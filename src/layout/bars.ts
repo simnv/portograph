@@ -187,7 +187,7 @@ export function shapeBars(model: LayoutModel): void {
     let y = group.bounds!.y + SKELETON_SPACING.padding;
     for (const [index, node] of nodes.entries()) {
       const old = node.bounds!, span = spans.get(node.id)!, height = Math.max(node.sizeFloor!.height, old.height);
-      const next = { x: span.min, y, width: span.max - span.min, height };
+      const next = { x: span.min, y, width: Math.max(node.sizeFloor!.width, span.max - span.min), height };
       const dx = next.x - old.x, dy = next.y - old.y, dw = next.width - old.width, dh = next.height - old.height;
       node.bounds = next; node.size = { width: next.width, height: next.height };
       const nodeSlots = slots.get(node.id)!;
@@ -274,6 +274,19 @@ function crosses(model: LayoutModel, segments: PathSegment[], endpoint: string):
   });
 }
 
+function sourceStemLength(model: LayoutModel, item: BarLink, slotX: number): number {
+  if (item.external.side !== 'top' && item.external.side !== 'bottom') return MIN_STEM;
+  const x = item.external.anchor!.x, destination = adjacentLaneX(model, item) ?? slotX;
+  const direction = Math.sign(destination - x);
+  if (!direction) return MIN_STEM;
+  const peers = model.links.map(link => barLink(model, link)).filter((other): other is BarLink => other !== undefined
+    && other.external.ref.node === item.external.ref.node && other.external.side === item.external.side
+    && Math.sign((adjacentLaneX(model, other) ?? other.port.anchor!.x) - other.external.anchor!.x) === direction
+    && direction * (other.external.anchor!.x - x) > EPS);
+  const spacing = (item.link.bundle || peers.some(peer => peer.link.bundle) ? 16 : 10) + DEFAULT_STROKE_WIDTHS.path;
+  return MIN_STEM + new Set(peers.map(peer => portId(peer.external.ref))).size * spacing;
+}
+
 function physicalPath(model: LayoutModel, item: BarLink, slotX: number, useHints: boolean): PathSegment[] {
   const external = item.external.anchor!, target = item.port.anchor!;
   const barNodes = Object.values(model.nodes).filter(node => isBarNode(model, node.id));
@@ -285,7 +298,7 @@ function physicalPath(model: LayoutModel, item: BarLink, slotX: number, useHints
   const targetOut = outward(target, targetSide, MIN_STEM);
   const mandatory = useHints ? hintLaneRuns(model, item) : orientedLaneRuns(model, item);
   const segments: PathSegment[] = [];
-  const startStem = outward(external, item.external.side, MIN_STEM);
+  const startStem = outward(external, item.external.side, sourceStemLength(model, item, slotX));
   appendConnector(segments, external, startStem, item.link.owner);
   let cursor = startStem;
   for (const run of mandatory) {
@@ -305,12 +318,20 @@ function physicalPath(model: LayoutModel, item: BarLink, slotX: number, useHints
     appendConnector(segments, { x: bypassX, y: targetOut.y }, targetOut, item.link.owner);
   }
   appendConnector(segments, targetOut, target, item.link.owner);
+  // Preserve the exact fixed run; its collinear approaches also touch the closed lane rectangle.
+  for (const run of mandatory) for (const segment of segments) {
+    if (segment === run || segment.lane !== undefined || segment.from.x !== run.from.x || segment.to.x !== run.from.x) continue;
+    if ([segment.from, segment.to].some(point => samePoint(point, run.from) || samePoint(point, run.to))) segment.lane = run.lane!;
+  }
   return segments;
 }
 
 function annotateCrossings(model: LayoutModel, segments: PathSegment[], crossed: string[]): void {
   for (const segment of segments) {
-    if (segment.lane !== undefined) continue;
+    if (segment.lane !== undefined) {
+      const lane = model.lanes.find(lane => lane.id === segment.lane)!;
+      if (Math.min(segment.from.y, segment.to.y) === lane.bounds.y && Math.max(segment.from.y, segment.to.y) === bottom(lane.bounds)) continue;
+    }
     const actual = crossed.filter(id => crossesBar(segment, model.nodes[id]!.bounds!));
     if (actual.length) segment.barCross = actual;
   }

@@ -54,4 +54,9 @@ export function bundle(model: LayoutModel): void {
   const owner = { kind: 'bundle' as const, id: 'bundle' };
   model.bundles.push({ id: 'bundle', owner, layer: 'routed', nodes: ['a', 'b'], members: model.links.map(l => l.id), memberGap: 16, envelope: { x: 0, y: 40, width: 100, height: 100 }, inversions: 3 });
   model.links.forEach(l => { l.bundle = 'bundle'; l.path!.segments.forEach(s => { s.owner = owner; }); });
+  if (model.links.every(l => JSON.stringify(l.path!.segments) === JSON.stringify(model.links[0]!.path!.segments))) {
+    model.links.forEach(l => { l.technique = 'merge'; });
+    model.bundles[0]!.mergeRuns = [{ id: 'merge', members: model.links.map(l => l.id), count: model.links.length, path: structuredClone(model.links[0]!.path!) }];
+    model.bundles[0]!.mergeRuns[0]!.path.owner = owner;
+  }
 }

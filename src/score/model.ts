@@ -1,6 +1,6 @@
-import type { Layer, LayoutLink, LayoutModel, LayoutPort, PathSegment, PortRef, Rect } from '../model/index.js';
+import type { Junction, Layer, LayoutLink, LayoutModel, LayoutPort, PathSegment, PortRef, Rect } from '../model/index.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
-import { EPS, bottom, contains, horizontal, near, pointRect, right, samePoint, vertical } from './geometry.js';
+import { EPS, bottom, contains, horizontal, length, near, pointRect, right, samePoint, vertical } from './geometry.js';
 
 export interface Segment { segment: PathSegment; link: LayoutLink; index: number; stroke: number }
 export const refEqual = (a: PortRef, b: PortRef): boolean => a.node === b.node && a.ordinal === b.ordinal && a.name === b.name && a.anonymous === b.anonymous;
@@ -95,19 +95,111 @@ export function bundlePair(model: LayoutModel, a: Segment, b: Segment, extent?: 
   const zone = bundle.envelope ?? bundle.rows;
   return zone !== undefined && (extent ? [extent.from, extent.to] : [a.segment.from, a.segment.to, b.segment.from, b.segment.to]).every(p => contains(zone, pointRect(p)));
 }
+/** The exact root-to-vertex chain, checked against each declared member's authored traversal. */
+export function junctionChain(model: LayoutModel, junction: Junction): Junction[] | undefined {
+  const chain: Junction[] = [], seen = new Set<string>();
+  let current: Junction | undefined = junction;
+  while (current) {
+    if (seen.has(current.id) || model.junctions.filter(j => j.id === current!.id).length !== 1) return undefined;
+    seen.add(current.id); chain.unshift(current);
+    if (!current.stem || !current.point || current.owner.kind !== 'shared-stem' || current.owner.id !== current.id
+      || current.stem.owner.kind !== 'shared-stem' || current.stem.owner.id !== current.id
+      || current.layer !== 'routed' || current.links.length < 2 || new Set(current.links).size !== current.links.length
+      || !samePoint(current.stem.to, current.point) || length(current.stem) <= EPS
+      || !horizontal(current.stem) && !vertical(current.stem)) return undefined;
+    if (!current.parent) break;
+    const parent = model.junctions.find(j => j.id === current!.parent);
+    if (!parent?.point || !refEqual(parent.port, current.port) || !samePoint(current.stem.from, parent.point)
+      || current.links.length >= parent.links.length || current.links.some(id => !parent.links.includes(id))) return undefined;
+    current = parent;
+  }
+  const root = chain[0]!, p = port(model, root.port);
+  if (!p || !root.stem || !outward(p, root.stem, true) || length(root.stem) < 15 - EPS) return undefined;
+  for (const [depth, j] of chain.entries()) {
+    for (const id of j.links) {
+      const link = model.links.find(l => l.id === id);
+      if (!link) return undefined;
+      const ends = endpoints(link), source = refEqual(ends.from, j.port), target = refEqual(ends.to, j.port);
+      if (source === target) return undefined;
+      for (let i = 0; i <= depth; i++) {
+        const vertex = chain[i]!, partial = !link.path ? link.sharedRuns?.[source ? 'from' : 'to'] : undefined;
+        const run = partial ? partial[i] : link.path?.segments[source ? i : link.path.segments.length - 1 - i];
+        if (!run || run.owner.kind !== 'shared-stem' || run.owner.id !== vertex.id
+          || !samePoint(source || partial ? run.from : run.to, vertex.stem!.from)
+          || !samePoint(source || partial ? run.to : run.from, vertex.stem!.to)) return undefined;
+      }
+    }
+    const children = model.junctions.filter(child => child.parent === j.id);
+    for (let i = 0; i < children.length; i++) if (children.slice(i + 1).some(child => child.links.some(id => children[i]!.links.includes(id)))) return undefined;
+  }
+  return chain;
+}
+function junctionPosition(model: LayoutModel, j: Junction, s: Segment, depth: number): number | undefined {
+  if (!j.links.includes(s.link.id)) return undefined;
+  const ends = endpoints(s.link);
+  if (refEqual(ends.from, j.port)) return s.index - depth;
+  if (refEqual(ends.to, j.port)) return s.link.path!.segments.length - 1 - s.index - depth;
+  return undefined;
+}
 export function sharedStem(model: LayoutModel, a: Segment, b: Segment, overlap: PathSegment): boolean {
   return model.junctions.some(j => {
-    if (!j.stem || j.owner.kind !== 'shared-stem' || j.owner.id !== j.id || !j.links.includes(a.link.id) || !j.links.includes(b.link.id) || !claimed(a, 'shared-stem', j.id) || !claimed(b, 'shared-stem', j.id)) return false;
-    const anchor = port(model, j.port)?.anchor;
-    if (!anchor || !samePoint(j.stem.from, anchor) || !j.point || !samePoint(j.stem.to, j.point)) return false;
-    const starts = [a, b].every(s => s.index === 0 && refEqual(endpoints(s.link).from, j.port));
-    return starts && (horizontal(j.stem) ? horizontal(overlap) && near(overlap.from.y, j.stem.from.y) : vertical(j.stem) && vertical(overlap) && near(overlap.from.x, j.stem.from.x))
-      && [overlap.from, overlap.to].every(p => contains({ x: Math.min(j.stem!.from.x, j.stem!.to.x), y: Math.min(j.stem!.from.y, j.stem!.to.y), width: Math.abs(j.stem!.to.x - j.stem!.from.x), height: Math.abs(j.stem!.to.y - j.stem!.from.y) }, pointRect(p)));
+    const chain = junctionChain(model, j);
+    if (!chain || !claimed(a, 'shared-stem', j.id) || !claimed(b, 'shared-stem', j.id)
+      || [a, b].some(s => junctionPosition(model, j, s, chain.length - 1) !== 0)) return false;
+    const stem = j.stem!;
+    return (horizontal(stem) ? horizontal(overlap) && near(overlap.from.y, stem.from.y)
+      : vertical(overlap) && near(overlap.from.x, stem.from.x))
+      && [overlap.from, overlap.to].every(p => contains({ x: Math.min(stem.from.x, stem.to.x), y: Math.min(stem.from.y, stem.to.y),
+        width: Math.abs(stem.to.x - stem.from.x), height: Math.abs(stem.to.y - stem.from.y) }, pointRect(p)));
   });
 }
-/** Only a stem and its immediate fan segment can use the junction clearance exception. */
+/** Only the incident run and immediately outgoing branches at one verified tree vertex qualify. */
 export function junctionFan(model: LayoutModel, a: Segment, b: Segment): boolean {
-  return model.junctions.some(j => j.point && j.stem && j.owner.kind === 'shared-stem' && j.owner.id === j.id
-    && [a, b].every(s => j.links.includes(s.link.id) && refEqual(endpoints(s.link).from, j.port) && claimed(s, 'shared-stem', j.id)
-      && (s.index === 0 && samePoint(s.segment.from, j.stem!.from) && samePoint(s.segment.to, j.point!) || s.index === 1 && samePoint(s.segment.from, j.point!))));
+  return model.junctions.some(j => {
+    const chain = junctionChain(model, j);
+    if (!chain) return false;
+    return [a, b].every(s => {
+      const position = junctionPosition(model, j, s, chain.length - 1);
+      if (position === 0) return claimed(s, 'shared-stem', j.id);
+      if (position !== 1) return false;
+      const ends = endpoints(s.link), start = refEqual(ends.from, j.port) ? s.segment.from : s.segment.to;
+      if (!samePoint(start, j.point!)) return false;
+      if (claimed(s, 'shared-stem', j.id)) return true;
+      return model.junctions.some(child => child.parent === j.id && child.links.includes(s.link.id)
+        && claimed(s, 'shared-stem', child.id) && junctionChain(model, child) !== undefined);
+    });
+  });
+}
+
+/** A merged overlap must be covered by actual, counted runs for the exact selected members. */
+export function mergedRun(model: LayoutModel, a: Segment, b: Segment, overlap: PathSegment): boolean {
+  if (!bundlePair(model, a, b, overlap) || a.link.technique !== 'merge' || b.link.technique !== 'merge') return false;
+  const bundle = model.bundles.find(item => item.id === a.link.bundle)!;
+  const h = horizontal(overlap), at = (p: { x: number; y: number }): number => h ? p.x : p.y;
+  const low = Math.min(at(overlap.from), at(overlap.to)), high = Math.max(at(overlap.from), at(overlap.to));
+  const intervals: [number, number][] = [];
+  for (const run of bundle.mergeRuns ?? []) {
+    if (run.count < 2 || run.count !== run.members.length || new Set(run.members).size !== run.count
+      || !run.members.includes(a.link.id) || !run.members.includes(b.link.id)
+      || run.path.owner.kind !== 'bundle' || run.path.owner.id !== bundle.id || run.path.layer !== 'routed') continue;
+    for (const segment of run.path.segments) {
+      if (segment.owner.kind !== 'bundle' || segment.owner.id !== bundle.id
+        || !(h ? horizontal(segment) && near(segment.from.y, overlap.from.y) : vertical(segment) && near(segment.from.x, overlap.from.x))) continue;
+      const lo = Math.min(at(segment.from), at(segment.to)), hi = Math.max(at(segment.from), at(segment.to));
+      if (!run.members.every(id => {
+        const link = model.links.find(link => link.id === id);
+        return link?.technique === 'merge' && link.bundle === bundle.id && link.path?.segments.some(s => s.owner.kind === 'bundle' && s.owner.id === bundle.id
+          && (h ? horizontal(s) && near(s.from.y, segment.from.y) : vertical(s) && near(s.from.x, segment.from.x))
+          && Math.min(at(s.from), at(s.to)) <= lo + EPS && Math.max(at(s.from), at(s.to)) >= hi - EPS);
+      })) continue;
+      intervals.push([lo, hi]);
+    }
+  }
+  let covered = low;
+  for (const [lo, hi] of intervals.sort((a, b) => a[0] - b[0])) {
+    if (lo > covered + EPS) return false;
+    if (hi > covered) covered = hi;
+    if (covered >= high - EPS) return true;
+  }
+  return false;
 }

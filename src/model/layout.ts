@@ -132,6 +132,8 @@ export interface LayoutLink {
    * complete geometry, so an incomplete reservation is never stored there.
    */
   fixedSegments?: PathSegment[];
+  /** Outward root-to-leaf shared runs; a pathless remainder must consume these in stage 13. */
+  sharedRuns?: { from?: PathSegment[]; to?: PathSegment[] };
   stubCandidate?: boolean;
 }
 
@@ -149,16 +151,24 @@ export interface Bundle extends OwnedElement {
   id: string;
   nodes: [string, string];
   members: string[];
+  /** Required visible clearance between strokes. */
   memberGap?: number;
+  /** Minimum regular centreline pitch, including stroke width; fixed tracks may be wider. */
+  memberPitch?: number;
+  mergeRuns?: { id: string; members: string[]; count: number; path: LayoutPath }[];
   rows?: Rect;
   centreline?: LayoutPath;
   envelope?: Rect;
+  /** Swept channel rectangles; consumers prefer these over the union for bent channels. */
+  envelopeParts?: Rect[];
   inversions?: number;
 }
 
 export interface Junction extends OwnedElement {
   id: string;
   port: PortRef;
+  /** Parent shared run at the same port; membership is a strict subset. */
+  parent?: string;
   links: string[];
   point?: Point;
   stem?: PathSegment;
@@ -239,6 +249,7 @@ export interface FrozenPort {
   authorOrder?: number;
 }
 export interface PlacementSnapshot {
+  sharedRuns: { link: string; runs: NonNullable<LayoutLink['sharedRuns']> }[];
   fixedSegments: { link: string; segments: PathSegment[] }[];
   nodes: Record<string, Pick<LayoutNode, 'bounds' | 'size' | 'sizeFloor' | 'contentSize' | 'contentInsets' | 'sidePitch' | 'ports' | 'icon'>>;
   groups: Record<string, Pick<LayoutGroup, 'bounds' | 'rowOrder' | 'nodes' | 'tier' | 'flank'>>;

@@ -19,3 +19,8 @@ one checked draft and retain the returned snapshot. Persisted topology/floor met
 serialization, and restore also checks resolved document semantics. Author keys constrain relative
 order, not absolute engine slots. Node text, icons and pills rebuild from measured content and the
 rule's final anchors. Missing claim rebuilds reject affected changes until their producer lands.
+
+Bundle placement now grows endpoint side pitch and node capacity, re-levels facing blocks,
+repacks affected rows and reserves horizontal or vertical crossing space before paths. The
+16 px member gap remains visible clearance. These movements retain topology, unequal authored
+precedence, unrelated relative order, content floors and fixed lane identity/x/owners.

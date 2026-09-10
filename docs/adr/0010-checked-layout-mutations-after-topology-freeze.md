@@ -72,3 +72,20 @@ Stage 7b checks every unrelated anchor against the common flank translation and 
 growth. Merely retaining its pitch and engine slot does not authorize moving that anchor.
 Fixed-segment equality uses structural JSON values: object key order is irrelevant, while array
 traversal order, ownership, dimensions and coordinates remain exact.
+
+Stage 7e's transaction finalizer owns bundle capacity planning and claim creation. It reuses the
+row repacker, band translation, fixed-owner lane extent rebuild, bounded centering, bar shaping,
+measured node content and earlier path producers. Callback-authored order corruption rejects
+before the planner runs. The same bundle producer validates publication and restore by rebuilding
+complete paths, envelopes, junction trees, partial shared runs and counted merge records.
+
+Junction children declare a strict membership subset and exact parent-point continuity at the
+same port. Complete paths and outward `sharedRuns.from/to` handoffs must match their root-to-leaf
+traversal. The final placement snapshot includes those partial runs. They remain partial for a
+routing remainder, so score's complete-path requirement is unchanged. Merge geometry preserves
+existing shared-run ownership and reserves any additional selected trunk before paths.
+
+Bar replay retains exact original fixed lane segments and tags only collinear owner approaches
+that touch the same closed corridor boundary. Same-source bar jogs use stroke-aware staggered
+rows in source order, avoiding coincident approach segments. Span subtraction keeps the explicit
+width floor even when floating-point cancellation would produce a slightly smaller value.

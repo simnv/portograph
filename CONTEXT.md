@@ -26,10 +26,10 @@ drew it. Network diagrams first; software architecture and electrical panels nex
 | **region** | The space between two adjacent tiers, or between a flank and its tier. Routing strategy is chosen per region by what is on each side. | *group* |
 | **lane** | A reserved vertical corridor (`laneW` = pill width + gap ≈ 34 px), in the margin beside a group, for one link transiting a tier it does not terminate in. A lane has an **owner**; it is an obstacle to every other link. Reserved before anything is pinned. | *channel*; the 16 px **member gap** inside a bundle |
 | **anchor tier** | The tier with the most main-tier nodes, including bars and excluding flank nodes (ties: lowest effective tier index). Groups below it are centred under their feeds; groups above it are centred over their children. | |
-| **junction** | The point where several links leaving one port share a stem before fanning out (libavoid `JunctionRef`). The stem is exempt from the overlap gate. | *bundle* |
+| **junction** | A branch point in a tree of shared runs at one port. Source and target incidence use the same outward tree. Only declared shared runs are exempt from the overlap gate. | *bundle* |
 | **band** | Reserved horizontal space: a **tier band** (the vertical extent a tier occupies) or a **label band** (space inside a group's top padding reserved for its label). | |
 | **skeleton** | The tier/group placement produced by ELK before region rules run. Lateral (flank↔tier) links are **withheld** from the skeleton so flanks land beside their tier. | *layout* (the whole result) |
-| **bundle** | Two or more routed links between the same pair of nodes, routed as one channel (its **envelope** = n × member gap) and fanned to ports. Members cross each other only as many times as the port permutation between the two ends has inversions — zero when the engine orders the ports. Rendered as parallel lines (`route: bundle`, default) or merged with a multiplicity label (`route: merge`). | *overlay* |
+| **bundle** | Two or more routed links between the same pair of nodes, routed through a channel and fanned to ports. Its **envelope** reserves the swept geometry, including stroke width. Parallel members cross once for each strict endpoint-order inversion; shared-port ties count as zero. Engine order minimizes avoidable inversions where incidence and reservations permit it. Selected `route: merge` members share counted trunks; other members remain parallel. | *overlay* |
 | **overlay** | A link family drawn straight, thin, translucent and *unrouted* on its own layer beneath routed links. Used for flow-class links (e.g. NTP sync). Exempt from clearance gates. | *bundle* |
 | **group-link** | One link drawn between two groups (each with ≥ 2 nodes) standing for the **complete** bipartite set of same-class links between their nodes, labelled with the count; membership is kept in the model. Near-complete sets stay overlay. M1: warns, draws the members. | *bundle* |
 | **stub** | A link drawn as a label on each end node instead of a line ("→ loc1ntp001"), used when a route would cross more than two tiers or detour more than 3× the direct distance. Both ends are marked. | hiding a link |
@@ -46,7 +46,7 @@ drew it. Network diagrams first; software architecture and electrical panels nex
 1. **Links attach to ports, never to nodes.** A link written to a bare node gets an anonymous port.
 2. **A node has exactly one group.** Groups do not nest in M1.
 3. **Node size is derived from its content and its ports:** the larger of the measured label/description/icon bounds, the author's `size:` floor, and per-side port counts × the measured pitch of that side. Never shrunk to fit.
-4. **Port topology freezes before paths:** identity, count, side and author `order:` are fixed after the two side phases. Engine-selected order may still change where bar and bundle rules require it, including compatible primary-bundle order during flank alignment. Placement may grow or move geometry only through its declared rules; it never shrinks a node below its current content or author floor. Final placement freezes after all region rules.
+4. **Port topology freezes before paths:** identity, count, side and author `order:` are fixed after the two side phases. Engine-selected order may still change where bar and bundle rules require it, including compatible primary-bundle order during flank alignment. Bundle rules may grow endpoint pitch and capacity, repack rows, re-level blocks and reserve crossing space before paths. Fixed lane x and owners remain immutable. Placement may grow or move geometry only through its declared rules; it never shrinks a node below its current content or author floor. Final placement freezes after all region rules.
 5. **Meaning before geometry, space before use:** which technique a link gets is decided from the document (stage 1); lanes, bands, bundle rows and bar spans are reserved during placement, not discovered during routing.
 6. **Every fixed path is an obstacle** for everything routed after it. All paths are validated together at the end.
 7. **Region rules are the router for regular tiered diagrams.** libavoid routes only what the rules do not claim.
@@ -72,7 +72,7 @@ drew it. Network diagrams first; software architecture and electrical panels nex
 | Port stem | ≥ 15 px, perpendicular to side | yFiles convention |
 | "Beautiful" ceiling | ~30 nodes | Störrle 2014/2016, Kobourov 2014 |
 | "Workable" ceiling | ~1,000 nodes; per-stage deadlines (ELK 10 s ≤ 300 nodes, 20 s above); full pipeline < 30 s — **not yet measured** | prototype: `elk.layout()` alone 2 s at 1,000 without partitioning |
-| Bundle member gap | 16 px | prototype `tall3` |
+| Bundle member gap | 16 px visible clearance; minimum centreline pitch = gap + maximum member stroke, 17.5 px at defaults | prototype `tall3`, stroke-aware G6 |
 | Fixed-path obstacle trim | 18 px at each end | prototype `tall3` |
 | Straight-link eligibility | ports face each other, collinear normals, clear path, length < 2× larger node dimension | Q30 as amended by codex |
 | Stub thresholds | crosses > 2 tiers, or detour > 3× direct | Q30 |

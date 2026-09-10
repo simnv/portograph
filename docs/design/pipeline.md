@@ -322,16 +322,68 @@ vertical translation.
 
 ### 7e — bundles
 
-For each bundle (stage 1): reserve `n × memberGap` rows in the tier gap on the exit side of the
-lower node (`memberGap` = 16 px; distinct from `laneW`). Apply all resulting tier-gap growth before
-creating any bundle path. Route one centreline with the **bundle envelope** (`n × memberGap` wide)
-as its width — so offsets cannot hit obstacles — then offset members, consuming any lane and
-bar-drop reservations from 7a/7d. Member order at each end is the port order; the number of
-unavoidable crossings inside the channel equals the **inversion count** of the permutation
-between the two ends. Engine-ordered ports are reordered to make it zero; author-`order:`ed ports
-keep their inversions, each drawn as one explicit crossing and reported. Members are **pinned**.
-A **shared stem** (several links leaving one port) is a `JunctionRef` in libavoid terms: one stem
-of ≥ 15 px then a fan; the stem is exempt from the overlap gate.
+`bundles(model)` commits one checked `bars -> bundles` transaction. Its geometry-only planner
+jointly orders endpoint sides, retains unequal authored precedence and unrelated relative order,
+grows measured side pitch/capacity and repacks affected rows. The 16 px `memberGap` is visible
+clearance. The minimum centreline pitch includes the maximum member stroke, 17.5 px at defaults.
+Primary facing blocks remain aligned. Secondary flank blocks clear intervening nodes using their
+actual stroke-aware bounds. Growth translates downstream bands and attached flanks before paths.
+Existing lane identity, owner, x and width never change.
+
+Reserve crossing width/rows before creating paths. Strict endpoint-pair inversions ignore shared
+port ties. Distinct engine ports use a common order where authored precedence permits it. Shared
+incidence uses a deterministic search capped at 4096 endpoint-order pairs. Exhaustion emits
+`BUNDLE_ORDER_OPTIMIZATION_LIMIT`; it does not claim a proved minimum. A K2,2 bundle has a true
+minimum of one. Contradictory intermediate lane order fails with
+`BUNDLE_RESERVATION_ORDER_CONFLICT` before publication, rather than inventing endpoint inversions.
+
+Route a clear full-width centreline and offset its members. Aligned clear bundles stay straight.
+Bent channels expose `envelopeParts` as swept rectangles and `envelope` as their union. Author
+inversions use isolated adjacent-swap cells. Every strict crossed member pair is independently
+checked against the endpoint inversions; undeclared bend contacts and overlaps fail. Complete
+member paths follow authored source-to-target direction even when bundle orientation differs.
+Lane runs and the latest rebuilt bar hints/slots remain constraints. Every actual `barCross`
+annotation retains its bar-owned reservation.
+
+Collinear transits remain separate exact lane segment records, each with its own lane ID and
+link owner. Connectors meeting closed lane boundaries are split and tagged only for the matching
+owner/corridor; a later lane never overwrites an earlier lane's identity. Publication and restore
+independently require every bundle lane's exact segment in authored traversal direction.
+
+Shared incidence uses explicit junction trees. A root has an outward perpendicular stem of at
+least 15 px. A child keeps the same port, starts at its parent point, and carries a strict subset
+of its parent's members. Each member traverses its exact root-to-leaf chain. A port shared across
+bundles and an unclaimed remainder has one tree. `LayoutLink.sharedRuns.from/to` records its
+outward partial runs. Stage 13 consumes `from` outward and `to` in reverse order and direction;
+a partial run never becomes a complete `path`. G4 exempts only validated shared runs. G6's fan
+exception covers the incident run and immediate outgoing branches at the same verified vertex.
+
+A global shared prefix is consumed even when only one member of a bundle uses that port. Ordinary
+endpoints keep ordinary approaches. Reserved lane/bar routes connect to the shared tree's leaf
+endpoints, with the fan plus outward continuation and lane buffer reserved before paths. The
+endpoint approach is replaced up to the nearest mandatory run; its exact segment and the remaining
+hint traversal survive. Source and target prefixes are composed before converting the complete
+path to authored direction, so no member retreats through its own fan or reservation.
+When a facing bar hint has no lane or crossed-bar constraint, its old common approach is not a
+mandatory splice boundary: rebuild the independent channel between fan leaves and retain the
+bar's actual attachment through the tree. A free shared bar star projects leaves onto its distinct
+peer tracks; reserve twice the regular peer pitch before paths so a mean bar slot still leaves
+clearance between its shared normal and the neighboring independent approaches.
+
+Only explicitly selected `merge` members enter `Bundle.mergeRuns`. Each run has a stable ID,
+exact members, count and actual shared trunk path. Counts change when membership changes along a
+trunk. Ordinary parallel bundles create no count. A singleton selected merge keeps its authored
+technique and ordinary anchored path, with `MERGE_SINGLE_MEMBER` warning because it has no
+selected merge partner. It does not recruit parallel members, and may still use a junction stem.
+Stage 14 measures and places multiplicity labels from these records after routing. Stage 16 emits
+that final geometry and labels; it never measures or invents a count-label position. Parallel
+inversion crossings are individually visible; merged trunks do not claim to depict them.
+
+All bundle paths, shared runs, junctions and envelopes are derived claims. Publication and restore
+rebuild and compare them with the same producer. Callbacks cannot edit these claims. Frozen
+identity, side, authored precedence and floors reject before replay can repair them. The ordered
+replay is reusable by stage 7f and consumes one caller-owned eight-pass centering budget. The final
+scorer still requires every complete path; a stage-11 subset score is not a full golden result.
 
 ### 7f — group label bands
 

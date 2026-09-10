@@ -1,11 +1,13 @@
 import type { LayoutModel, TierBand } from '../model/layout.js';
-import { centreDraft, type CentreBudget } from './centre.js';
+import { centreDraft, createCentreBudget, type CentreBudget } from './centre.js';
 import { rebuildLaneExtents } from './lanes.js';
 import { rebuildFlankPaths, flankPathCandidate } from './flanks.js';
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { rebuildRegions } from './regions.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { rebuildBarDrops, shapeBars } from './bars.js';
+import { prepareBundleGeometry } from './bundle-geometry.js';
+import { rebuildBundlePaths } from './bundle-paths.js';
 import { moveGroup, rebuildBands, union } from './skeleton-geometry.js';
 
 const barStages = ['bars', 'bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'];
@@ -50,13 +52,20 @@ function rebuildBarGeometry(draft: LayoutModel, before: readonly TierBand[] = dr
  * transaction. The checked transaction invokes this finalizer after geometry callbacks. Callbacks
  * use individual geometry producers; the transaction owns derived row/flank path writes.
  */
-export function rebuildRegionGeometry(draft: LayoutModel, budget?: CentreBudget, beforeBarBands?: readonly TierBand[]): void {
+export function rebuildRegionGeometry(draft: LayoutModel, budget?: CentreBudget, beforeBarBands?: readonly TierBand[], bundlesReady = ['bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'].includes(draft.stage)): void {
+  if (bundlesReady) {
+    for (const link of draft.links) if (link.bundle) delete link.path;
+    for (const bundle of draft.bundles) { delete bundle.rows; delete bundle.envelope; delete bundle.centreline; delete bundle.envelopeParts; }
+    prepareBundleGeometry(draft);
+    budget ??= createCentreBudget();
+  }
   const barsReady = barStages.includes(draft.stage) || beforeBarBands !== undefined;
   if (barsReady) rebuildBarGeometry(draft, beforeBarBands);
   rebuildRegions(draft);
   rebuildLaneExtents(draft);
   if (budget) {
     centreDraft(draft, budget);
+    if (bundlesReady) prepareBundleGeometry(draft);
     if (barsReady) rebuildBarGeometry(draft);
     rebuildRegions(draft);
     rebuildLaneExtents(draft);
@@ -66,4 +75,5 @@ export function rebuildRegionGeometry(draft: LayoutModel, budget?: CentreBudget,
   rebuildRowPaths(draft);
   rebuildFlankPaths(draft);
   if (barsReady) rebuildBarDrops(draft);
+  if (bundlesReady) rebuildBundlePaths(draft);
 }

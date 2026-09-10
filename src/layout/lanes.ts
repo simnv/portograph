@@ -203,8 +203,8 @@ export function validateLanes(model: LayoutModel): void {
     const order = transitTiers(model, link);
     const owned = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === link.id)
       .sort((a, b) => order.indexOf(a.tier) - order.indexOf(b.tier));
-    const runs = !link.bundle && owned.length ? owned.map(lane => reservation(model, link, lane)) : undefined;
-    if (!equal(link.fixedSegments, runs)) throw new Error(`Fixed lane segments contradict reservations on ${link.id}`);
+    const runs = owned.length ? owned.map(lane => reservation(model, link, lane)) : undefined;
+    if (!equal(link.fixedSegments, link.bundle ? undefined : runs)) throw new Error(`Fixed lane segments contradict reservations on ${link.id}`);
     if (link.path && runs && !runs.every(run => link.path!.segments.some(segment => equal(segment, run)))) {
       throw new Error('Complete path omits an immutable reserved segment');
     }

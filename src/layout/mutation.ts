@@ -17,6 +17,7 @@ import { rebuildRegions } from './regions.js';
 import { selectAnchorTier } from './centre.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
+import { rebuildBundlePaths } from './bundle-paths.js';
 
 export type PlacementRule = 'rows' | 'lanes' | 'flanks' | 'centre' | 'bars' | 'bundles'
   | 'bands' | 'route' | 'link-labels' | 'validate' | 'emit';
@@ -79,6 +80,7 @@ function placement(model: LayoutModel): PlacementSnapshot {
       pick(node, ['bounds', 'size', 'sizeFloor', 'contentSize', 'contentInsets', 'sidePitch', 'ports', 'icon'])])),
     groups: Object.fromEntries(Object.entries(model.groups).map(([id, group]) => [id, pick(group, ['bounds', 'rowOrder', 'nodes', 'tier', 'flank'])])),
     tierBands: model.tierBands, regions: model.regions, lanes: model.lanes, labelBands: model.labelBands,
+    sharedRuns: model.links.filter(link => link.sharedRuns !== undefined).map(link => ({ link: link.id, runs: link.sharedRuns! })),
     fixedSegments: model.links.filter(link => link.fixedSegments !== undefined).map(link => ({ link: link.id, segments: link.fixedSegments! })),
     labels: model.labels.filter(label => ['node', 'description', 'pill', 'group'].includes(label.role ?? '')),
   };
@@ -171,6 +173,7 @@ function validatePublication(model: LayoutModel, baseline: LayoutModel): void {
 function validateRegionClaims(model: LayoutModel): void {
   const expected = clone(model);
   const barStage = stages.indexOf(model.stage) >= stages.indexOf('bars');
+  const bundleStage = stages.indexOf(model.stage) >= stages.indexOf('bundles');
   if (barStage) {
     shapeBars(expected);
     for (const id of orderedGroupIds(model.document)) if (model.document.groups[id]!.shape === 'bar') {
@@ -191,11 +194,20 @@ function validateRegionClaims(model: LayoutModel): void {
   rebuildRowPaths(expected);
   const flankStage = stages.indexOf(model.stage) >= stages.indexOf('flanks');
   if (flankStage) {
-    const ordered = clone(model); normalizePrimaryBundlePorts(ordered);
-    for (const id of Object.keys(model.nodes)) same(model.nodes[id]!.ports.map(port => port.engineOrder), ordered.nodes[id]!.ports.map(port => port.engineOrder), 'Primary bundle facing order contradicts normalization');
+    if (!bundleStage) {
+      const ordered = clone(model); normalizePrimaryBundlePorts(ordered);
+      for (const id of Object.keys(model.nodes)) same(model.nodes[id]!.ports.map(port => port.engineOrder), ordered.nodes[id]!.ports.map(port => port.engineOrder), 'Primary bundle facing order contradicts normalization');
+    }
     rebuildFlankPaths(expected);
   }
   if (barStage) rebuildBarDrops(expected);
+  if (bundleStage) {
+    rebuildBundlePaths(expected);
+    same(model.bundles, expected.bundles, 'Bundle reservations contradict final paths');
+    same(model.junctions, expected.junctions, 'Junctions contradict shared incidence');
+    same(model.links.map(l => l.sharedRuns), expected.links.map(l => l.sharedRuns), 'Shared runs contradict port incidence');
+    for (const [index, link] of model.links.entries()) if (link.bundle) same(link.path, expected.links[index]!.path, `Bundle path on ${link.id} contradicts final anchors`);
+  }
   for (const [index, link] of model.links.entries()) {
     if (!rowPathCandidate(model, link) && !(flankStage && flankPathCandidate(model, link))) continue;
     const name = rowPathCandidate(model, link) ? 'Row' : 'Flank';
@@ -345,12 +357,13 @@ function hasUnsupportedClaims(model: LayoutModel): boolean {
   const laneStage = stages.indexOf(model.stage) >= stages.indexOf('lanes');
   const flankStage = stages.indexOf(model.stage) >= stages.indexOf('flanks');
   const barStage = stages.indexOf(model.stage) >= stages.indexOf('bars');
+  const bundleStage = stages.indexOf(model.stage) >= stages.indexOf('bundles');
   return model.links.some(link => (link.path !== undefined && !((rowStage && rowPathCandidate(model, link)) || (flankStage && flankPathCandidate(model, link))
-      || (barStage && barLink(model, link) !== undefined)))
-      || (link.fixedSegments !== undefined && !laneStage))
+      || (barStage && barLink(model, link) !== undefined) || (bundleStage && link.bundle !== undefined)))
+      || (link.fixedSegments !== undefined && !laneStage) || (link.sharedRuns !== undefined && !bundleStage))
     || (!laneStage && (model.lanes.length > 0 || model.regions.length > 0)) || (!barStage && model.barDrops.length > 0)
-    || model.junctions.length > 0
-    || model.bundles.some(b => b.rows !== undefined || b.centreline !== undefined || b.envelope !== undefined || b.memberGap !== undefined || b.inversions !== undefined)
+    || (!bundleStage && model.junctions.length > 0)
+    || (!bundleStage && model.bundles.some(b => b.rows !== undefined || b.centreline !== undefined || b.envelope !== undefined || b.envelopeParts !== undefined || b.memberGap !== undefined || b.inversions !== undefined || b.memberPitch !== undefined || b.mergeRuns !== undefined))
     || model.obstacles.length > 0 || model.labelBands.length > 0 || claims(model).labels.length > 0;
 }
 function rebuildBoxes(model: LayoutModel): void {
@@ -455,6 +468,11 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     if (rule === 'flanks') same(node.ports.map(port => port.engineOrder), flankOrder.nodes[id]!.ports.map(port => port.engineOrder), 'Flanks may reorder only the compatible primary bundle block');
     if (!permission.reorder) same(node.ports.map(port => port.engineOrder), old.ports.map(port => port.engineOrder), `${rule} cannot reorder ports`);
     for (const side of SIDE_TIE_ORDER) {
+      const authored = node.ports.filter(p => p.side === side && p.authorOrder !== undefined);
+      for (const ordered of [[...authored].sort((a, b) => a.engineOrder! - b.engineOrder!),
+        [...authored].sort((a, b) => side === 'top' || side === 'bottom' ? a.anchor!.x - b.anchor!.x : a.anchor!.y - b.anchor!.y)]) {
+        if (ordered.some((p, i) => i > 0 && p.authorOrder! < ordered[i - 1]!.authorOrder!)) throw new Error(`Author order reversed on ${id}.${side}`);
+      }
       if (node.sidePitch![side]! < old.sidePitch![side]!) throw new Error('Pitch cannot decrease');
       if (rule !== 'flanks' || !flankSides.get(id)?.has(side)) same(node.sidePitch![side], old.sidePitch![side], `${rule} cannot change pitch`);
     }
@@ -512,9 +530,9 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     rebuildRegions(draft);
     if (rule !== 'lanes') rebuildLaneExtents(draft);
   }
-  if (changed || ['rows', 'lanes', 'flanks', 'centre'].includes(rule)) {
+  if (changed || ['rows', 'lanes', 'flanks', 'centre', 'bundles'].includes(rule)) {
     if (stages.indexOf(rule) >= stages.indexOf('flanks')) {
-      rebuildRegionGeometry(draft, undefined, rule === 'bars' ? model.tierBands : undefined);
+      rebuildRegionGeometry(draft, undefined, rule === 'bars' ? model.tierBands : undefined, rule === 'bundles' || stages.indexOf(model.stage) >= stages.indexOf('bundles'));
       if (rule === 'bars') same(nonBarHorizontalPlacement(draft), nonBarHorizontalPlacement(model),
         'Bars may translate downstream tiers only vertically');
     }

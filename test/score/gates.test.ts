@@ -223,7 +223,8 @@ describe('G5 stems and port order', () => {
       { from: { x: 30, y: 100 }, to: b.ports[1]!.anchor!, owner: model.links[1]!.owner },
     ];
     expect(gate(model, 'G5').violations.some(v => v.code === 'port-order')).toBe(true);
-    [...a.ports, ...b.ports].forEach((p, i) => { p.authorOrder = i; });
+    a.ports.forEach((p, i) => { p.authorOrder = i; });
+    b.ports.forEach((p, i) => { p.authorOrder = b.ports.length - 1 - i; });
     expect(gate(model, 'G5').passed).toBe(true);
   });
 });

@@ -1,7 +1,7 @@
 import type { LayoutModel, LayoutNode, PathSegment } from '../model/index.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { EPS, bottom, contains, horizontal, length, near, overlapSegment, rectDistance, rectOverlap, samePoint, segmentDistance, segmentRect, segmentRectDistance, vertical } from './geometry.js';
-import { anchorOnBoundary, barContact, bundlePair, endpoints, incident, junctionFan, outward, port, refEqual, sharedStem } from './model.js';
+import { anchorOnBoundary, barContact, bundlePair, endpoints, incident, junctionFan, mergedRun, outward, port, refEqual, sharedStem } from './model.js';
 import type { Segment } from './model.js';
 import type { GateId, GateResult, ScoreCounters } from './types.js';
 
@@ -78,7 +78,7 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
   }
   collinearSweep(routed, (a, b, overlap) => {
     if (length(overlap) <= 1 + EPS) return;
-    if (bundlePair(model, a, b, overlap)) counters.bundledLength += length(overlap);
+    if (mergedRun(model, a, b, overlap)) counters.bundledLength += length(overlap);
     else if (!sharedStem(model, a, b, overlap)) { counters.overlaps++; fail('G4', 'collinear-overlap', [a.link.id, b.link.id], 'Routed segments share more than 1 px'); }
   });
   const lanesUsed = new Set<string>();
@@ -102,16 +102,26 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
     if (path!.some(s => (!horizontal(s) && !vertical(s)) || length(s) <= EPS)) fail('G5', 'orthogonal-path', [link.id], 'Routed segments must have positive length and follow an axis');
   }
   for (const node of nodes) for (const side of ['top', 'right', 'bottom', 'left'] as const) {
-    const positions = node.ports.filter(p => p.side === side && p.authorOrder === undefined).flatMap(p => model.links.filter(l => routed.some(s => s.link === l)).flatMap(l => {
-      const ends = endpoints(l), other = refEqual(ends.from, p.ref) ? ends.to : refEqual(ends.to, p.ref) ? ends.from : undefined;
-      const target = other && port(model, other);
-      return target ? [{ p, own: side === 'top' || side === 'bottom' ? p.anchor!.x : p.anchor!.y, far: side === 'top' || side === 'bottom' ? target.anchor!.x : target.anchor!.y }] : [];
-    }));
+    const positions = node.ports.filter(p => p.side === side && p.authorOrder === undefined).flatMap(p => {
+      const peers = model.links.filter(l => routed.some(s => s.link === l)).flatMap(l => {
+        const ends = endpoints(l), other = refEqual(ends.from, p.ref) ? ends.to : refEqual(ends.to, p.ref) ? ends.from : undefined;
+        const target = other && port(model, other);
+        return target ? [side === 'top' || side === 'bottom' ? target.anchor!.x : target.anchor!.y] : [];
+      });
+      return peers.length ? [{ own: side === 'top' || side === 'bottom' ? p.anchor!.x : p.anchor!.y,
+        min: Math.min(...peers), max: Math.max(...peers) }] : [];
+    });
     for (let i = 0; i < positions.length; i++) for (const b of positions.slice(i + 1)) {
       const a = positions[i]!;
-      if (!refEqual(a.p.ref, b.p.ref) && (a.own - b.own) * (a.far - b.far) < -EPS) fail('G5', 'port-order', [node.id], 'Port order must match far-end order unless authored');
+      if (a.own < b.own - EPS && a.min > b.max + EPS || b.own < a.own - EPS && b.min > a.max + EPS)
+        fail('G5', 'port-order', [node.id], 'Port order must match strictly separated far-end ranges unless authored');
     }
+    const authored = node.ports.filter(p => p.side === side && p.authorOrder !== undefined)
+      .sort((a, b) => (side === 'top' || side === 'bottom' ? a.anchor!.x - b.anchor!.x : a.anchor!.y - b.anchor!.y));
+    if (authored.some((p, i) => i > 0 && p.authorOrder! < authored[i - 1]!.authorOrder!))
+      fail('G5', 'author-port-order', [node.id], 'Physical port order reverses unequal authored keys');
   }
+
   for (let i = 0; i < routed.length; i++) for (const b of routed.slice(i + 1)) {
     const a = routed[i]!;
     if (a.link.id === b.link.id && Math.abs(a.index - b.index) <= 1) continue;
@@ -120,7 +130,7 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
     if (overlap && sharedStem(model, a, b, overlap) || junctionFan(model, a, b)) continue;
     const bundle = bundlePair(model, a, b);
     // Merged members intentionally share one rendered run. Other bundle runs retain memberGap.
-    if (bundle && overlap) continue;
+    if (overlap && mergedRun(model, a, b, overlap)) continue;
     const min = bundle ? model.bundles.find(item => item.id === a.link.bundle)!.memberGap ?? 16 : 10;
     const distance = segmentDistance(a.segment, b.segment) - (a.stroke + b.stroke) / 2;
     if (distance < min - EPS) fail('G6', bundle ? 'bundle-member-gap' : 'parallel-clearance', [a.link.id, b.link.id], `Parallel clearance is below ${min} px`);

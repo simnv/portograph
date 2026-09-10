@@ -41,7 +41,7 @@ function flattenRows(draft: LayoutModel): void {
 }
 
 /** Push overlapping row neighbours rightwards in row order, then push displaced row groups; flanks never move. */
-function repackOverlaps(draft: LayoutModel): void {
+export function repackOverlaps(draft: LayoutModel): void {
   const gap = bandGap(draft);
   for (const band of draft.tierBands) {
     const groups = rowGroups(draft, band);

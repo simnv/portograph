@@ -32,7 +32,7 @@ out of scope for G2, G4 and G6.
 | G1 | **No node overlap; containment** | node–node rectangles; node inside its group box; group boxes inside their tier band; no group–group overlap | — |
 | G2 | **No routed segment through a foreign node** | routed segments × node rectangles | a segment's own endpoint nodes; a drop crossing a **bar** it does not terminate on (`barCross`, reported) |
 | G3 | **No label collision** | every label bbox × every other label bbox, node rectangle, pill, routed segment (area-aware) | a label vs its **owner** (node label inside its node; pill text inside its own pill and over its own incident stem within that pill; link label on its own segment's clearance zone); overlay layer |
-| G4 | **No collinear overlap** | pairs of routed segments on the same line sharing > 1 px | members of one **bundle** (reported as `bundledLength`); the shared **stem** of links leaving one port (one stem, then fan); lane-owner runs vs their own lane |
+| G4 | **No collinear overlap** | pairs of routed segments on the same line sharing > 1 px | validated counted merge runs of selected bundle members (reported as `bundledLength`); exact source/target shared-run trees at one port; lane-owner runs vs their own lane |
 | G5 | **Ports exit correctly** | every routed link: first/last segment perpendicular to its side, ≥ 15 px; port order on a side matches far-end order | author `order:`; overlay; stub |
 | G6 | **Clearances** (stroke-aware, centre-to-centre minus half strokes) | node–node ≥ 20; routed segment–foreign node ≥ 10; parallel routed segments ≥ 10 | incident node–segment contact at the anchor; bundle members (`memberGap` = 16 applies); `barCross` contacts; junction fans |
 | G7 | **Attachment** | every link endpoint = a port anchor; every anchor on its node's boundary | — |
@@ -134,3 +134,11 @@ the snapshot block) layout time per stage.
 8. No crossing that a topology rewrite could avoid — bar, stub, duplicated cloud.
 9. Whitespace is even; object : gutter ≈ 60 : 40.
 10. A legend exists when more than one symbol or line style is used — generated, not authored.
+
+Bundle member gap means visible clearance between strokes. The regular minimum centreline pitch
+is 16 px plus the maximum member stroke. Crossovers may need wider tracks. An envelope owner does
+not exempt arbitrary parallel overlap: a counted merge run must have exact selected membership,
+actual geometry and matching count. Shared endpoint ties contribute no strict inversions; engine
+port precedence applies only between strictly separated far-peer coordinate ranges. Unequal
+authored order keys remain independently enforced. Shared-run and local fan exemptions are
+symmetric for source, target and mixed incidence, and require validated tree traversal.
