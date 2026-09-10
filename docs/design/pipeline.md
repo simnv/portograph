@@ -78,9 +78,14 @@ warning; they do not acquire group-link eligibility solely by using group endpoi
 | the same tier | **undecided** until stage 5 |
 
 Author `side:` on a port always wins. A port with **several peers in different directions** takes
-the side of the majority by link count, ties broken toward `bottom` then `right`; the other links
+the side of the majority by link count, ties broken in `bottom`, `right`, `top`, `left` order; the other links
 leave through that side and route. An **unused port** takes the side with the fewest ports
 (ties: `bottom`) and renders last on it.
+
+Same-tier peers remain unresolved until row order exists. For a shared port with both known and
+unresolved peer directions, commit the known winner only if allocating all unresolved votes to
+either lateral side cannot change that winner, including tie priority. Otherwise defer its side
+and retain only a provisional sizing side. Stage 5 recomputes its majority from all peers.
 
 ## Stage 3 — size
 
@@ -91,6 +96,10 @@ stay horizontal, matching the target JPEG and d3-fd. The extent used for pitch i
 box's width on top/bottom and its height on left/right. Then
 `height = max(minH, contentH, n_left|right × pitch + 2·pad)`, `width = max(minW, contentW,
 n_top|bottom × pitch + 2·pad)`, `contentW/H` from the measured label, description and icon.
+The content interior reserves, on each side, the larger of the 10 px content padding and the
+largest named pill's inward half-extent plus 4 px. Anonymous ports add no such inset. Store those
+content insets so placement centres the icon/text blocks in the remaining interior, which may be
+asymmetric; a long port name can therefore grow the normal node dimension without changing pitch.
 Author `size:` is a floor. Undecided ports count on their most likely side. Bars are sized in 7d.
 
 ## Stage 4 — skeleton (ELK)
@@ -134,8 +143,9 @@ Output: absolute group boxes, node positions, in-row order.
 
 ## Stage 5 — sides, phase two; resize; repack
 
-Immediately after the skeleton, before anything is pinned. Undecided ports take `left`/`right`
-from the in-row order. Nodes are **re-sized** (stage 3 formula) if a side gained ports. Each row is
+Immediately after the skeleton, before anything is pinned. Undecided same-tier directions take
+`left`/`right` from the in-row order; shared ports then recompute their majority across all peer
+directions, including already-known higher/lower-tier directions. Nodes are **re-sized** (stage 3 formula) if a side gained ports. Each row is
 then **repacked horizontally** in ELK's order with the standard node gap, and group boxes
 recomputed. Each side receives a provisional engine order by far-end x (for top/bottom) or y
 (left/right); author `order:` wins and is immutable.

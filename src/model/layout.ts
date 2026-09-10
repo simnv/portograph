@@ -44,6 +44,10 @@ export interface PillGeometry extends OwnedElement {
 export interface LayoutPort extends OwnedElement {
   ref: PortRef;
   side?: Side;
+  /** Capacity estimate only; stage 5 chooses the final side from actual peer positions. */
+  sizingSide?: Side;
+  /** Stage 5 orders unused ports after linked ports unless authorOrder takes precedence. */
+  unused?: boolean;
   authorOrder?: number;
   engineOrder?: number;
   anchor?: Point;
@@ -56,8 +60,11 @@ export interface LayoutNode extends OwnedElement {
   /** Overrides the shared theme default; zero explicitly means no visible stroke. */
   strokeWidth?: number;
   ports: LayoutPort[];
+  /** Maximum of theme minimum, measured content and author size; excludes port capacity. */
   sizeFloor?: Size;
   contentSize?: Size;
+  /** Content must fit within these asymmetric insets, clear of inward pill protrusions. */
+  contentInsets?: Record<Side, number>;
   size?: Size;
   bounds?: Rect;
   sidePitch?: Partial<Record<Side, number>>;

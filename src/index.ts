@@ -16,3 +16,7 @@ export * from './migrate/index.js';
 export * from './score/index.js';
 export { DEFAULT_STROKE_WIDTHS } from './theme/geometry.js';
 export * from './resolve/index.js';
+export * from './layout/sides-one.js';
+export * from './layout/size.js';
+export * from './theme/content.js';
+export * from './profiles/network/icons.js';
