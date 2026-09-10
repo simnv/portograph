@@ -1,0 +1,60 @@
+# Expected: Preserve the target JPEG's 12 nodes and 26 links across four tiers, two flanks, and two stacked bars.
+# Source: docs/design/target-example.jpeg; differences from the prototype are listed in README.md.
+portograph: 2
+profile: network
+groups:
+  providers: { tier: 0, label: "Провайдеры / Контрагенты" }
+  datacenter: { tier: 1, label: Datacenter }
+  tbr-left: { align: left, of: datacenter, label: TBR-001 }
+  tbr-right: { align: right, of: datacenter, label: TBR-002 }
+  route-reflector: { tier: 2, label: "Route-Reflector (ERR)" }
+  backbone: { tier: 3, shape: bar, label: Backbone }
+nodes:
+  # The provider and RR identifiers are assigned here; the JPEG has no node labels for them.
+  provider-1: { group: providers, class: provider, label: "", ports: [100G] }
+  provider-2: { group: providers, class: provider, label: "", ports: [100G] }
+  EAC-01: { group: datacenter, class: router, ports: [100G, 100G, 100G, 100G, 100G] }
+  EBR-01: { group: datacenter, class: router, ports: [100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G] }
+  EBR-02: { group: datacenter, class: router, ports: [100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G] }
+  EAC-02: { group: datacenter, class: router, ports: [100G, 100G, 100G, 100G, 100G] }
+  TBR-001:
+    group: tbr-left
+    class: tbr
+    ports: [100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G]
+  TBR-002:
+    group: tbr-right
+    class: tbr
+    ports: [100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G]
+  RR-01: { group: route-reflector, class: rr, label: "", ports: [100G] }
+  RR-02: { group: route-reflector, class: rr, label: "", ports: [100G] }
+  EBB-01: { group: backbone, class: router, ports: [100G, 100G, 100G] }
+  EBB-02: { group: backbone, class: router, ports: [100G, 100G, 100G] }
+links:
+  - [provider-1.100G, EAC-01.*]
+  - [provider-2.100G, EAC-02.*]
+  - [EBR-01.100G#1, EBR-02.100G#1]
+  - { from: { node: EBR-01, port: 100G, ordinal: 2 }, to: { node: EBR-02, port: 100G, ordinal: 2 } }
+  # Each TBR alternates four links to its EAC and four to its EBR, as shown in the JPEG.
+  - [TBR-001.*, EAC-01.*, { class: dotted }]
+  - [TBR-001.*, EBR-01.*, { class: dotted }]
+  - [TBR-001.*, EAC-01.*, { class: dotted }]
+  - [TBR-001.*, EBR-01.*, { class: dotted }]
+  - [TBR-001.*, EAC-01.*, { class: dotted }]
+  - [TBR-001.*, EBR-01.*, { class: dotted }]
+  - [TBR-001.*, EAC-01.*, { class: dotted }]
+  - [TBR-001.*, EBR-01.*, { class: dotted }]
+  - [TBR-002.*, EAC-02.*, { class: dashed }]
+  - [TBR-002.*, EBR-02.*, { class: dashed }]
+  - [TBR-002.*, EAC-02.*, { class: dashed }]
+  - [TBR-002.*, EBR-02.*, { class: dashed }]
+  - [TBR-002.*, EAC-02.*, { class: dashed }]
+  - [TBR-002.*, EBR-02.*, { class: dashed }]
+  - [TBR-002.*, EAC-02.*, { class: dashed }]
+  - [TBR-002.*, EBR-02.*, { class: dashed }]
+  # Both EBRs feed both bars. Each RR feeds only its corresponding bar.
+  - [EBR-01.100G#7, EBB-01.100G#1]
+  - [RR-01.100G, EBB-01.100G#2]
+  - [EBR-02.100G#7, EBB-01.100G#3]
+  - [EBR-01.100G#8, EBB-02.100G#1]
+  - [RR-02.100G, EBB-02.100G#2]
+  - [EBR-02.100G#8, EBB-02.100G#3]

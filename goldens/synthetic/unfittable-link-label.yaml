@@ -1,0 +1,13 @@
+# Expected: After segment, side, and ellipsis attempts fail, omit the visible link label, retain its full tooltip, and report labelsOmitted = 1.
+# Stage precondition: stage-inputs.yaml, unfittable-link-label.
+portograph: 2
+profile: network
+groups:
+  row-group: { tier: 0 }
+nodes:
+  source: { group: row-group, label: S, ports: [{ name: p, side: right }] }
+  target: { group: row-group, label: T, ports: [{ name: p, side: left }] }
+  above: { group: row-group, label: A }
+  below: { group: row-group, label: B }
+links:
+  - [source.p, target.p, { label: This link label must survive in its tooltip even when every visible placement collides }]

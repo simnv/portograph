@@ -1,0 +1,13 @@
+# Expected: Warn about the shared peer port, preserve one peer anchor and a shared stem, and route incompatible pairs without false overlap failures.
+portograph: 2
+profile: network
+groups:
+  tier-group: { tier: 0 }
+  flank-group: { align: left, of: tier-group }
+nodes:
+  peer: { group: tier-group, ports: { side: left, list: [p] } }
+  flank: { group: flank-group, ports: { side: right, list: [p, p, p] } }
+links:
+  - [flank.p#1, peer.p#1]
+  - [flank.p#2, peer.p#1]
+  - [flank.p#3, peer.p#1]

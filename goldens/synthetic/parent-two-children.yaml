@@ -1,0 +1,14 @@
+# Expected: Keep the parent's anchor fixed, give the first child by x a vertical link, and fan the other through one shared stem.
+portograph: 2
+profile: network
+groups:
+  parents: { tier: 0 }
+  children: { tier: 1 }
+nodes:
+  parent: { group: parents, ports: [{ name: p, side: bottom }] }
+  spare: { group: parents }
+  first: { group: children, ports: [{ name: p, side: top }] }
+  second: { group: children, ports: [{ name: p, side: top }] }
+links:
+  - [parent.p#1, first.p]
+  - [parent.p#1, second.p]

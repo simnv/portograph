@@ -1,0 +1,118 @@
+{
+  "portograph": 2,
+  "profile": "network",
+  "groups": {
+    "providers": { "tier": 0, "label": "Провайдеры / Контрагенты", "shape": "row" },
+    "datacenter": { "tier": 1, "label": "Datacenter", "shape": "row" },
+    "tbr-left": { "align": "left", "of": "datacenter", "label": "TBR-001", "shape": "row" },
+    "tbr-right": { "align": "right", "of": "datacenter", "label": "TBR-002", "shape": "row" },
+    "route-reflector": { "tier": 2, "label": "Route-Reflector (ERR)", "shape": "row" },
+    "backbone": { "tier": 3, "label": "Backbone", "shape": "bar" }
+  },
+  "nodes": {
+    "provider-1": { "group": "providers", "class": "provider", "label": "", "ports": [
+      { "name": "100G", "ordinal": 1 }
+    ] },
+    "provider-2": { "group": "providers", "class": "provider", "label": "", "ports": [
+      { "name": "100G", "ordinal": 1 }
+    ] },
+    "EAC-01": { "group": "datacenter", "class": "router", "label": "EAC-01", "ports": [
+      { "name": "100G", "ordinal": 1 },
+      { "name": "100G", "ordinal": 2 },
+      { "name": "100G", "ordinal": 3 },
+      { "name": "100G", "ordinal": 4 },
+      { "name": "100G", "ordinal": 5 }
+    ] },
+    "EBR-01": { "group": "datacenter", "class": "router", "label": "EBR-01", "ports": [
+      { "name": "100G", "ordinal": 1 },
+      { "name": "100G", "ordinal": 2 },
+      { "name": "100G", "ordinal": 3 },
+      { "name": "100G", "ordinal": 4 },
+      { "name": "100G", "ordinal": 5 },
+      { "name": "100G", "ordinal": 6 },
+      { "name": "100G", "ordinal": 7 },
+      { "name": "100G", "ordinal": 8 }
+    ] },
+    "EBR-02": { "group": "datacenter", "class": "router", "label": "EBR-02", "ports": [
+      { "name": "100G", "ordinal": 1 },
+      { "name": "100G", "ordinal": 2 },
+      { "name": "100G", "ordinal": 3 },
+      { "name": "100G", "ordinal": 4 },
+      { "name": "100G", "ordinal": 5 },
+      { "name": "100G", "ordinal": 6 },
+      { "name": "100G", "ordinal": 7 },
+      { "name": "100G", "ordinal": 8 }
+    ] },
+    "EAC-02": { "group": "datacenter", "class": "router", "label": "EAC-02", "ports": [
+      { "name": "100G", "ordinal": 1 },
+      { "name": "100G", "ordinal": 2 },
+      { "name": "100G", "ordinal": 3 },
+      { "name": "100G", "ordinal": 4 },
+      { "name": "100G", "ordinal": 5 }
+    ] },
+    "TBR-001": { "group": "tbr-left", "class": "tbr", "label": "TBR-001", "ports": [
+      { "name": "100G", "ordinal": 1 },
+      { "name": "100G", "ordinal": 2 },
+      { "name": "100G", "ordinal": 3 },
+      { "name": "100G", "ordinal": 4 },
+      { "name": "100G", "ordinal": 5 },
+      { "name": "100G", "ordinal": 6 },
+      { "name": "100G", "ordinal": 7 },
+      { "name": "100G", "ordinal": 8 }
+    ] },
+    "TBR-002": { "group": "tbr-right", "class": "tbr", "label": "TBR-002", "ports": [
+      { "name": "100G", "ordinal": 1 },
+      { "name": "100G", "ordinal": 2 },
+      { "name": "100G", "ordinal": 3 },
+      { "name": "100G", "ordinal": 4 },
+      { "name": "100G", "ordinal": 5 },
+      { "name": "100G", "ordinal": 6 },
+      { "name": "100G", "ordinal": 7 },
+      { "name": "100G", "ordinal": 8 }
+    ] },
+    "RR-01": { "group": "route-reflector", "class": "rr", "label": "", "ports": [
+      { "name": "100G", "ordinal": 1 }
+    ] },
+    "RR-02": { "group": "route-reflector", "class": "rr", "label": "", "ports": [
+      { "name": "100G", "ordinal": 1 }
+    ] },
+    "EBB-01": { "group": "backbone", "class": "router", "label": "EBB-01", "ports": [
+      { "name": "100G", "ordinal": 1 },
+      { "name": "100G", "ordinal": 2 },
+      { "name": "100G", "ordinal": 3 }
+    ] },
+    "EBB-02": { "group": "backbone", "class": "router", "label": "EBB-02", "ports": [
+      { "name": "100G", "ordinal": 1 },
+      { "name": "100G", "ordinal": 2 },
+      { "name": "100G", "ordinal": 3 }
+    ] }
+  },
+  "links": [
+    { "from": { "node": "provider-1", "name": "100G", "ordinal": 1 }, "to": { "node": "EAC-01", "name": "100G", "ordinal": 1 } },
+    { "from": { "node": "provider-2", "name": "100G", "ordinal": 1 }, "to": { "node": "EAC-02", "name": "100G", "ordinal": 1 } },
+    { "from": { "node": "EBR-01", "name": "100G", "ordinal": 1 }, "to": { "node": "EBR-02", "name": "100G", "ordinal": 1 } },
+    { "from": { "node": "EBR-01", "name": "100G", "ordinal": 2 }, "to": { "node": "EBR-02", "name": "100G", "ordinal": 2 } },
+    { "from": { "node": "TBR-001", "name": "100G", "ordinal": 1 }, "to": { "node": "EAC-01", "name": "100G", "ordinal": 2 }, "class": "dotted" },
+    { "from": { "node": "TBR-001", "name": "100G", "ordinal": 2 }, "to": { "node": "EBR-01", "name": "100G", "ordinal": 3 }, "class": "dotted" },
+    { "from": { "node": "TBR-001", "name": "100G", "ordinal": 3 }, "to": { "node": "EAC-01", "name": "100G", "ordinal": 3 }, "class": "dotted" },
+    { "from": { "node": "TBR-001", "name": "100G", "ordinal": 4 }, "to": { "node": "EBR-01", "name": "100G", "ordinal": 4 }, "class": "dotted" },
+    { "from": { "node": "TBR-001", "name": "100G", "ordinal": 5 }, "to": { "node": "EAC-01", "name": "100G", "ordinal": 4 }, "class": "dotted" },
+    { "from": { "node": "TBR-001", "name": "100G", "ordinal": 6 }, "to": { "node": "EBR-01", "name": "100G", "ordinal": 5 }, "class": "dotted" },
+    { "from": { "node": "TBR-001", "name": "100G", "ordinal": 7 }, "to": { "node": "EAC-01", "name": "100G", "ordinal": 5 }, "class": "dotted" },
+    { "from": { "node": "TBR-001", "name": "100G", "ordinal": 8 }, "to": { "node": "EBR-01", "name": "100G", "ordinal": 6 }, "class": "dotted" },
+    { "from": { "node": "TBR-002", "name": "100G", "ordinal": 1 }, "to": { "node": "EAC-02", "name": "100G", "ordinal": 2 }, "class": "dashed" },
+    { "from": { "node": "TBR-002", "name": "100G", "ordinal": 2 }, "to": { "node": "EBR-02", "name": "100G", "ordinal": 3 }, "class": "dashed" },
+    { "from": { "node": "TBR-002", "name": "100G", "ordinal": 3 }, "to": { "node": "EAC-02", "name": "100G", "ordinal": 3 }, "class": "dashed" },
+    { "from": { "node": "TBR-002", "name": "100G", "ordinal": 4 }, "to": { "node": "EBR-02", "name": "100G", "ordinal": 4 }, "class": "dashed" },
+    { "from": { "node": "TBR-002", "name": "100G", "ordinal": 5 }, "to": { "node": "EAC-02", "name": "100G", "ordinal": 4 }, "class": "dashed" },
+    { "from": { "node": "TBR-002", "name": "100G", "ordinal": 6 }, "to": { "node": "EBR-02", "name": "100G", "ordinal": 5 }, "class": "dashed" },
+    { "from": { "node": "TBR-002", "name": "100G", "ordinal": 7 }, "to": { "node": "EAC-02", "name": "100G", "ordinal": 5 }, "class": "dashed" },
+    { "from": { "node": "TBR-002", "name": "100G", "ordinal": 8 }, "to": { "node": "EBR-02", "name": "100G", "ordinal": 6 }, "class": "dashed" },
+    { "from": { "node": "EBR-01", "name": "100G", "ordinal": 7 }, "to": { "node": "EBB-01", "name": "100G", "ordinal": 1 } },
+    { "from": { "node": "RR-01", "name": "100G", "ordinal": 1 }, "to": { "node": "EBB-01", "name": "100G", "ordinal": 2 } },
+    { "from": { "node": "EBR-02", "name": "100G", "ordinal": 7 }, "to": { "node": "EBB-01", "name": "100G", "ordinal": 3 } },
+    { "from": { "node": "EBR-01", "name": "100G", "ordinal": 8 }, "to": { "node": "EBB-02", "name": "100G", "ordinal": 1 } },
+    { "from": { "node": "RR-02", "name": "100G", "ordinal": 1 }, "to": { "node": "EBB-02", "name": "100G", "ordinal": 2 } },
+    { "from": { "node": "EBR-02", "name": "100G", "ordinal": 8 }, "to": { "node": "EBB-02", "name": "100G", "ordinal": 3 } }
+  ]
+}

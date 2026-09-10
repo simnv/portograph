@@ -1,0 +1,10 @@
+# Expected: Lay out disconnected nodes in tier order and return finite scores, with empty routed-link metrics equal to 1.
+portograph: 2
+profile: network
+groups:
+  upper: { tier: 0 }
+  lower: { tier: 1 }
+nodes:
+  unused: { group: upper, ports: [p] }
+  portless: { group: lower, ports: [] }
+links: []

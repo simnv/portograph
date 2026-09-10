@@ -1,0 +1,12 @@
+# Expected: Size the portless node to its measured label and description bounds without shrinking to its author size floor.
+portograph: 2
+profile: network
+groups:
+  row-group: { tier: 0 }
+nodes:
+  labelled:
+    group: row-group
+    label: A portless node whose long label must remain inside its node rectangle
+    description: A second line contributes to the measured content height.
+    size: { width: 50, height: 35 }
+links: []

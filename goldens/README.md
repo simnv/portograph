@@ -1,0 +1,149 @@
+# Ticket 00 fixtures
+
+[m1-sip-edge.yaml](m1-sip-edge.yaml) transcribes
+[the target JPEG](../docs/design/target-example.jpeg).
+[m1-sip-edge.expected.json](m1-sip-edge.expected.json) is the hand-written
+normalised model. The 14 diagrams under `synthetic/` cover the counter-examples in
+[quality.md](../docs/design/quality.md#test-design).
+
+The maintainer approved these fixture inputs and the expected normalised model
+on 2026-09-10. They precede the implementation. No layout snapshot, render,
+approved score, or passing geometry result exists for them yet.
+
+## Target transcription
+
+The golden has six groups, 12 nodes, 52 named ports, and 26 links. Every port is
+named `100G`, and every port has exactly one link. Tiers are explicit.
+
+| Node pair | Links | Class |
+|---|---:|---|
+| provider-1 → EAC-01 | 1 | omitted |
+| provider-2 → EAC-02 | 1 | omitted |
+| EBR-01 → EBR-02 | 2 | omitted |
+| TBR-001 → EAC-01 | 4 | dotted |
+| TBR-001 → EBR-01 | 4 | dotted |
+| TBR-002 → EAC-02 | 4 | dashed |
+| TBR-002 → EBR-02 | 4 | dashed |
+| EBR-01 → EBB-01 / EBB-02 | 1 each | omitted |
+| EBR-02 → EBB-01 / EBB-02 | 1 each | omitted |
+| RR-01 → EBB-01 | 1 | omitted |
+| RR-02 → EBB-02 | 1 | omitted |
+
+The JPEG has no arrows. Source direction here follows top-to-bottom feeds or
+flank-to-tier links. Node declaration order records the visible datacenter row
+and the bar stack. The engine may reorder ports; no author `order:` is imposed.
+All port sides are inferred. For links to the flank's `of` group, a left flank's
+ports face right and a right flank's ports face left during sides phase one.
+The normalised model therefore contains no `side` fields.
+
+The provider and RR identifiers are assigned for reference; their labels are
+empty because the JPEG does not label those nodes. `Datacenter` and `Backbone`
+are group labels required by the design, although the JPEG does not show them.
+Node classes use the network profile vocabulary. The left TBR links are dotted;
+the right TBR links are dashed. The profile theme supplies their styling.
+The JPEG's `100G` text belongs to port pills, so the golden has no link labels.
+
+## Differences from the prototype
+
+The checked-in `prototype/out/out-tall5-av.json` uses a different topology.
+`prototype/build.mjs` reads the neighbouring `d3-fd/demo/public/diagram.yaml`;
+that file is not included in this repository. It was checked during ticket 00.
+
+| Property | Target JPEG and this golden | Prototype |
+|---|---|---|
+| Nodes / links | 12 / 26 | 13 / 32 |
+| Providers | Two, feeding the EAC pair | Three, also feeding EBR-01 |
+| TBR-001 peers | Four links each to EAC-01 and EBR-01 | Eight to EAC-01 |
+| TBR-002 classes | All eight dashed | Four solid to EAC-02; four dashed to EBR-02 |
+| EBR → RR | None | Two per EBR/RR pair |
+| RR → RR | None | One |
+| Each bar's feeds | Both EBRs and one RR | EBR-01 and both RRs |
+| Unused ports | None | One each on EBR-02 and EAC-02 |
+
+The maintainer confirmed the target JPEG as the golden's source on 2026-09-10.
+The fixtures already follow it. The prototype's measured baseline still applies
+only to the prototype input. These later acceptance statements need updates
+before they can serve as assertions for this golden:
+
+- Ticket 02's migrated legacy model cannot equal this model because the wiring differs.
+- Ticket 04's bundle counts assume the prototype. This golden has four four-link
+  node pairs and one two-link node pair, all eligible for bundle membership.
+- Ticket 09's 12 straight flank links and four EBR-to-RR links assume the prototype.
+- Ticket 12's exact label positions and tickets 17–18's prototype metric baseline
+  need measurement on this input.
+- Link-label coverage comes from `unfittable-link-label.yaml`; adding labels to
+  the golden would add text absent from the JPEG.
+
+## Normalised model contract
+
+The expected JSON records document normalisation before placement and technique
+resolution. It is authored independently of the parser and the prototype output.
+
+- Group and node map keys are their identifiers. Group `shape` defaults to `row`;
+  labels default to the identifier unless explicitly empty.
+- Flanks retain `align` and `of`. Their tier comes from the referenced tier group;
+  they do not receive an author `tier` alongside `align`.
+- Port arrays remain in declaration order. `ordinal` counts occurrences of that
+  name within the node, starting at 1. Only author-fixed sides appear here.
+- Link arrays retain YAML order. Each endpoint is an explicit
+  `{node, name, ordinal}` triple. No wildcard or free-name lookup remains.
+- Absent optional class, route, title, CSS, and geometry fields stay absent.
+  Families, bundle membership, inferred sides, anchors, and runtime data belong
+  to later stages. The named classes here are intended to remain routed.
+
+Ticket 02 can compare this normalised document directly. If ticket 03 wraps it
+in a larger `LayoutModel`, compare this document projection without regenerating
+the expected JSON from implementation output.
+
+## Synthetic inputs
+
+Each diagram starts with a one-line `Expected` comment. Every file in the table
+is a standalone schema-v2 document. `stage-inputs.yaml` is separate test data.
+
+| Diagram | Stage | Expected behaviour |
+|---|---|---|
+| [flank-two-peers](synthetic/flank-two-peers.yaml) | 7b | Select the two-link primary peer; route the other peer's link. |
+| [unequal-pitch](synthetic/unequal-pitch.yaml) | 3, 7b | Respace both sides to the larger measured pitch before alignment. |
+| [shared-peer-port](synthetic/shared-peer-port.yaml) | 7b, 7e, 8 | Retain one shared peer anchor and stem; route incompatible pairs. |
+| [stacked-at-one-x](synthetic/stacked-at-one-x.yaml) | 6 | Flatten and repack the row before pinning its link. |
+| [parent-two-children](synthetic/parent-two-children.yaml) | 7c | Keep the parent anchor fixed; one child link is vertical and the other fans. |
+| [three-bars](synthetic/three-bars.yaml) | 7d | Preserve stack order, merge spans transitively, and count bar crossings. |
+| [bar-both-sides](synthetic/bar-both-sides.yaml) | 7d | Mirror bottom-fed drops and count crossings of intervening bars. |
+| [one-px-sources](synthetic/one-px-sources.yaml) | 7d | Keep the first slot; jog the second to the next pitch-safe slot and warn. |
+| [author-ordered-bundle](synthetic/author-ordered-bundle.yaml) | 7e | Preserve the reversed permutation with exactly three inversions and crossings. |
+| [both-margins-full](synthetic/both-margins-full.yaml) | 7a | Widen the canvas for transit lanes when both margins have zero capacity. |
+| [label-no-gap](synthetic/label-no-gap.yaml) | 7f | Widen the group, push its neighbour, and re-centre the affected child. |
+| [unfittable-link-label](synthetic/unfittable-link-label.yaml) | 9 | Keep the full tooltip and report one omitted visible label. |
+| [long-label-portless-node](synthetic/long-label-portless-node.yaml) | 3 | Grow the node to contain its measured label and description. |
+| [zero-link-diagram](synthetic/zero-link-diagram.yaml) | 10 | Produce finite scores and use 1 for empty routed-link metrics. |
+
+The spare node in `parent-two-children` makes the parent tier the anchor tier by
+the lowest-index tie rule. Explicit shared-port references exercise the network
+profile warning without depending on free-name allocation.
+
+## Stage preconditions
+
+Schema v2 has no coordinates, margin capacities, fixed paths, or measured-label
+bounds. YAML topology alone cannot force ELK to stack nodes at one x or leave a
+specific 1 px gap. [stage-inputs.yaml](synthetic/stage-inputs.yaml) supplies the
+six geometric preconditions that later unit tests must install at stage entry.
+
+This file is test data, not an extension of the public YAML schema or a proposed
+`LayoutModel` format. Each key names its sibling diagram. A later test adapter
+normalises that diagram, prepares the stage's usual inputs, then installs the
+listed boxes, anchors, measured values, paths, and obstacles before running the
+named stage. Link numbers are 1-based positions in the diagram's `links` array.
+Coordinates are absolute px at scale 1. Recompute derived containment boxes and
+tier bands after overrides where they are not supplied. Do not run the solver
+again after installing these preconditions.
+
+The supplied measurements isolate rule arithmetic from the future font table.
+The bar fixture supplies spans that overlap transitively but not all pairwise.
+The 1 px fixture uses sources above and below the bar so the source nodes do not
+overlap. The label omission fixture supplies occupied candidate areas to reach
+the last repair branch; its stage result is an omission assertion, not an
+approved whole-diagram layout snapshot.
+
+No synthetic geometry setup is a prediction of ELK output. End-to-end tests can
+also consume the diagram YAML, but must not claim to cover a forced stage case
+unless its entry preconditions hold.

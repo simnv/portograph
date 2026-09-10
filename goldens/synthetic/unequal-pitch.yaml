@@ -1,0 +1,17 @@
+# Expected: Respace both facing sides to the larger measured pitch, grow the nodes as needed, and level all three pairs.
+portograph: 2
+profile: network
+groups:
+  tier-group: { tier: 0 }
+  flank-group: { align: left, of: tier-group }
+nodes:
+  peer:
+    group: tier-group
+    ports: { side: left, list: [HundredGigabitEthernet-1, HundredGigabitEthernet-2, HundredGigabitEthernet-3] }
+  flank:
+    group: flank-group
+    ports: { side: right, list: [p, p, p] }
+links:
+  - [flank.p#1, peer.HundredGigabitEthernet-1]
+  - [flank.p#2, peer.HundredGigabitEthernet-2]
+  - [flank.p#3, peer.HundredGigabitEthernet-3]

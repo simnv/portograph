@@ -1,0 +1,25 @@
+# Expected: Widen both occupied margins and the canvas for owned transit lanes; keep flanks, intermediate nodes, and foreign links outside each lane.
+# Stage precondition: stage-inputs.yaml, both-margins-full.
+portograph: 2
+profile: network
+groups:
+  upper: { tier: 0 }
+  middle: { tier: 1 }
+  left-flank: { align: left, of: middle }
+  right-flank: { align: right, of: middle }
+  lower: { tier: 2 }
+nodes:
+  source-left: { group: upper, ports: [{ name: p, side: bottom }] }
+  source-right: { group: upper, ports: [{ name: p, side: bottom }] }
+  peer:
+    group: middle
+    ports: [{ name: p, side: left }, { name: p, side: right }]
+  flank-left: { group: left-flank, ports: [{ name: p, side: right }] }
+  flank-right: { group: right-flank, ports: [{ name: p, side: left }] }
+  target-left: { group: lower, ports: [{ name: p, side: top }] }
+  target-right: { group: lower, ports: [{ name: p, side: top }] }
+links:
+  - [source-left.p, target-left.p]
+  - [source-right.p, target-right.p]
+  - [flank-left.p, peer.p#1]
+  - [peer.p#2, flank-right.p]

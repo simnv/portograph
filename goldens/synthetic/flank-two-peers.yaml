@@ -1,0 +1,14 @@
+# Expected: Choose primary as the flank's primary peer, level its two pairs, and route the secondary-peer link normally.
+portograph: 2
+profile: network
+groups:
+  tier-group: { tier: 0 }
+  flank-group: { align: left, of: tier-group }
+nodes:
+  primary: { group: tier-group, ports: { side: left, list: [p, p] } }
+  secondary: { group: tier-group, ports: { side: left, list: [p] } }
+  flank: { group: flank-group, ports: { side: right, list: [p, p, p] } }
+links:
+  - [flank.p#1, primary.p#1]
+  - [flank.p#2, primary.p#2]
+  - [flank.p#3, secondary.p#1]

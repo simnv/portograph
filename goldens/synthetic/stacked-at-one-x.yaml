@@ -1,0 +1,11 @@
+# Expected: Flatten the row to one top y and repack horizontally without node overlap before pinning the facing link.
+# Stage precondition: stage-inputs.yaml, stacked-at-one-x.
+portograph: 2
+profile: network
+groups:
+  row-group: { tier: 0 }
+nodes:
+  first: { group: row-group, ports: [{ name: p, side: right }] }
+  second: { group: row-group, ports: [{ name: p, side: left }] }
+links:
+  - [first.p, second.p]

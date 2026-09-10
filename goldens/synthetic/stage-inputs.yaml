@@ -1,0 +1,110 @@
+# Test preconditions, NOT a portograph document or a LayoutModel snapshot.
+# Each key names a sibling diagram YAML. See ../README.md for the adapter contract.
+# Coordinates are absolute px at scale 1; node boxes use [x, y, width, height].
+# Port keys use explicit schema endpoint syntax; paths refer to 1-based YAML link indices.
+stacked-at-one-x:
+  stage: 6
+  row-order: [first, second]
+  node-boxes:
+    first: [40, 40, 80, 40]
+    second: [40, 140, 80, 40]
+  port-anchors:
+    first.p#1: [120, 60]
+    second.p#1: [40, 160]
+  fixed-paths: []
+
+three-bars:
+  stage: 7d
+  node-boxes:
+    source: [0, 0, 400, 50]
+  port-anchors:
+    source.p#1: [100, 50]
+    source.p#2: [160, 50]
+    source.p#3: [220, 50]
+    source.p#4: [240, 50]
+    source.p#5: [300, 50]
+    source.p#6: [360, 50]
+  measured-bar-label-widths: { first: 10, second: 10, third: 10 }
+  # Initial spans: [70,270], [130,330], [190,390]. Adjacent overlap = 70%; outer overlap = 40%.
+  expected-shared-span: [70, 390]
+
+one-px-sources:
+  stage: 7d
+  node-boxes:
+    above: [170, 0, 60, 40]
+    below: [171, 300, 60, 40]
+  port-anchors:
+    above.p#1: [200, 40]
+    below.p#1: [201, 300]
+  bar-pitch: 12
+  # Opposite-tier sources can be 1 px apart in x without overlapping source nodes or pills.
+  expected-bar-port-x: { bar.p#1: 200, bar.p#2: 212 }
+
+both-margins-full:
+  stage: 7a
+  group-boxes:
+    upper: [140, 0, 320, 100]
+    left-flank: [0, 160, 180, 100]
+    middle: [200, 160, 200, 100]
+    right-flank: [420, 160, 180, 100]
+    lower: [140, 340, 320, 100]
+  node-boxes:
+    source-left: [150, 40, 50, 40]
+    source-right: [400, 40, 50, 40]
+    peer: [250, 200, 100, 40]
+    flank-left: [30, 200, 120, 40]
+    flank-right: [450, 200, 120, 40]
+    target-left: [150, 380, 50, 40]
+    target-right: [400, 380, 50, 40]
+  port-anchors:
+    source-left.p#1: [175, 80]
+    source-right.p#1: [425, 80]
+    target-left.p#1: [175, 380]
+    target-right.p#1: [425, 380]
+    flank-left.p#1: [150, 220]
+    peer.p#1: [250, 220]
+    peer.p#2: [350, 220]
+    flank-right.p#1: [450, 220]
+  lane-width: 34
+  # Both 20 px margins have zero capacity: floor(20 / 34) = 0.
+  canvas: [0, 0, 600, 440]
+
+label-no-gap:
+  stage: 7f
+  group-boxes:
+    row-group: [0, 0, 300, 120]
+    neighbour-group: [320, 0, 120, 120]
+    child-group: [320, 200, 120, 120]
+  node-boxes:
+    left: [40, 60, 60, 40]
+    right: [200, 60, 60, 40]
+    neighbour: [350, 60, 60, 40]
+    child: [350, 240, 60, 40]
+  port-anchors:
+    left.p#1: [70, 60]
+    right.p#1: [230, 60]
+    neighbour.p#1: [380, 100]
+    child.p#1: [380, 240]
+  label-band: { group: row-group, box: [0, 0, 300, 22] }
+  measured-label: { group: row-group, width: 180, height: 14 }
+  fixed-paths:
+    - { link: 1, points: [[70, 60], [70, 15], [230, 15], [230, 60]] }
+    - { link: 2, points: [[380, 100], [380, 240]] }
+
+unfittable-link-label:
+  stage: 9
+  node-boxes:
+    source: [0, 80, 100, 40]
+    target: [130, 80, 100, 40]
+    above: [80, 0, 70, 60]
+    below: [80, 140, 70, 60]
+  port-anchors:
+    source.p#1: [100, 100]
+    target.p#1: [130, 100]
+  routed-paths:
+    - { link: 1, points: [[100, 100], [130, 100]] }
+  # Occupied label candidates model the final collision branch, including the ellipsis candidate.
+  # These are foreign label bboxes owned by the two obstacle nodes, not extra input nodes.
+  foreign-label-boxes:
+    - { owner: above, box: [90, 60, 50, 40] }
+    - { owner: below, box: [90, 100, 50, 40] }

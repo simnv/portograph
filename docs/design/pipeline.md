@@ -59,6 +59,7 @@ says so and the links are drawn routed. This is explicit, not silent.
 | a lower tier, or a `bar` group below | `bottom` |
 | a higher tier | `top` |
 | a flank on the left / right of this node's tier | `left` / `right` |
+| this flank's `of` group, with this flank aligned left / right | `right` / `left` |
 | the same tier | **undecided** until stage 5 |
 
 Author `side:` on a port always wins. A port with **several peers in different directions** takes

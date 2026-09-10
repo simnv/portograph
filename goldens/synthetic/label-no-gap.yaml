@@ -1,0 +1,16 @@
+# Expected: Widen the group by the label width, push row neighbours, and re-centre affected child groups when no horizontal gap fits the label.
+# Stage precondition: stage-inputs.yaml, label-no-gap.
+portograph: 2
+profile: network
+groups:
+  row-group: { tier: 0, label: Reserved group label }
+  neighbour-group: { tier: 0 }
+  child-group: { tier: 1 }
+nodes:
+  left: { group: row-group, ports: [{ name: p, side: top }] }
+  right: { group: row-group, ports: [{ name: p, side: top }] }
+  neighbour: { group: neighbour-group, ports: [{ name: p, side: bottom }] }
+  child: { group: child-group, ports: [{ name: p, side: top }] }
+links:
+  - [left.p, right.p, { route: orthogonal }]
+  - [neighbour.p, child.p]

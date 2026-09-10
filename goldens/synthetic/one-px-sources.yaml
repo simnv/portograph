@@ -1,0 +1,17 @@
+# Expected: Preserve the first drop x, jog the later drop by two bends to the next pitch-safe slot, and report the source spacing warning.
+# Stage precondition: stage-inputs.yaml, one-px-sources.
+portograph: 2
+profile: network
+groups:
+  upper: { tier: 0 }
+  lower: { tier: 2 }
+  bars: { tier: 1, shape: bar }
+nodes:
+  above: { group: upper, ports: [{ name: p, side: bottom }] }
+  below: { group: lower, ports: [{ name: p, side: top }] }
+  bar:
+    group: bars
+    ports: [{ name: p, side: top }, { name: p, side: bottom }]
+links:
+  - [above.p, bar.p#1]
+  - [below.p, bar.p#2]

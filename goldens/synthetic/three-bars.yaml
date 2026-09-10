@@ -1,0 +1,22 @@
+# Expected: Stack bars in declaration order, merge their spans transitively, and report lower-bar drops crossing upper bars as barCross.
+# Stage precondition: stage-inputs.yaml, three-bars.
+portograph: 2
+profile: network
+groups:
+  sources: { tier: 0 }
+  bars: { tier: 1, shape: bar }
+nodes:
+  source:
+    group: sources
+    size: { width: 400, height: 50 }
+    ports: { side: bottom, list: [p, p, p, p, p, p] }
+  first: { group: bars, label: A, ports: { side: top, list: [p, p] } }
+  second: { group: bars, label: B, ports: { side: top, list: [p, p] } }
+  third: { group: bars, label: C, ports: { side: top, list: [p, p] } }
+links:
+  - [source.p#1, first.p#1]
+  - [source.p#4, first.p#2]
+  - [source.p#2, second.p#1]
+  - [source.p#5, second.p#2]
+  - [source.p#3, third.p#1]
+  - [source.p#6, third.p#2]
