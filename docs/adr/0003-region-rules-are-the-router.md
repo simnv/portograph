@@ -1,0 +1,24 @@
+# ADR-0003: Region rules are the router; libavoid routes the remainder
+
+Date: 2026-09-10 · Status: accepted · Decisions: Q24, Q29, Q30, user observations
+
+## Context
+On the M1 golden, ELK alone gave 3 crossings but the wrong shape; ELK with lateral ports fixed
+gave 20–76; ELK skeleton + libavoid gave the right shape with 11 crossings. Adding region rules
+one at a time — flank align, bars, lanes, bundle, row align, child-under-parents, label bands, bar
+span — took it to 0 crossings, 0 overlaps, 4 bends (`docs/research/prototype-results.md`). In the
+final run every link was claimed by a rule and libavoid routed nothing.
+
+## Decision
+Routing is decided per **region** (the space between two tiers, or a flank and its tier) by
+what is on each side. The rules run in a fixed order, each reserving space the next respects
+(`docs/design/pipeline.md` stage 5). libavoid-js routes only links no rule claims, with every fixed
+path registered as an obstacle. Per-link technique precedence is fixed:
+override → aggregation → visibility → bundle → straight → orthogonal.
+
+## Consequences
+- The product is the rule set; ELK and libavoid are substrate.
+- Rules that compete for space (lanes vs child-centering) are ordered, not iterated freely.
+- libavoid-js is beta; it is a fallback, not the critical path. A hand orthogonal router remains
+  a possible replacement without touching the rules.
+- Untested: sheets where rules leave many links over (NTP golden) — ticket.

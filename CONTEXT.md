@@ -1,0 +1,75 @@
+# portograph — Domain Context
+
+Glossary and invariants for the project. Use these terms exactly; do not drift to synonyms. When a
+concept you need is missing here, that is a signal — either you are inventing language the project
+does not use, or there is a real gap to record.
+
+`portograph` turns a YAML description of nodes, ports, links and groups into a laid-out diagram
+(SVG), choosing the drawing technique per part of the diagram so the result reads like an engineer
+drew it. Network diagrams first; software architecture and electrical panels next.
+
+---
+
+## Core vocabulary
+
+| Term | Definition | Not to be confused with |
+|---|---|---|
+| **node** | A drawn box with a label, a class, and zero or more ports. The unit that groups contain and links connect *through*. | *device* (network profile alias), *component* (architecture alias) |
+| **port** | A named or anonymous attachment point on a node's **side**. Every link end attaches to a port; a link never attaches to a node directly. Named ports render (the pill); anonymous ports do not. | *interface* (network alias), *terminal* (electrical alias) |
+| **side** | One of `top`, `right`, `bottom`, `left`. Each port has exactly one side, assigned by the engine from the peer's position unless the author fixes it. | |
+| **link** | A connection between two ports. Has a **class** (which decides its *family*) and optionally a **route** override. | *edge* (graph-theory word; avoid), *connection* |
+| **group** | A labelled container holding nodes. A node belongs to exactly one group. A group has a **tier** or is a **flank**, and has a **shape**. | *location* (d3-fd's word), *zone*, *area* |
+| **tier** | An integer rank on a group giving its row in the top-to-bottom hierarchy. Tier 0 is the top. Inferred from node classes by the profile when omitted; an explicit `tier:` always wins. | *layer* (reserved for OSI/link-class layers) |
+| **flank** | A group placed *beside* a tier rather than in it: `align: left` or `align: right`. Its links to the tier are lateral. A flank has a **primary peer** — the tier node it shares the most links with. | a tier member with `position` hints |
+| **shape** (of a group) | How the group arranges its nodes: `row` (default), `bar`, `grid`, `ring`, `free`. M1 ships `row` and `bar`. | *layout algorithm* |
+| **bar** | A group shape where each node renders as a horizontal bar spanning its attached ports' x-range; links onto a bar are vertical drops, ports ordered by source x. Bars may stack; a drop may cross an upper bar to reach a lower one. | a wide `row` node |
+| **region** | The space between two adjacent tiers, or between a flank and its tier. Routing strategy is chosen per region by what is on each side. | *group* |
+| **lane** | A reserved vertical corridor, in the margin beside a group, for links transiting a tier they do not terminate in. Lanes are reserved before placement. | *channel* |
+| **band** | Reserved horizontal space: a **tier band** (the vertical extent a tier occupies) or a **label band** (space inside a group's top padding reserved for its label). | |
+| **skeleton** | The tier/group placement produced by ELK before region rules run. Lateral (flank↔tier) links are **withheld** from the skeleton so flanks land beside their tier. | *layout* (the whole result) |
+| **bundle** | Two or more links between the same pair of nodes, routed as one channel and fanned to ports with member order preserved so members never cross. Rendered as parallel lines (`route: bundle`, default) or merged with a multiplicity label (`route: merge`). | *overlay* |
+| **overlay** | A link family drawn straight, thin, translucent and *unrouted* on its own layer beneath routed links. Used for flow-class links (e.g. NTP sync). Exempt from clearance gates. | *bundle* |
+| **group-link** | One link drawn between two groups standing for a **complete** bipartite set of links between their nodes, labelled with the count. Only complete sets collapse; near-complete sets stay overlay. | *bundle* |
+| **stub** | A link drawn as a label on each end node instead of a line ("→ loc1ntp001"), used when a route would cross more than two tiers or detour more than 3× the direct distance. Both ends are marked. | hiding a link |
+| **family** (of a link) | `routed` or `overlay`, decided by the link's class through the profile. Physical links are routed; flow links are overlay. | *route* (the per-link technique within a family) |
+| **profile** | A TypeScript module plus optional YAML overlay that supplies vocabulary aliases, tier-inference table, conventions (direction, which classes are routed vs overlay), default theme, icon set, and validators. Ships: `network`, `architecture`, `electrical`. | *theme* (only the visual part) |
+| **golden** | A reference diagram the renderer must reproduce to the maintainer's satisfaction. M1 golden: `docs/design/target-example.jpeg`. Others: a three-tier LAN, `superspine.yaml`, the Enterprise NTP sheet. | a snapshot test |
+| **gate** | A hard pass/fail check on layout output (overlap, through-node, label hit, port stem, clearance). Any failed gate fails the diagram. | *score* |
+| **score** | A weighted soft quality number in [0, 1] computed from crossings, bends, continuity, compactness, alignment, flow, aspect, uniformity. Guards regressions; never repairs. | *gate* |
+
+---
+
+## Invariants
+
+1. **Links attach to ports, never to nodes.** A link written to a bare node gets an anonymous port.
+2. **A node has exactly one group.** Groups do not nest in M1.
+3. **Node size is derived from its ports:** height from the larger of left/right port counts, width from the larger of top/bottom, pitch from the measured widest port label on that side. Never the other way round.
+4. **Sides are assigned in two phases:** from tier geometry (peer above → `top`, below → `bottom`, flank → its side) before the skeleton; intra-tier sides after the skeleton, once ELK has ordered the row.
+5. **Space is reserved before it is used:** lanes, label bands, bundle rows and bar spans are reserved during placement, not discovered during routing.
+6. **Every fixed path is an obstacle** for everything routed after it. All paths are validated together at the end.
+7. **Region rules are the router for regular tiered diagrams.** libavoid routes only what the rules do not claim.
+8. **The tier contract survives at any size:** ELK partitioning ≤ 300 nodes; on any ELK failure, one ELK run per tier band, stacked.
+9. **Nothing is styled by value in YAML.** Nodes, links and groups carry `class`; a profile theme and an optional `css:` block do the rest.
+10. **The layout JSON is a first-class output.** SVG is one renderer of it; `score` reads it directly.
+
+---
+
+## Numbers that are decisions
+
+| Quantity | Value | Origin |
+|---|---|---|
+| Port pitch on a side | 12 px at scale 1, or measured label width if larger | d3-fd, validated in prototype |
+| Node minimum | 50 × 35 px | d3-fd |
+| Port pill | 24 × 10 px, r 3 | d3-fd |
+| Node corner radius | 8 px; group 10 px | d3-fd |
+| Bar padding beyond outermost port | 30 px | prototype `tall5` |
+| Bar span merge threshold | spans overlap > 50 % of the narrower → shared span | prototype `tall5` |
+| Lane width | port pill width + gap ≈ 34 px | prototype `tall3` |
+| Group label band | label height + 8 px; label left-aligned, slides right only on collision | user decision, `tall5` |
+| Clearances (gates) | node–node 20, edge–node 10, edge–edge 10 px | ELK defaults |
+| Port stem | ≥ 15 px, perpendicular to side | yFiles convention |
+| "Beautiful" ceiling | ~30 nodes | Störrle 2014/2016, Kobourov 2014 |
+| "Workable" ceiling | ~1,000 nodes, layout < 30 s | prototype scale test (2 s at 1,000 without partitioning) |
+| Straight-link eligibility | ports face each other, collinear normals, clear path, length < 2× larger node dimension | Q30 as amended by codex |
+| Stub thresholds | crosses > 2 tiers, or detour > 3× direct | Q30 |
+| Group-link collapse | complete bipartite set only | Q30 as amended by codex |

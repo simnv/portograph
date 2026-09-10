@@ -1,0 +1,2677 @@
+{
+ "id": "root",
+ "layoutOptions": {
+  "elk.algorithm": "layered",
+  "elk.direction": "DOWN",
+  "elk.hierarchyHandling": "INCLUDE_CHILDREN",
+  "elk.edgeRouting": "ORTHOGONAL",
+  "elk.layered.spacing.nodeNodeBetweenLayers": "60",
+  "elk.layered.spacing.edgeNodeBetweenLayers": "30",
+  "elk.layered.spacing.edgeEdgeBetweenLayers": "12",
+  "elk.spacing.nodeNode": "40",
+  "elk.spacing.edgeNode": "20",
+  "elk.spacing.edgeEdge": "12",
+  "elk.spacing.portPort": "6",
+  "elk.spacing.componentComponent": "40",
+  "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
+  "elk.layered.thoroughness": "30",
+  "elk.separateConnectedComponents": "false",
+  "elk.padding": "[top=40,left=40,bottom=40,right=40]",
+  "elk.partitioning.activate": "true"
+ },
+ "children": [
+  {
+   "id": "providers",
+   "labels": [
+    {
+     "text": "Провайдеры / Контрагенты",
+     "width": 160,
+     "height": 14,
+     "x": 5,
+     "y": 5
+    }
+   ],
+   "children": [
+    {
+     "id": "provider-1",
+     "width": 130,
+     "height": 54,
+     "labels": [
+      {
+       "text": "provider-1",
+       "width": 60,
+       "height": 12,
+       "x": 5,
+       "y": 15
+      }
+     ],
+     "ports": [
+      {
+       "id": "provider-1.p0",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 50,
+       "y": 54
+      }
+     ],
+     "layoutOptions": {
+      "elk.portConstraints": "FREE",
+      "elk.nodeSize.constraints": "PORTS PORT_LABELS NODE_LABELS MINIMUM_SIZE",
+      "elk.nodeSize.minimum": "(90,50)",
+      "elk.portLabels.placement": "INSIDE",
+      "elk.nodeLabels.placement": "INSIDE V_TOP H_LEFT"
+     },
+     "$H": 281,
+     "x": 177,
+     "y": 47
+    },
+    {
+     "id": "provider-2",
+     "width": 130,
+     "height": 54,
+     "labels": [
+      {
+       "text": "provider-2",
+       "width": 60,
+       "height": 12,
+       "x": 5,
+       "y": 15
+      }
+     ],
+     "ports": [
+      {
+       "id": "provider-2.p0",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 50,
+       "y": 54
+      }
+     ],
+     "layoutOptions": {
+      "elk.portConstraints": "FREE",
+      "elk.nodeSize.constraints": "PORTS PORT_LABELS NODE_LABELS MINIMUM_SIZE",
+      "elk.nodeSize.minimum": "(90,50)",
+      "elk.portLabels.placement": "INSIDE",
+      "elk.nodeLabels.placement": "INSIDE V_TOP H_LEFT"
+     },
+     "$H": 287,
+     "x": 327,
+     "y": 47
+    },
+    {
+     "id": "provider-3",
+     "width": 130,
+     "height": 54,
+     "labels": [
+      {
+       "text": "provider-3",
+       "width": 60,
+       "height": 12,
+       "x": 5,
+       "y": 15
+      }
+     ],
+     "ports": [
+      {
+       "id": "provider-3.p0",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 50,
+       "y": 54
+      }
+     ],
+     "layoutOptions": {
+      "elk.portConstraints": "FREE",
+      "elk.nodeSize.constraints": "PORTS PORT_LABELS NODE_LABELS MINIMUM_SIZE",
+      "elk.nodeSize.minimum": "(90,50)",
+      "elk.portLabels.placement": "INSIDE",
+      "elk.nodeLabels.placement": "INSIDE V_TOP H_LEFT"
+     },
+     "$H": 292,
+     "x": 477,
+     "y": 47
+    }
+   ],
+   "layoutOptions": {
+    "elk.padding": "[top=28,left=12,bottom=12,right=12]",
+    "elk.nodeLabels.placement": "INSIDE V_TOP H_LEFT",
+    "elk.partitioning.partition": "0"
+   },
+   "$H": 277,
+   "x": 340,
+   "y": 40,
+   "width": 619,
+   "height": 127
+  },
+  {
+   "id": "tbr-left",
+   "labels": [
+    {
+     "text": "TBR-001",
+     "width": 160,
+     "height": 14,
+     "x": 5,
+     "y": 5
+    }
+   ],
+   "children": [
+    {
+     "id": "TBR-001",
+     "width": 330,
+     "height": 54,
+     "labels": [
+      {
+       "text": "TBR-001",
+       "width": 60,
+       "height": 12,
+       "x": 5,
+       "y": 15
+      }
+     ],
+     "ports": [
+      {
+       "id": "TBR-001.p0",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 50,
+       "y": 54
+      },
+      {
+       "id": "TBR-001.p1",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 90,
+       "y": 54
+      },
+      {
+       "id": "TBR-001.p2",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 130,
+       "y": 54
+      },
+      {
+       "id": "TBR-001.p3",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 170,
+       "y": 54
+      },
+      {
+       "id": "TBR-001.p4",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 210,
+       "y": 54
+      },
+      {
+       "id": "TBR-001.p5",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 250,
+       "y": 54
+      },
+      {
+       "id": "TBR-001.p6",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 290,
+       "y": 54
+      },
+      {
+       "id": "TBR-001.p7",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 10,
+       "y": 54
+      }
+     ],
+     "layoutOptions": {
+      "elk.portConstraints": "FREE",
+      "elk.nodeSize.constraints": "PORTS PORT_LABELS NODE_LABELS MINIMUM_SIZE",
+      "elk.nodeSize.minimum": "(90,50)",
+      "elk.portLabels.placement": "INSIDE",
+      "elk.nodeLabels.placement": "INSIDE V_TOP H_LEFT"
+     },
+     "$H": 300,
+     "x": 177,
+     "y": 47
+    }
+   ],
+   "layoutOptions": {
+    "elk.padding": "[top=28,left=12,bottom=12,right=12]",
+    "elk.nodeLabels.placement": "INSIDE V_TOP H_LEFT",
+    "elk.partitioning.partition": "1"
+   },
+   "$H": 297,
+   "x": 80,
+   "y": 232,
+   "width": 519,
+   "height": 127
+  },
+  {
+   "id": "datacenter",
+   "labels": [
+    {
+     "text": "Datacenter",
+     "width": 160,
+     "height": 14,
+     "x": 5,
+     "y": 5
+    }
+   ],
+   "children": [
+    {
+     "id": "EAC-01",
+     "width": 370,
+     "height": 54,
+     "labels": [
+      {
+       "text": "EAC-01",
+       "width": 60,
+       "height": 12,
+       "x": 5,
+       "y": 15
+      }
+     ],
+     "ports": [
+      {
+       "id": "EAC-01.p0",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 10,
+       "y": -14
+      },
+      {
+       "id": "EAC-01.p1",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 90,
+       "y": -14
+      },
+      {
+       "id": "EAC-01.p2",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 130,
+       "y": -14
+      },
+      {
+       "id": "EAC-01.p3",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 170,
+       "y": -14
+      },
+      {
+       "id": "EAC-01.p4",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 210,
+       "y": -14
+      },
+      {
+       "id": "EAC-01.p5",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 250,
+       "y": -14
+      },
+      {
+       "id": "EAC-01.p6",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 290,
+       "y": -14
+      },
+      {
+       "id": "EAC-01.p7",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 330,
+       "y": -14
+      },
+      {
+       "id": "EAC-01.p8",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 50,
+       "y": -14
+      }
+     ],
+     "layoutOptions": {
+      "elk.portConstraints": "FREE",
+      "elk.nodeSize.constraints": "PORTS PORT_LABELS NODE_LABELS MINIMUM_SIZE",
+      "elk.nodeSize.minimum": "(90,50)",
+      "elk.portLabels.placement": "INSIDE",
+      "elk.nodeLabels.placement": "INSIDE V_TOP H_LEFT"
+     },
+     "$H": 322,
+     "x": 177,
+     "y": 61
+    },
+    {
+     "id": "EBR-01",
+     "width": 250,
+     "height": 54,
+     "labels": [
+      {
+       "text": "EBR-01",
+       "width": 60,
+       "height": 12,
+       "x": 5,
+       "y": 15
+      }
+     ],
+     "ports": [
+      {
+       "id": "EBR-01.p0",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 110,
+       "y": -14
+      },
+      {
+       "id": "EBR-01.p1",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 170,
+       "y": 54
+      },
+      {
+       "id": "EBR-01.p2",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 210,
+       "y": 54
+      },
+      {
+       "id": "EBR-01.p3",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 130,
+       "y": 54
+      },
+      {
+       "id": "EBR-01.p4",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 90,
+       "y": 54
+      },
+      {
+       "id": "EBR-01.p5",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 50,
+       "y": 54
+      },
+      {
+       "id": "EBR-01.p6",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 10,
+       "y": 54
+      }
+     ],
+     "layoutOptions": {
+      "elk.portConstraints": "FREE",
+      "elk.nodeSize.constraints": "PORTS PORT_LABELS NODE_LABELS MINIMUM_SIZE",
+      "elk.nodeSize.minimum": "(90,50)",
+      "elk.portLabels.placement": "INSIDE",
+      "elk.nodeLabels.placement": "INSIDE V_TOP H_LEFT"
+     },
+     "$H": 343,
+     "x": 567,
+     "y": 61
+    },
+    {
+     "id": "EBR-02",
+     "width": 290,
+     "height": 54,
+     "labels": [
+      {
+       "text": "EBR-02",
+       "width": 60,
+       "height": 12,
+       "x": 5,
+       "y": 15
+      }
+     ],
+     "ports": [
+      {
+       "id": "EBR-02.p0",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 10,
+       "y": -14
+      },
+      {
+       "id": "EBR-02.p1",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 50,
+       "y": -14
+      },
+      {
+       "id": "EBR-02.p2",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 90,
+       "y": -14
+      },
+      {
+       "id": "EBR-02.p3",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 130,
+       "y": -14
+      },
+      {
+       "id": "EBR-02.p4",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 170,
+       "y": -14
+      },
+      {
+       "id": "EBR-02.p5",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 210,
+       "y": -14
+      },
+      {
+       "id": "EBR-02.p6",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 183.33333333333334,
+       "y": 54
+      },
+      {
+       "id": "EBR-02.p7",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 76.66666666666667,
+       "y": 54
+      },
+      {
+       "id": "EBR-02.p8",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 250,
+       "y": -14
+      }
+     ],
+     "layoutOptions": {
+      "elk.portConstraints": "FREE",
+      "elk.nodeSize.constraints": "PORTS PORT_LABELS NODE_LABELS MINIMUM_SIZE",
+      "elk.nodeSize.minimum": "(90,50)",
+      "elk.portLabels.placement": "INSIDE",
+      "elk.nodeLabels.placement": "INSIDE V_TOP H_LEFT"
+     },
+     "$H": 360,
+     "x": 992,
+     "y": 173
+    },
+    {
+     "id": "EAC-02",
+     "width": 250,
+     "height": 54,
+     "labels": [
+      {
+       "text": "EAC-02",
+       "width": 60,
+       "height": 12,
+       "x": 5,
+       "y": 15
+      }
+     ],
+     "ports": [
+      {
+       "id": "EAC-02.p0",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 10,
+       "y": -14
+      },
+      {
+       "id": "EAC-02.p1",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 50,
+       "y": -14
+      },
+      {
+       "id": "EAC-02.p2",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 90,
+       "y": -14
+      },
+      {
+       "id": "EAC-02.p3",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 130,
+       "y": -14
+      },
+      {
+       "id": "EAC-02.p4",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 170,
+       "y": -14
+      },
+      {
+       "id": "EAC-02.p5",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 210,
+       "y": -14
+      }
+     ],
+     "layoutOptions": {
+      "elk.portConstraints": "FREE",
+      "elk.nodeSize.constraints": "PORTS PORT_LABELS NODE_LABELS MINIMUM_SIZE",
+      "elk.nodeSize.minimum": "(90,50)",
+      "elk.portLabels.placement": "INSIDE",
+      "elk.nodeLabels.placement": "INSIDE V_TOP H_LEFT"
+     },
+     "$H": 381,
+     "x": 837,
+     "y": 61
+    }
+   ],
+   "layoutOptions": {
+    "elk.padding": "[top=28,left=12,bottom=12,right=12]",
+    "elk.nodeLabels.placement": "INSIDE V_TOP H_LEFT",
+    "elk.partitioning.partition": "1"
+   },
+   "$H": 319,
+   "x": 40,
+   "y": 465,
+   "width": 1294,
+   "height": 253
+  },
+  {
+   "id": "tbr-right",
+   "labels": [
+    {
+     "text": "TBR-002",
+     "width": 160,
+     "height": 14,
+     "x": 5,
+     "y": 5
+    }
+   ],
+   "children": [
+    {
+     "id": "TBR-002",
+     "width": 330,
+     "height": 54,
+     "labels": [
+      {
+       "text": "TBR-002",
+       "width": 60,
+       "height": 12,
+       "x": 5,
+       "y": 15
+      }
+     ],
+     "ports": [
+      {
+       "id": "TBR-002.p0",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 10,
+       "y": 54
+      },
+      {
+       "id": "TBR-002.p1",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 50,
+       "y": 54
+      },
+      {
+       "id": "TBR-002.p2",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 90,
+       "y": 54
+      },
+      {
+       "id": "TBR-002.p3",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 130,
+       "y": 54
+      },
+      {
+       "id": "TBR-002.p4",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 170,
+       "y": 54
+      },
+      {
+       "id": "TBR-002.p5",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 210,
+       "y": 54
+      },
+      {
+       "id": "TBR-002.p6",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 250,
+       "y": 54
+      },
+      {
+       "id": "TBR-002.p7",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 290,
+       "y": 54
+      }
+     ],
+     "layoutOptions": {
+      "elk.portConstraints": "FREE",
+      "elk.nodeSize.constraints": "PORTS PORT_LABELS NODE_LABELS MINIMUM_SIZE",
+      "elk.nodeSize.minimum": "(90,50)",
+      "elk.portLabels.placement": "INSIDE",
+      "elk.nodeLabels.placement": "INSIDE V_TOP H_LEFT"
+     },
+     "$H": 399,
+     "x": 177,
+     "y": 47
+    }
+   ],
+   "layoutOptions": {
+    "elk.padding": "[top=28,left=12,bottom=12,right=12]",
+    "elk.nodeLabels.placement": "INSIDE V_TOP H_LEFT",
+    "elk.partitioning.partition": "1"
+   },
+   "$H": 396,
+   "x": 775,
+   "y": 232,
+   "width": 519,
+   "height": 127
+  },
+  {
+   "id": "route-reflector",
+   "labels": [
+    {
+     "text": "Route-Reflector (ERR)",
+     "width": 160,
+     "height": 14,
+     "x": 5,
+     "y": 5
+    }
+   ],
+   "children": [
+    {
+     "id": "RR-01",
+     "width": 130,
+     "height": 54,
+     "labels": [
+      {
+       "text": "RR-01",
+       "width": 60,
+       "height": 12,
+       "x": 5,
+       "y": 15
+      }
+     ],
+     "ports": [
+      {
+       "id": "RR-01.p0",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 76.66666666666667,
+       "y": -14
+      },
+      {
+       "id": "RR-01.p1",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 23.333333333333336,
+       "y": -14
+      },
+      {
+       "id": "RR-01.p2",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 90,
+       "y": 54
+      },
+      {
+       "id": "RR-01.p3",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 50,
+       "y": 54
+      },
+      {
+       "id": "RR-01.p4",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 10,
+       "y": 54
+      }
+     ],
+     "layoutOptions": {
+      "elk.portConstraints": "FREE",
+      "elk.nodeSize.constraints": "PORTS PORT_LABELS NODE_LABELS MINIMUM_SIZE",
+      "elk.nodeSize.minimum": "(90,50)",
+      "elk.portLabels.placement": "INSIDE",
+      "elk.nodeLabels.placement": "INSIDE V_TOP H_LEFT"
+     },
+     "$H": 421,
+     "x": 177,
+     "y": 61
+    },
+    {
+     "id": "RR-02",
+     "width": 130,
+     "height": 54,
+     "labels": [
+      {
+       "text": "RR-02",
+       "width": 60,
+       "height": 12,
+       "x": 5,
+       "y": 15
+      }
+     ],
+     "ports": [
+      {
+       "id": "RR-02.p0",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 90,
+       "y": -14
+      },
+      {
+       "id": "RR-02.p1",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 50,
+       "y": -14
+      },
+      {
+       "id": "RR-02.p2",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 10,
+       "y": -14
+      },
+      {
+       "id": "RR-02.p3",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 76.66666666666667,
+       "y": 54
+      },
+      {
+       "id": "RR-02.p4",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": -10
+        }
+       ],
+       "layoutOptions": {},
+       "x": 23.333333333333336,
+       "y": 54
+      }
+     ],
+     "layoutOptions": {
+      "elk.portConstraints": "FREE",
+      "elk.nodeSize.constraints": "PORTS PORT_LABELS NODE_LABELS MINIMUM_SIZE",
+      "elk.nodeSize.minimum": "(90,50)",
+      "elk.portLabels.placement": "INSIDE",
+      "elk.nodeLabels.placement": "INSIDE V_TOP H_LEFT"
+     },
+     "$H": 434,
+     "x": 253,
+     "y": 163
+    }
+   ],
+   "layoutOptions": {
+    "elk.padding": "[top=28,left=12,bottom=12,right=12]",
+    "elk.nodeLabels.placement": "INSIDE V_TOP H_LEFT",
+    "elk.partitioning.partition": "2"
+   },
+   "$H": 418,
+   "x": 872.3333333333335,
+   "y": 836,
+   "width": 395,
+   "height": 263
+  },
+  {
+   "id": "backbone",
+   "labels": [
+    {
+     "text": "Backbone",
+     "width": 160,
+     "height": 14,
+     "x": 5,
+     "y": 5
+    }
+   ],
+   "children": [
+    {
+     "id": "EBB-01",
+     "width": 130,
+     "height": 54,
+     "labels": [
+      {
+       "text": "EBB-01",
+       "width": 60,
+       "height": 12,
+       "x": 5,
+       "y": 15
+      }
+     ],
+     "ports": [
+      {
+       "id": "EBB-01.p0",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 10,
+       "y": -14
+      },
+      {
+       "id": "EBB-01.p1",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 50,
+       "y": -14
+      },
+      {
+       "id": "EBB-01.p2",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 90,
+       "y": -14
+      }
+     ],
+     "layoutOptions": {
+      "elk.portConstraints": "FREE",
+      "elk.nodeSize.constraints": "PORTS PORT_LABELS NODE_LABELS MINIMUM_SIZE",
+      "elk.nodeSize.minimum": "(90,50)",
+      "elk.portLabels.placement": "INSIDE",
+      "elk.nodeLabels.placement": "INSIDE V_TOP H_LEFT"
+     },
+     "$H": 450,
+     "x": 327,
+     "y": 61
+    },
+    {
+     "id": "EBB-02",
+     "width": 130,
+     "height": 54,
+     "labels": [
+      {
+       "text": "EBB-02",
+       "width": 60,
+       "height": 12,
+       "x": 5,
+       "y": 15
+      }
+     ],
+     "ports": [
+      {
+       "id": "EBB-02.p0",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 10,
+       "y": -14
+      },
+      {
+       "id": "EBB-02.p1",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 50,
+       "y": -14
+      },
+      {
+       "id": "EBB-02.p2",
+       "width": 30,
+       "height": 14,
+       "labels": [
+        {
+         "text": "100G",
+         "width": 22,
+         "height": 9,
+         "x": 4,
+         "y": 15
+        }
+       ],
+       "layoutOptions": {},
+       "x": 90,
+       "y": -14
+      }
+     ],
+     "layoutOptions": {
+      "elk.portConstraints": "FREE",
+      "elk.nodeSize.constraints": "PORTS PORT_LABELS NODE_LABELS MINIMUM_SIZE",
+      "elk.nodeSize.minimum": "(90,50)",
+      "elk.portLabels.placement": "INSIDE",
+      "elk.nodeLabels.placement": "INSIDE V_TOP H_LEFT"
+     },
+     "$H": 459,
+     "x": 177,
+     "y": 61
+    }
+   ],
+   "layoutOptions": {
+    "elk.padding": "[top=28,left=12,bottom=12,right=12]",
+    "elk.nodeLabels.placement": "INSIDE V_TOP H_LEFT",
+    "elk.partitioning.partition": "3"
+   },
+   "$H": 447,
+   "x": 785.0000000000002,
+   "y": 1193,
+   "width": 469,
+   "height": 127
+  }
+ ],
+ "edges": [
+  {
+   "id": "e0",
+   "sources": [
+    "provider-1.p0"
+   ],
+   "targets": [
+    "EAC-01.p0"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e0_s0",
+     "startPoint": {
+      "x": 582,
+      "y": 155
+     },
+     "endPoint": {
+      "x": 242,
+      "y": 512
+     },
+     "bendPoints": [
+      {
+       "x": 582,
+       "y": 202
+      },
+      {
+       "x": 59,
+       "y": 202
+      },
+      {
+       "x": 59,
+       "y": 394
+      },
+      {
+       "x": 242,
+       "y": 394
+      }
+     ],
+     "incomingShape": "provider-1.p0",
+     "outgoingShape": "EAC-01.p0"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e1",
+   "sources": [
+    "provider-2.p0"
+   ],
+   "targets": [
+    "EBR-01.p0"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e1_s0",
+     "startPoint": {
+      "x": 732,
+      "y": 155
+     },
+     "endPoint": {
+      "x": 732,
+      "y": 512
+     },
+     "incomingShape": "provider-2.p0",
+     "outgoingShape": "EBR-01.p0"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e2",
+   "sources": [
+    "provider-3.p0"
+   ],
+   "targets": [
+    "EAC-02.p0"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e2_s0",
+     "startPoint": {
+      "x": 882,
+      "y": 155
+     },
+     "endPoint": {
+      "x": 902,
+      "y": 512
+     },
+     "bendPoints": [
+      {
+       "x": 882,
+       "y": 202
+      },
+      {
+       "x": 754,
+       "y": 202
+      },
+      {
+       "x": 754,
+       "y": 394
+      },
+      {
+       "x": 902,
+       "y": 394
+      }
+     ],
+     "incomingShape": "provider-3.p0",
+     "outgoingShape": "EAC-02.p0"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e3",
+   "sources": [
+    "EBR-01.p1"
+   ],
+   "targets": [
+    "EBR-02.p0"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e3_s0",
+     "startPoint": {
+      "x": 752,
+      "y": 129
+     },
+     "endPoint": {
+      "x": 1017,
+      "y": 159
+     },
+     "bendPoints": [
+      {
+       "x": 752,
+       "y": 149
+      },
+      {
+       "x": 1017,
+       "y": 149
+      }
+     ],
+     "incomingShape": "EBR-01.p1",
+     "outgoingShape": "EBR-02.p0"
+    }
+   ],
+   "container": "datacenter"
+  },
+  {
+   "id": "e4",
+   "sources": [
+    "EBR-01.p2"
+   ],
+   "targets": [
+    "EBR-02.p1"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e4_s0",
+     "startPoint": {
+      "x": 792,
+      "y": 129
+     },
+     "endPoint": {
+      "x": 1057,
+      "y": 159
+     },
+     "bendPoints": [
+      {
+       "x": 792,
+       "y": 139
+      },
+      {
+       "x": 1057,
+       "y": 139
+      }
+     ],
+     "incomingShape": "EBR-01.p2",
+     "outgoingShape": "EBR-02.p1"
+    }
+   ],
+   "container": "datacenter"
+  },
+  {
+   "id": "e5",
+   "sources": [
+    "TBR-001.p0"
+   ],
+   "targets": [
+    "EAC-01.p1"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e5_s0",
+     "startPoint": {
+      "x": 322,
+      "y": 347
+     },
+     "endPoint": {
+      "x": 322,
+      "y": 512
+     },
+     "incomingShape": "TBR-001.p0",
+     "outgoingShape": "EAC-01.p1"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e6",
+   "sources": [
+    "TBR-001.p1"
+   ],
+   "targets": [
+    "EAC-01.p2"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e6_s0",
+     "startPoint": {
+      "x": 362,
+      "y": 347
+     },
+     "endPoint": {
+      "x": 362,
+      "y": 512
+     },
+     "incomingShape": "TBR-001.p1",
+     "outgoingShape": "EAC-01.p2"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e7",
+   "sources": [
+    "TBR-001.p2"
+   ],
+   "targets": [
+    "EAC-01.p3"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e7_s0",
+     "startPoint": {
+      "x": 402,
+      "y": 347
+     },
+     "endPoint": {
+      "x": 402,
+      "y": 512
+     },
+     "incomingShape": "TBR-001.p2",
+     "outgoingShape": "EAC-01.p3"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e8",
+   "sources": [
+    "TBR-001.p3"
+   ],
+   "targets": [
+    "EAC-01.p4"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e8_s0",
+     "startPoint": {
+      "x": 442,
+      "y": 347
+     },
+     "endPoint": {
+      "x": 442,
+      "y": 512
+     },
+     "incomingShape": "TBR-001.p3",
+     "outgoingShape": "EAC-01.p4"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e9",
+   "sources": [
+    "TBR-001.p4"
+   ],
+   "targets": [
+    "EAC-01.p5"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e9_s0",
+     "startPoint": {
+      "x": 482,
+      "y": 347
+     },
+     "endPoint": {
+      "x": 482,
+      "y": 512
+     },
+     "incomingShape": "TBR-001.p4",
+     "outgoingShape": "EAC-01.p5"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e10",
+   "sources": [
+    "TBR-001.p5"
+   ],
+   "targets": [
+    "EAC-01.p6"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e10_s0",
+     "startPoint": {
+      "x": 522,
+      "y": 347
+     },
+     "endPoint": {
+      "x": 522,
+      "y": 512
+     },
+     "incomingShape": "TBR-001.p5",
+     "outgoingShape": "EAC-01.p6"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e11",
+   "sources": [
+    "TBR-001.p6"
+   ],
+   "targets": [
+    "EAC-01.p7"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e11_s0",
+     "startPoint": {
+      "x": 562,
+      "y": 347
+     },
+     "endPoint": {
+      "x": 562,
+      "y": 512
+     },
+     "incomingShape": "TBR-001.p6",
+     "outgoingShape": "EAC-01.p7"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e12",
+   "sources": [
+    "TBR-001.p7"
+   ],
+   "targets": [
+    "EAC-01.p8"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e12_s0",
+     "startPoint": {
+      "x": 282,
+      "y": 347
+     },
+     "endPoint": {
+      "x": 282,
+      "y": 512
+     },
+     "incomingShape": "TBR-001.p7",
+     "outgoingShape": "EAC-01.p8"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e13",
+   "sources": [
+    "TBR-002.p0"
+   ],
+   "targets": [
+    "EAC-02.p1"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e13_s0",
+     "startPoint": {
+      "x": 977,
+      "y": 347
+     },
+     "endPoint": {
+      "x": 942,
+      "y": 512
+     },
+     "bendPoints": [
+      {
+       "x": 977,
+       "y": 394
+      },
+      {
+       "x": 942,
+       "y": 394
+      }
+     ],
+     "incomingShape": "TBR-002.p0",
+     "outgoingShape": "EAC-02.p1"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e14",
+   "sources": [
+    "TBR-002.p1"
+   ],
+   "targets": [
+    "EAC-02.p2"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e14_s0",
+     "startPoint": {
+      "x": 1017,
+      "y": 347
+     },
+     "endPoint": {
+      "x": 982,
+      "y": 512
+     },
+     "bendPoints": [
+      {
+       "x": 1017,
+       "y": 406
+      },
+      {
+       "x": 982,
+       "y": 406
+      }
+     ],
+     "incomingShape": "TBR-002.p1",
+     "outgoingShape": "EAC-02.p2"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e15",
+   "sources": [
+    "TBR-002.p2"
+   ],
+   "targets": [
+    "EAC-02.p3"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e15_s0",
+     "startPoint": {
+      "x": 1057,
+      "y": 347
+     },
+     "endPoint": {
+      "x": 1022,
+      "y": 512
+     },
+     "bendPoints": [
+      {
+       "x": 1057,
+       "y": 418
+      },
+      {
+       "x": 1022,
+       "y": 418
+      }
+     ],
+     "incomingShape": "TBR-002.p2",
+     "outgoingShape": "EAC-02.p3"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e16",
+   "sources": [
+    "TBR-002.p3"
+   ],
+   "targets": [
+    "EAC-02.p4"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e16_s0",
+     "startPoint": {
+      "x": 1097,
+      "y": 347
+     },
+     "endPoint": {
+      "x": 1062,
+      "y": 512
+     },
+     "bendPoints": [
+      {
+       "x": 1097,
+       "y": 430
+      },
+      {
+       "x": 1062,
+       "y": 430
+      }
+     ],
+     "incomingShape": "TBR-002.p3",
+     "outgoingShape": "EAC-02.p4"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e17",
+   "sources": [
+    "TBR-002.p4"
+   ],
+   "targets": [
+    "EBR-02.p2"
+   ],
+   "cls": "link-dashed",
+   "sections": [
+    {
+     "id": "e17_s0",
+     "startPoint": {
+      "x": 1137,
+      "y": 347
+     },
+     "endPoint": {
+      "x": 1137,
+      "y": 624
+     },
+     "incomingShape": "TBR-002.p4",
+     "outgoingShape": "EBR-02.p2"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e18",
+   "sources": [
+    "TBR-002.p5"
+   ],
+   "targets": [
+    "EBR-02.p3"
+   ],
+   "cls": "link-dashed",
+   "sections": [
+    {
+     "id": "e18_s0",
+     "startPoint": {
+      "x": 1177,
+      "y": 347
+     },
+     "endPoint": {
+      "x": 1177,
+      "y": 624
+     },
+     "incomingShape": "TBR-002.p5",
+     "outgoingShape": "EBR-02.p3"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e19",
+   "sources": [
+    "TBR-002.p6"
+   ],
+   "targets": [
+    "EBR-02.p4"
+   ],
+   "cls": "link-dashed",
+   "sections": [
+    {
+     "id": "e19_s0",
+     "startPoint": {
+      "x": 1217,
+      "y": 347
+     },
+     "endPoint": {
+      "x": 1217,
+      "y": 624
+     },
+     "incomingShape": "TBR-002.p6",
+     "outgoingShape": "EBR-02.p4"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e20",
+   "sources": [
+    "TBR-002.p7"
+   ],
+   "targets": [
+    "EBR-02.p5"
+   ],
+   "cls": "link-dashed",
+   "sections": [
+    {
+     "id": "e20_s0",
+     "startPoint": {
+      "x": 1257,
+      "y": 347
+     },
+     "endPoint": {
+      "x": 1257,
+      "y": 624
+     },
+     "incomingShape": "TBR-002.p7",
+     "outgoingShape": "EBR-02.p5"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e21",
+   "sources": [
+    "EBR-01.p3"
+   ],
+   "targets": [
+    "RR-01.p0"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e21_s0",
+     "startPoint": {
+      "x": 752,
+      "y": 594
+     },
+     "endPoint": {
+      "x": 1141,
+      "y": 883
+     },
+     "bendPoints": [
+      {
+       "x": 752,
+       "y": 765
+      },
+      {
+       "x": 1141.0000000000002,
+       "y": 765
+      }
+     ],
+     "incomingShape": "EBR-01.p3",
+     "outgoingShape": "RR-01.p0"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e22",
+   "sources": [
+    "EBR-01.p4"
+   ],
+   "targets": [
+    "RR-01.p1"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e22_s0",
+     "startPoint": {
+      "x": 712,
+      "y": 594
+     },
+     "endPoint": {
+      "x": 1087.666666666667,
+      "y": 883
+     },
+     "bendPoints": [
+      {
+       "x": 712,
+       "y": 777
+      },
+      {
+       "x": 1087.6666666666667,
+       "y": 777
+      }
+     ],
+     "incomingShape": "EBR-01.p4",
+     "outgoingShape": "RR-01.p1"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e23",
+   "sources": [
+    "EBR-02.p6"
+   ],
+   "targets": [
+    "RR-02.p0"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e23_s0",
+     "startPoint": {
+      "x": 1230.3333333333335,
+      "y": 706
+     },
+     "endPoint": {
+      "x": 1230.3333333333335,
+      "y": 985
+     },
+     "incomingShape": "EBR-02.p6",
+     "outgoingShape": "RR-02.p0"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e24",
+   "sources": [
+    "EBR-02.p7"
+   ],
+   "targets": [
+    "RR-02.p1"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e24_s0",
+     "startPoint": {
+      "x": 1123.6666666666665,
+      "y": 706
+     },
+     "endPoint": {
+      "x": 1190.3333333333335,
+      "y": 985
+     },
+     "bendPoints": [
+      {
+       "x": 1123.6666666666665,
+       "y": 753
+      },
+      {
+       "x": 1190.3333333333335,
+       "y": 753
+      }
+     ],
+     "incomingShape": "EBR-02.p7",
+     "outgoingShape": "RR-02.p1"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e25",
+   "sources": [
+    "RR-01.p2"
+   ],
+   "targets": [
+    "RR-02.p2"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e25_s0",
+     "startPoint": {
+      "x": 282,
+      "y": 129
+     },
+     "endPoint": {
+      "x": 278,
+      "y": 149
+     },
+     "bendPoints": [
+      {
+       "x": 282,
+       "y": 139
+      },
+      {
+       "x": 278,
+       "y": 139
+      }
+     ],
+     "incomingShape": "RR-01.p2",
+     "outgoingShape": "RR-02.p2"
+    }
+   ],
+   "container": "route-reflector"
+  },
+  {
+   "id": "e26",
+   "sources": [
+    "EBR-01.p5"
+   ],
+   "targets": [
+    "EBB-01.p0"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e26_s0",
+     "startPoint": {
+      "x": 672,
+      "y": 594
+     },
+     "endPoint": {
+      "x": 1137.0000000000002,
+      "y": 1240
+     },
+     "bendPoints": [
+      {
+       "x": 672,
+       "y": 789
+      },
+      {
+       "x": 851.3333333333335,
+       "y": 789
+      },
+      {
+       "x": 851.3333333333335,
+       "y": 1134
+      },
+      {
+       "x": 1137.0000000000002,
+       "y": 1134
+      }
+     ],
+     "incomingShape": "EBR-01.p5",
+     "outgoingShape": "EBB-01.p0"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e27",
+   "sources": [
+    "RR-01.p3"
+   ],
+   "targets": [
+    "EBB-01.p1"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e27_s0",
+     "startPoint": {
+      "x": 1114.3333333333335,
+      "y": 965
+     },
+     "endPoint": {
+      "x": 1177.0000000000002,
+      "y": 1240
+     },
+     "bendPoints": [
+      {
+       "x": 1114.3333333333335,
+       "y": 1077
+      },
+      {
+       "x": 1173.6666666666667,
+       "y": 1077
+      },
+      {
+       "x": 1173.666666666667,
+       "y": 1134
+      },
+      {
+       "x": 1177.0000000000002,
+       "y": 1134
+      }
+     ],
+     "incomingShape": "RR-01.p3",
+     "outgoingShape": "EBB-01.p1"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e28",
+   "sources": [
+    "RR-02.p3"
+   ],
+   "targets": [
+    "EBB-01.p2"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e28_s0",
+     "startPoint": {
+      "x": 1217.0000000000002,
+      "y": 1067
+     },
+     "endPoint": {
+      "x": 1217.0000000000002,
+      "y": 1240
+     },
+     "incomingShape": "RR-02.p3",
+     "outgoingShape": "EBB-01.p2"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e29",
+   "sources": [
+    "EBR-01.p6"
+   ],
+   "targets": [
+    "EBB-02.p0"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e29_s0",
+     "startPoint": {
+      "x": 632,
+      "y": 594
+     },
+     "endPoint": {
+      "x": 987.0000000000002,
+      "y": 1240
+     },
+     "bendPoints": [
+      {
+       "x": 632,
+       "y": 801
+      },
+      {
+       "x": 838.3333333333335,
+       "y": 801
+      },
+      {
+       "x": 838.3333333333335,
+       "y": 1146
+      },
+      {
+       "x": 987.0000000000002,
+       "y": 1146
+      }
+     ],
+     "incomingShape": "EBR-01.p6",
+     "outgoingShape": "EBB-02.p0"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e30",
+   "sources": [
+    "RR-01.p4"
+   ],
+   "targets": [
+    "EBB-02.p1"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e30_s0",
+     "startPoint": {
+      "x": 1074.3333333333335,
+      "y": 965
+     },
+     "endPoint": {
+      "x": 1027.0000000000002,
+      "y": 1240
+     },
+     "bendPoints": [
+      {
+       "x": 1074.3333333333335,
+       "y": 1146
+      },
+      {
+       "x": 1027.0000000000002,
+       "y": 1146
+      }
+     ],
+     "incomingShape": "RR-01.p4",
+     "outgoingShape": "EBB-02.p1"
+    }
+   ],
+   "container": "root"
+  },
+  {
+   "id": "e31",
+   "sources": [
+    "RR-02.p4"
+   ],
+   "targets": [
+    "EBB-02.p2"
+   ],
+   "cls": "",
+   "sections": [
+    {
+     "id": "e31_s0",
+     "startPoint": {
+      "x": 1163.6666666666667,
+      "y": 1067
+     },
+     "endPoint": {
+      "x": 1067.0000000000002,
+      "y": 1240
+     },
+     "bendPoints": [
+      {
+       "x": 1163.666666666667,
+       "y": 1158
+      },
+      {
+       "x": 1067.0000000000002,
+       "y": 1158
+      }
+     ],
+     "incomingShape": "RR-02.p4",
+     "outgoingShape": "EBB-02.p2"
+    }
+   ],
+   "container": "root"
+  }
+ ],
+ "$H": 13,
+ "x": 0,
+ "y": 0,
+ "width": 1374,
+ "height": 1360
+}
