@@ -8,3 +8,6 @@
 
 export { VERBS, EXIT, isVerb, helpText } from './cli.js';
 export type { Verb } from './cli.js';
+export * from './model/index.js';
+export * from './text/index.js';
+export * from './geometry/index.js';

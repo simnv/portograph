@@ -28,7 +28,7 @@
   "scripts": {
     "build": "vite build",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit && tsc -p tsconfig.json --noEmit --module NodeNext --moduleResolution NodeNext",
     "lint": "eslint ."
   },
   "devDependencies": {

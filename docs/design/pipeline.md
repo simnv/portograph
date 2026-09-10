@@ -73,8 +73,11 @@ leave through that side and route. An **unused port** takes the side with the fe
 
 ## Stage 3 — size
 
-Per node, per side: `pitch(side) = max(12, widest pill on that side + 4)`, where pill width is
-measured text (font-metrics table) + 2×3 padding, rotated 90° for left/right. Then
+Per node, per side: `pitch(side) = max(12, largest rendered pill extent along that side + 4)`.
+The unrotated pill width is measured text (font-metrics table) + 2×3 padding, at least 24 px;
+its height is at least 10 px. Top/bottom pills and their text rotate −90°; left/right pills
+stay horizontal, matching the target JPEG and d3-fd. The extent used for pitch is the rotated
+box's width on top/bottom and its height on left/right. Then
 `height = max(minH, contentH, n_left|right × pitch + 2·pad)`, `width = max(minW, contentW,
 n_top|bottom × pitch + 2·pad)`, `contentW/H` from the measured label, description and icon.
 Author `size:` is a floor. Undecided ports count on their most likely side. Bars are sized in 7d.

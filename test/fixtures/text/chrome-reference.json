@@ -1,0 +1,64 @@
+{
+  "fontFamily": "Arial",
+  "fontKerning": "none",
+  "fontVariantLigatures": "none",
+  "browser": "Google Chrome 153.0.8010.37",
+  "samples": [
+    {
+      "text": "100G",
+      "fontSize": 8,
+      "weight": 400,
+      "width": 19.578125,
+      "height": 9
+    },
+    {
+      "text": "100G",
+      "fontSize": 8,
+      "weight": 700,
+      "width": 19.578125,
+      "height": 9
+    },
+    {
+      "text": "WWWiii",
+      "fontSize": 12,
+      "weight": 400,
+      "width": 41.984375,
+      "height": 14
+    },
+    {
+      "text": "WWWiii",
+      "fontSize": 12,
+      "weight": 700,
+      "width": 43.984375,
+      "height": 14
+    },
+    {
+      "text": "Провайдеры / Контрагенты",
+      "fontSize": 12,
+      "weight": 400,
+      "width": 151.640625,
+      "height": 14
+    },
+    {
+      "text": "Провайдеры / Контрагенты",
+      "fontSize": 12,
+      "weight": 700,
+      "width": 163.421875,
+      "height": 14
+    },
+    {
+      "text": "AV",
+      "fontSize": 12,
+      "weight": 400,
+      "width": 16.033203125,
+      "height": 14
+    },
+    {
+      "text": "AV",
+      "fontSize": 12,
+      "weight": 700,
+      "width": 16.671875,
+      "height": 14
+    }
+  ]
+}

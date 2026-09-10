@@ -60,7 +60,7 @@ drew it. Network diagrams first; software architecture and electrical panels nex
 
 | Quantity | Value | Origin |
 |---|---|---|
-| Port pitch on a side | 12 px at scale 1, or measured label width if larger | d3-fd, validated in prototype |
+| Port pitch on a side | max(12 px, rendered pill extent along the side + 4 px) | measured pill geometry; JPEG orientation |
 | Node minimum | 50 × 35 px | d3-fd |
 | Port pill | 24 × 10 px, r 3 | d3-fd |
 | Node corner radius | 8 px; group 10 px | d3-fd |

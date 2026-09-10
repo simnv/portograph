@@ -15,5 +15,5 @@ they do. Ports on a side are ordered by far-end position.
 ## Consequences
 - Node size derives from ports (`CONTEXT.md` invariant 3), never the reverse.
 - A shared port's exit stems are one stem then a fan — exempt from the overlap gate (codex F13).
-- Port pitch must come from measured label width, not a fixed 12 px (codex F14).
+- Port pitch must account for measured pill geometry after rotation, not a fixed 12 px (codex F14).
 - `*` in YAML means "next free port"; d3-fd's silent consume-by-declaration-order is retired.

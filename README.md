@@ -66,4 +66,6 @@ links the region rules do not claim · Vite lib build + `vite-plugin-dts` · Vit
 core. Supported Node versions: `^18.18.0 || ^20.9.0 || >=22.0.0`.
 
 Run `npm ci`, then `npm run build`, `npm test`, `npm run typecheck`, and `npm run lint`.
+The core exposes the staged JSON model, font measurements and port geometry helpers.
+See [text measurement](docs/design/text-measurement.md) for font and pill conventions.
 The CLI currently exposes help and four verb stubs; end-to-end behavior is ticket 17.
