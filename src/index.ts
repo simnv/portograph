@@ -11,3 +11,5 @@ export type { Verb } from './cli.js';
 export * from './model/index.js';
 export * from './text/index.js';
 export * from './geometry/index.js';
+export * from './parse/index.js';
+export * from './migrate/index.js';

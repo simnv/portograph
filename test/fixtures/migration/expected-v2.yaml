@@ -1,0 +1,37 @@
+portograph: 2
+css: |
+  .main-node .node-name { fill: #334155; }
+
+groups:
+  core:
+    label: Core
+  peers:
+    label: Peers
+
+nodes:
+  hub-a:
+    group: core
+    ports:
+      - name: uplink
+        side: left
+      - name: mgmt
+        side: bottom
+      - name: uplink
+        side: right
+  peer-1:
+    group: peers
+    ports:
+      - name: eth
+  peer-mgmt:
+    group: peers
+    ports:
+      - name: oob
+  peer-2:
+    group: peers
+    ports:
+      - name: eth
+
+links:
+  - ["hub-a.uplink#1", "peer-1.eth#1"]
+  - ["hub-a.mgmt#1", "peer-mgmt.oob#1"]
+  - ["hub-a.uplink#2", "peer-2.eth#1"]

@@ -1,0 +1,43 @@
+diagram:
+  css: |
+    .main-node .node-name { fill: #334155; }
+
+  locations:
+    - id: core
+      label: Core
+    - id: peers
+      label: Peers
+
+  nodes:
+    - id: hub-a
+      location: core
+      interfaces:
+        - name: uplink
+          side: left
+        - name: mgmt
+          side: bottom
+        - name: uplink
+          side: right
+
+    - id: peer-1
+      location: peers
+      interfaces:
+        - name: eth
+
+    - id: peer-mgmt
+      location: peers
+      interfaces:
+        - name: oob
+
+    - id: peer-2
+      location: peers
+      interfaces:
+        - name: eth
+
+  links:
+    - source: hub-a uplink
+      target: peer-1 eth
+    - source: hub-a mgmt
+      target: peer-mgmt oob
+    - source: hub-a uplink
+      target: peer-2 eth

@@ -62,7 +62,7 @@ pipeline. Labels are free text; ids are not.
 | `portograph` | int | yes | `2` |
 | `profile` | string | no | `network` (default), `architecture`, `electrical` |
 | `title` | string | no | |
-| `css` | string | no | appended after the profile theme; **geometry-affecting properties are locked** (font-family, font-size, font-weight, stroke-width, letter-spacing, transform); colour, fill, stroke colour, dasharray, opacity are allowed. Locked properties in `css:` are a warning and are ignored |
+| `css` | string | no | appended after the profile theme; **geometry-affecting properties are locked** (font-family, font-size, font-weight, stroke-width, letter-spacing, transform). Locks also cover `font`/`all` shorthands, vendor-prefixed transforms, `translate`/`rotate`/`scale`, `transform-origin`/`transform-box`, and SVG dimensions/coordinates (`width`, `height`, `x`, `y`, `cx`, `cy`, `r`, `rx`, `ry`, `d`). Colour, fill, stroke colour, dasharray, opacity are allowed. Locked properties in `css:` are a warning and are ignored, including case and escaped-name variants |
 | `groups` | map | yes | |
 | `nodes` | map | yes | |
 | `links` | list | no | |
