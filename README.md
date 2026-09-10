@@ -43,6 +43,8 @@ Renders: [`prototype/out/out-tall2-av.png`](prototype/out/out-tall2-av.png) →
   about readable graph drawings, and the scorer derived from it.
 - [`docs/research/codex-routing-review.md`](docs/research/codex-routing-review.md) — the
   adversarial review of the routing design: 29 findings, 17 that would break output, all folded in.
+- [`docs/research/codex-design-review.md`](docs/research/codex-design-review.md) — the second
+  adversarial review, of the whole record: 55 findings, all folded in (see the decisions log).
 - [`docs/research/naming.md`](docs/research/naming.md) — twenty-nine names vetted against
   registries, GitHub, DNS and trademark sources; why `portograph`.
 - [`docs/research/prototype-results.md`](docs/research/prototype-results.md) — sixteen ELK variants

@@ -1,22 +1,26 @@
 # YAML Schema (v2)
 
+Revision 2 (2026-09-10) after the codex design review: identifier grammar, a structured endpoint
+form, `order:` on ports, constraints on `of:`, aggregation eligibility, CSS limits, and a
+migration that emits explicit ordinals.
+
 Design goals: nodes keyed by id; links as two-element arrays; a node belongs to one group; tier
 and alignment live on groups; every override is a single key with the same name as the concept in
 `CONTEXT.md`; YAML anchors are the reuse mechanism — there is no `templates:` section.
 
 ```yaml
-portograph: 2                 # schema version (required)
-profile: network              # network | architecture | electrical  (default: network)
+portograph: 2
+profile: network
 title: "SIP edge — Datacenter A"
-css: |                        # optional, appended after the profile theme
-  .node-rr .node-rect { fill: #f9a825; }
+css: |
+  .node-rr .node-rect { fill: #f9a825; }      # colour/fill/dash/opacity only — see CSS
 
 groups:
   providers:  { tier: 0, label: "Провайдеры / Контрагенты" }
   datacenter: { tier: 1, label: Datacenter }
-  tbr-left:   { align: left,  of: datacenter, label: TBR-001 }   # a flank
+  tbr-left:   { align: left,  of: datacenter, label: TBR-001 }
   tbr-right:  { align: right, of: datacenter, label: TBR-002 }
-  reflector:  { tier: 2, label: "Route-Reflector (ERR)", class: highlighted }
+  reflector:  { tier: 2, label: "Route-Reflector (ERR)" }
   backbone:   { tier: 3, shape: bar, label: Backbone }
 
 nodes:
@@ -29,104 +33,124 @@ nodes:
     group: tbr-left
     class: tbr
     ports: { side: right, list: [100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G] }
-  RR-01: { group: reflector, class: rr, ports: [100G, 100G, 100G, 100G, 100G] }
-  EBB-01: { group: backbone, class: router, ports: [100G, 100G, 100G] }
+  RR-01:  { group: reflector, class: rr, ports: [100G, 100G, 100G, 100G, 100G] }
+  EBB-01: { group: backbone,  class: router, ports: [100G, 100G, 100G] }
 
 links:
-  - [provider-1.100G, EAC-01.*]                      # `*` = next free port on EAC-01
-  - [TBR-001.*, EAC-01.*]                            # repeated 8× → detected as a bundle
+  - [provider-1.100G, EAC-01.*]                        # `*` = next free port on EAC-01
+  - [TBR-001.*, EAC-01.*]                              # ×8 → a bundle
   - [TBR-002.*, EBR-02.*, { class: dashed }]
   - [EBR-01.*, RR-01.*, { label: "100G" }]
-  - [EBB-01.*, EBR-01.*, { route: straight }]        # per-link technique override
-  - [rr-cluster, edge-cluster, { route: group-link }]   # explicit group-to-group link
+  - [EBB-01.*, EBR-01.*, { route: straight }]
+  - { from: { node: EAC-02, port: "100G", ordinal: 3 }, to: { node: TBR-002, port: "100G" } }
 ```
 
 ---
+
+## Identifiers
+
+Node, group and port ids match `^[A-Za-z0-9][A-Za-z0-9_-]*$` — no dots, `#`, `*`, spaces or
+slashes — so the compact endpoint form is unambiguous. Node ids and group ids share one
+namespace (a name may not be both). Port names may repeat within a node; a port is identified by
+name plus **ordinal** (1-based, in declaration order), and that identity is immutable through the
+pipeline. Labels are free text; ids are not.
 
 ## Top level
 
 | Key | Type | Required | Notes |
 |---|---|---|---|
-| `portograph` | int | yes | schema version; `2` |
+| `portograph` | int | yes | `2` |
 | `profile` | string | no | `network` (default), `architecture`, `electrical` |
-| `title` | string | no | rendered in the title block if the profile has one |
-| `css` | string | no | appended after the profile theme |
-| `groups` | map | yes | id → group |
-| `nodes` | map | yes | id → node |
+| `title` | string | no | |
+| `css` | string | no | appended after the profile theme; **geometry-affecting properties are locked** (font-family, font-size, font-weight, stroke-width, letter-spacing, transform); colour, fill, stroke colour, dasharray, opacity are allowed. Locked properties in `css:` are a warning and are ignored |
+| `groups` | map | yes | |
+| `nodes` | map | yes | |
 | `links` | list | no | |
-| `overlays` | map | no | profile-level render switches, e.g. `{ flow: hidden }` |
+| `overlays` | map | no | render switches, e.g. `{ flow: hidden }` |
 
 ## Group
 
 | Key | Type | Notes |
 |---|---|---|
-| `tier` | int ≥ 0 | row in the hierarchy; 0 = top. Exactly one of `tier` / `align` |
-| `align` | `left` \| `right` | makes the group a **flank** of `of:` |
-| `of` | group id | required with `align` |
-| `label` | string | default: the id |
-| `shape` | `row` \| `bar` \| `grid` \| `ring` \| `free` | default `row`. M1: `row`, `bar` |
-| `class` | string | CSS class for the box |
-| `collapsed` | bool | render as one node with aggregated ports (v1: warning-only placeholder) |
-| `layout` | map | pass-through ELK options for this group's internal algorithm (escape hatch) |
+| `tier` | int ≥ 0 | 0 = top. Omitted → inferred (below). Mutually exclusive with `align` |
+| `align` | `left` \| `right` | makes the group a **flank** |
+| `of` | group id | required with `align`; **must name a tier group** (not a flank, not itself). At most one flank per side per tier group; a second is an error |
+| `label` | string | default: id |
+| `shape` | `row` \| `bar` \| `grid` \| `ring` \| `free` | default `row`; M1: `row`, `bar`. `bar` nodes stack in declaration order |
+| `class` | string | |
+| `collapsed` | bool | M1: warning, ignored |
+| `layout` | map | pass-through ELK options for the group's own algorithm (escape hatch; `SEPARATE_CHILDREN` semantics apply and are documented as such) |
 
-Tier inference: when `tier` is omitted and the group is not a flank, the profile infers it from
-the classes of its nodes (network: `provider|internet|wan` → 0; `backbone|core` → last; others →
-middle, ordered by first appearance). Explicit `tier` always wins. Inference is reported as an
-info message so it is never invisible.
+**Tier inference** (model-time). For each non-flank group without `tier:`: rank = the profile's
+class table applied to the group's nodes — `top` if any node class is in the profile's top set
+(network: `provider`, `internet`, `wan`), `bottom` if any is in the bottom set (`backbone`,
+`core`) and none in the top set, else `middle`. Explicit tiers are kept as given; inferred groups
+are then assigned tier indices so that all `top` groups precede all explicit tiers, all `bottom`
+groups follow them, and `middle` groups fill the range in order of first appearance, renumbering
+compactly. A group with both top- and bottom-class nodes is `middle` with a warning. Inference is
+logged as an info message.
 
 ## Node
 
 | Key | Type | Notes |
 |---|---|---|
 | `group` | group id | required |
-| `class` | string | drives colour/icon via the theme and tier inference via the profile |
-| `label` | string | default: the id |
-| `description` | string | second line inside the box |
+| `class` | string | |
+| `label` | string | default: id |
+| `description` | string | |
 | `icon` | string | from the profile icon set |
-| `ports` | list \| map | list of names, or `{ side: <side>, list: [...] }` to fix a side for all; per-port `{ name, side }` objects allowed in the list |
-| `size` | `{ width, height }` | author override; the engine may grow it, never shrink it |
+| `ports` | list \| map | list of `string` or `{ name, side?, order? }`; or `{ side: <side>, list: [...] }` |
+| `size` | `{ width, height }` | a floor; the engine may grow, never shrink |
 
-Ports are identified by **name plus ordinal**: the third `100G` on `EAC-01` is `EAC-01.100G#3`.
-Authors normally never write the ordinal — they write `*`.
+Per-port keys: `side` fixes the side; `order` (int) fixes the position on that side among
+author-ordered ports (engine-ordered ports fill the gaps by far-end position). Declaration order
+is **not** an order constraint unless `order` is given.
 
 ## Link
 
-Two-element list `[from, to]` with an optional third element, an options map.
+Compact form: `[from, to]` or `[from, to, options]`. Structured form: `{ from, to, ...options }`
+where `from`/`to` are `{ node, port?, ordinal? }` or `{ group }`.
 
-Endpoint forms:
+Compact endpoint grammar (`node` and `group` are identifiers as above):
 
 | Form | Meaning |
 |---|---|
-| `node.port` | that named port (first with that name if several) |
+| `node.port` | the **first free** port of that name; if all are taken, the first one (shared) |
 | `node.port#n` | the n-th port of that name |
-| `node.*` | **the next free port** on that node — allocated in link order; if none is free, a new anonymous port is created |
-| `node` | an anonymous port (never rendered) — same as `node.*` when no named ports exist |
-| `group` | a group-link endpoint (requires `route: group-link` or is inferred by the density rule) |
+| `node.*` | the next free port of any name, in declaration order; none free → a new anonymous port |
+| `node` | an anonymous port |
+| `group` | a group-link endpoint |
+
+Allocation of `*` and free-name lookups happens in **link order** at model time and is recorded
+in the model as explicit `(node, name, ordinal)` triples; the layout JSON never contains `*`.
 
 Options:
 
 | Key | Type | Notes |
 |---|---|---|
-| `class` | string | CSS class; also decides the **family** through the profile (`physical` → routed, `flow|sync` → overlay) |
-| `label` | string | drawn on the longest segment |
-| `route` | `orthogonal` \| `straight` \| `bundle` \| `merge` \| `overlay` \| `stub` \| `group-link` | overrides the engine's choice |
-| `weight` | number | line weight multiplier (profiles map speed → weight) |
+| `class` | string | CSS class; decides **family** via the profile (`physical` → routed; `flow`, `sync` → overlay) |
+| `label` | string | |
+| `route` | `orthogonal` \| `straight` \| `bundle` \| `merge` \| `overlay` \| `stub` \| `group-link` | override. `merge` requires the link to be a bundle member; `group-link` requires group endpoints. M1: `stub` and `group-link` warn and fall back to routed |
+| `weight` | number | line-weight multiplier |
 
-## Validation
+**Aggregation eligibility** (automatic `group-link`): both endpoint groups have ≥ 2 nodes; the
+links form the complete bipartite set between the two groups' nodes; all share one class and
+family; none carries `route:`. Membership is preserved in the model.
 
-Errors (stop): unknown group/node/port reference; a node without `group`; a group with both
-`tier` and `align`; `align` without `of`; a link with fewer than two endpoints; schema version
-missing or unsupported.
+## Diagnostics, by stage
 
-Warnings (continue): `*` created an anonymous port on a node that has named ports (likely a typo);
-more than one link on a port in the `network` profile; a tier with no nodes; a flank whose primary
-peer has fewer facing ports than the flank; diagram above 30 nodes.
+| Stage | Errors (stop) | Warnings |
+|---|---|---|
+| parse | bad identifier; unknown reference; node without `group`; `tier` + `align`; `align` without `of`; `of` not a tier group; two flanks on one side; link with < 2 endpoints; version missing | locked CSS property |
+| model | `*` on a node with no ports and no free anonymous slot is fine (creates one) | `*` created an anonymous port on a node that has named ports; > 1 link on a port (network); tier with no nodes; mixed top/bottom classes; > 30 nodes; `stub`/`group-link` in M1 |
+| placement | — | flank has more distinct links than the peer's facing ports; bar sources closer than pitch; bundle inversions from author order; both margins full (canvas widened) |
+| final geometry | gate failures (see `quality.md`) | advisories |
 
 ## Migration from d3-fd (`diagram:` format)
 
-A converter ships as `portograph migrate <file>`: `locations` → `groups` (tier inferred);
-`interfaces: [{name}]` → `ports`; `"node ifname"` strings → `node.ifname` with `*` when names
-repeat (preserving d3-fd's consume-by-declaration-order semantics exactly, then emitting a
-warning that the order is now explicit); `css` carried over; `side:` on interfaces carried over
-as per-port `side`. Location names containing `left`/`right` become flanks with a warning to
-confirm.
+`portograph migrate <file>`: `locations` → `groups` (tier inferred; location names containing
+`left`/`right` become flanks with a warning to confirm); `interfaces: [{name}]` → `ports`;
+`side:` on interfaces → per-port `side`; `css` carried over. Link strings `"node ifname"` are
+resolved **first, by d3-fd's own rule** (consume the next unused interface *of that name* in link
+order) and emitted as explicit `node.ifname#n` — never as `*`, which would consume across names
+and change the wiring.

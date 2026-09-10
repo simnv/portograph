@@ -15,7 +15,9 @@ orthogonal routing with crossing minimisation, tier ordering, and determinism.
 ## Decision
 elkjs 0.12 `layered` produces the tier/group skeleton. No force simulation exists in the core.
 Organic arrangement inside a group, if ever needed, is ELK's per-group `force`/`stress` algorithm
-on that compound node — a setting, not a second engine.
+on that compound node — a setting, not a second engine. (Unverified: mixed per-group algorithms
+under root `INCLUDE_CHILDREN` with cross-group edges; a probe is required before relying on it,
+and `SEPARATE_CHILDREN` may be needed for such groups.)
 
 ## Consequences
 - Determinism for free (not required, used for snapshot tests).

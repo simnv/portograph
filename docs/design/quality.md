@@ -1,94 +1,126 @@
 # Quality — gates, score, and what "beautiful" means
 
-Decision Q7: goldens decide, metrics guard regressions, the checklist is the spec. This document is
-the metrics half. It derives from `docs/research/aesthetics.md` (what is experimentally validated)
-and from the codex review (what makes gates attainable).
+Revision 2 (2026-09-10) after the codex design review: gates now name the object pairs they
+apply to and their ownership exceptions; every metric has a finite formula and an empty-set
+value; thresholds are split into **assertions** (tests fail) and **advisories** (reported).
 
-`portograph score <layout.json>` computes everything below from the layout JSON, never from SVG.
+`portograph score <layout.json>` computes everything below from the layout JSON, never from
+SVG. The JSON carries, per element, its geometry, its owner, and a `layer`
+(`routed` | `overlay`); runtime statistics (timings) are in a separate block excluded from
+snapshots.
 
 ---
 
+## Geometry vocabulary used by the gates
+
+- A **port anchor** is the point on the node boundary where a link attaches. A **pill** is the
+  rendered port rectangle centred on the anchor, straddling the boundary. Links start at the
+  anchor; G7 checks anchors, not pills.
+- A **stem** is the first/last segment of a routed link, from the anchor outward, perpendicular
+  to the side, ≥ 15 px.
+- **Owner** relations: a node owns its labels and pills; a group owns its label and its nodes; a
+  link owns its label and its stems; a bundle owns its members' parallel runs; a bar owns the
+  drops that cross it to reach a lower bar.
+
 ## Hard gates
 
-A failed gate fails the diagram. Each gate names the object pairs it applies to; the overlay layer
-is out of scope for all clearance gates.
+A failed gate fails the diagram (subject to the size table below). Overlay-layer elements are
+out of scope for G2, G4 and G6.
 
-| # | Gate | Definition | Exceptions |
+| # | Gate | Applies to | Exceptions (by ownership) |
 |---|---|---|---|
-| G1 | **No node overlap** | no two node rectangles intersect; every node inside its group box | — |
-| G2 | **No link through a foreign node** | no routed segment intersects a node rectangle it is not incident to | a drop crossing a **bar** on its way to a lower bar (`barCross`, reported separately) |
-| G3 | **No label collision** | no label bbox (node, port, link, group) intersects another label, a node, or a routed segment, area-aware | port labels inside their own pill |
-| G4 | **No link–link collinear overlap** | no two routed segments on the same line share > 1 px of length | segments inside a declared **bundle** (reported as bundled length); the shared **stem** of links leaving one port (one stem, then fan) |
-| G5 | **Ports exit correctly** | every routed link leaves its port perpendicular to the side, first/last segment ≥ 15 px; port order on a side matches far-end order unless author-fixed | overlay, stub |
-| G6 | **Clearances** | node–node ≥ 20, link–node ≥ 10, parallel link–link ≥ 10 px, stroke-aware | inside bundles (bundle spacing applies) |
-| G7 | **Containment** | every node's ports lie on its boundary; every link endpoint is on its port | — |
+| G1 | **No node overlap; containment** | node–node rectangles; node inside its group box; group boxes inside their tier band; no group–group overlap | — |
+| G2 | **No routed segment through a foreign node** | routed segments × node rectangles | a segment's own endpoint nodes; a drop crossing a **bar** it does not terminate on (`barCross`, reported) |
+| G3 | **No label collision** | every label bbox × every other label bbox, node rectangle, pill, routed segment (area-aware) | a label vs its **owner** (node label inside its node; pill text inside its pill; link label on its own segment's clearance zone); overlay layer |
+| G4 | **No collinear overlap** | pairs of routed segments on the same line sharing > 1 px | members of one **bundle** (reported as `bundledLength`); the shared **stem** of links leaving one port (one stem, then fan); lane-owner runs vs their own lane |
+| G5 | **Ports exit correctly** | every routed link: first/last segment perpendicular to its side, ≥ 15 px; port order on a side matches far-end order | author `order:`; overlay; stub |
+| G6 | **Clearances** (stroke-aware, centre-to-centre minus half strokes) | node–node ≥ 20; routed segment–foreign node ≥ 10; parallel routed segments ≥ 10 | incident node–segment contact at the anchor; bundle members (`memberGap` = 16 applies); `barCross` contacts; junction fans |
+| G7 | **Attachment** | every link endpoint = a port anchor; every anchor on its node's boundary | — |
+| G8 | **Tier contract** | every group's box within its tier's band; tier bands in order, non-overlapping | — |
 
-Why G4 exists: the prototype's crossing counter used a segment-intersection test that returns
-*false for parallel lines* — overlaps were invisible until a user asked how they would be scored.
-Overlap is its own family, computed by bucketing axis-aligned segments and sweeping.
+Why G4 exists: the prototype's crossing counter used an intersection test that returns *false for
+parallel segments*; overlaps were invisible until asked for. Overlap is computed by bucketing
+axis-aligned segments by line and sweeping intervals — O(S log S), never pairwise.
 
 ## Soft score
 
-`Q = Σ wᵢ · Mᵢ`, each `Mᵢ ∈ [0, 1]`, 1 = good. Weights follow the evidence ranking (crossings first
-by a wide margin; compactness and grid alignment correlate strongest with human preference for
-orthogonal drawings).
+`Q = Σ wᵢ · clamp(Mᵢ, 0, 1)`, weights sum to 1. Each `Mᵢ` is defined for every diagram, including
+empty ones (value 1 where the metric has no subject).
 
-| Metric | Formula | Weight | Threshold (≤ 30 nodes) | Threshold (≤ 100) |
-|---|---|---|---|---|
-| Crossings | `1 − min(1, c / m)` where `c` = crossings **outside bundles**, `m` = routed links | 0.30 | `c/m ≤ 0.05`; golden M1: `c = 0` | `≤ 0.15` |
-| Bends | `1 − min(1, mean bends per routed link / 3)` | 0.15 | mean ≤ 1.0, none > 3 | mean ≤ 1.5 |
-| Path continuity | fraction of multi-segment links whose segments keep direction between turns | 0.10 | ≥ 0.7 | ≥ 0.6 |
-| Compactness | node area / bbox area, per group and global | 0.10 | ≥ 0.25 | ≥ 0.2 |
-| Grid alignment | fraction of nodes in an alignment of ≥ 3 | 0.10 | ≥ 0.6 | ≥ 0.5 |
-| Flow consistency | fraction of routed segments pointing along the declared direction | 0.10 | ≥ 0.8 | ≥ 0.7 |
-| Aspect ratio | `min(w,h) / max(w,h)` | 0.05 | ≥ 0.5 | ≥ 0.4 |
-| Segment uniformity | `1 − std/mean` of segment lengths | 0.05 | ≥ 0.5 | report |
-| Symmetry | reflective-pair fraction (HOLA's cheap version) | 0.05 | report only | report |
+| Metric | Formula | Empty-set value | Weight |
+|---|---|---|---|
+| Crossings | `1 − min(1, c / m)`; `c` = crossings outside bundles, `m` = routed links | 1 | 0.30 |
+| Bends | `1 − min(1, mean bends per routed link / 3)` | 1 | 0.15 |
+| Path continuity | fraction of routed links with ≥ 2 segments whose consecutive turns alternate direction (no U-turns) | 1 | 0.10 |
+| Compactness | `Σ node area / bbox area`, computed globally and per group, reported both, scored as the mean | 1 | 0.10 |
+| Grid alignment | fraction of nodes whose top **or** left edge shares a coordinate (±1 px) with ≥ 2 other nodes | 1 | 0.10 |
+| Flow consistency | fraction of routed *vertical* segments whose direction (source→target) is downward when the target tier is lower | 1 | 0.10 |
+| Aspect ratio | `min(w, h) / max(w, h)` of the bounding box | 1 | 0.05 |
+| Segment uniformity | `max(0, 1 − std / mean)` of routed segment lengths | 1 | 0.05 |
+| Symmetry | reported only: fraction of nodes with a mirror partner about the bbox's vertical axis (±4 px) | — | 0.05 (report) |
 
-Use raw `c/m` in assertions, not the Purchase-normalised value — the normalised form saturates
-near 1.0 for every non-random layout and cannot discriminate.
+Use raw `c/m` in assertions, never the Purchase-normalised form (it saturates near 1 for every
+non-random layout).
 
-Also reported, not scored: `overlaps`, `bundledLength`, `barCross`, `labelHits`, `stubs`,
-`groupLinks`, `lanesUsed`, `fallbackUsed`, canvas size, layout time.
+Also reported: `overlaps`, `bundledLength`, `barCross`, `labelHits`, `labelsOmitted`, `stubs`,
+`groupLinks`, `lanesUsed`, `inversions`, `fallbackUsed`, `deadlineHit`, canvas size, and (outside
+the snapshot block) layout time per stage.
 
-## Size warnings
+## Thresholds — assertions vs advisories
 
-| Nodes | Message |
-|---|---|
-| > 30 | "Above the readable size (Störrle 2014/16, Kobourov 2014). Consider `collapsed:` groups or splitting by layer." |
-| > 300 | "Tier partitioning may fall back to per-band layout." |
-| > 1,000 | refuse without `--force` |
+| Metric | ≤ 30 nodes | ≤ 100 nodes | Kind |
+|---|---|---|---|
+| Gates G1–G8 | pass | pass (G3 warning-only above 300) | **assertion** |
+| Crossings outside bundles, M1 golden | **= 0** | — | **assertion** (supersedes the "≤ 2" in the decisions log) |
+| `c / m` | ≤ 0.05 | ≤ 0.15 | advisory |
+| Mean bends | ≤ 1.0, max 3 | ≤ 1.5 | advisory |
+| Continuity | ≥ 0.7 | ≥ 0.6 | advisory |
+| Compactness | ≥ 0.25 | ≥ 0.2 | advisory |
+| Grid alignment | ≥ 0.6 | ≥ 0.5 | advisory |
+| Flow | ≥ 0.8 | ≥ 0.7 | advisory |
+| Aspect | ≥ 0.5 | ≥ 0.4 | advisory (the M1 baseline is 0.496 — wide diagrams are wide) |
+| `Q` vs approved baseline | ± 0.05 | ± 0.05 | **assertion** |
+
+## Gate enforcement by size
+
+| Nodes | G1 G2 G4 G5 G6 G7 G8 | G3 |
+|---|---|---|---|
+| ≤ 300 | enforced | enforced |
+| 301–1,000 | enforced | warning |
+| > 1,000 | `--force` only | warning |
 
 ## Test design
 
-- **Golden tests**: one YAML per golden; `render` output reviewed by the maintainer once and
-  approved; thereafter the layout JSON is an **exact snapshot** (ELK and the rules are
-  deterministic; determinism was not required but is free). Any change to a snapshot is a
-  reviewed diff.
-- **Gate tests**: every golden passes G1–G7.
-- **Score tests**: `Q` within ±0.05 of the approved value; crossings-outside-bundles may only go
-  down without a waiver.
-- **Rule unit tests**: each region rule has a small synthetic fixture that isolates it (flank with
-  two peers; three stacked bars; through-link with both margins occupied; bundle with author-fixed
-  reversed ports) — the codex counter-examples, verbatim.
-- **Scale tests**: 100 / 300 / 1,000 synthetic nodes: completes, time bound, fallback path taken
-  where expected.
-- **Review**: codex on every ticket's diff; agy on every golden render against the checklist below.
+- **Fixtures first**: the golden YAML files and their hand-written expected models are ticket 00
+  — inputs exist before the pipeline does, so no ticket's acceptance depends on a later ticket.
+- **Golden tests**: `render` reviewed once by the maintainer; thereafter the layout JSON is an
+  **exact snapshot** (runtime block excluded). Determinism is not required but is free.
+- **Gate tests**: every golden passes G1–G8.
+- **Score tests**: `Q` within ± 0.05 of the approved value; crossings-outside-bundles may only
+  go down without a waiver.
+- **Rule unit tests** — the codex counter-examples as fixtures: flank facing two peers; flank
+  with unequal pitch on the two sides; many links sharing one peer port; same-tier nodes stacked
+  at one x; a parent port feeding two children; three stacked bars; a bar fed from both sides;
+  sources 1 px apart on a bar; a bundle with author-`order:` reversed ends (inversions = 3);
+  both margins occupied; a group label with no free gap; a link label that fits nowhere; a
+  node with no ports and a long label; a zero-link diagram.
+- **API probes** (before ticket 06/13): `partitioning.activate`, `semiInteractive` + `position`,
+  `nodeSize.constraints/minimum`, `shapeCoords=ROOT`; libavoid `setExclusive(false)`,
+  `JunctionRef`, pin on boundary → stem length.
+- **Scale tests**: the **full pipeline** at 100 / 300 / 1,000 synthetic nodes with a hub (degree
+  64), a wide tier (40 nodes), and long transit links; fallback exercised by **injected failure**
+  and by deadline, not by relying on a particular ELK crash.
+- **Review**: codex on every ticket's diff; agy on every golden render against the checklist.
 
 ## The checklist (the spec half of Q7)
 
-From the reference corpus, the rules a reviewer applies to a render:
-
-1. Hierarchy reads top-to-bottom; external/providers at the top, backbone/core at the bottom
-   (Auvik, drawthe.net's y-up).
-2. Segments are all horizontal or all vertical within a tier; mixed only to flag a special
-   segment (Auvik).
-3. Ports leave perpendicular; parallel links are bundled or evenly spaced (yFiles, libavoid).
-4. Redundant pairs sit side by side (Auvik L2).
-5. Every group is labelled; labels never sit on links (this project).
-6. Colour encodes role or link property, and the diagram survives removal of colour (C4).
-7. Link property encoded consistently: weight = speed, style = class (Auvik, Creately).
-8. No crossing that a topology rewrite could avoid — bar, stub, duplicated cloud
-   (networkdiagram101 TIP 4).
-9. Whitespace is even; object : gutter ≈ 60 : 40 (drawthe.net).
-10. A legend exists when more than one symbol or line style is used (networkdiagram101 TIP 7).
+1. Hierarchy reads top-to-bottom; providers/external at the top, backbone/core at the bottom.
+2. Segments all horizontal or all vertical within a tier; mixed only to flag a special segment.
+3. Ports leave perpendicular; parallel links bundled or evenly spaced.
+4. Redundant pairs sit side by side.
+5. Every group is labelled; labels never sit on links.
+6. Colour encodes role or link property; the diagram survives removal of colour.
+7. Link property encoded consistently: weight = speed, style = class.
+8. No crossing that a topology rewrite could avoid — bar, stub, duplicated cloud.
+9. Whitespace is even; object : gutter ≈ 60 : 40.
+10. A legend exists when more than one symbol or line style is used — generated, not authored.

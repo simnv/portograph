@@ -19,6 +19,11 @@ override → aggregation → visibility → bundle → straight → orthogonal.
 ## Consequences
 - The product is the rule set; ELK and libavoid are substrate.
 - Rules that compete for space (lanes vs child-centering) are ordered, not iterated freely.
-- libavoid-js is beta; it is a fallback, not the critical path. A hand orthogonal router remains
-  a possible replacement without touching the rules.
+- libavoid-js is beta; it is a fallback, not the critical path. Verified 2026-09-10 against its
+  IDL: `ShapeConnectionPin.setExclusive` exists (shared ports need `false`), `JunctionRef` exists
+  (shared stems), `Checkpoint` exists but `ConnRef.setRoutingCheckpoints` and `setFixedRoute` do
+  **not** — fixed paths are therefore registered as trimmed obstacles, as the prototype did. A
+  hand orthogonal router remains a possible replacement without touching the rules.
+- Semantic technique choice (override, aggregation, family, bundle membership) is made before
+  placement (pipeline stage 1); only geometry-dependent choices wait for a trial route.
 - Untested: sheets where rules leave many links over (NTP golden) — ticket.
