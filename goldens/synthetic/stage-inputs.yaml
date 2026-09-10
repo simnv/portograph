@@ -42,6 +42,8 @@ one-px-sources:
 
 both-margins-full:
   stage: 7a
+  # Short labels keep these explicit boxes above measured content floors.
+  test-labels: { source-left: S, source-right: S, target-left: T, target-right: T }
   group-boxes:
     upper: [140, 0, 320, 100]
     left-flank: [0, 160, 180, 100]
@@ -108,3 +110,11 @@ unfittable-link-label:
   foreign-label-boxes:
     - { owner: above, box: [90, 60, 50, 40] }
     - { owner: below, box: [90, 100, 50, 40] }
+
+unequal-pitch:
+  stage: 7b
+  # Test-only retained side pitch. Native long pill names increase normal extent, not tangential pitch.
+  side-pitches: { peer: { left: 24 }, flank: { right: 14 } }
+  # A hypothetical 20 px tangential pill height requires pitch 24. Keep real serialized pill geometry.
+  pitch-measurement: { peer-pill-height: 20, gap: 4 }
+  minimum-side-capacity: { peer-height: 92 }

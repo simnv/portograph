@@ -39,7 +39,7 @@ describe('all public publication boundaries', () => {
         draft => { draft.links[0]!.path = { owner: { kind: 'link', id: 'missing' }, layer: 'routed', fixed: true, segments: [] }; },
       ];
       // The transaction boundary reports a row candidate's path as derived; the other boundaries report the missing validator.
-      for (const edit of edits) expect(() => apply(model, draft => { edit(draft); diagnose(draft); })).toThrow(/not implemented|derived by the transaction/);
+      for (const edit of edits) expect(() => apply(model, draft => { edit(draft); diagnose(draft); })).toThrow(/not implemented|derived by the transaction|Callback regions contradict/);
       expect(serializeLayoutModel(model)).toBe(before);
     });
     it(`${boundary} rejects techniques that contradict an authored override`, async () => {

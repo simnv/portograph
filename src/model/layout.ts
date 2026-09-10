@@ -126,6 +126,12 @@ export interface LayoutLink {
   /** Routing must first resolve group endpoints to concrete port refs. */
   attachments?: { from: PortRef; to: PortRef };
   path?: LayoutPath;
+  /**
+   * Immutable reserved runs in source-to-target traversal order. Entries may be disconnected from
+   * each other; routing completes the gaps and the attachment stems. `path` always means the
+   * complete geometry, so an incomplete reservation is never stored there.
+   */
+  fixedSegments?: PathSegment[];
   stubCandidate?: boolean;
 }
 
@@ -233,6 +239,7 @@ export interface FrozenPort {
   authorOrder?: number;
 }
 export interface PlacementSnapshot {
+  fixedSegments: { link: string; segments: PathSegment[] }[];
   nodes: Record<string, Pick<LayoutNode, 'bounds' | 'size' | 'sizeFloor' | 'contentSize' | 'contentInsets' | 'sidePitch' | 'ports' | 'icon'>>;
   groups: Record<string, Pick<LayoutGroup, 'bounds' | 'rowOrder' | 'nodes' | 'tier' | 'flank'>>;
   tierBands: TierBand[];

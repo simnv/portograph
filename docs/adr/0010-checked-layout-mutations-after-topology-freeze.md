@@ -35,5 +35,32 @@ links to select straight or orthogonal from the rows stage through their actual 
 Row paths are the first derived claim. The transaction rebuilds them from final anchors in the
 rows stage and after every later committed movement, replacing stale paths instead of appending.
 Publication validates each row candidate against a fresh rebuild, so restore and every stage
-share one producer. Callbacks cannot write or remove a row path; other path claims still reject
-until their producer lands.
+share one producer. Callbacks cannot write or remove a row path. Flank paths now use the same derived-claim boundary;
+other complete path claims still reject until their producer lands.
+
+Stage 7a permits whole-group horizontal translation on occupied intermediate tiers before lane
+allocation. Transit source anchors remain fixed. Lane owner, identity, x and width then remain
+fixed; only band-derived extents rebuild before the final placement freeze. Non-bundle lane runs
+use ordered `fixedSegments`, separate from complete paths. Publication and restore check exact
+transit coverage, ownership, corridor capacity, extents and segment direction. Final placement
+includes the partial runs. Regions derive from current groups and tier bands.
+
+Stage 7b may normalize primary bundle members jointly on facing sides when authored precedence
+allows it. This narrow exception handles engine interleaving and inversions before flank
+alignment. Other ports retain their relative order and unrelated sides cannot reorder. The
+transaction checks the exact normalization; restore checks its consistent final order. Later
+bundle producers must extend this check alongside their own order/path validation.
+
+Stage 7c initializes the anchor tier from main-tier node count, including bars and excluding
+flanks, with the lowest effective tier breaking ties. It uses one shared eight-pass budget across
+all groups and replay calls. Infeasible alignment stays an orthogonal routing remainder. The
+ordered replay API rebuilds regions, fixed-owner lane extents, bounded centering, measured node
+geometry, row paths and flank paths. A later stage must still obey its declared movement scope.
+
+Review refinement for stage 7a: plan margin translations outward from the insertion gap and
+propagate them through neighbors in their existing order. Preserve transit sources and every
+earlier corridor; when either blocks a push, allocate a clear exterior corridor instead.
+Stage 7b checks every unrelated anchor against the common flank translation and actual boundary
+growth. Merely retaining its pitch and engine slot does not authorize moving that anchor.
+Fixed-segment equality uses structural JSON values: object key order is irrelevant, while array
+traversal order, ownership, dimensions and coordinates remain exact.

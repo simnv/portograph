@@ -86,9 +86,9 @@ export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segm
     if (segmentRectDistance(segment, lane.bounds) < stroke / 2 - EPS) return false;
   }
   for (const other of model.links) {
-    if (other.id === link.id || !other.path || other.path.layer === 'overlay') continue;
-    const otherStroke = other.path.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path;
-    for (const run of other.path.segments) {
+    if (other.id === link.id || other.layer === 'overlay') continue;
+    const otherStroke = other.path?.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path;
+    for (const run of [...(other.path?.segments ?? []), ...(other.fixedSegments ?? [])]) {
       if (segmentDistance(segment, run) - (stroke + otherStroke) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return false;
     }
   }

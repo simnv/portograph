@@ -31,3 +31,10 @@ export type { PlacementRule } from './layout/mutation.js';
 export { rows } from './layout/rows.js';
 export { rebuildRowPaths, expectedRowPath, straightCorridorClear, facingPair, rowPathCandidate, STRAIGHT_PATH_CLEARANCE } from './layout/row-paths.js';
 export type { FacingPair } from './layout/row-paths.js';
+
+export { lanes, allocateLanes, rebuildLaneExtents, laneWidth, validateLanes } from './layout/lanes.js';
+export { flanks, alignFlanks, rebuildFlankPaths, flankPair, flankPathCandidate, expectedFlankPath } from './layout/flanks.js';
+export { centre, centreDraft, createCentreBudget, selectAnchorTier } from './layout/centre.js';
+export type { CentreBudget } from './layout/centre.js';
+export { rebuildRegions } from './layout/regions.js';
+export { rebuildRegionGeometry } from './layout/region-rebuild.js';

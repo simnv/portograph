@@ -62,7 +62,7 @@ export function sizeNodes(model: LayoutModel): LayoutModel {
       }
     }
     const pitch: Record<Side, number> = { bottom: 12, right: 12, top: 12, left: 12 };
-    for (const side of SIDE_TIE_ORDER) pitch[side] = portPitch(sides[side].pills);
+    for (const side of SIDE_TIE_ORDER) pitch[side] = Math.max(portPitch(sides[side].pills), node.sidePitch?.[side] ?? 0);
     node.sidePitch = pitch;
     node.contentInsets = insets;
     const content = measureNodeContent(authored, insets);

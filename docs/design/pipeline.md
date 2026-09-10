@@ -239,12 +239,23 @@ a vertical corridor of width `laneW = pillW + gap` — in the margin of the inte
 the side nearer the source x. Lanes have an **owner** (the link) and a vertical-run reservation;
 the lane is an obstacle to every *other* link. For a non-bundle owner the route segment through
 the lane is fixed here. For a bundle member, 7a records only the owned lane x and extent; stage 7e
-consumes that reservation when it creates the member path. Capacity: the margin between the
-intermediate group and its neighbour in that tier (or a flank) holds ⌊margin / laneW⌋ lanes;
-overflow widens the tier gap and the canvas (canvas is never fixed). A link transiting several
-tiers reserves a lane at each. Lanes are allocated on the
-source node's outermost slots of the departing side so the run is an in-span vertical. *Moves:*
-group boxes, canvas. *Re-validate:* nothing yet pinned except row links — recheck them.
+consumes that reservation when it creates the member path. Capacity uses actual occupied geometry, measured pills, and participating strokes. Corridor width is
+`max(34, endpoint pill widths + 10, 20 + path stroke + maximum node stroke)` in pixels.
+Before fixing any lane x, expand occupied intermediate margins through horizontal group/node/flank
+translations and expand the canvas. Preserve transit source anchors and the groups' internal order.
+Plan displacement outward from the insertion gap and propagate it through neighboring groups.
+A corridor's centre cannot decide displacement direction when the corridor contains an entire
+neighbor. If a transit source or an existing corridor blocks propagation, use a clear exterior
+corridor without moving those owners.
+An existing lane's identity, owner, x and width cannot change in later stages. Extents follow the
+current intermediate band with `10 + pathStroke / 2` padding before placement freezes.
+
+A link transiting several tiers reserves a lane at each, ordered from source to target even for
+upward links. Prefer in-span corridors. When they do not fit, retain source geometry, reserve an
+outside-span corridor, and warn that routing must complete its attachment jog. Non-bundle runs
+live in `fixedSegments`; they may be disconnected. `path` always means a complete attached path.
+Bundle members carry lanes only until 7e. *Moves:* horizontal translation of occupied intermediate
+groups before allocation, group boxes and canvas. *Re-validate:* existing row paths and every lane.
 
 ### 7b — flank align
 
@@ -253,8 +264,15 @@ be a node of the flank's `of:` tier; 7b never reselects it after movement. Consi
 port pairs** (a shared peer port counts once); compute the translation that levels the first
 pair; a pair is *compatible* if the same translation levels it within 0.5 px — this holds when
 both sides use the same pitch, so before comparing, **respace both facing sides to the larger of
-their two pitches** (stage 3 formula re-run for those two sides only; sizes may grow). Shift the
-flank vertically by the translation; pin a compatible non-bundle pair as a straight horizontal
+their two pitches** (stage 3 formula re-run for those two sides only; sizes may grow). A primary bundle may first normalize its members' engine order jointly on both facing sides.
+Only this primary block moves; unrelated ports retain their relative order. All author keys and
+unequal-key precedence remain fixed. If that precedence prevents compatible ordering, keep it
+and report the incompatibility for 7e. This handles the golden's interleaved left primary members
+and reversed right primary members without claiming final bundle paths or global port-stem gates.
+Shift the
+flank vertically by one common translation for all its nodes. Unrelated anchors follow only
+that translation and actual right/bottom boundary growth; only participating facing sides may
+respace. Pin a compatible non-bundle pair as a straight horizontal
 only when foreign geometry is clear. This check also applies when stage 4 reports opposite
 flanks sharing a primary: the other flank may have a row node between it and the stored peer.
 Obstructed pairs remain for routing; aligned bundle members remain unpinned for 7e. Route the rest. Links from the flank
@@ -265,14 +283,14 @@ links on the peer.
 
 ### 7c — child under parents
 
-Anchor tier = the tier with the most nodes (ties: lowest tier index). Below the anchor, each
+Anchor tier = the tier with the most main-tier nodes, including bars and excluding flanks (ties: lowest effective tier index). Empty layouts omit it. Below the anchor, each
 group is centred under its feeds; above it, each group is centred over its children (mirror).
 For a child group G fed from tier T−1: the **feed set** is the parents' bottom ports whose peer
 is in G. **Parents are authoritative:** parent port x is fixed by stage 5/7a; G is centred
 horizontally under the barycentre of the feed set within the space between the lanes (7a) and
 neighbouring groups; then each child port x := its parent port x. A child port's x is feasible
 only if the child node can be widened to contain it without overlapping a sibling; if not, the
-link keeps one bend and is reported. A parent port feeding **two** children cannot be vertical to
+link remains unpinned and is reported. Unequal-x top/bottom normals generally need two orthogonal bends; routing determines the actual count. A parent port feeding **two** children cannot be vertical to
 both: the first (by child x) is vertical, the rest fan through a shared stem (7e semantics).
 Iterate child-widening → sibling push → re-centre at most 8 times, ε = 0.5 px; on non-convergence
 keep the last state and report. *Moves:* child groups, child widths. *Re-validate:* lanes (7a
