@@ -1,0 +1,61 @@
+import { placePortPill, portAnchor } from '../geometry/index.js';
+import type { LayoutModel, LayoutLabel } from '../model/layout.js';
+import { FONT_FAMILY, measurePortPill } from '../text/index.js';
+import { NODE_CONTENT_GEOMETRY as theme } from '../theme/content.js';
+import { measureNodeContent } from './size.js';
+import { SIDE_TIE_ORDER } from './sides-one.js';
+
+/** Replace final content and pill geometry. Current anchors remain authoritative for region rules. */
+export function rebuildNodeGeometry(draft: LayoutModel, nodeIds: readonly string[], anchors: 'from-slots' | 'current'): void {
+  const ids = new Set(nodeIds);
+  draft.labels = draft.labels.filter(label => !(label.owner.kind === 'node' && ids.has(label.owner.id)
+    && (label.role === 'node' || label.role === 'description' || label.role === 'pill')));
+  for (const id of nodeIds) {
+    const node = draft.nodes[id]!, box = node.bounds!, insets = node.contentInsets!;
+    if (!box || !insets) throw new Error(`Missing node geometry for ${id}`);
+    const owner = { kind: 'node', id } as const;
+    const content = measureNodeContent(draft.document.nodes[id]!, insets);
+    if (content.width > box.width + 1e-6 || content.height > box.height + 1e-6) throw new Error(`Content exceeds node ${id}`);
+    const centreX = box.x + insets.left + (box.width - insets.left - insets.right) / 2;
+    let y = box.y + insets.top + (box.height - content.height) / 2;
+    delete node.icon;
+    for (const block of content.blocks) {
+      const bounds = { x: centreX - block.width / 2, y, width: block.width, height: block.height };
+      if (block.kind === 'icon') node.icon = { icon: block.icon, bounds };
+      else {
+        const { kind, width: _width, height: _height, ...text } = block;
+        void _width; void _height;
+        draft.labels.push({ id: `node:${JSON.stringify(id)}:${kind}`, owner, layer: node.layer, role: kind, bounds, ...text });
+      }
+      y += block.height + theme.contentGap;
+    }
+    for (const side of SIDE_TIE_ORDER) {
+      const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
+      const horizontal = side === 'top' || side === 'bottom';
+      const length = horizontal ? box.width : box.height;
+      const pitch = node.sidePitch?.[side];
+      if (pitch === undefined) throw new Error(`Missing pitch for ${id}.${side}`);
+      for (const [index, port] of ports.entries()) {
+        if (anchors === 'from-slots') port.anchor = portAnchor(box, side, (length - (ports.length - 1) * pitch) / 2 + index * pitch);
+        const point = port.anchor;
+        if (!point) throw new Error(`Missing anchor for ${id}`);
+        const offset = horizontal ? point.x - box.x : point.y - box.y;
+        const expected = portAnchor(box, side, offset);
+        if (Math.abs(point.x - expected.x) > 1e-6 || Math.abs(point.y - expected.y) > 1e-6) throw new Error(`Anchor is off ${id}.${side}`);
+        delete port.pill;
+        if (port.ref.anonymous === true) continue;
+        const measured = measurePortPill(port.ref.name);
+        const { anchor: _anchor, ...pill } = placePortPill(box, side, offset, measured);
+        void _anchor;
+        port.pill = { ...pill, owner, layer: port.layer };
+        const width = horizontal ? measured.text.height : measured.text.width;
+        const height = horizontal ? measured.text.width : measured.text.height;
+        const label: LayoutLabel = { id: `pill:${JSON.stringify(port.ref)}`, owner, layer: port.layer,
+          role: 'pill', port: { ...port.ref }, text: port.ref.name, fontFamily: FONT_FAMILY, fontSize: 8,
+          fontWeight: 400, lineHeight: measured.text.lineHeight, lines: measured.text.lines, textRotation: pill.textRotation,
+          bounds: { x: point.x - width / 2, y: point.y - height / 2, width, height } };
+        draft.labels.push(label);
+      }
+    }
+  }
+}

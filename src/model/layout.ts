@@ -1,7 +1,7 @@
 import type { Endpoint, NormalisedDocument, PortRef, Route } from './document.js';
 import type { Point, Rect, Side, Size } from './geometry.js';
 
-/** Last completed stage. This marker does not itself enforce stage preconditions. */
+/** Last completed stage; checked transactions enforce progression after sides-two. */
 export type LayoutStage = 'normalised' | 'resolve' | 'sides-one' | 'size' | 'skeleton'
   | 'sides-two' | 'rows' | 'lanes' | 'flanks' | 'centre' | 'bars' | 'bundles'
   | 'bands' | 'route' | 'link-labels' | 'validate' | 'emit';
@@ -68,6 +68,8 @@ export interface LayoutNode extends OwnedElement {
   size?: Size;
   bounds?: Rect;
   sidePitch?: Partial<Record<Side, number>>;
+  /** Final measured icon placement; inherits the node identity and layer. */
+  icon?: { icon: string; bounds: Rect };
 }
 
 export interface LayoutGroup extends OwnedElement {
@@ -201,6 +203,7 @@ export interface LayoutRuntime {
 
 /** Geometry remains optional until the stage that produces it has completed. */
 export interface LayoutModel {
+  freeze?: LayoutFreeze;
   document: NormalisedDocument;
   stage: LayoutStage;
   groups: Record<string, LayoutGroup>;
@@ -222,4 +225,25 @@ export interface LayoutModel {
   anchorTier?: number;
   fallbackUsed?: boolean;
   deadlineHit?: boolean;
+}
+
+export interface FrozenPort {
+  ref: PortRef;
+  side: Side;
+  authorOrder?: number;
+}
+export interface PlacementSnapshot {
+  nodes: Record<string, Pick<LayoutNode, 'bounds' | 'size' | 'sizeFloor' | 'contentSize' | 'contentInsets' | 'sidePitch' | 'ports' | 'icon'>>;
+  groups: Record<string, Pick<LayoutGroup, 'bounds' | 'rowOrder' | 'nodes' | 'tier' | 'flank'>>;
+  tierBands: TierBand[];
+  regions: Region[];
+  lanes: Lane[];
+  labelBands: LabelBand[];
+  labels: LayoutLabel[];
+}
+export interface LayoutFreeze {
+  version: 1;
+  topology: { node: string; ports: FrozenPort[] }[];
+  floors: { node: string; size: Size }[];
+  placement?: PlacementSnapshot;
 }

@@ -24,3 +24,7 @@ export { skeleton, SkeletonError } from './layout/skeleton.js';
 export type { SkeletonOptions } from './layout/skeleton.js';
 export { createWorkerElkAttempt, createBrowserElkFactory, runElkAttempt, elkDeadlineMs, ElkDeadlineError } from './layout/elk-worker.js';
 export type { ElkAttempt, CreateElkAttempt, ElkWorker, ElkClock } from './layout/elk-worker.js';
+export { sidesTwo } from './layout/sides-two.js';
+export { rebuildNodeGeometry } from './layout/node-geometry.js';
+export { freezePortTopology, restoreLayoutModel, withLayoutMutation } from './layout/mutation.js';
+export type { PlacementRule } from './layout/mutation.js';

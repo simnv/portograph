@@ -153,13 +153,39 @@ Output: absolute group boxes, node positions, in-row order.
 Immediately after the skeleton, before anything is pinned. Undecided same-tier directions take
 `left`/`right` from the in-row order; shared ports then recompute their majority across all peer
 directions, including already-known higher/lower-tier directions. Nodes are **re-sized** (stage 3 formula) if a side gained ports. Each row is
-then **repacked horizontally** in ELK's order with the standard node gap, and group boxes
-recomputed. Each side receives a provisional engine order by far-end x (for top/bottom) or y
-(left/right); author `order:` wins and is immutable.
+then **repacked horizontally** in ELK's order, and group boxes are recomputed. The gap is at
+least 20 px plus the two node half-strokes. Where facing named pills protrude farther, use the
+sum of their measured half-widths and half-strokes instead. Adjacent groups and tier bands move
+as needed to contain the resized rows. Each side receives a provisional engine order by far-end x (for top/bottom) or y
+(left/right). Use translated skeleton peer anchors when present and peer-node centres otherwise;
+shared-port peers use their mean coordinate. Capture those coordinates before the final anchor
+rebuild. Author `order:` sorts the author-ordered subsequence; free ports occupy the remaining
+positions. Preserve signed keys and the relative physical order of unequal author keys, not an
+absolute slot number.
 
 From here on port identity, count, side and author `order:` are **frozen**. Later bar and bundle
 rules may adjust engine-selected slots and the documented stage-7 rules may grow or move geometry,
 but no stage may shrink a node below its current content or author floor.
+
+Stage 5 also produces measured node and description labels, icon bounds, named pills and exact
+port-associated pill labels. Centre content inside its asymmetric content insets. Anonymous ports
+receive anchors only. `rebuildNodeGeometry(draft, ids, 'current')` lets later rules retain their
+explicit anchors while replacing content geometry by stable owner/ID. The renderer consumes
+these bounds without measuring or reflowing text. Group and link labels have later producers.
+
+`freezePortTopology` publishes an immutable clone with a serializable topology/floor baseline.
+Every subsequent stage uses `withLayoutMutation(previous, rule, draft => { ... })` and retains
+its returned snapshot. Existing mutating helpers receive the draft. The closed rule validators
+check membership, resolved semantics, relative author order, measured capacity and floors before
+commit. A retained draft reference cannot change the published clone; failure leaves the input
+unchanged. Runtime measurements and diagnostics remain writable inside the transaction.
+
+A rule must integrate its real claim rebuild and validator before it can create or change that
+claim. An unimplemented rebuild rejects the affected mutation. Claim-free geometry changes still
+run geometry and ownership checks. Plain `JSON.parse` does not resume placement. Use
+`restoreLayoutModel`, which validates the baseline and compares complete link/attachment,
+bundle and group-link semantics with `resolve(document)`. This proves serialized
+self-consistency, not historical authenticity. See ADR-0010.
 
 ## Stage 6 — rows
 
@@ -278,8 +304,12 @@ installing their replacements; never append a replacement beside stale geometry.
 moves geometry again, repeat the same bounded pass. Non-convergence is diagnosed, the last state
 is kept, and final gates decide whether the diagram fails.
 
-After 7f, placement is frozen: later stages may create paths and label boxes but may not move or
-resize groups, nodes or port anchors.
+After 7f, the successful `bands` transaction captures `freeze.placement`, including node content
+and pill geometry, group geometry, tier bands, regions, lanes and group-label placement. Later
+transactions and restore require exact equality with this projection. Canvas may expand, and
+runtime/diagnostic fields remain writable. Later stages may create paths and link-label boxes but
+may not move or resize groups, nodes or port anchors. An async router computes outside the
+synchronous transaction, then commits its output through the route validator.
 
 ## Stage 8 — route (remainder)
 

@@ -13,3 +13,9 @@ Late movement rebuilds claims atomically: boxes, anchors and tier bands; fixed-o
 bounded centring; non-bundle row/flank paths; bar drops; bundle paths/envelopes; then label boxes,
 clearances and containment. Replacements remove stale obstacle geometry, and final gates decide
 failure after a diagnosed non-convergence.
+
+ADR-0010 makes this boundary executable. Stage 5 publishes an immutable snapshot; later rules edit
+one checked draft and retain the returned snapshot. Persisted topology/floor metadata survives
+serialization, and restore also checks resolved document semantics. Author keys constrain relative
+order, not absolute engine slots. Node text, icons and pills rebuild from measured content and the
+rule's final anchors. Missing claim rebuilds reject affected changes until their producer lands.

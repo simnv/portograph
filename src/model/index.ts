@@ -5,9 +5,9 @@ export type {
   NormalisedNode, NormalisedPort, PortIdentity, PortRef, Route,
 } from './document.js';
 export type {
-  BarDrop, Bundle, Diagnostic, GroupLink, Junction, LabelBand, Lane, Layer,
+  BarDrop, Bundle, Diagnostic, FrozenPort, GroupLink, Junction, LabelBand, Lane, Layer, LayoutFreeze,
   LayoutGroup, LayoutLabel, LayoutLink, LayoutModel, LayoutNode, LayoutPath,
   LayoutPort, LayoutRuntime, LayoutStage, Obstacle, OwnedElement, Owner,
-  PathSegment, PillGeometry, Region, TierBand,
+  PathSegment, PillGeometry, PlacementSnapshot, Region, TierBand,
 } from './layout.js';
 export { createLayoutModel, orderedGroupIds, orderedNodeIds, serializeLayoutModel, serializeLayoutSnapshot } from './model.js';
