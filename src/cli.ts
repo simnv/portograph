@@ -1,7 +1,7 @@
 /**
  * The CLI contract: verbs, exit codes and help text.
  *
- * `bin/portograph` reads this from the built library so the two never disagree.
+ * `bin/portograph.mjs` reads this from the built library so the two never disagree.
  * The verbs themselves are wired end to end in ticket 17; until then every verb
  * is a stub that exits with `EXIT.notImplemented`.
  */

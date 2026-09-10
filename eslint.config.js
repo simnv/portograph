@@ -31,7 +31,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['bin/**/*.mjs', 'bin/portograph', 'test/**/*.ts', 'vite.config.ts', 'eslint.config.js'],
+    files: ['bin/**/*.mjs', 'test/**/*.ts', 'vite.config.ts', 'eslint.config.js'],
     languageOptions: { globals: globals.node },
   },
 );
