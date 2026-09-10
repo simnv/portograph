@@ -1,0 +1,14 @@
+#!/usr/bin/env node
+// Executable shim. It has no extension, so Node 18 may parse it as CommonJS;
+// dynamic import() is valid in both module systems and keeps the shim inert.
+import('./cli.mjs')
+  .then(({ main }) => main(process.argv.slice(2)))
+  .then(
+    (code) => {
+      process.exitCode = code;
+    },
+    (error) => {
+      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+      process.exitCode = 2;
+    },
+  );
