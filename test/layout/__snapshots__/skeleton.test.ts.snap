@@ -1,0 +1,264 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer ends, and preserves topology 1`] = `
+{
+  "groups": [
+    {
+      "bounds": {
+        "height": 63,
+        "width": 146,
+        "x": 247.5244140625,
+        "y": 12,
+      },
+      "flank": undefined,
+      "id": "providers",
+      "rowOrder": [
+        "provider-1",
+        "provider-2",
+      ],
+    },
+    {
+      "bounds": {
+        "height": 100,
+        "width": 340.0390625,
+        "x": 159.509765625,
+        "y": 135,
+      },
+      "flank": undefined,
+      "id": "datacenter",
+      "rowOrder": [
+        "EAC-01",
+        "EBR-01",
+        "EBR-02",
+        "EAC-02",
+      ],
+    },
+    {
+      "bounds": {
+        "height": 156,
+        "width": 87.509765625,
+        "x": 12,
+        "y": 135,
+      },
+      "flank": {
+        "align": "left",
+        "of": "datacenter",
+        "primaryPeer": "EAC-01",
+        "proxyPeer": "EAC-01",
+      },
+      "id": "tbr-left",
+      "rowOrder": [
+        "TBR-001",
+      ],
+    },
+    {
+      "bounds": {
+        "height": 156,
+        "width": 87.509765625,
+        "x": 559.548828125,
+        "y": 135,
+      },
+      "flank": {
+        "align": "right",
+        "of": "datacenter",
+        "primaryPeer": "EAC-02",
+        "proxyPeer": "EAC-02",
+      },
+      "id": "tbr-right",
+      "rowOrder": [
+        "TBR-002",
+      ],
+    },
+    {
+      "bounds": {
+        "height": 63,
+        "width": 146,
+        "x": 148.5244140625,
+        "y": 351,
+      },
+      "flank": undefined,
+      "id": "route-reflector",
+      "rowOrder": [
+        "RR-01",
+        "RR-02",
+      ],
+    },
+    {
+      "bounds": {
+        "height": 98,
+        "width": 170,
+        "x": 127.0244140625,
+        "y": 474,
+      },
+      "flank": undefined,
+      "id": "backbone",
+      "rowOrder": [
+        "EBB-01",
+        "EBB-02",
+      ],
+    },
+  ],
+  "nodes": [
+    {
+      "bounds": {
+        "height": 39,
+        "width": 50,
+        "x": 259.5244140625,
+        "y": 24,
+      },
+      "id": "provider-1",
+    },
+    {
+      "bounds": {
+        "height": 39,
+        "width": 50,
+        "x": 331.5244140625,
+        "y": 24,
+      },
+      "id": "provider-2",
+    },
+    {
+      "bounds": {
+        "height": 76,
+        "width": 59.009765625,
+        "x": 171.509765625,
+        "y": 147,
+      },
+      "id": "EAC-01",
+    },
+    {
+      "bounds": {
+        "height": 76,
+        "width": 66.009765625,
+        "x": 252.51953125,
+        "y": 147,
+      },
+      "id": "EBR-01",
+    },
+    {
+      "bounds": {
+        "height": 76,
+        "width": 66.009765625,
+        "x": 340.529296875,
+        "y": 147,
+      },
+      "id": "EBR-02",
+    },
+    {
+      "bounds": {
+        "height": 76,
+        "width": 59.009765625,
+        "x": 428.5390625,
+        "y": 147,
+      },
+      "id": "EAC-02",
+    },
+    {
+      "bounds": {
+        "height": 132,
+        "width": 63.509765625,
+        "x": 24,
+        "y": 147,
+      },
+      "id": "TBR-001",
+    },
+    {
+      "bounds": {
+        "height": 132,
+        "width": 63.509765625,
+        "x": 571.548828125,
+        "y": 147,
+      },
+      "id": "TBR-002",
+    },
+    {
+      "bounds": {
+        "height": 39,
+        "width": 50,
+        "x": 160.5244140625,
+        "y": 363,
+      },
+      "id": "RR-01",
+    },
+    {
+      "bounds": {
+        "height": 39,
+        "width": 50,
+        "x": 232.5244140625,
+        "y": 363,
+      },
+      "id": "RR-02",
+    },
+    {
+      "bounds": {
+        "height": 54,
+        "width": 62,
+        "x": 139.0244140625,
+        "y": 506,
+      },
+      "id": "EBB-01",
+    },
+    {
+      "bounds": {
+        "height": 54,
+        "width": 62,
+        "x": 223.0244140625,
+        "y": 506,
+      },
+      "id": "EBB-02",
+    },
+  ],
+  "tierBands": [
+    {
+      "bounds": {
+        "height": 63,
+        "width": 146,
+        "x": 247.5244140625,
+        "y": 12,
+      },
+      "groups": [
+        "providers",
+      ],
+      "tier": 0,
+    },
+    {
+      "bounds": {
+        "height": 156,
+        "width": 635.05859375,
+        "x": 12,
+        "y": 135,
+      },
+      "groups": [
+        "datacenter",
+        "tbr-left",
+        "tbr-right",
+      ],
+      "tier": 1,
+    },
+    {
+      "bounds": {
+        "height": 63,
+        "width": 146,
+        "x": 148.5244140625,
+        "y": 351,
+      },
+      "groups": [
+        "route-reflector",
+      ],
+      "tier": 2,
+    },
+    {
+      "bounds": {
+        "height": 98,
+        "width": 170,
+        "x": 127.0244140625,
+        "y": 474,
+      },
+      "groups": [
+        "backbone",
+      ],
+      "tier": 3,
+    },
+  ],
+}
+`;

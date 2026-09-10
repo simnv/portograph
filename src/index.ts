@@ -20,3 +20,7 @@ export * from './layout/sides-one.js';
 export * from './layout/size.js';
 export * from './theme/content.js';
 export * from './profiles/network/icons.js';
+export { skeleton, SkeletonError } from './layout/skeleton.js';
+export type { SkeletonOptions } from './layout/skeleton.js';
+export { createWorkerElkAttempt, createBrowserElkFactory, runElkAttempt, elkDeadlineMs, ElkDeadlineError } from './layout/elk-worker.js';
+export type { ElkAttempt, CreateElkAttempt, ElkWorker, ElkClock } from './layout/elk-worker.js';

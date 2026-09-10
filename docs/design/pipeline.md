@@ -117,6 +117,7 @@ One `elkjs` `layered` run. Options set explicitly (all verified to exist, 2026-0
 | `elk.nodeSize.constraints` | `MINIMUM_SIZE` + `PORTS` | stage-3 size is a floor ELK may grow |
 | `elk.nodeSize.minimum` | stage-3 size | |
 | `elk.layered.crossingMinimization.semiInteractive` | `true` | **the** mechanism that preserves in-layer order — used with `elk.position` to put a flank's pre-skeleton proxy peer at the outer end (`considerModelOrder` is only a soft preference and does not pin) |
+| `elk.layered.nodePlacement.strategy` | `SIMPLE` on compounds with flank proxies | keeps hinted peers at distinct outer positions; the default can stack different-width peers at one x, changing the final outer-edge tie |
 | `elk.json.shapeCoords` / `edgeCoords` | `ROOT` | absolute coordinates; no compound-relative conversion in our code |
 | `elk.randomSeed` | `1` | default; kept explicit |
 
@@ -131,6 +132,12 @@ id. If it differs from the proxy, update the selection and repack that peer to t
 preserving the other nodes' final row order. Recompute the affected row and group boxes before
 stage 5, while no path is pinned. Store the selected peer on the flank; later stages consume it
 without reselecting after geometry moves.
+
+If opposite flanks select the same primary in a multi-node row, the first flank in authored
+group declaration order owns that peer's outer position. Keep both stored primary IDs and emit
+one placement warning identifying the competing flanks and peer. This is an explicit exception
+to the outer-end contract for the other flank; its obstructed links remain for routing. A
+single-node row satisfies both ends and needs no conflict warning.
 
 **Time and failure:** ELK runs in a worker with a deadline (`layoutBudgetMs`, default 10 s at
 ≤ 300 nodes, 20 s above). On exception **or deadline**, terminate the worker and run the
@@ -192,8 +199,10 @@ port pairs** (a shared peer port counts once); compute the translation that leve
 pair; a pair is *compatible* if the same translation levels it within 0.5 px — this holds when
 both sides use the same pitch, so before comparing, **respace both facing sides to the larger of
 their two pitches** (stage 3 formula re-run for those two sides only; sizes may grow). Shift the
-flank vertically by the translation; pin every compatible non-bundle pair as a straight
-horizontal; aligned bundle members remain unpinned for 7e. Route the rest. Links from the flank
+flank vertically by the translation; pin a compatible non-bundle pair as a straight horizontal
+only when foreign geometry is clear. This check also applies when stage 4 reports opposite
+flanks sharing a primary: the other flank may have a row node between it and the stored peer.
+Obstructed pairs remain for routing; aligned bundle members remain unpinned for 7e. Route the rest. Links from the flank
 to other nodes route normally.
 *Placement-time diagnostic:* flank has more distinct links to the peer than the peer has facing
 ports → warning, extra links route. *Moves:* the flank, two nodes' sizes. *Re-validate:* row

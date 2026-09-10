@@ -31,7 +31,8 @@ export default tseslint.config(
     },
   },
   {
-    files: ['bin/**/*.mjs', 'test/**/*.ts', 'vite.config.ts', 'eslint.config.js'],
+    files: ['bin/**/*.mjs', 'runtime/**/*.cjs', 'scripts/**/*.cjs', 'test/**/*.ts', 'vite.config.ts', 'eslint.config.js'],
     languageOptions: { globals: globals.node },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
   },
 );

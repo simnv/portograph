@@ -18,7 +18,12 @@
       "import": "./dist/portograph.js",
       "require": "./dist/portograph.umd.cjs"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./node": {
+      "types": "./dist/node.d.cts",
+      "import": "./dist/node.cjs",
+      "require": "./dist/node.cjs"
+    }
   },
   "files": [
     "bin",
@@ -43,7 +48,9 @@
     "vitest": "^3.2.7"
   },
   "dependencies": {
+    "elkjs": "0.12.0",
     "postcss": "^8.5.28",
+    "web-worker": "1.4.1",
     "yaml": "^2.9.0"
   }
 }
