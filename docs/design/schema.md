@@ -84,11 +84,14 @@ pipeline. Labels are free text; ids are not.
 **Tier inference** (model-time). For each non-flank group without `tier:`: rank = the profile's
 class table applied to the group's nodes — `top` if any node class is in the profile's top set
 (network: `provider`, `internet`, `wan`), `bottom` if any is in the bottom set (`backbone`,
-`core`) and none in the top set, else `middle`. Explicit tiers are kept as given; inferred groups
-are then assigned tier indices so that all `top` groups precede all explicit tiers, all `bottom`
-groups follow them, and `middle` groups fill the range in order of first appearance, renumbering
-compactly. A group with both top- and bottom-class nodes is `middle` with a warning. Inference is
-logged as an info message.
+`core`) and none in the top set, else `middle`. An explicit tier is an author ordering rank and
+is never replaced by class inference. Normalisation forms bands in this order: one band for all
+inferred `top` groups; explicit groups ordered by authored rank, with equal ranks sharing a band;
+one band per inferred `middle` group in first-appearance order; and one band for all inferred
+`bottom` groups. Empty categories are omitted and the resulting effective tier bands are numbered
+compactly from 0. The validated input may retain the authored rank for diagnostics; the normalised
+model records only the effective `tier`. A group with both top- and bottom-class nodes is `middle`
+with a warning. Inference is logged as an info message.
 
 ## Node
 
@@ -130,7 +133,7 @@ Options:
 |---|---|---|
 | `class` | string | CSS class; decides **family** via the profile (`physical` → routed; `flow`, `sync` → overlay) |
 | `label` | string | |
-| `route` | `orthogonal` \| `straight` \| `bundle` \| `merge` \| `overlay` \| `stub` \| `group-link` | override. `merge` requires the link to be a bundle member; `group-link` requires group endpoints. M1: `stub` and `group-link` warn and fall back to routed |
+| `route` | `orthogonal` \| `straight` \| `bundle` \| `merge` \| `overlay` \| `stub` \| `group-link` | override. `merge` is selected first and validated at model time after bundle grouping; it requires membership in a bundle of ≥ 2. `group-link` requires group endpoints. M1: `stub` and `group-link` warn and fall back to routed |
 | `weight` | number | line-weight multiplier |
 
 **Aggregation eligibility** (automatic `group-link`): both endpoint groups have ≥ 2 nodes; the
@@ -142,7 +145,7 @@ family; none carries `route:`. Membership is preserved in the model.
 | Stage | Errors (stop) | Warnings |
 |---|---|---|
 | parse | bad identifier; unknown reference; node without `group`; `tier` + `align`; `align` without `of`; `of` not a tier group; two flanks on one side; link with < 2 endpoints; version missing | locked CSS property |
-| model | `*` on a node with no ports and no free anonymous slot is fine (creates one) | `*` created an anonymous port on a node that has named ports; > 1 link on a port (network); tier with no nodes; mixed top/bottom classes; > 30 nodes; `stub`/`group-link` in M1 |
+| model | `route: merge` without membership in a bundle of ≥ 2 | `*` created an anonymous port on a node that has named ports; > 1 link on a port (network); tier with no nodes; mixed top/bottom classes; > 30 nodes; `stub`/`group-link` in M1 |
 | placement | — | flank has more distinct links than the peer's facing ports; bar sources closer than pitch; bundle inversions from author order; both margins full (canvas widened) |
 | final geometry | gate failures (see `quality.md`) | advisories |
 

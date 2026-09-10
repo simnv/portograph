@@ -12,8 +12,9 @@ had moved.
 → 10 validate → 11 emit
 ```
 
-Every stage reads and writes the **layout model** (`LayoutModel`, serialisable as the layout JSON
-that `render` and `score` consume). No stage touches the DOM.
+Stage 0 returns a serialisable **normalised document** (`NormalisedDocument`). Stage 1 wraps that
+document in the **layout model** (`LayoutModel`); stages 1–11 read and write that model. The layout
+JSON is the serialised `LayoutModel` that `render` and `score` consume. No stage touches the DOM.
 
 Three principles, each learned the hard way:
 
@@ -22,15 +23,16 @@ Three principles, each learned the hard way:
    dependent* choices (straight eligibility, stub) wait for a trial route.
 2. **Reserve space before using it.** Lanes, bands, bar spans and bundle rows are allocated while
    placing, never discovered while routing.
-3. **Freeze before pinning.** No fixed path is created until every node's sides, size and row
-   position are final (stage 5/6). Anything a later stage moves must be re-validated; the
-   invalidation rules are listed per stage.
+3. **Freeze topology before pinning.** Port identity, count, side and author `order:` freeze in
+   stage 5. Engine-selected order and geometry may still change only where a later stage says so.
+   Dimensions never shrink below their current content or author floor. Anything a later stage
+   moves must be re-validated; placement freezes after stage 7f.
 
 ---
 
 ## Stage 0 — parse
 
-YAML → validated document (`schema.md`). Diagnostics are staged: **parse-time** (references,
+YAML → validated and normalised document (`NormalisedDocument`; `schema.md`). Diagnostics are staged: **parse-time** (references,
 structure, identifiers), **model-time** (after normalisation: tier inference, families,
 port allocation), **placement-time** (capacity, facing ports — see stage 7b) and **final-geometry**
 (gates). A diagnostic is never emitted before its inputs exist.
@@ -39,14 +41,16 @@ port allocation), **placement-time** (capacity, facing ports — see stage 7b) a
 
 For every link, in this fixed order, from the document only:
 
-1. **Author `route:`** — taken as given (validated: `merge` needs ≥ 2 members; `group-link`
-   needs group endpoints).
+1. **Author `route:`** — selected first. Syntax and `group-link` endpoint shape are validated now;
+   `merge` membership is validated after bundle grouping in step 4.
 2. **Aggregation** — a set of links forms a group-link only if: both endpoint groups have ≥ 2
    nodes, the links are the **complete** bipartite set between them, all share one class and
    family, and none carries an override. Membership (every member link, its ports, class) is
    retained in the model and rendered as a tooltip/legend entry, never discarded.
 3. **Family** — from class via the profile: `routed` or `overlay`.
-4. **Bundle membership** — ≥ 2 routed links between the same node pair (ports may differ).
+4. **Bundle membership** — ≥ 2 routed links between the same node pair (ports may differ). After
+   grouping, a selected `merge` override without membership in a bundle of at least two is a
+   model-time error.
 5. **Stub** — deferred: needs a trial route (stage 8 marks candidates; stage 9 applies).
 
 **M1 behaviour:** `stub` and `group-link` are parsed and recorded but not applied; a warning
@@ -89,12 +93,21 @@ One `elkjs` `layered` run. Options set explicitly (all verified to exist, 2026-0
 | `elk.portConstraints` | `FIXED_SIDE` | phase-one sides |
 | `elk.nodeSize.constraints` | `MINIMUM_SIZE` + `PORTS` | stage-3 size is a floor ELK may grow |
 | `elk.nodeSize.minimum` | stage-3 size | |
-| `elk.layered.crossingMinimization.semiInteractive` | `true` | **the** mechanism that preserves in-layer order — used to pin a flank's primary peer to the outer end via `elk.position` x on the row's nodes (`considerModelOrder` is only a soft preference and does not pin) |
+| `elk.layered.crossingMinimization.semiInteractive` | `true` | **the** mechanism that preserves in-layer order — used with `elk.position` to put a flank's pre-skeleton proxy peer at the outer end (`considerModelOrder` is only a soft preference and does not pin) |
 | `elk.json.shapeCoords` / `edgeCoords` | `ROOT` | absolute coordinates; no compound-relative conversion in our code |
 | `elk.randomSeed` | `1` | default; kept explicit |
 
 **Lateral links (flank↔tier) are withheld** from the ELK graph. Flank groups are placed after ELK
 by rule: beside their `of:` tier, on their `align` side, top-aligned with the tier band.
+
+Primary-peer selection has two explicit phases. Before ELK, choose a **proxy peer** by greatest
+link count; a count tie uses declaration row order nearest the flank's side, then node id. Use the
+proxy for the `elk.position` outer-end hint. After ELK, choose the stored **primary peer** among
+the greatest-count peers by nearest distance to the final row's flank-facing outer edge, then node
+id. If it differs from the proxy, update the selection and repack that peer to the outer end while
+preserving the other nodes' final row order. Recompute the affected row and group boxes before
+stage 5, while no path is pinned. Store the selected peer on the flank; later stages consume it
+without reselecting after geometry moves.
 
 **Time and failure:** ELK runs in a worker with a deadline (`layoutBudgetMs`, default 10 s at
 ≤ 300 nodes, 20 s above). On exception **or deadline**, terminate the worker and run the
@@ -110,18 +123,20 @@ Output: absolute group boxes, node positions, in-row order.
 Immediately after the skeleton, before anything is pinned. Undecided ports take `left`/`right`
 from the in-row order. Nodes are **re-sized** (stage 3 formula) if a side gained ports. Each row is
 then **repacked horizontally** in ELK's order with the standard node gap, and group boxes
-recomputed. Every side's port order is finalised by far-end x (for top/bottom) or y (left/right);
-author `order:` wins.
+recomputed. Each side receives a provisional engine order by far-end x (for top/bottom) or y
+(left/right); author `order:` wins and is immutable.
 
-From here on sides, sizes and port counts are **frozen**. Later stages move nodes and ports but
-never change what a node is.
+From here on port identity, count, side and author `order:` are **frozen**. Later bar and bundle
+rules may adjust engine-selected slots and the documented stage-7 rules may grow or move geometry,
+but no stage may shrink a node below its current content or author floor.
 
 ## Stage 6 — rows
 
 Per tier: all `row`-shape nodes share one top y. Repack horizontally again if the flattening
 created overlap (nodes ELK stacked at one x). For each same-tier pair with facing east/west
 ports: level the facing ports (move the ports on the node with fewer on that side) and, if
-nothing lies between, **pin** the link as a straight horizontal.
+nothing lies between, **pin** a non-bundle link as a straight horizontal. Bundle endpoints are
+levelled here but remain unpinned for stage 7e.
 
 **Invalidation:** row alignment runs before any fixed path exists, so nothing needs re-checking.
 
@@ -135,24 +150,27 @@ may move and what it must therefore re-validate.
 
 For every link whose path must transit a tier it does not terminate in: reserve a **lane** —
 a vertical corridor of width `laneW = pillW + gap` — in the margin of the intermediate group on
-the side nearer the source x. Lanes have an **owner** (the link) and a **segment** (the vertical
-run); the owner's route through the lane is fixed here; the lane is an obstacle to every *other*
-link. Capacity: the margin between the intermediate group and its neighbour in that tier (or a
-flank) holds ⌊margin / laneW⌋ lanes; overflow widens the tier gap and the canvas (canvas is never
-fixed). A link transiting several tiers reserves a lane at each. Lanes are allocated on the
+the side nearer the source x. Lanes have an **owner** (the link) and a vertical-run reservation;
+the lane is an obstacle to every *other* link. For a non-bundle owner the route segment through
+the lane is fixed here. For a bundle member, 7a records only the owned lane x and extent; stage 7e
+consumes that reservation when it creates the member path. Capacity: the margin between the
+intermediate group and its neighbour in that tier (or a flank) holds ⌊margin / laneW⌋ lanes;
+overflow widens the tier gap and the canvas (canvas is never fixed). A link transiting several
+tiers reserves a lane at each. Lanes are allocated on the
 source node's outermost slots of the departing side so the run is an in-span vertical. *Moves:*
 group boxes, canvas. *Re-validate:* nothing yet pinned except row links — recheck them.
 
 ### 7b — flank align
 
-For each flank: primary peer = the tier node with the most links to it; the peer must be a node
-of the flank's `of:` tier and sits at the tier's outer end (stage 4). Consider only **distinct
+For each flank, consume the stored primary peer selected and packed at the end of stage 4. It must
+be a node of the flank's `of:` tier; 7b never reselects it after movement. Consider only **distinct
 port pairs** (a shared peer port counts once); compute the translation that levels the first
 pair; a pair is *compatible* if the same translation levels it within 0.5 px — this holds when
 both sides use the same pitch, so before comparing, **respace both facing sides to the larger of
-their two pitches** (stage 3 formula re-run for those two sides only; sizes may grow; nothing is
-pinned yet on those nodes). Shift the flank vertically by the translation; pin every compatible
-pair as a straight horizontal; route the rest. Links from the flank to other nodes route normally.
+their two pitches** (stage 3 formula re-run for those two sides only; sizes may grow). Shift the
+flank vertically by the translation; pin every compatible non-bundle pair as a straight
+horizontal; aligned bundle members remain unpinned for 7e. Route the rest. Links from the flank
+to other nodes route normally.
 *Placement-time diagnostic:* flank has more distinct links to the peer than the peer has facing
 ports → warning, extra links route. *Moves:* the flank, two nodes' sizes. *Re-validate:* row
 links on the peer.
@@ -181,14 +199,18 @@ two sources are closer than `pitch`, the later drop fans horizontally to the nex
 spans of stacked bars are merged to their union transitively when any pair overlaps by > 50 % of
 the narrower; a bar with no ports spans the group's label only. A drop to a lower bar crosses the
 upper bar (`barCross`); a link entering a bar from **below** is the mirror case and also counted.
-Drops are **pinned**. *Moves:* nothing outside the bar group (the group box shrinks to the bars).
+For a bundle-member drop, compute and reserve its bar slot, span contribution, drop hint and
+`barCross` ownership here, but do not pin a member path. Stage 7e consumes the reservation and
+preserves the bar-owned `barCross` annotation on the resulting member path. Non-bundle drops are
+pinned here. *Moves:* nothing outside the bar group (the group box shrinks to the bars).
 
 ### 7e — bundles
 
 For each bundle (stage 1): reserve `n × memberGap` rows in the tier gap on the exit side of the
-lower node (`memberGap` = 16 px; distinct from `laneW`), widening the gap. Route one centreline
-with the **bundle envelope** (`n × memberGap` wide) as its width — so offsets cannot hit
-obstacles — then offset members. Member order at each end is the port order; the number of
+lower node (`memberGap` = 16 px; distinct from `laneW`). Apply all resulting tier-gap growth before
+creating any bundle path. Route one centreline with the **bundle envelope** (`n × memberGap` wide)
+as its width — so offsets cannot hit obstacles — then offset members, consuming any lane and
+bar-drop reservations from 7a/7d. Member order at each end is the port order; the number of
 unavoidable crossings inside the channel equals the **inversion count** of the permutation
 between the two ends. Engine-ordered ports are reordered to make it zero; author-`order:`ed ports
 keep their inversions, each drawn as one explicit crossing and reported. Members are **pinned**.
@@ -202,6 +224,25 @@ left edge; if its bbox intersects any pinned segment or lane, slide right to the
 wide enough; if none, **widen the group** by the label width and push its row neighbours (which
 re-triggers 7c for groups whose parents moved — bounded by the same 8-pass limit). The label
 bbox becomes an obstacle. Centre is never a fallback.
+
+**Atomic rebuild after 7e/7f movement.** Tier-gap growth in 7e moves the lower tier bands and
+their contents; neighbour pushes or centring in 7f move the affected row groups and descendants.
+After any such movement, rebuild changed claims atomically in this order:
+
+1. Recompute moved node/group boxes, port anchors and tier bands.
+2. Update owned lane extents without reallocating their fixed x positions or owners.
+3. Rerun affected child-under-parents centring within the shared 8-pass limit.
+4. From the final anchors, rebuild affected non-bundle row paths, non-bundle flank paths, bar
+   drops, then bundle paths and envelopes; preserve bar-owned `barCross` annotations.
+5. Place or recheck group-label bboxes, then check all affected clearances and containment.
+
+Remove the old versions of changed paths, envelopes, label boxes and obstacle entries before
+installing their replacements; never append a replacement beside stale geometry. If rebuilding
+moves geometry again, repeat the same bounded pass. Non-convergence is diagnosed, the last state
+is kept, and final gates decide whether the diagram fails.
+
+After 7f, placement is frozen: later stages may create paths and label boxes but may not move or
+resize groups, nodes or port anchors.
 
 ## Stage 8 — route (remainder)
 
@@ -260,8 +301,9 @@ without partitioning. The **full pipeline** at 1,000 nodes has not been measured
 
 ## What the prototype proved and what it did not
 
-Proved on the M1 golden (`prototype/regions.mjs`, `tall5`): stages 3, 6, 7a–7f produce
-0 crossings, 0 overlaps, 4 bends with every link claimed; libavoid idle. **Not yet exercised:**
+Proved on the prototype source topology (`prototype/regions.mjs`, `tall5`): stages 3, 6, 7a–7f
+produce 0 crossings, 0 overlaps, 4 bends with every link claimed; libavoid idle. The approved M1
+JPEG fixture has different topology and must be measured independently. **Not yet exercised:**
 stage 8 with real remainder demand (NTP golden), bundles with author-fixed ports, 3+ stacked
 bars, fallback at scale under a deadline, aggregation, stubs, overlay masking, label repair.
 Each is a ticket or an explicit M2 item.

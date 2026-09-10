@@ -44,8 +44,10 @@ axis-aligned segments by line and sweeping intervals — O(S log S), never pairw
 
 ## Soft score
 
-`Q = Σ wᵢ · clamp(Mᵢ, 0, 1)`, weights sum to 1. Each `Mᵢ` is defined for every diagram, including
-empty ones (value 1 where the metric has no subject).
+`Q = Σ wᵢ · clamp(Mᵢ, 0, 1) / Σ wᵢ` over the eight scored metrics. Their existing raw weights
+sum to 0.95; normalising by that total preserves their relative importance. Each `Mᵢ` is defined
+for every diagram, including empty ones (value 1 where the metric has no subject). Symmetry is
+reported separately and does not contribute to either sum.
 
 | Metric | Formula | Empty-set value | Weight |
 |---|---|---|---|
@@ -57,7 +59,7 @@ empty ones (value 1 where the metric has no subject).
 | Flow consistency | fraction of routed *vertical* segments whose direction (source→target) is downward when the target tier is lower | 1 | 0.10 |
 | Aspect ratio | `min(w, h) / max(w, h)` of the bounding box | 1 | 0.05 |
 | Segment uniformity | `max(0, 1 − std / mean)` of routed segment lengths | 1 | 0.05 |
-| Symmetry | reported only: fraction of nodes with a mirror partner about the bbox's vertical axis (±4 px) | — | 0.05 (report) |
+| Symmetry | reported only: fraction of nodes with a mirror partner about the bbox's vertical axis (±4 px) | — | — |
 
 Use raw `c/m` in assertions, never the Purchase-normalised form (it saturates near 1 for every
 non-random layout).
@@ -78,7 +80,7 @@ the snapshot block) layout time per stage.
 | Compactness | ≥ 0.25 | ≥ 0.2 | advisory |
 | Grid alignment | ≥ 0.6 | ≥ 0.5 | advisory |
 | Flow | ≥ 0.8 | ≥ 0.7 | advisory |
-| Aspect | ≥ 0.5 | ≥ 0.4 | advisory (the M1 baseline is 0.496 — wide diagrams are wide) |
+| Aspect | ≥ 0.5 | ≥ 0.4 | advisory (the prototype measured 0.496; the JPEG golden baseline is pending) |
 | `Q` vs approved baseline | ± 0.05 | ± 0.05 | **assertion** |
 
 ## Gate enforcement by size
@@ -91,19 +93,25 @@ the snapshot block) layout time per stage.
 
 ## Test design
 
-- **Fixtures first**: the golden YAML files and their hand-written expected models are ticket 00
-  — inputs exist before the pipeline does, so no ticket's acceptance depends on a later ticket.
+- **Fixtures first**: ticket 00 owns the approved golden YAML, its hand-written expected model,
+  and the 14 rule counter-examples. The ticket that owns a parser diagnostic, API probe, router
+  remainder, gate pair or scale generator also owns that test-only input; these do not alter or
+  reopen the approved golden.
 - **Golden tests**: `render` reviewed once by the maintainer; thereafter the layout JSON is an
   **exact snapshot** (runtime block excluded). Determinism is not required but is free.
 - **Gate tests**: every golden passes G1–G8.
-- **Score tests**: `Q` within ± 0.05 of the approved value; crossings-outside-bundles may only
-  go down without a waiver.
+- **Score tests**: before golden approval, record a candidate `Q`; after ticket 18 approves it,
+  assert `Q` within ± 0.05 of that value. Crossings-outside-bundles may only go down without a
+  waiver. A nonempty zero-link diagram gives value 1 only to metrics whose subject is routed
+  links and must produce a finite node-aware `Q`; a truly empty geometry has `Q = 1`.
 - **Rule unit tests** — the codex counter-examples as fixtures: flank facing two peers; flank
   with unequal pitch on the two sides; many links sharing one peer port; same-tier nodes stacked
   at one x; a parent port feeding two children; three stacked bars; a bar fed from both sides;
   sources 1 px apart on a bar; a bundle with author-`order:` reversed ends (inversions = 3);
   both margins occupied; a group label with no free gap; a link label that fits nowhere; a
   node with no ports and a long label; a zero-link diagram.
+- **Tier and flank ties**: mixed inferred-top plus explicit tier 0; sparse explicit tiers; and a
+  4–4 primary-peer tie resolved toward the flank-facing outer peer, then node id.
 - **API probes** (before ticket 06/13): `partitioning.activate`, `semiInteractive` + `position`,
   `nodeSize.constraints/minimum`, `shapeCoords=ROOT`; libavoid `setExclusive(false)`,
   `JunctionRef`, pin on boundary → stem length.

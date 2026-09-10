@@ -19,7 +19,7 @@ drew it. Network diagrams first; software architecture and electrical panels nex
 | **side** | One of `top`, `right`, `bottom`, `left`. Each port has exactly one side, assigned by the engine from the peer's position unless the author fixes it. | |
 | **link** | A connection between two ports. Has a **class** (which decides its *family*) and optionally a **route** override. | *edge* (graph-theory word; avoid), *connection* |
 | **group** | A labelled container holding nodes. A node belongs to exactly one group. A group has a **tier** or is a **flank**, and has a **shape**. | *location* (d3-fd's word), *zone*, *area* |
-| **tier** | An integer rank on a group giving its row in the top-to-bottom hierarchy. Tier 0 is the top. Inferred from node classes by the profile when omitted; an explicit `tier:` always wins. | *layer* (reserved for OSI/link-class layers) |
+| **tier** | An integer ordering rank on a group giving its row in the top-to-bottom hierarchy. Tier 0 is the top. Inferred from node classes by the profile when omitted; an explicit `tier:` always wins over class inference. Effective tier bands are compact after normalisation while preserving explicit-rank order. | *layer* (reserved for OSI/link-class layers) |
 | **flank** | A group placed *beside* a tier rather than in it: `align: left` or `align: right`. Its links to the tier are lateral. A flank has a **primary peer** — the tier node it shares the most links with. | a tier member with `position` hints |
 | **shape** (of a group) | How the group arranges its nodes: `row` (default), `bar`, `grid`, `ring`, `free`. M1 ships `row` and `bar`. | *layout algorithm* |
 | **bar** | A group shape where each node renders as a horizontal bar spanning its attached ports' x-range; links onto a bar are vertical drops, ports ordered by source x. Bars may stack; a drop may cross an upper bar to reach a lower one. | a wide `row` node |
@@ -46,7 +46,7 @@ drew it. Network diagrams first; software architecture and electrical panels nex
 1. **Links attach to ports, never to nodes.** A link written to a bare node gets an anonymous port.
 2. **A node has exactly one group.** Groups do not nest in M1.
 3. **Node size is derived from its content and its ports:** the larger of the measured label/description/icon bounds, the author's `size:` floor, and per-side port counts × the measured pitch of that side. Never shrunk to fit.
-4. **Sides are assigned in two phases and then frozen:** from tier geometry before the skeleton; intra-tier sides immediately after it. No fixed path exists before sides, sizes and rows are final.
+4. **Port topology freezes before paths:** identity, count, side and author `order:` are fixed after the two side phases. Engine-selected order may still change where bar and bundle rules require it. Placement may grow or move geometry only through its declared rules; it never shrinks a node below its current content or author floor. Final placement freezes after all region rules.
 5. **Meaning before geometry, space before use:** which technique a link gets is decided from the document (stage 1); lanes, bands, bundle rows and bar spans are reserved during placement, not discovered during routing.
 6. **Every fixed path is an obstacle** for everything routed after it. All paths are validated together at the end.
 7. **Region rules are the router for regular tiered diagrams.** libavoid routes only what the rules do not claim.

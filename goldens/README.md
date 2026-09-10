@@ -3,8 +3,10 @@
 [m1-sip-edge.yaml](m1-sip-edge.yaml) transcribes
 [the target JPEG](../docs/design/target-example.jpeg).
 [m1-sip-edge.expected.json](m1-sip-edge.expected.json) is the hand-written
-normalised model. The 14 diagrams under `synthetic/` cover the counter-examples in
-[quality.md](../docs/design/quality.md#test-design).
+normalised model. The 14 diagrams under `synthetic/` cover the rule counter-examples in
+[quality.md](../docs/design/quality.md#test-design). Owning implementation tickets add their own
+test-only parser diagnostics, API probes, gate models, remainder cases and scale generators;
+those additions do not alter or reopen the approved golden.
 
 The maintainer approved these fixture inputs and the expected normalised model
 on 2026-09-10. They precede the implementation. No layout snapshot, render,
@@ -62,17 +64,17 @@ that file is not included in this repository. It was checked during ticket 00.
 
 The maintainer confirmed the target JPEG as the golden's source on 2026-09-10.
 The fixtures already follow it. The prototype's measured baseline still applies
-only to the prototype input. These later acceptance statements need updates
-before they can serve as assertions for this golden:
+only to the prototype input. The M1 preflight corrected these later acceptance statements before
+implementation:
 
-- Ticket 02's migrated legacy model cannot equal this model because the wiring differs.
-- Ticket 04's bundle counts assume the prototype. This golden has four four-link
+- Ticket 02 now uses a separate legacy migration input because its model cannot equal this one.
+- Ticket 04 now uses this golden's four four-link
   node pairs and one two-link node pair, all eligible for bundle membership.
-- Ticket 09's 12 straight flank links and four EBR-to-RR links assume the prototype.
-- Ticket 12's exact label positions and tickets 17–18's prototype metric baseline
-  need measurement on this input.
-- Link-label coverage comes from `unfittable-link-label.yaml`; adding labels to
-  the golden would add text absent from the JPEG.
+- Ticket 09 now uses 16 flank links and four EBR-to-bar transit links; no EBR-to-RR links exist.
+- Ticket 12 defers exact label positions, and tickets 17–18 measure and approve a new score
+  baseline on this input.
+- Link-label coverage comes from ticket-owned synthetic inputs; adding labels to the golden would
+  add text absent from the JPEG.
 
 ## Normalised model contract
 

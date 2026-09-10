@@ -11,9 +11,10 @@ Pronounced **POR-to-graf** · Портограф.
 
 ## Status
 
-**Design complete, implementation not started.** This repository currently holds the design
-record, the reference corpus it was built from, and the prototype that proved the approach on the
-first golden diagram:
+**M1 implementation is in progress.** The approved YAML fixtures and TypeScript package scaffold
+are in place. Follow the [implementation map](.scratch/m1-example-diagram/map.md) for ticket status.
+The repository also holds the design record, reference corpus, and prototype results below.
+These measurements use the prototype topology; the JPEG golden has different wiring:
 
 | tall2 (solver + router) | **tall5 (solver + router + nine region rules)** |
 |---|---|
@@ -58,8 +59,11 @@ See [`AGENTS.md`](AGENTS.md): tickets live in `.scratch/<feature>/issues/`, deci
 `docs/adr/`, vocabulary in `CONTEXT.md`. Every ticket is reviewed adversarially by codex (code) and
 agy (renders) before merge; correctness and metric regressions block.
 
-## Toolchain (decided, not yet scaffolded)
+## Toolchain
 
 TypeScript · elkjs 0.12 (layered; tiers by partitioning with per-band fallback) · libavoid-js for
 links the region rules do not claim · Vite lib build + `vite-plugin-dts` · Vitest · zero DOM in the
-core. Node ≥ 18.
+core. Supported Node versions: `^18.18.0 || ^20.9.0 || >=22.0.0`.
+
+Run `npm ci`, then `npm run build`, `npm test`, `npm run typecheck`, and `npm run lint`.
+The CLI currently exposes help and four verb stubs; end-to-end behavior is ticket 17.
