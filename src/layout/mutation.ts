@@ -9,6 +9,7 @@ import { measureText } from '../text/index.js';
 import { NODE_CONTENT_GEOMETRY } from '../theme/content.js';
 import { nodeGap } from './skeleton-graph.js';
 import { rebuildBands, union, validateSkeletonBands } from './skeleton-geometry.js';
+import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 
 export type PlacementRule = 'rows' | 'lanes' | 'flanks' | 'centre' | 'bars' | 'bundles'
   | 'bands' | 'route' | 'link-labels' | 'validate' | 'emit';
@@ -137,8 +138,9 @@ function validateTechniques(model: LayoutModel, baseline: LayoutModel): void {
   for (const [index, link] of model.links.entries()) {
     const expected = baseline.links[index]!.technique;
     const authored = model.document.links[link.sourceIndex]!.route;
+    // Only a rule with a landed validator may select a technique; today that is the rows rule for its candidates.
     const geometrySelected = authored === undefined && link.layer === 'routed' && !link.bundle && !link.groupLink
-      && stages.indexOf(model.stage) >= stages.indexOf('rows')
+      && stages.indexOf(model.stage) >= stages.indexOf('rows') && rowPathCandidate(model, link)
       && (expected === undefined || expected === 'straight' || expected === 'orthogonal')
       && (link.technique === 'straight' || link.technique === 'orthogonal');
     if (!geometrySelected) same(pick(link, ['technique']), pick(baseline.links[index]!, ['technique']), 'Link technique contradicts authored route, effective layer or M1 fallback');
@@ -147,10 +149,22 @@ function validateTechniques(model: LayoutModel, baseline: LayoutModel): void {
 /** Every protected result passes this same boundary, including direct freeze and restore. */
 function validatePublication(model: LayoutModel, baseline: LayoutModel): void {
   jsonValue(model);
-  if (hasClaims(model)) throw new Error('Claim validator is not implemented');
+  if (hasUnsupportedClaims(model)) throw new Error('Claim validator is not implemented');
   validateTechniques(model, baseline);
   validateGeometry(model, diagnosed(model));
   validateFreeze(model);
+  validateRowPaths(model);
+}
+/** Row paths are derived claims: every candidate must carry exactly the path a fresh rebuild produces. */
+function validateRowPaths(model: LayoutModel): void {
+  if (stages.indexOf(model.stage) < stages.indexOf('rows')) return;
+  const expected = clone(model);
+  rebuildRowPaths(expected);
+  for (const [index, link] of model.links.entries()) {
+    if (!rowPathCandidate(model, link)) continue;
+    same(link.path, expected.links[index]!.path, `Row path on ${link.id} contradicts the rows rule`);
+    same(link.technique, expected.links[index]!.technique, `Row path technique on ${link.id} contradicts the rows rule`);
+  }
 }
 function validateGeometry(model: LayoutModel, allowNonConvergence = false): void {
   jsonValue(model);
@@ -280,8 +294,10 @@ function claims(model: LayoutModel) {
     labelBands: model.labelBands, barDrops: model.barDrops, obstacles: model.obstacles,
     labels: model.labels.filter(label => !['node', 'description', 'pill'].includes(label.role ?? '')) };
 }
-function hasClaims(model: LayoutModel): boolean {
-  return model.links.some(link => link.path !== undefined) || model.lanes.length > 0 || model.barDrops.length > 0
+function hasUnsupportedClaims(model: LayoutModel): boolean {
+  const rowStage = stages.indexOf(model.stage) >= stages.indexOf('rows');
+  return model.links.some(link => link.path !== undefined && !(rowStage && rowPathCandidate(model, link)))
+    || model.lanes.length > 0 || model.barDrops.length > 0
     || model.regions.length > 0 || model.junctions.length > 0
     || model.bundles.some(b => b.rows !== undefined || b.centreline !== undefined || b.envelope !== undefined || b.memberGap !== undefined || b.inversions !== undefined)
     || model.obstacles.length > 0 || model.labelBands.length > 0 || claims(model).labels.length > 0;
@@ -318,12 +334,19 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
   same(draft.document, model.document, 'Document changed'); same(draft.freeze, model.freeze, 'Freeze metadata changed');
   same(structure(draft), structure(model), 'Topology or membership changed');
   same(semantics(draft), semantics(model), 'Resolved semantics changed');
+  for (const [index, link] of draft.links.entries()) {
+    if (rowPathCandidate(model, link) && !equal(pick(link, ['path', 'technique']), pick(model.links[index]!, ['path', 'technique']))) {
+      throw new Error(`Row path on ${link.id} is derived by the transaction from final anchors; callbacks cannot edit it`);
+    }
+  }
   same(claims(draft), claims(model), `${rule} claim validator/rebuild is not implemented`);
   same(draft.regions, model.regions, `${rule} region rebuild is not implemented`);
   const before = placement(model), after = placement(draft);
   const changed = !equal(before, after);
   if (changed && !permission.move) throw new Error(`${rule} cannot change placement`);
-  if (changed && hasClaims(model)) throw new Error(`${rule} requires an unimplemented claim rebuild`);
+  if (changed && hasUnsupportedClaims(model)) throw new Error(`${rule} requires an unimplemented claim rebuild`);
+  // Rebuild containing boxes and node content first, so every rule check below sees the final geometry.
+  if (changed) { rebuildBoxes(draft); rebuildNodeGeometry(draft, orderedNodeIds(draft.document), 'current'); }
   const bundledPorts = new Set(model.links.filter(link => link.bundle).flatMap(link => [JSON.stringify(link.attachments!.from), JSON.stringify(link.attachments!.to)]));
   const flankSides = new Map<string, Set<string>>();
   for (const group of Object.values(model.groups).filter(group => group.flank)) {
@@ -334,6 +357,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
   for (const [id, group] of Object.entries(draft.groups)) {
     same(omit(group, ['bounds']), omit(model.groups[id]!, ['bounds']), 'Undeclared group field changed');
     if (rule === 'rows' && group.flank) same(group, model.groups[id], 'Rows cannot move flank groups');
+    if (rule === 'rows' && !group.flank && draft.document.groups[id]!.shape !== 'row') same(group, model.groups[id], 'Rows cannot change non-row groups');
     if (rule === 'flanks' && group.flank) same(group.bounds!.x, model.groups[id]!.bounds!.x, 'Flanks cannot translate groups horizontally');
     if (rule === 'bars' && draft.document.groups[id]!.shape !== 'bar') same(group, model.groups[id], 'Bars cannot move another group');
     if (rule === 'flanks' && !group.flank && !Object.values(model.groups).some(g => g.flank?.of === id)) same(group, model.groups[id], 'Flanks cannot move another group');
@@ -389,7 +413,8 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
       if (!group.flank) same(pick(node.bounds!, ['x', 'y']), pick(old.bounds!, ['x', 'y']), 'Flanks cannot translate primary peer');
     }
   }
-  if (changed) { rebuildBoxes(draft); rebuildNodeGeometry(draft, orderedNodeIds(draft.document), 'current'); }
+  // The rows rule produces row paths; any later movement replaces them from the final anchors.
+  if (changed || rule === 'rows') rebuildRowPaths(draft);
   draft.stage = rule;
   draft.runtime.stages.push({ stage: rule, durationMs: Date.now() - started });
   if (rule === 'bands') draft.freeze!.placement = clone(placement(draft));

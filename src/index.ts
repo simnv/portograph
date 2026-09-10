@@ -28,3 +28,6 @@ export { sidesTwo } from './layout/sides-two.js';
 export { rebuildNodeGeometry } from './layout/node-geometry.js';
 export { freezePortTopology, restoreLayoutModel, withLayoutMutation } from './layout/mutation.js';
 export type { PlacementRule } from './layout/mutation.js';
+export { rows } from './layout/rows.js';
+export { rebuildRowPaths, expectedRowPath, straightCorridorClear, facingPair, rowPathCandidate, STRAIGHT_PATH_CLEARANCE } from './layout/row-paths.js';
+export type { FacingPair } from './layout/row-paths.js';

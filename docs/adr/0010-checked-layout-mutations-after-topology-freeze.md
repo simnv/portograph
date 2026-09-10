@@ -31,3 +31,9 @@ rectangle fields, row sequence and authored flank side remain structural checks 
 non-convergence diagnostic. Rows preserve flank placement; flank alignment translates vertically.
 Technique validation preserves author overrides and M1 fallbacks while allowing automatic routed
 links to select straight or orthogonal from the rows stage through their actual rule validator.
+
+Row paths are the first derived claim. The transaction rebuilds them from final anchors in the
+rows stage and after every later committed movement, replacing stale paths instead of appending.
+Publication validates each row candidate against a fresh rebuild, so restore and every stage
+share one producer. Callbacks cannot write or remove a row path; other path claims still reject
+until their producer lands.

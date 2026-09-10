@@ -89,7 +89,8 @@ describe('checked public layout transactions', () => {
     expect(serializeLayoutSnapshot(routed)).not.toContain('totalMs');
   });
   it('rejects unimplemented path claims instead of accepting a validator flag', async () => {
-    const model = await placed(simple);
+    // Cross-tier bundle members have no row-path producer; only the rows rule owns same-tier facing paths.
+    const model = await placed(bundleYaml);
     expect(() => withLayoutMutation(model, 'rows', draft => {
       draft.links[0]!.path = { owner: draft.links[0]!.owner, layer: 'routed', fixed: true, segments: [] };
     })).toThrow(/not implemented/);

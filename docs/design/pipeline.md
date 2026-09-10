@@ -195,7 +195,36 @@ ports: level the facing ports (move the ports on the node with fewer on that sid
 nothing lies between, **pin** a non-bundle link as a straight horizontal. Bundle endpoints are
 levelled here but remain unpinned for stage 7e.
 
+`rows(model)` runs inside the `rows` transaction. The baseline is the highest row-node top in the
+tier band; nodes move up only, and row group boxes fit the flattened nodes with the standard
+padding. Repack pushes a row neighbour rightwards only when its stroke-aware clearance or
+measured facing-pill gap (the stage-5 `rowGap`) is violated, then pushes displaced row groups in
+the tier. Flanks and non-row groups never move or resize in this rule; a repack that would
+collide with one fails explicitly, and so does a stage-5 input whose flank box lacks the padding
+the containment rebuild assumes. Levelling considers routed links only; a tie in facing port counts moves the
+right-hand node's ports. A target is applied only if it keeps engine order, the measured pitch
+and the capacity padding (`pad + pitch / 2` from each end); infeasible targets are skipped in
+engine order, ports beside a levelled port keep pitch spacing, and ports between two levelled
+ports spread evenly. Rows cannot reorder ports, so an engine-inverted bundle levels one member
+here and the rest waits for stage 7e.
+
+A **row path** is a derived claim, not a callback edit. The transaction rebuilds every row
+candidate from final anchors after each committed geometry change, removing the old path before
+recreating it. A candidate is a routed, non-bundle, non-group-link link with an automatic,
+`straight` or `orthogonal` route whose frozen sides face across a same-tier pair of row nodes.
+It is pinned when the endpoints are level, the length is at least one 15 px stem and below
+2 × the larger node dimension, and the corridor clears foreign geometry at gate clearance:
+10 px stroke-aware to foreign nodes, no contact with foreign pills, labels, lanes, label bands,
+bundle reservations or obstacles, and 10 px from other fixed segments. An automatic candidate
+records `technique: straight` while pinned and `orthogonal` otherwise; authored routes keep
+theirs, and a non-candidate automatic link keeps the resolver's unset technique until its own
+rule validator lands. Publication compares each candidate's path and technique with a fresh
+rebuild, and a callback that edits either is rejected. No separate obstacle record is written:
+the pinned path itself is the obstacle for every later reservation and for stage 8.
+
 **Invalidation:** row alignment runs before any fixed path exists, so nothing needs re-checking.
+Later movement replaces row paths through the same rebuild; a candidate whose corridor a later
+reservation blocks loses its pin and routes in stage 8.
 
 ## Stage 7 — regions
 

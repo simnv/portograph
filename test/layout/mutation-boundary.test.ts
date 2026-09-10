@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/model/layout.js';
 import { freezePortTopology, restoreLayoutModel, withLayoutMutation } from '../../src/layout/mutation.js';
+import { rows } from '../../src/layout/rows.js';
 import { serializeLayoutModel } from '../../src/model/model.js';
 import { placed, simple } from './phase-two-fixture.js';
 const copy = (model: LayoutModel): LayoutModel => JSON.parse(serializeLayoutModel(model));
@@ -37,7 +38,8 @@ describe('all public publication boundaries', () => {
         draft => { draft.junctions.push({ id: 'invented', owner: { kind: 'shared-stem', id: 'invented' }, layer: 'routed', port: { node: 'missing', name: 'p', ordinal: 1 }, links: ['missing'] }); },
         draft => { draft.links[0]!.path = { owner: { kind: 'link', id: 'missing' }, layer: 'routed', fixed: true, segments: [] }; },
       ];
-      for (const edit of edits) expect(() => apply(model, draft => { edit(draft); diagnose(draft); })).toThrow(/not implemented/);
+      // The transaction boundary reports a row candidate's path as derived; the other boundaries report the missing validator.
+      for (const edit of edits) expect(() => apply(model, draft => { edit(draft); diagnose(draft); })).toThrow(/not implemented|derived by the transaction/);
       expect(serializeLayoutModel(model)).toBe(before);
     });
     it(`${boundary} rejects techniques that contradict an authored override`, async () => {
@@ -61,12 +63,27 @@ links: [{from: {group: g}, to: {group: h}, route: group-link}]`);
     const model = await placed(simple);
     expect(() => publish.restore(model, draft => { Object.assign(draft.links[0]!, { technique: 'invented' }); })).toThrow(/technique/i);
   });
-  it('allows geometry-selected straight/orthogonal at rows without weakening an override', async () => {
-    const model = withLayoutMutation(await placed(simple), 'rows', () => {});
-    const straight = publish.restore(model, draft => { draft.links[0]!.technique = 'straight'; });
-    expect(straight.links[0]!.technique).toBe('straight');
-    expect(withLayoutMutation(straight, 'lanes', () => {}).links[0]!.technique).toBe('straight');
-    expect(publish.restore(straight, draft => { draft.links[0]!.technique = 'orthogonal'; }).links[0]!.technique).toBe('orthogonal');
+  it('validates geometry-selected straight/orthogonal through the rows rule without weakening an override', async () => {
+    const pinned = rows(await placed(`portograph: 2
+groups: {g: {tier: 0}}
+nodes:
+  a: {group: g, ports: [{name: p, side: right}]}
+  b: {group: g, ports: [{name: q, side: left}]}
+links: [[a.p, b.q]]`));
+    expect(pinned.links[0]!.technique).toBe('straight');
+    expect(publish.restore(pinned, () => {}).links[0]!.technique).toBe('straight');
+    expect(withLayoutMutation(pinned, 'lanes', () => {}).links[0]!.technique).toBe('straight');
+    expect(() => publish.restore(pinned, draft => { draft.links[0]!.technique = 'orthogonal'; })).toThrow(/technique/i);
+    // Too short to level against a tall peer: the rule leaves this automatic link orthogonal, and restore cannot claim straight.
+    const unpinned = rows(await placed(`portograph: 2
+groups: {g: {tier: 0}}
+nodes:
+  a: {group: g, size: {width: 50, height: 120}, ports: [{name: p, side: right}]}
+  b: {group: g, ports: [{name: q, side: left}]}
+links: [[a.p, b.q]]`));
+    expect(unpinned.links[0]!.technique).toBe('orthogonal');
+    expect(unpinned.links[0]!.path).toBeUndefined();
+    expect(() => publish.restore(unpinned, draft => { draft.links[0]!.technique = 'straight'; })).toThrow(/technique/i);
     const early = await placed(simple);
     expect(() => publish.freeze(early, draft => { draft.links[0]!.technique = 'straight'; })).toThrow(/technique/i);
   });

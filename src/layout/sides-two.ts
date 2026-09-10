@@ -12,6 +12,14 @@ import { rebuildNodeGeometry } from './node-geometry.js';
 import { freezePortTopology } from './mutation.js';
 const key = portId;
 
+/** Row gap between horizontal neighbours: stroke-aware node clearance or the facing named pills, whichever is larger. */
+export function rowGap(model: LayoutModel, a: string, b: string): number {
+  const protrusion = (id: string, side: Side): number => Math.max(0, ...model.nodes[id]!.ports
+    .filter(port => port.side === side && port.ref.anonymous !== true)
+    .map(port => measurePortPill(port.ref.name!).width / 2 + DEFAULT_STROKE_WIDTHS.pill / 2));
+  return Math.max(nodeGap(model, a, b), protrusion(a, 'right') + protrusion(b, 'left'));
+}
+
 /** Resolve all direction votes, resize and repack in skeleton order; retain the returned snapshot. */
 export function sidesTwo(model: LayoutModel): LayoutModel {
   if (model.stage !== 'skeleton' || model.freeze) throw new Error('Phase-two sides require the skeleton stage');
@@ -44,15 +52,11 @@ export function sidesTwo(model: LayoutModel): LayoutModel {
     }
   }
   sizeNodes(model);
-  const protrusion = (id: string, side: Side): number => Math.max(0, ...model.nodes[id]!.ports
-    .filter(port => port.side === side && port.ref.anonymous !== true)
-    .map(port => measurePortPill(port.ref.name!).width / 2 + DEFAULT_STROKE_WIDTHS.pill / 2));
-  const rowGap = (a: string, b: string): number => Math.max(nodeGap(model, a, b), protrusion(a, 'right') + protrusion(b, 'left'));
   for (const groupId of orderedGroupIds(model.document)) {
     const group = model.groups[groupId]!, order = group.rowOrder ?? group.nodes;
     let x = group.bounds!.x + spacing.padding;
     for (const [index, id] of order.entries()) {
-      if (index) x += rowGap(order[index - 1]!, id);
+      if (index) x += rowGap(model, order[index - 1]!, id);
       const node = model.nodes[id]!;
       const dx = x - node.bounds!.x;
       for (const port of node.ports) if (port.anchor) port.anchor.x += dx;
