@@ -57,6 +57,14 @@ all groups and replay calls. Infeasible alignment stays an orthogonal routing re
 ordered replay API rebuilds regions, fixed-owner lane extents, bounded centering, measured node
 geometry, row paths and flank paths. A later stage must still obey its declared movement scope.
 
+Stage 7d may increase a bar band's height to fit an authored outward stem and stroke-aware
+foreign-node clearance between stacked bars. The checked transaction compares the actual band
+before and after shaping, then translates every downstream tier and its attached flanks vertically
+by the positive growth. It preserves prior tier gaps and all x coordinates. Callback-authored
+movement outside the bar group remains invalid. The ordered replay rebuilds anchors, bands,
+fixed-owner lane extents, measured node geometry, and paths; a repeated replay observes zero band
+growth and does not translate tiers again.
+
 Review refinement for stage 7a: plan margin translations outward from the insertion gap and
 propagate them through neighbors in their existing order. Preserve transit sources and every
 earlier corridor; when either blocks a push, allocate a clear exterior corridor instead.

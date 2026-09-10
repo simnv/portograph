@@ -38,3 +38,4 @@ export { centre, centreDraft, createCentreBudget, selectAnchorTier } from './lay
 export type { CentreBudget } from './layout/centre.js';
 export { rebuildRegions } from './layout/regions.js';
 export { rebuildRegionGeometry } from './layout/region-rebuild.js';
+export { bars, shapeBars, rebuildBarDrops, barLink, BAR_PADDING } from './layout/bars.js';

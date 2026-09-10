@@ -312,7 +312,13 @@ pinned here. A drop crossing several bars has one `BarDrop` reservation per cros
 distinct IDs and `{ kind: 'barCross', node, link }` owners but the same source, port, slot and span.
 A drop with no crossings has one link-owned reservation. Segment `barCross` lists retain all
 crossed bars; gates require each exemption to match its bar-owned reservation.
-*Moves:* nothing outside the bar group (the group box shrinks to the bars).
+When required inter-bar stem clearance increases the bar band's height, translate every lower
+tier and any flank attached to it down by that band's actual positive growth. Preserve the
+existing tier gaps, tier order, and every x coordinate. The checked transaction derives this
+translation from the pre-shaping and final band geometry; callbacks still cannot move anything
+outside the bar group. Rebuild bands, fixed-owner lane extents, measured geometry, and derived
+paths through the atomic replay below. *Moves:* bar geometry plus this derived downstream-tier
+vertical translation.
 
 ### 7e — bundles
 
@@ -335,8 +341,9 @@ wide enough; if none, **widen the group** by the label width and push its row ne
 re-triggers 7c for groups whose parents moved — bounded by the same 8-pass limit). The label
 bbox becomes an obstacle. Centre is never a fallback.
 
-**Atomic rebuild after 7e/7f movement.** Tier-gap growth in 7e moves the lower tier bands and
-their contents; neighbour pushes or centring in 7f move the affected row groups and descendants.
+**Atomic rebuild after 7d/7e/7f movement.** Bar-band growth in 7d and tier-gap growth in 7e move
+the lower tier bands and their contents; neighbour pushes or centring in 7f move the affected row
+groups and descendants.
 After any such movement, rebuild changed claims atomically in this order:
 
 1. Recompute moved node/group boxes, port anchors and tier bands.

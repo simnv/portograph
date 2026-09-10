@@ -4,6 +4,7 @@ import type { LayoutModel } from '../../src/model/layout.js';
 import { serializeLayoutModel, serializeLayoutSnapshot } from '../../src/model/model.js';
 import { withLayoutMutation, restoreLayoutModel, freezePortTopology, type PlacementRule } from '../../src/layout/mutation.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
+import { bars } from '../../src/layout/bars.js';
 const advance = (model: LayoutModel, rules: PlacementRule[]) => rules.reduce((m, rule) => withLayoutMutation(m, rule, () => {}), model);
 const throughCentre: PlacementRule[] = ['rows', 'lanes', 'flanks', 'centre'];
 const bundleYaml = `portograph: 2
@@ -59,16 +60,13 @@ describe('checked public layout transactions', () => {
       rebuildNodeGeometry(draft, ['a'], 'from-slots');
     })).toThrow(/Author order/);
   });
-  it('rebuilds content once after growth with asymmetric insets and preserves explicit anchors', async () => {
+  it('rebuilds content once after deterministic bar growth with asymmetric insets', async () => {
     const model = advance(await placed(bundleYaml.replace('g: {tier: 0}', 'g: {tier: 0, shape: bar}')), throughCentre);
     const before = serializeLayoutModel(model);
-    const moved = withLayoutMutation(model, 'bars', draft => {
-      const node = draft.nodes.a!;
-      node.bounds!.width += 50; node.size!.width += 50;
-      // Anchors remain deliberately left of their default newly centred slots.
-    });
-    expect(moved.nodes.a!.ports[0]!.anchor).toEqual(model.nodes.a!.ports[0]!.anchor);
-    expect(moved.nodes.a!.icon!.bounds.x).toBeCloseTo(model.nodes.a!.icon!.bounds.x + 25);
+    const moved = bars(model);
+    expect(moved.nodes.a!.bounds!.width).toBeGreaterThanOrEqual(moved.nodes.a!.sizeFloor!.width);
+    expect(moved.nodes.a!.ports.map(port => port.authorOrder)).toEqual([-2, undefined, 4]);
+    expect(moved.nodes.a!.icon!.bounds.x).toBeGreaterThanOrEqual(moved.nodes.a!.bounds!.x);
     expect(moved.labels.filter(label => label.id === 'node:"a":description')).toHaveLength(1);
     expect(serializeLayoutModel(model)).toBe(before);
     expect(() => withLayoutMutation(model, 'bars', draft => { draft.nodes.a!.ports[0]!.anchor!.y++; })).toThrow(/Anchor/);

@@ -16,6 +16,7 @@ import { rebuildLaneExtents, validateLanes, transitTiers } from './lanes.js';
 import { rebuildRegions } from './regions.js';
 import { selectAnchorTier } from './centre.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
+import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 
 export type PlacementRule = 'rows' | 'lanes' | 'flanks' | 'centre' | 'bars' | 'bundles'
   | 'bands' | 'route' | 'link-labels' | 'validate' | 'emit';
@@ -82,6 +83,15 @@ function placement(model: LayoutModel): PlacementSnapshot {
     labels: model.labels.filter(label => ['node', 'description', 'pill', 'group'].includes(label.role ?? '')),
   };
 }
+function nonBarHorizontalPlacement(model: LayoutModel): unknown {
+  const groups = Object.values(model.groups).filter(group => model.document.groups[group.id]!.shape !== 'bar');
+  const nodes = groups.flatMap(group => group.nodes).map(id => model.nodes[id]!);
+  return {
+    groups: groups.map(group => ({ id: group.id, x: group.bounds!.x, width: group.bounds!.width })),
+    nodes: nodes.map(node => ({ id: node.id, x: node.bounds!.x, width: node.bounds!.width,
+      ports: node.ports.map(port => port.anchor!.x) })),
+  };
+}
 function validateDocument(model: LayoutModel): LayoutModel {
   const resolved = resolve(model.document);
   same(semantics(model), semantics(resolved), 'Resolved semantics differ from document');
@@ -141,7 +151,8 @@ function validateTechniques(model: LayoutModel, baseline: LayoutModel): void {
     // Only a rule with a landed validator may select a technique; today that is the rows rule for its candidates.
     const geometrySelected = authored === undefined && link.layer === 'routed' && !link.bundle && !link.groupLink
       && ((stages.indexOf(model.stage) >= stages.indexOf('rows') && rowPathCandidate(model, link))
-        || (stages.indexOf(model.stage) >= stages.indexOf('flanks') && flankPathCandidate(model, link)))
+        || (stages.indexOf(model.stage) >= stages.indexOf('flanks') && flankPathCandidate(model, link))
+        || (stages.indexOf(model.stage) >= stages.indexOf('bars') && barLink(model, link) !== undefined))
       && (expected === undefined || expected === 'straight' || expected === 'orthogonal')
       && (link.technique === 'straight' || link.technique === 'orthogonal');
     if (!geometrySelected) same(pick(link, ['technique']), pick(baseline.links[index]!, ['technique']), 'Link technique contradicts authored route, effective layer or M1 fallback');
@@ -159,6 +170,14 @@ function validatePublication(model: LayoutModel, baseline: LayoutModel): void {
 /** The same ordered producers validate every publication, including restored JSON. */
 function validateRegionClaims(model: LayoutModel): void {
   const expected = clone(model);
+  const barStage = stages.indexOf(model.stage) >= stages.indexOf('bars');
+  if (barStage) {
+    shapeBars(expected);
+    for (const id of orderedGroupIds(model.document)) if (model.document.groups[id]!.shape === 'bar') {
+      same(model.groups[id], expected.groups[id], `Bar group ${id} contradicts declaration-order geometry`);
+      for (const nodeId of model.groups[id]!.nodes) same(model.nodes[nodeId], expected.nodes[nodeId], `Bar ${nodeId} contradicts source slots or span rules`);
+    }
+  }
   if (stages.indexOf(model.stage) >= stages.indexOf('lanes')) {
     validateLanes(model);
     rebuildRegions(expected);
@@ -176,11 +195,19 @@ function validateRegionClaims(model: LayoutModel): void {
     for (const id of Object.keys(model.nodes)) same(model.nodes[id]!.ports.map(port => port.engineOrder), ordered.nodes[id]!.ports.map(port => port.engineOrder), 'Primary bundle facing order contradicts normalization');
     rebuildFlankPaths(expected);
   }
+  if (barStage) rebuildBarDrops(expected);
   for (const [index, link] of model.links.entries()) {
     if (!rowPathCandidate(model, link) && !(flankStage && flankPathCandidate(model, link))) continue;
     const name = rowPathCandidate(model, link) ? 'Row' : 'Flank';
     same(link.path, expected.links[index]!.path, `${name} path on ${link.id} contradicts the region rule`);
     same(link.technique, expected.links[index]!.technique, `${name} path technique on ${link.id} contradicts the region rule`);
+  }
+  if (barStage) {
+    same(model.barDrops, expected.barDrops, 'Bar drop reservations contradict current bars and fixed lanes');
+    for (const [index, link] of model.links.entries()) if (barLink(model, link)) {
+      same(link.path, expected.links[index]!.path, `Bar path on ${link.id} contradicts its reservation`);
+      same(link.technique, expected.links[index]!.technique, `Bar path technique on ${link.id} contradicts its reservation`);
+    }
   }
 }
 function validateGeometry(model: LayoutModel, allowNonConvergence = false): void {
@@ -198,7 +225,9 @@ function validateGeometry(model: LayoutModel, allowNonConvergence = false): void
     const node = model.nodes[id]!, measured = expected.nodes[id]!, box = node.bounds;
     if (!box || !node.size || !node.sizeFloor || box.width <= 0 || box.height <= 0) throw new Error(`Missing positive geometry on ${id}`);
     if (stages.indexOf(model.stage) >= stages.indexOf('bars') && model.document.groups[model.document.nodes[id]!.group]!.shape === 'bar') {
-      const label = measureText(model.document.nodes[id]!.label, { fontSize: NODE_CONTENT_GEOMETRY.labelFontSize, weight: NODE_CONTENT_GEOMETRY.labelFontWeight });
+      const group = model.document.groups[model.document.nodes[id]!.group]!;
+      const text = node.ports.length ? model.document.nodes[id]!.label : group.label;
+      const label = measureText(text, { fontSize: NODE_CONTENT_GEOMETRY.labelFontSize, weight: NODE_CONTENT_GEOMETRY.labelFontWeight });
       if (box.width < label.width + 60) throw new Error(`Bar ${id} violates label-plus-60 floor`);
     }
     same(node.size, { width: box.width, height: box.height }, `Size/bounds disagree on ${id}`);
@@ -315,9 +344,11 @@ function hasUnsupportedClaims(model: LayoutModel): boolean {
   const rowStage = stages.indexOf(model.stage) >= stages.indexOf('rows');
   const laneStage = stages.indexOf(model.stage) >= stages.indexOf('lanes');
   const flankStage = stages.indexOf(model.stage) >= stages.indexOf('flanks');
-  return model.links.some(link => (link.path !== undefined && !((rowStage && rowPathCandidate(model, link)) || (flankStage && flankPathCandidate(model, link))))
+  const barStage = stages.indexOf(model.stage) >= stages.indexOf('bars');
+  return model.links.some(link => (link.path !== undefined && !((rowStage && rowPathCandidate(model, link)) || (flankStage && flankPathCandidate(model, link))
+      || (barStage && barLink(model, link) !== undefined)))
       || (link.fixedSegments !== undefined && !laneStage))
-    || (!laneStage && (model.lanes.length > 0 || model.regions.length > 0)) || model.barDrops.length > 0
+    || (!laneStage && (model.lanes.length > 0 || model.regions.length > 0)) || (!barStage && model.barDrops.length > 0)
     || model.junctions.length > 0
     || model.bundles.some(b => b.rows !== undefined || b.centreline !== undefined || b.envelope !== undefined || b.memberGap !== undefined || b.inversions !== undefined)
     || model.obstacles.length > 0 || model.labelBands.length > 0 || claims(model).labels.length > 0;
@@ -360,8 +391,10 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
   } else same(draft.anchorTier, model.anchorTier, 'Anchor tier can initialize only in centre');
   same(semantics(draft), semantics(model), 'Resolved semantics changed');
   for (const [index, link] of draft.links.entries()) {
-    if ((rowPathCandidate(model, link) || (stages.indexOf(model.stage) >= stages.indexOf('flanks') && flankPathCandidate(model, link))) && !equal(pick(link, ['path', 'technique']), pick(model.links[index]!, ['path', 'technique']))) {
-      throw new Error(`Row path on ${link.id} is derived by the transaction from final anchors; callbacks cannot edit it`);
+    if ((rowPathCandidate(model, link) || (stages.indexOf(model.stage) >= stages.indexOf('flanks') && flankPathCandidate(model, link))
+      || (stages.indexOf(model.stage) >= stages.indexOf('bars') && barLink(model, link)))
+      && !equal(pick(link, ['path', 'technique']), pick(model.links[index]!, ['path', 'technique']))) {
+      throw new Error(`Path on ${link.id} is derived by the transaction from final anchors; callbacks cannot edit it`);
     }
   }
   const otherClaims = (value: LayoutModel) => ({ ...claims(value), lanes: [], links: value.links.map(link => omit(link, ['fixedSegments'])) });
@@ -480,9 +513,14 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     if (rule !== 'lanes') rebuildLaneExtents(draft);
   }
   if (changed || ['rows', 'lanes', 'flanks', 'centre'].includes(rule)) {
-    if (stages.indexOf(rule) >= stages.indexOf('flanks')) rebuildRegionGeometry(draft);
+    if (stages.indexOf(rule) >= stages.indexOf('flanks')) {
+      rebuildRegionGeometry(draft, undefined, rule === 'bars' ? model.tierBands : undefined);
+      if (rule === 'bars') same(nonBarHorizontalPlacement(draft), nonBarHorizontalPlacement(model),
+        'Bars may translate downstream tiers only vertically');
+    }
     else rebuildRowPaths(draft);
   }
+  if (rule === 'bars') rebuildBarDrops(draft);
   draft.stage = rule;
   draft.runtime.stages.push({ stage: rule, durationMs: Date.now() - started });
   if (rule === 'bands') draft.freeze!.placement = clone(placement(draft));

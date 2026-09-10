@@ -1,10 +1,48 @@
-import type { LayoutModel } from '../model/layout.js';
+import type { LayoutModel, TierBand } from '../model/layout.js';
 import { centreDraft, type CentreBudget } from './centre.js';
 import { rebuildLaneExtents } from './lanes.js';
 import { rebuildFlankPaths, flankPathCandidate } from './flanks.js';
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { rebuildRegions } from './regions.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
+import { rebuildBarDrops, shapeBars } from './bars.js';
+import { moveGroup, rebuildBands, union } from './skeleton-geometry.js';
+
+const barStages = ['bars', 'bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'];
+
+function reserveBarBandGrowth(draft: LayoutModel, before: readonly TierBand[]): void {
+  const barTiers = new Set(Object.values(draft.groups)
+    .filter(group => draft.document.groups[group.id]!.shape === 'bar').map(group => group.tier!));
+  const oldHeights = new Map(before.map(band => [band.tier, band.bounds!.height]));
+  let downstreamShift = 0;
+  for (const band of [...draft.tierBands].sort((a, b) => a.tier - b.tier)) {
+    if (downstreamShift > 0) {
+      for (const group of Object.values(draft.groups).filter(group => group.tier === band.tier)) {
+        moveGroup(draft, group, 0, downstreamShift);
+      }
+    }
+    if (barTiers.has(band.tier)) {
+      downstreamShift += Math.max(0, band.bounds!.height - (oldHeights.get(band.tier) ?? band.bounds!.height));
+    }
+  }
+  if (downstreamShift > 0) rebuildBands(draft);
+}
+
+function rebuildBarGeometry(draft: LayoutModel, before: readonly TierBand[] = draft.tierBands.map(band => ({
+  ...band, groups: [...band.groups], bounds: { ...band.bounds! },
+}))): void {
+  shapeBars(draft);
+  rebuildBands(draft);
+  reserveBarBandGrowth(draft, before);
+  if (!Object.keys(draft.groups).length) return;
+  const occupied = union(Object.values(draft.groups).map(group => group.bounds!)), old = draft.canvas ?? occupied;
+  const x = Math.min(old.x, occupied.x), y = Math.min(old.y, occupied.y);
+  draft.canvas = {
+    x, y,
+    width: Math.max(old.x + old.width, occupied.x + occupied.width) - x,
+    height: Math.max(old.y + old.height, occupied.y + occupied.height) - y,
+  };
+}
 
 /**
  * Ordered replay for later placement producers. Boxes must already contain their moved nodes.
@@ -12,11 +50,14 @@ import { rebuildNodeGeometry } from './node-geometry.js';
  * transaction. The checked transaction invokes this finalizer after geometry callbacks. Callbacks
  * use individual geometry producers; the transaction owns derived row/flank path writes.
  */
-export function rebuildRegionGeometry(draft: LayoutModel, budget?: CentreBudget): void {
+export function rebuildRegionGeometry(draft: LayoutModel, budget?: CentreBudget, beforeBarBands?: readonly TierBand[]): void {
+  const barsReady = barStages.includes(draft.stage) || beforeBarBands !== undefined;
+  if (barsReady) rebuildBarGeometry(draft, beforeBarBands);
   rebuildRegions(draft);
   rebuildLaneExtents(draft);
   if (budget) {
     centreDraft(draft, budget);
+    if (barsReady) rebuildBarGeometry(draft);
     rebuildRegions(draft);
     rebuildLaneExtents(draft);
   }
@@ -24,4 +65,5 @@ export function rebuildRegionGeometry(draft: LayoutModel, budget?: CentreBudget)
   for (const link of draft.links) if (rowPathCandidate(draft, link) || flankPathCandidate(draft, link)) delete link.path;
   rebuildRowPaths(draft);
   rebuildFlankPaths(draft);
+  if (barsReady) rebuildBarDrops(draft);
 }
