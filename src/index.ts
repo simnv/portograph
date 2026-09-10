@@ -15,3 +15,4 @@ export * from './parse/index.js';
 export * from './migrate/index.js';
 export * from './score/index.js';
 export { DEFAULT_STROKE_WIDTHS } from './theme/geometry.js';
+export * from './resolve/index.js';

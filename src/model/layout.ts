@@ -8,7 +8,7 @@ export type LayoutStage = 'normalised' | 'resolve' | 'sides-one' | 'size' | 'ske
 
 export type Layer = 'routed' | 'overlay';
 export type Owner =
-  | { kind: 'node' | 'group' | 'link' | 'bundle' | 'shared-stem' | 'lane'; id: string }
+  | { kind: 'node' | 'group' | 'link' | 'group-link' | 'bundle' | 'shared-stem' | 'lane'; id: string }
   | { kind: 'barCross'; node: string; link: string };
 
 export interface OwnedElement {
@@ -106,8 +106,11 @@ export interface LayoutLink {
   owner: Owner;
   from: Endpoint;
   to: Endpoint;
+  /** Class-derived family; an author route override can select a different effective layer. */
   family?: Layer;
+  /** Effective drawing layer, authoritative after semantic resolution. */
   layer?: Layer;
+  /** Effective drawing technique. M1 fallback requests remain on document.links[sourceIndex].route. */
   technique?: Route;
   bundle?: string;
   groupLink?: string;

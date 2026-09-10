@@ -56,6 +56,17 @@ For every link, in this fixed order, from the document only:
 **M1 behaviour:** `stub` and `group-link` are parsed and recorded but not applied; a warning
 says so and the links are drawn routed. This is explicit, not silent.
 
+The layout link's `family` records its class-derived family; `layer` is the effective drawing
+layer after the override and M1 fallback. Gates and routing use that effective layer. `technique`
+also records the effective behavior: an M1 stub/group-link request remains on the source document
+link, while its concrete members use orthogonal or bundle paths. A recorded request therefore
+does not receive the missing-path exemption of an actually applied stub.
+
+Group endpoints expand to concrete member-node attachments before placement. Empty groups cannot
+supply an attachment and produce a model error. Explicit `group-link` requires two distinct groups
+with at least two nodes each. Other group endpoints may expand to ordinary routed members with a
+warning; they do not acquire group-link eligibility solely by using group endpoint syntax.
+
 ## Stage 2 — sides, phase one
 
 | Peer is in… | Side |
