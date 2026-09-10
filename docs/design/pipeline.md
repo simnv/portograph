@@ -205,7 +205,11 @@ upper bar (`barCross`); a link entering a bar from **below** is the mirror case 
 For a bundle-member drop, compute and reserve its bar slot, span contribution, drop hint and
 `barCross` ownership here, but do not pin a member path. Stage 7e consumes the reservation and
 preserves the bar-owned `barCross` annotation on the resulting member path. Non-bundle drops are
-pinned here. *Moves:* nothing outside the bar group (the group box shrinks to the bars).
+pinned here. A drop crossing several bars has one `BarDrop` reservation per crossed bar, with
+distinct IDs and `{ kind: 'barCross', node, link }` owners but the same source, port, slot and span.
+A drop with no crossings has one link-owned reservation. Segment `barCross` lists retain all
+crossed bars; gates require each exemption to match its bar-owned reservation.
+*Moves:* nothing outside the bar group (the group box shrinks to the bars).
 
 ### 7e — bundles
 

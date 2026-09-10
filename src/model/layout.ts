@@ -19,6 +19,8 @@ export interface OwnedElement {
 export interface LayoutLabel extends OwnedElement {
   id: string;
   text: string;
+  /** A pill label's exact port; sharing a node owner does not exempt every pill collision. */
+  port?: PortRef;
   role?: 'node' | 'description' | 'group' | 'link' | 'pill' | 'legend';
   fontFamily?: string;
   fontSize?: number;
@@ -51,6 +53,8 @@ export interface LayoutPort extends OwnedElement {
 
 export interface LayoutNode extends OwnedElement {
   id: string;
+  /** Overrides the shared theme default; zero explicitly means no visible stroke. */
+  strokeWidth?: number;
   ports: LayoutPort[];
   sizeFloor?: Size;
   contentSize?: Size;
@@ -149,6 +153,7 @@ export interface LabelBand extends OwnedElement {
 }
 
 export interface BarDrop extends OwnedElement {
+  /** One reservation per crossed bar, owned by that barCross; no crossing uses link ownership. */
   id: string;
   link: string;
   port: PortRef;

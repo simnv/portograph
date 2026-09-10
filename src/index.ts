@@ -13,3 +13,5 @@ export * from './text/index.js';
 export * from './geometry/index.js';
 export * from './parse/index.js';
 export * from './migrate/index.js';
+export * from './score/index.js';
+export { DEFAULT_STROKE_WIDTHS } from './theme/geometry.js';

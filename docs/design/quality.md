@@ -31,7 +31,7 @@ out of scope for G2, G4 and G6.
 |---|---|---|---|
 | G1 | **No node overlap; containment** | node–node rectangles; node inside its group box; group boxes inside their tier band; no group–group overlap | — |
 | G2 | **No routed segment through a foreign node** | routed segments × node rectangles | a segment's own endpoint nodes; a drop crossing a **bar** it does not terminate on (`barCross`, reported) |
-| G3 | **No label collision** | every label bbox × every other label bbox, node rectangle, pill, routed segment (area-aware) | a label vs its **owner** (node label inside its node; pill text inside its pill; link label on its own segment's clearance zone); overlay layer |
+| G3 | **No label collision** | every label bbox × every other label bbox, node rectangle, pill, routed segment (area-aware) | a label vs its **owner** (node label inside its node; pill text inside its own pill and over its own incident stem within that pill; link label on its own segment's clearance zone); overlay layer |
 | G4 | **No collinear overlap** | pairs of routed segments on the same line sharing > 1 px | members of one **bundle** (reported as `bundledLength`); the shared **stem** of links leaving one port (one stem, then fan); lane-owner runs vs their own lane |
 | G5 | **Ports exit correctly** | every routed link: first/last segment perpendicular to its side, ≥ 15 px; port order on a side matches far-end order | author `order:`; overlay; stub |
 | G6 | **Clearances** (stroke-aware, centre-to-centre minus half strokes) | node–node ≥ 20; routed segment–foreign node ≥ 10; parallel routed segments ≥ 10 | incident node–segment contact at the anchor; bundle members (`memberGap` = 16 applies); `barCross` contacts; junction fans |
@@ -40,7 +40,9 @@ out of scope for G2, G4 and G6.
 
 Why G4 exists: the prototype's crossing counter used an intersection test that returns *false for
 parallel segments*; overlaps were invisible until asked for. Overlap is computed by bucketing
-axis-aligned segments by line and sweeping intervals — O(S log S), never pairwise.
+axis-aligned segments by line and sweeping intervals. The sweep is O(S log S + K) when reporting
+K overlapping pairs; it never scans every unrelated segment pair. Dense overlaps can require
+quadratic output, so the reporting cost cannot be bounded by O(S log S) alone.
 
 ## Soft score
 
