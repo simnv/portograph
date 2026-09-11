@@ -26,6 +26,11 @@ The final projection excludes runtime, diagnostics and canvas expansion. Non-con
 retain coherent geometry for the final gates through a placement diagnostic with code
 `PLACEMENT_NON_CONVERGENCE`; it never permits structural, floor or topology violations.
 
+Derived containing-box rebuilds retain an existing left, top, right or bottom edge when the newly
+computed padded edge differs by at most `1e-6`. This removes arithmetic no-ops before the exact
+movement permissions run; meaningful movement, structural JSON equality and lane guards remain
+strict.
+
 All three publication paths share claim, technique, geometry and freeze validation. Required
 rectangle fields, row sequence and authored flank side remain structural checks even after a
 non-convergence diagnostic. Rows preserve flank placement; flank alignment translates vertically.
@@ -89,3 +94,15 @@ Bar replay retains exact original fixed lane segments and tags only collinear ow
 that touch the same closed corridor boundary. Same-source bar jogs use stroke-aware staggered
 rows in source order, avoiding coincident approach segments. Span subtraction keeps the explicit
 width floor even when floating-point cancellation would produce a slightly smaller value.
+
+Stage 7f installs measured group-label bands inside each group, then uses stage 7e's ordered replay
+with one shared eight-pass budget. Group fitting and bar shaping preserve the installed top inset
+and any wider collision-repair extent. The checked producer replaces stable band and group-label
+claims, validates them again on restore, and captures final placement only after the coherent
+claims exist. It does not create duplicate generic obstacles.
+
+A label band also carries the `clearance` it reserves below itself for stage 8 entry geometry. That
+number is derived from frozen inputs only — the outward stem, which follows the node's frozen
+stroke, and the mandatory shared runs — so it cannot change when a remainder receives its path. It is part of the frozen placement
+projection. Publication and restore recompute it, require the reserved node gap, and reject a
+required entry point that falls inside the stroke-aware obstacle of its own group's band.

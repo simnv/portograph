@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel, PathSegment, PortRef, Rect } from '../../src/model/index.js';
 import { bars, shapeBars } from '../../src/layout/bars.js';
+import { bands } from '../../src/layout/bands.js';
 import { centre } from '../../src/layout/centre.js';
 import { flanks } from '../../src/layout/flanks.js';
 import { lanes } from '../../src/layout/lanes.js';
@@ -254,7 +255,7 @@ links: []`;
     expect(rebuilt.links.every(link => link.path!.segments.at(-1)!.to.y === findPort(rebuilt, link.attachments!.to)!.anchor!.y)).toBe(true);
   });
 
-  it('reshapes and restores stable bar claims after a checked bands-stage source move', async () => {
+  it('reshapes and restores stable bar claims around the checked label-band reservation', async () => {
     const yaml = `portograph: 2
 groups: {upper: {tier: 0}, bars: {tier: 1, shape: bar}}
 nodes:
@@ -264,15 +265,12 @@ links: [[source.p, bar.p, {route: orthogonal}]]`;
     const shaped = bars(await throughCentre(yaml));
     const bundled = withLayoutMutation(shaped, 'bundles', () => {});
     const ids = bundled.barDrops.map(drop => drop.id), oldSlot = bundled.barDrops[0]!.slotX;
-    const moved = withLayoutMutation(bundled, 'bands', draft => {
-      draft.groups.upper!.bounds!.x += 20;
-      draft.nodes.source!.bounds!.x += 20;
-      for (const port of draft.nodes.source!.ports) port.anchor!.x += 20;
-    });
+    const moved = bands(bundled);
 
     expect(moved.barDrops.map(drop => drop.id)).toEqual(ids);
-    expect(moved.barDrops[0]!.slotX).toBe(oldSlot + 20);
-    expect(findPort(moved, ref('bar.p'))!.anchor!.x).toBe(oldSlot + 20);
+    expect(moved.barDrops[0]!.slotX).toBe(oldSlot);
+    expect(findPort(moved, ref('bar.p'))!.anchor!.x).toBe(oldSlot);
+    expect(moved.nodes.bar!.bounds!.y).toBeGreaterThan(moved.labelBands.find(item => item.group === 'bars')!.bounds.y);
     expect(restoreLayoutModel(JSON.stringify(moved)).barDrops).toEqual(moved.barDrops);
   });
 

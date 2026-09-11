@@ -4,10 +4,27 @@ import { rebuildBands, union } from './skeleton-geometry.js';
 
 export const right = (box: Rect): number => box.x + box.width;
 export const bottom = (box: Rect): number => box.y + box.height;
+export const GROUP_PADDING = 12;
+/**
+ * Label bands extend the top inset while ordinary group padding remains below and at both sides.
+ * A band reserves its own clearance below itself; that reservation is at least the ordinary padding.
+ */
+export function groupInsets(model: LayoutModel, group: LayoutGroup): { top: number; right: number; bottom: number; left: number } {
+  const band = model.labelBands.find(item => item.group === group.id);
+  return { top: band ? band.bounds.height + band.clearance : GROUP_PADDING, right: GROUP_PADDING,
+    bottom: GROUP_PADDING, left: GROUP_PADDING };
+}
 export function fitRegionGroup(model: LayoutModel, group: LayoutGroup): void {
   if (!group.nodes.length) return;
-  const box = union(group.nodes.map(id => model.nodes[id]!.bounds!));
-  group.bounds = { x: box.x - 12, y: box.y - 12, width: box.width + 24, height: box.height + 24 };
+  const box = union(group.nodes.map(id => model.nodes[id]!.bounds!)), inset = groupInsets(model, group);
+  if (!model.labelBands.some(item => item.group === group.id)) {
+    group.bounds = { x: box.x - inset.left, y: box.y - inset.top,
+      width: box.width + inset.left + inset.right, height: box.height + inset.top + inset.bottom };
+    return;
+  }
+  const old = group.bounds!, x = Math.min(old.x, box.x - inset.left), y = box.y - inset.top;
+  group.bounds = { x, y, width: Math.max(right(old), right(box) + inset.right) - x,
+    height: bottom(box) + inset.bottom - y };
 }
 export function expandCanvas(model: LayoutModel): void {
   const boxes = [...Object.values(model.groups).map(group => group.bounds!), ...model.lanes.map(lane => lane.bounds)];

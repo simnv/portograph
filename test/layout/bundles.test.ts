@@ -154,15 +154,10 @@ it('replays growth with one shared budget and replaces claims without moving fix
   expect(draft.lanes.map(l => [l.id, l.owner, l.x])).toEqual(model.lanes.map(l => [l.id, l.owner, l.x]));
   expect(budget.passes).toBeLessThanOrEqual(8);
   expect(restoreLayoutModel(JSON.stringify(draft))).toEqual(draft);
-  const moved = api.withLayoutMutation(model, 'bands', value => {
-    const group = value.groups['route-reflector']!, dy = 20;
-    group.bounds!.y += dy;
-    for (const id of group.nodes) {
-      value.nodes[id]!.bounds!.y += dy;
-      value.nodes[id]!.ports.forEach(p => { p.anchor!.y += dy; });
-    }
-  });
+  const moved = api.bands(model);
   expect(moved.stage).toBe('bands');
+  expect(moved.lanes.map(l => [l.id, l.owner, l.x])).toEqual(model.lanes.map(l => [l.id, l.owner, l.x]));
+  expect(moved.bundles.map(bundle => bundle.id)).toEqual(model.bundles.map(bundle => bundle.id));
   expect(restoreLayoutModel(JSON.stringify(moved))).toEqual(moved);
 });
 

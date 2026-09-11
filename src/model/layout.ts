@@ -178,6 +178,12 @@ export interface LabelBand extends OwnedElement {
   id: string;
   group: string;
   bounds: Rect;
+  /**
+   * Reserved vertical gap between the band and the group's topmost node. It is the ordinary group
+   * padding unless a routed outward stem or shared prefix at a top port needs more room to keep
+   * its entry points outside the stroke-aware band obstacle.
+   */
+  clearance: number;
 }
 
 export interface BarDrop extends OwnedElement {

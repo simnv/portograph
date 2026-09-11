@@ -393,6 +393,31 @@ wide enough; if none, **widen the group** by the label width and push its row ne
 re-triggers 7c for groups whose parents moved — bounded by the same 8-pass limit). The label
 bbox becomes an obstacle. Centre is never a fallback.
 
+Measure group labels with the shared font table at 12 px, weight 700 and `FONT_FAMILY`. The band
+retains 4 px above and below the measured text, and the label has an 8 px horizontal inset. Convert
+intersecting geometry into forbidden label-start intervals, sort by start/end/stable ID, merge, and
+choose the first free x. The stable claims are `label-band:<group-id>` and
+`label:group:<group-id>`; labels and bands are already separate router inputs, so no duplicate
+generic obstacle is added. Group fitting and bar shaping include the band above the ordinary 12 px
+node padding and retain a wider extent created by collision repair. The intervals include every
+reserved rectangle of a link: its complete path, its partially fixed lane runs and the mandatory
+outward shared runs of both ends. A complete path repeats the runs it consumed, so identical
+stroke-aware rectangles with identical ownership collapse to one entry.
+
+**Band clearance for stage 8 entry.** Stage 8 routes only free gaps and must avoid whole label
+bands; owning the endpoint group does not waive that obstacle. Each band therefore records the
+`clearance` it reserves between its lower edge and the group's topmost node. The reservation is the
+ordinary 12 px padding unless a top-side port carries a routed attachment, in which case it is the
+largest outward reach at those ports plus the widest routed half stroke and a 0.25 px tolerance.
+The reach is the whole mandatory shared prefix when the port has one, otherwise the ordinary
+checkpoint `max(15, 10 + (node stroke + widest routed stroke) / 2 + 0.25)`, which follows the node
+obstacle when a wide stroke expands it past the 15 px stem. With the default 2 px node and 1.5 px
+routed strokes an ordinary top port reserves 16 px. The rule reads frozen inputs only: the constant
+stem and `sharedRuns`, which every publication at or after stage 7e rebuilds and compares, so
+completing a remainder in stage 8 cannot retire the reservation. Publication and restore recompute
+the reservation, require the node gap, and reject any required entry point that lies inside the
+stroke-aware obstacle of its own group's band.
+
 **Atomic rebuild after 7d/7e/7f movement.** Bar-band growth in 7d and tier-gap growth in 7e move
 the lower tier bands and their contents; neighbour pushes or centring in 7f move the affected row
 groups and descendants.
@@ -409,6 +434,10 @@ Remove the old versions of changed paths, envelopes, label boxes and obstacle en
 installing their replacements; never append a replacement beside stale geometry. If rebuilding
 moves geometry again, repeat the same bounded pass. Non-convergence is diagnosed, the last state
 is kept, and final gates decide whether the diagram fails.
+
+The bands transaction owns this production after its callback checks, reuses one centring budget
+across every replay, and captures placement only after the final coherent claims. A callback cannot
+publish provisional bands or labels for the finalizer to repair.
 
 After 7f, the successful `bands` transaction captures `freeze.placement`, including node content
 and pill geometry, group geometry, tier bands, regions, lanes and group-label placement. Later

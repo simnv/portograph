@@ -18,6 +18,7 @@ import { selectAnchorTier } from './centre.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
+import { produceGroupLabelBands, validateGroupLabelBands } from './bands.js';
 
 export type PlacementRule = 'rows' | 'lanes' | 'flanks' | 'centre' | 'bars' | 'bundles'
   | 'bands' | 'route' | 'link-labels' | 'validate' | 'emit';
@@ -221,6 +222,7 @@ function validateRegionClaims(model: LayoutModel): void {
       same(link.technique, expected.links[index]!.technique, `Bar path technique on ${link.id} contradicts its reservation`);
     }
   }
+  if (stages.indexOf(model.stage) >= stages.indexOf('bands')) validateGroupLabelBands(model);
 }
 function validateGeometry(model: LayoutModel, allowNonConvergence = false): void {
   jsonValue(model);
@@ -358,21 +360,30 @@ function hasUnsupportedClaims(model: LayoutModel): boolean {
   const flankStage = stages.indexOf(model.stage) >= stages.indexOf('flanks');
   const barStage = stages.indexOf(model.stage) >= stages.indexOf('bars');
   const bundleStage = stages.indexOf(model.stage) >= stages.indexOf('bundles');
+  const bandsStage = stages.indexOf(model.stage) >= stages.indexOf('bands');
+  const nonNodeLabels = claims(model).labels;
   return model.links.some(link => (link.path !== undefined && !((rowStage && rowPathCandidate(model, link)) || (flankStage && flankPathCandidate(model, link))
       || (barStage && barLink(model, link) !== undefined) || (bundleStage && link.bundle !== undefined)))
       || (link.fixedSegments !== undefined && !laneStage) || (link.sharedRuns !== undefined && !bundleStage))
     || (!laneStage && (model.lanes.length > 0 || model.regions.length > 0)) || (!barStage && model.barDrops.length > 0)
     || (!bundleStage && model.junctions.length > 0)
     || (!bundleStage && model.bundles.some(b => b.rows !== undefined || b.centreline !== undefined || b.envelope !== undefined || b.envelopeParts !== undefined || b.memberGap !== undefined || b.inversions !== undefined || b.memberPitch !== undefined || b.mergeRuns !== undefined))
-    || model.obstacles.length > 0 || model.labelBands.length > 0 || claims(model).labels.length > 0;
+    || model.obstacles.length > 0 || (!bandsStage && model.labelBands.length > 0)
+    || nonNodeLabels.some(label => !bandsStage || label.role !== 'group');
 }
 function rebuildBoxes(model: LayoutModel): void {
+  const EPS = 1e-6;
   for (const group of Object.values(model.groups)) {
     if (!group.nodes.length) continue;
     const box = union(group.nodes.map(id => model.nodes[id]!.bounds!)), old = group.bounds!;
-    const x = Math.min(old.x, box.x - 12), y = Math.min(old.y, box.y - 12);
-    group.bounds = { x, y, width: Math.max(old.x + old.width, box.x + box.width + 12) - x,
-      height: Math.max(old.y + old.height, box.y + box.height + 12) - y };
+    const derivedLeft = box.x - 12, derivedTop = box.y - 12;
+    const oldRight = old.x + old.width, oldBottom = old.y + old.height;
+    const derivedRight = box.x + box.width + 12, derivedBottom = box.y + box.height + 12;
+    const x = derivedLeft < old.x - EPS ? derivedLeft : old.x;
+    const y = derivedTop < old.y - EPS ? derivedTop : old.y;
+    const farX = derivedRight > oldRight + EPS ? derivedRight : oldRight;
+    const farY = derivedBottom > oldBottom + EPS ? derivedBottom : oldBottom;
+    group.bounds = { x, y, width: farX - x, height: farY - y };
   }
   rebuildBands(model);
   if (Object.keys(model.groups).length) {
@@ -426,6 +437,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     for (const [index, lane] of draft.lanes.entries()) if (!equal(lane.bounds, model.lanes[index]!.bounds)) same(lane.bounds, supplied.lanes[index]!.bounds, 'Callback lane extent contradicts current geometry');
   }
   const before = placement(model), after = placement(draft);
+  if (rule === 'bands') same(after, before, 'Bands callback cannot author placement or derived claims');
   const changed = !equal(before, after);
   if (changed && !permission.move) throw new Error(`${rule} cannot change placement`);
   if (changed && hasUnsupportedClaims(model)) throw new Error(`${rule} requires an unimplemented claim rebuild`);
@@ -530,7 +542,8 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     rebuildRegions(draft);
     if (rule !== 'lanes') rebuildLaneExtents(draft);
   }
-  if (changed || ['rows', 'lanes', 'flanks', 'centre', 'bundles'].includes(rule)) {
+  if (rule === 'bands') produceGroupLabelBands(draft);
+  else if (changed || ['rows', 'lanes', 'flanks', 'centre', 'bundles'].includes(rule)) {
     if (stages.indexOf(rule) >= stages.indexOf('flanks')) {
       rebuildRegionGeometry(draft, undefined, rule === 'bars' ? model.tierBands : undefined, rule === 'bundles' || stages.indexOf(model.stage) >= stages.indexOf('bundles'));
       if (rule === 'bars') same(nonBarHorizontalPlacement(draft), nonBarHorizontalPlacement(model),

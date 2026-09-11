@@ -40,6 +40,7 @@ export { rebuildRegions } from './layout/regions.js';
 export { rebuildRegionGeometry } from './layout/region-rebuild.js';
 export { bars, shapeBars, rebuildBarDrops, barLink, BAR_PADDING } from './layout/bars.js';
 export { bundles, prepareBundleGeometry, rebuildBundlePaths, BundleFeasibilityError } from './layout/bundles.js';
+export { bands, GROUP_LABEL_GEOMETRY } from './layout/bands.js';
 
 export { optimizeBundleOrder } from './layout/bundle-order.js';
 export type { BundleOrderResult } from './layout/bundle-order.js';

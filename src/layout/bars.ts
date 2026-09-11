@@ -4,7 +4,8 @@ import { equal } from '../model/json-equality.js';
 import { measureText } from '../text/index.js';
 import { NODE_CONTENT_GEOMETRY } from '../theme/content.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
-import { nodeGap, portId, SKELETON_SPACING } from './skeleton-graph.js';
+import { nodeGap, portId } from './skeleton-graph.js';
+import { groupInsets } from './regions.js';
 import { findPort } from './row-paths.js';
 import { withLayoutMutation } from './mutation.js';
 
@@ -184,7 +185,8 @@ export function shapeBars(model: LayoutModel): void {
     }
     mergedSpans(spans);
     const gaps = nodes.slice(0, -1).map((node, index) => barGap(model, node, nodes[index + 1]!, allLinks));
-    let y = group.bounds!.y + SKELETON_SPACING.padding;
+    const originalGroup = { ...group.bounds! }, inset = groupInsets(model, group);
+    let y = group.bounds!.y + inset.top;
     for (const [index, node] of nodes.entries()) {
       const old = node.bounds!, span = spans.get(node.id)!, height = Math.max(node.sizeFloor!.height, old.height);
       const next = { x: span.min, y, width: Math.max(node.sizeFloor!.width, span.max - span.min), height };
@@ -206,9 +208,12 @@ export function shapeBars(model: LayoutModel): void {
     }
     if (nodes.length) {
       const minX = Math.min(...nodes.map(node => node.bounds!.x)), maxX = Math.max(...nodes.map(node => right(node.bounds!)));
-      group.bounds = { x: minX - SKELETON_SPACING.padding, y: nodes[0]!.bounds!.y - SKELETON_SPACING.padding,
-        width: maxX - minX + 2 * SKELETON_SPACING.padding,
-        height: bottom(nodes.at(-1)!.bounds!) - nodes[0]!.bounds!.y + 2 * SKELETON_SPACING.padding };
+      const x = model.labelBands.some(item => item.group === group.id)
+        ? Math.min(originalGroup.x, minX - inset.left) : minX - inset.left;
+      const far = model.labelBands.some(item => item.group === group.id)
+        ? Math.max(right(originalGroup), maxX + inset.right) : maxX + inset.right;
+      group.bounds = { x, y: nodes[0]!.bounds!.y - inset.top, width: far - x,
+        height: bottom(nodes.at(-1)!.bounds!) - nodes[0]!.bounds!.y + inset.top + inset.bottom };
     }
   }
 }

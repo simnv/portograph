@@ -212,7 +212,7 @@ describe('corridor predicate', () => {
       ['fixed segment', m => { m.links.push({ ...m.links[0]!, id: 'other', owner: foreign, path: { owner: foreign, layer: 'routed', fixed: true, segments: [{ from: { x, y: y + 11 }, to: { x: x + 1, y: y + 11 }, owner: foreign }] } }); }],
       ['bundle envelope', m => { m.bundles.push({ id: 'bundle-x', owner: { kind: 'bundle', id: 'bundle-x' }, layer: 'routed', nodes: ['a', 'b'], members: [], envelope: box }); }],
       ['bundle rows', m => { m.bundles.push({ id: 'bundle-x', owner: { kind: 'bundle', id: 'bundle-x' }, layer: 'routed', nodes: ['a', 'b'], members: [], rows: box }); }],
-      ['label band', m => { m.labelBands.push({ id: 'band', owner: { kind: 'group', id: 'g' }, layer: 'routed', group: 'g', bounds: box }); }],
+      ['label band', m => { m.labelBands.push({ id: 'band', owner: { kind: 'group', id: 'g' }, layer: 'routed', group: 'g', bounds: box, clearance: 12 }); }],
       ['obstacle', m => { m.obstacles.push({ id: 'ob', owner: { kind: 'group', id: 'g' }, layer: 'routed', bounds: box }); }],
     ];
     for (const [name, edit] of blockers) {
@@ -285,8 +285,11 @@ describe('levelling and straight eligibility', () => {
       segments: [{ from: from.anchor, to: to.anchor, owner: { kind: 'link', id: 'link-1' } }] });
     expect(from.anchor!.y).toBe(to.anchor!.y);
     const later = advance(model, ['lanes', 'flanks', 'centre', 'bars', 'bundles', 'bands']);
-    expect(later.links[0]!.path).toEqual(link.path);
-    expect(restoreLayoutModel(serializeLayoutModel(later)).links[0]!.path).toEqual(link.path);
+    const after = endpoints(later, 'link-1');
+    expect(later.links[0]!.path).toEqual({ owner: { kind: 'link', id: 'link-1' }, layer: 'routed', fixed: true,
+      segments: [{ from: after.from.anchor, to: after.to.anchor, owner: { kind: 'link', id: 'link-1' } }] });
+    expect(after.from.anchor!.y - from.anchor!.y).toBe(22);
+    expect(restoreLayoutModel(serializeLayoutModel(later)).links[0]!.path).toEqual(later.links[0]!.path);
   });
   it('orients a pinned path from the authored source even when it runs right to left', async () => {
     const model = rows(await placed(pairYaml.replace('links: [[a.p, b.q]]', 'links: [[b.q, a.p]]')));
