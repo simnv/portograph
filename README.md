@@ -110,4 +110,3 @@ library calls remain portable and use the supplied worker factories and optional
 The generated hub / wide-tier / long-transit benchmark currently reaches the 30-second deadline
 at 100, 300 and 1,000 nodes. The simple 50-link aligned case passes every gate with zero crossings;
 the high-fan scale cases remain a performance limit. Run `node scripts/scale-bench.mjs` to reproduce.
-

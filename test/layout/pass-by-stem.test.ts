@@ -92,4 +92,3 @@ links: [[far.p, b.p]]`);
     expect(report.Q).toBeCloseTo(0.8424281545245618, 12);
   }, 120000);
 });
-
