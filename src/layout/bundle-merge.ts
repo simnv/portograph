@@ -1,4 +1,5 @@
 import type { Bundle, LayoutModel, PathSegment, Point } from '../model/index.js';
+import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { clone, normal, type Member } from './bundle-geometry.js';
 import { BundleFeasibilityError, polyline, reverse } from './bundle-paths.js';
 
@@ -72,8 +73,12 @@ export function mergeMembers(model: LayoutModel, bundle: Bundle, list: Member[],
     const ids = [...new Set(runs.filter(run => run.low <= low && run.high >= high).map(run => run.link))].sort();
     if (ids.length < 2) continue;
     const segment: PathSegment = { from: world({ x: trunk, y: low }), to: world({ x: trunk, y: high }), owner: { ...bundle.owner } };
+    // One trunk paints for every member of this run, so it carries the widest resolved member
+    // width. A narrower trunk would draw a stroke no reservation and no gate ever measured.
+    const width = Math.max(...ids.map(id => linkStrokeWidth(model.links.find(link => link.id === id)!)));
     bundle.mergeRuns.push({ id: `merge:${bundle.id}:${bundle.mergeRuns.length}`, members: ids, count: ids.length,
-      path: { owner: { ...bundle.owner }, layer: 'routed', fixed: true, segments: [segment] } });
+      path: { owner: { ...bundle.owner }, layer: 'routed', fixed: true,
+        ...(width === DEFAULT_STROKE_WIDTHS.path ? {} : { strokeWidth: width }), segments: [segment] } });
   }
   return bundle.mergeRuns;
 }

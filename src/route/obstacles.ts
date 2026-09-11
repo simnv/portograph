@@ -1,7 +1,7 @@
 import type { Point, Rect } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import { orderedNodeIds } from '../model/model.js';
-import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { GROUP_LABEL_GEOMETRY, routedStroke } from '../layout/bands.js';
 import { portId } from '../layout/skeleton-graph.js';
 import { bottom, right } from '../score/geometry.js';
@@ -55,7 +55,7 @@ function nodeBox(node: LayoutModel['nodes'][string], stroke: number): Rect {
 
 /** Half-width of the protective cover around one reserved run of `link`. */
 function runClearance(link: LayoutLink, stroke: number): number {
-  return GROUP_LABEL_GEOMETRY.nodeClearance + ((link.path?.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path) + stroke) / 2;
+  return GROUP_LABEL_GEOMETRY.nodeClearance + (linkStrokeWidth(link) + stroke) / 2;
 }
 
 const anchorsOf = (model: LayoutModel, link: LayoutLink): Point[] => {

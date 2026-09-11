@@ -160,6 +160,31 @@ describe('parse diagnostics', () => {
     expect(result.diagnostics.filter(d => d.code === 'LOCKED_CSS')).toHaveLength(1);
   });
 
+  // Ticket 16 found these while transplanting the theme: each one draws measured text or a measured
+  // element somewhere other than where the gates cleared it, without naming a locked property.
+  it.each([
+    ['text-transform', 'uppercase'], ['font-stretch', 'ultra-expanded'], ['font-variant', 'small-caps'],
+    ['font-size-adjust', '2'], ['word-spacing', '20px'], ['writing-mode', 'vertical-rl'],
+    ['text-anchor', 'start'], ['dominant-baseline', 'hanging'], ['baseline-shift', '40px'],
+    ['dx', '60px'], ['dy', '60px'], ['marker-end', 'url(#m)'], ['vector-effect', 'non-scaling-stroke'],
+    ['offset-distance', '40%'], ['zoom', '3'], ['-webkit-text-size-adjust', '300%'],
+    // Found by the ticket-16 adversarial review: paint that leaves the measured box, protection
+    // that the overlay layer depends on, and the remaining text-metric properties.
+    ['filter', 'drop-shadow(100px 0px 0px black)'], ['mask', 'none'], ['clip-path', 'none'],
+    ['text-shadow', '80px 0 red'], ['backdrop-filter', 'blur(9px)'], ['box-shadow', '70px 0 red'],
+    ['font-style', 'italic'], ['font-kerning', 'none'], ['font-variant-ligatures', 'none'],
+    ['font-variant-numeric', 'tabular-nums'], ['font-variant-east-asian', 'full-width'],
+    ['font-variant-position', 'super'], ['font-language-override', '"TRK"'],
+    ['mask-image', 'none'], ['mask-type', 'alpha'], ['stroke-miterlimit', '200'],
+  ])('locks the text and placement property %s, which would move measured geometry', (property, value) => {
+    const result = parseWithDiagnostics(source({ css: `.x { ${property}: ${value}; fill: red; stroke: blue; opacity: .5; }` }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.document.css).not.toContain(value);
+    expect(result.document.css).toContain('fill: red; stroke: blue; opacity: .5;');
+    expect(result.diagnostics.filter(d => d.code === 'LOCKED_CSS')).toHaveLength(1);
+  });
+
   it.each(['\t', '\n', '\r', '\r\n', '\f'])('filters whitespace-terminated CSS property escapes: %j', whitespace => {
     const result = parseWithDiagnostics(source({ css: `.x { font-\\73${whitespace}ize: 30px; \\66${whitespace}ill: red; }` }));
     expect(result.ok).toBe(true);

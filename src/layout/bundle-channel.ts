@@ -1,6 +1,6 @@
 import type { Bundle, LayoutModel, PathSegment, Point, Rect } from '../model/index.js';
 import { segmentRect, segmentRectDistance } from '../score/geometry.js';
-import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { coordinate, normal, type Member } from './bundle-geometry.js';
 import { BundleFeasibilityError, pathBounds, polyline } from './bundle-paths.js';
 
@@ -12,7 +12,7 @@ function rects(model: LayoutModel, bundle: Bundle, halfWidth: number): Rect[] {
   for (const label of model.labels) if (label.bounds && !label.omitted && label.layer !== 'overlay') obstacles.push(inflate(label.bounds, halfWidth + 0.001));
   for (const link of model.links) {
     if (!link.path || link.bundle === bundle.id || link.layer !== 'routed') continue;
-    for (const s of link.path.segments) obstacles.push(inflate(pathBounds([s]), halfWidth + 10 + (link.path.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path) / 2));
+    for (const s of link.path.segments) obstacles.push(inflate(pathBounds([s]), halfWidth + 10 + linkStrokeWidth(link) / 2));
   }
   return obstacles;
 }
@@ -70,7 +70,8 @@ export function routeBundleChannel(model: LayoutModel, bundle: Bundle, list: Mem
     y: list.reduce((sum, item) => sum + item[end].anchor!.y, 0) / list.length });
   const a = mean('a'), b = mean('b'), tangent = n.x !== 0 ? 'y' : 'x';
   if (list.some(item => Math.abs(item.a.anchor![tangent] - a[tangent] - item.b.anchor![tangent] + b[tangent]) > 1e-6)) return undefined;
-  const halfWidth = Math.max(...list.map(item => Math.abs(item.a.anchor![tangent] - a[tangent]))) + DEFAULT_STROKE_WIDTHS.path / 2;
+  const halfWidth = Math.max(...list.map(item => Math.abs(item.a.anchor![tangent] - a[tangent])))
+    + Math.max(...list.map(item => linkStrokeWidth(item.link))) / 2;
   const obstacles = rects(model, bundle, halfWidth), stem = halfWidth + 15;
   const start = { x: a.x + n.x * stem, y: a.y + n.y * stem }, end = { x: b.x + m.x * stem, y: b.y + m.y * stem };
   const points = [a, ...route(start, end, obstacles, bundle), b];
@@ -78,11 +79,11 @@ export function routeBundleChannel(model: LayoutModel, bundle: Bundle, list: Mem
   const paths = new Map(list.map(item => [item.link.id, offset(reduced, (coordinate(item.a) - a[tangent]) * (n.x !== 0 ? n.x : -n.y), bundle)]));
   return { centreline, paths };
 }
-export function clearBundleMembers(model: LayoutModel, bundle: Bundle, paths: PathSegment[][]): boolean {
+export function clearBundleMembers(model: LayoutModel, bundle: Bundle, paths: PathSegment[][], stroke: number = DEFAULT_STROKE_WIDTHS.path): boolean {
   for (const segments of paths) for (const [index, segment] of segments.entries()) {
     for (const node of Object.values(model.nodes)) {
       if (index === 0 && bundle.nodes.includes(node.id) || index === segments.length - 1 && bundle.nodes.includes(node.id)) continue;
-      if (segmentRectDistance(segment, node.bounds!) < 10 + (DEFAULT_STROKE_WIDTHS.path + (node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node)) / 2 - 1e-6) return false;
+      if (segmentRectDistance(segment, node.bounds!) < 10 + (stroke + (node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node)) / 2 - 1e-6) return false;
     }
   }
   return true;

@@ -7,6 +7,7 @@ import { EPS, bottom, contains, rectDistance, right, segmentRect, segmentRectDis
 import { effectiveLayer } from '../score/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
+import { drawnBoxes as paintedBoxes, produceLegend } from './legend.js';
 import { withLayoutMutation } from './mutation.js';
 import { RectangleIndex, type RectangleBounds } from './rectangle-index.js';
 
@@ -303,6 +304,9 @@ export function produceLinkLabels(model: LayoutModel): void {
     suppressed.map(id => ({ kind: 'link', id }))));
 
   model.labels.push(...produced);
+  // The generated legend is measured last, against the geometry every earlier step settled, and
+  // takes newly reserved space below it. Nothing already placed moves.
+  produceLegend(model);
   for (const box of drawnBoxes(model)) {
     if (!model.canvas) break;
     const x = Math.min(model.canvas.x, box.x), y = Math.min(model.canvas.y, box.y);
@@ -312,21 +316,12 @@ export function produceLinkLabels(model: LayoutModel): void {
 }
 
 /**
- * Everything the canvas has to hold. `expandCanvas` reserves groups and lanes; a route may leave
- * both, and stage 9 adds label boxes, so stage 9 is where the canvas is finally settled. An
- * orthogonal chain is covered by the boxes of its segments.
+ * Everything the canvas has to hold, with the outer half of every stroke. `expandCanvas` reserves
+ * groups and lanes on their centrelines; a route may leave both, and stage 9 adds label and legend
+ * boxes, so stage 9 is where the canvas is finally settled. An orthogonal chain is covered by the
+ * boxes of its segments.
  */
-function drawnBoxes(model: LayoutModel): Rect[] {
-  const boxes: Rect[] = [];
-  for (const group of Object.values(model.groups)) if (group.bounds) boxes.push(group.bounds);
-  for (const lane of model.lanes) boxes.push(lane.bounds);
-  for (const link of model.links) {
-    if (link.technique === 'stub') continue;
-    for (const segment of link.path?.segments ?? []) boxes.push(segmentBounds(segment));
-  }
-  for (const label of model.labels) if (!label.omitted && label.bounds) boxes.push(label.bounds);
-  return boxes;
-}
+const drawnBoxes = (model: LayoutModel): Rect[] => paintedBoxes(model, true);
 
 const linkLabelDiagnostics = (model: LayoutModel): Diagnostic[] =>
   model.diagnostics.filter(item => (LINK_LABEL_CODES as readonly string[]).includes(item.code));
@@ -334,10 +329,12 @@ const linkLabelDiagnostics = (model: LayoutModel): Diagnostic[] =>
 /** Recheck the exact stage-9 claims. Publication and restore run the one deterministic producer. */
 export function validateLinkLabels(model: LayoutModel): void {
   const expected = JSON.parse(JSON.stringify(model)) as LayoutModel;
-  expected.labels = expected.labels.filter(label => label.role !== 'link');
+  expected.labels = expected.labels.filter(label => label.role !== 'link' && label.role !== 'legend');
+  delete expected.legend;
   expected.diagnostics = expected.diagnostics.filter(item => !(LINK_LABEL_CODES as readonly string[]).includes(item.code));
   produceLinkLabels(expected);
   if (!equal(model.labels, expected.labels)) throw new Error('Link labels contradict measured post-route placement');
+  if (!equal(model.legend, expected.legend)) throw new Error('Legend contradicts the measured classes and final geometry');
   if (!equal(linkLabelDiagnostics(model), linkLabelDiagnostics(expected))) throw new Error('Link-label diagnostics contradict measured post-route placement');
   // Restore has no predecessor transaction to compare against, so the canvas-only-expands rule has
   // to be stated geometrically here: the published canvas must hold everything that is drawn. The

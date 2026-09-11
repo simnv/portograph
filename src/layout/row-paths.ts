@@ -1,7 +1,7 @@
 import type { PortRef } from '../model/document.js';
 import type { LayoutLink, LayoutModel, LayoutNode, LayoutPath, LayoutPort, PathSegment } from '../model/layout.js';
 import { EPS, length, segmentDistance, segmentRectDistance } from '../score/geometry.js';
-import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { portId } from './skeleton-graph.js';
 
 /** Stroke-aware clearances that the final gates require between a routed segment and foreign geometry. */
@@ -61,7 +61,9 @@ function automatic(model: LayoutModel, link: LayoutLink): boolean {
 
 /** Nothing foreign may lie inside the segment's gate clearances. Other pinned paths count as foreign. */
 export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segment: PathSegment): boolean {
-  const stroke = DEFAULT_STROKE_WIDTHS.path;
+  // The corridor has to clear this link's own resolved width, not the theme default: a weighted
+  // path measured at 1.5 px would be pinned where G6 then fails it.
+  const stroke = linkStrokeWidth(link);
   const ends = link.attachments;
   if (!ends) return false;
   const endNodes = new Set([ends.from.node, ends.to.node]);
@@ -87,7 +89,7 @@ export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segm
   }
   for (const other of model.links) {
     if (other.id === link.id || other.layer === 'overlay') continue;
-    const otherStroke = other.path?.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path;
+    const otherStroke = linkStrokeWidth(other);
     // A stage-8 remainder (`fixed: false`) is routed around this corridor, so it is not an
     // obstacle to the rule that reserved the corridor first. Re-deriving the pin against it would
     // let routing retract a placement decision, which the pipeline's load-bearing rule forbids.
@@ -119,7 +121,7 @@ export function expectedRowPath(model: LayoutModel, link: LayoutLink): LayoutPat
   const limit = 2 * Math.max(...[pair.left.node, pair.right.node].flatMap(node => [node.bounds!.width, node.bounds!.height]));
   if (extent < MIN_STEM - EPS || extent >= limit - EPS) return undefined;
   if (!straightCorridorClear(model, link, segment)) return undefined;
-  return { owner: { ...link.owner }, layer: 'routed', fixed: true, segments: [segment] };
+  return { owner: { ...link.owner }, layer: 'routed', fixed: true, ...pathStrokeWidth(link), segments: [segment] };
 }
 
 /**

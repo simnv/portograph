@@ -5,6 +5,31 @@ import { anchorOnBoundary, barContact, bundlePair, endpoints, incident, junction
 import type { Segment } from './model.js';
 import type { GateId, GateResult, ScoreCounters } from './types.js';
 
+/**
+ * The two runs on either side of one tread of an orthogonal staircase: the same link's segments
+ * `i` and `i + 2`, joined by the segment between them, with no shared extent. They lie before and
+ * after the tread, so they never appear beside each other and their measured distance is a corner
+ * of one wire. Any other pair of a link's segments — a loop that brings two distant bends together,
+ * for instance — is measured like any other clearance pair.
+ */
+function staircaseTread(a: Segment, b: Segment): boolean {
+  if (a.link.id !== b.link.id || Math.abs(a.index - b.index) !== 2) return false;
+  const segments = a.link.path!.segments;
+  const low = Math.min(a.index, b.index), tread = segments[low + 1];
+  if (!tread) return false;
+  return samePoint(segments[low]!.to, tread.from) && samePoint(tread.to, segments[low + 2]!.from)
+    && !alongside(a.segment, b.segment);
+}
+
+/** Shared extent of two parallel axis-aligned segments along the axis they both run on. */
+export function alongside(a: PathSegment, b: PathSegment): boolean {
+  const along = horizontal(a) && horizontal(b)
+    ? (segment: PathSegment): [number, number] => [Math.min(segment.from.x, segment.to.x), Math.max(segment.from.x, segment.to.x)]
+    : (segment: PathSegment): [number, number] => [Math.min(segment.from.y, segment.to.y), Math.max(segment.from.y, segment.to.y)];
+  const [aLow, aHigh] = along(a), [bLow, bHigh] = along(b);
+  return Math.min(aHigh, bHigh) - Math.max(aLow, bLow) > EPS;
+}
+
 export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCounters): Record<GateId, GateResult> {
   const nodes = Object.values(model.nodes), groups = Object.values(model.groups);
   const gate = (warning = false): GateResult => ({ passed: true, severity: warning ? 'warning' : 'error', violations: [] });
@@ -133,6 +158,10 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
     const a = routed[i]!;
     if (a.link.id === b.link.id && Math.abs(a.index - b.index) <= 1) continue;
     if (!(horizontal(a.segment) && horizontal(b.segment) || vertical(a.segment) && vertical(b.segment))) continue;
+    // One link's own staircase tread is not a clearance pair. Stage 7a reserves a lane at a fixed x
+    // and states that routing completes the attachment jog, so a tread shorter than the clearance
+    // is expected geometry rather than a corridor two objects share.
+    if (staircaseTread(a, b)) continue;
     const overlap = overlapSegment(a.segment, b.segment);
     if (overlap && sharedStem(model, a, b, overlap) || junctionFan(model, a, b)) continue;
     const bundle = bundlePair(model, a, b);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { LayoutLabel, LayoutModel, PathSegment } from '../../src/model/index.js';
 import { score } from '../../src/score/index.js';
+import { alongside } from '../../src/score/gates.js';
 import { bundle, empty, node, parallel, simple } from './fixtures.js';
 
 const gate = (model: LayoutModel, id: 'G1' | 'G2' | 'G3' | 'G4' | 'G5' | 'G6' | 'G7' | 'G8') => score(model).snapshot.gates[id];
@@ -218,6 +219,58 @@ describe('G4 overlap sweep and owners', () => {
     model.junctions[0]!.stem = { ...stem, to: { x: 30, y: 60 } };
     expect(gate(model, 'G4').passed).toBe(false);
   });
+  it('exempts one link\'s own staircase tread, and only that', () => {
+    const hit = (model: LayoutModel): boolean => gate(model, 'G6').violations.some(v => v.code === 'parallel-clearance');
+    // Two vertical runs 5 px apart that share their whole extent are a corridor two links share.
+    expect(hit(parallel(5))).toBe(true);
+
+    // One link's own staircase: its two vertical runs lie above and below the 5 px tread that joins
+    // them, so they never appear side by side and the measured distance is a corner of one wire.
+    const own = parallel(5);
+    own.links[1]!.path!.segments = [{ from: { x: 60, y: 40 }, to: { x: 60, y: 140 }, owner: { kind: 'link', id: 'two' } }];
+    own.links[0]!.path!.segments = [
+      { from: { x: 30, y: 40 }, to: { x: 30, y: 90 }, owner: { kind: 'link', id: 'one' } },
+      { from: { x: 30, y: 90 }, to: { x: 35, y: 90 }, owner: { kind: 'link', id: 'one' } },
+      { from: { x: 35, y: 90 }, to: { x: 35, y: 140 }, owner: { kind: 'link', id: 'one' } }];
+    expect(alongside(own.links[0]!.path!.segments[0]!, own.links[0]!.path!.segments[2]!)).toBe(false);
+    expect(hit(own)).toBe(false);
+    // The same link's runs that really do lie alongside each other are still measured.
+    own.links[0]!.path!.segments[2] = { from: { x: 35, y: 45 }, to: { x: 35, y: 140 }, owner: { kind: 'link', id: 'one' } };
+    expect(hit(own)).toBe(true);
+
+    // Two different links are always measured, whatever their extents: their painted corners can
+    // still meet. Only the vertical pair is close here, and its extents are disjoint, so this
+    // fails for exactly the reason the blanket exclusion would have hidden.
+    const corners = parallel(5);
+    corners.links[0]!.path!.segments = [
+      { from: { x: 30, y: 0 }, to: { x: 30, y: 50 }, owner: { kind: 'link', id: 'one' } },
+      { from: { x: 30, y: 50 }, to: { x: 200, y: 50 }, owner: { kind: 'link', id: 'one' } }];
+    corners.links[1]!.path!.segments = [
+      { from: { x: 35, y: 55 }, to: { x: 35, y: 200 }, owner: { kind: 'link', id: 'two' } },
+      { from: { x: 35, y: 200 }, to: { x: -100, y: 200 }, owner: { kind: 'link', id: 'two' } }];
+    expect(alongside(corners.links[0]!.path!.segments[0]!, corners.links[1]!.path!.segments[0]!)).toBe(false);
+    expect(alongside(corners.links[0]!.path!.segments[1]!, corners.links[1]!.path!.segments[1]!)).toBe(true);
+    expect(hit(corners)).toBe(true);
+    // Move the only close pair apart and nothing is left to report.
+    corners.links[1]!.path!.segments[0] = { from: { x: 90, y: 55 }, to: { x: 90, y: 200 }, owner: { kind: 'link', id: 'two' } };
+    corners.links[1]!.path!.segments[1] = { from: { x: 90, y: 200 }, to: { x: -100, y: 200 }, owner: { kind: 'link', id: 'two' } };
+    expect(hit(corners)).toBe(false);
+
+    // One link's loop is not a tread: two bends it brings together are three segments apart, so
+    // they are measured like any other pair.
+    const loop = parallel(5);
+    loop.links[1]!.path!.segments = [{ from: { x: 400, y: 40 }, to: { x: 400, y: 140 }, owner: { kind: 'link', id: 'two' } }];
+    loop.links[0]!.path!.segments = [
+      { from: { x: -20, y: 0 }, to: { x: 100, y: 0 }, owner: { kind: 'link', id: 'one' } },
+      { from: { x: 100, y: 0 }, to: { x: 100, y: -100 }, owner: { kind: 'link', id: 'one' } },
+      { from: { x: 100, y: -100 }, to: { x: 300, y: -100 }, owner: { kind: 'link', id: 'one' } },
+      { from: { x: 300, y: -100 }, to: { x: 300, y: 200 }, owner: { kind: 'link', id: 'one' } },
+      { from: { x: 300, y: 200 }, to: { x: 101, y: 200 }, owner: { kind: 'link', id: 'one' } },
+      { from: { x: 101, y: 200 }, to: { x: 101, y: 1 }, owner: { kind: 'link', id: 'one' } },
+      { from: { x: 101, y: 1 }, to: { x: 201, y: 1 }, owner: { kind: 'link', id: 'one' } }];
+    expect(hit(loop)).toBe(true);
+  });
+
   it('allows lane runs only for their explicit owner', () => {
     const model = simple();
     model.lanes.push({ id: 'lane', owner: { kind: 'link', id: 'ab' }, layer: 'routed', group: 'g-a', tier: 0, side: 'left', x: 30, bounds: { x: 20, y: 60, width: 20, height: 60 } });

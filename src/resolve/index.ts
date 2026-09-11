@@ -3,6 +3,7 @@ import {
   type Diagnostic, type Endpoint, type Layer, type LayoutLink, type LayoutModel,
   type NormalisedDocument, type Owner, type PortRef,
 } from '../model/index.js';
+import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 
 export interface ResolveOptions {
   /** Pass parseWithDiagnostics().diagnostics here at the orchestrator boundary. */
@@ -26,6 +27,19 @@ function stopOnErrors(model: LayoutModel): void {
 
 function family(linkClass: string | undefined): Layer {
   return linkClass === 'flow' || linkClass === 'sync' ? 'overlay' : 'routed';
+}
+
+/**
+ * The author's `weight` is a line-weight multiplier on the theme's base path stroke. It is resolved
+ * here, in stage 1, so every rule that reserves stroke-aware space during placement — bundle pitch,
+ * lane width, label bands, the G6 clearances — sees the real width before any path exists, and the
+ * scorer and the renderer read the same number. The shared default is left implicit.
+ */
+function strokeWidth(weight: number | undefined): number | undefined {
+  if (weight === undefined) return undefined;
+  const width = DEFAULT_STROKE_WIDTHS.path * weight;
+  if (!Number.isFinite(width) || width < 0) throw new Error('Link weight must produce a finite, nonnegative stroke width');
+  return width === DEFAULT_STROKE_WIDTHS.path ? undefined : width;
 }
 
 function orderedPair(a: string, b: string, order: Map<string, number>): [string, string] {
@@ -87,6 +101,8 @@ function expandEndpoints(model: LayoutModel, groupOrder: Map<string, number>): A
     const authored = model.document.links[link.sourceIndex]!;
     link.family = family(authored.class);
     link.layer = authored.route === undefined ? link.family : authored.route === 'overlay' ? 'overlay' : 'routed';
+    const width = strokeWidth(authored.weight);
+    if (width !== undefined) link.strokeWidth = width;
     if (authored.route !== undefined) link.technique = authored.route;
     else if (link.family === 'overlay') link.technique = 'overlay';
     if (authored.route === 'stub' || authored.route === 'group-link') {

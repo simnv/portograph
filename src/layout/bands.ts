@@ -4,7 +4,7 @@ import type { LabelBand, LayoutGroup, LayoutLabel, LayoutModel, Owner, PathSegme
 import { equal } from '../model/json-equality.js';
 import { orderedGroupIds } from '../model/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
-import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { createCentreBudget, type CentreBudget } from './centre.js';
 import { laneSidesHold } from './lanes.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
@@ -59,7 +59,7 @@ function measurement(model: LayoutModel, groupId: string) {
 /** Widest routed stroke this placement must keep clear; stage 8 may not exceed it. */
 export function routedStroke(model: LayoutModel): number {
   return Math.max(DEFAULT_STROKE_WIDTHS.path, ...model.links.filter(link => link.layer === 'routed')
-    .map(link => link.path?.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path));
+    .map(linkStrokeWidth));
 }
 function strokeAllowance(model: LayoutModel): number { return routedStroke(model) / 2; }
 
@@ -160,7 +160,7 @@ function segmentRect(segment: PathSegment, stroke: number): Rect {
  * consumed, so identical stroke-aware rectangles with identical ownership collapse to one entry.
  */
 function linkRects(link: LayoutModel['links'][number]): { id: string; bounds: Rect }[] {
-  const stroke = (link.path?.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path) / 2;
+  const stroke = linkStrokeWidth(link) / 2;
   // A stage-8 remainder (`fixed: false`) is routed around this placement, so only the runs a rule
   // reserved count here; re-deriving a label against a later route would let routing move it.
   const reserved = link.path?.fixed === false ? [] : link.path?.segments ?? [];
@@ -196,8 +196,10 @@ function forbiddenRects(model: LayoutModel, placed: LayoutLabel[]): { id: string
     }
   }
   // Stage 9 labels are placed around this band, so re-deriving the band around them would let a
-  // later label move an earlier frozen one. Group labels are replanned here and join through `placed`.
-  for (const label of [...model.labels.filter(item => item.role !== 'group' && item.role !== 'link'), ...placed]) {
+  // later label move an earlier frozen one. That covers the generated legend below the diagram as
+  // well. Group labels are replanned here and join through `placed`.
+  const stageNine = (role: string | undefined): boolean => role === 'link' || role === 'legend';
+  for (const label of [...model.labels.filter(item => item.role !== 'group' && !stageNine(item.role)), ...placed]) {
     if (!label.omitted && label.layer !== 'overlay' && label.bounds) result.push({ id: label.id, bounds: label.bounds });
   }
   for (const lane of model.lanes) if (lane.layer !== 'overlay') result.push({ id: lane.id, bounds: lane.bounds });

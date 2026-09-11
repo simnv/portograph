@@ -535,7 +535,7 @@ marked `stubCandidate` and warned about; M1 keeps the technique and the full rou
 provider feeds into EAC-01 and EAC-02. This is a deviation from the prototype run, where the rules
 claimed every link and libavoid was idle; the rules claim 24 of 26 here. Both really invoke
 libavoid, in one ownership batch, and the complete 26-link diagram passes G1–G8 with 0 crossings,
-0 overlaps, 0 label hits and Q 0.8182938137778218. Each feed leaves the datacenter group sideways,
+0 overlaps, 0 label hits and Q 0.818586208746674 (0.8182938137778218 before ticket 16 reserved a visible wire between facing pills). Each feed leaves the datacenter group sideways,
 drops beside the full-width label band and enters its top port through the 16 px clearance stage 7f
 reserved for exactly that entry.
 
@@ -587,10 +587,23 @@ because a coordinate is large. Shared-stem copies remain semantically distinct; 
 is not assumed to be bounded by G4 or G6. Scale checks count visited tree nodes and candidate tests
 separately from text measurement.
 
+**The generated legend is measured here too.** It is drawn geometry with text and symbol bounds, so
+it belongs to the layout model, not to an unmeasured renderer margin. After the ordinary link
+labels and before publication, the same transaction measures it and places it in newly reserved
+space below everything the diagram draws — group boxes, lanes, pills, paths and visible labels —
+with a 20 px gap. Frozen node, group, port, band and path geometry never moves for it, group label
+bands are not replanned around it, and the anchor is that drawn-geometry union rather than the
+canvas, so re-deriving the legend from a published model puts it back in exactly the same place.
+It exists only when the document draws more than one symbol or more than one line style, lists
+exactly the classes present (known profile classes in declaration order, then author classes by
+first use; a link without a class contributes the profile's default line style), and records the
+same effective stroke width `score` measures. `LayoutModel.legend` and its `role: 'legend'` labels
+are stage 9's claims: the validator re-derives both and rejects a forged, moved or removed legend.
+
 **Stage 9 settles the canvas.** `expandCanvas` reserves group boxes and lanes; a route may leave
-both, and stage 9 adds label boxes, so the producer expands the canvas over every group, lane, drawn
-path and visible label. Restore has no predecessor transaction, so the "canvas may only expand" rule
-is restated geometrically there: the canvas must contain all of that.
+both, and stage 9 adds label and legend boxes, so the producer expands the canvas over every group,
+lane, drawn path, visible label and the legend. Restore has no predecessor transaction, so the
+"canvas may only expand" rule is restated geometrically there: the canvas must contain all of that.
 
 **Multiplicity labels.** One per `Bundle.mergeRuns` record, `label:multiplicity:<run id>`, with the
 decimal count as its text. `count` must equal the member count, be at least two, and every member
@@ -607,12 +620,42 @@ table by size is in `quality.md` and is authoritative.
 
 ## Stage 11 — emit
 
-Layout JSON (always) → SVG. `class` attributes from YAML; an inline `<style>` from the profile
-theme plus the document `css:`. **CSS may not change geometry**: font-family, font-size,
-stroke-width and transforms are set by the theme and locked (`!important` in the emitted style);
-`css:` may set colour, fill, dash, opacity. The overlay `<g>` sits beneath the routed layer with
-node interiors, group labels, port pills and link labels masked out; overlay endpoints keep a
-2 px mark.
+Layout JSON (always) → SVG. `render(layout, options?)` is pure: it measures nothing, moves nothing
+and grows nothing. Every coordinate, size, rotation, stroke width and label metric is read from the
+model, and the emitted stroke width of an element is exactly the width `score` measured for it.
+A top or bottom pill's rectangle is already rotated in the model, so the renderer draws that
+rectangle unrotated and turns only the text, by the label's stored `textRotation`.
+
+`class` attributes from YAML, kept as separate tokens beside the structural class (`node router`),
+on the painted element as well as its container, so a document rule of the same specificity still
+owns the palette. One semantic `data-id` per object: group id, node id, `node.port#ordinal` for a
+named port, the model link id, the merge-run id and the legend entry key. A detached label or
+endpoint mark carries `data-owner` and, for a mark, `data-end`, instead of repeating a `data-id`.
+Every text node and attribute is XML-escaped, including the inline style, so no source string is
+interpolated as markup.
+
+An inline `<style>` holds the profile theme, the generated geometry locks and the parser-filtered
+document `css:`, in that order. **CSS may not change geometry**: the parser strips every locked
+property from `css:` with a warning, and the theme states the same properties with `!important`.
+The renderer uses no CSS custom property for a locked value, so an author `--name` cannot reach
+one either. The locked set is in `schema.md`; `css:` may set colour, fill, dash and opacity.
+
+The overlay `<g>` sits beneath the routed layer with node interiors, group labels, port pills and
+visible link labels masked out; a hidden link's label is left out of the mask so it cannot leave an
+unexplained gap. Overlay endpoints keep a 2 px mark, drawn above the protected elements rather than
+inside the masked group. One counted merge trunk is painted once by its bundle, and the interval it
+covers is subtracted from each member's own path, which still draws its approach and departure.
+
+`RenderOptions.layers` selects the effective link families to draw as a nonempty list of `routed`
+and `overlay`. With no selection both families are drawn and `document.overlays` hides overlay
+links by class; an explicit selection overrides those switches. Nodes, groups, ports and the
+generated legend are never hidden by it, and link-owned labels and overlay endpoint marks follow
+their links. This changes emitted visibility only: stored geometry, the canvas, the score and the
+gate scope are untouched, and the legend keeps its recorded full class set and geometry.
+
+Emission order: `<defs>` (style, icon symbols, overlay mask), canvas background, group boxes,
+masked overlay paths, routed paths and merge trunks, nodes with icons, text and pills, group and
+link labels, unmasked overlay endpoint marks, generated legend.
 
 ---
 

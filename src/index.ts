@@ -15,6 +15,12 @@ export * from './parse/index.js';
 export * from './migrate/index.js';
 export * from './score/index.js';
 export { DEFAULT_STROKE_WIDTHS } from './theme/geometry.js';
+export { LEGEND_GEOMETRY } from './theme/legend.js';
+export { LEGEND_DEFAULT_CLASS, NETWORK_LINK_CLASSES, NETWORK_NODE_CLASSES, NETWORK_THEME,
+  classDisplayLabel, classOrder, linkClassStyle, nodeClassStyle } from './profiles/network/theme.js';
+export type { LinkClassStyle, NodeClassStyle } from './profiles/network/theme.js';
+export { render, linkVisible, OVERLAY_ENDPOINT_RADIUS } from './render/index.js';
+export type { RenderOptions } from './render/index.js';
 export * from './resolve/index.js';
 export * from './layout/sides-one.js';
 export * from './layout/size.js';
@@ -43,6 +49,7 @@ export { bundles, prepareBundleGeometry, rebuildBundlePaths, BundleFeasibilityEr
 export { bands, GROUP_LABEL_GEOMETRY } from './layout/bands.js';
 export { linkLabels, produceLinkLabels, validateLinkLabels, overlayDensity, overlayLabelsSuppressed,
   LINK_LABEL_GEOMETRY, LINK_LABEL_CODES, OVERLAY_LABEL_DENSITY } from './layout/link-labels.js';
+export { diagramBounds, drawnBoxes, legendBoxes, legendRequired, legendVariants, produceLegend } from './layout/legend.js';
 
 export { optimizeBundleOrder } from './layout/bundle-order.js';
 export type { BundleOrderResult } from './layout/bundle-order.js';

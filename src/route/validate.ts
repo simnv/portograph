@@ -3,6 +3,7 @@ import type { LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import { equal } from '../model/json-equality.js';
 import { routedStroke, stemReach } from '../layout/bands.js';
 import { findPort } from '../layout/row-paths.js';
+import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { EPS, horizontal, length, samePoint, segmentRect, vertical } from '../score/geometry.js';
 import { outward } from '../score/model.js';
 import { effectiveLayer, reversedRuns } from './plan.js';
@@ -162,6 +163,16 @@ export function validateRoutedPaths(model: LayoutModel, requireComplete = false)
     // `fixed` decides which contract this path answers to, so a restored value that merely looks
     // true is not good enough.
     if (typeof path.fixed !== 'boolean') throw new Error(`Path on ${link.id} has no boolean fixed flag`);
+    // The effective width is the one stage 1 resolved from the document, and every path constructor
+    // restates it the same way: present when it differs from the shared default, absent otherwise.
+    // Placement, the gates and the renderer all read this one number, so a path width that differs
+    // — or that merely omits a resolved width — would not be producer output. The expectation is
+    // derived from the link alone: reading the path here would compare it with itself.
+    const resolved = link.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path;
+    const expected = resolved === DEFAULT_STROKE_WIDTHS.path ? undefined : resolved;
+    if (!equal(expected, path.strokeWidth)) {
+      throw new Error(`Path width on ${link.id} contradicts its resolved link width`);
+    }
     if (effectiveLayer(link) !== 'routed') {
       // An overlay link is drawn straight between its anchors on its own layer, never routed.
       if (path.segments.length !== 1) throw new Error(`Overlay path on ${link.id} is not a single straight segment`);

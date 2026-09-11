@@ -1,7 +1,7 @@
 import type { Bundle, LayoutLink, LayoutModel, LayoutPort, Point, Side } from '../model/index.js';
 import { repackOverlaps } from './rows.js';
 import { applyBundleOrder } from './bundle-order.js';
-import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { findPort } from './row-paths.js';
 import { portId } from './skeleton-graph.js';
 import { fitRegionGroup, bottom, right } from './regions.js';
@@ -29,7 +29,7 @@ export function outward(port: LayoutPort, length = MIN_STEM): Point {
   const n = normal(port.side!); return { x: port.anchor!.x + n.x * length, y: port.anchor!.y + n.y * length };
 }
 export function pitch(model: LayoutModel, bundle: Bundle): number {
-  return MEMBER_GAP + Math.max(DEFAULT_STROKE_WIDTHS.path, ...members(model, bundle).map(m => m.link.path?.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path));
+  return MEMBER_GAP + Math.max(DEFAULT_STROKE_WIDTHS.path, ...members(model, bundle).map(m => linkStrokeWidth(m.link)));
 }
 export function inversionPairs(list: Member[]): [string, string][] {
   const pairs: [string, string][] = [];
@@ -145,7 +145,10 @@ export function prepareBundleGeometry(model: LayoutModel): void {
     const q = Math.max(pitch(model, primaryBundle), ...list.flatMap(m => [model.nodes[m.a.ref.node]!.sidePitch![m.a.side!]!, model.nodes[m.b.ref.node]!.sidePitch![m.b.side!]!]));
     primary.bounds!.height = Math.max(primary.bounds!.height, 20 + new Set(list.map(m => m.a.ref.node === primary.id ? m.a : m.b)).size * q);
     primary.size!.height = primary.bounds!.height;
-    let lower = bottom(primary.bounds!) + 10 + (DEFAULT_STROKE_WIDTHS.path + (primary.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node)) / 2;
+    // Each block has to clear whatever stroke its own members really carry.
+    const memberStroke = (item: Bundle): number =>
+      Math.max(DEFAULT_STROKE_WIDTHS.path, ...members(model, item).map(m => linkStrokeWidth(m.link)));
+    let lower = bottom(primary.bounds!) + 10 + (memberStroke(primaryBundle) + (primary.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node)) / 2;
     for (const secondary of model.bundles.filter(b => b.id !== primaryBundle.id && b.nodes.includes(own))) {
       const peers = members(model, secondary);
       if (!facing(peers) || axis(peers[0]!.a.side!) !== 'y' || inversionPairs(peers).length) continue;
@@ -154,7 +157,7 @@ export function prepareBundleGeometry(model: LayoutModel): void {
       for (const n of Object.values(model.nodes)) {
         if (secondary.nodes.includes(n.id) || n.bounds!.x >= rightEdge || right(n.bounds!) <= left) continue;
         if (model.groups[model.document.nodes[n.id]!.group]!.tier !== group.tier) continue;
-        lower = Math.max(lower, bottom(n.bounds!) + 10 + (DEFAULT_STROKE_WIDTHS.path + (n.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node)) / 2);
+        lower = Math.max(lower, bottom(n.bounds!) + 10 + (memberStroke(secondary) + (n.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node)) / 2);
       }
       block(secondary, lower);
       lower += peers.length * pitch(model, secondary);

@@ -79,16 +79,33 @@ describe('stage 9 golden', () => {
     expect(model.document.links.every(link => link.label === undefined)).toBe(true);
     expect(model.bundles.every(bundle => bundle.mergeRuns === undefined)).toBe(true);
     expect(linkLabelsOf(model)).toEqual([]);
-    expect(model.labels).toEqual(routed.labels);
+    // Ticket 16 adds the generated legend to this same transaction. Nothing the diagram already
+    // drew moves: only legend labels join, below everything, with the canvas reserved for them.
+    expect(model.labels.filter(label => label.role !== 'legend')).toEqual(routed.labels);
+    expect(model.legend!.entries.map(entry => entry.id)).toEqual(['symbol:provider', 'symbol:router',
+      'symbol:tbr', 'symbol:rr', 'line:default', 'line:dotted', 'line:dashed']);
     expect(model.links).toEqual(routed.links);
     expect(model.freeze!.placement).toEqual(routed.freeze!.placement);
-    expect(model.canvas).toEqual(routed.canvas);
+    // The canvas now also holds the outer half of every stroke, so it grows on every side rather
+    // than only downward: a rectangle is drawn on its centreline.
+    const canvas = model.canvas!, before = routed.canvas!;
+    expect(canvas.x).toBeLessThan(before.x);
+    expect(canvas.y).toBeLessThanOrEqual(before.y);
+    expect(canvas.x + canvas.width).toBeGreaterThanOrEqual(before.x + before.width);
+    expect(canvas.y + canvas.height).toBeGreaterThanOrEqual(model.legend!.bounds.y + model.legend!.bounds.height);
+    expect(canvas.height).toBeGreaterThan(before.height);
+    // Nothing the diagram paints lies outside it, strokes included.
+    for (const box of api.drawnBoxes(model, true)) {
+      expect([box, box.x >= canvas.x && box.y >= canvas.y
+        && box.x + box.width <= canvas.x + canvas.width
+        && box.y + box.height <= canvas.y + canvas.height]).toEqual([box, true]);
+    }
 
     const report = score(model, { golden: true }).snapshot;
     for (const id of GATES) expect([id, report.gates[id].violations]).toEqual([id, []]);
     expect(report.counters).toMatchObject({ labelHits: 0, labelsOmitted: 0, barCross: 3, lanesUsed: 4, overlaps: 0 });
     expect(report.metrics.crossings.count).toBe(0);
-    expect(report.Q).toBeCloseTo(0.8182938137778218, 12);
+    expect(report.Q).toBeCloseTo(0.818586208746674, 12);
     expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
   }, 60000);
 });

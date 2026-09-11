@@ -8,7 +8,7 @@ export type LayoutStage = 'normalised' | 'resolve' | 'sides-one' | 'size' | 'ske
 
 export type Layer = 'routed' | 'overlay';
 export type Owner =
-  | { kind: 'node' | 'group' | 'link' | 'group-link' | 'bundle' | 'shared-stem' | 'lane'; id: string }
+  | { kind: 'node' | 'group' | 'link' | 'group-link' | 'bundle' | 'shared-stem' | 'lane' | 'legend'; id: string }
   | { kind: 'barCross'; node: string; link: string };
 
 export interface OwnedElement {
@@ -131,6 +131,12 @@ export interface LayoutLink {
   layer?: Layer;
   /** Effective drawing technique. M1 fallback requests remain on document.links[sourceIndex].route. */
   technique?: Route;
+  /**
+   * Effective stroke width, resolved in stage 1 from the author's `weight` multiplier and omitted
+   * when it is the shared default. Placement reserves stroke-aware space from it before any path
+   * exists; `score` and `render` read the same number through `linkStrokeWidth`.
+   */
+  strokeWidth?: number;
   bundle?: string;
   groupLink?: string;
   /** Routing must first resolve group endpoints to concrete port refs. */
@@ -208,6 +214,36 @@ export interface BarDrop extends OwnedElement {
   barCross: string[];
 }
 
+/**
+ * One generated legend row. `swatch` is the measured symbol tile or line sample; `label` names the
+ * `role: 'legend'` label that describes it. Both are final geometry: stage 11 draws them and never
+ * re-measures or reflows them, including when a render hides a layer.
+ */
+export interface LegendEntry {
+  /** `symbol:<class>` or `line:<class>`; the rendered `data-id` and the acceptance key. */
+  id: string;
+  kind: 'symbol' | 'line';
+  /** The document class this entry stands for; `LEGEND_DEFAULT_CLASS` for links without one. */
+  key: string;
+  /** Profile icon of a symbol entry, absent when the class resolves to none. */
+  icon?: string;
+  /** Effective stroke width of a line entry; identical to the width `score` measures. */
+  strokeWidth?: number;
+  swatch: Rect;
+  label: string;
+}
+
+/**
+ * The generated legend. It exists only when the document uses more than one symbol or more than one
+ * line style, describes exactly the classes present, and occupies canvas space reserved below the
+ * drawn diagram — it never moves frozen node, group, port, band or path geometry.
+ */
+export interface Legend extends OwnedElement {
+  id: string;
+  bounds: Rect;
+  entries: LegendEntry[];
+}
+
 export interface GroupLink extends OwnedElement {
   id: string;
   groups: [string, string];
@@ -253,6 +289,8 @@ export interface LayoutModel {
   obstacles: Obstacle[];
   diagnostics: Diagnostic[];
   runtime: LayoutRuntime;
+  /** Measured by stage 9 inside the link-label transaction; absent when one variant or none. */
+  legend?: Legend;
   canvas?: Rect;
   anchorTier?: number;
   fallbackUsed?: boolean;

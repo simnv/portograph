@@ -1,0 +1,362 @@
+import type { Point, Rect } from '../model/geometry.js';
+import type {
+  Bundle, Layer, LayoutLabel, LayoutLink, LayoutModel, LayoutNode, PathSegment,
+} from '../model/layout.js';
+import { orderedGroupIds, orderedNodeIds } from '../model/model.js';
+import { iconKey, iconPath } from '../profiles/network/icons.js';
+import { LEGEND_DEFAULT_CLASS } from '../profiles/network/theme.js';
+import { EPS, right } from '../score/geometry.js';
+import { effectiveLayer, validate } from '../score/model.js';
+import { measureText } from '../text/index.js';
+import { DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, linkStrokeWidth } from '../theme/geometry.js';
+import { GeometryLocks, themeCss } from './theme.js';
+import { authorClass, classes, element, escapeStyle, escapeText, num } from './svg.js';
+
+export { OVERLAY_ENDPOINT_RADIUS };
+/** Inset of a scaled icon glyph inside its measured tile, so the tile keeps a visible border. */
+const ICON_INSET = 1.5;
+const MASK_ID = 'pg-overlay-mask';
+
+export interface RenderOptions {
+  /**
+   * Effective link families to draw, as a nonempty selection. Omitted, both families are drawn and
+   * `document.overlays` hides overlay links by class; an explicit selection overrides those
+   * switches. Nodes, groups, ports and the generated legend are never hidden by it.
+   */
+  layers?: readonly Layer[];
+}
+
+const nodeStroke = (node: LayoutNode): number => node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node;
+const centre = (box: Rect): Point => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
+const samePoint = (a: Point, b: Point): boolean => Math.abs(a.x - b.x) <= EPS && Math.abs(a.y - b.y) <= EPS;
+
+/** `node.port#ordinal` for a named port; anonymous ports draw nothing and need no identity. */
+const portId = (node: string, name: string, ordinal: number): string => `${node}.${name}#${ordinal}`;
+
+/** The authored class exactly as the document holds it; `document.overlays` is keyed by this. */
+function documentClass(model: LayoutModel, link: LayoutLink): string | undefined {
+  const value = model.document.links[link.sourceIndex]?.class;
+  return value === '' ? undefined : value;
+}
+
+/** The same class as a class token, with the renderer's reserved prefix removed. */
+const linkClassToken = (model: LayoutModel, link: LayoutLink): string | undefined =>
+  authorClass(documentClass(model, link));
+
+/** The effective visibility rule ticket 17's `--layers` consumes. */
+export function linkVisible(model: LayoutModel, link: LayoutLink, options: RenderOptions): boolean {
+  const layer = effectiveLayer(link);
+  if (options.layers) return options.layers.includes(layer);
+  if (layer !== 'overlay') return true;
+  const authored = documentClass(model, link);
+  return authored === undefined || model.document.overlays?.[authored] !== 'hidden';
+}
+
+function checkOptions(options: RenderOptions): void {
+  if (options.layers === undefined) return;
+  if (!options.layers.length) throw new Error('Layer selection must name at least one of routed, overlay');
+  for (const layer of options.layers) {
+    if (layer !== 'routed' && layer !== 'overlay') throw new Error(`Unknown link layer ${String(layer)}`);
+  }
+}
+
+/** `d` for one chain of segments, starting a new subpath wherever the model's chain breaks. */
+function pathData(segments: readonly PathSegment[]): string {
+  const parts: string[] = [];
+  let previous: Point | undefined;
+  for (const segment of segments) {
+    if (!previous || !samePoint(previous, segment.from)) parts.push(`M${num(segment.from.x)} ${num(segment.from.y)}`);
+    parts.push(`L${num(segment.to.x)} ${num(segment.to.y)}`);
+    previous = segment.to;
+  }
+  return parts.join(' ');
+}
+
+/** Merge runs of a bundle that really contain this member, as collinear intervals to remove. */
+function trunkIntervals(bundle: Bundle | undefined, link: LayoutLink): PathSegment[] {
+  if (!bundle?.mergeRuns) return [];
+  return bundle.mergeRuns.filter(run => run.members.includes(link.id)).flatMap(run => run.path.segments);
+}
+
+/**
+ * A member of a counted merge run keeps the shared trunk in its logical path, but the trunk is
+ * painted once by its bundle. Subtract exactly the covered collinear intervals, so the member's own
+ * approach and departure still draw and nothing is emitted twice.
+ */
+function withoutTrunks(link: LayoutLink, trunks: readonly PathSegment[]): PathSegment[] {
+  if (!trunks.length) return [...(link.path?.segments ?? [])];
+  const result: PathSegment[] = [];
+  for (const segment of link.path?.segments ?? []) {
+    const vertical = Math.abs(segment.to.x - segment.from.x) <= EPS;
+    const horizontal = Math.abs(segment.to.y - segment.from.y) <= EPS;
+    const at = (point: Point): number => vertical ? point.y : point.x;
+    const fixed = (point: Point): number => vertical ? point.x : point.y;
+    const covers = (!vertical && !horizontal) ? [] : trunks.filter(trunk =>
+      (vertical ? Math.abs(trunk.to.x - trunk.from.x) <= EPS : Math.abs(trunk.to.y - trunk.from.y) <= EPS)
+      && Math.abs(fixed(trunk.from) - fixed(segment.from)) <= EPS)
+      .map(trunk => [Math.min(at(trunk.from), at(trunk.to)), Math.max(at(trunk.from), at(trunk.to))] as const)
+      .sort((a, b) => a[0] - b[0]);
+    if (!covers.length) { result.push(segment); continue; }
+    const forward = at(segment.to) >= at(segment.from);
+    const low = Math.min(at(segment.from), at(segment.to)), high = Math.max(at(segment.from), at(segment.to));
+    const point = (value: number): Point => vertical ? { x: fixed(segment.from), y: value } : { x: value, y: fixed(segment.from) };
+    let cursor = low;
+    const keep: [number, number][] = [];
+    for (const [start, end] of covers) {
+      if (start > cursor + EPS) keep.push([cursor, Math.min(start, high)]);
+      cursor = Math.max(cursor, end);
+      if (cursor >= high - EPS) break;
+    }
+    if (cursor < high - EPS) keep.push([cursor, high]);
+    for (const [start, end] of keep) {
+      if (end - start <= EPS) continue;
+      result.push({ ...segment, from: point(forward ? start : end), to: point(forward ? end : start) });
+    }
+  }
+  return result;
+}
+
+/** First baseline of a measured label; the font table supplies the ascent, the model the box. */
+function baseline(label: LayoutLabel): number {
+  const size = label.fontSize ?? 9;
+  return measureText('', { fontSize: size, weight: label.fontWeight ?? 400 }).ascent;
+}
+
+function textElement(label: LayoutLabel, locks: GeometryLocks, structural: string, owner: string, extra?: string): string {
+  const lines = label.lines ?? (label.text ? [label.text] : []);
+  if (!lines.length || !label.bounds) return '';
+  const rotated = label.textRotation === -90;
+  const box = label.bounds, middle = centre(box);
+  // A rotated label's stored box is already rotated, so lay the text out unrotated about the same
+  // centre and turn only the text. The rectangle is never rotated twice.
+  const height = rotated ? box.width : box.height;
+  const lineHeight = label.lineHeight ?? height / lines.length;
+  const top = middle.y - height / 2;
+  const font = locks.font(label.fontFamily ?? 'Arial, Helvetica, sans-serif', label.fontSize ?? 9, label.fontWeight ?? 400);
+  const first = top + baseline(label);
+  const spans = lines.map((line, index) => element('tspan',
+    { x: middle.x, y: first + index * lineHeight }, escapeText(line))).join('');
+  const title = label.tooltip !== undefined && label.tooltip !== label.text
+    ? element('title', {}, escapeText(label.tooltip)) : '';
+  return element('text', {
+    class: classes(structural, extra, font),
+    'data-owner': owner,
+    'text-anchor': 'middle',
+    ...(rotated ? { transform: `rotate(-90 ${num(middle.x)} ${num(middle.y)})` } : {}),
+  }, title + spans);
+}
+
+function iconElement(icon: { icon: string; bounds: Rect }, locks: GeometryLocks, authored: string | undefined): string {
+  const box = icon.bounds;
+  const inset = Math.min(ICON_INSET, box.width / 4, box.height / 4);
+  return element('rect', { class: classes('icon-tile', authored, locks.stroke(DEFAULT_STROKE_WIDTHS.pill)),
+    x: box.x, y: box.y, width: box.width, height: box.height, rx: 2, ry: 2 })
+    + element('use', { class: classes('node-icon', authored, locks.stroke(DEFAULT_STROKE_WIDTHS.node)),
+      href: `#pg-icon-${iconKey(icon.icon)}`,
+      x: box.x + inset, y: box.y + inset, width: box.width - 2 * inset, height: box.height - 2 * inset });
+}
+
+/**
+ * Whether a stage-9 label is drawn at all. A link label follows its own link; a multiplicity label
+ * belongs to a **bundle** and follows any visible member of it. The mask and the label layer read
+ * this one predicate, so a drawn label is always protected and a hidden one never leaves a hole.
+ */
+function labelDrawn(model: LayoutModel, label: LayoutLabel, visible: (link: LayoutLink) => boolean): boolean {
+  if (label.omitted || !label.bounds) return false;
+  const owner = label.owner;
+  if (owner.kind === 'barCross') {
+    const crossing = model.links.find(link => link.id === owner.link);
+    return crossing === undefined || visible(crossing);
+  }
+  if (label.support?.kind === 'merge-run' || owner.kind === 'bundle') {
+    return model.links.some(link => link.bundle === owner.id && visible(link));
+  }
+  const link = model.links.find(item => item.id === owner.id);
+  return link === undefined || visible(link);
+}
+
+/** Every rectangle the overlay layer is masked out of, per `pipeline.md` stage 11. */
+function maskedBoxes(model: LayoutModel, visible: (link: LayoutLink) => boolean): Rect[] {
+  const boxes: Rect[] = [];
+  for (const node of Object.values(model.nodes)) {
+    if (node.bounds) boxes.push(node.bounds);
+    for (const port of node.ports) if (port.pill) boxes.push(port.pill.bounds);
+  }
+  for (const label of model.labels) {
+    if (label.omitted || !label.bounds) continue;
+    if (label.role === 'group') boxes.push(label.bounds);
+    // A hidden link's label is not drawn, so masking it would leave an unexplained gap.
+    if (label.role === 'link' && labelDrawn(model, label, visible)) boxes.push(label.bounds);
+  }
+  return boxes;
+}
+
+/** A group whose nodes all share one class reads as that class, as the approved target does. */
+function uniformNodeClass(model: LayoutModel, nodes: readonly string[]): string | undefined {
+  const values = new Set(nodes.map(id => model.document.nodes[id]?.class ?? ''));
+  const only = values.size === 1 ? [...values][0]! : '';
+  return only === '' ? undefined : authorClass(only);
+}
+
+/**
+ * Serialize final layout geometry as SVG. This is a pure function: it measures nothing, moves
+ * nothing, and grows nothing. Every coordinate, size, rotation, stroke width and label metric comes
+ * from the model, and the emitted stroke widths are the ones `score` measured.
+ */
+export function render(layout: LayoutModel, options: RenderOptions = {}): string {
+  checkOptions(options);
+  validate(layout);
+  const canvas = layout.canvas;
+  if (!canvas) throw new Error('Render requires a final canvas');
+  const locks = new GeometryLocks();
+  const visible = (link: LayoutLink): boolean => linkVisible(layout, link, options);
+  const icons = new Set<string>();
+
+  const groups = orderedGroupIds(layout.document).map(id => {
+    const group = layout.groups[id]!, authored = authorClass(layout.document.groups[id]!.class);
+    const uniform = uniformNodeClass(layout, group.nodes);
+    return element('g', { class: classes('group', authored), 'data-id': id,
+      ...(uniform ? { 'data-node-class': uniform } : {}) },
+    element('rect', { class: classes('group-box', authored, uniform, locks.stroke(DEFAULT_STROKE_WIDTHS.group)),
+      x: group.bounds!.x, y: group.bounds!.y, width: group.bounds!.width, height: group.bounds!.height,
+      rx: 10, ry: 10 }));
+  }).join('');
+
+  /**
+   * Text the link carries but does not draw: an omitted label keeps its full text as a tooltip, and
+   * an M1 group-link fallback keeps its membership. Neither may disappear, and neither becomes an
+   * aggregated glyph: the members are still drawn one by one.
+   */
+  const linkTooltip = (link: LayoutLink): string => {
+    const lines = layout.labels.filter(label => label.role === 'link' && label.omitted
+      && label.tooltip !== undefined && label.owner.kind === 'link' && label.owner.id === link.id)
+      .map(label => label.tooltip!);
+    const group = link.groupLink === undefined ? undefined : layout.groupLinks.find(item => item.id === link.groupLink);
+    if (group) lines.push(`${group.groups[0]} – ${group.groups[1]}: ${group.members.length} links`);
+    return lines.length ? element('title', {}, escapeText(lines.join('\n'))) : '';
+  };
+
+  const linkElement = (link: LayoutLink, bundle: Bundle | undefined): string => {
+    const authored = linkClassToken(layout, link);
+    const layer = effectiveLayer(link);
+    const segments = withoutTrunks(link, trunkIntervals(bundle, link));
+    const data = pathData(segments);
+    if (!data) return '';
+    return element('g', { class: classes('link', layer === 'overlay' ? 'overlay' : undefined, authored), 'data-id': link.id },
+      linkTooltip(link)
+      + element('path', { class: classes('link-line', layer === 'overlay' ? 'overlay-line' : undefined,
+        authored, locks.stroke(linkStrokeWidth(link))), d: data }));
+  };
+
+  const drawn = layout.links.filter(link => link.technique !== 'stub' && link.path && visible(link));
+  const byId = new Map(layout.links.map(link => [link.id, link]));
+  const bundleOf = new Map(layout.bundles.map(bundle => [bundle.id, bundle]));
+  const overlayPaths = drawn.filter(link => effectiveLayer(link) === 'overlay')
+    .map(link => linkElement(link, undefined)).join('');
+  const routedPaths = drawn.filter(link => effectiveLayer(link) === 'routed')
+    .map(link => linkElement(link, link.bundle ? bundleOf.get(link.bundle) : undefined)).join('');
+  // One counted merge trunk is painted once by its bundle, never once per member.
+  const trunks = layout.bundles.flatMap(bundle => (bundle.mergeRuns ?? []).flatMap(run => {
+    const members = run.members.map(id => byId.get(id)).filter((link): link is LayoutLink => link !== undefined);
+    if (!members.length || !members.some(visible)) return [];
+    const shared = new Set(members.map(member => linkClassToken(layout, member)));
+    const authored = shared.size === 1 ? [...shared][0] : undefined;
+    return [element('g', { class: classes('merge-run', authored), 'data-id': run.id, 'data-owner': bundle.id },
+      element('path', { class: classes('link-line', authored, locks.stroke(run.path.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path)),
+        d: pathData(run.path.segments) }))];
+  })).join('');
+
+  const nodes = orderedNodeIds(layout.document).map(id => {
+    const node = layout.nodes[id]!, authored = authorClass(layout.document.nodes[id]!.class);
+    const body = element('rect', { class: classes('node-body', authored, locks.stroke(nodeStroke(node))),
+      x: node.bounds!.x, y: node.bounds!.y, width: node.bounds!.width, height: node.bounds!.height, rx: 8, ry: 8 });
+    if (node.icon) icons.add(iconKey(node.icon.icon));
+    const icon = node.icon ? iconElement(node.icon, locks, authored) : '';
+    const text = layout.labels.filter(label => label.owner.kind === 'node' && label.owner.id === id
+      && (label.role === 'node' || label.role === 'description'))
+      .map(label => textElement(label, locks, label.role === 'node' ? 'node-label' : 'node-description', id, authored)).join('');
+    const pills = node.ports.filter(port => port.pill && port.ref.anonymous !== true).map(port => {
+      const pill = port.pill!, identity = portId(id, port.ref.name!, port.ref.ordinal);
+      const label = layout.labels.find(item => item.role === 'pill' && item.port !== undefined
+        && item.port.node === id && item.port.name === port.ref.name && item.port.ordinal === port.ref.ordinal);
+      return element('g', { class: 'port', 'data-id': identity },
+        element('rect', { class: classes('pill', authored, locks.stroke(DEFAULT_STROKE_WIDTHS.pill)),
+          x: pill.bounds.x, y: pill.bounds.y, width: pill.bounds.width, height: pill.bounds.height,
+          rx: pill.radius, ry: pill.radius })
+        + (label ? textElement(label, locks, 'pill-label', identity, authored) : ''));
+    }).join('');
+    return element('g', { class: classes('node', authored), 'data-id': id }, body + icon + text + pills);
+  }).join('');
+
+  const groupLabels = layout.labels.filter(label => label.role === 'group' && !label.omitted)
+    .map(label => {
+      const group = label.owner.kind === 'group' ? layout.groups[label.owner.id] : undefined;
+      const uniform = group ? uniformNodeClass(layout, group.nodes) : undefined;
+      return textElement(label, locks, 'group-label', label.owner.kind === 'barCross' ? label.owner.node : label.owner.id,
+        classes(group ? authorClass(layout.document.groups[group.id]!.class) : undefined, uniform));
+    }).join('');
+  const linkLabels = layout.labels.filter(label => label.role === 'link' && labelDrawn(layout, label, visible))
+    .map(label => {
+      const owner = label.owner.kind === 'barCross' ? label.owner.link : label.owner.id;
+      const link = byId.get(owner);
+      const multiplicity = label.support?.kind === 'merge-run';
+      return textElement(label, locks, classes('link-label', multiplicity ? 'multiplicity-label' : undefined),
+        owner, link ? linkClassToken(layout, link) : undefined);
+    }).join('');
+
+  const marks = drawn.filter(link => effectiveLayer(link) === 'overlay').flatMap(link => {
+    const segments = link.path!.segments;
+    if (!segments.length) return [];
+    return ([['from', segments[0]!.from], ['to', segments.at(-1)!.to]] as const).map(([end, point]) =>
+      element('circle', { class: classes('overlay-endpoint', linkClassToken(layout, link)),
+        'data-owner': link.id, 'data-end': end, cx: point.x, cy: point.y, r: OVERLAY_ENDPOINT_RADIUS }));
+  }).join('');
+
+  const legendSwatch = (entry: NonNullable<LayoutModel['legend']>['entries'][number]): string => {
+    if (entry.kind === 'line') {
+      const middle = centre(entry.swatch).y;
+      return element('line', { class: classes('link-line', entry.key === LEGEND_DEFAULT_CLASS ? undefined : authorClass(entry.key),
+        locks.stroke(entry.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path)),
+      x1: entry.swatch.x, y1: middle, x2: right(entry.swatch), y2: middle });
+    }
+    if (!entry.icon) return '';
+    icons.add(iconKey(entry.icon));
+    return iconElement({ icon: entry.icon, bounds: entry.swatch }, locks, authorClass(entry.key));
+  };
+  const legend = layout.legend ? element('g', { class: 'legend', 'data-id': layout.legend.id },
+    layout.legend.entries.map(entry => {
+      const label = layout.labels.find(item => item.id === entry.label);
+      return element('g', { class: classes('legend-entry', `legend-${entry.kind}`, authorClass(entry.key)), 'data-id': entry.id },
+        legendSwatch(entry) + (label ? textElement(label, locks, 'legend-label', entry.id) : ''));
+    }).join('')) : '';
+
+  const overlayVisible = drawn.some(link => effectiveLayer(link) === 'overlay');
+  const mask = overlayVisible ? element('mask', { id: MASK_ID, maskUnits: 'userSpaceOnUse',
+    x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height },
+  element('rect', { class: 'pg-mask-show', x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height })
+    + maskedBoxes(layout, visible).map(box => element('rect', { class: 'pg-mask-hide',
+      x: box.x, y: box.y, width: box.width, height: box.height })).join('')) : '';
+
+  const symbols = [...icons].sort().map(name => element('symbol',
+    { id: `pg-icon-${name}`, viewBox: '0 0 24 24' }, element('path', { d: iconPath(name) }))).join('');
+  const documentCss = layout.document.css ?? '';
+  const style = element('style', { type: 'text/css' },
+    escapeStyle([themeCss(), locks.css(), documentCss].filter(part => part.trim()).join('\n')));
+
+  const body = element('rect', { class: 'pg-canvas', x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height })
+    + element('g', { class: 'groups' }, groups)
+    + (overlayPaths ? element('g', { class: 'overlay-links', mask: `url(#${MASK_ID})` }, overlayPaths) : '')
+    + element('g', { class: 'links' }, routedPaths + trunks)
+    + element('g', { class: 'nodes' }, nodes)
+    + element('g', { class: 'labels' }, groupLabels + linkLabels)
+    + (marks ? element('g', { class: 'overlay-marks' }, marks) : '')
+    + legend;
+  const title = layout.document.title !== undefined && layout.document.title !== ''
+    ? element('title', {}, escapeText(layout.document.title)) : '';
+  return element('svg', {
+    xmlns: 'http://www.w3.org/2000/svg',
+    class: classes('portograph', authorClass(layout.document.profile)),
+    viewBox: `${num(canvas.x)} ${num(canvas.y)} ${num(canvas.width)} ${num(canvas.height)}`,
+    width: canvas.width, height: canvas.height,
+  }, title + element('defs', {}, style + symbols + mask) + body) + '\n';
+}

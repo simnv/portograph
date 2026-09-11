@@ -53,7 +53,7 @@ function protect(model: LayoutModel, baseline: LayoutModel): LayoutModel {
 }
 function semantics(model: LayoutModel) {
   return {
-    links: model.links.map(link => pick(link, ['id', 'sourceIndex', 'owner', 'from', 'to', 'attachments', 'family', 'layer', 'bundle', 'groupLink'])),
+    links: model.links.map(link => pick(link, ['id', 'sourceIndex', 'owner', 'from', 'to', 'attachments', 'family', 'layer', 'bundle', 'groupLink', 'strokeWidth'])),
     bundles: model.bundles.map(bundle => pick(bundle, ['id', 'owner', 'layer', 'nodes', 'members'])),
     groupLinks: model.groupLinks.map(group => pick(group, ['id', 'owner', 'layer', 'groups', 'members'])),
   };
@@ -383,7 +383,8 @@ function hasUnsupportedClaims(model: LayoutModel): boolean {
   const bandsStage = stages.indexOf(model.stage) >= stages.indexOf('bands');
   // Stage 8 owns every remaining path; validateRoutedPaths then judges the geometry it produced.
   const routeStage = stages.indexOf(model.stage) >= stages.indexOf('route');
-  // Stage 9 owns link and multiplicity labels; validateLinkLabels re-derives the ones it published.
+  // Stage 9 owns link, multiplicity and generated legend labels, and the legend itself;
+  // validateLinkLabels re-derives everything it published.
   const labelStage = stages.indexOf(model.stage) >= stages.indexOf('link-labels');
   const nonNodeLabels = claims(model).labels;
   return model.links.some(link => (link.path !== undefined && !(routeStage || (rowStage && rowPathCandidate(model, link)) || (flankStage && flankPathCandidate(model, link))
@@ -394,7 +395,9 @@ function hasUnsupportedClaims(model: LayoutModel): boolean {
     || (!bundleStage && model.junctions.length > 0)
     || (!bundleStage && model.bundles.some(b => b.rows !== undefined || b.centreline !== undefined || b.envelope !== undefined || b.envelopeParts !== undefined || b.memberGap !== undefined || b.inversions !== undefined || b.memberPitch !== undefined || b.mergeRuns !== undefined))
     || model.obstacles.length > 0 || (!bandsStage && model.labelBands.length > 0)
-    || nonNodeLabels.some(label => !(bandsStage && label.role === 'group') && !(labelStage && label.role === 'link'));
+    || (!labelStage && model.legend !== undefined)
+    || nonNodeLabels.some(label => !(bandsStage && label.role === 'group')
+      && !(labelStage && (label.role === 'link' || label.role === 'legend')));
 }
 function rebuildBoxes(model: LayoutModel): void {
   const EPS = 1e-6;

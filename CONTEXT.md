@@ -38,6 +38,7 @@ drew it. Network diagrams first; software architecture and electrical panels nex
 | **family** (of a link) | `routed` or `overlay`, decided by the link's class through the profile. Physical links are routed; flow links are overlay. | *route* (the per-link technique within a family) |
 | **profile** | A TypeScript module plus optional YAML overlay that supplies vocabulary aliases, tier-inference table, conventions (direction, which classes are routed vs overlay), default theme, icon set, and validators. Ships: `network`, `architecture`, `electrical`. | *theme* (only the visual part) |
 | **golden** | A reference diagram the renderer must reproduce to the maintainer's satisfaction. M1 golden: `docs/design/target-example.jpeg`. Others: a three-tier LAN, `superspine.yaml`, the Enterprise NTP sheet. | a snapshot test |
+| **legend** | The generated key to the symbols and line styles a diagram really draws. It appears only when more than one symbol or more than one line style is present, lists exactly the classes present, and is measured during stage 9 into reserved canvas space below the drawn diagram. It is model geometry, owned by `legend`, never authored and never scored as part of the diagram's bounding box. | a **group label**; an authored key |
 | **gate** | A hard pass/fail check on layout output (overlap, through-node, label hit, port stem, clearance). Any failed gate fails the diagram. | *score* |
 | **score** | A weighted soft quality number in [0, 1] computed from crossings, bends, continuity, compactness, alignment, flow, aspect, uniformity. Guards regressions; never repairs. | *gate* |
 
@@ -73,6 +74,8 @@ drew it. Network diagrams first; software architecture and electrical panels nex
 | Group label type | `FONT_FAMILY` 12 px, weight 700; 8 px horizontal inset | d3-fd, render-theme notes |
 | Link and multiplicity label type | `FONT_FAMILY` 9 px, weight 400; 4 px visible gap beyond the supporting stroke; ASCII `...` shortening to segment length − 8 px | d3-fd, render-theme notes |
 | Overlay label suppression | overlay links / max(1, nodes) > 3 | pipeline stage 9 |
+| Legend type and spacing | `FONT_FAMILY` 9 px, weight 400; 20 px gap below the drawn diagram; 12 × 12 symbol swatch, 24 px line swatch, 6 px swatch gap, 18 px column gap, 6 px row gap | render-theme notes, ticket 16 |
+| Overlay endpoint mark | 2 px radius, drawn above the masked overlay layer | pipeline stage 11 |
 | Clearances (gates) | node–node 20, edge–foreign-node 10, parallel edge–edge 10 px, stroke-aware, with ownership exceptions | ELK defaults; codex review |
 | Port stem | ≥ 15 px, perpendicular to side | yFiles convention |
 | "Beautiful" ceiling | ~30 nodes | Störrle 2014/2016, Kobourov 2014 |

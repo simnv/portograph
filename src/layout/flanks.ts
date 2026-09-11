@@ -1,6 +1,7 @@
 import type { LayoutGroup, LayoutLink, LayoutModel, LayoutPath, LayoutPort } from '../model/layout.js';
 import type { Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
+import { pathStrokeWidth } from '../theme/geometry.js';
 import { findPort, straightCorridorClear } from './row-paths.js';
 import { portId } from './skeleton-graph.js';
 import { moveGroup, validateSkeletonBands } from './skeleton-geometry.js';
@@ -31,7 +32,7 @@ export function expectedFlankPath(model: LayoutModel, link: LayoutLink): LayoutP
   if ((pair.own.side === 'right' ? dx : -dx) < 15 || Math.abs(from.anchor!.y - to.anchor!.y) > 1e-6) return undefined;
   const segment = { from: { ...from.anchor! }, to: { ...to.anchor! }, owner: { ...link.owner } };
   if (!straightCorridorClear(model, link, segment)) return undefined;
-  return { owner: { ...link.owner }, layer: 'routed', fixed: true, segments: [segment] };
+  return { owner: { ...link.owner }, layer: 'routed', fixed: true, ...pathStrokeWidth(link), segments: [segment] };
 }
 /** Remove every old flank claim before testing final corridors. */
 export function rebuildFlankPaths(model: LayoutModel): void {

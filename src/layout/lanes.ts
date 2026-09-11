@@ -1,7 +1,7 @@
 import { equal } from '../model/json-equality.js';
 import type { Rect } from '../model/geometry.js';
 import type { Lane, LayoutGroup, LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
-import { DEFAULT_STROKE_WIDTHS as stroke } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS as stroke, linkStrokeWidth, routedStrokeWidth } from '../theme/geometry.js';
 import { segmentRectDistance } from '../score/geometry.js';
 import { findPort } from './row-paths.js';
 import { moveGroup, union } from './skeleton-geometry.js';
@@ -21,14 +21,14 @@ export function transitTiers(model: LayoutModel, link: LayoutLink): number[] {
 export function laneWidth(model: LayoutModel, link: LayoutLink): number {
   const pills = link.attachments ? [findPort(model, link.attachments.from), findPort(model, link.attachments.to)] : [];
   const maxNodeStroke = Math.max(stroke.node, ...Object.values(model.nodes).map(node => node.strokeWidth ?? stroke.node));
-  return Math.max(24 + 10, ...pills.map(port => (port?.pill?.size.width ?? 0) + 10), 20 + stroke.path + maxNodeStroke);
+  return Math.max(24 + 10, ...pills.map(port => (port?.pill?.size.width ?? 0) + 10), 20 + routedStrokeWidth(model) + maxNodeStroke);
 }
 function occupied(model: LayoutModel, group: LayoutGroup) {
   return union([group.bounds!, ...group.nodes.flatMap(id => {
-    const node = model.nodes[id]!, box = node.bounds!, clearance = 10 + ((node.strokeWidth ?? stroke.node) + stroke.path) / 2;
+    const node = model.nodes[id]!, box = node.bounds!, clearance = 10 + ((node.strokeWidth ?? stroke.node) + routedStrokeWidth(model)) / 2;
     return [{ x: box.x - clearance, y: box.y, width: box.width + 2 * clearance, height: box.height },
       ...node.ports.filter(port => port.pill).map(port => {
-        const pill = port.pill!.bounds, gap = (stroke.pill + stroke.path) / 2;
+        const pill = port.pill!.bounds, gap = (stroke.pill + routedStrokeWidth(model)) / 2;
         return { x: pill.x - gap, y: pill.y, width: pill.width + 2 * gap, height: pill.height };
       })];
   })]);
@@ -218,7 +218,7 @@ export function validateLanes(model: LayoutModel): void {
     for (const other of model.lanes) if (other !== lane && other.tier === lane.tier
       && Math.abs(other.x - lane.x) < (other.bounds.width + lane.bounds.width) / 2 - 1e-6) throw new Error('Owned lanes overlap');
     for (const other of model.links) if (other.id !== link.id && other.path?.fixed) for (const segment of other.path.segments) {
-      if (segmentRectDistance(segment, lane.bounds) < (other.path.strokeWidth ?? stroke.path) / 2 - 1e-6) throw new Error('Fixed path crosses a foreign lane');
+      if (segmentRectDistance(segment, lane.bounds) < linkStrokeWidth(other) / 2 - 1e-6) throw new Error('Fixed path crosses a foreign lane');
     }
   }
   for (const link of model.links) {

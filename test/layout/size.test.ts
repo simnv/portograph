@@ -102,5 +102,12 @@ describe('measured node size', () => {
     expect(resolveNodeIcon({ class: 'provider', icon: 'custom' })).toBe('custom');
     expect(resolveNodeIcon({ class: 'provider', icon: '' })).toBeUndefined();
     expect(resolveNodeIcon({ class: 'constructor' })).toBeUndefined();
+    // The four network roles must be separable without colour, so their glyphs differ where the
+    // target does. The icon box is a fixed 12 x 12 whatever the glyph, so this moves no geometry.
+    expect(resolveNodeIcon({ class: 'router' })).toBe('router');
+    expect(resolveNodeIcon({ class: 'tbr' })).toBe('switch');
+    expect(new Set(['provider', 'router', 'tbr'].map(value => resolveNodeIcon({ class: value }))).size).toBe(3);
+    const glyphs = sized('{a: {group: g, class: router, label: A}, b: {group: g, class: tbr, label: A}}').nodes;
+    expect(glyphs.b!.contentSize).toEqual(glyphs.a!.contentSize);
   });
 });

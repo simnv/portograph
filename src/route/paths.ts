@@ -1,6 +1,6 @@
 import type { Point } from '../model/geometry.js';
 import type { Lane, LayoutLink, LayoutModel, LayoutPath, PathSegment } from '../model/layout.js';
-import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
+import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { findPort } from '../layout/row-paths.js';
 import { bottom, EPS, horizontal, length, samePoint, segmentRect, vertical } from '../score/geometry.js';
 import { effectiveLayer, type LinkPlan, type RoutePlan } from './plan.js';
@@ -136,14 +136,13 @@ export function stitchPath(model: LayoutModel, plan: LinkPlan, routes: Map<strin
     }
     segments.push(...gapSegments(model, link, points, piece.from, piece.to));
   }
-  return { owner: { ...link.owner }, layer: 'routed', fixed: false, segments,
-    ...(link.path?.strokeWidth !== undefined ? { strokeWidth: link.path.strokeWidth } : {}) };
+  return { owner: { ...link.owner }, layer: 'routed', fixed: false, segments, ...pathStrokeWidth(link) };
 }
 
 /** Overlay links are drawn straight between their anchors and never enter the router. */
 export function overlayPath(model: LayoutModel, link: LayoutLink): LayoutPath {
   const from = findPort(model, link.attachments!.from)!, to = findPort(model, link.attachments!.to)!;
-  return { owner: { ...link.owner }, layer: 'overlay', fixed: false,
+  return { owner: { ...link.owner }, layer: 'overlay', fixed: false, ...pathStrokeWidth(link),
     segments: [{ from: { ...from.anchor! }, to: { ...to.anchor! }, owner: { ...link.owner } }] };
 }
 
@@ -188,4 +187,4 @@ export function stubCandidate(model: LayoutModel, link: LayoutLink): boolean {
   return direct <= EPS ? arc > EPS : arc > 3 * direct + EPS;
 }
 
-export const pathStroke = (link: LayoutLink): number => link.path?.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path;
+export const pathStroke = (link: LayoutLink): number => linkStrokeWidth(link);

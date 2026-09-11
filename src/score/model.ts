@@ -1,5 +1,5 @@
 import type { Junction, Layer, LayoutLink, LayoutModel, LayoutPort, PathSegment, PortRef, Rect } from '../model/index.js';
-import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
+import { linkStrokeWidth } from '../theme/geometry.js';
 import { EPS, bottom, contains, horizontal, length, near, pointRect, right, samePoint, vertical } from './geometry.js';
 
 export interface Segment { segment: PathSegment; link: LayoutLink; index: number; stroke: number }
@@ -15,7 +15,7 @@ export function effectiveLayer(link: LayoutLink): Layer {
 }
 export const routed = (link: LayoutLink): boolean => effectiveLayer(link) === 'routed' && link.technique !== 'stub';
 export function segments(model: LayoutModel): Segment[] {
-  return model.links.filter(routed).flatMap(link => link.path!.segments.map((segment, index) => ({ segment, link, index, stroke: link.path!.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path })));
+  return model.links.filter(routed).flatMap(link => link.path!.segments.map((segment, index) => ({ segment, link, index, stroke: linkStrokeWidth(link) })));
 }
 export function validate(model: LayoutModel): void {
   const finite = (value: unknown, at: string): void => {

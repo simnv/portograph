@@ -12,12 +12,21 @@ import { rebuildNodeGeometry } from './node-geometry.js';
 import { freezePortTopology } from './mutation.js';
 const key = portId;
 
+/**
+ * Visible wire between two facing named pills. Without it the two pills' outer edges meet and the
+ * link between them is drawn entirely behind them, which is a connection a reader cannot see.
+ */
+export const PILL_WIRE_GAP = 8;
+
 /** Row gap between horizontal neighbours: stroke-aware node clearance or the facing named pills, whichever is larger. */
 export function rowGap(model: LayoutModel, a: string, b: string): number {
   const protrusion = (id: string, side: Side): number => Math.max(0, ...model.nodes[id]!.ports
     .filter(port => port.side === side && port.ref.anonymous !== true)
     .map(port => measurePortPill(port.ref.name!).width / 2 + DEFAULT_STROKE_WIDTHS.pill / 2));
-  return Math.max(nodeGap(model, a, b), protrusion(a, 'right') + protrusion(b, 'left'));
+  const left = protrusion(a, 'right'), right = protrusion(b, 'left');
+  // Only a facing *pair* of pills needs the wire. One pill opposite a bare side has nothing to be
+  // separated from, so it keeps the ordinary stroke-aware node clearance.
+  return Math.max(nodeGap(model, a, b), left + right + (left > 0 && right > 0 ? PILL_WIRE_GAP : 0));
 }
 
 /** Resolve all direction votes, resize and repack in skeleton order; retain the returned snapshot. */

@@ -61,7 +61,7 @@ reported separately and does not contribute to either sum.
 | Compactness | `Σ node area / bbox area`, computed globally and per group, reported both, scored as the mean | 1 | 0.10 |
 | Grid alignment | fraction of nodes whose top **or** left edge shares a coordinate (±1 px) with ≥ 2 other nodes | 1 | 0.10 |
 | Flow consistency | fraction of routed *vertical* segments whose direction (source→target) is downward when the target tier is lower | 1 | 0.10 |
-| Aspect ratio | `min(w, h) / max(w, h)` of the bounding box | 1 | 0.05 |
+| Aspect ratio | `min(w, h) / max(w, h)` of the bounding box of nodes, paths and visible labels, excluding the generated legend | 1 | 0.05 |
 | Segment uniformity | `max(0, 1 − std / mean)` of routed segment lengths | 1 | 0.05 |
 | Symmetry | reported only: fraction of nodes with a mirror partner about the bbox's vertical axis (±4 px) | — | — |
 
@@ -135,7 +135,10 @@ the snapshot block) layout time per stage.
 7. Link property encoded consistently: weight = speed, style = class.
 8. No crossing that a topology rewrite could avoid — bar, stub, duplicated cloud.
 9. Whitespace is even; object : gutter ≈ 60 : 40.
-10. A legend exists when more than one symbol or line style is used — generated, not authored.
+10. A legend exists when more than one symbol or line style is used — generated, not authored. It
+    is measured in stage 9 and placed in reserved canvas space below the drawn diagram, lists
+    exactly the classes present, and is excluded from the scored bounding box: its size follows the
+    class set, not the quality of the layout.
 
 Bundle member gap means visible clearance between strokes. The regular minimum centreline pitch
 is 16 px plus the maximum member stroke. Crossovers may need wider tracks. An envelope owner does

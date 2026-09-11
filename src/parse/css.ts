@@ -6,6 +6,30 @@ const locked = new Set([
   // Shorthands, independent transforms and SVG geometry must not bypass the locks.
   'font', 'all', 'translate', 'rotate', 'scale', 'transform-origin', 'transform-box',
   'width', 'height', 'x', 'y', 'cx', 'cy', 'r', 'rx', 'ry', 'd',
+  // Text metrics. A label's box is measured from the font table at its stored size and weight, so
+  // anything that changes glyph advances or case would draw text outside the box the gates cleared.
+  'font-stretch', 'font-size-adjust', 'font-variant', 'font-variant-caps', 'font-feature-settings',
+  'font-variation-settings', 'font-synthesis', 'font-optical-sizing', 'text-size-adjust',
+  'word-spacing', 'text-transform', 'writing-mode', 'text-orientation',
+  'glyph-orientation-horizontal', 'glyph-orientation-vertical',
+  // Text and element placement. These move drawn geometry away from its measured position.
+  'text-anchor', 'dominant-baseline', 'alignment-baseline', 'baseline-shift', 'dx', 'dy',
+  'offset', 'offset-path', 'offset-distance', 'offset-rotate', 'zoom',
+  // Extra painted geometry: markers add arrowheads, and a non-scaling stroke changes its width.
+  'marker', 'marker-start', 'marker-mid', 'marker-end', 'vector-effect',
+  // Remaining text metrics. An italic face, kerning and the font-variant longhands all change glyph
+  // advances, so the drawn text no longer fits the box the font table measured.
+  'font-style', 'font-kerning', 'font-language-override', 'font-variant-ligatures',
+  'font-variant-numeric', 'font-variant-east-asian', 'font-variant-alternates',
+  'font-variant-position', 'font-variant-emoji',
+  // Paint that leaves its element's box, or removes protection the design requires. A filter or a
+  // shadow paints outside the measured geometry; `mask` and `clip-path` can switch off the overlay
+  // mask that keeps node interiors, pills and labels readable.
+  'filter', 'backdrop-filter', 'text-shadow', 'box-shadow', 'clip', 'clip-path',
+  'mask', 'mask-image', 'mask-mode', 'mask-repeat', 'mask-position', 'mask-clip', 'mask-origin',
+  'mask-size', 'mask-composite', 'mask-type', 'mask-border', 'mask-border-source',
+  // An unbounded miter can extend a stroke far past the joint the gates measured.
+  'stroke-miterlimit',
 ]);
 
 const cssEscape = /\\(?:([\da-f]{1,6})(?:\r\n|[ \t\n\r\f])?|([^\r\n\f]))/gi;

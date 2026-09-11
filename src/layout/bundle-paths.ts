@@ -3,7 +3,7 @@ import { clearBundleMembers, routeBundleChannel } from './bundle-channel.js';
 import { mergeMembers } from './bundle-merge.js';
 import { bundleFans, crossBundleFans } from './bundle-junctions.js';
 import { junctionChain, junctionFan, mergedRun, sharedStem } from '../score/model.js';
-import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
+import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { intersection, overlapSegment, samePoint } from '../score/geometry.js';
 import { clone, coordinate, facing, inversionPairs, members, normal, outward, pitch, type Member } from './bundle-geometry.js';
 
@@ -25,7 +25,9 @@ export function polyline(points: Point[], owner: Owner): PathSegment[] {
   return result;
 }
 export function reverse(segments: PathSegment[]): PathSegment[] { return [...segments].reverse().map(s => ({ ...clone(s), from: { ...s.to }, to: { ...s.from } })); }
-function path(segments: PathSegment[], owner: Owner): LayoutPath { return { owner: { ...owner }, layer: 'routed', fixed: true, segments }; }
+function path(segments: PathSegment[], owner: Owner, width?: Pick<LayoutPath, 'strokeWidth'>): LayoutPath {
+  return { owner: { ...owner }, layer: 'routed', fixed: true, ...(width ?? {}), segments };
+}
 export function pathBounds(segments: PathSegment[], padding = 0): Rect {
   const points = segments.flatMap(s => [s.from, s.to]);
   const x = Math.min(...points.map(p => p.x)) - padding, y = Math.min(...points.map(p => p.y)) - padding;
@@ -196,12 +198,12 @@ export function rebuildBundlePaths(model: LayoutModel): void {
         }
       }
       if (fans && segments) segments = [...fans.a.get(item.link.id)!, ...segments, ...reverse(fans.b.get(item.link.id)!)];
-      item.link.path = path(item.reversed ? reverse(segments!) : segments!, item.link.owner);
+      item.link.path = path(item.reversed ? reverse(segments!) : segments!, item.link.owner, pathStrokeWidth(item.link));
     }
     let routedCentreline: PathSegment[] | undefined;
     if (!inversions && !fans && !model.barDrops.some(d => bundle.members.includes(d.link))
       && !model.lanes.some(l => l.owner.kind === 'link' && bundle.members.includes(l.owner.id))
-      && !clearBundleMembers(model, bundle, list.map(m => m.link.path!.segments))) {
+      && !clearBundleMembers(model, bundle, list.map(m => m.link.path!.segments), Math.max(...list.map(item => linkStrokeWidth(item.link))))) {
       const routed = routeBundleChannel(model, bundle, list);
       if (!routed) throw new BundleFeasibilityError('BUNDLE_CHANNEL_ORIENTATION', bundle.id, 'Endpoint tracks cannot be transported through one clear channel.');
       routedCentreline = routed.centreline;
@@ -210,10 +212,11 @@ export function rebuildBundlePaths(model: LayoutModel): void {
     const merged = mergeMembers(model, bundle, list, q);
     if (merged) bundle.mergeRuns = merged;
     const all = list.flatMap(m => m.link.path!.segments);
-    bundle.envelope = pathBounds(all, DEFAULT_STROKE_WIDTHS.path / 2);
+    const widest = Math.max(...list.map(item => linkStrokeWidth(item.link)));
+    bundle.envelope = pathBounds(all, widest / 2);
     bundle.rows = { ...bundle.envelope };
     const meanTrack = list.reduce((sum, item) => sum + coordinate(item.a), 0) / list.length;
-    const channelHalfWidth = Math.max(...list.map(item => Math.abs(coordinate(item.a) - meanTrack))) + DEFAULT_STROKE_WIDTHS.path / 2;
+    const channelHalfWidth = Math.max(...list.map(item => Math.abs(coordinate(item.a) - meanTrack))) + widest / 2;
     bundle.envelopeParts = routedCentreline ? routedCentreline.map(s => pathBounds([s], channelHalfWidth)) : [bundle.envelope];
     // A straight channel has an exact midline between its outer tracks. Curved channels retain the middle member traversal.
     const centre = (end: 'a' | 'b', dimension: 'x' | 'y'): number => (Math.min(...list.map(m => m[end].anchor![dimension])) + Math.max(...list.map(m => m[end].anchor![dimension]))) / 2;

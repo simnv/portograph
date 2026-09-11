@@ -55,8 +55,10 @@ export function metrics(model: LayoutModel, routed: Segment[]): ScoreMetrics {
   const lengths = routed.map(s => length(s.segment)), average = mean(lengths, 0), longest = lengths.length ? Math.max(...lengths) : 0;
   const std = longest ? longest * Math.sqrt(mean(lengths.map(n => (n / longest - average / longest) ** 2), 0)) : 0;
   const nodeBox = boundingBox(nodes.map(n => n.bounds!));
-  // Canvas padding is not diagram geometry. Paths and visible labels still enlarge its bbox.
-  const box = boundingBox([...nodes.map(n => n.bounds!), ...model.links.flatMap(l => l.path?.segments.map(bounds) ?? []), ...model.labels.flatMap(l => !l.omitted && l.bounds ? [l.bounds] : [])]);
+  // Canvas padding is not diagram geometry. Paths and visible labels still enlarge its bbox, but
+  // the generated legend does not: its size follows the class set, not the quality of the layout,
+  // so letting it move `aspectRatio` would score the legend instead of the diagram.
+  const box = boundingBox([...nodes.map(n => n.bounds!), ...model.links.flatMap(l => l.path?.segments.map(bounds) ?? []), ...model.labels.flatMap(l => !l.omitted && l.bounds && l.role !== 'legend' ? [l.bounds] : [])]);
   const axis = nodeBox ? nodeBox.x + nodeBox.width / 2 : 0;
   const mirrored = nodes.filter(n => nodes.some(other => other !== n && Math.abs(other.bounds!.x + other.bounds!.width / 2 - (2 * axis - n.bounds!.x - n.bounds!.width / 2)) <= 4 + EPS
     && Math.abs(other.bounds!.y + other.bounds!.height / 2 - n.bounds!.y - n.bounds!.height / 2) <= 4 + EPS

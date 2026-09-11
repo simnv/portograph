@@ -3,7 +3,7 @@ import { orderedGroupIds } from '../model/model.js';
 import { equal } from '../model/json-equality.js';
 import { measureText } from '../text/index.js';
 import { NODE_CONTENT_GEOMETRY } from '../theme/content.js';
-import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { nodeGap, portId } from './skeleton-graph.js';
 import { groupInsets } from './regions.js';
 import { findPort } from './row-paths.js';
@@ -153,7 +153,8 @@ function oppositeApproach(item: BarLink): boolean {
 
 function barGap(model: LayoutModel, upper: LayoutNode, lower: LayoutNode, links: BarLink[]): number {
   let gap = nodeGap(model, upper.id, lower.id);
-  const pathStroke = DEFAULT_STROKE_WIDTHS.path;
+  // The drop that has to pass between these bars carries its own resolved width.
+  const pathStroke = Math.max(DEFAULT_STROKE_WIDTHS.path, ...links.map(item => linkStrokeWidth(item.link)));
   if (links.some(item => item.bar.id === upper.id && item.port.side === 'bottom' && oppositeApproach(item))) {
     gap = Math.max(gap, MIN_STEM + FOREIGN_NODE_CLEARANCE
       + (pathStroke + (lower.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node)) / 2);
@@ -288,7 +289,10 @@ function sourceStemLength(model: LayoutModel, item: BarLink, slotX: number): num
     && other.external.ref.node === item.external.ref.node && other.external.side === item.external.side
     && Math.sign((adjacentLaneX(model, other) ?? other.port.anchor!.x) - other.external.anchor!.x) === direction
     && direction * (other.external.anchor!.x - x) > EPS);
-  const spacing = (item.link.bundle || peers.some(peer => peer.link.bundle) ? 16 : 10) + DEFAULT_STROKE_WIDTHS.path;
+  // Staggered drops run parallel to each other, so the pitch carries the widest resolved stroke of
+  // this drop and the peers it is staggered against, not the theme default.
+  const stroke = Math.max(linkStrokeWidth(item.link), ...peers.map(peer => linkStrokeWidth(peer.link)));
+  const spacing = (item.link.bundle || peers.some(peer => peer.link.bundle) ? 16 : 10) + stroke;
   return MIN_STEM + new Set(peers.map(peer => portId(peer.external.ref))).size * spacing;
 }
 
@@ -378,7 +382,7 @@ export function rebuildBarDrops(model: LayoutModel): void {
       ...base, id: dropId(item.link, node), owner: { kind: 'barCross', node, link: item.link.id },
     });
     else model.barDrops.push({ ...base, id: dropId(item.link), owner: { ...item.link.owner } });
-    if (!item.link.bundle) item.link.path = { owner: { ...item.link.owner }, layer: 'routed', fixed: true, segments: traversed };
+    if (!item.link.bundle) item.link.path = { owner: { ...item.link.owner }, layer: 'routed', fixed: true, ...pathStrokeWidth(item.link), segments: traversed };
     if (model.document.links[item.link.sourceIndex]!.route === undefined && !item.link.bundle) item.link.technique = 'orthogonal';
   }
 }
