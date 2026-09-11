@@ -9,8 +9,11 @@ test-only parser diagnostics, API probes, gate models, remainder cases and scale
 those additions do not alter or reopen the approved golden.
 
 The maintainer approved these fixture inputs and the expected normalised model
-on 2026-09-10. They precede the implementation. No layout snapshot, render,
-approved score, or passing geometry result exists for them yet.
+on 2026-09-10. They precede the implementation. On 2026-09-11 the maintainer
+approved the render (ticket 18): [m1-sip-edge.layout.json](m1-sip-edge.layout.json)
+is the exact layout snapshot (runtime block excluded), [m1-sip-edge.png](m1-sip-edge.png)
+and [m1-sip-edge.svg](m1-sip-edge.svg) are the approved render, and
+`Q = 0.9004061377064178` is the baseline. `test/pipeline/golden-snapshot.test.ts` guards them.
 
 ## Target transcription
 
