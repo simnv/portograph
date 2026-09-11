@@ -11,11 +11,35 @@ import { LEGEND_GEOMETRY as theme } from '../theme/legend.js';
 const OWNER = { kind: 'legend', id: 'legend' } as const;
 
 /**
- * One field of a legend entry ID, with the separator and the escape itself encoded. Without this a
- * class literally named `router:server` would produce the same ID as class `router` drawn with icon
- * `server`, and one of the two classes present would silently vanish from the legend.
+ * One field of a legend entry ID, with the separator, the escape itself and every character an XML
+ * attribute cannot carry unchanged encoded. Without the separator escape a class literally named
+ * `router:server` would produce the same ID as class `router` drawn with icon `server`, and one of
+ * the two classes present would silently vanish from the legend. Without the rest, two classes that
+ * differ only in a control character, a literal newline or a lone surrogate would reach the reader
+ * as one `data-id`: the serializer substitutes U+FFFD for a character XML forbids, and an XML parser
+ * normalizes a literal tab, carriage return or newline in an attribute value to a space. A class is
+ * accepted free text, so identity is encoded here, where it is built, rather than in the serializer,
+ * which has to leave the text a legend row displays exactly as the author wrote it.
+ *
+ * The encoding is percent-and-code-unit: `%XX` below U+0100, `%uXXXX` above it. `%` itself always
+ * encodes, so no ordinary class can spell the encoded form of another: `a%0Ab` is class `a`, a
+ * newline and `b`, while the class literally spelled `a%0Ab` becomes `a%250Ab`.
  */
-const token = (value: string): string => value.replace(/%/g, '%25').replace(/:/g, '%3A');
+function token(value: string): string {
+  let result = '';
+  for (const character of value) {
+    const code = character.codePointAt(0)!;
+    // A valid surrogate pair is one code point above U+FFFF, which XML carries; a lone surrogate,
+    // the two non-characters and every C0 control — including the whitespace a parser folds — is
+    // not, so each of those is spelled out instead.
+    const encode = character === '%' || character === ':'
+      || code < 0x20 || code >= 0xd800 && code <= 0xdfff || code === 0xfffe || code === 0xffff;
+    result += !encode ? character
+      : code <= 0xff ? `%${code.toString(16).toUpperCase().padStart(2, '0')}`
+        : `%u${code.toString(16).toUpperCase().padStart(4, '0')}`;
+  }
+  return result;
+}
 
 /** One legend variant before it is measured: its identity, its style source and its first use. */
 interface Variant {

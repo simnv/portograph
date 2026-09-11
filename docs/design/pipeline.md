@@ -625,6 +625,14 @@ first use; a link without a class contributes the profile's default line style),
 same effective stroke width `score` measures. `LayoutModel.legend` and its `role: 'legend'` labels
 are stage 9's claims: the validator re-derives both and rejects a forged, moved or removed legend.
 
+An entry ID is built from the class, which is accepted free text, so each field of it is encoded:
+`%` and the `:` separator, and every character an XML attribute cannot carry unchanged — a C0
+control, a lone surrogate, the two non-characters, and the tab, carriage return and newline a
+parser folds to a space. `%XX` below U+0100, `%uXXXX` above it. Two classes that differ at all
+therefore keep two identities all the way into the drawn `data-id`, and because `%` always encodes,
+no class can spell another one's encoded form. The text a legend row *displays* is separate: it is
+the class as authored, substituted for display by the serializer like any other visible text.
+
 **Stage 9 settles the canvas.** `expandCanvas` reserves group boxes and lanes; a route may leave
 both, and stage 9 adds label and legend boxes, so the producer expands the canvas over every group,
 lane, drawn path, visible label and the legend. Restore has no predecessor transaction, so the
@@ -670,6 +678,16 @@ visible link labels masked out; a hidden link's label is left out of the mask so
 unexplained gap. Overlay endpoints keep a 2 px mark, drawn above the protected elements rather than
 inside the masked group. One counted merge trunk is painted once by its bundle, and the interval it
 covers is subtracted from each member's own path, which still draws its approach and departure.
+
+**The mask is internal render structure, not an author styling surface.** The theme states no rule
+for it: a rule in that sheet is reachable by an accepted `css:` rule of the same specificity and
+importance, which then wins by source order, and an ordinary global rule reaches it as well. Each
+mask element carries its own paint instead, as a presentation attribute and as important inline
+declarations — colour, fill and element opacity, stroke, display, visibility, blending, and `mask`,
+`clip-path` and `filter` — with `mask-type: luminance` on the mask itself. An important inline
+declaration outranks every rule of an author style sheet whatever its specificity, importance and
+source order, and the presentation attribute keeps the mask correct for a renderer that reads no
+style at all. An author `css:` block still owns the palette of every element the diagram draws.
 
 `RenderOptions.layers` selects the effective link families to draw as a nonempty list of `routed`
 and `overlay`. With no selection both families are drawn and `document.overlays` hides overlay

@@ -175,6 +175,38 @@ function labelDrawn(model: LayoutModel, label: LayoutLabel, visible: (link: Layo
   return link === undefined || visible(link);
 }
 
+/**
+ * What one mask rectangle keeps to itself. The overlay mask is internal render structure, not an
+ * author styling surface: its cutouts are what keeps node interiors, pills and labels readable under
+ * an overlay link, and the theme deliberately states no rule for them. An author `css:` block is one
+ * author-origin style sheet, and an important inline declaration outranks every rule in it whatever
+ * its specificity, its importance or its source order, so these are the declarations that decide the
+ * mask. Each one can turn a cutout into paint, or the shown region into a hole: the colour, its
+ * alpha, the element's opacity, a stroke painted over a cutout edge, removal from the render, and
+ * blending that would lighten black over white. An outline and a mask border are pinned for the same
+ * reason and are not covered by the others: an outline is painted after the shape and independently
+ * of `stroke`, so a wide white one over a cutout reopens it, and a mask border removes the element's
+ * paint altogether. `mask`, `clip-path` and `filter` are locked in `css:` for this mask's sake; they
+ * are pinned here as well, so the renderer does not depend on a document having passed the parser —
+ * a restored layout model carries its CSS as published.
+ */
+const MASK_PAINT = 'fill-opacity:1!important;opacity:1!important;stroke:none!important'
+  + ';outline:none!important;display:inline!important;visibility:visible!important'
+  + ';mix-blend-mode:normal!important;mask:none!important;clip-path:none!important'
+  + ';filter:none!important;mask-border:none!important;-webkit-mask-box-image:none!important';
+
+/**
+ * One rectangle of the overlay mask: `shown` keeps the overlay, otherwise it is a cutout. The paint
+ * is a presentation attribute as well, so a renderer that reads no style at all still draws the mask
+ * the layout intends rather than the initial fill.
+ */
+function maskRect(shown: boolean, box: Rect): string {
+  const colour = shown ? '#ffffff' : '#000000';
+  return element('rect', { class: shown ? 'pg-mask-show' : 'pg-mask-hide', fill: colour,
+    style: `fill:${colour}!important;${MASK_PAINT}`,
+    x: box.x, y: box.y, width: box.width, height: box.height });
+}
+
 /** Every rectangle the overlay layer is masked out of, per `pipeline.md` stage 11. */
 function maskedBoxes(model: LayoutModel, visible: (link: LayoutLink) => boolean): Rect[] {
   const boxes: Rect[] = [];
@@ -332,10 +364,11 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
 
   const overlayVisible = drawn.some(link => effectiveLayer(link) === 'overlay');
   const mask = overlayVisible ? element('mask', { id: MASK_ID, maskUnits: 'userSpaceOnUse',
+    // The mask means luminance: white shows the overlay, black cuts it out. Said here, on the
+    // element, so no rule can reinterpret the cutouts as opaque alpha.
+    style: 'mask-type:luminance!important',
     x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height },
-  element('rect', { class: 'pg-mask-show', x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height })
-    + maskedBoxes(layout, visible).map(box => element('rect', { class: 'pg-mask-hide',
-      x: box.x, y: box.y, width: box.width, height: box.height })).join('')) : '';
+  maskRect(true, canvas) + maskedBoxes(layout, visible).map(box => maskRect(false, box)).join('')) : '';
 
   const symbols = [...icons].sort().map(name => element('symbol',
     { id: `pg-icon-${name}`, viewBox: '0 0 24 24' }, element('path', { d: iconPath(name) }))).join('');

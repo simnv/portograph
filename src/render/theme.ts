@@ -88,8 +88,9 @@ export function themeCss(): string {
     rules.push(`.link-line.${name}{stroke:${style.stroke}`
       + `${style.dash ? `;stroke-dasharray:${style.dash}` : ''}${style.cap ? `;stroke-linecap:${style.cap}` : ''}}`);
   }
-  // The overlay mask is internal render structure, not an author styling surface.
-  rules.push('.pg-mask-show{fill:#ffffff!important;stroke:none!important}',
-    '.pg-mask-hide{fill:#000000!important;stroke:none!important}');
+  // The overlay mask is internal render structure, not an author styling surface, so its paint is
+  // not stated here at all: a rule in this sheet is reachable by an accepted `css:` rule of the same
+  // specificity and importance, which then wins by source order. The mask states its own paint on
+  // its elements, inline and important, where no author style sheet can reach it.
   return rules.join('\n');
 }

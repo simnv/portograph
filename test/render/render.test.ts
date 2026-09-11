@@ -320,6 +320,41 @@ describe('escaping', () => {
   });
 });
 
+describe('legend identity', () => {
+  /** XML attribute-value normalization: a literal tab, newline or carriage return becomes a space. */
+  const normalized = (value: string): string => value.replace(/\r\n|[\t\n\r]/g, ' ');
+  const drawn = (classes: string[]): LayoutModel => {
+    const model = scene({ nodes: classes.map((value, index) => ({ id: `n${index}`, class: value,
+      bounds: { x: index * 120, y: 0, width: 60, height: 40 } })) });
+    produceLegend(model);
+    return model;
+  };
+
+  it('keeps distinct classes distinct in the serialized data-id', () => {
+    // Accepted free-text classes, including two that spell the escapes of two others and one
+    // spelled with the substitute the serializer uses for a character XML forbids.
+    const hostile = ['a\u0001', 'a\u0002', 'a\nb', 'a b', 'a\tb', 'a\ud800', 'a\ud801', 'a%01', 'a%uD800', 'a\ufffd'];
+    const model = drawn(hostile);
+    const svg = render(model);
+    const ids = [...svg.matchAll(/<g class="legend-entry[^"]*" data-id="([^"]*)"/g)].map(match => match[1]!);
+    expect(ids).toEqual(model.legend!.entries.map(entry => entry.id));
+    expect(ids).toHaveLength(hostile.length);
+    // The serialized attribute is what a consumer reads back: the renderer substitutes U+FFFD for a
+    // character XML forbids, and an XML parser folds literal attribute whitespace to a space. An
+    // identity that survives both unchanged is one no other identity can collide with.
+    expect(ids.map(id => normalized(xmlSafe(id)))).toEqual(ids);
+    expect(new Set(ids).size).toBe(hostile.length);
+  });
+
+  it('replaces the text a row displays without touching the row identity', () => {
+    const svg = render(drawn(['a\u0001', 'a\u0002']));
+    // Visible text is substituted, so both rows read the same; identity is encoded, so they differ.
+    expect(svg.match(/>a\ufffd<\/tspan>/g)).toHaveLength(2);
+    expect(svg).toContain('data-id="symbol:a%01"');
+    expect(svg).toContain('data-id="symbol:a%02"');
+  });
+});
+
 describe('document CSS', () => {
   it('ignores a locked font-size with a parse warning and keeps the colour', () => {
     const parsed = parseWithDiagnostics(['portograph: 2', 'css: |', '  .router { font-size: 40px; fill: #123456; }',
@@ -422,6 +457,98 @@ describe('overlay layer', () => {
     expect(hidden).not.toContain('class="link-label"');
     // A hidden routed label must not leave an unexplained gap in the overlay that is displayed.
     expect(hidden).toContain('class="overlay-links"');
+  });
+});
+
+describe('internal overlay mask', () => {
+  /**
+   * Every declaration an author may write that reaches an internal mask element: the literal
+   * override the finding reported, a higher-specificity variant of it, and ordinary global palette
+   * rules. All of them are accepted by the parser, because each property is one `css:` may set.
+   */
+  const hostileCss = ['.pg-mask-hide { fill: #ffffff !important; }',
+    'svg .pg-mask-hide.pg-mask-hide { fill: #ffffff !important; opacity: 0 !important; }',
+    '.pg-mask-show { fill: #000000 !important; visibility: hidden !important; }',
+    'rect { fill: #ffffff !important; fill-opacity: 0 !important; mix-blend-mode: screen !important; }',
+    '.pg-mask-hide:last-child { outline: 1000px solid #ffffff !important; }',
+    '.pg-mask-hide { -webkit-mask-box-image: linear-gradient(#000000, #000000) !important; }',
+    '.node-body { fill: none; }'].join('\n');
+
+  /** The finding's diagram: three nodes in a row with an overlay link from the first to the last. */
+  const masked = (css?: string): LayoutModel => scene({
+    nodes: [{ id: 'a', bounds: { x: 0, y: 0, width: 40, height: 40 } },
+      { id: 'b', bounds: { x: 100, y: 0, width: 40, height: 40 } },
+      { id: 'c', bounds: { x: 200, y: 0, width: 40, height: 40 } }],
+    ports: [{ node: 'a', name: 'p', side: 'right', anchor: { x: 40, y: 20 } },
+      { node: 'c', name: 'p', side: 'left', anchor: { x: 200, y: 20 } }],
+    links: [{ id: 'flow-1', from: 'a', to: 'c', class: 'flow', layer: 'overlay',
+      points: [{ x: 40, y: 20 }, { x: 200, y: 20 }] }],
+    labels: [{ id: 'label:group:row-group', owner: { kind: 'group', id: 'row-group' }, layer: 'routed',
+      role: 'group', text: 'Row group', lines: ['Row group'], fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: 12, fontWeight: 700, lineHeight: 14, bounds: { x: -12, y: -16, width: 50, height: 14 } }],
+    ...(css === undefined ? {} : { css }),
+  });
+
+  /** Inline declarations of one element, as property → value, importance included in the value. */
+  const declarations = (style: string | undefined): Map<string, string> =>
+    new Map((style ?? '').split(';').filter(part => part.trim()).map(part => {
+      const at = part.indexOf(':');
+      return [part.slice(0, at).trim(), part.slice(at + 1).trim()];
+    }));
+
+  /**
+   * Paint, alpha, blending and presence, with the value each one has to keep. Every one of them can
+   * turn a cutout into paint or the shown region into a hole, and each is reachable from an accepted
+   * `css:` rule or from a restored model whose CSS never passed the parser's locks.
+   */
+  const pinned: [string, string][] = [['fill-opacity', '1'], ['opacity', '1'], ['stroke', 'none'],
+    ['outline', 'none'], ['display', 'inline'], ['visibility', 'visible'], ['mix-blend-mode', 'normal'],
+    ['mask', 'none'], ['clip-path', 'none'], ['filter', 'none'], ['mask-border', 'none'],
+    ['-webkit-mask-box-image', 'none']];
+
+  it('pins its own paint inline, where no author style sheet can reach it', () => {
+    const svg = render(masked(hostileCss));
+    const mask = svg.slice(svg.indexOf('<mask'), svg.indexOf('</mask>'));
+    const rects = elements(mask, 'rect');
+    // One shown canvas and a cutout for each node, pill and drawn label.
+    expect(rects.filter(item => item['class'] === 'pg-mask-show')).toHaveLength(1);
+    expect(rects.filter(item => item['class'] === 'pg-mask-hide').length).toBeGreaterThan(1);
+    for (const item of rects) {
+      const shown = item['class'] === 'pg-mask-show';
+      const colour = shown ? '#ffffff' : '#000000';
+      // The paint is on the element too, so a renderer that reads no style sheet still draws it.
+      expect([item['class'], item['fill']]).toEqual([item['class'], colour]);
+      const inline = declarations(item['style']);
+      // An important inline declaration outranks every rule of an author style sheet, whatever its
+      // specificity, its importance and its source order. That is the whole protection, so each
+      // pinned property has to carry both its own value and that importance.
+      expect([item['class'], inline.get('fill')]).toEqual([item['class'], `${colour}!important`]);
+      for (const [property, value] of pinned) {
+        expect([item['class'], property, inline.get(property)])
+          .toEqual([item['class'], property, `${value}!important`]);
+      }
+    }
+    // The mask states its own luminance meaning, so no rule can reinterpret black as opaque.
+    expect(elements(svg, 'mask')[0]!['style']).toContain('mask-type:luminance!important');
+    // The theme no longer states mask paint, where an accepted rule of equal specificity and
+    // importance won by source order; nothing in the sheet decides the mask any more.
+    expect(svg).not.toContain('.pg-mask-hide{');
+    expect(svg).not.toContain('.pg-mask-show{');
+    // The author still owns the palette of real diagram elements: no rule is filtered out here.
+    expect(svg).toContain('.node-body { fill: none; }');
+    expect(svg).toContain('.pg-mask-hide { fill: #ffffff !important; }');
+  });
+
+  it('cuts out the same geometry whatever the document styles', () => {
+    const plain = render(masked()), styled = render(masked(hostileCss));
+    const boxes = (svg: string): Rect[] =>
+      elements(svg.slice(svg.indexOf('<mask'), svg.indexOf('</mask>')), 'rect').map(rect);
+    expect(boxes(styled)).toEqual(boxes(plain));
+    const model = masked();
+    for (const box of [model.nodes['b']!.bounds!, model.nodes['a']!.ports[0]!.pill!.bounds,
+      model.labels[0]!.bounds!]) {
+      expect(boxes(styled).some(item => sameRect(item, box))).toBe(true);
+    }
   });
 });
 

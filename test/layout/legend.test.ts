@@ -45,6 +45,12 @@ const pair = (nodes: { id: string; class?: string; icon?: string }[], links: { c
       points: [{ x: 60, y: 10 + index * 5 }, { x: 120, y: 10 + index * 5 }], ...link })),
   });
 
+/** Legend symbol IDs for a diagram that draws one class per node, in document order. */
+const symbolIds = (values: string[]): string[] => legendVariants(scene({
+  nodes: values.map((value, index) => ({ id: `n${index}`, class: value,
+    bounds: { x: index * 120, y: 0, width: 60, height: 40 } })),
+})).symbols.map(item => item.id);
+
 describe('legend presence', () => {
   it('adds nothing for an empty diagram or a single visual variant', () => {
     const empty = scene({ nodes: [{ id: 'a', bounds: { x: 0, y: 0, width: 40, height: 40 } }] });
@@ -90,6 +96,28 @@ describe('legend presence', () => {
     produceLegend(model);
     expect(model.legend!.entries).toHaveLength(3);
     expect(new Set(model.labels.filter(label => label.role === 'legend').map(label => label.id)).size).toBe(3);
+  });
+
+  it('keeps two classes distinct when one of them holds a character XML attributes alter', () => {
+    // Class strings are accepted free text, so an identity built from them has to survive both the
+    // serializer's substitution for a character XML forbids and an XML parser's folding of literal
+    // attribute whitespace. Every one of these classes is distinct in the document.
+    // Control characters, the whitespace a parser normalizes to a space, and lone surrogates.
+    expect(symbolIds(['a\u0001', 'a\u0002'])).toEqual(['symbol:a%01', 'symbol:a%02']);
+    expect(symbolIds(['a\nb', 'a b', 'a\tb', 'a\r\nb']))
+      .toEqual(['symbol:a%0Ab', 'symbol:a b', 'symbol:a%09b', 'symbol:a%0D%0Ab']);
+    expect(symbolIds(['a\ud800', 'a\udfff'])).toEqual(['symbol:a%uD800', 'symbol:a%uDFFF']);
+    // An ordinary class keeps its spelling, and a valid astral pair is one code point XML carries.
+    expect(symbolIds(['router', 'edge core', 'a\u{1f600}']))
+      .toEqual(['symbol:router', 'symbol:edge core', 'symbol:a\u{1f600}']);
+  });
+
+  it('cannot have its identity impersonated by a class that spells an escape', () => {
+    // `%` always encodes, so no ordinary class can spell the encoded form of another one.
+    for (const both of [['a\u0001', 'a%01'], ['a\nb', 'a%0Ab'], ['a\ud800', 'a%uD800'],
+      ['a:b', 'a%3Ab'], ['a%b', 'a%25b'], ['a%0Ab', 'a%250Ab']]) {
+      expect([both, new Set(symbolIds(both)).size]).toEqual([both, 2]);
+    }
   });
 
   it('qualifies a class drawn with two different icons and skips a node without a class', () => {
