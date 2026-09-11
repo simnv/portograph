@@ -633,3 +633,140 @@ describe('counted merge runs', () => {
       .some(box => sameRect(box, label.bounds!))).toBe(false);
   });
 });
+
+describe('declared bar crossings', () => {
+  /** The detached-body layer alone, between the overlay and the links. */
+  const detachedLayer = (svg: string): string =>
+    svg.slice(svg.indexOf('<g class="nodes crossed-bars">'), svg.indexOf('<g class="links">'));
+
+  /** Where one node body is painted, in serialized order; exactly one element paints each. */
+  function bodyAt(svg: string, box: Rect): number {
+    const found = [...svg.matchAll(/<rect\b[^>]*\/>/g)].filter(match => {
+      const values = elements(match[0], 'rect')[0]!;
+      return values['class']!.startsWith('node-body') && sameRect(rect(values), box);
+    });
+    expect(found).toHaveLength(1);
+    return found[0]!.index!;
+  }
+
+  /**
+   * The reported golden pattern, minimised: `drop` reaches the lower bar and crosses the upper bar
+   * on the way, as the three Backbone drops cross EBB-01 to reach EBB-02. `feed` ends on the upper
+   * bar and crosses nothing; `aside` is an ordinary node; `flow` is an overlay link. The crossing is
+   * the model's own annotation, reserved during placement — the renderer reads it and moves nothing.
+   */
+  const crossing = (): LayoutModel => {
+    const model = scene({
+      nodes: [{ id: 'top', bounds: { x: 100, y: 0, width: 60, height: 40 }, class: 'router' },
+        { id: 'upper', bounds: { x: 0, y: 100, width: 300, height: 40 }, class: 'router', label: 'EBB-01' },
+        { id: 'lower', bounds: { x: 0, y: 200, width: 300, height: 40 }, class: 'router', label: 'EBB-02' },
+        { id: 'aside', bounds: { x: 360, y: 100, width: 60, height: 40 } }],
+      ports: [{ node: 'top', name: '100G', side: 'bottom', anchor: { x: 130, y: 40 } },
+        { node: 'top', name: '100G', side: 'bottom', anchor: { x: 110, y: 40 } },
+        { node: 'lower', name: '100G', side: 'top', anchor: { x: 130, y: 200 } },
+        { node: 'upper', name: '100G', side: 'top', anchor: { x: 40, y: 100 } },
+        { node: 'upper', name: 'sync', side: 'right', anchor: { x: 300, y: 130 } },
+        { node: 'aside', name: 'sync', side: 'left', anchor: { x: 360, y: 130 } }],
+      links: [{ id: 'drop', from: 'top', to: 'lower', points: [{ x: 130, y: 40 }, { x: 130, y: 200 }] },
+        { id: 'feed', from: 'top', to: 'upper',
+          points: [{ x: 110, y: 40 }, { x: 110, y: 70 }, { x: 40, y: 70 }, { x: 40, y: 100 }] },
+        { id: 'flow', from: 'upper', to: 'aside', class: 'flow', layer: 'overlay',
+          points: [{ x: 300, y: 130 }, { x: 360, y: 130 }] }],
+      labels: [{ id: 'label:node:upper', owner: { kind: 'node', id: 'upper' }, layer: 'routed', role: 'node',
+        text: 'EBB-01', lines: ['EBB-01'], fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 12,
+        fontWeight: 700, lineHeight: 14, bounds: { x: 60, y: 113, width: 44, height: 14 } },
+      pillLabel('upper', '100G', 1, { x: 35, y: 92, width: 10, height: 16 }, -90)],
+    });
+    model.links[0]!.path!.segments[0]!.barCross = ['upper'];
+    return model;
+  };
+  const RUN = 'd="M130 40 L130 200"';
+
+  it('paints a crossed bar body beneath the run that declares the crossing', () => {
+    const model = crossing();
+    const svg = render(model);
+    const run = svg.indexOf(RUN);
+    expect(run).toBeGreaterThan(-1);
+    // The reported symptom: the bar's opaque fill used to be painted over the drop that crosses it.
+    expect(bodyAt(svg, model.nodes['upper']!.bounds!)).toBeLessThan(run);
+
+    // The body itself is untouched: the same rectangle, painted once, with the same classes an
+    // ordinary body of that class carries and no paint attribute of its own.
+    const body = elements(detachedLayer(svg), 'rect')[0]!, ordinary = elements(block(svg, 'lower'), 'rect')[0]!;
+    expect(rect(body)).toEqual(model.nodes['upper']!.bounds!);
+    expect(Object.keys(body)).toEqual(Object.keys(ordinary));
+    expect(body['class']).toBe(ordinary['class']);
+    expect(elements(svg, 'rect').filter(values => sameRect(rect(values), model.nodes['upper']!.bounds!)
+      && values['class']!.startsWith('node-body'))).toHaveLength(1);
+    // One semantic data-id per object: the detached container carries `data-owner`, as every other
+    // detached element does, and the bar's identity stays on the group its content is drawn in.
+    expect(svg.match(/data-id="upper"/g)).toHaveLength(1);
+    expect(block(svg, 'upper')).toContain('data-id="upper.100G#1"');
+  });
+
+  it('detaches the body into a node container and a node layer, named as before', () => {
+    // A `css:` rule reaches the palette by name: the body, the node class, the container or the
+    // layer. Each of those names is kept, so a rule that reaches an ordinary body reaches this one.
+    // A rule that depends instead on the element's place in the tree reaches no detached element
+    // here — a link label and an endpoint mark leave their link the same way.
+    const svg = render(crossing());
+    const containers = elements(detachedLayer(svg), 'g').slice(1);
+    expect(containers.map(values => values['data-owner'])).toEqual(['upper']);
+    expect(containers[0]!['class']).toBe(elements(block(svg, 'lower'), 'g')[0]!['class']);
+    expect(containers[0]!['data-id']).toBeUndefined();
+    expect(svg).toContain(`<g class="${containers[0]!['class']}" data-owner="upper"><rect class="node-body`);
+    expect(detachedLayer(svg).startsWith('<g class="nodes crossed-bars">')).toBe(true);
+  });
+
+  it('keeps bar content, and every body no run crosses, above the routed layer', () => {
+    const model = crossing();
+    const svg = render(model);
+    const run = svg.indexOf(RUN);
+    // The bar's label and pill stay over the run that crosses the bar, as the target draws them.
+    expect(svg.indexOf('>EBB-01</tspan>')).toBeGreaterThan(run);
+    expect(svg.indexOf('data-id="upper.100G#1"')).toBeGreaterThan(run);
+    // Only a declared crossing moves a body. A link that ends on a node is not one.
+    for (const id of ['top', 'lower', 'aside']) expect(bodyAt(svg, model.nodes[id]!.bounds!)).toBeGreaterThan(run);
+    expect(elements(detachedLayer(svg), 'g').slice(1).map(values => values['data-owner'])).toEqual(['upper']);
+  });
+
+  it('keeps the overlay masked, beneath the crossed body, and cut out of it', () => {
+    const svg = render(crossing());
+    expect(elements(svg, 'g').find(item => item['class'] === 'overlay-links')!['mask']).toBe('url(#pg-overlay-mask)');
+    for (const [above, below] of [['overlay-links', 'nodes crossed-bars'],
+      ['nodes crossed-bars', 'links'], ['links', 'nodes']]) {
+      expect([above, svg.indexOf(`class="${above}"`) < svg.indexOf(`class="${below}"`)]).toEqual([above, true]);
+    }
+    const mask = svg.slice(svg.indexOf('<mask'), svg.indexOf('</mask>'));
+    const hidden = elements(mask, 'rect').filter(item => item['class'] === 'pg-mask-hide').map(rect);
+    expect(hidden.some(box => sameRect(box, crossing().nodes['upper']!.bounds!))).toBe(true);
+  });
+
+  it('moves no body when the painted geometry declares no crossing', () => {
+    const model = crossing();
+    delete model.links[0]!.path!.segments[0]!.barCross;
+    const svg = render(model);
+    expect(svg).not.toContain('crossed-bars');
+    expect(bodyAt(svg, model.nodes['upper']!.bounds!)).toBeGreaterThan(svg.indexOf(RUN));
+
+    // A crossing that is not drawn is not painted over either, so it moves nothing.
+    const overlayOnly = render(crossing(), { layers: ['overlay'] });
+    expect(overlayOnly).not.toContain('crossed-bars');
+    expect(elements(block(overlayOnly, 'upper'), 'rect')[0]!['class']).toContain('node-body');
+  });
+
+  it('reads the crossing from a counted trunk as well, still painted once', () => {
+    const model = crossing();
+    // Only the shared trunk declares the crossing here, so it alone can move the bar's body.
+    delete model.links[0]!.path!.segments[0]!.barCross;
+    const owner = { kind: 'bundle' as const, id: 'bundle-1' };
+    const trunk = { from: { x: 200, y: 40 }, to: { x: 200, y: 200 }, owner, barCross: ['upper'] };
+    for (const link of model.links.slice(0, 2)) link.bundle = 'bundle-1';
+    model.bundles.push({ id: 'bundle-1', owner, layer: 'routed', nodes: ['top', 'lower'], members: ['drop', 'feed'],
+      mergeRuns: [{ id: 'merge:bundle-1:0', members: ['drop', 'feed'], count: 2,
+        path: { owner, layer: 'routed', fixed: true, segments: [trunk] } }] });
+    const svg = render(model);
+    expect((svg.match(/M200 40 L200 200/g) ?? []).length).toBe(1);
+    expect(bodyAt(svg, model.nodes['upper']!.bounds!)).toBeLessThan(svg.indexOf('d="M200 40 L200 200"'));
+  });
+});

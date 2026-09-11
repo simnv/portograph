@@ -268,12 +268,25 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     return lines.length ? element('title', {}, escapeText(lines.join('\n'))) : '';
   };
 
+  /**
+   * Bars that painted geometry declares it crosses. A drop onto a lower bar crosses the upper bar's
+   * body by design — reserved during placement, annotated `barCross`, exempt from G2 — so that body
+   * may not be painted over the run that crosses it. The bars named here paint their body beneath
+   * the routed layer instead and keep their icon, label and pills above it; read from the segments
+   * that are really drawn, so a crossing nothing paints moves nothing.
+   */
+  const crossedBars = new Set<string>();
+  const noteCrossings = (segments: readonly PathSegment[]): void => {
+    for (const segment of segments) for (const id of segment.barCross ?? []) crossedBars.add(id);
+  };
+
   const linkElement = (link: LayoutLink, bundle: Bundle | undefined): string => {
     const authored = linkClassToken(layout, link);
     const layer = effectiveLayer(link);
     const segments = withoutTrunks(link, trunkIntervals(bundle, link));
     const data = pathData(segments);
     if (!data) return '';
+    noteCrossings(segments);
     return element('g', { class: classes('link', layer === 'overlay' ? 'overlay' : undefined, authored), 'data-id': link.id },
       linkTooltip(link)
       + element('path', { class: classes('link-line', layer === 'overlay' ? 'overlay-line' : undefined,
@@ -291,6 +304,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
   const trunks = layout.bundles.flatMap(bundle => (bundle.mergeRuns ?? []).flatMap(run => {
     const members = run.members.map(id => byId.get(id)).filter((link): link is LayoutLink => link !== undefined);
     if (!members.length || !members.some(visible)) return [];
+    noteCrossings(run.path.segments);
     const shared = new Set(members.map(member => linkClassToken(layout, member)));
     const authored = shared.size === 1 ? [...shared][0] : undefined;
     return [element('g', { class: classes('merge-run', authored), 'data-id': run.id, 'data-owner': bundle.id },
@@ -298,10 +312,19 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
         d: pathData(run.path.segments) }))];
   })).join('');
 
+  // Bodies detached to the layer beneath the links, in node order; see `crossedBars`.
+  const crossedBodies: string[] = [];
   const nodes = orderedNodeIds(layout.document).map(id => {
     const node = layout.nodes[id]!, authored = authorClass(layout.document.nodes[id]!.class);
+    const crossed = crossedBars.has(id);
     const body = element('rect', { class: classes('node-body', authored, locks.stroke(nodeStroke(node))),
       x: node.bounds!.x, y: node.bounds!.y, width: node.bounds!.width, height: node.bounds!.height, rx: 8, ry: 8 });
+    // The detached body is the same rectangle, in a container of the same kind, inside a second
+    // node layer, so what a document styles by name still reaches it: the theme, the geometry locks
+    // and a `css:` rule naming the body, the class, the container or the layer. What it cannot
+    // reach is the element's place in the tree, which no detached element here has ever kept. The
+    // container carries `data-owner`; the node's one `data-id` stays on its content group.
+    if (crossed) crossedBodies.push(element('g', { class: classes('node', authored), 'data-owner': id }, body));
     if (node.icon) icons.add(iconKey(node.icon.icon));
     const icon = node.icon ? iconElement(node.icon, locks, authored) : '';
     const text = layout.labels.filter(label => label.owner.kind === 'node' && label.owner.id === id
@@ -317,7 +340,8 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
           rx: pill.radius, ry: pill.radius })
         + (label ? textElement(label, locks, 'pill-label', identity, authored) : ''));
     }).join('');
-    return element('g', { class: classes('node', authored), 'data-id': id }, body + icon + text + pills);
+    return element('g', { class: classes('node', authored), 'data-id': id },
+      (crossed ? '' : body) + icon + text + pills);
   }).join('');
 
   const groupLabels = layout.labels.filter(label => label.role === 'group' && !label.omitted)
@@ -379,6 +403,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
   const body = element('rect', { class: 'pg-canvas', x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height })
     + element('g', { class: 'groups' }, groups)
     + (overlayPaths ? element('g', { class: 'overlay-links', mask: `url(#${MASK_ID})` }, overlayPaths) : '')
+    + (crossedBodies.length ? element('g', { class: 'nodes crossed-bars' }, crossedBodies.join('')) : '')
     + element('g', { class: 'links' }, routedPaths + trunks)
     + element('g', { class: 'nodes' }, nodes)
     + element('g', { class: 'labels' }, groupLabels + linkLabels)

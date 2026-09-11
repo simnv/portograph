@@ -662,8 +662,8 @@ rectangle unrotated and turns only the text, by the label's stored `textRotation
 `class` attributes from YAML, kept as separate tokens beside the structural class (`node router`),
 on the painted element as well as its container, so a document rule of the same specificity still
 owns the palette. One semantic `data-id` per object: group id, node id, `node.port#ordinal` for a
-named port, the model link id, the merge-run id and the legend entry key. A detached label or
-endpoint mark carries `data-owner` and, for a mark, `data-end`, instead of repeating a `data-id`.
+named port, the model link id, the merge-run id and the legend entry key. A detached label, endpoint
+mark or bar body carries `data-owner` and, for a mark, `data-end`, instead of repeating a `data-id`.
 Every text node and attribute is XML-escaped, including the inline style, so no source string is
 interpolated as markup.
 
@@ -683,6 +683,27 @@ unexplained gap. Overlay endpoints keep a 2 px mark, drawn above the protected e
 inside the masked group. One counted merge trunk is painted once by its bundle, and the interval it
 covers is subtracted from each member's own path, which still draws its approach and departure.
 
+**A bar that a drawn run crosses paints its body beneath the routed layer.** A drop onto a lower bar
+crosses the upper bar by design: the crossing is reserved during placement, annotated `barCross` on
+the segment and reported by G2, so the bar's opaque fill may not hide the run that crosses it. Those
+bodies are emitted in one `nodes crossed-bars` layer between the overlay and the links; the bar keeps
+its icon, label and pills in the node layer above the run, as the approved target draws them. The
+renderer reads the annotation from the geometry it really paints, so a crossing that no drawn run
+declares — a layer selection that hides it, or a link with nothing left to draw — moves no body, and
+no other node body moves either: G2 keeps every other routed segment out of every foreign node.
+
+The detached body is the same rectangle, with the same classes, in a container of the same kind
+(`<g class="node …">`), inside a second node layer. **A document styles the palette by name**, and
+every name is kept: the theme, the geometry locks and a `css:` rule naming the body, the node class,
+the container or the node layer all reach a crossed bar's body exactly as they reach any other. What
+no rule can follow is the element's place in the tree — a selector written on the owner's `data-id`,
+on sibling order or with `:has()`. That is not new here: a detached label and an endpoint mark leave
+their link the same way, and internal render structure is not a styling surface. The container is a
+detached element, so it carries `data-owner`, and the node's one `data-id` stays on the group its
+content is drawn in. Two differences are accepted: an author who makes a node translucent composites
+a crossed bar's body and its content as two groups rather than one, and a rule that names the node
+layer applies to both of its groups.
+
 **The mask is internal render structure, not an author styling surface.** The theme states no rule
 for it: a rule in that sheet is reachable by an accepted `css:` rule of the same specificity and
 importance, which then wins by source order, and an ordinary global rule reaches it as well. Each
@@ -701,8 +722,8 @@ their links. This changes emitted visibility only: stored geometry, the canvas, 
 gate scope are untouched, and the legend keeps its recorded full class set and geometry.
 
 Emission order: `<defs>` (style, icon symbols, overlay mask), canvas background, group boxes,
-masked overlay paths, routed paths and merge trunks, nodes with icons, text and pills, group and
-link labels, unmasked overlay endpoint marks, generated legend.
+masked overlay paths, crossed bar bodies, routed paths and merge trunks, nodes with icons, text and
+pills, group and link labels, unmasked overlay endpoint marks, generated legend.
 
 ---
 
