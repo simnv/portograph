@@ -44,3 +44,16 @@ export { bands, GROUP_LABEL_GEOMETRY } from './layout/bands.js';
 
 export { optimizeBundleOrder } from './layout/bundle-order.js';
 export type { BundleOrderResult } from './layout/bundle-order.js';
+
+export { route, routeRemainders } from './route/index.js';
+export type { RouteOptions } from './route/index.js';
+export { batchRequest, planRoute, routeObstacles, nodeClearance, trimChain, stemCheckpoint, TERMINAL_TRIM,
+  ROUTE_PARAMETERS, SHAPE_BUFFER_DISTANCE } from './route/index.js';
+export type { LinkPlan, RoutePiece, RoutePlan, RouteObstacle } from './route/index.js';
+export { checkpointsHonoured, crossedTiers, overlayPath, simplify, stitchPath, stitchPaths, stubCandidate,
+  reservationConflicts, reservedRuns, validateRoutedPaths } from './route/index.js';
+export type { ReservationConflict, RoutedLinkPath } from './route/index.js';
+export { createBrowserRouteFactory, createRouteFactory, RouteDeadlineError, RouteSession, withRouteSession,
+  systemRouteClock, ROUTE_BUDGET_MS, ROUTE_REQUEST, ROUTE_RESPONSE, ALL_DIRECTIONS, DIRECTION_BITS } from './route/index.js';
+export type { CreateRouteAttempt, RouteAssets, RouteAttempt, RouteBatch, RouteCheckpoint, RouteClock,
+  RouteConnector, RouteEndpoint, RoutePin, RouteShape, RouteWorker, RoutedConnector } from './route/index.js';

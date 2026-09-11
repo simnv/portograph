@@ -88,7 +88,11 @@ export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segm
   for (const other of model.links) {
     if (other.id === link.id || other.layer === 'overlay') continue;
     const otherStroke = other.path?.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path;
-    for (const run of [...(other.path?.segments ?? []), ...(other.fixedSegments ?? [])]) {
+    // A stage-8 remainder (`fixed: false`) is routed around this corridor, so it is not an
+    // obstacle to the rule that reserved the corridor first. Re-deriving the pin against it would
+    // let routing retract a placement decision, which the pipeline's load-bearing rule forbids.
+    const foreign = other.path?.fixed === false ? [] : other.path?.segments ?? [];
+    for (const run of [...foreign, ...(other.fixedSegments ?? [])]) {
       if (segmentDistance(segment, run) - (stroke + otherStroke) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return false;
     }
   }

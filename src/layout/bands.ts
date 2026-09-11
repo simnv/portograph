@@ -57,7 +57,7 @@ function measurement(model: LayoutModel, groupId: string) {
 }
 
 /** Widest routed stroke this placement must keep clear; stage 8 may not exceed it. */
-function routedStroke(model: LayoutModel): number {
+export function routedStroke(model: LayoutModel): number {
   return Math.max(DEFAULT_STROKE_WIDTHS.path, ...model.links.filter(link => link.layer === 'routed')
     .map(link => link.path?.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path));
 }
@@ -67,7 +67,7 @@ function strokeAllowance(model: LayoutModel): number { return routedStroke(model
  * Outward distance of the ordinary checkpoint at a node. It is the 15 px stem, unless that node's
  * stroke-expanded routing obstacle already reaches further; then it clears that obstacle instead.
  */
-function stemReach(model: LayoutModel, node: LayoutModel['nodes'][string]): number {
+export function stemReach(model: LayoutModel, node: LayoutModel['nodes'][string]): number {
   const expanded = GROUP_LABEL_GEOMETRY.nodeClearance
     + ((node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node) + routedStroke(model)) / 2;
   return Math.max(GROUP_LABEL_GEOMETRY.routerStem, expanded + GROUP_LABEL_GEOMETRY.entryTolerance);
@@ -161,7 +161,10 @@ function segmentRect(segment: PathSegment, stroke: number): Rect {
  */
 function linkRects(link: LayoutModel['links'][number]): { id: string; bounds: Rect }[] {
   const stroke = (link.path?.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path) / 2;
-  const sources: [string, PathSegment[]][] = [['path', link.path?.segments ?? []],
+  // A stage-8 remainder (`fixed: false`) is routed around this placement, so only the runs a rule
+  // reserved count here; re-deriving a label against a later route would let routing move it.
+  const reserved = link.path?.fixed === false ? [] : link.path?.segments ?? [];
+  const sources: [string, PathSegment[]][] = [['path', reserved],
     ['fixed', link.fixedSegments ?? []], ['shared:from', link.sharedRuns?.from ?? []],
     ['shared:to', link.sharedRuns?.to ?? []]];
   const seen = new Set<string>(), result: { id: string; bounds: Rect }[] = [];

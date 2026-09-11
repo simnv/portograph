@@ -19,6 +19,7 @@ import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
 import { produceGroupLabelBands, validateGroupLabelBands } from './bands.js';
+import { validateRoutedPaths } from '../route/validate.js';
 
 export type PlacementRule = 'rows' | 'lanes' | 'flanks' | 'centre' | 'bars' | 'bundles'
   | 'bands' | 'route' | 'link-labels' | 'validate' | 'emit';
@@ -209,20 +210,37 @@ function validateRegionClaims(model: LayoutModel): void {
     same(model.links.map(l => l.sharedRuns), expected.links.map(l => l.sharedRuns), 'Shared runs contradict port incidence');
     for (const [index, link] of model.links.entries()) if (link.bundle) same(link.path, expected.links[index]!.path, `Bundle path on ${link.id} contradicts final anchors`);
   }
+  // A candidate its rule declined to pin is unclaimed geometry; stage 8 owns it from then on, and
+  // validateRoutedPaths judges what the router produced. A pinned path is still exactly the rule's.
+  const routeStage = stages.indexOf(model.stage) >= stages.indexOf('route');
+  const ruled = (index: number): boolean => !routeStage || expected.links[index]!.path !== undefined;
+  // `fixed` means "a region rule produced this", so only a rule that really pinned this link may
+  // set it. Without this check a forged fixed path would skip the whole stage-8 contract,
+  // reservation avoidance included. Every rule below rebuilds its own paths into `expected`.
+  const ruleOwned = (link: LayoutModel['links'][number]): boolean => link.bundle !== undefined
+    || rowPathCandidate(model, link) || (flankStage && flankPathCandidate(model, link))
+    || (barStage && barLink(model, link) !== undefined);
+  if (routeStage) for (const [index, link] of model.links.entries()) {
+    if (link.path?.fixed === true && !(ruleOwned(link) && expected.links[index]!.path !== undefined)) {
+      throw new Error(`Path on ${link.id} claims a region rule fixed it`);
+    }
+  }
   for (const [index, link] of model.links.entries()) {
     if (!rowPathCandidate(model, link) && !(flankStage && flankPathCandidate(model, link))) continue;
     const name = rowPathCandidate(model, link) ? 'Row' : 'Flank';
-    same(link.path, expected.links[index]!.path, `${name} path on ${link.id} contradicts the region rule`);
+    if (ruled(index)) same(link.path, expected.links[index]!.path, `${name} path on ${link.id} contradicts the region rule`);
     same(link.technique, expected.links[index]!.technique, `${name} path technique on ${link.id} contradicts the region rule`);
   }
   if (barStage) {
     same(model.barDrops, expected.barDrops, 'Bar drop reservations contradict current bars and fixed lanes');
     for (const [index, link] of model.links.entries()) if (barLink(model, link)) {
-      same(link.path, expected.links[index]!.path, `Bar path on ${link.id} contradicts its reservation`);
+      if (ruled(index)) same(link.path, expected.links[index]!.path, `Bar path on ${link.id} contradicts its reservation`);
       same(link.technique, expected.links[index]!.technique, `Bar path technique on ${link.id} contradicts its reservation`);
     }
   }
   if (stages.indexOf(model.stage) >= stages.indexOf('bands')) validateGroupLabelBands(model);
+  // Route geometry cannot be re-derived without the router, so its claims are checked structurally.
+  if (stages.indexOf(model.stage) >= stages.indexOf('route')) validateRoutedPaths(model, stages.indexOf(model.stage) > stages.indexOf('route'));
 }
 function validateGeometry(model: LayoutModel, allowNonConvergence = false): void {
   jsonValue(model);
@@ -361,9 +379,12 @@ function hasUnsupportedClaims(model: LayoutModel): boolean {
   const barStage = stages.indexOf(model.stage) >= stages.indexOf('bars');
   const bundleStage = stages.indexOf(model.stage) >= stages.indexOf('bundles');
   const bandsStage = stages.indexOf(model.stage) >= stages.indexOf('bands');
+  // Stage 8 owns every remaining path; validateRoutedPaths then judges the geometry it produced.
+  const routeStage = stages.indexOf(model.stage) >= stages.indexOf('route');
   const nonNodeLabels = claims(model).labels;
-  return model.links.some(link => (link.path !== undefined && !((rowStage && rowPathCandidate(model, link)) || (flankStage && flankPathCandidate(model, link))
+  return model.links.some(link => (link.path !== undefined && !(routeStage || (rowStage && rowPathCandidate(model, link)) || (flankStage && flankPathCandidate(model, link))
       || (barStage && barLink(model, link) !== undefined) || (bundleStage && link.bundle !== undefined)))
+      || (link.stubCandidate !== undefined && !routeStage)
       || (link.fixedSegments !== undefined && !laneStage) || (link.sharedRuns !== undefined && !bundleStage))
     || (!laneStage && (model.lanes.length > 0 || model.regions.length > 0)) || (!barStage && model.barDrops.length > 0)
     || (!bundleStage && model.junctions.length > 0)
@@ -415,14 +436,25 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
   } else same(draft.anchorTier, model.anchorTier, 'Anchor tier can initialize only in centre');
   same(semantics(draft), semantics(model), 'Resolved semantics changed');
   for (const [index, link] of draft.links.entries()) {
+    // A candidate its rule declined to pin stays unclaimed, and stage 8 may complete it.
+    const unpinned = rule === 'route' && model.links[index]!.path === undefined;
+    const owned = unpinned ? (['technique'] as const) : (['path', 'technique'] as const);
     if ((rowPathCandidate(model, link) || (stages.indexOf(model.stage) >= stages.indexOf('flanks') && flankPathCandidate(model, link))
       || (stages.indexOf(model.stage) >= stages.indexOf('bars') && barLink(model, link)))
-      && !equal(pick(link, ['path', 'technique']), pick(model.links[index]!, ['path', 'technique']))) {
+      && !equal(pick(link, owned), pick(model.links[index]!, owned))) {
       throw new Error(`Path on ${link.id} is derived by the transaction from final anchors; callbacks cannot edit it`);
     }
   }
-  const otherClaims = (value: LayoutModel) => ({ ...claims(value), lanes: [], links: value.links.map(link => omit(link, ['fixedSegments'])) });
+  // The route rule owns exactly the remaining paths and their stub marks; nothing else may move.
+  const linkFields = rule === 'route' ? ['fixedSegments', 'path', 'stubCandidate'] : ['fixedSegments'];
+  const otherClaims = (value: LayoutModel) => ({ ...claims(value), lanes: [], links: value.links.map(link => omit(link, linkFields)) });
   same(otherClaims(draft), otherClaims(model), `${rule} claim validator/rebuild is not implemented`);
+  if (rule === 'route') {
+    for (const [index, link] of draft.links.entries()) {
+      const prior = model.links[index]!;
+      if (prior.path !== undefined) same(link.path, prior.path, `Route cannot change the path a rule already fixed on ${link.id}`);
+    }
+  }
   if (rule !== 'lanes') {
     same(draft.lanes.map(lane => ({ ...lane, bounds: pick(lane.bounds, ['x', 'width']) })),
       model.lanes.map(lane => ({ ...lane, bounds: pick(lane.bounds, ['x', 'width']) })), 'Established lane identity, owner, x and width cannot change');

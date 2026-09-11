@@ -1,0 +1,332 @@
+import { describe, expect, it } from 'vitest';
+import { bands, bars, bundles, centre, flanks, lanes, rows } from '../../src/index.js';
+import { batchRequest, disjointShapes, planRoute, stemCheckpoint } from '../../src/route/plan.js';
+import { nodeClearance, routeObstacles, trimChain, TERMINAL_TRIM } from '../../src/route/obstacles.js';
+import { checkpointsHonoured, simplify } from '../../src/route/paths.js';
+import { retraces } from '../../src/route/validate.js';
+import type { Point, Rect } from '../../src/model/index.js';
+import type { LayoutModel } from '../../src/model/index.js';
+import { restoreLayoutModel } from '../../src/layout/mutation.js';
+import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
+import { rebuildBands, union } from '../../src/layout/skeleton-geometry.js';
+import { findPort } from '../../src/layout/row-paths.js';
+import { placed } from '../layout/phase-two-fixture.js';
+
+const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+const right = (box: Rect): number => box.x + box.width;
+const bottom = (box: Rect): number => box.y + box.height;
+const contains = (outer: Rect, inner: Rect): boolean => inner.x >= outer.x - 1e-9 && inner.y >= outer.y - 1e-9
+  && right(inner) <= right(outer) + 1e-9 && bottom(inner) <= bottom(outer) + 1e-9;
+const throughBands = async (yaml: string): Promise<LayoutModel> => bands(bundles(bars(centre(flanks(lanes(rows(await placed(yaml))))))));
+
+const twoTier = `portograph: 2
+groups: {up: {tier: 0}, low: {tier: 1, label: Lower}}
+nodes:
+  a: {group: up, ports: [{name: p, side: bottom}]}
+  b: {group: low, ports: [{name: p, side: top}]}
+links: [[a.p, b.p]]`;
+
+describe('stage 8 obstacles', () => {
+  it('expands each node by its own stroke-aware clearance and swallows its pills', async () => {
+    const model = await throughBands(twoTier);
+    const obstacles = routeObstacles(model);
+    // 10 px gate clearance plus half the node stroke plus half the widest routed stroke.
+    expect(nodeClearance(model, 'a')).toBe(11.75);
+    const box = model.nodes.a!.bounds!, pill = model.nodes.a!.ports[0]!.pill!.bounds;
+    const obstacle = obstacles.find(item => item.id === 'node:a')!.bounds;
+    // The bottom pill protrudes 12 px past the boundary, further than the 11.75 px node clearance.
+    expect(bottom(pill) - bottom(box)).toBe(12);
+    expect(obstacle).toEqual({ x: box.x - 11.75, y: box.y - 11.75,
+      width: box.width + 23.5, height: box.height + 11.75 + 12 + 1.25 });
+    expect(contains(obstacle, { x: pill.x - 1.25, y: pill.y - 1.25, width: pill.width + 2.5, height: pill.height + 2.5 })).toBe(true);
+    expect(model.nodes.a!.bounds).toEqual(box);
+    // One obstacle per node keeps the set identical for every connector: no link needs a pill
+    // exemption, because a connector may always leave the shape its pin belongs to.
+    expect(obstacles.filter(item => item.id.startsWith('node:')).every(item => item.consumers.length === 0)).toBe(true);
+    expect(obstacles.some(item => item.id.startsWith('pill:'))).toBe(false);
+  });
+
+  it('measures an unequal custom node stroke and lengthens the required stem with it', async () => {
+    const draft = copy(await placed(twoTier));
+    draft.nodes.b!.strokeWidth = 20;
+    rebuildBands(draft);
+    rebuildNodeGeometry(draft, Object.keys(draft.nodes), 'current');
+    draft.canvas = union([draft.canvas!, ...Object.values(draft.groups).map(group => group.bounds!)]);
+    const model = bands(bundles(bars(centre(flanks(lanes(rows(restoreLayoutModel(JSON.stringify(draft)))))))));
+    expect(nodeClearance(model, 'a')).toBe(11.75);
+    expect(nodeClearance(model, 'b')).toBe(20.75);
+    const anchor = findPort(model, model.links[0]!.attachments!.to)!;
+    expect(stemCheckpoint(model, anchor)).toEqual({ x: anchor.anchor!.x, y: anchor.anchor!.y - 21 });
+    const thin = findPort(model, model.links[0]!.attachments!.from)!;
+    expect(stemCheckpoint(model, thin)).toEqual({ x: thin.anchor!.x, y: thin.anchor!.y + 15 });
+    expect(model.nodes.b!.strokeWidth).toBe(20);
+  });
+
+  it('trims 18 px of arc length once per whole chain and keeps interior bends covered', () => {
+    const chain: Point[] = [{ x: 0, y: 0 }, { x: 0, y: 40 }, { x: 60, y: 40 }, { x: 60, y: 90 }];
+    const trimmed = trimChain(chain, TERMINAL_TRIM, TERMINAL_TRIM);
+    expect(trimmed).toEqual([{ x: 0, y: 18 }, { x: 0, y: 40 }, { x: 60, y: 40 }, { x: 60, y: 72 }]);
+    // A terminal segment shorter than the trim consumes the following one; the bend survives.
+    const shortTerminal = trimChain([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 60 }], TERMINAL_TRIM, 0);
+    expect(shortTerminal).toEqual([{ x: 10, y: 8 }, { x: 10, y: 60 }]);
+    // Nothing is protected when the whole chain is inside the two trims.
+    expect(trimChain([{ x: 0, y: 0 }, { x: 36, y: 0 }], TERMINAL_TRIM, TERMINAL_TRIM)).toEqual([]);
+    expect(trimChain([{ x: 0, y: 0 }, { x: 36.5, y: 0 }], TERMINAL_TRIM, TERMINAL_TRIM)).toEqual([{ x: 18, y: 0 }, { x: 18.5, y: 0 }]);
+    // One trimmed end only: the run keeps its far terminal.
+    expect(trimChain([{ x: 0, y: 0 }, { x: 40, y: 0 }], 0, TERMINAL_TRIM)).toEqual([{ x: 0, y: 0 }, { x: 22, y: 0 }]);
+  });
+
+  it('covers a fixed path with butt caps at its link terminals and square corners between', async () => {
+    const model = await throughBands(`portograph: 2
+groups: {ga: {tier: 0}, gb: {tier: 1}}
+nodes:
+  a: {group: ga, ports: [{name: p, side: bottom}]}
+  b: {group: gb, ports: [{name: p, side: top}, {name: q, side: top}]}
+links: [[a.p, b.p], [a.p, b.q]]`);
+    const path = model.links[0]!.path!;
+    expect(path.fixed).toBe(true);
+    expect(path.segments.length).toBeGreaterThan(2);
+    const covers = routeObstacles(model).filter(item => item.id.startsWith('link-1:path:'));
+    const points: Point[] = [path.segments[0]!.from, ...path.segments.map(segment => segment.to)];
+    const trimmed = trimChain(points, TERMINAL_TRIM, TERMINAL_TRIM);
+    expect(covers).toHaveLength(trimmed.length - 1);
+    for (const [index, cover] of covers.entries()) {
+      const a = trimmed[index]!, b = trimmed[index + 1]!;
+      // 10 px parallel clearance plus the two half strokes on the perpendicular axis.
+      expect(a.x === b.x ? cover.bounds.width : cover.bounds.height).toBeCloseTo(23, 9);
+      expect(contains(cover.bounds, { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y),
+        width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y) })).toBe(true);
+      expect(cover.consumers).toEqual(['link-1']);
+    }
+    // Butt caps: this path runs downward, so neither trimmed terminal is extended and a link
+    // sharing that port can still reach it.
+    expect(covers[0]!.bounds.y).toBe(trimmed[0]!.y);
+    expect(bottom(covers.at(-1)!.bounds)).toBe(trimmed.at(-1)!.y);
+    // Square corners: every interior bend is inside both of its covers.
+    for (let index = 1; index + 1 < trimmed.length; index++) {
+      const bend = trimmed[index]!;
+      for (const cover of [covers[index - 1]!, covers[index]!]) {
+        expect(bend.x).toBeGreaterThan(cover.bounds.x - 1e-9);
+        expect(bend.x).toBeLessThan(right(cover.bounds) + 1e-9);
+        expect(bend.y).toBeGreaterThan(cover.bounds.y - 1e-9);
+        expect(bend.y).toBeLessThan(bottom(cover.bounds) + 1e-9);
+      }
+      expect(covers[index - 1]!.bounds).not.toEqual(covers[index]!.bounds);
+    }
+  });
+
+  it('keeps a group label band as a whole obstacle and gives no group owner a way through it', async () => {
+    const model = await throughBands(twoTier);
+    const band = model.labelBands.find(item => item.group === 'low')!;
+    const obstacle = routeObstacles(model).find(item => item.id === band.id)!;
+    expect(obstacle.bounds).toEqual({ x: band.bounds.x - 0.75, y: band.bounds.y - 0.75,
+      width: band.bounds.width + 1.5, height: band.bounds.height + 1.5 });
+    expect(obstacle.consumers).toEqual([]);
+  });
+
+  it('drops an obstacle that lies wholly inside another and keeps the union identical', async () => {
+    const model = await throughBands(twoTier);
+    const plan = planRoute(model);
+    const request = batchRequest(plan, plan.batches[0]!, []);
+    for (const shape of request.shapes) {
+      expect(request.shapes.filter(other => other !== shape && contains(other.bounds, shape.bounds))).toEqual([]);
+    }
+    // Every dropped rectangle is still covered by a kept one, so the obstacle region is unchanged.
+    const excluded = new Set(plan.links[0]!.exclusions);
+    for (const obstacle of plan.obstacles.filter(item => !excluded.has(item.id))) {
+      expect(request.shapes.some(shape => contains(shape.bounds, obstacle.bounds))).toBe(true);
+    }
+    // The pill and its label are inside the node obstacle; the group label is inside its band.
+    const kept = new Set(request.shapes.map(shape => shape.id));
+    expect(kept.has('label:label:group:low')).toBe(false);
+    expect(kept.has('label-band:low')).toBe(true);
+  });
+
+  it('never drops an attachment shape and reports a container that would swallow one', () => {
+    const pinned = { id: 'node:a', bounds: { x: 0, y: 0, width: 10, height: 10 },
+      pins: [{ classId: 1, x: 0, y: 5, directions: 4, exclusive: true }] };
+    expect(() => disjointShapes([{ id: 'big', bounds: { x: -5, y: -5, width: 30, height: 30 } }, pinned]))
+      .toThrow(/contains the attachment shape node:a/);
+    expect(disjointShapes([pinned, { id: 'inner', bounds: { x: 1, y: 1, width: 2, height: 2 } }])).toEqual([pinned]);
+  });
+
+  it('gives each reserved lane and shared run its exact owners, and batches links by them', async () => {
+    const model = await throughBands(`portograph: 2
+groups: {top-group: {tier: 0}, mid: {tier: 1}, low: {tier: 2}}
+nodes:
+  a: {group: top-group, ports: [{name: p, side: bottom}]}
+  m: {group: mid, ports: [{name: q, side: bottom}]}
+  b: {group: low, ports: [{name: p, side: top}]}
+  c: {group: low, ports: [{name: p, side: top}]}
+links: [[a.p, b.p], [m.q, c.p]]`);
+    const plan = planRoute(model);
+    expect(plan.remainders).toEqual(['link-1', 'link-2']);
+    const lane = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === 'link-1')!;
+    expect(routeObstacles(model).find(item => item.id === lane.id)!.consumers).toEqual(['link-1']);
+    expect(plan.links.find(item => item.link === 'link-1')!.exclusions).toContain(lane.id);
+    expect(plan.links.find(item => item.link === 'link-2')!.exclusions).not.toContain(lane.id);
+    // Different exclusion sets cannot share one router, so they become ordered ownership batches.
+    expect(plan.batches).toEqual([{ id: 'batch-0', links: ['link-1'] }, { id: 'batch-1', links: ['link-2'] }]);
+    const owner = batchRequest(plan, plan.batches[0]!, []);
+    expect(owner.shapes.some(shape => shape.id === lane.id)).toBe(false);
+    expect(batchRequest(plan, plan.batches[1]!, []).shapes.some(shape => shape.id === lane.id)).toBe(true);
+    // The lane run is a reserved gap between two routed pieces, not a connector.
+    const pieces = plan.links.find(item => item.link === 'link-1')!.pieces;
+    expect(pieces.map(piece => piece.kind)).toEqual(['gap', 'reserved', 'gap']);
+    expect((pieces[1] as { segments: unknown }).segments).toEqual(model.links[0]!.fixedSegments);
+  });
+
+  it('marks a shared port non-exclusive and counts link ends already fixed by a rule', async () => {
+    const model = await throughBands(`portograph: 2
+groups: {ga: {tier: 0}, gb: {tier: 1}}
+nodes:
+  a: {group: ga, ports: [{name: p, side: bottom}, {name: q, side: bottom}]}
+  b: {group: gb, ports: [{name: p, side: top}, {name: q, side: top}]}
+  c: {group: gb, ports: [{name: p, side: top}]}
+links: [[a.p, b.p], [a.q, b.q], [c.p, a.p]]`);
+    const plan = planRoute(model);
+    expect(plan.remainders).toEqual(['link-3']);
+    const shapes = batchRequest(plan, plan.batches[0]!, []).shapes;
+    // link-3 consumes a shared prefix at a.p, so it attaches at c.p only; that pin carries one end.
+    const pins = shapes.flatMap(shape => (shape.pins ?? []).map(pin => ({ shape: shape.id, ...pin })));
+    expect(pins).toEqual([{ shape: 'node:c', classId: 1, x: model.nodes.c!.ports[0]!.anchor!.x,
+      y: model.nodes.c!.ports[0]!.anchor!.y, directions: 1, exclusive: true }]);
+    // `[c.p, a.p]` shares the target port, so the reserved prefix is traversed last.
+    expect(plan.links[0]!.pieces.map(piece => piece.kind)).toEqual(['gap', 'reserved']);
+  });
+
+  it('shares one non-exclusive pin between two connectors that no junction covers', async () => {
+    const model = await throughBands(`portograph: 2
+groups: {ga: {tier: 0}, gb: {tier: 1}}
+nodes:
+  a: {group: ga, ports: [{name: p, side: bottom}]}
+  b: {group: gb, ports: [{name: p, side: top}]}
+  c: {group: gb, ports: [{name: p, side: top}]}
+links: [[a.p, b.p], [a.p, c.p]]`);
+    expect(model.junctions).toEqual([]);
+    const plan = planRoute(model);
+    expect(plan.remainders).toEqual(['link-1', 'link-2']);
+    const pins = batchRequest(plan, plan.batches[0]!, []).shapes.find(shape => shape.id === 'node:a')!.pins!;
+    // One pin, used by both connectors: an exclusive pin would accept only the first.
+    expect(pins).toHaveLength(1);
+    expect(pins[0]!.exclusive).toBe(false);
+    expect(plan.batches).toEqual([{ id: 'batch-0', links: ['link-1', 'link-2'] }]);
+  });
+
+  it('pins and constrains an attachment on each of the four sides', async () => {
+    const model = await throughBands(`portograph: 2
+groups: {t0: {tier: 0}, t1: {tier: 1}, t2: {tier: 2}, t3: {tier: 3}, t4: {tier: 4}}
+nodes:
+  hub: {group: t2, ports: [{name: n, side: top}, {name: s, side: bottom}, {name: w, side: left}, {name: e, side: right}]}
+  a: {group: t0, ports: [{name: p, side: bottom}]}
+  b: {group: t4, ports: [{name: p, side: top}]}
+  c: {group: t1, ports: [{name: p, side: bottom}]}
+  d: {group: t3, ports: [{name: p, side: top}]}
+links: [[a.p, hub.n], [hub.s, b.p], [c.p, hub.w], [hub.e, d.p]]`);
+    const plan = planRoute(model);
+    expect(plan.remainders).toEqual(['link-1', 'link-2', 'link-3', 'link-4']);
+    const pins = plan.obstacles.find(item => item.id === 'node:hub')!.pins!;
+    const ports = model.nodes.hub!.ports;
+    // libavoid direction bits: top 1, bottom 2, left 4, right 8 — the port's own outward side.
+    expect(pins.map(pin => [pin.classId, pin.x, pin.y, pin.directions]))
+      .toEqual(ports.map((port, index) => [index + 1, port.anchor!.x, port.anchor!.y,
+        { top: 1, bottom: 2, left: 4, right: 8 }[port.side!]]));
+    // Each hub end has one outward checkpoint 15 px along its normal, entered or left head-on.
+    const outward: Record<string, [number, number]> = { top: [0, -1], bottom: [0, 1], left: [-1, 0], right: [1, 0] };
+    for (const [index, port] of ports.entries()) {
+      const link = model.links.find(item => [item.attachments!.from, item.attachments!.to]
+        .some(ref => ref.name === port.ref.name && ref.node === 'hub'))!;
+      const source = link.attachments!.from.node === 'hub';
+      const [dx, dy] = outward[port.side!]!;
+      const checkpoints = plan.links.find(item => item.link === link.id)!.connectors.flatMap(item => item.checkpoints);
+      const own = checkpoints.find(point => point.x === port.anchor!.x + 15 * dx && point.y === port.anchor!.y + 15 * dy)!;
+      const inward = { top: 2, bottom: 1, left: 8, right: 4 }[port.side!];
+      expect([index, source ? own.arrival : own.departure]).toEqual([index, inward]);
+      expect(source ? own.departure : own.arrival).toBe(15);
+    }
+  });
+
+  it('orders checkpoints by distance along the route, not by the segment they fall on', () => {
+    const line: Point[] = [{ x: 0, y: 0 }, { x: 100, y: 0 }];
+    const at = (x: number) => ({ x, y: 0, arrival: 15, departure: 15 });
+    expect(checkpointsHonoured(line, [at(20), at(80)])).toBe(true);
+    expect(checkpointsHonoured(line, [at(80), at(20)])).toBe(false);
+    expect(checkpointsHonoured(line, [{ x: 20, y: 40, arrival: 15, departure: 15 }])).toBe(false);
+    // A point the route reaches twice is honoured at the visit that keeps the order: (50,0) comes
+    // first at distance 50, which is too early, and again at 250, which is not.
+    const twice: Point[] = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 20 },
+      { x: 20, y: 20 }, { x: 20, y: 0 }, { x: 70, y: 0 }];
+    expect(checkpointsHonoured(twice, [at(90), at(50)])).toBe(true);
+    // (80,0) is only ever reached at distance 80, so after (90,0) the order cannot be kept.
+    expect(checkpointsHonoured(twice, [at(90), at(80)])).toBe(false);
+  });
+
+  it('removes exact containment without rounding cell boundaries or obstacle edges', () => {
+    const outer = { id: 'outer', bounds: { x: 127.99999999999999, y: 0, width: 200, height: 100 } };
+    const inner = { id: 'inner', bounds: { x: 150, y: 10, width: 10, height: 10 } };
+    expect(disjointShapes([outer, inner])).toEqual([outer]);
+    expect(disjointShapes([inner, outer])).toEqual([outer]);
+    const pinned = { ...inner, pins: [{ classId: 1, x: 150, y: 10, directions: 4, exclusive: true }] };
+    expect(() => disjointShapes([outer, pinned])).toThrow(/contains the attachment shape inner/);
+    // Collision tolerance must not erase a real sliver of the obstacle union.
+    const edge = { id: 'edge', bounds: { x: 256, y: 0, width: 64, height: 64 } };
+    const slack = { id: 'slack', bounds: { x: 256 - 1e-9, y: 0, width: 32, height: 32 } };
+    expect(disjointShapes([edge, slack])).toEqual([edge, slack]);
+    const thin = { id: 'thin', bounds: { x: 128, y: 0, width: 1, height: 100 } };
+    const fatter = { id: 'fatter', bounds: { x: 127.9999999, y: 0.000001, width: 1.0000002, height: 99.999998 } };
+    expect(disjointShapes([thin, fatter])).toEqual([thin, fatter]);
+    const partialPin = { ...fatter, pins: [{ classId: 1, x: 128, y: 1, directions: 4, exclusive: true }] };
+    expect(disjointShapes([thin, partialPin])).toEqual([thin, partialPin]);
+  });
+
+  it('preserves the exact union in every order of the tolerance cycle and chain', () => {
+    const box = (id: string, x: number, y: number, r: number, b: number) =>
+      ({ id, bounds: { x, y, width: r - x, height: b - y } });
+    const cycle = [box('a', 0, 0, 10, 10), box('b', -1.6e-7, 8e-8, 9.99999992, 10), box('c', -8e-8, -8e-8, 9.99999984, 10)];
+    const chain = [box('a', 0, 0, 10, 10), box('b', -8e-8, 1, 9.5, 9), box('c', -1.6e-7, 2, 9, 8)];
+    for (const shapes of [cycle, chain]) {
+      for (const [i, j, k] of [[0,1,2], [0,2,1], [1,0,2], [1,2,0], [2,0,1], [2,1,0]]) {
+        const order = [shapes[i!]!, shapes[j!]!, shapes[k!]!];
+        expect(disjointShapes(order)).toEqual(order);
+      }
+    }
+  });
+
+  it('matches exact maximal rectangles for nested, duplicate, and scattered inputs', () => {
+    const exact = (outer: Rect, inner: Rect): boolean => outer.x <= inner.x && outer.y <= inner.y
+      && right(outer) >= right(inner) && bottom(outer) >= bottom(inner);
+    let seed = 1777;
+    const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 2 ** 32; };
+    for (let trial = 0; trial < 40; trial++) {
+      const shapes = Array.from({ length: 30 }, (_, i) => ({ id: `s${i}`, bounds: {
+        x: Math.floor(random() * 20) - 10, y: Math.floor(random() * 20) - 10,
+        width: 1 + Math.floor(random() * 30), height: 1 + Math.floor(random() * 30),
+      } }));
+      shapes.push({ id: 'duplicate', bounds: { ...shapes[0]!.bounds } });
+      const before = copy(shapes);
+      const expected = shapes.filter((shape, i) => !shapes.some((other, j) => i !== j
+        && exact(other.bounds, shape.bounds) && (!exact(shape.bounds, other.bounds) || j < i)));
+      expect(disjointShapes(shapes)).toEqual(expected);
+      expect(shapes).toEqual(before);
+    }
+  });
+
+  it('compares only runs whose lines are within the tolerance, however they chain', () => {
+    const owner = { kind: 'link' as const, id: 'x' };
+    const run = (y: number, from: number, to: number) => ({ from: { x: from, y }, to: { x: to, y }, owner });
+    // 0, 8e-8 and 1.6e-7 are each within EPS of the next, but the outer two are 1.6e-7 apart and
+    // are not the same line: only their intervals overlap, which is not a retrace.
+    expect(() => retraces('x', [run(0, 0, 100), run(8e-8, 200, 300), run(1.6e-7, 50, 150)])).not.toThrow();
+    // Two lines that really are within the tolerance, with overlapping intervals, are one line.
+    expect(() => retraces('x', [run(0, 0, 100), run(8e-8, 50, 150)])).toThrow(/retraces itself/);
+    // Runs that only meet at a bend are how every ordinary path is built.
+    expect(() => retraces('x', [run(0, 0, 100), run(0, 100, 200)])).not.toThrow();
+    expect(() => retraces('x', [run(0, 0, 100), run(0, 99, 200)])).toThrow(/retraces itself/);
+  });
+
+  it('collapses repeated and collinear router vertices without inventing a turn', () => {
+    expect(simplify([{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 10 }, { x: 0, y: 20 }, { x: 10, y: 20 }]))
+      .toEqual([{ x: 0, y: 0 }, { x: 0, y: 20 }, { x: 10, y: 20 }]);
+    expect(simplify([{ x: 5, y: 5 }])).toEqual([{ x: 5, y: 5 }]);
+  });
+});

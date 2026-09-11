@@ -456,16 +456,88 @@ synchronous transaction, then commits its output through the route validator.
 
 ## Stage 8 — route (remainder)
 
-libavoid-js (`Router(OrthogonalRouting)`). Registered as obstacles: node rectangles; every
-**pinned path** as thin rectangles with **18 px trimmed at each end** so a remaining link that
-shares an endpoint can reach it; lanes not owned by the link; label bands; bundle envelopes.
-Ports are `ShapeConnectionPin`s, one class id per port, **`setExclusive(false)` for ports with
-> 1 link**, direction = the side. Terminal escape: libavoid-js exposes no fixed routes or
-checkpoints (verified: `connector.idl` has `Checkpoint` but no `setRoutingCheckpoints`); the
-≥ 15 px stem is enforced by placing the pin on the boundary and validating the first segment
-in stage 10. `overlay` links: straight segments between port centres on their own layer, not
-routed. Stub candidates: after routing, a link whose route crosses > 2 tiers or is > 3× the
-direct distance is marked; M1 only warns (stage 1).
+`libavoid-js@0.5.0-beta.5`, `Router(RouterFlag.OrthogonalRouting.value)`, with
+`shapeBufferDistance = 0`: every obstacle carries its own exact clearance, so a terminal trim is
+never expanded shut afterwards. `processTransaction()` is synchronous WASM work, so the whole
+adapter runs in a **real terminable worker**; the host prepares serializable batches outside the
+checked transaction, awaits the worker under `routeBudgetMs` (default 30,000; stage 17 injects
+what is left of the pipeline budget) and commits only validated geometry. The budget bounds the
+worker — that is the part no same-thread race could stop; preparing batches and validating the
+answer are host work, measured with the stage. A diagram with no routed remainder never loads the
+WASM.
+
+Registered as obstacles, each expanded once in the adapter and never in the model:
+
+- **nodes**, by `10 + (node stroke + widest routed stroke) / 2`, grown to swallow their own visible
+  pills; a pill on a top or bottom side reaches further out than that clearance, and one rectangle
+  per node keeps the obstacle set identical for every connector;
+- **every reserved run** — a complete pinned path, a partially fixed lane run, an outward shared
+  prefix — covered by rectangles of half-width `10 + (its stroke + widest routed stroke) / 2`,
+  with **18 px of arc length trimmed once per whole chain at each end that is one of its own port
+  anchors**, so a link that shares that port can still reach it. Interior bends keep square corner
+  coverage; the trimmed ends keep butt caps. A chain of 36 px or less protects nothing, which is
+  the explicit limit of the trim constant;
+- **lanes**, **group label bands**, **group and node labels**, **bundle envelopes** and model
+  obstacles, each expanded by the routed half stroke.
+
+A rectangle that lies wholly inside another is dropped before routing. libavoid's orthogonal
+visibility sweep assumes no obstacle is contained in another: a contained rectangle opens a false
+corridor along its own edge straight through the containing obstacle. Dropping it leaves the
+obstacle union exactly as it was. This is measured, not theoretical — the datacenter group label
+inside its own band let a golden route cross that band.
+
+Containment for this removal uses the exact rectangle edges, not collision `EPS`.
+Approximate containment can form directed cycles, so it cannot preserve both the union and the
+absence of contained survivors. Nearly overlapping rectangles remain unchanged; the real binding
+routes around them. A left-edge sweep with two-dimensional prefix maxima finds surviving
+containers in O(S log² S) time and O(S log S) space. Exact duplicates keep their first input ID,
+and surviving shapes retain input order. An exactly contained attachment shape is an error.
+
+Ownership is exact. A link may pass only through the reservations it already owns: its own transit
+lanes, its own bundle envelope, its own reserved runs. Owning the endpoint group does not open a
+label band. Links whose exclusion sets differ cannot share one router, because the binding has no
+per-connector shape-ignore API, so they run as an ordered sequence of **ownership batches**, and
+every completed route becomes a protective obstacle for the batches after it.
+
+Ports are `ShapeConnectionPin`s, one non-zero class id per port (its ordinal after the topology
+freeze), direction = the side, **`setExclusive(false)` for any port carrying more than one link
+end**, counting ends a region rule already fixed. A link that consumes a declared shared run does
+not attach to the pin at all: its connector starts at the run's terminal point.
+
+Checkpoints replace the fixed routes this binding does not have. They constrain the two things a
+route may not choose for itself — its outward stem and its head-on entry to a reserved corridor.
+A junction is not one of them: its reserved run is stitched back exactly, and the router only fills
+the gap beyond that run's terminal. Each attachment gets one
+checkpoint `max(15, 10 + (node stroke + widest routed stroke) / 2 + 0.25)` px along its outward
+normal — the same number stage 7f reserved below each label band — constrained to be entered
+(source) or left (target) along that normal. A gap beside a reserved run gets one 15 px approach
+checkpoint on the run's own line, outside the reservation, so the route joins it head-on: a
+reserved corridor admits only its owner's collinear run. `setRoutingCheckpoints` exists in this
+version; `ConnRef.setFixedRoute` and a real `JunctionRef` class do not (ADR-0003). libavoid may
+skip a checkpoint it cannot reach, so every required one is verified against the returned polyline
+and the stage rejects the route rather than publish geometry that occupies a reservation.
+
+Each link is stitched back in source-to-target order: its reserved runs byte-for-byte, with their
+owner, lane and `barCross` annotations, and the routed gaps between them. Where a gap meets one of
+its own lanes it is split at the corridor boundaries and each piece names the one lane it touches,
+the same shape the region rules produce. Publication and restore then check the result
+structurally — complete anchored path, orthogonal and connected, exact reserved runs, perpendicular
+stems of at least the reserved reach, link ownership of every routed gap, and no entry into a
+reservation the link does not own — because route geometry cannot be re-derived without the router.
+
+`overlay` links: one straight segment between the port anchors on the overlay layer, never routed
+and never sent to the worker. Stub candidates: after routing, a link whose route passes through
+more than two intermediate tier bands (measured by their vertical extent, since a reserved lane
+sits in the margin beside its tier) or whose arc length exceeds 3× the direct anchor distance is
+marked `stubCandidate` and warned about; M1 keeps the technique and the full routed path.
+
+**Measured on the JPEG golden:** stage 7 leaves exactly two links, `link-1` and `link-2`, the two
+provider feeds into EAC-01 and EAC-02. This is a deviation from the prototype run, where the rules
+claimed every link and libavoid was idle; the rules claim 24 of 26 here. Both really invoke
+libavoid, in one ownership batch, and the complete 26-link diagram passes G1–G8 with 0 crossings,
+0 overlaps, 0 label hits and Q 0.8182938137778218. Each feed leaves the datacenter group sideways,
+drops beside the full-width label band and enters its top port through the 16 px clearance stage 7f
+reserved for exactly that entry.
 
 ## Stage 9 — link labels
 
@@ -503,8 +575,8 @@ node interiors, group labels, port pills and link labels masked out; overlay end
 | > 1,000 | refused without `--force` | 30 s | as above | |
 
 Budgets that bound work, checked at parse: links ≤ 10 × N, ports ≤ 20 per node, node degree
-≤ 64; beyond them, a warning and best-effort. Geometry algorithms use interval sweeps and a
-uniform grid index; anything O(S²) over segments is a defect, not a design choice.
+≤ 64; beyond them, a warning and best-effort. Geometry algorithms use interval sweeps and indexed
+rectangle queries; anything O(S²) over segments is a defect, not a design choice.
 
 Measured so far: `elk.layout()` alone, 100 nodes / 300 links ≈ 250 ms; 1,000 / 3,000 ≈ 2 s
 without partitioning. The **full pipeline** at 1,000 nodes has not been measured — ticket 17.
@@ -513,7 +585,9 @@ without partitioning. The **full pipeline** at 1,000 nodes has not been measured
 
 Proved on the prototype source topology (`prototype/regions.mjs`, `tall5`): stages 3, 6, 7a–7f
 produce 0 crossings, 0 overlaps, 4 bends with every link claimed; libavoid idle. The approved M1
-JPEG fixture has different topology and must be measured independently. **Not yet exercised:**
-stage 8 with real remainder demand (NTP golden), bundles with author-fixed ports, 3+ stacked
-bars, fallback at scale under a deadline, aggregation, stubs, overlay masking, label repair.
+JPEG fixture has different topology: it was measured in ticket 13 and leaves two links for
+libavoid, which routes them and keeps every gate (stage 8 above). **Not yet exercised:** stage 8
+at scale or with substantial remainder demand (NTP golden), bundles with author-fixed ports, 3+
+stacked bars, fallback at scale under a deadline, aggregation, applied stubs, overlay masking,
+label repair.
 Each is a ticket or an explicit M2 item.
