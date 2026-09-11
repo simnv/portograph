@@ -30,6 +30,12 @@ const locked = new Set([
   'mask-size', 'mask-composite', 'mask-type', 'mask-border', 'mask-border-source',
   // An unbounded miter can extend a stroke far past the joint the gates measured.
   'stroke-miterlimit',
+  // An outline is painted outside its element's box, after the shape and independently of `stroke`,
+  // and it never contributes to the geometry the gates and the score measure. A wide one on an
+  // ordinary node covers unrelated geometry and reaches past the canvas. The shorthand and each
+  // longhand are locked together: `outline-style` alone paints at the `medium` default width, and
+  // `outline-offset` pushes an outline arbitrarily far from the element it belongs to.
+  'outline', 'outline-width', 'outline-style', 'outline-color', 'outline-offset',
 ]);
 
 const cssEscape = /\\(?:([\da-f]{1,6})(?:\r\n|[ \t\n\r\f])?|([^\r\n\f]))/gi;

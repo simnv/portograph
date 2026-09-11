@@ -669,7 +669,11 @@ interpolated as markup.
 
 An inline `<style>` holds the profile theme, the generated geometry locks and the parser-filtered
 document `css:`, in that order. **CSS may not change geometry**: the parser strips every locked
-property from `css:` with a warning, and the theme states the same properties with `!important`.
+property from `css:` with a warning, and `restoreFinalLayout` re-runs that same filter over a
+published model's CSS, so a hand-written layout JSON cannot reach the renderer with a locked
+declaration either. The generated locks restate the measured stroke widths and typography with
+`!important`; the rest of the locked set — paint that leaves the measured box, such as an outline
+or a shadow — is held by that one parser policy on both routes, not restated per element.
 The renderer uses no CSS custom property for a locked value, so an author `--name` cannot reach
 one either. The locked set is in `schema.md`; `css:` may set colour, fill, dash and opacity.
 

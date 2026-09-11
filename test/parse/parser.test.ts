@@ -185,6 +185,26 @@ describe('parse diagnostics', () => {
     expect(result.diagnostics.filter(d => d.code === 'LOCKED_CSS')).toHaveLength(1);
   });
 
+  // The final whole-branch review found ordinary node rectangles accepting `outline: 1000px solid
+  // red`. An outline is painted outside the element's box, after the shape and independently of
+  // `stroke`, so it covers unrelated geometry and reaches past the canvas every gate measured.
+  it.each([
+    ['outline', '1000px solid red'], ['outline-width', '1000px'], ['outline-style', 'solid'],
+    ['outline-color', '#00ff00'], ['outline-offset', '1000px'],
+    ['OUTLINE', '1000px solid red'], ['Outline-Offset', '1000px'],
+    ['-webkit-outline', '1000px solid red'], ['-moz-outline-style', 'solid'],
+    ['-ms-outline-width', '1000px'], ['-o-outline-color', '#00ff00'],
+    ['outl\\69 ne', '1000px solid red'], ['outline-\\6f ffset', '1000px'],
+    ['-\\77 ebkit-outline', '1000px solid red'],
+  ])('locks the outline property %s, which paints outside the measured box', (property, value) => {
+    const result = parseWithDiagnostics(source({ css: `.x { ${property}: ${value}; fill: red; stroke: blue; opacity: .5; }` }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Exact, because an escaped name survives a `/outline/` search even when the declaration does.
+    expect(result.document.css).toBe('.x { fill: red; stroke: blue; opacity: .5; }');
+    expect(result.diagnostics.filter(d => d.code === 'LOCKED_CSS')).toHaveLength(1);
+  });
+
   it.each(['\t', '\n', '\r', '\r\n', '\f'])('filters whitespace-terminated CSS property escapes: %j', whitespace => {
     const result = parseWithDiagnostics(source({ css: `.x { font-\\73${whitespace}ize: 30px; \\66${whitespace}ill: red; }` }));
     expect(result.ok).toBe(true);
@@ -193,6 +213,19 @@ describe('parse diagnostics', () => {
     expect(result.document.css).toContain('ill: red');
     expect(result.diagnostics.filter(d => d.code === 'LOCKED_CSS')).toHaveLength(1);
     expect(result.diagnostics.some(d => d.code === 'INVALID_CSS')).toBe(false);
+  });
+
+  // The outline lock names properties, not substrings. An allowed declaration may still consume a
+  // custom property through `var()`, but every declaration that could turn one into outline paint
+  // is locked, and an unrelated vendor property that merely spells "outline" paints nothing
+  // outside the box.
+  it('keeps custom and unrelated declarations whose names contain outline', () => {
+    const css = '.x { --outline: 1000px solid red; --outline-width: 40px; -webkit-text-stroke-color: red; fill: blue; }';
+    const result = parseWithDiagnostics(source({ css }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.document.css).toBe(css);
+    expect(result.diagnostics.some(d => d.code === 'LOCKED_CSS')).toBe(false);
   });
 
   it('keeps escaped backslashes and unlocked vendor declarations intact', () => {

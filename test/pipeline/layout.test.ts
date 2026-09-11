@@ -224,6 +224,39 @@ describe('restoreFinalLayout', () => {
     }
   });
 
+  // An outline paints outside the element's box on ordinary node rectangles, so it covers unrelated
+  // geometry and reaches past the canvas, while every gate and the score still measure the bounds
+  // the layout published. Neither the authored route nor a hand-written final JSON may publish one.
+  it('never publishes an authored outline and refuses a forged one', async () => {
+    const authored = '.node-body { outline: 1000px solid #ff0000; fill: #eeeeee; }';
+    const parsed = parseWithDiagnostics(`${threeTiers}\ncss: ${JSON.stringify(authored)}`);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.document.css).not.toMatch(/outline/i);
+    expect(parsed.document.css).toContain('fill: #eeeeee');
+    expect(parsed.diagnostics.filter(d => d.code === 'LOCKED_CSS')).toHaveLength(1);
+
+    const model = await layout(parsed.document, {
+      diagnostics: parsed.diagnostics, createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
+    });
+    const json = serializeLayoutModel(model);
+    // The renderer pins `outline:none` on its own internal mask elements, so the drawing is checked
+    // for the authored outline itself rather than for the word.
+    const svg = render(restoreFinalLayout(json));
+    expect(svg).not.toMatch(/outline\s*:\s*1000px/i);
+    expect(svg).not.toContain('solid #ff0000');
+    expect(svg).toContain('fill: #eeeeee');
+
+    for (const forgedCss of ['.node-body { outline: 1000px solid #ff0000 !important; }',
+      '.node-body { outline-width: 1000px; outline-style: solid; }',
+      String.raw`.node-body { outl\69 ne: 1000px solid #ff0000; }`,
+      '.node-body { -webkit-outline: 1000px solid #ff0000; }']) {
+      const forged = JSON.parse(json) as { document: { css: unknown } };
+      forged.document.css = forgedCss;
+      expect(() => render(restoreFinalLayout(JSON.stringify(forged)))).toThrow(/css/i);
+    }
+  }, 120000);
+
   it('accepts stage 9 output and refuses an unfinished layout', async () => {
     const parsed = parseWithDiagnostics(threeTiers);
     if (!parsed.ok) throw new Error('fixture must parse');

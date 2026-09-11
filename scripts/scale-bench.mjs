@@ -48,7 +48,9 @@ const routed = (model) => model.links.filter((link) => link.path && (link.layer 
 
 try {
   for (const nodes of cases) {
-    const generated = generateScaleYaml({ nodes, shape });
+    // The specified 100/300/1000 sizes give each hub three incoming source links.
+    // Its 61 access links bring total incidence to the quality spec's degree 64.
+    const generated = generateScaleYaml({ nodes, shape, degree: 61 });
     const input = path.join(temp, `scale-${nodes}.yaml`);
     const svg = path.join(temp, `scale-${nodes}.svg`);
     const stem = svg.slice(0, -4);

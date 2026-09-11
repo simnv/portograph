@@ -107,6 +107,6 @@ const svg = render(model);
 
 The CLI enforces its deadline in a separate process, including synchronous placement and scoring;
 library calls remain portable and use the supplied worker factories and optional shared budget.
-The generated hub / wide-tier / long-transit benchmark currently reaches the 30-second deadline
-at 100, 300 and 1,000 nodes. The simple 50-link aligned case passes every gate with zero crossings;
+The generated degree-64 hub / wide-tier / long-transit benchmark currently reaches the 30-second
+deadline at 100, 300 and 1,000 nodes. Those cases contain 389, 1,167 and 3,890 links. The simple 50-link aligned case passes every gate with zero crossings;
 the high-fan scale cases remain a performance limit. Run `node scripts/scale-bench.mjs` to reproduce.

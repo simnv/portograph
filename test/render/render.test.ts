@@ -462,9 +462,9 @@ describe('overlay layer', () => {
 
 describe('internal overlay mask', () => {
   /**
-   * Every declaration an author may write that reaches an internal mask element: the literal
-   * override the finding reported, a higher-specificity variant of it, and ordinary global palette
-   * rules. All of them are accepted by the parser, because each property is one `css:` may set.
+   * Direct-model CSS that targets internal mask elements: the reported override, a variant with
+   * higher specificity, global palette rules, and outline paint. The parser now rejects outlines;
+   * injecting the CSS into this test model also checks the renderer's own mask protection.
    */
   const hostileCss = ['.pg-mask-hide { fill: #ffffff !important; }',
     'svg .pg-mask-hide.pg-mask-hide { fill: #ffffff !important; opacity: 0 !important; }',
