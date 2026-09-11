@@ -211,7 +211,7 @@ here and the rest waits for stage 7e.
 Known bundle membership reserves its minimum stroke-aware side pitch during phase-two sizing,
 before rows and lanes. The largest requirement propagates across sides that participate in the
 same bundle. Stage 7e can then order those ports without discovering a mandatory capacity increase
-inside an already allocated lane corridor. Transit source sides with top/bottom ports likewise
+inside an already allocated lane corridor. Transit alignment-end sides (7a) with top/bottom ports likewise
 reserve the required lane width as their minimum pitch before topology freezes; adjacent source
 ports can then own separate source-aligned corridors. Groups are fitted around the resulting
 node bodies and named pills before rows or lane ownership begin.
@@ -249,7 +249,7 @@ the lane is an obstacle to every *other* link. For a non-bundle owner the route 
 the lane is fixed here. For a bundle member, 7a records only the owned lane x and extent; stage 7e
 consumes that reservation when it creates the member path. Capacity uses actual occupied geometry, measured pills, and participating strokes. Corridor width is
 `max(34, endpoint pill widths + 10, 20 + path stroke + maximum node stroke)` in pixels.
-First try the source port x, considering every insertion gap in the intermediate group order.
+The lane's **alignment end** is the endpoint nearer the anchor tier (7c), because 7c holds that end fixed and aligns the other end under the lane; when both ends are equidistant, and for bundle members (7e owns their geometry), it is the authored source. "Source" in this stage means that end. First try the source port x, considering every insertion gap in the intermediate group order.
 Choose the feasible outward translation plan with the least total displacement, keeping all
 previous corridors and transit source groups fixed. If no such plan exists, use the in-span
 allocation and then the exterior fallback described below.
@@ -300,7 +300,13 @@ links on the peer.
 Anchor tier = the tier with the most main-tier nodes, including bars and excluding flanks (ties: lowest effective tier index). Empty layouts omit it. Below the anchor, each
 group is centred under its feeds; above it, each group is centred over its children (mirror).
 For a child group G fed from tier T−1: the **feed set** is the parents' bottom ports whose peer
-is in G. **Parents are authoritative:** parent port x is fixed by stage 5/7a; G is centred
+is in G, plus every non-bundle link that terminates in G and transits T−1 through a lane it owns
+(7a); for such a **transit feed** the authoritative x is that lane's x, not the far parent anchor.
+Its identity is still the parent port, so one parent port fanning through several lanes is vertical
+to its first child by x and the others fan, as for adjacent feeds. A transit feed never contests a child
+port another feed already owns: it yields with `CENTRE_FAN_REMAINDER` and is excluded from the
+centring barycentre, because contesting it would exhaust the shared budget. Bundle members are
+not transit feeds; 7e owns their geometry. **Parents are authoritative:** parent port x is fixed by stage 5/7a; G is centred
 horizontally under the barycentre of the feed set within the space between the lanes (7a) and
 neighbouring groups; then each child port x := its parent port x. A child port's x is feasible
 only if the child node can be widened to contain it without overlapping a sibling; if not, the
@@ -430,7 +436,11 @@ choose the free x nearest the centered position. The stable claims are `label-ba
 generic obstacle is added. Group fitting and bar shaping include the band above the measured
 node-and-pill padding and retain a wider extent created by collision repair. The intervals include every
 reserved rectangle of a link: its complete path, its partially fixed lane runs and the mandatory
-outward shared runs of both ends. A complete path repeats the runs it consumed, so identical
+outward shared runs of both ends — and, for a non-bundle top/bottom feed whose two anchors already
+share an x (7c) and whose straight corridor is clear of every node, pill, lane and fixed run, that
+**feed corridor** itself: stage 8 will route it as that straight line, so a label placed on it would
+force a detour placement could have avoided. The check ignores group and stage-9 labels so planning
+and restore agree. A complete path repeats the runs it consumed, so identical
 stroke-aware rectangles with identical ownership collapse to one entry.
 
 **Widening cannot cross a reserved lane.** Lane x, width, owner and side are immutable after 7a, so

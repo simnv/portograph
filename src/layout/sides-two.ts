@@ -10,7 +10,7 @@ import { bandGap, nodeGap, portId, SKELETON_SPACING as spacing } from './skeleto
 import { moveGroup, stackBands } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { nodeObstacleReach, routedStroke, stemReach } from './bands.js';
-import { laneWidth, transitTiers } from './lanes.js';
+import { laneSource, laneWidth, transitTiers } from './lanes.js';
 import { fitRegionGroup } from './regions.js';
 import { freezePortTopology } from './mutation.js';
 const key = portId;
@@ -121,11 +121,11 @@ export function sidesTwo(model: LayoutModel): LayoutModel {
       delete port.sizingSide;
     }
   }
-  // Transit corridors are wider than the ordinary port pitch. Reserve that source-side capacity
-  // before lane allocation, so consecutive feeds can retain their own x coordinates.
+  // Transit corridors are wider than the ordinary port pitch. Reserve that capacity on the end the
+  // lane aligns to (7a) before allocation, so consecutive feeds can retain their own x coordinates.
   for (const link of model.links) {
     if (!transitTiers(model, link).length) continue;
-    const ref = link.attachments!.from, node = model.nodes[ref.node]!;
+    const ref = laneSource(model, link), node = model.nodes[ref.node]!;
     const port = node.ports.find(port => key(port.ref) === key(ref))!;
     if (port.side === 'top' || port.side === 'bottom') {
       node.sidePitch![port.side] = Math.max(node.sidePitch![port.side]!, laneWidth(model, link));

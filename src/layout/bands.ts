@@ -9,7 +9,7 @@ import { createCentreBudget, type CentreBudget } from './centre.js';
 import { laneSidesHold } from './lanes.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
-import { findPort } from './row-paths.js';
+import { findPort, straightCorridorClear } from './row-paths.js';
 import { bandGap, portId } from './skeleton-graph.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
 import { bottom, GROUP_PADDING, groupPadding, placementWarning, right } from './regions.js';
@@ -217,8 +217,29 @@ function forbiddenRects(model: LayoutModel, placed: LayoutLabel[]): { id: string
     }
   }
   for (const obstacle of model.obstacles) if (obstacle.layer !== 'overlay') result.push({ id: obstacle.id, bounds: obstacle.bounds });
-  for (const link of model.links) result.push(...linkRects(link));
+  for (const link of model.links) result.push(...linkRects(link), ...feedCorridorRects(model, link));
   return result;
+}
+
+/**
+ * A top/bottom feed whose two anchors already share an x, and whose straight corridor is clear of
+ * everything placement has fixed, will be routed as that straight line in stage 8. The corridor is
+ * therefore reserved here, so a label is never placed where the route then has to detour around it
+ * — the pipeline's load-bearing rule. The check ignores group labels (this stage places them) and
+ * stage-9 labels, so planning and restore see the same corridor.
+ */
+function feedCorridorRects(model: LayoutModel, link: LayoutModel['links'][number]): { id: string; bounds: Rect }[] {
+  if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments || link.bundle) return [];
+  if (link.path && link.path.fixed !== false) return [];
+  const from = findPort(model, link.attachments.from), to = findPort(model, link.attachments.to);
+  if (!from?.anchor || !to?.anchor || !from.side || !to.side) return [];
+  const vertical = (from.side === 'bottom' && to.side === 'top') || (from.side === 'top' && to.side === 'bottom');
+  if (!vertical || Math.abs(from.anchor.x - to.anchor.x) > EPS) return [];
+  const segment: PathSegment = { from: { ...from.anchor }, to: { ...to.anchor }, owner: { kind: 'link', id: link.id } };
+  const stageNine = (role: string | undefined): boolean => role === 'link' || role === 'legend';
+  const view: LayoutModel = { ...model, labels: model.labels.filter(label => label.role !== 'group' && !stageNine(label.role)) };
+  if (!straightCorridorClear(view, link, segment)) return [];
+  return [{ id: `${link.id}:feed-corridor`, bounds: segmentRect(segment, linkStrokeWidth(link) / 2) }];
 }
 
 function intervals(model: LayoutModel, placed: LayoutLabel[], y: number, height: number, width: number): ForbiddenInterval[] {

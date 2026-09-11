@@ -57,10 +57,14 @@ groups: {up: {tier: 0}, mid: {tier: 1}, low: {tier: 2, shape: bar}}
 nodes:
   a: {group: up, ports: [{name: p, side: bottom}]}
   m: {group: mid}
+  n: {group: mid}
   b: {group: low, ports: [{name: long-port-name, side: top}]}
 links: [[b.long-port-name, a.p]]`), {
     createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
   });
+  // mid is the anchor tier, so both ends are equidistant and the authored source, the bar, is the
+  // end the lane aligns to and reserves capacity on (ticket 19).
+  expect(result.anchorTier).toBe(1);
   const bar = result.nodes.b!;
   expect(bar.sidePitch!.top).toBeGreaterThan(40);
   expect(bar.bounds!.width).toBeGreaterThanOrEqual(bar.sidePitch!.top! + 20);

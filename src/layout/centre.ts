@@ -1,7 +1,7 @@
 import type { LayoutGroup, LayoutModel, LayoutNode, LayoutPort } from '../model/layout.js';
 import type { Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
-import { nodeTier } from './lanes.js';
+import { nodeTier, selectAnchorTier } from './lanes.js';
 import { findPort } from './row-paths.js';
 import { portId, bandGap } from './skeleton-graph.js';
 import { moveGroup } from './skeleton-geometry.js';
@@ -12,22 +12,34 @@ import { EPS } from '../score/geometry.js';
 
 export interface CentreBudget { remaining: number; passes: number }
 export function createCentreBudget(): CentreBudget { return { remaining: 8, passes: 0 }; }
-export function selectAnchorTier(model: LayoutModel): number | undefined {
-  const counts = new Map<number, number>();
-  for (const group of Object.values(model.groups)) if (!group.flank && group.nodes.length) counts.set(group.tier!, (counts.get(group.tier!) ?? 0) + group.nodes.length);
-  return [...counts.keys()].sort((a, b) => counts.get(b)! - counts.get(a)! || a - b)[0];
-}
-interface Feed { parent: LayoutPort; child: LayoutPort; link: string }
+export { selectAnchorTier };
+/**
+ * `x` is the authoritative feed x: the parent anchor, or the owned lane x in the adjacent tier for a
+ * transit. `key` is the parent port either way: a parent port feeding several children is vertical
+ * to one of them (the first by x), and the rest fan — lanes packed at lane width cannot seat two
+ * default-width children side by side, so a per-lane winner would only manufacture infeasible pins.
+ */
+interface Feed { parent: LayoutPort; child: LayoutPort; link: string; x: number; key: string; transit: boolean }
 function feeds(model: LayoutModel, tier: number, authority: number): Feed[] {
   const result: Feed[] = [];
   for (const link of model.links) {
     if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
     for (const [parentRef, childRef] of [[link.attachments.from, link.attachments.to], [link.attachments.to, link.attachments.from]]) {
-      if (!parentRef || !childRef || nodeTier(model, parentRef.node) !== authority || nodeTier(model, childRef.node) !== tier) continue;
+      if (!parentRef || !childRef || nodeTier(model, childRef.node) !== tier) continue;
+      // The parent is in the adjacent authority tier, or beyond it for a link that transits the
+      // adjacent tier through an owned lane (7a). Both fix the x the child must sit under.
+      const parentTier = nodeTier(model, parentRef.node);
+      if (parentTier === undefined || (tier > authority ? parentTier > authority : parentTier < authority)) continue;
       if ([parentRef.node, childRef.node].some(id => model.groups[model.document.nodes[id]!.group]!.flank)) continue;
       const parent = findPort(model, parentRef)!, child = findPort(model, childRef)!;
       if (parent.side !== (tier > authority ? 'bottom' : 'top') || child.side !== (tier > authority ? 'top' : 'bottom')) continue;
-      result.push({ parent, child, link: link.id });
+      // A bundle member carries its lane only until 7e, which owns member geometry; only a
+      // non-bundle transit with an owned lane in the authority tier fixes its child's x here.
+      const lane = parentTier === authority ? undefined
+        : model.lanes.find(lane => lane.owner.kind === 'link' && lane.owner.id === link.id && lane.tier === authority);
+      if (parentTier !== authority && (!lane || link.bundle)) continue;
+      result.push({ parent, child, link: link.id, x: lane ? lane.x : parent.anchor!.x,
+        key: portId(parent.ref), transit: Boolean(lane) });
     }
   }
   return result;
@@ -97,7 +109,7 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
   const allFeeds = new Map(steps.map(step => [step.tier, feeds(model, step.tier, step.authority)]));
   const winners = new Map<string, string>();
   for (const [tier, list] of allFeeds) for (const feed of [...list].sort((a, b) => model.nodes[a.child.ref.node]!.bounds!.x - model.nodes[b.child.ref.node]!.bounds!.x || portId(a.child.ref).localeCompare(portId(b.child.ref)))) {
-    const key = `${tier}:${portId(feed.parent.ref)}`;
+    const key = `${tier}:${feed.key}`;
     if (!winners.has(key)) winners.set(key, portId(feed.child.ref));
   }
   const groupOrder = new Map(steps.map(step => [step.tier, Object.values(model.groups).filter(group => group.tier === step.tier && !group.flank)
@@ -124,21 +136,30 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
         if (model.document.groups[id]!.shape === 'bar') { previous = group; continue; }
         if (!own.length) { previous = group; continue; }
         const saved = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
-        const vertical = own.filter(feed => winners.get(`${tier}:${portId(feed.parent.ref)}`) === portId(feed.child.ref));
+        // Adjacent feeds first: a transit yields to any other feed of the same child port instead
+        // of contesting it, so a fan of lanes into one port cannot exhaust the shared budget.
+        const wanted = new Map<string, number>(), yielded = new Set<Feed>();
+        for (const feed of [...own].sort((a, b) => Number(a.transit) - Number(b.transit))) {
+          const child = portId(feed.child.ref);
+          if (winners.get(`${tier}:${feed.key}`) !== child) {
+            placementWarning(model, 'CENTRE_FAN_REMAINDER', `${feed.link} shares a parent port; the first child by x owns vertical alignment.`, [feed.link]); continue;
+          }
+          if (!wanted.has(child)) wanted.set(child, feed.x);
+          else if (wanted.get(child) !== feed.x) {
+            if (feed.transit) {
+              yielded.add(feed);
+              placementWarning(model, 'CENTRE_FAN_REMAINDER', `${feed.link} shares its child port with a feed at another x; that feed owns vertical alignment.`, [feed.link]);
+            } else unresolved.add(id);
+          }
+        }
+        // Centre under the feeds that may own an alignment; a yielded transit would only pull the
+        // group away from the x its child is then aligned to.
+        const vertical = own.filter(feed => winners.get(`${tier}:${feed.key}`) === portId(feed.child.ref) && !yielded.has(feed));
         const chosen = vertical.length ? vertical : own;
-        const distinctParents = new Map(chosen.map(feed => [portId(feed.parent.ref), feed.parent.anchor!.x]));
+        const distinctParents = new Map(chosen.map(feed => [feed.key, feed.x]));
         const distinctChildren = new Map(chosen.map(feed => [portId(feed.child.ref), feed.child.anchor!.x]));
         const mean = (values: Iterable<number>) => { const xs = [...values]; return xs.reduce((sum, x) => sum + x, 0) / xs.length; };
         moveGroup(model, group, mean(distinctParents.values()) - mean(distinctChildren.values()), 0);
-        const wanted = new Map<string, number>();
-        for (const feed of own) {
-          const child = portId(feed.child.ref);
-          if (winners.get(`${tier}:${portId(feed.parent.ref)}`) !== child) {
-            placementWarning(model, 'CENTRE_FAN_REMAINDER', `${feed.link} shares a parent port; the first child by x owns vertical alignment.`, [feed.link]); continue;
-          }
-          if (!wanted.has(child)) wanted.set(child, feed.parent.anchor!.x);
-          else if (wanted.get(child) !== feed.parent.anchor!.x) unresolved.add(id);
-        }
         const aligned = new Set<string>();
         for (const nodeId of group.rowOrder!) {
           const node = model.nodes[nodeId]!;

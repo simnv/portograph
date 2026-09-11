@@ -2,6 +2,7 @@ import { measurePortPill } from '../text/index.js';
 import { equal } from '../model/json-equality.js';
 import type { Rect } from '../model/geometry.js';
 import type { Lane, LayoutGroup, LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
+import type { PortRef } from '../model/document.js';
 import { DEFAULT_STROKE_WIDTHS as stroke, linkStrokeWidth, routedStrokeWidth } from '../theme/geometry.js';
 import { segmentRectDistance } from '../score/geometry.js';
 import { findPort } from './row-paths.js';
@@ -12,6 +13,24 @@ import { bottom, expandCanvas, placementWarning, rebuildRegions, right } from '.
 
 export function nodeTier(model: LayoutModel, id: string): number {
   return model.groups[model.document.nodes[id]!.group]!.tier!;
+}
+/** Anchor tier = most main-tier nodes, bars included, flanks excluded; ties: lowest tier (7c). */
+export function selectAnchorTier(model: LayoutModel): number | undefined {
+  const counts = new Map<number, number>();
+  for (const group of Object.values(model.groups)) if (!group.flank && group.nodes.length) counts.set(group.tier!, (counts.get(group.tier!) ?? 0) + group.nodes.length);
+  return [...counts.keys()].sort((a, b) => counts.get(b)! - counts.get(a)! || a - b)[0];
+}
+/**
+ * The transit end a lane aligns to: the endpoint nearer the anchor tier, because stage 7c holds that
+ * end fixed and aligns the other under the lane. Ties, and bundle members (7e owns their geometry),
+ * keep the authored source.
+ */
+export function laneSource(model: LayoutModel, link: LayoutLink): PortRef {
+  const ends = link.attachments!;
+  if (link.bundle) return ends.from;
+  const anchor = selectAnchorTier(model);
+  if (anchor === undefined) return ends.from;
+  return Math.abs(nodeTier(model, ends.to.node) - anchor) < Math.abs(nodeTier(model, ends.from.node) - anchor) ? ends.to : ends.from;
 }
 export function transitTiers(model: LayoutModel, link: LayoutLink): number[] {
   if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) return [];
@@ -82,7 +101,7 @@ export function rebuildLaneExtents(model: LayoutModel): void {
 /** Prefer the nearest in-span slot that leaves room for the remaining members of this source. */
 function inSpanSlot(model: LayoutModel, link: LayoutLink, core: { x: number; width: number }, width: number,
   prior: Lane[], remaining: LayoutLink[]): number | undefined {
-  const source = model.nodes[link.attachments!.from.node]!.bounds!, half = width / 2;
+  const source = model.nodes[laneSource(model, link).node]!.bounds!, half = width / 2;
   let intervals = [
     { low: source.x, high: Math.min(right(source), core.x - half) },
     { low: Math.max(source.x, core.x + core.width + half), high: right(source) },
@@ -92,9 +111,9 @@ function inSpanSlot(model: LayoutModel, link: LayoutLink, core: { x: number; wid
     intervals = intervals.flatMap(range => high <= range.low || low >= range.high ? [range]
       : [{ low: range.low, high: low }, { low: high, high: range.high }].filter(part => part.high >= part.low && part.low >= range.low && part.high <= range.high));
   }
-  const cohort = remaining.filter(other => other.attachments!.from.node === link.attachments!.from.node);
+  const cohort = remaining.filter(other => laneSource(model, other).node === laneSource(model, link).node);
   const count = cohort.length, gap = Math.max(width, ...cohort.map(other => laneWidth(model, other)));
-  const sx = findPort(model, link.attachments!.from)!.anchor!.x;
+  const sx = findPort(model, laneSource(model, link))!.anchor!.x;
   const candidates = intervals.flatMap(range => [range.low, range.high, Math.max(range.low, Math.min(sx, range.high)),
     ...Array.from({ length: count }, (_, index) => range.high - index * gap).filter(x => x >= range.low)]);
   const capacity = (x: number): number => intervals.reduce((sum, range) => {
@@ -150,15 +169,21 @@ export function allocateLanes(model: LayoutModel): void {
     }),
   }]));
   // Retain the source-side order through every intermediate tier, including same-node bundles.
+  // Links sharing one alignment-end anchor follow their far ends' x, so the lanes of a fan from one
+  // port keep the children's row order and 7c can align every child under its own lane.
+  const farX = (link: LayoutLink) => {
+    const source = laneSource(model, link), far = source === link.attachments!.from ? link.attachments!.to : link.attachments!.from;
+    return findPort(model, far)!.anchor!.x;
+  };
   const links = model.links.filter(link => transitTiers(model, link).length).sort((a, b) =>
-    findPort(model, a.attachments!.from)!.anchor!.x - findPort(model, b.attachments!.from)!.anchor!.x || a.sourceIndex - b.sourceIndex);
-  const fixedSources = new Set(links.map(link => model.document.nodes[link.attachments!.from.node]!.group));
+    findPort(model, laneSource(model, a))!.anchor!.x - findPort(model, laneSource(model, b))!.anchor!.x || farX(a) - farX(b) || a.sourceIndex - b.sourceIndex);
+  const fixedSources = new Set(links.map(link => model.document.nodes[laneSource(model, link).node]!.group));
   for (const tier of model.tierBands.map(band => band.tier)) {
     const groups = Object.values(model.groups).filter(group => group.tier === tier).sort((a, b) => a.bounds!.x - b.bounds!.x);
     const main = groups.filter(group => !group.flank);
     const tierLinks = links.filter(link => transitTiers(model, link).includes(tier));
     for (const [index, link] of tierLinks.entries()) {
-      const source = model.nodes[link.attachments!.from.node]!, sx = findPort(model, link.attachments!.from)!.anchor!.x;
+      const source = model.nodes[laneSource(model, link).node]!, sx = findPort(model, laneSource(model, link))!.anchor!.x;
       const width = laneWidth(model, link), half = width / 2;
       const nearest = [...main].sort((a, b) => Math.min(Math.abs(sx - a.bounds!.x), Math.abs(sx - right(a.bounds!)))
         - Math.min(Math.abs(sx - b.bounds!.x), Math.abs(sx - right(b.bounds!))))[0] ?? groups[0]!;

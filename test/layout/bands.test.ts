@@ -332,8 +332,9 @@ ${pairs.flatMap(i => [`  - [parent-${i}.p, child-${i}.p]`, `  - [parent-${i}.q, 
     const before = await throughBundles(enclosedByLanes);
     const laneIdentity = before.lanes.map(lane => [lane.id, lane.owner, lane.group, lane.side, lane.x, lane.bounds.width]);
     const midBox = { ...before.groups.mid!.bounds! }, lowWidth = before.groups.low!.bounds!.width;
+    // link-3 is the only non-bundle transit; its lane aligns toward c in the anchor tier (ticket 19).
     expect(before.lanes.map(lane => [lane.id, lane.side])).toEqual([['lane:"link-1":1', 'left'],
-      ['lane:"link-2":1', 'right'], ['lane:"link-3":1', 'left']]);
+      ['lane:"link-2":1', 'right'], ['lane:"link-3":1', 'right']]);
 
     const model = run(before);
     expect(model.lanes.map(lane => [lane.id, lane.owner, lane.group, lane.side, lane.x, lane.bounds.width]))

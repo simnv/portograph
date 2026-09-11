@@ -614,7 +614,9 @@ describe('stage 9 transaction', () => {
     const cases: [string, (draft: LayoutModel) => void][] = [
       ['moved', draft => { draft.labels.at(-1)!.bounds!.x += 12; }],
       ['retexted', draft => { draft.labels.at(-1)!.text = 'downlink'; }],
-      ['stale support', draft => { draft.labels.at(-1)!.support = { kind: 'link-segment', link: 'link-1', segment: 0 }; }],
+      // The fitting drop is one straight segment since ticket 19, so "stale" means a segment other
+      // than the supporting one, not a fixed index.
+      ['stale support', draft => { const support = draft.labels.at(-1)!.support as { segment: number }; draft.labels.at(-1)!.support = { kind: 'link-segment', link: 'link-1', segment: support.segment + 1 }; }],
       ['dropped support', draft => { delete draft.labels.at(-1)!.support; }],
       ['removed', draft => { draft.labels = draft.labels.filter(label => label.role !== 'link'); }],
       ['duplicated', draft => { draft.labels.push({ ...draft.labels.at(-1)!, id: 'label:link:extra' }); }],
