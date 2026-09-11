@@ -89,6 +89,6 @@ links: [[far.p, b.p]]`);
     for (const id of ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8'] as GateId[]) {
       expect([id, report.gates[id].violations]).toEqual([id, []]);
     }
-    expect(report.Q).toBeCloseTo(0.8424281545245618, 12);
+    expect(report.Q).toBeCloseTo(0.9004061377064178, 12);
   }, 120000);
 });

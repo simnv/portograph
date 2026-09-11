@@ -89,7 +89,7 @@ describe('stage 9 golden', () => {
     // The canvas now also holds the outer half of every stroke, so it grows on every side rather
     // than only downward: a rectangle is drawn on its centreline.
     const canvas = model.canvas!, before = routed.canvas!;
-    expect(canvas.x).toBeLessThan(before.x);
+    expect(canvas.x).toBeLessThanOrEqual(before.x);
     expect(canvas.y).toBeLessThanOrEqual(before.y);
     expect(canvas.x + canvas.width).toBeGreaterThanOrEqual(before.x + before.width);
     expect(canvas.y + canvas.height).toBeGreaterThanOrEqual(model.legend!.bounds.y + model.legend!.bounds.height);
@@ -105,7 +105,7 @@ describe('stage 9 golden', () => {
     for (const id of GATES) expect([id, report.gates[id].violations]).toEqual([id, []]);
     expect(report.counters).toMatchObject({ labelHits: 0, labelsOmitted: 0, barCross: 3, lanesUsed: 4, overlaps: 0 });
     expect(report.metrics.crossings.count).toBe(0);
-    expect(report.Q).toBeCloseTo(0.8424281545245618, 12);
+    expect(report.Q).toBeCloseTo(0.9004061377064178, 12);
     expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
   }, 60000);
 });

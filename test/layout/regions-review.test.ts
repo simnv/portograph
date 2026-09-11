@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { generateScaleYaml } from '../../scripts/scale-input.mjs';
 import type { LayoutModel, PathSegment } from '../../src/model/layout.js';
 import { rows } from '../../src/layout/rows.js';
 import { lanes, validateLanes } from '../../src/layout/lanes.js';
@@ -25,20 +26,22 @@ function checkedMargins(input: LayoutModel, result: LayoutModel): void {
   const ordered = (model: LayoutModel) => Object.values(model.groups).filter(group => group.tier === 1).sort((a, b) => a.bounds!.x - b.bounds!.x).map(group => group.id);
   expect(ordered(result)).toEqual(ordered(input));
   expect(result.nodes.a).toEqual(input.nodes.a);
-  expect(result.canvas!.width).toBeGreaterThan(input.canvas!.width);
+  expect(result.canvas!.width).toBeGreaterThanOrEqual(input.canvas!.width);
 }
 
 describe('review: lane expansion preserves occupied group order', () => {
-  it('handles a wide corridor on real stage 01–08 output without moving a neighbor inward', async () => {
+  it('opens a source-aligned wide corridor while preserving occupied group order', async () => {
     const input = rows(await placed(wideYaml('long-port-name-that-requires-a-wide-reserved-corridor')));
     const result = lanes(input); checkedMargins(input, result);
     expect(result.lanes[0]!.bounds.width).toBeGreaterThan(input.groups.mid!.bounds!.width);
     expect(result.groups.mid!.bounds!.x).toBeGreaterThan(input.groups.mid!.bounds!.x);
-    expect(result.groups.outer!.bounds).toEqual(input.groups.outer!.bounds);
+    expect(result.lanes[0]!.x).toBe(input.nodes.a!.ports[0]!.anchor!.x);
+    const boxes = Object.values(result.groups).filter(group => group.tier === 1).map(group => group.bounds!).sort((a, b) => a.x - b.x);
+    for (let i = 1; i < boxes.length; i++) expect(right(boxes[i - 1]!)).toBeLessThanOrEqual(boxes[i]!.x);
   });
   it('propagates an occupied-margin push to the next neighbor', async () => {
     const draft = copy(rows(await placed(wideYaml('p'))));
-    for (const [id, x, y] of [['up', 176, 0], ['outer', 0, 160], ['left', 100, 160], ['mid', 194, 160], ['down', 176, 340]] as const) {
+    for (const [id, x, y] of [['up', 136, 0], ['outer', 0, 160], ['left', 100, 160], ['mid', 194, 160], ['down', 136, 340]] as const) {
       const group = draft.groups[id]!; moveGroup(draft, group, x - group.bounds!.x, y - group.bounds!.y);
     }
     draft.groups.outer!.bounds!.width = 95;
@@ -47,9 +50,10 @@ describe('review: lane expansion preserves occupied group order', () => {
     const input = restoreLayoutModel(JSON.stringify(draft)), result = lanes(input); checkedMargins(input, result);
     expect(result.groups.left!.bounds!.x).toBeLessThan(input.groups.left!.bounds!.x);
     expect(result.groups.outer!.bounds!.x).toBeLessThan(input.groups.outer!.bounds!.x);
-    expect(right(result.groups.outer!.bounds!)).toBeLessThanOrEqual(result.groups.left!.bounds!.x);
+    const boxes = Object.values(result.groups).filter(group => group.tier === 1).map(group => group.bounds!).sort((a, b) => a.x - b.x);
+    for (let i = 1; i < boxes.length; i++) expect(right(boxes[i - 1]!)).toBeLessThanOrEqual(boxes[i]!.x);
   });
-  it('uses an exterior corridor when propagation would move another transit source', async () => {
+  it('opens a direct corridor on the free side without moving another transit source', async () => {
     const yaml = wideYaml('p').replace('down: {tier: 2}', 'down: {tier: 2}, further: {tier: 3}')
       .replace('l: {group: left, label: L}', 'l: {group: left, label: L, ports: [{name: q, side: bottom}]}')
       .replace('links: [[a.p, c.p]]', '  d: {group: further, label: D, ports: [{name: q, side: top}]}\nlinks: [[a.p, c.p], [l.q, d.q]]');
@@ -62,7 +66,8 @@ describe('review: lane expansion preserves occupied group order', () => {
     draft.canvas = union([draft.canvas!, ...Object.values(draft.groups).map(group => group.bounds!)]);
     const input = restoreLayoutModel(JSON.stringify(draft)), result = lanes(input);
     expect(result.nodes.l).toEqual(input.nodes.l); expect(result.nodes.a).toEqual(input.nodes.a);
-    expect(result.lanes[0]!.bounds.x).toBeGreaterThanOrEqual(right(input.groups.mid!.bounds!));
+    expect(result.lanes[0]!.x).toBe(input.nodes.a!.ports[0]!.anchor!.x);
+    expect(result.groups.mid!.bounds!.x).toBeGreaterThanOrEqual(right(result.lanes[0]!.bounds));
     expect(validateSkeletonBands(result)).toEqual([]); validateLanes(result);
   });
   it('keeps earlier corridors clear while reserving several wide members', async () => {
@@ -145,3 +150,21 @@ describe('review: fixed-segment structural equality', () => {
     expect(() => validateLanes(draft)).toThrow(/omits an immutable/);
   });
 });
+
+it('publishes exact common translations after repeated degree-64 corridor pushes', async () => {
+  const input = rows(await placed(generateScaleYaml({ nodes: 300, shape: 'hub', degree: 61 }).yaml));
+  const result = lanes(input);
+  expect(result.lanes).toHaveLength(24);
+  for (const group of Object.values(result.groups)) {
+    const dx = group.bounds!.x - input.groups[group.id]!.bounds!.x;
+    for (const id of group.nodes) {
+      const before = input.nodes[id]!, after = result.nodes[id]!;
+      expect(after.bounds).toEqual({ ...before.bounds!, x: before.bounds!.x + dx });
+      for (const [i, port] of after.ports.entries()) {
+        expect(port.anchor).toEqual({ x: before.ports[i]!.anchor!.x + dx, y: before.ports[i]!.anchor!.y });
+      }
+    }
+  }
+  validateLanes(result);
+  expect(restoreLayoutModel(JSON.stringify(result))).toEqual(result);
+}, 30000);

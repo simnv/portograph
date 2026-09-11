@@ -63,7 +63,7 @@ describe('golden render', () => {
     expect(JSON.stringify(model)).toBe(before);
     const report = score(model, { golden: true }).snapshot;
     for (const id of GATES) expect([id, report.gates[id].violations]).toEqual([id, []]);
-    expect(report.Q).toBeCloseTo(0.8424281545245618, 12);
+    expect(report.Q).toBeCloseTo(0.9004061377064178, 12);
 
     // One canvas for layout, score and render.
     const canvas = model.canvas!;

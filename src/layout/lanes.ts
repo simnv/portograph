@@ -1,3 +1,4 @@
+import { measurePortPill } from '../text/index.js';
 import { equal } from '../model/json-equality.js';
 import type { Rect } from '../model/geometry.js';
 import type { Lane, LayoutGroup, LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
@@ -21,7 +22,7 @@ export function transitTiers(model: LayoutModel, link: LayoutLink): number[] {
 export function laneWidth(model: LayoutModel, link: LayoutLink): number {
   const pills = link.attachments ? [findPort(model, link.attachments.from), findPort(model, link.attachments.to)] : [];
   const maxNodeStroke = Math.max(stroke.node, ...Object.values(model.nodes).map(node => node.strokeWidth ?? stroke.node));
-  return Math.max(24 + 10, ...pills.map(port => (port?.pill?.size.width ?? 0) + 10), 20 + routedStrokeWidth(model) + maxNodeStroke);
+  return Math.max(24 + 10, ...pills.map(port => (port?.ref.name !== undefined ? measurePortPill(port.ref.name).width : 0) + 10), 20 + routedStrokeWidth(model) + maxNodeStroke);
 }
 function occupied(model: LayoutModel, group: LayoutGroup) {
   return union([group.bounds!, ...group.nodes.flatMap(id => {
@@ -142,6 +143,12 @@ function marginTranslations(model: LayoutModel, groups: LayoutGroup[], split: nu
 export function allocateLanes(model: LayoutModel): void {
   if (model.lanes.length || model.links.some(link => link.fixedSegments)) throw new Error('Lanes can be allocated only once');
   const pending: Lane[] = [];
+  const origins = new Map(Object.values(model.groups).map(group => [group.id, {
+    x: group.bounds!.x, nodes: group.nodes.map(id => {
+      const node = model.nodes[id]!;
+      return { id, x: node.bounds!.x, anchors: node.ports.map(port => ({ ...port.anchor! })) };
+    }),
+  }]));
   // Retain the source-side order through every intermediate tier, including same-node bundles.
   const links = model.links.filter(link => transitTiers(model, link).length).sort((a, b) =>
     findPort(model, a.attachments!.from)!.anchor!.x - findPort(model, b.attachments!.from)!.anchor!.x || a.sourceIndex - b.sourceIndex);
@@ -163,12 +170,22 @@ export function allocateLanes(model: LayoutModel): void {
       for (const lane of prior) if (Math.abs(x - lane.x) < (width + lane.bounds.width) / 2) {
         x = lane.x + (width + lane.bounds.width) / 2;
       }
-      // Prefer a full in-span allocation for the remaining same-source members when it fits.
-      x = inSpanSlot(model, link, core, width, prior, tierLinks.slice(index)) ?? x;
-      // If exterior packing crossed the main group, take its other margin.
-      if (x + half > core.x && x - half < right(core)) x = right(core) + half;
-      const split = groups.indexOf(nearest) + (x > right(core) ? 1 : 0);
-      let shifts = marginTranslations(model, groups, split, x, width, prior, fixedSources);
+      // A corridor directly below its source avoids an approach jog. Before ownership freezes,
+      // move intermediate groups aside where that preserves prior corridors and source groups.
+      const direct = Array.from({ length: groups.length + 1 }, (_, split) =>
+        marginTranslations(model, groups, split, sx, width, prior, fixedSources))
+        .filter((shift): shift is number[] => shift !== undefined)
+        .sort((a, b) => a.reduce((sum, dx) => sum + Math.abs(dx), 0) - b.reduce((sum, dx) => sum + Math.abs(dx), 0))[0];
+      let shifts: number[] | undefined;
+      if (direct) { x = sx; shifts = direct; }
+      else {
+        // Prefer a full in-span allocation for the remaining same-source members when it fits.
+        x = inSpanSlot(model, link, core, width, prior, tierLinks.slice(index)) ?? x;
+        // If exterior packing crossed the main group, take its other margin.
+        if (x + half > core.x && x - half < right(core)) x = right(core) + half;
+        const split = groups.indexOf(nearest) + (x > right(core) ? 1 : 0);
+        shifts = marginTranslations(model, groups, split, x, width, prior, fixedSources);
+      }
       if (!shifts) {
         // A source or earlier corridor blocks propagation. An exterior corridor needs no movement.
         const left = Math.min(...groups.map(group => occupied(model, group).x), ...prior.map(lane => lane.bounds.x)) - half;
@@ -180,7 +197,16 @@ export function allocateLanes(model: LayoutModel): void {
       for (const [index, group] of groups.entries()) {
         const dx = shifts[index]!;
         if (!dx) continue;
-        moveGroup(model, group, dx, 0); moved.push(...group.nodes);
+        moveGroup(model, group, dx, 0);
+        // Repeated pushes must serialize as one exact common translation, not independently
+        // accumulated floating-point sums for each anchor and its container.
+        const origin = origins.get(group.id)!, totalDx = group.bounds!.x - origin.x;
+        for (const old of origin.nodes) {
+          const node = model.nodes[old.id]!;
+          node.bounds!.x = old.x + totalDx;
+          node.ports.forEach((port, i) => { port.anchor = { ...old.anchors[i]!, x: old.anchors[i]!.x + totalDx }; });
+        }
+        moved.push(...group.nodes);
         placementWarning(model, 'LANE_MARGIN_EXPANDED', `Expanded the occupied margin of ${group.id} for ${link.id}.`, [group.id], 'group');
       }
       // Subsequent reservations inspect current pills, not the pre-translation measurements.

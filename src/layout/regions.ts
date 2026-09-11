@@ -1,5 +1,7 @@
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import type { Rect } from '../model/geometry.js';
+import { measurePortPill } from '../text/index.js';
+import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { rebuildBands, union } from './skeleton-geometry.js';
 
 export const right = (box: Rect): number => box.x + box.width;
@@ -9,10 +11,18 @@ export const GROUP_PADDING = 12;
  * Label bands extend the top inset while ordinary group padding remains below and at both sides.
  * A band reserves its own clearance below itself; that reservation is at least the ordinary padding.
  */
+export function groupPadding(model: LayoutModel, group: LayoutGroup): { top: number; right: number; bottom: number; left: number } {
+  const padding = { top: GROUP_PADDING, right: GROUP_PADDING, bottom: GROUP_PADDING, left: GROUP_PADDING };
+  for (const id of group.nodes) for (const port of model.nodes[id]!.ports) {
+    if (port.ref.anonymous === true || port.side === undefined) continue;
+    padding[port.side] = Math.max(padding[port.side], GROUP_PADDING
+      + measurePortPill(port.ref.name).width / 2 + DEFAULT_STROKE_WIDTHS.pill / 2);
+  }
+  return padding;
+}
 export function groupInsets(model: LayoutModel, group: LayoutGroup): { top: number; right: number; bottom: number; left: number } {
-  const band = model.labelBands.find(item => item.group === group.id);
-  return { top: band ? band.bounds.height + band.clearance : GROUP_PADDING, right: GROUP_PADDING,
-    bottom: GROUP_PADDING, left: GROUP_PADDING };
+  const padding = groupPadding(model, group), band = model.labelBands.find(item => item.group === group.id);
+  return { ...padding, top: band ? band.bounds.height + band.clearance : padding.top };
 }
 export function fitRegionGroup(model: LayoutModel, group: LayoutGroup): void {
   if (!group.nodes.length) return;

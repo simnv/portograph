@@ -1,7 +1,8 @@
 import type { Rect, Side } from '../model/geometry.js';
 import type { LayoutGroup, LayoutModel, LayoutNode } from '../model/layout.js';
-import { bandGap, compareId, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
+import { bandGap, compareId, portId } from './skeleton-graph.js';
 import { moveGroup, rebuildBands, union } from './skeleton-geometry.js';
+import { groupInsets } from './regions.js';
 import { rowGap } from './sides-two.js';
 import { withLayoutMutation } from './mutation.js';
 import { facingPair, type FacingPair } from './row-paths.js';
@@ -21,9 +22,9 @@ function rowGroups(draft: LayoutModel, band: { groups: string[] }): LayoutGroup[
 }
 /** Keep the left edge and width; fit the vertical extent to the flattened nodes with standard padding. */
 function fitGroupBox(draft: LayoutModel, group: LayoutGroup): void {
-  const box = union(group.nodes.map(id => draft.nodes[id]!.bounds!)), old = group.bounds!;
-  const x = Math.min(old.x, box.x - spacing.padding), y = Math.min(old.y, box.y - spacing.padding);
-  group.bounds = { x, y, width: Math.max(right(old), right(box) + spacing.padding) - x, height: box.y + box.height + spacing.padding - y };
+  const box = union(group.nodes.map(id => draft.nodes[id]!.bounds!)), old = group.bounds!, inset = groupInsets(draft, group);
+  const x = Math.min(old.x, box.x - inset.left), y = Math.min(old.y, box.y - inset.top);
+  group.bounds = { x, y, width: Math.max(right(old), right(box) + inset.right) - x, height: box.y + box.height + inset.bottom - y };
 }
 
 function flattenRows(draft: LayoutModel): void {

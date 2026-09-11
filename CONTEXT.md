@@ -64,13 +64,14 @@ drew it. Network diagrams first; software architecture and electrical panels nex
 | Quantity | Value | Origin |
 |---|---|---|
 | Port pitch on a side | max(12 px, rendered pill extent along the side + 4 px) | measured pill geometry; JPEG orientation |
+| Group padding | 12 px beyond node bodies and named port pills, including pill half stroke | maintainer M1 visual review |
 | Node minimum | 50 × 35 px | d3-fd |
 | Port pill | 24 × 10 px, r 3 | d3-fd |
 | Node corner radius | 8 px; group 10 px | d3-fd |
 | Bar padding beyond outermost port | 30 px | prototype `tall5` |
 | Bar span merge threshold | spans overlap > 50 % of the narrower → shared span | prototype `tall5` |
 | Lane width | port pill width + gap ≈ 34 px | prototype `tall3` |
-| Group label band | label height + 8 px; label left-aligned, slides right only on collision | user decision, `tall5` |
+| Group label band | label height + 8 px; label centered when clear, otherwise nearest free gap | maintainer M1 visual review |
 | Group label type | `FONT_FAMILY` 12 px, weight 700; 8 px horizontal inset | d3-fd, render-theme notes |
 | Link and multiplicity label type | `FONT_FAMILY` 9 px, weight 400; 4 px visible gap beyond the supporting stroke; ASCII `...` shortening to segment length − 8 px | d3-fd, render-theme notes |
 | Overlay label suppression | overlay links / max(1, nodes) > 3 | pipeline stage 9 |

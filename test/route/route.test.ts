@@ -297,7 +297,7 @@ links: [[a, b]]`);
     const label = model.labels.find(item => item.role === 'group' && item.owner.kind === 'group' && item.owner.id === 'low')!;
     const link = forged.links[0]!, segments = link.path!.segments;
     const from = segments[0]!.from, to = segments.at(-1)!.to;
-    const x = label.bounds!.x + label.bounds!.width / 2;
+    const x = label.bounds!.x + label.bounds!.width / 3;
     const y = label.bounds!.y + label.bounds!.height / 2;
     const points = [from, { x: from.x, y }, { x, y }, { x, y: to.y - 15 },
       { x: to.x, y: to.y - 15 }, to];

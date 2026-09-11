@@ -197,7 +197,7 @@ levelled here but remain unpinned for stage 7e.
 
 `rows(model)` runs inside the `rows` transaction. The baseline is the highest row-node top in the
 tier band; nodes move up only, and row group boxes fit the flattened nodes with the standard
-padding. Repack pushes a row neighbour rightwards only when its stroke-aware clearance or
+padding beyond the complete named pills (including their half stroke), not just node bodies. Repack pushes a row neighbour rightwards only when its stroke-aware clearance or
 measured facing-pill gap (the stage-5 `rowGap`) is violated, then pushes displaced row groups in
 the tier. Flanks and non-row groups never move or resize in this rule; a repack that would
 collide with one fails explicitly, and so does a stage-5 input whose flank box lacks the padding
@@ -211,7 +211,10 @@ here and the rest waits for stage 7e.
 Known bundle membership reserves its minimum stroke-aware side pitch during phase-two sizing,
 before rows and lanes. The largest requirement propagates across sides that participate in the
 same bundle. Stage 7e can then order those ports without discovering a mandatory capacity increase
-inside an already allocated lane corridor.
+inside an already allocated lane corridor. Transit source sides with top/bottom ports likewise
+reserve the required lane width as their minimum pitch before topology freezes; adjacent source
+ports can then own separate source-aligned corridors. Groups are fitted around the resulting
+node bodies and named pills before rows or lane ownership begin.
 
 A **row path** is a derived claim, not a callback edit. The transaction rebuilds every row
 candidate from final anchors after each committed geometry change, removing the old path before
@@ -246,9 +249,15 @@ the lane is an obstacle to every *other* link. For a non-bundle owner the route 
 the lane is fixed here. For a bundle member, 7a records only the owned lane x and extent; stage 7e
 consumes that reservation when it creates the member path. Capacity uses actual occupied geometry, measured pills, and participating strokes. Corridor width is
 `max(34, endpoint pill widths + 10, 20 + path stroke + maximum node stroke)` in pixels.
+First try the source port x, considering every insertion gap in the intermediate group order.
+Choose the feasible outward translation plan with the least total displacement, keeping all
+previous corridors and transit source groups fixed. If no such plan exists, use the in-span
+allocation and then the exterior fallback described below.
 Before fixing any lane x, expand occupied intermediate margins through horizontal group/node/flank
 translations and expand the canvas. Preserve transit source anchors and the groups' internal order.
 Plan displacement outward from the insertion gap and propagate it through neighboring groups.
+Repeated pushes publish node positions and anchors from their original coordinates plus the
+final group delta, avoiding accumulated rounding under the exact translation guard.
 A corridor's centre cannot decide displacement direction when the corridor contains an entire
 neighbor. If a transit source or an existing corridor blocks propagation, use a clear exterior
 corridor without moving those owners.
@@ -301,6 +310,10 @@ Iterate child-widening → sibling push → re-centre at most 8 times, ε = 0.5 
 keep the last state and report. *Moves:* child groups, child widths. *Re-validate:* lanes (7a
 positions are fixed; if a child now overlaps a lane, push the child, not the lane).
 
+Bar groups do not participate in row centering: stage 7d owns their stacked spans and source-derived
+port positions, including on later replay. Repacking their bars as a row would widen the group
+again after every replay.
+
 ### 7d — bars
 
 For each `bar` group, after 7c so all source ports are final: each node is a horizontal bar;
@@ -324,6 +337,10 @@ translation from the pre-shaping and final band geometry; callbacks still cannot
 outside the bar group. Rebuild bands, fixed-owner lane extents, measured geometry, and derived
 paths through the atomic replay below. *Moves:* bar geometry plus this derived downstream-tier
 vertical translation.
+
+Bar shaping retains top/bottom port count × reserved side pitch + twice the content padding as a
+width floor, including on replay and after span subtraction. A bar can itself source an upward
+transit; its lane-capacity reservation survives the same shaping rule as a downward target.
 
 ### 7e — bundles
 
@@ -399,19 +416,19 @@ or immutable lane; local slots remain valid and the bundle bends instead.
 
 ### 7f — group label bands
 
-For every group: band height = label height + 8, inside the top padding; label at the band's
-left edge; if its bbox intersects any pinned segment or lane, slide right to the first free gap
-wide enough; if none, **widen the group** by the label width and push its row neighbours (which
-re-triggers 7c for groups whose parents moved — bounded by the same 8-pass limit). The label
-bbox becomes an obstacle. Centre is never a fallback.
+For every group: band height = label height + 8, inside the top padding. Center the label when
+its measured box is clear. Otherwise choose the nearest free position within the horizontal
+insets, breaking equal-distance ties to the left. If none fits, retain the existing first-free
+widening rule and push row neighbours (which re-triggers 7c for groups whose parents moved,
+bounded by the same 8-pass limit). The label bbox becomes an obstacle.
 
 Measure group labels with the shared font table at 12 px, weight 700 and `FONT_FAMILY`. The band
 retains 4 px above and below the measured text, and the label has an 8 px horizontal inset. Convert
 intersecting geometry into forbidden label-start intervals, sort by start/end/stable ID, merge, and
-choose the first free x. The stable claims are `label-band:<group-id>` and
+choose the free x nearest the centered position. The stable claims are `label-band:<group-id>` and
 `label:group:<group-id>`; bands remain placement reservations and measured labels are router inputs, so no duplicate
-generic obstacle is added. Group fitting and bar shaping include the band above the ordinary 12 px
-node padding and retain a wider extent created by collision repair. The intervals include every
+generic obstacle is added. Group fitting and bar shaping include the band above the measured
+node-and-pill padding and retain a wider extent created by collision repair. The intervals include every
 reserved rectangle of a link: its complete path, its partially fixed lane runs and the mandatory
 outward shared runs of both ends. A complete path repeats the runs it consumed, so identical
 stroke-aware rectangles with identical ownership collapse to one entry.
@@ -430,12 +447,13 @@ band space. Treating the entire group width as an obstacle forced ten aligned li
 edge, producing 80 avoidable crossings; ticket 17 corrects that earlier stage-8 interpretation.
 Each band retains the
 `clearance` it reserves between its lower edge and the group's topmost node. The reservation is the
-ordinary 12 px padding unless a top-side port carries a routed attachment, in which case it is the
-largest outward reach at those ports plus the widest routed half stroke and a 0.25 px tolerance.
+larger of the measured top padding (12 px beyond the complete named pill and its half stroke)
+and the largest top-side routed outward reach plus the widest routed half stroke and a 0.25 px tolerance.
 The reach is the whole mandatory shared prefix when the port has one, otherwise the ordinary
 checkpoint `max(15, 10 + (node stroke + widest routed stroke) / 2 + 0.25)`, which follows the node
 obstacle when a wide stroke expands it past the 15 px stem. With the default 2 px node and 1.5 px
-routed strokes an ordinary top port reserves 16 px. The rule reads frozen inputs only: the constant
+routed strokes the entry requirement is 16 px; a default named pill instead reserves 24.5 px
+to retain its visible gutter. The rule reads frozen inputs only: measured port names, the constant
 stem and `sharedRuns`, which every publication at or after stage 7e rebuilds and compares, so
 completing a remainder in stage 8 cannot retire the reservation. Publication and restore recompute
 the reservation, require the node gap, and reject any required entry point that lies inside the

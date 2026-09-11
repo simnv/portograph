@@ -10,6 +10,8 @@ import { bandGap, nodeGap, portId, SKELETON_SPACING as spacing } from './skeleto
 import { moveGroup, stackBands } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { nodeObstacleReach, routedStroke, stemReach } from './bands.js';
+import { laneWidth, transitTiers } from './lanes.js';
+import { fitRegionGroup } from './regions.js';
 import { freezePortTopology } from './mutation.js';
 const key = portId;
 
@@ -119,6 +121,16 @@ export function sidesTwo(model: LayoutModel): LayoutModel {
       delete port.sizingSide;
     }
   }
+  // Transit corridors are wider than the ordinary port pitch. Reserve that source-side capacity
+  // before lane allocation, so consecutive feeds can retain their own x coordinates.
+  for (const link of model.links) {
+    if (!transitTiers(model, link).length) continue;
+    const ref = link.attachments!.from, node = model.nodes[ref.node]!;
+    const port = node.ports.find(port => key(port.ref) === key(ref))!;
+    if (port.side === 'top' || port.side === 'bottom') {
+      node.sidePitch![port.side] = Math.max(node.sidePitch![port.side]!, laneWidth(model, link));
+    }
+  }
   // Bundle membership and link widths are already known. Reserve their minimum side capacity
   // before lanes freeze, rather than discovering a larger row width in stage 7e.
   let pitchChanged = true;
@@ -182,6 +194,16 @@ export function sidesTwo(model: LayoutModel): LayoutModel {
     }
   }
   rebuildNodeGeometry(model, orderedNodeIds(model.document), 'from-slots');
+  for (const group of Object.values(model.groups)) fitRegionGroup(model, group);
+  for (const tier of model.tierBands) {
+    let end = -Infinity;
+    for (const group of tier.groups.map(id => model.groups[id]!).sort((a, b) => a.bounds!.x - b.bounds!.x)) {
+      if (group.bounds!.x < end) moveGroup(model, group, end - group.bounds!.x, 0);
+      end = group.bounds!.x + group.bounds!.width + bandGap(model);
+    }
+  }
+  if (Object.keys(model.groups).length) stackBands(model, true);
+  rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');
   model.stage = 'sides-two';
   return freezePortTopology(model);
 }

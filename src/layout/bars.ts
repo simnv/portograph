@@ -15,6 +15,8 @@ const MIN_STEM = 15;
 const FOREIGN_NODE_CLEARANCE = 10;
 const right = (box: Rect): number => box.x + box.width;
 const bottom = (box: Rect): number => box.y + box.height;
+const horizontalCapacity = (node: LayoutNode): number => Math.max(...(['top', 'bottom'] as const).map(side =>
+  node.ports.filter(port => port.side === side).length * node.sidePitch![side]! + 2 * NODE_CONTENT_GEOMETRY.padding));
 const samePoint = (a: Point, b: Point): boolean => Math.abs(a.x - b.x) <= EPS && Math.abs(a.y - b.y) <= EPS;
 
 interface BarLink {
@@ -179,7 +181,8 @@ export function shapeBars(model: LayoutModel): void {
       const xs = nodeSlots.map(item => item.slot);
       const labelText = node.ports.length ? model.document.nodes[node.id]!.label : model.document.groups[groupId]!.label;
       const label = measureText(labelText, { fontSize: NODE_CONTENT_GEOMETRY.labelFontSize, weight: NODE_CONTENT_GEOMETRY.labelFontWeight });
-      const floor = Math.max(node.sizeFloor!.width, label.width + 2 * BAR_PADDING);
+      const capacity = horizontalCapacity(node);
+      const floor = Math.max(node.sizeFloor!.width, label.width + 2 * BAR_PADDING, capacity);
       const centre = xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : node.bounds!.x + node.bounds!.width / 2;
       const width = Math.max(floor, xs.length ? Math.max(...xs) - Math.min(...xs) + 2 * BAR_PADDING : 0);
       spans.set(node.id, { min: centre - width / 2, max: centre + width / 2 });
@@ -190,7 +193,8 @@ export function shapeBars(model: LayoutModel): void {
     let y = group.bounds!.y + inset.top;
     for (const [index, node] of nodes.entries()) {
       const old = node.bounds!, span = spans.get(node.id)!, height = Math.max(node.sizeFloor!.height, old.height);
-      const next = { x: span.min, y, width: Math.max(node.sizeFloor!.width, span.max - span.min), height };
+      const capacity = horizontalCapacity(node);
+      const next = { x: span.min, y, width: Math.max(node.sizeFloor!.width, capacity, span.max - span.min), height };
       const dx = next.x - old.x, dy = next.y - old.y, dw = next.width - old.width, dh = next.height - old.height;
       node.bounds = next; node.size = { width: next.width, height: next.height };
       const nodeSlots = slots.get(node.id)!;

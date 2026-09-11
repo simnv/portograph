@@ -120,6 +120,8 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
       let previous: LayoutGroup | undefined;
       for (const id of order) {
         const group = model.groups[id]!, own = list.filter(feed => model.document.nodes[feed.child.ref.node]!.group === id);
+        // Bar shaping owns their source-derived slots and stacked spans; row centering cannot repack them.
+        if (model.document.groups[id]!.shape === 'bar') { previous = group; continue; }
         if (!own.length) { previous = group; continue; }
         const saved = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
         const vertical = own.filter(feed => winners.get(`${tier}:${portId(feed.parent.ref)}`) === portId(feed.child.ref));

@@ -124,7 +124,7 @@ links: [[a.p, c.p], [a.q, c.q], [a.r, c.r]]`;
       for (const id of ['up', 'mid']) { const box = union(draft.groups[id]!.nodes.map(id => draft.nodes[id]!.bounds!)); draft.groups[id]!.bounds = { x: box.x - 12, y: box.y - 12, width: box.width + 24, height: box.height + 24 }; }
     });
     const model = lanes(rows(input));
-    expect(model.lanes.map(lane => lane.x)).toEqual([49, 83, 191]);
+    expect(model.lanes.map(lane => lane.x)).toEqual(input.nodes.a!.ports.map(port => port.anchor!.x));
     expect(model.lanes.every(lane => lane.x >= 0 && lane.x <= 220)).toBe(true);
     expect(model.diagnostics.some(d => d.code === 'LANE_OUTSIDE_SOURCE_SPAN')).toBe(false);
     expect(model.nodes.a).toEqual(input.nodes.a);
@@ -138,7 +138,10 @@ links: [[a.p, c.p], [a.q, c.q], [a.r, c.r]]`;
     const input = stageInput(await placed(fixture('both-margins-full').replaceAll('group: upper,', 'group: upper, label: S,').replaceAll('group: lower,', 'group: lower, label: T,')), model => {
       for (const [id, box] of Object.entries(pre['group-boxes'])) model.groups[id]!.bounds = rect(box);
       for (const [id, box] of Object.entries(pre['node-boxes'])) {
-        const node = model.nodes[id]!; node.bounds = rect(box); node.size = { width: box[2]!, height: box[3]! };
+        const node = model.nodes[id]!; node.bounds = rect(box);
+        const width = Math.max(box[2]!, node.sidePitch?.bottom ? node.sidePitch.bottom + 20 : 0);
+        node.bounds.x -= (width - box[2]!) / 2; node.bounds.width = width;
+        node.size = { width, height: box[3]! };
         for (const port of node.ports) { const point = pre['port-anchors'][`${id}.${port.ref.name}#${port.ref.ordinal}`]!; port.anchor = { x: point[0]!, y: point[1]! }; }
       }
     });
@@ -304,7 +307,7 @@ links: [[a.p, c.p], [a.q, b.p]]`;
     const input = stageInput(await placed(yaml), draft => {
       const a = draft.nodes.a!, b = draft.nodes.b!, spare = draft.nodes.spare!;
       const shift = (node: typeof a, x: number) => { const dx = x - node.bounds!.x; node.bounds!.x = x; for (const port of node.ports) port.anchor!.x += dx; };
-      shift(a, 0); a.bounds!.width = 320; a.size!.width = 320; a.ports[0]!.anchor!.x = 250; a.ports[1]!.anchor!.x = 280;
+      shift(a, 0); a.bounds!.width = 320; a.size!.width = 320; a.ports[0]!.anchor!.x = 250; a.ports[1]!.anchor!.x = 250 + a.sidePitch!.bottom!;
       shift(spare, 360); shift(b, 100);
       draft.groups.up!.rowOrder = ['a', 'spare'];
       for (const id of ['up', 'mid']) { const box = union(draft.groups[id]!.nodes.map(id => draft.nodes[id]!.bounds!)); draft.groups[id]!.bounds = { x: box.x - 12, y: box.y - 12, width: box.width + 24, height: box.height + 24 }; }

@@ -12,7 +12,7 @@ import { rebuildRegionGeometry } from './region-rebuild.js';
 import { findPort } from './row-paths.js';
 import { bandGap, portId } from './skeleton-graph.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
-import { bottom, GROUP_PADDING, placementWarning, right } from './regions.js';
+import { bottom, GROUP_PADDING, groupPadding, placementWarning, right } from './regions.js';
 import { withLayoutMutation } from './mutation.js';
 
 const EPS = 1e-6;
@@ -122,8 +122,8 @@ export function bandEntryConflicts(model: LayoutModel, entries = routerEntryPoin
 function clearanceFor(model: LayoutModel, group: LayoutGroup, entries: RouterEntryPoint[]): number {
   const members = new Set(group.nodes);
   const reach = Math.max(0, ...entries.filter(entry => entry.side === 'top' && members.has(entry.node)).map(entry => entry.outward));
-  if (reach <= 0) return GROUP_PADDING;
-  return Math.max(GROUP_PADDING, reach + strokeAllowance(model) + GROUP_LABEL_GEOMETRY.entryTolerance);
+  if (reach <= 0) return groupPadding(model, group).top;
+  return Math.max(groupPadding(model, group).top, reach + strokeAllowance(model) + GROUP_LABEL_GEOMETRY.entryTolerance);
 }
 
 function bandFor(model: LayoutModel, groupId: string, entries: RouterEntryPoint[]): LabelBand {
@@ -271,9 +271,14 @@ function planLabels(model: LayoutModel, permitGrowth: boolean): LabelPlan {
   for (const id of orderedGroupIds(model.document)) {
     const group = model.groups[id]!, measured = measurement(model, id);
     const y = group.bounds!.y + GROUP_LABEL_GEOMETRY.verticalInset;
-    const x = firstFree(group.bounds!.x + GROUP_LABEL_GEOMETRY.horizontalInset,
-      intervals(model, labels, y, measured.height, measured.width));
+    const start = group.bounds!.x + GROUP_LABEL_GEOMETRY.horizontalInset;
     const limit = right(group.bounds!) - GROUP_LABEL_GEOMETRY.horizontalInset - measured.width;
+    const ranges = intervals(model, labels, y, measured.height, measured.width);
+    const centre = group.bounds!.x + (group.bounds!.width - measured.width) / 2;
+    const candidates = [centre, start, limit, ...ranges.flatMap(range => [range.low - 2 * EPS, range.high + 2 * EPS])]
+      .filter(x => x >= start - EPS && x <= limit + EPS && ranges.every(range => x < range.low - EPS || x > range.high + EPS))
+      .sort((a, b) => Math.abs(a - centre) - Math.abs(b - centre) || a - b);
+    const x = candidates[0] ?? firstFree(start, ranges);
     if (x > limit + EPS) {
       // Classify every group that needs to grow, so an exhausted budget still reports the ones
       // that no budget could have repaired.
@@ -327,7 +332,7 @@ function reserveInitialSpace(model: LayoutModel): void {
   for (const id of orderedGroupIds(model.document)) {
     const group = model.groups[id]!, band = model.labelBands.find(item => item.group === id)!;
     // The band replaces the ordinary top padding, and its clearance replaces that padding below it.
-    const shift = band.bounds.height + band.clearance - GROUP_PADDING;
+    const shift = band.bounds.height + band.clearance - groupPadding(model, group).top;
     for (const nodeId of group.nodes) {
       const node = model.nodes[nodeId]!;
       node.bounds!.y += shift;

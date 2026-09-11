@@ -106,3 +106,10 @@ number is derived from frozen inputs only — the outward stem, which follows th
 stroke, and the mandatory shared runs — so it cannot change when a remainder receives its path. It is part of the frozen placement
 projection. Publication and restore recompute it, require the reserved node gap, and reject a
 required entry point that falls inside the stroke-aware obstacle of its own group's band.
+
+M1 visual-review refinement: stage 5 reserves source-side transit pitch and group padding beyond
+named pills before topology freezes. Stage 7a first tries source-aligned corridors using the same
+checked outward margin translations; all owner and occupied-order guards remain in force. Stage 7c
+leaves bar groups to stage 7d on every replay. Stage 7f prefers the centered label position, then the
+nearest clear gap; its bounded widening fallback and immutable-lane checks are unchanged. Label-band
+clearance also includes measured top pill padding, a frozen input independent of later route paths.
