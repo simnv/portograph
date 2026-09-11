@@ -25,6 +25,12 @@ export function pathStrokeWidth(link: Pick<LayoutLink, 'path' | 'strokeWidth'>):
 
 /** Radius of the mark stage 11 draws at each overlay endpoint, above the masked overlay layer. */
 export const OVERLAY_ENDPOINT_RADIUS = 2;
+/**
+ * A group title owns a link-free margin around its measured text. Placement keeps labels this far
+ * from every reserved link geometry, routing treats the margin as part of the label obstacle, and
+ * G3 fails a routed segment that enters it (maintainer M1 visual review, 2026-09-11).
+ */
+export const GROUP_LABEL_LINK_CLEARANCE = 8;
 
 /** The widest routed stroke a placement must keep clear; reservations may not assume less. */
 export function routedStrokeWidth(model: Pick<LayoutModel, 'links'>): number {

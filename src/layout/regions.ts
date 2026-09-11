@@ -6,7 +6,8 @@ import { rebuildBands, union } from './skeleton-geometry.js';
 
 export const right = (box: Rect): number => box.x + box.width;
 export const bottom = (box: Rect): number => box.y + box.height;
-export const GROUP_PADDING = 12;
+/** Group box beyond node bodies and named pills, all four sides (maintainer M1 visual review: 12 → 20). */
+export const GROUP_PADDING = 20;
 /**
  * Label bands extend the top inset while ordinary group padding remains below and at both sides.
  * A band reserves its own clearance below itself; that reservation is at least the ordinary padding.

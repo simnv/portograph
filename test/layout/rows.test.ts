@@ -8,6 +8,7 @@ import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { rebuildBands } from '../../src/layout/skeleton-geometry.js';
 import { nodeGap } from '../../src/layout/skeleton-graph.js';
 import { rows } from '../../src/layout/rows.js';
+import { GROUP_PADDING } from '../../src/layout/regions.js';
 import { expectedRowPath, rowPathCandidate, straightCorridorClear } from '../../src/layout/row-paths.js';
 import { rowGap } from '../../src/layout/sides-two.js';
 import { placed, simple } from './phase-two-fixture.js';
@@ -113,7 +114,7 @@ describe('flatten and repack', () => {
     expect(b.x - (a.x + a.width)).toBeGreaterThanOrEqual(Math.max(nodeGap(model, 'a', 'b'), rowGap(model, 'a', 'b')) - 1e-9);
     const box = model.groups.g!.bounds!;
     expect(b.x + b.width).toBeLessThanOrEqual(box.x + box.width);
-    expect(box.height).toBe(a.height + 24);
+    expect(box.height).toBe(a.height + 2 * GROUP_PADDING);
     expect(model.tierBands[0]!.bounds).toEqual(box);
     expect(anchorOf(model, 'b', 0)).toEqual({ x: b.x, y: anchorOf(model, 'a', 0).y });
     expect(model.links[0]!.path?.segments).toEqual([{ from: anchorOf(model, 'a', 0), to: anchorOf(model, 'b', 0), owner: { kind: 'link', id: 'link-1' } }]);

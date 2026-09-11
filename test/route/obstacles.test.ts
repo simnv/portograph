@@ -1,3 +1,4 @@
+import { GROUP_LABEL_LINK_CLEARANCE } from '../../src/theme/geometry.js';
 import { describe, expect, it } from 'vitest';
 import { bands, bars, bundles, centre, flanks, lanes, rows } from '../../src/index.js';
 import { batchRequest, disjointShapes, planRoute, stemCheckpoint } from '../../src/route/plan.js';
@@ -120,8 +121,10 @@ links: [[a.p, b.p], [a.p, b.q]]`);
     const band = model.labelBands.find(item => item.group === 'low')!;
     const label = model.labels.find(item => item.role === 'group' && item.owner.kind === 'group' && item.owner.id === 'low')!;
     const obstacle = routeObstacles(model).find(item => item.id === `label:${label.id}`)!;
-    expect(obstacle.bounds).toEqual({ x: label.bounds!.x - 0.75, y: label.bounds!.y - 0.75,
-      width: label.bounds!.width + 1.5, height: label.bounds!.height + 1.5 });
+    // Half the routed stroke plus the title's link-free margin, on every side.
+    const by = 0.75 + GROUP_LABEL_LINK_CLEARANCE;
+    expect(obstacle.bounds).toEqual({ x: label.bounds!.x - by, y: label.bounds!.y - by,
+      width: label.bounds!.width + 2 * by, height: label.bounds!.height + 2 * by });
     expect(routeObstacles(model).some(item => item.id === band.id)).toBe(false);
     expect(obstacle.consumers).toEqual([]);
   });

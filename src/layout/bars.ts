@@ -174,7 +174,7 @@ export function shapeBars(model: LayoutModel): void {
   for (const groupId of orderedGroupIds(model.document)) {
     if (model.document.groups[groupId]!.shape !== 'bar') continue;
     const group = model.groups[groupId]!, nodes = group.nodes.map(id => model.nodes[id]!);
-    const slots = new Map<string, PortSlot[]>(), spans = new Map<string, { min: number; max: number }>();
+    const slots = new Map<string, PortSlot[]>(), spans = new Map<string, { min: number; max: number }>(), floors = new Map<string, number>();
     for (const node of nodes) {
       const nodeSlots = slotsForNode(model, node, allLinks.filter(item => item.bar.id === node.id));
       slots.set(node.id, nodeSlots);
@@ -185,6 +185,8 @@ export function shapeBars(model: LayoutModel): void {
       const floor = Math.max(node.sizeFloor!.width, label.width + 2 * BAR_PADDING, capacity);
       const centre = xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : node.bounds!.x + node.bounds!.width / 2;
       const width = Math.max(floor, xs.length ? Math.max(...xs) - Math.min(...xs) + 2 * BAR_PADDING : 0);
+      // Keep the exact floor: `max - min` of a centred span can lose a bit and fall under it.
+      floors.set(node.id, floor);
       spans.set(node.id, { min: centre - width / 2, max: centre + width / 2 });
     }
     mergedSpans(spans);
@@ -194,7 +196,7 @@ export function shapeBars(model: LayoutModel): void {
     for (const [index, node] of nodes.entries()) {
       const old = node.bounds!, span = spans.get(node.id)!, height = Math.max(node.sizeFloor!.height, old.height);
       const capacity = horizontalCapacity(node);
-      const next = { x: span.min, y, width: Math.max(node.sizeFloor!.width, capacity, span.max - span.min), height };
+      const next = { x: span.min, y, width: Math.max(node.sizeFloor!.width, capacity, floors.get(node.id)!, span.max - span.min), height };
       const dx = next.x - old.x, dy = next.y - old.y, dw = next.width - old.width, dh = next.height - old.height;
       node.bounds = next; node.size = { width: next.width, height: next.height };
       const nodeSlots = slots.get(node.id)!;

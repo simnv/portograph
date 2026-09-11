@@ -1,7 +1,7 @@
 import type { Point, Rect } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import { orderedNodeIds } from '../model/model.js';
-import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { GROUP_LABEL_GEOMETRY, routedStroke } from '../layout/bands.js';
 import { portId } from '../layout/skeleton-graph.js';
 import { bottom, right } from '../score/geometry.js';
@@ -163,7 +163,8 @@ export function routeObstacles(model: LayoutModel): RouteObstacle[] {
     // A pill label sits inside its pill, and a node label inside its node, so both are already
     // covered; only a link's own label would ever need an exemption.
     const consumers = label.owner.kind === 'link' ? [label.owner.id] : [];
-    push({ id: `label:${label.id}`, bounds: expand(label.bounds, half), consumers });
+    // A group title's link-free margin is part of its obstacle.
+    push({ id: `label:${label.id}`, bounds: expand(label.bounds, half + (label.role === 'group' ? GROUP_LABEL_LINK_CLEARANCE : 0)), consumers });
   }
   // A label band reserves placement space, not a solid barrier across the whole group.
   // Its measured label is protected above, including against the group's own attachments.

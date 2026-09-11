@@ -4,7 +4,7 @@ import type { LabelBand, LayoutGroup, LayoutLabel, LayoutModel, Owner, PathSegme
 import { equal } from '../model/json-equality.js';
 import { orderedGroupIds } from '../model/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
-import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { createCentreBudget, type CentreBudget } from './centre.js';
 import { laneSidesHold } from './lanes.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
@@ -167,7 +167,7 @@ function segmentRect(segment: PathSegment, stroke: number): Rect {
  * the mandatory outward shared runs of both ends. A complete bundle path repeats the runs it
  * consumed, so identical stroke-aware rectangles with identical ownership collapse to one entry.
  */
-function linkRects(link: LayoutModel['links'][number]): { id: string; bounds: Rect }[] {
+function linkRects(link: LayoutModel['links'][number]): ForbiddenRect[] {
   const stroke = linkStrokeWidth(link) / 2;
   // A stage-8 remainder (`fixed: false`) is routed around this placement, so only the runs a rule
   // reserved count here; re-deriving a label against a later route would let routing move it.
@@ -175,23 +175,26 @@ function linkRects(link: LayoutModel['links'][number]): { id: string; bounds: Re
   const sources: [string, PathSegment[]][] = [['path', reserved],
     ['fixed', link.fixedSegments ?? []], ['shared:from', link.sharedRuns?.from ?? []],
     ['shared:to', link.sharedRuns?.to ?? []]];
-  const seen = new Set<string>(), result: { id: string; bounds: Rect }[] = [];
+  const seen = new Set<string>(), result: ForbiddenRect[] = [];
   for (const [kind, segments] of sources) for (const [index, segment] of segments.entries()) {
     const bounds = segmentRect(segment, stroke), key = ownedRectKey(bounds, segment.owner);
     if (seen.has(key)) continue;
     seen.add(key);
-    result.push({ id: `${link.id}:${kind}:${index}`, bounds });
+    result.push({ id: `${link.id}:${kind}:${index}`, bounds, clearance: GROUP_LABEL_LINK_CLEARANCE });
   }
   return result;
 }
 
+/** A reserved rectangle a label must avoid; `clearance` is the title's link-free margin for link geometry. */
+export interface ForbiddenRect { id: string; bounds: Rect; clearance?: number }
+
 /** Every reserved rectangle a group label must avoid, with stable semantic IDs. */
-export function groupLabelObstacles(model: LayoutModel, placed: LayoutLabel[] = []): { id: string; bounds: Rect }[] {
+export function groupLabelObstacles(model: LayoutModel, placed: LayoutLabel[] = []): ForbiddenRect[] {
   return forbiddenRects(model, placed);
 }
 
-function forbiddenRects(model: LayoutModel, placed: LayoutLabel[]): { id: string; bounds: Rect }[] {
-  const result: { id: string; bounds: Rect }[] = [];
+function forbiddenRects(model: LayoutModel, placed: LayoutLabel[]): ForbiddenRect[] {
+  const result: ForbiddenRect[] = [];
   for (const node of Object.values(model.nodes)) {
     const half = (node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node) / 2;
     result.push({ id: `node:${node.id}`, bounds: { x: node.bounds!.x - half, y: node.bounds!.y - half,
@@ -210,13 +213,14 @@ function forbiddenRects(model: LayoutModel, placed: LayoutLabel[]): { id: string
   for (const label of [...model.labels.filter(item => item.role !== 'group' && !stageNine(item.role)), ...placed]) {
     if (!label.omitted && label.layer !== 'overlay' && label.bounds) result.push({ id: label.id, bounds: label.bounds });
   }
-  for (const lane of model.lanes) if (lane.layer !== 'overlay') result.push({ id: lane.id, bounds: lane.bounds });
+  const margin = GROUP_LABEL_LINK_CLEARANCE;
+  for (const lane of model.lanes) if (lane.layer !== 'overlay') result.push({ id: lane.id, bounds: lane.bounds, clearance: margin });
   for (const bundle of model.bundles) {
     for (const [index, bounds] of (bundle.envelopeParts?.length ? bundle.envelopeParts : bundle.envelope ? [bundle.envelope] : [] as Rect[]).entries()) {
-      result.push({ id: `${bundle.id}:envelope:${index}`, bounds });
+      result.push({ id: `${bundle.id}:envelope:${index}`, bounds, clearance: margin });
     }
   }
-  for (const obstacle of model.obstacles) if (obstacle.layer !== 'overlay') result.push({ id: obstacle.id, bounds: obstacle.bounds });
+  for (const obstacle of model.obstacles) if (obstacle.layer !== 'overlay') result.push({ id: obstacle.id, bounds: obstacle.bounds, clearance: margin });
   for (const link of model.links) result.push(...linkRects(link), ...feedCorridorRects(model, link));
   return result;
 }
@@ -228,7 +232,7 @@ function forbiddenRects(model: LayoutModel, placed: LayoutLabel[]): { id: string
  * — the pipeline's load-bearing rule. The check ignores group labels (this stage places them) and
  * stage-9 labels, so planning and restore see the same corridor.
  */
-function feedCorridorRects(model: LayoutModel, link: LayoutModel['links'][number]): { id: string; bounds: Rect }[] {
+function feedCorridorRects(model: LayoutModel, link: LayoutModel['links'][number]): ForbiddenRect[] {
   if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments || link.bundle) return [];
   if (link.path && link.path.fixed !== false) return [];
   const from = findPort(model, link.attachments.from), to = findPort(model, link.attachments.to);
@@ -239,12 +243,13 @@ function feedCorridorRects(model: LayoutModel, link: LayoutModel['links'][number
   const stageNine = (role: string | undefined): boolean => role === 'link' || role === 'legend';
   const view: LayoutModel = { ...model, labels: model.labels.filter(label => label.role !== 'group' && !stageNine(label.role)) };
   if (!straightCorridorClear(view, link, segment)) return [];
-  return [{ id: `${link.id}:feed-corridor`, bounds: segmentRect(segment, linkStrokeWidth(link) / 2) }];
+  return [{ id: `${link.id}:feed-corridor`, bounds: segmentRect(segment, linkStrokeWidth(link) / 2), clearance: GROUP_LABEL_LINK_CLEARANCE }];
 }
 
 function intervals(model: LayoutModel, placed: LayoutLabel[], y: number, height: number, width: number): ForbiddenInterval[] {
-  const raw = forbiddenRects(model, placed).filter(item => intersectsY(item.bounds, y, height)).map(item => ({
-    low: item.bounds.x - width, high: right(item.bounds), id: item.id,
+  // Link geometry keeps the title's link-free margin on every side; nodes, pills and labels do not.
+  const raw = forbiddenRects(model, placed).filter(item => intersectsY(item.bounds, y - (item.clearance ?? 0), height + 2 * (item.clearance ?? 0))).map(item => ({
+    low: item.bounds.x - width - (item.clearance ?? 0), high: right(item.bounds) + (item.clearance ?? 0), id: item.id,
   })).sort((a, b) => a.low - b.low || a.high - b.high || a.id.localeCompare(b.id));
   const merged: ForbiddenInterval[] = [];
   for (const item of raw) {

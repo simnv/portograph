@@ -1,3 +1,4 @@
+import { APPROVED_Q } from '../golden-baseline.js';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse, parseWithDiagnostics, restoreLayoutModel, score, serializeLayoutModel } from '../../src/index.js';
@@ -89,6 +90,6 @@ links: [[far.p, b.p]]`);
     for (const id of ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8'] as GateId[]) {
       expect([id, report.gates[id].violations]).toEqual([id, []]);
     }
-    expect(report.Q).toBeCloseTo(0.9004061377064178, 12);
+    expect(report.Q).toBeCloseTo(APPROVED_Q, 12);
   }, 120000);
 });

@@ -1,3 +1,4 @@
+import { APPROVED_Q } from '../golden-baseline.js';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
@@ -142,7 +143,7 @@ describe('layout(document, options)', () => {
     expect(report.passed).toBe(true);
     expect(report.metrics.crossings.count).toBe(0);
     expect(report.counters).toMatchObject({ overlaps: 0, labelHits: 0, stubs: 0, fallbackUsed: false, deadlineHit: false });
-    expect(report.Q).toBeCloseTo(0.9004061377064178, 12);
+    expect(report.Q).toBeCloseTo(APPROVED_Q, 12);
 
     // The published model is frozen and restores byte-equal, so score, render and the layout JSON
     // all describe the same geometry.

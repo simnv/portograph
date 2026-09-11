@@ -426,7 +426,10 @@ For every group: band height = label height + 8, inside the top padding. Center 
 its measured box is clear. Otherwise choose the nearest free position within the horizontal
 insets, breaking equal-distance ties to the left. If none fits, retain the existing first-free
 widening rule and push row neighbours (which re-triggers 7c for groups whose parents moved,
-bounded by the same 8-pass limit). The label bbox becomes an obstacle.
+bounded by the same 8-pass limit). The label bbox becomes an obstacle, together with its **link-margin**: 8 px on every side that no
+link may enter. Placement keeps the label that far from every reserved link rectangle (paths, lane
+runs, shared runs, envelopes, feed corridors); stage 8 expands the label obstacle by it; G3 fails a
+routed segment closer than stroke/2 + 8 px to a group title.
 
 Measure group labels with the shared font table at 12 px, weight 700 and `FONT_FAMILY`. The band
 retains 4 px above and below the measured text, and the label has an 8 px horizontal inset. Convert
@@ -457,7 +460,7 @@ band space. Treating the entire group width as an obstacle forced ten aligned li
 edge, producing 80 avoidable crossings; ticket 17 corrects that earlier stage-8 interpretation.
 Each band retains the
 `clearance` it reserves between its lower edge and the group's topmost node. The reservation is the
-larger of the measured top padding (12 px beyond the complete named pill and its half stroke)
+larger of the measured top padding (20 px beyond the complete named pill and its half stroke)
 and the largest top-side routed outward reach plus the widest routed half stroke and a 0.25 px tolerance.
 The reach is the whole mandatory shared prefix when the port has one, otherwise the ordinary
 checkpoint `max(15, 10 + (node stroke + widest routed stroke) / 2 + 0.25)`, which follows the node

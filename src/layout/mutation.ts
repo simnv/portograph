@@ -288,7 +288,7 @@ function validateGeometry(model: LayoutModel, allowNonConvergence = false): void
       const group = model.document.groups[model.document.nodes[id]!.group]!;
       const text = node.ports.length ? model.document.nodes[id]!.label : group.label;
       const label = measureText(text, { fontSize: NODE_CONTENT_GEOMETRY.labelFontSize, weight: NODE_CONTENT_GEOMETRY.labelFontWeight });
-      if (box.width < label.width + 60) throw new Error(`Bar ${id} violates label-plus-60 floor`);
+      if (box.width < label.width + 60 - 1e-6) throw new Error(`Bar ${id} violates label-plus-60 floor: width ${box.width} < ${label.width + 60}`);
     }
     same(node.size, { width: box.width, height: box.height }, `Size/bounds disagree on ${id}`);
     same(node.contentInsets, measured.contentInsets, `Content insets differ on ${id}`);

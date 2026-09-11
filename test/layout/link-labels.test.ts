@@ -1,3 +1,4 @@
+import { APPROVED_Q } from '../golden-baseline.js';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import * as api from '../../src/index.js';
@@ -105,7 +106,7 @@ describe('stage 9 golden', () => {
     for (const id of GATES) expect([id, report.gates[id].violations]).toEqual([id, []]);
     expect(report.counters).toMatchObject({ labelHits: 0, labelsOmitted: 0, barCross: 3, lanesUsed: 4, overlaps: 0 });
     expect(report.metrics.crossings.count).toBe(0);
-    expect(report.Q).toBeCloseTo(0.9004061377064178, 12);
+    expect(report.Q).toBeCloseTo(APPROVED_Q, 12);
     expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
   }, 60000);
 });

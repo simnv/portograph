@@ -1,3 +1,4 @@
+import { APPROVED_Q } from '../golden-baseline.js';
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { bands, bars, bundles, centre, flanks, lanes, restoreLayoutModel, route, routeRemainders, rows, score } from '../../src/index.js';
@@ -41,7 +42,7 @@ it('routes the measured JPEG golden remainder and scores the complete diagram', 
   expect(report.metrics.crossings.count).toBe(0);
   expect(report.counters).toMatchObject({ overlaps: 0, labelHits: 0, barCross: 3, lanesUsed: 4, stubs: 0 });
   expect(report.assertions).toEqual([{ code: 'golden-crossings', passed: true, actual: 0, expected: 0, tolerance: 0 }]);
-  expect(report.Q).toBeCloseTo(0.9004061377064178, 12);
+  expect(report.Q).toBeCloseTo(APPROVED_Q, 12);
 
   // Placement is frozen: stage 8 adds paths only, and the result restores byte-equal.
   expect(model.freeze!.placement).toEqual(before.freeze!.placement);

@@ -1,3 +1,4 @@
+import { APPROVED_Q } from '../golden-baseline.js';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { GateId, LayoutModel, Rect } from '../../src/index.js';
@@ -63,7 +64,7 @@ describe('golden render', () => {
     expect(JSON.stringify(model)).toBe(before);
     const report = score(model, { golden: true }).snapshot;
     for (const id of GATES) expect([id, report.gates[id].violations]).toEqual([id, []]);
-    expect(report.Q).toBeCloseTo(0.9004061377064178, 12);
+    expect(report.Q).toBeCloseTo(APPROVED_Q, 12);
 
     // One canvas for layout, score and render.
     const canvas = model.canvas!;

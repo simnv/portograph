@@ -7,7 +7,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
 
 // Ticket 18: the maintainer approved this render on 2026-09-11. From here on the layout JSON is an
 // exact snapshot (runtime block excluded) and Q is a baseline, per quality.md "Test design".
-const APPROVED_Q = 0.9004061377064178;
+import { APPROVED_Q } from '../golden-baseline.js';
 const yamlUrl = new URL('../../goldens/m1-sip-edge.yaml', import.meta.url);
 const snapshotUrl = new URL('../../goldens/m1-sip-edge.layout.json', import.meta.url);
 

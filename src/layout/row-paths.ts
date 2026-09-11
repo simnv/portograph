@@ -1,7 +1,7 @@
 import type { PortRef } from '../model/document.js';
 import type { LayoutLink, LayoutModel, LayoutNode, LayoutPath, LayoutPort, PathSegment } from '../model/layout.js';
 import { EPS, length, segmentDistance, segmentRectDistance } from '../score/geometry.js';
-import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { portId } from './skeleton-graph.js';
 
 /** Stroke-aware clearances that the final gates require between a routed segment and foreign geometry. */
@@ -81,7 +81,7 @@ export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segm
   for (const label of model.labels) {
     if (label.omitted || !label.bounds || label.layer === 'overlay' || ownsObstacle(label.owner)) continue;
     if (label.role === 'pill' && label.port && endPorts.has(portId(label.port))) continue;
-    if (segmentRectDistance(segment, label.bounds) < stroke / 2 - EPS) return false;
+    if (segmentRectDistance(segment, label.bounds) < stroke / 2 + (label.role === 'group' ? GROUP_LABEL_LINK_CLEARANCE : 0) - EPS) return false;
   }
   for (const lane of model.lanes) {
     if (lane.layer === 'overlay' || ownsObstacle(lane.owner)) continue;

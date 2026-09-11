@@ -1,3 +1,5 @@
+import { GROUP_PADDING } from '../../src/layout/regions.js';
+import { GROUP_LABEL_LINK_CLEARANCE } from '../../src/theme/geometry.js';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import * as api from '../../src/index.js';
@@ -21,7 +23,7 @@ const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const right = (box: Rect): number => box.x + box.width;
 const bottom = (box: Rect): number => box.y + box.height;
 /** 12 px visible padding beyond a default top pill and its half stroke. */
-const ORDINARY_CLEARANCE = 24.5;
+const ORDINARY_CLEARANCE = GROUP_PADDING + 12.5;
 /** Three transits fan around the single mid-tier group, leaving it no room to widen. */
 const enclosedByLanes = `portograph: 2
 groups:
@@ -60,9 +62,9 @@ function expectedClearance(model: LayoutModel, groupId: string): number {
   const members = new Set(model.groups[groupId]!.nodes);
   const reach = Math.max(0, ...routerEntryPoints(model)
     .filter(entry => entry.side === 'top' && members.has(entry.node)).map(entry => entry.outward));
-  const padding = Math.max(12, ...[...members].flatMap(id => model.nodes[id]!.ports
+  const padding = Math.max(GROUP_PADDING, ...[...members].flatMap(id => model.nodes[id]!.ports
     .filter(port => port.side === 'top' && port.ref.name !== undefined)
-    .map(port => 12 + measurePortPill(port.ref.name!).width / 2 + 0.5)));
+    .map(port => GROUP_PADDING + measurePortPill(port.ref.name!).width / 2 + 0.5)));
   return Math.max(padding, reach + (reach > 0 ? 1 : 0));
 }
 
@@ -101,8 +103,8 @@ describe('group label bands', () => {
     }
     // The two groups with named top ports reserve space beyond the complete pill.
     expect(Object.fromEntries(model.labelBands.map(band => [band.group, band.clearance])))
-      .toEqual({ providers: 12, datacenter: 25.5, 'tbr-left': 12, 'tbr-right': 12,
-        'route-reflector': 12, backbone: 25.5 });
+      .toEqual({ providers: GROUP_PADDING, datacenter: GROUP_PADDING + 13.5, 'tbr-left': GROUP_PADDING, 'tbr-right': GROUP_PADDING,
+        'route-reflector': GROUP_PADDING, backbone: GROUP_PADDING + 13.5 });
 
     const produced = { ...model, links: model.links.filter(link => link.path !== undefined) };
     const snapshot = score(produced).snapshot;
@@ -181,7 +183,7 @@ links:
       .flatMap(link => link.path!.segments).filter(segment => segment.from.x === segment.to.x
         && Math.min(segment.from.y, segment.to.y) <= label.bounds!.y
         && Math.max(segment.from.y, segment.to.y) >= bottom(label.bounds!)).map(segment => segment.from.x));
-    expect(label.bounds!.x).toBeCloseTo(rightmostBlockingPath + 0.75 + 2e-6, 8);
+    expect(label.bounds!.x).toBeCloseTo(rightmostBlockingPath + 0.75 + GROUP_LABEL_LINK_CLEARANCE + 2e-6, 8);
     expect(model.groups.blocked!.bounds!.width).toBeGreaterThan(label.bounds!.width + 16);
     expect(right(label.bounds!)).toBeLessThanOrEqual(right(model.groups.blocked!.bounds!) - 8 + 1e-6);
     expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
@@ -258,19 +260,19 @@ nodes:
   b: {group: low, ports: [{name: p, side: top}]}
 links: [[a.p, b.p]]`;
     const draft = copy(await placed(yaml));
-    draft.nodes.b!.strokeWidth = 30;
+    draft.nodes.b!.strokeWidth = 44;
     rebuildBands(draft);
     rebuildNodeGeometry(draft, Object.keys(draft.nodes), 'current');
     draft.canvas = union([draft.canvas!, ...Object.values(draft.groups).map(group => group.bounds!)]);
     const model = run(bundles(bars(centre(flanks(lanes(rows(restoreLayoutModel(JSON.stringify(draft)))))))));
 
-    // A 30 px node stroke needs a 26 px checkpoint, beyond both the stem and pill padding.
+    // A 44 px node stroke needs a 33 px checkpoint, beyond the stem and the 20 px pill padding.
     const band = model.labelBands.find(item => item.group === 'low')!;
-    expect(band.clearance).toBe(27);
-    expect(model.labelBands.find(item => item.group === 'up')!.clearance).toBe(12);
-    expect(model.nodes.b!.bounds!.y).toBe(bottom(band.bounds) + 27);
+    expect(band.clearance).toBe(34);
+    expect(model.labelBands.find(item => item.group === 'up')!.clearance).toBe(GROUP_PADDING);
+    expect(model.nodes.b!.bounds!.y).toBe(bottom(band.bounds) + 34);
     const stem = routerEntryPoints(model).find(entry => entry.node === 'b' && entry.kind === 'stem')!;
-    expect(stem.outward).toBe(26);
+    expect(stem.outward).toBe(33);
     expect(stem.point.y).toBe(bottom(band.bounds) + 1);
     expect(bandEntryConflicts(model)).toEqual([]);
     expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
@@ -316,7 +318,7 @@ ${pairs.flatMap(i => [`  - [parent-${i}.p, child-${i}.p]`, `  - [parent-${i}.q, 
     expect(model.labels.filter(item => item.role === 'group')).toHaveLength(pairs.length * 2);
     for (const band of model.labelBands) {
       expect(band.clearance).toBe(model.groups[band.group]!.nodes.some(id =>
-        model.nodes[id]!.ports.some(port => port.side === 'top')) ? ORDINARY_CLEARANCE : 12);
+        model.nodes[id]!.ports.some(port => port.side === 'top')) ? ORDINARY_CLEARANCE : GROUP_PADDING);
       for (const nodeId of model.groups[band.group]!.nodes) {
         expect(model.nodes[nodeId]!.bounds!.y).toBeGreaterThanOrEqual(bottom(band.bounds) + band.clearance - 1e-6);
       }
@@ -436,8 +438,8 @@ ${pairs.flatMap(i => [`  - [parent-${i}.p, child-${i}.p]`, `  - [parent-${i}.q, 
     const yaml = `portograph: 2
 groups:
   top: {tier: 0}
-  first: {tier: 1, label: WWWWWW}
-  second: {tier: 1, label: WWWWWW}
+  first: {tier: 1, label: WWWWWWWW}
+  second: {tier: 1, label: WWWWWWWW}
   third: {tier: 1}
   low: {tier: 2}
 nodes:
@@ -449,7 +451,10 @@ nodes:
 links: [[a.p, z.p]]`;
     // A checked rows transaction places the three groups; every later stage runs normally.
     const rowed = withLayoutMutation(await placed(yaml), 'rows', draft => {
-      for (const [id, x] of Object.entries({ top: 364.25, first: 0, second: 134, third: 268, low: 364.25 })) {
+      // With 20 px padding a 50 px node makes a 90 px group, so an eight-W label (90.609375 px) needs a
+      // 16.609375 px widening. Groups keep the 60 px band gap, and the corridor sits where exactly one
+      // such widening fits.
+      for (const [id, x] of Object.entries({ top: 413.5, first: 0, second: 150, third: 300, low: 413.5 })) {
         moveGroup(draft, draft.groups[id]!, x - draft.groups[id]!.bounds!.x, 0);
       }
     });
@@ -458,10 +463,10 @@ links: [[a.p, z.p]]`;
     const lane = before.lanes.find(item => item.id === 'lane:"link-1":1')!;
     const pill = before.nodes.t!.ports[0]!.pill!;
     expect(lane.side).toBe('right');
-    expect([pill.bounds.x, right(pill.bounds)]).toEqual([302, 358]);
-    // The headroom allows one 9.95703125 px reservation, but not two.
-    expect(lane.bounds.x - right(before.groups.third!.bounds!)).toBeGreaterThan(9.95703125);
-    expect(lane.bounds.x - right(before.groups.third!.bounds!)).toBeLessThan(19.9140625);
+    expect([pill.bounds.x, right(pill.bounds)]).toEqual([342, 398]);
+    // The headroom allows one 16.609375 px reservation, but not two.
+    expect(lane.bounds.x - right(before.groups.third!.bounds!)).toBeGreaterThan(16.609375);
+    expect(lane.bounds.x - right(before.groups.third!.bounds!)).toBeLessThan(33.21875);
 
     const model = run(before);
     expect(model.groups.first!.bounds!.width).toBeGreaterThan(before.groups.first!.bounds!.width);

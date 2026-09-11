@@ -1,5 +1,5 @@
 import type { LayoutModel, LayoutNode, PathSegment } from '../model/index.js';
-import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
 import { EPS, bottom, contains, horizontal, length, near, overlapSegment, rectDistance, rectOverlap, samePoint, segmentDistance, segmentRect, segmentRectDistance, vertical } from './geometry.js';
 import { anchorOnBoundary, barContact, bundlePair, endpoints, incident, junctionFan, mergedRun, outward, port, refEqual, sharedStem } from './model.js';
 import type { Segment } from './model.js';
@@ -105,7 +105,9 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       const support = label.support;
       if (support?.kind === 'link-segment' && label.owner.kind === 'link' && label.owner.id === support.link
         && support.link === s.link.id && support.segment === s.index) continue;
-      if (segmentRectDistance(s.segment, label.bounds!) < s.stroke / 2 - EPS) hit(s.link.id);
+      // A group title owns a link-free margin beyond its stroke-aware edge.
+      const margin = label.role === 'group' ? GROUP_LABEL_LINK_CLEARANCE : 0;
+      if (segmentRectDistance(s.segment, label.bounds!) < s.stroke / 2 + margin - EPS) hit(s.link.id);
     }
   }
   collinearSweep(routed, (a, b, overlap) => {

@@ -64,7 +64,8 @@ drew it. Network diagrams first; software architecture and electrical panels nex
 | Quantity | Value | Origin |
 |---|---|---|
 | Port pitch on a side | max(12 px, rendered pill extent along the side + 4 px) | measured pill geometry; JPEG orientation |
-| Group padding | 12 px beyond node bodies and named port pills, including pill half stroke | maintainer M1 visual review |
+| Group padding | 20 px beyond node bodies and named port pills, including pill half stroke | maintainer M1 visual review (12 → 20, 2026-09-11) |
+| Group title link-margin | 8 px around the measured title, link-free: labels keep it from reserved link geometry, routing treats it as an obstacle, G3 fails a segment inside it | maintainer M1 visual review, 2026-09-11 |
 | Node minimum | 50 × 35 px | d3-fd |
 | Port pill | 24 × 10 px, r 3 | d3-fd |
 | Node corner radius | 8 px; group 10 px | d3-fd |
