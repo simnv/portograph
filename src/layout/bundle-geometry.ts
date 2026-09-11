@@ -6,6 +6,7 @@ import { findPort } from './row-paths.js';
 import { portId } from './skeleton-graph.js';
 import { fitRegionGroup, bottom, right } from './regions.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
+import { rowGap } from './sides-two.js';
 
 export const MEMBER_GAP = 16;
 export const MIN_STEM = 15;
@@ -108,13 +109,34 @@ export function prepareBundleGeometry(model: LayoutModel): void {
       && !model.barDrops.some(drop => bundle.members.includes(drop.link) && drop.barCross.length);
     const spacing = Math.max(q * (inverted || freeBarStar ? 2 : 1), ...list.flatMap(m => [model.nodes[m.a.ref.node]!.sidePitch![m.a.side!]!, model.nodes[m.b.ref.node]!.sidePitch![m.b.side!]!]));
     for (const item of list) for (const p of [item.a, item.b]) model.nodes[p.ref.node]!.sidePitch![p.side!] = spacing;
-    const start = Math.max(lower ?? -Infinity, ...bundle.nodes.map(id => model.nodes[id]!.bounds![tangent] + 10 + spacing / 2));
+    const commonStart = Math.max(lower ?? -Infinity, ...bundle.nodes.map(id => model.nodes[id]!.bounds![tangent] + 10 + spacing / 2));
     for (const end of ['a', 'b'] as const) {
       const far = end === 'a' ? 'b' : 'a';
       const ordered = [...list].sort((a, b) => a[end].engineOrder! - b[end].engineOrder! || a[far].engineOrder! - b[far].engineOrder! || a.link.sourceIndex - b.link.sourceIndex);
       const ports = [...new Set(ordered.map(m => m[end]))];
-      ports.forEach(port => set(port, start + ordered.findIndex(m => m[end] === port) * spacing));
       const node = model.nodes[ports[0]!.ref.node]!, dim = tangent === 'x' ? 'width' : 'height';
+      let start = commonStart;
+      if (tangent === 'x') {
+        const group = model.groups[model.document.nodes[node.id]!.group]!;
+        let limit = Infinity;
+        for (const id of group.rowOrder ?? []) {
+          const sibling = model.nodes[id]!;
+          if (id !== node.id && sibling.bounds!.x > node.bounds!.x
+            && Math.min(bottom(node.bounds!), bottom(sibling.bounds!)) > Math.max(node.bounds!.y, sibling.bounds!.y)) {
+            limit = Math.min(limit, sibling.bounds!.x - rowGap(model, node.id, id));
+          }
+        }
+        for (const lane of model.lanes) if (lane.tier === group.tier && lane.x > group.bounds!.x) {
+          limit = Math.min(limit, lane.bounds.x - 12);
+        }
+        // Alignment is optional; capacity and immutable lanes are not. Leave a bundle bent when
+        // projecting a distant peer's x would grow this node across a sibling or reserved lane.
+        const sideCount = node.ports.filter(port => port.side === ports[0]!.side).length;
+        if (start + (sideCount - 1) * spacing + 10 + spacing / 2 > limit) {
+          start = node.bounds!.x + 10 + spacing / 2;
+        }
+      }
+      ports.forEach(port => set(port, start + ordered.findIndex(m => m[end] === port) * spacing));
       node.bounds![dim] = Math.max(node.bounds![dim], start + (list.length - 1) * spacing + 10 + spacing / 2 - node.bounds![tangent]);
       node.size![dim] = node.bounds![dim];
     }

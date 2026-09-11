@@ -9,7 +9,9 @@ main(process.argv.slice(2)).then(
     process.exitCode = code;
   },
   (error) => {
+    // main() returns 2 for every input error it recognises, so anything that escapes it is the
+    // tool failing, not the document: a missing build, an unwritable path, an internal bug.
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-    process.exitCode = 2;
+    process.exitCode = 3;
   },
 );

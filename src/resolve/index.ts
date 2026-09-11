@@ -66,9 +66,14 @@ function validateExpansion(model: LayoutModel): void {
     if (link.from.group !== undefined) for (const id of from) counts.set(id, counts.get(id)! + to.length);
     if (link.to.group !== undefined) for (const id of to) counts.set(id, counts.get(id)! + from.length);
   }
-  if (linkCount > 10 * counts.size) report(model, 'LINK_LIMIT', 'Expanded links must not exceed 10 times the node count', []);
+  // The same work bound as the parser, restated after expansion (ADR-0006). A Cartesian endpoint
+  // can cross it where the authored counts did not, and it warns for the same reason: it bounds
+  // work, it does not define a legal document. Only the node count refuses without --force.
+  if (linkCount > 10 * counts.size) {
+    report(model, 'LINK_LIMIT', `Expanded links (${linkCount}) exceed 10 times the node count; continuing best effort`, [], 'warning');
+  }
   for (const [id, count] of counts) if (count > 20) {
-    report(model, 'PORT_LIMIT', `Node ${id} must not exceed 20 ports, including generated anonymous ports`, [{ kind: 'node', id }]);
+    report(model, 'PORT_LIMIT', `Node ${id} has ${count} ports after expansion, above the 20 that bound work; continuing best effort`, [{ kind: 'node', id }], 'warning');
   }
   stopOnErrors(model);
 }

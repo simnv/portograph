@@ -210,7 +210,7 @@ export function validateLanes(model: LayoutModel): void {
     const extent = laneExtent(model, lane.tier);
     if (lane.bounds.y !== extent.y || lane.bounds.height !== extent.height) throw new Error('Lane extent contradicts tier band');
     const group = model.groups[lane.group]!;
-    if (lane.side === 'left' ? lane.x >= group.bounds!.x : lane.x <= right(group.bounds!)) throw new Error('Lane side contradicts its group');
+    if (lane.side === 'left' ? lane.x >= group.bounds!.x : lane.x <= right(group.bounds!)) throw new Error(`Lane side contradicts its group: ${lane.id} / ${group.id}`);
     for (const other of Object.values(model.groups).filter(group => group.tier === lane.tier)) {
       const box = occupied(model, other);
       if (box.x < right(lane.bounds) - 1e-6 && right(box) > lane.bounds.x + 1e-6) throw new Error(`Lane ${lane.id} crosses occupied group ${other.id}`);

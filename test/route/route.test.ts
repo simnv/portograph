@@ -276,7 +276,7 @@ links: [[a.p, b.p], [m.p, c.p], [m.q, c.q], [m.r, b2.p]]`);
   it('rejects router output that misses a checkpoint or stops short, and keeps the input model', async () => {
     const before = await throughBands(irregular);
     const snapshot = JSON.stringify(before);
-    const truncate = (points: Point[]): Point[] => points.slice(0, Math.max(2, points.length - 1));
+    const truncate = (points: Point[]): Point[] => points.slice(0, -1);
     await expect(route(before, { createAttempt: forgingAttempt(truncate) })).rejects.toThrow(/does not meet its reserved endpoints|checkpoint/);
     expect(JSON.stringify(before)).toBe(snapshot);
     // A detour that misses the required outward checkpoint is rejected before anything is published.
@@ -288,22 +288,22 @@ links: [[a.p, b.p], [m.p, c.p], [m.q, c.q], [m.r, b2.p]]`);
     expect(JSON.stringify(before)).toBe(snapshot);
   });
 
-  it('rejects a published route that enters a reservation it does not own', async () => {
-    const model = await routed(irregular);
-    const band = model.labelBands.find(item => item.group === 'low')!;
+  it('rejects a published route through its own endpoint group label', async () => {
+    const model = await routed(`portograph: 2
+groups: {up: {tier: 0}, low: {tier: 1}}
+nodes: {a: {group: up}, b: {group: low}}
+links: [[a, b]]`);
     const forged = JSON.parse(JSON.stringify(model)) as LayoutModel;
+    const label = model.labels.find(item => item.role === 'group' && item.owner.kind === 'group' && item.owner.id === 'low')!;
     const link = forged.links[0]!, segments = link.path!.segments;
-    const anchor = segments.at(-1)!.to;
-    // Drop straight from the lane exit to the anchor, cutting across the lower group's label band.
-    const exit = segments.reduce((last, segment, index) => segment.lane !== undefined ? index : last, -1);
-    const from = segments[exit]!.to;
-    expect(from.x).toBe(anchor.x);
-    segments.splice(exit + 1, segments.length, { from, to: anchor, owner: { ...link.owner } });
-    expect(band.bounds.y).toBeGreaterThan(from.y);
-    expect(reservationConflicts(forged).map(item => item.reservation)).toContain(band.id);
+    const from = segments[0]!.from, to = segments.at(-1)!.to;
+    const x = label.bounds!.x + label.bounds!.width / 2;
+    const y = label.bounds!.y + label.bounds!.height / 2;
+    const points = [from, { x: from.x, y }, { x, y }, { x, y: to.y - 15 },
+      { x: to.x, y: to.y - 15 }, to];
+    link.path!.segments = points.slice(1).map((point, i) => ({ from: points[i]!, to: point, owner: { ...link.owner } }));
+    expect(reservationConflicts(forged).map(item => item.reservation)).toContain(label.id);
     expect(() => restoreLayoutModel(JSON.stringify(forged))).toThrow(/enters reserved/);
-    // Where the route goes is decided before what a derived mark says about it: a wrong stub mark
-    // on the same forgery must not mask the reservation it entered.
     link.stubCandidate = true;
     expect(() => restoreLayoutModel(JSON.stringify(forged))).toThrow(/enters reserved/);
   });
@@ -341,10 +341,12 @@ links: [[a.p, b.p], [m.p, c.p], [m.q, c.q], [m.r, b2.p]]`);
         // Overshoot the turn, come part of the way back, then finish: no pair is an exact reversal,
         // and `drift` puts the return leg a fraction off the line it retraces.
         const segments = copy.links[0]!.path!.segments;
-        const at = segments.findIndex(segment => segment.lane === undefined && Math.abs(segment.to.x - segment.from.x) > 20);
-        const gap = segments[at]!, step = Math.sign(gap.to.x - gap.from.x) * 10;
-        const over = { x: gap.to.x + step, y: gap.to.y + drift };
-        const back = { x: gap.from.x + step / 2, y: gap.to.y + 2 * drift };
+        const at = 0; // The first gap is now straight and may already carry its approach lane tag.
+        const gap = segments[at]!, vertical = gap.from.x === gap.to.x;
+        const along = vertical ? 'y' : 'x', across = vertical ? 'x' : 'y';
+        const step = Math.sign(gap.to[along] - gap.from[along]) * 10;
+        const over = { ...gap.to, [along]: gap.to[along] + step, [across]: gap.to[across] + drift };
+        const back = { ...gap.from, [along]: gap.from[along] + step / 2, [across]: gap.to[across] + 2 * drift };
         segments.splice(at, 1, { ...gap, to: over }, { ...gap, from: over, to: back }, { ...gap, from: back });
       })).toThrow(/retraces itself/);
     }

@@ -1,6 +1,7 @@
 import type { LayoutModel } from '../model/layout.js';
 import { createBrowserElkFactory, elkDeadlineMs, ElkDeadlineError, runElkAttempt, systemElkClock,
   type CreateElkAttempt, type ElkClock } from './elk-worker.js';
+import { UNBOUNDED_BUDGET, type Budget } from '../pipeline/budget.js';
 import { buildSkeletonGraph } from './skeleton-graph.js';
 import { placeFlanksAndPeers, readSkeleton, rebuildBands, stackBands, validateSkeletonBands } from './skeleton-geometry.js';
 export { buildSkeletonGraph } from './skeleton-graph.js';
@@ -9,6 +10,11 @@ export interface SkeletonOptions {
   createAttempt?: CreateElkAttempt;
   clock?: ElkClock;
   layoutBudgetMs?: number;
+  /**
+   * The command's shared remainder. Partitioning and every fallback band draw from it, so a
+   * sequence of legal attempts cannot add up to more than the command was given (ADR-0006).
+   */
+  budget?: Budget;
 }
 export class SkeletonError extends Error {
   constructor(message: string) { super(message); this.name = 'SkeletonError'; }
@@ -20,12 +26,19 @@ export async function skeleton(model: LayoutModel, options: SkeletonOptions = {}
   if (model.stage !== 'size') throw new SkeletonError('Skeleton requires the size stage');
   const clock = options.clock ?? systemElkClock, started = clock.now();
   const createAttempt = options.createAttempt ?? createBrowserElkFactory();
-  const budget = options.layoutBudgetMs ?? elkDeadlineMs(Object.keys(model.nodes).length);
-  if (!Number.isFinite(budget) || budget <= 0) throw new SkeletonError('ELK deadline must be positive and finite');
+  const policy = options.layoutBudgetMs ?? elkDeadlineMs(Object.keys(model.nodes).length);
+  if (!Number.isFinite(policy) || policy <= 0) throw new SkeletonError('ELK deadline must be positive and finite');
+  const shared = options.budget ?? UNBOUNDED_BUDGET;
+  /** Every attempt, partitioned or fallback, takes the smaller of the policy and what is left. */
+  const attemptMs = (): number => {
+    const remaining = shared.share(policy);
+    if (remaining <= 0) throw new ElkDeadlineError(0);
+    return remaining;
+  };
   let work = copy(model);
   try {
     try {
-      const result = await runElkAttempt(buildSkeletonGraph(work), createAttempt, budget, clock);
+      const result = await runElkAttempt(buildSkeletonGraph(work), createAttempt, attemptMs(), clock);
       try {
         readSkeleton(work, result);
         rebuildBands(work, false);
@@ -47,7 +60,7 @@ export async function skeleton(model: LayoutModel, options: SkeletonOptions = {}
       const tiers = [...new Set(Object.values(work.groups).filter(group => !group.flank).map(group => group.tier!))].sort((a, b) => a - b);
       for (const tier of tiers) {
         try {
-          const result = await runElkAttempt(buildSkeletonGraph(work, tier), createAttempt, budget, clock);
+          const result = await runElkAttempt(buildSkeletonGraph(work, tier), createAttempt, attemptMs(), clock);
           readSkeleton(work, result, tier);
           // Other bands may still be unplaced. Validate this band's output independently.
           const groups = Object.values(work.groups).filter(group => !group.flank && group.tier === tier);

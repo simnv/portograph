@@ -44,13 +44,13 @@ const yaml = [
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   let browser;
   try {
-    browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' });
+    browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) });
     const page = await browser.newPage();
     page.on('pageerror', error => console.error('Browser script error:', error.message));
     page.on('console', message => { if (message.type() === 'error') console.error('Browser console:', message.text()); });
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     await page.waitForFunction(() => globalThis.portographEsm !== undefined);
-    const result = await page.evaluate(async source => {
+    const result = await page.evaluate(async ({ source, golden }) => {
       const placedWith = async api => {
         const model = api.sizeNodes(api.sidesOne(api.resolve(api.parse(source))));
         await api.skeleton(model, { createAttempt: api.createBrowserElkFactory('/portograph-elk-worker.js') });
@@ -68,6 +68,16 @@ const yaml = [
         };
       };
       for (const [mode, api] of [['UMD', globalThis.portograph], ['ES', globalThis.portographEsm]]) {
+        const parsed = api.parseWithDiagnostics(golden);
+        if (!parsed.ok) throw new Error('Golden must parse');
+        const final = await api.layout(parsed.document, { diagnostics: parsed.diagnostics,
+          createElkAttempt: api.createBrowserElkFactory('/portograph-elk-worker.js'),
+          createRouteAttempt: api.createBrowserRouteFactory(), budget: api.createBudget(30000) });
+        const report = api.score(final).snapshot;
+        const restored = api.restoreFinalLayout(api.serializeLayoutModel(final));
+        out[mode + 'FullPipeline'] = report.passed && report.metrics.crossings.count === 0
+          && final.links.length === 26 && api.render(restored) === api.render(final);
+        out[mode + 'Q'] = report.Q;
         const placed = await placedWith(api);
         out[mode + 'Remainder'] = api.routeRemainders(placed);
         // Two diagrams at once share one worker each; each loads its own WASM exactly once.
@@ -92,7 +102,8 @@ const yaml = [
       out.elapsedMs = performance.now() - started;
       out.created = created; out.terminated = terminated;
       return out;
-    }, yaml);
+    }, { source: yaml, golden: readFileSync(path.resolve('goldens/m1-sip-edge.yaml'), 'utf8') });
+    assert.equal(result.UMDFullPipeline, true); assert.equal(result.ESFullPipeline, true);
     assert.deepEqual(result.UMDRemainder, ['link-1']);
     assert.deepEqual(result.ESRemainder, ['link-1']);
     assert.equal(result.UMDPassed, true); assert.equal(result.ESPassed, true);

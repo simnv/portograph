@@ -6,8 +6,10 @@
  * first-class output that `score` and the tests consume.
  */
 
-export { VERBS, EXIT, isVerb, helpText } from './cli.js';
-export type { Verb } from './cli.js';
+export { VERBS, EXIT, COMMAND_DEADLINE_MS, isVerb, helpText, parseCommand, sidecarPaths, formatDiagnostic, UsageError } from './cli.js';
+export type { Command, Verb } from './cli.js';
+export { layout, createBudget, CommandDeadlineError, UNBOUNDED_BUDGET } from './pipeline/index.js';
+export type { Budget, LayoutOptions, LayoutProgress } from './pipeline/index.js';
 export * from './model/index.js';
 export * from './text/index.js';
 export * from './geometry/index.js';
@@ -32,7 +34,7 @@ export { createWorkerElkAttempt, createBrowserElkFactory, runElkAttempt, elkDead
 export type { ElkAttempt, CreateElkAttempt, ElkWorker, ElkClock } from './layout/elk-worker.js';
 export { sidesTwo } from './layout/sides-two.js';
 export { rebuildNodeGeometry } from './layout/node-geometry.js';
-export { freezePortTopology, restoreLayoutModel, withLayoutMutation } from './layout/mutation.js';
+export { freezePortTopology, restoreLayoutModel, restoreFinalLayout, withLayoutMutation, FINAL_STAGES } from './layout/mutation.js';
 export type { PlacementRule } from './layout/mutation.js';
 export { rows } from './layout/rows.js';
 export { rebuildRowPaths, expectedRowPath, straightCorridorClear, facingPair, rowPathCandidate, STRAIGHT_PATH_CLEARANCE } from './layout/row-paths.js';

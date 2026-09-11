@@ -8,6 +8,7 @@ import { moveGroup } from './skeleton-geometry.js';
 import { rowGap } from './sides-two.js';
 import { withLayoutMutation } from './mutation.js';
 import { fitRegionGroup, placementWarning, rebuildRegions, right } from './regions.js';
+import { EPS } from '../score/geometry.js';
 
 export interface CentreBudget { remaining: number; passes: number }
 export function createCentreBudget(): CentreBudget { return { remaining: 8, passes: 0 }; }
@@ -35,16 +36,36 @@ function shiftNode(node: LayoutNode, dx: number): void {
   node.bounds!.x += dx;
   for (const port of node.ports) port.anchor!.x += dx;
 }
-/** Keep compatible targets in engine order; every other port retains a legal pitch slot. */
-function alignSide(node: LayoutNode, side: Side, targets: Map<string, number>): Set<string> {
+interface WideningLimit { low: number; high: number }
+
+/** Widen into free row space only; stacked siblings do not constrain horizontal growth. */
+function siblingLimit(model: LayoutModel, group: LayoutGroup, node: LayoutNode): WideningLimit {
+  const limit = { low: -Infinity, high: Infinity }, box = node.bounds!, order = group.rowOrder!;
+  const index = order.indexOf(node.id);
+  for (const [otherIndex, id] of order.entries()) {
+    if (id === node.id) continue;
+    const other = model.nodes[id]!.bounds!;
+    if (Math.min(box.y + box.height, other.y + other.height) <= Math.max(box.y, other.y) + EPS) continue;
+    if (otherIndex < index) limit.low = Math.max(limit.low, right(other) + rowGap(model, id, node.id));
+    else limit.high = Math.min(limit.high, other.x - rowGap(model, node.id, id));
+  }
+  return limit;
+}
+
+/** Keep compatible targets that fit between siblings; other ports retain their legal slots. */
+function alignSide(node: LayoutNode, side: Side, targets: Map<string, number>, limit: WideningLimit): Set<string> {
   const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
   const pitch = node.sidePitch![side]!, kept: { index: number; x: number; key: string }[] = [];
+  const box = node.bounds!, oldRight = right(box);
+  if (box.x < limit.low - EPS || oldRight > limit.high + EPS) return new Set();
   for (const [index, port] of ports.entries()) {
     const key = portId(port.ref), x = targets.get(key), last = kept[kept.length - 1];
+    if (x !== undefined && (x - index * pitch - 10 - pitch / 2 < limit.low - EPS
+      || x + (ports.length - 1 - index) * pitch + 10 + pitch / 2 > limit.high + EPS)) continue;
     if (x !== undefined && (!last || x - last.x >= (index - last.index) * pitch)) kept.push({ index, x, key });
   }
   if (!kept.length) return new Set();
-  const box = node.bounds!, oldRight = right(box), first = kept[0]!, last = kept[kept.length - 1]!;
+  const first = kept[0]!, last = kept[kept.length - 1]!;
   box.x = Math.min(box.x, first.x - first.index * pitch - 10 - pitch / 2);
   box.width = Math.max(oldRight, last.x + (ports.length - 1 - last.index) * pitch + 10 + pitch / 2) - box.x;
   node.size!.width = box.width;
@@ -116,9 +137,20 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
           if (!wanted.has(child)) wanted.set(child, feed.parent.anchor!.x);
           else if (wanted.get(child) !== feed.parent.anchor!.x) unresolved.add(id);
         }
+        const aligned = new Set<string>();
         for (const nodeId of group.rowOrder!) {
           const node = model.nodes[nodeId]!;
-          for (const side of ['top', 'bottom'] as const) alignSide(node, side, wanted);
+          for (const side of ['top', 'bottom'] as const) {
+            for (const key of alignSide(node, side, wanted, siblingLimit(model, group, node))) aligned.add(key);
+          }
+        }
+        for (const feed of own) {
+          const key = portId(feed.child.ref);
+          if (wanted.has(key) && !aligned.has(key)) {
+            unresolved.add(id);
+            placementWarning(model, 'CENTRE_ALIGNMENT_INFEASIBLE',
+              `${feed.link} cannot align within its child's available row span; routing completes it.`, [feed.link]);
+          }
         }
         for (let i = 1; i < group.rowOrder!.length; i++) {
           const a = model.nodes[group.rowOrder![i - 1]!]!, b = model.nodes[group.rowOrder![i]!]!;

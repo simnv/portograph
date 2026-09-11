@@ -233,11 +233,28 @@ describe('parse diagnostics', () => {
     expect(doc.css).toContain('stroke: blue');
   });
 
-  it('accepts resource-boundary diagrams and keeps force from bypassing port/link bounds', () => {
+  it('accepts resource-boundary diagrams and warns without refusing beyond the work bounds', () => {
     const nodes = Object.fromEntries(Array.from({ length: 1000 }, (_, i) => [`n${i}`, { group: 'g' }]));
     expect(parseWithDiagnostics(source({ nodes })).ok).toBe(true);
     expect(parseWithDiagnostics(source({ nodes: { a: { group: 'g' }, b: { group: 'g' } }, links: Array.from({ length: 20 }, () => ['a', 'b']) })).ok).toBe(true);
-    expect(parseWithDiagnostics(source({ links: Array.from({ length: 21 }, () => ['a', 'b']) }), { force: true }).ok).toBe(false);
+    // ADR-0006: links, ports and degree bound work. Beyond them the tool warns and continues best
+    // effort, so a large diagram reaches layout instead of being refused at the door.
+    const manyLinks = parseWithDiagnostics(source({ links: Array.from({ length: 21 }, () => ['a', 'b']) }));
+    expect(manyLinks.ok).toBe(true);
+    expect(manyLinks.diagnostics.filter(d => d.code === 'LINK_LIMIT'))
+      .toEqual([{ code: 'LINK_LIMIT', path: '$.links', severity: 'warning', stage: 'model',
+        message: 'Links (21) exceed 10 times the node count; continuing best effort' }]);
+    const manyPorts = parseWithDiagnostics(source({
+      nodes: { a: { group: 'g', ports: Array.from({ length: 21 }, (_, i) => `p${i}`) }, b: { group: 'g' } },
+    }));
+    expect(manyPorts.ok).toBe(true);
+    expect(manyPorts.diagnostics.filter(d => d.code === 'PORT_LIMIT').map(d => [d.severity, d.path]))
+      .toEqual([['warning', '$.nodes.a.ports']]);
+    // Only the node count still refuses, and only without --force.
+    const manyNodes = Object.fromEntries(Array.from({ length: 1001 }, (_, i) => [`n${i}`, { group: 'g' }]));
+    expect(parseWithDiagnostics(source({ nodes: manyNodes })).ok).toBe(false);
+    expect(codes(source({ nodes: manyNodes }))).toContain('NODE_LIMIT');
+    expect(parseWithDiagnostics(source({ nodes: manyNodes }), { force: true }).ok).toBe(true);
   });
 
   it('resolves YAML merge aliases without adding defaults as document fields', () => {

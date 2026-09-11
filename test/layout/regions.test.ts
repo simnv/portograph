@@ -119,7 +119,7 @@ links: [[a.p, c.p], [a.q, c.q], [a.r, c.r]]`;
     const input = stageInput(await placed(yaml), draft => {
       const a = draft.nodes.a!, b = draft.nodes.b!;
       a.bounds!.x = 0; a.bounds!.width = 220; a.size!.width = 220;
-      a.ports.forEach((port, index) => { port.anchor!.x = 120 + index * 14; });
+      a.ports.forEach((port, index) => { port.anchor!.x = 120 + index * a.sidePitch!.bottom!; });
       b.bounds!.x = 112;
       for (const id of ['up', 'mid']) { const box = union(draft.groups[id]!.nodes.map(id => draft.nodes[id]!.bounds!)); draft.groups[id]!.bounds = { x: box.x - 12, y: box.y - 12, width: box.width + 24, height: box.height + 24 }; }
     });
@@ -204,7 +204,7 @@ links: [[b.p, a.q], [b.q, a.p]]`;
       rebuildNodeGeometry(draft, ['peer'], 'from-slots');
       draft.groups['tier-group']!.bounds!.height = height + 24;
     });
-    expect(input.nodes.peer!.sidePitch!.left).toBe(24); expect(input.nodes.flank!.sidePitch!.right).toBe(14);
+    expect(input.nodes.peer!.sidePitch!.left).toBe(24); expect(input.nodes.flank!.sidePitch!.right).toBe(17.5);
     const result = flanks(lanes(rows(input)));
     for (const [id, side] of [['peer', 'left'], ['flank', 'right']] as const) {
       expect(result.nodes[id]!.sidePitch![side]).toBe(24); expect(result.nodes[id]!.bounds!.height).toBeGreaterThanOrEqual(92);

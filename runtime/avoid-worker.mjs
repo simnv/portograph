@@ -37,6 +37,38 @@ export function loadAvoid(moduleUrl, wasmUrl, importModule = specifier => import
 /** All directions; libavoid's ConnDirFlags are top 1, bottom 2, left 4, right 8. */
 const ALL_DIRECTIONS = 15;
 
+/** Exact straight visibility against the already expanded obstacle set. */
+function directRoute(batch, connector) {
+  const endpoint = value => {
+    if (value.kind === 'point') return { x: value.x, y: value.y, directions: ALL_DIRECTIONS };
+    return batch.shapes.find(shape => shape.id === value.shape)?.pins?.find(pin => pin.classId === value.classId);
+  };
+  const a = endpoint(connector.from), b = endpoint(connector.to);
+  if (!a || !b || (a.x !== b.x && a.y !== b.y) || (a.x === b.x && a.y === b.y)) return;
+  const direction = a.x === b.x ? (b.y > a.y ? 2 : 1) : (b.x > a.x ? 8 : 4);
+  const opposite = ({ 1: 2, 2: 1, 4: 8, 8: 4 })[direction];
+  if (!(a.directions & direction) || !(b.directions & opposite)) return;
+  const vertical = a.x === b.x, axis = vertical ? 'y' : 'x', cross = vertical ? 'x' : 'y';
+  const sign = b[axis] > a[axis] ? 1 : -1;
+  let cursor = 0;
+  for (const checkpoint of connector.checkpoints || []) {
+    const distance = (checkpoint[axis] - a[axis]) * sign;
+    if (checkpoint[cross] !== a[cross] || distance < cursor || distance > (b[axis] - a[axis]) * sign
+      || !((checkpoint.arrival ?? ALL_DIRECTIONS) & opposite)
+      || !((checkpoint.departure ?? ALL_DIRECTIONS) & direction)) return;
+    cursor = distance;
+  }
+  for (const shape of batch.shapes) {
+    // A monotone outward segment can leave its source and enter its target, but no foreign shape.
+    if (connector.from.kind === 'pin' && shape.id === connector.from.shape) continue;
+    if (connector.to.kind === 'pin' && shape.id === connector.to.shape) continue;
+    const box = shape.bounds;
+    if (Math.max(a.x, b.x) >= box.x && Math.min(a.x, b.x) <= box.x + box.width
+      && Math.max(a.y, b.y) >= box.y && Math.min(a.y, b.y) <= box.y + box.height) return;
+  }
+  return [{ x: a.x, y: a.y }, { x: b.x, y: b.y }];
+}
+
 /**
  * Route one batch. Every shape, pin, endpoint and checkpoint is given by the host in absolute
  * coordinates; obstacles already carry their clearance, so the shape buffer stays at 0.
@@ -76,24 +108,29 @@ export function routeBatch(Avoid, batch) {
       if (shape === undefined) throw new Error(`Connector endpoint references unknown obstacle ${value.shape}`);
       return track(new Avoid.ConnEnd(shape, value.classId));
     };
-    const connectors = batch.connectors.map(connector => {
-      const ref = new Avoid.ConnRef(router, endpoint(connector.from), endpoint(connector.to));
-      const checkpoints = connector.checkpoints || [];
-      if (checkpoints.length) {
-        const vector = track(new Avoid.CheckpointVector());
-        for (const checkpoint of checkpoints) {
-          vector.push_back(track(new Avoid.Checkpoint(point(checkpoint.x, checkpoint.y),
-            checkpoint.arrival === undefined ? ALL_DIRECTIONS : checkpoint.arrival,
-            checkpoint.departure === undefined ? ALL_DIRECTIONS : checkpoint.departure)));
-        }
-        ref.setRoutingCheckpoints(vector);
+    const setCheckpoints = (ref, checkpoints) => {
+      const vector = track(new Avoid.CheckpointVector());
+      for (const checkpoint of checkpoints) {
+        vector.push_back(track(new Avoid.Checkpoint(point(checkpoint.x, checkpoint.y),
+          checkpoint.arrival === undefined ? ALL_DIRECTIONS : checkpoint.arrival,
+          checkpoint.departure === undefined ? ALL_DIRECTIONS : checkpoint.departure)));
       }
-      return { id: connector.id, ref };
+      ref.setRoutingCheckpoints(vector);
+    };
+    const connectors = batch.connectors.map(connector => {
+      const direct = directRoute(batch, connector);
+      const ref = new Avoid.ConnRef(router, endpoint(connector.from), endpoint(connector.to));
+      // Collinear checkpoints are already on a clear direct route. Passing them to libavoid
+      // 0.5.0-beta.5 can truncate its result at the final checkpoint. Keep this connector in
+      // the transaction, but omit redundant hints; the host still checks every requested one.
+      const checkpoints = direct ? [] : connector.checkpoints || [];
+      if (checkpoints.length) setCheckpoints(ref, checkpoints);
+      return { id: connector.id, ref, connector, checkpoints };
     });
     router.processTransaction();
     // `displayRoute()` and `at()` hand back independent native copies in this binding, so each one
     // is released here; only the copied coordinates leave the worker.
-    return connectors.map(({ id, ref }) => {
+    const extract = ({ id, ref }) => {
       const route = ref.displayRoute(), size = route.size(), points = [];
       try {
         for (let index = 0; index < size; index++) {
@@ -102,7 +139,22 @@ export function routeBatch(Avoid, batch) {
         }
       } finally { route.delete(); }
       return { connector: id, points };
-    });
+    };
+    let routes = connectors.map(extract), retry = false;
+    for (const [index, item] of connectors.entries()) {
+      const points = routes[index].points, last = points.at(-1), previous = points.at(-2);
+      const checkpoint = item.checkpoints.at(-1);
+      if (!last || !previous || !checkpoint || last.x !== checkpoint.x || last.y !== checkpoint.y) continue;
+      const continuation = directRoute(batch, { from: { kind: 'point', ...previous },
+        to: item.connector.to, checkpoints: [checkpoint] });
+      if (!continuation) continue;
+      // The same upstream defect can truncate the last straight leg of a bent route. Re-solve
+      // once without that redundant hint; never append a guessed endpoint to returned geometry.
+      setCheckpoints(item.ref, item.checkpoints.slice(0, -1));
+      retry = true;
+    }
+    if (retry) { router.processTransaction(); routes = connectors.map(extract); }
+    return routes;
   } finally {
     // Release every temporary even if one of them is already gone, so the Router itself is always
     // deleted: it owns the shapes, pins and connectors and frees them in turn.

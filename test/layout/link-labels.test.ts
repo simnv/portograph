@@ -105,7 +105,7 @@ describe('stage 9 golden', () => {
     for (const id of GATES) expect([id, report.gates[id].violations]).toEqual([id, []]);
     expect(report.counters).toMatchObject({ labelHits: 0, labelsOmitted: 0, barCross: 3, lanesUsed: 4, overlaps: 0 });
     expect(report.metrics.crossings.count).toBe(0);
-    expect(report.Q).toBeCloseTo(0.818586208746674, 12);
+    expect(report.Q).toBeCloseTo(0.8424281545245618, 12);
     expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
   }, 60000);
 });
@@ -216,7 +216,7 @@ describe('stage 9 authored labels', () => {
     expect(model.links).toEqual(routed.links);
     expect(model.labels.filter(item => item.role !== 'link')).toEqual(routed.labels);
     expect(model.canvas!.x).toBe(routed.canvas!.x);
-    expect(model.canvas!.width).toBeGreaterThan(routed.canvas!.width);
+    expect(model.canvas!.width).toBeGreaterThanOrEqual(routed.canvas!.width);
     expect(model.canvas!.x + model.canvas!.width).toBeGreaterThanOrEqual(label[0]!.bounds!.x + label[0]!.bounds!.width);
     expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
   }, 60000);
@@ -626,7 +626,7 @@ describe('stage 9 transaction', () => {
     expect(() => restoreLayoutModel(forge(draft => { draft.diagnostics.push({ stage: 'final-geometry', severity: 'warning', code: 'LINK_LABEL_OMITTED', message: 'x' }); })))
       .toThrow('Link-label diagnostics contradict measured post-route placement');
     // Clipping the label, and shrinking to the label alone, are both clipped drawn geometry.
-    expect(() => restoreLayoutModel(forge(draft => { draft.canvas = { ...draft.canvas!, width: draft.canvas!.width - 8 }; })))
+    expect(() => restoreLayoutModel(forge(draft => { draft.canvas = { ...draft.canvas!, width: draft.labels.at(-1)!.bounds!.x + draft.labels.at(-1)!.bounds!.width - draft.canvas!.x - 1 }; })))
       .toThrow('Canvas does not contain the published diagram');
     expect(() => restoreLayoutModel(forge(draft => { draft.canvas = { ...draft.labels.at(-1)!.bounds! }; })))
       .toThrow('Canvas does not contain the published diagram');

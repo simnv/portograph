@@ -11,8 +11,7 @@ Pronounced **POR-to-graf** · Портограф.
 
 ## Status
 
-**M1 implementation is in progress.** The approved YAML fixtures and TypeScript package scaffold
-are in place. Follow the [implementation map](.scratch/m1-example-diagram/map.md) for ticket status.
+**M1 implementation is in progress.** The YAML-to-SVG pipeline and CLI are implemented; final golden visual approval is pending. Follow the [implementation map](.scratch/m1-example-diagram/map.md) for ticket status.
 The repository also holds the design record, reference corpus, and prototype results below.
 These measurements use the prototype topology; the JPEG golden has different wiring:
 
@@ -66,6 +65,49 @@ links the region rules do not claim · Vite lib build + `vite-plugin-dts` · Vit
 core. Supported Node versions: `^18.18.0 || ^20.9.0 || >=22.0.0`.
 
 Run `npm ci`, then `npm run build`, `npm test`, `npm run typecheck`, and `npm run lint`.
-The core exposes the staged JSON model, font measurements and port geometry helpers.
+The core exposes `parseWithDiagnostics`, `layout`, `score`, `render`, the staged JSON model,
+font measurements and port geometry helpers.
 See [text measurement](docs/design/text-measurement.md) for font and pill conventions.
-The CLI currently exposes help and four verb stubs; end-to-end behavior is ticket 17.
+
+```sh
+node bin/portograph.mjs render goldens/m1-sip-edge.yaml --output diagram.svg
+node bin/portograph.mjs layout goldens/m1-sip-edge.yaml --output diagram.layout.json
+node bin/portograph.mjs score diagram.layout.json
+node bin/portograph.mjs render diagram.layout.json --layers routed
+node bin/portograph.mjs migrate test/fixtures/migration/legacy.yaml
+```
+
+`render --output diagram.svg` writes the SVG, `diagram.layout.json` and `diagram.score.json`
+from the same final model. Without `--output`, stdout contains only the requested artifact;
+diagnostics go to stderr. `render` accepts YAML or validated final layout JSON, regardless of file
+extension. `score` accepts final layout JSON. Options may precede or follow the one required file.
+
+Exit codes are 0 for success, 1 for a computed gate failure, 2 for input or output-file errors,
+and 3 for processing failure or the 30-second command deadline. A computed gate failure still
+writes the complete artifact set; `--allow-gate-failures` changes only its exit code. Link, port
+and degree limits warn and continue; more than 1,000 nodes requires `--force`.
+Set `PORTOGRAPH_PROGRESS=1` to see stage timings and worker startup on stderr.
+
+For Node library use:
+
+```js
+import { parseWithDiagnostics, layout, score, render } from 'portograph';
+import { createNodeElkFactory, createNodeRouteFactory } from 'portograph/node';
+
+const parsed = parseWithDiagnostics(yaml);
+if (!parsed.ok) throw new Error(JSON.stringify(parsed.diagnostics));
+const model = await layout(parsed.document, {
+  diagnostics: parsed.diagnostics,
+  createElkAttempt: createNodeElkFactory(),
+  createRouteAttempt: createNodeRouteFactory(),
+});
+const report = score(model);
+const svg = render(model);
+```
+
+The CLI enforces its deadline in a separate process, including synchronous placement and scoring;
+library calls remain portable and use the supplied worker factories and optional shared budget.
+The generated hub / wide-tier / long-transit benchmark currently reaches the 30-second deadline
+at 100, 300 and 1,000 nodes. The simple 50-link aligned case passes every gate with zero crossings;
+the high-fan scale cases remain a performance limit. Run `node scripts/scale-bench.mjs` to reproduce.
+

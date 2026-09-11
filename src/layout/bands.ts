@@ -64,13 +64,21 @@ export function routedStroke(model: LayoutModel): number {
 function strokeAllowance(model: LayoutModel): number { return routedStroke(model) / 2; }
 
 /**
+ * How far a node's routing obstacle reaches beyond its drawn rectangle. This is the one definition
+ * of that distance; `route/obstacles` builds the rectangle itself from the same constants, and
+ * placement reserves against it before any path exists.
+ */
+export function nodeObstacleReach(model: LayoutModel, node: LayoutModel['nodes'][string]): number {
+  return GROUP_LABEL_GEOMETRY.nodeClearance
+    + ((node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node) + routedStroke(model)) / 2;
+}
+
+/**
  * Outward distance of the ordinary checkpoint at a node. It is the 15 px stem, unless that node's
  * stroke-expanded routing obstacle already reaches further; then it clears that obstacle instead.
  */
 export function stemReach(model: LayoutModel, node: LayoutModel['nodes'][string]): number {
-  const expanded = GROUP_LABEL_GEOMETRY.nodeClearance
-    + ((node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node) + routedStroke(model)) / 2;
-  return Math.max(GROUP_LABEL_GEOMETRY.routerStem, expanded + GROUP_LABEL_GEOMETRY.entryTolerance);
+  return Math.max(GROUP_LABEL_GEOMETRY.routerStem, nodeObstacleReach(model, node) + GROUP_LABEL_GEOMETRY.entryTolerance);
 }
 
 /**
@@ -99,7 +107,7 @@ export function routerEntryPoints(model: LayoutModel): RouterEntryPoint[] {
   return result;
 }
 
-/** A required entry point may not sit inside the band obstacle a routed stroke has to avoid. */
+/** Keep required entry points below the band, reserving clearance for any valid label position. */
 export function bandEntryConflicts(model: LayoutModel, entries = routerEntryPoints(model)): { band: LabelBand; entry: RouterEntryPoint }[] {
   const allowance = strokeAllowance(model), result: { band: LabelBand; entry: RouterEntryPoint }[] = [];
   for (const entry of entries) for (const band of model.labelBands) {
@@ -388,10 +396,10 @@ export function validateGroupLabelBands(model: LayoutModel): void {
       if (model.nodes[nodeId]!.bounds!.y < bottom(band.bounds) + band.clearance - EPS) throw new Error(`Group ${band.group} does not retain its reserved clearance below its label band`);
     }
   }
-  // Stage 8 keeps these entry points; owning the group does not waive its own band obstacle.
+  // Stage 8 keeps these entry points and the below-band clearance reserved during placement.
   for (const { band, entry } of bandEntryConflicts(model, entries)) {
     if (band.group !== model.document.nodes[entry.node]!.group) continue;
-    throw new Error(`Reserved ${entry.kind} entry point of ${entry.link} lies inside the ${band.group} label band obstacle`);
+    throw new Error(`Reserved ${entry.kind} entry point of ${entry.link} lies inside the ${band.group} label band reservation`);
   }
   const retained = model.labels.filter(label => label.role !== 'group');
   const expected = { ...model, labels: retained };

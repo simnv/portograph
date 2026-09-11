@@ -115,12 +115,14 @@ links: [[a.p, b.p], [a.p, b.q]]`);
     }
   });
 
-  it('keeps a group label band as a whole obstacle and gives no group owner a way through it', async () => {
+  it('protects the measured group label for every link while leaving unused band space open', async () => {
     const model = await throughBands(twoTier);
     const band = model.labelBands.find(item => item.group === 'low')!;
-    const obstacle = routeObstacles(model).find(item => item.id === band.id)!;
-    expect(obstacle.bounds).toEqual({ x: band.bounds.x - 0.75, y: band.bounds.y - 0.75,
-      width: band.bounds.width + 1.5, height: band.bounds.height + 1.5 });
+    const label = model.labels.find(item => item.role === 'group' && item.owner.kind === 'group' && item.owner.id === 'low')!;
+    const obstacle = routeObstacles(model).find(item => item.id === `label:${label.id}`)!;
+    expect(obstacle.bounds).toEqual({ x: label.bounds!.x - 0.75, y: label.bounds!.y - 0.75,
+      width: label.bounds!.width + 1.5, height: label.bounds!.height + 1.5 });
+    expect(routeObstacles(model).some(item => item.id === band.id)).toBe(false);
     expect(obstacle.consumers).toEqual([]);
   });
 
@@ -136,10 +138,10 @@ links: [[a.p, b.p], [a.p, b.q]]`);
     for (const obstacle of plan.obstacles.filter(item => !excluded.has(item.id))) {
       expect(request.shapes.some(shape => contains(shape.bounds, obstacle.bounds))).toBe(true);
     }
-    // The pill and its label are inside the node obstacle; the group label is inside its band.
+    // The pill and its label are inside the node obstacle; the group label remains separate.
     const kept = new Set(request.shapes.map(shape => shape.id));
-    expect(kept.has('label:label:group:low')).toBe(false);
-    expect(kept.has('label-band:low')).toBe(true);
+    expect(kept.has('label:label:group:low')).toBe(true);
+    expect(kept.has('label-band:low')).toBe(false);
   });
 
   it('never drops an attachment shape and reports a container that would swallow one', () => {

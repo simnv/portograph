@@ -208,13 +208,18 @@ engine order, ports beside a levelled port keep pitch spacing, and ports between
 ports spread evenly. Rows cannot reorder ports, so an engine-inverted bundle levels one member
 here and the rest waits for stage 7e.
 
+Known bundle membership reserves its minimum stroke-aware side pitch during phase-two sizing,
+before rows and lanes. The largest requirement propagates across sides that participate in the
+same bundle. Stage 7e can then order those ports without discovering a mandatory capacity increase
+inside an already allocated lane corridor.
+
 A **row path** is a derived claim, not a callback edit. The transaction rebuilds every row
 candidate from final anchors after each committed geometry change, removing the old path before
 recreating it. A candidate is a routed, non-bundle, non-group-link link with an automatic,
 `straight` or `orthogonal` route whose frozen sides face across a same-tier pair of row nodes.
 It is pinned when the endpoints are level, the length is at least one 15 px stem and below
 2 × the larger node dimension, and the corridor clears foreign geometry at gate clearance:
-10 px stroke-aware to foreign nodes, no contact with foreign pills, labels, lanes, label bands,
+10 px stroke-aware to foreign nodes, no contact with foreign pills, labels, lanes,
 bundle reservations or obstacles, and 10 px from other fixed segments. An automatic candidate
 records `technique: straight` while pinned and `orthogonal` otherwise; authored routes keep
 theirs, and a non-candidate automatic link keeps the resolver's unset technique until its own
@@ -385,6 +390,13 @@ identity, side, authored precedence and floors reject before replay can repair t
 replay is reusable by stage 7f and consumes one caller-owned eight-pass centering budget. The final
 scorer still requires every complete path; a stage-11 subset score is not a full golden result.
 
+For facing, non-inverted members whose endpoint tracks differ, each bend receives a distinct
+member-pitch row. Members moving toward smaller tangent coordinates turn in increasing source
+order; those moving toward larger coordinates turn in decreasing order. This avoids bend contact
+and coincident lateral runs even when unrelated ports create unequal endpoint spacing. Optional
+projection onto a common endpoint block is declined if its full side capacity would cross a sibling
+or immutable lane; local slots remain valid and the bundle bends instead.
+
 ### 7f — group label bands
 
 For every group: band height = label height + 8, inside the top padding; label at the band's
@@ -397,7 +409,7 @@ Measure group labels with the shared font table at 12 px, weight 700 and `FONT_F
 retains 4 px above and below the measured text, and the label has an 8 px horizontal inset. Convert
 intersecting geometry into forbidden label-start intervals, sort by start/end/stable ID, merge, and
 choose the first free x. The stable claims are `label-band:<group-id>` and
-`label:group:<group-id>`; labels and bands are already separate router inputs, so no duplicate
+`label:group:<group-id>`; bands remain placement reservations and measured labels are router inputs, so no duplicate
 generic obstacle is added. Group fitting and bar shaping include the band above the ordinary 12 px
 node padding and retain a wider extent created by collision repair. The intervals include every
 reserved rectangle of a link: its complete path, its partially fixed lane runs and the mandatory
@@ -412,8 +424,11 @@ and pills where they are while a push carries them along. A group whose only fre
 that limit keeps its width and its left-first label, spends no centring pass, and is diagnosed
 `GROUP_LABEL_GAP_INFEASIBLE`; the unchanged final gates decide the retained geometry.
 
-**Band clearance for stage 8 entry.** Stage 8 routes only free gaps and must avoid whole label
-bands; owning the endpoint group does not waive that obstacle. Each band therefore records the
+**Band clearance for stage 8 entry.** A band reserves room for its label during placement. Stage 8
+protects the measured label bbox, including from links attached to that group, and may cross unused
+band space. Treating the entire group width as an obstacle forced ten aligned links around one
+edge, producing 80 avoidable crossings; ticket 17 corrects that earlier stage-8 interpretation.
+Each band retains the
 `clearance` it reserves between its lower edge and the group's topmost node. The reservation is the
 ordinary 12 px padding unless a top-side port carries a routed attachment, in which case it is the
 largest outward reach at those ports plus the widest routed half stroke and a 0.25 px tolerance.
@@ -424,7 +439,8 @@ routed strokes an ordinary top port reserves 16 px. The rule reads frozen inputs
 stem and `sharedRuns`, which every publication at or after stage 7e rebuilds and compares, so
 completing a remainder in stage 8 cannot retire the reservation. Publication and restore recompute
 the reservation, require the node gap, and reject any required entry point that lies inside the
-stroke-aware obstacle of its own group's band.
+stroke-aware extent of its own group's band. This conservative checkpoint reservation preserves
+room below any label position without making unused band space a routing obstacle.
 
 **Atomic rebuild after 7d/7e/7f movement.** Bar-band growth in 7d and tier-gap growth in 7e move
 the lower tier bands and their contents; neighbour pushes or centring in 7f move the affected row
@@ -477,7 +493,7 @@ Registered as obstacles, each expanded once in the adapter and never in the mode
   anchors**, so a link that shares that port can still reach it. Interior bends keep square corner
   coverage; the trimmed ends keep butt caps. A chain of 36 px or less protects nothing, which is
   the explicit limit of the trim constant;
-- **lanes**, **group label bands**, **group and node labels**, **bundle envelopes** and model
+- **lanes**, **group and node labels**, **bundle envelopes** and model
   obstacles, each expanded by the routed half stroke.
 
 A rectangle that lies wholly inside another is dropped before routing. libavoid's orthogonal
@@ -535,9 +551,18 @@ marked `stubCandidate` and warned about; M1 keeps the technique and the full rou
 provider feeds into EAC-01 and EAC-02. This is a deviation from the prototype run, where the rules
 claimed every link and libavoid was idle; the rules claim 24 of 26 here. Both really invoke
 libavoid, in one ownership batch, and the complete 26-link diagram passes G1–G8 with 0 crossings,
-0 overlaps, 0 label hits and Q 0.818586208746674 (0.8182938137778218 before ticket 16 reserved a visible wire between facing pills). Each feed leaves the datacenter group sideways,
-drops beside the full-width label band and enters its top port through the 16 px clearance stage 7f
-reserved for exactly that entry.
+0 overlaps, 0 label hits and Q 0.8424281545245618 (before link-label placement). The previous
+candidate's Q was 0.818586208746674; allowing the feeds through unused band space removes the
+avoidable detours. Node, port and group placement remains unchanged.
+
+**Collinear checkpoints.** The pinned libavoid build can truncate a straight route at its final
+checkpoint. The adapter omits redundant hints only after checking exact collinearity, direction,
+checkpoint order and the full expanded obstacle set. The connector still participates in the real
+routing transaction. If a bent route ends at its final checkpoint and a clear straight continuation
+exists to the requested port, the adapter re-solves once without that final hint. It never appends
+coordinates to a returned path. The host still checks every original checkpoint, attachment,
+reservation and stem, so a changed route that misses any requirement is rejected.
+
 
 ## Stage 9 — link labels
 

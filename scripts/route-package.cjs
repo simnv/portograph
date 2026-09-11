@@ -2,7 +2,7 @@
 // Pack, install and exercise the stage-8 router from an unrelated working directory, on this Node
 // and on the supported floor (Node 18.18). Run with: node scripts/route-package.cjs
 const { execFileSync } = require('node:child_process');
-const { mkdtempSync, writeFileSync, rmSync, existsSync } = require('node:fs');
+const { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const path = require('node:path');
 
@@ -28,7 +28,18 @@ const yaml = [
   'links: [[a.p, b.p], [m.p, c.p], [m.q, c.q]]',
 ].join('\\n');
 
+const golden = readFileSync(path.join(root, 'goldens/m1-sip-edge.yaml'), 'utf8');
 const body = `
+  const parsed = api.parseWithDiagnostics(${JSON.stringify(golden)});
+  if (!parsed.ok) throw new Error('Golden failed to parse');
+  const final = await api.layout(parsed.document, { diagnostics: parsed.diagnostics,
+    createElkAttempt: createNodeElkFactory(), createRouteAttempt: createNodeRouteFactory(),
+    budget: api.createBudget(30000) });
+  const finalReport = api.score(final).snapshot;
+  if (!finalReport.passed || finalReport.metrics.crossings.count !== 0 || final.links.length !== 26) throw new Error('Packed pipeline golden failed');
+  const restored = api.restoreFinalLayout(api.serializeLayoutModel(final));
+  if (api.render(restored) !== api.render(final)) throw new Error('Packed final JSON rendering differs');
+  console.log('packed full pipeline ' + mode + ' Q=' + finalReport.Q);
   const model = api.sizeNodes(api.sidesOne(api.resolve(api.parse('${yaml}'))));
   await api.skeleton(model, { createAttempt: createNodeElkFactory() });
   const placed = api.bands(api.bundles(api.bars(api.centre(api.flanks(api.lanes(api.rows(api.sidesTwo(model))))))));
@@ -93,6 +104,17 @@ ${assets}
     for (const file of ['consumer.mjs', 'consumer.cjs']) {
       console.log(execFileSync(runtime, [file], { cwd: temp, encoding: 'utf8', timeout: 120000 }).trim());
     }
+  }
+  const input = path.join(temp, 'golden.yaml');
+  writeFileSync(input, golden);
+  for (const runtime of [process.execPath, floor]) {
+    const installedCli = path.join(temp, 'node_modules/portograph/bin/portograph.mjs');
+    const output = path.join(temp, 'golden.svg');
+    execFileSync(runtime, [installedCli, 'render', input, '--output', output], { cwd: temp, stdio: 'pipe', timeout: 40000 });
+    const model = path.join(temp, 'golden.layout.json');
+    const restoredSvg = execFileSync(runtime, [installedCli, 'render', model], { cwd: temp, encoding: 'utf8', timeout: 40000 });
+    if (restoredSvg.trimEnd() !== readFileSync(output, 'utf8').trimEnd()) throw new Error('Packed CLI JSON renderer differs');
+    console.log('packed CLI YAML / final JSON passed on ' + execFileSync(runtime, ['--version'], { encoding: 'utf8' }).trim());
   }
   writeFileSync(path.join(temp, 'types.mts'), `import { route, type CreateRouteAttempt, type RouteOptions } from 'portograph';\nimport { createNodeRouteFactory } from 'portograph/node';\nconst factory: CreateRouteAttempt = createNodeRouteFactory();\nconst options: RouteOptions = { createAttempt: factory, routeBudgetMs: 30000 };\nvoid route; void options;\n`);
   writeFileSync(path.join(temp, 'types.cts'), `import adapter = require('portograph/node');\nconst attempt = adapter.createNodeRouteFactory()();\nattempt.worker.terminate();\n`);

@@ -3,6 +3,8 @@ import type { Rect } from '../model/geometry.js';
 import type { LayoutModel, LayoutStage, PlacementSnapshot } from '../model/layout.js';
 import { orderedNodeIds, orderedGroupIds } from '../model/model.js';
 import { resolve } from '../resolve/index.js';
+import { filterCss } from '../parse/css.js';
+import { Validation } from '../parse/validation.js';
 import { sidesOne, SIDE_TIE_ORDER } from './sides-one.js';
 import { sizeNodes } from './size.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
@@ -97,7 +99,31 @@ function nonBarHorizontalPlacement(model: LayoutModel): unknown {
       ports: node.ports.map(port => port.anchor!.x) })),
   };
 }
+/**
+ * A restored document must carry the CSS the parser would have produced, and no more.
+ *
+ * The renderer appends `document.css` after its generated geometry locks, so an author rule of the
+ * same specificity and importance wins on the properties it is allowed to change. The parser is
+ * what makes that safe: it strips every geometry-changing declaration from `css:` with a warning.
+ * A hand-written layout JSON never went through the parser, so without this check
+ * `.node-body { stroke-width: 40px !important }` reaches the SVG while `score` still measures 2 px
+ * — the drawing and the gates would describe different geometry. The check is the *same* policy,
+ * not a second one: it re-runs `filterCss` and requires it to remove nothing, so every vendor,
+ * custom and palette declaration the parser keeps is still accepted here.
+ */
+function validateDocumentCss(model: LayoutModel): void {
+  const css = model.document.css;
+  if (css === undefined) return;
+  if (typeof css !== 'string') throw new Error('Document css must be a string');
+  const validation = new Validation();
+  filterCss(css, validation);
+  if (!validation.diagnostics.length) return;
+  const codes = validation.diagnostics.map(diagnostic => diagnostic.message).join('; ');
+  throw new Error(`Document css is not normalised: ${codes}`);
+}
+
 function validateDocument(model: LayoutModel): LayoutModel {
+  validateDocumentCss(model);
   const resolved = resolve(model.document);
   same(semantics(model), semantics(resolved), 'Resolved semantics differ from document');
   same(Object.keys(model.nodes).sort(), Object.keys(resolved.nodes).sort(), 'Node membership differs from document');
@@ -352,11 +378,31 @@ export function restoreLayoutModel(json: string): LayoutModel {
   if (!model || !stages.includes(model.stage) || !model.runtime || !Array.isArray(model.runtime.stages)) throw new Error('Invalid layout model');
   if (stages.indexOf(model.stage) < stages.indexOf('sides-two')) {
     if (model.freeze) throw new Error('Premature topology freeze');
+    validateDocumentCss(model);
     resolve(model.document);
     return model;
   }
   const baseline = validateDocument(model);
   return protect(model, baseline);
+}
+
+/** The stages at which a layout is complete: stage 9 has published labels and the legend. */
+export const FINAL_STAGES: readonly LayoutStage[] = ['link-labels', 'validate', 'emit'];
+
+/**
+ * Restore a *final* layout, for `score` and `render`. It is `restoreLayoutModel` plus the one
+ * question those two need answered: is this geometry finished? A model still at `rows` or `route`
+ * has no link labels and no legend, so scoring it would report gates on a diagram that does not
+ * exist yet, and rendering it would omit labels the author wrote. Refusing here is what keeps the
+ * CLI from casting an incomplete stage into a final one.
+ */
+export function restoreFinalLayout(json: string): LayoutModel {
+  const model = restoreLayoutModel(json);
+  if (!FINAL_STAGES.includes(model.stage)) {
+    throw new Error(`Layout is at stage ${model.stage}; a final layout is one of ${FINAL_STAGES.join(', ')}`);
+  }
+  if (!model.canvas) throw new Error('A final layout requires a canvas');
+  return model;
 }
 
 const permissions: Record<PlacementRule, { move: boolean; reorder: boolean }> = {

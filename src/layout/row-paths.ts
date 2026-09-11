@@ -101,7 +101,6 @@ export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segm
   for (const bundle of model.bundles) {
     for (const zone of [bundle.rows, bundle.envelope]) if (zone && segmentRectDistance(segment, zone) < stroke / 2 - EPS) return false;
   }
-  for (const band of model.labelBands) if (segmentRectDistance(segment, band.bounds) < stroke / 2 - EPS) return false;
   for (const obstacle of model.obstacles) {
     if (ownsObstacle(obstacle.owner)) continue;
     if (segmentRectDistance(segment, obstacle.bounds) < stroke / 2 - EPS) return false;

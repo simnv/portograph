@@ -212,9 +212,11 @@ describe('corridor predicate', () => {
       ['fixed segment', m => { m.links.push({ ...m.links[0]!, id: 'other', owner: foreign, path: { owner: foreign, layer: 'routed', fixed: true, segments: [{ from: { x, y: y + 11 }, to: { x: x + 1, y: y + 11 }, owner: foreign }] } }); }],
       ['bundle envelope', m => { m.bundles.push({ id: 'bundle-x', owner: { kind: 'bundle', id: 'bundle-x' }, layer: 'routed', nodes: ['a', 'b'], members: [], envelope: box }); }],
       ['bundle rows', m => { m.bundles.push({ id: 'bundle-x', owner: { kind: 'bundle', id: 'bundle-x' }, layer: 'routed', nodes: ['a', 'b'], members: [], rows: box }); }],
-      ['label band', m => { m.labelBands.push({ id: 'band', owner: { kind: 'group', id: 'g' }, layer: 'routed', group: 'g', bounds: box, clearance: 12 }); }],
       ['obstacle', m => { m.obstacles.push({ id: 'ob', owner: { kind: 'group', id: 'g' }, layer: 'routed', bounds: box }); }],
     ];
+    const emptyBand = probe(model, m => { m.labelBands.push({ id: 'band', owner: { kind: 'group', id: 'g' },
+      layer: 'routed', group: 'g', bounds: box, clearance: 12 }); });
+    expect(straightCorridorClear(emptyBand, emptyBand.links[0]!, segment)).toBe(true);
     for (const [name, edit] of blockers) {
       const blocked = probe(model, edit);
       expect(straightCorridorClear(blocked, blocked.links[0]!, segment), name).toBe(false);

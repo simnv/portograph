@@ -40,6 +40,13 @@ export function rebuildNodeGeometry(draft: LayoutModel, nodeIds: readonly string
         const point = port.anchor;
         if (!point) throw new Error(`Missing anchor for ${id}`);
         const offset = horizontal ? point.x - box.x : point.y - box.y;
+        // Name the port when an earlier rule has left its anchor off the node: the bare range error
+        // from `portAnchor` says only that some offset is out of range, which is unusable evidence
+        // at scale, where a single stage moved one anchor among thousands.
+        if (offset < 0 || offset > length) {
+          throw new RangeError(`Anchor for ${id}.${port.ref.name ?? '#'}#${port.ref.ordinal} on ${side} is ${offset} `
+            + `along a ${length} px side; a rule moved it off its node ${JSON.stringify(box)}`);
+        }
         const expected = portAnchor(box, side, offset);
         if (Math.abs(point.x - expected.x) > 1e-6 || Math.abs(point.y - expected.y) > 1e-6) throw new Error(`Anchor is off ${id}.${side}`);
         delete port.pill;

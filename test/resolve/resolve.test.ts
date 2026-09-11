@@ -189,19 +189,29 @@ links: [["20", "3", {route: group-link}]]`);
     expect(model.links[0]?.technique).toBe('orthogonal');
   });
 
-  it('enforces the port cap after expansion without mutating authored ports', () => {
+  // ADR-0006: the expanded port and link counts bound work, exactly as the authored counts do.
+  // Beyond them resolution warns and continues best effort; neither one refuses the document.
+  it('warns about the expanded port count and still expands, without mutating authored ports', () => {
     const doc = input(Array.from({ length: 11 }, () => '[upper, lower, {route: group-link}]'));
-    expect(() => resolve(doc)).toThrow(/20 ports/);
+    const model = resolve(doc);
+    expect(model.diagnostics.filter(item => item.code === 'PORT_LIMIT').map(item => [item.severity, item.owners]))
+      .toContainEqual(['warning', [{ kind: 'node', id: 'a' }]]);
+    expect(model.diagnostics.some(item => item.code === 'PORT_LIMIT' && /22 ports after expansion/.test(item.message))).toBe(true);
     expect(doc.nodes.a?.ports).toEqual([]);
+    expect(model.nodes.a!.ports.length).toBe(22);
   });
 
-  it('enforces the link cap after repeated group-to-port expansion', () => {
+  it('warns about the expanded link count after repeated group-to-port expansion', () => {
     const doc = parse(`portograph: 2
 groups: {upper: {tier: 0}, lower: {tier: 1}}
 nodes: {a: {group: upper}, b: {group: upper}, c: {group: lower, ports: [p]}, d: {group: lower}}
 links:
 ${Array.from({ length: 21 }, () => '  - [upper, c.p]').join('\n')}`);
-    expect(() => resolve(doc)).toThrow(/10 times/);
+    const model = resolve(doc);
+    expect(model.diagnostics.filter(item => item.code === 'LINK_LIMIT'))
+      .toEqual([{ stage: 'model', severity: 'warning', code: 'LINK_LIMIT', owners: [],
+        message: 'Expanded links (42) exceed 10 times the node count; continuing best effort' }]);
+    expect(model.links.length).toBe(42);
   });
 
   it('keeps parser diagnostics outside the author document and owns the copied diagnostics', () => {

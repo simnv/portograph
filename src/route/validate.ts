@@ -21,13 +21,17 @@ const shrink = (bounds: Rect, by: number): Rect => ({
 
 /**
  * Reserved rectangles a newly routed segment may not enter. Nodes, pills, labels and fixed paths
- * are judged by the public gates; these three reservations are not, so stage 8 asserts them
- * directly. Ownership is exact: owning an endpoint group never opens a label band.
+ * are judged by the public gates; lane and bundle reservations are not, so stage 8 asserts them
+ * directly. A label band's unused space is traversable; its actual label remains protected.
  */
 function reservations(model: LayoutModel, link: LayoutLink): { id: string; bounds: Rect }[] {
   const half = routedStroke(model) / 2, result: { id: string; bounds: Rect }[] = [];
   const expand = (bounds: Rect): Rect => ({ x: bounds.x - half, y: bounds.y - half, width: bounds.width + 2 * half, height: bounds.height + 2 * half });
-  for (const band of model.labelBands) if (band.layer !== 'overlay') result.push({ id: band.id, bounds: expand(band.bounds) });
+  for (const label of model.labels) {
+    if (label.role === 'group' && !label.omitted && label.bounds && label.layer !== 'overlay') {
+      result.push({ id: label.id, bounds: expand(label.bounds) });
+    }
+  }
   for (const lane of model.lanes) {
     if (lane.layer === 'overlay') continue;
     const owner = lane.owner;

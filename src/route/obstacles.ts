@@ -165,11 +165,8 @@ export function routeObstacles(model: LayoutModel): RouteObstacle[] {
     const consumers = label.owner.kind === 'link' ? [label.owner.id] : [];
     push({ id: `label:${label.id}`, bounds: expand(label.bounds, half), consumers });
   }
-  // Owning the group does not authorize passage through its label band.
-  for (const band of model.labelBands) {
-    if (band.layer === 'overlay') continue;
-    push({ id: band.id, bounds: expand(band.bounds, half), consumers: [] });
-  }
+  // A label band reserves placement space, not a solid barrier across the whole group.
+  // Its measured label is protected above, including against the group's own attachments.
   for (const lane of model.lanes) {
     if (lane.layer === 'overlay') continue;
     const owner = lane.owner;

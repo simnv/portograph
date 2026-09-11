@@ -169,6 +169,30 @@ function crossedPaths(bundle: Bundle, list: Member[], q: number): Map<string, Pa
   return new Map(list.map(m => [m.link.id, polyline(points.get(m.link.id)!.map(world), bundle.owner)]));
 }
 
+/** Non-inverted members turn in distinct rows, including when their endpoint pitches differ. */
+function parallelPaths(bundle: Bundle, list: Member[], q: number): Map<string, PathSegment[]> {
+  const n = normal(list[0]!.a.side!), horizontal = n.x !== 0;
+  const depth = (p: Point): number => n.x * p.x + n.y * p.y;
+  const start = Math.max(...list.map(item => depth(item.a.anchor!))) + 15;
+  const end = Math.min(...list.map(item => depth(item.b.anchor!))) - 15;
+  const result = new Map<string, PathSegment[]>();
+  for (const direction of [-1, 1]) {
+    const turning = list.filter(item => Math.sign(coordinate(item.b) - coordinate(item.a)) === direction)
+      .sort((a, b) => -direction * (coordinate(a.a) - coordinate(b.a)));
+    const span = (turning.length - 1) * q;
+    if (turning.length && end - start < span - 1e-6) {
+      throw new BundleFeasibilityError('BUNDLE_CHANNEL_CAPACITY', bundle.id, `Need ${span} px for distinct member turns, have ${end - start}.`);
+    }
+    for (const [index, item] of turning.entries()) {
+      const a = item.a.anchor!, b = item.b.anchor!, row = (start + end - span) / 2 + index * q;
+      result.set(item.link.id, polyline(horizontal
+        ? [a, { x: n.x * row, y: a.y }, { x: n.x * row, y: b.y }, b]
+        : [a, { x: a.x, y: n.y * row }, { x: b.x, y: n.y * row }, b], bundle.owner));
+    }
+  }
+  return result;
+}
+
 /** Replace complete bundle paths and swept reservations from the final coherent geometry. */
 export function rebuildBundlePaths(model: LayoutModel): void {
   for (const link of model.links) if (link.bundle) delete link.path;
@@ -182,10 +206,11 @@ export function rebuildBundlePaths(model: LayoutModel): void {
     const fans = bundleFans(model, bundle, list, q), channel = fans?.members ?? list;
     const crossing = inversions && facing(list) && !model.lanes.some(l => l.owner.kind === 'link' && bundle.members.includes(l.owner.id))
       ? crossedPaths(bundle, channel, q) : undefined;
+    const parallel = !inversions && facing(list) ? parallelPaths(bundle, channel, q) : undefined;
     for (const item of list) {
       const routed = channel.find(m => m.link.id === item.link.id)!;
       const reserved = reservedPath(model, bundle, item, routed);
-      let segments = reserved ?? crossing?.get(item.link.id);
+      let segments = reserved ?? crossing?.get(item.link.id) ?? parallel?.get(item.link.id);
       if (!segments && !reserved) {
         const a = routed.a.anchor!, b = routed.b.anchor!;
         if (facing(list) && (a.x === b.x || a.y === b.y)) segments = polyline([a, b], bundle.owner);

@@ -256,7 +256,9 @@ function limits(doc: NormalisedDocument, inputLinkCount: number, options: ParseO
   const ids = orderedNodeIds(doc);
   if (ids.length > 1000 && !options.force) v.report('NODE_LIMIT', '$.nodes', 'More than 1000 nodes requires force');
   if (ids.length > 30) v.report('LARGE_DIAGRAM', '$.nodes', 'More than 30 nodes; consider collapsed groups', 'warning', 'model');
-  if (inputLinkCount > 10 * ids.length) v.report('LINK_LIMIT', '$.links', 'Links must not exceed 10 times the node count');
+  // ADR-0006: links, ports and degree *bound work*, they do not define a legal document. Beyond
+  // them the tool warns and continues best effort; only the node count refuses without --force.
+  if (inputLinkCount > 10 * ids.length) v.report('LINK_LIMIT', '$.links', `Links (${inputLinkCount}) exceed 10 times the node count; continuing best effort`, 'warning', 'model');
   const degree = new Map<string, Set<number>>();
   doc.links.forEach((link, index) => {
     for (const end of [link.from, link.to]) if (end.node !== undefined) {
@@ -265,7 +267,7 @@ function limits(doc: NormalisedDocument, inputLinkCount: number, options: ParseO
   });
   for (const id of ids) {
     const node = own(doc.nodes, id);
-    if (node && node.ports.length > 20) v.report('PORT_LIMIT', `$.nodes.${id}.ports`, 'A node must not exceed 20 ports, including anonymous ports');
+    if (node && node.ports.length > 20) v.report('PORT_LIMIT', `$.nodes.${id}.ports`, `Node ${id} has ${node.ports.length} ports, above the 20 that bound work; continuing best effort`, 'warning', 'model');
     if ((degree.get(id)?.size ?? 0) > 64) v.report('HIGH_DEGREE', `$.nodes.${id}`, 'Node degree exceeds 64', 'warning', 'model');
   }
 }

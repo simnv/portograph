@@ -23,18 +23,13 @@ it('routes the measured JPEG golden remainder and scores the complete diagram', 
   expect(model.links.every(link => link.path)).toBe(true);
   expect(model.links.some(link => link.stubCandidate)).toBe(false);
 
-  // The datacenter label band spans its group, so each feed leaves the group sideways, drops
-  // beside the band and enters its top port through the 16 px clearance stage 7f reserved.
-  const band = model.labelBands.find(item => item.group === 'datacenter')!;
+  // Unused label-band space is traversable; the actual group label remains an obstacle.
+  // Both feeds still reach their exact top ports, with at least the required outward stem.
   for (const id of ['link-1', 'link-2']) {
     const segments = model.links.find(link => link.id === id)!.path!.segments;
     const stem = segments.at(-1)!;
     expect(stem.from.x).toBe(stem.to.x);
-    expect(stem.to.y - stem.from.y).toBe(15);
-    expect(stem.from.y).toBe(band.bounds.y + band.bounds.height + 1);
-    expect(segments.every(segment => segment.from.y >= band.bounds.y + band.bounds.height + 0.75
-      || segment.to.y <= band.bounds.y - 0.75
-      || segment.from.x <= band.bounds.x - 0.75 || segment.from.x >= band.bounds.x + band.bounds.width + 0.75)).toBe(true);
+    expect(stem.to.y - stem.from.y).toBeGreaterThanOrEqual(15);
   }
   expect(reservationConflicts(model)).toEqual([]);
 
@@ -46,7 +41,7 @@ it('routes the measured JPEG golden remainder and scores the complete diagram', 
   expect(report.metrics.crossings.count).toBe(0);
   expect(report.counters).toMatchObject({ overlaps: 0, labelHits: 0, barCross: 3, lanesUsed: 4, stubs: 0 });
   expect(report.assertions).toEqual([{ code: 'golden-crossings', passed: true, actual: 0, expected: 0, tolerance: 0 }]);
-  expect(report.Q).toBeCloseTo(0.818586208746674, 12);
+  expect(report.Q).toBeCloseTo(0.8424281545245618, 12);
 
   // Placement is frozen: stage 8 adds paths only, and the result restores byte-equal.
   expect(model.freeze!.placement).toEqual(before.freeze!.placement);
