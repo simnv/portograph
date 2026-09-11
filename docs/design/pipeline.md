@@ -545,8 +545,59 @@ Placed after routing on the longest segment of the computed path, then checked a
 label, node and segment; on collision, try the next-longest segment, then offset to the other
 side of the segment, then shorten with an ellipsis to the segment length − 8; a label that still
 collides is dropped to a tooltip and reported (`labelsOmitted`). Overlay-layer labels are
-suppressed when overlay density (overlay links per node) exceeds the profile's threshold
-(default 3).
+suppressed when overlay density (overlay links per node, over `max(1, nodes)`) exceeds the
+profile's threshold (default 3). A suppressed label leaves no record at all, so it is not an
+omission.
+
+The transaction owns the whole production, as 7f owns group labels: a callback may not author a
+label. It adds labels, their diagnostics and canvas extent only — placement, every path, every
+fixed segment, junction, bundle, merge run and obstacle stay exactly as stage 8 left them. Group
+label bands are validated against the geometry that existed when they were reserved, so a stage-9
+label never moves one.
+
+**Typography and spacing.** Link and multiplicity labels are `FONT_FAMILY` 9 px weight 400, text
+horizontal, with the measured `lines` and `lineHeight` stored; stage 11 re-measures nothing. The
+box is centred on its segment's midpoint, `4 px` of visible clearance beyond the supporting
+stroke's edge. Shortening uses the measured ASCII `...`, because the checked-in advance table has
+no U+2026, and keeps the longest proper prefix that fits. That width does **not** grow with the
+prefix: a line break inside it moves the ellipsis onto a new line and can make the box narrower, so
+the search is a scan over exact prefix widths, never a bisection.
+
+**Order of candidates.** Segments run in descending geometric length, then source-to-target index;
+zero-length segments are skipped. The first side — *above* for a horizontal segment, *right* for a
+vertical one — is tried across every segment before the opposite side is tried across that same
+order; then both passes repeat with the shortened text; then the label is omitted with its full
+text as `tooltip`. Authored labels run in link order, then merge runs in bundle and run order, so
+an accepted label is an obstacle for every later one.
+
+**What a candidate must clear.** Visible nodes and their stroke, visible pills, every already
+placed label, and every routed-layer segment with its half stroke. Only the *clearance zone* of the
+one segment the label was finally measured against is exempt, through a persisted `support`
+reference that G3 reads; text drawn across a segment is a hit whatever it claims, and a stale,
+absent or foreign reference exempts nothing. A **multiplicity label** carries its bundle's owner
+and a `merge-run` reference, gets no segment exemption at all, and must clear every routed member
+segment.
+
+Obstacle queries use a balanced four-dimensional rectangle index. Each rectangle is stored as
+`(left, top, -right, -bottom)`; intersection is four upper-bound comparisons. Subtree minima
+reject disjoint rectangles before visiting members. Queries stop at the first actual collision
+without collecting a candidate list. Static geometry builds one tree; accepted labels enter a
+forest of balanced blocks. No query enumerates coordinate cells or falls back to every obstacle
+because a coordinate is large. Shared-stem copies remain semantically distinct; their multiplicity
+is not assumed to be bounded by G4 or G6. Scale checks count visited tree nodes and candidate tests
+separately from text measurement.
+
+**Stage 9 settles the canvas.** `expandCanvas` reserves group boxes and lanes; a route may leave
+both, and stage 9 adds label boxes, so the producer expands the canvas over every group, lane, drawn
+path and visible label. Restore has no predecessor transaction, so the "canvas may only expand" rule
+is restated geometrically there: the canvas must contain all of that.
+
+**Multiplicity labels.** One per `Bundle.mergeRuns` record, `label:multiplicity:<run id>`, with the
+decimal count as its text. `count` must equal the member count, be at least two, and every member
+must really be a selected `merge` member of that bundle; anything else is an error, not a repair.
+Ordinary parallel bundles, a singleton merge member and the M1 golden produce no count label. A
+count has no meaningful prefix, so the shortening rung never applies to one: it is placed or
+omitted.
 
 ## Stage 10 — validate
 

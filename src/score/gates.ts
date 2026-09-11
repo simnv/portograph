@@ -69,11 +69,18 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       }
     }
     for (const s of routed) {
-      if (label.owner.kind === 'link' && label.owner.id === s.link.id) continue;
       // A pill's own incident stem runs behind the pill text by construction.
       if (containedOwnPill && label.port && incident(model, s, label.port.node)
         && [endpoints(s.link).from, endpoints(s.link).to].some(ref => refEqual(ref, label.port!))) continue;
-      if (segmentRectDistance(s.segment, label.bounds!) < s.stroke / 2 - EPS || segmentRect(s.segment, label.bounds!)) hit(s.link.id);
+      // Text drawn across a routed segment is a hit whatever it claims to support.
+      if (segmentRect(s.segment, label.bounds!)) { hit(s.link.id); continue; }
+      // Only the clearance zone of the one segment a link label was measured against is exempt.
+      // Another segment of the same link, a stale or absent reference, and every multiplicity
+      // label exempt nothing.
+      const support = label.support;
+      if (support?.kind === 'link-segment' && label.owner.kind === 'link' && label.owner.id === support.link
+        && support.link === s.link.id && support.segment === s.index) continue;
+      if (segmentRectDistance(s.segment, label.bounds!) < s.stroke / 2 - EPS) hit(s.link.id);
     }
   }
   collinearSweep(routed, (a, b, overlap) => {

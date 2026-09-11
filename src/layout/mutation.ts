@@ -19,6 +19,7 @@ import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
 import { produceGroupLabelBands, validateGroupLabelBands } from './bands.js';
+import { produceLinkLabels, validateLinkLabels } from './link-labels.js';
 import { validateRoutedPaths } from '../route/validate.js';
 
 export type PlacementRule = 'rows' | 'lanes' | 'flanks' | 'centre' | 'bars' | 'bundles'
@@ -241,6 +242,7 @@ function validateRegionClaims(model: LayoutModel): void {
   if (stages.indexOf(model.stage) >= stages.indexOf('bands')) validateGroupLabelBands(model);
   // Route geometry cannot be re-derived without the router, so its claims are checked structurally.
   if (stages.indexOf(model.stage) >= stages.indexOf('route')) validateRoutedPaths(model, stages.indexOf(model.stage) > stages.indexOf('route'));
+  if (stages.indexOf(model.stage) >= stages.indexOf('link-labels')) validateLinkLabels(model);
 }
 function validateGeometry(model: LayoutModel, allowNonConvergence = false): void {
   jsonValue(model);
@@ -381,6 +383,8 @@ function hasUnsupportedClaims(model: LayoutModel): boolean {
   const bandsStage = stages.indexOf(model.stage) >= stages.indexOf('bands');
   // Stage 8 owns every remaining path; validateRoutedPaths then judges the geometry it produced.
   const routeStage = stages.indexOf(model.stage) >= stages.indexOf('route');
+  // Stage 9 owns link and multiplicity labels; validateLinkLabels re-derives the ones it published.
+  const labelStage = stages.indexOf(model.stage) >= stages.indexOf('link-labels');
   const nonNodeLabels = claims(model).labels;
   return model.links.some(link => (link.path !== undefined && !(routeStage || (rowStage && rowPathCandidate(model, link)) || (flankStage && flankPathCandidate(model, link))
       || (barStage && barLink(model, link) !== undefined) || (bundleStage && link.bundle !== undefined)))
@@ -390,7 +394,7 @@ function hasUnsupportedClaims(model: LayoutModel): boolean {
     || (!bundleStage && model.junctions.length > 0)
     || (!bundleStage && model.bundles.some(b => b.rows !== undefined || b.centreline !== undefined || b.envelope !== undefined || b.envelopeParts !== undefined || b.memberGap !== undefined || b.inversions !== undefined || b.memberPitch !== undefined || b.mergeRuns !== undefined))
     || model.obstacles.length > 0 || (!bandsStage && model.labelBands.length > 0)
-    || nonNodeLabels.some(label => !bandsStage || label.role !== 'group');
+    || nonNodeLabels.some(label => !(bandsStage && label.role === 'group') && !(labelStage && label.role === 'link'));
 }
 function rebuildBoxes(model: LayoutModel): void {
   const EPS = 1e-6;
@@ -448,6 +452,8 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
   // The route rule owns exactly the remaining paths and their stub marks; nothing else may move.
   const linkFields = rule === 'route' ? ['fixedSegments', 'path', 'stubCandidate'] : ['fixedSegments'];
   const otherClaims = (value: LayoutModel) => ({ ...claims(value), lanes: [], links: value.links.map(link => omit(link, linkFields)) });
+  // Stage 9's producer owns every link and multiplicity label, exactly as 7f owns group labels.
+  if (rule === 'link-labels') same(draft.labels, model.labels, 'Link-label callback cannot author labels');
   same(otherClaims(draft), otherClaims(model), `${rule} claim validator/rebuild is not implemented`);
   if (rule === 'route') {
     for (const [index, link] of draft.links.entries()) {
@@ -575,6 +581,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     if (rule !== 'lanes') rebuildLaneExtents(draft);
   }
   if (rule === 'bands') produceGroupLabelBands(draft);
+  else if (rule === 'link-labels') produceLinkLabels(draft);
   else if (changed || ['rows', 'lanes', 'flanks', 'centre', 'bundles'].includes(rule)) {
     if (stages.indexOf(rule) >= stages.indexOf('flanks')) {
       rebuildRegionGeometry(draft, undefined, rule === 'bars' ? model.tierBands : undefined, rule === 'bundles' || stages.indexOf(model.stage) >= stages.indexOf('bundles'));

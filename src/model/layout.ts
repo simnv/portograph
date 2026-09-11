@@ -16,12 +16,22 @@ export interface OwnedElement {
   layer: Layer;
 }
 
+/**
+ * The final path geometry a visible label was measured against. A link label names the one
+ * supporting segment G3 exempts from its clearance zone; a multiplicity label names its counted
+ * merge run and gets no segment exemption at all. A stale reference exempts nothing.
+ */
+export type LabelSupport =
+  | { kind: 'link-segment'; link: string; segment: number }
+  | { kind: 'merge-run'; bundle: string; run: string };
+
 export interface LayoutLabel extends OwnedElement {
   id: string;
   text: string;
   /** A pill label's exact port; sharing a node owner does not exempt every pill collision. */
   port?: PortRef;
   role?: 'node' | 'description' | 'group' | 'link' | 'pill' | 'legend';
+  support?: LabelSupport;
   fontFamily?: string;
   fontSize?: number;
   fontWeight?: 400 | 700;

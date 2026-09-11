@@ -10,7 +10,7 @@ export const endpoints = (link: LayoutLink): { from: PortRef; to: PortRef } => {
   throw new Error(`Link ${link.id} requires concrete port attachments`);
 };
 export function port(model: LayoutModel, ref: PortRef): LayoutPort | undefined { return model.nodes[ref.node]?.ports.find(candidate => refEqual(candidate.ref, ref)); }
-function effectiveLayer(link: LayoutLink): Layer {
+export function effectiveLayer(link: LayoutLink): Layer {
   return link.layer ?? (link.technique !== undefined ? link.technique === 'overlay' ? 'overlay' : 'routed' : link.family ?? link.path?.layer ?? 'routed');
 }
 export const routed = (link: LayoutLink): boolean => effectiveLayer(link) === 'routed' && link.technique !== 'stub';

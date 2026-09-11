@@ -19,8 +19,10 @@ snapshots.
 - A **stem** is the first/last segment of a routed link, from the anchor outward, perpendicular
   to the side, ≥ 15 px.
 - **Owner** relations: a node owns its labels and pills; a group owns its label and its nodes; a
-  link owns its label and its stems; a bundle owns its members' parallel runs; a bar owns the
-  drops that cross it to reach a lower bar.
+  link owns its label and its stems; a bundle owns its members' parallel runs and its counted
+  merge trunks, including each trunk's **multiplicity label**; a bar owns the drops that cross it
+  to reach a lower bar. Owning a link does not exempt a label from that link's other segments: a
+  visible link label names its one supporting segment and nothing else.
 
 ## Hard gates
 
@@ -31,7 +33,7 @@ out of scope for G2, G4 and G6.
 |---|---|---|---|
 | G1 | **No node overlap; containment** | node–node rectangles; node inside its group box; group boxes inside their tier band; no group–group overlap | — |
 | G2 | **No routed segment through a foreign node** | routed segments × node rectangles | a segment's own endpoint nodes; a drop crossing a **bar** it does not terminate on (`barCross`, reported) |
-| G3 | **No label collision** | every label bbox × every other label bbox, node rectangle, pill, routed segment (area-aware) | a label vs its **owner** (node label inside its node; pill text inside its own pill and over its own incident stem within that pill; link label on its own segment's clearance zone); overlay layer |
+| G3 | **No label collision** | every label bbox × every other label bbox, node rectangle, pill, routed segment (area-aware) | a label vs its **owner** (node label inside its node; pill text inside its own pill and over its own incident stem within that pill; a link label on the clearance zone — never the body — of the **one** segment its persisted `support` reference names, and only when that reference's link is its own owner); overlay layer |
 | G4 | **No collinear overlap** | pairs of routed segments on the same line sharing > 1 px | validated counted merge runs of selected bundle members (reported as `bundledLength`); exact source/target shared-run trees at one port; lane-owner runs vs their own lane |
 | G5 | **Ports exit correctly** | every routed link: first/last segment perpendicular to its side, ≥ 15 px; port order on a side matches far-end order | author `order:`; overlay; stub |
 | G6 | **Clearances** (stroke-aware, centre-to-centre minus half strokes) | node–node ≥ 20; routed segment–foreign node ≥ 10; parallel routed segments ≥ 10 | incident node–segment contact at the anchor; bundle members (`memberGap` = 16 applies); `barCross` contacts; junction fans |

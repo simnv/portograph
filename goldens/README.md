@@ -116,8 +116,13 @@ is a standalone schema-v2 document. `stage-inputs.yaml` is separate test data.
 | [both-margins-full](synthetic/both-margins-full.yaml) | 7a | Widen the canvas for transit lanes when both margins have zero capacity. |
 | [label-no-gap](synthetic/label-no-gap.yaml) | 7f | Widen the group, push its neighbour, and re-centre the affected child. |
 | [unfittable-link-label](synthetic/unfittable-link-label.yaml) | 9 | Keep the full tooltip and report one omitted visible label. |
+| [fitting-link-label](synthetic/fitting-link-label.yaml) | 9 | Place the measured label beside the longest segment with no collision. |
 | [long-label-portless-node](synthetic/long-label-portless-node.yaml) | 3 | Grow the node to contain its measured label and description. |
 | [zero-link-diagram](synthetic/zero-link-diagram.yaml) | 10 | Produce finite scores and use 1 for empty routed-link metrics. |
+
+The first 14 diagrams are ticket 00's approved counter-examples. `fitting-link-label` is the
+test-only successful-label input ticket 14 added beside them; it needs no stage precondition,
+because the whole pipeline runs on it.
 
 The spare node in `parent-two-children` makes the parent tier the anchor tier by
 the lowest-index tie rule. Explicit shared-port references exercise the network

@@ -5,7 +5,7 @@ export type {
   NormalisedNode, NormalisedPort, PortIdentity, PortRef, Route,
 } from './document.js';
 export type {
-  BarDrop, Bundle, Diagnostic, FrozenPort, GroupLink, Junction, LabelBand, Lane, Layer, LayoutFreeze,
+  BarDrop, Bundle, Diagnostic, FrozenPort, GroupLink, Junction, LabelBand, LabelSupport, Lane, Layer, LayoutFreeze,
   LayoutGroup, LayoutLabel, LayoutLink, LayoutModel, LayoutNode, LayoutPath,
   LayoutPort, LayoutRuntime, LayoutStage, Obstacle, OwnedElement, Owner,
   PathSegment, PillGeometry, PlacementSnapshot, Region, TierBand,

@@ -90,15 +90,54 @@ describe('G3 labels', () => {
     model.labels[1]!.layer = 'overlay';
     expect(gate(model, 'G3').passed).toBe(true);
   });
-  it('allows link labels on their own clearance zone, not a different link', () => {
+  it('allows a link label only on the clearance zone of its own supporting segment', () => {
     const model = simple();
-    model.labels.push(label('link text', 29.5, 80, { kind: 'link', id: 'ab' }));
+    const support = { kind: 'link-segment' as const, link: 'ab', segment: 0 };
+    // Inside segment 0's 0.75 px stroke zone, but not across its centreline at x = 30.
+    model.labels.push({ ...label('link text', 30.5, 80, { kind: 'link', id: 'ab' }), role: 'link', support });
     expect(gate(model, 'G3').passed).toBe(true);
     model.labels[0]!.owner = { kind: 'link', id: 'wrong' };
-    expect(gate(model, 'G3').passed).toBe(false);
-    model.labels[0]!.bounds!.x = 30.5;
     expect(gate(model, 'G3').passed).toBe(false); // Centerline misses, stroke hits.
     model.labels[0]!.bounds!.x = 31;
+    expect(gate(model, 'G3').passed).toBe(true);
+    // The exemption covers the clearance zone only; text drawn across the segment is always a hit.
+    model.labels[0]!.owner = { kind: 'link', id: 'ab' };
+    model.labels[0]!.bounds!.x = 29.5;
+    expect(gate(model, 'G3').violations.map(v => v.elements)).toEqual([['link text', 'ab']]);
+  });
+  it('gives a link label with no, stale or foreign support no segment exemption at all', () => {
+    const model = simple();
+    const label0 = { ...label('link text', 30.5, 80, { kind: 'link' as const, id: 'ab' }), role: 'link' as const };
+    // Same box, same owner, no reference: the blanket link exemption is gone.
+    model.labels.push(label0);
+    expect(gate(model, 'G3').violations.map(v => v.elements)).toEqual([['link text', 'ab']]);
+    // A reference to a segment index the path does not have exempts nothing either.
+    model.labels[0] = { ...label0, support: { kind: 'link-segment', link: 'ab', segment: 1 } };
+    expect(gate(model, 'G3').passed).toBe(false);
+    // Nor does a reference whose link contradicts the label's own owner.
+    model.labels[0] = { ...label0, owner: { kind: 'link', id: 'other' }, support: { kind: 'link-segment', link: 'ab', segment: 0 } };
+    expect(gate(model, 'G3').passed).toBe(false);
+    // A merge-run reference is never a segment exemption.
+    model.labels[0] = { ...label0, owner: { kind: 'bundle', id: 'bundle' }, support: { kind: 'merge-run', bundle: 'bundle', run: 'merge' } };
+    expect(gate(model, 'G3').passed).toBe(false);
+    model.labels[0] = { ...label0, support: { kind: 'link-segment', link: 'ab', segment: 0 } };
+    expect(gate(model, 'G3').passed).toBe(true);
+  });
+  it('exempts the supporting segment only, never another segment of the same link', () => {
+    const model = simple(), link = model.links[0]!;
+    // A dog-leg: the label sits on segment 1 but names segment 0 of the same link.
+    link.path!.segments = [
+      { from: { x: 30, y: 40 }, to: { x: 30, y: 90 }, owner: link.owner },
+      { from: { x: 30, y: 90 }, to: { x: 200, y: 90 }, owner: link.owner },
+      { from: { x: 200, y: 90 }, to: { x: 200, y: 140 }, owner: link.owner },
+    ];
+    model.nodes.b!.ports[0]!.anchor = { x: 200, y: 140 };
+    model.nodes.b!.bounds = { x: 170, y: 140, width: 60, height: 40 };
+    model.groups['g-b']!.bounds = { x: 160, y: 130, width: 80, height: 60 };
+    model.labels.push({ ...label('link text', 100, 90.5, { kind: 'link', id: 'ab' }), role: 'link',
+      support: { kind: 'link-segment', link: 'ab', segment: 0 } });
+    expect(gate(model, 'G3').violations.map(v => v.elements)).toEqual([['link text', 'ab']]);
+    model.labels[0]!.support = { kind: 'link-segment', link: 'ab', segment: 1 };
     expect(gate(model, 'G3').passed).toBe(true);
   });
   it('exempts pill text only from its specific pill and incident stem', () => {

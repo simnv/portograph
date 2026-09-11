@@ -41,6 +41,8 @@ export { rebuildRegionGeometry } from './layout/region-rebuild.js';
 export { bars, shapeBars, rebuildBarDrops, barLink, BAR_PADDING } from './layout/bars.js';
 export { bundles, prepareBundleGeometry, rebuildBundlePaths, BundleFeasibilityError } from './layout/bundles.js';
 export { bands, GROUP_LABEL_GEOMETRY } from './layout/bands.js';
+export { linkLabels, produceLinkLabels, validateLinkLabels, overlayDensity, overlayLabelsSuppressed,
+  LINK_LABEL_GEOMETRY, LINK_LABEL_CODES, OVERLAY_LABEL_DENSITY } from './layout/link-labels.js';
 
 export { optimizeBundleOrder } from './layout/bundle-order.js';
 export type { BundleOrderResult } from './layout/bundle-order.js';

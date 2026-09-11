@@ -1,0 +1,13 @@
+# Expected: Place the measured label beside the longest segment of its own routed path, clear of
+# every node, pill, label and routed segment, and report no omission.
+# Test-only input owned by ticket 14; it needs no stage precondition because the whole pipeline runs.
+portograph: 2
+profile: network
+groups:
+  upper: { tier: 0, label: Upper }
+  lower: { tier: 1, label: Lower }
+nodes:
+  source: { group: upper, label: S, ports: [{ name: p, side: bottom }] }
+  target: { group: lower, label: T, ports: [{ name: p, side: top }] }
+links:
+  - [source.p, target.p, { label: uplink }]

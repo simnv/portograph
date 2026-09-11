@@ -195,7 +195,9 @@ function forbiddenRects(model: LayoutModel, placed: LayoutLabel[]): { id: string
       } });
     }
   }
-  for (const label of [...model.labels.filter(item => item.role !== 'group'), ...placed]) {
+  // Stage 9 labels are placed around this band, so re-deriving the band around them would let a
+  // later label move an earlier frozen one. Group labels are replanned here and join through `placed`.
+  for (const label of [...model.labels.filter(item => item.role !== 'group' && item.role !== 'link'), ...placed]) {
     if (!label.omitted && label.layer !== 'overlay' && label.bounds) result.push({ id: label.id, bounds: label.bounds });
   }
   for (const lane of model.lanes) if (lane.layer !== 'overlay') result.push({ id: lane.id, bounds: lane.bounds });

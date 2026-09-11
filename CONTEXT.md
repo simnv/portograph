@@ -28,6 +28,8 @@ drew it. Network diagrams first; software architecture and electrical panels nex
 | **anchor tier** | The tier with the most main-tier nodes, including bars and excluding flank nodes (ties: lowest effective tier index). Groups below it are centred under their feeds; groups above it are centred over their children. | |
 | **junction** | A branch point in a tree of shared runs at one port. Source and target incidence use the same outward tree. Only declared shared runs are exempt from the overlap gate. It is model geometry reserved during placement, never a runtime `JunctionRef`: stage 8 stitches the reserved run back unchanged and routes only the gap beyond its terminal. | *bundle* |
 | **band** | Reserved horizontal space: a **tier band** (the vertical extent a tier occupies) or a **label band** (space inside a group's top padding reserved for its label). | |
+| **multiplicity label** | The measured count drawn beside one counted merge trunk, owned by the trunk's bundle. Stage 9 places exactly one per `mergeRuns` record; it clears every routed member segment and is never shortened. | a **link label** (one authored label, owned by its link, exempt only from its own supporting segment) |
+| **supporting segment** | The one path segment a visible link label was finally measured against, persisted on the label. Its clearance zone is the only thing G3 exempts: text across the segment itself is still a hit, and a stale or absent reference exempts nothing. | the link's other segments |
 | **skeleton** | The tier/group placement produced by ELK before region rules run. Lateral (flank↔tier) links are **withheld** from the skeleton so flanks land beside their tier. | *layout* (the whole result) |
 | **bundle** | Two or more routed links between the same pair of nodes, routed through a channel and fanned to ports. Its **envelope** reserves the swept geometry, including stroke width. Parallel members cross once for each strict endpoint-order inversion; shared-port ties count as zero. Engine order minimizes avoidable inversions where incidence and reservations permit it. Selected `route: merge` members share counted trunks; other members remain parallel. | *overlay* |
 | **overlay** | A link family drawn straight, thin, translucent and *unrouted* on its own layer beneath routed links. Used for flow-class links (e.g. NTP sync). Exempt from clearance gates. | *bundle* |
@@ -68,6 +70,9 @@ drew it. Network diagrams first; software architecture and electrical panels nex
 | Bar span merge threshold | spans overlap > 50 % of the narrower → shared span | prototype `tall5` |
 | Lane width | port pill width + gap ≈ 34 px | prototype `tall3` |
 | Group label band | label height + 8 px; label left-aligned, slides right only on collision | user decision, `tall5` |
+| Group label type | `FONT_FAMILY` 12 px, weight 700; 8 px horizontal inset | d3-fd, render-theme notes |
+| Link and multiplicity label type | `FONT_FAMILY` 9 px, weight 400; 4 px visible gap beyond the supporting stroke; ASCII `...` shortening to segment length − 8 px | d3-fd, render-theme notes |
+| Overlay label suppression | overlay links / max(1, nodes) > 3 | pipeline stage 9 |
 | Clearances (gates) | node–node 20, edge–foreign-node 10, parallel edge–edge 10 px, stroke-aware, with ownership exceptions | ELK defaults; codex review |
 | Port stem | ≥ 15 px, perpendicular to side | yFiles convention |
 | "Beautiful" ceiling | ~30 nodes | Störrle 2014/2016, Kobourov 2014 |
