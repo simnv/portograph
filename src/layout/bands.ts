@@ -6,11 +6,13 @@ import { orderedGroupIds } from '../model/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { createCentreBudget, type CentreBudget } from './centre.js';
+import { laneSidesHold } from './lanes.js';
+import { rebuildNodeGeometry } from './node-geometry.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { findPort } from './row-paths.js';
 import { bandGap, portId } from './skeleton-graph.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
-import { bottom, GROUP_PADDING, right } from './regions.js';
+import { bottom, GROUP_PADDING, placementWarning, right } from './regions.js';
 import { withLayoutMutation } from './mutation.js';
 
 const EPS = 1e-6;
@@ -33,7 +35,9 @@ const OUTWARD: Record<Side, Point> = {
 };
 
 interface ForbiddenInterval { low: number; high: number; id: string }
-interface LabelPlan { labels: LayoutLabel[]; growth?: { group: LayoutGroup; width: number } }
+interface LabelPlan { labels: LayoutLabel[]; growth?: { group: LayoutGroup; width: number }; blocked: string[] }
+/** Where one tier's groups land when the grown group takes its new width. */
+interface GroupPlacement { group: LayoutGroup; x: number; width: number }
 /** A point stage 8 must reach outside every obstacle to honour this placement. */
 export interface RouterEntryPoint {
   link: string;
@@ -225,17 +229,43 @@ function firstFree(start: number, ranges: ForbiddenInterval[]): number {
   return candidate;
 }
 
+/**
+ * Where widening `grown` to `width` leaves every group of its tier, or nothing when the request is
+ * not a widening or would move a group out of the window its tier's reserved lanes leave it. Lane
+ * geometry cannot move, so a label gap that only a crossing movement could reach is infeasible and
+ * the group keeps its width; `planLabels` and `reserveInitialSpace` share this one decision.
+ */
+function growthPlan(model: LayoutModel, grown: LayoutGroup, width: number): GroupPlacement[] | undefined {
+  const groups = Object.values(model.groups).filter(group => group.tier === grown.tier)
+    .sort((a, b) => a.bounds!.x - b.bounds!.x || a.id.localeCompare(b.id));
+  const at = groups.indexOf(grown);
+  if (at < 0 || width <= grown.bounds!.width + EPS) return undefined;
+  const gaps = groups.slice(0, -1).map((group, index) => groups[index + 1]!.bounds!.x - right(group.bounds!));
+  const plan: GroupPlacement[] = groups.map(group => ({ group, x: group.bounds!.x, width: group.bounds!.width }));
+  plan[at]!.width = width;
+  for (let index = at + 1; index < plan.length; index++) {
+    const prior = plan[index - 1]!, minimum = prior.x + prior.width + Math.max(gaps[index - 1]!, bandGap(model));
+    if (plan[index]!.x < minimum - EPS) plan[index]!.x = minimum;
+  }
+  return laneSidesHold(model, plan.map(item => ({ group: item.group,
+    bounds: { ...item.group.bounds!, x: item.x, width: item.width } }))) ? plan : undefined;
+}
+
 function planLabels(model: LayoutModel, permitGrowth: boolean): LabelPlan {
-  const labels: LayoutLabel[] = [];
+  const labels: LayoutLabel[] = [], blocked: string[] = [];
   for (const id of orderedGroupIds(model.document)) {
     const group = model.groups[id]!, measured = measurement(model, id);
     const y = group.bounds!.y + GROUP_LABEL_GEOMETRY.verticalInset;
     const x = firstFree(group.bounds!.x + GROUP_LABEL_GEOMETRY.horizontalInset,
       intervals(model, labels, y, measured.height, measured.width));
     const limit = right(group.bounds!) - GROUP_LABEL_GEOMETRY.horizontalInset - measured.width;
-    if (x > limit + EPS && permitGrowth) return { labels, growth: {
-      group, width: x + measured.width + GROUP_LABEL_GEOMETRY.horizontalInset - group.bounds!.x,
-    } };
+    if (x > limit + EPS) {
+      // Classify every group that needs to grow, so an exhausted budget still reports the ones
+      // that no budget could have repaired.
+      const width = x + measured.width + GROUP_LABEL_GEOMETRY.horizontalInset - group.bounds!.x;
+      if (!growthPlan(model, group, width)) blocked.push(id);
+      else if (permitGrowth) return { labels, blocked, growth: { group, width } };
+    }
     labels.push({ id: `label:group:${id}`, owner: { ...group.owner }, layer: 'routed', role: 'group',
       text: model.document.groups[id]!.label, fontFamily: GROUP_LABEL_GEOMETRY.fontFamily,
       fontSize: GROUP_LABEL_GEOMETRY.fontSize, fontWeight: GROUP_LABEL_GEOMETRY.fontWeight,
@@ -243,20 +273,29 @@ function planLabels(model: LayoutModel, permitGrowth: boolean): LabelPlan {
       bounds: { x: x <= limit + EPS ? x : group.bounds!.x + GROUP_LABEL_GEOMETRY.horizontalInset,
         y, width: measured.width, height: measured.height } });
   }
-  return { labels };
+  return { labels, blocked };
 }
 
+/** Apply a lane-feasible widening and its neighbour propagation. An infeasible one does nothing. */
 function pushFollowingGroups(model: LayoutModel, grown: LayoutGroup, width: number): void {
-  const groups = Object.values(model.groups).filter(group => group.tier === grown.tier)
-    .sort((a, b) => a.bounds!.x - b.bounds!.x || a.id.localeCompare(b.id));
-  const at = groups.indexOf(grown);
-  if (at < 0 || width <= grown.bounds!.width + EPS) return;
-  const gaps = groups.slice(0, -1).map((group, index) => groups[index + 1]!.bounds!.x - right(group.bounds!));
+  const plan = growthPlan(model, grown, width);
+  if (!plan) return;
   grown.bounds!.width = width;
-  for (let index = at + 1; index < groups.length; index++) {
-    const prior = groups[index - 1]!, group = groups[index]!;
-    const minimum = right(prior.bounds!) + Math.max(gaps[index - 1]!, bandGap(model));
-    if (group.bounds!.x < minimum - EPS) moveGroup(model, group, minimum - group.bounds!.x, 0);
+  const moved: string[] = [];
+  for (const item of plan) {
+    const dx = item.x - item.group.bounds!.x;
+    if (item.group !== grown && dx) { moveGroup(model, item.group, dx, 0); moved.push(...item.group.nodes); }
+  }
+  // `moveGroup` leaves pill bounds behind, and the next reservation measures them. Only horizontal
+  // movement can invalidate a lane window, so the vertical band shift needs no rebuild here.
+  if (moved.length) rebuildNodeGeometry(model, moved, 'current');
+}
+
+/** A group boxed in by reserved lanes keeps a coherent contained label; final gates decide it. */
+function diagnoseBlocked(model: LayoutModel, blocked: string[]): void {
+  for (const id of blocked) {
+    placementWarning(model, 'GROUP_LABEL_GAP_INFEASIBLE', `Group ${id} has no free label gap between `
+      + 'the reserved lanes of its tier; final gates decide the retained geometry.', [id], 'group');
   }
 }
 
@@ -308,9 +347,13 @@ export function produceGroupLabelBands(model: LayoutModel): void {
     }
     model.labels = model.labels.filter(label => label.role !== 'group');
     const plan = planLabels(model, true);
-    if (!plan.growth) { model.labels.push(...plan.labels); return; }
+    if (!plan.growth) { model.labels.push(...plan.labels); diagnoseBlocked(model, plan.blocked); return; }
     if (budget.remaining <= 0) {
-      model.labels.push(...planLabels(model, false).labels);
+      // The growth-permitted plan stops at the first repairable group, so re-plan for the full
+      // blocked classification as well as the retained labels.
+      const stalled = planLabels(model, false);
+      model.labels.push(...stalled.labels);
+      diagnoseBlocked(model, stalled.blocked);
       if (!model.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE')) model.diagnostics.push({
         stage: 'placement', severity: 'warning', code: 'PLACEMENT_NON_CONVERGENCE',
         message: 'Group-label growth exhausted the shared eight-pass budget; final gates decide the retained geometry.',

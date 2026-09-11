@@ -1,4 +1,5 @@
 import { equal } from '../model/json-equality.js';
+import type { Rect } from '../model/geometry.js';
 import type { Lane, LayoutGroup, LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import { DEFAULT_STROKE_WIDTHS as stroke } from '../theme/geometry.js';
 import { segmentRectDistance } from '../score/geometry.js';
@@ -31,6 +32,27 @@ function occupied(model: LayoutModel, group: LayoutGroup) {
         return { x: pill.x - gap, y: pill.y, width: pill.width + 2 * gap, height: pill.height };
       })];
   })]);
+}
+/**
+ * The occupied box a group would have at `bounds`. Its nodes and pills translate with the group, so
+ * a pure widening leaves a pill that already reaches past the padding exactly where it is.
+ */
+function occupiedAt(model: LayoutModel, group: LayoutGroup, bounds: Rect): Rect {
+  const current = occupied(model, group);
+  return union([bounds, { ...current, x: current.x + (bounds.x - group.bounds!.x) }]);
+}
+/**
+ * Whether every reserved lane of a tier would still lie on the side of each group that currently
+ * contains it once those groups take the proposed boxes. Lane x, width, owner and side are
+ * immutable after allocation, so a movement that fails this is geometrically infeasible rather than
+ * something an ordered replay can repair. This is the same occupied extent `validateLanes` measures.
+ */
+export function laneSidesHold(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[]): boolean {
+  return proposed.every(({ group, bounds }) => {
+    const box = occupiedAt(model, group, bounds);
+    return model.lanes.filter(lane => lane.tier === group.tier).every(lane => group.bounds!.x >= lane.x
+      ? box.x >= right(lane.bounds) - 1e-6 : right(box) <= lane.bounds.x + 1e-6);
+  });
 }
 function laneId(link: LayoutLink, tier: number): string { return `lane:${JSON.stringify(link.id)}:${tier}`; }
 function laneExtent(model: LayoutModel, tier: number): { y: number; height: number } {

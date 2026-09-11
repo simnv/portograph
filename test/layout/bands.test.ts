@@ -6,12 +6,12 @@ import { bars } from '../../src/layout/bars.js';
 import { bundles } from '../../src/layout/bundles.js';
 import { centre } from '../../src/layout/centre.js';
 import { flanks } from '../../src/layout/flanks.js';
-import { lanes, transitTiers } from '../../src/layout/lanes.js';
+import { laneSidesHold, lanes, transitTiers, validateLanes } from '../../src/layout/lanes.js';
 import { bandEntryConflicts, groupLabelObstacles, routerEntryPoints } from '../../src/layout/bands.js';
 import { restoreLayoutModel, withLayoutMutation } from '../../src/layout/mutation.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { rows } from '../../src/layout/rows.js';
-import { rebuildBands, union } from '../../src/layout/skeleton-geometry.js';
+import { moveGroup, rebuildBands, union } from '../../src/layout/skeleton-geometry.js';
 import { score } from '../../src/score/index.js';
 import { FONT_FAMILY, measureText } from '../../src/text/index.js';
 import { placed } from './phase-two-fixture.js';
@@ -22,6 +22,30 @@ const right = (box: Rect): number => box.x + box.width;
 const bottom = (box: Rect): number => box.y + box.height;
 /** 15 px outward stem plus the routed half stroke and the strict-outside tolerance. */
 const ORDINARY_CLEARANCE = 16;
+/** Three transits fan around the single mid-tier group, leaving it no room to widen. */
+const enclosedByLanes = `portograph: 2
+groups:
+  top-group: {tier: 0}
+  mid: {tier: 1}
+  low: {tier: 2, label: A moderately long label for the lower group}
+nodes:
+  a: {group: top-group, ports: [{name: p, side: bottom}]}
+  m: {group: mid, ports: [{name: p, side: top}]}
+  b: {group: low, ports: [{name: p, side: top}, {name: q, side: top}]}
+  c: {group: low, ports: [{name: p, side: top}]}
+links: [[a.p, b.p], [a.p, b.q], [a.p, c.p], [a.p, m.p]]`;
+/** The same fan, plus a named side port whose pill reaches well past mid's padded box. */
+const pillPastThePadding = `portograph: 2
+groups:
+  top-group: {tier: 0}
+  mid: {tier: 1}
+  low: {tier: 2, label: A moderately long label for the lower group}
+nodes:
+  a: {group: top-group, ports: [{name: p, side: bottom}]}
+  m: {group: mid, ports: [{name: p, side: top}, {name: a-very-long-side-port-name, side: right}]}
+  b: {group: low, ports: [{name: p, side: top}, {name: q, side: top}]}
+  c: {group: low, ports: [{name: p, side: top}]}
+links: [[a.p, b.p], [a.p, b.q], [a.p, c.p], [a.p, m.p]]`;
 
 async function throughBundles(yaml: string): Promise<LayoutModel> {
   return bundles(bars(centre(flanks(lanes(rows(await placed(yaml)))))));
@@ -298,6 +322,181 @@ ${pairs.flatMap(i => [`  - [parent-${i}.p, child-${i}.p]`, `  - [parent-${i}.q, 
       .toEqual(before.lanes.map(lane => [lane.id, lane.owner, lane.x, lane.bounds.width]));
     expect(model.bundles.map(bundle => bundle.id)).toEqual(before.bundles.map(bundle => bundle.id));
     expect(bandEntryConflicts(model)).toEqual([]);
+    expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
+  });
+
+  it('refuses a label widening that would push a group across an immutable transit lane', async () => {
+    const before = await throughBundles(enclosedByLanes);
+    const laneIdentity = before.lanes.map(lane => [lane.id, lane.owner, lane.group, lane.side, lane.x, lane.bounds.width]);
+    const midBox = { ...before.groups.mid!.bounds! }, lowWidth = before.groups.low!.bounds!.width;
+    expect(before.lanes.map(lane => [lane.id, lane.side])).toEqual([['lane:"link-1":1', 'left'],
+      ['lane:"link-2":1', 'right'], ['lane:"link-3":1', 'left']]);
+
+    const model = run(before);
+    expect(model.lanes.map(lane => [lane.id, lane.owner, lane.group, lane.side, lane.x, lane.bounds.width]))
+      .toEqual(laneIdentity);
+
+    // Feasibility evidence: the two nearest reserved corridors touch mid's own edges, so the only
+    // widening that would reach the first free gap crosses the corridor mid's right lane owns.
+    const leftLane = model.lanes.find(item => item.id === 'lane:"link-1":1')!;
+    const rightLane = model.lanes.find(item => item.id === 'lane:"link-2":1')!;
+    const mid = model.groups.mid!;
+    expect(right(leftLane.bounds)).toBe(mid.bounds!.x);
+    expect(rightLane.bounds.x).toBe(right(mid.bounds!));
+    expect([mid.bounds!.x, mid.bounds!.width]).toEqual([midBox.x, midBox.width]);
+
+    // The retained label is the ordinary left-first start. Its width was never the obstruction.
+    const label = model.labels.find(item => item.id === 'label:group:mid')!;
+    expect(label.bounds!.x).toBe(mid.bounds!.x + 8);
+    expect(right(label.bounds!)).toBeLessThanOrEqual(right(mid.bounds!) - 8 + 1e-6);
+    expect(groupLabelObstacles(model).some(item => overlaps(label.bounds!, item.bounds))).toBe(true);
+    expect(model.diagnostics.filter(item => item.code === 'GROUP_LABEL_GAP_INFEASIBLE')).toEqual([{
+      stage: 'placement', severity: 'warning', code: 'GROUP_LABEL_GAP_INFEASIBLE',
+      message: 'Group mid has no free label gap between the reserved lanes of its tier; final gates decide the retained geometry.',
+      owners: [{ kind: 'group', id: 'mid' }],
+    }]);
+    // The refusal costs no centring pass: a budget-exhaustion diagnosis would be a different defect.
+    expect(model.diagnostics.filter(item => item.code === 'PLACEMENT_NON_CONVERGENCE')).toHaveLength(0);
+
+    // A feasible widening in the same model still succeeds; low has no reserved lane at its tier.
+    expect(model.lanes.some(lane => lane.tier === model.groups.low!.tier)).toBe(false);
+    expect(model.groups.low!.bounds!.width).toBeGreaterThan(lowWidth);
+    expect(model.labels.find(item => item.id === 'label:group:low')!.bounds!.x)
+      .toBeGreaterThan(model.groups.low!.bounds!.x + 8 + 1e-6);
+
+    // The stroke-aware reservation and the mandatory shared prefix both survive the refusal.
+    const band = model.labelBands.find(item => item.group === 'mid')!;
+    expect(band.bounds).toEqual({ x: mid.bounds!.x, y: mid.bounds!.y, width: mid.bounds!.width, height: 22 });
+    expect(band.clearance).toBe(ORDINARY_CLEARANCE);
+    expect(model.nodes.m!.bounds!.y).toBe(bottom(band.bounds) + ORDINARY_CLEARANCE);
+    const member = model.links.find(link => link.id === 'link-1')!;
+    expect(member.sharedRuns!.from!.length).toBeGreaterThan(0);
+    expect(member.path!.segments.slice(0, member.sharedRuns!.from!.length)).toEqual(member.sharedRuns!.from);
+    expect(bandEntryConflicts(model)).toEqual([]);
+    expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
+  });
+
+  it('still rejects a group that has been widened across its own reserved lane', async () => {
+    const model = run(await throughBundles(enclosedByLanes));
+    const lane = model.lanes.find(item => item.id === 'lane:"link-2":1')!;
+    expect(() => validateLanes(copy(model))).not.toThrow();
+
+    const crossed = copy(model);
+    crossed.groups.mid!.bounds!.width = lane.x - crossed.groups.mid!.bounds!.x;
+    expect(() => validateLanes(crossed)).toThrow(/Lane side contradicts its group/);
+
+    // One pixel into the reserved corridor is still rejected, by the crossing rule.
+    const touching = copy(model);
+    touching.groups.mid!.bounds!.width = lane.bounds.x + 1 - touching.groups.mid!.bounds!.x;
+    expect(() => validateLanes(touching)).toThrow(/Lane lane:"link-2":1 crosses occupied group mid/);
+
+    expect(() => withLayoutMutation(model, 'route', draft => { draft.groups.mid!.bounds!.width += 20; }))
+      .toThrow(/cannot change placement/);
+  });
+
+  it('measures widening feasibility from the occupied box a lane was reserved against', async () => {
+    const before = await throughBundles(pillPastThePadding);
+    const mid = before.groups.mid!, lane = before.lanes.find(item => item.id === 'lane:"link-2":1')!;
+    const pill = before.nodes.m!.ports.find(port => port.side === 'right')!.pill!;
+    const box = mid.bounds!;
+
+    // The named pill reaches past the padding, so the corridor was reserved past mid's own edge.
+    expect(right(pill.bounds)).toBeGreaterThan(right(box) + 1e-6);
+    expect(lane.bounds.x).toBeGreaterThan(right(box) + 1e-6);
+
+    // A widening leaves that pill where it is, so it may reach the corridor edge; a translation
+    // carries the pill with it and may not. Reading the padded box alone confuses the two.
+    const widened = { ...box, width: lane.bounds.x - box.x };
+    expect(laneSidesHold(before, [{ group: mid, bounds: widened }])).toBe(true);
+    expect(laneSidesHold(before, [{ group: mid, bounds: { ...widened, width: widened.width + 1 } }])).toBe(false);
+    expect(laneSidesHold(before, [{ group: mid, bounds: { ...box, x: box.x + 1 } }])).toBe(false);
+    const crossed = copy(before);
+    crossed.groups.mid!.bounds!.width = widened.width + 1;
+    expect(() => validateLanes(crossed)).toThrow(/Lane lane:"link-2":1 crosses occupied group mid/);
+
+    const model = run(before);
+    expect(model.groups.mid!.bounds!.width).toBe(mid.bounds!.width);
+    expect(model.lanes.map(item => [item.id, item.owner, item.group, item.side, item.x, item.bounds.width]))
+      .toEqual(before.lanes.map(item => [item.id, item.owner, item.group, item.side, item.x, item.bounds.width]));
+    expect(model.labels.find(item => item.id === 'label:group:mid')!.bounds!.x).toBe(model.groups.mid!.bounds!.x + 8);
+    expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
+  });
+
+  it('measures each consecutive initial reservation against the pills the previous push moved', async () => {
+    // Three tier-1 groups left of one corridor. Two of them reserve their label width in turn, and
+    // both pushes land on `third`, whose named pill already reaches 11.25 px past its group box.
+    const yaml = `portograph: 2
+groups:
+  top: {tier: 0}
+  first: {tier: 1, label: WWWWWW}
+  second: {tier: 1, label: WWWWWW}
+  third: {tier: 1}
+  low: {tier: 2}
+nodes:
+  a: {group: top, ports: [{name: p, side: bottom}]}
+  f: {group: first}
+  s: {group: second}
+  t: {group: third, ports: [{name: long-right-port, side: right}]}
+  z: {group: low, ports: [{name: p, side: top}]}
+links: [[a.p, z.p]]`;
+    // A checked rows transaction places the three groups; every later stage runs normally.
+    const rowed = withLayoutMutation(await placed(yaml), 'rows', draft => {
+      for (const [id, x] of Object.entries({ top: 354.25, first: 0, second: 134, third: 268, low: 354.25 })) {
+        moveGroup(draft, draft.groups[id]!, x - draft.groups[id]!.bounds!.x, 0);
+      }
+    });
+    const before = bundles(bars(centre(flanks(lanes(rowed)))));
+
+    const lane = before.lanes.find(item => item.id === 'lane:"link-1":1')!;
+    const pill = before.nodes.t!.ports[0]!.pill!;
+    expect([lane.side, lane.bounds.x]).toEqual(['right', 374.25]);
+    expect([pill.bounds.x, right(pill.bounds)]).toEqual([302, 358]);
+    // Only 15 px of headroom, and the two 9.95703125 px reservations would need 19.9140625.
+    expect(lane.bounds.x - (right(pill.bounds) + 1.25)).toBe(15);
+
+    const model = run(before);
+    expect(model.groups.first!.bounds!.width).toBeGreaterThan(before.groups.first!.bounds!.width);
+    expect(model.groups.second!.bounds!.width).toBe(before.groups.second!.bounds!.width);
+    expect(right(model.nodes.t!.ports[0]!.pill!.bounds) + 1.25).toBeLessThanOrEqual(lane.bounds.x + 1e-6);
+    expect(model.lanes.map(item => [item.id, item.owner, item.group, item.side, item.x, item.bounds.width]))
+      .toEqual(before.lanes.map(item => [item.id, item.owner, item.group, item.side, item.x, item.bounds.width]));
+    expect(model.diagnostics.filter(item => item.code === 'GROUP_LABEL_GAP_INFEASIBLE')
+      .map(item => item.owners)).toEqual([[{ kind: 'group', id: 'second' }]]);
+    expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
+  });
+
+  it('diagnoses every lane-blocked group even when the shared budget is exhausted first', async () => {
+    const pairs = [0, 1, 2, 3, 4];
+    const yaml = `portograph: 2
+groups:
+${pairs.map(i => `  parents-${i}: {tier: 0}\n  blocked-${i}: {tier: 1, label: A deliberately long reserved group label ${i} that cannot fit the initial band}`).join('\n')}
+  top-group: {tier: 2}
+  mid: {tier: 3}
+  low: {tier: 4, label: A moderately long label for the lower group}
+nodes:
+${pairs.map(i => `  parent-${i}: {group: parents-${i}, ports: [{name: p, side: bottom}, {name: q, side: bottom}]}\n  child-${i}: {group: blocked-${i}, ports: [{name: p, side: top}, {name: q, side: top}]}`).join('\n')}
+  a: {group: top-group, ports: [{name: p, side: bottom}]}
+  m: {group: mid, ports: [{name: p, side: top}]}
+  b: {group: low, ports: [{name: p, side: top}, {name: q, side: top}]}
+  c: {group: low, ports: [{name: p, side: top}]}
+links:
+${pairs.flatMap(i => [`  - [parent-${i}.p, child-${i}.p]`, `  - [parent-${i}.q, child-${i}.q]`]).join('\n')}
+  - [a.p, b.p]
+  - [a.p, b.q]
+  - [a.p, c.p]
+  - [a.p, m.p]`;
+    const model = run(await throughBundles(yaml));
+
+    // The budget runs out on the five repairable pairs, but `mid` is boxed in by its tier's
+    // corridors: no budget could have repaired it, so it is still classified.
+    expect(model.diagnostics.filter(item => item.code === 'PLACEMENT_NON_CONVERGENCE')).toHaveLength(1);
+    expect(model.diagnostics.filter(item => item.code === 'GROUP_LABEL_GAP_INFEASIBLE')
+      .map(item => item.owners)).toEqual([[{ kind: 'group', id: 'mid' }]]);
+    const mid = model.groups.mid!;
+    expect(model.labels.find(item => item.id === 'label:group:mid')!.bounds!.x).toBe(mid.bounds!.x + 8);
+    for (const lane of model.lanes.filter(item => item.tier === mid.tier)) {
+      expect(lane.side === 'left' ? lane.x < mid.bounds!.x : lane.x > right(mid.bounds!)).toBe(true);
+    }
     expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
   });
 

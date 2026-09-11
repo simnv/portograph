@@ -404,6 +404,14 @@ reserved rectangle of a link: its complete path, its partially fixed lane runs a
 outward shared runs of both ends. A complete path repeats the runs it consumed, so identical
 stroke-aware rectangles with identical ownership collapse to one entry.
 
+**Widening cannot cross a reserved lane.** Lane x, width, owner and side are immutable after 7a, so
+a widening and its neighbour pushes are feasible only while every group keeps each lane of its tier
+on the side that currently holds it. Feasibility reads the same occupied extent the lane validator
+measures — group box, stroke-aware node clearance and pill gaps — and a widening leaves those nodes
+and pills where they are while a push carries them along. A group whose only free gap lies beyond
+that limit keeps its width and its left-first label, spends no centring pass, and is diagnosed
+`GROUP_LABEL_GAP_INFEASIBLE`; the unchanged final gates decide the retained geometry.
+
 **Band clearance for stage 8 entry.** Stage 8 routes only free gaps and must avoid whole label
 bands; owning the endpoint group does not waive that obstacle. Each band therefore records the
 `clearance` it reserves between its lower edge and the group's topmost node. The reservation is the
