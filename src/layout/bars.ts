@@ -1,3 +1,4 @@
+import { GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
 import type { LayoutLink, LayoutModel, LayoutNode, LayoutPort, PathSegment, Point, Rect } from '../model/index.js';
 import { orderedGroupIds } from '../model/model.js';
 import { equal } from '../model/json-equality.js';
@@ -305,8 +306,13 @@ function sourceStemLength(model: LayoutModel, item: BarLink, slotX: number): num
 function physicalPath(model: LayoutModel, item: BarLink, slotX: number, useHints: boolean): PathSegment[] {
   const external = item.external.anchor!, target = item.port.anchor!;
   const barNodes = Object.values(model.nodes).filter(node => isBarNode(model, node.id));
-  const topY = Math.min(...barNodes.map(node => node.bounds!.y)) - MIN_STEM;
-  const bottomY = Math.max(...barNodes.map(node => bottom(node.bounds!))) + MIN_STEM;
+  // Approach rows and bypass tracks sit one stem outside the bars — and, if that lands within the
+  // edge margin of the bar group's box, outside the box by the margin instead (ADR-0013).
+  const groupBox = model.groups[model.document.nodes[item.bar.id]!.group]!.bounds!;
+  const offEdge = (value: number, edge: number, outward: 1 | -1): number =>
+    Math.abs(value - edge) < GROUP_EDGE_LINK_CLEARANCE ? edge + outward * GROUP_EDGE_LINK_CLEARANCE : value;
+  const topY = offEdge(Math.min(...barNodes.map(node => node.bounds!.y)) - MIN_STEM, groupBox.y, -1);
+  const bottomY = offEdge(Math.max(...barNodes.map(node => bottom(node.bounds!))) + MIN_STEM, bottom(groupBox), 1);
   const externalSide = peerSide(item);
   const targetSide = item.port.side as 'top' | 'bottom';
   const peerY = externalSide === 'top' ? topY : bottomY;
@@ -325,8 +331,8 @@ function physicalPath(model: LayoutModel, item: BarLink, slotX: number, useHints
     appendConnector(segments, cursor, { x: slotX, y: targetY }, item.link.owner);
     appendConnector(segments, { x: slotX, y: targetY }, targetOut, item.link.owner);
   } else {
-    const minX = Math.min(...barNodes.map(node => node.bounds!.x)) - MIN_STEM;
-    const maxX = Math.max(...barNodes.map(node => right(node.bounds!))) + MIN_STEM;
+    const minX = offEdge(Math.min(...barNodes.map(node => node.bounds!.x)) - MIN_STEM, groupBox.x, -1);
+    const maxX = offEdge(Math.max(...barNodes.map(node => right(node.bounds!))) + MIN_STEM, right(groupBox), 1);
     const bypassX = Math.abs(cursor.x - minX) <= Math.abs(cursor.x - maxX) ? minX : maxX;
     appendConnector(segments, cursor, { x: bypassX, y: peerY }, item.link.owner);
     appendConnector(segments, { x: bypassX, y: peerY }, { x: bypassX, y: targetOut.y }, item.link.owner);

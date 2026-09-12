@@ -514,6 +514,13 @@ synchronous transaction, then commits its output through the route validator.
 
 ## Stage 8 — route (remainder)
 
+**Group boxes are obstacles for foreign links (ADR-0013).** Every group box, grown by the 10 px
+edge margin, obstructs each link that neither attaches inside it, nor owns a lane in its margin,
+nor crosses one of its declared bars. Attached links still cross their own boundary at ports. The
+same margin keeps any routed segment from running along a group edge from on or outside the box;
+stage 7e producers move fan, merge, channel and bar-bypass rows off such edges and reserve that
+room in their tier-gap capacity.
+
 `libavoid-js@0.5.0-beta.5`, `Router(RouterFlag.OrthogonalRouting.value)`, with
 `shapeBufferDistance = 0`: every obstacle carries its own exact clearance, so a terminal trim is
 never expanded shut afterwards. `processTransaction()` is synchronous WASM work, so the whole

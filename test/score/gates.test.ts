@@ -335,9 +335,12 @@ describe('G6 stroke-aware clearance', () => {
   it('uses segment and foreign-node strokes at the 10 px boundary', () => {
     const model = simple();
     node(model, 'c', { x: 41.75, y: 80, width: 30, height: 10 });
-    expect(gate(model, 'G6').passed).toBe(true);
+    // The fixture's 10 px group padding puts c's box within the group edge margin; that is the
+    // separate segment-group-edge code (ADR-0013), so only the node-clearance code is read here.
+    const nodeClearance = (): boolean => !gate(model, 'G6').violations.some(v => v.code === 'segment-node-clearance');
+    expect(nodeClearance()).toBe(true);
     model.nodes.c!.bounds!.x = 41.7;
-    expect(gate(model, 'G6').passed).toBe(false);
+    expect(nodeClearance()).toBe(false);
     model.links[0]!.layer = model.links[0]!.path!.layer = 'overlay';
     expect(gate(model, 'G6').passed).toBe(true);
   });

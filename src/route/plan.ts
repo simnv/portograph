@@ -174,9 +174,14 @@ export const reversedRuns = (segments: PathSegment[]): PathSegment[] =>
 export function batchRequest(plan: RoutePlan, batch: { id: string; links: string[] }, extra: RouteObstacle[]): RouteBatch {
   const owner = plan.links.find(item => item.link === batch.links[0]!)!;
   const excluded = new Set(owner.exclusions);
-  const shapes: RouteShape[] = [...plan.obstacles, ...extra].filter(item => !excluded.has(item.id))
-    .map(item => item.pins?.length ? { id: item.id, bounds: item.bounds, pins: item.pins } : { id: item.id, bounds: item.bounds });
   const connectors = batch.links.flatMap(id => plan.links.find(item => item.link === id)!.connectors);
+  // A pin matters to this batch only when one of its connectors ends there; a pinned node that
+  // another batch attaches to is a plain obstacle here, so a foreign group box may cover it.
+  const targeted = new Set(connectors.flatMap(c => [c.from, c.to]).flatMap(e => e.kind === 'pin' ? [`${e.shape}#${e.classId}`] : []));
+  const shapes: RouteShape[] = [...plan.obstacles, ...extra].filter(item => !excluded.has(item.id)).map(item => {
+    const pins = item.pins?.filter(pin => targeted.has(`${item.id}#${pin.classId}`));
+    return pins?.length ? { id: item.id, bounds: item.bounds, pins } : { id: item.id, bounds: item.bounds };
+  });
   return { id: batch.id, shapeBufferDistance: SHAPE_BUFFER_DISTANCE, parameters: ROUTE_PARAMETERS,
     shapes: disjointShapes(shapes), connectors };
 }

@@ -3,7 +3,8 @@ import type { LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import { equal } from '../model/json-equality.js';
 import { routedStroke, stemReach } from '../layout/bands.js';
 import { findPort } from '../layout/row-paths.js';
-import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
+import { groupConsumers } from '../score/model.js';
 import { EPS, horizontal, length, samePoint, segmentRect, vertical } from '../score/geometry.js';
 import { outward } from '../score/model.js';
 import { effectiveLayer, reversedRuns } from './plan.js';
@@ -38,6 +39,11 @@ function reservations(model: LayoutModel, link: LayoutLink): { id: string; bound
     const owns = owner.kind === 'link' ? owner.id === link.id
       : owner.kind === 'bundle' && model.bundles.some(bundle => bundle.id === owner.id && bundle.members.includes(link.id));
     if (!owns) result.push({ id: lane.id, bounds: expand(lane.bounds) });
+  }
+  for (const [id, group] of Object.entries(model.groups)) {
+    if (!group.bounds || !group.nodes.length || groupConsumers(model, id).includes(link.id)) continue;
+    const margin = half + GROUP_EDGE_LINK_CLEARANCE, box = group.bounds;
+    result.push({ id: `group:${id}`, bounds: { x: box.x - margin, y: box.y - margin, width: box.width + 2 * margin, height: box.height + 2 * margin } });
   }
   for (const bundle of model.bundles) {
     if (bundle.layer === 'overlay' || bundle.members.includes(link.id)) continue;

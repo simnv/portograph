@@ -9,6 +9,23 @@ export const endpoints = (link: LayoutLink): { from: PortRef; to: PortRef } => {
   if (link.from.node !== undefined && link.to.node !== undefined) return { from: link.from, to: link.to };
   throw new Error(`Link ${link.id} requires concrete port attachments`);
 };
+/** Links a group's box does not obstruct: attached inside it, or owning a lane reserved in its margin. */
+export function groupConsumers(model: LayoutModel, groupId: string): string[] {
+  const members = new Set(model.groups[groupId]!.nodes), result = new Set<string>();
+  for (const link of model.links) {
+    const ends = endpoints(link);
+    if (members.has(ends.from.node) || members.has(ends.to.node)) result.add(link.id);
+  }
+  for (const drop of model.barDrops) if (drop.barCross.some(id => members.has(id))) result.add(drop.link);
+  for (const lane of model.lanes) {
+    if (lane.group !== groupId) continue;
+    const owner = lane.owner;
+    if (owner.kind === 'link') result.add(owner.id);
+    else if (owner.kind === 'bundle') for (const id of model.bundles.find(bundle => bundle.id === owner.id)?.members ?? []) result.add(id);
+  }
+  return [...result];
+}
+
 export function port(model: LayoutModel, ref: PortRef): LayoutPort | undefined { return model.nodes[ref.node]?.ports.find(candidate => refEqual(candidate.ref, ref)); }
 export function effectiveLayer(link: LayoutLink): Layer {
   return link.layer ?? (link.technique !== undefined ? link.technique === 'overlay' ? 'overlay' : 'routed' : link.family ?? link.path?.layer ?? 'routed');

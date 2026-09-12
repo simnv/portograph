@@ -67,6 +67,7 @@ drew it. Network diagrams first; software architecture and electrical panels nex
 | Group padding | 20 px beyond node bodies and named port pills, including pill half stroke | maintainer M1 visual review (12 → 20, 2026-09-11) |
 | Group title edge | the horizontal edge with fewer incident link ports (fed from above → bottom); ties keep the top; titles stay horizontal | ADR-0011, maintainer 2026-09-12 |
 | Linked-group grid | groups joined by vertical links share x-extent and width, by horizontal links y-extent and height, when neither is smaller than the union by more than 30 % | ADR-0012, maintainer 2026-09-12 |
+| Group edge link-margin | 10 px: foreign group boxes are routing obstacles grown by it (G2 `through-group`); no segment runs along a group edge from on or outside the box within it (G6 `segment-group-edge`) | ADR-0013, maintainer 2026-09-12 |
 | Group title link-margin | 8 px around the measured title, link-free: labels keep it from reserved link geometry, routing treats it as an obstacle, G3 fails a segment inside it | maintainer M1 visual review, 2026-09-11 |
 | Node minimum | 50 × 35 px | d3-fd |
 | Port pill | 24 × 10 px, r 3 | d3-fd |

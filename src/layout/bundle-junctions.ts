@@ -1,6 +1,6 @@
 import type { Bundle, LayoutModel, LayoutPort, Owner, PathSegment, Point } from '../model/index.js';
 import { portId } from './skeleton-graph.js';
-import { axis, clone, coordinate, facing, normal, type Member } from './bundle-geometry.js';
+import { axis, clearOfGroupEdges, clone, coordinate, facing, groupDepthPairs, normal, type Member } from './bundle-geometry.js';
 
 export interface BundleFans {
   members: Member[];
@@ -19,8 +19,16 @@ export function bundleFans(model: LayoutModel, bundle: Bundle, list: Member[], q
     for (const item of ordered) { const own = groups.get(item[end]) ?? []; own.push(item); groups.set(item[end], own); }
     const spacing = Math.max(q, ...ordered.map(m => model.nodes[m[end].ref.node]!.sidePitch![m[end].side!]!));
     const base = Math.min(...ordered.map(m => coordinate(m[end])));
-    const distance = 15 + q * list.length;
     for (const [port, own] of groups) {
+      // Fan rows sit 15 px out and then one pitch apart, but never within the edge margin of a group
+      // edge they run along (ADR-0013): a row that would, and every row after it, moves outward.
+      const nrm = normal(port.side!);
+      const toDepth = (p: Point): number => axis(port.side!) === 'y' ? nrm.x * (p.x - port.anchor!.x) : nrm.y * (p.y - port.anchor!.y);
+      const pairs = groupDepthPairs(model, [model.document.nodes[port.ref.node]!.group], toDepth);
+      const clearDepth = (depth: number): number => clearOfGroupEdges(depth, pairs, 1);
+      const rows: number[] = [];
+      for (let i = 0; i < list.length; i++) rows.push(clearDepth(Math.max(15 + i * q, (rows[i - 1] ?? -Infinity) + q)));
+      const distance = clearDepth(Math.max(15 + q * list.length, rows[rows.length - 1]! + q));
       const reserved = own.map(m => ({ member: m, runs: m.link.sharedRuns?.[end === 'a' ? m.reversed ? 'to' : 'from' : m.reversed ? 'from' : 'to'] }));
       if (reserved.every(item => item.runs?.length)) {
         for (const item of reserved) {
@@ -58,20 +66,20 @@ export function bundleFans(model: LayoutModel, bundle: Bundle, list: Member[], q
       let depth = 0;
       while (active.length >= 2) {
         const id = `junction:${portId(port.ref)}:${bundle.id}:${depth}`, owner = { kind: 'shared-stem' as const, id };
-        const point = world(coordinate(port), 15 + depth * q);
+        const point = world(coordinate(port), rows[depth]!);
         const stem: PathSegment = { from: { ...current }, to: { ...point }, owner };
         model.junctions.push({ id, owner, layer: 'routed', port: { ...port.ref }, links: active.map(m => m.link.id),
           ...(previous ? { parent: previous } : {}), point, stem });
         for (const member of active) segments.get(member.link.id)!.push(clone(stem));
         // Peel the track farthest from the shared normal. Remaining members continue on the shared normal.
         const leaf = [...active].sort((a, b) => Math.abs(outputs.get(b.link.id)! - coordinate(port)) - Math.abs(outputs.get(a.link.id)! - coordinate(port)))[0]!, output = outputs.get(leaf.link.id)!;
-        const elbow = world(output, 15 + depth * q), terminal = world(output, distance);
+        const elbow = world(output, rows[depth]!), terminal = world(output, distance);
         push(leaf.link.id, point, elbow, owner);
         push(leaf.link.id, elbow, terminal, elbow.x === point.x && elbow.y === point.y ? owner : bundle.owner);
         active = active.filter(m => m !== leaf); current = point; previous = id; depth++;
       }
       const last = active[0]!, output = outputs.get(last.link.id)!;
-      const elbow = world(output, previous ? 15 + (depth - 1) * q : 15);
+      const elbow = world(output, previous ? rows[depth - 1]! : rows[0]!);
       const owner: Owner = previous ? { kind: 'shared-stem', id: previous } : bundle.owner;
       push(last.link.id, current, elbow, owner);
       push(last.link.id, elbow, world(output, distance), previous && coordinate(port) === output ? owner : bundle.owner);
@@ -107,6 +115,11 @@ export function crossBundleFans(model: LayoutModel): void {
     const target = new Map<string, number>();
     let prior = -Infinity;
     for (const item of ordered) { prior = Math.max(item.far.anchor![tangent], prior + q); target.set(item.link.id, prior); }
+    // Rows one pitch apart from a 15 px stem, each moved off the port group's edge margin (ADR-0013).
+    const toDepth = (p: Point): number => tangent === 'y' ? n.x * (p.x - port.anchor!.x) : n.y * (p.y - port.anchor!.y);
+    const pairs = groupDepthPairs(model, [model.document.nodes[port.ref.node]!.group], toDepth);
+    const rows: number[] = [];
+    for (let i = 0; i <= items.length; i++) rows.push(clearOfGroupEdges(Math.max(15 + i * q, (rows[i - 1] ?? -Infinity) + q), pairs, 1));
     let active = [...ordered], cursor = { ...port.anchor! }, parent: string | undefined, depth = 0;
     const paths = new Map(items.map(item => [item.link.id, [] as PathSegment[]]));
     const push = (id: string, from: Point, to: Point, owner: Owner): void => {
@@ -114,20 +127,20 @@ export function crossBundleFans(model: LayoutModel): void {
     };
     while (active.length > 1) {
       const id = `junction:${portId(port.ref)}:shared:${depth}`, owner = { kind: 'shared-stem' as const, id };
-      const point = world(coordinate(port), 15 + depth * q), stem: PathSegment = { from: cursor, to: point, owner };
+      const point = world(coordinate(port), rows[depth]!), stem: PathSegment = { from: cursor, to: point, owner };
       model.junctions.push({ id, owner, layer: 'routed', port: { ...port.ref }, links: active.map(i => i.link.id),
         ...(parent ? { parent } : {}), point, stem });
       for (const item of active) paths.get(item.link.id)!.push(clone(stem));
       const leaf = [...active].sort((a, b) => Math.abs(target.get(b.link.id)! - coordinate(port)) - Math.abs(target.get(a.link.id)! - coordinate(port)))[0]!;
-      const elbow = world(target.get(leaf.link.id)!, 15 + depth * q);
+      const elbow = world(target.get(leaf.link.id)!, rows[depth]!);
       push(leaf.link.id, point, elbow, owner);
-      push(leaf.link.id, elbow, world(target.get(leaf.link.id)!, 15 + items.length * q), leaf.link.owner);
+      push(leaf.link.id, elbow, world(target.get(leaf.link.id)!, rows[items.length]!), leaf.link.owner);
       active = active.filter(i => i !== leaf); cursor = point; parent = id; depth++;
     }
     const last = active[0]!, owner = { kind: 'shared-stem' as const, id: parent! };
-    const elbow = world(target.get(last.link.id)!, 15 + (depth - 1) * q);
+    const elbow = world(target.get(last.link.id)!, rows[depth - 1]!);
     push(last.link.id, cursor, elbow, owner);
-    push(last.link.id, elbow, world(target.get(last.link.id)!, 15 + items.length * q), target.get(last.link.id) === coordinate(port) ? owner : last.link.owner);
+    push(last.link.id, elbow, world(target.get(last.link.id)!, rows[items.length]!), target.get(last.link.id) === coordinate(port) ? owner : last.link.owner);
     for (const item of items) {
       item.link.sharedRuns ??= {};
       item.link.sharedRuns[item.end] = paths.get(item.link.id)!;

@@ -1,13 +1,16 @@
 import type { Bundle, LayoutModel, PathSegment, Point, Rect } from '../model/index.js';
 import { segmentRect, segmentRectDistance } from '../score/geometry.js';
-import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
-import { coordinate, normal, type Member } from './bundle-geometry.js';
+import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
+import { clearOfGroupEdges, coordinate, groupDepthPairs, normal, type Member } from './bundle-geometry.js';
 import { BundleFeasibilityError, pathBounds, polyline } from './bundle-paths.js';
 
 const inflate = (r: Rect, d: number): Rect => ({ x: r.x - d, y: r.y - d, width: r.width + 2 * d, height: r.height + 2 * d });
 const segment = (from: Point, to: Point, bundle: Bundle): PathSegment => ({ from, to, owner: bundle.owner });
 function rects(model: LayoutModel, bundle: Bundle, halfWidth: number): Rect[] {
   const obstacles = Object.values(model.nodes).map(node => inflate(node.bounds!, halfWidth + 10 + (node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node) / 2));
+  // Foreign group boxes keep the edge margin (ADR-0013); the bundle's own two groups do not obstruct.
+  const own = new Set(bundle.nodes.map(id => model.document.nodes[id]!.group));
+  for (const [id, group] of Object.entries(model.groups)) if (!own.has(id) && group.bounds && group.nodes.length) obstacles.push(inflate(group.bounds, halfWidth + GROUP_EDGE_LINK_CLEARANCE));
   for (const lane of model.lanes) obstacles.push(inflate(lane.bounds, halfWidth + 0.001));
   for (const label of model.labels) if (label.bounds && !label.omitted && label.layer !== 'overlay') obstacles.push(inflate(label.bounds, halfWidth + 0.001));
   for (const link of model.links) {
@@ -73,7 +76,14 @@ export function routeBundleChannel(model: LayoutModel, bundle: Bundle, list: Mem
   const halfWidth = Math.max(...list.map(item => Math.abs(item.a.anchor![tangent] - a[tangent])))
     + Math.max(...list.map(item => linkStrokeWidth(item.link))) / 2;
   const obstacles = rects(model, bundle, halfWidth), stem = halfWidth + 15;
-  const start = { x: a.x + n.x * stem, y: a.y + n.y * stem }, end = { x: b.x + m.x * stem, y: b.y + m.y * stem };
+  // A stem that would turn on or just outside its own group edge turns one margin beyond it instead.
+  // The innermost member turns `halfWidth` before the centreline; that turn is what must clear the edge.
+  const stemFor = (end: 'a' | 'b', anchor: Point, dir: Point): number => {
+    const group = model.document.nodes[list[0]![end].ref.node]!.group;
+    return clearOfGroupEdges(stem - halfWidth, groupDepthPairs(model, [group], p => dir.x * (p.x - anchor.x) + dir.y * (p.y - anchor.y)), 1) + halfWidth;
+  };
+  const stemA = stemFor('a', a, n), stemB = stemFor('b', b, m);
+  const start = { x: a.x + n.x * stemA, y: a.y + n.y * stemA }, end = { x: b.x + m.x * stemB, y: b.y + m.y * stemB };
   const points = [a, ...route(start, end, obstacles, bundle), b];
   const centreline = polyline(points, bundle.owner), reduced = [centreline[0]!.from, ...centreline.map(s => s.to)];
   const paths = new Map(list.map(item => [item.link.id, offset(reduced, (coordinate(item.a) - a[tangent]) * (n.x !== 0 ? n.x : -n.y), bundle)]));
@@ -84,6 +94,11 @@ export function clearBundleMembers(model: LayoutModel, bundle: Bundle, paths: Pa
     for (const node of Object.values(model.nodes)) {
       if (index === 0 && bundle.nodes.includes(node.id) || index === segments.length - 1 && bundle.nodes.includes(node.id)) continue;
       if (segmentRectDistance(segment, node.bounds!) < 10 + (stroke + (node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node)) / 2 - 1e-6) return false;
+    }
+    const own = new Set(bundle.nodes.map(id => model.document.nodes[id]!.group));
+    for (const [id, group] of Object.entries(model.groups)) {
+      if (own.has(id) || !group.bounds || !group.nodes.length) continue;
+      if (segmentRectDistance(segment, group.bounds) < GROUP_EDGE_LINK_CLEARANCE + stroke / 2 - 1e-6) return false;
     }
   }
   return true;

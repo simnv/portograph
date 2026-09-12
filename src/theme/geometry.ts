@@ -31,6 +31,14 @@ export const OVERLAY_ENDPOINT_RADIUS = 2;
  * G3 fails a routed segment that enters it (maintainer M1 visual review, 2026-09-11).
  */
 export const GROUP_LABEL_LINK_CLEARANCE = 8;
+/**
+ * Group boxes are geometry links respect (ADR-0013). A routed link never enters a group it does not
+ * attach inside: stage 8 treats the foreign box, grown by this margin, as an obstacle and G2 fails a
+ * segment inside it. No routed segment runs along any group edge from on or outside the box — parallel
+ * to it and closer than this — and G6 fails one that does; turns inside a group's own padding and
+ * perpendicular crossings at ports stay free.
+ */
+export const GROUP_EDGE_LINK_CLEARANCE = 10;
 
 /** The widest routed stroke a placement must keep clear; reservations may not assume less. */
 export function routedStrokeWidth(model: Pick<LayoutModel, 'links'>): number {

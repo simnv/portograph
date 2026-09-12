@@ -1,7 +1,7 @@
 import type { LayoutModel, LayoutNode, PathSegment } from '../model/index.js';
-import { DEFAULT_STROKE_WIDTHS, GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
 import { EPS, bottom, contains, horizontal, length, near, overlapSegment, rectDistance, rectOverlap, samePoint, segmentDistance, segmentRect, segmentRectDistance, vertical } from './geometry.js';
-import { anchorOnBoundary, barContact, bundlePair, endpoints, incident, junctionFan, mergedRun, outward, port, refEqual, sharedStem } from './model.js';
+import { anchorOnBoundary, barContact, bundlePair, endpoints, groupConsumers, incident, junctionFan, mergedRun, outward, port, refEqual, sharedStem } from './model.js';
 import type { Segment } from './model.js';
 import type { GateId, GateResult, ScoreCounters } from './types.js';
 
@@ -73,6 +73,25 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
     }
   }
   counters.barCross = crossedBars.size;
+  // Group boxes are geometry links respect (ADR-0013): no segment inside a foreign group, and no
+  // segment running along any group edge closer than the edge margin.
+  const groupBoxes = Object.entries(model.groups).filter(([, group]) => group.bounds && group.nodes.length)
+    .map(([id, group]) => ({ id, bounds: group.bounds!, consumers: new Set(groupConsumers(model, id)) }));
+  for (const s of routed) {
+    for (const group of groupBoxes) {
+      const box = group.bounds;
+      if (!group.consumers.has(s.link.id) && segmentRect(s.segment, box)) fail('G2', 'through-group', [s.link.id, group.id], 'Routed segment passes through a foreign group');
+      // Inside its own box a link turns in the group's padding; on or outside an edge it keeps the margin.
+      const along = (edge: number, low: number, high: number, at: number, from: number, to: number, inner: [number, number]): boolean =>
+        !(at > inner[0] + EPS && at < inner[1] - EPS)
+        && Math.abs(at - edge) < GROUP_EDGE_LINK_CLEARANCE - EPS && Math.min(from, to) < high - EPS && Math.max(from, to) > low + EPS;
+      const { from, to } = s.segment;
+      const runs = horizontal(s.segment)
+        ? [box.y, bottom(box)].some(edge => along(edge, box.x, box.x + box.width, from.y, from.x, to.x, [box.y, bottom(box)]))
+        : vertical(s.segment) && [box.x, box.x + box.width].some(edge => along(edge, box.y, bottom(box), from.x, from.y, to.y, [box.x, box.x + box.width]));
+      if (runs) fail('G6', 'segment-group-edge', [s.link.id, group.id], `Routed segment runs along a group edge closer than ${GROUP_EDGE_LINK_CLEARANCE} px`);
+    }
+  }
   const labels = model.labels.filter(l => !l.omitted && l.layer !== 'overlay');
   for (let i = 0; i < labels.length; i++) {
     const label = labels[i]!;

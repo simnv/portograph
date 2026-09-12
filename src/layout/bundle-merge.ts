@@ -1,6 +1,6 @@
 import type { Bundle, LayoutModel, PathSegment, Point } from '../model/index.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
-import { clone, normal, type Member } from './bundle-geometry.js';
+import { clone, normal, type Member, clearOfGroupEdges, groupDepthPairs } from './bundle-geometry.js';
 import { BundleFeasibilityError, polyline, reverse } from './bundle-paths.js';
 
 /** Merge selected members through a comb of real trunk joins, retaining complete logical paths. */
@@ -31,8 +31,21 @@ export function mergeMembers(model: LayoutModel, bundle: Bundle, list: Member[],
   const sourceOrder = [...selected].sort((a, b) => endpoints.get(a.link.id)!.from.x - endpoints.get(b.link.id)!.from.x);
   const targetOrder = [...selected].sort((a, b) => endpoints.get(a.link.id)!.to.x - endpoints.get(b.link.id)!.to.x);
   const trunk = Math.min(...[...endpoints.values()].flatMap(e => [e.from.x, e.to.x]));
-  const start = Math.max(...[...endpoints.values()].map(e => e.from.y)) + 15;
-  let end = Math.min(...[...endpoints.values()].map(e => e.to.y)) - 15;
+  // Join and leave rows never run along a group edge (ADR-0013): the whole row set moves outward
+  // until every row clears the edge depths of the two endpoint groups by the edge margin.
+  const pairs = groupDepthPairs(model, bundle.nodes.map(id => model.document.nodes[id]!.group), p => local(p).y);
+  const shiftRows = (first: number, step: number, direction: 1 | -1): number => {
+    let value = first;
+    for (let guard = 0; guard < 8; guard++) {
+      const moved = selected.map((_, index) => clearOfGroupEdges(value + index * step, pairs, direction) - (value + index * step));
+      const delta = direction > 0 ? Math.max(0, ...moved) : Math.min(0, ...moved);
+      if (Math.abs(delta) < 1e-9) return value;
+      value += delta;
+    }
+    return value;
+  };
+  const start = shiftRows(Math.max(...[...endpoints.values()].map(e => e.from.y)) + 15, q, 1);
+  let end = shiftRows(Math.min(...[...endpoints.values()].map(e => e.to.y)) - 15, -q, -1);
   if (constrained) {
     const entries = model.lanes.filter(l => l.owner.kind === 'link' && selectedIds.has(l.owner.id))
       .map(l => Math.min(local({ x: l.x, y: l.bounds.y }).y, local({ x: l.x, y: l.bounds.y + l.bounds.height }).y));
@@ -43,8 +56,8 @@ export function mergeMembers(model: LayoutModel, bundle: Bundle, list: Member[],
       if (entry > start) entries.push(entry);
     }
     end = Math.min(end, ...entries) - q;
-    if (end - start < (2 * selected.length - 1) * q) throw new BundleFeasibilityError('BUNDLE_MERGE_CAPACITY', bundle.id, 'No free counted trunk interval before the fixed reservations.');
   }
+  if (end - start < (2 * selected.length - 1) * q) throw new BundleFeasibilityError('BUNDLE_MERGE_CAPACITY', bundle.id, `No free counted trunk interval before the fixed reservations (start ${start}, end ${end}, need ${(2 * selected.length - 1) * q}).`);
   for (const item of selected) {
     const { from, to } = endpoints.get(item.link.id)!;
     const join = start + sourceOrder.indexOf(item) * q, leave = end - targetOrder.indexOf(item) * q;

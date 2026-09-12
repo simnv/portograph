@@ -32,11 +32,11 @@ out of scope for G2, G4 and G6.
 | # | Gate | Applies to | Exceptions (by ownership) |
 |---|---|---|---|
 | G1 | **No node overlap; containment** | node–node rectangles; node inside its group box; group boxes inside their tier band; no group–group overlap | — |
-| G2 | **No routed segment through a foreign node** | routed segments × node rectangles | a segment's own endpoint nodes; a drop crossing a **bar** it does not terminate on (`barCross`, reported) |
+| G2 | **No routed segment through a foreign node or group** | routed segments × node rectangles; routed segments × group boxes the link does not attach inside (ADR-0013) | a segment's own endpoint nodes; a drop crossing a **bar** it does not terminate on (`barCross`, reported); a link owning a lane in the group's margin or crossing a declared bar of the group |
 | G3 | **No label collision** | every label bbox × every other label bbox, node rectangle, pill, routed segment (area-aware); a **group title** also owns an 8 px link-free margin no routed segment may enter | a label vs its **owner** (node label inside its node; pill text inside its own pill and over its own incident stem within that pill; a link label on the clearance zone — never the body — of the **one** segment its persisted `support` reference names, and only when that reference's link is its own owner); overlay layer |
 | G4 | **No collinear overlap** | pairs of routed segments on the same line sharing > 1 px | validated counted merge runs of selected bundle members (reported as `bundledLength`); exact source/target shared-run trees at one port; lane-owner runs vs their own lane |
 | G5 | **Ports exit correctly** | every routed link: first/last segment perpendicular to its side, ≥ 15 px; port order on a side matches far-end order | author `order:`; overlay; stub |
-| G6 | **Clearances** (stroke-aware, centre-to-centre minus half strokes) | node–node ≥ 20; routed segment–foreign node ≥ 10; parallel routed segments ≥ 10 | incident node–segment contact at the anchor; bundle members (`memberGap` = 16 applies); `barCross` contacts; junction fans |
+| G6 | **Clearances** (stroke-aware, centre-to-centre minus half strokes) | node–node ≥ 20; routed segment–foreign node ≥ 10; parallel routed segments ≥ 10; a routed segment on or outside a group box runs no closer than 10 px parallel to its edge (ADR-0013) | incident node–segment contact at the anchor; bundle members (`memberGap` = 16 applies); `barCross` contacts; junction fans |
 | G7 | **Attachment** | every link endpoint = a port anchor; every anchor on its node's boundary | — |
 | G8 | **Tier contract** | every group's box within its tier's band; tier bands in order, non-overlapping | — |
 
