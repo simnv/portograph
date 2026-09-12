@@ -450,6 +450,13 @@ force a detour placement could have avoided. The check ignores group and stage-9
 and restore agree. A complete path repeats the runs it consumed, so identical
 stroke-aware rectangles with identical ownership collapse to one entry.
 
+**Linked groups share a grid (ADR-0012).** Before labels are planned, groups joined by vertical
+ports take one x-extent and groups joined by horizontal ports take one y-extent — the union of the
+two boxes — whenever neither box is smaller than that union by more than 30 % of it. Boxes only
+grow; a union that would overlap a third group or cross a reserved lane window is skipped; chains
+converge in at most eight passes. Publication and restore re-run the pass and reject a model it
+would still change.
+
 **Widening cannot cross a reserved lane.** Lane x, width, owner and side are immutable after 7a, so
 a widening and its neighbour pushes are feasible only while every group keeps each lane of its tier
 on the side that currently holds it. Feasibility reads the same occupied extent the lane validator

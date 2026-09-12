@@ -33,9 +33,11 @@ export function fitRegionGroup(model: LayoutModel, group: LayoutGroup): void {
       width: box.width + inset.left + inset.right, height: box.height + inset.top + inset.bottom };
     return;
   }
-  const old = group.bounds!, x = Math.min(old.x, box.x - inset.left), y = box.y - inset.top;
+  // A band group keeps any extent placement granted it beyond its content: label widening and
+  // the linked-group grid (7f) only ever grow a box, and content never leaves it.
+  const old = group.bounds!, x = Math.min(old.x, box.x - inset.left), y = Math.min(old.y, box.y - inset.top);
   group.bounds = { x, y, width: Math.max(right(old), right(box) + inset.right) - x,
-    height: bottom(box) + inset.bottom - y };
+    height: Math.max(bottom(old), bottom(box) + inset.bottom) - y };
 }
 export function expandCanvas(model: LayoutModel): void {
   const boxes = [...Object.values(model.groups).map(group => group.bounds!), ...model.lanes.map(lane => lane.bounds)];

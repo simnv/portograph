@@ -110,8 +110,8 @@ describe('group label bands', () => {
       // The nearest node on the band's side sits exactly one clearance away from it.
       const gaps = group.nodes.map(nodeId => side === 'top' ? model.nodes[nodeId]!.bounds!.y - bottom(band.bounds)
         : band.bounds.y - bottom(model.nodes[nodeId]!.bounds!));
+      // At least one clearance; the linked-group grid (ticket 24) may have granted the box more.
       for (const gap of gaps) expect(gap).toBeGreaterThanOrEqual(band.clearance - 1e-6);
-      expect(Math.min(...gaps)).toBeCloseTo(band.clearance, 9);
     }
     // Backbone is fed from above, so its title moves to the bottom edge, where no pill needs room.
     expect(Object.fromEntries(model.labelBands.map(band => [band.group, band.side])))
@@ -398,8 +398,12 @@ ${pairs.flatMap(i => [`  - [parent-${i}.p, child-${i}.p]`, `  - [parent-${i}.q, 
     expect(model.lanes.some(lane => lane.tier === model.groups.low!.tier)).toBe(false);
     const lowBand = model.labelBands.find(item => item.group === 'low')!, lowLabel = model.labels.find(item => item.id === 'label:group:low')!;
     expect(lowBand.side).toBe('bottom');
-    expect(model.groups.low!.bounds!.width).toBe(lowWidth);
-    expect(lowLabel.bounds!.x).toBeCloseTo(model.groups.low!.bounds!.x + (lowWidth - lowLabel.bounds!.width) / 2, 9);
+    // Its box only changed through the linked-group grid: it shares the x-extent of top-group, which
+    // feeds it through the lanes (ticket 24); the label centres in that shared box.
+    const lowBox = model.groups.low!.bounds!, topBox = model.groups['top-group']!.bounds!;
+    expect(lowBox.width).toBeGreaterThanOrEqual(lowWidth);
+    expect([lowBox.x, lowBox.width]).toEqual([topBox.x, topBox.width]);
+    expect(lowLabel.bounds!.x).toBeCloseTo(lowBox.x + (lowBox.width - lowLabel.bounds!.width) / 2, 9);
     expect(model.diagnostics.filter(item => item.code === 'GROUP_LABEL_GAP_INFEASIBLE').map(item => item.owners)).toEqual([[{ kind: 'group', id: 'mid' }]]);
 
     // The stroke-aware reservation and the mandatory shared prefix both survive the refusal.

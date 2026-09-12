@@ -136,13 +136,15 @@ it('reserves a clear aligned feed corridor before placing the group label (label
   expectStraightDrop(model, 'link-2');
   expect(link.path!.segments).toHaveLength(1);
   // child-group is fed from above, so its title sits on the bottom edge (ADR-0011): the drop never
-  // meets it, the label centres, and the group keeps its unwidened 50 + 2 × 20 px width.
+  // meets it and the label centres.
   const band = model.labelBands.find(band => band.group === 'child-group')!;
   const label = model.labels.find(label => label.id === 'label:group:child-group')!.bounds!;
   const group = model.groups['child-group']!.bounds!;
   expect(band.side).toBe('bottom');
   expect(label.y).toBeGreaterThan(anchorOf(model, link.attachments!.to).y);
-  expect(group.width).toBe(90);
+  // No label widening; the box only took the x-extent of neighbour-group, which feeds it (ticket 24 grid).
+  const neighbour = model.groups['neighbour-group']!.bounds!;
+  expect([group.x, group.width]).toEqual([neighbour.x, neighbour.width]);
   expect(label.x).toBeCloseTo(group.x + (group.width - label.width) / 2, 9);
   expect(model.diagnostics.filter(d => d.code === 'GROUP_LABEL_GAP_INFEASIBLE')).toEqual([]);
   const report = score(model).snapshot;

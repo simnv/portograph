@@ -42,10 +42,12 @@ it('keeps EBR feeds directly above their Backbone ports without lane approach jo
   }
 });
 
-it('fits the Backbone group to its final bars instead of accumulated movement extents', () => {
-  const group = model.groups['backbone']!, boxes = group.nodes.map(id => model.nodes[id]!.bounds!);
-  const contentWidth = Math.max(...boxes.map(box => box.x + box.width)) - Math.min(...boxes.map(box => box.x));
-  expect(group.bounds!.width - contentWidth).toBeLessThanOrEqual(60);
+it('fits the Backbone group to the linked-group grid instead of accumulated movement extents', () => {
+  // Backbone shares the Datacenter's x-extent (ticket 24 grid); nothing beyond that grid remains.
+  const group = model.groups['backbone']!, datacenter = model.groups['datacenter']!.bounds!;
+  expect([group.bounds!.x, group.bounds!.width]).toEqual([datacenter.x, datacenter.width]);
+  expect(model.groups['providers']!.bounds!.x).toBe(datacenter.x);
+  expect(model.groups['providers']!.bounds!.width).toBe(datacenter.width);
   const result = score(model, { golden: true }).snapshot;
   expect(result.passed).toBe(true);
   expect(result.metrics.crossings.count).toBe(0);
