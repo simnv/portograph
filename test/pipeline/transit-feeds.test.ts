@@ -129,17 +129,21 @@ links: [[a.p, b.p], [a.p, b.q], [a.p, c.p], [a.p, m.p]]`;
 
 it('reserves a clear aligned feed corridor before placing the group label (label-no-gap)', async () => {
   // Maintainer critique: the child-group label sat on the future straight route and the router
-  // detoured around it. Stage 7f now reserves the corridor; the label moves aside and the group widens.
+  // detoured around it. Stage 7f reserves the corridor (ticket 19) and the title takes the edge
+  // opposite its links (ticket 23).
   const model = await run(readFileSync(new URL('../../goldens/synthetic/label-no-gap.yaml', import.meta.url), 'utf8'));
   const link = model.links.find(link => link.id === 'link-2')!;
   expectStraightDrop(model, 'link-2');
   expect(link.path!.segments).toHaveLength(1);
+  // child-group is fed from above, so its title sits on the bottom edge (ADR-0011): the drop never
+  // meets it, the label centres, and the group keeps its unwidened 50 + 2 × 20 px width.
+  const band = model.labelBands.find(band => band.group === 'child-group')!;
   const label = model.labels.find(label => label.id === 'label:group:child-group')!.bounds!;
-  const x = anchorOf(model, link.attachments!.from).x;
-  expect(label.x > x + 0.75 || label.x + label.width < x - 0.75).toBe(true);
   const group = model.groups['child-group']!.bounds!;
-  expect(label.x).toBeGreaterThanOrEqual(group.x + 8 - 1e-6);
-  expect(label.x + label.width).toBeLessThanOrEqual(group.x + group.width - 8 + 1e-6);
+  expect(band.side).toBe('bottom');
+  expect(label.y).toBeGreaterThan(anchorOf(model, link.attachments!.to).y);
+  expect(group.width).toBe(90);
+  expect(label.x).toBeCloseTo(group.x + (group.width - label.width) / 2, 9);
   expect(model.diagnostics.filter(d => d.code === 'GROUP_LABEL_GAP_INFEASIBLE')).toEqual([]);
   const report = score(model).snapshot;
   expect(report.passed).toBe(true);

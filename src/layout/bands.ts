@@ -118,20 +118,40 @@ export function bandEntryConflicts(model: LayoutModel, entries = routerEntryPoin
   return result;
 }
 
-/** Reserved gap below the band; top-side entry points of this group's own nodes must clear it. */
-function clearanceFor(model: LayoutModel, group: LayoutGroup, entries: RouterEntryPoint[]): number {
+/**
+ * The edge a group's title occupies: the horizontal edge with fewer incident routed link ports, so
+ * the title sits opposite the links that enter the group and nothing has to route around it. Ties,
+ * including groups linked only through left/right ports, keep the top. Reads frozen port topology
+ * only, so placement, publication and restore agree.
+ */
+export function bandSide(model: LayoutModel, group: LayoutGroup): 'top' | 'bottom' {
+  const members = new Set(group.nodes), counts = { top: 0, bottom: 0 };
+  for (const link of model.links) {
+    if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
+    for (const ref of [link.attachments.from, link.attachments.to]) {
+      if (!members.has(ref.node)) continue;
+      const side = findPort(model, ref)?.side;
+      if (side === 'top' || side === 'bottom') counts[side]++;
+    }
+  }
+  return counts.top > counts.bottom ? 'bottom' : 'top';
+}
+
+/** Reserved gap beside the band; entry points of this group's own ports on that side must clear it. */
+function clearanceFor(model: LayoutModel, group: LayoutGroup, entries: RouterEntryPoint[], side: 'top' | 'bottom'): number {
   const members = new Set(group.nodes);
-  const reach = Math.max(0, ...entries.filter(entry => entry.side === 'top' && members.has(entry.node)).map(entry => entry.outward));
-  if (reach <= 0) return groupPadding(model, group).top;
-  return Math.max(groupPadding(model, group).top, reach + strokeAllowance(model) + GROUP_LABEL_GEOMETRY.entryTolerance);
+  const reach = Math.max(0, ...entries.filter(entry => entry.side === side && members.has(entry.node)).map(entry => entry.outward));
+  if (reach <= 0) return groupPadding(model, group)[side];
+  return Math.max(groupPadding(model, group)[side], reach + strokeAllowance(model) + GROUP_LABEL_GEOMETRY.entryTolerance);
 }
 
 function bandFor(model: LayoutModel, groupId: string, entries: RouterEntryPoint[]): LabelBand {
-  const group = model.groups[groupId]!, measured = measurement(model, groupId);
-  return { id: `label-band:${groupId}`, group: groupId, owner: { ...group.owner }, layer: 'routed',
-    bounds: { x: group.bounds!.x, y: group.bounds!.y, width: group.bounds!.width,
-      height: measured.height + GROUP_LABEL_GEOMETRY.bandExtra },
-    clearance: clearanceFor(model, group, entries) };
+  const group = model.groups[groupId]!, measured = measurement(model, groupId), side = bandSide(model, group);
+  const height = measured.height + GROUP_LABEL_GEOMETRY.bandExtra;
+  return { id: `label-band:${groupId}`, group: groupId, owner: { ...group.owner }, layer: 'routed', side,
+    bounds: { x: group.bounds!.x, y: side === 'top' ? group.bounds!.y : bottom(group.bounds!) - height,
+      width: group.bounds!.width, height },
+    clearance: clearanceFor(model, group, entries, side) };
 }
 
 /**
@@ -296,7 +316,8 @@ function planLabels(model: LayoutModel, permitGrowth: boolean): LabelPlan {
   const labels: LayoutLabel[] = [], blocked: string[] = [];
   for (const id of orderedGroupIds(model.document)) {
     const group = model.groups[id]!, measured = measurement(model, id);
-    const y = group.bounds!.y + GROUP_LABEL_GEOMETRY.verticalInset;
+    const band = model.labelBands.find(item => item.group === id);
+    const y = (band ? band.bounds.y : group.bounds!.y) + GROUP_LABEL_GEOMETRY.verticalInset;
     const start = group.bounds!.x + GROUP_LABEL_GEOMETRY.horizontalInset;
     const limit = right(group.bounds!) - GROUP_LABEL_GEOMETRY.horizontalInset - measured.width;
     const ranges = intervals(model, labels, y, measured.height, measured.width);
@@ -355,16 +376,26 @@ function reserveInitialSpace(model: LayoutModel): void {
   const before = new Map(model.tierBands.map(band => [band.tier, { ...band.bounds! }]));
   const entries = routerEntryPoints(model);
   syncBands(model, entries);
-  for (const id of orderedGroupIds(model.document)) {
+  // The band replaces the ordinary padding on its side, and its clearance replaces that padding
+  // beside it. A top band pushes its nodes down; a bottom band only grows the box downward. Nodes
+  // of one tier keep one row: a bottom-band group moves its nodes down by the largest top-band
+  // shift of its tier, so mixed title edges never break the row levelling of stage 6.
+  const shifts = new Map(orderedGroupIds(model.document).map(id => {
     const group = model.groups[id]!, band = model.labelBands.find(item => item.group === id)!;
-    // The band replaces the ordinary top padding, and its clearance replaces that padding below it.
-    const shift = band.bounds.height + band.clearance - groupPadding(model, group).top;
+    return [id, band.bounds.height + band.clearance - groupPadding(model, group)[band.side]];
+  }));
+  const topShift = (tier: number) => Math.max(0, ...orderedGroupIds(model.document)
+    .filter(id => model.groups[id]!.tier === tier && model.labelBands.find(item => item.group === id)!.side === 'top')
+    .map(id => shifts.get(id)!));
+  for (const id of orderedGroupIds(model.document)) {
+    const group = model.groups[id]!, band = model.labelBands.find(item => item.group === id)!, shift = shifts.get(id)!;
+    const down = band.side === 'top' ? shift : topShift(group.tier!);
     for (const nodeId of group.nodes) {
       const node = model.nodes[nodeId]!;
-      node.bounds!.y += shift;
-      for (const port of node.ports) port.anchor!.y += shift;
+      node.bounds!.y += down;
+      for (const port of node.ports) port.anchor!.y += down;
     }
-    group.bounds!.height += shift;
+    group.bounds!.height += band.side === 'top' ? shift : down + shift;
     pushFollowingGroups(model, group, Math.max(group.bounds!.width,
       measurement(model, id).width + 2 * GROUP_LABEL_GEOMETRY.horizontalInset));
   }
@@ -424,7 +455,9 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   for (const band of model.labelBands) {
     if (!Number.isFinite(band.clearance) || band.clearance < GROUP_PADDING - EPS) throw new Error(`Group ${band.group} reserves less than the ordinary padding below its label band`);
     for (const nodeId of model.groups[band.group]!.nodes) {
-      if (model.nodes[nodeId]!.bounds!.y < bottom(band.bounds) + band.clearance - EPS) throw new Error(`Group ${band.group} does not retain its reserved clearance below its label band`);
+      const box = model.nodes[nodeId]!.bounds!;
+      const clear = band.side === 'top' ? box.y >= bottom(band.bounds) + band.clearance - EPS : bottom(box) <= band.bounds.y - band.clearance + EPS;
+      if (!clear) throw new Error(`Group ${band.group} does not retain its reserved clearance beside its label band`);
     }
   }
   // Stage 8 keeps these entry points and the below-band clearance reserved during placement.

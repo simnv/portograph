@@ -13,7 +13,7 @@ on 2026-09-10. They precede the implementation. On 2026-09-11 the maintainer
 approved the render (ticket 18): [m1-sip-edge.layout.json](m1-sip-edge.layout.json)
 is the exact layout snapshot (runtime block excluded), [m1-sip-edge.png](m1-sip-edge.png)
 and [m1-sip-edge.svg](m1-sip-edge.svg) are the approved render, and
-`Q = 0.9004061377064178` was the ticket 18 baseline. Ticket 22 (2026-09-11) re-rendered the golden with 20 px group padding and an 8 px link-free margin around group titles; the committed snapshot, SVG and PNG are that render and `Q = 0.8995810439740073` is the baseline, pending the maintainer's visual approval. `test/pipeline/golden-snapshot.test.ts` guards them.
+`Q = 0.9004061377064178` was the ticket 18 baseline. Ticket 22 (2026-09-11) re-rendered the golden with 20 px group padding and an 8 px link-free margin around group titles; ticket 23 (2026-09-12) then moved each title to the edge opposite its links (Backbone's to the bottom); the committed snapshot, SVG and PNG are that render and `Q = 0.8984321241441757` is the baseline, pending the maintainer's visual approval. `test/pipeline/golden-snapshot.test.ts` guards them.
 
 ## Target transcription
 

@@ -270,7 +270,10 @@ links: [[source.p, bar.p, {route: orthogonal}]]`;
     expect(moved.barDrops.map(drop => drop.id)).toEqual(ids);
     expect(moved.barDrops[0]!.slotX).toBe(oldSlot);
     expect(findPort(moved, ref('bar.p'))!.anchor!.x).toBe(oldSlot);
-    expect(moved.nodes.bar!.bounds!.y).toBeGreaterThan(moved.labelBands.find(item => item.group === 'bars')!.bounds.y);
+    // The bar group is fed from above, so its title band sits below the bar (ADR-0011).
+    const barBand = moved.labelBands.find(item => item.group === 'bars')!;
+    expect(barBand.side).toBe('bottom');
+    expect(moved.nodes.bar!.bounds!.y + moved.nodes.bar!.bounds!.height).toBeLessThanOrEqual(barBand.bounds.y - barBand.clearance + 1e-6);
     expect(restoreLayoutModel(JSON.stringify(moved)).barDrops).toEqual(moved.barDrops);
   });
 

@@ -422,7 +422,11 @@ or immutable lane; local slots remain valid and the bundle bends instead.
 
 ### 7f — group label bands
 
-For every group: band height = label height + 8, inside the top padding. Center the label when
+For every group: band height = label height + 8, inside the padding of the **title edge**: the
+horizontal edge with fewer incident routed link ports, so a group fed from above carries its title
+at the bottom and no link routes around it; ties, including groups linked only sideways, keep the
+top (ADR-0011). A bottom band grows the group downward; its nodes move down only by the largest
+top-band shift of their tier, so mixed title edges keep the tier's node row level. Center the label when
 its measured box is clear. Otherwise choose the nearest free position within the horizontal
 insets, breaking equal-distance ties to the left. If none fits, retain the existing first-free
 widening rule and push row neighbours (which re-triggers 7c for groups whose parents moved,

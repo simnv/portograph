@@ -23,7 +23,7 @@ export function groupPadding(model: LayoutModel, group: LayoutGroup): { top: num
 }
 export function groupInsets(model: LayoutModel, group: LayoutGroup): { top: number; right: number; bottom: number; left: number } {
   const padding = groupPadding(model, group), band = model.labelBands.find(item => item.group === group.id);
-  return { ...padding, top: band ? band.bounds.height + band.clearance : padding.top };
+  return band ? { ...padding, [band.side]: band.bounds.height + band.clearance } : padding;
 }
 export function fitRegionGroup(model: LayoutModel, group: LayoutGroup): void {
   if (!group.nodes.length) return;

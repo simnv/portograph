@@ -193,11 +193,17 @@ export interface Junction extends OwnedElement {
 export interface LabelBand extends OwnedElement {
   id: string;
   group: string;
+  /**
+   * The horizontal group edge the title occupies: the one with fewer incident link ports, so a
+   * group fed from above carries its title at the bottom and no link has to route around it.
+   * Ties, including groups linked only sideways, keep the top.
+   */
+  side: 'top' | 'bottom';
   bounds: Rect;
   /**
-   * Reserved vertical gap between the band and the group's topmost node. It is the ordinary group
-   * padding unless a routed outward stem or shared prefix at a top port needs more room to keep
-   * its entry points outside the stroke-aware band obstacle.
+   * Reserved vertical gap between the band and the group's nearest node on that side. It is the
+   * ordinary group padding unless a routed outward stem or shared prefix at a port on that side
+   * needs more room to keep its entry points outside the stroke-aware band obstacle.
    */
   clearance: number;
 }

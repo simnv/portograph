@@ -216,7 +216,7 @@ describe('corridor predicate', () => {
       ['obstacle', m => { m.obstacles.push({ id: 'ob', owner: { kind: 'group', id: 'g' }, layer: 'routed', bounds: box }); }],
     ];
     const emptyBand = probe(model, m => { m.labelBands.push({ id: 'band', owner: { kind: 'group', id: 'g' },
-      layer: 'routed', group: 'g', bounds: box, clearance: 12 }); });
+      layer: 'routed', group: 'g', side: 'top', bounds: box, clearance: 12 }); });
     expect(straightCorridorClear(emptyBand, emptyBand.links[0]!, segment)).toBe(true);
     for (const [name, edit] of blockers) {
       const blocked = probe(model, edit);

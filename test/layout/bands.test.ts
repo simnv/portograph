@@ -58,14 +58,24 @@ function overlaps(a: Rect, b: Rect): boolean {
 }
 
 /** Independent expectation: a top-side routed port needs its outward reach plus stroke and tolerance. */
-function expectedClearance(model: LayoutModel, groupId: string): number {
+function expectedClearance(model: LayoutModel, groupId: string, side: 'top' | 'bottom' = 'top'): number {
   const members = new Set(model.groups[groupId]!.nodes);
   const reach = Math.max(0, ...routerEntryPoints(model)
-    .filter(entry => entry.side === 'top' && members.has(entry.node)).map(entry => entry.outward));
+    .filter(entry => entry.side === side && members.has(entry.node)).map(entry => entry.outward));
   const padding = Math.max(GROUP_PADDING, ...[...members].flatMap(id => model.nodes[id]!.ports
-    .filter(port => port.side === 'top' && port.ref.name !== undefined)
+    .filter(port => port.side === side && port.ref.name !== undefined)
     .map(port => GROUP_PADDING + measurePortPill(port.ref.name!).width / 2 + 0.5)));
   return Math.max(padding, reach + (reach > 0 ? 1 : 0));
+}
+/** The title takes the horizontal edge with fewer incident link ports; ties keep the top. */
+function expectedSide(model: LayoutModel, groupId: string): 'top' | 'bottom' {
+  const members = new Set(model.groups[groupId]!.nodes), counts = { top: 0, bottom: 0 };
+  for (const link of model.links) for (const ref of [link.attachments!.from, link.attachments!.to]) {
+    if (!members.has(ref.node)) continue;
+    const side = model.nodes[ref.node]!.ports.find(port => port.ref.name === ref.name && port.ref.ordinal === ref.ordinal)!.side;
+    if (side === 'top' || side === 'bottom') counts[side]++;
+  }
+  return counts.top > counts.bottom ? 'bottom' : 'top';
 }
 
 function run(model: LayoutModel): LayoutModel {
@@ -87,24 +97,29 @@ describe('group label bands', () => {
       const group = model.groups[id]!, band = model.labelBands.find(item => item.group === id)!;
       const label = model.labels.find(item => item.id === `label:group:${id}`)!;
       const measured = measureText(model.document.groups[id]!.label, { fontSize: 12, weight: 700 });
-      expect(band).toEqual({ id: `label-band:${id}`, group: id, owner: group.owner, layer: 'routed',
-        bounds: { x: group.bounds!.x, y: group.bounds!.y, width: group.bounds!.width, height: measured.height + 8 },
-        clearance: expectedClearance(model, id) });
+      const side = expectedSide(model, id), height = measured.height + 8;
+      expect(band).toEqual({ id: `label-band:${id}`, group: id, owner: group.owner, layer: 'routed', side,
+        bounds: { x: group.bounds!.x, y: side === 'top' ? group.bounds!.y : bottom(group.bounds!) - height, width: group.bounds!.width, height },
+        clearance: expectedClearance(model, id, side) });
       expect(label).toMatchObject({ owner: group.owner, layer: 'routed', role: 'group', text: model.document.groups[id]!.label,
         fontFamily: FONT_FAMILY, fontSize: 12, fontWeight: 700, lineHeight: measured.lineHeight,
         lines: measured.lines, textRotation: 0 });
-      expect(label.bounds!.y).toBe(group.bounds!.y + 4);
+      expect(label.bounds!.y).toBe(band.bounds.y + 4);
       expect(label.bounds!.x).toBeGreaterThanOrEqual(group.bounds!.x + 8);
       expect(right(label.bounds!)).toBeLessThanOrEqual(right(group.bounds!) - 8 + 1e-6);
-      for (const nodeId of group.nodes) expect(model.nodes[nodeId]!.bounds!.y)
-        .toBeGreaterThanOrEqual(bottom(band.bounds) + band.clearance - 1e-6);
-      expect(Math.min(...group.nodes.map(nodeId => model.nodes[nodeId]!.bounds!.y - bottom(band.bounds))))
-        .toBeCloseTo(band.clearance, 9);
+      // The nearest node on the band's side sits exactly one clearance away from it.
+      const gaps = group.nodes.map(nodeId => side === 'top' ? model.nodes[nodeId]!.bounds!.y - bottom(band.bounds)
+        : band.bounds.y - bottom(model.nodes[nodeId]!.bounds!));
+      for (const gap of gaps) expect(gap).toBeGreaterThanOrEqual(band.clearance - 1e-6);
+      expect(Math.min(...gaps)).toBeCloseTo(band.clearance, 9);
     }
-    // The two groups with named top ports reserve space beyond the complete pill.
+    // Backbone is fed from above, so its title moves to the bottom edge, where no pill needs room.
+    expect(Object.fromEntries(model.labelBands.map(band => [band.group, band.side])))
+      .toEqual({ providers: 'top', datacenter: 'top', 'tbr-left': 'top', 'tbr-right': 'top', 'route-reflector': 'top', backbone: 'bottom' });
+    // Datacenter keeps a top title with named top pills, so it reserves space beyond the complete pill.
     expect(Object.fromEntries(model.labelBands.map(band => [band.group, band.clearance])))
       .toEqual({ providers: GROUP_PADDING, datacenter: GROUP_PADDING + 13.5, 'tbr-left': GROUP_PADDING, 'tbr-right': GROUP_PADDING,
-        'route-reflector': GROUP_PADDING, backbone: GROUP_PADDING + 13.5 });
+        'route-reflector': GROUP_PADDING, backbone: GROUP_PADDING });
 
     const produced = { ...model, links: model.links.filter(link => link.path !== undefined) };
     const snapshot = score(produced).snapshot;
@@ -118,8 +133,10 @@ describe('group label bands', () => {
     expect(model.bundles.map(bundle => [bundle.id, bundle.owner, bundle.members, bundle.mergeRuns?.map(run => run.id)]))
       .toEqual(before.bundles.map(bundle => [bundle.id, bundle.owner, bundle.members, bundle.mergeRuns?.map(run => run.id)]));
     expect(model.links.some((link, index) => link.path && JSON.stringify(link.path) !== JSON.stringify(before.links[index]!.path))).toBe(true);
+    // Backbone is fed from above, so its title band is at the bottom, one clearance below the last bar.
     const barBand = model.labelBands.find(item => item.group === 'backbone')!;
-    expect(model.nodes['EBB-01']!.bounds!.y).toBe(bottom(barBand.bounds) + barBand.clearance);
+    expect(barBand.side).toBe('bottom');
+    expect(bottom(model.nodes['EBB-02']!.bounds!)).toBe(barBand.bounds.y - barBand.clearance);
     expect(snapshot.counters.labelHits).toBe(0);
     expect(snapshot.gates.G3.passed).toBe(true);
     expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
@@ -155,15 +172,21 @@ groups:
   blocked: {tier: 1, label: A deliberately long reserved group label that cannot fit the initial band}
   neighbour: {tier: 1}
   child-group: {tier: 2}
+  sink-group: {tier: 2}
 nodes:
   parent: {group: parents, ports: [{name: p, side: bottom}, {name: q, side: bottom}]}
-  blocked-node: {group: blocked, ports: [{name: p, side: top}, {name: q, side: top}]}
+  blocked-node: {group: blocked, ports: [{name: p, side: top}, {name: q, side: top}, {name: r, side: bottom}, {name: s, side: bottom}]}
   neighbour-node: {group: neighbour, ports: [{name: p, side: bottom}]}
   child: {group: child-group, ports: [{name: p, side: top}]}
+  sink: {group: sink-group, ports: [{name: p, side: top}, {name: q, side: top}]}
 links:
   - [parent.p, blocked-node.p]
   - [parent.q, blocked-node.q]
-  - [neighbour-node.p, child.p]`;
+  - [neighbour-node.p, child.p]
+  - [blocked-node.r, sink.p]
+  - [blocked-node.s, sink.q]`;
+    // `blocked` feeds `sink` with as many bottom ports as it has top ports, so its title stays on top
+    // and the bundle from `parent` still enters beside that title (ADR-0011 tie rule).
     const before = await throughBundles(yaml);
     const blockedWidth = before.groups.blocked!.bounds!.width;
     const neighbourX = before.groups.neighbour!.bounds!.x;
@@ -191,12 +214,14 @@ links:
 
   it('treats the reserved shared runs of a pathless remainder as label obstacles', async () => {
     const yaml = `portograph: 2
-groups: {ga: {tier: 1, label: A moderately long label for the shared group}, gb: {tier: 0}}
+groups: {ga: {tier: 1, label: A moderately long label for the shared group}, gb: {tier: 0}, gc: {tier: 2}}
 nodes:
-  a: {group: ga, size: {width: 500, height: 50}, ports: [{name: p, side: top}]}
+  a: {group: ga, size: {width: 500, height: 50}, ports: [{name: p, side: top}, {name: q, side: bottom}, {name: r, side: bottom}, {name: s, side: bottom}]}
   b: {group: gb, ports: [{name: p, side: bottom}, {name: q, side: bottom}]}
   c: {group: gb, ports: [{name: p, side: bottom}]}
-links: [[a.p, b.p], [a.p, b.q], [a.p, c.p]]`;
+  d: {group: gc, ports: [{name: p, side: top}, {name: q, side: top}, {name: r, side: top}]}
+links: [[a.p, b.p], [a.p, b.q], [a.p, c.p], [a.q, d.p], [a.r, d.q], [a.s, d.r]]`;
+    // Three bottom links keep `ga`'s title on top (tie rule), where the fan from above must clear it.
     const model = run(await throughBundles(yaml));
     const remainder = model.links.find(link => link.id === 'link-3')!;
     const member = model.links.find(link => link.id === 'link-1')!;
@@ -254,11 +279,13 @@ links: [[a.p, b.p], [a.p, b.q], [a.p, c.p]]`;
 
   it('lengthens the reserved checkpoint when a wide node stroke expands its routing obstacle', async () => {
     const yaml = `portograph: 2
-groups: {up: {tier: 0}, low: {tier: 1, label: Lower}}
+groups: {up: {tier: 0}, low: {tier: 1, label: Lower}, lower: {tier: 2}}
 nodes:
   a: {group: up, ports: [{name: p, side: bottom}]}
-  b: {group: low, ports: [{name: p, side: top}]}
-links: [[a.p, b.p]]`;
+  b: {group: low, ports: [{name: p, side: top}, {name: q, side: bottom}]}
+  c: {group: lower, ports: [{name: p, side: top}]}
+links: [[a.p, b.p], [b.q, c.p]]`;
+    // The bottom link keeps `low`'s title on top (tie rule), above the wide-stroke top port.
     const draft = copy(await placed(yaml));
     draft.nodes.b!.strokeWidth = 44;
     rebuildBands(draft);
@@ -286,7 +313,7 @@ links: [[a.p, b.p]]`;
       .toThrow(/Group label bands contradict final group geometry/);
   });
 
-  it('stops repeated collision growth at the shared eight-pass bound with coherent claims', async () => {
+  it('widens every group fed from above in the initial reservation without spending a growth pass', async () => {
     const pairs = [0, 1, 2, 3, 4];
     const yaml = `portograph: 2
 groups:
@@ -299,28 +326,30 @@ ${pairs.flatMap(i => [`  - [parent-${i}.p, child-${i}.p]`, `  - [parent-${i}.q, 
     expect(before.diagnostics.filter(item => item.code === 'PLACEMENT_NON_CONVERGENCE')).toHaveLength(0);
     const model = run(before);
 
-    // Four collision repairs fit inside the one shared budget; the fifth has no pass left. A fresh
-    // budget per replay would have slid all five instead.
-    const repaired = pairs.filter(i => model.labels.find(item => item.id === `label:group:blocked-${i}`)!.bounds!.x
-      > model.groups[`blocked-${i}`]!.bounds!.x + 8 + 1e-6);
-    expect(repaired).toEqual([0, 1, 2, 3]);
-    const stalled = model.labels.find(item => item.id === 'label:group:blocked-4')!;
-    expect(stalled.bounds!.x).toBe(model.groups['blocked-4']!.bounds!.x + 8);
-    expect(groupLabelObstacles(model).some(item => overlaps(stalled.bounds!, item.bounds))).toBe(true);
-    expect(model.diagnostics.filter(item => item.code === 'PLACEMENT_NON_CONVERGENCE')).toEqual([{
-      stage: 'placement', severity: 'warning', code: 'PLACEMENT_NON_CONVERGENCE',
-      message: 'Group-label growth exhausted the shared eight-pass budget; final gates decide the retained geometry.',
-      owners: [{ kind: 'group', id: 'blocked-4' }],
-    }]);
+    // Every blocked group is fed from above, so its title takes the bottom edge (ADR-0011): the
+    // long label meets no link there, the initial reservation widens each group to the label in one
+    // pass, and no collision-growth replay spends the shared budget. The tied-title collision path is
+    // covered by the widening test above; budget exhaustion by the lane-blocked test below.
+    for (const i of pairs) {
+      const group = model.groups[`blocked-${i}`]!, label = model.labels.find(item => item.id === `label:group:blocked-${i}`)!;
+      expect(model.labelBands.find(item => item.group === `blocked-${i}`)!.side).toBe('bottom');
+      expect(group.bounds!.width).toBeCloseTo(label.bounds!.width + 16, 9);
+      expect(label.bounds!.x).toBe(group.bounds!.x + 8);
+      expect(groupLabelObstacles(model).some(item => overlaps(label.bounds!, item.bounds))).toBe(false);
+    }
+    expect(model.diagnostics.filter(item => item.code === 'PLACEMENT_NON_CONVERGENCE')).toEqual([]);
 
     // The diagnosed state still carries one coherent claim set and survives restore.
     expect(model.labelBands.map(band => band.group)).toEqual(Object.keys(model.document.groups));
     expect(model.labels.filter(item => item.role === 'group')).toHaveLength(pairs.length * 2);
     for (const band of model.labelBands) {
-      expect(band.clearance).toBe(model.groups[band.group]!.nodes.some(id =>
-        model.nodes[id]!.ports.some(port => port.side === 'top')) ? ORDINARY_CLEARANCE : GROUP_PADDING);
+      // Parents keep top titles above portless tops; blocked groups carry bottom titles below plain bottoms.
+      expect(band.side).toBe(band.group.startsWith('blocked') ? 'bottom' : 'top');
+      expect(band.clearance).toBe(GROUP_PADDING);
       for (const nodeId of model.groups[band.group]!.nodes) {
-        expect(model.nodes[nodeId]!.bounds!.y).toBeGreaterThanOrEqual(bottom(band.bounds) + band.clearance - 1e-6);
+        const box = model.nodes[nodeId]!.bounds!;
+        if (band.side === 'top') expect(box.y).toBeGreaterThanOrEqual(bottom(band.bounds) + band.clearance - 1e-6);
+        else expect(bottom(box)).toBeLessThanOrEqual(band.bounds.y - band.clearance + 1e-6);
       }
     }
     expect(model.lanes.map(lane => [lane.id, lane.owner, lane.x, lane.bounds.width]))
@@ -364,17 +393,22 @@ ${pairs.flatMap(i => [`  - [parent-${i}.p, child-${i}.p]`, `  - [parent-${i}.q, 
     // The refusal costs no centring pass: a budget-exhaustion diagnosis would be a different defect.
     expect(model.diagnostics.filter(item => item.code === 'PLACEMENT_NON_CONVERGENCE')).toHaveLength(0);
 
-    // A feasible widening in the same model still succeeds; low has no reserved lane at its tier.
+    // `low` is fed from above, so its title moved to the bottom edge (ADR-0011): nothing collides
+    // there, the label centres, and the group needs no widening at all.
     expect(model.lanes.some(lane => lane.tier === model.groups.low!.tier)).toBe(false);
-    expect(model.groups.low!.bounds!.width).toBeGreaterThan(lowWidth);
-    expect(model.labels.find(item => item.id === 'label:group:low')!.bounds!.x)
-      .toBeGreaterThan(model.groups.low!.bounds!.x + 8 + 1e-6);
+    const lowBand = model.labelBands.find(item => item.group === 'low')!, lowLabel = model.labels.find(item => item.id === 'label:group:low')!;
+    expect(lowBand.side).toBe('bottom');
+    expect(model.groups.low!.bounds!.width).toBe(lowWidth);
+    expect(lowLabel.bounds!.x).toBeCloseTo(model.groups.low!.bounds!.x + (lowWidth - lowLabel.bounds!.width) / 2, 9);
+    expect(model.diagnostics.filter(item => item.code === 'GROUP_LABEL_GAP_INFEASIBLE').map(item => item.owners)).toEqual([[{ kind: 'group', id: 'mid' }]]);
 
     // The stroke-aware reservation and the mandatory shared prefix both survive the refusal.
     const band = model.labelBands.find(item => item.group === 'mid')!;
-    expect(band.bounds).toEqual({ x: mid.bounds!.x, y: mid.bounds!.y, width: mid.bounds!.width, height: 22 });
-    expect(band.clearance).toBe(ORDINARY_CLEARANCE);
-    expect(model.nodes.m!.bounds!.y).toBe(bottom(band.bounds) + ORDINARY_CLEARANCE);
+    // `mid` is fed from above, so its band is the bottom edge with the plain bottom padding below m.
+    expect(band.side).toBe('bottom');
+    expect(band.bounds).toEqual({ x: mid.bounds!.x, y: bottom(mid.bounds!) - 22, width: mid.bounds!.width, height: 22 });
+    expect(band.clearance).toBe(GROUP_PADDING);
+    expect(bottom(model.nodes.m!.bounds!)).toBe(band.bounds.y - GROUP_PADDING);
     const member = model.links.find(link => link.id === 'link-1')!;
     expect(member.sharedRuns!.from!.length).toBeGreaterThan(0);
     expect(member.path!.segments.slice(0, member.sharedRuns!.from!.length)).toEqual(member.sharedRuns!.from);
@@ -557,7 +591,7 @@ nodes: {a: {group: g}}
 links: []`);
     expect(() => withLayoutMutation(before, 'bands', draft => {
       draft.labelBands.push({ id: 'forged', group: 'g', owner: draft.groups.g!.owner,
-        layer: 'routed', bounds: { ...draft.groups.g!.bounds! }, clearance: 12 });
+        layer: 'routed', side: 'top', bounds: { ...draft.groups.g!.bounds! }, clearance: 12 });
     })).toThrow(/claim validator/);
     expect(before.labelBands).toEqual([]);
     const legal = withLayoutMutation(before, 'bands', draft => {
@@ -574,7 +608,7 @@ groups: {g: {tier: 0, label: Group}}
 nodes: {a: {group: g}}
 links: []`));
     const draft = copy(model), band = draft.labelBands[0]!, label = draft.labels.find(item => item.role === 'group')!;
-    draft.labelBands[0] = { clearance: band.clearance, layer: band.layer, bounds: { height: band.bounds.height,
+    draft.labelBands[0] = { clearance: band.clearance, side: band.side, layer: band.layer, bounds: { height: band.bounds.height,
       width: band.bounds.width, y: band.bounds.y, x: band.bounds.x }, owner: band.owner, group: band.group, id: band.id };
     const index = draft.labels.indexOf(label);
     draft.labels[index] = { bounds: label.bounds!, textRotation: label.textRotation!, lines: label.lines!,
