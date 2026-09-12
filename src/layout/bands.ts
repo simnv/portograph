@@ -413,8 +413,8 @@ function reserveInitialSpace(model: LayoutModel): void {
 
 /**
  * Largest size difference, as a fraction of the shared extent, that the linked-group grid closes.
- * The maintainer asked for "about 10 %"; the fixtures that motivated the rule (one-px-sources,
- * bar-both-sides) need 21 % and 26 %, so the cap is 30 % and lives here as one number.
+ * The maintainer first asked for "about 10 %"; the fixtures that motivated the rule (one-px-sources,
+ * bar-both-sides) need 21 % and 26 %, and the maintainer confirmed 30 %. One number, here.
  */
 export const GROUP_GRID_MAX_GROWTH = 0.30;
 
