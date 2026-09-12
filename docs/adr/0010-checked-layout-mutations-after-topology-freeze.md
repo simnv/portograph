@@ -1,6 +1,11 @@
 # ADR-0010: Checked layout mutations after topology freeze
 
-Status: accepted
+Status: accepted (2026-09-12: publication and restore also check the stage 7c alignment invariant, `centreViolations`, at every stage from centre on; its exemptions derive from geometry and topology by replaying the producer's own per-group step, never from serialized diagnostics, and the linked-group grid check replays rather than reads its diagnostic)
+
+Known limit: a spent shared centring budget is producer state that geometry cannot witness. A model
+carrying `PLACEMENT_NON_CONVERGENCE` therefore keeps its last state, as this ADR requires, and any
+alignment the replay cannot confirm is recorded on it as `CENTRE_INVARIANT_UNVERIFIED` for the final
+gates to judge, instead of being rejected. Every other model must hold the invariant exactly.
 
 After stage 5, publish immutable layout snapshots and apply each later stage through one checked
 draft transaction, so accidental direct writes cannot bypass the topology, floor and movement

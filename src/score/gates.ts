@@ -84,12 +84,12 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       // Inside its own box a link turns in the group's padding; on or outside an edge it keeps the margin.
       const along = (edge: number, low: number, high: number, at: number, from: number, to: number, inner: [number, number]): boolean =>
         !(at > inner[0] + EPS && at < inner[1] - EPS)
-        && Math.abs(at - edge) < GROUP_EDGE_LINK_CLEARANCE - EPS && Math.min(from, to) < high - EPS && Math.max(from, to) > low + EPS;
+        && Math.abs(at - edge) < GROUP_EDGE_LINK_CLEARANCE + s.stroke / 2 - EPS && Math.min(from, to) < high - EPS && Math.max(from, to) > low + EPS;
       const { from, to } = s.segment;
       const runs = horizontal(s.segment)
         ? [box.y, bottom(box)].some(edge => along(edge, box.x, box.x + box.width, from.y, from.x, to.x, [box.y, bottom(box)]))
         : vertical(s.segment) && [box.x, box.x + box.width].some(edge => along(edge, box.y, bottom(box), from.x, from.y, to.y, [box.x, box.x + box.width]));
-      if (runs) fail('G6', 'segment-group-edge', [s.link.id, group.id], `Routed segment runs along a group edge closer than ${GROUP_EDGE_LINK_CLEARANCE} px`);
+      if (runs) fail('G6', 'segment-group-edge', [s.link.id, group.id], `Routed segment runs along a group edge closer than ${GROUP_EDGE_LINK_CLEARANCE} px beyond its half stroke`);
     }
   }
   const labels = model.labels.filter(l => !l.omitted && l.layer !== 'overlay');

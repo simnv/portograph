@@ -309,8 +309,9 @@ function physicalPath(model: LayoutModel, item: BarLink, slotX: number, useHints
   // Approach rows and bypass tracks sit one stem outside the bars — and, if that lands within the
   // edge margin of the bar group's box, outside the box by the margin instead (ADR-0013).
   const groupBox = model.groups[model.document.nodes[item.bar.id]!.group]!.bounds!;
+  const margin = GROUP_EDGE_LINK_CLEARANCE + linkStrokeWidth(item.link) / 2;
   const offEdge = (value: number, edge: number, outward: 1 | -1): number =>
-    Math.abs(value - edge) < GROUP_EDGE_LINK_CLEARANCE ? edge + outward * GROUP_EDGE_LINK_CLEARANCE : value;
+    Math.abs(value - edge) < margin ? edge + outward * margin : value;
   const topY = offEdge(Math.min(...barNodes.map(node => node.bounds!.y)) - MIN_STEM, groupBox.y, -1);
   const bottomY = offEdge(Math.max(...barNodes.map(node => bottom(node.bounds!))) + MIN_STEM, bottom(groupBox), 1);
   const externalSide = peerSide(item);

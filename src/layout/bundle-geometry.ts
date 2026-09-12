@@ -1,4 +1,4 @@
-import { GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
+import { GROUP_EDGE_LINK_CLEARANCE, routedStrokeWidth } from '../theme/geometry.js';
 import type { Bundle, LayoutLink, LayoutModel, LayoutPort, Point, Side } from '../model/index.js';
 import { repackOverlaps } from './rows.js';
 import { applyBundleOrder } from './bundle-order.js';
@@ -32,6 +32,8 @@ export function groupDepthPairs(model: LayoutModel, groupIds: Iterable<string>, 
     return [Math.min(...values), Math.max(...values)] as DepthPair;
   });
 }
+/** The stroke-aware edge margin: centreline distance a link of this stroke keeps from a group edge. */
+export function edgeMargin(strokeWidth: number): number { return GROUP_EDGE_LINK_CLEARANCE + strokeWidth / 2; }
 /**
  * A coordinate on or outside a group box, closer to its edge than the margin, moves `direction`-ward
  * to margin distance from that edge (ADR-0013). Strictly inside a box it is the group's own routing
@@ -268,7 +270,7 @@ export function prepareBundleGeometry(model: LayoutModel): void {
     const degree = Math.max(links.length, ...incidentBundles.map(bundle => bundle.members.length));
     const q = Math.max(17.5, ...incidentBundles.map(bundle => pitch(model, bundle)));
     // Fan rows may each move one edge margin off a group edge (ADR-0013); reserve that room.
-    const required = 2 * MIN_STEM + q * (degree + 1) + 2 * GROUP_EDGE_LINK_CLEARANCE;
+    const required = 2 * MIN_STEM + q * (degree + 1) + 2 * edgeMargin(routedStrokeWidth(model));
     const delta = Math.max(0, required - (entry - n.y * port.anchor!.y));
     const movedTier = n.y > 0 ? adjacent.tier : tier;
     if (delta) for (const group of Object.values(model.groups).filter(g => g.tier! >= movedTier)) moveGroup(model, group, 0, delta);
@@ -287,7 +289,7 @@ export function prepareBundleGeometry(model: LayoutModel): void {
     const band = model.tierBands.find(b => b.tier === tier)!;
     const entry = n.y > 0 ? band.bounds!.y - 10.75 : -bottom(band.bounds!) - 10.75;
     const start = Math.max(...list.map(m => n.y * m.a.anchor!.y));
-    const delta = Math.max(0, 30 + (2 * list.length + 1) * pitch(model, bundle) + 2 * GROUP_EDGE_LINK_CLEARANCE - (entry - start));
+    const delta = Math.max(0, 30 + (2 * list.length + 1) * pitch(model, bundle) + 2 * edgeMargin(routedStrokeWidth(model)) - (entry - start));
     const movedTier = n.y > 0 ? tier : model.groups[model.document.nodes[list[0]!.a.ref.node]!.group]!.tier!;
     if (delta) for (const group of Object.values(model.groups).filter(g => g.tier! >= movedTier)) moveGroup(model, group, 0, delta);
     rebuildBands(model);
@@ -321,9 +323,9 @@ export function prepareBundleGeometry(model: LayoutModel): void {
     const mergeAllowance = shared && mergeMembers >= 2 ? (2 * list.length + 1) * q : 0;
     // Join, leave and fan rows may each move one edge margin off a group edge (ADR-0013).
     const general = mergeAllowance + (shared ? 2 * (15 + q * degree) : 0) + 2 * MIN_STEM + (inversions ? 4 * q * inversions + 2 * q * (list.length + 1) : q * (list.length + 1))
-      + 2 * GROUP_EDGE_LINK_CLEARANCE;
+      + 2 * edgeMargin(routedStrokeWidth(model));
     // An unshared merge trunk needs its interleaved join and leave rows between the two stems too.
-    const mergeTrunk = mergeMembers >= 2 ? 2 * MIN_STEM + (2 * mergeMembers - 1) * q + 2 * GROUP_EDGE_LINK_CLEARANCE : 0;
+    const mergeTrunk = mergeMembers >= 2 ? 2 * MIN_STEM + (2 * mergeMembers - 1) * q + 2 * edgeMargin(routedStrokeWidth(model)) : 0;
     const required = Math.max(general, mergeTrunk);
     const delta = Math.max(0, required - (lower.bounds!.y - bottom(upper.bounds!)));
     if (delta) for (const group of Object.values(model.groups).filter(g => g.tier! >= lowerTier)) moveGroup(model, group, 0, delta);

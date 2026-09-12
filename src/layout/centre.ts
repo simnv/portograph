@@ -97,19 +97,20 @@ function geometry(model: LayoutModel): number[] {
   return Object.values(model.nodes).flatMap(node => [node.bounds!.x, node.bounds!.width, ...node.ports.map(port => port.anchor!.x)]);
 }
 /** Reusable bounded producer. The caller shares one budget across all ordered placement replay. */
-export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
-  if (!Number.isSafeInteger(budget.remaining) || !Number.isSafeInteger(budget.passes) || budget.remaining < 0
-    || budget.passes < 0 || budget.remaining + budget.passes > 8) throw new Error('Centering requires one shared eight-pass budget');
-  const anchor = selectAnchorTier(model);
-  if (anchor === undefined) { delete model.anchorTier; return; }
-  model.anchorTier = anchor;
+interface CentreContext {
+  steps: { tier: number; authority: number }[];
+  winners: Map<string, string>;
+  groupOrder: Map<number, string[]>;
+  limits: Map<string, { low: number; high: number }>;
+}
+/** Everything one centring pass reads but never writes: step order, winners, group order, lane windows. */
+function centreContext(model: LayoutModel, anchor: number): CentreContext {
   const tiers = model.tierBands.map(band => band.tier), index = tiers.indexOf(anchor);
   const steps = [...tiers.slice(index + 1).map((tier, i) => ({ tier, authority: tiers[index + i]! })),
     ...tiers.slice(0, index).reverse().map((tier, i) => ({ tier, authority: tiers[index - i]! }))];
-  const allFeeds = new Map(steps.map(step => [step.tier, feeds(model, step.tier, step.authority)]));
   const winners = new Map<string, string>();
-  for (const [tier, list] of allFeeds) for (const feed of [...list].sort((a, b) => model.nodes[a.child.ref.node]!.bounds!.x - model.nodes[b.child.ref.node]!.bounds!.x || portId(a.child.ref).localeCompare(portId(b.child.ref)))) {
-    const key = `${tier}:${feed.key}`;
+  for (const step of steps) for (const feed of [...feeds(model, step.tier, step.authority)].sort((a, b) => model.nodes[a.child.ref.node]!.bounds!.x - model.nodes[b.child.ref.node]!.bounds!.x || portId(a.child.ref).localeCompare(portId(b.child.ref)))) {
+    const key = `${step.tier}:${feed.key}`;
     if (!winners.has(key)) winners.set(key, portId(feed.child.ref));
   }
   const groupOrder = new Map(steps.map(step => [step.tier, Object.values(model.groups).filter(group => group.tier === step.tier && !group.flank)
@@ -123,85 +124,114 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
     }
     limits.set(group.id, { low, high });
   }
+  return { steps, winners, groupOrder, limits };
+}
+/** The feeds of one group in one step, with the x each child port wants and the transits that yield. */
+function groupFeeds(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, warn: boolean): { own: Feed[]; wanted: Map<string, number>; yielded: Set<Feed>; conflicts: Set<string> } {
+  const own = list.filter(feed => model.document.nodes[feed.child.ref.node]!.group === id);
+  // Adjacent feeds first: a transit yields to any other feed of the same child port instead of
+  // contesting it, so a fan of lanes into one port cannot exhaust the shared budget.
+  const wanted = new Map<string, number>(), yielded = new Set<Feed>(), conflicts = new Set<string>();
+  for (const feed of [...own].sort((a, b) => Number(a.transit) - Number(b.transit))) {
+    const child = portId(feed.child.ref);
+    if (context.winners.get(`${tier}:${feed.key}`) !== child) {
+      if (warn) placementWarning(model, 'CENTRE_FAN_REMAINDER', `${feed.link} shares a parent port; the first child by x owns vertical alignment.`, [feed.link]);
+      continue;
+    }
+    if (!wanted.has(child)) wanted.set(child, feed.x);
+    else if (wanted.get(child) !== feed.x) {
+      if (feed.transit) {
+        yielded.add(feed);
+        if (warn) placementWarning(model, 'CENTRE_FAN_REMAINDER', `${feed.link} shares its child port with a feed at another x; that feed owns vertical alignment.`, [feed.link]);
+      } else conflicts.add(child);
+    }
+  }
+  return { own, wanted, yielded, conflicts };
+}
+/**
+ * One group's centring step: centre under its owning feeds, align the wanted ports, repack, fit,
+ * clamp into the lane/flank/neighbour window. Reports exactly which child ports stay unresolved —
+ * a conflict, an alignment the row cannot hold, a window the group cannot fit, or a clamp that
+ * moved it off its feed — so a check can excuse those and no others. Shared by the producer pass and
+ * by the publication/restore check, so both read one definition.
+ */
+function centreGroupStep(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean): { unresolved: Set<string>; group: LayoutGroup } {
+  const group = model.groups[id]!, order = context.groupOrder.get(tier)!;
+  const { own, wanted, yielded, conflicts } = groupFeeds(model, context, tier, list, id, warn);
+  const unresolved = new Set<string>(conflicts);
+  const saved = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
+  // Centre under the feeds that may own an alignment; a yielded transit would only pull the group
+  // away from the x its child is then aligned to.
+  const vertical = own.filter(feed => context.winners.get(`${tier}:${feed.key}`) === portId(feed.child.ref) && !yielded.has(feed));
+  const chosen = vertical.length ? vertical : own;
+  const distinctParents = new Map(chosen.map(feed => [feed.key, feed.x]));
+  const distinctChildren = new Map(chosen.map(feed => [portId(feed.child.ref), feed.child.anchor!.x]));
+  const mean = (values: Iterable<number>) => { const xs = [...values]; return xs.reduce((sum, x) => sum + x, 0) / xs.length; };
+  moveGroup(model, group, mean(distinctParents.values()) - mean(distinctChildren.values()), 0);
+  const aligned = new Set<string>();
+  for (const nodeId of group.rowOrder!) {
+    const node = model.nodes[nodeId]!;
+    for (const side of ['top', 'bottom'] as const) {
+      for (const key of alignSide(node, side, wanted, siblingLimit(model, group, node))) aligned.add(key);
+    }
+  }
+  for (const feed of own) {
+    const key = portId(feed.child.ref);
+    if (wanted.has(key) && !aligned.has(key)) {
+      unresolved.add(key);
+      if (warn) placementWarning(model, 'CENTRE_ALIGNMENT_INFEASIBLE', `${feed.link} cannot align within its child's available row span; routing completes it.`, [feed.link]);
+    }
+  }
+  for (let i = 1; i < group.rowOrder!.length; i++) {
+    const a = model.nodes[group.rowOrder![i - 1]!]!, b = model.nodes[group.rowOrder![i]!]!;
+    const minimum = right(a.bounds!) + rowGap(model, a.id, b.id);
+    if (b.bounds!.x < minimum) shiftNode(b, minimum - b.bounds!.x);
+  }
+  fitRegionGroup(model, group);
+  const limit = context.limits.get(id)!, low = Math.max(limit.low, previous ? right(previous.bounds!) + bandGap(model) : -Infinity);
+  let high = limit.high;
+  const nextFixed = order.slice(order.indexOf(id) + 1).map(id => model.groups[id]!).find(other => !list.some(feed => model.document.nodes[feed.child.ref.node]!.group === other.id));
+  if (nextFixed) high = Math.min(high, nextFixed.bounds!.x - bandGap(model));
+  for (const flank of Object.values(model.groups).filter(group => group.flank && group.tier === tier)) {
+    if (flank.flank!.align === 'left') {
+      if (group.bounds!.x < right(flank.bounds!) + bandGap(model)) moveGroup(model, group, right(flank.bounds!) + bandGap(model) - group.bounds!.x, 0);
+    } else high = Math.min(high, flank.bounds!.x - bandGap(model));
+  }
+  if (group.bounds!.width > high - low) {
+    model.groups[id] = saved.group;
+    for (const node of saved.nodes) model.nodes[node.id] = node;
+    return { unresolved: new Set(wanted.keys()), group: saved.group };
+  }
+  const x = Math.max(low, Math.min(group.bounds!.x, high - group.bounds!.width));
+  moveGroup(model, group, x - group.bounds!.x, 0);
+  for (const [key, want] of wanted) {
+    const port = group.nodes.flatMap(id => model.nodes[id]!.ports).find(port => portId(port.ref) === key)!;
+    if (Math.abs(port.anchor!.x - want) > 0.5) unresolved.add(key);
+  }
+  return { unresolved, group };
+}
+/** Reusable bounded producer. The caller shares one budget across all ordered placement replay. */
+export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
+  if (!Number.isSafeInteger(budget.remaining) || !Number.isSafeInteger(budget.passes) || budget.remaining < 0
+    || budget.passes < 0 || budget.remaining + budget.passes > 8) throw new Error('Centering requires one shared eight-pass budget');
+  const anchor = selectAnchorTier(model);
+  if (anchor === undefined) { delete model.anchorTier; return; }
+  model.anchorTier = anchor;
+  const context = centreContext(model, anchor);
   let unresolved = new Set<string>();
   while (budget.remaining > 0) {
     budget.remaining--; budget.passes++;
     const before = geometry(model); unresolved = new Set();
-    for (const { tier, authority } of steps) {
-      const list = feeds(model, tier, authority), order = groupOrder.get(tier)!;
+    for (const { tier, authority } of context.steps) {
+      const list = feeds(model, tier, authority);
       let previous: LayoutGroup | undefined;
-      for (const id of order) {
-        const group = model.groups[id]!, own = list.filter(feed => model.document.nodes[feed.child.ref.node]!.group === id);
+      for (const id of context.groupOrder.get(tier)!) {
+        const group = model.groups[id]!;
         // Bar shaping owns their source-derived slots and stacked spans; row centering cannot repack them.
-        if (model.document.groups[id]!.shape === 'bar') { previous = group; continue; }
-        if (!own.length) { previous = group; continue; }
-        const saved = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
-        // Adjacent feeds first: a transit yields to any other feed of the same child port instead
-        // of contesting it, so a fan of lanes into one port cannot exhaust the shared budget.
-        const wanted = new Map<string, number>(), yielded = new Set<Feed>();
-        for (const feed of [...own].sort((a, b) => Number(a.transit) - Number(b.transit))) {
-          const child = portId(feed.child.ref);
-          if (winners.get(`${tier}:${feed.key}`) !== child) {
-            placementWarning(model, 'CENTRE_FAN_REMAINDER', `${feed.link} shares a parent port; the first child by x owns vertical alignment.`, [feed.link]); continue;
-          }
-          if (!wanted.has(child)) wanted.set(child, feed.x);
-          else if (wanted.get(child) !== feed.x) {
-            if (feed.transit) {
-              yielded.add(feed);
-              placementWarning(model, 'CENTRE_FAN_REMAINDER', `${feed.link} shares its child port with a feed at another x; that feed owns vertical alignment.`, [feed.link]);
-            } else unresolved.add(id);
-          }
-        }
-        // Centre under the feeds that may own an alignment; a yielded transit would only pull the
-        // group away from the x its child is then aligned to.
-        const vertical = own.filter(feed => winners.get(`${tier}:${feed.key}`) === portId(feed.child.ref) && !yielded.has(feed));
-        const chosen = vertical.length ? vertical : own;
-        const distinctParents = new Map(chosen.map(feed => [feed.key, feed.x]));
-        const distinctChildren = new Map(chosen.map(feed => [portId(feed.child.ref), feed.child.anchor!.x]));
-        const mean = (values: Iterable<number>) => { const xs = [...values]; return xs.reduce((sum, x) => sum + x, 0) / xs.length; };
-        moveGroup(model, group, mean(distinctParents.values()) - mean(distinctChildren.values()), 0);
-        const aligned = new Set<string>();
-        for (const nodeId of group.rowOrder!) {
-          const node = model.nodes[nodeId]!;
-          for (const side of ['top', 'bottom'] as const) {
-            for (const key of alignSide(node, side, wanted, siblingLimit(model, group, node))) aligned.add(key);
-          }
-        }
-        for (const feed of own) {
-          const key = portId(feed.child.ref);
-          if (wanted.has(key) && !aligned.has(key)) {
-            unresolved.add(id);
-            placementWarning(model, 'CENTRE_ALIGNMENT_INFEASIBLE',
-              `${feed.link} cannot align within its child's available row span; routing completes it.`, [feed.link]);
-          }
-        }
-        for (let i = 1; i < group.rowOrder!.length; i++) {
-          const a = model.nodes[group.rowOrder![i - 1]!]!, b = model.nodes[group.rowOrder![i]!]!;
-          const minimum = right(a.bounds!) + rowGap(model, a.id, b.id);
-          if (b.bounds!.x < minimum) shiftNode(b, minimum - b.bounds!.x);
-        }
-        fitRegionGroup(model, group);
-        const limit = limits.get(id)!, low = Math.max(limit.low, previous ? right(previous.bounds!) + bandGap(model) : -Infinity);
-        let high = limit.high;
-        const nextFixed = order.slice(order.indexOf(id) + 1).map(id => model.groups[id]!).find(other => !list.some(feed => model.document.nodes[feed.child.ref.node]!.group === other.id));
-        if (nextFixed) high = Math.min(high, nextFixed.bounds!.x - bandGap(model));
-        for (const flank of Object.values(model.groups).filter(group => group.flank && group.tier === tier)) {
-          if (flank.flank!.align === 'left') {
-            if (group.bounds!.x < right(flank.bounds!) + bandGap(model)) moveGroup(model, group, right(flank.bounds!) + bandGap(model) - group.bounds!.x, 0);
-          } else high = Math.min(high, flank.bounds!.x - bandGap(model));
-        }
-        if (group.bounds!.width > high - low) {
-          model.groups[id] = saved.group;
-          for (const node of saved.nodes) model.nodes[node.id] = node;
-          unresolved.add(id); previous = saved.group; continue;
-        }
-        const x = Math.max(low, Math.min(group.bounds!.x, high - group.bounds!.width));
-        moveGroup(model, group, x - group.bounds!.x, 0);
-        for (const [key, x] of wanted) {
-          const port = group.nodes.flatMap(id => model.nodes[id]!.ports).find(port => portId(port.ref) === key)!;
-          if (Math.abs(port.anchor!.x - x) > 0.5) unresolved.add(id);
-        }
-        previous = group;
+        if (model.document.groups[id]!.shape === 'bar' || !list.some(feed => model.document.nodes[feed.child.ref.node]!.group === id)) { previous = group; continue; }
+        const result = centreGroupStep(model, context, tier, list, id, previous, true);
+        if (result.unresolved.size) unresolved.add(id);
+        previous = result.group;
       }
     }
     rebuildRegions(model);
@@ -210,5 +240,50 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
   }
   if (!model.diagnostics.some(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE')) placementWarning(model,
     'PLACEMENT_NON_CONVERGENCE', 'Centering exhausted the shared eight-pass budget; unresolved alignments remain for routing and final gates.', [...unresolved], 'group');
+}
+/**
+ * The stage 7c invariant, readable at any later stage (ADR-0010): for every centred group, replaying
+ * its own centring step on a copy either leaves each owning alignment where the model has it, or ends
+ * unresolved by the producer's own rules for that port (infeasible alignment, conflicting feeds, a
+ * window it cannot cross). The check is scoped per child port and reads no diagnostics: a serialized
+ * diagnostic proves nothing, and one port's genuine blockage excuses no other port. Ports that later rules own — bar
+ * drops and endpoints (7d), ports any bundle member uses (7e) — are not compared.
+ */
+export function centreViolations(model: LayoutModel): string[] {
+  const anchor = model.anchorTier;
+  if (anchor === undefined || !model.tierBands.some(band => band.tier === anchor)) return [];
+  const context = centreContext(model, anchor);
+  // Stage 7e re-anchors every port a bundle member uses. A child port it moved stays where 7e put it
+  // from then on; a parent port it moved is a new feed x that 7f re-centres under, so a feed on such
+  // a parent is excused only while the model sits exactly at the bundles stage.
+  const bundled = new Set(model.links.filter(link => link.bundle && link.attachments).flatMap(link => [portId(link.attachments!.from), portId(link.attachments!.to)]));
+  const afterBundles = ['bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'].includes(model.stage);
+  const atBundles = model.stage === 'bundles';
+  const drops = new Set(model.barDrops.map(drop => drop.link));
+  const isBar = (node: string): boolean => model.document.groups[model.document.nodes[node]!.group]!.shape === 'bar';
+  const result: string[] = [];
+  for (const { tier, authority } of context.steps) {
+    const list = feeds(model, tier, authority);
+    let previous: LayoutGroup | undefined;
+    for (const id of context.groupOrder.get(tier)!) {
+      const group = model.groups[id]!;
+      const owned = groupFeeds(model, context, tier, list, id, false);
+      if (model.document.groups[id]!.shape === 'bar' || !owned.own.length) { previous = group; continue; }
+      const trial = JSON.parse(JSON.stringify(model)) as LayoutModel;
+      const step = centreGroupStep(trial, centreContext(trial, anchor), tier, feeds(trial, tier, authority), id, previous && trial.groups[previous.id], false);
+      previous = group;
+      for (const [child, x] of owned.wanted) {
+        // Only the ports the producer's own step could not resolve are excused, never their siblings.
+        if (step.unresolved.has(child)) continue;
+        const feed = owned.own.find(item => portId(item.child.ref) === child)!;
+        if (model.links.find(link => link.id === feed.link)?.bundle || drops.has(feed.link)) continue;
+        if ((afterBundles && bundled.has(child)) || (atBundles && bundled.has(portId(feed.parent.ref)))) continue;
+        if (isBar(feed.child.ref.node) || isBar(feed.parent.ref.node)) continue;
+        const port = group.nodes.flatMap(nodeId => model.nodes[nodeId]!.ports).find(port => portId(port.ref) === child)!;
+        if (Math.abs(port.anchor!.x - x) > 0.5) result.push(`${feed.link}: ${child} sits at x ${port.anchor!.x} instead of its feed x ${x}`);
+      }
+    }
+  }
+  return result;
 }
 export function centre(model: LayoutModel): LayoutModel { return withLayoutMutation(model, 'centre', draft => centreDraft(draft, createCentreBudget())); }

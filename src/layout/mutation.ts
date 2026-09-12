@@ -16,7 +16,7 @@ import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, flankPair } from './flanks.js';
 import { rebuildLaneExtents, validateLanes, transitTiers } from './lanes.js';
 import { rebuildRegions } from './regions.js';
-import { selectAnchorTier } from './centre.js';
+import { centreViolations, selectAnchorTier } from './centre.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
@@ -215,7 +215,20 @@ function validateRegionClaims(model: LayoutModel): void {
     rebuildRegions(expected);
     same(model.regions, expected.regions, 'Region geometry contradicts current groups');
   }
-  if (stages.indexOf(model.stage) >= stages.indexOf('centre')) same(model.anchorTier, selectAnchorTier(model), 'Anchor tier contradicts node count or tie rule');
+  if (stages.indexOf(model.stage) >= stages.indexOf('centre')) {
+    same(model.anchorTier, selectAnchorTier(model), 'Anchor tier contradicts node count or tie rule');
+    const centring = centreViolations(model);
+    if (centring.length) {
+      // A spent shared budget is producer state geometry cannot witness (ADR-0010). A model that
+      // reports it keeps its last state and is judged by the final gates; the unverified alignments
+      // are recorded on it. Every other model must hold the invariant exactly.
+      if (!diagnosed(model)) throw new Error(`Centring invariant violated: ${centring.join('; ')}`);
+      const message = `Centring invariant unverified after a spent budget: ${centring.join('; ')}`;
+      if (!model.diagnostics.some(d => d.code === 'CENTRE_INVARIANT_UNVERIFIED' && d.message === message)) {
+        model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'CENTRE_INVARIANT_UNVERIFIED', message });
+      }
+    }
+  }
   else if (model.anchorTier !== undefined) throw new Error('Premature anchor tier');
   if (stages.indexOf(model.stage) < stages.indexOf('rows')) return;
   // Clear both kinds together so stale paths cannot suppress their replacements.

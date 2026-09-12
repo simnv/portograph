@@ -1,5 +1,5 @@
 import { GROUP_PADDING } from '../../src/layout/regions.js';
-import { GROUP_LABEL_LINK_CLEARANCE } from '../../src/theme/geometry.js';
+import { GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../../src/theme/geometry.js';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import * as api from '../../src/index.js';
@@ -251,7 +251,7 @@ links: [[a.p, b.p], [a.p, b.q], [a.p, c.p], [a.q, d.p], [a.r, d.q], [a.s, d.r]]`
     const band = model.labelBands.find(item => item.group === 'ga')!;
     expect(band.clearance).toBe(68.5);
     expect(model.nodes.a!.bounds!.y).toBeGreaterThanOrEqual(bottom(band.bounds) + 68.5);
-    expect(model.nodes.a!.bounds!.y).toBeLessThanOrEqual(bottom(band.bounds) + 78.5 + 1e-6);
+    expect(model.nodes.a!.bounds!.y).toBeLessThanOrEqual(bottom(band.bounds) + 68.5 + GROUP_EDGE_LINK_CLEARANCE + 0.75 + 1e-6);
     expect(bandEntryConflicts(model)).toEqual([]);
     expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
 

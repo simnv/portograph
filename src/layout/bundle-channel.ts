@@ -1,7 +1,7 @@
 import type { Bundle, LayoutModel, PathSegment, Point, Rect } from '../model/index.js';
 import { segmentRect, segmentRectDistance } from '../score/geometry.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
-import { clearOfGroupEdges, coordinate, groupDepthPairs, normal, type Member } from './bundle-geometry.js';
+import { clearOfGroupEdges, coordinate, edgeMargin, groupDepthPairs, normal, type Member } from './bundle-geometry.js';
 import { BundleFeasibilityError, pathBounds, polyline } from './bundle-paths.js';
 
 const inflate = (r: Rect, d: number): Rect => ({ x: r.x - d, y: r.y - d, width: r.width + 2 * d, height: r.height + 2 * d });
@@ -80,7 +80,8 @@ export function routeBundleChannel(model: LayoutModel, bundle: Bundle, list: Mem
   // The innermost member turns `halfWidth` before the centreline; that turn is what must clear the edge.
   const stemFor = (end: 'a' | 'b', anchor: Point, dir: Point): number => {
     const group = model.document.nodes[list[0]![end].ref.node]!.group;
-    return clearOfGroupEdges(stem - halfWidth, groupDepthPairs(model, [group], p => dir.x * (p.x - anchor.x) + dir.y * (p.y - anchor.y)), 1) + halfWidth;
+    const margin = edgeMargin(Math.max(...list.map(item => linkStrokeWidth(item.link))));
+    return clearOfGroupEdges(stem - halfWidth, groupDepthPairs(model, [group], p => dir.x * (p.x - anchor.x) + dir.y * (p.y - anchor.y)), 1, margin) + halfWidth;
   };
   const stemA = stemFor('a', a, n), stemB = stemFor('b', b, m);
   const start = { x: a.x + n.x * stemA, y: a.y + n.y * stemA }, end = { x: b.x + m.x * stemB, y: b.y + m.y * stemB };

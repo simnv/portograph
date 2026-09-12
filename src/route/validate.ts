@@ -3,7 +3,7 @@ import type { LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import { equal } from '../model/json-equality.js';
 import { routedStroke, stemReach } from '../layout/bands.js';
 import { findPort } from '../layout/row-paths.js';
-import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
 import { groupConsumers } from '../score/model.js';
 import { EPS, horizontal, length, samePoint, segmentRect, vertical } from '../score/geometry.js';
 import { outward } from '../score/model.js';
@@ -30,7 +30,8 @@ function reservations(model: LayoutModel, link: LayoutLink): { id: string; bound
   const expand = (bounds: Rect): Rect => ({ x: bounds.x - half, y: bounds.y - half, width: bounds.width + 2 * half, height: bounds.height + 2 * half });
   for (const label of model.labels) {
     if (label.role === 'group' && !label.omitted && label.bounds && label.layer !== 'overlay') {
-      result.push({ id: label.id, bounds: expand(label.bounds) });
+      const m = half + GROUP_LABEL_LINK_CLEARANCE, b = label.bounds;
+      result.push({ id: label.id, bounds: { x: b.x - m, y: b.y - m, width: b.width + 2 * m, height: b.height + 2 * m } });
     }
   }
   for (const lane of model.lanes) {

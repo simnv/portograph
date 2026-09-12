@@ -1,3 +1,4 @@
+import { GROUP_EDGE_LINK_CLEARANCE } from '../../src/theme/geometry.js';
 import { describe, expect, it } from 'vitest';
 import type { LayoutLabel, LayoutModel, PathSegment } from '../../src/model/index.js';
 import { score } from '../../src/score/index.js';
@@ -378,5 +379,38 @@ describe('G7 attachment', () => {
     expect(gate(model, 'G7').violations.some(v => v.code === 'disconnected-path')).toBe(true);
     model.nodes.a!.ports = [];
     expect(gate(model, 'G7').violations.some(v => v.code === 'missing-port')).toBe(true);
+  });
+});
+
+describe('ADR-0013 group boxes', () => {
+  it('fails a routed segment through a foreign group box and admits its own groups', () => {
+    const model = simple();
+    // c sits beside the a→b drop at x = 30; its 10 px fixture padding makes g-c span x 20..70.
+    node(model, 'c', { x: 30, y: 80, width: 30, height: 10 });
+    model.nodes.c!.bounds!.x = 40; model.groups['g-c']!.bounds = { x: 20, y: 70, width: 80, height: 30 };
+    const violations = gate(model, 'G2').violations;
+    expect(violations.filter(v => v.code === 'through-group').map(v => v.elements)).toEqual([['ab', 'g-c']]);
+    expect(violations.some(v => v.code === 'through-group' && v.elements.includes('g-a'))).toBe(false);
+    // A declared bar crossing admits the bar's group as well as the bar.
+    model.document.groups['g-c']!.shape = 'bar';
+    const l = model.links[0]!, owner = { kind: 'barCross' as const, node: 'c', link: l.id };
+    l.path!.segments[0]!.barCross = ['c'];
+    model.barDrops.push({ id: 'drop', owner, layer: 'routed', link: l.id, source: model.nodes.a!.ports[0]!.ref, port: model.nodes.b!.ports[0]!.ref, slotX: 30, span: { min: 0, max: 60 }, barCross: ['c'] });
+    expect(gate(model, 'G2').violations.filter(v => v.code === 'through-group')).toEqual([]);
+  });
+  it('fails a segment running along a group edge from outside, stroke-aware, and admits turns inside the box', () => {
+    const model = simple();
+    // A foreign box whose right edge lies exactly the margin plus half stroke from the drop's centreline.
+    node(model, 'd', { x: -60, y: 60, width: 30, height: 20 });
+    const stroke = 1.5, edge = 30 - GROUP_EDGE_LINK_CLEARANCE - stroke / 2;
+    model.groups['g-d']!.bounds = { x: edge - 60, y: 50, width: 60, height: 40 };
+    const along = () => gate(model, 'G6').violations.filter(v => v.code === 'segment-group-edge');
+    expect(along()).toEqual([]);
+    model.groups['g-d']!.bounds!.width += 0.1;
+    expect(along().map(v => v.elements)).toEqual([['ab', 'g-d']]);
+    // The same run strictly inside a box it attaches to is the group's own routing space.
+    model.groups['g-d']!.bounds!.width -= 0.1;
+    model.groups['g-a']!.bounds = { x: 25, y: -10, width: 80, height: 60 };
+    expect(along()).toEqual([]);
   });
 });

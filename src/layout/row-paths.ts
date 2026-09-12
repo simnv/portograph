@@ -1,7 +1,8 @@
 import type { PortRef } from '../model/document.js';
 import type { LayoutLink, LayoutModel, LayoutNode, LayoutPath, LayoutPort, PathSegment } from '../model/layout.js';
 import { EPS, length, segmentDistance, segmentRectDistance } from '../score/geometry.js';
-import { DEFAULT_STROKE_WIDTHS, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
+import { groupConsumers } from '../score/model.js';
 import { portId } from './skeleton-graph.js';
 
 /** Stroke-aware clearances that the final gates require between a routed segment and foreign geometry. */
@@ -86,6 +87,12 @@ export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segm
   for (const lane of model.lanes) {
     if (lane.layer === 'overlay' || ownsObstacle(lane.owner)) continue;
     if (segmentRectDistance(segment, lane.bounds) < stroke / 2 - EPS) return false;
+  }
+  // A foreign group box, with its edge margin, is closed to this link (ADR-0013): placement must
+  // not reserve a straight corridor that stage 8 would then be forbidden to use.
+  for (const [id, group] of Object.entries(model.groups)) {
+    if (!group.bounds || !group.nodes.length || groupConsumers(model, id).includes(link.id)) continue;
+    if (segmentRectDistance(segment, group.bounds) < GROUP_EDGE_LINK_CLEARANCE + stroke / 2 - EPS) return false;
   }
   for (const other of model.links) {
     if (other.id === link.id || other.layer === 'overlay') continue;

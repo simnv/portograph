@@ -1,6 +1,6 @@
 import type { Bundle, LayoutModel, PathSegment, Point } from '../model/index.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
-import { clone, normal, type Member, clearOfGroupEdges, groupDepthPairs } from './bundle-geometry.js';
+import { clone, normal, type Member, clearOfGroupEdges, edgeMargin, groupDepthPairs } from './bundle-geometry.js';
 import { BundleFeasibilityError, polyline, reverse } from './bundle-paths.js';
 
 /** Merge selected members through a comb of real trunk joins, retaining complete logical paths. */
@@ -37,7 +37,7 @@ export function mergeMembers(model: LayoutModel, bundle: Bundle, list: Member[],
   const shiftRows = (first: number, step: number, direction: 1 | -1): number => {
     let value = first;
     for (let guard = 0; guard < 8; guard++) {
-      const moved = selected.map((_, index) => clearOfGroupEdges(value + index * step, pairs, direction) - (value + index * step));
+      const moved = selected.map((_, index) => clearOfGroupEdges(value + index * step, pairs, direction, edgeMargin(Math.max(...selected.map(m => linkStrokeWidth(m.link))))) - (value + index * step));
       const delta = direction > 0 ? Math.max(0, ...moved) : Math.min(0, ...moved);
       if (Math.abs(delta) < 1e-9) return value;
       value += delta;

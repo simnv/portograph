@@ -1,6 +1,7 @@
+import { linkStrokeWidth } from '../theme/geometry.js';
 import type { Bundle, LayoutModel, LayoutPort, Owner, PathSegment, Point } from '../model/index.js';
 import { portId } from './skeleton-graph.js';
-import { axis, clearOfGroupEdges, clone, coordinate, facing, groupDepthPairs, normal, type Member } from './bundle-geometry.js';
+import { axis, clearOfGroupEdges, clone, coordinate, edgeMargin, facing, groupDepthPairs, normal, type Member } from './bundle-geometry.js';
 
 export interface BundleFans {
   members: Member[];
@@ -25,7 +26,7 @@ export function bundleFans(model: LayoutModel, bundle: Bundle, list: Member[], q
       const nrm = normal(port.side!);
       const toDepth = (p: Point): number => axis(port.side!) === 'y' ? nrm.x * (p.x - port.anchor!.x) : nrm.y * (p.y - port.anchor!.y);
       const pairs = groupDepthPairs(model, [model.document.nodes[port.ref.node]!.group], toDepth);
-      const clearDepth = (depth: number): number => clearOfGroupEdges(depth, pairs, 1);
+      const clearDepth = (depth: number): number => clearOfGroupEdges(depth, pairs, 1, edgeMargin(Math.max(...own.map(m => linkStrokeWidth(m.link)))));
       const rows: number[] = [];
       for (let i = 0; i < list.length; i++) rows.push(clearDepth(Math.max(15 + i * q, (rows[i - 1] ?? -Infinity) + q)));
       const distance = clearDepth(Math.max(15 + q * list.length, rows[rows.length - 1]! + q));
@@ -119,7 +120,8 @@ export function crossBundleFans(model: LayoutModel): void {
     const toDepth = (p: Point): number => tangent === 'y' ? n.x * (p.x - port.anchor!.x) : n.y * (p.y - port.anchor!.y);
     const pairs = groupDepthPairs(model, [model.document.nodes[port.ref.node]!.group], toDepth);
     const rows: number[] = [];
-    for (let i = 0; i <= items.length; i++) rows.push(clearOfGroupEdges(Math.max(15 + i * q, (rows[i - 1] ?? -Infinity) + q), pairs, 1));
+    const margin = edgeMargin(Math.max(...items.map(i => linkStrokeWidth(i.link))));
+    for (let i = 0; i <= items.length; i++) rows.push(clearOfGroupEdges(Math.max(15 + i * q, (rows[i - 1] ?? -Infinity) + q), pairs, 1, margin));
     let active = [...ordered], cursor = { ...port.anchor! }, parent: string | undefined, depth = 0;
     const paths = new Map(items.map(item => [item.link.id, [] as PathSegment[]]));
     const push = (id: string, from: Point, to: Point, owner: Owner): void => {

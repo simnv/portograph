@@ -449,7 +449,13 @@ const rectOverlap = (p: Rect, q: Rect): boolean => p.x < right(q) - EPS && q.x <
  */
 export function alignLinkedGroupGrid(model: LayoutModel): boolean {
   let changed = false;
-  for (let pass = 0; pass < 8; pass++) {
+  // Extents only grow and only ever onto existing box edges, so the process terminates; the cap
+  // exhausting is a defect signal, not a design bound. Pairs × groups passes cover any cascade in
+  // which each pass enables one more merge under the cap.
+  const groupCount = Object.keys(model.groups).length;
+  const bound = groupCount * Math.max(1, linkedGroupPairs(model).length) + 2;
+  let pass = 0;
+  for (; pass < bound; pass++) {
     let moved = false;
     for (const { a, b, axis } of linkedGroupPairs(model)) {
       const [pos, len] = axis === 'x' ? ['x', 'width'] as const : ['y', 'height'] as const;
@@ -468,6 +474,7 @@ export function alignLinkedGroupGrid(model: LayoutModel): boolean {
     }
     if (!moved) break;
   }
+  if (pass >= bound) placementWarning(model, 'GROUP_GRID_NON_CONVERGENCE', 'Linked-group grid did not settle within its pass bound; final gates decide the retained boxes.', [], 'group');
   if (changed) { rebuildBands(model); rebuildRegions(model); }
   return changed;
 }
@@ -514,8 +521,12 @@ export function produceGroupLabelBands(model: LayoutModel): void {
 
 /** Recheck exact stable claims against final paths without moving geometry or allocating a new budget. */
 export function validateGroupLabelBands(model: LayoutModel): void {
+  // Replay the grid on a copy: a settled model does not change; a genuinely unsettled chain exhausts
+  // the pass bound again. A serialized diagnostic alone proves nothing.
   const trial = clone(model);
-  if (alignLinkedGroupGrid(trial)) throw new Error('Linked groups do not share the grid their links require');
+  trial.diagnostics = trial.diagnostics.filter(item => item.code !== 'GROUP_GRID_NON_CONVERGENCE');
+  const changed = alignLinkedGroupGrid(trial), exhausted = trial.diagnostics.some(item => item.code === 'GROUP_GRID_NON_CONVERGENCE');
+  if (changed && !exhausted) throw new Error('Linked groups do not share the grid their links require');
   const entries = routerEntryPoints(model);
   const expectedBands = orderedGroupIds(model.document).map(id => bandFor(model, id, entries));
   if (!equal(model.labelBands, expectedBands)) throw new Error('Group label bands contradict final group geometry');
