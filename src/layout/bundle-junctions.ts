@@ -1,7 +1,7 @@
 import { linkStrokeWidth } from '../theme/geometry.js';
 import type { Bundle, LayoutModel, LayoutPort, Owner, PathSegment, Point } from '../model/index.js';
 import { portId } from './skeleton-graph.js';
-import { axis, clearOfGroupEdges, clone, coordinate, edgeMargin, facing, groupDepthPairs, normal, type Member } from './bundle-geometry.js';
+import { axis, clearOfGroupEdges, clone, coordinate, edgeMargin, facing, groupDepthPairs, normal, treeCohorts, type Member } from './bundle-geometry.js';
 
 export interface BundleFans {
   members: Member[];
@@ -93,29 +93,43 @@ export function bundleFans(model: LayoutModel, bundle: Bundle, list: Member[], q
   return result;
 }
 
-/** A port can belong to several bundles and to a later routing remainder. One tree owns it. */
+/**
+ * A port can belong to several bundles, to a plain fan of routed links, or to a bundle and a later
+ * routing remainder. One junction tree owns it: every link leaves the anchor on one shared stem and
+ * peels off at its own row, so stage 8 starts each remainder at its leaf instead of drawing the same
+ * first 15 px twice (ticket 20). A port whose links all belong to one bundle is that bundle's own
+ * fan (`bundleFans`) and is left alone.
+ */
 export function crossBundleFans(model: LayoutModel): void {
   for (const link of model.links) delete link.sharedRuns;
-  const incidence = new Map<string, { port: LayoutPort; items: { link: LayoutModel['links'][number]; end: 'from' | 'to'; far: LayoutPort }[] }>();
-  for (const link of model.links) {
-    if (link.layer !== 'routed' || !link.attachments || link.technique === 'stub') continue;
-    for (const end of ['from', 'to'] as const) {
-      const ref = link.attachments[end], farRef = link.attachments[end === 'from' ? 'to' : 'from'];
-      const port = model.nodes[ref.node]!.ports.find(p => portId(p.ref) === portId(ref))!;
+  // Eligibility is `treeCohorts`' (shared with 7e's capacity reservation); this producer adds only
+  // the ends and far ports it needs, and leaves a port whose links all belong to one bundle to that
+  // bundle's own fan (`bundleFans`).
+  for (const { port, links } of treeCohorts(model)) {
+    const bundles = new Set(links.map(link => link.bundle));
+    if (bundles.size === 1 && !bundles.has(undefined)) continue;
+    const items = links.map(link => {
+      const end: 'from' | 'to' = portId(link.attachments!.from) === portId(port.ref) ? 'from' : 'to';
+      const farRef = link.attachments![end === 'from' ? 'to' : 'from'];
       const far = model.nodes[farRef.node]!.ports.find(p => portId(p.ref) === portId(farRef))!;
-      const key = portId(ref), group = incidence.get(key) ?? { port, items: [] };
-      group.items.push({ link, end, far }); incidence.set(key, group);
-    }
-  }
-  for (const { port, items } of incidence.values()) {
-    if (items.length < 2 || !items.some(i => i.link.bundle) || new Set(items.map(i => i.link.bundle)).size < 2) continue;
-    const q = 17.5, tangent = axis(port.side!), n = normal(port.side!);
+      return { link, end, far };
+    });
+    const tangent = axis(port.side!), n = normal(port.side!);
+    // Rows and tracks one pitch apart: 16 px of visible clearance plus the widest member stroke.
+    const q = Math.max(17.5, 16 + Math.max(...items.map(i => linkStrokeWidth(i.link))));
     const world = (u: number, v: number): Point => tangent === 'x' ? { x: u, y: port.anchor!.y + n.y * v }
       : { x: port.anchor!.x + n.x * v, y: u };
-    const ordered = [...items].sort((a, b) => a.far.anchor![tangent] - b.far.anchor![tangent] || a.link.sourceIndex - b.link.sourceIndex);
+    // A member that owns a lane in the adjacent tier must end its leaf on that lane's x, exactly as
+    // a bundle fan does: placement knows the lane, so stage 8 never has to find it sideways.
+    const tier = model.groups[model.document.nodes[port.ref.node]!.group]!.tier!;
+    const laneX = (id: string): number | undefined => tangent === 'x' ? model.lanes
+      .filter(l => l.owner.kind === 'link' && l.owner.id === id)
+      .sort((a, b) => Math.abs(a.tier - tier) - Math.abs(b.tier - tier))[0]?.x : undefined;
+    const wanted = (item: typeof items[number]): number => laneX(item.link.id) ?? item.far.anchor![tangent];
+    const ordered = [...items].sort((a, b) => wanted(a) - wanted(b) || a.link.sourceIndex - b.link.sourceIndex);
     const target = new Map<string, number>();
     let prior = -Infinity;
-    for (const item of ordered) { prior = Math.max(item.far.anchor![tangent], prior + q); target.set(item.link.id, prior); }
+    for (const item of ordered) { prior = Math.max(wanted(item), prior + q); target.set(item.link.id, prior); }
     // Rows one pitch apart from a 15 px stem, each moved off the port group's edge margin (ADR-0013).
     const toDepth = (p: Point): number => tangent === 'y' ? n.x * (p.x - port.anchor!.x) : n.y * (p.y - port.anchor!.y);
     const pairs = groupDepthPairs(model, [model.document.nodes[port.ref.node]!.group], toDepth);

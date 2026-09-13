@@ -127,7 +127,7 @@ links: [[a.p, b.p]]`);
     expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
   });
 
-  it('accepts two connectors on one shared pin and reports the unreserved overlap as a gate failure', async () => {
+  it('routes a plain fan from one port through the shared stem 7e reserved, so no overlap remains', async () => {
     const before = await throughBands(`portograph: 2
 groups: {ga: {tier: 0}, gb: {tier: 1}}
 nodes:
@@ -135,20 +135,22 @@ nodes:
   b: {group: gb, ports: [{name: p, side: top}]}
   c: {group: gb, ports: [{name: p, side: top}]}
 links: [[a.p, b.p], [a.p, c.p]]`);
-    expect(before.junctions).toEqual([]);
+    // Ticket 20: a port feeding two children outside a bundle owns one junction tree; both links
+    // carry the same first stem as a reserved run and stage 8 starts each remainder at its leaf.
+    expect(before.junctions.map(junction => junction.links)).toEqual([['link-1', 'link-2']]);
+    const stems = before.links.map(link => link.sharedRuns!.from![0]!);
+    expect(stems[1]).toEqual(stems[0]);
+    expect(stems[0]!.from).toEqual(before.nodes.a!.ports[0]!.anchor);
     expect(routeRemainders(before)).toEqual(['link-1', 'link-2']);
     const model = await route(before, { createAttempt: createAvoidAttempt });
-    // The non-exclusive pin accepts both connectors, and both reach their anchors with real stems.
     for (const link of model.links) {
       expect(link.path!.segments[0]!.from).toEqual(before.nodes.a!.ports[0]!.anchor);
     }
     expectStems(model, ['link-1', 'link-2']);
-    // Stage 11 declares no junction here, so the common stem is an ordinary overlap: only a
-    // declared shared run is exempt, and G4 says so instead of stage 8 inventing a junction.
+    // The declared shared run is the one exemption G4 grants, and here it covers the whole overlap.
     const report = score(model).snapshot;
-    expect(report.gates.G4.passed).toBe(false);
-    expect(report.gates.G4.violations[0]!.code).toBe('collinear-overlap');
-    expect(model.junctions).toEqual([]);
+    expect(report.gates.G4.passed).toBe(true);
+    expect(report.gates.G6.passed).toBe(true);
   });
 
   it('draws an overlay link straight and never initializes the router', async () => {

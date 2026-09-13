@@ -200,7 +200,7 @@ links: [[a.p, b.p], [a.q, b.q], [c.p, a.p]]`);
     expect(plan.links[0]!.pieces.map(piece => piece.kind)).toEqual(['gap', 'reserved']);
   });
 
-  it('shares one non-exclusive pin between two connectors that no junction covers', async () => {
+  it('starts both remainders of a plain fan at their junction leaves instead of sharing one pin', async () => {
     const model = await throughBands(`portograph: 2
 groups: {ga: {tier: 0}, gb: {tier: 1}}
 nodes:
@@ -208,14 +208,19 @@ nodes:
   b: {group: gb, ports: [{name: p, side: top}]}
   c: {group: gb, ports: [{name: p, side: top}]}
 links: [[a.p, b.p], [a.p, c.p]]`);
-    expect(model.junctions).toEqual([]);
+    // Ticket 20: the shared port owns a junction tree, so neither remainder needs a pin on `a`.
+    expect(model.junctions).toHaveLength(1);
     const plan = planRoute(model);
     expect(plan.remainders).toEqual(['link-1', 'link-2']);
-    const pins = batchRequest(plan, plan.batches[0]!, []).shapes.find(shape => shape.id === 'node:a')!.pins!;
-    // One pin, used by both connectors: an exclusive pin would accept only the first.
-    expect(pins).toHaveLength(1);
-    expect(pins[0]!.exclusive).toBe(false);
-    expect(plan.batches).toEqual([{ id: 'batch-0', links: ['link-1', 'link-2'] }]);
+    const shapes = batchRequest(plan, plan.batches[0]!, []).shapes;
+    expect(shapes.find(shape => shape.id === 'node:a')?.pins ?? []).toEqual([]);
+    for (const link of model.links) {
+      const leaf = link.sharedRuns!.from!.at(-1)!.to;
+      expect(plan.links.find(item => item.link === link.id)!.connectors[0]!.from).toEqual({ kind: 'point', x: leaf.x, y: leaf.y });
+    }
+    // Each link owns its own leaf run as an obstacle, so the two remainders route in separate batches.
+    expect(plan.batches.flatMap(batch => batch.links)).toEqual(['link-1', 'link-2']);
+    expect(plan.batches.map(batch => batch.links.length)).toEqual([1, 1]);
   });
 
   it('pins and constrains an attachment on each of the four sides', async () => {

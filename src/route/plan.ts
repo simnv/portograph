@@ -123,7 +123,11 @@ export function planRoute(model: LayoutModel): RoutePlan {
           ...(first ? [] : [approachCheckpoint(fixed[index - 1]!, 'to')]),
           ...(last ? [] : [approachCheckpoint(fixed[index]!, 'from')]),
           ...(last && to.checkpoint ? [{ ...to.checkpoint, arrival: ALL_DIRECTIONS, departure: DIRECTION_BITS[OPPOSITE[to.port!.side!]] }] : []),
-        ];
+          // A checkpoint the adjacent reserved run already passes through, head-on and strictly
+          // inside a segment, is consumed by that run: a junction leaf that reaches deeper than a
+          // lane's approach point has honoured it, and the gap starting at the leaf could only
+          // reach it by turning back (ticket 20).
+        ].filter(checkpoint => !reservedPasses(first ? link.sharedRuns?.from : last ? link.sharedRuns?.to : undefined, checkpoint));
         connectors.push({ id, from: start.endpoint, to: end.endpoint, checkpoints });
         pieces.push({ kind: 'gap', connector: id, from: start.point, to: end.point });
       }
@@ -147,6 +151,36 @@ export function planRoute(model: LayoutModel): RoutePlan {
 }
 
 const asPoint = (point: Point): RouteEndpoint => ({ kind: 'point', x: point.x, y: point.y });
+
+/**
+ * Whether the reserved runs adjacent to a gap pass through a checkpoint strictly inside one of their
+ * segments, travelling along the axis the checkpoint has to be arrived at on. Only such a
+ * checkpoint is consumed: one at a run's endpoint, or crossed sideways, still binds the gap.
+ */
+function reservedPasses(runs: PathSegment[] | undefined, checkpoint: RouteCheckpoint): boolean {
+  if (!runs) return false;
+  // The axis the checkpoint pins: its departure when constrained (a lane approach departs into the
+  // lane), else its arrival. A checkpoint free in every direction pins no axis and is never consumed.
+  const pinned = checkpoint.departure !== ALL_DIRECTIONS ? checkpoint.departure : checkpoint.arrival;
+  const vertical = (pinned & (DIRECTION_BITS.top | DIRECTION_BITS.bottom)) !== 0
+    && (pinned & (DIRECTION_BITS.left | DIRECTION_BITS.right)) === 0;
+  const horizontal = (pinned & (DIRECTION_BITS.left | DIRECTION_BITS.right)) !== 0
+    && (pinned & (DIRECTION_BITS.top | DIRECTION_BITS.bottom)) === 0;
+  return runs.some(segment => {
+    const alongY = Math.abs(segment.from.x - segment.to.x) < 1e-6, alongX = Math.abs(segment.from.y - segment.to.y) < 1e-6;
+    if (alongY && !vertical) return false;
+    if (alongX && !horizontal) return false;
+    if (alongY) {
+      const low = Math.min(segment.from.y, segment.to.y), high = Math.max(segment.from.y, segment.to.y);
+      return Math.abs(checkpoint.x - segment.from.x) < 1e-6 && checkpoint.y > low + 1e-6 && checkpoint.y < high - 1e-6;
+    }
+    if (alongX) {
+      const low = Math.min(segment.from.x, segment.to.x), high = Math.max(segment.from.x, segment.to.x);
+      return Math.abs(checkpoint.y - segment.from.y) < 1e-6 && checkpoint.x > low + 1e-6 && checkpoint.x < high - 1e-6;
+    }
+    return false;
+  });
+}
 const OPPOSITE_BIT: Record<number, number> = { 1: 2, 2: 1, 4: 8, 8: 4 };
 /**
  * Where a routed gap joins a reserved run head-on: one checkpoint on the run's own line, the

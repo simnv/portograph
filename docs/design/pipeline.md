@@ -314,7 +314,8 @@ horizontally under the barycentre of the feed set within the space between the l
 neighbouring groups; then each child port x := its parent port x. A child port's x is feasible
 only if the child node can be widened to contain it without overlapping a sibling; if not, the
 link remains unpinned and is reported. Unequal-x top/bottom normals generally need two orthogonal bends; routing determines the actual count. A parent port feeding **two** children cannot be vertical to
-both: the first (by child x) is vertical, the rest fan through a shared stem (7e semantics).
+both: the first (by child x) is vertical, the rest fan through a shared stem — the junction tree 7e
+reserves for every port with two or more routed links that no earlier rule fixed (ticket 20).
 Iterate child-widening → sibling push → re-centre at most 8 times, ε = 0.5 px; on non-convergence
 keep the last state and report. *Moves:* child groups, child widths. *Re-validate:* lanes (7a
 positions are fixed; if a child now overlaps a lane, push the child, not the lane).
@@ -384,8 +385,14 @@ independently require every bundle lane's exact segment in authored traversal di
 Shared incidence uses explicit junction trees. A root has an outward perpendicular stem of at
 least 15 px. A child keeps the same port, starts at its parent point, and carries a strict subset
 of its parent's members. Each member traverses its exact root-to-leaf chain. A port shared across
-bundles and an unclaimed remainder has one tree. `LayoutLink.sharedRuns.from/to` records its
-outward partial runs. Stage 13 consumes `from` outward and `to` in reverse order and direction;
+bundles, between a bundle and an unclaimed remainder, or by a plain fan of routed links that no
+bundle claims, has one tree (ticket 20); only a port whose links all belong to one bundle is that
+bundle's own fan. In a bundle-less fan a member whose complete path an earlier rule fixed (a bar
+drop, a straight flank or row link) keeps that path and stays outside the tree, which the remaining
+members form when two or more are left; the overlap of that member's own stem with the tree root
+is ticket 36's, open and blocking for M1. `LayoutLink.sharedRuns.from/to` records its outward partial runs. A checkpoint
+the reserved run already passes through — a lane's approach point that a deep leaf has reached — is
+consumed by the run and not asked of the router. Stage 13 consumes `from` outward and `to` in reverse order and direction;
 a partial run never becomes a complete `path`. G4 exempts only validated shared runs. G6's fan
 exception covers the incident run and immediate outgoing branches at the same verified vertex.
 

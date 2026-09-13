@@ -94,19 +94,15 @@ describe('real CLI', () => {
   });
 
   it('reports computed gate failure as 1, or 0 when allowed, with the same complete artifacts', async () => {
+    // A fixture that fails a gate today: `flank-two-peers` fails G5 (ticket 21). When that ticket
+    // lands, swap in another failing input; the shared-port fan used before passes since ticket 20.
     const input = join(temp, 'shared.yaml');
-    writeFileSync(input, `portograph: 2
-groups: {up: {tier: 0}, down: {tier: 1}}
-nodes:
-  a: {group: up, ports: [{name: p, side: bottom}]}
-  b: {group: down, ports: [{name: p, side: top}]}
-  c: {group: down, ports: [{name: p, side: top}]}
-links: [[a.p, b.p], [a.p, c.p]]`);
+    writeFileSync(input, readFileSync(new URL('../../goldens/synthetic/flank-two-peers.yaml', import.meta.url), 'utf8'));
     const output = join(temp, 'shared.svg');
     const first = await command(['render', input, '-o', output]);
     expect(first.code, first.stderr).toBe(1);
     const report = JSON.parse(readFileSync(join(temp, 'shared.score.json'), 'utf8'));
-    expect(report.snapshot.gates.G4.passed).toBe(false);
+    expect(report.snapshot.gates.G5.passed).toBe(false);
     const normal = await command(['score', join(temp, 'shared.layout.json')]);
     const allowed = await command(['score', '--allow-gate-failures', join(temp, 'shared.layout.json')]);
     expect(normal.code).toBe(1);

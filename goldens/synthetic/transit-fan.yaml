@@ -1,0 +1,20 @@
+# Expected: One parent port feeds three children through a middle tier it does not terminate in:
+# every link owns a lane in that tier, in the children's x order, and all three leave the parent on
+# one shared stem tree (7e) whose leaves start each routed remainder, so no first stem is drawn twice
+# and every gate passes.
+# Test-only input owned by ticket 20; it needs no stage precondition because the whole pipeline runs.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  middle: { tier: 1, label: Middle }
+  bottom: { tier: 2, label: Bottom }
+nodes:
+  a: { group: top, ports: [{ name: p, side: bottom }] }
+  m: { group: middle }
+  c1: { group: bottom, ports: [{ name: p, side: top }] }
+  c2: { group: bottom, ports: [{ name: p, side: top }] }
+  c3: { group: bottom, ports: [{ name: p, side: top }] }
+links:
+  - [a.p#1, c1.p]
+  - [a.p#1, c2.p]
+  - [a.p#1, c3.p]

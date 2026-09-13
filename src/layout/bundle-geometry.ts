@@ -110,9 +110,30 @@ function orderDistinct(model: LayoutModel, bundle: Bundle): void {
   }
 }
 
+/**
+ * The ports stage 7e gives a junction tree, with the links that join it: two or more routed links
+ * on one port, none a self-link (ticket 20). In a bundle-less cohort a member whose complete path a
+ * rule already fixed (rows, flanks, bars: `path.fixed === true`) keeps that path and stays out of
+ * the tree; the remaining routed members form it when two or more are left. Shared with the
+ * capacity loop below, so a plain fan reserves its depth exactly when it will get a tree.
+ */
+export function treeCohorts(model: LayoutModel): { port: LayoutPort; links: LayoutLink[] }[] {
+  const incidence = new Map<string, { port: LayoutPort; links: LayoutLink[] }>();
+  for (const link of model.links) if (link.layer === 'routed' && link.attachments && link.technique !== 'stub') for (const ref of [link.attachments.from, link.attachments.to]) {
+    const port = findPort(model, ref)!, key = portId(ref), entry = incidence.get(key) ?? { port, links: [] };
+    entry.links.push(link); incidence.set(key, entry);
+  }
+  return [...incidence.values()]
+    .filter(({ links }) => new Set(links.map(link => link.id)).size === links.length)
+    .map(({ port, links }) => ({ port, links: links.some(link => link.bundle) ? links : links.filter(link => link.path?.fixed !== true) }))
+    .filter(({ links }) => links.length >= 2);
+}
+
 /** Geometry-only plan. No path, lane owner, bar reservation or envelope is written here. */
 export function prepareBundleGeometry(model: LayoutModel): void {
-  if (!model.bundles.length) return;
+  // A diagram with no bundle still reserves the depth of its plain fans (ticket 20); one with
+  // neither has nothing to plan.
+  if (!model.bundles.length && !treeCohorts(model).some(({ port }) => axis(port.side!) === 'x')) return;
   const oldBands = clone(model.tierBands);
   for (const bundle of model.bundles) { orderDistinct(model, bundle); applyBundleOrder(model, bundle); }
   const planned = new Map<string, Map<LayoutPort, number>>();
@@ -251,28 +272,32 @@ export function prepareBundleGeometry(model: LayoutModel): void {
     shift += Math.max(0, bottom(band.bounds!) - bottom(old.bounds!));
   }
   rebuildBands(model);
-  // Shared trees and their normal continuation must finish before the nearest fixed lane.
-  const incidence = new Map<string, { port: LayoutPort; links: LayoutLink[] }>();
-  for (const link of model.links) if (link.layer === 'routed' && link.attachments) for (const ref of [link.attachments.from, link.attachments.to]) {
-    const port = findPort(model, ref)!, key = portId(ref), entry = incidence.get(key) ?? { port, links: [] };
-    entry.links.push(link); incidence.set(key, entry);
-  }
-  for (const { port, links } of incidence.values()) {
-    if (links.length < 2 || !links.some(link => link.bundle) || axis(port.side!) !== 'x') continue;
+  // Shared trees and their normal continuation must finish before the nearest fixed lane. Every
+  // cohort that stage 7e will give a tree — a bundle's own fan, a cross-bundle port or a plain fan
+  // of routed links (ticket 20) — reserves the depth its rows and tracks need before its lane.
+  for (const { port, links } of treeCohorts(model)) {
+    if (axis(port.side!) !== 'x') continue;
     const n = normal(port.side!), tier = model.groups[model.document.nodes[port.ref.node]!.group]!.tier!;
     const memberIds = new Set(links.map(link => link.id));
-    const adjacent = model.lanes.filter(lane => lane.owner.kind === 'link' && memberIds.has(lane.owner.id))
+    // Only a lane the fan actually runs towards — beyond the port's normal — bounds it; a lane on
+    // the other side of the node belongs to a link that leaves this port and turns back.
+    const adjacent = model.lanes.filter(lane => lane.owner.kind === 'link' && memberIds.has(lane.owner.id)
+      && (n.y > 0 ? lane.tier > tier : lane.tier < tier))
       .sort((a, b) => Math.abs(a.tier - tier) - Math.abs(b.tier - tier))[0];
-    if (!adjacent) continue;
-    const band = model.tierBands.find(b => b.tier === adjacent.tier)!;
+    // A fan whose links own no lane ends in the next tier band itself: its tree still needs the
+    // same depth before that band's entry (ticket 20), so the band is the boundary to reserve against.
+    const nextTier = adjacent?.tier ?? [...model.tierBands].map(b => b.tier)
+      .filter(t => n.y > 0 ? t > tier : t < tier).sort((a, b) => n.y > 0 ? a - b : b - a)[0];
+    if (nextTier === undefined) continue;
+    const band = model.tierBands.find(b => b.tier === nextTier)!;
     const entry = n.y > 0 ? band.bounds!.y - 10.75 : -bottom(band.bounds!) - 10.75;
     const incidentBundles = model.bundles.filter(bundle => links.some(link => link.bundle === bundle.id));
     const degree = Math.max(links.length, ...incidentBundles.map(bundle => bundle.members.length));
-    const q = Math.max(17.5, ...incidentBundles.map(bundle => pitch(model, bundle)));
+    const q = Math.max(17.5, 16 + Math.max(...links.map(linkStrokeWidth)), ...incidentBundles.map(bundle => pitch(model, bundle)));
     // Fan rows may each move one edge margin off a group edge (ADR-0013); reserve that room.
     const required = 2 * MIN_STEM + q * (degree + 1) + 2 * edgeMargin(routedStrokeWidth(model));
     const delta = Math.max(0, required - (entry - n.y * port.anchor!.y));
-    const movedTier = n.y > 0 ? adjacent.tier : tier;
+    const movedTier = n.y > 0 ? nextTier : tier;
     if (delta) for (const group of Object.values(model.groups).filter(g => g.tier! >= movedTier)) moveGroup(model, group, 0, delta);
     rebuildBands(model);
   }
