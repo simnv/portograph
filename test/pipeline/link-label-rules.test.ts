@@ -391,3 +391,53 @@ links: [[a.p, b.p, {label: ${text}}]]`);
   expect(linkLabel(bars).text).toBe(text);
   expect(score(bars).snapshot.passed).toBe(true);
 }, 60000);
+
+it('ticket 30: a full text longer than its segment is shortened instead of overhanging both ends', async () => {
+  // Unreservable (right → right across two groups): the ladder decides, and the longest run is
+  // shorter than the text, so no placement may carry the full text. The label is shortened, drawn
+  // within its supporting segment, and keeps the full text as a tooltip.
+  const text = 'a very long link description that cannot possibly fit on the short wrapping leg';
+  const model = await run(`portograph: 2
+groups: {l: {tier: 0}, r: {tier: 0}}
+nodes:
+  a: {group: l, ports: [{name: p, side: right}]}
+  b: {group: r, ports: [{name: p, side: right}]}
+links: [[a.p, b.p, {label: "${text}"}]]`);
+  const label = linkLabel(model);
+  expect(label.omitted).toBeUndefined();
+  expect(label.text).not.toBe(text);
+  expect(label.text!.endsWith(LINK_LABEL_GEOMETRY.ellipsis)).toBe(true);
+  expect(label.tooltip).toBe(text);
+  const segment = model.links[0]!.path!.segments[(label.support as { segment: number }).segment]!;
+  const along = Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y);
+  // A shortened text fits `length - shortenMargin` (ADR-0014); a full text needs the margin at both ends.
+  const extent = label.textRotation === -90 ? label.bounds!.height : label.bounds!.width;
+  expect(extent).toBeLessThanOrEqual(along - LINK_LABEL_GEOMETRY.shortenMargin + 1e-6);
+  // Every placed full label of the label fixtures sits inside its run with the margin at both ends.
+  for (const model of [await run(fixture('unfittable-link-label')), await run(fixture('fitting-link-label'))]) {
+    for (const item of model.labels.filter(l => l.role === 'link' && !l.omitted && l.support?.kind === 'link-segment')) {
+      const owner = item.owner.kind === 'barCross' ? item.owner.link : item.owner.id;
+      const s = model.links.find(l => l.id === owner)!.path!.segments[(item.support as { segment: number }).segment]!;
+      const run = Math.hypot(s.to.x - s.from.x, s.to.y - s.from.y);
+      const margins = item.tooltip === undefined ? 2 : 1;
+      expect(item.textRotation === -90 ? item.bounds!.height : item.bounds!.width).toBeLessThanOrEqual(run - margins * LINK_LABEL_GEOMETRY.shortenMargin + 1e-6);
+    }
+  }
+}, 60000);
+
+it('ticket 30: the full text still takes a segment exactly long enough for it plus both margins', () => {
+  const text = 'WWWWWWWW';
+  const need = width(text) + 2 * LINK_LABEL_GEOMETRY.shortenMargin;
+  const place = (length: number) => {
+    const model = bench(
+      [{ id: 'source', bounds: { x: 0, y: 100, width: 40, height: 40 } }, { id: 'target', bounds: { x: 40 + length, y: 100, width: 40, height: 40 } }],
+      [{ id: 'link-1', from: 'source', to: 'target', sides: ['right', 'left'], label: text, points: [{ x: 40, y: 120 }, { x: 40 + length, y: 120 }] }], []);
+    produceLinkLabels(model);
+    return linkLabel(model);
+  };
+  expect(place(need).text).toBe(text);
+  // One pixel short: the full text no longer fits, the shortened pass takes over on the same run.
+  const short = place(need - 1);
+  expect(short.text).not.toBe(text);
+  expect(short.text!.endsWith(LINK_LABEL_GEOMETRY.ellipsis)).toBe(true);
+});

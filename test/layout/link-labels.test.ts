@@ -535,6 +535,23 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
     expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
   }, 60000);
 
+  it('ticket 30: keeps every count on a three-member merge whose trunks are one pitch long', async () => {
+    // Three merge members produce nested counted runs; the inner one is one member pitch (17.5 px)
+    // long, shorter than `2` plus the 8 px margin at each end. A count is not shortenable, so the
+    // authored-label length guard must not touch it: every counted run keeps its label.
+    const three = merged.replace('[a.r, b.r]', '{from: a.r, to: b.r, route: merge}');
+    const routed = await throughRoute(three);
+    const runs = routed.bundles.flatMap(bundle => bundle.mergeRuns ?? []);
+    expect(runs.length).toBeGreaterThanOrEqual(1);
+    const model = run(routed);
+    const labels = linkLabelsOf(model);
+    expect(labels.map(label => label.omitted)).toEqual(runs.map(() => undefined));
+    expect(new Set(labels.map(label => label.text))).toEqual(new Set(runs.map(item => String(item.count))));
+    const shortest = Math.min(...runs.map(item => Math.max(...item.path.segments.map(s => Math.hypot(s.to.x - s.from.x, s.to.y - s.from.y)))));
+    expect(shortest).toBeLessThan(measure('2').width + 2 * LINK_LABEL_GEOMETRY.shortenMargin);
+    expect(score(model).snapshot.counters.labelsOmitted).toBe(0);
+  }, 60000);
+
   it('creates no count label for ordinary parallel bundles or a singleton merge member', async () => {
     const singleton = merged.replace('{from: b.q, to: a.q, route: merge}', '[b.q, a.q]');
     const model = run(await throughRoute(singleton));

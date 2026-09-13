@@ -213,9 +213,13 @@ function placeLabel(index: ObstacleIndex, supported: Supported, text: string, sh
     .sort((a, b) => b.length - a.length || a.at - b.at);
   const widths = shortenable ? prefixWidths(text) : undefined;
   for (const shortened of widths ? [false, true] : [false]) {
-    // The full text takes the first clear candidate in ladder order. A shortened text takes the
-    // clear candidate that keeps the most characters, so the best location is found automatically
-    // rather than the first short stub of a segment; ties keep ladder order.
+    // An authored description takes the first clear candidate in ladder order whose segment is long
+    // enough to carry it: the text plus the shorten margin at each end, so a label never overhangs
+    // both ends of the run it names (ticket 30). A multiplicity count is not shortenable and keeps
+    // its trunk however short — a count-2 run one member pitch long is 17.5 px, less than `2` plus
+    // both margins — so the length guard is the shortenable labels' alone. A shortened text takes
+    // the clear candidate that keeps the most characters, so the best location is found
+    // automatically rather than the first short stub of a segment; ties keep ladder order.
     let best: Placement | undefined;
     for (const second of [false, true]) {
       for (const { segment, at, length } of ordered) {
@@ -223,6 +227,7 @@ function placeLabel(index: ObstacleIndex, supported: Supported, text: string, sh
         if (drawn === undefined) continue;
         const measured = measure(drawn);
         if (!measured.lines.length) continue;
+        if (!shortened && widths && measured.width + 2 * LINK_LABEL_GEOMETRY.shortenMargin > length + EPS) continue;
         const { bounds, textRotation } = candidateBox(segment, supported.half, { width: measured.width, height: measured.height }, second);
         if (collides(index, bounds, supported.support(at))) continue;
         const placement = { segment: at, bounds, textRotation, text: drawn, lines: measured.lines, lineHeight: measured.lineHeight };

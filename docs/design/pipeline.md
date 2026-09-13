@@ -665,7 +665,9 @@ the search is a scan over exact prefix widths, never a bisection.
 **Order of candidates.** Segments run in descending geometric length, then source-to-target index;
 zero-length segments are skipped. The first side — *above* for a horizontal segment, *right* for a
 vertical one — is tried across every segment before the opposite side is tried across that same
-order; then both passes repeat with the shortened text, and among the clear shortened candidates the
+order; a segment carries the full text only when it is at least the text plus the 8 px shorten
+margin at each end long, so a placed label never reaches past both ends of its run (ticket 30);
+then both passes repeat with the shortened text, and among the clear shortened candidates the
 one keeping the most characters wins (ADR-0014); then the label is omitted with its full text as
 `tooltip`. Authored labels run in link order, then merge runs in bundle and run order, so
 an accepted label is an obstacle for every later one.

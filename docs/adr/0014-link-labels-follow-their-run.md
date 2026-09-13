@@ -29,10 +29,12 @@ Three rules for link descriptions (stage 9 labels):
    rather than forced. Moves settle pills before the next link measures, any
    movement replays the region producers, and publication and restore re-run the reservation on a
    copy and reject a model it would still change.
-3. **The best location is found automatically.** The stage 9 ladder is unchanged for the full text:
-   longest segment first, first side before second. When the text must be shortened, the placement
-   that keeps the most characters wins across every segment and side, instead of the first clear
-   candidate in ladder order.
+3. **The best location is found automatically.** The stage 9 ladder keeps its order for the full
+   text — longest segment first, first side before second — but a segment may carry the full text
+   only when it is at least the text plus the 8 px shorten margin at each end long, so no label
+   reaches past both ends of the run it names (ticket 30). When the text must be shortened, the
+   placement that keeps the most characters wins across every segment and side, instead of the
+   first clear candidate in ladder order.
 
 Why: the maintainer's review found horizontal labels hanging beside vertical drops, descriptions
 that did not fit their link because placement never knew about them, and shortened labels landing
