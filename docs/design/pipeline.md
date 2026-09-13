@@ -425,8 +425,9 @@ or immutable lane; local slots remain valid and the bundle bends instead.
 For every group: band height = label height + 8, inside the padding of the **title edge**: the
 horizontal edge with fewer incident routed link ports, so a group fed from above carries its title
 at the bottom and no link routes around it; ties, including groups linked only sideways, keep the
-top (ADR-0011). A bottom band grows the group downward; its nodes move down only by the largest
-top-band shift of their tier, so mixed title edges keep the tier's node row level. Center the label when
+top (ADR-0011). A bottom band grows the group downward. Every group's nodes move down by the largest
+top-band shift of their tier, so mixed title edges and unequal clearances keep the tier's node row
+level and flanks stay level with their peers. Center the label when
 its measured box is clear. Otherwise choose the nearest free position within the horizontal
 insets, breaking equal-distance ties to the left. If none fits, retain the existing first-free
 widening rule and push row neighbours (which re-triggers 7c for groups whose parents moved,
@@ -449,6 +450,25 @@ share an x (7c) and whose straight corridor is clear of every node, pill, lane a
 force a detour placement could have avoided. The check ignores group and stage-9 labels so planning
 and restore agree. A complete path repeats the runs it consumed, so identical
 stroke-aware rectangles with identical ownership collapse to one entry.
+
+**A described link is long enough for its description (ADR-0014).** Before labels are planned,
+every authored link label (bars and unsuppressed overlay links included; bundle members excluded) is
+measured and its link's run — symmetric about the anchor midpoint, out to the nearer pill face or
+node edge — is made at least the label width plus both 8 px shortening margins: a link between tiers
+moves every lower tier down by the deficit; a link between two ends of one tier inserts the room at
+the gap: every group in every tier at or beyond the split between the two pill faces moves right,
+and a group straddling the split shifts only the nodes beyond it — in the link's own tier those that
+start beyond it, elsewhere those with any part beyond it — so alignments, flank sides and
+bar-to-source slots all survive and nothing moves left into a preceding group; a reserved lane at or
+beyond the split makes the link unreservable. A routed link will detour when its ends are not level
+or when the straight run between them is not clear by the corridor check — a node, pill, foreign group
+box with its margin, lane, fixed run, bundle row or bundle envelope in the way — and its run is then reserved with both stroke-aware
+router stems and twice the anchor-side pill protrusion on top of the label. Self-links, same-tier links
+through top/bottom ports, pairs whose ports do not face each other across the gap, and links whose room
+lies beyond a reserved lane are diagnosed `LINK_LABEL_ROOM_UNRESERVED`. Moves settle pills before the next link measures; the
+reservation re-runs after the grid inside the 7f loop and any movement replays the region producers. That group's band clearance also
+reserves the label's room beside the detour run under the title. Publication and restore re-run the
+reservation on a copy and reject a model it would still change.
 
 **Linked groups share a grid (ADR-0012).** Before labels are planned, groups joined by vertical
 ports take one x-extent and groups joined by horizontal ports take one y-extent — the union of the
@@ -629,10 +649,12 @@ fixed segment, junction, bundle, merge run and obstacle stay exactly as stage 8 
 label bands are validated against the geometry that existed when they were reserved, so a stage-9
 label never moves one.
 
-**Typography and spacing.** Link and multiplicity labels are `FONT_FAMILY` 9 px weight 400, text
-horizontal, with the measured `lines` and `lineHeight` stored; stage 11 re-measures nothing. The
-box is centred on its segment's midpoint, `4 px` of visible clearance beyond the supporting
-stroke's edge. Shortening uses the measured ASCII `...`, because the checked-in advance table has
+**Typography and spacing.** Link and multiplicity labels are `FONT_FAMILY` 9 px weight 400, with
+the measured `lines` and `lineHeight` stored; stage 11 re-measures nothing. Text follows its
+supporting segment (ADR-0014): upright along a horizontal run, rotated −90° along a vertical run so
+it reads bottom-to-top — gravity: never upside down, never top-to-bottom. The stored box is the
+rotated one, its long side along the run. The box is centred on its segment's midpoint, `4 px` of
+visible clearance beyond the supporting stroke's edge. Shortening uses the measured ASCII `...`, because the checked-in advance table has
 no U+2026, and keeps the longest proper prefix that fits. That width does **not** grow with the
 prefix: a line break inside it moves the ellipsis onto a new line and can make the box narrower, so
 the search is a scan over exact prefix widths, never a bisection.
@@ -640,8 +662,9 @@ the search is a scan over exact prefix widths, never a bisection.
 **Order of candidates.** Segments run in descending geometric length, then source-to-target index;
 zero-length segments are skipped. The first side — *above* for a horizontal segment, *right* for a
 vertical one — is tried across every segment before the opposite side is tried across that same
-order; then both passes repeat with the shortened text; then the label is omitted with its full
-text as `tooltip`. Authored labels run in link order, then merge runs in bundle and run order, so
+order; then both passes repeat with the shortened text, and among the clear shortened candidates the
+one keeping the most characters wins (ADR-0014); then the label is omitted with its full text as
+`tooltip`. Authored labels run in link order, then merge runs in bundle and run order, so
 an accepted label is an obstacle for every later one.
 
 **What a candidate must clear.** Visible nodes and their stroke, visible pills, every already

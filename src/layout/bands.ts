@@ -1,6 +1,6 @@
 import type { Point, Rect, Side } from '../model/geometry.js';
 import type { PortRef } from '../model/document.js';
-import type { LabelBand, LayoutGroup, LayoutLabel, LayoutModel, Owner, PathSegment } from '../model/layout.js';
+import type { LabelBand, LayoutGroup, LayoutLabel, LayoutModel, LayoutNode, LayoutPort, Owner, PathSegment } from '../model/layout.js';
 import { equal } from '../model/json-equality.js';
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 import { orderedGroupIds } from '../model/model.js';
@@ -13,8 +13,10 @@ import { rebuildRegionGeometry } from './region-rebuild.js';
 import { findPort, straightCorridorClear } from './row-paths.js';
 import { bandGap, portId } from './skeleton-graph.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
-import { bottom, GROUP_PADDING, groupPadding, placementWarning, rebuildRegions, right } from './regions.js';
+import { bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placementWarning, rebuildRegions, right } from './regions.js';
 import { withLayoutMutation } from './mutation.js';
+import { effectiveLayer } from '../score/model.js';
+import { LINK_LABEL_GEOMETRY, overlayLabelsSuppressed } from './link-labels.js';
 
 const EPS = 1e-6;
 export const GROUP_LABEL_GEOMETRY = {
@@ -142,8 +144,57 @@ export function bandSide(model: LayoutModel, group: LayoutGroup): 'top' | 'botto
 function clearanceFor(model: LayoutModel, group: LayoutGroup, entries: RouterEntryPoint[], side: 'top' | 'bottom'): number {
   const members = new Set(group.nodes);
   const reach = Math.max(0, ...entries.filter(entry => entry.side === side && members.has(entry.node)).map(entry => entry.outward));
-  if (reach <= 0) return groupPadding(model, group)[side];
-  return Math.max(groupPadding(model, group)[side], reach + strokeAllowance(model) + GROUP_LABEL_GEOMETRY.entryTolerance);
+  const room = detourLabelRoom(model, group);
+  if (reach <= 0) return Math.max(groupPadding(model, group)[side], room);
+  return Math.max(groupPadding(model, group)[side], room, reach + strokeAllowance(model) + GROUP_LABEL_GEOMETRY.entryTolerance);
+}
+
+type SameTierEnds = { leftPort: LayoutPort; leftNode: LayoutNode; rightPort: LayoutPort; rightNode: LayoutNode };
+/**
+ * The one reading of which same-tier described links have a run to lengthen (ADR-0014): both ports
+ * on a left or right side, and facing each other across the gap — a right port on the left end, a
+ * left port on the right end. Ports on the same side, or facing away, wrap around their nodes and
+ * the router places the wrapping leg where it likes, so no anchor distance bounds that run. The
+ * reservation and the title-band clearance both ask here, so neither moves anything for a link the
+ * other diagnoses.
+ */
+function sameTierEnds(from: LayoutPort, fromNode: LayoutNode, to: LayoutPort, toNode: LayoutNode): SameTierEnds | { unreservable: string } {
+  if (!['left', 'right'].includes(from.side!) || !['left', 'right'].includes(to.side!)) return { unreservable: 'joins two nodes of one tier through top or bottom ports' };
+  const [leftPort, leftNode, rightPort, rightNode] = from.anchor!.x <= to.anchor!.x ? [from, fromNode, to, toNode] : [to, toNode, from, fromNode];
+  if (leftPort.side !== 'right' || rightPort.side !== 'left') return { unreservable: 'does not face its peer across the gap' };
+  return { leftPort, leftNode, rightPort, rightNode };
+}
+
+/**
+ * A described link between two nodes of one row that has a third node between them will detour
+ * around that node, hugging it at node clearance, and its label then follows that run (ADR-0014).
+ * The band under the title reserves the room that label needs: the title's link margin, the label
+ * height, its normal gap and stroke, and the node clearance the run keeps. Without it the run sits
+ * between the title margin and the node with no side free, and the longest segment goes unused.
+ */
+function detourLabelRoom(model: LayoutModel, group: LayoutGroup): number {
+  let room = 0;
+  for (const link of model.links) {
+    const text = model.document.links[link.sourceIndex]?.label;
+    if (!text || link.layer !== 'routed' || link.technique === 'stub' || link.bundle || !link.attachments) continue;
+    if (effectiveLayer(link) === 'overlay') continue;
+    const fromTier = model.groups[model.document.nodes[link.attachments.from.node]!.group]!.tier;
+    if (fromTier !== group.tier || model.groups[model.document.nodes[link.attachments.to.node]!.group]!.tier !== group.tier) continue;
+    const from = findPort(model, link.attachments.from), to = findPort(model, link.attachments.to);
+    if (!from?.anchor || !to?.anchor || link.attachments.from.node === link.attachments.to.node) continue;
+    const ends = sameTierEnds(from, model.nodes[link.attachments.from.node]!, to, model.nodes[link.attachments.to.node]!);
+    if ('unreservable' in ends) continue;
+    const low = ends.leftPort.anchor!.x, high = ends.rightPort.anchor!.x;
+    // The detour runs over this group's nodes when one of them lies between the two ends of the link.
+    const between = group.nodes.some(id => id !== link.attachments!.from.node && id !== link.attachments!.to.node
+      && model.nodes[id]!.bounds!.x < high && right(model.nodes[id]!.bounds!) > low);
+    if (!between) continue;
+    const measured = measureText(text, { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight });
+    const nodeStroke = Math.max(DEFAULT_STROKE_WIDTHS.node, ...group.nodes.map(id => model.nodes[id]!.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node));
+    room = Math.max(room, GROUP_LABEL_LINK_CLEARANCE + measured.height + LINK_LABEL_GEOMETRY.normalGap + linkStrokeWidth(link)
+      + GROUP_LABEL_GEOMETRY.nodeClearance + (nodeStroke + linkStrokeWidth(link)) / 2 + GROUP_LABEL_GEOMETRY.entryTolerance);
+  }
+  return room;
 }
 
 function bandFor(model: LayoutModel, groupId: string, entries: RouterEntryPoint[]): LabelBand {
@@ -379,8 +430,9 @@ function reserveInitialSpace(model: LayoutModel): void {
   syncBands(model, entries);
   // The band replaces the ordinary padding on its side, and its clearance replaces that padding
   // beside it. A top band pushes its nodes down; a bottom band only grows the box downward. Nodes
-  // of one tier keep one row: a bottom-band group moves its nodes down by the largest top-band
-  // shift of its tier, so mixed title edges never break the row levelling of stage 6.
+  // of one tier keep one row: every group moves its nodes down by the largest top-band shift of its
+  // tier — a smaller clearance or a bottom title never breaks the row levelling of stage 6, and a
+  // flank stays level with the peer whose band grew more.
   const shifts = new Map(orderedGroupIds(model.document).map(id => {
     const group = model.groups[id]!, band = model.labelBands.find(item => item.group === id)!;
     return [id, band.bounds.height + band.clearance - groupPadding(model, group)[band.side]];
@@ -390,13 +442,13 @@ function reserveInitialSpace(model: LayoutModel): void {
     .map(id => shifts.get(id)!));
   for (const id of orderedGroupIds(model.document)) {
     const group = model.groups[id]!, band = model.labelBands.find(item => item.group === id)!, shift = shifts.get(id)!;
-    const down = band.side === 'top' ? shift : topShift(group.tier!);
+    const down = Math.max(band.side === 'top' ? shift : 0, topShift(group.tier!));
     for (const nodeId of group.nodes) {
       const node = model.nodes[nodeId]!;
       node.bounds!.y += down;
       for (const port of node.ports) port.anchor!.y += down;
     }
-    group.bounds!.height += band.side === 'top' ? shift : down + shift;
+    group.bounds!.height += band.side === 'top' ? down : down + shift;
     pushFollowingGroups(model, group, Math.max(group.bounds!.width,
       measurement(model, id).width + 2 * GROUP_LABEL_GEOMETRY.horizontalInset));
   }
@@ -479,20 +531,132 @@ export function alignLinkedGroupGrid(model: LayoutModel): boolean {
   return changed;
 }
 
+
+/**
+ * A link's description influences its length (ADR-0014): the run a label will follow must be long
+ * enough for the measured text plus the shortening margins before anything is routed. Stage 9
+ * centres the label on the run's midpoint, so the room is measured symmetrically about the anchor
+ * midpoint out to the nearer pill face (or node edge). A link between two tiers moves every lower
+ * tier down by the deficit. A link between two ends of one tier inserts the room at the gap itself:
+ * every group starting at or beyond the split moves right, in every tier; in a straddling group a
+ * node of the link's own tier moves when it starts beyond the split (a node the detour passes stays
+ * by the left end) and a node of any other tier when any part of it lies beyond (a wide source moves
+ * with the bar slotted under it), so alignments, flank sides and bar-to-source slots all move alike.
+ * A routed link that will detour (ends that are not level, or a straight run `straightCorridorClear`
+ * rejects) adds both stroke-aware stems and the anchor-side pill protrusion. Every authored label on
+ * a drawn link counts — bars, overlay links whose labels are not suppressed — except bundle members,
+ * whose geometry 7e owns. Self-links, same-tier links through top/bottom ports, pairs whose ports do
+ * not face each other and links whose room lies beyond a reserved lane are diagnosed and left to the
+ * stage 9 ladder.
+ */
+export function reserveLinkLabelRoom(model: LayoutModel): boolean {
+  let changed = false;
+  const suppressed = overlayLabelsSuppressed(model);
+  const outer = (port: LayoutPort, node: LayoutNode): Rect => port.pill ? port.pill.bounds : node.bounds!;
+  const settle = (nodes: string[]): void => { if (nodes.length) rebuildNodeGeometry(model, nodes, 'current'); };
+  for (const link of model.links) {
+    const text = model.document.links[link.sourceIndex]?.label;
+    if (!text || link.technique === 'stub' || link.bundle || !link.attachments) continue;
+    if (effectiveLayer(link) === 'overlay' && suppressed) continue;
+    const from = findPort(model, link.attachments.from), to = findPort(model, link.attachments.to);
+    if (!from?.anchor || !to?.anchor) continue;
+    const fromNode = model.nodes[link.attachments.from.node]!, toNode = model.nodes[link.attachments.to.node]!;
+    const fromGroup = model.groups[model.document.nodes[fromNode.id]!.group]!, toGroup = model.groups[model.document.nodes[toNode.id]!.group]!;
+    const unreserved = (why: string): void => placementWarning(model, 'LINK_LABEL_ROOM_UNRESERVED', `${link.id} ${why}; its label room cannot be reserved and the stage 9 ladder decides.`, [link.id]);
+    if (fromNode === toNode) { unreserved('returns to its own node'); continue; }
+    const measured = measureText(text, { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight });
+    const required = measured.width + 2 * LINK_LABEL_GEOMETRY.shortenMargin;
+    if (fromGroup.tier !== toGroup.tier) {
+      const [upper, lower, upperPort, lowerPort] = fromNode.bounds!.y <= toNode.bounds!.y ? [fromNode, toNode, from, to] : [toNode, fromNode, to, from];
+      const upperTier = model.groups[model.document.nodes[upper.id]!.group]!.tier!;
+      const mid = (upperPort.anchor!.y + lowerPort.anchor!.y) / 2;
+      const room = 2 * Math.min(mid - Math.max(bottom(upper.bounds!), bottom(outer(upperPort, upper))), Math.min(lower.bounds!.y, outer(lowerPort, lower).y) - mid);
+      const deficit = required - room;
+      if (deficit <= EPS) continue;
+      const moved = Object.values(model.groups).filter(group => group.tier! > upperTier);
+      for (const group of moved) moveGroup(model, group, 0, deficit);
+      settle(moved.flatMap(group => group.nodes));
+      changed = true;
+      continue;
+    }
+    const ends = sameTierEnds(from, fromNode, to, toNode);
+    if ('unreservable' in ends) { unreserved(ends.unreservable); continue; }
+    const { leftPort, leftNode, rightPort, rightNode } = ends;
+    const low = leftPort.anchor!.x, high = rightPort.anchor!.x, mid = (low + high) / 2;
+    // A routed link detours when its ends are not level or when the straight run between them is not
+    // clear — the same stroke-aware reading of nodes, pills, foreign group boxes with their margin,
+    // lanes, fixed runs and bundle rows and envelopes that pins row paths and reserves corridors
+    // (`straightCorridorClear`).
+    const straight: PathSegment = { from: { ...leftPort.anchor! }, to: { ...rightPort.anchor! }, owner: { ...link.owner } };
+    const detour = effectiveLayer(link) !== 'overlay'
+      && (Math.abs(leftPort.anchor!.y - rightPort.anchor!.y) > EPS || !straightCorridorClear(model, link, straight));
+    const room = 2 * Math.min(mid - Math.max(right(leftNode.bounds!), right(outer(leftPort, leftNode))), Math.min(rightNode.bounds!.x, outer(rightPort, rightNode).x) - mid);
+    // A detour's long run ends at an anchor on one side and at a turn on the other, so its midpoint is
+    // not the pill-face midpoint: the label centred there must clear the pill on the anchor side.
+    const protrusion = Math.max(right(outer(leftPort, leftNode)) - leftPort.anchor!.x, rightPort.anchor!.x - outer(rightPort, rightNode).x, 0);
+    const deficit = required + (detour ? stemReach(model, leftNode) + stemReach(model, rightNode) + 2 * protrusion : 0) - room;
+    if (deficit <= EPS) continue;
+    // Insert the room at the gap itself: everything at or right of the split — in every tier — moves
+    // right together, and a group straddling the split shifts only its nodes beyond it. Alignments,
+    // flank sides and bar-to-source slots all survive because both ends of each of them move alike;
+    // nothing ever moves left into a preceding group. A reserved lane at or beyond the split cannot
+    // move, so such a link is diagnosed instead.
+    const split = (Math.max(right(leftNode.bounds!), right(outer(leftPort, leftNode))) + Math.min(rightNode.bounds!.x, outer(rightPort, rightNode).x)) / 2;
+    if (model.lanes.some(lane => lane.x >= split - EPS)) { unreserved('needs room beyond a reserved lane'); continue; }
+    const moved: string[] = [];
+    for (const group of Object.values(model.groups)) {
+      if (group.bounds!.x >= split - EPS) { moveGroup(model, group, deficit, 0); moved.push(...group.nodes); continue; }
+      if (right(group.bounds!) <= split + EPS) continue;
+      // In the link's own tier a node moves only when it starts beyond the split: a node the detour
+      // must pass stays by the left end, so the run over it spans the whole gap. In any other tier a
+      // node with any part beyond the split moves, so a wide source straddling the cut moves with the
+      // bar slotted under its port and 7d's replay finds that slot where it left it.
+      const shifted = group.nodes.filter(id => group.tier === fromGroup.tier
+        ? model.nodes[id]!.bounds!.x >= split - EPS : right(model.nodes[id]!.bounds!) > split + EPS);
+      for (const id of shifted) {
+        const node = model.nodes[id]!;
+        node.bounds!.x += deficit;
+        for (const port of node.ports) { port.anchor!.x += deficit; if (port.pill) port.pill.bounds.x += deficit; }
+      }
+      if (shifted.length) { moved.push(...shifted); fitRegionGroup(model, group); }
+    }
+    settle(moved);
+    changed = true;
+  }
+  if (changed) { rebuildBands(model); rebuildRegions(model); }
+  return changed;
+}
+
 /** Transaction-owned stage-7f producer. It replaces every affected claim before publication. */
 export function produceGroupLabelBands(model: LayoutModel): void {
   reserveInitialSpace(model);
+  reserveLinkLabelRoom(model);
   const budget = createCentreBudget();
   rebuildRegionGeometry(model, budget, undefined, true);
   while (true) {
-    // Linked groups share a grid before labels are planned inside their (possibly wider) boxes.
+    // Linked groups share a grid before labels are planned inside their (possibly wider) boxes, and
+    // every described link keeps the run its label needs after whatever the replay moved. Either
+    // movement, like a changed reservation, must replay the region producers (bars, paths) first.
     alignLinkedGroupGrid(model);
+    const roomChanged = reserveLinkLabelRoom(model);
     // A replay that changes reserved outward geometry changes the reservation; refit before placing.
-    if (syncBands(model) && budget.remaining > 0) {
+    const bandsChanged = syncBands(model);
+    if ((bandsChanged || roomChanged) && budget.remaining > 0) {
       const passes = budget.passes;
       rebuildRegionGeometry(model, budget, undefined, true);
       consumeGrowthPass(budget, passes);
       continue;
+    }
+    if (roomChanged) {
+      // Room moved geometry after the shared budget ran out: replay the producers once more with that
+      // same spent budget (no fresh centring passes) so no claim is left stale, and say so — the final
+      // gates decide the retained geometry.
+      rebuildRegionGeometry(model, budget, undefined, true);
+      syncBands(model);
+      if (!model.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE')) model.diagnostics.push({
+        stage: 'placement', severity: 'warning', code: 'PLACEMENT_NON_CONVERGENCE',
+        message: 'Link-label room reservation exhausted the shared eight-pass budget; final gates decide the retained geometry.',
+      });
     }
     model.labels = model.labels.filter(label => label.role !== 'group');
     const plan = planLabels(model, true);
@@ -523,6 +687,7 @@ export function produceGroupLabelBands(model: LayoutModel): void {
 export function validateGroupLabelBands(model: LayoutModel): void {
   // Replay the grid on a copy: a settled model does not change; a genuinely unsettled chain exhausts
   // the pass bound again. A serialized diagnostic alone proves nothing.
+  if (reserveLinkLabelRoom(clone(model))) throw new Error('A labelled link is shorter than the run its label reserved');
   const trial = clone(model);
   trial.diagnostics = trial.diagnostics.filter(item => item.code !== 'GROUP_GRID_NON_CONVERGENCE');
   const changed = alignLinkedGroupGrid(trial), exhausted = trial.diagnostics.some(item => item.code === 'GROUP_GRID_NON_CONVERGENCE');

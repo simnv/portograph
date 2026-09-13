@@ -22,6 +22,12 @@ export const LINK_LABEL_GEOMETRY = {
   ellipsis: '...',
   /** A shortened label must leave this much of its supporting segment free. */
   shortenMargin: 8,
+  /**
+   * Text follows its supporting segment (ADR-0014): horizontal along a horizontal run, and along a
+   * vertical run rotated so it reads bottom-to-top — Visio's "gravity": rotated text is never
+   * upside down and never reads top-to-bottom. Orthogonal paths need only these two headings.
+   */
+  verticalRotation: -90 as const,
 } as const;
 
 /** Overlay labels are suppressed strictly above this density (overlay links per node). */
@@ -127,20 +133,23 @@ function collides(index: ObstacleIndex, box: Rect, support: LabelSupport | undef
 }
 
 /**
- * The measured box for one side of one segment. Text stays horizontal and is centred on the
- * segment's midpoint; the 4 px normal gap is visible clearance beyond the stroke edge. A segment
- * that is neither axis-aligned — only an overlay link can be one — uses its dominant axis.
+ * The measured box for one side of one segment. Text follows the segment (ADR-0014): along a
+ * horizontal run it stays upright; along a vertical run it turns by `verticalRotation` and the stored
+ * box is the rotated one, so its long side lies along the run. The box is centred on the segment's
+ * midpoint; the 4 px normal gap is visible clearance beyond the stroke edge. A segment that is
+ * neither axis-aligned — only an overlay link can be one — uses its dominant axis.
  */
-function candidateBox(segment: PathSegment, half: number, size: { width: number; height: number }, second: boolean): Rect {
+export function candidateBox(segment: PathSegment, half: number, size: { width: number; height: number }, second: boolean): { bounds: Rect; textRotation: -90 | 0 } {
   const midX = (segment.from.x + segment.to.x) / 2, midY = (segment.from.y + segment.to.y) / 2;
   const gap = LINK_LABEL_GEOMETRY.normalGap + half;
   if (Math.abs(segment.to.x - segment.from.x) >= Math.abs(segment.to.y - segment.from.y)) {
-    return { x: midX - size.width / 2, y: second ? midY + gap : midY - gap - size.height, ...size };
+    return { bounds: { x: midX - size.width / 2, y: second ? midY + gap : midY - gap - size.height, ...size }, textRotation: 0 };
   }
-  return { x: second ? midX - gap - size.width : midX + gap, y: midY - size.height / 2, ...size };
+  const rotated = { width: size.height, height: size.width };
+  return { bounds: { x: second ? midX - gap - rotated.width : midX + gap, y: midY - rotated.height / 2, ...rotated }, textRotation: LINK_LABEL_GEOMETRY.verticalRotation };
 }
 
-interface Placement { segment: number; bounds: Rect; text: string; lines: string[]; lineHeight: number }
+interface Placement { segment: number; bounds: Rect; textRotation: -90 | 0; text: string; lines: string[]; lineHeight: number }
 interface Supported { segments: PathSegment[]; half: number; support: (index: number) => LabelSupport | undefined }
 
 const measure = (text: string) =>
@@ -204,17 +213,24 @@ function placeLabel(index: ObstacleIndex, supported: Supported, text: string, sh
     .sort((a, b) => b.length - a.length || a.at - b.at);
   const widths = shortenable ? prefixWidths(text) : undefined;
   for (const shortened of widths ? [false, true] : [false]) {
+    // The full text takes the first clear candidate in ladder order. A shortened text takes the
+    // clear candidate that keeps the most characters, so the best location is found automatically
+    // rather than the first short stub of a segment; ties keep ladder order.
+    let best: Placement | undefined;
     for (const second of [false, true]) {
       for (const { segment, at, length } of ordered) {
         const drawn = shortened ? shorten(widths!, length - LINK_LABEL_GEOMETRY.shortenMargin) : text;
         if (drawn === undefined) continue;
         const measured = measure(drawn);
         if (!measured.lines.length) continue;
-        const bounds = candidateBox(segment, supported.half, { width: measured.width, height: measured.height }, second);
+        const { bounds, textRotation } = candidateBox(segment, supported.half, { width: measured.width, height: measured.height }, second);
         if (collides(index, bounds, supported.support(at))) continue;
-        return { segment: at, bounds, text: drawn, lines: measured.lines, lineHeight: measured.lineHeight };
+        const placement = { segment: at, bounds, textRotation, text: drawn, lines: measured.lines, lineHeight: measured.lineHeight };
+        if (!shortened) return placement;
+        if (!best || drawn.length > best.text.length) best = placement;
       }
     }
+    if (best) return best;
   }
   return undefined;
 }
@@ -230,7 +246,7 @@ function omitted(label: LayoutLabel): LayoutLabel {
 }
 
 function placedLabel(label: LayoutLabel, placement: Placement, support: LabelSupport | undefined): LayoutLabel {
-  return { ...label, ...(support ? { support } : {}), text: placement.text,
+  return { ...label, ...(support ? { support } : {}), text: placement.text, textRotation: placement.textRotation,
     lines: placement.lines, lineHeight: placement.lineHeight, bounds: placement.bounds,
     ...(placement.text === label.text ? {} : { tooltip: label.text }) };
 }

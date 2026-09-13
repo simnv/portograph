@@ -118,8 +118,8 @@ is a standalone schema-v2 document. `stage-inputs.yaml` is separate test data.
 | [author-ordered-bundle](synthetic/author-ordered-bundle.yaml) | 7e | Preserve the reversed permutation with exactly three inversions and crossings. |
 | [both-margins-full](synthetic/both-margins-full.yaml) | 7a | Widen the canvas for transit lanes when both margins have zero capacity. |
 | [label-no-gap](synthetic/label-no-gap.yaml) | 7f | Widen the group, push its neighbour, and re-centre the affected child. |
-| [unfittable-link-label](synthetic/unfittable-link-label.yaml) | 9 | Keep the full tooltip and report one omitted visible label. |
-| [fitting-link-label](synthetic/fitting-link-label.yaml) | 9 | Place the measured label beside the longest segment with no collision. |
+| [unfittable-link-label](synthetic/unfittable-link-label.yaml) | 9 | Keep the full tooltip and report one omitted visible label (with its stage precondition; the whole pipeline reserves run and band room and places the full label on the longest run, ADR-0014). |
+| [fitting-link-label](synthetic/fitting-link-label.yaml) | 9 | Place the measured label along the longest segment — rotated to read bottom-to-top on a vertical run — with no collision. |
 | [long-label-portless-node](synthetic/long-label-portless-node.yaml) | 3 | Grow the node to contain its measured label and description. |
 | [zero-link-diagram](synthetic/zero-link-diagram.yaml) | 10 | Produce finite scores and use 1 for empty routed-link metrics. |
 

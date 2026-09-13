@@ -68,6 +68,8 @@ drew it. Network diagrams first; software architecture and electrical panels nex
 | Group title edge | the horizontal edge with fewer incident link ports (fed from above → bottom); ties keep the top; titles stay horizontal | ADR-0011, maintainer 2026-09-12 |
 | Linked-group grid | groups joined by vertical links share x-extent and width, by horizontal links y-extent and height, when neither is smaller than the union by more than 30 % | ADR-0012, maintainer 2026-09-12 |
 | Group edge link-margin | 10 px beyond half the link stroke: foreign group boxes are routing obstacles grown by it (G2 `through-group`); no segment runs along a group edge from on or outside the box within it (G6 `segment-group-edge`) | ADR-0013, maintainer 2026-09-12 |
+| Link label heading | follows the supporting segment: 0° on horizontal runs, −90° (reads bottom-to-top) on vertical runs — gravity, never upside down | ADR-0014, maintainer 2026-09-13 |
+| Link label room | a described link's run is at least label width + 2 × 8 px, symmetric about the anchor midpoint out to the nearer pill face, reserved in 7f; a detour under a title also reserves band room | ADR-0014, maintainer 2026-09-13 |
 | Group title link-margin | 8 px around the measured title, link-free: labels keep it from reserved link geometry, routing treats it as an obstacle, G3 fails a segment inside it | maintainer M1 visual review, 2026-09-11 |
 | Node minimum | 50 × 35 px | d3-fd |
 | Port pill | 24 × 10 px, r 3 | d3-fd |

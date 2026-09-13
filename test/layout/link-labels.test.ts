@@ -31,19 +31,25 @@ const overlaps = (a: Rect, b: Rect): boolean => Math.min(a.x + a.width, b.x + b.
 const NORMAL_GAP = 4, SHORTEN_MARGIN = 8, ELLIPSIS = '...';
 it('keeps the theme and spacing rulings stage 9 was given', () => {
   expect(LINK_LABEL_GEOMETRY).toEqual({ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 9,
-    fontWeight: 400, normalGap: NORMAL_GAP, ellipsis: ELLIPSIS, shortenMargin: SHORTEN_MARGIN });
+    fontWeight: 400, normalGap: NORMAL_GAP, ellipsis: ELLIPSIS, shortenMargin: SHORTEN_MARGIN, verticalRotation: -90 });
   expect(OVERLAY_LABEL_DENSITY).toBe(3);
 });
 
-/** An independent restatement of the placement ruling: midpoint, 4 px beyond the stroke edge. */
+/**
+ * An independent restatement of the placement ruling: midpoint, 4 px beyond the stroke edge, text
+ * along the run — a vertical run stores the rotated box (ADR-0014).
+ */
 function candidate(segment: PathSegment, text: string, second: boolean, stroke = DEFAULT_STROKE_WIDTHS.path): Rect {
   const size = measure(text), gap = NORMAL_GAP + stroke / 2;
   const midX = (segment.from.x + segment.to.x) / 2, midY = (segment.from.y + segment.to.y) / 2;
   if (Math.abs(segment.to.x - segment.from.x) >= Math.abs(segment.to.y - segment.from.y)) {
     return { x: midX - size.width / 2, y: second ? midY + gap : midY - gap - size.height, width: size.width, height: size.height };
   }
-  return { x: second ? midX - gap - size.width : midX + gap, y: midY - size.height / 2, width: size.width, height: size.height };
+  return { x: second ? midX - gap - size.height : midX + gap, y: midY - size.width / 2, width: size.height, height: size.width };
 }
+/** Gravity: text along a vertical run reads bottom-to-top; along a horizontal run it stays upright. */
+const rotationOf = (segment: PathSegment): -90 | 0 =>
+  Math.abs(segment.to.x - segment.from.x) >= Math.abs(segment.to.y - segment.from.y) ? 0 : -90;
 
 async function throughRoute(yaml: string): Promise<LayoutModel> {
   const placedModel = bands(bundles(bars(centre(flanks(lanes(rows(await placed(yaml))))))));
@@ -201,7 +207,7 @@ describe('stage 9 authored labels', () => {
     expect(label[0]).toEqual({
       id: 'label:link:link-1', owner: { kind: 'link', id: 'link-1' }, layer: 'routed', role: 'link',
       text: 'uplink', fontFamily: LINK_LABEL_GEOMETRY.fontFamily, fontSize: 9, fontWeight: 400,
-      textRotation: 0, support: { kind: 'link-segment', link: 'link-1', segment: longest },
+      textRotation: rotationOf(path[longest]!), support: { kind: 'link-segment', link: 'link-1', segment: longest },
       lines: ['uplink'], lineHeight: measure('uplink').lineHeight,
       bounds: candidate(path[longest]!, 'uplink', false),
     });
@@ -516,7 +522,7 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
     expect(label[0]).toEqual({
       id: `label:multiplicity:${bundle.mergeRuns![0]!.id}`, owner: { ...bundle.owner }, layer: 'routed',
       role: 'link', text: '2', fontFamily: LINK_LABEL_GEOMETRY.fontFamily, fontSize: 9, fontWeight: 400,
-      textRotation: 0, support: { kind: 'merge-run', bundle: bundle.id, run: bundle.mergeRuns![0]!.id },
+      textRotation: rotationOf(bundle.mergeRuns![0]!.path.segments[0]!), support: { kind: 'merge-run', bundle: bundle.id, run: bundle.mergeRuns![0]!.id },
       lines: ['2'], lineHeight: measure('2').lineHeight,
       bounds: candidate(bundle.mergeRuns![0]!.path.segments[0]!, '2', false),
     });

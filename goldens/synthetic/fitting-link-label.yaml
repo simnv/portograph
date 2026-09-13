@@ -1,5 +1,6 @@
-# Expected: Place the measured label beside the longest segment of its own routed path, clear of
-# every node, pill, label and routed segment, and report no omission.
+# Expected: Place the measured label along the longest segment of its own routed path — rotated to
+# read bottom-to-top on a vertical run (ADR-0014) — clear of every node, pill, label and routed
+# segment, and report no omission.
 # Test-only input owned by ticket 14; it needs no stage precondition because the whole pipeline runs.
 portograph: 2
 profile: network
