@@ -197,8 +197,11 @@ levelled here but remain unpinned for stage 7e.
 
 `rows(model)` runs inside the `rows` transaction. The baseline is the highest row-node top in the
 tier band; nodes move up only, and row group boxes fit the flattened nodes with the standard
-padding beyond the complete named pills (including their half stroke), not just node bodies. Repack pushes a row neighbour rightwards only when its stroke-aware clearance or
-measured facing-pill gap (the stage-5 `rowGap`) is violated, then pushes displaced row groups in
+padding beyond the complete named pills (including their half stroke), not just node bodies. Repack pushes a row neighbour rightwards only when its stroke-aware clearance,
+measured facing-pill gap or pass-by stem (the stage-5 `rowGap`) is violated — the stem is the
+15 px checkpoint plus the neighbour's obstacle reach that a port needs when its link does not enter
+the neighbour's facing side, whether it goes to a third node or to the neighbour's far side, top or
+bottom (ticket 29) — then pushes displaced row groups in
 the tier. Flanks and non-row groups never move or resize in this rule; a repack that would
 collide with one fails explicitly, and so does a stage-5 input whose flank box lacks the padding
 the containment rebuild assumes. Levelling considers routed links only; a tie in facing port counts moves the

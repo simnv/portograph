@@ -12,6 +12,7 @@ import { rebuildNodeGeometry } from './node-geometry.js';
 import { nodeObstacleReach, routedStroke, stemReach } from './bands.js';
 import { laneSource, laneWidth, transitTiers } from './lanes.js';
 import { fitRegionGroup } from './regions.js';
+import { findPort } from './row-paths.js';
 import { freezePortTopology } from './mutation.js';
 const key = portId;
 
@@ -22,25 +23,25 @@ const key = portId;
 export const PILL_WIRE_GAP = 8;
 
 /**
- * Peer nodes of every routed attachment that no rule has already promised geometry to, keyed by
+ * Peer ports of every routed attachment that no rule has already promised geometry to, keyed by
  * port. A bundle member is left out: stage 7e reserves its envelope, its pitch and its path, so it
  * never asks stage 8 for a stem. Everything else may still reach stage 8, which always gives it one.
  *
  * The index is derived from the link array and cached against it. Membership and attachments are
  * fixed in stage 1, and every checked transaction clones the array, so a new array is a new index.
  */
-const peerCache = new WeakMap<LayoutModel['links'], Map<string, Set<string>>>();
-function unreservedPeers(model: LayoutModel): Map<string, Set<string>> {
+const peerCache = new WeakMap<LayoutModel['links'], Map<string, PortRef[]>>();
+function unreservedPeers(model: LayoutModel): Map<string, PortRef[]> {
   const cached = peerCache.get(model.links);
   if (cached) return cached;
-  const index = new Map<string, Set<string>>();
+  const index = new Map<string, PortRef[]>();
   for (const link of model.links) {
     if (link.layer !== 'routed' || link.technique === 'stub' || link.bundle !== undefined || !link.attachments) continue;
     const { from, to } = link.attachments;
     for (const [near, far] of [[from, to], [to, from]] as const) {
-      const set = index.get(key(near)) ?? new Set<string>();
-      set.add(far.node);
-      index.set(key(near), set);
+      const list = index.get(key(near)) ?? [];
+      list.push(far);
+      index.set(key(near), list);
     }
   }
   peerCache.set(model.links, index);
@@ -62,26 +63,31 @@ export function rowGap(model: LayoutModel, a: string, b: string): number {
     return Math.max(nodeObstacleReach(model, model.nodes[id]!), pill > 0 ? pill + routedStroke(model) / 2 : 0);
   };
   /**
-   * Room a port on `side` of `node` needs beside `neighbour` when its link does not end there.
+   * Room a port on `side` of `node` needs beside `neighbour` when its link does not end on the
+   * neighbour's facing side.
    *
    * Such a port still leaves its node the way every routed attachment does: stage 8 gives it a
    * perpendicular stem and may turn only at the far end of it. When the neighbour's routing
    * obstacle covers the port's own row, that stem has nowhere to go, so the room is reserved here
-   * instead of being discovered during routing. A port whose link ends at the neighbour is pinned
-   * to that shape and may cross it, and a port beside the neighbour rather than in front of it is
-   * already clear; neither reserves anything.
+   * instead of being discovered during routing. A port whose link ends on the neighbour's facing
+   * side is pinned to that shape and enters it straight across the gap; one whose link ends on any
+   * other side of the neighbour — its far side, its top or its bottom — has to pass the neighbour
+   * by like a link to a third node, and reserves the same stem. A port beside the neighbour rather
+   * than in front of it is already clear and reserves nothing.
    */
   const passByStem = (node: string, side: 'left' | 'right', neighbour: string): number => {
     const owner = model.nodes[node]!, other = model.nodes[neighbour]!, peers = unreservedPeers(model);
     // Before the skeleton there is no row to be in front of, so there is nothing to reserve yet;
     // the row rule asks again once the nodes and their anchors have coordinates.
     if (!other.bounds) return 0;
+    const facing: Side = side === 'left' ? 'right' : 'left';
     const span = Math.max(reach(neighbour, 'top'), reach(neighbour, 'bottom'));
     const top = other.bounds.y - span, bottom = other.bounds.y + other.bounds.height + span;
+    const entersNeighbour = (peer: PortRef): boolean => peer.node === neighbour && findPort(model, peer)?.side === facing;
     const blocked = owner.ports.some(port => port.side === side && port.anchor !== undefined
       && port.anchor.y >= top && port.anchor.y <= bottom
-      && [...(peers.get(key(port.ref)) ?? [])].some(peer => peer !== neighbour));
-    return blocked ? stemReach(model, owner) + reach(neighbour, side === 'left' ? 'right' : 'left') : 0;
+      && (peers.get(key(port.ref)) ?? []).some(peer => !entersNeighbour(peer)));
+    return blocked ? stemReach(model, owner) + reach(neighbour, facing) : 0;
   };
   const left = protrusion(a, 'right'), right = protrusion(b, 'left');
   // Only a facing *pair* of pills needs the wire. One pill opposite a bare side has nothing to be
