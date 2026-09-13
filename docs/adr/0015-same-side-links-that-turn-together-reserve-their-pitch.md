@@ -1,6 +1,6 @@
 # ADR-0015: Same-side links that turn the same way reserve their pitch and their corridor
 
-Date: 2026-09-14 · Status: **proposed** (drafted for the maintainer from tickets 21 and 31) · Decisions: tickets 21, 31 (cases A, B, C)
+Date: 2026-09-14 · Status: accepted (maintainer, 2026-09-14; drafted from tickets 21 and 31) · Decisions: tickets 21, 31 (cases A, B, C)
 
 ## Problem
 

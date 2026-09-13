@@ -1,6 +1,6 @@
 # ADR-0016: The root stem of a fan has one owner, whichever producer draws its members
 
-Date: 2026-09-14 · Status: **proposed** (drafted for the maintainer from ticket 36) · Decisions: ticket 36
+Date: 2026-09-14 · Status: accepted (maintainer, 2026-09-14; drafted from ticket 36) · Decisions: ticket 36
 
 ## Problem
 

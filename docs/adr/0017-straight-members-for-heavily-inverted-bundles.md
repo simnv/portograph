@@ -1,6 +1,6 @@
 # ADR-0017: Straight members instead of orthogonal crossovers for heavily inverted bundles
 
-Date: 2026-09-14 · Status: **proposed** (drafted for the maintainer from ticket 26) · Decisions: ticket 26
+Date: 2026-09-14 · Status: accepted (maintainer, 2026-09-14; drafted from ticket 26) · Decisions: ticket 26
 
 ## Problem
 
