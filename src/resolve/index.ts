@@ -243,15 +243,32 @@ function recordAggregations(model: LayoutModel, aggregations: Aggregation[]): vo
 function groupBundles(model: LayoutModel): void {
   const nodeOrder = new Map(orderedNodeIds(model.document).map((id, index) => [id, index]));
   const candidates = new Map<string, { nodes: [string, string]; members: LayoutLink[] }>();
+  // The authored side of a port, or `*` for one the engine will choose. A bundle's members must
+  // leave each shared node on one side — parallel runs cannot start on two sides of one box — so
+  // links between one node pair whose authored sides differ at either node form separate cohorts
+  // (ticket 35). Engine-chosen sides are decided from the same peers and land together.
+  const authoredSide = (ref: PortRef): string => model.nodes[ref.node]!.ports
+    .find(port => port.ref.name === ref.name && port.ref.ordinal === ref.ordinal && port.ref.anonymous === ref.anonymous)?.side ?? '*';
+  // Per node pair: how many links it has and which side cohorts they fell into, built in one pass.
+  const pairs = new Map<string, { nodes: [string, string]; count: number; cohorts: Set<string> }>();
   for (const link of model.links) {
     const route = model.document.links[link.sourceIndex]!.route;
     if (link.layer !== 'routed' || route === 'straight' || route === 'orthogonal' || route === 'overlay') continue;
     const ends = link.attachments!;
     const nodes = orderedPair(ends.from.node, ends.to.node, nodeOrder);
-    const key = JSON.stringify(nodes);
+    const ordered = nodes[0] === ends.from.node ? [ends.from, ends.to] : [ends.to, ends.from];
+    const key = JSON.stringify([nodes, authoredSide(ordered[0]!), authoredSide(ordered[1]!)]);
     const candidate = candidates.get(key) ?? { nodes, members: [] };
     candidate.members.push(link);
     candidates.set(key, candidate);
+    const pairKey = JSON.stringify(nodes), pair = pairs.get(pairKey) ?? { nodes, count: 0, cohorts: new Set<string>() };
+    pair.count++; pair.cohorts.add(key); pairs.set(pairKey, pair);
+  }
+  for (const { nodes, count, cohorts } of pairs.values()) {
+    if (count < 2) continue;
+    const single = [...cohorts].map(key => candidates.get(key)!).filter(candidate => candidate.members.length < 2).flatMap(candidate => candidate.members);
+    if (!single.length) continue;
+    report(model, 'BUNDLE_MIXED_SIDES', `${single.map(link => link.id).join(', ')} between ${nodes[0]} and ${nodes[1]} attach on a different side of a shared node than the other links of the pair; left out of the bundle`, single.map(link => link.owner), 'warning');
   }
   for (const { nodes, members } of candidates.values()) {
     if (members.length < 2) continue;

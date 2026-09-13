@@ -1,8 +1,8 @@
 import type { PortRef } from '../model/document.js';
 import type { Side } from '../model/geometry.js';
-import type { LayoutModel } from '../model/layout.js';
+import type { LayoutModel, LayoutPort } from '../model/layout.js';
 import { orderedNodeIds, orderedGroupIds } from '../model/model.js';
-import { SIDE_TIE_ORDER } from './sides-one.js';
+import { SIDE_TIE_ORDER, portKey, tiedPortComponents } from './sides-one.js';
 import { measurePortPill } from '../text/index.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { sizeNodes } from './size.js';
@@ -106,27 +106,50 @@ export function sidesTwo(model: LayoutModel): LayoutModel {
       const list = peers.get(key(a!)) ?? []; list.push(b!); peers.set(key(a!), list);
     }
   }
-  for (const id of orderedNodeIds(model.document)) {
+  // The votes of one undecided port, from where its peers sit.
+  const voteFor = (id: string, port: LayoutPort): Record<Side, number> => {
     const node = model.nodes[id]!, group = model.groups[model.document.nodes[id]!.group]!;
-    for (const port of node.ports) {
-      if (port.side === undefined) {
-        const votes = { bottom: 0, right: 0, top: 0, left: 0 };
-        for (const peer of peers.get(key(port.ref)) ?? []) {
-          const other = model.nodes[peer.node]!, otherGroup = model.groups[model.document.nodes[peer.node]!.group]!;
-          let side: Side;
-          if (otherGroup.tier! > group.tier!) side = 'bottom';
-          else if (otherGroup.tier! < group.tier!) side = 'top';
-          else if (otherGroup.flank && !group.flank) side = otherGroup.flank.align;
-          else if (group.flank && !otherGroup.flank) side = group.flank.align === 'left' ? 'right' : 'left';
-          else if (otherGroup.id === group.id) side = group.rowOrder!.indexOf(peer.node) < group.rowOrder!.indexOf(id) ? 'left' : 'right';
-          else side = other.bounds!.x + other.bounds!.width / 2 < node.bounds!.x + node.bounds!.width / 2 ? 'left' : 'right';
-          votes[side]++;
-        }
-        port.side = SIDE_TIE_ORDER.reduce((best, side) => votes[side] > votes[best] ? side : best, 'bottom');
-      }
-      delete port.sizingSide;
+    const votes = { bottom: 0, right: 0, top: 0, left: 0 };
+    for (const peer of peers.get(key(port.ref)) ?? []) {
+      const other = model.nodes[peer.node]!, otherGroup = model.groups[model.document.nodes[peer.node]!.group]!;
+      let side: Side;
+      if (otherGroup.tier! > group.tier!) side = 'bottom';
+      else if (otherGroup.tier! < group.tier!) side = 'top';
+      else if (otherGroup.flank && !group.flank) side = otherGroup.flank.align;
+      else if (group.flank && !otherGroup.flank) side = group.flank.align === 'left' ? 'right' : 'left';
+      else if (otherGroup.id === group.id) side = group.rowOrder!.indexOf(peer.node) < group.rowOrder!.indexOf(id) ? 'left' : 'right';
+      else side = other.bounds!.x + other.bounds!.width / 2 < node.bounds!.x + node.bounds!.width / 2 ? 'left' : 'right';
+      votes[side]++;
+    }
+    return votes;
+  };
+  // Ports one bundle ties at a node vote as one component and take one side (ticket 35); a side a
+  // tied port already carries — authored, or decided by stage 2 — binds the whole component.
+  const components = tiedPortComponents(model);
+  const membersByRoot = new Map<string, LayoutPort[]>();
+  for (const [portRef, root] of components) {
+    const [nodeId] = JSON.parse(portRef) as [string];
+    const port = model.nodes[nodeId]!.ports.find(item => portKey(item.ref) === portRef)!;
+    membersByRoot.set(root, [...(membersByRoot.get(root) ?? []), port]);
+  }
+  const undecided = new Map<string, { id: string; port: LayoutPort }[]>();
+  for (const id of orderedNodeIds(model.document)) {
+    for (const port of model.nodes[id]!.ports) {
+      if (port.side !== undefined) continue;
+      const root = components.get(portKey(port.ref)) ?? portKey(port.ref);
+      undecided.set(root, [...(undecided.get(root) ?? []), { id, port }]);
     }
   }
+  for (const [root, members] of undecided) {
+    const decided = new Set<Side>();
+    for (const port of membersByRoot.get(root) ?? []) if (port.side !== undefined) decided.add(port.side);
+    if (decided.size > 1) throw new Error(`Bundle members at ${members[0]!.id} leave on different decided sides`);
+    const votes = { bottom: 0, right: 0, top: 0, left: 0 };
+    for (const { id, port } of members) for (const side of SIDE_TIE_ORDER) votes[side] += voteFor(id, port)[side];
+    const chosen: Side = decided.size ? [...decided][0]! : SIDE_TIE_ORDER.reduce((best, side) => votes[side] > votes[best] ? side : best, 'bottom');
+    for (const { port } of members) port.side = chosen;
+  }
+  for (const id of orderedNodeIds(model.document)) for (const port of model.nodes[id]!.ports) delete port.sizingSide;
   // Transit corridors are wider than the ordinary port pitch. Reserve that capacity on the end the
   // lane aligns to (7a) before allocation, so consecutive feeds can retain their own x coordinates.
   for (const link of model.links) {

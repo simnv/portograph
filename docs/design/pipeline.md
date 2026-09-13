@@ -48,7 +48,10 @@ For every link, in this fixed order, from the document only:
    family, and none carries an override. Membership (every member link, its ports, class) is
    retained in the model and rendered as a tooltip/legend entry, never discarded.
 3. **Family** — from class via the profile: `routed` or `overlay`.
-4. **Bundle membership** — ≥ 2 routed links between the same node pair (ports may differ). After
+4. **Bundle membership** — ≥ 2 routed links between the same node pair (ports may differ) that
+   leave each shared node on one authored side; links whose authored sides differ at a shared node
+   form separate cohorts, and a cohort of one stays routed with a `BUNDLE_MIXED_SIDES` warning
+   (ticket 35). After
    grouping, a selected `merge` override without membership in a bundle of at least two is a
    model-time error.
 5. **Stub** — deferred: needs a trial route (stage 8 marks candidates; stage 9 applies).
@@ -163,7 +166,10 @@ rebuild. Author `order:` sorts the author-ordered subsequence; free ports occupy
 positions. Preserve signed keys and the relative physical order of unequal author keys, not an
 absolute slot number.
 
-From here on port identity, count, side and author `order:` are **frozen**. Later bar and bundle
+A bundle's members leave each shared node on one side: the ports one bundle ties at a node (and,
+through a port in two bundles, both bundles' ports) vote as one component in stage 2 and again here
+for what stage 2 left open, so they take one side; an authored side wins, and stage 1 never bundles
+two different authored sides (ticket 35). From here on port identity, count, side and author `order:` are **frozen**. Later bar and bundle
 rules may adjust engine-selected slots and the documented stage-7 rules may grow or move geometry,
 but no stage may shrink a node below its current content or author floor.
 

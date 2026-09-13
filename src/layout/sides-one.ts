@@ -7,7 +7,8 @@ import { orderedGroupIds, orderedNodeIds } from '../model/model.js';
 export const SIDE_TIE_ORDER: readonly Side[] = ['bottom', 'right', 'top', 'left'];
 type Votes = Record<Side, number>;
 const emptyVotes = (): Votes => ({ bottom: 0, right: 0, top: 0, left: 0 });
-const portKey = (ref: PortRef): string => JSON.stringify([ref.node, ref.anonymous === true, ref.name, ref.ordinal]);
+/** Port identity as `[node, anonymous, name, ordinal]`; the key `tiedPortComponents` is indexed by. */
+export const portKey = (ref: PortRef): string => JSON.stringify([ref.node, ref.anonymous === true, ref.name, ref.ordinal]);
 
 function winner(votes: Votes, fewest = false): Side {
   return SIDE_TIE_ORDER.reduce((best, side) =>
@@ -23,9 +24,34 @@ function tierSide(source: LayoutGroup, peer: LayoutGroup): Side | undefined {
   return undefined;
 }
 
+/**
+ * Ports a bundle ties together at a node — its members' ports on that node — and, through a port
+ * that belongs to two bundles, both bundles' ports: one component that has to leave the node on one
+ * side, since parallel runs cannot start on two sides of one box (ticket 35). Keyed by `portKey`;
+ * every tied port maps to its component root, and a port in no bundle is absent.
+ */
+export function tiedPortComponents(model: LayoutModel): Map<string, string> {
+  const parent = new Map<string, string>(), seen = new Set<string>();
+  const find = (id: string): string => { const up = parent.get(id) ?? id; if (up === id) return id; const root = find(up); parent.set(id, root); return root; };
+  const byBundle = new Map<string, LayoutModel['links']>();
+  for (const link of model.links) if (link.bundle !== undefined) byBundle.set(link.bundle, [...(byBundle.get(link.bundle) ?? []), link]);
+  for (const bundle of model.bundles) {
+    const links = byBundle.get(bundle.id) ?? [];
+    for (const nodeId of bundle.nodes) {
+      const keys = links.flatMap(link => [link.attachments!.from, link.attachments!.to]).filter(ref => ref.node === nodeId).map(portKey);
+      for (const id of keys) seen.add(id);
+      for (const other of keys.slice(1)) { const a = find(keys[0]!), b = find(other); if (a !== b) parent.set(a, b); }
+    }
+  }
+  const roots = new Map<string, string>();
+  for (const id of seen) roots.set(id, find(id));
+  return roots;
+}
+
 /** Assign semantic sides in place. Same-tier estimates affect capacity, never final topology. */
 export function sidesOne(model: LayoutModel): LayoutModel {
   if (model.stage !== 'resolve') throw new Error('Phase-one sides require the resolve stage');
+  const components = tiedPortComponents(model);
   const ports = new Map<string, { port: LayoutPort; known: Votes; predicted: Votes; unresolved: number; links: number }>();
   const rank = new Map<string, number>();
   for (const groupId of orderedGroupIds(model.document)) {
@@ -59,13 +85,33 @@ export function sidesOne(model: LayoutModel): LayoutModel {
     count(from, to);
     if (portKey(from) !== portKey(to)) count(to, from);
   }
+  // Tied ports vote as one: their known, predicted and unresolved counts are summed, an authored
+  // side among them binds the whole component, and two different authored sides cannot occur
+  // (stage 1 never bundles them).
+  const sum = (values: Votes[]): Votes => values.reduce((total, votes) => {
+    for (const side of SIDE_TIE_ORDER) total[side] += votes[side];
+    return total;
+  }, emptyVotes());
+  const byRoot = new Map<string, string[]>();
+  for (const [id, root] of components) byRoot.set(root, [...(byRoot.get(root) ?? []), id]);
+  const tied = (port: LayoutPort): { port: LayoutPort; known: Votes; predicted: Votes; unresolved: number; links: number; authored?: Side } => {
+    const root = components.get(portKey(port.ref));
+    const own = ports.get(portKey(port.ref))!;
+    if (root === undefined) return own;
+    const group = byRoot.get(root)!.map(id => ports.get(id)!);
+    const authoredSides = new Set(group.map(entry => entry.port.side).filter((side): side is Side => side !== undefined));
+    if (authoredSides.size > 1) throw new Error(`Bundle members at ${port.ref.node} leave on different authored sides`);
+    return { port, known: sum(group.map(entry => entry.known)), predicted: sum(group.map(entry => entry.predicted)),
+      unresolved: group.reduce((n, entry) => n + entry.unresolved, 0), links: own.links, ...(authoredSides.size ? { authored: [...authoredSides][0] } : {}) };
+  };
   for (const id of orderedNodeIds(model.document)) {
     const node = model.nodes[id]!;
     const capacity = emptyVotes();
     const unused: LayoutPort[] = [];
     for (const port of node.ports) {
-      const entry = ports.get(portKey(port.ref))!;
+      const entry = tied(port);
       if (entry.links === 0) port.unused = true;
+      if (port.side === undefined && entry.authored !== undefined) port.side = entry.authored;
       if (port.side !== undefined) {
         capacity[port.side]++;
       } else if (entry.links === 0) {
