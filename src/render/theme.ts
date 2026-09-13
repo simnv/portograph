@@ -1,4 +1,6 @@
-import { NETWORK_LINK_CLASSES, NETWORK_NODE_CLASSES, NETWORK_THEME } from '../profiles/network/theme.js';
+import { LEGEND_DEFAULT_CLASS, NETWORK_LINK_CLASSES, NETWORK_NODE_CLASSES, NETWORK_PORT_LOOPBACK, NETWORK_PORT_ROLES,
+  NETWORK_PORT_STATUS, NETWORK_THEME, nodeClassPaint, portRolePaint } from '../profiles/network/theme.js';
+import type { ThemeMode } from '../profiles/network/theme.js';
 
 /**
  * Locked geometry properties. `schema.md` forbids a document from changing these, the parser strips
@@ -50,47 +52,74 @@ export class GeometryLocks {
 const token = (value: number): string => String(value).replace(/\./g, '_').replace(/-/g, 'm').replace(/\+/g, 'p');
 
 /**
- * The network profile theme. Colour, fill, dash and opacity only: every rule here is at the same
- * specificity a document `css:` rule can reach, and the document's filtered CSS is appended after
- * it, so an author still owns the palette.
+ * The paint rules of one theme mode. Colour, fill, dash and opacity only: every rule here is at
+ * the same specificity a document `css:` rule can reach, and the document's filtered CSS is
+ * appended after the whole theme, so an author still owns the palette. The order and the
+ * declarations are those of `ref/theme-handoff/portograph-theme.css` plus its recorded amendments,
+ * which a test compares against.
  */
-export function themeCss(): string {
+export function themeRules(mode: ThemeMode): string[] {
+  const paint = NETWORK_THEME[mode];
   const rules: string[] = [
-    `.pg-canvas{fill:${NETWORK_THEME.background}}`,
-    `.group-box{fill:${NETWORK_THEME.group.fill};stroke:${NETWORK_THEME.group.stroke};stroke-dasharray:${NETWORK_THEME.group.dash}}`,
-    `.group-label{fill:${NETWORK_THEME.group.text}}`,
-    `.node-body{fill:${NETWORK_THEME.node.fill};stroke:${NETWORK_THEME.node.stroke}}`,
-    `.node-label{fill:${NETWORK_THEME.node.text}}`,
-    `.node-description{fill:${NETWORK_THEME.node.text};fill-opacity:0.8}`,
+    `.pg-canvas{fill:${paint.background}}`,
+    `.group-box{fill:${paint.group.fill};fill-opacity:${paint.group.fillOpacity};stroke:${paint.group.stroke};stroke-dasharray:${paint.group.dash}}`,
+    `.group-label{fill:${paint.group.text}}`,
+    `.node-body{fill:${paint.node.fill};stroke:${paint.node.stroke}}`,
+    `.node-label{fill:${paint.node.text}}`,
+    `.node-description{fill:${paint.node.description};fill-opacity:1}`,
     // Defaults for a class the profile does not know; the class rules below are more specific.
-    `.icon-tile{fill:${NETWORK_THEME.node.fill};stroke:${NETWORK_THEME.node.stroke}}`,
-    `.node-icon{fill:none;stroke:${NETWORK_THEME.node.text};stroke-linecap:round;stroke-linejoin:round}`,
-    `.pill{fill:${NETWORK_THEME.pill.fill};stroke:${NETWORK_THEME.pill.stroke}}`,
-    `.pill-label{fill:${NETWORK_THEME.pill.text}}`,
-    `.link-line{fill:none;stroke:${NETWORK_LINK_CLASSES[0]![1].stroke}}`,
-    `.link-label{fill:${NETWORK_THEME.link.label}}`,
-    `.legend-label{fill:${NETWORK_THEME.legend.text}}`,
-    `.overlay-line{stroke:${NETWORK_THEME.overlay.stroke};stroke-opacity:${NETWORK_THEME.overlay.opacity}}`,
-    `.overlay-endpoint{fill:${NETWORK_THEME.overlay.mark};stroke:none}`,
+    `.icon-tile{fill:${paint.tile.fill};stroke:${paint.tile.stroke}}`,
+    `.node-icon{fill:none;stroke:${paint.glyph};stroke-linecap:round;stroke-linejoin:round}`,
+    `.pill{fill:${paint.pill.fill};stroke:${paint.pill.stroke}}`,
+    `.pill-label{fill:${paint.pill.text}}`,
+    `.link-line{fill:none;stroke:${paint.link.stroke}}`,
+    `.link-label{fill:${paint.link.label}}`,
+    `.multiplicity-label{fill:${paint.link.multiplicity}}`,
+    `.legend-label{fill:${paint.legend.text}}`,
+    `.overlay-line{stroke:${paint.overlay.stroke};stroke-opacity:${paint.overlay.opacity}}`,
+    `.overlay-endpoint{fill:${paint.overlay.mark};stroke:none}`,
   ];
+  // The role colour lives on the icon tile; the pill takes the class hue. No class fills a body.
   for (const [name, style] of NETWORK_NODE_CLASSES) {
-    rules.push(`.icon-tile.${name}{fill:${style.fill};stroke:${style.stroke}}`);
-    rules.push(`.node-icon.${name}{stroke:${style.foreground}}`);
-    if (style.body) {
-      rules.push(`.node-body.${name}{fill:${style.body.fill};stroke:${style.body.stroke}}`);
-      // A group whose nodes all share this class reads as one filled region, as the target does.
-      rules.push(`.group-box.${name}{fill:${style.body.fill};stroke:${style.body.stroke};stroke-dasharray:none}`);
-      rules.push(`.group-label.${name}{fill:${NETWORK_THEME.groupBodyText}}`);
-      rules.push(`.node-label.${name}{fill:${style.foreground}}`);
-    }
+    const { tile, glyph, pill } = nodeClassPaint(style, mode);
+    rules.push(`.icon-tile.${name}{fill:${tile.fill};stroke:${tile.stroke}}`);
+    rules.push(`.node-icon.${name}{stroke:${glyph}}`);
+    rules.push(`.pill.${name}{fill:${pill.fill};stroke:${pill.stroke}}`);
+    rules.push(`.pill-label.${name}{fill:${pill.text}}`);
   }
-  for (const [name, style] of NETWORK_LINK_CLASSES.slice(1)) {
-    rules.push(`.link-line.${name}{stroke:${style.stroke}`
+  for (const [name, style] of NETWORK_LINK_CLASSES) {
+    if (name === LEGEND_DEFAULT_CLASS) continue;
+    rules.push(`.link-line.${name}{stroke:${style.strokes[mode]}`
       + `${style.dash ? `;stroke-dasharray:${style.dash}` : ''}${style.cap ? `;stroke-linecap:${style.cap}` : ''}}`);
+  }
+  // A `port.class` role drives the pill fill; a status drives the stroke; `unused` fades the port.
+  for (const [name, style] of NETWORK_PORT_ROLES) {
+    const { fill, text } = portRolePaint(style, mode);
+    rules.push(`.pill.${name}{fill:${fill}}`);
+    rules.push(`.pill-label.${name}{fill:${text}}`);
+  }
+  rules.push(`.pill.${NETWORK_PORT_LOOPBACK.name}{fill:none;stroke:${NETWORK_PORT_LOOPBACK.stroke[mode]}}`);
+  for (const [name, style] of NETWORK_PORT_STATUS) {
+    if (style.kind === 'fade') { rules.push(`.port.${name}{opacity:${style.opacity}}`); continue; }
+    rules.push(`.pill.${name}{stroke:${style.stroke[mode]}`
+      + `${style.dash ? `;stroke-dasharray:${style.dash}` : ''}${style.fill ? `;fill:${style.fill[mode]}` : ''}}`);
+    if (style.text) rules.push(`.pill-label.${name}{fill:${style.text[mode]}}`);
   }
   // The overlay mask is internal render structure, not an author styling surface, so its paint is
   // not stated here at all: a rule in this sheet is reachable by an accepted `css:` rule of the same
   // specificity and importance, which then wins by source order. The mask states its own paint on
   // its elements, inline and important, where no author style sheet can reach it.
-  return rules.join('\n');
+  return rules;
+}
+
+/**
+ * The network profile theme: the light sheet, then the dark sheet behind `prefers-color-scheme`
+ * and the greyscale print sheet behind `print`. A reader that honours neither sees light.
+ */
+export function themeCss(): string {
+  return [
+    ...themeRules('light'),
+    '@media (prefers-color-scheme: dark){', ...themeRules('dark').map(rule => `  ${rule}`), '}',
+    '@media print{', ...themeRules('print').map(rule => `  ${rule}`), '}',
+  ].join('\n');
 }

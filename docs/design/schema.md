@@ -13,7 +13,7 @@ portograph: 2
 profile: network
 title: "SIP edge — Datacenter A"
 css: |
-  .node-rr .node-rect { fill: #f9a825; }      # colour/fill/dash/opacity only — see CSS
+  .pill.router { fill: #a9d6db; }             # colour/fill/dash/opacity only — see CSS
 
 groups:
   providers:  { tier: 0, label: "Провайдеры / Контрагенты" }

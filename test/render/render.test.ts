@@ -601,7 +601,8 @@ describe('counted merge runs', () => {
     expect(text['data-owner']).toBe('bundle-1');
     expect(svg).toContain('>2</tspan>');
     // Hiding every member hides the counted trunk's label with them.
-    expect(render(merged(), { layers: ['overlay'] })).not.toContain('multiplicity-label');
+    // The theme sheet names the class in every render; no drawn text may carry it.
+    expect(elements(render(merged(), { layers: ['overlay'] }), 'text').some(item => item['class']!.includes('multiplicity-label'))).toBe(false);
   });
 
   it('protects a drawn multiplicity label in the overlay mask, like any other drawn label', () => {
@@ -624,12 +625,12 @@ describe('counted merge runs', () => {
     const label = model.labels.find(item => item.support?.kind === 'merge-run')!;
     const mask = svg.slice(svg.indexOf('<mask'), svg.indexOf('</mask>'));
     const hidden = elements(mask, 'rect').filter(item => item['class'] === 'pg-mask-hide').map(rect);
-    expect(svg).toContain('multiplicity-label');
+    expect(elements(svg, 'text').some(item => item['class']!.includes('multiplicity-label'))).toBe(true);
     expect(hidden.some(box => sameRect(box, label.bounds!))).toBe(true);
     // With every member hidden, the label is not drawn and must not be masked either.
     const hiddenMembers = render(model, { layers: ['overlay'] });
     const other = hiddenMembers.slice(hiddenMembers.indexOf('<mask'), hiddenMembers.indexOf('</mask>'));
-    expect(hiddenMembers).not.toContain('multiplicity-label');
+    expect(elements(hiddenMembers, 'text').some(item => item['class']!.includes('multiplicity-label'))).toBe(false);
     expect(elements(other, 'rect').filter(item => item['class'] === 'pg-mask-hide').map(rect)
       .some(box => sameRect(box, label.bounds!))).toBe(false);
   });
