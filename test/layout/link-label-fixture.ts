@@ -54,7 +54,7 @@ export function bench(nodes: BenchNode[], links: BenchLink[], labels: LayoutLabe
   const width = Math.max(...boxes.map(right)) + 10 - x, height = Math.max(...boxes.map(bottom)) + 10 - y;
   model.groups['row-group']!.bounds = { x, y, width, height };
   model.tierBands.push({ tier: 0, groups: ['row-group'], bounds: { x, y, width, height } });
-  // Wide enough that a candidate is never rejected for leaving the canvas; stage 9 only expands it.
+  // Wide enough that a candidate is never rejected for leaving the canvas; stage 9 refits it (ticket 28).
   model.canvas = { x: x - 2000, y: y - 2000, width: width + 4000, height: height + 4000 };
   model.stage = 'route';
   return model;

@@ -6,7 +6,7 @@ import { equal } from '../model/json-equality.js';
 import { EPS, bottom, contains, rectDistance, right, segmentRect, segmentRectDistance } from '../score/geometry.js';
 import { effectiveLayer } from '../score/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
-import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
+import { CANVAS_MARGIN, DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { drawnBoxes as paintedBoxes, produceLegend } from './legend.js';
 import { withLayoutMutation } from './mutation.js';
 import { RectangleIndex, type RectangleBounds } from './rectangle-index.js';
@@ -328,12 +328,7 @@ export function produceLinkLabels(model: LayoutModel): void {
   // The generated legend is measured last, against the geometry every earlier step settled, and
   // takes newly reserved space below it. Nothing already placed moves.
   produceLegend(model);
-  for (const box of drawnBoxes(model)) {
-    if (!model.canvas) break;
-    const x = Math.min(model.canvas.x, box.x), y = Math.min(model.canvas.y, box.y);
-    model.canvas = { x, y, width: Math.max(right(model.canvas), right(box)) - x,
-      height: Math.max(bottom(model.canvas), bottom(box)) - y };
-  }
+  model.canvas = refitCanvas(model);
 }
 
 /**
@@ -343,6 +338,28 @@ export function produceLinkLabels(model: LayoutModel): void {
  * boxes of its segments.
  */
 const drawnBoxes = (model: LayoutModel): Rect[] => paintedBoxes(model, true);
+
+/**
+ * The final canvas: the union of everything drawn plus `CANVAS_MARGIN` on every side (ticket 28).
+ * Earlier stages may only expand the canvas inside their transactions, so growth during placement
+ * — band clearance, label room, a grid, a push — leaves the skeleton's extent behind and a zero
+ * margin on the side that grew. Publication owns the final extent and refits it, shrinking when
+ * earlier growth was undone. A diagram that draws nothing gets the canonical empty canvas: the
+ * margin alone, at the origin.
+ */
+export function refitCanvas(model: LayoutModel): Rect {
+  const boxes = drawnBoxes(model);
+  if (!boxes.length) return { x: 0, y: 0, width: 2 * CANVAS_MARGIN, height: 2 * CANVAS_MARGIN };
+  // One pass over the boxes: a spread into `Math.min` would hit the engine's argument limit on a
+  // large diagram, where every path segment and pill is a box.
+  let left = Infinity, top = Infinity, farRight = -Infinity, farBottom = -Infinity;
+  for (const box of boxes) {
+    left = Math.min(left, box.x); top = Math.min(top, box.y);
+    farRight = Math.max(farRight, right(box)); farBottom = Math.max(farBottom, bottom(box));
+  }
+  const x = left - CANVAS_MARGIN, y = top - CANVAS_MARGIN;
+  return { x, y, width: farRight + CANVAS_MARGIN - x, height: farBottom + CANVAS_MARGIN - y };
+}
 
 const linkLabelDiagnostics = (model: LayoutModel): Diagnostic[] =>
   model.diagnostics.filter(item => (LINK_LABEL_CODES as readonly string[]).includes(item.code));
@@ -357,12 +374,13 @@ export function validateLinkLabels(model: LayoutModel): void {
   if (!equal(model.labels, expected.labels)) throw new Error('Link labels contradict measured post-route placement');
   if (!equal(model.legend, expected.legend)) throw new Error('Legend contradicts the measured classes and final geometry');
   if (!equal(linkLabelDiagnostics(model), linkLabelDiagnostics(expected))) throw new Error('Link-label diagnostics contradict measured post-route placement');
-  // Restore has no predecessor transaction to compare against, so the canvas-only-expands rule has
-  // to be stated geometrically here: the published canvas must hold everything that is drawn. The
-  // producer expands the canvas to exactly that union, so this containment is the same statement as
-  // comparing it with the re-derived one, and it names the box that is actually clipped.
-  for (const box of drawnBoxes(model)) {
-    if (model.canvas && !contains(model.canvas, box)) throw new Error('Canvas does not contain the published diagram');
+  // Restore has no predecessor transaction to compare against, so the canvas is stated
+  // geometrically here: the published canvas is the drawn union plus the one margin, no more and no
+  // less. A canvas that clips a drawn box or leaves dead space is a forged or stale extent.
+  const refit = refitCanvas(model);
+  if (!equal(model.canvas, refit)) {
+    const clipped = drawnBoxes(model).some(box => !model.canvas || !contains(model.canvas, box));
+    throw new Error(clipped ? 'Canvas does not contain the published diagram' : 'Canvas does not fit the published diagram');
   }
 }
 

@@ -7910,10 +7910,10 @@
   "obstacles": [],
   "diagnostics": [],
   "canvas": {
-    "x": 0,
-    "y": 0,
-    "width": 826.0390625,
-    "height": 922
+    "x": -1,
+    "y": -0.5,
+    "width": 827.5390625,
+    "height": 934.5
   },
   "freeze": {
     "version": 1,

@@ -16,7 +16,7 @@ export * from './geometry/index.js';
 export * from './parse/index.js';
 export * from './migrate/index.js';
 export * from './score/index.js';
-export { DEFAULT_STROKE_WIDTHS } from './theme/geometry.js';
+export { CANVAS_MARGIN, DEFAULT_STROKE_WIDTHS } from './theme/geometry.js';
 export { LEGEND_GEOMETRY } from './theme/legend.js';
 export { LEGEND_DEFAULT_CLASS, NETWORK_LINK_CLASSES, NETWORK_NODE_CLASSES, NETWORK_PORT_LOOPBACK, NETWORK_PORT_ROLES,
   NETWORK_PORT_STATUS, NETWORK_THEME, classDisplayLabel, classOrder, linkClassStyle, nodeClassPaint, nodeClassStyle,

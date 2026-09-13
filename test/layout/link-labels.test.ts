@@ -16,9 +16,9 @@ import { RectangleIndex } from '../../src/layout/rectangle-index.js';
 import { route } from '../../src/route/index.js';
 import { score } from '../../src/score/index.js';
 import { measureText } from '../../src/text/index.js';
-import { DEFAULT_STROKE_WIDTHS } from '../../src/theme/geometry.js';
+import { CANVAS_MARGIN, DEFAULT_STROKE_WIDTHS } from '../../src/theme/geometry.js';
 import { bench, nodeLabel, type BenchLink, type BenchNode } from './link-label-fixture.js';
-import { placed } from './phase-two-fixture.js';
+import { createAttempt, placed } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 const GATES: GateId[] = ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8'];
@@ -61,6 +61,15 @@ function run(model: LayoutModel): LayoutModel {
 }
 const linkLabelsOf = (model: LayoutModel): LayoutLabel[] => model.labels.filter(label => label.role === 'link');
 
+/** Every drawn box lies inside the canvas, and the canvas edge is exactly one margin beyond the drawn union. */
+function expectRefit(model: LayoutModel): void {
+  const canvas = model.canvas!, boxes = api.drawnBoxes(model, true);
+  expect(Math.min(...boxes.map(box => box.x))).toBeCloseTo(canvas.x + CANVAS_MARGIN, 9);
+  expect(Math.min(...boxes.map(box => box.y))).toBeCloseTo(canvas.y + CANVAS_MARGIN, 9);
+  expect(Math.max(...boxes.map(box => box.x + box.width))).toBeCloseTo(canvas.x + canvas.width - CANVAS_MARGIN, 9);
+  expect(Math.max(...boxes.map(box => box.y + box.height))).toBeCloseTo(canvas.y + canvas.height - CANVAS_MARGIN, 9);
+}
+
 const goldenYaml = readFileSync(new URL('../../goldens/m1-sip-edge.yaml', import.meta.url), 'utf8');
 const fittingYaml = readFileSync(new URL('../../goldens/synthetic/fitting-link-label.yaml', import.meta.url), 'utf8');
 
@@ -93,20 +102,12 @@ describe('stage 9 golden', () => {
       'symbol:tbr', 'symbol:rr', 'line:default', 'line:dotted', 'line:dashed']);
     expect(model.links).toEqual(routed.links);
     expect(model.freeze!.placement).toEqual(routed.freeze!.placement);
-    // The canvas now also holds the outer half of every stroke, so it grows on every side rather
-    // than only downward: a rectangle is drawn on its centreline.
+    // The canvas holds the outer half of every stroke and the legend, with one uniform margin on
+    // every side (ticket 28): it grows below for the legend and is refit everywhere else.
     const canvas = model.canvas!, before = routed.canvas!;
-    expect(canvas.x).toBeLessThanOrEqual(before.x);
-    expect(canvas.y).toBeLessThanOrEqual(before.y);
-    expect(canvas.x + canvas.width).toBeGreaterThanOrEqual(before.x + before.width);
-    expect(canvas.y + canvas.height).toBeGreaterThanOrEqual(model.legend!.bounds.y + model.legend!.bounds.height);
+    expect(canvas.y + canvas.height).toBeGreaterThanOrEqual(model.legend!.bounds.y + model.legend!.bounds.height + CANVAS_MARGIN);
     expect(canvas.height).toBeGreaterThan(before.height);
-    // Nothing the diagram paints lies outside it, strokes included.
-    for (const box of api.drawnBoxes(model, true)) {
-      expect([box, box.x >= canvas.x && box.y >= canvas.y
-        && box.x + box.width <= canvas.x + canvas.width
-        && box.y + box.height <= canvas.y + canvas.height]).toEqual([box, true]);
-    }
+    expectRefit(model);
 
     const report = score(model, { golden: true }).snapshot;
     for (const id of GATES) expect([id, report.gates[id].violations]).toEqual([id, []]);
@@ -222,9 +223,9 @@ describe('stage 9 authored labels', () => {
     expect(model.freeze!.placement).toEqual(routed.freeze!.placement);
     expect(model.links).toEqual(routed.links);
     expect(model.labels.filter(item => item.role !== 'link')).toEqual(routed.labels);
-    expect(model.canvas!.x).toBe(routed.canvas!.x);
-    expect(model.canvas!.width).toBeGreaterThanOrEqual(routed.canvas!.width);
-    expect(model.canvas!.x + model.canvas!.width).toBeGreaterThanOrEqual(label[0]!.bounds!.x + label[0]!.bounds!.width);
+    // Ticket 28: publication refits the canvas to the drawn union plus one uniform margin.
+    expectRefit(model);
+    expect(model.canvas!.x + model.canvas!.width).toBeGreaterThanOrEqual(label[0]!.bounds!.x + label[0]!.bounds!.width + CANVAS_MARGIN);
     expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
   }, 60000);
 
@@ -659,6 +660,35 @@ describe('stage 9 transaction', () => {
     // The groups start at x = 12, so a shift past them is a real exclusion, label box or not.
     expect(() => restoreLayoutModel(forge(draft => { draft.canvas = { ...draft.canvas!, x: draft.canvas!.x + 16 }; })))
       .toThrow('Canvas does not contain the published diagram');
+  }, 60000);
+
+  it('shrinks an oversized predecessor canvas to the drawn union plus the margin, and rejects a stale one', () => {
+    // Placement growth that was later undone leaves a canvas larger than what is drawn.
+    const model = bench(
+      [{ id: 'source', bounds: { x: 0, y: 80, width: 100, height: 40 } },
+        { id: 'target', bounds: { x: 300, y: 80, width: 100, height: 40 } }],
+      [{ id: 'link-1', from: 'source', to: 'target', sides: ['right', 'left'], points: [{ x: 100, y: 100 }, { x: 300, y: 100 }] }]);
+    const oversized = { x: -200, y: -300, width: 2000, height: 1500 };
+    model.canvas = { ...oversized };
+    produceLinkLabels(model);
+    expect(model.canvas.width).toBeLessThan(oversized.width);
+    expect(model.canvas.height).toBeLessThan(oversized.height);
+    expectRefit(model);
+    // A published layout that kept the stale extent is rejected: dead space is a forged claim too.
+    const stale = JSON.parse(JSON.stringify(model)) as LayoutModel;
+    stale.stage = 'link-labels';
+    stale.canvas = { ...oversized };
+    expect(() => validateLinkLabels(stale)).toThrow('Canvas does not fit the published diagram');
+    model.stage = 'link-labels';
+    expect(() => validateLinkLabels(model)).not.toThrow();
+  });
+
+  it('gives a diagram that draws nothing the canonical empty canvas and rejects a stale one', async () => {
+    const model = await api.layout(api.parse('portograph: 2\ngroups: {}\nnodes: {}'), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    expect(model.canvas).toEqual({ x: 0, y: 0, width: 2 * CANVAS_MARGIN, height: 2 * CANVAS_MARGIN });
+    expect(api.restoreFinalLayout(JSON.stringify(model)).canvas).toEqual(model.canvas);
+    const stale = { ...JSON.parse(JSON.stringify(model)) as LayoutModel, canvas: { x: -50, y: -50, width: 400, height: 300 } };
+    expect(() => api.restoreFinalLayout(JSON.stringify(stale))).toThrow('Canvas does not fit the published diagram');
   }, 60000);
 
   it('expands the canvas over a path that leaves its group, and rejects one that clips it', () => {

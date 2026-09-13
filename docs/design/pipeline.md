@@ -726,9 +726,14 @@ no class can spell another one's encoded form. The text a legend row *displays* 
 the class as authored, substituted for display by the serializer like any other visible text.
 
 **Stage 9 settles the canvas.** `expandCanvas` reserves group boxes and lanes; a route may leave
-both, and stage 9 adds label and legend boxes, so the producer expands the canvas over every group,
-lane, drawn path, visible label and the legend. Restore has no predecessor transaction, so the
-"canvas may only expand" rule is restated geometrically there: the canvas must contain all of that.
+both, and stage 9 adds label and legend boxes, so the producer *refits* the canvas: the union of
+every group, lane, drawn path (stroke included), visible label and the legend, plus `CANVAS_MARGIN`
+(12 px) on every side (ticket 28). "Canvas may only expand" governs the placement transactions,
+where a later rule must never lose room an earlier one reserved; publication owns the final extent,
+so growth during placement leaves no dead space below and no zero margin on the side that grew, and
+a canvas that an undone push had stretched shrinks back. Restore has no predecessor transaction, so
+the rule is stated geometrically there: the published canvas equals that refit — one that clips a
+drawn box or leaves dead space is rejected.
 
 **Multiplicity labels.** One per `Bundle.mergeRuns` record, `label:multiplicity:<run id>`, with the
 decimal count as its text. `count` must equal the member count, be at least two, and every member

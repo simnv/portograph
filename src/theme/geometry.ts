@@ -26,6 +26,12 @@ export function pathStrokeWidth(link: Pick<LayoutLink, 'path' | 'strokeWidth'>):
 /** Radius of the mark stage 11 draws at each overlay endpoint, above the masked overlay layer. */
 export const OVERLAY_ENDPOINT_RADIUS = 2;
 /**
+ * The one uniform margin between everything the diagram paints and the canvas edge (ticket 28). The
+ * skeleton starts the canvas at this padding; stage 9 refits the canvas to the drawn union plus this
+ * margin on every side, so growth during placement leaves no dead space and no side without margin.
+ */
+export const CANVAS_MARGIN = 12;
+/**
  * A group title owns a link-free margin around its measured text. Placement keeps labels this far
  * from every reserved link geometry, routing treats the margin as part of the label obstacle, and
  * G3 fails a routed segment that enters it (maintainer M1 visual review, 2026-09-11).

@@ -82,6 +82,7 @@ drew it. Network diagrams first; software architecture and electrical panels nex
 | Link and multiplicity label type | `FONT_FAMILY` 9 px, weight 400; 4 px visible gap beyond the supporting stroke; ASCII `...` shortening to segment length − 8 px | d3-fd, render-theme notes |
 | Overlay label suppression | overlay links / max(1, nodes) > 3 | pipeline stage 9 |
 | Legend type and spacing | `FONT_FAMILY` 9 px, weight 400; 20 px gap below the drawn diagram; 12 × 12 symbol swatch, 24 px line swatch, 6 px swatch gap, 18 px column gap, 6 px row gap | render-theme notes, ticket 16 |
+| Canvas margin | 12 px between everything drawn (strokes included) and every canvas edge; stage 9 refits the canvas to that after the legend is placed | ticket 28 |
 | Overlay endpoint mark | 2 px radius, drawn above the masked overlay layer | pipeline stage 11 |
 | Clearances (gates) | node–node 20, edge–foreign-node 10, parallel edge–edge 10 px, stroke-aware, with ownership exceptions | ELK defaults; codex review |
 | Port stem | ≥ 15 px, perpendicular to side | yFiles convention |
