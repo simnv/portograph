@@ -54,7 +54,7 @@ export { bundles, prepareBundleGeometry, rebuildBundlePaths, BundleFeasibilityEr
 export { bands, GROUP_LABEL_GEOMETRY } from './layout/bands.js';
 export { linkLabels, produceLinkLabels, validateLinkLabels, overlayDensity, overlayLabelsSuppressed,
   LINK_LABEL_GEOMETRY, LINK_LABEL_CODES, OVERLAY_LABEL_DENSITY } from './layout/link-labels.js';
-export { diagramBounds, drawnBoxes, legendBoxes, legendRequired, legendVariants, produceLegend } from './layout/legend.js';
+export { diagramBounds, drawnBoxes, legendBoxes, legendRequired, legendVariants, paintedSwatch, portRoles, produceLegend } from './layout/legend.js';
 
 export { optimizeBundleOrder } from './layout/bundle-order.js';
 export type { BundleOrderResult } from './layout/bundle-order.js';

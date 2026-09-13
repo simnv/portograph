@@ -122,7 +122,7 @@ describe('parse diagnostics', () => {
     { groups: { g: { align: 'up' } } }, { groups: { g: { collapsed: 'yes' } } },
     { groups: { g: { layout: { x: [] } } } }, { nodes: { a: false } }, { nodes: { a: { group: 'g', ports: null } } },
     { nodes: { a: { group: 'g', ports: [2] } } }, { nodes: { a: { group: 'g', ports: [{ name: 'p', side: 'up' }] } } },
-    { nodes: { a: { group: 'g', ports: [{ name: 'p', order: 0.5 }] } } },
+    { nodes: { a: { group: 'g', ports: [{ name: 'p', order: 0.5 }] } } }, { nodes: { a: { group: 'g', ports: [{ name: 'p', class: 3 }] } } },
     { nodes: { a: { group: 'g', ports: { side: 'left' } } } }, { nodes: { a: { group: 'g', size: { width: -1, height: 2 } } } },
     { overlays: { flow: 'other' } }, { links: [[null, 'b']] }, { links: [['a', 'b', null]] },
     { links: [['a', 'b', { route: 'other' }]] }, { links: [['a', 'b', { weight: Infinity }]] },
@@ -252,6 +252,15 @@ describe('parse diagnostics', () => {
     const degreeNodes = Object.fromEntries(Array.from({ length: 8 }, (_, i) => [`n${i}`, { group: 'g', ports: ['p'] }]));
     expect(codes(source({ nodes: degreeNodes, links: Array.from({ length: 65 }, () => ['n0.p', 'n1.p']) }))).toContain('HIGH_DEGREE');
     expect(codes(source({ links: Array.from({ length: 21 }, () => ['a', 'b']) }))).toContain('PORT_LIMIT');
+  });
+
+  it('keeps a port class as authored tokens and rejects a non-string one at the port path', () => {
+    const ok = parseWithDiagnostics(source({ nodes: { a: { group: 'g', ports: ['p', { name: 'q', class: 'uplink down' }, { name: 'r', side: 'left', class: '' }] } } }));
+    expect(ok.ok).toBe(true);
+    if (!ok.ok) return;
+    expect(ok.document.nodes['a']!.ports).toEqual([{ name: 'p', ordinal: 1 }, { name: 'q', ordinal: 1, class: 'uplink down' }, { name: 'r', ordinal: 1, side: 'left', class: '' }]);
+    const bad = parseWithDiagnostics(source({ nodes: { a: { group: 'g', ports: { side: 'left', list: [{ name: 'p', class: ['uplink'] }] } } } }));
+    expect(bad.diagnostics).toContainEqual(expect.objectContaining({ path: '$.nodes.a.ports.list[0].class', severity: 'error' }));
   });
 
   it('points shorthand port diagnostics at the authored list', () => {

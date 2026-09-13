@@ -1,5 +1,5 @@
-import { LEGEND_DEFAULT_CLASS, NETWORK_LINK_CLASSES, NETWORK_NODE_CLASSES, NETWORK_PORT_LOOPBACK, NETWORK_PORT_ROLES,
-  NETWORK_PORT_STATUS, NETWORK_THEME, nodeClassPaint, portRolePaint } from '../profiles/network/theme.js';
+import { LEGEND_DEFAULT_CLASS, NETWORK_LINK_CLASSES, NETWORK_NODE_CLASSES, NETWORK_PORT_ROLES, NETWORK_PORT_STATUS, NETWORK_THEME,
+  nodeClassPaint, portRolePaint } from '../profiles/network/theme.js';
 import type { ThemeMode } from '../profiles/network/theme.js';
 
 /**
@@ -92,17 +92,18 @@ export function themeRules(mode: ThemeMode): string[] {
     rules.push(`.link-line.${name}{stroke:${style.strokes[mode]}`
       + `${style.dash ? `;stroke-dasharray:${style.dash}` : ''}${style.cap ? `;stroke-linecap:${style.cap}` : ''}}`);
   }
-  // A `port.class` role drives the pill fill; a status drives the stroke; `unused` fades the port.
+  // A `port.class` role drives the pill fill (the outlined role its stroke); a status drives the
+  // stroke; `unused` fades the whole port.
   for (const [name, style] of NETWORK_PORT_ROLES) {
-    const { fill, text } = portRolePaint(style, mode);
-    rules.push(`.pill.${name}{fill:${fill}}`);
-    rules.push(`.pill-label.${name}{fill:${text}}`);
+    const paint = portRolePaint(style, mode);
+    if (paint.stroke !== undefined) { rules.push(`.pill.${name}{fill:none;stroke:${paint.stroke}}`); continue; }
+    rules.push(`.pill.${name}{fill:${paint.fill}}`);
+    rules.push(`.pill-label.${name}{fill:${paint.text}}`);
   }
-  rules.push(`.pill.${NETWORK_PORT_LOOPBACK.name}{fill:none;stroke:${NETWORK_PORT_LOOPBACK.stroke[mode]}}`);
   for (const [name, style] of NETWORK_PORT_STATUS) {
     if (style.kind === 'fade') { rules.push(`.port.${name}{opacity:${style.opacity}}`); continue; }
     rules.push(`.pill.${name}{stroke:${style.stroke[mode]}`
-      + `${style.dash ? `;stroke-dasharray:${style.dash}` : ''}${style.fill ? `;fill:${style.fill[mode]}` : ''}}`);
+      + `${style.dash ? `;stroke-dasharray:${style.dash[mode]}` : ''}${style.fill ? `;fill:${style.fill[mode]}` : ''}}`);
     if (style.text) rules.push(`.pill-label.${name}{fill:${style.text[mode]}}`);
   }
   // The overlay mask is internal render structure, not an author styling surface, so its paint is

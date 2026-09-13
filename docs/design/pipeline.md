@@ -691,9 +691,11 @@ space below everything the diagram draws — group boxes, lanes, pills, paths an
 with a 20 px gap. Frozen node, group, port, band and path geometry never moves for it, group label
 bands are not replanned around it, and the anchor is that drawn-geometry union rather than the
 canvas, so re-deriving the legend from a published model puts it back in exactly the same place.
-It exists only when the document draws more than one symbol or more than one line style, lists
-exactly the classes present (known profile classes in declaration order, then author classes by
-first use; a link without a class contributes the profile's default line style), and records the
+It exists only when the document draws more than one symbol or more than one line style — or a
+port role beside any other variant, since nothing else says what a role's paint means — lists exactly the classes present (known profile classes in declaration
+order, then author classes by first use; a link without a class contributes the profile's default
+line style; each role token of a drawn pill's `class` contributes one `port:<role>` entry, drawn as
+a 26 × 10 pill with that role's paint, while status tokens contribute nothing), and records the
 same effective stroke width `score` measures. `LayoutModel.legend` and its `role: 'legend'` labels
 are stage 9's claims: the validator re-derives both and rejects a forged, moved or removed legend.
 

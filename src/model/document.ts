@@ -24,7 +24,8 @@ export interface GroupRef {
 }
 export type Endpoint = PortRef | GroupRef;
 
-export type NormalisedPort = PortIdentity & { side?: Side; order?: number };
+/** `class` is the port's author tokens: a profile role, a status, or anything a `css:` rule names. */
+export type NormalisedPort = PortIdentity & { side?: Side; order?: number; class?: string };
 
 export interface GroupContent {
   label: string;

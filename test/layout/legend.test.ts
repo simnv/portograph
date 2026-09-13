@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel, Rect } from '../../src/index.js';
-import { DEFAULT_STROKE_WIDTHS, LEGEND_GEOMETRY, diagramBounds, drawnBoxes, legendBoxes, legendRequired, legendVariants, produceLegend,
-  restoreLayoutModel, score } from '../../src/index.js';
+import { DEFAULT_STROKE_WIDTHS, LEGEND_GEOMETRY, classDisplayLabel, diagramBounds, drawnBoxes, legendBoxes, legendRequired, legendVariants,
+  paintedSwatch, portRoles, produceLegend, restoreLayoutModel, score } from '../../src/index.js';
 import { bands } from '../../src/layout/bands.js';
 import { bars } from '../../src/layout/bars.js';
 import { bundles } from '../../src/layout/bundles.js';
@@ -129,6 +129,62 @@ describe('legend presence', () => {
       { id: 'c', bounds: { x: 240, y: 0, width: 60, height: 40 } }] });
     expect(legendVariants(model).symbols.map(item => [item.id, item.icon]))
       .toEqual([['symbol:router:router', 'router'], ['symbol:router:server', 'server']]);
+  });
+});
+
+describe('port roles in the legend', () => {
+  const roles = (classes: (string | undefined)[], nodeClass?: string): LayoutModel => scene({
+    nodes: [{ id: 'a', bounds: { x: 0, y: 0, width: 200, height: 40 }, ...(nodeClass ? { class: nodeClass } : {}) }],
+    ports: classes.map((value, index) => ({ node: 'a', name: `p${index}`, side: 'bottom' as const,
+      anchor: { x: 20 + index * 30, y: 40 }, ...(value === undefined ? {} : { class: value }) })),
+  });
+
+  it('lists one entry per role token, profile roles first, author roles by first use, never a status', () => {
+    const model = roles(['zeta up', 'mgmt down', 'uplink', 'zeta', 'admin-down', undefined, 'alpha mgmt']);
+    const { ports } = legendVariants(model);
+    expect(ports.map(item => [item.id, item.kind, item.key])).toEqual([
+      ['port:uplink', 'port', 'uplink'], ['port:mgmt', 'port', 'mgmt'], ['port:zeta', 'port', 'zeta'], ['port:alpha', 'port', 'alpha']]);
+    expect(portRoles('up down')).toEqual([]);
+    expect(portRoles(undefined)).toEqual([]);
+  });
+
+  it('needs a legend for two roles, or one role beside a node class or a line style', () => {
+    expect(legendRequired(roles(['uplink', 'uplink']))).toBe(false);
+    expect(legendRequired(roles(['uplink', 'peer']))).toBe(true);
+    expect(legendRequired(roles(['uplink'], 'router'))).toBe(true);
+    const withLine = pair([{ id: 'a' }, { id: 'b' }], [{}]);
+    expect(legendRequired(withLine)).toBe(false);
+    withLine.nodes['a']!.ports[0]!.class = 'uplink';
+    expect(legendRequired(withLine)).toBe(true);
+    // The role and the line style are both explained, and nothing else.
+    produceLegend(withLine);
+    expect(withLine.legend!.entries.map(entry => entry.id)).toEqual(['port:uplink', 'line:default']);
+  });
+
+  it('ignores a role on a port that draws no pill', () => {
+    const model = scene({ nodes: [{ id: 'a', bounds: { x: 0, y: 0, width: 60, height: 40 } }],
+      ports: [{ node: 'a', name: 'p', side: 'bottom', anchor: { x: 20, y: 40 }, pill: false, class: 'uplink' },
+        { node: 'a', name: 'q', side: 'bottom', anchor: { x: 40, y: 40 }, class: 'peer' }] });
+    expect(legendVariants(model).ports.map(item => item.key)).toEqual(['peer']);
+  });
+
+  it('draws a role as a 26 × 10 pill swatch at the pill radius, labelled from the profile, between symbols and lines', () => {
+    const model = pair([{ id: 'a', class: 'router' }, { id: 'b', class: 'tbr' }], [{}, { class: 'dashed' }]);
+    model.nodes['a']!.ports[0]!.class = 'mgmt';
+    produceLegend(model);
+    const entries = model.legend!.entries;
+    expect(entries.map(entry => entry.kind)).toEqual(['symbol', 'symbol', 'port', 'line', 'line']);
+    const port = entries[2]!;
+    expect(port).toMatchObject({ id: 'port:mgmt', key: 'mgmt', radius: LEGEND_GEOMETRY.portRadius,
+      swatch: expect.objectContaining({ width: LEGEND_GEOMETRY.portWidth, height: LEGEND_GEOMETRY.portHeight }) });
+    expect(model.labels.find(label => label.id === port.label)!.text).toBe('Mgmt');
+    // The pill is outlined on its bounds, so its paint reaches half a pill stroke outside them.
+    const painted = paintedSwatch(port);
+    expect(painted.width).toBeCloseTo(LEGEND_GEOMETRY.portWidth + DEFAULT_STROKE_WIDTHS.pill);
+    expect(painted.height).toBeCloseTo(LEGEND_GEOMETRY.portHeight + DEFAULT_STROKE_WIDTHS.pill);
+    // An author role keeps its literal name; a reserved token is never drawn, so it is no role.
+    model.nodes['b']!.ports[0]!.class = 'pg-mask-hide core-facing';
+    expect(legendVariants(model).ports.map(item => classDisplayLabel('port', item.key))).toEqual(['Mgmt', 'core-facing']);
   });
 });
 

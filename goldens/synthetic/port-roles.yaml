@@ -1,0 +1,60 @@
+# Expected: Paint each pill by its port role (uplink, downlink, peer, mgmt, lag, loopback) and its
+# status (up, down, admin-down, degraded, unused: the stroke, a greyed admin-down, a faded unused), and list every role drawn —
+# profile roles first — as a pill swatch in the generated legend beside the node classes and the
+# line styles. Geometry is that of the same document without port classes.
+# Test-only input owned by ticket 33; it needs no stage precondition because the whole pipeline runs.
+portograph: 2
+profile: network
+groups:
+  core: { tier: 0, label: Core }
+  edge: { tier: 1, label: Edge }
+nodes:
+  c1:
+    group: core
+    class: router
+    label: C1
+    ports:
+      side: bottom
+      list:
+        - { name: 100G, class: downlink up }
+        - { name: 100G, class: downlink degraded }
+        - { name: 100G, class: lag up }
+        - { name: 100G, class: lag up }
+        - { name: lo0, class: loopback }
+  c2:
+    group: core
+    class: router
+    label: C2
+    ports:
+      side: bottom
+      list:
+        - { name: 100G, class: downlink down }
+        - { name: 100G, class: peer down }
+        - { name: mgmt, class: mgmt unused }
+  e1:
+    group: edge
+    class: tbr
+    label: E1
+    ports:
+      side: top
+      list:
+        - { name: 100G-F, class: uplink up }
+        - { name: 100G-F, class: uplink degraded }
+        - { name: 100G-C, class: lag up }
+        - { name: 100G-C, class: lag up }
+  e2:
+    group: edge
+    class: tbr
+    label: E2
+    ports:
+      side: top
+      list:
+        - { name: 100G, class: uplink down }
+        - { name: 100G, class: peer admin-down }
+links:
+  - [c1.100G#1, e1.100G-F#1]
+  - [c1.100G#2, e1.100G-F#2]
+  - [c1.100G#3, e1.100G-C#1, { class: dashed }]
+  - [c1.100G#4, e1.100G-C#2, { class: dashed }]
+  - [c2.100G#1, e2.100G#1]
+  - [c2.100G#2, e2.100G#2, { class: dotted }]

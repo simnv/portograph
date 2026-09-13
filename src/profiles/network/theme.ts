@@ -106,54 +106,69 @@ export const NETWORK_LINK_CLASSES: readonly (readonly [string, LinkClassStyle])[
 ];
 
 /**
- * A `port.class` role: it drives the pill fill and names a legend entry. The light fill and text
- * are the documented API; dark pills are all steel, and print has its own greyscale steps.
+ * A `port.class` role: it drives the pill fill and names a legend entry. A filled role states a
+ * fill and a text colour per mode; the one outlined role, `loopback`, states a stroke per mode and
+ * no text rule.
  */
-export interface PortRoleStyle {
-  fill: string;
-  text: string;
-  label: string;
-  print: string;
-}
+export type PortRoleStyle =
+  | { kind: 'filled'; fill: Modal<string>; text: Modal<string>; label: string }
+  | { kind: 'outlined'; stroke: Modal<string>; label: string };
 
-const role = (fill: string, text: string, label: string, print: string): PortRoleStyle => ({ fill, text, label, print });
+const role = (fill: Modal<string>, text: Modal<string>, label: string): PortRoleStyle => ({ kind: 'filled', fill, text, label });
 
-/** Declaration order is the legend's stable order for known port roles. */
+/**
+ * Declaration order is the legend's stable order for known port roles and the sheet's rule order.
+ * Light is the handoff. Dark keeps the five filled roles apart the way the class pills do — a dark
+ * step of each role's own hue (steel-600 for uplink, steel-800 for downlink, hue-800 for the three
+ * hued roles) under a light step of the same hue — where the handoff collapsed them all to
+ * steel-700 (amendment 2). Print spreads the roles over five distinct neutral steps; the handoff
+ * gave peer and lag one step and mgmt the base pill's own white (amendment 3). Print text is black
+ * (amendment 1).
+ */
 export const NETWORK_PORT_ROLES: readonly (readonly [string, PortRoleStyle])[] = [
-  ['uplink', role(STEEL[400], STEEL[800], 'Uplink', NEUTRAL[400])],
-  ['downlink', role(STEEL[200], STEEL[800], 'Downlink', NEUTRAL[200])],
-  ['peer', role(INDIGO[300], INDIGO[800], 'Peer', NEUTRAL[300])],
-  ['mgmt', role(WARM[300], WARM[800], 'Mgmt', NEUTRAL[100])],
-  ['lag', role(TEAL[300], TEAL[800], 'Lag', NEUTRAL[300])],
+  ['uplink', role(modal(STEEL[400], STEEL[600], NEUTRAL[400]), modal(STEEL[800], STEEL[100], BLACK), 'Uplink')],
+  ['downlink', role(modal(STEEL[200], STEEL[800], NEUTRAL[100]), modal(STEEL[800], STEEL[100], BLACK), 'Downlink')],
+  ['peer', role(modal(INDIGO[300], INDIGO[800], NEUTRAL[300]), modal(INDIGO[800], INDIGO[200], BLACK), 'Peer')],
+  ['mgmt', role(modal(WARM[300], WARM[800], NEUTRAL[200]), modal(WARM[800], WARM[200], BLACK), 'Mgmt')],
+  ['lag', role(modal(TEAL[300], TEAL[800], NEUTRAL[500]), modal(TEAL[800], TEAL[200], BLACK), 'Lag')],
+  ['loopback', { kind: 'outlined', stroke: modal(STEEL[400], STEEL[500], NEUTRAL[500]), label: 'Loopback' }],
 ];
 
 /**
- * The pill fill and label text of a role in one mode. Print states the text too, or the light role
- * text would keep its hue on paper (handoff amendment 1).
+ * The outlined role on its own, as ticket 32 exported it before `loopback` joined `NETWORK_PORT_ROLES`
+ * (ticket 33). Kept for consumers of that shape; the roles table is the source of truth.
+ * @deprecated Read `NETWORK_PORT_ROLES` instead.
  */
-export function portRolePaint(style: PortRoleStyle, mode: ThemeMode): { fill: string; text: string } {
-  if (mode === 'print') return { fill: style.print, text: NETWORK_THEME.print.pill.text };
-  return mode === 'light' ? { fill: style.fill, text: style.text } : { fill: STEEL[700], text: STEEL[100] };
+export const NETWORK_PORT_LOOPBACK: { readonly name: 'loopback'; readonly stroke: Modal<string> } = {
+  name: 'loopback',
+  stroke: (NETWORK_PORT_ROLES.find(([name]) => name === 'loopback')![1] as { stroke: Modal<string> }).stroke,
+};
+
+/** The pill paint of a role in one mode: a fill and a label text, or `none` and a stroke for the outlined one. */
+export function portRolePaint(style: PortRoleStyle, mode: ThemeMode):
+{ fill: string; text: string; stroke?: never } | { fill: 'none'; stroke: string; text?: never } {
+  if (style.kind === 'outlined') return { fill: 'none', stroke: style.stroke[mode] };
+  return { fill: style.fill[mode], text: style.text[mode] };
 }
 
-/** The `loopback` role: an outlined, unfilled pill. It has no legend label of its own. */
-export const NETWORK_PORT_LOOPBACK = { name: 'loopback', stroke: modal(STEEL[400], STEEL[500], NEUTRAL[500]) } as const;
-
 /**
- * A `port.class` status. Status is stroke only and steel only; `admin-down` also greys the pill and
- * its text, and `unused` fades the whole port group instead of restyling the pill.
+ * A `port.class` status. A status paints the stroke in steel or ink and never the hue: `admin-down`
+ * also greys the pill and its text, and `unused` fades the whole port group instead. A dash is
+ * stated per mode: `degraded` is a plain ink stroke on screen but a dense `3 1` dash on paper, where
+ * black on black would equal `up` (amendment 4). `admin-down` text is neutral-700 in light, the
+ * handoff's neutral-600 fell to 3.5:1 on the greyed pill at 8 px (amendment 5).
  */
 export type PortStatusStyle =
-  | { kind: 'stroke'; stroke: Modal<string>; dash?: string; fill?: Modal<string>; text?: Modal<string> }
+  | { kind: 'stroke'; stroke: Modal<string>; dash?: Modal<string>; fill?: Modal<string>; text?: Modal<string> }
   | { kind: 'fade'; opacity: number };
 
 /** Declaration order is the emission order of the status rules. */
 export const NETWORK_PORT_STATUS: readonly (readonly [string, PortStatusStyle])[] = [
   ['up', { kind: 'stroke', stroke: modal(STEEL[800], STEEL[200], BLACK) }],
-  ['down', { kind: 'stroke', stroke: modal(STEEL[600], STEEL[400], NEUTRAL[700]), dash: '2 2' }],
-  ['admin-down', { kind: 'stroke', stroke: modal(NEUTRAL[500], STEEL[500], NEUTRAL[600]), dash: '2 2',
-    fill: modal(NEUTRAL[200], STEEL[900], WHITE), text: modal(NEUTRAL[600], STEEL[400], NEUTRAL[600]) }],
-  ['degraded', { kind: 'stroke', stroke: modal(INK, WHITE, BLACK) }],
+  ['down', { kind: 'stroke', stroke: modal(STEEL[600], STEEL[400], NEUTRAL[700]), dash: modal('2 2', '2 2', '2 2') }],
+  ['admin-down', { kind: 'stroke', stroke: modal(NEUTRAL[500], STEEL[500], NEUTRAL[600]), dash: modal('2 2', '2 2', '2 2'),
+    fill: modal(NEUTRAL[200], STEEL[900], WHITE), text: modal(NEUTRAL[700], STEEL[400], NEUTRAL[600]) }],
+  ['degraded', { kind: 'stroke', stroke: modal(INK, WHITE, BLACK), dash: modal('none', 'none', '3 1') }],
   ['unused', { kind: 'fade', opacity: 0.45 }],
 ];
 

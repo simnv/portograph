@@ -56,6 +56,7 @@ export function createLayoutModel(input: NormalisedDocument): LayoutModel {
       const layoutPort: LayoutPort = {
         ref: portReference(id, port), owner: { kind: 'node', id }, layer: 'routed',
       };
+      if (port.class !== undefined) layoutPort.class = port.class;
       if (port.side !== undefined) layoutPort.side = port.side;
       if (port.order !== undefined) layoutPort.authorOrder = port.order;
       return layoutPort;

@@ -135,10 +135,12 @@ the snapshot block) layout time per stage.
 7. Link property encoded consistently: weight = speed, style = class.
 8. No crossing that a topology rewrite could avoid — bar, stub, duplicated cloud.
 9. Whitespace is even; object : gutter ≈ 60 : 40.
-10. A legend exists when more than one symbol or line style is used — generated, not authored. It
-    is measured in stage 9 and placed in reserved canvas space below the drawn diagram, lists
-    exactly the classes present, and is excluded from the scored bounding box: its size follows the
-    class set, not the quality of the layout.
+10. A legend exists when more than one symbol or line style is used — generated, not authored. A
+    port role (a pill painted to mean something) needs one as soon as any other variant — a second
+    role, a node class or a line style — is drawn beside it. It is measured in stage 9 and
+    placed in reserved canvas space below the drawn diagram, lists exactly the classes and port
+    roles present, and is excluded from the scored bounding box: its size follows the class set,
+    not the quality of the layout.
 
 Bundle member gap means visible clearance between strokes. The regular minimum centreline pitch
 is 16 px plus the maximum member stroke. Crossovers may need wider tracks. An envelope owner does

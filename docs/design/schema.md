@@ -102,12 +102,18 @@ with a warning. Inference is logged as an info message.
 | `label` | string | default: id |
 | `description` | string | |
 | `icon` | string | from the profile icon set |
-| `ports` | list \| map | list of `string` or `{ name, side?, order? }`; or `{ side: <side>, list: [...] }` |
+| `ports` | list \| map | list of `string` or `{ name, side?, order?, class? }`; or `{ side: <side>, list: [...] }` |
 | `size` | `{ width, height }` | a floor; the engine may grow, never shrink |
 
 Per-port keys: `side` fixes the side; `order` (int) fixes the position on that side among
 author-ordered ports (engine-ordered ports fill the gaps by far-end position). Declaration order
-is **not** an order constraint unless `order` is given.
+is **not** an order constraint unless `order` is given. `class` (string, space-separated tokens)
+is appended to the pill, its label and the port group like any author class: a profile **role**
+(`uplink downlink peer mgmt lag loopback`) paints the pill and earns a legend row; a
+**status** (`up down admin-down degraded unused`) paints the stroke — `admin-down` also greys the
+fill and the text — or, for `unused`, fades the whole port; any
+other token is kept for a `css:` rule and listed in the legend as a role by first use. A class
+never changes geometry: the pill is measured from its label text alone.
 
 ## Link
 

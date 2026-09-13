@@ -334,11 +334,15 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
       const pill = port.pill!, identity = portId(id, port.ref.name!, port.ref.ordinal);
       const label = layout.labels.find(item => item.role === 'pill' && item.port !== undefined
         && item.port.node === id && item.port.name === port.ref.name && item.port.ordinal === port.ref.ordinal);
-      return element('g', { class: 'port', 'data-id': identity },
-        element('rect', { class: classes('pill', authored, locks.stroke(DEFAULT_STROKE_WIDTHS.pill)),
+      // The port's own tokens (a role, a status, free text) follow the node class on the pill, its
+      // label and the port group, so `.pill.<role>` paints the fill, `.pill.<status>` the stroke
+      // and `.port.unused` fades the whole port. Reserved tokens are stripped like any author class.
+      const authoredPort = classes(authored, authorClass(port.class)) || undefined;
+      return element('g', { class: classes('port', authoredPort), 'data-id': identity },
+        element('rect', { class: classes('pill', authoredPort, locks.stroke(DEFAULT_STROKE_WIDTHS.pill)),
           x: pill.bounds.x, y: pill.bounds.y, width: pill.bounds.width, height: pill.bounds.height,
           rx: pill.radius, ry: pill.radius })
-        + (label ? textElement(label, locks, 'pill-label', identity, authored) : ''));
+        + (label ? textElement(label, locks, 'pill-label', identity, authoredPort) : ''));
     }).join('');
     return element('g', { class: classes('node', authored), 'data-id': id },
       (crossed ? '' : body) + icon + text + pills);
@@ -374,6 +378,12 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
       return element('line', { class: classes('link-line', entry.key === LEGEND_DEFAULT_CLASS ? undefined : authorClass(entry.key),
         locks.stroke(entry.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path)),
       x1: entry.swatch.x, y1: middle, x2: right(entry.swatch), y2: middle });
+    }
+    if (entry.kind === 'port') {
+      // A role's swatch is a pill drawn with the role class, so it takes the same paint as the pills.
+      return element('rect', { class: classes('pill', authorClass(entry.key), locks.stroke(DEFAULT_STROKE_WIDTHS.pill)),
+        x: entry.swatch.x, y: entry.swatch.y, width: entry.swatch.width, height: entry.swatch.height,
+        ...(entry.radius !== undefined ? { rx: entry.radius, ry: entry.radius } : {}) });
     }
     if (!entry.icon) return '';
     icons.add(iconKey(entry.icon));

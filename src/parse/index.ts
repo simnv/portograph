@@ -94,7 +94,7 @@ function ports(value: unknown, path: string, v: Validation): NormalisedPort[] {
   for (const [index, item] of v.list(list, listPath).entries()) {
     const itemPath = `${listPath}[${index}]`;
     const fields = typeof item === 'string' ? new Map<string, unknown>([['name', item]]) : v.map(item, itemPath);
-    v.keys(fields, ['name', 'side', 'order'], itemPath);
+    v.keys(fields, ['name', 'side', 'order', 'class'], itemPath);
     const name = v.identifier(fields.get('name'), `${itemPath}.name`);
     const side = fields.has('side') ? v.choice(fields.get('side'), sides, `${itemPath}.side`) : inherited;
     const order = fields.has('order') ? v.number(fields.get('order'), `${itemPath}.order`, true) : undefined;
@@ -104,6 +104,7 @@ function ports(value: unknown, path: string, v: Validation): NormalisedPort[] {
     const port: NormalisedPort = { name, ordinal };
     if (side !== undefined) port.side = side;
     if (order !== undefined) port.order = order;
+    optionalStrings(fields, port, ['class'], itemPath, v);
     result.push(port);
   }
   return result;

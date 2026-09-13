@@ -20,6 +20,8 @@ export interface ScenePort {
   /** Named ports get a pill; an anonymous port sets this false and renders nothing. */
   pill?: boolean;
   textRotation?: -90 | 0;
+  /** Author tokens of the port: a profile role, a status, or free text. */
+  class?: string;
 }
 export interface SceneLink {
   id: string;
@@ -75,11 +77,13 @@ export function scene(input: Scene): LayoutModel {
     const size = { width: 26, height: 10 };
     const width = rotation === -90 ? size.height : size.width, height = rotation === -90 ? size.width : size.height;
     node.ports.push({ ref, side: port.side, owner: { kind: 'node', id: port.node }, layer: 'routed',
+      ...(port.class === undefined ? {} : { class: port.class }),
       anchor: { ...port.anchor },
       ...(port.pill === false ? {} : { pill: { owner: { kind: 'node', id: port.node }, layer: 'routed', size,
         bounds: { x: port.anchor.x - width / 2, y: port.anchor.y - height / 2, width, height },
         textRotation: rotation, radius: 3 } }) });
-    model.document.nodes[port.node]!.ports.push({ name: port.name, ordinal: ref.ordinal, side: port.side });
+    model.document.nodes[port.node]!.ports.push({ name: port.name, ordinal: ref.ordinal, side: port.side,
+      ...(port.class === undefined ? {} : { class: port.class }) });
   }
   for (const link of input.links ?? []) {
     const owner = { kind: 'link' as const, id: link.id }, layer = link.layer ?? 'routed';

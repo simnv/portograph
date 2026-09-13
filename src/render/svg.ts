@@ -57,8 +57,7 @@ function attributes(values: Attributes): string {
 export const element = (name: string, values: Attributes, children?: string): string =>
   children === undefined ? `<${name}${attributes(values)}/>` : `<${name}${attributes(values)}>${children}</${name}>`;
 
-/** Structural classes the renderer owns. An author class token may never enter this namespace. */
-export const RESERVED_CLASS_PREFIX = 'pg-';
+export { RESERVED_CLASS_PREFIX, authorClass } from '../model/classes.js';
 
 /** A class attribute from structural and author tokens, with empty and duplicate tokens dropped. */
 export function classes(...tokens: (string | undefined)[]): string {
@@ -68,18 +67,6 @@ export function classes(...tokens: (string | undefined)[]): string {
     for (const part of token.split(/\s+/)) if (part && !seen.includes(part)) seen.push(part);
   }
   return seen.join(' ');
-}
-
-/**
- * An author-supplied class string, with any token claiming the reserved prefix removed. A class
- * named after a generated geometry lock — `pg-w-2` on a 3 px link — would otherwise put a second
- * `stroke-width` rule on the element and win by source order, drawing a width `score` never
- * measured. Every author-controlled token passes through here before it becomes a class.
- */
-export function authorClass(value: string | undefined): string | undefined {
-  if (value === undefined) return undefined;
-  const kept = value.split(/\s+/).filter(part => part && !part.startsWith(RESERVED_CLASS_PREFIX));
-  return kept.length ? kept.join(' ') : undefined;
 }
 
 /**

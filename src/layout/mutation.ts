@@ -70,7 +70,7 @@ function structure(model: LayoutModel) {
   return {
     nodes: Object.fromEntries(Object.entries(model.nodes).map(([id, node]) => [id, {
       ...pick(node, ['id', 'owner', 'layer', 'strokeWidth']),
-      ports: node.ports.map(port => pick(port, ['ref', 'side', 'authorOrder', 'owner', 'layer', 'unused', 'sizingSide'])),
+      ports: node.ports.map(port => pick(port, ['ref', 'class', 'side', 'authorOrder', 'owner', 'layer', 'unused', 'sizingSide'])),
     }])),
     groups: Object.fromEntries(Object.entries(model.groups).map(([id, group]) => [id, pick(group, ['id', 'owner', 'layer', 'nodes', 'tier', 'flank', 'rowOrder'])])),
     ...pick(model, ['fallbackUsed', 'deadlineHit']),
@@ -132,8 +132,8 @@ function validateDocument(model: LayoutModel): LayoutModel {
   for (const id of orderedNodeIds(model.document)) {
     const node = model.nodes[id]!, original = predicted.nodes[id]!;
     same(pick(node, ['id', 'owner', 'layer']), pick(original, ['id', 'owner', 'layer']), 'Node identity differs from document');
-    same(node.ports.map(port => pick(port, ['ref', 'authorOrder', 'owner', 'layer', 'unused'])),
-      original.ports.map(port => pick(port, ['ref', 'authorOrder', 'owner', 'layer', 'unused'])), 'Port identity differs from document');
+    same(node.ports.map(port => pick(port, ['ref', 'class', 'authorOrder', 'owner', 'layer', 'unused'])),
+      original.ports.map(port => pick(port, ['ref', 'class', 'authorOrder', 'owner', 'layer', 'unused'])), 'Port identity differs from document');
     original.ports.forEach((port, index) => { if (port.side) same(node.ports[index]!.side, port.side, 'Semantic or authored side differs from document'); });
   }
   for (const id of orderedGroupIds(model.document)) {

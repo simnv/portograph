@@ -1,8 +1,9 @@
 import type { Rect } from '../model/geometry.js';
 import type { Legend, LegendEntry, LayoutLabel, LayoutModel } from '../model/layout.js';
 import { orderedNodeIds } from '../model/model.js';
-import { LEGEND_DEFAULT_CLASS, classDisplayLabel, classOrder } from '../profiles/network/theme.js';
+import { LEGEND_DEFAULT_CLASS, NETWORK_PORT_STATUS, classDisplayLabel, classOrder } from '../profiles/network/theme.js';
 import { resolveNodeIcon } from '../profiles/network/icons.js';
+import { authorClass } from '../model/classes.js';
 import { bottom, boundingBox } from '../score/geometry.js';
 import { measureText } from '../text/index.js';
 import { DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, linkStrokeWidth } from '../theme/geometry.js';
@@ -44,11 +45,23 @@ function token(value: string): string {
 /** One legend variant before it is measured: its identity, its style source and its first use. */
 interface Variant {
   id: string;
-  kind: 'symbol' | 'line';
+  kind: 'symbol' | 'line' | 'port';
   key: string;
   icon?: string;
   strokeWidth?: number;
   order: number;
+}
+
+/** Status tokens are plain author classes too, but they paint a state, not a role: no legend row. */
+const STATUS_TOKENS = new Set(NETWORK_PORT_STATUS.map(([name]) => name));
+
+/**
+ * The role tokens of one port's `class`: every drawn token that is not a status. A profile role is
+ * a role; so is any other author token, exactly as an unknown node class is a symbol of its own. A
+ * reserved token never reaches the SVG, so it is no role either: the legend lists what is drawn.
+ */
+export function portRoles(value: string | undefined): string[] {
+  return (authorClass(value) ?? '').split(/\s+/).filter(token => token && !STATUS_TOKENS.has(token));
 }
 
 const inflate = (box: Rect, by: number): Rect =>
@@ -118,13 +131,14 @@ export function diagramBounds(model: LayoutModel): Rect | undefined {
 }
 
 /**
- * The distinct symbol and line variants the diagram really draws, in the accepted order: known
- * profile classes by declaration order, then author classes by first use. A node without a class
- * contributes no symbol; a link without one contributes the profile's default line style, because
- * that style is what its line really uses.
+ * The distinct symbol, line and port-role variants the diagram really draws, in the accepted order:
+ * known profile classes by declaration order, then author classes by first use. A node without a
+ * class contributes no symbol; a link without one contributes the profile's default line style,
+ * because that style is what its line really uses; a drawn pill contributes one port variant per
+ * role token of its `class`, and none for a status token or a port without a class.
  */
-export function legendVariants(model: LayoutModel): { symbols: Variant[]; lines: Variant[] } {
-  const symbols: Variant[] = [], lines: Variant[] = [];
+export function legendVariants(model: LayoutModel): { symbols: Variant[]; lines: Variant[]; ports: Variant[] } {
+  const symbols: Variant[] = [], lines: Variant[] = [], ports: Variant[] = [];
   // A class drawn with two different icons needs two rows, so the icon qualifies the id then.
   const icons = new Map<string, Set<string>>();
   for (const id of orderedNodeIds(model.document)) {
@@ -157,6 +171,20 @@ export function legendVariants(model: LayoutModel): { symbols: Variant[]; lines:
     lines.push({ id: `line:${token(key)}`, kind: 'line', key, order: lines.length,
       strokeWidth: linkStrokeWidth(link) });
   }
+  for (const id of orderedNodeIds(model.document)) {
+    const node = model.nodes[id];
+    if (!node) continue;
+    for (const port of node.ports) {
+      // Only a drawn pill shows its paint; an anonymous port has no pill and so no role to explain.
+      if (!port.pill || port.ref.anonymous) continue;
+      for (const role of portRoles(port.class)) {
+        const identity = JSON.stringify(['port', role]);
+        if (seen.has(identity)) continue;
+        seen.add(identity);
+        ports.push({ id: `port:${token(role)}`, kind: 'port', key: role, order: ports.length });
+      }
+    }
+  }
   const sort = (items: Variant[]): Variant[] => [...items].sort((a, b) => {
     const left = classOrder(a.kind, a.key), rightOrder = classOrder(b.kind, b.key);
     if (left !== undefined && rightOrder !== undefined) return left - rightOrder || a.order - b.order;
@@ -164,13 +192,18 @@ export function legendVariants(model: LayoutModel): { symbols: Variant[]; lines:
     if (rightOrder !== undefined) return 1;
     return a.order - b.order;
   });
-  return { symbols: sort(symbols), lines: sort(lines) };
+  return { symbols: sort(symbols), lines: sort(lines), ports: sort(ports) };
 }
 
-/** `quality.md` item 10: a legend exists once more than one symbol or one line style is drawn. */
+/**
+ * `quality.md` item 10: a legend exists once more than one symbol or one line style is drawn. A
+ * port role is a pill painted to mean something, and nothing else on the page says what: so two
+ * roles, or one role beside any other variant — a node class or a line style — need the legend.
+ */
 export function legendRequired(model: LayoutModel): boolean {
-  const { symbols, lines } = legendVariants(model);
-  return symbols.length > 1 || lines.length > 1;
+  const { symbols, lines, ports } = legendVariants(model);
+  return symbols.length > 1 || lines.length > 1 || ports.length > 1
+    || (ports.length === 1 && symbols.length + lines.length > 0);
 }
 
 interface Measured extends Variant {
@@ -185,8 +218,8 @@ interface Measured extends Variant {
 function measure(variant: Variant): Measured {
   const label = classDisplayLabel(variant.kind, variant.key);
   const text = measureText(label, { fontSize: theme.fontSize, weight: theme.fontWeight });
-  const swatchWidth = variant.kind === 'symbol' ? theme.symbolWidth : theme.lineWidth;
-  const swatchHeight = variant.kind === 'symbol' ? theme.symbolHeight
+  const swatchWidth = variant.kind === 'symbol' ? theme.symbolWidth : variant.kind === 'port' ? theme.portWidth : theme.lineWidth;
+  const swatchHeight = variant.kind === 'symbol' ? theme.symbolHeight : variant.kind === 'port' ? theme.portHeight
     : Math.max(variant.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path, 2);
   return { ...variant, label, text, swatchWidth, swatchHeight,
     width: swatchWidth + theme.swatchGap + text.width, height: Math.max(swatchHeight, text.height) };
@@ -201,8 +234,8 @@ export function produceLegend(model: LayoutModel): void {
   if (!legendRequired(model)) return;
   const diagram = diagramBounds(model);
   if (!diagram) return;
-  const { symbols, lines } = legendVariants(model);
-  const measured = [...symbols, ...lines].map(measure);
+  const { symbols, lines, ports } = legendVariants(model);
+  const measured = [...symbols, ...ports, ...lines].map(measure);
   const widest = Math.max(...measured.map(item => item.width));
   const limit = Math.max(diagram.width, widest);
 
@@ -218,12 +251,12 @@ export function produceLegend(model: LayoutModel): void {
 
   const entries: LegendEntry[] = [], labels: LayoutLabel[] = [], boxes: Rect[] = [];
   // The gap is visible separation, so it is measured from the legend's painted top, not from a
-  // box edge. A tile is outlined on its bounds and paints half a stroke above them; a line sample
-  // is stroked along its box's centreline and paints inside a box at least as tall as it is.
+  // box edge. A tile or a pill is outlined on its bounds and paints half a stroke above them; a
+  // line sample is stroked along its box's centreline and paints inside a box at least as tall as it is.
   const paintedTop = (item: Measured, height: number): number => {
     const swatchTop = (height - item.swatchHeight) / 2;
     const text = (height - item.text.height) / 2;
-    const swatch = item.kind === 'symbol' ? swatchTop - DEFAULT_STROKE_WIDTHS.pill / 2
+    const swatch = item.kind !== 'line' ? swatchTop - DEFAULT_STROKE_WIDTHS.pill / 2
       : swatchTop + (item.swatchHeight - (item.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path)) / 2;
     return Math.min(swatch, text);
   };
@@ -243,7 +276,8 @@ export function produceLegend(model: LayoutModel): void {
         lineHeight: item.text.lineHeight, lines: item.text.lines, textRotation: 0, bounds });
       const entry: LegendEntry = { id: item.id, kind: item.kind, key: item.key,
         ...(item.icon ? { icon: item.icon } : {}),
-        ...(item.strokeWidth !== undefined ? { strokeWidth: item.strokeWidth } : {}), swatch, label };
+        ...(item.strokeWidth !== undefined ? { strokeWidth: item.strokeWidth } : {}),
+        ...(item.kind === 'port' ? { radius: theme.portRadius } : {}), swatch, label };
       entries.push(entry);
       // `bounds` is the legend's painted region, so a thin line's taller box never enlarges it.
       boxes.push(paintedSwatch(entry), bounds);
@@ -258,13 +292,13 @@ export function produceLegend(model: LayoutModel): void {
 }
 
 /**
- * What one swatch really paints. A symbol tile is outlined on its bounds, so its paint reaches half
- * a stroke outside them; a line sample is stroked along its box's centreline, so its paint is that
- * stroke tall wherever the box is taller — inflating the whole box would count the same width
- * twice — and reaches half a stroke past each end when the cap is not butt.
+ * What one swatch really paints. A symbol tile or a port pill is outlined on its bounds, so its
+ * paint reaches half a stroke outside them; a line sample is stroked along its box's centreline, so
+ * its paint is that stroke tall wherever the box is taller — inflating the whole box would count the
+ * same width twice — and reaches half a stroke past each end when the cap is not butt.
  */
 export function paintedSwatch(entry: LegendEntry): Rect {
-  if (entry.kind === 'symbol') return inflate(entry.swatch, DEFAULT_STROKE_WIDTHS.pill / 2);
+  if (entry.kind !== 'line') return inflate(entry.swatch, DEFAULT_STROKE_WIDTHS.pill / 2);
   const stroke = entry.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path;
   const middle = entry.swatch.y + entry.swatch.height / 2;
   return { x: entry.swatch.x - stroke / 2, y: middle - stroke / 2,

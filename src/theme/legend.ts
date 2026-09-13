@@ -16,6 +16,10 @@ export const LEGEND_GEOMETRY = {
   symbolHeight: NODE_CONTENT_GEOMETRY.iconHeight,
   /** A line swatch is a horizontal sample of the class's stroke. */
   lineWidth: 24,
+  /** A port swatch is the handoff's 26 × 10 pill sample at the drawn pill radius. */
+  portWidth: 26,
+  portHeight: 10,
+  portRadius: 3,
   /** Visible gap between a swatch and its text. */
   swatchGap: 6,
   /** Visible gap between two entries on one row. */

@@ -53,6 +53,8 @@ export interface PillGeometry extends OwnedElement {
 
 export interface LayoutPort extends OwnedElement {
   ref: PortRef;
+  /** The authored `class` tokens, verbatim; the renderer and the legend filter reserved ones. */
+  class?: string;
   side?: Side;
   /** Capacity estimate only; stage 5 chooses the final side from actual peer positions. */
   sizingSide?: Side;
@@ -226,15 +228,18 @@ export interface BarDrop extends OwnedElement {
  * re-measures or reflows them, including when a render hides a layer.
  */
 export interface LegendEntry {
-  /** `symbol:<class>` or `line:<class>`; the rendered `data-id` and the acceptance key. */
+  /** `symbol:<class>`, `line:<class>` or `port:<role>`; the rendered `data-id` and the acceptance key. */
   id: string;
-  kind: 'symbol' | 'line';
+  /** A `port` entry stands for one port role: its swatch is a pill drawn with `.pill.<role>`. */
+  kind: 'symbol' | 'line' | 'port';
   /** The document class this entry stands for; `LEGEND_DEFAULT_CLASS` for links without one. */
   key: string;
   /** Profile icon of a symbol entry, absent when the class resolves to none. */
   icon?: string;
   /** Effective stroke width of a line entry; identical to the width `score` measures. */
   strokeWidth?: number;
+  /** Corner radius of a port entry's pill swatch, the same as every drawn pill. */
+  radius?: number;
   swatch: Rect;
   label: string;
 }

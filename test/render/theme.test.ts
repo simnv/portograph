@@ -19,34 +19,54 @@ function rules(css: string): [string, string, string[]][] {
 describe('the default theme is the designed sheet', () => {
   const handoff = readFileSync(new URL('../../ref/theme-handoff/portograph-theme.css', import.meta.url), 'utf8');
 
-  it('emits the handoff rules, in order, in the light, dark and print blocks, plus the print amendment', () => {
-    const expected = rules(handoff);
-    const key = (rule: [string, string, string[]]): string => JSON.stringify([rule[0], rule[1]]);
-    const known = new Set(expected.map(key));
-    const actual = rules(themeCss());
-    // Amendment 1: a `@media` block adds no specificity, so print must restate every class-pill
-    // and role-text rule the light sheet colours, or those keep their hue on paper.
-    const amendment = actual.filter(rule => !known.has(key(rule)));
-    expect(amendment.map(rule => `${rule[1]}{${rule[2].join(';')}}`)).toEqual([
-      ...['provider', 'router', 'tbr', 'rr'].flatMap(name =>
-        [`.pill.${name}{fill:#f5f5f8;stroke:#7a7a7d}`, `.pill-label.${name}{fill:#000000}`]),
-      ...['uplink', 'downlink', 'peer', 'mgmt', 'lag'].map(name => `.pill-label.${name}{fill:#000000}`),
-    ]);
-    expect(amendment.every(rule => rule[0] === '@media print')).toBe(true);
-    expect(actual.filter(rule => known.has(key(rule)))).toEqual(expected);
-  });
+  type Rule = [string, string, string[]];
+  const PRINT = '@media print', DARK = '@media (prefers-color-scheme: dark)';
+  const rule = (at: string, selector: string, declarations: string): Rule => [at, selector, declarations.split(';')];
 
-  it('restates every light selector with the same properties in dark and in print', () => {
-    // A `@media` block adds no specificity, so a light declaration that the dark or print block
-    // does not restate stays in force there. Parity of selectors alone is not enough: a light-only
-    // `stroke` on a selector both blocks name would still leak, so the property sets must match.
-    const declared = (mode: 'light' | 'dark' | 'print'): [string, string[]][] => rules(themeRules(mode).join('\n'))
-      .map(rule => [rule[1], rule[2].map(declaration => declaration.slice(0, declaration.indexOf(':'))).sort()]);
-    const light = declared('light');
-    expect(light.length).toBe(51);
-    expect(new Set(light.map(([selector]) => selector)).size).toBe(light.length);
-    expect(declared('dark')).toEqual(light);
-    expect(declared('print')).toEqual(light);
+  /**
+   * The delivered sheet with every review amendment applied in place, as one ordered sequence.
+   * Amendments are recorded in `ref/theme-handoff/README.md`, "Amendments found in review":
+   * 1 print restates the class pills and the role text; 2 dark role fills; 3 print role steps;
+   * 4 degraded dash per mode; 5 admin-down text. A rule's position in the cascade matters as much
+   * as its declarations — `.pill.mgmt` must follow `.pill.router` for a `router mgmt` pill to be
+   * warm — so the whole sequence is compared, duplicates included.
+   */
+  function amendedHandoff(): Rule[] {
+    const replaced: Record<string, Record<string, string>> = {
+      '': { '.pill-label.admin-down': 'fill:#5d5d60', '.pill.degraded': 'stroke:#1d1f20;stroke-dasharray:none' },
+      [DARK]: {
+        '.pill.uplink': 'fill:#597ea3', '.pill.downlink': 'fill:#2c455d', '.pill.peer': 'fill:#363966',
+        '.pill-label.peer': 'fill:#e0e1f6', '.pill.mgmt': 'fill:#46413a', '.pill-label.mgmt': 'fill:#e8e4dc',
+        '.pill.lag': 'fill:#20484f', '.pill-label.lag': 'fill:#cfe9ec', '.pill.degraded': 'stroke:#ffffff;stroke-dasharray:none',
+      },
+      [PRINT]: {
+        '.pill.downlink': 'fill:#f5f5f8', '.pill.mgmt': 'fill:#e7e7ea', '.pill.lag': 'fill:#98989b',
+        '.pill.degraded': 'stroke:#000000;stroke-dasharray:3 1',
+      },
+    };
+    const out: Rule[] = [];
+    for (const [at, selector, declarations] of rules(handoff)) {
+      const swap = replaced[at]?.[selector];
+      out.push(swap === undefined ? [at, selector, declarations] : rule(at, selector, swap));
+      if (at !== PRINT) continue;
+      // Amendment 1: after each class glyph rule, the class pill and its text; after each filled
+      // role's pill, its text.
+      const glyph = /^\.node-icon\.([a-z]+)$/.exec(selector);
+      if (glyph) out.push(rule(PRINT, `.pill.${glyph[1]}`, 'fill:#f5f5f8;stroke:#7a7a7d'), rule(PRINT, `.pill-label.${glyph[1]}`, 'fill:#000000'));
+      const role = /^\.pill\.(uplink|downlink|peer|mgmt|lag)$/.exec(selector);
+      if (role) out.push(rule(PRINT, `.pill-label.${role[1]}`, 'fill:#000000'));
+    }
+    return out;
+  }
+
+  it('emits the delivered sheet with the recorded amendments, as one ordered sequence', () => {
+    const actual = rules(themeCss()), expected = amendedHandoff();
+    expect(actual).toEqual(expected);
+    // The amendments are the whole difference: 15 rules replaced and 13 added against the delivered file.
+    const delivered = rules(handoff);
+    const same = actual.filter(item => delivered.some(other => other[0] === item[0] && other[1] === item[1] && other[2].join(';') === item[2].join(';')));
+    expect(actual.length - same.length).toBe(28);
+    expect(actual.length - delivered.length).toBe(13);
   });
 
   it('states paint only: no geometry property in any mode', () => {
