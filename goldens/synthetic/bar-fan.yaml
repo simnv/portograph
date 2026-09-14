@@ -1,0 +1,19 @@
+# Expected: The bar drop from parent.p is a rule-fixed straight path; the two routed remainders from the
+# same port form a junction tree, and the drop joins it as the straight-through leaf: 7d splits its
+# first run under the junction ids 7e will build, so every member shares one root stem and no first
+# segment is drawn twice (ADR-0016). Every gate passes.
+# Test-only input owned by ticket 36; it needs no stage precondition because the whole pipeline runs.
+portograph: 2
+groups:
+  parents: { tier: 0 }
+  bar: { tier: 1, shape: bar }
+  leaves: { tier: 1 }
+nodes:
+  parent: { group: parents, ports: [{ name: p, side: bottom }] }
+  b: { group: bar, ports: [{ name: p, side: top }] }
+  c1: { group: leaves, ports: [{ name: p, side: top }] }
+  c2: { group: leaves, ports: [{ name: p, side: top }] }
+links:
+  - [parent.p#1, b.p]
+  - [parent.p#1, c1.p]
+  - [parent.p#1, c2.p]

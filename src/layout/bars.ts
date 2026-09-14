@@ -6,6 +6,7 @@ import { measureText } from '../text/index.js';
 import { NODE_CONTENT_GEOMETRY } from '../theme/content.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { nodeGap, portId } from './skeleton-graph.js';
+import { splitUnderJunctions, treeCohorts } from './bundle-geometry.js';
 import { groupInsets } from './regions.js';
 import { findPort } from './row-paths.js';
 import { withLayoutMutation } from './mutation.js';
@@ -378,12 +379,27 @@ export function rebuildBarDrops(model: LayoutModel): void {
   const candidates = model.links.map(link => barLink(model, link)).filter((item): item is BarLink => item !== undefined);
   for (const item of candidates) delete item.link.path;
   model.barDrops = [];
+  // Every drop's traversal first: a drop that leaves a port shared with other routed links is split
+  // under the fan tree's junction ids (ADR-0016), and the cohort that decides the rows needs every
+  // drop's path at once.
+  const built = new Map<string, { item: BarLink; slotX: number; physical: PathSegment[]; crossed: string[]; traversed: PathSegment[] }>();
   for (const item of candidates) {
     const slotX = item.port.anchor!.x;
     const physical = physicalPath(model, item, slotX, item.link.bundle !== undefined);
     const crossed = crosses(model, physical, item.bar.id);
     annotateCrossings(model, physical, crossed);
-    const traversed = traversalPath(item, physical);
+    built.set(item.link.id, { item, slotX, physical, crossed, traversed: traversalPath(item, physical) });
+  }
+  const pending = new Map([...built.values()].filter(entry => !entry.item.link.bundle)
+    .map(entry => [entry.item.link.id, { port: portId(entry.item.external.ref), segments: entry.traversed }] as const));
+  const cohorts = treeCohorts(model, pending);
+  for (const entry of built.values()) {
+    const { item, slotX, crossed } = entry;
+    let traversed = entry.traversed;
+    if (!item.link.bundle) {
+      const cohort = cohorts.find(c => portId(c.port.ref) === portId(item.external.ref) && c.links.includes(item.link));
+      if (cohort) traversed = splitUnderJunctions(model, cohort.port, cohort.links, item.link, traversed, pending);
+    }
     const span = { min: item.bar.bounds!.x, max: right(item.bar.bounds!) };
     const hint = points(traversed);
     const base = {

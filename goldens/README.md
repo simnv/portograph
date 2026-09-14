@@ -120,6 +120,7 @@ is a standalone schema-v2 document. `stage-inputs.yaml` is separate test data.
 | [label-no-gap](synthetic/label-no-gap.yaml) | 7f | Widen the group, push its neighbour, and re-centre the affected child. |
 | [port-roles](synthetic/port-roles.yaml) | 9, 11 | Paint pills by role and status; list every role as a pill swatch in the legend; move nothing. |
 | [transit-fan](synthetic/transit-fan.yaml) | 7a, 7e, 8 | One port feeds three children through a transit tier: lanes in the children's order, one shared stem tree, gates pass. |
+| [bar-fan](synthetic/bar-fan.yaml) | 7d, 7e | A bar drop and two remainders from one port: the drop is split under the tree's junction ids and joins as the straight leaf. |
 | [unfittable-link-label](synthetic/unfittable-link-label.yaml) | 9 | Keep the full tooltip and report one omitted visible label (with its stage precondition; the whole pipeline reserves run and band room and places the full label on the longest run, ADR-0014). |
 | [fitting-link-label](synthetic/fitting-link-label.yaml) | 9 | Place the measured label along the longest segment — rotated to read bottom-to-top on a vertical run — with no collision. |
 | [long-label-portless-node](synthetic/long-label-portless-node.yaml) | 3 | Grow the node to contain its measured label and description. |

@@ -321,7 +321,8 @@ neighbouring groups; then each child port x := its parent port x. A child port's
 only if the child node can be widened to contain it without overlapping a sibling; if not, the
 link remains unpinned and is reported. Unequal-x top/bottom normals generally need two orthogonal bends; routing determines the actual count. A parent port feeding **two** children cannot be vertical to
 both: the first (by child x) is vertical, the rest fan through a shared stem — the junction tree 7e
-reserves for every port with two or more routed links that no earlier rule fixed (ticket 20).
+reserves for every port with two or more routed links (ticket 20; a rule-fixed member joins it under
+ADR-0016).
 Iterate child-widening → sibling push → re-centre at most 8 times, ε = 0.5 px; on non-convergence
 keep the last state and report. *Moves:* child groups, child widths. *Re-validate:* lanes (7a
 positions are fixed; if a child now overlaps a lane, push the child, not the lane).
@@ -393,10 +394,18 @@ least 15 px. A child keeps the same port, starts at its parent point, and carrie
 of its parent's members. Each member traverses its exact root-to-leaf chain. A port shared across
 bundles, between a bundle and an unclaimed remainder, or by a plain fan of routed links that no
 bundle claims, has one tree (ticket 20); only a port whose links all belong to one bundle is that
-bundle's own fan. In a bundle-less fan a member whose complete path an earlier rule fixed (a bar
-drop, a straight flank or row link) keeps that path and stays outside the tree, which the remaining
-members form when two or more are left; the overlap of that member's own stem with the tree root
-is ticket 36's, open and blocking for M1. `LayoutLink.sharedRuns.from/to` records its outward partial runs. A checkpoint
+bundle's own fan. A bar drop (its path fixed by 7d) joins the tree as its straight-through leaf when
+its plain straight run out of the port reaches the last junction row plus a pitch: stage 7d has
+already split that run into the tree's stems and the continuation under the junction ids 7e will use
+(`junction:<port>:shared:<depth>`, ADR-0016), the continuation ending where the drop turns if that is
+before the tree's usual end, so the scorer sees one owner on every shared segment. At most one fixed
+member joins a port — the first by source order whose run fits the rows its cohort would have — and
+it is always peeled last. A drop whose run is too short, a drop at its bar end, and the straight row
+and flank paths of stages 6 and 7b (ticket 37) stay outside the tree, and the cohort shrinks
+accordingly — one rule (`treeCohorts`) decides this in 7d from the traversals under construction, and
+in 7e and on restore from the root junction id a split path carries. An excluded member keeps its own
+stem out of the port, which covers the tree's root: 7e reports it with `FAN_MEMBER_UNRESERVED` and G4
+reports the overlap, until ticket 37 adopts every fixed member. `LayoutLink.sharedRuns.from/to` records its outward partial runs. A checkpoint
 the reserved run already passes through — a lane's approach point that a deep leaf has reached — is
 consumed by the run and not asked of the router. Stage 13 consumes `from` outward and `to` in reverse order and direction;
 a partial run never becomes a complete `path`. G4 exempts only validated shared runs. G6's fan

@@ -1,7 +1,8 @@
 import { linkStrokeWidth } from '../theme/geometry.js';
 import type { Bundle, LayoutModel, LayoutPort, Owner, PathSegment, Point } from '../model/index.js';
 import { portId } from './skeleton-graph.js';
-import { axis, clearOfGroupEdges, clone, coordinate, edgeMargin, facing, groupDepthPairs, normal, treeCohorts, type Member } from './bundle-geometry.js';
+import { axis, clearOfGroupEdges, clone, coordinate, edgeMargin, facing, fanCohorts, fanEnd, fanPitch, fanRows, groupDepthPairs, junctionId, normal, type Member } from './bundle-geometry.js';
+import { placementWarning } from './regions.js';
 
 export interface BundleFans {
   members: Member[];
@@ -105,7 +106,13 @@ export function crossBundleFans(model: LayoutModel): void {
   // Eligibility is `treeCohorts`' (shared with 7e's capacity reservation); this producer adds only
   // the ends and far ports it needs, and leaves a port whose links all belong to one bundle to that
   // bundle's own fan (`bundleFans`).
-  for (const { port, links } of treeCohorts(model)) {
+  const { cohorts, excluded } = fanCohorts(model);
+  for (const { port, link } of excluded) {
+    placementWarning(model, 'FAN_MEMBER_UNRESERVED',
+      `${link.id} keeps a path an earlier rule fixed, so the shared stem at ${port.ref.node}.${port.ref.name ?? '*'} does not cover it; its own stem overlaps the tree root (ticket 37).`,
+      [link.id]);
+  }
+  for (const { port, links } of cohorts) {
     const bundles = new Set(links.map(link => link.bundle));
     if (bundles.size === 1 && !bundles.has(undefined)) continue;
     const items = links.map(link => {
@@ -116,7 +123,7 @@ export function crossBundleFans(model: LayoutModel): void {
     });
     const tangent = axis(port.side!), n = normal(port.side!);
     // Rows and tracks one pitch apart: 16 px of visible clearance plus the widest member stroke.
-    const q = Math.max(17.5, 16 + Math.max(...items.map(i => linkStrokeWidth(i.link))));
+    const q = fanPitch(links);
     const world = (u: number, v: number): Point => tangent === 'x' ? { x: u, y: port.anchor!.y + n.y * v }
       : { x: port.anchor!.x + n.x * v, y: u };
     // A member that owns a lane in the adjacent tier must end its leaf on that lane's x, exactly as
@@ -125,40 +132,53 @@ export function crossBundleFans(model: LayoutModel): void {
     const laneX = (id: string): number | undefined => tangent === 'x' ? model.lanes
       .filter(l => l.owner.kind === 'link' && l.owner.id === id)
       .sort((a, b) => Math.abs(a.tier - tier) - Math.abs(b.tier - tier))[0]?.x : undefined;
-    const wanted = (item: typeof items[number]): number => laneX(item.link.id) ?? item.far.anchor![tangent];
+    // A member whose path a rule fixed is the straight-through leaf (ADR-0016): its target is the
+    // port's own coordinate, so it is peeled last and its stems are its path's leading segments.
+    const wanted = (item: typeof items[number]): number => item.link.path?.fixed === true ? coordinate(port) : laneX(item.link.id) ?? item.far.anchor![tangent];
     const ordered = [...items].sort((a, b) => wanted(a) - wanted(b) || a.link.sourceIndex - b.link.sourceIndex);
     const target = new Map<string, number>();
+    // A fixed member owns the port's own track exactly, since its path runs straight there (7d);
+    // the pitch pass spaces every other member around that track, never onto it.
+    const fixedItem = items.find(item => item.link.path?.fixed === true);
+    const reserved = fixedItem ? coordinate(port) : undefined;
+    if (fixedItem) target.set(fixedItem.link.id, reserved!);
     let prior = -Infinity;
-    for (const item of ordered) { prior = Math.max(wanted(item), prior + q); target.set(item.link.id, prior); }
-    // Rows one pitch apart from a 15 px stem, each moved off the port group's edge margin (ADR-0013).
-    const toDepth = (p: Point): number => tangent === 'y' ? n.x * (p.x - port.anchor!.x) : n.y * (p.y - port.anchor!.y);
-    const pairs = groupDepthPairs(model, [model.document.nodes[port.ref.node]!.group], toDepth);
-    const rows: number[] = [];
-    const margin = edgeMargin(Math.max(...items.map(i => linkStrokeWidth(i.link))));
-    for (let i = 0; i <= items.length; i++) rows.push(clearOfGroupEdges(Math.max(15 + i * q, (rows[i - 1] ?? -Infinity) + q), pairs, 1, margin));
+    for (const item of ordered) {
+      if (item === fixedItem) continue;
+      let slot = Math.max(wanted(item), prior + q);
+      if (reserved !== undefined && Math.abs(slot - reserved) < q - 1e-6) slot = reserved + q;
+      target.set(item.link.id, slot); prior = slot;
+    }
+    // Rows one pitch apart from a 15 px stem, each moved off the port group's edge margin (ADR-0013);
+    // the same rows 7d used to split a fixed member's path.
+    const rows = fanRows(model, port, links), end = fanEnd(model, port, links);
+    const isFixed = (id: string): boolean => links.find(link => link.id === id)?.path?.fixed === true;
     let active = [...ordered], cursor = { ...port.anchor! }, parent: string | undefined, depth = 0;
     const paths = new Map(items.map(item => [item.link.id, [] as PathSegment[]]));
     const push = (id: string, from: Point, to: Point, owner: Owner): void => {
       if (from.x !== to.x || from.y !== to.y) paths.get(id)!.push({ from: { ...from }, to: { ...to }, owner: { ...owner } });
     };
     while (active.length > 1) {
-      const id = `junction:${portId(port.ref)}:shared:${depth}`, owner = { kind: 'shared-stem' as const, id };
+      const id = junctionId(port, depth), owner = { kind: 'shared-stem' as const, id };
       const point = world(coordinate(port), rows[depth]!), stem: PathSegment = { from: cursor, to: point, owner };
       model.junctions.push({ id, owner, layer: 'routed', port: { ...port.ref }, links: active.map(i => i.link.id),
         ...(parent ? { parent } : {}), point, stem });
       for (const item of active) paths.get(item.link.id)!.push(clone(stem));
-      const leaf = [...active].sort((a, b) => Math.abs(target.get(b.link.id)! - coordinate(port)) - Math.abs(target.get(a.link.id)! - coordinate(port)))[0]!;
+      // Farthest track first; a fixed member is never peeled while another member remains.
+      const leaf = [...active].sort((a, b) => (Number(isFixed(a.link.id)) - Number(isFixed(b.link.id)))
+        || Math.abs(target.get(b.link.id)! - coordinate(port)) - Math.abs(target.get(a.link.id)! - coordinate(port)))[0]!;
       const elbow = world(target.get(leaf.link.id)!, rows[depth]!);
       push(leaf.link.id, point, elbow, owner);
-      push(leaf.link.id, elbow, world(target.get(leaf.link.id)!, rows[items.length]!), leaf.link.owner);
+      push(leaf.link.id, elbow, world(target.get(leaf.link.id)!, end), leaf.link.owner);
       active = active.filter(i => i !== leaf); cursor = point; parent = id; depth++;
     }
     const last = active[0]!, owner = { kind: 'shared-stem' as const, id: parent! };
     const elbow = world(target.get(last.link.id)!, rows[depth - 1]!);
     push(last.link.id, cursor, elbow, owner);
-    push(last.link.id, elbow, world(target.get(last.link.id)!, rows[items.length]!), target.get(last.link.id) === coordinate(port) ? owner : last.link.owner);
+    push(last.link.id, elbow, world(target.get(last.link.id)!, end), target.get(last.link.id) === coordinate(port) ? owner : last.link.owner);
     for (const item of items) {
       item.link.sharedRuns ??= {};
+      // A fixed member's runs are the same stems and straight continuation 7d wrote into its path.
       item.link.sharedRuns[item.end] = paths.get(item.link.id)!;
     }
   }

@@ -1,5 +1,5 @@
 import { GROUP_EDGE_LINK_CLEARANCE, routedStrokeWidth } from '../theme/geometry.js';
-import type { Bundle, LayoutLink, LayoutModel, LayoutPort, Point, Side } from '../model/index.js';
+import type { Bundle, LayoutLink, LayoutModel, LayoutPort, PathSegment, Point, Side } from '../model/index.js';
 import { repackOverlaps } from './rows.js';
 import { applyBundleOrder } from './bundle-order.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
@@ -59,7 +59,7 @@ export function outward(port: LayoutPort, length = MIN_STEM): Point {
   const n = normal(port.side!); return { x: port.anchor!.x + n.x * length, y: port.anchor!.y + n.y * length };
 }
 export function pitch(model: LayoutModel, bundle: Bundle): number {
-  return MEMBER_GAP + Math.max(DEFAULT_STROKE_WIDTHS.path, ...members(model, bundle).map(m => linkStrokeWidth(m.link)));
+  return fanPitch(members(model, bundle).map(m => m.link));
 }
 export function inversionPairs(list: Member[]): [string, string][] {
   const pairs: [string, string][] = [];
@@ -110,23 +110,215 @@ function orderDistinct(model: LayoutModel, bundle: Bundle): void {
   }
 }
 
+/** The stable id of the junction at `depth` on a shared port; 7d names it before 7e builds it (ADR-0016). */
+export const junctionId = (port: LayoutPort, depth: number): string => `junction:${portId(port.ref)}:shared:${depth}`;
+
+/**
+ * Fan pitch: the bundle member gap plus the widest member stroke — the same formula `pitch()` uses
+ * for a bundle, and never below the default-stroke value (17.5 px), so reserved capacity and the
+ * emitted rows cannot drift apart.
+ */
+export function fanPitch(links: readonly LayoutLink[]): number {
+  return MEMBER_GAP + Math.max(DEFAULT_STROKE_WIDTHS.path, ...links.map(linkStrokeWidth));
+}
+
+/**
+ * Row depths of a fan tree at `port` for `links` members: 15 px out, then one pitch apart, each row
+ * moved off a group edge it would run along (ADR-0013). `rows[i]` for `i < links.length` is the
+ * depth of junction `i`; `rows[links.length]` is where the straight continuation ends.
+ */
+export function fanRows(model: LayoutModel, port: LayoutPort, links: readonly LayoutLink[]): number[] {
+  const q = fanPitch(links), n = normal(port.side!), tangent = axis(port.side!);
+  const toDepth = (p: Point): number => tangent === 'y' ? n.x * (p.x - port.anchor!.x) : n.y * (p.y - port.anchor!.y);
+  const pairs = groupDepthPairs(model, [model.document.nodes[port.ref.node]!.group], toDepth);
+  const margin = edgeMargin(Math.max(...links.map(linkStrokeWidth)));
+  const rows: number[] = [];
+  for (let i = 0; i <= links.length; i++) rows.push(clearOfGroupEdges(Math.max(MIN_STEM + i * q, (rows[i - 1] ?? -Infinity) + q), pairs, 1, margin));
+  return rows;
+}
+
+/** The point `depth` px out from the port along its normal, at the port's own coordinate. */
+export function alongNormal(port: LayoutPort, depth: number): Point {
+  const n = normal(port.side!);
+  return { x: port.anchor!.x + n.x * depth, y: port.anchor!.y + n.y * depth };
+}
+
+/**
+ * How far a fixed path runs straight out of `port` along its normal before it turns or meets a
+ * reserved lane segment: the length of its leading plain collinear run at that end. Zero when the
+ * path does not start or end at the port's anchor.
+ */
+export function leadingRun(port: LayoutPort, segments: readonly PathSegment[]): number {
+  const anchor = port.anchor!, n = normal(port.side!), tangent = axis(port.side!);
+  const first = segments[0], last = segments.at(-1);
+  const forward = first && Math.abs(first.from.x - anchor.x) < 1e-6 && Math.abs(first.from.y - anchor.y) < 1e-6;
+  const backward = !forward && last && Math.abs(last.to.x - anchor.x) < 1e-6 && Math.abs(last.to.y - anchor.y) < 1e-6;
+  if (!forward && !backward) return 0;
+  const ordered = forward ? segments : [...segments].reverse().map(s => ({ ...s, from: s.to, to: s.from }));
+  let depth = 0;
+  for (const segment of ordered) {
+    if (segment.lane !== undefined) break;
+    const along = tangent === 'x' ? n.y * (segment.to.y - segment.from.y) : n.x * (segment.to.x - segment.from.x);
+    const across = tangent === 'x' ? Math.abs(segment.to.x - segment.from.x) : Math.abs(segment.to.y - segment.from.y);
+    if (across > 1e-6 || along <= 1e-6) break;
+    depth += along;
+  }
+  return depth;
+}
+
+/** A path already split under this port's tree: its segment at the port is owned by the root junction. */
+function carriesRoot(port: LayoutPort, segments: readonly PathSegment[]): boolean {
+  const anchor = port.anchor!, first = segments[0], last = segments.at(-1);
+  const at = first && Math.abs(first.from.x - anchor.x) < 1e-6 && Math.abs(first.from.y - anchor.y) < 1e-6 ? first
+    : last && Math.abs(last.to.x - anchor.x) < 1e-6 && Math.abs(last.to.y - anchor.y) < 1e-6 ? last : undefined;
+  return at?.owner.kind === 'shared-stem' && at.owner.id === junctionId(port, 0);
+}
+
+/** Traversals stage 7d is still building, by link id, with the port each one may be split at. */
+export type PendingFixed = ReadonlyMap<string, { port: string; segments: readonly PathSegment[] }>;
+
 /**
  * The ports stage 7e gives a junction tree, with the links that join it: two or more routed links
- * on one port, none a self-link (ticket 20). In a bundle-less cohort a member whose complete path a
- * rule already fixed (rows, flanks, bars: `path.fixed === true`) keeps that path and stays out of
- * the tree; the remaining routed members form it when two or more are left. Shared with the
- * capacity loop below, so a plain fan reserves its depth exactly when it will get a tree.
+ * on one port, none a self-link (ticket 20). A cohort with a bundle keeps every link. In a
+ * bundle-less cohort at most one rule-fixed member joins, as the tree's straight-through leaf
+ * (ADR-0016): in 7d, a bar drop whose traversal is pending at this port and whose plain straight
+ * run reaches the last junction row; in 7e and on restore, a path whose segment at the port already
+ * carries the root junction id — which 7d wrote exactly when that fit held. Row and flank paths, and
+ * a drop at its bar end, are never split and stay outside. Dropping a member shrinks the rows, so
+ * the fit is settled by iteration. Shared with the capacity loop below and with 7d.
  */
-export function treeCohorts(model: LayoutModel): { port: LayoutPort; links: LayoutLink[] }[] {
+export function treeCohorts(model: LayoutModel, pending?: PendingFixed): { port: LayoutPort; links: LayoutLink[] }[] {
+  return fanCohorts(model, pending).cohorts;
+}
+
+/**
+ * The cohorts, and the fixed members excluded from one. An excluded member keeps its own stem out of
+ * the port, which coincides with the tree's root: G4 reports that overlap, and stage 7e warns
+ * `FAN_MEMBER_UNRESERVED` so the reason is in the model. Adopting such a member — by letting 7d turn
+ * it at a junction row — is ticket 37.
+ */
+export function fanCohorts(model: LayoutModel, pending?: PendingFixed): { cohorts: { port: LayoutPort; links: LayoutLink[] }[]; excluded: { port: LayoutPort; link: LayoutLink }[] } {
   const incidence = new Map<string, { port: LayoutPort; links: LayoutLink[] }>();
   for (const link of model.links) if (link.layer === 'routed' && link.attachments && link.technique !== 'stub') for (const ref of [link.attachments.from, link.attachments.to]) {
     const port = findPort(model, ref)!, key = portId(ref), entry = incidence.get(key) ?? { port, links: [] };
     entry.links.push(link); incidence.set(key, entry);
   }
-  return [...incidence.values()]
-    .filter(({ links }) => new Set(links.map(link => link.id)).size === links.length)
-    .map(({ port, links }) => ({ port, links: links.some(link => link.bundle) ? links : links.filter(link => link.path?.fixed !== true) }))
-    .filter(({ links }) => links.length >= 2);
+  const result: { port: LayoutPort; links: LayoutLink[] }[] = [], excluded: { port: LayoutPort; link: LayoutLink }[] = [];
+  for (const { port, links } of incidence.values()) {
+    if (new Set(links.map(link => link.id)).size !== links.length) continue;
+    let active = links;
+    {
+      const at = portId(port.ref);
+      /**
+       * A fixed path's plain straight run out of this port, or `undefined` when the link is not
+       * fixed here. `eligible` is false for a fixed path this port may not adopt — a drop pending at
+       * its other end, a row or flank path (ticket 37), a path not split under the root id — so such
+       * a link never occupies the one straight-leaf slot and is simply excluded.
+       */
+      const fixedRun = (link: LayoutLink): { run: number; eligible: boolean } | undefined => {
+        const waiting = pending?.get(link.id);
+        if (waiting) return waiting.port === at ? { run: leadingRun(port, waiting.segments), eligible: true } : { run: -1, eligible: false };
+        if (link.path?.fixed !== true) return undefined;
+        return carriesRoot(port, link.path.segments) ? { run: leadingRun(port, link.path.segments), eligible: true } : { run: -1, eligible: false };
+      };
+      // At most one fixed member is the straight-through leaf. Every other fixed path — a drop at
+      // its bar end, a row or flank path (ticket 37) — is outside the tree whether or not the cohort
+      // has bundle members, since 7e would otherwise give it shared runs its own path does not
+      // contain. The candidates are tried in source order and the first whose run fits the rows the
+      // resulting cohort would have becomes the leaf, so a short drop never blocks a longer one.
+      const candidates = links.filter(link => fixedRun(link)?.eligible === true).sort((a, b) => a.sourceIndex - b.sourceIndex);
+      const fits = (leaf: LayoutLink | undefined): boolean => {
+        if (!leaf) return true;
+        const cohort = links.filter(link => fixedRun(link) === undefined || link === leaf);
+        if (cohort.length < 2) return false;
+        return fixedRun(leaf)!.run >= fanRows(model, port, cohort)[cohort.length - 2]! + fanPitch(cohort) - 1e-6;
+      };
+      const leaf = candidates.find(candidate => fits(candidate));
+      active = links.filter(link => fixedRun(link) === undefined || link === leaf);
+      // A bundle owns its members' geometry (7e's own fan), so only the fixed-path filter applies there.
+      if (links.some(link => link.bundle)) {
+        if (active.length >= 2) {
+          result.push({ port, links: active });
+          for (const link of links) if (!active.includes(link)) excluded.push({ port, link });
+        }
+        continue;
+      }
+      for (;;) {
+        if (active.length < 2) break;
+        const rows = fanRows(model, port, active), last = rows[active.length - 2]! + fanPitch(active);
+        const out = active.filter(link => { const fit = fixedRun(link); return fit !== undefined && fit.run < last - 1e-6; });
+        if (!out.length) break;
+        active = active.filter(link => !out.includes(link));
+      }
+    }
+    if (active.length >= 2) {
+      result.push({ port, links: active });
+      for (const link of links) if (!active.includes(link)) excluded.push({ port, link });
+    }
+  }
+  return { cohorts: result, excluded };
+}
+
+/**
+ * Where the tree's straight continuation ends: `rows[n]`, or earlier when the fixed member that is
+ * the straight leaf turns before that — never before the last junction row.
+ */
+export function fanEnd(model: LayoutModel, port: LayoutPort, links: readonly LayoutLink[], pending?: PendingFixed): number {
+  const rows = fanRows(model, port, links), last = rows[links.length - 2]!, end = rows[links.length]!;
+  const at = portId(port.ref);
+  const runs = links.map(link => {
+    const waiting = pending?.get(link.id);
+    if (waiting && waiting.port === at) return leadingRun(port, waiting.segments);
+    return link.path?.fixed === true ? leadingRun(port, link.path.segments) : Infinity;
+  });
+  // The continuation must clear the last peel row by a pitch: a fixed member that turns at the row
+  // itself would touch the branch peeling there, which no junction exemption covers.
+  const shortest = Math.min(end, ...runs);
+  return shortest >= last + fanPitch(links) - 1e-6 ? shortest : end;
+}
+
+/**
+ * Split a fixed path's leading run out of `port` into the fan tree's stems — one per junction, owned
+ * by that junction's id — and the remainder owned by the link (ADR-0016). `segments` must run
+ * either from the port or into it. Returns the original when the run is too short to hold them.
+ */
+export function splitUnderJunctions(model: LayoutModel, port: LayoutPort, cohort: readonly LayoutLink[], link: LayoutLink, segments: PathSegment[], pending?: PendingFixed): PathSegment[] {
+  const junctions = cohort.length - 1, rows = fanRows(model, port, cohort), end = fanEnd(model, port, cohort, pending);
+  if (junctions < 1 || leadingRun(port, segments) < end - 1e-6) return segments;
+  const anchor = port.anchor!;
+  const forward = Math.abs(segments[0]!.from.x - anchor.x) < 1e-6 && Math.abs(segments[0]!.from.y - anchor.y) < 1e-6;
+  const flip = (list: readonly PathSegment[]): PathSegment[] => [...list].reverse().map(s => ({ ...s, from: { ...s.to }, to: { ...s.from } }));
+  const ordered = forward ? segments : flip(segments);
+  const n = normal(port.side!), tangent = axis(port.side!);
+  const along = (s: PathSegment): number => tangent === 'x' ? n.y * (s.to.y - s.from.y) : n.x * (s.to.x - s.from.x);
+  // The plain run up to `end` is one straight line; it becomes exactly one segment per junction stem
+  // and one continuation, each owned by its junction. The input segment holding `end` keeps its
+  // remainder with its own owner and annotations; every later segment is untouched.
+  const cuts = [...rows.slice(0, junctions), end].filter((value, index, all) => index === 0 || value > all[index - 1]! + 1e-6);
+  const template = ordered[0]!;
+  const rebuilt: PathSegment[] = [];
+  let from = 0;
+  for (const [index, to] of cuts.entries()) {
+    const owner = { kind: 'shared-stem' as const, id: junctionId(port, Math.min(index, junctions - 1)) };
+    rebuilt.push({ ...template, from: alongNormal(port, from), to: alongNormal(port, to), owner });
+    from = to;
+  }
+  // Consume the input up to `end`: a segment wholly inside the run is replaced by the stems above,
+  // and the one holding `end` keeps the part beyond it. A perpendicular segment never advances the
+  // depth, so the scan stops at the first turn even when `end` falls on a boundary.
+  let depth = 0, index = 0;
+  for (; index < ordered.length; index++) {
+    const length = along(ordered[index]!);
+    if (length <= 1e-6 || depth + length > end + 1e-6) break;
+    depth += length;
+  }
+  if (index < ordered.length && depth < end - 1e-6) {
+    // `end` falls inside this segment: keep what lies beyond it, under the link's own name.
+    rebuilt.push({ ...ordered[index]!, from: alongNormal(port, end), owner: { ...link.owner } });
+    index++;
+  }
+  rebuilt.push(...ordered.slice(index));
+  return forward ? rebuilt : flip(rebuilt);
 }
 
 /** Geometry-only plan. No path, lane owner, bar reservation or envelope is written here. */
@@ -293,7 +485,7 @@ export function prepareBundleGeometry(model: LayoutModel): void {
     const entry = n.y > 0 ? band.bounds!.y - 10.75 : -bottom(band.bounds!) - 10.75;
     const incidentBundles = model.bundles.filter(bundle => links.some(link => link.bundle === bundle.id));
     const degree = Math.max(links.length, ...incidentBundles.map(bundle => bundle.members.length));
-    const q = Math.max(17.5, 16 + Math.max(...links.map(linkStrokeWidth)), ...incidentBundles.map(bundle => pitch(model, bundle)));
+    const q = Math.max(fanPitch(links), ...incidentBundles.map(bundle => pitch(model, bundle)));
     // Fan rows may each move one edge margin off a group edge (ADR-0013); reserve that room.
     const required = 2 * MIN_STEM + q * (degree + 1) + 2 * edgeMargin(routedStrokeWidth(model));
     const delta = Math.max(0, required - (entry - n.y * port.anchor!.y));
