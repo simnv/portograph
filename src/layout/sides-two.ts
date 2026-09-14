@@ -11,7 +11,7 @@ import { bandGap, nodeGap, portId, SKELETON_SPACING as spacing } from './skeleto
 import { moveGroup, stackBands } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { nodeObstacleReach, routedStroke, stemReach } from './bands.js';
-import { MEMBER_GAP } from './bundle-geometry.js';
+import { MEMBER_GAP, fanEnd } from './bundle-geometry.js';
 import { laneSource, laneWidth, transitTiers } from './lanes.js';
 import { fitRegionGroup } from './regions.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
@@ -502,8 +502,28 @@ export function rowGap(model: LayoutModel, a: string, b: string): number {
   const turning = legs === 0 ? 0
     : gapStem(model, a, legsAt.a.ports, legsAt.b, 'right') + gapStem(model, b, legsAt.b.ports, legsAt.a, 'left')
       + (legs - 1) * (MEMBER_GAP + routedStroke(model));
+  // A fan on a left or right side draws its rows into this gap, and its side allocates them as one
+  // sequence, so the fan that starts last starts beyond every row before it (ADR-0018 rule 1).
+  // `fanEnd` is where that fan's leaves actually finish; the far side still needs its own stem past
+  // them. Reserved here because two nodes in one row are separated here and nowhere else — moving
+  // their group moves both. Read back by `edgeAwareRows`, never discovered.
+  const fanReach = (id: string, side: 'left' | 'right'): number => {
+    const node = model.nodes[id];
+    if (!node) return 0;
+    let deepest = 0;
+    for (const port of node.ports) {
+      if (port.side !== side || !port.anchor) continue;
+      const links = model.links.filter(link => link.layer === 'routed' && link.technique !== 'stub' && link.attachments
+        && [link.attachments.from, link.attachments.to].some(ref => key(ref) === key(port.ref)));
+      if (links.length >= 2) deepest = Math.max(deepest, fanEnd(model, port, links));
+    }
+    return deepest;
+  };
+  const reachA = fanReach(a, 'right'), reachB = fanReach(b, 'left');
+  const fans = Math.max(reachA ? reachA + stemReach(model, model.nodes[b]!) : 0,
+    reachB ? reachB + stemReach(model, model.nodes[a]!) : 0);
   return Math.max(nodeGap(model, a, b), left + right + (left > 0 && right > 0 ? PILL_WIRE_GAP : 0),
-    passByStem(b, 'left', a), passByStem(a, 'right', b), turning);
+    passByStem(b, 'left', a), passByStem(a, 'right', b), turning, fans);
 }
 
 /** Resolve all direction votes, resize and repack in skeleton order; retain the returned snapshot. */

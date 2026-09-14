@@ -153,7 +153,50 @@ function edgeAwareRows(model: LayoutModel, port: LayoutPort, fanLinks: readonly 
   const pairs = groupDepthPairs(model, [model.document.nodes[port.ref.node]!.group], toDepth);
   const margin = edgeMargin(Math.max(...fanLinks.map(linkStrokeWidth)));
   const rows: number[] = [];
-  for (let i = 0; i < count; i++) rows.push(clearOfGroupEdges(Math.max(MIN_STEM + i * q, (rows[i - 1] ?? -Infinity) + q), pairs, 1, margin));
+  // A row runs parallel to the node side, so two fans on one side that both start at `MIN_STEM`
+  // draw their peel runs on the same lines (ADR-0018 rule 1, ticket 44). The side allocates its
+  // rows as one sequence: a fan starts beyond the rows the fans before it have taken, ordered by
+  // their own coordinate so the answer cannot depend on the order the producers happen to run in.
+  const base = MIN_STEM + priorSideRows(model, port) * q;
+  for (let i = 0; i < count; i++) rows.push(clearOfGroupEdges(Math.max(base + i * q, (rows[i - 1] ?? -Infinity) + q), pairs, 1, margin));
+  return rows;
+}
+
+/** Routed links at `port` that stage 8 has not already been given a path for. */
+function sideFanLinks(model: LayoutModel, port: LayoutPort): number {
+  return model.links.filter(link => link.layer === 'routed' && link.technique !== 'stub' && link.attachments
+    && [link.attachments.from, link.attachments.to].some(ref => portId(ref) === portId(port.ref))).length;
+}
+
+/**
+ * How many rows the fans before `port` on its own node side have taken. A port with one link draws
+ * no fan and takes none; a port with `k` takes `k`, which is what `fanRows` hands its own tree.
+ * Ordered by coordinate along the side, so the sequence is a property of the side, not of the call.
+ */
+export function priorSideRows(model: LayoutModel, port: LayoutPort): number {
+  const node = model.nodes[port.ref.node];
+  if (!node || !port.anchor || !port.side) return 0;
+  const tangent = axis(port.side), at = portId(port.ref);
+  let taken = 0;
+  for (const other of node.ports) {
+    if (other.side !== port.side || portId(other.ref) === at || !other.anchor) continue;
+    if (other.anchor[tangent] > port.anchor[tangent] + 1e-6) continue;
+    const links = sideFanLinks(model, other);
+    if (links >= 2) taken += links;
+  }
+  return taken;
+}
+
+/** Every row the fans on one side of `node` take together; what that side must have room for. */
+export function sideRowBudget(model: LayoutModel, node: string, side: Side): number {
+  const own = model.nodes[node];
+  if (!own) return 0;
+  let rows = 0;
+  for (const port of own.ports) {
+    if (port.side !== side) continue;
+    const links = sideFanLinks(model, port);
+    if (links >= 2) rows += links;
+  }
   return rows;
 }
 
@@ -557,8 +600,13 @@ export function prepareBundleGeometry(model: LayoutModel): void {
     const incidentBundles = model.bundles.filter(bundle => links.some(link => link.bundle === bundle.id));
     const degree = Math.max(links.length, ...incidentBundles.map(bundle => bundle.members.length));
     const q = Math.max(fanPitch(links), ...incidentBundles.map(bundle => pitch(model, bundle)));
-    // Fan rows may each move one edge margin off a group edge (ADR-0013); reserve that room.
-    const required = 2 * MIN_STEM + q * (degree + 1) + 2 * edgeMargin(routedStrokeWidth(model));
+    // Fan rows may each move one edge margin off a group edge (ADR-0013); reserve that room. A
+    // degree bound no longer bounds the depth: a side allocates its fans' rows as one sequence
+    // (ADR-0018 rule 1), so the fan that starts last starts beyond every row before it. `fanEnd` is
+    // where this fan's own leaves actually finish, offset included, and the far side still needs its
+    // stem beyond that.
+    const required = Math.max(2 * MIN_STEM + q * (degree + 1), MIN_STEM + fanEnd(model, port, links))
+      + 2 * edgeMargin(routedStrokeWidth(model));
     const delta = Math.max(0, required - (entry - n.y * port.anchor!.y));
     const movedTier = n.y > 0 ? nextTier : tier;
     if (delta) for (const group of Object.values(model.groups).filter(g => g.tier! >= movedTier)) moveGroup(model, group, 0, delta);

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { layout, parse, restoreFinalLayout, score } from '../../src/index.js';
-import { MIN_STEM, edgeMargin, fanPitch } from '../../src/layout/bundle-geometry.js';
+import { MIN_STEM, edgeMargin, fanPitch, priorSideRows, sideRowBudget } from '../../src/layout/bundle-geometry.js';
 import { DEFAULT_STROKE_WIDTHS, routedStrokeWidth } from '../../src/theme/geometry.js';
 import type { LayoutModel } from '../../src/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -152,4 +152,53 @@ links: [[a.p, b.top], [a.p, c.bot]]`);
   expect(branch.owner).toEqual({ kind: 'shared-stem', id: junction.id });
   // It turns at the point: the segment crosses the normal instead of continuing along it.
   expect(branch.from.x).toBe(branch.to.x);
+}, 60000);
+
+it('ticket 44: two fans on one node side take separate rows (ADR-0018 rule 1)', async () => {
+  // Rows run parallel to the side, so two fans that both start at MIN_STEM draw their peel runs on
+  // the same lines. The side allocates them as one sequence instead: the fan nearer the top takes
+  // the first rows and the one below it starts beyond them.
+  const model = await run(`portograph: 2
+groups: {g: {tier: 0}}
+nodes:
+  a: {group: g, ports: [{name: p, side: right, order: 0}, {name: r, side: right, order: 1}]}
+  b: {group: g, ports: [{name: s, side: left, order: 0}, {name: t, side: left, order: 1}, {name: u, side: left, order: 2}]}
+  c: {group: g, ports: [{name: p, side: left, order: 0}]}
+links: [[a.p, b.u], [a.p, b.t], [a.r, b.s], [a.r, c.p]]`);
+  expect(score(model).snapshot.passed).toBe(true);
+  const ports = model.nodes['a']!.ports;
+  const upper = ports.find(port => port.ref.name === 'p')!, lower = ports.find(port => port.ref.name === 'r')!;
+  // The upper fan takes no rows before it; the lower one starts beyond the two the upper one took.
+  expect(priorSideRows(model, upper)).toBe(0);
+  expect(priorSideRows(model, lower)).toBe(2);
+  expect(sideRowBudget(model, 'a', 'right')).toBe(4);
+  // Every peel run on this side lies on its own line.
+  const legs = model.links.flatMap(link => link.path!.segments
+    .filter(segment => segment.from.x === segment.to.x && segment.from.x < model.nodes['b']!.bounds!.x)
+    .map(segment => segment.from.x));
+  expect(new Set(legs).size).toBe(legs.length);
+}, 60000);
+
+it('ticket 42: a fan track steps over a sibling port row (ADR-0018 rule 2)', async () => {
+  // `a.p` sends its own link out along y = 81.5. The tree at `a.r` used to lay a track 7.5 px from
+  // it; the pitch pass now steps over every other row on the side, to the nearer free side so the
+  // track is not pushed across a sibling and into the envelope that sibling's bundle reserves.
+  const model = await run(`portograph: 2
+groups: {g: {tier: 0}}
+nodes:
+  a: {group: g, ports: [{name: p, side: right, order: 0}, {name: r, side: right, order: 1}]}
+  b: {group: g, ports: [{name: s, side: left, order: 0}, {name: t, side: left, order: 1}]}
+  c: {group: g, ports: [{name: p, side: left, order: 0}]}
+links: [[a.p, b.t], [a.r, b.s], [a.r, c.p]]`);
+  const report = score(model).snapshot;
+  expect(report.passed).toBe(true);
+  expect(report.gates.G6!.violations).toEqual([]);
+  // Each member's own track — the first run it draws after leaving the tree — keeps the fan pitch
+  // from `a.p`'s row, and the two step to opposite sides of it rather than both pushing outward.
+  const q = fanPitch(model.links);
+  const row = model.nodes['a']!.ports.find(port => port.ref.name === 'p')!.anchor!.y;
+  const track = (id: string): number => model.links.find(link => link.id === id)!.path!.segments
+    .find(segment => segment.owner.kind === 'link' && segment.from.y === segment.to.y)!.from.y;
+  expect(track('link-3')).toBe(row - q);
+  expect(track('link-2')).toBe(row + q);
 }, 60000);

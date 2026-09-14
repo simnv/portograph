@@ -33,6 +33,39 @@ export function pathBounds(segments: PathSegment[], padding = 0): Rect {
   const x = Math.min(...points.map(p => p.x)) - padding, y = Math.min(...points.map(p => p.y)) - padding;
   return { x, y, width: Math.max(...points.map(p => p.x)) + padding - x, height: Math.max(...points.map(p => p.y)) + padding - y };
 }
+/**
+ * Join a straight run that two producers emitted as two segments back into one. The fan and the
+ * channel meet head-on and collinear, and their join is neither a bend nor a terminal — but every
+ * crossing test here treats a segment endpoint as one, so a member crossing that run at the join
+ * would be discarded by `bundleCrossings` and rejected as bend contact by the pair validator
+ * (ticket 44). Strict drawn crossings must not depend on how a straight run was split.
+ *
+ * Only a genuine continuation merges: the same owner, the same lane, bar and straight annotations,
+ * and the same direction. A turn, a U-turn, an ownership boundary or a lane edge all survive.
+ */
+function coalesce(segments: PathSegment[]): PathSegment[] {
+  const compatible = (a: PathSegment, b: PathSegment): boolean => {
+    if (!samePoint(a.to, b.from)) return false;
+    const ax = a.to.x - a.from.x, ay = a.to.y - a.from.y, bx = b.to.x - b.from.x, by = b.to.y - b.from.y;
+    if (Math.abs(ax * by - ay * bx) > 1e-9 || ax * bx + ay * by <= 1e-9) return false;
+    // Only the bundle's own geometry. Everything else a member's path carries is immutable and is
+    // matched verbatim somewhere: a junction's stems are counted one per junction from the root by
+    // the tree validator (and ticket 41's continuation is collinear with its stem on purpose), and
+    // a lane run, a bar traversal or any other reserved segment must appear in the complete path
+    // exactly as it was reserved.
+    if (a.owner.kind !== 'bundle' || b.owner.kind !== 'bundle') return false;
+    return a.owner.id === b.owner.id && a.lane === undefined && b.lane === undefined
+      && a.straight === b.straight && a.barCross === undefined && b.barCross === undefined;
+  };
+  const result: PathSegment[] = [];
+  for (const segment of segments) {
+    const last = result.at(-1);
+    if (last && compatible(last, segment)) last.to = { ...segment.to };
+    else result.push({ ...segment, from: { ...segment.from }, to: { ...segment.to } });
+  }
+  return result;
+}
+
 /** Strict internal member intersections, deduplicated per pair and geometric point. */
 export function bundleCrossings(list: Member[]): number {
   const hits = new Set<string>();
@@ -320,7 +353,7 @@ export function rebuildBundlePaths(model: LayoutModel): void {
             : [a, start, { x: start.x, y: middle }, { x: end.x, y: middle }, end, b], bundle.owner);
         }
       }
-      if (fans && segments) segments = [...fans.a.get(item.link.id)!, ...segments, ...reverse(fans.b.get(item.link.id)!)];
+      if (fans && segments) segments = coalesce([...fans.a.get(item.link.id)!, ...segments, ...reverse(fans.b.get(item.link.id)!)]);
       item.link.path = path(item.reversed ? reverse(segments!) : segments!, item.link.owner, pathStrokeWidth(item.link));
     }
     let routedCentreline: PathSegment[] | undefined;

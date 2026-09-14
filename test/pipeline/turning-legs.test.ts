@@ -64,8 +64,24 @@ nodes:
 links: [${aligned ? '[a.p, b.p], ' : ''}[a.p, c.p]]
 `;
   const both = rows(await placed(diagram(true))), alone = rows(await placed(diagram(false)));
+  // The claim: the aligned link is not a leg. `a.p` carries two links but only one turns.
   expect(gapLegs(both, 'a', 'right', 'b').links.size).toBe(1);
-  expect(rowGap(both, 'a', 'b')).toBeCloseTo(rowGap(alone, 'a', 'b'), 6);
+  expect(gapLegs(alone, 'a', 'right', 'b').links.size).toBe(1);
+  // Both diagrams reserve one leg. `both` also reserves the fan `a.p`'s two links draw, which
+  // ADR-0018 rule 1 added and `alone` has no need of — so the gaps are no longer equal, and the
+  // invariant is the one below: a second link that *turns* costs a pitch, an aligned one costs none.
+  const turning = rows(await placed(`
+portograph: 2
+groups: {g: {tier: 0}}
+nodes:
+  a: {group: g, ports: [{name: p, side: right}]}
+  b: {group: g, ports: [{name: p, side: left}, {name: q, side: right}]}
+  c: {group: g, ports: [{name: p, side: left}]}
+  d: {group: g, ports: [{name: p, side: left}]}
+links: [[a.p, c.p], [a.p, d.p]]
+`));
+  expect(gapLegs(turning, 'a', 'right', 'b').links.size).toBe(2);
+  expect(rowGap(turning, 'a', 'b')).toBeGreaterThan(rowGap(both, 'a', 'b') - 1e-9);
 }, 60000);
 
 it('ticket 31: an aligned link into a bare facing side asks for no stem there', async () => {
@@ -82,7 +98,20 @@ nodes:
 links: [[a.p, b], [a.p, c.p]]
 `));
   expect(gapLegs(model, 'a', 'right', 'b').links.size).toBe(1);
-  expect(rowGap(model, 'a', 'b')).toBeLessThan(stemReach(model, model.nodes['a']!) + stemReach(model, model.nodes['b']!) - 1e-9);
+  // The claim: `b` contributes no leg and receives no jog, so its own side of the gap is its
+  // obstacle reach rather than a full stem. Measured on a diagram whose `a.p` carries one link, so
+  // no fan reservation (ADR-0018 rule 1) is mixed into the figure.
+  expect(gapLegs(model, 'b', 'left', 'a').ports).toEqual([]);
+  const bare = rows(await placed(`
+portograph: 2
+groups: {g: {tier: 0}}
+nodes:
+  a: {group: g, ports: [{name: p, side: right}]}
+  b: {group: g}
+  c: {group: g, ports: [{name: p, side: left}]}
+links: [[a.p, c.p]]
+`));
+  expect(rowGap(bare, 'a', 'b')).toBeLessThan(stemReach(bare, bare.nodes['a']!) + stemReach(bare, bare.nodes['b']!) - 1e-9);
 }, 60000);
 
 it('ticket 31: the row gap still holds after facing ports level', async () => {

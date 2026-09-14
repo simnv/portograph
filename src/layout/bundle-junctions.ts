@@ -1,7 +1,10 @@
-import type { Bundle, LayoutModel, LayoutPort, Owner, PathSegment, Point } from '../model/index.js';
+import type { Bundle, LayoutLink, LayoutModel, LayoutPort, Owner, PathSegment, Point } from '../model/index.js';
+import type { PortRef } from '../model/document.js';
 import { portId } from './skeleton-graph.js';
-import { axis, bundleFanRows, clone, coordinate, facing, fanCohorts, fanEnd, fanPitch, fanRows, junctionId, normal, type Member } from './bundle-geometry.js';
+import { MEMBER_GAP, axis, bundleFanRows, clone, coordinate, facing, fanCohorts, fanEnd, fanPitch, fanRows, junctionId, normal, type Member } from './bundle-geometry.js';
 import { placementWarning } from './regions.js';
+import { linkStrokeWidth } from '../theme/geometry.js';
+import { routedStroke } from './bands.js';
 
 export interface BundleFans {
   members: Member[];
@@ -136,11 +139,38 @@ export function crossBundleFans(model: LayoutModel): void {
     const fixedItem = items.find(item => item.link.path?.fixed === true);
     const reserved = fixedItem ? coordinate(port) : undefined;
     if (fixedItem) target.set(fixedItem.link.id, reserved!);
+    // Every other port on this side sends its own links out along its own coordinate, so a track
+    // laid on one of those rows runs beside them for the whole width of the fan (ADR-0018 rule 2,
+    // ticket 42). The side's rows are steps the pitch pass takes, exactly as a fixed member's own
+    // track already is. `sidePitch` is what holds the room between them, reserved at sizing.
+    // Every other port on this side sends its own links out along its own coordinate, each needing
+    // the clearance its own stroke asks for. A track must stay on the side of that row its far end
+    // is on: stepping *past* a sibling reorders the members against their endpoints, which is the
+    // topology change rule 2 exists to prevent, and lands the track where that sibling's own links
+    // run — inside the envelope when the sibling is bundled.
+    const atPort = (ref: PortRef): LayoutLink[] => model.links.filter(link => link.layer === 'routed'
+      && link.technique !== 'stub' && link.attachments
+      && [link.attachments.from, link.attachments.to].some(other => portId(other) === portId(ref)));
+    const siblings = model.nodes[port.ref.node]!.ports
+      .filter(other => other.side === port.side && portId(other.ref) !== portId(port.ref)
+        && other.anchor && atPort(other.ref).length > 0)
+      .map(other => ({ at: other.anchor![tangent], stroke: Math.max(...atPort(other.ref).map(linkStrokeWidth)) }));
+    const occupied = [...(reserved === undefined ? [] : [{ at: reserved, stroke: routedStroke(model) }]), ...siblings]
+      .sort((x, y) => x.at - y.at);
     let prior = -Infinity;
     for (const item of ordered) {
       if (item === fixedItem) continue;
+      const own = linkStrokeWidth(item.link);
       let slot = Math.max(wanted(item), prior + q);
-      if (reserved !== undefined && Math.abs(slot - reserved) < q - 1e-6) slot = reserved + q;
+      // Re-check every row after any move: a step taken for one row can carry the slot onto another
+      // it already passed. Bounded, since each pass only moves the slot away from the target's side.
+      for (let guard = 0; guard < occupied.length + 1; guard++) {
+        const hit = occupied.find(row => Math.abs(slot - row.at) < MEMBER_GAP + (own + row.stroke) / 2 - 1e-6);
+        if (!hit) break;
+        const clearance = MEMBER_GAP + (own + hit.stroke) / 2;
+        const keep = wanted(item) <= hit.at ? hit.at - clearance : hit.at + clearance;
+        slot = keep >= prior + q - 1e-6 ? keep : hit.at + clearance;
+      }
       target.set(item.link.id, slot); prior = slot;
     }
     // Rows one pitch apart from a 15 px stem, each moved off the port group's edge margin (ADR-0013);
