@@ -160,3 +160,6 @@ approved whole-diagram layout snapshot.
 No synthetic geometry setup is a prediction of ELK output. End-to-end tests can
 also consume the diagram YAML, but must not claim to cover a forced stage case
 unless its entry preconditions hold.
+
+The command line loads `dist/`, so `npm run build` must run before `node bin/portograph.mjs render`
+is used to check a golden. A source change alone does not reach the CLI.
