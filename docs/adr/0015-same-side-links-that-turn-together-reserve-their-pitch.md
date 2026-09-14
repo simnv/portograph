@@ -50,3 +50,33 @@ block-by-far-end patch (`.superpowers/sdd/spec/ticket-21-wip/`) and ticket 31's 
   fixture but leaves the gate ambiguous; rejected unless the maintainer prefers it.
 - Route every remainder in one libavoid batch: loses the ownership exclusions that let a link
   pass its own lane and group box; rejected.
+
+## Amendments requested (2026-09-14, from ticket 38's measured attempt)
+
+Rule 1 was implemented against the row-gap legs, measured, and reverted. Three things it says, or
+does not say, need the maintainer's word before the next attempt.
+
+1. **Rule 1 needs a second sentence: where the ordering does not bind, the leg that travels farther
+   turns *first*.** "The link that turns farthest away leaves the node last" is forced only when a
+   leg reaches over another port's row — then it must leave outside that port, or it crosses its
+   approach run. Where no leg reaches over another's row the rule is vacuous, and applying it as a
+   total order fails: on `bundle-sides.test.ts`'s mixed pair it puts the wrapping link's approach
+   run at y = 71 beside the jogging link's arrival run at y = 71.5, and G6 fails on the 0.5 px
+   between them. The reverse order passes every gate.
+
+2. **Rule 1 reserves per gap, so it must allocate per gap.** `rowGap` counts a jogging link once
+   across both of its ports. A depth chosen per port on each side can therefore ask for two pitches
+   where one was reserved. The unit is the leg in the gap: slot *i* at
+   `right(a) + stemReach(a) + i * pitch`, the port on `a` taking `slot - right(a)` and the port on
+   `b` taking `left(b) - slot`, so both ends of a jogging link name one x.
+
+3. **The consequence paragraph is wrong about the golden.** "The golden has such ports on the TBR
+   flanks and will re-baseline" did not happen: with rule 1 applied to every row-gap leg the golden
+   was byte-identical. The TBR flank ports are flank groups, not row neighbours, and nothing
+   reserves room for a nested stem there. Either the paragraph goes, or rule 1 owes those ports a
+   reservation of their own — which is a change to stage 7b, not to stage 8.
+
+A fourth point is not the ADR's but must be settled with it: this repo's two routing paths disagree
+on libavoid's checkpoint direction flags. `runtime/avoid-worker.mjs:48` treats bit 1 as travel with
+decreasing y; passing bit 1 to libavoid as a checkpoint `departure` sent every leg the other way,
+measured twice. A pinned turn cannot be trusted until that is resolved.
