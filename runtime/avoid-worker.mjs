@@ -142,14 +142,16 @@ export function routeBatch(Avoid, batch) {
     };
     let routes = connectors.map(extract), retry = false;
     for (const [index, item] of connectors.entries()) {
-      const points = routes[index].points, last = points.at(-1), previous = points.at(-2);
+      const points = routes[index].points, last = points.at(-1);
       const checkpoint = item.checkpoints.at(-1);
-      if (!last || !previous || !checkpoint || last.x !== checkpoint.x || last.y !== checkpoint.y) continue;
-      const continuation = directRoute(batch, { from: { kind: 'point', ...previous },
-        to: item.connector.to, checkpoints: [checkpoint] });
+      if (!last || points.length < 2 || !checkpoint || last.x !== checkpoint.x || last.y !== checkpoint.y) continue;
+      // The same upstream defect can truncate a route at its final checkpoint, whether the missing
+      // leg continues the last segment straight or follows a bend. That leg is the destination's
+      // own stem — the checkpoint lies on the perpendicular from its anchor — so it is straight and
+      // clear by construction, and the hint is redundant. Re-solve once without it; never append a
+      // guessed endpoint to returned geometry. The host still checks every requested checkpoint.
+      const continuation = directRoute(batch, { from: { kind: 'point', ...checkpoint }, to: item.connector.to, checkpoints: [] });
       if (!continuation) continue;
-      // The same upstream defect can truncate the last straight leg of a bent route. Re-solve
-      // once without that redundant hint; never append a guessed endpoint to returned geometry.
       setCheckpoints(item.ref, item.checkpoints.slice(0, -1));
       retry = true;
     }

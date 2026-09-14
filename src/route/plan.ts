@@ -1,6 +1,6 @@
 import type { Point, Side } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel, LayoutPort, PathSegment } from '../model/layout.js';
-import { GROUP_LABEL_GEOMETRY, stemReach } from '../layout/bands.js';
+import { GROUP_LABEL_GEOMETRY, routedStroke, stemReach } from '../layout/bands.js';
 import { findPort } from '../layout/row-paths.js';
 import { portId } from '../layout/skeleton-graph.js';
 import { samePoint } from '../score/geometry.js';
@@ -11,9 +11,6 @@ import { ALL_DIRECTIONS, DIRECTION_BITS, type RouteBatch, type RouteCheckpoint, 
 
 /** Shape buffer stays at zero; every obstacle already carries its exact clearance. */
 export const SHAPE_BUFFER_DISTANCE = 0;
-/** Prefer fewer bends; libavoid stays deterministic for any fixed parameter set. */
-export const ROUTE_PARAMETERS: Record<string, number> = { segmentPenalty: 50 };
-
 const OUTWARD: Record<Side, Point> = {
   top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 },
 };
@@ -39,6 +36,21 @@ export interface RoutePlan {
   links: LinkPlan[];
   batches: { id: string; links: string[] }[];
   obstacles: RouteObstacle[];
+  /** libavoid parameters for this diagram (`routeParameters`). */
+  parameters: Record<string, number>;
+}
+
+/** Prefer fewer bends; libavoid stays deterministic for any fixed parameter set. */
+export const ROUTE_PARAMETERS: Record<string, number> = { segmentPenalty: 50 };
+
+/**
+ * libavoid parameters for one diagram. Two remainders routed in one batch that turn side by side are
+ * nudged apart by `idealNudgingDistance`; its default of 4 px is below G6's 10 px, so the distance is
+ * the gate clearance plus the widest routed stroke (ADR-0015 rule 2). That is the clearance the gate
+ * demands, not rule 1's wider nested-stem pitch, which placement reserves in the row gap.
+ */
+export function routeParameters(model: LayoutModel): Record<string, number> {
+  return { ...ROUTE_PARAMETERS, idealNudgingDistance: GROUP_LABEL_GEOMETRY.nodeClearance + routedStroke(model) };
 }
 
 export const effectiveLayer = (link: LayoutLink): 'routed' | 'overlay' => link.layer ?? link.family ?? 'routed';
@@ -146,7 +158,7 @@ export function planRoute(model: LayoutModel): RoutePlan {
     const key = JSON.stringify(plan.exclusions);
     batches.set(key, [...(batches.get(key) ?? []), plan.link]);
   }
-  return { remainders, overlay, links, obstacles,
+  return { remainders, overlay, links, obstacles, parameters: routeParameters(model),
     batches: [...batches.values()].map((ids, index) => ({ id: `batch-${index}`, links: ids })) };
 }
 
@@ -216,6 +228,6 @@ export function batchRequest(plan: RoutePlan, batch: { id: string; links: string
     const pins = item.pins?.filter(pin => targeted.has(`${item.id}#${pin.classId}`));
     return pins?.length ? { id: item.id, bounds: item.bounds, pins } : { id: item.id, bounds: item.bounds };
   });
-  return { id: batch.id, shapeBufferDistance: SHAPE_BUFFER_DISTANCE, parameters: ROUTE_PARAMETERS,
+  return { id: batch.id, shapeBufferDistance: SHAPE_BUFFER_DISTANCE, parameters: plan.parameters,
     shapes: disjointShapes(shapes), connectors };
 }

@@ -207,7 +207,9 @@ padding beyond the complete named pills (including their half stroke), not just 
 measured facing-pill gap or pass-by stem (the stage-5 `rowGap`) is violated — the stem is the
 15 px checkpoint plus the neighbour's obstacle reach that a port needs when its link does not enter
 the neighbour's facing side, whether it goes to a third node or to the neighbour's far side, top or
-bottom (ticket 29) — then pushes displaced row groups in
+bottom (ticket 29) — and, when links turn inside the gap (a pass-by, or a facing link
+that enters at another height and jogs), one stem on each side that contributes a leg plus one pitch
+between every two legs, counted by link (ADR-0015 rule 1) — then pushes displaced row groups in
 the tier. Flanks and non-row groups never move or resize in this rule; a repack that would
 collide with one fails explicitly, and so does a stage-5 input whose flank box lacks the padding
 the containment rebuild assumes. Levelling considers routed links only; a tie in facing port counts moves the
@@ -650,6 +652,11 @@ libavoid, in one ownership batch, and the complete 26-link diagram passes G1–G
 0 overlaps, 0 label hits and Q 0.8424281545245618 (before link-label placement). The previous
 candidate's Q was 0.818586208746674; allowing the feeds through unused band space removes the
 avoidable detours. Node, port and group placement remains unchanged.
+
+**Nudging.** libavoid's `idealNudgingDistance` is the gate clearance plus the widest routed stroke,
+so two remainders of one batch that turn side by side land at least that far apart, never at its
+4 px default (ADR-0015 rule 2). It is the clearance G6 demands, not the wider nested-stem pitch of
+rule 1, which placement reserves.
 
 **Collinear checkpoints.** The pinned libavoid build can truncate a straight route at its final
 checkpoint. The adapter omits redundant hints only after checking exact collinearity, direction,

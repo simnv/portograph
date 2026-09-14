@@ -4,12 +4,14 @@ import type { LayoutModel, LayoutPort } from '../model/layout.js';
 import { orderedNodeIds, orderedGroupIds } from '../model/model.js';
 import { SIDE_TIE_ORDER, portKey, tiedPortComponents } from './sides-one.js';
 import { measurePortPill } from '../text/index.js';
+import { EPS } from '../score/geometry.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { sizeNodes } from './size.js';
 import { bandGap, nodeGap, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { moveGroup, stackBands } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { nodeObstacleReach, routedStroke, stemReach } from './bands.js';
+import { MEMBER_GAP } from './bundle-geometry.js';
 import { laneSource, laneWidth, transitTiers } from './lanes.js';
 import { fitRegionGroup } from './regions.js';
 import { findPort } from './row-paths.js';
@@ -30,22 +32,62 @@ export const PILL_WIRE_GAP = 8;
  * The index is derived from the link array and cached against it. Membership and attachments are
  * fixed in stage 1, and every checked transaction clones the array, so a new array is a new index.
  */
-const peerCache = new WeakMap<LayoutModel['links'], Map<string, PortRef[]>>();
-function unreservedPeers(model: LayoutModel): Map<string, PortRef[]> {
+interface Peer { peer: PortRef; link: string }
+const peerCache = new WeakMap<LayoutModel['links'], Map<string, Peer[]>>();
+function unreservedPeers(model: LayoutModel): Map<string, Peer[]> {
   const cached = peerCache.get(model.links);
   if (cached) return cached;
-  const index = new Map<string, PortRef[]>();
+  const index = new Map<string, Peer[]>();
   for (const link of model.links) {
     if (link.layer !== 'routed' || link.technique === 'stub' || link.bundle !== undefined || !link.attachments) continue;
     const { from, to } = link.attachments;
     for (const [near, far] of [[from, to], [to, from]] as const) {
       const list = index.get(key(near)) ?? [];
-      list.push(far);
+      list.push({ peer: far, link: link.id });
       index.set(key(near), list);
     }
   }
   peerCache.set(model.links, index);
   return index;
+}
+
+/** How far a node's routing obstacle reaches beyond one side: its clearance, or an outward pill. */
+function sideReach(model: LayoutModel, id: string, side: Side): number {
+  const pill = Math.max(0, ...model.nodes[id]!.ports
+    .filter(port => port.side === side && port.ref.anonymous !== true)
+    .map(port => measurePortPill(port.ref.name!).width / 2 + DEFAULT_STROKE_WIDTHS.pill / 2));
+  return Math.max(nodeObstacleReach(model, model.nodes[id]!), pill > 0 ? pill + routedStroke(model) / 2 : 0);
+}
+
+/**
+ * The ports on `side` of `node` whose links turn inside the gap towards `neighbour` (ADR-0015
+ * rule 1): a link that passes the neighbour by, or enters its facing side at another height and so
+ * jogs in the gap. Each puts one vertical leg into the gap.
+ */
+export function gapLegs(model: LayoutModel, node: string, side: 'left' | 'right', neighbour: string): { ports: LayoutPort[]; links: Set<string> } {
+  const owner = model.nodes[node]!, other = model.nodes[neighbour]!, peers = unreservedPeers(model);
+  const empty = { ports: [] as LayoutPort[], links: new Set<string>() };
+  if (!other.bounds) return empty;
+  const facing: Side = side === 'left' ? 'right' : 'left';
+  const span = Math.max(sideReach(model, neighbour, 'top'), sideReach(model, neighbour, 'bottom'));
+  const top = other.bounds.y - span, bottom = other.bounds.y + other.bounds.height + span;
+  const ports: LayoutPort[] = [], links = new Set<string>();
+  for (const port of owner.ports) {
+    if (port.side !== side || port.anchor === undefined || port.anchor.y < top || port.anchor.y > bottom) continue;
+    // The qualifying links are kept, not just the port: a port may also carry a link that crosses
+    // the gap straight and turns nowhere, which reserves nothing.
+    const turning = (peers.get(key(port.ref)) ?? []).filter(({ peer }) => {
+      const far = findPort(model, peer);
+      const enters = peer.node === neighbour && far?.side === facing;
+      // The same tolerance `expectedRowPath` uses to pin a straight row path: anything it would not
+      // pin jogs, and a jog that placement did not reserve is what ADR-0015 forbids.
+      return !enters || (far.anchor !== undefined && Math.abs(far.anchor.y - port.anchor!.y) > EPS);
+    });
+    if (!turning.length) continue;
+    ports.push(port);
+    for (const item of turning) links.add(item.link);
+  }
+  return { ports, links };
 }
 
 /**
@@ -57,11 +99,9 @@ export function rowGap(model: LayoutModel, a: string, b: string): number {
   const protrusion = (id: string, side: Side): number => Math.max(0, ...model.nodes[id]!.ports
     .filter(port => port.side === side && port.ref.anonymous !== true)
     .map(port => measurePortPill(port.ref.name!).width / 2 + DEFAULT_STROKE_WIDTHS.pill / 2));
-  /** How far a node's routing obstacle reaches beyond one side: its clearance, or an outward pill. */
-  const reach = (id: string, side: Side): number => {
-    const pill = protrusion(id, side);
-    return Math.max(nodeObstacleReach(model, model.nodes[id]!), pill > 0 ? pill + routedStroke(model) / 2 : 0);
-  };
+  // One rule for the obstacle reach, shared with the leg classifier, so the room reserved here and
+  // the ports it is reserved for can never be measured differently.
+  const reach = (id: string, side: Side): number => sideReach(model, id, side);
   /**
    * Room a port on `side` of `node` needs beside `neighbour` when its link does not end on the
    * neighbour's facing side.
@@ -86,14 +126,33 @@ export function rowGap(model: LayoutModel, a: string, b: string): number {
     const entersNeighbour = (peer: PortRef): boolean => peer.node === neighbour && findPort(model, peer)?.side === facing;
     const blocked = owner.ports.some(port => port.side === side && port.anchor !== undefined
       && port.anchor.y >= top && port.anchor.y <= bottom
-      && (peers.get(key(port.ref)) ?? []).some(peer => !entersNeighbour(peer)));
+      && (peers.get(key(port.ref)) ?? []).some(({ peer }) => !entersNeighbour(peer)));
     return blocked ? stemReach(model, owner) + reach(neighbour, facing) : 0;
   };
   const left = protrusion(a, 'right'), right = protrusion(b, 'left');
   // Only a facing *pair* of pills needs the wire. One pill opposite a bare side has nothing to be
   // separated from, so it keeps the ordinary stroke-aware node clearance.
+  // Every leg turning in the gap needs the gate clearance to the next; a side stands one stem off
+  // its node when it contributes a leg or receives a jogging link (its approach stem lies in the
+  // gap too), and only its plain obstacle reach otherwise.
+  const legsAt = { a: gapLegs(model, a, 'right', b), b: gapLegs(model, b, 'left', a) };
+  // A jogging link is seen from both of its ports; it is one leg. Legs are the links the classifier
+  // itself accepted, by identity, so two links between the same pair of ports are two legs and a
+  // link that crosses the gap straight beside one is none.
+  // A jogging link enters the neighbour on its facing side; its approach stem lies in the gap.
+  const legs = new Set([...legsAt.a.links, ...legsAt.b.links]).size;
+  // Only a link the classifier accepted jogs into the facing side; an aligned link beside it enters
+  // straight across and asks for no stem.
+  const entersFacing = (from: { ports: LayoutPort[]; links: Set<string> }, neighbour: string, facing: Side): boolean =>
+    from.ports.some(port => (unreservedPeers(model).get(key(port.ref)) ?? [])
+      .some(({ peer, link }) => from.links.has(link) && peer.node === neighbour && findPort(model, peer)?.side === facing));
+  const stemSide = (id: string, own: LayoutPort[], incoming: typeof legsAt.a, side: Side): number =>
+    own.length || entersFacing(incoming, id, side) ? stemReach(model, model.nodes[id]!) : reach(id, side);
+  const turning = legs === 0 ? 0
+    : stemSide(a, legsAt.a.ports, legsAt.b, 'right') + stemSide(b, legsAt.b.ports, legsAt.a, 'left')
+      + (legs - 1) * (MEMBER_GAP + routedStroke(model));
   return Math.max(nodeGap(model, a, b), left + right + (left > 0 && right > 0 ? PILL_WIRE_GAP : 0),
-    passByStem(b, 'left', a), passByStem(a, 'right', b));
+    passByStem(b, 'left', a), passByStem(a, 'right', b), turning);
 }
 
 /** Resolve all direction votes, resize and repack in skeleton order; retain the returned snapshot. */

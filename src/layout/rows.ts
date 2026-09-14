@@ -143,5 +143,9 @@ export function rows(model: LayoutModel): LayoutModel {
     flattenRows(draft);
     repackOverlaps(draft);
     levelFacingPorts(draft);
+    // Levelling moves anchors, which can turn a straight crossing into a jog and so add a turning
+    // leg (ADR-0015 rule 1). The gap is asked again on the levelled anchors, so no leg's room is
+    // left for stage 8 to discover. Nodes move in x only, which cannot undo the levelling.
+    repackOverlaps(draft);
   });
 }

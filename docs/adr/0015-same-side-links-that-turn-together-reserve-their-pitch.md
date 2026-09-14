@@ -18,7 +18,7 @@ turn the same way, and nothing in placement reserved the room between them.
 Each is the pipeline's load-bearing rule broken: a route, size or spacing discovered during routing
 that placement could have reserved.
 
-## Decision (proposed)
+## Decision
 
 1. **Nested stems by turn depth.** For ports on one side of a node whose links turn the same way,
    stage 7c/7e orders the checkpoints outward by how far each link travels along the side after its
