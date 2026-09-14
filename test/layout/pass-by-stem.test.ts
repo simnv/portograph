@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { layout, parse, parseWithDiagnostics, restoreLayoutModel, score, serializeLayoutModel } from '../../src/index.js';
 import type { GateId, LayoutModel } from '../../src/index.js';
 import { rowGap } from '../../src/layout/sides-two.js';
+import { findPort } from '../../src/layout/row-paths.js';
 import { nodeGap } from '../../src/layout/skeleton-graph.js';
 import { nodeObstacleReach, stemReach } from '../../src/layout/bands.js';
 import { nodeObstacle } from '../../src/route/obstacles.js';
@@ -56,6 +57,39 @@ describe('a port that passes its row neighbour by keeps its stem', () => {
     expect(stem.to.x - stem.from.x).toBe(15);
     expect(stem.from.x).toBeGreaterThanOrEqual(nodeObstacle(model, 'primary').x + nodeObstacle(model, 'primary').width);
     expect(restoreLayoutModel(serializeLayoutModel(model))).toEqual(model);
+  }, 120000);
+
+  it('ticket 21: the flank keeps the levelling that placed its secondary port, and every gate passes', async () => {
+    const model = await pipeline(fixture('flank-two-peers'));
+    // G5 orders the flank's right side by far end, so the secondary port takes the top slot and the
+    // primary pair sits below it. Stage 7e used to bring the flank's box down to its primary's,
+    // which undid that levelling and left the secondary port's stem inside the bundle's envelope.
+    const flank = model.nodes.flank!, primary = model.nodes.primary!;
+    const order = flank.ports.slice().sort((a, b) => a.engineOrder! - b.engineOrder!).map(port => port.ref.ordinal);
+    expect(order).toEqual([3, 1, 2]);
+    for (const link of model.links.filter(item => item.bundle !== undefined)) {
+      const ends = [link.attachments!.from, link.attachments!.to].map(ref => findPort(model, ref)!);
+      expect(ends[0]!.anchor!.y).toBe(ends[1]!.anchor!.y);
+    }
+    // The secondary port clears the envelope its neighbours' bundle reserves, so its stem can leave.
+    const envelope = model.bundles[0]!.envelope!;
+    const secondaryPort = flank.ports.find(port => port.ref.ordinal === 3)!;
+    expect(secondaryPort.anchor!.y).toBeLessThan(envelope.y);
+    expect(primary.bounds!.y).toBeGreaterThan(flank.bounds!.y);
+    const report = score(model).snapshot;
+    expect(report.passed).toBe(true);
+    // Pinned so the soft score cannot drift unnoticed. The order G5 demands costs this fixture
+    // length and bends against the render that failed the gate, and that trade is the ticket's.
+    expect(report.Q).toBe(0.6138477956459003);
+  }, 120000);
+
+  it('ticket 21: a weighted secondary link keeps the same levelling, whatever its stroke', async () => {
+    // The remainder's own stroke decides how much room it needs, not how much it already has:
+    // gating the rule on a stroke-aware clearance would refuse it exactly when it is wide.
+    const model = await pipeline(readFileSync(new URL('../../goldens/synthetic/flank-two-peers.yaml', import.meta.url), 'utf8')
+      .replace('- [flank.p#3, secondary.p#1]', '- [flank.p#3, secondary.p#1, {weight: 2}]'));
+    expect(model.links.find(link => link.id === 'link-3')!.strokeWidth).toBe(3);
+    expect(score(model).snapshot.passed).toBe(true);
   }, 120000);
 
   it('reserves nothing when the neighbour is not in front of the port', () => {

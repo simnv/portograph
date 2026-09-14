@@ -448,7 +448,33 @@ export function prepareBundleGeometry(model: LayoutModel): void {
     if (!primaryBundle || !facing(members(model, primaryBundle))) continue;
     const list = members(model, primaryBundle);
     if (axis(list[0]!.a.side!) !== 'y' || inversionPairs(list).length) continue;
-    const flank = model.nodes[own]!, dy = Math.max(0, primary.bounds!.y - flank.bounds!.y);
+    // Bringing the flank's box down to its primary's makes room for the block below. A flank that
+    // also carries a port outside the bundle has had its own height set by stage 7b to level the
+    // pairs *around* that port, so the boxes no longer measure the same thing: moving by them undoes
+    // the levelling and leaves the outside port's stem inside the envelope this block reserves
+    // (ticket 21). Such a flank is measured between its paired anchors instead.
+    const flank = model.nodes[own]!, paired = list[0]!;
+    // Only a remainder on the side this bundle uses, and above its members: that is the port 7b
+    // levelled the pairs around, and the one whose stem the envelope would otherwise capture. A
+    // remainder elsewhere on the flank, or below the block, did not move these ports and is no
+    // reason to leave the box where 7b put it.
+    const flankPort = (item: Member): LayoutPort => item.a.ref.node === own ? item.a : item.b;
+    const facingSide = flankPort(paired).side, top = Math.min(...list.map(item => flankPort(item).anchor!.y));
+    // Above the block at all. Demanding a stroke-aware pitch here would answer the wrong question:
+    // a weighted remainder needs *more* room than stage 5's member pitch gave it, and refusing the
+    // branch for want of that room is exactly the failure this fixes. Reserving the wider pitch is
+    // its own work, recorded on the ticket.
+    const band = model.tierBands.find(item => item.groups.includes(group.id));
+    const outside = flank.ports.some(port => port.side === facingSide && port.anchor!.y < top - 1e-6
+      && model.links.some(link => link.layer === 'routed' && link.technique !== 'stub'
+        && link.bundle === undefined && link.attachments
+        && [link.attachments.from, link.attachments.to].some(ref => portId(ref) === portId(port.ref))))
+      // Keeping the flank where 7b put it is only safe inside its own band: the box-based move also
+      // repairs a flank lifted past the band above it, and nothing restacks the bands after this.
+      && (!band?.bounds || group.bounds!.y >= band.bounds.y - 1e-6);
+    const here = flankPort(paired);
+    const there = paired.a.ref.node === own ? paired.b : paired.a;
+    const dy = Math.max(0, outside ? there.anchor!.y - here.anchor!.y : primary.bounds!.y - flank.bounds!.y);
     if (dy) moveGroup(model, group, 0, dy);
     block(primaryBundle);
     const q = Math.max(pitch(model, primaryBundle), ...list.flatMap(m => [model.nodes[m.a.ref.node]!.sidePitch![m.a.side!]!, model.nodes[m.b.ref.node]!.sidePitch![m.b.side!]!]));

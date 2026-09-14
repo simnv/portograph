@@ -94,15 +94,24 @@ describe('real CLI', () => {
   });
 
   it('reports computed gate failure as 1, or 0 when allowed, with the same complete artifacts', async () => {
-    // A fixture that fails a gate today: `flank-two-peers` fails G5 (ticket 21). When that ticket
-    // lands, swap in another failing input; the shared-port fan used before passes since ticket 20.
+    // A fixture that fails a gate today: this one fails G6 on two counts, a fan track spaced off its
+    // own members but not off `a.p`'s row (ticket 42) and two port anchors 10 px apart (ticket 43).
+    // When those tickets land, swap in another failing input. `flank-two-peers` was used until
+    // ticket 21, and the shared-port fan before that until ticket 20.
     const input = join(temp, 'shared.yaml');
-    writeFileSync(input, readFileSync(new URL('../../goldens/synthetic/flank-two-peers.yaml', import.meta.url), 'utf8'));
+    writeFileSync(input, `portograph: 2
+groups: {g: {tier: 0}}
+nodes:
+  a: {group: g, ports: [{name: p, side: right, order: 0}, {name: r, side: right, order: 1}]}
+  b: {group: g, ports: [{name: s, side: left, order: 0}, {name: t, side: left, order: 1}]}
+  c: {group: g, ports: [{name: p, side: left, order: 0}]}
+links: [[a.p, b.t], [a.r, b.s], [a.r, c.p]]
+`);
     const output = join(temp, 'shared.svg');
     const first = await command(['render', input, '-o', output]);
     expect(first.code, first.stderr).toBe(1);
     const report = JSON.parse(readFileSync(join(temp, 'shared.score.json'), 'utf8'));
-    expect(report.snapshot.gates.G5.passed).toBe(false);
+    expect(report.snapshot.gates.G6.passed).toBe(false);
     const normal = await command(['score', join(temp, 'shared.layout.json')]);
     const allowed = await command(['score', '--allow-gate-failures', join(temp, 'shared.layout.json')]);
     expect(normal.code).toBe(1);

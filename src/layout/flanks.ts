@@ -78,7 +78,31 @@ export function normalizePrimaryBundlePorts(model: LayoutModel): void {
       const members = new Set(list.map(pair => portId(pair[end].ref)));
       const start = side.findIndex(port => members.has(portId(port.ref)));
       const others = side.filter(port => !members.has(portId(port.ref)));
-      const proposal = [...others.slice(0, start), ...ordered.map(pair => pair[end]), ...others.slice(start)];
+      // The block sits where its far ends sit (G5), by choosing one place in the remaining ports to
+      // insert it: everything before that place keeps its slot ahead of the block and everything
+      // from it keeps its slot behind. A per-port test would answer the same question but could
+      // swap two unrelated ports around the block, and only this block may reorder anything
+      // (ADR-0010). Placing the block at the first member's old slot instead pushed a port past far
+      // ends it precedes (ticket 21).
+      const range = ordered.map(pair => farCoordinate(model, pair[end])).filter(Number.isFinite);
+      const low = Math.min(...range), high = Math.max(...range);
+      // Only unauthored ports answer the far-end question; G5 judges no other kind, and an authored
+      // sentinel with no routed peer reads as `Infinity`, which would otherwise decide the place.
+      const free = others.filter(port => port.authorOrder === undefined);
+      const target = free.find(port => farCoordinate(model, port) >= low - 1e-6);
+      const found = target ? others.indexOf(target) : -1;
+      // An authored port is a wall. G5 judges only unauthored ports, and ADR-0010 keeps every
+      // authored key in place, so the block may not cross one however its far ends read: it stays
+      // on the side of each authored port it started on.
+      const origin = others.filter(port => side.indexOf(port) < start).length;
+      let lowWall = 0, highWall = others.length;
+      others.forEach((port, index) => {
+        if (port.authorOrder === undefined) return;
+        if (index < origin) lowWall = Math.max(lowWall, index + 1);
+        else highWall = Math.min(highWall, index);
+      });
+      const at = Math.min(Math.max(found < 0 ? others.length : found, lowWall), highWall);
+      const proposal = [...others.slice(0, at), ...ordered.map(pair => pair[end]), ...others.slice(at)];
       proposals.push(proposal);
     }
     const valid = proposals.every(ports => {
@@ -92,6 +116,25 @@ export function normalizePrimaryBundlePorts(model: LayoutModel): void {
     }
     for (const proposal of proposals) proposal.forEach((port, index) => { port.engineOrder = index; });
   }
+}
+
+/**
+ * Where a port's links go, on the axis its side is ordered along: the mean tangent coordinate of
+ * its routed peers' anchors, `Infinity` for an unlinked port, so it sorts last like in stage 5.
+ */
+function farCoordinate(model: LayoutModel, port: LayoutPort): number {
+  const vertical = port.side === 'left' || port.side === 'right';
+  const values: number[] = [];
+  for (const link of model.links) {
+    if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
+    for (const [near, far] of [[link.attachments.from, link.attachments.to], [link.attachments.to, link.attachments.from]] as const) {
+      if (portId(near) !== portId(port.ref)) continue;
+      const peer = findPort(model, far);
+      const node = model.nodes[far.node]!, box = node.bounds!;
+      values.push(peer?.anchor ? (vertical ? peer.anchor.y : peer.anchor.x) : vertical ? box.y + box.height / 2 : box.x + box.width / 2);
+    }
+  }
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : Infinity;
 }
 
 /** Equalise complete facing sides, grow capacity, then translate each flank as one group. */
