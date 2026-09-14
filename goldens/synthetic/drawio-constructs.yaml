@@ -1,0 +1,37 @@
+# Expected: One small diagram carrying every construct the draw.io exporter has to translate that
+# the golden does not exercise together: a group whose title band the pipeline puts at the bottom,
+# a port role and a port status on one pill, a dotted and a dashed link class, a labelled link, and
+# an overlay link that the SVG masks and a draw.io file cannot. Every gate passes.
+# Test-only input owned by drawio-export ticket 01; the whole pipeline runs, so no stage
+# precondition is needed.
+portograph: 2
+groups:
+  upper: { tier: 0, label: Upper }
+  lower: { tier: 1, label: Lower }
+nodes:
+  a:
+    group: upper
+    class: router
+    label: Router A
+    description: 10.0.0.1
+    ports:
+      - { name: down, side: bottom, class: downlink up }
+      - { name: spare, side: bottom, class: mgmt admin-down }
+  b:
+    group: lower
+    class: tbr
+    label: Border B
+    ports:
+      - { name: up, side: top, class: uplink up }
+      - { name: alt, side: top, class: peer degraded }
+  c:
+    group: lower
+    class: rr
+    label: Reflector C
+    ports:
+      - { name: up, side: top, class: loopback }
+links:
+  - [a.down, b.up, { label: 100G }]
+  - [a.spare, b.alt, { class: dotted }]
+  - [a.down, c.up, { class: dashed }]
+  - [b.alt, c.up, { route: overlay }]

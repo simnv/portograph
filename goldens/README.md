@@ -3,7 +3,7 @@
 [m1-sip-edge.yaml](m1-sip-edge.yaml) transcribes
 [the target JPEG](../docs/design/target-example.jpeg).
 [m1-sip-edge.expected.json](m1-sip-edge.expected.json) is the hand-written
-normalised model. The 14 diagrams under `synthetic/` cover the rule counter-examples in
+normalised model. The diagrams under `synthetic/` cover the rule counter-examples in
 [quality.md](../docs/design/quality.md#test-design). Owning implementation tickets add their own
 test-only parser diagnostics, API probes, gate models, remainder cases and scale generators;
 those additions do not alter or reopen the approved golden.
@@ -125,6 +125,7 @@ is a standalone schema-v2 document. `stage-inputs.yaml` is separate test data.
 | [fitting-link-label](synthetic/fitting-link-label.yaml) | 9 | Place the measured label along the longest segment — rotated to read bottom-to-top on a vertical run — with no collision. |
 | [long-label-portless-node](synthetic/long-label-portless-node.yaml) | 3 | Grow the node to contain its measured label and description. |
 | [zero-link-diagram](synthetic/zero-link-diagram.yaml) | 10 | Produce finite scores and use 1 for empty routed-link metrics. |
+| [drawio-constructs](synthetic/drawio-constructs.yaml) | 11 | Carry every construct the draw.io export must translate that the golden does not exercise together: a title band on each edge, a port role and status on one pill, a dotted and a dashed class, a labelled link, and an overlay link. |
 
 The first 14 diagrams are ticket 00's approved counter-examples. `fitting-link-label` is the
 test-only successful-label input ticket 14 added beside them; it needs no stage precondition,

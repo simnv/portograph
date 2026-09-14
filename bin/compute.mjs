@@ -28,7 +28,8 @@ function readInput(path) {
 async function run(request, emit) {
   const api = await loadLibrary();
   const { CommandDeadlineError, ParseError, ResolveError, createBudget, formatDiagnostic, layout,
-    migrateWithDiagnostics, parseWithDiagnostics, render, restoreFinalLayout, score, serializeLayoutModel } = api;
+    drawio, migrateWithDiagnostics, parseWithDiagnostics, render, restoreFinalLayout, score,
+    serializeLayoutModel } = api;
 
   const budget = createBudget(Math.max(1, request.deadlineAt - Date.now()));
   const printed = new Set();
@@ -43,7 +44,12 @@ async function run(request, emit) {
       text: `portograph: ${event.stage} took ${Math.round(event.durationMs)} ms, ${Number.isFinite(event.remainingMs) ? `${Math.round(event.remainingMs)} ms left` : 'no deadline'}` })
     : undefined;
 
-  const { verb, input, force, allowGateFailures, layers } = request.command;
+  const { verb, input, force, allowGateFailures, layers, format, theme } = request.command;
+  // One place decides what `render` writes, so the restored-layout path and the from-YAML path can
+  // never drift apart on it.
+  const primaryArtifact = (model) => format === 'drawio'
+    ? drawio(model, { ...(layers ? { layers } : {}), ...(theme ? { theme } : {}) })
+    : render(model, layers ? { layers } : {});
   void allowGateFailures; // the parent applies it to the exit code; the report never changes.
   const source = readInput(input);
   if (source.ok !== true) return source;
@@ -77,7 +83,7 @@ async function run(request, emit) {
     }
     const report = score(model, { force });
     if (verb === 'render') return { ok: true, result: {
-      primary: render(model, layers ? { layers } : {}),
+      primary: primaryArtifact(model),
       sidecars: { layout: `${serializeLayoutModel(model)}\n`, score: `${JSON.stringify(report, null, 2)}\n` },
       passed: report.snapshot.passed,
     } };
@@ -124,9 +130,8 @@ async function run(request, emit) {
   if (verb === 'layout') return { ok: true, result: { primary: layoutJson } };
 
   const report = score(model, { force });
-  const svg = render(model, layers ? { layers } : {});
   return { ok: true, result: {
-    primary: svg,
+    primary: primaryArtifact(model),
     sidecars: { layout: layoutJson, score: `${JSON.stringify(report, null, 2)}\n` },
     passed: report.snapshot.passed,
   } };

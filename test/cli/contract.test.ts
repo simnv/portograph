@@ -20,7 +20,8 @@ describe('CLI contract', () => {
 
   it('help documents every option, the file position rule and all four exit codes', () => {
     const help = helpText();
-    for (const option of ['--output', '--force', '--allow-gate-failures', '--layers', '-h, --help', '-V, --version']) {
+    for (const option of ['--output', '--force', '--allow-gate-failures', '--layers', '--format',
+      '--theme', '-h, --help', '-V, --version']) {
       expect(help).toContain(option);
     }
     expect(help).toContain('Options may come before or after the file');
@@ -88,12 +89,34 @@ describe('parseCommand', () => {
   });
 });
 
+describe('render formats', () => {
+  it('takes a known format and refuses one it cannot write', () => {
+    expect(parseCommand('render', ['a.yaml', '--format', 'drawio']).format).toBe('drawio');
+    expect(parseCommand('render', ['a.yaml', '--format', 'svg']).format).toBe('svg');
+    expect(parseCommand('render', ['a.yaml']).format).toBeUndefined();
+    expect(() => parseCommand('render', ['a.yaml', '--format', 'pdf'])).toThrow(UsageError);
+    expect(() => parseCommand('layout', ['a.yaml', '--format', 'drawio'])).toThrow(UsageError);
+  });
+
+  it('refuses a theme for a format that carries every palette at once', () => {
+    // The claim: `--theme` is not a global preference but a property of the artifact. An SVG ships
+    // light, dark behind `prefers-color-scheme` and print in one file, so naming one there would
+    // state something the file cannot hold; a draw.io file holds exactly one.
+    expect(parseCommand('render', ['a.yaml', '--format', 'drawio', '--theme', 'dark']).theme).toBe('dark');
+    expect(() => parseCommand('render', ['a.yaml', '--theme', 'dark'])).toThrow(UsageError);
+    expect(() => parseCommand('render', ['a.yaml', '--format', 'svg', '--theme', 'dark'])).toThrow(UsageError);
+    expect(() => parseCommand('render', ['a.yaml', '--format', 'drawio', '--theme', 'sepia'])).toThrow(UsageError);
+  });
+});
+
 describe('sidecarPaths', () => {
   it('replaces a .svg suffix and otherwise appends, so no author extension is dropped', () => {
     expect(sidecarPaths('out/diagram.svg')).toEqual({ layout: 'out/diagram.layout.json', score: 'out/diagram.score.json' });
     expect(sidecarPaths('out/diagram.SVG')).toEqual({ layout: 'out/diagram.layout.json', score: 'out/diagram.score.json' });
     expect(sidecarPaths('out/diagram')).toEqual({ layout: 'out/diagram.layout.json', score: 'out/diagram.score.json' });
     expect(sidecarPaths('out/diagram.svgz')).toEqual({ layout: 'out/diagram.svgz.layout.json', score: 'out/diagram.svgz.score.json' });
+    expect(sidecarPaths('out/diagram.drawio')).toEqual({ layout: 'out/diagram.layout.json', score: 'out/diagram.score.json' });
+    expect(sidecarPaths('out/diagram.DRAWIO')).toEqual({ layout: 'out/diagram.layout.json', score: 'out/diagram.score.json' });
   });
 });
 

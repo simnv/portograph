@@ -50,6 +50,32 @@ describe('real CLI', () => {
     expect(JSON.parse(readFileSync(`${output}.score.json`, 'utf8'))).toEqual(JSON.parse(readFileSync(scorePath, 'utf8')));
   });
 
+  it('writes a draw.io document from the same layout, with the sidecars beside it', async () => {
+    const output = join(temp, 'diagram.drawio');
+    const written = await command(['render', '--format', 'drawio', '-o', output, jsonPath]);
+    expect(written.code, written.stderr).toBe(0);
+    expect(written.stdout).toBe('');
+    const xml = readFileSync(output, 'utf8');
+    expect(xml.startsWith('<?xml version="1.0" encoding="UTF-8"?>')).toBe(true);
+    // Uncompressed, as a plain `<mxGraphModel>` child. draw.io reads either, its own default is
+    // uncompressed, and the published schema models only this form.
+    expect(xml).toContain('<mxGraphModel');
+    expect(xml).not.toContain('compressed="true"');
+    // The two mandatory root cells, and the sidecars named from the stem of either extension.
+    expect(xml).toContain('<mxCell id="0"/>');
+    expect(JSON.parse(readFileSync(join(temp, 'diagram.layout.json'), 'utf8')))
+      .toEqual(JSON.parse(readFileSync(jsonPath, 'utf8')));
+    expect(JSON.parse(readFileSync(join(temp, 'diagram.score.json'), 'utf8')))
+      .toEqual(JSON.parse(readFileSync(scorePath, 'utf8')));
+    // The claim: choosing a format changes the artifact and nothing else. Same input, same layout,
+    // same score — only the primary bytes differ.
+    const svg = await command(['render', '-o', join(temp, 'diagram.svg'), jsonPath]);
+    expect(svg.code, svg.stderr).toBe(0);
+    expect(readFileSync(join(temp, 'diagram.svg'), 'utf8')).not.toBe(xml);
+    expect(JSON.parse(readFileSync(join(temp, 'diagram.layout.json'), 'utf8')))
+      .toEqual(JSON.parse(readFileSync(jsonPath, 'utf8')));
+  });
+
   it('refuses more than 1000 authored nodes unless force is supplied', async () => {
     const input = join(temp, 'large.yaml');
     writeFileSync(input, ['portograph: 2', 'groups: {g: {tier: 0}}', 'nodes:',

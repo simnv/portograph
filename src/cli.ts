@@ -7,6 +7,7 @@
  * that owns the real work. Nothing in this file touches the file system, the process or a worker.
  */
 import type { Diagnostic, Layer, Owner } from './model/index.js';
+import type { ThemeMode } from './profiles/network/theme.js';
 
 export const VERBS = [
   { name: 'layout', summary: 'YAML in, layout JSON out' },
@@ -53,6 +54,10 @@ export interface Command {
   allowGateFailures: boolean;
   /** `render` only. Absent means both families draw and `document.overlays` applies. */
   layers?: Layer[];
+  /** `render` only. Absent means SVG. */
+  format?: Format;
+  /** `render` only, and only for a format that carries one palette. Absent means light. */
+  theme?: ThemeMode;
 }
 
 interface OptionSpec {
@@ -67,6 +72,8 @@ const OPTIONS: Record<string, OptionSpec> = {
   '--force': { value: false, summary: 'Lay out and score more than 1,000 nodes' },
   '--allow-gate-failures': { verbs: ['render', 'score'], value: false, summary: 'Report a failed gate but exit 0' },
   '--layers': { verbs: ['render'], value: true, summary: 'Draw only these link families: routed, overlay (comma separated)' },
+  '--format': { verbs: ['render'], value: true, summary: 'Primary artifact format: svg (default) or drawio' },
+  '--theme': { verbs: ['render'], value: true, summary: 'Palette a single-palette format carries: light (default), dark or print' },
 };
 
 /** Both spellings of `-o X`, `--output X` and `--output=X`, in the order a user would try them. */
@@ -97,10 +104,10 @@ export function helpText(): string {
     '',
     'Output:',
     '  Without --output the primary artifact is the only thing on stdout: layout JSON, SVG,',
-    '  score JSON or schema-v2 YAML. Diagnostics and progress always go to stderr.',
-    '  With --output the artifact goes to that path and stdout stays empty. For',
-    '  `render --output X.svg` the layout and the score are written beside it as',
-    '  X.layout.json and X.score.json; any other output path gets .layout.json and',
+    '  a draw.io document, score JSON or schema-v2 YAML. Diagnostics and progress always go',
+    '  to stderr. With --output the artifact goes to that path and stdout stays empty. For',
+    '  `render --output X.svg` or `X.drawio` the layout and the score are written beside it',
+    '  as X.layout.json and X.score.json; any other output path gets .layout.json and',
     '  .score.json appended.',
     '',
     'Exit codes:',
@@ -113,6 +120,21 @@ export function helpText(): string {
 }
 
 const LAYERS: readonly Layer[] = ['routed', 'overlay'];
+
+/** The formats `render` can write. The SVG carries all three palettes; a draw.io file carries one. */
+export const FORMATS = ['svg', 'drawio'] as const;
+export type Format = (typeof FORMATS)[number];
+const THEMES: readonly ThemeMode[] = ['light', 'dark', 'print'];
+
+function parseFormat(value: string): Format {
+  if (!FORMATS.includes(value as Format)) throw new UsageError(`--format does not know '${value}'; use svg or drawio`);
+  return value as Format;
+}
+
+function parseTheme(value: string): ThemeMode {
+  if (!THEMES.includes(value as ThemeMode)) throw new UsageError(`--theme does not know '${value}'; use light, dark or print`);
+  return value as ThemeMode;
+}
 
 function parseLayers(value: string): Layer[] {
   const names = value.split(',').map((name) => name.trim());
@@ -157,6 +179,13 @@ export function parseCommand(verb: Verb, args: readonly string[]): Command {
   const output = values.get('--output');
   if (output !== undefined && output === '') throw new UsageError('--output needs a path');
   const layers = values.get('--layers');
+  const format = values.get('--format');
+  const theme = values.get('--theme');
+  // An SVG carries every palette behind `prefers-color-scheme`, so choosing one at the command line
+  // would state something the artifact cannot hold; the option belongs to the formats that can.
+  if (theme !== undefined && (format === undefined || parseFormat(format) === 'svg')) {
+    throw new UsageError('--theme applies to --format drawio; an SVG carries light, dark and print at once');
+  }
   return {
     verb,
     input: inputs[0]!,
@@ -164,16 +193,23 @@ export function parseCommand(verb: Verb, args: readonly string[]): Command {
     force: seen.has('--force'),
     allowGateFailures: seen.has('--allow-gate-failures'),
     ...(layers === undefined ? {} : { layers: parseLayers(layers) }),
+    ...(format === undefined ? {} : { format: parseFormat(format) }),
+    ...(theme === undefined ? {} : { theme: parseTheme(theme) }),
   };
 }
 
 /**
- * The two sidecar paths `render --output` publishes beside the SVG. A `.svg` suffix is replaced so
- * `diagram.svg` gives `diagram.layout.json`; any other path keeps its full name, because silently
- * dropping an author's extension would be worse than a long file name.
+ * The two sidecar paths `render --output` publishes beside the primary artifact. A known artifact
+ * suffix is replaced so `diagram.svg` and `diagram.drawio` both give `diagram.layout.json`; any
+ * other path keeps its full name, because silently dropping an author's extension would be worse
+ * than a long file name.
  */
+const ARTIFACT_SUFFIXES: readonly string[] = ['.svg', '.drawio'];
+
 export function sidecarPaths(output: string): { layout: string; score: string } {
-  const stem = output.toLowerCase().endsWith('.svg') ? output.slice(0, -'.svg'.length) : output;
+  const lower = output.toLowerCase();
+  const suffix = ARTIFACT_SUFFIXES.find((known) => lower.endsWith(known));
+  const stem = suffix === undefined ? output : output.slice(0, -suffix.length);
   return { layout: `${stem}.layout.json`, score: `${stem}.score.json` };
 }
 

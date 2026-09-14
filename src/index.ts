@@ -26,6 +26,8 @@ export type { FullRamp, HueRamp, LinkClassStyle, Modal, NodeClassStyle, PillPain
   from './profiles/network/theme.js';
 export { render, linkVisible, OVERLAY_ENDPOINT_RADIUS } from './render/index.js';
 export type { RenderOptions } from './render/index.js';
+export { drawio } from './render/drawio.js';
+export type { DrawioOptions } from './render/drawio.js';
 export * from './resolve/index.js';
 export * from './layout/sides-one.js';
 export * from './layout/size.js';
