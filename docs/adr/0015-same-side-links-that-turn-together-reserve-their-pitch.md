@@ -88,3 +88,11 @@ with the drawn legs at 187.375/144/173.5 against slots of 113/144/261.75. Since 
 then moved the depth as well, the diagram ends up worse than if the rule had not run: Q 0.3941 to
 0.3148, crossings 3 to 7. Rule 1 must reserve each leg's run in `link.fixedSegments`, which stage 8
 routes *through*, rather than name a checkpoint it routes *towards*.
+
+**Fifth amendment (2026-09-14, from ticket 21).** Rule 4 should be withdrawn or re-justified. Its
+reproducer was `flank-two-peers`, and the measurement there names a different obstacle: the flank
+port G5 orders above the bundle pair is not blocked passing *over* the primary — its route past the
+primary is clear — it is blocked leaving its own node, because stage 7e moved the flank by the
+difference of the box tops and put the port inside the envelope it was about to reserve. Measuring
+that move between the paired anchors fixes the fixture with the golden unchanged. No corridor in the
+group's padding is needed, and nothing else in M1 asks for one.
