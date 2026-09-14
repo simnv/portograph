@@ -148,6 +148,7 @@ export function crossBundleFans(model: LayoutModel): void {
     const rows = fanRows(model, port, links), end = fanEnd(model, port, links);
     const isFixed = (id: string): boolean => links.find(link => link.id === id)?.path?.fixed === true;
     let active = [...ordered], cursor = { ...port.anchor! }, parent: string | undefined, depth = 0;
+    let peeled: number | undefined;
     const paths = new Map(items.map(item => [item.link.id, [] as PathSegment[]]));
     const push = (id: string, from: Point, to: Point, owner: Owner): void => {
       if (from.x !== to.x || from.y !== to.y) paths.get(id)!.push({ from: { ...from }, to: { ...to }, owner: { ...owner } });
@@ -164,12 +165,30 @@ export function crossBundleFans(model: LayoutModel): void {
       const elbow = world(target.get(leaf.link.id)!, rows[depth]!);
       push(leaf.link.id, point, elbow, owner);
       push(leaf.link.id, elbow, world(target.get(leaf.link.id)!, end), leaf.link.owner);
+      peeled = target.get(leaf.link.id)!;
       active = active.filter(i => i !== leaf); cursor = point; parent = id; depth++;
     }
+    // The member left over turns at the last junction's own row, which the branch that peeled there
+    // also used. Two branches that leave the point the same way therefore run along one line
+    // (ticket 41). Only then does the member left over take a row of its own (ticket 20, ADR-0016):
+    // it keeps the shared normal out to `rows[depth]`, which `fanRows` already holds and `fanEnd`
+    // already lies beyond, and turns there. Branches leaving the point opposite ways never meet, and
+    // a straight-through leaf turns nowhere, so both keep the shorter path they had.
     const last = active[0]!, owner = { kind: 'shared-stem' as const, id: parent! };
-    const elbow = world(target.get(last.link.id)!, rows[depth - 1]!);
-    push(last.link.id, cursor, elbow, owner);
-    push(last.link.id, elbow, world(target.get(last.link.id)!, end), target.get(last.link.id) === coordinate(port) ? owner : last.link.owner);
+    const goal = target.get(last.link.id)!, here = coordinate(port);
+    const shares = goal !== here && Math.sign(goal - here) === Math.sign(peeled! - here);
+    if (shares) {
+      const turn = world(here, rows[depth]!), elbow = world(goal, rows[depth]!);
+      // The extension leaves the last junction's point along the shared normal, so it claims that
+      // junction like every other branch there; G6 excuses a branch at a tree vertex, not a stray run.
+      push(last.link.id, cursor, turn, owner);
+      push(last.link.id, turn, elbow, last.link.owner);
+      push(last.link.id, elbow, world(goal, end), last.link.owner);
+    } else {
+      const elbow = world(goal, rows[depth - 1]!);
+      push(last.link.id, cursor, elbow, owner);
+      push(last.link.id, elbow, world(goal, end), goal === here ? owner : last.link.owner);
+    }
     for (const item of items) {
       item.link.sharedRuns ??= {};
       // A fixed member's runs are the same stems and straight continuation 7d wrote into its path.

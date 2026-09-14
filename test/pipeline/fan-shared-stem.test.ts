@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { layout, parse, restoreFinalLayout, score } from '../../src/index.js';
-import { MIN_STEM, edgeMargin } from '../../src/layout/bundle-geometry.js';
+import { MIN_STEM, edgeMargin, fanPitch } from '../../src/layout/bundle-geometry.js';
 import { DEFAULT_STROKE_WIDTHS, routedStrokeWidth } from '../../src/theme/geometry.js';
 import type { LayoutModel } from '../../src/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -98,4 +98,58 @@ it('ticket 20: a plain-fan tree survives the final-layout round trip and a forge
   const dropped = JSON.parse(JSON.stringify(model)) as LayoutModel;
   delete dropped.links[1]!.sharedRuns;
   expect(() => restoreFinalLayout(JSON.stringify(dropped))).toThrow();
+}, 60000);
+
+it('ticket 41: a tree shared by a bundle member and an outside link peels each at its own row', async () => {
+  const yaml = `portograph: 2
+groups: {g: {tier: 0}}
+nodes:
+  a: {group: g, ports: [{name: p, side: right, order: 0}, {name: r, side: right, order: 1}]}
+  b: {group: g, ports: [{name: s, side: left, order: 0}, {name: t, side: left, order: 1}]}
+  c: {group: g, ports: [{name: p, side: left, order: 0}]}
+links: [[a.p, b.t], [a.r, b.s], [a.r, c.p]]`;
+  const model = await run(yaml);
+  // The two members share one stem out of a.r and no longer run up the same line (ticket 41).
+  expect(score(model).snapshot.gates.G4!.violations).toEqual([]);
+  const anchor = model.nodes['a']!.ports.find(p => p.ref.name === 'r')!.anchor!;
+  const tree = model.junctions.filter(j => j.port.name === 'r');
+  expect(tree).toHaveLength(1);
+  expect(tree[0]!.links).toEqual(expect.arrayContaining(['link-2', 'link-3']));
+  // Each member turns off the shared normal at a row of its own: 15 px out, then one pitch further.
+  const q = fanPitch(model.links);
+  const turn = (id: string): number => {
+    const path = model.links.find(link => link.id === id)!.path!.segments;
+    return path.find(s => s.from.x === s.to.x && s.from.y !== s.to.y)!.from.x - anchor.x;
+  };
+  expect([turn('link-3'), turn('link-2')]).toEqual([MIN_STEM, MIN_STEM + q]);
+  // link-2 reaches its row by keeping the shared normal past the junction point. That extension
+  // leaves the point, so it claims the junction like every other branch there; owned by the link it
+  // would abut link-3's stem as a zero-clearance pair.
+  const extension = model.links.find(link => link.id === 'link-2')!.path!.segments[1]!;
+  expect(extension.owner).toEqual({ kind: 'shared-stem', id: tree[0]!.id });
+  expect(extension.from).toEqual(tree[0]!.point);
+  // G6 still fails here for a reason of its own: a.p's row and c.p's row are 10 px apart, so the
+  // links leaving them cannot clear each other whatever the fan does (ticket 42).
+  expect(model.nodes['c']!.ports[0]!.anchor!.y - model.nodes['a']!.ports[0]!.anchor!.y).toBe(-10);
+}, 60000);
+
+it('ticket 41: a two-member tree peeling to opposite sides takes no row of its own', async () => {
+  // Branches that leave the junction point opposite ways never run along one line, so the member
+  // left over turns at the point itself. An extra segment here would only cost segment uniformity.
+  const model = await run(`portograph: 2
+groups: {ga: {tier: 0}, gb: {tier: 0}, gc: {tier: 0}}
+nodes:
+  a: {group: ga, ports: [{name: q, side: right, order: 0}, {name: p, side: right, order: 1}, {name: r, side: right, order: 2}]}
+  b: {group: gb, ports: [{name: top, side: left, order: 0}, {name: mid, side: left, order: 1}, {name: bot, side: left, order: 2}]}
+  c: {group: gc, ports: [{name: top, side: left, order: 0}, {name: mid, side: left, order: 1}, {name: bot, side: left, order: 2}]}
+links: [[a.p, b.top], [a.p, c.bot]]`);
+  const report = score(model).snapshot;
+  expect(report.passed).toBe(true);
+  expect(report.metrics.crossings.count).toBe(0);
+  const junction = model.junctions.find(j => j.port.name === 'p')!;
+  const branch = model.links.find(link => link.id === 'link-2')!.path!.segments[1]!;
+  expect(branch.from).toEqual(junction.point);
+  expect(branch.owner).toEqual({ kind: 'shared-stem', id: junction.id });
+  // It turns at the point: the segment crosses the normal instead of continuing along it.
+  expect(branch.from.x).toBe(branch.to.x);
 }, 60000);
