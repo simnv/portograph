@@ -1,11 +1,11 @@
 import type { PortRef } from '../model/document.js';
-import type { Side } from '../model/geometry.js';
-import type { LayoutModel, LayoutPort } from '../model/layout.js';
+import type { Rect, Side } from '../model/geometry.js';
+import type { LayoutLink, LayoutModel, LayoutPort, PathSegment } from '../model/layout.js';
 import { orderedNodeIds, orderedGroupIds } from '../model/model.js';
 import { SIDE_TIE_ORDER, portKey, tiedPortComponents } from './sides-one.js';
 import { measurePortPill } from '../text/index.js';
 import { EPS } from '../score/geometry.js';
-import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { sizeNodes } from './size.js';
 import { bandGap, nodeGap, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { moveGroup, stackBands } from './skeleton-geometry.js';
@@ -14,7 +14,7 @@ import { nodeObstacleReach, routedStroke, stemReach } from './bands.js';
 import { MEMBER_GAP } from './bundle-geometry.js';
 import { laneSource, laneWidth, transitTiers } from './lanes.js';
 import { fitRegionGroup } from './regions.js';
-import { findPort } from './row-paths.js';
+import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { freezePortTopology } from './mutation.js';
 const key = portId;
 
@@ -91,6 +91,361 @@ export function gapLegs(model: LayoutModel, node: string, side: 'left' | 'right'
 }
 
 /**
+ * The node beside `node` on `side` in its group's row order, or undefined when there is none whose
+ * gap the rows rule set. Only a plain row group has its gaps sized by `rowGap`; a flank or a bar is
+ * packed by its own rule, so a pair there has no reservation to read back and is left alone.
+ */
+function rowNeighbour(model: LayoutModel, node: string, side: 'left' | 'right'): string | undefined {
+  const id = model.document.nodes[node]!.group, group = model.groups[id];
+  if (!group || group.flank || model.document.groups[id]!.shape !== 'row') return undefined;
+  const order = group.rowOrder ?? group.nodes;
+  const at = order.indexOf(node);
+  if (at < 0) return undefined;
+  const next = order[at + (side === 'right' ? 1 : -1)];
+  return next !== undefined && model.nodes[next]?.bounds ? next : undefined;
+}
+
+/**
+ * How far, and which way, each of `port`'s accepted legs travels along its own node side after it
+ * turns: to its far anchor when it jogs into the neighbour's facing side, and past the nearer end
+ * of the neighbour's obstacle when it passes the neighbour by. Signed towards growing y.
+ */
+function legRuns(model: LayoutModel, port: LayoutPort, side: 'left' | 'right', neighbour: string,
+  accepted: ReadonlySet<string>): { link: string; run: number }[] {
+  const other = model.nodes[neighbour]!, facing: Side = side === 'left' ? 'right' : 'left';
+  const span = Math.max(sideReach(model, neighbour, 'top'), sideReach(model, neighbour, 'bottom'));
+  const top = other.bounds!.y - span, bottom = other.bounds!.y + other.bounds!.height + span;
+  return (unreservedPeers(model).get(key(port.ref)) ?? [])
+    .filter(item => accepted.has(item.link))
+    .map(({ peer, link }) => {
+      const far = findPort(model, peer);
+      if (peer.node === neighbour && far?.side === facing && far.anchor !== undefined) {
+        return { link, run: far.anchor.y - port.anchor!.y };
+      }
+      // Which way it wraps is decided by where it is going, not by which end of the neighbour is
+      // nearer: a link whose far end lies below the neighbour approaches from below, and a leg
+      // pointed the other way would be a run the route has to double back along.
+      const up = port.anchor!.y - top, down = bottom - port.anchor!.y;
+      const beyond = far?.anchor ? far.anchor.y < top + EPS ? -1 : far.anchor.y > bottom - EPS ? 1 : 0 : 0;
+      return { link, run: beyond < 0 ? -up : beyond > 0 ? down : up <= down ? -up : down };
+    });
+}
+
+/**
+ * Where every leg turning in one row gap turns (ADR-0015 rule 1). The unit is the **leg**, not the
+ * port: a link that jogs from one node into the other is one leg seen twice, and `rowGap` reserves
+ * it once, so both of its ends must name the same x or a gap that reserved one pitch could have two
+ * demanded. Leg `i` turns at `right(a) + base.a + i * pitch`, which is exactly the room reserved —
+ * the last leg still stands `base.b` off `b`.
+ *
+ * The order is forced wherever a leg reaches over another leg's row: it would cross that leg's
+ * approach run, and which side of it the leg must pass depends on which node that run comes from.
+ * Where nothing is forced, a leg belonging to one node's side alone stays beside that node and a
+ * jogging leg goes between. Contradictory constraints mean no order is clean, and the gap keeps the
+ * flat stems it had.
+ */
+export interface GapPlan {
+  /** Absolute x each leg turns at, by link id. */
+  slot: Map<string, number>;
+  /** The stem each side stands off its own node; `rowGap` reserves these plus one pitch per leg. */
+  base: { a: number; b: number };
+}
+export function gapPlan(model: LayoutModel, a: string, b: string): GapPlan | undefined {
+  const left = model.nodes[a], right = model.nodes[b];
+  if (!left?.bounds || !right?.bounds) return undefined;
+  const legsAt = { a: gapLegs(model, a, 'right', b), b: gapLegs(model, b, 'left', a) };
+  const links = [...new Set([...legsAt.a.links, ...legsAt.b.links])];
+  if (links.length < 2) return undefined;
+  // A leg is modelled only as far as the neighbour it turns beside. A link leaving the tier keeps
+  // going long after that — up to its band entry, then along it — and where that run lies decides
+  // the order just as much as the rows beside the node do. One such leg and the gap is not
+  // understood here, so none of it is nested and every stem stays flat.
+  const tier = (node: string): number | undefined => model.groups[model.document.nodes[node]!.group]?.tier;
+  const sameTier = (['a', 'b'] as const).every(end => legsAt[end].ports.every(port =>
+    (unreservedPeers(model).get(key(port.ref)) ?? []).every(item => !legsAt[end].links.has(item.link)
+      || tier(item.peer.node) === tier(port.ref.node))));
+  if (!sameTier) return undefined;
+  // A link with a lane already has a reserved run of its own, and stage 8 stitches its gaps around
+  // it in traversal order. Adding a second reservation to the same link is a question about how the
+  // two compose that no fixture asks, so a gap holding one keeps its flat stems.
+  if (links.some(id => model.links.find(link => link.id === id)?.fixedSegments?.length)) return undefined;
+  // A link can be a leg in the gap on either side of a node, and one link holds one reserved run.
+  // Which of the two slots it should take is a question about both gaps at once, so a link seen in
+  // two of them declines this one and, by the same test, the other.
+  if (links.some(id => legGapCount(model, model.links.find(link => link.id === id)!) > 1)) return undefined;
+  // A leg is reserved only where placement knows its whole shape. That holds when it jogs into the
+  // neighbour's facing side, and when it wraps the neighbour to reach a port on the neighbour
+  // itself: either way the neighbour bounds it. A link heading past the neighbour to somewhere else
+  // may wrap either way, for reasons — the other legs competing for the corridor above it — that
+  // placement cannot see, and a run reserved against the side the router picks is one it has to
+  // double back along. One such leg and the gap keeps its flat stems.
+  const bounded = (['a', 'b'] as const).every(end => {
+    const neighbour = end === 'a' ? b : a, facing: Side = end === 'a' ? 'left' : 'right';
+    const far: Side = end === 'a' ? 'right' : 'left';
+    return legsAt[end].ports.every(port => (unreservedPeers(model).get(key(port.ref)) ?? [])
+      .every(item => {
+        if (!legsAt[end].links.has(item.link)) return true;
+        if (item.peer.node !== neighbour) return false;
+        // A peer on the neighbour's own top or bottom is reached from either end of it, and which
+        // one the router picks is the same global question a link heading past it raises.
+        const side = findPort(model, item.peer)?.side;
+        return side === facing || side === far;
+      }));
+  });
+  if (!bounded) return undefined;
+  const base = { a: gapStem(model, a, legsAt.a.ports, legsAt.b, 'right'), b: gapStem(model, b, legsAt.b.ports, legsAt.a, 'left') };
+  const pitch = MEMBER_GAP + routedStroke(model);
+  // Every row a leg occupies, and every row from which it is approached, by link.
+  const rows = new Map(links.map(id => [id, [] as { at: number; from: 'a' | 'b' }[]]));
+  const reach = new Map(links.map(id => [id, [] as number[]]));
+  for (const end of ['a', 'b'] as const) {
+    const side = end === 'a' ? 'right' : 'left', neighbour = end === 'a' ? b : a;
+    for (const port of legsAt[end].ports) {
+      for (const item of legRuns(model, port, side, neighbour, legsAt[end].links)) {
+        if (!rows.has(item.link)) continue;
+        rows.get(item.link)!.push({ at: port.anchor!.y, from: end });
+        reach.get(item.link)!.push(port.anchor!.y, port.anchor!.y + item.run);
+      }
+    }
+  }
+  const span = (id: string): [number, number] => [Math.min(...reach.get(id)!), Math.max(...reach.get(id)!)];
+  const sides = (id: string): number => {
+    const own = rows.get(id)!;
+    return own.every(item => item.from === 'a') ? 0 : own.every(item => item.from === 'b') ? 2 : 1;
+  };
+  const travel = (id: string): number => { const [low, high] = span(id); return high - low; };
+  // `after.get(i)` holds the legs `i` must turn beyond; `before` is its mirror.
+  const after = new Map(links.map(id => [id, new Set<string>()]));
+  for (const leg of links) {
+    const [low, high] = span(leg);
+    for (const other of links) {
+      if (other === leg) continue;
+      for (const row of rows.get(other)!) {
+        if (row.at < low - EPS || row.at > high + EPS) continue;
+        // An approach run from `a` runs out to its leg, so a leg crossing that row passes outside
+        // it; a run from `b` runs inward from its leg, so the crossing leg passes inside it.
+        if (row.from === 'a') after.get(leg)!.add(other); else after.get(other)!.add(leg);
+      }
+    }
+  }
+  // Kahn's order over the constraint, counting predecessors rather than rescanning the set: a
+  // turning cohort can be large, and this runs once per gap for a whole routing pass.
+  const waiting = new Map(links.map(id => [id, after.get(id)!.size]));
+  const feeds = new Map(links.map(id => [id, [] as string[]]));
+  for (const id of links) for (const other of after.get(id)!) feeds.get(other)!.push(id);
+  const order: string[] = [];
+  const ready = links.filter(id => waiting.get(id) === 0);
+  while (ready.length) {
+    ready.sort((x, y) => sides(x) - sides(y) || travel(y) - travel(x) || (x < y ? -1 : 1));
+    const next = ready.shift()!;
+    order.push(next);
+    for (const id of feeds.get(next)!) {
+      waiting.set(id, waiting.get(id)! - 1);
+      if (waiting.get(id) === 0) ready.push(id);
+    }
+  }
+  // Legs that must each turn beyond the other: no order is clean, so the gap keeps its flat stems.
+  if (order.length !== links.length) return undefined;
+  // Legs that belong to `b`'s side alone pack from `b`, not from `a`: a gap made wide by a label or
+  // a pill is wider than the turning reservation, and packing everything from `a` would leave those
+  // stems running the whole gap before they turn. The order decides which end each leg packs from
+  // only when it already puts them last; otherwise every leg packs from `a`, as the reservation is
+  // measured. Both ends together still leave a pitch between the two runs, since the gap holds
+  // `base.a + (n - 1) * pitch + base.b`.
+  const tail = order.findIndex(id => sides(id) === 2);
+  const split = tail >= 0 && order.slice(tail).every(id => sides(id) === 2) ? tail : order.length;
+  const start = left.bounds.x + left.bounds.width + base.a, end = right.bounds.x - base.b;
+  const slot = new Map(order.map((id, index) => [id,
+    index < split ? start + index * pitch : end - (order.length - 1 - index) * pitch]));
+  // A slot is only worth having where the leg can take it. A blocked one is not a reason to move
+  // that leg alone, since its neighbours are spaced against it, so the whole gap keeps the flat
+  // stems it had. Checked here rather than per port, so `legReservation` never hands stage 8 a run
+  // the router cannot honour.
+  for (const end of ['a', 'b'] as const) {
+    const side = end === 'a' ? 'right' : 'left', neighbour = end === 'a' ? b : a, node = end === 'a' ? a : b;
+    for (const port of legsAt[end].ports) {
+      for (const item of legRuns(model, port, side, neighbour, legsAt[end].links)) {
+        const at = slot.get(item.link);
+        if (at !== undefined && !legClear(model, node, at, port.anchor!.y, port.anchor!.y + item.run)) return undefined;
+      }
+    }
+  }
+  return { slot, base };
+}
+
+/**
+ * Nothing stage 8 must respect stands in the leg's way between its own row and the far end of its
+ * travel: a foreign node with its obstacle reach, a foreign group box, a group title, a lane, a
+ * bundle's envelope or any other reserved obstacle. The pin is only worth making where the leg can
+ * take it; anywhere else the checkpoint stays the minimum it always was.
+ */
+function legClear(model: LayoutModel, owner: string, at: number, from: number, to: number): boolean {
+  const low = Math.min(from, to), high = Math.max(from, to);
+  // Each kind is expanded by exactly what `routeObstacles` expands it by, and by nothing else. A
+  // node's reach already carries the routed half stroke — `nodeObstacleReach` and the router's own
+  // `clearanceOf` are the same figure — so adding it again would refuse room the reservation
+  // supplies. The raw boxes carry no stroke, so those take the half themselves. A node's obstacle
+  // also swallows its outward pills, and a pill reaches past the body on a side that carries one.
+  const half = routedStroke(model) / 2, pillGap = half + DEFAULT_STROKE_WIDTHS.pill / 2;
+  const hits = (box: Rect, margin: number): boolean => at > box.x - margin + EPS && at < box.x + box.width + margin - EPS
+    && high > box.y - margin + EPS && low < box.y + box.height + margin - EPS;
+  // `nodeBox` gives the router the *enclosing* rectangle of the expanded body and every expanded
+  // pill, not their union, so it also owns the corners between them. Testing the parts separately
+  // would approve a leg the router treats as inside the node.
+  const grow = (box: Rect, by: number): Rect => ({ x: box.x - by, y: box.y - by, width: box.width + 2 * by, height: box.height + 2 * by });
+  const obstacleOf = (node: LayoutModel['nodes'][string]): Rect => {
+    const boxes = [grow(node.bounds!, nodeObstacleReach(model, node)),
+      ...node.ports.filter(port => port.pill && port.pill.layer !== 'overlay').map(port => grow(port.pill!.bounds, pillGap))];
+    const x = Math.min(...boxes.map(box => box.x)), y = Math.min(...boxes.map(box => box.y));
+    return { x, y, width: Math.max(...boxes.map(box => box.x + box.width)) - x, height: Math.max(...boxes.map(box => box.y + box.height)) - y };
+  };
+  const group = model.document.nodes[owner]!.group;
+  return !Object.values(model.nodes).some(node => node.id !== owner && node.bounds && node.layer !== 'overlay'
+      && hits(obstacleOf(node), 0))
+    && !Object.entries(model.groups).some(([id, item]) => id !== group && item.bounds && item.nodes.length
+      && hits(item.bounds, GROUP_EDGE_LINK_CLEARANCE + half))
+    && !model.labels.some(label => !label.omitted && label.bounds && label.layer !== 'overlay' && label.role === 'group'
+      && hits(label.bounds, GROUP_LABEL_LINK_CLEARANCE + half))
+    && !model.lanes.some(lane => lane.layer !== 'overlay' && hits(lane.bounds, half))
+    && !model.bundles.some(bundle => (bundle.envelopeParts ?? (bundle.envelope ? [bundle.envelope] : [])).some(part => hits(part, half)))
+    && !model.obstacles.some(item => hits(item.bounds, half))
+    // Geometry another rule already fixed is an obstacle to stage 8 exactly as a node is: a pinned
+    // row or flank path, a reserved run of a fan tree, a bar drop's traversal.
+    && !model.links.some(other => other.layer !== 'overlay' && reservedRuns(other).some(run => hits({
+      x: Math.min(run.from.x, run.to.x), y: Math.min(run.from.y, run.to.y),
+      width: Math.abs(run.to.x - run.from.x), height: Math.abs(run.to.y - run.from.y),
+    }, linkStrokeWidth(other) / 2 + half + STRAIGHT_PATH_CLEARANCE.path)));
+}
+
+/** Every run of `link` that a rule has already fixed, and that stage 8 must therefore route around. */
+function reservedRuns(link: LayoutLink): PathSegment[] {
+  return [...(link.path?.fixed === true ? link.path.segments : []), ...(link.fixedSegments ?? []),
+    ...(link.sharedRuns?.from ?? []), ...(link.sharedRuns?.to ?? [])];
+}
+
+/** The stem a side stands off its node in a row gap: one full stem when it takes part, else its reach. */
+function gapStem(model: LayoutModel, id: string, own: LayoutPort[],
+  incoming: { ports: LayoutPort[]; links: Set<string> }, side: Side): number {
+  const enters = incoming.ports.some(port => (unreservedPeers(model).get(key(port.ref)) ?? [])
+    .some(item => incoming.links.has(item.link) && item.peer.node === id && findPort(model, item.peer)?.side === side));
+  return own.length || enters ? stemReach(model, model.nodes[id]!) : sideReach(model, id, side);
+}
+
+/**
+ * How far out of its node `port`'s stem reaches before stage 8 turns it. A port whose link is a leg
+ * in a row gap reaches that leg's slot (`gapPlan`); every other port keeps the plain reach. Derived,
+ * never stored, so the figure stage 7f reserves and the figure stage 8 receives are the same one.
+ */
+/** One gap plan per row gap for a whole pass; placement does not move while any pass runs. */
+function cachedPlan(model: LayoutModel, a: string, b: string,
+  cache?: Map<string, GapPlan | undefined>): GapPlan | undefined {
+  const at = `${a}|${b}`;
+  if (cache?.has(at)) return cache.get(at);
+  const plan = gapPlan(model, a, b);
+  cache?.set(at, plan);
+  return plan;
+}
+
+export function stemPlan(model: LayoutModel, port: LayoutPort, cache?: Map<string, GapPlan | undefined>): { depth: number; turn?: 'top' | 'bottom' } {
+  const node = model.nodes[port.ref.node]!, base = stemReach(model, node);
+  const side = port.side;
+  if (side !== 'left' && side !== 'right' || !node.bounds || !port.anchor) return { depth: base };
+  const neighbour = rowNeighbour(model, port.ref.node, side);
+  if (neighbour === undefined) return { depth: base };
+  const pair: [string, string] = side === 'right' ? [port.ref.node, neighbour] : [neighbour, port.ref.node];
+  const plan = cachedPlan(model, pair[0], pair[1], cache);
+  if (!plan) return { depth: base };
+  const legs = gapLegs(model, port.ref.node, side, neighbour);
+  if (!legs.ports.includes(port)) return { depth: base };
+  const runs = legRuns(model, port, side, neighbour, legs.links).filter(item => plan!.slot.has(item.link));
+  if (!runs.length) return { depth: base };
+  const edge = side === 'right' ? node.bounds.x + node.bounds.width : node.bounds.x;
+  const depths = runs.map(item => Math.abs(plan!.slot.get(item.link)! - edge));
+  const depth = Math.min(...depths);
+  const own = runs.filter(item => Math.abs(Math.abs(plan!.slot.get(item.link)! - edge) - depth) < EPS);
+  // Two legs leaving one port the same way share the stem; turning apart, neither may be pinned.
+  const turn = own.every(item => item.run < -EPS) ? 'top' as const
+    : own.every(item => item.run > EPS) ? 'bottom' as const : undefined;
+  void turn;
+  return { depth: Math.max(base, depth) };
+}
+
+/**
+ * The row gaps `link` is a leg in, one entry per end, with the row it turns at and how far it runs.
+ * Both entries name the same gap when the link jogs from one node into the other; two different
+ * gaps mean the link turns on both sides of its own node, which `gapPlan` declines.
+ */
+interface LegGap { pair: [string, string]; at: number; run: number }
+function legGaps(model: LayoutModel, link: LayoutLink): (LegGap | undefined)[] {
+  if (!link.attachments || link.layer !== 'routed' || link.technique === 'stub' || link.bundle !== undefined) return [];
+  return (['from', 'to'] as const).map(end => {
+    const port = findPort(model, link.attachments![end]);
+    const side = port?.side;
+    if (!port?.anchor || side !== 'left' && side !== 'right') return undefined;
+    const neighbour = rowNeighbour(model, port.ref.node, side);
+    if (neighbour === undefined) return undefined;
+    const legs = gapLegs(model, port.ref.node, side, neighbour);
+    if (!legs.ports.includes(port) || !legs.links.has(link.id)) return undefined;
+    const run = legRuns(model, port, side, neighbour, legs.links).find(item => item.link === link.id);
+    if (!run) return undefined;
+    const pair: [string, string] = side === 'right' ? [port.ref.node, neighbour] : [neighbour, port.ref.node];
+    return { pair, at: port.anchor.y, run: run.run };
+  });
+}
+
+/** How many distinct gaps `link` is a leg in; one link holds one reserved run. */
+function legGapCount(model: LayoutModel, link: LayoutLink): number {
+  return new Set(legGaps(model, link).flatMap(item => item ? [item.pair.join('|')] : [])).size;
+}
+
+/**
+ * The run a leg reserves in its row gap, in this link's own traversal order, or undefined when the
+ * link is not a leg (ADR-0015 rule 1). Stage 8 routes *through* a reserved run and stitches the gaps
+ * around it, so the leg lands where placement put it rather than wherever the router's nudging left
+ * it -- which is what a checkpoint could only ask for and never require.
+ *
+ * `gapPlan` has already declined the gap when any leg's corridor is blocked, so a run returned here
+ * is one the router can take.
+ */
+export function legReservation(model: LayoutModel, link: LayoutLink,
+  cache?: Map<string, GapPlan | undefined>): PathSegment | undefined {
+  const seen = legGaps(model, link).map(item => {
+    if (!item) return undefined;
+    const slot = cachedPlan(model, item.pair[0], item.pair[1], cache)?.slot.get(link.id);
+    return slot === undefined ? undefined : { slot, at: item.at, run: item.run };
+  });
+  const [from, to] = seen;
+  if (!from && !to) return undefined;
+  const slot = (from ?? to)!.slot;
+  // Seen from both of its ports it is one leg between their two rows; seen from one, it runs that
+  // port's own travel, towards the row it turns at.
+  const full = from && to ? { start: from.at, end: to.at }
+    : from ? { start: from.at, end: from.at + from.run }
+      : { start: to!.at + to!.run, end: to!.at };
+  // What this reserves is *where* the leg turns, not how far it goes. A link that only passes the
+  // neighbour by carries on well past it — up to a band entry, into a node's top side — and how far
+  // is routing's business, not placement's. So the run is cut to one pitch from the row it turns
+  // at, enough to fix the turn and no more; `legClear` has already checked the whole travel, and a
+  // prefix of a clear corridor is clear.
+  const pitch = MEMBER_GAP + routedStroke(model);
+  const span = full.end - full.start;
+  const cut = Math.sign(span) * Math.min(Math.abs(span), pitch);
+  // Keep the end that touches the row the leg turns at: that is where the turn happens and what the
+  // reservation exists to fix. A leg seen only at its target turns at the far end of its traversal,
+  // so its stub is the suffix, not the prefix.
+  const line = from && to ? full
+    : from ? { start: full.start, end: full.start + cut }
+      : { start: full.end - cut, end: full.end };
+  if (Math.abs(line.end - line.start) <= EPS) return undefined;
+  return { from: { x: slot, y: line.start }, to: { x: slot, y: line.end }, owner: { kind: 'link', id: link.id } };
+}
+
+/** The outward reach of `port`'s stem alone; see `stemPlan`. */
+export function stemDepth(model: LayoutModel, port: LayoutPort, cache?: Map<string, GapPlan | undefined>): number {
+  return stemPlan(model, port, cache).depth;
+}
+
+/**
  * Row gap between horizontal neighbours: the largest of the stroke-aware node clearance, the two
  * facing named pills with their visible wire, and the stem a port that passes its neighbour by
  * needs in order to leave its node at all.
@@ -142,14 +497,10 @@ export function rowGap(model: LayoutModel, a: string, b: string): number {
   // A jogging link enters the neighbour on its facing side; its approach stem lies in the gap.
   const legs = new Set([...legsAt.a.links, ...legsAt.b.links]).size;
   // Only a link the classifier accepted jogs into the facing side; an aligned link beside it enters
-  // straight across and asks for no stem.
-  const entersFacing = (from: { ports: LayoutPort[]; links: Set<string> }, neighbour: string, facing: Side): boolean =>
-    from.ports.some(port => (unreservedPeers(model).get(key(port.ref)) ?? [])
-      .some(({ peer, link }) => from.links.has(link) && peer.node === neighbour && findPort(model, peer)?.side === facing));
-  const stemSide = (id: string, own: LayoutPort[], incoming: typeof legsAt.a, side: Side): number =>
-    own.length || entersFacing(incoming, id, side) ? stemReach(model, model.nodes[id]!) : reach(id, side);
+  // straight across and asks for no stem. `gapStem` is the one rule, shared with `gapPlan`, so the
+  // room reserved here and the slot each leg turns at cannot be measured differently.
   const turning = legs === 0 ? 0
-    : stemSide(a, legsAt.a.ports, legsAt.b, 'right') + stemSide(b, legsAt.b.ports, legsAt.a, 'left')
+    : gapStem(model, a, legsAt.a.ports, legsAt.b, 'right') + gapStem(model, b, legsAt.b.ports, legsAt.a, 'left')
       + (legs - 1) * (MEMBER_GAP + routedStroke(model));
   return Math.max(nodeGap(model, a, b), left + right + (left > 0 && right > 0 ? PILL_WIRE_GAP : 0),
     passByStem(b, 'left', a), passByStem(a, 'right', b), turning);

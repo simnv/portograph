@@ -1,4 +1,5 @@
 import type { Point, Rect, Side } from '../model/geometry.js';
+import { stemDepth, type GapPlan } from './sides-two.js';
 import type { PortRef } from '../model/document.js';
 import type { LabelBand, LayoutGroup, LayoutLabel, LayoutModel, LayoutNode, LayoutPort, Owner, PathSegment } from '../model/layout.js';
 import { equal } from '../model/json-equality.js';
@@ -91,6 +92,8 @@ export function stemReach(model: LayoutModel, node: LayoutModel['nodes'][string]
  */
 export function routerEntryPoints(model: LayoutModel): RouterEntryPoint[] {
   const result: RouterEntryPoint[] = [];
+  // One gap plan per row gap for this pass; nothing moves while it runs.
+  const gaps = new Map<string, GapPlan | undefined>();
   for (const link of model.links) {
     if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
     for (const end of ['from', 'to'] as const) {
@@ -98,7 +101,8 @@ export function routerEntryPoints(model: LayoutModel): RouterEntryPoint[] {
       if (!port?.anchor || !port.side) continue;
       const anchor = port.anchor, delta = OUTWARD[port.side];
       const common = { link: link.id, end, node: ref.node, port: { ...port.ref }, side: port.side };
-      const stem = stemReach(model, model.nodes[ref.node]!);
+      // The same figure `stemCheckpoint` gives stage 8, a leg's reserved slot included.
+      const stem = stemDepth(model, port, gaps);
       result.push({ ...common, kind: 'stem', outward: stem,
         point: { x: anchor.x + stem * delta.x, y: anchor.y + stem * delta.y } });
       for (const segment of link.sharedRuns?.[end] ?? []) for (const point of [segment.from, segment.to]) {

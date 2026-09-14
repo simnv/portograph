@@ -1,12 +1,13 @@
 import type { Point, Side } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel, LayoutPort, PathSegment } from '../model/layout.js';
-import { GROUP_LABEL_GEOMETRY, routedStroke, stemReach } from '../layout/bands.js';
+import { GROUP_LABEL_GEOMETRY, routedStroke } from '../layout/bands.js';
+import { legReservation, stemPlan, type GapPlan } from '../layout/sides-two.js';
 import { findPort } from '../layout/row-paths.js';
 import { portId } from '../layout/skeleton-graph.js';
 import { samePoint } from '../score/geometry.js';
 import { disjointShapes } from './containment.js';
 export { disjointShapes } from './containment.js';
-import { routeObstacles, type RouteObstacle } from './obstacles.js';
+import { completedRouteObstacles, routeObstacles, type RouteObstacle } from './obstacles.js';
 import { ALL_DIRECTIONS, DIRECTION_BITS, type RouteBatch, type RouteCheckpoint, type RouteConnector, type RouteEndpoint, type RoutePin, type RouteShape } from './types.js';
 
 /** Shape buffer stays at zero; every obstacle already carries its exact clearance. */
@@ -69,14 +70,19 @@ function portUsage(model: LayoutModel): Map<string, number> {
   return usage;
 }
 
-/** The point a route must reach outside every obstacle before it may turn. */
-export function stemCheckpoint(model: LayoutModel, port: LayoutPort): Point {
-  const reach = stemReach(model, model.nodes[port.ref.node]!), delta = OUTWARD[port.side!];
+/**
+ * The point a route must reach outside every obstacle before it may turn. A port whose link is a
+ * leg in a row gap reaches its own reserved slot (ADR-0015 rule 1); every other port keeps the
+ * plain reach.
+ */
+export function stemCheckpoint(model: LayoutModel, port: LayoutPort, cache?: Map<string, GapPlan | undefined>): Point {
+  const reach = stemPlan(model, port, cache).depth, delta = OUTWARD[port.side!];
   return { x: port.anchor!.x + reach * delta.x, y: port.anchor!.y + reach * delta.y };
 }
 
 function endpointFor(model: LayoutModel, link: LayoutLink, end: 'from' | 'to',
-  pins: Map<string, RoutePin[]>, usage: Map<string, number>): { endpoint: RouteEndpoint; point: Point; checkpoint?: Point; port?: LayoutPort } {
+  pins: Map<string, RoutePin[]>, usage: Map<string, number>,
+  cache: Map<string, GapPlan | undefined>): { endpoint: RouteEndpoint; point: Point; checkpoint?: Point; port?: LayoutPort } {
   const runs = link.sharedRuns?.[end];
   if (runs?.length) {
     const terminal = runs.at(-1)!.to;
@@ -92,7 +98,7 @@ function endpointFor(model: LayoutModel, link: LayoutLink, end: 'from' | 'to',
     pins.set(ref.node, list);
   }
   return { endpoint: { kind: 'pin', shape: `node:${ref.node}`, classId }, point: { ...port.anchor! },
-    checkpoint: stemCheckpoint(model, port), port };
+    checkpoint: stemCheckpoint(model, port, cache), port };
 }
 
 /**
@@ -102,6 +108,20 @@ function endpointFor(model: LayoutModel, link: LayoutLink, end: 'from' | 'to',
  */
 export function planRoute(model: LayoutModel): RoutePlan {
   const obstacles = routeObstacles(model);
+  // One gap plan per row gap for the whole pass: placement is frozen here, and recomputing it per
+  // link end is cubic in the size of a turning cohort.
+  const gaps = new Map<string, GapPlan | undefined>();
+  // A leg's run is derived here rather than stored on the link, because `fixedSegments` belongs to
+  // the lanes rule, which runs long before this geometry exists. It is still a reserved run, so it
+  // is an obstacle to every link but its own from the start — a batch that ran earlier, or one this
+  // link shares, would otherwise be free to cross geometry the stitcher inserts verbatim.
+  const legs = new Map<string, PathSegment>();
+  for (const link of model.links) {
+    const leg = drawn(link) && !link.path ? legReservation(model, link, gaps) : undefined;
+    if (!leg) continue;
+    legs.set(link.id, leg);
+    obstacles.push(...completedRouteObstacles(model, link, `leg:${link.id}`, [leg.from, leg.to]));
+  }
   const owned = new Map<string, string[]>();
   for (const item of obstacles) for (const consumer of item.consumers) {
     owned.set(consumer, [...(owned.get(consumer) ?? []), item.id]);
@@ -112,9 +132,13 @@ export function planRoute(model: LayoutModel): RoutePlan {
     if (link.path || !drawn(link)) continue;
     if (effectiveLayer(link) === 'overlay') { overlay.push(link.id); continue; }
     remainders.push(link.id);
-    const from = endpointFor(model, link, 'from', pins, usage);
-    const to = endpointFor(model, link, 'to', pins, usage);
-    const fixed = link.fixedSegments ?? [];
+    const from = endpointFor(model, link, 'from', pins, usage, gaps);
+    const to = endpointFor(model, link, 'to', pins, usage, gaps);
+    // A leg turning in a row gap reserves its run, exactly as a lane does, and stage 8 stitches the
+    // gaps around it (ADR-0015 rule 1). `gapPlan` declines a gap whose legs already own a lane, so
+    // the two reservations never meet and the traversal order stays the one the lanes rule wrote.
+    const leg = legs.get(link.id);
+    const fixed = leg ? [...(link.fixedSegments ?? []), leg] : link.fixedSegments ?? [];
     const stops: { endpoint: RouteEndpoint; point: Point }[] = [
       { endpoint: from.endpoint, point: from.point },
       ...fixed.flatMap(segment => [{ endpoint: asPoint(segment.from), point: segment.from },
@@ -132,8 +156,12 @@ export function planRoute(model: LayoutModel): RoutePlan {
         // head-on: one approach checkpoint the standard stem away, outside the reservation.
         const checkpoints = [
           ...(first && from.checkpoint ? [{ ...from.checkpoint, arrival: DIRECTION_BITS[OPPOSITE[from.port!.side!]], departure: ALL_DIRECTIONS }] : []),
-          ...(first ? [] : [approachCheckpoint(fixed[index - 1]!, 'to')]),
-          ...(last ? [] : [approachCheckpoint(fixed[index]!, 'from')]),
+          // Only a lane is a corridor that admits its owner's run alone, so only a lane asks the gap
+          // beside it to join head-on. A leg's run is entered from the side by construction — the
+          // stem reaches its slot and turns into it — and an approach point on the leg's own line
+          // is one the router cannot reach (ADR-0015 rule 1).
+          ...(first || fixed[index - 1]!.lane === undefined ? [] : [approachCheckpoint(fixed[index - 1]!, 'to')]),
+          ...(last || fixed[index]!.lane === undefined ? [] : [approachCheckpoint(fixed[index]!, 'from')]),
           ...(last && to.checkpoint ? [{ ...to.checkpoint, arrival: ALL_DIRECTIONS, departure: DIRECTION_BITS[OPPOSITE[to.port!.side!]] }] : []),
           // A checkpoint the adjacent reserved run already passes through, head-on and strictly
           // inside a segment, is consumed by that run: a junction leaf that reaches deeper than a
