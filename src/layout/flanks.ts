@@ -85,7 +85,7 @@ export function normalizePrimaryBundlePorts(model: LayoutModel): void {
       // (ADR-0010). Placing the block at the first member's old slot instead pushed a port past far
       // ends it precedes (ticket 21).
       const range = ordered.map(pair => farCoordinate(model, pair[end])).filter(Number.isFinite);
-      const low = Math.min(...range), high = Math.max(...range);
+      const low = Math.min(...range);
       // Only unauthored ports answer the far-end question; G5 judges no other kind, and an authored
       // sentinel with no routed peer reads as `Infinity`, which would otherwise decide the place.
       const free = others.filter(port => port.authorOrder === undefined);
