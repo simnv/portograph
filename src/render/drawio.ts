@@ -517,13 +517,16 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   }
 
   // ---- document -----------------------------------------------------------------------------
+  // The root and the layers claim their ids like everything else. Their namespaces are ones no
+  // other caller can reach, so this catches nothing today — but "every id is claimed" is a rule
+  // worth being able to state without an exception, and an unclaimed id is how the last one hid.
   const layers = LAYERS.map(name =>
-    element('mxCell', { id: layerId(name), value: LAYER_NAMES[name], parent: '0' })).join('');
+    element('mxCell', { id: claim(layerId(name)), value: LAYER_NAMES[name], parent: '0' })).join('');
   const model = element('mxGraphModel', {
     dx: 0, dy: 0, grid: 0, gridSize: 10, guides: 1, tooltips: 1, connect: 1, arrows: 0, fold: 1,
     page: 1, pageScale: 1, pageWidth: Math.ceil(canvas.width), pageHeight: Math.ceil(canvas.height),
     math: 0, shadow: 0, background: paint.background,
-  }, element('root', {}, element('mxCell', { id: '0' }) + layers + cells.join('')));
+  }, element('root', {}, element('mxCell', { id: claim('0') }) + layers + cells.join('')));
   const title = document.title ?? 'portograph';
   return `<?xml version="1.0" encoding="UTF-8"?>\n`
     + element('mxfile', { host: 'portograph' },
