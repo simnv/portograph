@@ -1,6 +1,6 @@
 # ADR-0018: A node side allocates the rows and tracks of every fan on it
 
-Date: 2026-09-14 · Status: proposed (drafted from tickets 37, 40, 42, 43 and 44) · Decisions: pending
+Date: 2026-09-14 · Status: accepted (maintainer, 2026-09-14; option (a), after option (b) was built and measured) · Decisions: tickets 37, 42, 43, 44
 
 ## Problem
 
@@ -98,5 +98,5 @@ The golden almost certainly moves: the target diagram has fans on sides that als
 and per-side rows will not land where per-port rows did. That needs the maintainer's approval as a
 re-baseline, so the work cannot start until this ADR is accepted.
 
-Tickets 37, 42, 43 and 44 are all `needs-info` on this decision. Ticket 40's own defect is closed;
-its reproducers are the evidence above.
+Tickets 37, 42, 43 and 44 are unblocked by this decision. Ticket 40's own defect is closed; its
+reproducers are the evidence above.
