@@ -89,10 +89,19 @@ then moved the depth as well, the diagram ends up worse than if the rule had not
 0.3148, crossings 3 to 7. Rule 1 must reserve each leg's run in `link.fixedSegments`, which stage 8
 routes *through*, rather than name a checkpoint it routes *towards*.
 
-**Fifth amendment (2026-09-14, from ticket 21).** Rule 4 should be withdrawn or re-justified. Its
-reproducer was `flank-two-peers`, and the measurement there names a different obstacle: the flank
-port G5 orders above the bundle pair is not blocked passing *over* the primary — its route past the
-primary is clear — it is blocked leaving its own node, because stage 7e moved the flank by the
-difference of the box tops and put the port inside the envelope it was about to reserve. Measuring
-that move between the paired anchors fixes the fixture with the golden unchanged. No corridor in the
-group's padding is needed, and nothing else in M1 asks for one.
+**Fifth amendment (2026-09-14, from ticket 21; maintainer 2026-09-14).** Rule 4 stands, marked
+**unverified**: no input in M1 reaches it.
+
+Its reproducer was `flank-two-peers`, and the measurement there names a different obstacle. The
+flank port G5 orders above the bundle pair is not blocked passing *over* the primary — its route
+past the primary is clear, and the tier group's title band is well clear of it. It is blocked
+leaving its own node: stage 7e moved the flank by the difference of the box tops and put the port
+inside the envelope it was about to reserve. Measuring that move between the paired anchors fixes
+the fixture with the golden unchanged, and no corridor in the group's padding is involved.
+
+So rule 4 has no live reproducer and nothing implements it. It is kept because the shape it
+describes — a flank port ordered above its primary pair, whose link must pass the primary — is
+reachable in principle even though no M1 input reaches it, and because withdrawing a rule is harder
+to reverse than leaving one unverified. Treat it the way ADR-0001 treats finding 42: recorded, not
+resolved, and not a dependency of any ticket. Anything that claims rule 4 must first produce the
+input that needs it.
