@@ -80,3 +80,11 @@ A fourth point is not the ADR's but must be settled with it: this repo's two rou
 on libavoid's checkpoint direction flags. `runtime/avoid-worker.mjs:48` treats bit 1 as travel with
 decreasing y; passing bit 1 to libavoid as a checkpoint `departure` sent every leg the other way,
 measured twice. A pinned turn cannot be trusted until that is resolved.
+
+**Fourth amendment (2026-09-14, from the second attempt).** Rule 1 says stage 7c/7e "orders the
+checkpoints". A checkpoint cannot carry the rule: `checkpointsHonoured` checks only that each one
+was visited, and libavoid ignores the direction mask on any gap with more than two legs — measured,
+with the drawn legs at 187.375/144/173.5 against slots of 113/144/261.75. Since placement has by
+then moved the depth as well, the diagram ends up worse than if the rule had not run: Q 0.3941 to
+0.3148, crossings 3 to 7. Rule 1 must reserve each leg's run in `link.fixedSegments`, which stage 8
+routes *through*, rather than name a checkpoint it routes *towards*.
