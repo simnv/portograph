@@ -61,10 +61,33 @@ Then ticket 37 is what its own text says — the row and flank producers call `t
 
 **(b) Move each row and track outward until clear, the way `clearOfGroupEdges` moves a row off a
 group edge.** Cheapest, local to `edgeAwareRows` and the pitch pass, and still placement-time, so it
-keeps the load-bearing rule. It answers tickets 42 and 44 and probably 37. It cannot answer ticket
-43, where the two rows are port anchors and only placement can separate them, and it makes the room
-a side needs depend on the order the fans are built, which is the property that made these defects
-hard to see.
+keeps the load-bearing rule. **Built and measured on 2026-09-14, at the maintainer's request, then
+reverted.** It costs the approved golden nothing and does not work.
+
+Both halves were written: rows offset by the rows the fans before them on the side have taken,
+ordered by their own coordinate so the result does not depend on producer order; and tracks stepped
+over every sibling port row on the side, exactly as the pitch pass already steps over a fixed
+member's track. Each half alone, and both together, leave `goldens/m1-sip-edge.svg` **byte-identical**
+with `Q = 0.8986107135065587`.
+
+On the fixtures the tickets are about, it turns scored gate failures into hard pipeline failures:
+
+| fixture | on `main` | rows only | tracks only | both |
+| --- | --- | --- | --- | --- |
+| ticket 44 | publishes, G4 + G6, Q 0.2726 | `BUNDLE_CROSSING_MISMATCH` | `BUNDLE_BEND_CONTACT` | `BUNDLE_BEND_CONTACT` |
+| tickets 42/43 | publishes, G6, Q 0.4637 | unchanged, Q 0.4637 | envelope rejection | envelope rejection |
+| ticket 40's second | `BUNDLE_CROSSOVER_CAPACITY` | — | envelope rejection | envelope rejection |
+
+Two existing tests fail as well (ticket 41's tree fixture and the e2e gate-failure case).
+
+The reason is the one the option's own paragraph gives, and it is fatal rather than untidy: moving a
+row or a track outward consumes room `fanDepth` never reserved. The bundle machinery then measures
+its inversions, its crossings and its envelope against geometry placement did not plan, and rejects
+the result outright. Option (b) cannot be separated from the reservation, and the reservation is
+option (a).
+
+Ticket 43 was already outside (b)'s reach: its two rows are port anchors, and only placement can
+separate them.
 
 **(c) Leave the geometry and widen the gates' exemptions.** Rejected. The overlaps are real ink;
 CONTEXT.md's invariants are what the renders are for.
