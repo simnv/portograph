@@ -144,7 +144,7 @@ describe('G3 labels', () => {
   });
   it('exempts pill text only from its specific pill and incident stem', () => {
     const model = simple(), p = model.nodes.a!.ports[0]!;
-    p.pill = { size: { width: 24, height: 10 }, bounds: { x: 18, y: 35, width: 24, height: 10 }, owner: { kind: 'node', id: 'a' }, layer: 'routed', radius: 3, textRotation: 0 };
+    p.pill = { size: { width: 24, height: 10 }, bounds: { x: 18, y: 35, width: 24, height: 10 }, owner: { kind: 'node', id: 'a' }, layer: 'routed', radius: 2, textRotation: 0 };
     model.labels.push({ ...label('pill', 26, 37), role: 'pill', port: p.ref });
     expect(gate(model, 'G3').passed).toBe(true);
     p.pill.owner = { kind: 'node', id: 'b' };
@@ -326,21 +326,22 @@ describe('G6 stroke-aware clearance', () => {
   it('uses node strokes at the 20 px boundary', () => {
     const model = empty();
     node(model, 'a', { x: 0, y: 0, width: 40, height: 40 });
-    node(model, 'b', { x: 62, y: 0, width: 40, height: 40 });
+    // 20 px between the strokes: 40 + 20 + two half node strokes of 0.75.
+    node(model, 'b', { x: 61.5, y: 0, width: 40, height: 40 });
     expect(gate(model, 'G6').passed).toBe(true);
-    model.nodes.b!.bounds!.x = 61.9;
+    model.nodes.b!.bounds!.x = 61.4;
     expect(gate(model, 'G6').passed).toBe(false);
     model.nodes.a!.strokeWidth = model.nodes.b!.strokeWidth = 0;
     expect(gate(model, 'G6').passed).toBe(true);
   });
   it('uses segment and foreign-node strokes at the 10 px boundary', () => {
     const model = simple();
-    node(model, 'c', { x: 41.75, y: 80, width: 30, height: 10 });
+    node(model, 'c', { x: 41.5, y: 80, width: 30, height: 10 });
     // The fixture's 10 px group padding puts c's box within the group edge margin; that is the
     // separate segment-group-edge code (ADR-0013), so only the node-clearance code is read here.
     const nodeClearance = (): boolean => !gate(model, 'G6').violations.some(v => v.code === 'segment-node-clearance');
     expect(nodeClearance()).toBe(true);
-    model.nodes.c!.bounds!.x = 41.7;
+    model.nodes.c!.bounds!.x = 41.4;
     expect(nodeClearance()).toBe(false);
     model.links[0]!.layer = model.links[0]!.path!.layer = 'overlay';
     expect(gate(model, 'G6').passed).toBe(true);

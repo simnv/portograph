@@ -217,8 +217,8 @@ nodes:
   below: {group: g}
 links: [{from: source.p, to: target.p, route: overlay${label}}]`;
   const gap = (model: LayoutModel) => model.nodes.target!.ports[0]!.pill!.bounds.x - (model.nodes.source!.ports[0]!.pill!.bounds.x + model.nodes.source!.ports[0]!.pill!.bounds.width);
-  const plain = await run(yaml('')), labelled = await run(yaml(', label: medium label'));
-  expect(width('medium label') + 2 * LINK_LABEL_GEOMETRY.shortenMargin).toBeLessThanOrEqual(gap(plain));
+  const plain = await run(yaml('')), labelled = await run(yaml(', label: mid label'));
+  expect(width('mid label') + 2 * LINK_LABEL_GEOMETRY.shortenMargin).toBeLessThanOrEqual(gap(plain));
   expect(gap(labelled)).toBeCloseTo(gap(plain), 9);
   // The straight overlay crosses node `above`; whether stage 9 finds a clear spot beside it is the
   // ladder's business, not the reservation's.

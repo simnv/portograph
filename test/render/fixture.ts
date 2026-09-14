@@ -81,7 +81,7 @@ export function scene(input: Scene): LayoutModel {
       anchor: { ...port.anchor },
       ...(port.pill === false ? {} : { pill: { owner: { kind: 'node', id: port.node }, layer: 'routed', size,
         bounds: { x: port.anchor.x - width / 2, y: port.anchor.y - height / 2, width, height },
-        textRotation: rotation, radius: 3 } }) });
+        textRotation: rotation, radius: 2 } }) });
     model.document.nodes[port.node]!.ports.push({ name: port.name, ordinal: ref.ordinal, side: port.side,
       ...(port.class === undefined ? {} : { class: port.class }) });
   }

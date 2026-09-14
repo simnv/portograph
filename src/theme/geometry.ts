@@ -2,10 +2,22 @@ import type { LayoutLink, LayoutModel, LayoutPath } from '../model/layout.js';
 
 /** Shared by scoring and rendering; layout may store per-element overrides. */
 export const DEFAULT_STROKE_WIDTHS = {
-  node: 2,
+  /** Node body outline; Lucide's technical weight (ticket 34, from 2). */
+  node: 1.5,
   path: 1.5,
   pill: 1,
   group: 1,
+  /** Icon glyph stroke, the same technical weight as the body (ticket 34, from 2). */
+  glyph: 1.5,
+} as const;
+
+/** Corner radii. Industry's radius token is 4 px (ticket 34: node from 8, group from 10, pill from 3). */
+export const CORNER_RADII = {
+  node: 4,
+  group: 4,
+  pill: 2,
+  /** The icon tile inside a node keeps its small radius. */
+  tile: 2,
 } as const;
 
 /**

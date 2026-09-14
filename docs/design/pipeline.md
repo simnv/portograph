@@ -511,7 +511,7 @@ larger of the measured top padding (20 px beyond the complete named pill and its
 and the largest top-side routed outward reach plus the widest routed half stroke and a 0.25 px tolerance.
 The reach is the whole mandatory shared prefix when the port has one, otherwise the ordinary
 checkpoint `max(15, 10 + (node stroke + widest routed stroke) / 2 + 0.25)`, which follows the node
-obstacle when a wide stroke expands it past the 15 px stem. With the default 2 px node and 1.5 px
+obstacle when a wide stroke expands it past the 15 px stem. With the default 1.5 px node and 1.5 px
 routed strokes the entry requirement is 16 px; a default named pill instead reserves 24.5 px
 to retain its visible gutter. The rule reads frozen inputs only: measured port names, the constant
 stem and `sharedRuns`, which every publication at or after stage 7e rebuilds and compares, so

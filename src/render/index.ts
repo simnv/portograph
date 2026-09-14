@@ -8,7 +8,7 @@ import { LEGEND_DEFAULT_CLASS } from '../profiles/network/theme.js';
 import { EPS, right } from '../score/geometry.js';
 import { effectiveLayer, validate } from '../score/model.js';
 import { measureText } from '../text/index.js';
-import { DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, linkStrokeWidth } from '../theme/geometry.js';
+import { CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, linkStrokeWidth } from '../theme/geometry.js';
 import { GeometryLocks, themeCss } from './theme.js';
 import { authorClass, classes, element, escapeStyle, escapeText, num } from './svg.js';
 
@@ -150,8 +150,8 @@ function iconElement(icon: { icon: string; bounds: Rect }, locks: GeometryLocks,
   const box = icon.bounds;
   const inset = Math.min(ICON_INSET, box.width / 4, box.height / 4);
   return element('rect', { class: classes('icon-tile', authored, locks.stroke(DEFAULT_STROKE_WIDTHS.pill)),
-    x: box.x, y: box.y, width: box.width, height: box.height, rx: 2, ry: 2 })
-    + element('use', { class: classes('node-icon', authored, locks.stroke(DEFAULT_STROKE_WIDTHS.node)),
+    x: box.x, y: box.y, width: box.width, height: box.height, rx: CORNER_RADII.tile, ry: CORNER_RADII.tile })
+    + element('use', { class: classes('node-icon', authored, locks.stroke(DEFAULT_STROKE_WIDTHS.glyph)),
       href: `#pg-icon-${iconKey(icon.icon)}`,
       x: box.x + inset, y: box.y + inset, width: box.width - 2 * inset, height: box.height - 2 * inset });
 }
@@ -251,7 +251,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
       ...(uniform ? { 'data-node-class': uniform } : {}) },
     element('rect', { class: classes('group-box', authored, uniform, locks.stroke(DEFAULT_STROKE_WIDTHS.group)),
       x: group.bounds!.x, y: group.bounds!.y, width: group.bounds!.width, height: group.bounds!.height,
-      rx: 10, ry: 10 }));
+      rx: CORNER_RADII.group, ry: CORNER_RADII.group }));
   }).join('');
 
   /**
@@ -318,7 +318,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     const node = layout.nodes[id]!, authored = authorClass(layout.document.nodes[id]!.class);
     const crossed = crossedBars.has(id);
     const body = element('rect', { class: classes('node-body', authored, locks.stroke(nodeStroke(node))),
-      x: node.bounds!.x, y: node.bounds!.y, width: node.bounds!.width, height: node.bounds!.height, rx: 8, ry: 8 });
+      x: node.bounds!.x, y: node.bounds!.y, width: node.bounds!.width, height: node.bounds!.height, rx: CORNER_RADII.node, ry: CORNER_RADII.node });
     // The detached body is the same rectangle, in a container of the same kind, inside a second
     // node layer, so what a document styles by name still reaches it: the theme, the geometry locks
     // and a `css:` rule naming the body, the class, the container or the layer. What it cannot

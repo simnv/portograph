@@ -31,14 +31,14 @@ describe('stage 8 obstacles', () => {
   it('expands each node by its own stroke-aware clearance and swallows its pills', async () => {
     const model = await throughBands(twoTier);
     const obstacles = routeObstacles(model);
-    // 10 px gate clearance plus half the node stroke plus half the widest routed stroke.
-    expect(nodeClearance(model, 'a')).toBe(11.75);
+    // 10 px gate clearance plus half the node stroke (1.5) plus half the widest routed stroke (1.5).
+    expect(nodeClearance(model, 'a')).toBe(11.5);
     const box = model.nodes.a!.bounds!, pill = model.nodes.a!.ports[0]!.pill!.bounds;
     const obstacle = obstacles.find(item => item.id === 'node:a')!.bounds;
-    // The bottom pill protrudes 12 px past the boundary, further than the 11.75 px node clearance.
+    // The bottom pill protrudes 12 px past the boundary, further than the 11.5 px node clearance.
     expect(bottom(pill) - bottom(box)).toBe(12);
-    expect(obstacle).toEqual({ x: box.x - 11.75, y: box.y - 11.75,
-      width: box.width + 23.5, height: box.height + 11.75 + 12 + 1.25 });
+    expect(obstacle).toEqual({ x: box.x - 11.5, y: box.y - 11.5,
+      width: box.width + 23, height: box.height + 11.5 + 12 + 1.25 });
     expect(contains(obstacle, { x: pill.x - 1.25, y: pill.y - 1.25, width: pill.width + 2.5, height: pill.height + 2.5 })).toBe(true);
     expect(model.nodes.a!.bounds).toEqual(box);
     // One obstacle per node keeps the set identical for every connector: no link needs a pill
@@ -54,7 +54,7 @@ describe('stage 8 obstacles', () => {
     rebuildNodeGeometry(draft, Object.keys(draft.nodes), 'current');
     draft.canvas = union([draft.canvas!, ...Object.values(draft.groups).map(group => group.bounds!)]);
     const model = bands(bundles(bars(centre(flanks(lanes(rows(restoreLayoutModel(JSON.stringify(draft)))))))));
-    expect(nodeClearance(model, 'a')).toBe(11.75);
+    expect(nodeClearance(model, 'a')).toBe(11.5);
     expect(nodeClearance(model, 'b')).toBe(20.75);
     const anchor = findPort(model, model.links[0]!.attachments!.to)!;
     expect(stemCheckpoint(model, anchor)).toEqual({ x: anchor.anchor!.x, y: anchor.anchor!.y - 21 });

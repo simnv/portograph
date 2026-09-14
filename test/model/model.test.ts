@@ -40,7 +40,7 @@ function handBuiltModel(): LayoutModel {
   model.nodes.a!.ports[0]!.pill = {
     owner: { kind: 'node', id: 'a' }, layer: 'routed',
     size: { width: 24, height: 10 }, bounds: { x: 55, y: 38, width: 10, height: 24 },
-    textRotation: -90, radius: 3,
+    textRotation: -90, radius: 2,
   };
   model.links[0]!.attachments = {
     from: { node: 'a', name: '100G', ordinal: 1 },

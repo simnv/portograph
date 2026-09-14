@@ -1,3 +1,4 @@
+import { CORNER_RADII } from '../theme/geometry.js';
 import type { Point, Rect, Side, Size } from '../model/geometry.js';
 
 function checkSize(size: Size): void {
@@ -38,7 +39,7 @@ export function placePortPill(node: Rect, side: Side, offset: number, size: Size
   const height = rotated ? size.width : size.height;
   return { anchor, size: { width: size.width, height: size.height },
     bounds: { x: anchor.x - width / 2, y: anchor.y - height / 2, width, height },
-    textRotation: rotated ? -90 : 0, radius: Math.min(3, width / 2, height / 2) };
+    textRotation: rotated ? -90 : 0, radius: Math.min(CORNER_RADII.pill, width / 2, height / 2) };
 }
 
 /** Pills face along the outward normal, so their unrotated height runs along every side. */

@@ -1,3 +1,4 @@
+import { CORNER_RADII } from '../theme/geometry.js';
 import { FONT_METRICS } from './font-metrics.js';
 
 /** Renderers must use this font stack, with kerning and discretionary ligatures disabled. */
@@ -62,5 +63,5 @@ export interface PortPillMeasurement {
 /** Unrotated dimensions. Port labels use 8px Arial, 3px horizontal padding and minimum 24×10. */
 export function measurePortPill(label: string, style: TextStyle = {}): PortPillMeasurement {
   const text = measureText(label, { ...style, fontSize: style.fontSize ?? 8 });
-  return { width: Math.max(24, Math.ceil(text.width + 6)), height: Math.max(10, text.height), radius: 3, text };
+  return { width: Math.max(24, Math.ceil(text.width + 6)), height: Math.max(10, text.height), radius: CORNER_RADII.pill, text };
 }

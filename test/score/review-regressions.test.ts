@@ -48,7 +48,7 @@ describe('review round 1: label exception containment', () => {
   });
   it('permits pill text to straddle the node only while contained in its own pill', () => {
     const model = simple(), port = model.nodes.a!.ports[0]!;
-    port.pill = { size: { width: 24, height: 10 }, bounds: { x: 18, y: 35, width: 24, height: 10 }, owner: { kind: 'node', id: 'a' }, layer: 'routed', radius: 3, textRotation: 0 };
+    port.pill = { size: { width: 24, height: 10 }, bounds: { x: 18, y: 35, width: 24, height: 10 }, owner: { kind: 'node', id: 'a' }, layer: 'routed', radius: 2, textRotation: 0 };
     model.labels.push({ id: 'pill-text', text: 'pill', role: 'pill', port: port.ref, owner: { kind: 'node', id: 'a' }, layer: 'routed', bounds: { x: 26, y: 37, width: 10, height: 6 } });
     expect(score(model).snapshot.gates.G3.passed).toBe(true);
     // This overflow hits the pill but stays wholly inside the node and misses the stem.

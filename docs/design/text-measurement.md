@@ -14,7 +14,7 @@ canonical lines are also the renderer's input.
 Default text is 12 px. Line height is the ceiling of the font's ascent, descent and line gap,
 scaled to that size. Multiline width is the widest line; an empty string has no lines and zero
 height. Port text defaults to 8 px. A pill has 3 px horizontal padding, a minimum unrotated size
-of 24×10 px, and radius 3. Measured sizes round outward. `100G` therefore needs 26×10 px.
+of 24×10 px, and radius 2 (ticket 34; 3 before). Measured sizes round outward. `100G` therefore needs 26×10 px.
 
 The JPEG and d3-fd `src/nodes/interfaceNode.ts` put the pill's long axis along the port's normal.
 Top and bottom pills and their text rotate −90°. Left and right pills stay horizontal. This

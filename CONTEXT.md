@@ -72,8 +72,8 @@ drew it. Network diagrams first; software architecture and electrical panels nex
 | Link label room | a described link's run is at least label width + 2 × 8 px, symmetric about the anchor midpoint out to the nearer pill face, reserved in 7f; a detour under a title also reserves band room | ADR-0014, maintainer 2026-09-13 |
 | Group title link-margin | 8 px around the measured title, link-free: labels keep it from reserved link geometry, routing treats it as an obstacle, G3 fails a segment inside it | maintainer M1 visual review, 2026-09-11 |
 | Node minimum | 50 × 35 px | d3-fd |
-| Port pill | 24 × 10 px, r 3 | d3-fd |
-| Node corner radius | 8 px; group 10 px | d3-fd |
+| Port pill | 24 × 10 px, r 2 (was 3) | d3-fd; ticket 34 |
+| Corner radii | node 4 px, group 4 px, pill 2 px, icon tile 2 px (Industry's 4 px token; was 8 / 10 / 3 from d3-fd) | ticket 34, maintainer 2026-09-14 |
 | Bar padding beyond outermost port | 30 px | prototype `tall5` |
 | Bar span merge threshold | spans overlap > 50 % of the narrower → shared span | prototype `tall5` |
 | Lane width | port pill width + gap ≈ 34 px | prototype `tall3` |

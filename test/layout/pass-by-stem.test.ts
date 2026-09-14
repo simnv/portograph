@@ -41,7 +41,8 @@ describe('a port that passes its row neighbour by keeps its stem', () => {
     const model = await pipeline(fixture('flank-two-peers'));
     const secondary = model.nodes.secondary!, primary = model.nodes.primary!;
     const required = stemReach(model, secondary) + nodeObstacleReach(model, primary);
-    expect(required).toBe(26.75);
+    // 15 px stem + 10 px clearance + half the node stroke (1.5) + half the path stroke (1.5).
+    expect(required).toBe(26.5);
     expect(gap(model, 'primary', 'secondary')).toBeGreaterThanOrEqual(required);
     expect(gap(model, 'primary', 'secondary')).toBeGreaterThan(nodeGap(model, 'primary', 'secondary'));
 

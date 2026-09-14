@@ -67,6 +67,8 @@ describe('port roles in the drawn legend', () => {
       ['port:uplink', 'legend-entry legend-port uplink'], ['port:mgmt', 'legend-entry legend-port mgmt']]);
     const legend = svg.slice(svg.indexOf('<g class="legend"'));
     const swatches = elements(legend, 'rect').filter(rect => rect['class']?.startsWith('pill'));
+    // The accepted pill radius (ticket 34): the swatch is drawn like every pill.
+    expect(LEGEND_GEOMETRY.portRadius).toBe(2);
     expect(swatches.map(rect => [rect['class']!.replace(/ pg-w-[^ ]+/, ''), Number(rect['width']), Number(rect['height']), Number(rect['rx'])]))
       .toEqual([['pill uplink', LEGEND_GEOMETRY.portWidth, LEGEND_GEOMETRY.portHeight, LEGEND_GEOMETRY.portRadius],
         ['pill mgmt', LEGEND_GEOMETRY.portWidth, LEGEND_GEOMETRY.portHeight, LEGEND_GEOMETRY.portRadius]]);

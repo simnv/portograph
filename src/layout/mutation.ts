@@ -106,7 +106,7 @@ function nonBarHorizontalPlacement(model: LayoutModel): unknown {
  * same specificity and importance wins on the properties it is allowed to change. The parser is
  * what makes that safe: it strips every geometry-changing declaration from `css:` with a warning.
  * A hand-written layout JSON never went through the parser, so without this check
- * `.node-body { stroke-width: 40px !important }` reaches the SVG while `score` still measures 2 px
+ * `.node-body { stroke-width: 40px !important }` reaches the SVG while `score` still measures 1.5 px
  * — the drawing and the gates would describe different geometry. The check is the *same* policy,
  * not a second one: it re-runs `filterCss` and requires it to remove nothing, so every vendor,
  * custom and palette declaration the parser keeps is still accepted here.

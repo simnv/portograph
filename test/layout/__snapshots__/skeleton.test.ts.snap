@@ -6,8 +6,8 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
     {
       "bounds": {
         "height": 63,
-        "width": 146,
-        "x": 247.5244140625,
+        "width": 145.5,
+        "x": 247.2744140625,
         "y": 12,
       },
       "flank": undefined,
@@ -20,7 +20,7 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
     {
       "bounds": {
         "height": 100,
-        "width": 340.0390625,
+        "width": 338.5390625,
         "x": 159.509765625,
         "y": 135,
       },
@@ -55,7 +55,7 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
       "bounds": {
         "height": 156,
         "width": 87.509765625,
-        "x": 559.548828125,
+        "x": 558.048828125,
         "y": 135,
       },
       "flank": {
@@ -72,8 +72,8 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
     {
       "bounds": {
         "height": 63,
-        "width": 146,
-        "x": 148.5244140625,
+        "width": 145.5,
+        "x": 148.7744140625,
         "y": 351,
       },
       "flank": undefined,
@@ -86,8 +86,8 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
     {
       "bounds": {
         "height": 98,
-        "width": 170,
-        "x": 127.0244140625,
+        "width": 169.5,
+        "x": 127.2744140625,
         "y": 474,
       },
       "flank": undefined,
@@ -103,7 +103,7 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
       "bounds": {
         "height": 39,
         "width": 50,
-        "x": 259.5244140625,
+        "x": 259.2744140625,
         "y": 24,
       },
       "id": "provider-1",
@@ -112,7 +112,7 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
       "bounds": {
         "height": 39,
         "width": 50,
-        "x": 331.5244140625,
+        "x": 330.7744140625,
         "y": 24,
       },
       "id": "provider-2",
@@ -130,7 +130,7 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
       "bounds": {
         "height": 76,
         "width": 66.009765625,
-        "x": 252.51953125,
+        "x": 252.01953125,
         "y": 147,
       },
       "id": "EBR-01",
@@ -139,7 +139,7 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
       "bounds": {
         "height": 76,
         "width": 66.009765625,
-        "x": 340.529296875,
+        "x": 339.529296875,
         "y": 147,
       },
       "id": "EBR-02",
@@ -148,7 +148,7 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
       "bounds": {
         "height": 76,
         "width": 59.009765625,
-        "x": 428.5390625,
+        "x": 427.0390625,
         "y": 147,
       },
       "id": "EAC-02",
@@ -166,7 +166,7 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
       "bounds": {
         "height": 132,
         "width": 63.509765625,
-        "x": 571.548828125,
+        "x": 570.048828125,
         "y": 147,
       },
       "id": "TBR-002",
@@ -175,7 +175,7 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
       "bounds": {
         "height": 39,
         "width": 50,
-        "x": 160.5244140625,
+        "x": 160.7744140625,
         "y": 363,
       },
       "id": "RR-01",
@@ -184,7 +184,7 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
       "bounds": {
         "height": 39,
         "width": 50,
-        "x": 232.5244140625,
+        "x": 232.2744140625,
         "y": 363,
       },
       "id": "RR-02",
@@ -193,7 +193,7 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
       "bounds": {
         "height": 54,
         "width": 62,
-        "x": 139.0244140625,
+        "x": 139.2744140625,
         "y": 506,
       },
       "id": "EBB-01",
@@ -202,7 +202,7 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
       "bounds": {
         "height": 54,
         "width": 62,
-        "x": 223.0244140625,
+        "x": 222.7744140625,
         "y": 506,
       },
       "id": "EBB-02",
@@ -212,8 +212,8 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
     {
       "bounds": {
         "height": 63,
-        "width": 146,
-        "x": 247.5244140625,
+        "width": 145.5,
+        "x": 247.2744140625,
         "y": 12,
       },
       "groups": [
@@ -224,7 +224,7 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
     {
       "bounds": {
         "height": 156,
-        "width": 635.05859375,
+        "width": 633.55859375,
         "x": 12,
         "y": 135,
       },
@@ -238,8 +238,8 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
     {
       "bounds": {
         "height": 63,
-        "width": 146,
-        "x": 148.5244140625,
+        "width": 145.5,
+        "x": 148.7744140625,
         "y": 351,
       },
       "groups": [
@@ -250,8 +250,8 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
     {
       "bounds": {
         "height": 98,
-        "width": 170,
-        "x": 127.0244140625,
+        "width": 169.5,
+        "x": 127.2744140625,
         "y": 474,
       },
       "groups": [

@@ -1,5 +1,6 @@
 import { FONT_FAMILY } from '../text/index.js';
 import { NODE_CONTENT_GEOMETRY } from './content.js';
+import { CORNER_RADII } from './geometry.js';
 
 /**
  * Generated-legend typography and spacing. Stage 9 measures the legend with these values and
@@ -19,7 +20,7 @@ export const LEGEND_GEOMETRY = {
   /** A port swatch is the handoff's 26 × 10 pill sample at the drawn pill radius. */
   portWidth: 26,
   portHeight: 10,
-  portRadius: 3,
+  portRadius: CORNER_RADII.pill,
   /** Visible gap between a swatch and its text. */
   swatchGap: 6,
   /** Visible gap between two entries on one row. */
