@@ -95,6 +95,16 @@ const samePoint = (a: Point, b: Point): boolean => Math.abs(a.x - b.x) <= EPS &&
 const relative = (box: Rect, origin: Point): Rect =>
   ({ x: box.x - origin.x, y: box.y - origin.y, width: box.width, height: box.height });
 
+/**
+ * One component of a cell id, with the separator escaped so it cannot be produced by an author's
+ * own identifier. Ids are built by concatenation, and draw.io neither rejects nor reports a
+ * duplicate — it keeps one cell and drops the other — so the scheme has to be injective by
+ * construction: `pg-<kind>~<part>~<part>`, where no kind holds a `~` and no part can grow one.
+ */
+const part = (value: string): string => value.replace(/[%~]/g, character => `%${character.charCodeAt(0).toString(16)}`);
+const cellId = (kind: string, ...parts: readonly string[]): string =>
+  parts.length ? `pg-${kind}~${parts.map(part).join('~')}` : `pg-${kind}`;
+
 /** The tokens an author put on a port: a role, a status and any free text, in any order. */
 const portTokens = (port: LayoutPort): string[] => (authorClass(port.class) ?? '').split(/\s+/).filter(Boolean);
 
@@ -114,23 +124,35 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   const shiftRect = (box: Rect): Rect => ({ ...shift(box), width: box.width, height: box.height });
 
   const cells: string[] = [];
+  const claimed = new Set<string>();
+  /**
+   * Every id passes through here. A collision is silent corruption in draw.io, and the loss is
+   * whichever cell it decides to drop, so it is refused at the source instead.
+   */
+  const claim = (id: string): string => {
+    if (claimed.has(id)) throw new Error(`A draw.io export cannot reuse the cell id ${id}`);
+    claimed.add(id);
+    return id;
+  };
   const vertex = (id: string, parent: string, style: string, box: Rect, value?: string,
     extra: Readonly<Record<string, StyleValue>> = {}): void => {
-    cells.push(element('mxCell', { id, value, style, vertex: 1, parent, ...extra },
+    cells.push(element('mxCell', { id: claim(id), value, style, vertex: 1, parent, ...extra },
       element('mxGeometry', { x: box.x, y: box.y, width: box.width, height: box.height, as: 'geometry' })));
   };
 
   /** A text cell placed at exactly the box stage 9 measured, so no label is re-flowed on open. */
   const textCell = (id: string, parent: string, label: LayoutLabel, box: Rect, colour: string): void => {
-    // `bounds` on a rotated label is already the rotated box, and draw.io rotates a vertex label
-    // about the cell centre, so the same box with `horizontal=0` reproduces a quarter turn exactly.
-    const quarter = label.textRotation === -90 || label.textRotation === 90;
+    // A label's `bounds` is already the rotated box and the model keeps no unrotated size, so the
+    // angle is reproduced the way the SVG renderer reproduces it: the text is laid out unclipped
+    // about the box centre and then turned. `rotation` is clockwise-positive in both formats, and
+    // it takes every reserved angle — a straight bundle member's label is rotated to its own run
+    // (ADR-0017), not to a quarter turn.
     vertex(id, parent, styleString(['text'], {
       html: 1, strokeColor: 'none', fillColor: 'none', align: 'center', verticalAlign: 'middle',
       whiteSpace: 'nowrap', overflow: 'visible', points: '[]', resizable: 0,
       fontFamily: FONT_FAMILY, fontSize: label.fontSize, fontColor: colour,
       fontStyle: label.fontWeight === 700 ? 1 : undefined,
-      horizontal: quarter ? 0 : undefined,
+      rotation: label.textRotation ? label.textRotation : undefined,
     }), box, htmlText(label.lines ?? [label.text]));
   };
 
@@ -175,15 +197,20 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
 
   // ---- layers -----------------------------------------------------------------------------
   // mxGraph paints in tree order and a container paints with its children, so the SVG renderer's
-  // z-order cannot be reproduced cell by cell. Layers carry it instead. Every routed link ends up
-  // above every node body, where the SVG puts only the bar bodies a crossing declares: G2 keeps
-  // routed segments out of foreign nodes, so the one place a link meets a body is a declared bar
-  // crossing, which is exactly where it must be painted on top.
-  const LAYERS = ['overlay', 'diagram', 'links', 'labels', 'legend'] as const;
+  // z-order cannot be reproduced cell by cell: a group box must sit under the links and its own
+  // nodes over them, and those are one subtree. Layers carry what can be carried.
+  //
+  // Everything therefore paints above the group boxes. That is the right way round — between 45%
+  // and 63% of routed length runs inside a group box on the measured diagrams, and the group fill
+  // is translucent, so links underneath would be washed out rather than merely re-ordered. The
+  // same reasoning puts the overlay layer above the diagram: below it, an overlay stroke is all
+  // but invisible. The SVG masks overlay strokes out of the boxes they would obscure; mxGraph has
+  // no mask, so they are drawn over instead of under.
+  const LAYERS = ['diagram', 'overlay', 'links', 'labels', 'legend'] as const;
   const LAYER_NAMES: Readonly<Record<(typeof LAYERS)[number], string>> = {
     overlay: 'Overlay', diagram: 'Diagram', links: 'Links', labels: 'Labels', legend: 'Legend',
   };
-  const layerId = (name: (typeof LAYERS)[number]): string => `pg-layer-${name}`;
+  const layerId = (name: (typeof LAYERS)[number]): string => cellId('layer', name);
 
   // ---- groups and their nodes ---------------------------------------------------------------
   const groupTitle = (group: LayoutGroup): LayoutLabel | undefined =>
@@ -226,16 +253,16 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         opacity: Math.round(paint.group.fillOpacity * 100),
         verticalAlign: 'top', align: 'center',
       });
-    vertex(`pg-group-${id}`, layerId('diagram'), style, box, swimlane ? htmlText(title!.lines ?? [title!.text]) : undefined);
+    vertex(cellId('group', id), layerId('diagram'), style, box, swimlane ? htmlText(title!.lines ?? [title!.text]) : undefined);
     if (title && !swimlane) {
-      textCell(`pg-group-title-${id}`, `pg-group-${id}`, title,
+      textCell(cellId('groupTitle', id), cellId('group', id), title,
         relative(shiftRect(title.bounds!), box), paint.group.text);
     }
   }
 
   for (const id of orderedNodeIds(document)) {
     const node = layout.nodes[id]!;
-    const group = `pg-group-${document.nodes[id]!.group}`;
+    const group = cellId('group', document.nodes[id]!.group);
     const box = shiftRect(node.bounds!);
     const origin = shift(layout.groups[document.nodes[id]!.group]!.bounds!);
     const authored = nodeClassOf(id);
@@ -247,7 +274,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       return `[${num((at.x - node.bounds!.x) / node.bounds!.width)},`
         + `${num((at.y - node.bounds!.y) / node.bounds!.height)},0]`;
     });
-    vertex(`pg-node-${id}`, group, styleString([], {
+    vertex(cellId('node', id), group, styleString([], {
       html: 1, rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.node * 2,
       whiteSpace: 'nowrap', fillColor: paint.node.fill, strokeColor: paint.node.stroke,
       strokeWidth: node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node,
@@ -258,7 +285,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const tile = relative(shiftRect(node.icon.bounds), shift(node.bounds!));
       const known = nodeClassStyle(authored);
       const resolved = known ? nodeClassPaint(known, mode) : { tile: paint.tile, glyph: paint.glyph };
-      vertex(`pg-icon-tile-${id}`, `pg-node-${id}`, styleString([], {
+      vertex(cellId('iconTile', id), cellId('node', id), styleString([], {
         html: 1, rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
         fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
       }), tile);
@@ -267,7 +294,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const glyph = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">`
         + `<path d="${iconPath(node.icon.icon)}" fill="none" stroke="${resolved.glyph}"`
         + ` stroke-width="${num(GLYPH_STROKE)}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-      vertex(`pg-icon-${id}`, `pg-node-${id}`, styleString([], {
+      vertex(cellId('icon', id), cellId('node', id), styleString([], {
         shape: 'image', html: 1, imageAspect: 0, points: '[]',
         image: svgImage(glyph),
       }), { x: tile.x + ICON_INSET, y: tile.y + ICON_INSET,
@@ -278,16 +305,16 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       if (label.owner.kind !== 'node' || label.owner.id !== id) continue;
       if (label.role !== 'node' && label.role !== 'description') continue;
       if (label.omitted) continue;
-      textCell(`pg-node-${label.role}-${id}`, `pg-node-${id}`, label,
+      textCell(cellId(label.role === 'node' ? 'nodeLabel' : 'nodeDescription', id), cellId('node', id), label,
         relative(shiftRect(label.bounds!), shift(node.bounds!)),
         label.role === 'node' ? paint.node.text : paint.node.description);
     }
 
     for (const port of node.ports) {
       if (!port.pill || port.ref.anonymous === true) continue;
-      const identity = `${id}.${port.ref.name!}#${port.ref.ordinal}`;
+      const identity = [id, port.ref.name!, String(port.ref.ordinal)];
       const resolved = pillPaint(authored, port);
-      vertex(`pg-port-${identity}`, `pg-node-${id}`, styleString([], {
+      vertex(cellId('port', ...identity), cellId('node', id), styleString([], {
         html: 1, rounded: 1, absoluteArcSize: 1, arcSize: port.pill.radius * 2,
         fillColor: resolved.fill, strokeColor: resolved.stroke,
         strokeWidth: DEFAULT_STROKE_WIDTHS.pill, points: '[]',
@@ -297,7 +324,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const label = layout.labels.find(item => item.role === 'pill' && item.port !== undefined
         && item.port.node === id && item.port.name === port.ref.name && item.port.ordinal === port.ref.ordinal);
       if (label && !label.omitted) {
-        textCell(`pg-port-label-${identity}`, `pg-node-${id}`, label,
+        textCell(cellId('portLabel', ...identity), cellId('node', id), label,
           relative(shiftRect(label.bounds!), shift(node.bounds!)), resolved.text);
       }
     }
@@ -349,7 +376,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       : '';
     const dangling = (ends.sourcePoint ? element('mxPoint', { x: ends.sourcePoint.x, y: ends.sourcePoint.y, as: 'sourcePoint' }) : '')
       + (ends.targetPoint ? element('mxPoint', { x: ends.targetPoint.x, y: ends.targetPoint.y, as: 'targetPoint' }) : '');
-    cells.push(element('mxCell', { id, style, edge: 1, parent: layer, source: ends.source, target: ends.target },
+    cells.push(element('mxCell', { id: claim(id), style, edge: 1, parent: layer, source: ends.source, target: ends.target },
       element('mxGeometry', { relative: 1, as: 'geometry' }, waypoints + dangling)));
   };
 
@@ -365,7 +392,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     runs.forEach((run, index) => {
       const first = index === 0, last = index === runs.length - 1;
       const from = link.attachments?.from, to = link.attachments?.to;
-      const id = runs.length === 1 ? `pg-link-${link.id}` : `pg-link-${link.id}-${index}`;
+      const id = runs.length === 1 ? cellId('link', link.id) : cellId('link', link.id, String(index));
       ids.push(id);
       // A connector holds one polyline; a path whose segment chain breaks becomes one connector per
       // run, each dangling where the chain did. Only the ends that are really ends are pinned.
@@ -379,8 +406,8 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         ...(last && to ? pin('entry', to) : {}),
       });
       edgeCell(id, layer, style, run, {
-        source: first && from ? `pg-node-${from.node}` : undefined,
-        target: last && to ? `pg-node-${to.node}` : undefined,
+        source: first && from ? cellId('node', from.node) : undefined,
+        target: last && to ? cellId('node', to.node) : undefined,
         sourcePoint: first && from ? undefined : run[0],
         targetPoint: last && to ? undefined : run[run.length - 1],
       });
@@ -393,7 +420,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const ends = link.path!.segments;
       for (const [end, point] of [['from', ends[0]!.from], ['to', ends[ends.length - 1]!.to]] as const) {
         const at = shift(point);
-        vertex(`pg-overlay-${link.id}-${end}`, layerId('overlay'), styleString(['ellipse'], {
+        vertex(cellId('overlayMark', link.id, end), layerId('overlay'), styleString(['ellipse'], {
           html: 1, fillColor: paint.overlay.mark, strokeColor: 'none', points: '[]',
         }), { x: at.x - OVERLAY_ENDPOINT_RADIUS, y: at.y - OVERLAY_ENDPOINT_RADIUS,
           width: 2 * OVERLAY_ENDPOINT_RADIUS, height: 2 * OVERLAY_ENDPOINT_RADIUS });
@@ -407,25 +434,35 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   // `offset`, which is measured in screen axes: exact, and free of the sign convention.
   for (const label of layout.labels) {
     if (label.role !== 'link' || label.omitted || !label.bounds) continue;
+    const multiplicity = label.support?.kind === 'merge-run';
+    const colour = multiplicity ? paint.link.multiplicity : paint.link.label;
     const owner = label.owner.kind === 'barCross' ? label.owner.link
       : label.owner.kind === 'link' ? label.owner.id : undefined;
     const link = owner === undefined ? undefined : byId.get(owner);
     const ids = owner === undefined ? undefined : edgeIds.get(owner);
-    if (!link || !ids?.length) continue;
+    if (!link || !ids?.length) {
+      // A counted merge label is owned by its bundle, not by any one link: it names the shared
+      // trunk, and no connector here is that trunk, because each member exports its whole path.
+      // Attaching the count to an arbitrary member would say something false about which link
+      // carries it, so it keeps its measured box in the label layer instead. Dropping it was the
+      // defect: the count is a datum stage 9 placed, and it has to survive the export.
+      if (label.owner.kind !== 'bundle') continue;
+      const bundle = label.owner.id;
+      if (!drawn.some(item => item.bundle === bundle)) continue;
+      textCell(cellId('linkLabel', label.id), layerId('labels'), label, shiftRect(label.bounds), colour);
+      continue;
+    }
     const parent = ids[0]!;
     const anchor = midpoint(polylines(link.path!.segments)[0] ?? []);
     if (!anchor) continue;
     const at = centre(shiftRect(label.bounds));
-    const multiplicity = label.support?.kind === 'merge-run';
-    const quarter = label.textRotation === -90 || label.textRotation === 90;
     cells.push(element('mxCell', {
-      id: `pg-link-label-${label.id}`, value: htmlText(label.lines ?? [label.text]),
+      id: claim(cellId('linkLabel', label.id)), value: htmlText(label.lines ?? [label.text]),
       style: styleString(['edgeLabel'], {
         html: 1, align: 'center', verticalAlign: 'middle', resizable: 0, points: '[]',
-        fontFamily: FONT_FAMILY, fontSize: label.fontSize,
-        fontColor: multiplicity ? paint.link.multiplicity : paint.link.label,
+        fontFamily: FONT_FAMILY, fontSize: label.fontSize, fontColor: colour,
         fontStyle: label.fontWeight === 700 ? 1 : undefined,
-        horizontal: quarter ? 0 : undefined,
+        rotation: label.textRotation ? label.textRotation : undefined,
       }),
       vertex: 1, connectable: 0, parent,
     }, element('mxGeometry', { x: 0, y: 0, relative: 1, as: 'geometry' },
@@ -435,13 +472,13 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   // ---- legend -------------------------------------------------------------------------------
   if (layout.legend) {
     const box = shiftRect(layout.legend.bounds);
-    vertex('pg-legend', layerId('legend'), styleString(['group'], { html: 1, points: '[]' }), box);
+    vertex(cellId('legend'), layerId('legend'), styleString(['group'], { html: 1, points: '[]' }), box);
     for (const entry of layout.legend.entries) {
       const swatch = relative(shiftRect(entry.swatch), shift(layout.legend.bounds));
       if (entry.kind === 'line') {
         const klass = entry.key === LEGEND_DEFAULT_CLASS ? linkClassStyle(undefined) : linkClassStyle(entry.key);
         const middle = swatch.y + swatch.height / 2;
-        edgeCell(`pg-legend-${entry.id}`, 'pg-legend', styleString([], {
+        edgeCell(cellId('legendSwatch', entry.id), cellId('legend'), styleString([], {
           edgeStyle: 'none', rounded: 0, html: 1, endArrow: 'none', startArrow: 'none',
           strokeColor: klass.strokes[mode], strokeWidth: entry.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path,
           ...dashEntries(klass.dash),
@@ -449,7 +486,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       } else if (entry.kind === 'port') {
         const role = portRoleStyle(entry.key);
         const resolved = role ? portRolePaint(role, mode) : undefined;
-        vertex(`pg-legend-${entry.id}`, 'pg-legend', styleString([], {
+        vertex(cellId('legendSwatch', entry.id), cellId('legend'), styleString([], {
           html: 1, rounded: 1, absoluteArcSize: 1,
           arcSize: (entry.radius ?? CORNER_RADII.pill) * 2,
           fillColor: resolved?.fill ?? paint.pill.fill,
@@ -459,21 +496,21 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       } else if (entry.icon) {
         const known = nodeClassStyle(entry.key);
         const resolved = known ? nodeClassPaint(known, mode) : { tile: paint.tile, glyph: paint.glyph };
-        vertex(`pg-legend-tile-${entry.id}`, 'pg-legend', styleString([], {
+        vertex(cellId('legendTile', entry.id), cellId('legend'), styleString([], {
           html: 1, rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
           fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
         }), swatch);
         const glyph = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">`
           + `<path d="${iconPath(entry.icon)}" fill="none" stroke="${resolved.glyph}"`
           + ` stroke-width="${num(GLYPH_STROKE)}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-        vertex(`pg-legend-${entry.id}`, 'pg-legend', styleString([], {
+        vertex(cellId('legendSwatch', entry.id), cellId('legend'), styleString([], {
           shape: 'image', html: 1, imageAspect: 0, points: '[]', image: svgImage(glyph),
         }), { x: swatch.x + ICON_INSET, y: swatch.y + ICON_INSET,
           width: swatch.width - 2 * ICON_INSET, height: swatch.height - 2 * ICON_INSET });
       }
       const label = layout.labels.find(item => item.id === entry.label);
       if (label && !label.omitted && label.bounds) {
-        textCell(`pg-legend-label-${entry.id}`, 'pg-legend', label,
+        textCell(cellId('legendLabel', entry.id), cellId('legend'), label,
           relative(shiftRect(label.bounds), shift(layout.legend.bounds)), paint.legend.text);
       }
     }
