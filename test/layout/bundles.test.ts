@@ -12,7 +12,9 @@ import { score } from '../../src/score/index.js';
 import { intersection, samePoint } from '../../src/score/geometry.js';
 import { placed } from './phase-two-fixture.js';
 import { straightMembers } from '../../src/layout/bundle-paths.js';
-import { inversionPairs, type Member } from '../../src/layout/bundle-geometry.js';
+import { MIN_STEM, bundleFanRows, edgeMargin, fanDepth, fanEnd, inversionPairs, members, pitch, treeCohorts, type Member } from '../../src/layout/bundle-geometry.js';
+import { portId } from '../../src/layout/skeleton-graph.js';
+import { routedStroke as routedStrokeWidth } from '../../src/layout/bands.js';
 import type { Bundle } from '../../src/model/index.js';
 
 export const throughBars = async (yaml: string): Promise<LayoutModel> => bars(centre(flanks(lanes(rows(await placed(yaml))))));
@@ -324,4 +326,62 @@ links: [[a.p, b.p], [a.q, b.q], [a.r, b.r], [a.s, b.s]]`;
   const scored = score(model);
   for (const gate of ['G2', 'G4', 'G5', 'G6', 'G7'] as const) expect(scored.snapshot.gates[gate], gate).toMatchObject({ passed: true });
   expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
+});
+
+it('ticket 39: a left-right facing inverted bundle reserves its shared fan depth', async () => {
+  // The vertical branch of the capacity reservation always included the fan depth; the horizontal
+  // one did not, so `crossedPaths`, which measures from the fan-advanced anchors, could throw after
+  // placement. The reserved gap now covers the stem, the fan rows, the crossover cells and the fan.
+  const model = run(await throughBars(`
+portograph: 2
+groups: {g: {tier: 0}}
+nodes:
+  a: {group: g, ports: [{name: p, side: right, order: 0}, {name: r, side: right, order: 1}]}
+  b: {group: g, ports: [{name: b0, side: left, order: 0}, {name: b1, side: left, order: 1}, {name: b2, side: left, order: 2}]}
+links: [[a.p, b.b1], [a.p, b.b2], [a.r, b.b0]]
+`));
+  const bundle = model.bundles[0]!;
+  expect(bundle.members).toHaveLength(3);
+  const list = members(model, bundle), q = pitch(model, bundle);
+  const inversions = inversionPairs(list).length;
+  expect(inversions).toBeGreaterThan(0);
+  // The fan at the shared port advances the anchors `crossedPaths` measures from by its last row,
+  // one pitch beyond the *bundle's* rows, not the two members that meet there. The reserved gap must
+  // cover the two stems, the fan rows, the crossover cells, that advance and the two edge margins.
+  const shared = list.filter(m => m.a.ref.name === 'p');
+  expect(shared).toHaveLength(2);
+  const advance = bundleFanRows(model, shared[0]!.a, shared.map(m => m.link), list.length, q).distance;
+  expect(advance).toBeGreaterThanOrEqual(MIN_STEM + q * list.length - 1e-6);
+  const [left, right] = bundle.nodes.map(id => model.nodes[id]!).sort((x, y) => x.bounds!.x - y.bounds!.x);
+  const gap = right!.bounds!.x - (left!.bounds!.x + left!.bounds!.width);
+  const margins = 2 * edgeMargin(routedStrokeWidth(model));
+  expect(gap).toBeGreaterThanOrEqual(30 + 4 * q * inversions + 2 * q * (list.length + 1) + advance + margins - 1e-6);
+  expect(score(model).snapshot.gates.G6).toMatchObject({ passed: true });
+}, 60000);
+
+it('ticket 39: a tree made with an outside link sets the reserved depth, not the bundle fan', async () => {
+  // Codex rounds 4 and 5: at a port an outside routed link joins, `bundleFans` consumes the shared
+  // runs stage 7e reserved and draws no fan of its own, so the tree's own end is the depth to
+  // reserve. (The fixture publishes with a G4 overlap — ticket 41 — which is why this reads the
+  // reservation rather than a gate.)
+  // The reservation runs before the bundle stage pins any path, which is when the cohorts exist.
+  const model = await throughBars(`
+portograph: 2
+groups: {g: {tier: 0}}
+nodes:
+  a: {group: g, ports: [{name: p, side: right, order: 0}, {name: r, side: right, order: 1}]}
+  b: {group: g, ports: [{name: s, side: left, order: 0}, {name: t, side: left, order: 1}]}
+  c: {group: g, ports: [{name: p, side: left, order: 0}]}
+links: [[a.p, b.t], [a.r, b.s], [a.r, c.p]]
+`);
+  const bundle = model.bundles[0]!;
+  const list = members(model, bundle), q = pitch(model, bundle);
+  const cohorts = treeCohorts(model);
+  const tree = cohorts.find(cohort => cohort.port.ref.name === 'r');
+  expect(tree).toBeDefined();
+  expect(tree!.links.some(link => link.bundle === undefined)).toBe(true);
+  const indexed = new Map(cohorts.map(cohort => [portId(cohort.port.ref), cohort]));
+  expect(fanDepth(model, indexed, bundle, list, 'a', q)).toBeCloseTo(fanEnd(model, tree!.port, tree!.links), 6);
+  // No two members meet at a port here, so the bundle's own fan contributes nothing at either end.
+  expect(fanDepth(model, new Map(), bundle, list, 'a', q)).toBe(0);
 });

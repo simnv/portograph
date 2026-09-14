@@ -1,7 +1,6 @@
-import { linkStrokeWidth } from '../theme/geometry.js';
 import type { Bundle, LayoutModel, LayoutPort, Owner, PathSegment, Point } from '../model/index.js';
 import { portId } from './skeleton-graph.js';
-import { axis, clearOfGroupEdges, clone, coordinate, edgeMargin, facing, fanCohorts, fanEnd, fanPitch, fanRows, groupDepthPairs, junctionId, normal, type Member } from './bundle-geometry.js';
+import { axis, bundleFanRows, clone, coordinate, facing, fanCohorts, fanEnd, fanPitch, fanRows, junctionId, normal, type Member } from './bundle-geometry.js';
 import { placementWarning } from './regions.js';
 
 export interface BundleFans {
@@ -24,13 +23,8 @@ export function bundleFans(model: LayoutModel, bundle: Bundle, list: Member[], q
     for (const [port, own] of groups) {
       // Fan rows sit 15 px out and then one pitch apart, but never within the edge margin of a group
       // edge they run along (ADR-0013): a row that would, and every row after it, moves outward.
-      const nrm = normal(port.side!);
-      const toDepth = (p: Point): number => axis(port.side!) === 'y' ? nrm.x * (p.x - port.anchor!.x) : nrm.y * (p.y - port.anchor!.y);
-      const pairs = groupDepthPairs(model, [model.document.nodes[port.ref.node]!.group], toDepth);
-      const clearDepth = (depth: number): number => clearOfGroupEdges(depth, pairs, 1, edgeMargin(Math.max(...own.map(m => linkStrokeWidth(m.link)))));
-      const rows: number[] = [];
-      for (let i = 0; i < list.length; i++) rows.push(clearDepth(Math.max(15 + i * q, (rows[i - 1] ?? -Infinity) + q)));
-      const distance = clearDepth(Math.max(15 + q * list.length, rows[rows.length - 1]! + q));
+      // Stage 7e reserves this same figure before any path exists (ticket 39).
+      const { rows, distance } = bundleFanRows(model, port, own.map(m => m.link), list.length, q);
       const reserved = own.map(m => ({ member: m, runs: m.link.sharedRuns?.[end === 'a' ? m.reversed ? 'to' : 'from' : m.reversed ? 'from' : 'to'] }));
       if (reserved.every(item => item.runs?.length)) {
         for (const item of reserved) {

@@ -128,13 +128,58 @@ export function fanPitch(links: readonly LayoutLink[]): number {
  * depth of junction `i`; `rows[links.length]` is where the straight continuation ends.
  */
 export function fanRows(model: LayoutModel, port: LayoutPort, links: readonly LayoutLink[]): number[] {
-  const q = fanPitch(links), n = normal(port.side!), tangent = axis(port.side!);
+  return edgeAwareRows(model, port, links, links.length + 1, fanPitch(links));
+}
+
+/**
+ * Row depths of a bundle's own fan at `port` (`bundleFans`): `count` rows a pitch apart from 15 px
+ * out, each moved off a group edge it would run along (ADR-0013), and the `distance` one further
+ * pitch out where the members join the channel. The reservation in 7e and the producer read this
+ * one function, so the room reserved is the room the fan takes.
+ */
+export function bundleFanRows(model: LayoutModel, port: LayoutPort, fanLinks: readonly LayoutLink[], count: number, q: number): { rows: number[]; distance: number } {
+  const rows = edgeAwareRows(model, port, fanLinks, count, q);
+  return { rows, distance: edgeAwareRows(model, port, fanLinks, count + 1, q)[count]! };
+}
+
+/**
+ * `count` row depths at `port`, a pitch apart from `MIN_STEM` out, each moved off a group edge it
+ * would run along (ADR-0013) together with every row after it. The one recurrence both fan kinds
+ * read, so a change to the clearance cannot move one and leave the other behind.
+ */
+function edgeAwareRows(model: LayoutModel, port: LayoutPort, fanLinks: readonly LayoutLink[], count: number, q: number): number[] {
+  const n = normal(port.side!), tangent = axis(port.side!);
   const toDepth = (p: Point): number => tangent === 'y' ? n.x * (p.x - port.anchor!.x) : n.y * (p.y - port.anchor!.y);
   const pairs = groupDepthPairs(model, [model.document.nodes[port.ref.node]!.group], toDepth);
-  const margin = edgeMargin(Math.max(...links.map(linkStrokeWidth)));
+  const margin = edgeMargin(Math.max(...fanLinks.map(linkStrokeWidth)));
   const rows: number[] = [];
-  for (let i = 0; i <= links.length; i++) rows.push(clearOfGroupEdges(Math.max(MIN_STEM + i * q, (rows[i - 1] ?? -Infinity) + q), pairs, 1, margin));
+  for (let i = 0; i < count; i++) rows.push(clearOfGroupEdges(Math.max(MIN_STEM + i * q, (rows[i - 1] ?? -Infinity) + q), pairs, 1, margin));
   return rows;
+}
+
+/**
+ * How far the fan at one end of a bundle pushes the anchors its paths are measured from, the figure
+ * stage 7e reserves before any path exists (ticket 39). `trees` is the stage's one index of junction
+ * cohorts by port.
+ */
+export function fanDepth(model: LayoutModel, trees: Map<string, { port: LayoutPort; links: LayoutLink[] }>,
+  bundle: Bundle, list: Member[], end: 'a' | 'b', q: number): number {
+  return Math.max(0, ...list.map(m => {
+    const at = portId(m[end].ref), cohort = trees.get(at);
+    // Wherever two members meet, `bundleFans` draws the bundle's own fan and counts its rows over
+    // the whole bundle, even when only some members share that port.
+    const meeting = list.filter(other => portId(other[end].ref) === at);
+    const own = meeting.length > 1 ? bundleFanRows(model, m[end], meeting.map(other => other.link), list.length, q).distance : 0;
+    const outside = cohort?.links.some(link => link.bundle !== bundle.id) === true;
+    if (!outside) return own;
+    // A link from outside makes the port a junction tree, and `bundleFans` then consumes the shared
+    // runs 7e reserved for it instead of drawing its own fan — but only when every member meeting
+    // there is in the cohort. A member the cohort left out still brings the bundle's own fan.
+    // `fanEnd`, not the last row: a tree that adopts a fixed straight-through leaf can stop earlier.
+    const tree = fanEnd(model, cohort!.port, cohort!.links);
+    const adopted = new Set(cohort!.links.map(link => link.id));
+    return meeting.every(other => adopted.has(other.link.id)) ? tree : Math.max(own, tree);
+  }));
 }
 
 /** The point `depth` px out from the port along its normal, at the port's own coordinate. */
@@ -511,14 +556,22 @@ export function prepareBundleGeometry(model: LayoutModel): void {
     if (delta) for (const group of Object.values(model.groups).filter(g => g.tier! >= movedTier)) moveGroup(model, group, 0, delta);
     rebuildBands(model);
   }
-  // Reserve the complete crossing area before any producer pins paths.
+  // Reserve the complete crossing area before any producer pins paths. A port with a junction tree
+  // advances every path through it by the tree's own depth — its stem, its rows and any row moved
+  // off a group edge — which is the same figure 7e will draw, whether the tree comes from the
+  // bundle's own shared port or from an ordinary routed link on it.
+  const trees = new Map(treeCohorts(model).map(cohort => [portId(cohort.port.ref), cohort]));
   for (const bundle of model.bundles) {
     const list = members(model, bundle), inversions = inversionPairs(list).length;
     if (!facing(list)) continue;
+    const q0 = pitch(model, bundle);
+    const fan = fanDepth(model, trees, bundle, list, 'a', q0) + fanDepth(model, trees, bundle, list, 'b', q0);
     if (axis(list[0]!.a.side!) === 'y') {
       if (inversions) {
         const q = pitch(model, bundle), [left, rightNode] = bundle.nodes.map(id => model.nodes[id]!).sort((a, b) => a.bounds!.x - b.bounds!.x);
-        const required = 30 + 4 * q * inversions + 2 * q * (list.length + 1), threshold = rightNode!.bounds!.x;
+        // Join, leave and fan rows may each move one edge margin off a group edge (ADR-0013), the
+        // same allowance the other axis carries.
+        const required = 30 + 4 * q * inversions + 2 * q * (list.length + 1) + fan + 2 * edgeMargin(routedStrokeWidth(model)), threshold = rightNode!.bounds!.x;
         const delta = Math.max(0, required - (threshold - right(left!.bounds!)));
         const tier = model.groups[model.document.nodes[rightNode!.id]!.group]!.tier;
         if (delta) for (const group of Object.values(model.groups).filter(g => g.tier === tier)) {
@@ -534,12 +587,12 @@ export function prepareBundleGeometry(model: LayoutModel): void {
     const upper = a.bounds!.y < b.bounds!.y ? a : b, lower = upper === a ? b : a;
     const upperTier = model.groups[model.document.nodes[upper.id]!.group]!.tier!, lowerTier = model.groups[model.document.nodes[lower.id]!.group]!.tier!;
     if (upperTier >= lowerTier || model.lanes.some(lane => bundle.members.includes(lane.owner.kind === 'link' ? lane.owner.id : ''))) continue;
-    const shared = (['a', 'b'] as const).some(end => new Set(list.map(m => portId(m[end].ref))).size < list.length);
-    const degree = Math.max(list.length, ...list.flatMap(m => [m.a, m.b]).map(p => model.links.filter(l => l.attachments && [l.attachments.from, l.attachments.to].some(ref => portId(ref) === portId(p.ref))).length));
     const mergeMembers = list.filter(m => m.link.technique === 'merge').length;
+    // A merge trunk interleaves its join and leave rows only where the members meet on one port.
+    const shared = (['a', 'b'] as const).some(end => new Set(list.map(m => portId(m[end].ref))).size < list.length);
     const mergeAllowance = shared && mergeMembers >= 2 ? (2 * list.length + 1) * q : 0;
     // Join, leave and fan rows may each move one edge margin off a group edge (ADR-0013).
-    const general = mergeAllowance + (shared ? 2 * (15 + q * degree) : 0) + 2 * MIN_STEM + (inversions ? 4 * q * inversions + 2 * q * (list.length + 1) : q * (list.length + 1))
+    const general = mergeAllowance + fan + 2 * MIN_STEM + (inversions ? 4 * q * inversions + 2 * q * (list.length + 1) : q * (list.length + 1))
       + 2 * edgeMargin(routedStrokeWidth(model));
     // An unshared merge trunk needs its interleaved join and leave rows between the two stems too.
     const mergeTrunk = mergeMembers >= 2 ? 2 * MIN_STEM + (2 * mergeMembers - 1) * q + 2 * edgeMargin(routedStrokeWidth(model)) : 0;
