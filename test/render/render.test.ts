@@ -151,6 +151,21 @@ describe('geometry is consumed, never recomputed', () => {
     expect(horizontal['transform']).toBeUndefined();
   });
 
+  it('spaces the lines of a rotated label without a stored line height', () => {
+    // Codex rounds 16 and 17: a quarter turn keeps the stored box, whose width is the text height,
+    // so its lines still divide that. Any other angle has no stored height to divide and takes the
+    // font's own line pitch.
+    const model = JSON.parse(JSON.stringify(rotated)) as LayoutModel;
+    const label = model.labels.find(item => item.text === '100G')!;
+    label.lines = ['one', 'two'];
+    delete label.lineHeight;
+    const quarter = elements(block(render(model), 'a.100G#1'), 'tspan').map(span => Number(span['y']));
+    expect(quarter[1]! - quarter[0]!).toBeCloseTo(label.bounds!.width / 2, 6);
+    label.textRotation = 45;
+    const diagonal = elements(block(render(model), 'a.100G#1'), 'tspan').map(span => Number(span['y']));
+    expect(diagonal[1]! - diagonal[0]!).toBeGreaterThan(label.fontSize!);
+  });
+
   it('keeps stored typography and emits it as a locked style', () => {
     const svg = render(rotated);
     const text = elements(block(svg, 'a.100G#1'), 'text')[0]!;

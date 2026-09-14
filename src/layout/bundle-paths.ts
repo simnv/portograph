@@ -4,8 +4,8 @@ import { mergeMembers } from './bundle-merge.js';
 import { bundleFans, crossBundleFans } from './bundle-junctions.js';
 import { junctionChain, junctionFan, mergedRun, sharedStem } from '../score/model.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
-import { intersection, overlapSegment, samePoint } from '../score/geometry.js';
-import { clone, coordinate, facing, inversionPairs, members, normal, outward, pitch, type Member } from './bundle-geometry.js';
+import { EPS, intersection, overlapSegment, samePoint, segmentDistance } from '../score/geometry.js';
+import { MEMBER_GAP, MIN_STEM, clone, coordinate, facing, inversionPairs, members, normal, outward, pitch, type Member } from './bundle-geometry.js';
 
 export class BundleFeasibilityError extends Error {
   readonly code: string;
@@ -169,6 +169,103 @@ function crossedPaths(bundle: Bundle, list: Member[], q: number): Map<string, Pa
   return new Map(list.map(m => [m.link.id, polyline(points.get(m.link.id)!.map(world), bundle.owner)]));
 }
 
+/** The stem, diagonal and stem of one member between the two stem rows of a straight channel. */
+function straightMember(item: Member, start: number, end: number, n: Point, horizontal: boolean): Point[] {
+  const world = (track: number, d: number): Point => horizontal ? { x: n.x * d, y: track } : { x: track, y: n.y * d };
+  return [item.a.anchor!, world(coordinate(item.a), start), world(coordinate(item.b), end), item.b.anchor!];
+}
+
+/**
+ * Whether the proposed straight members hold the member gap, judged exactly as G6 judges the drawn
+ * paths: every pair of segments of two different members, stems included, except a pair that
+ * strictly crosses and except two axis-aligned runs on different axes. Distances are measured
+ * between finite segments — the closest points of two non-crossing runs lie at an endpoint of one of
+ * them — minus the pair's own strokes. Members tied at a port are left out: their shared stem
+ * belongs to the fan stage 7e builds, which G6 exempts. Nothing is moved to make room; a bundle that
+ * fails this keeps the orthogonal staircase.
+ */
+function straightFeasible(list: Member[], start: number, end: number, n: Point, horizontal: boolean): boolean {
+  const owner = { kind: 'bundle' as const, id: 'clearance' };
+  const paths = list.map(item => ({ item, segments: polyline(straightMember(item, start, end, n, horizontal), owner) }));
+  const diagonal = (s: PathSegment): boolean => s.from.x !== s.to.x && s.from.y !== s.to.y;
+  for (const [i, one] of paths.entries()) for (const other of paths.slice(i + 1)) {
+    if (samePoint(one.item.a.anchor!, other.item.a.anchor!) || samePoint(one.item.b.anchor!, other.item.b.anchor!)) continue;
+    const strokes = (linkStrokeWidth(one.item.link) + linkStrokeWidth(other.item.link)) / 2;
+    for (const a of one.segments) for (const b of other.segments) {
+      const slanted = diagonal(a) || diagonal(b);
+      if (!slanted && !(a.from.y === a.to.y && b.from.y === b.to.y || a.from.x === a.to.x && b.from.x === b.to.x)) continue;
+      if (slanted) {
+        // Only a strict crossing — the interior of both runs — excuses the pair, as in G6.
+        const point = intersection(a, b);
+        if (point !== undefined && ![a.from, a.to, b.from, b.to].some(corner => samePoint(corner, point))) continue;
+      }
+      // The same tolerance G6 applies, so a pair this accepts cannot fail the gate it was chosen for.
+      if (segmentDistance(a, b) - strokes < MEMBER_GAP - EPS) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Whether a heavily inverted bundle draws straight members (ADR-0017): more inversions than half its
+ * members, or — below that threshold — a staircase more than `STRAIGHT_LENGTH_FACTOR` times the
+ * straight members' drawn length; and in either case only when the geometry that already exists
+ * holds the member gap between every pair of member segments G6 would measure. Nothing is moved to
+ * make straight members fit; an infeasible bundle keeps the orthogonal staircase. Only a facing bundle
+ * without lanes qualifies, like the staircase. (An authored override is out of scope: `route:
+ * straight` is a per-link key and stage 1 excludes such links from bundles.)
+ */
+export function straightMembers(model: LayoutModel, bundle: Bundle, list: Member[], q: number): boolean {
+  const inversions = inversionPairs(list).length;
+  if (!inversions || !facing(list) || model.lanes.some(l => l.owner.kind === 'link' && bundle.members.includes(l.owner.id))) return false;
+  const n = normal(list[0]!.a.side!), depth = (p: Point): number => n.x * p.x + n.y * p.y;
+  const start = Math.max(...list.map(m => depth(m.a.anchor!))) + MIN_STEM;
+  const end = Math.min(...list.map(m => depth(m.b.anchor!))) - MIN_STEM;
+  // Both stems must exist between the two rows; the clearance test judges the rest.
+  if (end - start <= 0) return false;
+  if (!straightFeasible(list, start, end, n, n.x !== 0)) return false;
+  if (inversions > Math.floor(list.length / 2)) return true;
+  // Below the inversion threshold the choice is made on drawn length: both shapes are built (both
+  // are pure) and the staircase is rejected when its members are half as long again as the straight
+  // ones — the maintainer's "so many crossings … better to use straight lines". A staircase that
+  // cannot be built at all leaves straight members as the only shape.
+  const total = (paths: Map<string, PathSegment[]>): number =>
+    [...paths.values()].reduce((sum, segments) => sum + segments.reduce((run, s) => run + Math.hypot(s.to.x - s.from.x, s.to.y - s.from.y), 0), 0);
+  let staircase: number;
+  try { staircase = total(crossedPaths(bundle, list, q)); } catch (error) {
+    // Only "the staircase does not fit" leaves straight members as the remaining shape; any other
+    // failure is a defect and must surface.
+    if (!(error instanceof BundleFeasibilityError) || error.code !== 'BUNDLE_CROSSOVER_CAPACITY') throw error;
+    return true;
+  }
+  return staircase > STRAIGHT_LENGTH_FACTOR * total(straightPaths(bundle, list));
+}
+
+/** How much longer the staircase must be than straight members before straight members win. */
+const STRAIGHT_LENGTH_FACTOR = 1.5;
+
+/**
+ * Straight members: each is stem → one diagonal → stem, on the member's own tracks. The decision
+ * above has already checked that these paths hold the member gap.
+ */
+function straightPaths(bundle: Bundle, list: Member[]): Map<string, PathSegment[]> {
+  const n = normal(list[0]!.a.side!), horizontal = n.x !== 0;
+  const depth = (p: Point): number => n.x * p.x + n.y * p.y;
+  const start = Math.max(...list.map(m => depth(m.a.anchor!))) + MIN_STEM;
+  const end = Math.min(...list.map(m => depth(m.b.anchor!))) - MIN_STEM;
+  if (end - start <= 0) throw new BundleFeasibilityError('BUNDLE_CROSSOVER_CAPACITY', bundle.id, `Straight members need a positive channel, have ${end - start}.`);
+  const result = new Map<string, PathSegment[]>();
+  for (const item of list) {
+    const segments = polyline(straightMember(item, start, end, n, horizontal), bundle.owner);
+    // A member whose two tracks coincide is one plain axis-aligned run; only a true diagonal is flagged.
+    for (const segment of segments) {
+      if (segment.from.x !== segment.to.x && segment.from.y !== segment.to.y) segment.straight = true;
+    }
+    result.set(item.link.id, segments);
+  }
+  return result;
+}
+
 /** Non-inverted members turn in distinct rows, including when their endpoint pitches differ. */
 function parallelPaths(bundle: Bundle, list: Member[], q: number): Map<string, PathSegment[]> {
   const n = normal(list[0]!.a.side!), horizontal = n.x !== 0;
@@ -204,8 +301,9 @@ export function rebuildBundlePaths(model: LayoutModel): void {
     bundle.memberGap = 16; bundle.memberPitch = q; bundle.inversions = inversions;
     delete bundle.mergeRuns;
     const fans = bundleFans(model, bundle, list, q), channel = fans?.members ?? list;
+    const straight = straightMembers(model, bundle, channel, q);
     const crossing = inversions && facing(list) && !model.lanes.some(l => l.owner.kind === 'link' && bundle.members.includes(l.owner.id))
-      ? crossedPaths(bundle, channel, q) : undefined;
+      ? straight ? straightPaths(bundle, channel) : crossedPaths(bundle, channel, q) : undefined;
     const parallel = !inversions && facing(list) ? parallelPaths(bundle, channel, q) : undefined;
     for (const item of list) {
       const routed = channel.find(m => m.link.id === item.link.id)!;

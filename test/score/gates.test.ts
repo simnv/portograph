@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import type { LayoutLabel, LayoutModel, PathSegment } from '../../src/model/index.js';
 import { score } from '../../src/score/index.js';
 import { alongside } from '../../src/score/gates.js';
-import { bundle, empty, node, parallel, simple } from './fixtures.js';
+import { horizontal, vertical } from '../../src/score/geometry.js';
+import { bundle, empty, link, node, parallel, simple } from './fixtures.js';
 
 const gate = (model: LayoutModel, id: 'G1' | 'G2' | 'G3' | 'G4' | 'G5' | 'G6' | 'G7' | 'G8') => score(model).snapshot.gates[id];
 const label = (id: string, x: number, y: number, owner: LayoutLabel['owner'] = { kind: 'node', id: 'a' }): LayoutLabel => ({ id, text: id, bounds: { x, y, width: 10, height: 6 }, owner, layer: 'routed' });
@@ -413,5 +414,211 @@ describe('ADR-0013 group boxes', () => {
     model.groups['g-d']!.bounds!.width -= 0.1;
     model.groups['g-a']!.bounds = { x: 25, y: -10, width: 80, height: 60 };
     expect(along()).toEqual([]);
+  });
+});
+
+describe('ADR-0017 straight bundle members in the gates', () => {
+  /**
+   * Two crossing links between wide nodes, each drawn stem, declared diagonal, stem. `offset` is the
+   * distance between the two source tracks; `collinear` makes the second member repeat the first.
+   */
+  const diagonals = (offset: number, collinear = false): LayoutModel => {
+    const model = empty();
+    node(model, 'a', { x: 0, y: 0, width: 300, height: 40 }, 0);
+    node(model, 'b', { x: 0, y: 140, width: 300, height: 40 }, 1);
+    const path = (id: string, x0: number, x1: number) =>
+      link(model, id, 'a', 'b', [{ x: x0, y: 40 }, { x: x0, y: 55 }, { x: x1, y: 125 }, { x: x1, y: 140 }]);
+    path('one', 30, 200);
+    path('two', collinear ? 30 : 30 + offset, collinear ? 200 : 200 + offset);
+    // A declared diagonal is legal only on a member of a bundle that owns it (ADR-0017).
+    bundle(model);
+    for (const item of model.links) item.path!.segments[1]!.straight = true;
+    return model;
+  };
+
+  it('measures the clearance between two parallel diagonals against the bundle member gap', () => {
+    expect(gate(diagonals(60), 'G6').passed).toBe(true);
+    const close = gate(diagonals(4), 'G6');
+    expect(close.passed).toBe(false);
+    expect(close.violations.some(v => v.code === 'bundle-member-gap')).toBe(true);
+  });
+
+  it('reports a collinear overlap between two diagonals, measured along the run', () => {
+    // Two members on one line whose *stems* do not overlap: only the diagonals do, and steeply, so
+    // the overlap is longer along the run than along x.
+    const model = empty();
+    node(model, 'a', { x: 0, y: 0, width: 300, height: 40 }, 0);
+    node(model, 'b', { x: 0, y: 300, width: 300, height: 40 }, 1);
+    link(model, 'one', 'a', 'b', [{ x: 30, y: 40 }, { x: 30, y: 60 }, { x: 60, y: 260 }, { x: 60, y: 300 }]);
+    link(model, 'two', 'a', 'b', [{ x: 45, y: 40 }, { x: 45, y: 160 }, { x: 75, y: 360 }, { x: 75, y: 300 }]);
+    // `two`'s diagonal continues `one`'s line: same direction, same offset, overlapping halves.
+    model.links[1]!.path!.segments = [
+      { from: { x: 45, y: 40 }, to: { x: 45, y: 160 }, owner: model.links[1]!.owner },
+      { from: { x: 45, y: 160 }, to: { x: 75, y: 360 }, owner: model.links[1]!.owner, straight: true },
+      { from: { x: 75, y: 360 }, to: { x: 75, y: 300 }, owner: model.links[1]!.owner },
+    ];
+    model.links[0]!.path!.segments[1]!.straight = true;
+    bundle(model);
+    for (const item of model.links) for (const segment of item.path!.segments) if (segment.straight) segment.straight = true;
+    const overlapX = Math.min(60, 75) - Math.max(30, 45);
+    expect(overlapX).toBeLessThan(16);
+    const overlap = gate(model, 'G4');
+    expect(overlap.passed).toBe(false);
+    expect(overlap.violations.some(v => v.code === 'collinear-overlap')).toBe(true);
+  });
+
+  it('finds a near-EPS collinear overlap far from the origin, where a float key would miss it', () => {
+    // Codex round 9: two collinear runs at large coordinates whose normalised directions differ by
+    // less than EPS. The sweep is by bounding box, so the pair is compared and the overlap reported.
+    const model = empty();
+    node(model, 'a', { x: 99000, y: 99000, width: 2000, height: 40 }, 0);
+    node(model, 'b', { x: 99000, y: 101000, width: 2000, height: 40 }, 1);
+    link(model, 'one', 'a', 'b', [{ x: 100000, y: 99040 }, { x: 100000, y: 100000 }, { x: 100100, y: 100100 }, { x: 100100, y: 101000 }]);
+    link(model, 'two', 'a', 'b', [{ x: 100050, y: 99040 }, { x: 100050, y: 100050 }, { x: 100150, y: 100150.0000001 }, { x: 100150, y: 101000 }]);
+    model.links[0]!.path!.segments[1]!.straight = true;
+    model.links[1]!.path!.segments[1]!.straight = true;
+    bundle(model);
+    const overlap = gate(model, 'G4');
+    expect(overlap.violations.some(v => v.code === 'collinear-overlap')).toBe(true);
+  });
+
+  it('finds a collinear overlap that straddles a grid cell boundary, in either argument order', () => {
+    // Codex round 11: the pair sits either side of x = 256 and is EPS-collinear; the cell walk takes
+    // each crossed cell's neighbours, and the predicate is symmetric, so order cannot matter.
+    const build = (swap: boolean): LayoutModel => {
+      const model = empty();
+      node(model, 'a', { x: 100, y: 0, width: 400, height: 40 }, 0);
+      node(model, 'b', { x: 100, y: 400, width: 400, height: 40 }, 1);
+      const one: [number, number] = [200, 320], two: [number, number] = [240, 360];
+      const [first, second] = swap ? [two, one] : [one, two];
+      link(model, 'one', 'a', 'b', [{ x: first[0], y: 40 }, { x: first[0], y: 60 }, { x: first[1], y: 380 }, { x: first[1], y: 400 }]);
+      link(model, 'two', 'a', 'b', [{ x: second[0], y: 40 }, { x: second[0], y: 60 }, { x: second[1], y: 380 }, { x: second[1], y: 400 }]);
+      // Put the second run exactly on the first's line, shifted along it, so they overlap.
+      const line = model.links[swap ? 1 : 0]!.path!.segments[1]!;
+      const dx = line.to.x - line.from.x, dy = line.to.y - line.from.y, at = 0.4;
+      model.links[swap ? 0 : 1]!.path!.segments[1] = {
+        from: { x: line.from.x + dx * at, y: line.from.y + dy * at },
+        to: { x: line.from.x + dx * (at + 0.8), y: line.from.y + dy * (at + 0.8) },
+        owner: model.links[swap ? 0 : 1]!.owner, straight: true,
+      };
+      line.straight = true;
+      bundle(model);
+      return model;
+    };
+    for (const swap of [false, true]) {
+      expect(gate(build(swap), 'G4').violations.some(v => v.code === 'collinear-overlap'), `swap ${swap}`).toBe(true);
+    }
+  });
+
+  it('finds a near-axis declared pair split by a cell boundary', () => {
+    // Codex round 12: two declared members that are vertical within EPS and lie either side of
+    // x = 256 — exact axis buckets would separate them; the grid, taken first for declared members,
+    // does not. Their overlap along y is far longer than the gate's 1 px.
+    const model = empty();
+    node(model, 'a', { x: 100, y: 0, width: 400, height: 40 }, 0);
+    node(model, 'b', { x: 100, y: 600, width: 400, height: 40 }, 1);
+    link(model, 'one', 'a', 'b', [{ x: 255.99999999, y: 40 }, { x: 255.99999999, y: 60 }, { x: 255.99999999, y: 500 }, { x: 255.99999999, y: 600 }]);
+    link(model, 'two', 'a', 'b', [{ x: 256.000000001, y: 40 }, { x: 256.000000001, y: 300 }, { x: 256.000000001, y: 560 }, { x: 256.000000001, y: 600 }]);
+    for (const item of model.links) item.path!.segments[1]!.straight = true;
+    bundle(model);
+    expect(gate(model, 'G4').violations.some(v => v.code === 'collinear-overlap')).toBe(true);
+  });
+
+  it('finds a declared member that overlaps an ordinary collinear run', () => {
+    // Codex round 13: the declared member is vertical within EPS, the other link's run is exactly
+    // vertical and undeclared, so their exact buckets differ and only the grid can pair them. An
+    // ordinary run joins the grid whenever the diagram declares a straight member.
+    const model = empty();
+    node(model, 'a', { x: 100, y: 0, width: 400, height: 40 }, 0);
+    node(model, 'b', { x: 100, y: 600, width: 400, height: 40 }, 1);
+    link(model, 'one', 'a', 'b', [{ x: 300.000000001, y: 40 }, { x: 300.000000001, y: 60 }, { x: 300.000000001, y: 500 }, { x: 300.000000001, y: 600 }]);
+    link(model, 'two', 'a', 'b', [{ x: 300, y: 40 }, { x: 300, y: 300 }, { x: 300, y: 560 }, { x: 300, y: 600 }]);
+    model.links[0]!.path!.segments[1]!.straight = true;
+    bundle(model);
+    expect(model.links[1]!.path!.segments[1]!.straight).toBeUndefined();
+    expect(gate(model, 'G4').violations.some(v => v.code === 'collinear-overlap')).toBe(true);
+  });
+
+  it('finds a collinear overlap between two ordinary runs whose exact coordinates differ by less than EPS', () => {
+    // Codex round 14: exact line buckets can straddle the collinearity tolerance, so buckets no more
+    // than EPS apart are swept as one chain. Neither run is declared; a declared member elsewhere
+    // must not change the answer.
+    const build = (withDeclared: boolean): LayoutModel => {
+      const model = empty();
+      node(model, 'a', { x: 100, y: 0, width: 600, height: 40 }, 0);
+      node(model, 'b', { x: 100, y: 600, width: 600, height: 40 }, 1);
+      link(model, 'one', 'a', 'b', [{ x: 300, y: 40 }, { x: 300, y: 60 }, { x: 300, y: 500 }, { x: 300, y: 600 }]);
+      link(model, 'two', 'a', 'b', [{ x: 300.00000001, y: 40 }, { x: 300.00000001, y: 300 }, { x: 300.00000001, y: 560 }, { x: 300.00000001, y: 600 }]);
+      if (withDeclared) {
+        link(model, 'three', 'a', 'b', [{ x: 600, y: 40 }, { x: 600, y: 60 }, { x: 660, y: 560 }, { x: 660, y: 600 }]);
+        model.links[2]!.path!.segments[1]!.straight = true;
+      }
+      bundle(model);
+      return model;
+    };
+    for (const withDeclared of [false, true]) {
+      expect(gate(build(withDeclared), 'G4').violations.some(v => v.code === 'collinear-overlap'), `declared ${withDeclared}`).toBe(true);
+    }
+  });
+
+  it('rejects a straight claim on an axis-aligned segment that no bundle owns', () => {
+    // Codex round 14: the marker drives G4's grid and the renderer, so G5 reads it whatever the
+    // segment's angle — an axis-aligned segment cannot smuggle it past the orthogonality test.
+    const forged = simple();
+    expect(gate(forged, 'G5').passed).toBe(true);
+    const axis = forged.links[0]!.path!.segments[0]!;
+    expect(vertical(axis) || horizontal(axis)).toBe(true);
+    axis.straight = true;
+    expect(gate(forged, 'G5').violations.some(v => v.code === 'orthogonal-path')).toBe(true);
+  });
+
+  it('rejects a second declared diagonal on one member', () => {
+    const two = diagonals(60);
+    expect(gate(two, 'G5').passed).toBe(true);
+    const path = two.links[0]!.path!.segments;
+    path.splice(2, 1, { from: path[1]!.to, to: { x: path[2]!.to.x + 4, y: path[2]!.to.y }, owner: path[1]!.owner, straight: true },
+      { from: { x: path[2]!.to.x + 4, y: path[2]!.to.y }, to: path[2]!.to, owner: path[2]!.owner });
+    expect(gate(two, 'G5').violations.some(v => v.code === 'orthogonal-path')).toBe(true);
+  });
+
+  it('compares a run too long to index against the declared members instead of walking its cells', () => {
+    // Codex round 15: a hand-written layout can carry a run whose half-cell walk would never finish.
+    // Such a run skips the grid and is compared directly, so the gate still terminates and reports.
+    const model = diagonals(60);
+    const far = model.links[1]!.path!.segments[0]!;
+    const line = model.links[0]!.path!.segments[1]!;
+    const dx = line.to.x - line.from.x, dy = line.to.y - line.from.y, scale = 1e18;
+    model.links[1]!.path!.segments[0] = { from: line.from, to: { x: line.from.x + dx * scale, y: line.from.y + dy * scale }, owner: far.owner, straight: true };
+    const started = Date.now();
+    const found = gate(model, 'G4').violations.some(v => v.code === 'collinear-overlap');
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(found).toBe(true);
+  });
+
+  it('returns on an axis run whose coordinate is far past the safe key range', () => {
+    // Codex round 16: the EPS key stops being a safe integer past about 9e8 px, where its
+    // neighbours no longer move. The float spacing there already exceeds EPS, so the exact key is
+    // complete and the sweep must simply finish.
+    const model = simple();
+    const far = model.links[0]!.path!.segments[0]!;
+    far.from = { x: -1e30, y: far.from.y };
+    far.to = { x: -1e30, y: far.to.y };
+    const started = Date.now();
+    expect(gate(model, 'G4').violations.some(v => v.code === 'collinear-overlap')).toBe(false);
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
+  it('accepts a declared diagonal on an owning bundle member, and nothing else', () => {
+    expect(gate(diagonals(60), 'G5').passed).toBe(true);
+    const undeclared = diagonals(60);
+    delete undeclared.links[0]!.path!.segments[1]!.straight;
+    expect(gate(undeclared, 'G5').violations.some(v => v.code === 'orthogonal-path')).toBe(true);
+    // The same claim outside a bundle, or on a link the bundle does not list, is not accepted.
+    const loose = diagonals(60);
+    delete loose.links[0]!.bundle;
+    expect(gate(loose, 'G5').violations.some(v => v.code === 'orthogonal-path')).toBe(true);
+    const unlisted = diagonals(60);
+    unlisted.bundles[0]!.members = [unlisted.links[1]!.id];
+    expect(gate(unlisted, 'G5').violations.some(v => v.code === 'orthogonal-path')).toBe(true);
   });
 });

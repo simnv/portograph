@@ -35,7 +35,7 @@ out of scope for G2, G4 and G6.
 | G2 | **No routed segment through a foreign node or group** | routed segments × node rectangles; routed segments × group boxes the link does not attach inside (ADR-0013) | a segment's own endpoint nodes; a drop crossing a **bar** it does not terminate on (`barCross`, reported); a link owning a lane in the group's margin or crossing a declared bar of the group |
 | G3 | **No label collision** | every label bbox × every other label bbox, node rectangle, pill, routed segment (area-aware); a **group title** also owns an 8 px link-free margin no routed segment may enter | a label vs its **owner** (node label inside its node; pill text inside its own pill and over its own incident stem within that pill; a link label on the clearance zone — never the body — of the **one** segment its persisted `support` reference names, and only when that reference's link is its own owner); overlay layer |
 | G4 | **No collinear overlap** | pairs of routed segments on the same line sharing > 1 px | validated counted merge runs of selected bundle members (reported as `bundledLength`); exact source/target shared-run trees at one port; lane-owner runs vs their own lane |
-| G5 | **Ports exit correctly** | every routed link: first/last segment perpendicular to its side, ≥ 15 px; port order on a side matches far-end order | author `order:`; overlay; stub |
+| G5 | **Ports exit correctly** | every routed link: first/last segment perpendicular to its side, ≥ 15 px; every other segment axis-aligned unless it is a declared **straight bundle member** (`straight: true`, ADR-0017); port order on a side matches far-end order | author `order:`; overlay; stub |
 | G6 | **Clearances** (stroke-aware, centre-to-centre minus half strokes) | node–node ≥ 20; routed segment–foreign node ≥ 10; parallel routed segments ≥ 10; a routed segment on or outside a group box runs no closer than 10 px beyond its half stroke parallel to its edge (ADR-0013) | incident node–segment contact at the anchor; bundle members (`memberGap` = 16 applies); `barCross` contacts; junction fans |
 | G7 | **Attachment** | every link endpoint = a port anchor; every anchor on its node's boundary | — |
 | G8 | **Tier contract** | every group's box within its tier's band; tier bands in order, non-overlapping | — |
@@ -141,6 +141,22 @@ the snapshot block) layout time per stage.
     placed in reserved canvas space below the drawn diagram, lists exactly the classes and port
     roles present, and is excluded from the scored bounding box: its size follows the class set,
     not the quality of the layout.
+
+A **straight bundle member** is the single diagonal between the two stems of a heavily inverted
+bundle (ADR-0017: more inversions than half the members, or a staircase more than half as long again
+as the straight members, and only when the existing geometry holds the member gap between every pair of member segments G6 would measure, stems included). It carries `straight: true`, which G5 accepts only on a member of a bundle that owns the
+segment, and only one per member — a second is a staircase of its own. G4 indexes such a segment — before the axis buckets, whatever its angle — on a uniform grid over the
+cells its run crosses and their neighbours, so an overlap longer than 1 px always shares a cell, and
+measures that overlap along the run. An ordinary run joins that grid too, in the cells a declared
+member already holds, because a declared member can also lie on an ordinary run's line; two ordinary
+runs are judged on their own axis, keyed by the EPS the collinearity predicate uses and swept in
+span order against the two neighbouring keys as well, since collinearity within a tolerance is not
+transitive. A run too long to walk
+cell by cell is compared with the declared members directly. G5 reads `straight: true` whatever the segment's angle, so an axis-aligned segment cannot
+carry the marker without an owning bundle; G6 measures its clearance to any segment it does not strictly cross, at the bundle member gap
+between two members. Each pair of members still crosses exactly once per endpoint inversion, counted by the same
+strict intersection test. A label on such a member takes the run's own heading (ADR-0014 rule 1) and
+is offset so its stored box clears the run.
 
 Bundle member gap means visible clearance between strokes. The regular minimum centreline pitch
 is 16 px plus the maximum member stroke. Crossovers may need wider tracks. An envelope owner does

@@ -117,32 +117,38 @@ function withoutTrunks(link: LayoutLink, trunks: readonly PathSegment[]): PathSe
 }
 
 /** First baseline of a measured label; the font table supplies the ascent, the model the box. */
-function baseline(label: LayoutLabel): number {
+function metrics(label: LayoutLabel): { ascent: number; lineHeight: number } {
   const size = label.fontSize ?? 9;
-  return measureText('', { fontSize: size, weight: label.fontWeight ?? 400 }).ascent;
+  return measureText('', { fontSize: size, weight: label.fontWeight ?? 400 });
 }
 
 function textElement(label: LayoutLabel, locks: GeometryLocks, structural: string, owner: string, extra?: string): string {
   const lines = label.lines ?? (label.text ? [label.text] : []);
   if (!lines.length || !label.bounds) return '';
-  const rotated = label.textRotation === -90;
+  const angle = label.textRotation ?? 0, rotated = angle !== 0;
   const box = label.bounds, middle = centre(box);
   // A rotated label's stored box is already rotated, so lay the text out unrotated about the same
-  // centre and turn only the text. The rectangle is never rotated twice.
-  const height = rotated ? box.width : box.height;
-  const lineHeight = label.lineHeight ?? height / lines.length;
+  // centre and turn only the text. The rectangle is never rotated twice. A quarter turn swaps the
+  // box's sides; any other angle (a straight bundle member, ADR-0017) keeps the unrotated height,
+  // which stage 9 measured before rotating the box.
+  // At any other angle the stored height belongs to the rotated box, so it cannot set the line
+  // pitch; the font's own line height stands in when a hand-written label carries none.
+  const font = metrics(label);
+  const quarter = angle === -90 || angle === 90;
+  const height = quarter ? box.width
+    : rotated ? (label.lineHeight ?? font.lineHeight) * lines.length : box.height;
+  const lineHeight = label.lineHeight ?? (rotated && !quarter ? font.lineHeight : height / lines.length);
   const top = middle.y - height / 2;
-  const font = locks.font(label.fontFamily ?? 'Arial, Helvetica, sans-serif', label.fontSize ?? 9, label.fontWeight ?? 400);
-  const first = top + baseline(label);
+  const first = top + font.ascent;
   const spans = lines.map((line, index) => element('tspan',
     { x: middle.x, y: first + index * lineHeight }, escapeText(line))).join('');
   const title = label.tooltip !== undefined && label.tooltip !== label.text
     ? element('title', {}, escapeText(label.tooltip)) : '';
   return element('text', {
-    class: classes(structural, extra, font),
+    class: classes(structural, extra, locks.font(label.fontFamily ?? 'Arial, Helvetica, sans-serif', label.fontSize ?? 9, label.fontWeight ?? 400)),
     'data-owner': owner,
     'text-anchor': 'middle',
-    ...(rotated ? { transform: `rotate(-90 ${num(middle.x)} ${num(middle.y)})` } : {}),
+    ...(rotated ? { transform: `rotate(${num(angle)} ${num(middle.x)} ${num(middle.y)})` } : {}),
   }, title + spans);
 }
 

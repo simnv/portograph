@@ -134,14 +134,33 @@ function collides(index: ObstacleIndex, box: Rect, support: LabelSupport | undef
 
 /**
  * The measured box for one side of one segment. Text follows the segment (ADR-0014): along a
- * horizontal run it stays upright; along a vertical run it turns by `verticalRotation` and the stored
- * box is the rotated one, so its long side lies along the run. The box is centred on the segment's
- * midpoint; the 4 px normal gap is visible clearance beyond the stroke edge. A segment that is
- * neither axis-aligned — only an overlay link can be one — uses its dominant axis.
+ * horizontal run it stays upright; along a vertical run it turns by `verticalRotation`; along a
+ * declared straight bundle member (ADR-0017) it turns by the run's own angle, flipped by 180° when
+ * that would read upside down (Visio gravity). The stored box is the rotated one, so its long side
+ * lies along the run. The box is centred on the segment's midpoint; the 4 px normal gap is visible
+ * clearance beyond the stroke edge. A segment that is neither axis-aligned nor a declared straight
+ * member — only an overlay link can be one — uses its dominant axis.
  */
-export function candidateBox(segment: PathSegment, half: number, size: { width: number; height: number }, second: boolean): { bounds: Rect; textRotation: -90 | 0 } {
+export function candidateBox(segment: PathSegment, half: number, size: { width: number; height: number }, second: boolean): { bounds: Rect; textRotation: number } {
   const midX = (segment.from.x + segment.to.x) / 2, midY = (segment.from.y + segment.to.y) / 2;
   const gap = LINK_LABEL_GEOMETRY.normalGap + half;
+  if (segment.straight === true) {
+    const dx = segment.to.x - segment.from.x, dy = segment.to.y - segment.from.y;
+    // Gravity: the heading that keeps the text upright, then the box rotated about the midpoint.
+    let degrees = Math.atan2(dy, dx) * 180 / Math.PI;
+    if (degrees > 90) degrees -= 180;
+    if (degrees <= -90) degrees += 180;
+    const radians = degrees * Math.PI / 180, cos = Math.cos(radians), sin = Math.sin(radians);
+    // The label sits beside the run on the chosen side. The stored box is the axis-aligned box of
+    // the rotated text, and every gate measures that box, so the offset clears *it* — half its
+    // extent along the run's normal plus the visible gap — not merely half the text height.
+    const side = second ? -1 : 1, nx = side * sin, ny = -side * cos;
+    const width = Math.abs(size.width * cos) + Math.abs(size.height * sin);
+    const height = Math.abs(size.width * sin) + Math.abs(size.height * cos);
+    const offset = gap + (width * Math.abs(nx) + height * Math.abs(ny)) / 2;
+    const cx = midX + nx * offset, cy = midY + ny * offset;
+    return { bounds: { x: cx - width / 2, y: cy - height / 2, width, height }, textRotation: degrees };
+  }
   if (Math.abs(segment.to.x - segment.from.x) >= Math.abs(segment.to.y - segment.from.y)) {
     return { bounds: { x: midX - size.width / 2, y: second ? midY + gap : midY - gap - size.height, ...size }, textRotation: 0 };
   }
@@ -149,7 +168,7 @@ export function candidateBox(segment: PathSegment, half: number, size: { width: 
   return { bounds: { x: second ? midX - gap - rotated.width : midX + gap, y: midY - rotated.height / 2, ...rotated }, textRotation: LINK_LABEL_GEOMETRY.verticalRotation };
 }
 
-interface Placement { segment: number; bounds: Rect; textRotation: -90 | 0; text: string; lines: string[]; lineHeight: number }
+interface Placement { segment: number; bounds: Rect; textRotation: number; text: string; lines: string[]; lineHeight: number }
 interface Supported { segments: PathSegment[]; half: number; support: (index: number) => LabelSupport | undefined }
 
 const measure = (text: string) =>

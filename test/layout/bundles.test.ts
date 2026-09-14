@@ -11,6 +11,9 @@ import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { score } from '../../src/score/index.js';
 import { intersection, samePoint } from '../../src/score/geometry.js';
 import { placed } from './phase-two-fixture.js';
+import { straightMembers } from '../../src/layout/bundle-paths.js';
+import { inversionPairs, type Member } from '../../src/layout/bundle-geometry.js';
+import type { Bundle } from '../../src/model/index.js';
 
 export const throughBars = async (yaml: string): Promise<LayoutModel> => bars(centre(flanks(lanes(rows(await placed(yaml))))));
 const run = (model: LayoutModel): LayoutModel => {
@@ -238,4 +241,87 @@ it('reserves horizontal crossover length before drawing an authored permutation'
   const model = run(await throughBars(yaml));
   expect(strictCrossings(model)).toBe(3);
   for (const gate of ['G2', 'G4', 'G5', 'G6', 'G7'] as const) expect(score(model).snapshot.gates[gate], gate).toMatchObject({ passed: true });
+});
+
+it('ADR-0017: a heavily inverted bundle draws straight members instead of an orthogonal staircase', async () => {
+  const model = run(await throughBars(reversed));
+  const bundle = model.bundles[0]!;
+  expect(bundle.inversions).toBe(3);
+  // Each member is stem, one declared diagonal, stem — the middle member's tracks coincide, so its
+  // three collinear runs merge into one segment.
+  const diagonals = model.links.flatMap(link => link.path!.segments.filter(segment => segment.straight === true));
+  expect(diagonals).toHaveLength(2);
+  for (const segment of diagonals) {
+    expect(segment.from.x === segment.to.x || segment.from.y === segment.to.y).toBe(false);
+  }
+  for (const link of model.links) {
+    const first = link.path!.segments[0]!, last = link.path!.segments.at(-1)!;
+    for (const segment of [first, last]) expect(segment.straight).toBeUndefined();
+    expect(Math.hypot(first.to.x - first.from.x, first.to.y - first.from.y)).toBeGreaterThanOrEqual(15 - 1e-9);
+  }
+  // One strict crossing per endpoint inversion, and every gate still passes.
+  expect(strictCrossings(model)).toBe(3);
+  const scored = score(model);
+  for (const gate of ['G2', 'G4', 'G5', 'G6', 'G7'] as const) expect(scored.snapshot.gates[gate], gate).toMatchObject({ passed: true });
+  expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
+});
+
+it('ADR-0017: one inversion in a three-member bundle keeps the orthogonal crossover', async () => {
+  // Author order `p, q, r` against `p, r, q`: only the last pair inverts.
+  const oneInversion = reversed.replace('{name: p, side: top, order: 2}, {name: q, side: top, order: 1}, {name: r, side: top, order: 0}',
+    '{name: p, side: top, order: 0}, {name: q, side: top, order: 2}, {name: r, side: top, order: 1}');
+  const model = run(await throughBars(oneInversion));
+  expect(model.bundles[0]!.inversions).toBe(1);
+  expect(model.links.flatMap(link => link.path!.segments.filter(segment => segment.straight === true))).toEqual([]);
+  expect(score(model).snapshot.gates.G5.passed).toBe(true);
+});
+
+it('ADR-0017: parallel straight members keep the member gap between their diagonals', async () => {
+  // `[2, 3, 1]`: two inversions select straight mode, and two of the three members stay parallel —
+  // their perpendicular distance, not their track spacing, has to hold the gap (Codex round 3).
+  const partial = reversed.replace('{name: p, side: top, order: 2}, {name: q, side: top, order: 1}, {name: r, side: top, order: 0}',
+    '{name: p, side: top, order: 1}, {name: q, side: top, order: 2}, {name: r, side: top, order: 0}');
+  const model = run(await throughBars(partial));
+  const bundle = model.bundles[0]!;
+  expect(bundle.inversions).toBe(2);
+  const diagonals = model.links.flatMap(link => link.path!.segments.filter(segment => segment.straight === true));
+  expect(diagonals.length).toBeGreaterThanOrEqual(2);
+  const scored = score(model);
+  for (const gate of ['G2', 'G4', 'G5', 'G6', 'G7'] as const) expect(scored.snapshot.gates[gate], gate).toMatchObject({ passed: true });
+  expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
+});
+
+it('ADR-0017: keeps the staircase when a diagonal would pass too close to another stem', () => {
+  // Codex round 18: the feasibility test measured diagonal against diagonal only. Here every pair
+  // inverts, so no diagonal pair is measured at all, yet the first diagonal passes about 11 px from
+  // the second member's source stem — below the 16 px member gap G6 would then demand.
+  const sources = [0, 35, 70, 105], targets = [2105, 2070, 2035, 2000];
+  const list = sources.map((x, i) => ({
+    link: { id: `l${i}` },
+    a: { side: 'bottom', anchor: { x, y: 0 } },
+    b: { side: 'top', anchor: { x: targets[i]!, y: 730 } },
+    reversed: false,
+  })) as unknown as Member[];
+  const bundle = { id: 'b', members: list.map(m => m.link.id), nodes: ['a', 'b'], owner: { kind: 'bundle', id: 'b' } } as unknown as Bundle;
+  const model = { lanes: [], links: list.map(m => m.link), bundles: [bundle] } as unknown as LayoutModel;
+  expect(inversionPairs(list).length).toBe(6);
+  expect(straightMembers(model, bundle, list, 16)).toBe(false);
+});
+
+it('ADR-0017: a four-member permutation with non-parallel near-misses keeps the member gap', async () => {
+  // `[2, 4, 1, 3]`: three inversions select straight mode, and the closest non-crossing pair is not
+  // parallel, so the clearance test measures the true minimum distance rather than a track offset
+  // (Codex round 4).
+  const four = `portograph: 2
+groups: {ga: {tier: 0}, gb: {tier: 1}}
+nodes:
+  a: {group: ga, ports: [{name: p, side: bottom, order: 0}, {name: q, side: bottom, order: 1}, {name: r, side: bottom, order: 2}, {name: s, side: bottom, order: 3}]}
+  b: {group: gb, ports: [{name: p, side: top, order: 1}, {name: q, side: top, order: 3}, {name: r, side: top, order: 0}, {name: s, side: top, order: 2}]}
+links: [[a.p, b.p], [a.q, b.q], [a.r, b.r], [a.s, b.s]]`;
+  const model = run(await throughBars(four));
+  expect(model.bundles[0]!.inversions).toBeGreaterThanOrEqual(2);
+  expect(model.links.flatMap(link => link.path!.segments.filter(segment => segment.straight === true)).length).toBeGreaterThanOrEqual(3);
+  const scored = score(model);
+  for (const gate of ['G2', 'G4', 'G5', 'G6', 'G7'] as const) expect(scored.snapshot.gates[gate], gate).toMatchObject({ passed: true });
+  expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
 });

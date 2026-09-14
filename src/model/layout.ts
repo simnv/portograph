@@ -37,7 +37,8 @@ export interface LayoutLabel extends OwnedElement {
   fontWeight?: 400 | 700;
   lineHeight?: number;
   lines?: string[];
-  textRotation?: -90 | 0;
+  /** Degrees, counter-clockwise negative; `-90` for a vertical run, any angle for a straight member. */
+  textRotation?: number;
   tooltip?: string;
   bounds?: Rect;
   omitted?: boolean;
@@ -112,6 +113,12 @@ export interface PathSegment {
   /** IDs of crossed bar nodes; these contacts are reported and exempt from G2/G6. */
   barCross?: string[];
   lane?: string;
+  /**
+   * A straight bundle member (ADR-0017): the one diagonal between the two stems of a heavily
+   * inverted bundle. G5 accepts it in place of an axis-aligned segment; G4 and G6 measure it by
+   * distance like any segment, and the crossing counter counts each crossing pair once.
+   */
+  straight?: true;
 }
 
 export interface LayoutPath extends OwnedElement {

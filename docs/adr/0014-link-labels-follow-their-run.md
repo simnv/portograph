@@ -6,7 +6,8 @@ Three rules for link descriptions (stage 9 labels):
 
 1. **Text follows the run.** A label on a horizontal segment stays upright; a label on a vertical
    segment is rotated so it reads bottom-to-top. This is Visio's "gravity": rotated text is never
-   upside down and never reads top-to-bottom, so orthogonal paths need only the headings 0° and −90°.
+   upside down and never reads top-to-bottom, so orthogonal paths need only the headings 0° and −90°; a straight bundle member (ADR-0017) takes
+   its run's own heading, brought into (−90°, 90°] by the same rule.
    The stored label box is the rotated one, with its long side along the segment; the renderer
    already draws rotated text about the box centre exactly as it does for port pills.
 2. **Description width influences link length.** Stage 7f reserves, before anything is routed, a
@@ -42,5 +43,5 @@ on stubs while a longer run stood free. Rule 2 is the pipeline's load-bearing ru
 nothing routing would have to discover was left unreserved.
 
 Consequences: fixtures with authored labels change (fitting-link-label's "uplink" now runs along
-its drop). The golden has no link labels and is byte-identical. A future diagonal member
-(ticket 26) extends rule 1 with the segment's own angle under the same gravity flip.
+its drop). The golden has no link labels and is byte-identical. A straight bundle member
+(ADR-0017, ticket 26) extends rule 1 with the segment's own angle under the same gravity flip.

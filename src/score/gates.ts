@@ -1,6 +1,6 @@
 import type { LayoutModel, LayoutNode, PathSegment } from '../model/index.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
-import { EPS, bottom, contains, horizontal, length, near, overlapSegment, rectDistance, rectOverlap, samePoint, segmentDistance, segmentRect, segmentRectDistance, vertical } from './geometry.js';
+import { EPS, bottom, contains, horizontal, intersection, length, near, overlapSegment, rectDistance, rectOverlap, samePoint, segmentDistance, segmentRect, segmentRectDistance, vertical } from './geometry.js';
 import { anchorOnBoundary, barContact, bundlePair, endpoints, groupConsumers, incident, junctionFan, mergedRun, outward, port, refEqual, sharedStem } from './model.js';
 import type { Segment } from './model.js';
 import type { GateId, GateResult, ScoreCounters } from './types.js';
@@ -152,7 +152,18 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
     }
     if (!routed.some(s => s.link === link)) continue;
     if (!outward(from, path![0]!, true) || !outward(to, path!.at(-1)!, false) || length(path![0]!) < 15 - EPS || length(path!.at(-1)!) < 15 - EPS) fail('G5', 'port-stem', [link.id], 'Port stems must exit perpendicular and extend at least 15 px');
-    if (path!.some(s => (!horizontal(s) && !vertical(s)) || length(s) <= EPS)) fail('G5', 'orthogonal-path', [link.id], 'Routed segments must have positive length and follow an axis');
+    // A declared diagonal is legal only on a member of a bundle that owns the segment (ADR-0017);
+    // anywhere else `straight: true` is an unowned claim and the gate treats it as a bent path.
+    const straightOk = (s: PathSegment): boolean => s.straight === true && link.bundle !== undefined
+      && s.owner.kind === 'bundle' && s.owner.id === link.bundle
+      && model.bundles.some(item => item.id === link.bundle && item.owner.kind === 'bundle'
+        && item.owner.id === item.id && item.members.includes(link.id));
+    // The claim is judged before the geometry: an axis-aligned segment that carries the marker
+    // without an owning bundle would otherwise pass unread, yet G4 and the renderer both act on it.
+    if (path!.some(s => (s.straight === true ? !straightOk(s) : !horizontal(s) && !vertical(s)) || length(s) <= EPS)) fail('G5', 'orthogonal-path', [link.id], 'Routed segments must have positive length and follow an axis, or be a declared straight member of an owning bundle');
+    // ADR-0017 shapes the member as stem, one diagonal, stem: a second diagonal is a staircase of
+    // its own and reserves geometry no stage measured.
+    if (path!.filter(s => s.straight === true).length > 1) fail('G5', 'orthogonal-path', [link.id], 'A member may declare only one straight segment');
   }
   for (const node of nodes) for (const side of ['top', 'right', 'bottom', 'left'] as const) {
     const positions = node.ports.filter(p => p.side === side && p.authorOrder === undefined).flatMap(p => {
@@ -178,7 +189,19 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
   for (let i = 0; i < routed.length; i++) for (const b of routed.slice(i + 1)) {
     const a = routed[i]!;
     if (a.link.id === b.link.id && Math.abs(a.index - b.index) <= 1) continue;
-    if (!(horizontal(a.segment) && horizontal(b.segment) || vertical(a.segment) && vertical(b.segment))) continue;
+    // Axis-aligned pairs on the same axis, and any pair where a declared straight bundle member is
+    // involved (ADR-0017): a diagonal has no axis, so its clearance is measured by distance against
+    // every other segment it does not cross.
+    const diagonal = a.segment.straight === true || b.segment.straight === true;
+    if (!diagonal && !(horizontal(a.segment) && horizontal(b.segment) || vertical(a.segment) && vertical(b.segment))) continue;
+    if (diagonal) {
+      // Only a strict crossing — interior of both runs — excuses the pair; an endpoint or T contact
+      // still owes the clearance.
+      const point = intersection(a.segment, b.segment);
+      const strict = point !== undefined
+        && ![a.segment.from, a.segment.to, b.segment.from, b.segment.to].some(end => samePoint(end, point));
+      if (strict) continue;
+    }
     // One link's own staircase tread is not a clearance pair. Stage 7a reserves a lane at a fixed x
     // and states that routing completes the attachment jog, so a tread shorter than the clearance
     // is expected geometry rather than a corridor two objects share.
@@ -195,27 +218,121 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
   return result;
 }
 
-/** O(S log S + K): line buckets and an interval sweep visit only actual overlap candidates. */
+
+/** Grid cell for the diagonal broad phase; a few node widths, so a diagonal spans few cells. */
+const DIAGONAL_CELL = 256;
+
+/** A run this many cells long is compared directly instead: the walk below must stay finite. */
+const MAX_CELL_STEPS = 4096;
+
+/**
+ * Axis-aligned runs: line buckets, each swept against itself and against the buckets within EPS of
+ * it, O(S log S + K). Declared straight members (ADR-0017): a uniform grid over the cells each run
+ * crosses, with the neighbouring cells, so an EPS-collinear pair always shares a cell; the work
+ * follows their total length.
+ */
 function collinearSweep(segments: Segment[], visit: (a: Segment, b: Segment, overlap: PathSegment) => void): void {
-  const buckets = new Map<string, Segment[]>();
+  const declared: Segment[] = [], lines: [Segment[], Segment[]] = [[], []];
   for (const s of segments) {
-    const h = horizontal(s.segment);
-    if (!h && !vertical(s.segment)) continue;
-    // Final routing coordinates define a line exactly; EPS is for geometric predicates only.
-    const key = `${h ? 'h' : 'v'}:${h ? s.segment.from.y : s.segment.from.x}`;
-    const list = buckets.get(key) ?? []; list.push(s); buckets.set(key, list);
+    // A declared straight bundle member (ADR-0017) has no axis to key by, whatever its angle, so
+    // every declared member is indexed below on a uniform grid by the cells it crosses.
+    if (s.segment.straight === true) { declared.push(s); continue; }
+    if (horizontal(s.segment)) lines[0].push(s);
+    else if (vertical(s.segment)) lines[1].push(s);
   }
-  for (const list of buckets.values()) {
-    const h = horizontal(list[0]!.segment), coordinate = (s: Segment): [number, number] => {
+  for (const line of lines) {
+    const h = line === lines[0];
+    const coordinate = (s: Segment): [number, number] => {
       const a = h ? s.segment.from.x : s.segment.from.y, b = h ? s.segment.to.x : s.segment.to.y;
       return [Math.min(a, b), Math.max(a, b)];
     };
-    list.sort((a, b) => coordinate(a)[0] - coordinate(b)[0]);
-    let active: Segment[] = [];
-    for (const next of list) {
-      active = active.filter(s => coordinate(s)[1] > coordinate(next)[0] + 1 + EPS);
-      for (const prior of active) { const overlap = overlapSegment(prior.segment, next.segment); if (overlap) visit(prior, next, overlap); }
-      active.push(next);
+    // `overlapSegment` calls two axis-aligned runs collinear when their offsets are within EPS, which
+    // two exact buckets can straddle, and collinearity within a tolerance is not transitive. So the
+    // lines are re-keyed by the EPS the predicate uses and each run is compared with the two
+    // neighbouring keys as well: a pair the predicate accepts differs by at most one key, and a key
+    // holds only runs the predicate may accept, so neither a chain of near-equal offsets nor a dense
+    // cluster of them makes the sweep scan an unrelated pair. (Beyond about 4e8 px the float spacing
+    // itself exceeds EPS, so two distinct offsets are never collinear and the key's own rounding
+    // there cannot lose a pair.)
+    // Past about 9e8 px the key is no longer a safe integer, so `at ± 1` would not move; there the
+    // float spacing already exceeds EPS, two distinct offsets can never be collinear, and the exact
+    // key alone is complete.
+    const key = (s: Segment): number => Math.floor((h ? s.segment.from.y : s.segment.from.x) / EPS);
+    const active = new Map<number, Segment[]>();
+    const runs = [...line].sort((a, b) => coordinate(a)[0] - coordinate(b)[0]);
+    for (const next of runs) {
+      const at = key(next), start = coordinate(next)[0];
+      for (const k of Number.isSafeInteger(at) ? [at - 1, at, at + 1] : [at]) {
+        const list = active.get(k);
+        if (!list) continue;
+        // Runs are taken in span order, so a span that has closed for this one has closed for every
+        // later one: dropping it here keeps the scan proportional to the pairs it really compares.
+        let write = 0;
+        for (const prior of list) {
+          if (coordinate(prior)[1] <= start + 1 + EPS) continue;
+          list[write++] = prior;
+          const overlap = overlapSegment(prior.segment, next.segment);
+          if (overlap) visit(prior, next, overlap);
+        }
+        list.length = write;
+      }
+      const own = active.get(at) ?? []; own.push(next); active.set(at, own);
     }
+  }
+  if (!declared.length) return;
+  const cells = new Map<string, { declared: Segment[]; ordinary: Segment[] }>();
+  const unindexed: Segment[] = [];
+  // Walk the cells a run actually crosses, in half-cell steps so none is skipped, and take each
+  // one's eight neighbours as well: a pair the EPS-tolerant predicate accepts can sit either side of
+  // a cell boundary, and the neighbourhood covers that.
+  const register = (item: Segment, into: 'declared' | 'ordinary'): void => {
+    const { from, to } = item.segment;
+    const run = Math.hypot(to.x - from.x, to.y - from.y);
+    const steps = Math.max(1, Math.ceil(run / (DIAGONAL_CELL / 2)));
+    // A run longer than the whole grid budget — only a hand-written layout reaches this — is
+    // compared with every declared member instead, which is complete and cannot outrun the walk.
+    if (!Number.isFinite(steps) || steps > MAX_CELL_STEPS) { unindexed.push(item); return; }
+    const visited = new Set<string>();
+    for (let step = 0; step <= steps; step++) {
+      const at = step / steps, x = from.x + (to.x - from.x) * at, y = from.y + (to.y - from.y) * at;
+      const cx = Math.floor(x / DIAGONAL_CELL), cy = Math.floor(y / DIAGONAL_CELL);
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+        const cell = `${cx + dx}:${cy + dy}`;
+        if (visited.has(cell)) continue;
+        visited.add(cell);
+        // An ordinary run joins only a cell a declared member already occupies: it is in the grid
+        // solely to meet one, and its own line bucket judges it against every other ordinary run.
+        const found = cells.get(cell);
+        if (found) found[into].push(item);
+        else if (into === 'declared') cells.set(cell, { declared: [item], ordinary: [] });
+      }
+    }
+  };
+  for (const item of declared) register(item, 'declared');
+  const ordinary = segments.filter(s => s.segment.straight !== true && (horizontal(s.segment) || vertical(s.segment)));
+  for (const s of ordinary) register(s, 'ordinary');
+  const compared = new Set<string>();
+  // The predicate decides first and only an overlapping pair is remembered: a cell that holds many
+  // declared members on distinct lines then costs arithmetic alone, not a string for every pair.
+  const consider = (one: Segment, other: Segment): void => {
+    const overlap = overlapSegment(one.segment, other.segment);
+    if (!overlap) return;
+    const a = `${one.link.id}#${one.index}`, b = `${other.link.id}#${other.index}`;
+    const pair = a < b ? `${a}|${b}` : `${b}|${a}`;
+    if (compared.has(pair)) return;
+    compared.add(pair);
+    visit(one, other, overlap);
+  };
+  for (const cell of cells.values()) {
+    for (let i = 0; i < cell.declared.length; i++) {
+      const one = cell.declared[i]!;
+      for (let j = i + 1; j < cell.declared.length; j++) consider(one, cell.declared[j]!);
+      for (const other of cell.ordinary) consider(one, other);
+    }
+  }
+  for (const item of unindexed) {
+    for (const other of declared) if (other !== item) consider(item, other);
+    // An unindexed declared member is in no cell, so the ordinary runs cannot meet it there either.
+    if (item.segment.straight === true) for (const other of ordinary) consider(item, other);
   }
 }

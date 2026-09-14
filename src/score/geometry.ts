@@ -57,10 +57,29 @@ export function boundingBox(rects: Rect[]): Rect | undefined {
 export function overlapSegment(a: PathSegment, b: PathSegment): PathSegment | undefined {
   const h = horizontal(a) && horizontal(b) && near(a.from.y, b.from.y);
   const v = vertical(a) && vertical(b) && near(a.from.x, b.from.x);
-  if (!h && !v) return undefined;
-  const coordinate = (p: Point): number => h ? p.x : p.y;
-  const low = Math.max(Math.min(coordinate(a.from), coordinate(a.to)), Math.min(coordinate(b.from), coordinate(b.to)));
-  const high = Math.min(Math.max(coordinate(a.from), coordinate(a.to)), Math.max(coordinate(b.from), coordinate(b.to)));
+  if (h || v) {
+    const coordinate = (p: Point): number => h ? p.x : p.y;
+    const low = Math.max(Math.min(coordinate(a.from), coordinate(a.to)), Math.min(coordinate(b.from), coordinate(b.to)));
+    const high = Math.min(Math.max(coordinate(a.from), coordinate(a.to)), Math.max(coordinate(b.from), coordinate(b.to)));
+    if (high <= low + EPS) return undefined;
+    return { from: h ? { x: low, y: a.from.y } : { x: a.from.x, y: low }, to: h ? { x: high, y: a.from.y } : { x: a.from.x, y: high }, owner: a.owner };
+  }
+  // Any other collinear pair — a declared straight bundle member against another on the same line
+  // (ADR-0017) — is measured along its own direction, so a steep overlap is not lost to an axis. The
+  // test is symmetric: both directions are normalised, and each segment's endpoints must lie on the
+  // other's line, so the answer cannot depend on which segment is passed first.
+  const ax = a.to.x - a.from.x, ay = a.to.y - a.from.y, bx = b.to.x - b.from.x, by = b.to.y - b.from.y;
+  const lengthA = Math.hypot(ax, ay), lengthB = Math.hypot(bx, by);
+  if (lengthA <= EPS || lengthB <= EPS) return undefined;
+  const ux = ax / lengthA, uy = ay / lengthA, vx = bx / lengthB, vy = by / lengthB;
+  if (Math.abs(ux * vy - uy * vx) > EPS) return undefined;
+  const offsetFrom = (origin: Point, nx: number, ny: number) => (p: Point): number => (p.x - origin.x) * -ny + (p.y - origin.y) * nx;
+  const onA = offsetFrom(a.from, ux, uy), onB = offsetFrom(b.from, vx, vy);
+  if ([b.from, b.to].some(p => Math.abs(onA(p)) > EPS) || [a.from, a.to].some(p => Math.abs(onB(p)) > EPS)) return undefined;
+  const along = (p: Point): number => (p.x - a.from.x) * ux + (p.y - a.from.y) * uy;
+  const low = Math.max(Math.min(along(a.from), along(a.to)), Math.min(along(b.from), along(b.to)));
+  const high = Math.min(Math.max(along(a.from), along(a.to)), Math.max(along(b.from), along(b.to)));
   if (high <= low + EPS) return undefined;
-  return { from: h ? { x: low, y: a.from.y } : { x: a.from.x, y: low }, to: h ? { x: high, y: a.from.y } : { x: a.from.x, y: high }, owner: a.owner };
+  const at = (d: number): Point => ({ x: a.from.x + ux * d, y: a.from.y + uy * d });
+  return { from: at(low), to: at(high), owner: a.owner };
 }
