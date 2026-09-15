@@ -3,9 +3,10 @@ import { equal } from '../model/json-equality.js';
 import type { Rect } from '../model/geometry.js';
 import type { Lane, LayoutGroup, LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import type { PortRef } from '../model/document.js';
-import { DEFAULT_STROKE_WIDTHS as stroke, linkStrokeWidth, routedStrokeWidth } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS as stroke, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth, routedStrokeWidth } from '../theme/geometry.js';
 import { segmentRectDistance } from '../score/geometry.js';
 import { findPort } from './row-paths.js';
+import { portId } from './skeleton-graph.js';
 import { moveGroup, union } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { withLayoutMutation } from './mutation.js';
@@ -110,6 +111,129 @@ export function rebuildLaneExtents(model: LayoutModel): void {
   }
   expandCanvas(model);
 }
+/** The end of a transit a lane does not align to: the one 7c has to bring under the corridor. */
+function laneChild(model: LayoutModel, link: LayoutLink): PortRef {
+  const source = laneSource(model, link);
+  return source === link.attachments!.from ? link.attachments!.to : link.attachments!.from;
+}
+/**
+ * Whether the child node keeps its feed order. The order the move can break is the order of the
+ * corridors of one tier against the order of the children they serve: two that swap put each
+ * link's descent across the other's. The order of a *node's* feeds cannot break here, because this
+ * rule runs after the last centring replay — the measurement behind the rule's condition is in
+ * decisions-log Q48.
+ */
+function feedOrderHolds(model: LayoutModel, lane: Lane, link: LayoutLink, cx: number): boolean {
+  const anchor = findPort(model, laneChild(model, link))!.anchor!;
+  for (const other of model.lanes) {
+    if (other === lane || other.tier !== lane.tier || other.owner.kind !== 'link') continue;
+    const peer = model.links.find(item => item.id === (other.owner as { id: string }).id);
+    if (!peer || peer.bundle || !peer.attachments) continue;
+    const peerChild = findPort(model, laneChild(model, peer))?.anchor;
+    if (peerChild && (cx - other.x) * (anchor.x - peerChild.x) < -1e-9) return false;
+  }
+  return true;
+}
+/** Whether a node is drawn as a bar, whose port x stage 7d derives instead of placing. */
+function isBarNode(model: LayoutModel, id: string): boolean {
+  return model.document.groups[model.document.nodes[id]!.group]!.shape === 'bar';
+}
+/** Whether more than one routed link attaches to a port, which makes it a fan (ticket 20). */
+function shared(model: LayoutModel, ref: PortRef): boolean {
+  const key = portId(ref);
+  return model.links.filter(link => link.layer === 'routed' && link.attachments
+    && [link.attachments.from, link.attachments.to].some(end => portId(end) === key)).length > 1;
+}
+/** Every box a corridor may not stand in, other than the geometry the moving link owns. */
+function corridorFree(model: LayoutModel, lane: Lane, link: LayoutLink, child: PortRef, x: number): boolean {
+  const half = lane.bounds.width / 2, window = { x: x - half, width: lane.bounds.width };
+  const overlaps = (box: { x: number; width: number }) => box.x < window.x + window.width - 1e-6 && box.x + box.width > window.x + 1e-6;
+  // Inside the transited band the corridor is the reservation `validateLanes` measures.
+  for (const group of Object.values(model.groups)) if (group.tier === lane.tier && overlaps(occupied(model, group))) return false;
+  for (const other of model.lanes) if (other !== lane && other.tier === lane.tier
+    && Math.abs(other.x - x) < (other.bounds.width + lane.bounds.width) / 2 - 1e-6) return false;
+  // Beyond the band the corridor is the child's own descent. It may enter the child's group and
+  // nothing else: a foreign node, a foreign group box or a reserved run of another link stops it.
+  const anchor = findPort(model, child)!.anchor!;
+  const low = Math.min(lane.bounds.y, anchor.y), high = Math.max(bottom(lane.bounds), anchor.y);
+  const span = { x: window.x, y: low, width: window.width, height: high - low };
+  const childGroup = model.document.nodes[child.node]!.group;
+  for (const node of Object.values(model.nodes)) {
+    if (node.id === child.node) continue;
+    const box = node.bounds!;
+    if (overlaps(box) && box.y < bottom(span) - 1e-6 && bottom(box) > span.y + 1e-6) return false;
+  }
+  for (const group of Object.values(model.groups)) {
+    if (group.id === childGroup || group.tier === lane.tier) continue;
+    const box = group.bounds!;
+    if (overlaps(box) && box.y < bottom(span) - 1e-6 && bottom(box) > span.y + 1e-6) return false;
+  }
+  // Every reserved run of another link, in the three forms placement writes: a pinned path, the
+  // corridor runs of 7a, and the shared runs 7e cuts for a fan. The gap allocation counts all
+  // three, so a corridor that ignored one would stand where a reserved run already does.
+  for (const other of model.links) {
+    if (other.id === link.id) continue;
+    const runs = [...other.path?.fixed ? other.path.segments : [], ...other.fixedSegments ?? [],
+      ...other.sharedRuns?.from ?? [], ...other.sharedRuns?.to ?? []];
+    for (const segment of runs) if (segmentRectDistance(segment, span) < linkStrokeWidth(other) / 2 - 1e-6) return false;
+  }
+  // A group title keeps its link-free margin from every link, this link included (ADR-0013).
+  for (const label of model.labels) {
+    if (label.role !== 'group' || label.omitted || !label.bounds) continue;
+    const box = {
+      x: label.bounds.x - GROUP_LABEL_LINK_CLEARANCE, y: label.bounds.y - GROUP_LABEL_LINK_CLEARANCE,
+      width: label.bounds.width + 2 * GROUP_LABEL_LINK_CLEARANCE, height: label.bounds.height + 2 * GROUP_LABEL_LINK_CLEARANCE,
+    };
+    if (overlaps(box) && box.y < bottom(span) - 1e-6 && bottom(box) > span.y + 1e-6) return false;
+  }
+  return true;
+}
+/**
+ * 7c seats a transit feed's child under the corridor its link owns. Where it could not, the
+ * corridor follows the child instead of the child's route crossing back to it (ticket 02). Only
+ * the corridor in the tier next to the child may move, and only when the corridor at the child's
+ * port x is free of foreign geometry, and the move keeps the child node's feed order. Only the
+ * corridor in the tier next to the child may move: the corridors before it carry the link across
+ * tiers it has left behind, and the jog between two corridors is what § 7a already accepts.
+ */
+export function reseatLanes(model: LayoutModel): boolean {
+  let moved = false;
+  // The corridors are taken in reservation order and each candidate is measured against the ones
+  // already moved, the same serialization 7a allocates in. A corridor is never measured against a
+  // move that has not been made.
+  for (const lane of model.lanes) {
+    if (lane.owner.kind !== 'link') continue;
+    const link = model.links.find(item => item.id === (lane.owner as { id: string }).id);
+    if (!link || link.bundle || !link.attachments) continue;
+    // 7e has already cut the geometry of a link that shares a run, and a shared port's tree is
+    // reserved against the corridor this rule would move. Both keep their corridor. So does a link
+    // with a bar end: 7d takes that port's x from this very corridor, and the bar rebuild every
+    // publication replays would then contradict the declaration-order geometry it re-derives.
+    if (link.sharedRuns || [link.attachments.from, link.attachments.to]
+      .some(end => shared(model, end) || isBarNode(model, end.node))) continue;
+    const child = laneChild(model, link);
+    // `transitTiers` runs from the authored source to the authored target. The corridor that may
+    // move is the one next to the *child*, which is that order's last tier only when the child is
+    // the authored target; read it from the child so the answer does not follow the authoring.
+    const order = transitTiers(model, link);
+    if ((child === link.attachments.to ? order.at(-1) : order[0]) !== lane.tier) continue;
+    const anchor = findPort(model, child)?.anchor;
+    if (!anchor || Math.abs(anchor.x - lane.x) < 0.5) continue;
+    if (!corridorFree(model, lane, link, child, anchor.x) || !feedOrderHolds(model, lane, link, anchor.x)) continue;
+    const group = Object.values(model.groups).filter(item => item.tier === lane.tier)
+      .sort((a, b) => Math.abs(anchor.x - (a.bounds!.x + a.bounds!.width / 2)) - Math.abs(anchor.x - (b.bounds!.x + b.bounds!.width / 2)))[0];
+    if (!group) continue;
+    lane.x = anchor.x;
+    lane.bounds.x = anchor.x - lane.bounds.width / 2;
+    lane.group = group.id;
+    lane.side = anchor.x < group.bounds!.x ? 'left' : 'right';
+    moved = true;
+    placementWarning(model, 'LANE_FOLLOWS_ITS_CHILD',
+      `${link.id} could not be seated under its corridor at tier ${lane.tier}; the corridor follows the child port.`, [link.id]);
+  }
+  if (moved) rebuildLaneExtents(model);
+  return moved;
+}
 /** Prefer the nearest in-span slot that leaves room for the remaining members of this source. */
 function inSpanSlot(model: LayoutModel, link: LayoutLink, core: { x: number; width: number }, width: number,
   prior: Lane[], remaining: LayoutLink[]): number | undefined {
@@ -183,9 +307,51 @@ export function allocateLanes(model: LayoutModel): void {
   // Retain the source-side order through every intermediate tier, including same-node bundles.
   // Links sharing one alignment-end anchor follow their far ends' x, so the lanes of a fan from one
   // port keep the children's row order and 7c can align every child under its own lane.
-  const farX = (link: LayoutLink) => {
-    const source = laneSource(model, link), far = source === link.attachments!.from ? link.attachments!.to : link.attachments!.from;
-    return findPort(model, far)!.anchor!.x;
+  const farEnd = (link: LayoutLink) => {
+    const source = laneSource(model, link);
+    return source === link.attachments!.from ? link.attachments!.to : link.attachments!.from;
+  };
+  const farX = (link: LayoutLink) => findPort(model, farEnd(link))!.anchor!.x;
+  const isBar = (port: PortRef) => model.document.groups[model.document.nodes[port.node]!.group]!.shape === 'bar';
+  const portLoad = new Map<string, number>();
+  const peerTiers = new Map<string, Set<number>>();
+  for (const link of model.links) if (link.layer === 'routed' && link.attachments) {
+    const ends = [link.attachments.from, link.attachments.to] as const;
+    for (const end of ends) portLoad.set(portId(end), (portLoad.get(portId(end)) ?? 0) + 1);
+    for (const [end, peer] of [ends, [ends[1], ends[0]] as const]) {
+      if (!peerTiers.has(end.node)) peerTiers.set(end.node, new Set());
+      peerTiers.get(end.node)!.add(nodeTier(model, peer.node));
+    }
+  }
+  /**
+   * Whether 7c will seat the far end under the lane as a transit feed. It reads the same two port
+   * sides `feeds` reads: the run leaves the alignment end towards the far tier, and enters the far
+   * port from that side. A wrapped port fails this, and its far end keeps the x it has.
+   */
+  const anchorTier = selectAnchorTier(model);
+  const seatedByCentre = (link: LayoutLink): boolean => {
+    if (anchorTier === undefined) return false;
+    const parent = laneSource(model, link), child = farEnd(link);
+    if ([parent, child].some(end => model.groups[model.document.nodes[end.node]!.group]!.flank)) return false;
+    const below = nodeTier(model, child.node) > anchorTier;
+    return findPort(model, parent)!.side === (below ? 'bottom' : 'top')
+      && findPort(model, child)!.side === (below ? 'top' : 'bottom');
+  };
+  /**
+   * The x the link's target holds once placement freezes, where placement already knows it. The
+   * target is the far end: 7c brings it under the lane, and where it cannot, the run out of the
+   * lane travels to it. Five far ends have no x to read yet, and the rule that reads the target
+   * takes no opinion from them: a bundle member keeps the authored source and 7e owns its geometry,
+   * a bar takes its port x from the other end in 7d, a port that several links share is a fan whose
+   * x 7c settles from all of its peers at once, a far end 7c seats under the lane takes the lane's
+   * own x, so reading it here would only read this rule's own answer back, and a far end the
+   * transited tier itself feeds travels with the groups this stage moves aside.
+   */
+  const targetX = (link: LayoutLink, tier: number): number | undefined => {
+    if (link.bundle || seatedByCentre(link)) return undefined;
+    const far = farEnd(link);
+    return isBar(far) || (portLoad.get(portId(far)) ?? 0) > 1 || peerTiers.get(far.node)!.has(tier)
+      ? undefined : findPort(model, far)!.anchor!.x;
   };
   const links = model.links.filter(link => transitTiers(model, link).length).sort((a, b) =>
     findPort(model, laneSource(model, a))!.anchor!.x - findPort(model, laneSource(model, b))!.anchor!.x || farX(a) - farX(b) || a.sourceIndex - b.sourceIndex);
@@ -200,8 +366,12 @@ export function allocateLanes(model: LayoutModel): void {
       const nearest = [...main].sort((a, b) => Math.min(Math.abs(sx - a.bounds!.x), Math.abs(sx - right(a.bounds!)))
         - Math.min(Math.abs(sx - b.bounds!.x), Math.abs(sx - right(b.bounds!))))[0] ?? groups[0]!;
       const core = occupied(model, nearest);
-      const side = sx < core.x + core.width / 2 ? 'left' : 'right';
-      let x = side === 'left' ? Math.min(sx, core.x - half) : Math.max(sx, right(core) + half);
+      // A corridor passes its tier on the side of the transited group that faces the link's target
+      // (ticket 03), so the run leaves the tier already on the side its far end stands on. Where the
+      // target has no x to read, the corridor keeps the side the source asks for.
+      const target = targetX(link, tier);
+      const side = target === undefined ? undefined : target < core.x + core.width / 2 ? 'left' : 'right';
+      let x = sx < core.x + core.width / 2 ? Math.min(sx, core.x - half) : Math.max(sx, right(core) + half);
       // Reserve in transported source order. Previous corridors are immutable even during planning.
       const prior = pending.filter(lane => lane.tier === tier);
       for (const lane of prior) if (Math.abs(x - lane.x) < (width + lane.bounds.width) / 2) {
@@ -209,25 +379,30 @@ export function allocateLanes(model: LayoutModel): void {
       }
       // A corridor directly below its source avoids an approach jog. Before ownership freezes,
       // move intermediate groups aside where that preserves prior corridors and source groups.
-      const direct = Array.from({ length: groups.length + 1 }, (_, split) =>
-        marginTranslations(model, groups, split, sx, width, prior, fixedSources))
-        .filter((shift): shift is number[] => shift !== undefined)
-        .sort((a, b) => a.reduce((sum, dx) => sum + Math.abs(dx), 0) - b.reduce((sum, dx) => sum + Math.abs(dx), 0))[0];
+      // An insertion gap that leaves the transited group on the target side is taken first; a plan
+      // on the other side is taken only where the target side has none.
+      const at = groups.indexOf(nearest);
+      const offSide = (split: number): number => side === undefined ? 0 : Number(side === 'left' ? split > at : split <= at);
+      const direct = Array.from({ length: groups.length + 1 }, (_, split) => split)
+        .map(split => ({ split, shift: marginTranslations(model, groups, split, sx, width, prior, fixedSources) }))
+        .filter((plan): plan is { split: number; shift: number[] } => plan.shift !== undefined)
+        .sort((a, b) => offSide(a.split) - offSide(b.split)
+          || a.shift.reduce((sum, dx) => sum + Math.abs(dx), 0) - b.shift.reduce((sum, dx) => sum + Math.abs(dx), 0))[0]?.shift;
       let shifts: number[] | undefined;
       if (direct) { x = sx; shifts = direct; }
       else {
         // Prefer a full in-span allocation for the remaining same-source members when it fits.
         x = inSpanSlot(model, link, core, width, prior, tierLinks.slice(index)) ?? x;
-        // If exterior packing crossed the main group, take its other margin.
-        if (x + half > core.x && x - half < right(core)) x = right(core) + half;
-        const split = groups.indexOf(nearest) + (x > right(core) ? 1 : 0);
+        // If exterior packing crossed the main group, take the margin the target side asks for.
+        if (x + half > core.x && x - half < right(core)) x = side === 'left' ? core.x - half : right(core) + half;
+        const split = at + (x > right(core) ? 1 : 0);
         shifts = marginTranslations(model, groups, split, x, width, prior, fixedSources);
       }
       if (!shifts) {
         // A source or earlier corridor blocks propagation. An exterior corridor needs no movement.
         const left = Math.min(...groups.map(group => occupied(model, group).x), ...prior.map(lane => lane.bounds.x)) - half;
         const rightX = Math.max(...groups.map(group => right(occupied(model, group))), ...prior.map(lane => right(lane.bounds))) + half;
-        x = Math.abs(left - sx) <= Math.abs(rightX - sx) ? left : rightX;
+        x = side === undefined ? (Math.abs(left - sx) <= Math.abs(rightX - sx) ? left : rightX) : side === 'left' ? left : rightX;
         shifts = groups.map(() => 0);
       }
       const moved: string[] = [];

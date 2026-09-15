@@ -14,7 +14,7 @@ import { nodeGap } from './skeleton-graph.js';
 import { rebuildBands, union, validateSkeletonBands } from './skeleton-geometry.js';
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, flankPair } from './flanks.js';
-import { rebuildLaneExtents, validateLanes, transitTiers } from './lanes.js';
+import { rebuildLaneExtents, reseatLanes, validateLanes, transitTiers } from './lanes.js';
 import { rebuildRegions } from './regions.js';
 import { centreViolations, selectAnchorTier } from './centre.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
@@ -22,6 +22,7 @@ import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
 import { produceGroupLabelBands, replanGroupLabels, validateGroupLabelBands } from './bands.js';
 import { growTierGaps } from './gap-room.js';
+import { tierGapRoom } from './gap-runs.js';
 import { produceLinkLabels, validateLinkLabels } from './link-labels.js';
 import { validateRoutedPaths } from '../route/validate.js';
 
@@ -40,6 +41,20 @@ function jsonValue(value: unknown): void {
   }
 }
 function same(a: unknown, b: unknown, message: string): void { if (!equal(a, b)) throw new Error(message); }
+/**
+ * The tier gaps that owe a row they cannot seat. 7f has already reserved the room every gap asks
+ * for, so a later reservation change that makes one of these owe more room owes it room nothing
+ * will reserve.
+ */
+function shortGaps(model: LayoutModel): string[] {
+  return tierGapRoom(model).filter(room => room.rows > 0 && !room.refuses && room.seated < room.rows)
+    .map(room => `gap:${room.above}:${room.below}`);
+}
+/** Whether `after` names nothing `before` does not. A trade of one item for another is not "no worse". */
+function noNewItems(after: readonly string[], before: readonly string[]): boolean {
+  const held = new Set(before);
+  return after.every(item => held.has(item));
+}
 function pick<T extends object, K extends keyof T>(value: T, keys: readonly K[]): Pick<T, K> {
   return Object.fromEntries(keys.filter(key => Object.hasOwn(value, key)).map(key => [key, value[key]])) as Pick<T, K>;
 }
@@ -652,6 +667,31 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     if (growTierGaps(draft)) {
       rebuildRegionGeometry(draft, undefined, undefined, true);
       replanGroupLabels(draft);
+    }
+    // 7c seats each transit feed's child under the corridor its link owns; where it could not, the
+    // corridor follows the child (ticket 02). The move belongs to the transaction, not to the
+    // callback, exactly as the growth above does. It runs last in 7f, after every centring replay,
+    // because each replay reads lane x as that feed's authoritative x: a corridor moved before one
+    // is a corridor the replay chases, and the child's node stretches after it. Nothing moves here,
+    // so the label bands 7f has just placed stay where they are.
+    const heldLanes = clone(draft.lanes);
+    if (reseatLanes(draft)) {
+      rebuildLaneExtents(draft);
+      // Two things the move can spoil, and it is refused rather than allowed to. It may open an
+      // alignment 7c could not reach, and the centring invariant would then read the published
+      // placement as unfinished work. It also turns the run in the gap beside the corridor from a
+      // column into a row, and the height rule has already measured that gap: a gap that cannot
+      // seat the new row would owe room nothing reserves. Measure both ways and keep the corridors
+      // where they were rather than publish either contradiction.
+      // Both are compared as sets, not as counts: a move that trades one unverified alignment or
+      // one short gap for another is not "no worse", it is a different diagram with the same tally.
+      const followed = clone(draft.lanes);
+      const after = { centring: centreViolations(draft), gaps: shortGaps(draft) };
+      draft.lanes = heldLanes; rebuildLaneExtents(draft);
+      const held = { centring: centreViolations(draft), gaps: shortGaps(draft) };
+      if (noNewItems(after.centring, held.centring) && noNewItems(after.gaps, held.gaps)) {
+        draft.lanes = followed; rebuildLaneExtents(draft);
+      } else draft.diagnostics = draft.diagnostics.filter(item => item.code !== 'LANE_FOLLOWS_ITS_CHILD');
     }
   }
   else if (rule === 'link-labels') produceLinkLabels(draft);

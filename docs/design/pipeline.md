@@ -261,10 +261,33 @@ vertical run, which stage 8 stitches back unchanged. For a non-bundle owner the 
 the lane is fixed here. For a bundle member, 7a records only the owned lane x and extent; stage 7e
 consumes that reservation when it creates the member path. Capacity uses actual occupied geometry, measured pills, and participating strokes. Corridor width is
 `max(34, endpoint pill widths + 10, 20 + path stroke + maximum node stroke)` in pixels.
-The lane's **alignment end** is the endpoint nearer the anchor tier (7c), because 7c holds that end fixed and aligns the other end under the lane; when both ends are equidistant, and for bundle members (7e owns their geometry), it is the authored source. "Source" in this stage means that end. First try the source port x, considering every insertion gap in the intermediate group order.
+The lane's **alignment end** is the endpoint nearer the anchor tier (7c), because 7c holds that end fixed and aligns the other end under the lane; when both ends are equidistant, and for bundle members (7e owns their geometry), it is the authored source. "Source" in this stage means that end. The other end is the **target**. First try the source port x, considering every insertion gap in the intermediate group order.
 Choose the feasible outward translation plan with the least total displacement, keeping all
 previous corridors and transit source groups fixed. If no such plan exists, use the in-span
 allocation and then the exterior fallback described below.
+
+**A corridor passes its tier on the side that faces the target.** The source decides where inside
+that side the column goes; the target decides which side. Of the insertion gaps, the in-span slots
+and the two exterior columns, take the one that leaves the transited group between the corridor and
+the target, so the run leaves the tier already on the side it has to reach.
+
+The rule reads the target only where placement already knows the x it will keep. Five targets have
+no such x, and the corridor then keeps the side the source asks for, exactly as before:
+
+- a **bundle member** — it keeps the authored source and 7e owns its geometry;
+- a target in a **bar** group — 7d takes its port x from the other end of the drop;
+- a **shared port** — it is a fan, and 7c settles its x from all of its peers at once;
+- a target **7c seats under the lane** — it takes the lane's own x, so reading it here would read
+  this rule's own answer back. 7c seats it when the two ports face each other across the tiers: the
+  source port on the side towards the target's tier and the target port on the side towards the
+  source's tier, neither end in a flank (that is the same test `feeds` makes in 7c). A wrapped
+  port — one on the side away from its peer — fails it, and its target keeps the x it has;
+- a target the **transited tier itself feeds** — it travels with the groups this stage moves aside.
+
+The fourth and fifth read the target's *node*. 7c centres the target's whole group, so a sibling's
+feed can still carry the target sideways after this stage reads it — measured at 105–157 px on two
+probes, with no side flipped by it. The rule is not tightened for that: the corridor that ends up
+away from its child is the case the move in 7f answers, and that move is the safety net here.
 Before fixing any lane x, expand occupied intermediate margins through horizontal group/node/flank
 translations and expand the canvas. Preserve transit source anchors and the groups' internal order.
 Plan displacement outward from the insertion gap and propagate it through neighboring groups.
@@ -273,8 +296,59 @@ final group delta, avoiding accumulated rounding under the exact translation gua
 A corridor's centre cannot decide displacement direction when the corridor contains an entire
 neighbor. If a transit source or an existing corridor blocks propagation, use a clear exterior
 corridor without moving those owners.
-An existing lane's identity, owner, x and width cannot change in later stages. Extents follow the
-current intermediate band with `10 + pathStroke / 2` padding before placement freezes.
+An existing lane's identity, owner and width cannot change in later stages, and its x cannot either
+except under the one rule below. Extents follow the current intermediate band with
+`10 + pathStroke / 2` padding before placement freezes.
+
+**A corridor whose child cannot sit under it follows the child.** 7c aligns each transit feed's
+child port under the lane the feed owns (§ 7c). Where it could not, the child's route has to reach
+the corridor sideways, and it crosses whatever stands between them. The corridor then moves to the
+child's port x instead. Only the corridor in the tier next to the child moves; the corridors before
+it carry the link across tiers it has left behind, and the jog between two corridors is what this
+stage already accepts. "Next to the child" is read from the child, not from the transit order: that
+order runs from the authored source to the authored target, so its last tier is the child's
+neighbour only when the child is the authored target, and reading it the other way would make the
+answer follow the authoring.
+
+The move is made only when every one of these holds:
+
+- the **corridor at the child's port x is free of foreign geometry** over the whole distance it
+  runs — no occupied group of the transited tier, no other corridor of that tier, and, from the
+  band out to the child's port, no foreign node, no foreign group box, no reserved run of another
+  link and no group title with its link-free margin (ADR-0013);
+- the **child node keeps its feed order**: two corridors of one tier may not swap the children they
+  serve, because each link's descent would then cross the other's;
+- neither end is a **shared port**, neither end is in a **bar** group, and the link holds no
+  **shared run** — 7e has already cut that geometry against the corridor where it stands, and 7d
+  takes a bar's port x from this very corridor, so a move would make the bar rebuild every
+  publication replays contradict the declaration-order geometry it re-derives;
+- the move leaves the **centring invariant no worse**. A corridor that follows its child can open
+  an alignment 7c could not reach, and the invariant would then read the published placement as
+  unfinished work. The rule measures `centreViolations` both ways and keeps the corridors where
+  they were rather than publish that contradiction;
+- the move leaves **no tier gap owing a row it cannot seat**. The move turns the run in the gap
+  beside the corridor from a column into a row, and 7f has already reserved the room every gap
+  asks for. The rule counts the gaps where `rows > 0`, the allocation refuses nothing and the
+  seating falls short, both ways, and keeps the corridors where they were when the move adds one.
+
+**The move runs last in 7f**, after the tier-gap growth and after the group label bands, and that
+is a measured choice. Every centring replay reads lane x as that feed's authoritative x, so a
+corridor moved before one is a corridor the replay chases: on
+`goldens/synthetic/own-lane-is-an-obstacle.yaml` the same move made at 7c widened the child node
+from 145.78 to 1150.89 px and the canvas from 500.05 to 1505.16, and made before the tier-gap
+growth, to 622.89 px and 977.16 — the growth's own replay chases it. Made last, nothing moves at
+all: the corridor alone changes, and crossings go 3 → 1 with Q 0.5122 → 0.6704. Nothing else moves
+either, so the label bands 7f has just placed stay where they are, and the corridor is measured
+clear of them.
+
+The row the move creates is therefore **refused, not reserved**: the gap keeps the room 7f gave it
+and the corridor moves only where that room seats the new row. Running the move before the growth
+so the height rule counts the row was measured and rejected for the number above — the golden is
+byte-identical either way, but the fixture the rule exists for loses its whole point.
+
+The reservation follows the corridor: extents and `fixedSegments` are rebuilt from the new x, so
+the per-gap allocation that reads lane x after 7a and 7c reads the moved one. A moved corridor
+reports `LANE_FOLLOWS_ITS_CHILD`.
 
 **The runs between the lanes are allocated too (ADR-0015 rule 1).** A **tier gap** is the open band
 between two adjacent tier bands. The lane extents that face it bound it. Every run that crosses one
@@ -376,7 +450,9 @@ reserves for every port with two or more routed links (ticket 20; a rule-fixed m
 ADR-0016).
 Iterate child-widening → sibling push → re-centre at most 8 times, ε = 0.5 px; on non-convergence
 keep the last state and report. *Moves:* child groups, child widths. *Re-validate:* lanes (7a
-positions are fixed; if a child now overlaps a lane, push the child, not the lane).
+positions are fixed; if a child now overlaps a lane, push the child, not the lane). A child this
+step leaves off its lane is not left there for good: 7f moves the corridor to it under the rule
+§ 7a states, after the last replay of this step.
 
 **The sibling push covers the whole tier.** A widening takes the space of the groups after it.
 Those groups move right. This includes a group the step does not centre. It also includes a group
@@ -519,6 +595,14 @@ projection onto a common endpoint block is declined if its full side capacity wo
 or immutable lane; local slots remain valid and the bundle bends instead.
 
 ### 7f — group label bands, tier gap room, group label bands again
+
+7f does four things, in this order: it places the group label bands, it grows each tier gap to the
+rows it must seat, it places the group label bands again where a band moved, and it lets a corridor
+whose child 7c could not seat follow that child (§ 7a). The corridor move is last because every
+centring replay before it — 7c's own, the growth's and the label bands' — reads lane x as that
+feed's authoritative x and chases a corridor that has moved. It therefore reserves no room: the
+gap keeps the room this stage gave it, and a move whose new row that room cannot seat is refused
+(§ 7a states the whole condition).
 
 **A tier gap grows to the rows it must seat (ADR-0015 rule 1).** 7f places its group labels, then
 measures the gaps, then places its group labels again. The middle step is the reservation, and it
