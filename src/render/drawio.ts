@@ -29,7 +29,7 @@ import type {
   Layer, LayoutGroup, LayoutLabel, LayoutLink, LayoutModel, LayoutPort, PathSegment,
 } from '../model/layout.js';
 import { orderedGroupIds, orderedNodeIds } from '../model/model.js';
-import { iconPath } from '../profiles/network/icons.js';
+import { iconKey, iconPath } from '../profiles/network/icons.js';
 import type { ThemeMode } from '../profiles/network/theme.js';
 import {
   LEGEND_DEFAULT_CLASS, NETWORK_PORT_STATUS, NETWORK_THEME,
@@ -47,6 +47,9 @@ const ICON_INSET = 1.5;
 const GLYPH_STROKE = DEFAULT_STROKE_WIDTHS.glyph;
 /** Points closer than this in both axes are the same point, as `render` treats them. */
 const EPS = 1e-6;
+
+/** Clear space a label on its run keeps around its glyphs, so the stroke it covers stays covered. */
+const LABEL_MARGIN = 5;
 
 /** `#rrggbb` to its three channels; anything else (a name, `none`) has no channels to mix. */
 function channels(colour: string): [number, number, number] | undefined {
@@ -86,12 +89,16 @@ const isColour = (value: string): boolean => /^#[0-9a-fA-F]{3,8}$/.test(value);
  * draw.io 26.0.0 (December 2024).
  *
  * Only values that really are colours are paired. A dash pattern is a string too, and
- * `dashPattern=light-dark(2 2,2 2)` would be nonsense; equal colours are left alone, as draw.io's
- * own writer does.
+ * `dashPattern=light-dark(2 2,2 2)` would be nonsense.
+ *
+ * A colour the two palettes agree on is paired **anyway**, as `light-dark(x, x)`. That looks
+ * redundant and is not: an unpaired colour is precisely the thing draw.io inverts, so writing white
+ * once yields a dark glyph in dark mode, while writing it twice keeps it white. Measured — the
+ * Cisco glyph stroke is the case that found this.
  */
 function adapt<T>(light: T, dark: T): T {
   if (typeof light === 'string' && typeof dark === 'string') {
-    return (light === dark || !isColour(light) || !isColour(dark) ? light : `light-dark(${light},${dark})`) as T;
+    return (!isColour(light) || !isColour(dark) ? light : `light-dark(${light},${dark})`) as T;
   }
   if (light !== null && typeof light === 'object' && dark !== null && typeof dark === 'object') {
     const out: Record<string, unknown> = {};
@@ -101,6 +108,34 @@ function adapt<T>(light: T, dark: T): T {
     return out as T;
   }
   return light;
+}
+
+/**
+ * The profile's glyphs as draw.io's own Cisco-19 shapes. These resolve from the style string alone:
+ * drawio-desktop loads every bundled stencil set before it renders, so a sidebar library never has
+ * to be enabled — verified against a deliberately bogus shape name, which fell back to a plain
+ * rectangle while every name here drew.
+ *
+ * `badge` is the framed form (`shape=mxgraph.cisco19.rect` plus a `prIcon`), where `fillColor`
+ * paints the frame and **`strokeColor` paints the glyph**; it replaces the tile rather than sitting
+ * on it. `silhouette` is a bare stencil filled with `fillColor` and no frame.
+ *
+ * `width`/`height` are the shape's native proportions, and they matter: `aspect=fixed` is only a
+ * hint to the editor's resize handles and does not constrain rendering, so a shape written into a
+ * box of the wrong ratio is simply stretched. Each is letterboxed into its measured tile instead.
+ */
+const CISCO19: Readonly<Record<string, { kind: 'badge' | 'silhouette'; shape: string; width: number; height: number }>> = {
+  router: { kind: 'badge', shape: 'router', width: 50, height: 50 },
+  switch: { kind: 'badge', shape: 'l2_switch', width: 50, height: 50 },
+  server: { kind: 'badge', shape: 'server', width: 64, height: 50 },
+  cloud: { kind: 'silhouette', shape: 'cloud', width: 50, height: 30 },
+};
+
+/** The largest box of `ratio`'s proportions that fits inside `box`, centred in it. */
+function letterbox(box: Rect, ratio: { width: number; height: number }): Rect {
+  const scale = Math.min(box.width / ratio.width, box.height / ratio.height);
+  const width = ratio.width * scale, height = ratio.height * scale;
+  return { x: box.x + (box.width - width) / 2, y: box.y + (box.height - height) / 2, width, height };
 }
 
 /** A side's outward direction as a fraction of a box: the point a link leaves its port from. */
@@ -119,6 +154,12 @@ export interface DrawioOptions {
    * deliberate departure from the measured geometry, and it moves a label only — never a route.
    */
   labels?: 'measured' | 'on-run';
+  /**
+   * Which glyphs the icons use. `profile` draws the network profile's own five, as the SVG does.
+   * `cisco19` uses draw.io's bundled Cisco-19 shapes where one matches, which are native shapes and
+   * so take the palette — and therefore adapt to dark, which an embedded image never can.
+   */
+  icons?: 'profile' | 'cisco19';
   /**
    * Which palette the file carries. `auto`, the default, writes every colour as a
    * `light-dark(light, dark)` pair and lets draw.io pick — one file that is exact in both
@@ -185,6 +226,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   const adaptive = chosen === 'auto';
   const mode: ThemeMode = adaptive ? 'light' : chosen;
   const placement = options.labels ?? 'on-run';
+  const iconSet = options.icons ?? 'profile';
   /** One resolution of something the palette decides, adapted to both appearances when asked. */
   const dual = <T,>(pick: (of: ThemeMode) => T): T => adaptive ? adapt(pick('light'), pick('dark')) : pick(mode);
   const paint = dual(of => NETWORK_THEME[of]);
@@ -378,20 +420,44 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         return known ? nodeClassPaint(known, of) : { tile: NETWORK_THEME[of].tile, glyph: NETWORK_THEME[of].glyph };
       };
       const resolved = dual(pick);
-      vertex(cellId('iconTile', id), cellId('node', id), styleString([], {
-        html: 1, rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
-        fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
-      }), tile);
-      // The glyphs are stroked 24-unit paths with no draw.io stencil equivalent, so each is carried
-      // as its own image: exact, self-contained, and independent of any shape library being present.
-      const glyph = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">`
-        + `<path d="${iconPath(node.icon.icon)}" fill="none" stroke="${pick(mode).glyph}"`
-        + ` stroke-width="${num(GLYPH_STROKE)}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-      vertex(cellId('icon', id), cellId('node', id), styleString([], {
-        shape: 'image', html: 1, imageAspect: 0, points: '[]',
-        image: svgImage(glyph),
-      }), { x: tile.x + ICON_INSET, y: tile.y + ICON_INSET,
-        width: tile.width - 2 * ICON_INSET, height: tile.height - 2 * ICON_INSET });
+      const native = iconSet === 'cisco19' ? CISCO19[iconKey(node.icon.icon)] : undefined;
+      if (native) {
+        // A badge carries its own frame, so it replaces the tile; a silhouette keeps it.
+        if (native.kind === 'silhouette') {
+          vertex(cellId('iconTile', id), cellId('node', id), styleString([], {
+            html: 1, rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
+            fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
+          }), tile);
+        }
+        const box = letterbox(native.kind === 'badge' ? tile
+          : { x: tile.x + ICON_INSET, y: tile.y + ICON_INSET,
+            width: tile.width - 2 * ICON_INSET, height: tile.height - 2 * ICON_INSET }, native);
+        vertex(cellId('icon', id), cellId('node', id), styleString([], {
+          sketch: 0, html: 1, aspect: 'fixed', points: '[]',
+          shape: native.kind === 'badge' ? 'mxgraph.cisco19.rect' : `mxgraph.cisco19.${native.shape}`,
+          ...(native.kind === 'badge' ? { prIcon: native.shape } : {}),
+          // On a badge `fillColor` is the frame and `strokeColor` is the glyph; a silhouette is
+          // filled with the glyph colour and has no frame to stroke.
+          fillColor: native.kind === 'badge' ? resolved.tile.fill : resolved.glyph,
+          strokeColor: native.kind === 'badge' ? resolved.glyph : 'none',
+        }), box);
+      } else {
+        vertex(cellId('iconTile', id), cellId('node', id), styleString([], {
+          html: 1, rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
+          fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
+        }), tile);
+        // A profile glyph is a stroked 24-unit path with no bundled equivalent, so it is carried as
+        // its own image. An embedded image is the one thing here that cannot adapt to dark — draw.io
+        // has no way into it — which is the reason `cisco19` exists as an option at all.
+        const glyph = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">`
+          + `<path d="${iconPath(node.icon.icon)}" fill="none" stroke="${pick(mode).glyph}"`
+          + ` stroke-width="${num(GLYPH_STROKE)}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+        vertex(cellId('icon', id), cellId('node', id), styleString([], {
+          shape: 'image', html: 1, imageAspect: 0, points: '[]',
+          image: svgImage(glyph),
+        }), { x: tile.x + ICON_INSET, y: tile.y + ICON_INSET,
+          width: tile.width - 2 * ICON_INSET, height: tile.height - 2 * ICON_INSET });
+      }
     }
 
     for (const label of layout.labels) {
@@ -591,6 +657,10 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         // `edgeLabel` is a named style in draw.io's bundled sheet and brings
         // `labelBackgroundColor=default` with it — the white box the SVG does not draw.
         html: 1, labelBackgroundColor: on ? behind() : 'none',
+        // The backdrop is sized from the label's spacing, which defaults to 2 px and leaves the
+        // line touching the glyphs. A label sitting on its run has to clear the stroke it covers,
+        // so it takes a margin of its own; one sitting beside the run fills nothing and needs none.
+        ...(on ? { spacing: LABEL_MARGIN } : {}),
         align: 'center', verticalAlign: 'middle', resizable: 0, points: '[]',
         fontFamily: FONT_FAMILY, fontSize: label.fontSize, fontColor: colour,
         fontStyle: label.fontWeight === 700 ? 1 : undefined,
@@ -631,6 +701,25 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           return known ? nodeClassPaint(known, of) : { tile: NETWORK_THEME[of].tile, glyph: NETWORK_THEME[of].glyph };
         };
         const resolved = dual(pick);
+        const native = iconSet === 'cisco19' ? CISCO19[iconKey(entry.icon)] : undefined;
+        if (native) {
+          // The legend has to name what the diagram draws, so it takes the same glyph.
+          if (native.kind === 'silhouette') {
+            vertex(cellId('legendTile', entry.id), cellId('legend'), styleString([], {
+              html: 1, rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
+              fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
+            }), swatch);
+          }
+          vertex(cellId('legendSwatch', entry.id), cellId('legend'), styleString([], {
+            sketch: 0, html: 1, aspect: 'fixed', points: '[]',
+            shape: native.kind === 'badge' ? 'mxgraph.cisco19.rect' : `mxgraph.cisco19.${native.shape}`,
+            ...(native.kind === 'badge' ? { prIcon: native.shape } : {}),
+            fillColor: native.kind === 'badge' ? resolved.tile.fill : resolved.glyph,
+            strokeColor: native.kind === 'badge' ? resolved.glyph : 'none',
+          }), letterbox(native.kind === 'badge' ? swatch
+            : { x: swatch.x + ICON_INSET, y: swatch.y + ICON_INSET,
+              width: swatch.width - 2 * ICON_INSET, height: swatch.height - 2 * ICON_INSET }, native));
+        } else {
         vertex(cellId('legendTile', entry.id), cellId('legend'), styleString([], {
           html: 1, rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
           fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
@@ -642,6 +731,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           shape: 'image', html: 1, imageAspect: 0, points: '[]', image: svgImage(glyph),
         }), { x: swatch.x + ICON_INSET, y: swatch.y + ICON_INSET,
           width: swatch.width - 2 * ICON_INSET, height: swatch.height - 2 * ICON_INSET });
+        }
       }
       const label = layout.labels.find(item => item.id === entry.label);
       if (label && !label.omitted && label.bounds) {

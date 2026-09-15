@@ -60,6 +60,8 @@ export interface Command {
   theme?: ThemeMode | 'auto';
   /** `render --format drawio` only. Absent means `on-run`. */
   labels?: LabelPlacement;
+  /** `render --format drawio` only. Absent means `profile`. */
+  icons?: IconSet;
 }
 
 interface OptionSpec {
@@ -77,6 +79,7 @@ const OPTIONS: Record<string, OptionSpec> = {
   '--format': { verbs: ['render'], value: true, summary: 'Primary artifact format: svg (default) or drawio' },
   '--theme': { verbs: ['render'], value: true, summary: 'draw.io palette: auto (default, light and dark in one file), light, dark or print' },
   '--labels': { verbs: ['render'], value: true, summary: 'draw.io link labels: on-run (default) or measured, the box stage 9 placed' },
+  '--icons': { verbs: ['render'], value: true, summary: "draw.io glyphs: profile (default) or cisco19, draw.io's own Cisco shapes" },
 };
 
 /** Both spellings of `-o X`, `--output X` and `--output=X`, in the order a user would try them. */
@@ -132,6 +135,15 @@ const THEMES: readonly (ThemeMode | 'auto')[] = ['auto', 'light', 'dark', 'print
 /** Where a draw.io link label sits; see `DrawioOptions.labels`. */
 export const LABEL_PLACEMENTS = ['on-run', 'measured'] as const;
 export type LabelPlacement = (typeof LABEL_PLACEMENTS)[number];
+
+/** Which glyphs a draw.io export draws; see `DrawioOptions.icons`. */
+export const ICON_SETS = ['profile', 'cisco19'] as const;
+export type IconSet = (typeof ICON_SETS)[number];
+
+function parseIcons(value: string): IconSet {
+  if (!ICON_SETS.includes(value as IconSet)) throw new UsageError(`--icons does not know '${value}'; use profile or cisco19`);
+  return value as IconSet;
+}
 
 function parseLabels(value: string): LabelPlacement {
   if (!LABEL_PLACEMENTS.includes(value as LabelPlacement)) throw new UsageError(`--labels does not know '${value}'; use on-run or measured`);
@@ -197,6 +209,10 @@ export function parseCommand(verb: Verb, args: readonly string[]): Command {
   if (labels !== undefined && (format === undefined || parseFormat(format) === 'svg')) {
     throw new UsageError('--labels applies to --format drawio; an SVG draws the label box stage 9 measured');
   }
+  const icons = values.get('--icons');
+  if (icons !== undefined && (format === undefined || parseFormat(format) === 'svg')) {
+    throw new UsageError("--icons applies to --format drawio; an SVG draws the profile's own glyphs");
+  }
   // An SVG carries every palette behind `prefers-color-scheme`, so choosing one at the command line
   // would state something the artifact cannot hold; the option belongs to the formats that can.
   if (theme !== undefined && (format === undefined || parseFormat(format) === 'svg')) {
@@ -212,6 +228,7 @@ export function parseCommand(verb: Verb, args: readonly string[]): Command {
     ...(format === undefined ? {} : { format: parseFormat(format) }),
     ...(theme === undefined ? {} : { theme: parseTheme(theme) }),
     ...(labels === undefined ? {} : { labels: parseLabels(labels) }),
+    ...(icons === undefined ? {} : { icons: parseIcons(icons) }),
   };
 }
 

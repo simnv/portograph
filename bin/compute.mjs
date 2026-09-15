@@ -44,11 +44,11 @@ async function run(request, emit) {
       text: `portograph: ${event.stage} took ${Math.round(event.durationMs)} ms, ${Number.isFinite(event.remainingMs) ? `${Math.round(event.remainingMs)} ms left` : 'no deadline'}` })
     : undefined;
 
-  const { verb, input, force, allowGateFailures, layers, format, theme, labels } = request.command;
+  const { verb, input, force, allowGateFailures, layers, format, theme, labels, icons } = request.command;
   // One place decides what `render` writes, so the restored-layout path and the from-YAML path can
   // never drift apart on it.
   const primaryArtifact = (model) => format === 'drawio'
-    ? drawio(model, { ...(layers ? { layers } : {}), ...(theme ? { theme } : {}), ...(labels ? { labels } : {}) })
+    ? drawio(model, { ...(layers ? { layers } : {}), ...(theme ? { theme } : {}), ...(labels ? { labels } : {}), ...(icons ? { icons } : {}) })
     : render(model, layers ? { layers } : {});
   void allowGateFailures; // the parent applies it to the exit code; the report never changes.
   const source = readInput(input);

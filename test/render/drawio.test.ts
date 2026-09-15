@@ -309,12 +309,36 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
       .exec(auto.get(key)!.style['fillColor']!)!;
     expect(lightValue).toBe(light.get(key)!.style['fillColor']);
     expect(darkValue).toBe(dark.get(key)!.style['fillColor']);
+    // A colour both palettes agree on is paired anyway: an unpaired colour is exactly what draw.io
+    // inverts, so writing white once yields a dark glyph in dark mode. The Cisco glyph stroke found
+    // this — it is `#ffffff` in both palettes and came out dark until it was written twice.
+    const glyph = cells(drawio(model, { icons: 'cisco19' }));
+    const badge = [...glyph.values()].find(cell => cell.style['prIcon'] !== undefined);
+    expect(badge).toBeDefined();
+    expect(badge!.style['strokeColor']).toBe('light-dark(#ffffff,#ffffff)');
     // A dash pattern is a string too; pairing it would be nonsense, so only colours are paired.
     for (const cell of auto.values()) {
       expect(cell.style['dashPattern'] ?? '').not.toContain('light-dark');
     }
     // Naming a mode pins the file to it, for a reader older than draw.io 26.0.0.
     expect(light.get(key)!.style['fillColor']).not.toContain('light-dark');
+  }, 60000);
+
+  it('draws draw.io\u2019s own Cisco shapes when asked, in their native proportions', async () => {
+    const model = await pipeline(fixture('drawio-constructs'));
+    const all = cells(drawio(model, { icons: 'cisco19' }));
+    const node = Object.entries(model.nodes).find(([, item]) => item.icon !== undefined)!;
+    const cell = all.get(id('icon', node[0]))!;
+    // These resolve from the style string alone — drawio-desktop loads every bundled stencil set
+    // before it renders, so no sidebar library has to be enabled.
+    expect(cell.style['shape']).toMatch(/^mxgraph\.cisco19\./);
+    // `aspect=fixed` is only a hint to the editor's resize handles: a shape written into a box of
+    // the wrong ratio is stretched, so each is letterboxed into the tile stage 3 measured.
+    const drawn = box(cell);
+    const tile = node[1].icon!.bounds;
+    expect(drawn.width).toBeLessThanOrEqual(tile.width + 1e-9);
+    expect(drawn.height).toBeLessThanOrEqual(tile.height + 1e-9);
+    expect(Math.min(drawn.width / tile.width, drawn.height / tile.height)).toBeGreaterThan(0.5);
   }, 60000);
 
   it('leaves the model untouched and gives the same bytes twice', async () => {
