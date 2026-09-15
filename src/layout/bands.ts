@@ -457,6 +457,11 @@ function consumeGrowthPass(budget: CentreBudget, before: number): void {
 
 function reserveInitialSpace(model: LayoutModel): void {
   const before = new Map(model.tierBands.map(band => [band.tier, { ...band.bounds! }]));
+  // The room each group already holds for a band on that side, from the reservation it carries now.
+  // 7f calls this producer twice — labels, tier gap room, labels again — so the shift has to be the
+  // room still missing, never the whole band again. The map is empty on the first call, where the
+  // group holds the ordinary padding and the shift is the whole band beyond it.
+  const held = new Map(model.labelBands.map(band => [band.group, band]));
   const entries = routerEntryPoints(model);
   syncBands(model, entries);
   // The band replaces the ordinary padding on its side, and its clearance replaces that padding
@@ -466,7 +471,10 @@ function reserveInitialSpace(model: LayoutModel): void {
   // flank stays level with the peer whose band grew more.
   const shifts = new Map(orderedGroupIds(model.document).map(id => {
     const group = model.groups[id]!, band = model.labelBands.find(item => item.group === id)!;
-    return [id, band.bounds.height + band.clearance - groupPadding(model, group)[band.side]];
+    const prior = held.get(id);
+    const room = prior !== undefined && prior.side === band.side
+      ? prior.bounds.height + prior.clearance : groupPadding(model, group)[band.side];
+    return [id, band.bounds.height + band.clearance - room];
   }));
   const topShift = (tier: number) => Math.max(0, ...orderedGroupIds(model.document)
     .filter(id => model.groups[id]!.tier === tier && model.labelBands.find(item => item.group === id)!.side === 'top')
@@ -712,6 +720,22 @@ export function produceGroupLabelBands(model: LayoutModel): void {
     rebuildRegionGeometry(model, budget, undefined, true);
     consumeGrowthPass(budget, before);
   }
+}
+
+/**
+ * 7f's third step: the tier gap room moved whole bands down, so the group labels are planned again
+ * in the geometry the move produced. It plans and nothing else — the room is the first step's
+ * reservation and a repeat of the reservation would move geometry the measurement has already been
+ * taken against. A pure vertical translation leaves every band's height and clearance where they
+ * were, so the reservation still holds; where it does not, the full producer runs and reserves.
+ */
+export function replanGroupLabels(model: LayoutModel): void {
+  if (syncBands(model)) { produceGroupLabelBands(model); return; }
+  const retained = model.labels.filter(label => label.role !== 'group');
+  const plan = planLabels({ ...model, labels: retained }, true);
+  if (plan.growth) { produceGroupLabelBands(model); return; }
+  model.labels = [...retained, ...plan.labels];
+  diagnoseBlocked(model, plan.blocked);
 }
 
 /** Recheck exact stable claims against final paths without moving geometry or allocating a new budget. */

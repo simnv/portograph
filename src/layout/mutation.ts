@@ -20,7 +20,7 @@ import { centreViolations, selectAnchorTier } from './centre.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
-import { produceGroupLabelBands, validateGroupLabelBands } from './bands.js';
+import { produceGroupLabelBands, replanGroupLabels, validateGroupLabelBands } from './bands.js';
 import { growTierGaps } from './gap-room.js';
 import { produceLinkLabels, validateLinkLabels } from './link-labels.js';
 import { validateRoutedPaths } from '../route/validate.js';
@@ -651,7 +651,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     produceGroupLabelBands(draft);
     if (growTierGaps(draft)) {
       rebuildRegionGeometry(draft, undefined, undefined, true);
-      produceGroupLabelBands(draft);
+      replanGroupLabels(draft);
     }
   }
   else if (rule === 'link-labels') produceLinkLabels(draft);

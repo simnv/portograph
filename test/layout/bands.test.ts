@@ -9,7 +9,7 @@ import { bundles } from '../../src/layout/bundles.js';
 import { centre } from '../../src/layout/centre.js';
 import { flanks } from '../../src/layout/flanks.js';
 import { laneSidesHold, lanes, transitTiers, validateLanes } from '../../src/layout/lanes.js';
-import { bandEntryConflicts, groupLabelObstacles, routerEntryPoints } from '../../src/layout/bands.js';
+import { bandEntryConflicts, groupLabelObstacles, produceGroupLabelBands, replanGroupLabels, routerEntryPoints } from '../../src/layout/bands.js';
 import { restoreLayoutModel, withLayoutMutation } from '../../src/layout/mutation.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { rows } from '../../src/layout/rows.js';
@@ -657,3 +657,41 @@ links: [[a.p, b.p], [b.q, a.p]]`;
     })).toThrow(/Lanes may expand only occupied intermediate tiers/);
   });
 });
+
+it('reserves a group label band once, however often 7f places its labels', async () => {
+  // Stress ticket 06. 7f places its group labels, measures the tier gaps and places them again.
+  // `reserveInitialSpace` measured the band against the ordinary padding instead of against the
+  // room the group already holds, so a repeated call reserved the whole band a second time: every
+  // node moved down by it and every box grew by it, without bound.
+  for (const source of [golden, enclosedByLanes]) {
+    const model = copy(await throughBundles(source));
+    const vertical = (): string => JSON.stringify([
+      Object.entries(model.groups).map(([id, group]) => [id, group.bounds!.y, group.bounds!.height]),
+      Object.entries(model.nodes).map(([id, node]) => [id, node.bounds!.y, node.ports.map(port => port.anchor!.y)]),
+      model.labelBands.map(band => [band.group, band.side, band.bounds.y, band.bounds.height, band.clearance]),
+    ]);
+    produceGroupLabelBands(model);
+    const once = vertical();
+    produceGroupLabelBands(model);
+    expect(vertical()).toEqual(once);
+    produceGroupLabelBands(model);
+    expect(vertical()).toEqual(once);
+  }
+}, 120000);
+
+it('moves nothing when 7f plans its group labels again after the tier gap room', async () => {
+  // The third step of 7f plans and does not reserve: the measurement that grew the gaps was taken
+  // against the reservation the first step made, so nothing it moves may move again.
+  for (const source of [golden, enclosedByLanes]) {
+    const model = copy(await throughBundles(source));
+    produceGroupLabelBands(model);
+    const shape = (): string => JSON.stringify([
+      Object.entries(model.groups).map(([id, group]) => [id, group.bounds]),
+      Object.entries(model.nodes).map(([id, node]) => [id, node.bounds, node.ports.map(port => port.anchor)]),
+      model.labelBands, model.labels.filter(label => label.role === 'group'),
+    ]);
+    const before = shape();
+    replanGroupLabels(model);
+    expect(shape()).toEqual(before);
+  }
+}, 120000);
