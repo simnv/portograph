@@ -1,0 +1,18 @@
+# Expected: the same fan, with the remainder's target one tier down and its port facing up. That far
+# port's normal runs along the fan's own side, so its anchor stands on its node's top edge: a branch
+# that turned there would run along that node. ADR-0018 rule 3 gives the branch the far port's own
+# outward checkpoint instead, steps the track clear of every node standing in the corridor the
+# branch crosses, and stops the run where the far port's normal stands, so stage 8 has only the
+# 15 px approach left to draw. Every gate passes.
+portograph: 2
+profile: network
+groups:
+  row-group: { tier: 0 }
+  lower: { tier: 1 }
+nodes:
+  hub: { group: row-group, ports: [{ name: p, side: right }] }
+  peer: { group: row-group, ports: [{ name: q, side: left }] }
+  sub: { group: lower, ports: [{ name: q, side: top }] }
+links:
+  - [hub.p, peer.q]
+  - [hub.p, sub.q]

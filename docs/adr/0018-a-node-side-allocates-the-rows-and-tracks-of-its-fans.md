@@ -106,3 +106,41 @@ ADR does.** Its two rows are node port anchors in different nodes, fixed by stag
 centring (`node-geometry.ts:39`) and merely exposed by stage 6's top-alignment (`rows.ts:30-42`).
 None of option (a)'s three clauses compares one node's anchor with another's; a side's own budget
 cannot separate them. It needs a decision of its own and blocks nothing here.
+
+## Amendment (2026-09-15, from tickets 37 and 45): rule 3's second clause is a reservation, not a move
+
+Rules 1 and 2 shipped with tickets 44 and 42. Rule 3 reads "stage 5 keeps the corridor beside the
+side clear of foreign nodes to the side's deepest row". Measured against ticket 37's tier-below
+reproducer, that sentence names the wrong stage and the wrong remedy: the corridor there is the
+whole height of a tier gap, and no placement move can clear it. What the reproducer needs is what
+the fan does *inside* the corridor. Rule 3's second clause therefore reads:
+
+**A fan reserves the run each branch takes, at a coordinate that keeps the gate's clearance from
+every node standing in the corridor that run crosses.** Three parts, all in 7e:
+
+1. *Where a branch turns.* A far port that faces the side stands at its own coordinate along it. A
+   far port whose normal runs *along* the side stands on its own node's edge, so a branch that
+   turned there would run along that node by construction. Such a branch turns at that port's
+   **outward checkpoint** instead, which is where the port's own approach begins.
+2. *What a track is measured against.* Rule 2 spaces a track against the other port rows on the
+   side. It is now also spaced against the nodes beside the side: every node whose routing obstacle
+   stands in the band the branch's run crosses is a wall, and the track steps to the side of it its
+   own far end is on. The reach is `routeObstacles`' own, so the room the fan reserves is the room
+   the gates measure.
+3. *Where a branch stops.* A branch reaches the tree's common end, except one whose far port's
+   normal runs along the side: that branch stops where the far port's normal stands, never short of
+   its own peel row. Ending it at the common end beyond that leaves stage 8 to retrace the reserved
+   run to come back, which `validateRoutedPaths` rejects outright.
+
+Stage 8 is then left with the port's own approach and nothing else. The approved golden is
+byte-identical.
+
+**Scope.** This is `crossBundleFans`, the plain-fan producer, as rule 2 is. `bundleFans`' own
+`outputs` map is untouched: a bundle's members reach a channel their bundle placed, not a far port's
+checkpoint, and no reproducer reaches it. A branch whose far port stands *behind* its own peel row
+keeps the sub-pitch jog to that port; that piece is the port's own approach, which stage 8 owns.
+
+**The first clause is still open.** "Stage 3 grows `sidePitch` and the node box" is not implemented,
+and `mutation.ts` still lets only the `flanks` rule change `sidePitch`. Nothing above needs it: a
+track moves along the side, not out of it, so it consumes no room `fanDepth` reserved. A fan that
+cannot find a clear track on its own side will need it.

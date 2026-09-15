@@ -1,10 +1,10 @@
-import type { Bundle, LayoutLink, LayoutModel, LayoutPort, Owner, PathSegment, Point } from '../model/index.js';
+import type { Bundle, LayoutLink, LayoutModel, LayoutPort, Owner, PathSegment, Point, Rect } from '../model/index.js';
 import type { PortRef } from '../model/document.js';
 import { portId } from './skeleton-graph.js';
 import { MEMBER_GAP, axis, bundleFanRows, clone, coordinate, facing, fanCohorts, fanEnd, fanPitch, fanRows, junctionId, normal, type Member } from './bundle-geometry.js';
 import { placementWarning } from './regions.js';
-import { linkStrokeWidth } from '../theme/geometry.js';
-import { routedStroke } from './bands.js';
+import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
+import { nodeObstacleReach, routedStroke, stemReach } from './bands.js';
 
 export interface BundleFans {
   members: Member[];
@@ -92,6 +92,41 @@ export function bundleFans(model: LayoutModel, bundle: Bundle, list: Member[], q
 }
 
 /**
+ * The spans along `port`'s side at which a fan branch may not turn: for every node whose routing
+ * obstacle stands in the corridor the branch's outward run crosses, the span that node occupies
+ * along the side (ADR-0018 rule 3, ticket 45). Rule 2 spaces a track against the rows on its own
+ * side; this is what spaces it against the nodes beside it.
+ *
+ * The reach is `routeObstacles`' own — the enclosing rectangle of the expanded body and of every
+ * expanded pill, since the router owns the corners between them — so the room the fan reserves is
+ * the room the gates then measure. The fan's own node is left out: a branch leaves that node's port,
+ * and G2 exempts that one outward stem.
+ */
+function blockedTracks(model: LayoutModel, port: LayoutPort, band: { from: number; to: number },
+  stroke: number): { lo: number; hi: number }[] {
+  const n = normal(port.side!), tangent = axis(port.side!);
+  const low = Math.min(band.from, band.to), high = Math.max(band.from, band.to);
+  const pillGap = (stroke + DEFAULT_STROKE_WIDTHS.pill) / 2;
+  const grow = (box: Rect, by: number): Rect =>
+    ({ x: box.x - by, y: box.y - by, width: box.width + 2 * by, height: box.height + 2 * by });
+  const result: { lo: number; hi: number }[] = [];
+  for (const node of Object.values(model.nodes)) {
+    if (!node.bounds || node.layer === 'overlay' || node.id === port.ref.node) continue;
+    const boxes = [grow(node.bounds, nodeObstacleReach(model, node, stroke)),
+      ...node.ports.filter(item => item.pill && item.pill.layer !== 'overlay').map(item => grow(item.pill!.bounds, pillGap))];
+    const x = Math.min(...boxes.map(box => box.x)), y = Math.min(...boxes.map(box => box.y));
+    const box = { x, y, right: Math.max(...boxes.map(box => box.x + box.width)), bottom: Math.max(...boxes.map(box => box.y + box.height)) };
+    // The box mapped onto the side's own two axes: how deep it reaches out of the side, and where it
+    // stands along it.
+    const depths = tangent === 'y' ? [n.x * (box.x - port.anchor!.x), n.x * (box.right - port.anchor!.x)]
+      : [n.y * (box.y - port.anchor!.y), n.y * (box.bottom - port.anchor!.y)];
+    if (Math.max(...depths) <= low + 1e-6 || Math.min(...depths) >= high - 1e-6) continue;
+    result.push(tangent === 'y' ? { lo: box.y, hi: box.bottom } : { lo: box.x, hi: box.right });
+  }
+  return result;
+}
+
+/**
  * A port can belong to several bundles, to a plain fan of routed links, or to a bundle and a later
  * routing remainder. One junction tree owns it: every link leaves the anchor on one shared stem and
  * peels off at its own row, so stage 8 starts each remainder at its leaf instead of drawing the same
@@ -129,9 +164,32 @@ export function crossBundleFans(model: LayoutModel): void {
     const laneX = (id: string): number | undefined => tangent === 'x' ? model.lanes
       .filter(l => l.owner.kind === 'link' && l.owner.id === id)
       .sort((a, b) => Math.abs(a.tier - tier) - Math.abs(b.tier - tier))[0]?.x : undefined;
+    // Rows one pitch apart from a 15 px stem, each moved off the port group's edge margin (ADR-0013);
+    // the same rows 7d used to split a fixed member's path. The tracks are spaced inside the corridor
+    // these rows name, so both are known before either is used.
+    const rows = fanRows(model, port, links), end = fanEnd(model, port, links);
+    // Where a member's own approach starts. A far port that faces this side stands at its own
+    // coordinate along it. A far port whose normal runs *along* this side stands on its node's edge
+    // instead, so a branch that turned there would run along that node: the coordinate such a
+    // member wants is its outward checkpoint, where its own approach begins (ADR-0018 rule 3).
+    const approach = (item: typeof items[number]): number => {
+      const side = item.far.side!;
+      if (axis(side) === tangent) return item.far.anchor![tangent];
+      return item.far.anchor![tangent] + normal(side)[tangent] * stemReach(model, model.nodes[item.far.ref.node]!);
+    };
+    // How deep out of the side a branch's own run goes. Every branch reaches the tree's common end,
+    // except one whose far port's normal runs along this side: that branch turns out of the fan and
+    // then travels along the far port's own normal, so its run stops where that normal stands. Ending
+    // it at the common end beyond that would make stage 8 retrace the reserved run to come back.
+    const stop = (item: typeof items[number], row: number): number => {
+      const side = item.far.side!;
+      if (item.link.path?.fixed === true || axis(side) === tangent) return end;
+      const depth = tangent === 'y' ? n.x * (item.far.anchor!.x - port.anchor!.x) : n.y * (item.far.anchor!.y - port.anchor!.y);
+      return Math.min(end, Math.max(row, depth));
+    };
     // A member whose path a rule fixed is the straight-through leaf (ADR-0016): its target is the
     // port's own coordinate, so it is peeled last and its stems are its path's leading segments.
-    const wanted = (item: typeof items[number]): number => item.link.path?.fixed === true ? coordinate(port) : laneX(item.link.id) ?? item.far.anchor![tangent];
+    const wanted = (item: typeof items[number]): number => item.link.path?.fixed === true ? coordinate(port) : laneX(item.link.id) ?? approach(item);
     const ordered = [...items].sort((a, b) => wanted(a) - wanted(b) || a.link.sourceIndex - b.link.sourceIndex);
     const target = new Map<string, number>();
     // A fixed member owns the port's own track exactly, since its path runs straight there (7d);
@@ -161,21 +219,29 @@ export function crossBundleFans(model: LayoutModel): void {
     for (const item of ordered) {
       if (item === fixedItem) continue;
       const own = linkStrokeWidth(item.link);
+      // ADR-0018 rule 3 (ticket 45): a track is measured against the nodes beside the side as well
+      // as against the rows on it. The corridor a branch's outward run crosses is the band from the
+      // fan's first row to its end, and every node standing in that band is a wall the track steps
+      // past, on the side its own far end is on.
+      const walls = blockedTracks(model, port, { from: rows[0]!, to: stop(item, rows[0]!) }, own);
       let slot = Math.max(wanted(item), prior + q);
       // Re-check every row after any move: a step taken for one row can carry the slot onto another
       // it already passed. Bounded, since each pass only moves the slot away from the target's side.
-      for (let guard = 0; guard < occupied.length + 1; guard++) {
+      for (let guard = 0; guard < occupied.length + walls.length + 1; guard++) {
         const hit = occupied.find(row => Math.abs(slot - row.at) < MEMBER_GAP + (own + row.stroke) / 2 - 1e-6);
-        if (!hit) break;
-        const clearance = MEMBER_GAP + (own + hit.stroke) / 2;
-        const keep = wanted(item) <= hit.at ? hit.at - clearance : hit.at + clearance;
-        slot = keep >= prior + q - 1e-6 ? keep : hit.at + clearance;
+        if (hit) {
+          const clearance = MEMBER_GAP + (own + hit.stroke) / 2;
+          const keep = wanted(item) <= hit.at ? hit.at - clearance : hit.at + clearance;
+          slot = keep >= prior + q - 1e-6 ? keep : hit.at + clearance;
+          continue;
+        }
+        const wall = walls.find(span => slot > span.lo - 1e-6 && slot < span.hi + 1e-6);
+        if (!wall) break;
+        const keep = Math.abs(wanted(item) - wall.lo) <= Math.abs(wanted(item) - wall.hi) ? wall.lo : wall.hi;
+        slot = keep >= prior + q - 1e-6 ? keep : wall.hi;
       }
       target.set(item.link.id, slot); prior = slot;
     }
-    // Rows one pitch apart from a 15 px stem, each moved off the port group's edge margin (ADR-0013);
-    // the same rows 7d used to split a fixed member's path.
-    const rows = fanRows(model, port, links), end = fanEnd(model, port, links);
     const isFixed = (id: string): boolean => links.find(link => link.id === id)?.path?.fixed === true;
     let active = [...ordered], cursor = { ...port.anchor! }, parent: string | undefined, depth = 0;
     let peeled: number | undefined;
@@ -194,7 +260,7 @@ export function crossBundleFans(model: LayoutModel): void {
         || Math.abs(target.get(b.link.id)! - coordinate(port)) - Math.abs(target.get(a.link.id)! - coordinate(port)))[0]!;
       const elbow = world(target.get(leaf.link.id)!, rows[depth]!);
       push(leaf.link.id, point, elbow, owner);
-      push(leaf.link.id, elbow, world(target.get(leaf.link.id)!, end), leaf.link.owner);
+      push(leaf.link.id, elbow, world(target.get(leaf.link.id)!, stop(leaf, rows[depth]!)), leaf.link.owner);
       peeled = target.get(leaf.link.id)!;
       active = active.filter(i => i !== leaf); cursor = point; parent = id; depth++;
     }
@@ -213,11 +279,11 @@ export function crossBundleFans(model: LayoutModel): void {
       // junction like every other branch there; G6 excuses a branch at a tree vertex, not a stray run.
       push(last.link.id, cursor, turn, owner);
       push(last.link.id, turn, elbow, last.link.owner);
-      push(last.link.id, elbow, world(goal, end), last.link.owner);
+      push(last.link.id, elbow, world(goal, stop(last, rows[depth]!)), last.link.owner);
     } else {
       const elbow = world(goal, rows[depth - 1]!);
       push(last.link.id, cursor, elbow, owner);
-      push(last.link.id, elbow, world(goal, end), goal === here ? owner : last.link.owner);
+      push(last.link.id, elbow, world(goal, stop(last, rows[depth - 1] ?? rows[0]!)), goal === here ? owner : last.link.owner);
     }
     for (const item of items) {
       item.link.sharedRuns ??= {};

@@ -202,3 +202,47 @@ links: [[a.p, b.t], [a.r, b.s], [a.r, c.p]]`);
   expect(track('link-3')).toBe(row - q);
   expect(track('link-2')).toBe(row + q);
 }, 60000);
+
+it('ticket 37: a pinned row path joins its port\'s fan tree as the straight-through leaf', async () => {
+  // Stages 6 and 7b pin a straight path at a port. Until ticket 37 that path stayed outside the
+  // tree, so its own first 15 px lay on the tree's root and G4 reported the overlap. The producers
+  // now offer their candidates to `treeCohorts`, and the pinned path becomes the straight leaf.
+  const model = await run(fixture('pinned-path-joins-its-fan'));
+  const report = score(model).snapshot;
+  expect(report.passed).toBe(true);
+  expect(report.gates.G4!.violations).toEqual([]);
+  const port = model.nodes['hub']!.ports[0]!;
+  expect(model.junctions).toHaveLength(1);
+  expect(model.junctions[0]!.links).toEqual(['link-1', 'link-2']);
+  // Both members leave the anchor on the one reserved root stem, and only then part.
+  const stems = model.links.map(link => link.sharedRuns!.from![0]!);
+  expect(stems[0]).toEqual(stems[1]);
+  expect(stems[0]!.from).toEqual(port.anchor);
+  // The pinned path keeps the port's own track; the remainder takes one of its own.
+  expect(model.links[0]!.path!.segments.every(segment => segment.from.y === port.anchor!.y)).toBe(true);
+  expect(model.links[1]!.sharedRuns!.from!.at(-1)!.to.y).not.toBe(port.anchor!.y);
+}, 60000);
+
+it('ticket 45: a fan branch reserves the run it takes, clear of the nodes beside the side (ADR-0018 rule 3)', async () => {
+  // The remainder's far port faces up from the tier below, so its anchor stands on its own node's
+  // top edge. A branch that turned there ran along that edge — G2 `through-node` — and the router
+  // then looped back to enter the port. The branch now turns at that port's outward checkpoint and
+  // stops where the port's normal stands, so nothing it takes was discovered during routing.
+  const model = await run(fixture('a-fan-branch-reserves-its-descent'));
+  const report = score(model).snapshot;
+  expect(report.passed).toBe(true);
+  for (const gate of ['G2', 'G3', 'G4', 'G6'] as const) expect(report.gates[gate]!.violations).toEqual([]);
+  const target = model.nodes['sub']!, port = target.ports[0]!;
+  const branch = model.links[1]!;
+  // The reserved run ends on the far port's own x, one router stem short of it, and stage 8 has only
+  // that stem left to draw.
+  const terminal = branch.sharedRuns!.from!.at(-1)!.to;
+  expect(terminal.x).toBe(port.anchor!.x);
+  expect(port.anchor!.y - terminal.y).toBe(15);
+  expect(branch.path!.segments.at(-1)).toMatchObject({ from: terminal, to: port.anchor });
+  // Nothing the fan reserved touches the node it is travelling to.
+  for (const run of branch.sharedRuns!.from!) {
+    expect(Math.min(run.from.y, run.to.y)).toBeLessThan(target.bounds!.y);
+    expect(Math.max(run.from.y, run.to.y)).toBeLessThanOrEqual(target.bounds!.y - 15);
+  }
+}, 60000);

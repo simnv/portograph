@@ -1,0 +1,16 @@
+# Expected: node `hub`'s one right port carries two links. The rows rule pins the first as a straight
+# row path, and the second stays a routing remainder. Before ticket 37 the pinned path kept its own
+# stem out of the port, which is where the tree's root runs, and G4 reported the overlap. Stage 6
+# now offers the pinned path to `treeCohorts`, so it becomes the tree's straight-through leaf and
+# the remainder takes a track of its own. Every gate passes.
+portograph: 2
+profile: network
+groups:
+  row-group: { tier: 0 }
+nodes:
+  hub: { group: row-group, ports: [{ name: p, side: right }] }
+  peer: { group: row-group, ports: [{ name: q, side: left }] }
+  spur: { group: row-group, ports: [{ name: q, side: left }] }
+links:
+  - [hub.p, peer.q]
+  - [hub.p, spur.q]
