@@ -137,6 +137,12 @@ const CISCO19: Readonly<Record<string, { kind: 'badge' | 'silhouette'; shape: st
   cloud: { kind: 'silhouette', shape: 'cloud', width: 50, height: 30 },
 };
 
+/** The smallest box containing both. */
+function union(a: Rect, b: Rect): Rect {
+  const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+  return { x, y, width: Math.max(a.x + a.width, b.x + b.width) - x, height: Math.max(a.y + a.height, b.y + b.height) - y };
+}
+
 /** The largest box of `ratio`'s proportions that fits inside `box`, centred in it. */
 function letterbox(box: Rect, ratio: { width: number; height: number }): Rect {
   const scale = Math.min(box.width / ratio.width, box.height / ratio.height);
@@ -748,19 +754,39 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     const box = shiftRect(layout.legend.bounds);
     vertex(cellId('legend'), layerId('legend'), styleString(['group'], { html: 1, points: '[]' }), box);
     for (const entry of layout.legend.entries) {
-      const swatch = relative(shiftRect(entry.swatch), shift(layout.legend.bounds));
+      // A legend row is one thing: a swatch and the name of what it means. It is emitted as one
+      // cell carrying that name as its own label, with the swatch inside it — so the row moves and
+      // reads as a row, rather than as a mark and an unrelated caption that happens to sit beside
+      // it. `spacingLeft` puts the text exactly where stage 9 measured it.
+      const caption = layout.labels.find(item => item.id === entry.label);
+      const shown = caption && !caption.omitted && caption.bounds ? caption : undefined;
+      const outer = shown
+        ? union(shiftRect(entry.swatch), shiftRect(shown.bounds!))
+        : shiftRect(entry.swatch);
+      const row = relative(outer, shift(layout.legend.bounds));
+      vertex(cellId('legendRow', entry.id), cellId('legend'), styleString([], {
+        html: 1, fillColor: 'none', strokeColor: 'none', points: '[]',
+        ...(shown ? {
+          align: 'left', verticalAlign: 'middle', whiteSpace: 'nowrap', overflow: 'visible',
+          spacingLeft: shiftRect(shown.bounds!).x - outer.x - LABEL_SPACING,
+          fontFamily: FONT_FAMILY, fontSize: shown.fontSize, fontColor: paint.legend.text,
+          fontStyle: shown.fontWeight === 700 ? 1 : undefined,
+        } : {}),
+      }), row, shown ? htmlText(shown.lines ?? [shown.text]) : undefined);
+      const swatch = relative(shiftRect(entry.swatch), outer);
       if (entry.kind === 'line') {
         const klass = entry.key === LEGEND_DEFAULT_CLASS ? linkClassStyle(undefined) : linkClassStyle(entry.key);
-        const middle = swatch.y + swatch.height / 2;
-        edgeCell(cellId('legendSwatch', entry.id), cellId('legend'), styleString([], {
-          edgeStyle: 'none', rounded: 0, html: 1, endArrow: 'none', startArrow: 'none',
+        // `shape=line` draws the sample across its own box, so the swatch is a vertex like every
+        // other one and sits in the row rather than floating over it.
+        vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
+          shape: 'line', html: 1, points: '[]',
           strokeColor: dual(of => klass.strokes[of]), strokeWidth: entry.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path,
           ...dashEntries(klass.dash),
-        }), [], { sourcePoint: { x: swatch.x, y: middle }, targetPoint: { x: swatch.x + swatch.width, y: middle } });
+        }), swatch);
       } else if (entry.kind === 'port') {
         const role = portRoleStyle(entry.key);
         const resolved = role ? dual(of => portRolePaint(role, of)) : undefined;
-        vertex(cellId('legendSwatch', entry.id), cellId('legend'), styleString([], {
+        vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
           html: 1, rounded: 1, absoluteArcSize: 1,
           arcSize: (entry.radius ?? CORNER_RADII.pill) * 2,
           fillColor: resolved?.fill ?? paint.pill.fill,
@@ -777,12 +803,12 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         if (native) {
           // The legend has to name what the diagram draws, so it takes the same glyph.
           if (native.kind === 'silhouette') {
-            vertex(cellId('legendTile', entry.id), cellId('legend'), styleString([], {
+            vertex(cellId('legendTile', entry.id), cellId('legendRow', entry.id), styleString([], {
               html: 1, rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
               fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
             }), swatch);
           }
-          vertex(cellId('legendSwatch', entry.id), cellId('legend'), styleString([], {
+          vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
             sketch: 0, html: 1, aspect: 'fixed', points: '[]',
             shape: native.kind === 'badge' ? 'mxgraph.cisco19.rect' : `mxgraph.cisco19.${native.shape}`,
             ...(native.kind === 'badge' ? { prIcon: native.shape } : {}),
@@ -792,23 +818,18 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
             : { x: swatch.x + ICON_INSET, y: swatch.y + ICON_INSET,
               width: swatch.width - 2 * ICON_INSET, height: swatch.height - 2 * ICON_INSET }, native));
         } else {
-        vertex(cellId('legendTile', entry.id), cellId('legend'), styleString([], {
+        vertex(cellId('legendTile', entry.id), cellId('legendRow', entry.id), styleString([], {
           html: 1, rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
           fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
         }), swatch);
         const glyph = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">`
           + `<path d="${iconPath(entry.icon)}" fill="none" stroke="${pick(mode).glyph}"`
           + ` stroke-width="${num(GLYPH_STROKE)}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-        vertex(cellId('legendSwatch', entry.id), cellId('legend'), styleString([], {
+        vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
           shape: 'image', html: 1, imageAspect: 0, points: '[]', image: svgImage(glyph),
         }), { x: swatch.x + ICON_INSET, y: swatch.y + ICON_INSET,
           width: swatch.width - 2 * ICON_INSET, height: swatch.height - 2 * ICON_INSET });
         }
-      }
-      const label = layout.labels.find(item => item.id === entry.label);
-      if (label && !label.omitted && label.bounds) {
-        textCell(cellId('legendLabel', entry.id), cellId('legend'), label,
-          relative(shiftRect(label.bounds), shift(layout.legend.bounds)), paint.legend.text);
       }
     }
   }
