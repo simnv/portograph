@@ -472,8 +472,8 @@ function firstBlock(list: readonly Blocker[], link: LayoutLink, line: { from: Po
 }
 
 /**
- * The allocation of one tier gap, or undefined when the gap declines it and keeps the routed gaps
- * it has today. A gap declines when no run needs a row — there is then nothing to allocate and no
+ * The allocation of one tier gap. `runs` is empty and `refused` set when the gap declines it and
+ * keeps the routed gaps it has today. A gap declines when no run needs a row — there is then nothing to allocate and no
  * diagram changes — when no clean order exists, when a row cannot be seated clear of frozen
  * placement geometry, or when the rows do not fit at their pitch inside the room the gap has.
  *
