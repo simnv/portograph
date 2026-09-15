@@ -18,6 +18,7 @@ import { bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placementWarning, 
 import { withLayoutMutation } from './mutation.js';
 import { effectiveLayer } from '../score/model.js';
 import { LINK_LABEL_GEOMETRY, overlayLabelsSuppressed } from './link-labels.js';
+import { OVERLAY_PILL_CLEARANCE } from './overlay-paths.js';
 
 const EPS = 1e-6;
 export const GROUP_LABEL_GEOMETRY = {
@@ -585,7 +586,12 @@ export function reserveLinkLabelRoom(model: LayoutModel): boolean {
     const unreserved = (why: string): void => placementWarning(model, 'LINK_LABEL_ROOM_UNRESERVED', `${link.id} ${why}; its label room cannot be reserved and the stage 9 ladder decides.`, [link.id]);
     if (fromNode === toNode) { unreserved('returns to its own node'); continue; }
     const measured = measureText(text, { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight });
-    const required = measured.width + 2 * LINK_LABEL_GEOMETRY.shortenMargin;
+    // An overlay link leaves each port one clearance beyond its own outward face before it turns, so
+    // the run its label rides starts that far in from each face (synthetics review ticket 01). Where
+    // the detour puts the long run on the other axis entirely, 7f cannot reserve for it at all and
+    // the stage 9 ladder decides, as it does for a link whose room lies beyond a reserved lane.
+    const required = measured.width + 2 * LINK_LABEL_GEOMETRY.shortenMargin
+      + (effectiveLayer(link) === 'overlay' ? 2 * OVERLAY_PILL_CLEARANCE : 0);
     if (fromGroup.tier !== toGroup.tier) {
       const [upper, lower, upperPort, lowerPort] = fromNode.bounds!.y <= toNode.bounds!.y ? [fromNode, toNode, from, to] : [toNode, fromNode, to, from];
       const upperTier = model.groups[model.document.nodes[upper.id]!.group]!.tier!;

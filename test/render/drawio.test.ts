@@ -1238,22 +1238,22 @@ describe('maintainer edit principles', () => {
   }, 60000);
 
   it('reads the guard off the polyline draw.io draws, terminals included', async () => {
-    // Codex round 1: the guard read the waypoints alone. A port that draws no pill terminates on its
-    // node's box rather than on a pill head, and that moves an endpoint *across* the stem axis — so
-    // a link whose every waypoint is square can still be drawn as a diagonal, and the orthogonal
-    // router would answer it with a corner nothing reserved.
+    // Codex round 1: the guard read the waypoints alone. An end is pinned to the pill's outward
+    // midpoint, not to the port anchor the path starts from, so a pill that does not sit on its own
+    // anchor's axis moves the endpoint *across* that axis — and a link whose every waypoint is
+    // square is then drawn as a diagonal the orthogonal router would answer with a corner nothing
+    // reserved.
     const model = await pipeline(fixture('drawio-constructs'));
     const link = model.links.find(item => effectiveLayer(item) === 'overlay' && item.path)!;
     const square = cells(drawio(model)).get(id('link', link.id))!;
     expect(square.style['edgeStyle']).toBe('orthogonalEdgeStyle');
-    const bare = structuredClone(model);
+    const skewed = structuredClone(model);
     const ref = link.attachments!.from;
-    delete bare.nodes[ref.node]!.ports.find(item => item.ref.name === ref.name
-      && item.ref.ordinal === ref.ordinal)!.pill;
-    const cell = cells(drawio(bare)).get(id('link', link.id))!;
-    // No pill to route round and no pill to end on: the model polyline is square, the drawn one is
-    // not, and the honest style is the one that draws the line exactly as stated.
-    expect(cell.points).toEqual([]);
+    // The pill slid along its own side, away from the anchor the model's first segment leaves from.
+    skewed.nodes[ref.node]!.ports.find(item => item.ref.name === ref.name
+      && item.ref.ordinal === ref.ordinal)!.pill!.bounds.x += 12;
+    const cell = cells(drawio(skewed)).get(id('link', link.id))!;
+    expect(cell.points).toEqual(square.points);
     expect(cell.style['edgeStyle']).toBe('none');
     expect(cell.style['jettySize']).toBeUndefined();
   }, 60000);
@@ -1309,37 +1309,6 @@ links:
     expect(path[path.length - 2]).toEqual(out(path[path.length - 1]!, tail.side));
     expect(path.length).toBe(6);
     square(path, [head, tail]);
-  }, 60000);
-
-  it('goes down the middle when the two heads face away over a gap', async () => {
-    // Codex round 2: two heads facing away from each other with a gap between the boxes have no
-    // single turn and no way round the *outside* of the pair — the route has to run down the gap.
-    // The geometry is codex's own: a top head at x 100..110 and a bottom head at x 40..50.
-    const model = await pipeline(fixture('drawio-constructs'));
-    const link = model.links.find(item => effectiveLayer(item) === 'overlay')!;
-    const facing = structuredClone(model);
-    const place = (ref: { node: string; name?: string; ordinal: number },
-      side: 'top' | 'bottom', box: { x: number; y: number }): Point => {
-      const port = facing.nodes[ref.node]!.ports.find(item => item.ref.name === ref.name
-        && item.ref.ordinal === ref.ordinal)!;
-      port.side = side;
-      port.pill!.bounds = { x: box.x, y: box.y, width: 10, height: 24 };
-      port.anchor = { x: box.x + 5, y: box.y + 12 };
-      return { x: box.x + 5, y: side === 'top' ? box.y : box.y + 24 };
-    };
-    const head = place(link.attachments!.from, 'top', { x: 100, y: 100 });
-    const tail = place(link.attachments!.to, 'bottom', { x: 40, y: 80 });
-    const path = facing.links.find(item => item.id === link.id)!.path!;
-    const anchors = { from: { x: 105, y: 112 }, to: { x: 45, y: 92 } };
-    path.segments = [{ ...path.segments[0]!, from: anchors.from, to: anchors.to }];
-    const cell = cells(drawio({ ...facing, canvas: { x: 0, y: 0, width: 400, height: 400 } }))
-      .get(id('link', link.id))!;
-    expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
-    // Out of each head by the clearance, then down the middle of the 50 px gap between the boxes.
-    expect([head, ...cell.points, tail]).toEqual([
-      { x: 105, y: 100 }, { x: 105, y: 96 }, { x: 75, y: 96 },
-      { x: 75, y: 108 }, { x: 45, y: 108 }, { x: 45, y: 104 },
-    ]);
   }, 60000);
 
   it('states a detoured overlay label against the run the connector really draws', async () => {
@@ -1536,7 +1505,11 @@ describe('direct lines', () => {
     // clearance, then down the middle of the gap the two boxes leave on x.
     const overlay = linkOf('b.lo', 'c.lo');
     expect(effectiveLayer(overlay)).toBe('overlay');
-    expect(overlay.path!.segments.length).toBe(1);
+    // The model holds that route, not the exporter: the waypoints are its own interior points, and
+    // the two stubs it leaves are the ones the pinned terminals stand for (synthetics review 01).
+    expect(overlay.path!.segments.length).toBe(5);
+    expect(all.get(id('link', overlay.id))!.points).toEqual(overlay.path!.segments.slice(1)
+      .map(segment => ({ x: segment.from.x - model.canvas!.x, y: segment.from.y - model.canvas!.y })));
     const head = pillOf('b.lo'), tail = pillOf('c.lo');
     const cell = all.get(id('link', overlay.id))!;
     expect([head.side, tail.side]).toEqual(['top', 'bottom']);

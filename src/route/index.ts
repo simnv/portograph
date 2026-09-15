@@ -10,7 +10,7 @@ export type { RouteObstacle } from './obstacles.js';
 export type { LinkPlan, RoutePiece, RoutePlan, StemReservation } from './plan.js';
 export { batchRequest, pendingStemObstacles, planRoute, effectiveLayer, stemCheckpoint, ROUTE_PARAMETERS, SHAPE_BUFFER_DISTANCE } from './plan.js';
 export { nodeClearance, routeObstacles, trimChain, TERMINAL_TRIM } from './obstacles.js';
-export { checkpointsHonoured, crossedTiers, overlayPath, simplify, stitchPath, stitchPaths, stubCandidate } from './paths.js';
+export { checkpointsHonoured, crossedTiers, simplify, stitchPath, stitchPaths, stubCandidate } from './paths.js';
 export type { RoutedLinkPath } from './paths.js';
 export { reservationConflicts, reservedRuns, validateRoutedPaths } from './validate.js';
 export type { ReservationConflict } from './validate.js';

@@ -153,7 +153,7 @@ links: [[a.p, b.p], [a.p, c.p]]`);
     expect(report.gates.G6.passed).toBe(true);
   });
 
-  it('draws an overlay link straight and never initializes the router', async () => {
+  it('draws an overlay link between two facing ports straight, and never initializes the router', async () => {
     const before = await throughBands(`portograph: 2
 groups: {ga: {tier: 0}, gb: {tier: 1}}
 nodes:
@@ -164,6 +164,8 @@ links: [[a.p, b.p, {route: overlay}]]`);
     const refuse: CreateRouteAttempt = () => { throw new Error('The router must not start without a routed remainder'); };
     const model = await route(before, { createAttempt: refuse });
     const path = model.links[0]!.path!;
+    // The two ports face each other on one axis with nothing between, so every turn the overlay
+    // rule offers collapses onto the line the anchors already share (synthetics review ticket 01).
     expect(path).toEqual({ owner: { kind: 'link', id: 'link-1' }, layer: 'overlay', fixed: false,
       segments: [{ from: before.nodes.a!.ports[0]!.anchor, to: before.nodes.b!.ports[0]!.anchor,
         owner: { kind: 'link', id: 'link-1' } }] });
@@ -364,7 +366,7 @@ links: [[a.p, b.p, {route: overlay}]]`);
     const path = broken.links[0]!.path!;
     path.segments = [{ ...path.segments[0]!, to: { x: 999, y: 999 } },
       { ...path.segments[0]!, from: { x: -999, y: -999 } }];
-    expect(() => restoreLayoutModel(JSON.stringify(broken))).toThrow(/single straight segment/);
+    expect(() => restoreLayoutModel(JSON.stringify(broken))).toThrow(/is not the one its ports and their boxes state/);
   });
 
   it('terminates a real worker that never replies when the budget expires', async () => {

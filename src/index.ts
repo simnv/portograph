@@ -59,6 +59,8 @@ export { bands, GROUP_LABEL_GEOMETRY } from './layout/bands.js';
 export { linkLabels, produceLinkLabels, validateLinkLabels, overlayDensity, overlayLabelsSuppressed,
   LINK_LABEL_GEOMETRY, LINK_LABEL_CODES, OVERLAY_LABEL_DENSITY } from './layout/link-labels.js';
 export { diagramBounds, drawnBoxes, legendBoxes, legendRequired, legendVariants, paintedSwatch, portRoles, produceLegend } from './layout/legend.js';
+export { overlayBlockers, overlayPath, OVERLAY_PILL_CLEARANCE } from './layout/overlay-paths.js';
+export type { OverlayBlockers } from './layout/overlay-paths.js';
 
 export { optimizeBundleOrder } from './layout/bundle-order.js';
 export type { BundleOrderResult } from './layout/bundle-order.js';
@@ -68,7 +70,7 @@ export type { RouteOptions } from './route/index.js';
 export { batchRequest, planRoute, routeObstacles, nodeClearance, trimChain, stemCheckpoint, TERMINAL_TRIM,
   ROUTE_PARAMETERS, SHAPE_BUFFER_DISTANCE } from './route/index.js';
 export type { LinkPlan, RoutePiece, RoutePlan, RouteObstacle } from './route/index.js';
-export { checkpointsHonoured, crossedTiers, overlayPath, simplify, stitchPath, stitchPaths, stubCandidate,
+export { checkpointsHonoured, crossedTiers, simplify, stitchPath, stitchPaths, stubCandidate,
   reservationConflicts, reservedRuns, validateRoutedPaths } from './route/index.js';
 export type { ReservationConflict, RoutedLinkPath } from './route/index.js';
 export { createBrowserRouteFactory, createRouteFactory, RouteDeadlineError, RouteSession, withRouteSession,
