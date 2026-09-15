@@ -5,7 +5,7 @@ import { MEMBER_GAP, axis, bundleFanRows, clone, coordinate, facing, fanCohorts,
 import { placementWarning } from './regions.js';
 import { STRAIGHT_PATH_CLEARANCE, findPort } from './row-paths.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
-import { GROUP_LABEL_GEOMETRY, nodeObstacleReach, routedStroke, stemReach } from './bands.js';
+import { GROUP_LABEL_GEOMETRY, nodeObstacleReach, nudgingDistance, routedStroke, stemReach } from './bands.js';
 
 export interface BundleFans {
   members: Member[];
@@ -447,7 +447,10 @@ function stemCount(port: LayoutPort, runs: readonly PathSegment[]): number {
  * fixed keeps its run, since its `sharedRuns` are the prefix of that path (ADR-0016).
  */
 function releaseHemmedFans(model: LayoutModel): void {
-  const half = routedStroke(model) / 2, tolerance = 1;
+  // The room the *router* insists on beside a route it still has to draw, read from the one figure
+  // `routeParameters` hands libavoid. A literal here would drift from it: an unrelated heavy link
+  // widens what the router demands and would leave this pass looking at the wrong distance.
+  const margin = nudgingDistance(model);
   const drawn = (link: LayoutLink): boolean => link.layer === 'routed' && link.technique !== 'stub' && link.attachments !== undefined;
   const branches: { link: LayoutLink; end: 'from' | 'to'; port: LayoutPort; runs: PathSegment[] }[] = [];
   for (const link of model.links) {
@@ -471,11 +474,12 @@ function releaseHemmedFans(model: LayoutModel): void {
       for (const branch of branches) {
         if (branch.link.id === link.id) continue;
         if (branch.port.ref.node === port.ref.node && branch.port.side === port.side) continue;
-        const margin = linkStrokeWidth(branch.link) / 2 + half + STRAIGHT_PATH_CLEARANCE.path + tolerance;
-        if (!branch.runs.some(run => at.x > Math.min(run.from.x, run.to.x) - margin
-          && at.x < Math.max(run.from.x, run.to.x) + margin
-          && at.y > Math.min(run.from.y, run.to.y) - margin
-          && at.y < Math.max(run.from.y, run.to.y) + margin)) continue;
+        // The boundary counts: the router refuses a corridor exactly this wide, so a checkpoint at
+        // the distance itself is closed, not clear.
+        if (!branch.runs.some(run => at.x > Math.min(run.from.x, run.to.x) - margin - 1e-6
+          && at.x < Math.max(run.from.x, run.to.x) + margin + 1e-6
+          && at.y > Math.min(run.from.y, run.to.y) - margin - 1e-6
+          && at.y < Math.max(run.from.y, run.to.y) + margin + 1e-6)) continue;
         release.add(`${branch.link.id}:${branch.end}`);
         // The hemmed link gives way at whichever end its own fan reserved, which is not the end the
         // closed checkpoint belongs to.

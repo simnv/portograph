@@ -94,6 +94,17 @@ export function nodeObstacleReach(model: LayoutModel, node: LayoutModel['nodes']
 }
 
 /**
+ * How far apart the router nudges two routes that run side by side, and so the least room a
+ * reservation must leave beside anything another link still has to reach: at less than this the
+ * router refuses the corridor rather than narrowing it. `routeParameters` hands this exact figure to
+ * libavoid as `idealNudgingDistance`, and placement measures against the same one, so a reservation
+ * cannot leave a gap stage 8 will not use.
+ */
+export function nudgingDistance(model: LayoutModel): number {
+  return GROUP_LABEL_GEOMETRY.nodeClearance + routedStroke(model);
+}
+
+/**
  * Outward distance of the ordinary checkpoint at a node. It is the 15 px stem, unless that node's
  * stroke-expanded routing obstacle already reaches further; then it clears that obstacle instead.
  */

@@ -3,6 +3,8 @@ import { expect, it } from 'vitest';
 import { layout, parse, restoreFinalLayout, score } from '../../src/index.js';
 import { MIN_STEM, edgeMargin, fanPitch, priorSideRows, sideRowBudget } from '../../src/layout/bundle-geometry.js';
 import { DEFAULT_STROKE_WIDTHS, routedStrokeWidth } from '../../src/theme/geometry.js';
+import { nudgingDistance } from '../../src/layout/bands.js';
+import { routeParameters } from '../../src/route/plan.js';
 import type { LayoutModel, Owner } from '../../src/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -335,11 +337,22 @@ it('ticket 46: a branch that hems another link\'s approach gives way, and so doe
   expect(report.gates.G4!.violations).toEqual([]);
   expect(model.diagnostics.some(item => item.code === 'FAN_BRANCH_HEMMED')).toBe(true);
   // Neither fan reserves anything past its own stems, so the checkpoint every port needs is clear.
-  for (const link of model.links) {
-    for (const end of ['from', 'to'] as const) {
-      const runs = link.sharedRuns?.[end];
-      if (!runs) continue;
-      for (const item of runs) expect(item.from.y).toBe(item.to.y);
+  const onStems = (item: LayoutModel): void => {
+    for (const link of item.links) {
+      for (const end of ['from', 'to'] as const) {
+        for (const run of link.sharedRuns?.[end] ?? []) expect(run.from.y).toBe(run.to.y);
+      }
     }
-  }
+  };
+  onStems(model);
+  // The room the pass leaves is the room the router insists on, so an unrelated link heavy enough to
+  // widen what the router demands widens this too. A literal margin would have stayed where it was.
+  const heavy = await run(`${fixture('two-fans-hem-one-approach')}  - { from: heavyA.x, to: heavyB.x, weight: 5 }\n`
+    .replace('  lower: { tier: 1 }\n', '  lower: { tier: 1 }\n  heavy: { tier: 2 }\n')
+    .replace('links:\n', '  heavyA: { group: heavy, ports: [{ name: x, side: right }] }\n'
+      + '  heavyB: { group: heavy, ports: [{ name: x, side: left }] }\nlinks:\n'));
+  expect(nudgingDistance(heavy)).toBeGreaterThan(nudgingDistance(model));
+  expect(routeParameters(heavy).idealNudgingDistance).toBe(nudgingDistance(heavy));
+  expect(heavy.diagnostics.some(item => item.code === 'FAN_BRANCH_HEMMED')).toBe(true);
+  onStems(heavy);
 }, 60000);
