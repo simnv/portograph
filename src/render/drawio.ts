@@ -74,7 +74,7 @@ function composite(over: string, under: string, alpha: number): string {
 }
 
 /** The point on `segment` nearest `at`: where a label sits when it sits on its run. */
-function project(at: Point, segment: PathSegment): Point {
+function project(at: Point, segment: { from: Point; to: Point }): Point {
   const dx = segment.to.x - segment.from.x, dy = segment.to.y - segment.from.y;
   const length = dx * dx + dy * dy;
   if (length === 0) return { ...segment.from };
@@ -149,6 +149,22 @@ function letterbox(box: Rect, ratio: { width: number; height: number }): Rect {
   const width = ratio.width * scale, height = ratio.height * scale;
   return { x: box.x + (box.width - width) / 2, y: box.y + (box.height - height) / 2, width, height };
 }
+
+/**
+ * A label on an edge, in draw.io's own terms: `x` and `y` are relative to the drawn polyline and
+ * follow it, `offset` is absolute screen pixels and does not. See `edgeLabel`.
+ */
+interface EdgeLabel { x: number; y: number; offset?: Point }
+
+/** One polyline of a path, with the range of path segments it draws. */
+interface Run { points: Point[]; first: number; last: number }
+
+/** One exported connector: a run, resolved to the polyline draw.io will really draw. */
+interface Connector extends Run { id: string }
+
+/** The absolute remainder of a label's position, written only when there is one to write. */
+const residualPoint = (label: EdgeLabel | undefined): string =>
+  label?.offset ? element('mxPoint', { x: label.offset.x, y: label.offset.y, as: 'offset' }) : '';
 
 /** A side's outward direction as a fraction of a box: the point a link leaves its port from. */
 const OUTWARD: Readonly<Record<Side, Point>> = {
@@ -556,18 +572,24 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     return value === '' ? undefined : authorClass(value);
   };
 
-  /** The polylines a path draws: one per run of segments whose ends meet, as `pathData` splits. */
-  function polylines(segments: readonly PathSegment[]): Point[][] {
-    const runs: Point[][] = [];
-    let current: Point[] | undefined;
-    for (const segment of segments) {
-      if (!current || !samePoint(current[current.length - 1]!, segment.from)) {
-        current = [segment.from];
+  /**
+   * The polylines a path draws: one per run of segments whose ends meet, as `pathData` splits.
+   * Each run keeps the range of path segments it covers, because a label names its supporting
+   * segment and has to be attached to the connector that really draws that segment.
+   */
+  function polylines(segments: readonly PathSegment[]): Run[] {
+    const runs: Run[] = [];
+    let current: Run | undefined;
+    for (const [index, segment] of segments.entries()) {
+      if (!current || !samePoint(current.points[current.points.length - 1]!, segment.from)) {
+        current = { points: [segment.from], first: index, last: index };
         runs.push(current);
       }
-      current.push(segment.to);
+      current.points.push(segment.to);
+      current.last = index;
     }
-    return runs.filter(run => run.length > 1).map(run => run.map(shift));
+    return runs.filter(run => run.points.length > 1)
+      .map(run => ({ ...run, points: run.points.map(shift) }));
   }
 
   /**
@@ -580,7 +602,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
    * half depth, onto the point the diagram already showed.
    */
   const terminal = (end: 'exit' | 'entry', ref: { node: string; name?: string; ordinal: number }):
-  { cell: string; style: Readonly<Record<string, StyleValue>> } | undefined => {
+  { cell: string; style: Readonly<Record<string, StyleValue>>; at: Point } | undefined => {
     const node = layout.nodes[ref.node];
     const port = node?.ports.find(item => item.ref.node === ref.node && item.ref.name === ref.name
       && item.ref.ordinal === ref.ordinal);
@@ -589,19 +611,26 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     // defaults to 1, which would project the point onto the perimeter instead of using it.
     const fix = (at: Point): Readonly<Record<string, StyleValue>> =>
       ({ [`${end}X`]: at.x, [`${end}Y`]: at.y, [`${end}Dx`]: 0, [`${end}Dy`]: 0, [`${end}Perimeter`]: 0 });
+    // `at` is where draw.io really puts the endpoint: the constraint fraction resolved against the
+    // terminal cell's own box. The exported waypoints do not hold it, and an edge label is stated
+    // relative to the whole drawn polyline, terminals included, so it has to be known here.
     if (port.pill && port.ref.anonymous !== true && port.side) {
-      return { cell: cellId('port', ref.node, ref.name!, String(ref.ordinal)), style: fix(OUTWARD[port.side]) };
+      const pill = port.pill.bounds, outward = OUTWARD[port.side];
+      return {
+        cell: cellId('port', ref.node, ref.name!, String(ref.ordinal)), style: fix(outward),
+        at: shift({ x: pill.x + outward.x * pill.width, y: pill.y + outward.y * pill.height }),
+      };
     }
     return { cell: cellId('node', ref.node), style: fix({
       x: (port.anchor.x - node.bounds.x) / node.bounds.width,
       y: (port.anchor.y - node.bounds.y) / node.bounds.height,
-    }) };
+    }), at: shift(port.anchor) };
   };
 
   const edgeCell = (id: string, layer: string, style: string, points: readonly Point[],
     ends: { source?: string | undefined; target?: string | undefined;
       sourcePoint?: Point | undefined; targetPoint?: Point | undefined },
-    label?: { value: string; at: { x: number; y: number } }): void => {
+    label?: { value: string; at: EdgeLabel }): void => {
     const waypoints = points.length > 2
       ? element('Array', { as: 'points' },
         points.slice(1, -1).map(point => element('mxPoint', { x: point.x, y: point.y })).join(''))
@@ -611,11 +640,12 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     cells.push(element('mxCell', { id: claim(id), value: label?.value, style, edge: 1, parent: layer,
       source: ends.source, target: ends.target },
     element('mxGeometry', { ...(label ? { x: label.at.x, y: label.at.y } : {}), relative: 1, as: 'geometry' },
-      waypoints + dangling)));
+      waypoints + dangling + residualPoint(label?.at))));
   };
 
   const drawn = layout.links.filter(link => link.technique !== 'stub' && link.path && visible(link));
-  const edgeIds = new Map<string, string[]>();
+  /** Every connector a link became, with the polyline draw.io will really draw for each. */
+  const edgeRuns = new Map<string, Connector[]>();
 
   /** Where a link label sits: on its supporting segment, or the box stage 9 measured. */
   const labelPoint = (label: LayoutLabel, link: LayoutLink): Point => {
@@ -669,6 +699,30 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     if (ownLabel.has(owner)) { ownLabel.delete(owner); continue; }
     ownLabel.set(owner, label);
   }
+  /**
+   * Which of a link's connectors carries a label: the one that draws the label's supporting
+   * segment. A bundle whose path breaks becomes one connector per run, and attaching every label to
+   * run 0 states the label against a polyline that does not hold the segment it was measured
+   * against. With no usable support, the nearest run carries it.
+   */
+  const runFor = (label: LayoutLabel, link: LayoutLink, runs: readonly Run[]): number => {
+    const support = label.support?.kind === 'link-segment' ? label.support.segment : undefined;
+    if (support !== undefined) {
+      const found = runs.findIndex(run => support >= run.first && support <= run.last);
+      if (found >= 0) return found;
+    }
+    const at = labelPoint(label, link);
+    let best = 0, nearest = Infinity;
+    runs.forEach((run, index) => {
+      for (const [step, to] of run.points.slice(1).entries()) {
+        const on = project(at, { from: run.points[step]!, to });
+        const distance = Math.hypot(at.x - on.x, at.y - on.y);
+        if (distance < nearest) { nearest = distance; best = index; }
+      }
+    });
+    return best;
+  };
+
   const taken = new Set<string>();
   for (const link of drawn) {
     const layer = effectiveLayer(link) === 'overlay' ? layerId('overlay') : layerId('links');
@@ -676,18 +730,32 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     const klass = linkClassStyle(authored);
     const overlay = effectiveLayer(link) === 'overlay';
     const runs = polylines(link.path!.segments);
-    const ids: string[] = [];
+    const from = link.attachments?.from, to = link.attachments?.to;
+    const head = from ? terminal('exit', from) : undefined;
+    const tail = to ? terminal('entry', to) : undefined;
+    // What draw.io draws is not what the model holds: a pinned end sits on the pill's outward edge,
+    // not on the port anchor the waypoints start from. An edge label's coordinates are fractions of
+    // that drawn polyline, so it is resolved here — the waypoints themselves are untouched.
+    const shown: Connector[] = runs.map((run, index) => {
+      const points = [...run.points];
+      if (index === 0 && head) points[0] = head.at;
+      if (index === runs.length - 1 && tail) points[points.length - 1] = tail.at;
+      return {
+        id: runs.length === 1 ? cellId('link', link.id) : cellId('link', link.id, String(index)),
+        points, first: run.first, last: run.last,
+      };
+    });
+    const mine = ownLabel.get(link.id);
+    const mineRun = mine ? runFor(mine, link, shown) : -1;
     runs.forEach((run, index) => {
       const first = index === 0, last = index === runs.length - 1;
-      const from = link.attachments?.from, to = link.attachments?.to;
-      const source = first && from ? terminal('exit', from) : undefined;
-      const target = last && to ? terminal('entry', to) : undefined;
-      const id = runs.length === 1 ? cellId('link', link.id) : cellId('link', link.id, String(index));
-      ids.push(id);
-      // The connector's own label, on the first run, where a reader would look for it.
-      const mine = first ? ownLabel.get(link.id) : undefined;
-      const carried = mine ? { label: mine, at: alongPolyline(run, labelPoint(mine, link)) } : undefined;
-      if (carried) taken.add(mine!.id);
+      const source = first ? head : undefined;
+      const target = last ? tail : undefined;
+      const id = shown[index]!.id;
+      // The connector's own label, on the run that draws the segment it was measured against.
+      const carried = mine && index === mineRun
+        ? { label: mine, at: edgeLabel(shown[index]!.points, labelPoint(mine, link)) } : undefined;
+      if (carried) taken.add(carried.label.id);
       // A connector holds one polyline; a path whose segment chain breaks becomes one connector per
       // run, each dangling where the chain did. Only the ends that are really ends are pinned.
       const style = styleString([], {
@@ -700,17 +768,17 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         ...(target?.style ?? {}),
         ...(carried ? labelStyle(carried.label, labelPoint(carried.label, link)) : {}),
       });
-      edgeCell(id, layer, style, run, {
+      edgeCell(id, layer, style, run.points, {
         source: source?.cell,
         target: target?.cell,
-        sourcePoint: source ? undefined : run[0],
-        targetPoint: target ? undefined : run[run.length - 1],
+        sourcePoint: source ? undefined : run.points[0],
+        targetPoint: target ? undefined : run.points[run.points.length - 1],
       }, carried ? {
         value: htmlText(carried.label.lines ?? [carried.label.text]),
         at: carried.at,
       } : undefined);
     });
-    edgeIds.set(link.id, ids);
+    edgeRuns.set(link.id, shown);
 
     if (overlay) {
       // The SVG masks an overlay stroke out of every box it would obscure; mxGraph has no mask, so
@@ -728,17 +796,15 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
 
   // ---- link labels --------------------------------------------------------------------------
   // What is left after the edges took their own: a counted merge label, whose owner is a bundle,
-  // and any label at an angle no shape's own label can take. An edge label's `x` is arc length
-  // along the polyline and its `y` a signed perpendicular offset, positive to the left of travel;
-  // both are left at zero and the whole displacement goes in `offset`, which is measured in screen
-  // axes, exact, and free of the sign convention.
+  // and any label at an angle no shape's own label can take. A child label is stated in the same
+  // relative terms its edge's own label is, on the connector that draws its supporting segment.
   for (const label of layout.labels) {
     if (label.role !== 'link' || label.omitted || !label.bounds) continue;
     if (taken.has(label.id)) continue;
     const owner = label.owner.kind === 'barCross' ? label.owner.link
       : label.owner.kind === 'link' ? label.owner.id : undefined;
     const link = owner === undefined ? undefined : byId.get(owner);
-    const ids = owner === undefined ? undefined : edgeIds.get(owner);
+    const ids = owner === undefined ? undefined : edgeRuns.get(owner);
     if (!link || !ids?.length) {
       // A counted merge label is owned by its bundle, not by any one link: it names the shared
       // trunk, and no connector here is that trunk, because each member exports its whole path.
@@ -751,10 +817,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         paint.link.multiplicity);
       continue;
     }
-    const run = polylines(link.path!.segments)[0];
-    if (!run) continue;
+    const run = ids[runFor(label, link, ids)]!;
     const at = labelPoint(label, link);
-    const relativeAt = alongPolyline(run, at);
+    const relativeAt = edgeLabel(run.points, at);
     cells.push(element('mxCell', {
       id: claim(cellId('linkLabel', label.id)), value: htmlText(label.lines ?? [label.text]),
       style: styleString(['edgeLabel'], {
@@ -765,8 +830,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         // A turn `horizontal=0` cannot express is stated outright.
         rotation: label.textRotation && label.textRotation % 90 !== 0 ? label.textRotation : undefined,
       }),
-      vertex: 1, connectable: 0, parent: ids[0]!,
-    }, element('mxGeometry', { x: relativeAt.x, y: relativeAt.y, relative: 1, as: 'geometry' })));
+      vertex: 1, connectable: 0, parent: run.id,
+    }, element('mxGeometry', { x: relativeAt.x, y: relativeAt.y, relative: 1, as: 'geometry' },
+      residualPoint(relativeAt) || undefined)));
   }
 
   // ---- legend -------------------------------------------------------------------------------
@@ -875,34 +941,107 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       element('diagram', { id: 'pg-diagram', name: title }, model)) + '\n';
 }
 
+/** The segment lengths of a polyline, as `mxGraphView.updateEdgeBounds` measures them. */
+const spansOf = (points: readonly Point[]): number[] =>
+  points.slice(1).map((point, index) => Math.hypot(point.x - points[index]!.x, point.y - points[index]!.y));
+
 /**
- * Where a point sits on a polyline, in the terms draw.io states an edge label in: `x` is arc length
- * as a fraction of the whole, from -1 at the source to 1 at the target, and `y` is the signed
- * perpendicular distance, positive to the **left** of the direction of travel.
- *
- * These are the format's own relative coordinates, and that is the point of using them: a label
- * placed this way follows its connector when a shape moves, where one placed by `offset` — which is
- * absolute screen pixels — stays where it was written and drifts off the line.
+ * The segment draw.io decodes an arc-length position onto, and how far the walk had gone when it
+ * got there. This is `mxGraphView.getPoint`'s own loop, and it has two properties worth stating:
+ * the position is **rounded to a whole pixel** before the walk, and the walk leaves a segment as
+ * soon as the position reaches its rounded far end. So a position exactly on a joint decodes onto
+ * the *later* segment, and the label then takes that segment's normal rather than the earlier one's.
  */
-function alongPolyline(points: readonly Point[], at: Point): { x: number; y: number } {
-  const spans = points.slice(1).map((point, index) => Math.hypot(point.x - points[index]!.x, point.y - points[index]!.y));
+function decodeSegment(points: readonly Point[], spans: readonly number[], dist: number):
+{ index: number; walked: number; span: number } {
+  let span = spans[0] ?? 0, walked = 0, index = 1;
+  while (dist >= Math.round(walked + span) && index < points.length - 1) {
+    walked += span;
+    span = spans[index]!;
+    index += 1;
+  }
+  return { index, walked, span };
+}
+
+/**
+ * Where draw.io will really draw a label carried by `points` with this geometry: the whole of
+ * `mxGraphView.getPoint`, at scale 1. Written so the encoder below can measure its own output
+ * instead of trusting an inverse.
+ */
+function decodeEdgeLabel(points: readonly Point[], label: EdgeLabel): Point {
+  const spans = spansOf(points);
   const total = spans.reduce((sum, span) => sum + span, 0);
-  if (total === 0) return { x: 0, y: 0 };
-  let walked = 0, best = { distance: Infinity, along: 0, side: 0 };
+  const dist = Math.round((label.x / 2 + 0.5) * total);
+  const { index, walked, span } = decodeSegment(points, spans, dist);
+  const from = points[index - 1]!, to = points[index]!;
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const factor = span === 0 ? 0 : (dist - walked) / span;
+  // The left normal of the direction of travel, in screen axes where y grows downward.
+  const nx = span === 0 ? 0 : dy / span, ny = span === 0 ? 0 : dx / span;
+  return {
+    x: from.x + dx * factor + nx * label.y + (label.offset?.x ?? 0),
+    y: from.y + dy * factor - ny * label.y + (label.offset?.y ?? 0),
+  };
+}
+
+/**
+ * How to state `at` as an edge label on `points`, in the terms draw.io reads: `x` is arc length as a
+ * fraction of the whole, from -1 at the source to 1 at the target, `y` is the signed perpendicular
+ * distance, positive to the **left** of the direction of travel, and `offset` is absolute screen
+ * pixels added to both.
+ *
+ * The relative pair carries as much as it can, because that is what makes a label follow its
+ * connector when a shape moves; `offset` carries only the remainder, and stays absolute. There is
+ * always a remainder to consider, because draw.io rounds the arc length to a whole pixel before it
+ * resolves the point, and three cases leave more than a rounding behind: a label beyond an endpoint
+ * (no arc length reaches it), a label at a corner (the joint decodes onto the later segment, whose
+ * normal points elsewhere), and a zero-length polyline (there is no direction at all).
+ *
+ * Every whole-pixel position that could carry the label is measured with the decoder above, and the
+ * one leaving the smallest remainder wins. The result is exact wherever the format allows it and
+ * exact by remainder everywhere else.
+ */
+function edgeLabel(points: readonly Point[], at: Point): EdgeLabel {
+  const spans = spansOf(points);
+  const total = spans.reduce((sum, span) => sum + span, 0);
+  const start = points[0] ?? at;
+  if (total === 0) return { x: 0, y: 0, offset: { x: at.x - start.x, y: at.y - start.y } };
+  // `x` stays inside the stated -1..1, so the arc length never runs past the last point.
+  const limit = Math.floor(total);
+  const wanted = new Set<number>([0, limit]);
+  let walked = 0;
   for (const [index, span] of spans.entries()) {
-    const from = points[index]!, to = points[index + 1]!;
-    const dx = to.x - from.x, dy = to.y - from.y;
-    const ratio = span === 0 ? 0
-      : Math.min(1, Math.max(0, ((at.x - from.x) * dx + (at.y - from.y) * dy) / (span * span)));
-    const on = { x: from.x + dx * ratio, y: from.y + dy * ratio };
-    const distance = Math.hypot(at.x - on.x, at.y - on.y);
-    if (distance < best.distance) {
-      // The left normal of a travel direction, in screen axes where y grows downward.
-      const side = span === 0 ? 0 : ((at.x - on.x) * dy - (at.y - on.y) * dx) / span;
-      best = { distance, along: walked + span * ratio, side };
+    if (span > 0) {
+      const from = points[index]!, to = points[index + 1]!;
+      const ratio = ((at.x - from.x) * (to.x - from.x) + (at.y - from.y) * (to.y - from.y)) / (span * span);
+      const along = walked + Math.min(1, Math.max(0, ratio)) * span;
+      // Either whole pixel around the wanted position, and one either side of those: a position on
+      // a joint has to be able to step back into the earlier segment to keep that segment's normal.
+      for (const step of [-1, 0, 1]) {
+        wanted.add(Math.min(limit, Math.max(0, Math.floor(along) + step)));
+        wanted.add(Math.min(limit, Math.max(0, Math.ceil(along) + step)));
+      }
     }
     walked += span;
   }
-  return { x: 2 * (best.along / total) - 1, y: best.side };
+  let best: { label: EdgeLabel; left: number } | undefined;
+  for (const wholePixel of [...wanted].sort((a, b) => a - b)) {
+    const x = 2 * (wholePixel / total) - 1;
+    // Read the position back the way draw.io will, so the chosen segment is the one it will choose.
+    const dist = Math.round((x / 2 + 0.5) * total);
+    const { index, walked: before, span } = decodeSegment(points, spans, dist);
+    const from = points[index - 1]!, to = points[index]!;
+    const dx = to.x - from.x, dy = to.y - from.y;
+    const factor = span === 0 ? 0 : (dist - before) / span;
+    const on = { x: from.x + dx * factor, y: from.y + dy * factor };
+    const y = span === 0 ? 0 : ((at.x - on.x) * dy - (at.y - on.y) * dx) / span;
+    const drawn = decodeEdgeLabel(points, { x, y });
+    const left = Math.hypot(at.x - drawn.x, at.y - drawn.y);
+    if (best === undefined || left < best.left - EPS) best = { label: { x, y }, left };
+  }
+  const label = best!.label;
+  if (best!.left <= EPS) return label;
+  const drawn = decodeEdgeLabel(points, label);
+  return { ...label, offset: { x: at.x - drawn.x, y: at.y - drawn.y } };
 }
 
