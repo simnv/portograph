@@ -266,7 +266,14 @@ one position, was refused for running along a group edge, and allocated **nothin
 
 A group edge names only "not here". So does a corridor, and so does an own run. The search advances
 by one pitch on each of them and gives up only at the gap's limit. That is the sixth amendment's own
-packing rule, read as it is written, and the rule itself does not change. Measured on
+packing rule, read as it is written, and the rule itself does not change.
+
+**A group edge costs at most two pitches.** The pitch is `16 + s` and the margin an edge keeps is
+`10 + s/2` (ADR-0013), so `margin < pitch < 2 × margin` for every stroke. A row refused under a
+group's bottom edge is already inside the margin, so one pitch clears it. A row refused above a
+group's top edge stands at some depth `d` below that edge; one pitch clears it whenever
+`d > 6 + s/2`, and two clear it always, because `2 × pitch > 2 × margin`. The fixture's comment says
+"one pitch on" because that is what that gap needed; the bound is two. Measured on
 `goldens/synthetic/a-row-steps-past-a-group-edge.yaml`: the gap is y 121.00 … 190.25, the first
 position is 129.75 and lies 8.75 px under a group edge that keeps 10.75 px, and the row is seated at
 147.25, one pitch on. The nine-node reproducer publishes. On the Enterprise NTP sheet the gap that
