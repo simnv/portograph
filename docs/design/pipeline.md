@@ -279,7 +279,9 @@ current intermediate band with `10 + pathStroke / 2` padding before placement fr
 **The runs between the lanes are allocated too (ADR-0015 rule 1).** A **tier gap** is the open band
 between two adjacent tier bands. The lane extents that face it bound it. Every run that crosses one
 is allocated before the first ownership batch runs. The rule that owns the lanes owns this too,
-and reads the same frozen placement.
+and reads the same frozen placement. It does not own the gap's **height**: that is the rows the
+allocation must seat times the pitch, and only 7f knows the count (7c, 7d and 7e each turn a row
+into a column). 7f reserves it, and this allocation consumes it.
 
 A run whose two ends share one x takes that **column**, straight across the gap. A run whose ends
 differ takes a **row**: a horizontal line inside the gap. A vertical segment joins the row to each
@@ -506,7 +508,28 @@ and coincident lateral runs even when unrelated ports create unequal endpoint sp
 projection onto a common endpoint block is declined if its full side capacity would cross a sibling
 or immutable lane; local slots remain valid and the bundle bends instead.
 
-### 7f — group label bands
+### 7f — tier gap room, then group label bands
+
+**A tier gap grows to the rows it must seat (ADR-0015 rule 1).** This is 7f's first act, before any
+label is placed. `bandGap` is one number for the whole diagram, chosen in stage 4 from the node
+clearance and the widest stroke. The room a tier gap needs is a property of that gap: the rows 7a's
+allocation must seat in it (`allocateGapRuns`), one pitch apart. A gap short of `rows × pitch` grows
+by exactly the shortfall, and every band below it moves down by the running total. Nothing moves
+horizontally, nothing moves up, so lane x, the groups' order and every reservation 7a–7e made are
+untouched; the lane extents follow their bands and the replay rebuilds every claim the movement
+touched. A gap whose rows already fit grows by nothing.
+
+The height is a reservation, not a discovery: stage 8 receives a gap that already holds its rows.
+The allocation is the **consumer** of the grown gap and never its owner — it reads the room the gap
+has and seats what fits in it.
+
+The count is taken here and not at 7a, where the gap's own bounds are fixed, because it separates a
+**column** (both ends on one x, no row needed) from a **row**, and three later rules turn a row into
+a column: 7c aligns a child under its lane, 7d spans a bar across its ports, and 7e orders a
+bundle's ports. Measured: the M1 golden's one populated tier gap owes four rows after 7a and none
+after 7d, so a count taken at 7a would grow a gap the finished diagram does not need. 7f is the last
+placement rule, so its count is the one stage 8 receives. What 7f itself then moves horizontally for
+a label band can still change the count, and nothing re-reserves after that.
 
 For every group: band height = label height + 8, inside the padding of the **title edge**: the
 horizontal edge with fewer incident routed link ports, so a group fed from above carries its title
@@ -656,7 +679,8 @@ Registered as obstacles, each expanded once in the adapter and never in the mode
   another side of the same node stands in its own strip and keeps its reservation.
   These rectangles are added per batch. They never enter the ownership exclusions, so they cannot
   change a batch; they remain for the attachments no gap allocation reaches.
-- **every allocated tier-gap run** (§ 7a), covered by the clearance a reserved run carries, for
+- **every allocated tier-gap run** (§ 7a, in the room § 7f reserved for it), covered by the
+  clearance a reserved run carries, for
   every batch from the first. This is the head-on approach to a lane, reserved rather than covered
   by a rectangle. Measured over 322 diagrams, a 23 × 38 px cover repaired 8 failures and broke 4.
   The wall it put in a tier gap pushed other links into routes their own checkpoints could not meet.

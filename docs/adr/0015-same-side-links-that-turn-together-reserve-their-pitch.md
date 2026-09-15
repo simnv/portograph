@@ -176,3 +176,36 @@ per-connector form of it, because the binding has no per-connector shape-ignore 
 is too much, a route runs along a reservation; where it is too little, a route has no way through.
 The other two items are the limit of reserving room without routing: a run the allocation displaces
 can displace a second, and the second can seal a third link's approach.
+
+## Seventh amendment (2026-09-15, from the stress test; stress ticket 05)
+
+**A tier gap grows to the rows it must seat.** The sixth amendment allocates every run that crosses
+a tier gap, and says of the gap's height only that "it does not grow a tier gap". That is the item
+the Enterprise NTP sheet then named: one 38.5 px gap seating two rows where sixteen needed one, and
+about 280 px of row at the pitch. A gap cannot allocate room it does not have.
+
+The gap's height is therefore a reservation like every other room in this ADR. A gap short of
+`rows × pitch` grows by the shortfall, and every band below it moves down by the running total. The
+margin the facing lane extents take (`10 + pathStroke / 2` on each side that has a lane) is not
+part of the room, so the band gap a grown gap ends with is `rows × pitch + margins`. Nothing moves
+horizontally, nothing moves up, so lane x, the groups' order and every earlier reservation stand;
+the lane extents follow their bands.
+
+**The rule runs in 7f, and that is a measured choice, not the obvious one.** The count separates a
+**column** — both ends on one x, no row needed — from a **row**, so it cannot be taken before 7a
+fixes lane x. It cannot be taken at 7a either: 7c aligns a child under its lane, 7d spans a bar
+across its ports, and 7e orders a bundle's ports, and each of those turns a row into a column. The
+M1 golden's one populated tier gap owes four rows after 7a and none after 7d; a rule that grew the
+gap at 7a moved every band below it and the approved golden changed (Q 0.8986107 → 0.8978139,
+measured). 7f is the last placement rule, so its count is the one stage 8 receives, and it runs
+before any group label is placed because the growth moves whole bands and a label placed first
+would stay behind.
+
+**What it does not settle.** 7f itself may move a group horizontally to fit a label band, and
+nothing re-reserves after that. The rule reserves `rows × pitch`, which is the room the rows need
+when they pack from the low boundary with nothing in the way; a row the seating has to push past a
+blocker can still fall outside the gap, so a grown gap seats *more* rows, not always all of them.
+Measured on the Enterprise NTP sheet, every one of its twelve gaps ends with the room its rows ask
+for, six gaps seat every row they owe or all but one or two, and three seat none — those decline
+for the sixth amendment's own reason, an approach beyond the boundary the gap cannot leave clear,
+which is not a question of room. That decline is stress ticket 06.
