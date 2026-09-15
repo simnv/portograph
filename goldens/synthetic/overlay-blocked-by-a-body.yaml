@@ -3,7 +3,9 @@
 # every node and pill. The rule falls back one step and takes the shortest way that clears its own
 # two pill boxes: out of each pill head by the clearance, and one run across above both of them,
 # which crosses Border B. The SVG mask keeps that body readable, as it did before the rule existed.
-# Every gate passes.
+# Every gate passes; Q is 0.8401068126850539. The detour reaches further than the straight line it
+# replaced, so `aspectRatio` reads a different bounding box and Q moves with it: the score reads
+# what the diagram draws, and a drift here is not a regression.
 # Test-only input owned by synthetics-review ticket 01; the whole pipeline runs, so no stage
 # precondition is needed.
 portograph: 2

@@ -4,7 +4,9 @@
 # `orthogonalEdgeStyle;jettySize=0` with no waypoint of its own. The overlay link joins a top pill to
 # a bottom pill that share neither x nor y. That is the unaligned pair. It takes the shortest
 # orthogonal detour that enters neither pill box. A dragged end then makes a Z-bend, never a
-# diagonal. Every gate passes.
+# diagonal. Every gate passes; Q is 0.8236621295302419. The `peer` label crosses the overlay's
+# descent and the mask cuts 11 px of it: both of the label's candidate sides are covered, and a
+# label that is drawn beats a line that is whole (synthetics review ticket 01).
 # Test-only input owned by drawio-export ticket 02; the whole pipeline runs, so no stage
 # precondition is needed.
 portograph: 2
