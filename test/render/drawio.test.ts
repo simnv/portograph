@@ -1411,3 +1411,135 @@ links:
     }
   }, 60000);
 });
+
+describe('direct lines', () => {
+  it('keeps every direct line square, the unaligned overlay detour included', async () => {
+    // A direct line is a link whose model path is one segment. The maintainer's rule, verbatim:
+    // "straight direct line should be horizontal or vertical. angled direct lines should be
+    // straight." — then "orthogonal then maybe?". The decision taken on 2026-09-15 is all
+    // orthogonal. A direct line the pipeline routed on one axis carries that axis and nothing else.
+    // An overlay between two pill heads that share neither axis takes the shortest orthogonal
+    // detour round both pill boxes. A dragged end then makes a Z-bend, never a diagonal.
+    //
+    // Every number below is read out of the exported file and only then compared with the model,
+    // because a test that states the model against itself agrees with any export at all.
+    const model = await pipeline(fixture('drawio-direct-lines'));
+    const all = cells(drawio(model));
+    const origin = model.canvas!;
+    /** The clearance `overlayPath` keeps off a pill head: the endpoint mark's own diameter. */
+    const CLEARANCE = 2 * OVERLAY_ENDPOINT_RADIUS;
+    /** The outward fraction of each side, which is what the exporter pins an endpoint with. */
+    const OUTWARD: Readonly<Record<string, Point>> = {
+      top: { x: 0.5, y: 0 }, bottom: { x: 0.5, y: 1 },
+      left: { x: 0, y: 0.5 }, right: { x: 1, y: 0.5 },
+    };
+    interface Pill { cell: string; side: string; x: number; y: number; width: number; height: number }
+    /**
+     * A cell's box in page space, walked out of the file itself. A child's geometry is stated from
+     * its parent's top-left and `startSize` does not shift that origin, so the origins simply add.
+     */
+    const absolute = (key: string): { x: number; y: number; width: number; height: number } => {
+      const own = box(all.get(key)!);
+      let at = all.get(key)!.parent, x = own.x, y = own.y;
+      while (at !== undefined && at !== '0') {
+        const parent = all.get(at)!;
+        x += box(parent).x; y += box(parent).y;
+        at = parent.parent;
+      }
+      return { x, y, width: own.width, height: own.height };
+    };
+    /**
+     * The pill a `node.port` draws, in page space, read off the exported cell hierarchy — and then
+     * checked against the box placement reserved, so the two cannot drift apart unnoticed.
+     */
+    const pillOf = (ref: string): Pill => {
+      const [node, name] = ref.split('.') as [string, string];
+      const port = model.nodes[node]!.ports.find(item => item.ref.name === name)!;
+      const key = id('port', node, name, String(port.ref.ordinal));
+      const reserved = port.pill!.bounds, drawn = absolute(key);
+      expect(drawn).toEqual({ x: reserved.x - origin.x, y: reserved.y - origin.y,
+        width: reserved.width, height: reserved.height });
+      return { cell: key, side: port.side!, ...drawn };
+    };
+    const linkOf = (from: string, to: string): LayoutModel['links'][number] => {
+      const [fromNode, fromPort] = from.split('.'), [toNode, toPort] = to.split('.');
+      return model.links.find(item => item.attachments !== undefined
+        && item.attachments.from.node === fromNode && item.attachments.from.name === fromPort
+        && item.attachments.to.node === toNode && item.attachments.to.name === toPort)!;
+    };
+    /**
+     * Where draw.io really puts one end of a connector: the **exported** constraint read against the
+     * pill's own box. mxGraph resolves an end from four keys, not two — the fraction pair places a
+     * point on the box and the `Dx`/`Dy` pair then moves it in absolute pixels — so all four are
+     * read, and a non-zero offset would carry the end off the pill head the fraction names.
+     */
+    const endOf = (cell: Cell, which: 'exit' | 'entry', pill: Pill): Point => {
+      expect(cell.style[`${which}Perimeter`]).toBe('0');
+      const fraction = { x: Number(cell.style[`${which}X`]), y: Number(cell.style[`${which}Y`]) };
+      expect(fraction).toEqual(OUTWARD[pill.side]);
+      const offset = { x: Number(cell.style[`${which}Dx`] ?? 0), y: Number(cell.style[`${which}Dy`] ?? 0) };
+      expect(offset).toEqual({ x: 0, y: 0 });
+      return { x: pill.x + fraction.x * pill.width + offset.x,
+        y: pill.y + fraction.y * pill.height + offset.y };
+    };
+
+    // Two vertical direct lines and one horizontal one, the last carrying its own label. Each is a
+    // square connector with **no** waypoint: the two pinned ends are the whole connector, so there
+    // is nothing in the file that could bend it or send it past its target and back.
+    const routed = [
+      { from: 'a.d1', to: 'b.u1', along: 'x', across: 'y', value: undefined },
+      { from: 'a.d2', to: 'c.u2', along: 'x', across: 'y', value: undefined },
+      { from: 'b.east', to: 'c.west', along: 'y', across: 'x', value: 'peer' },
+    ] as const;
+    for (const stated of routed) {
+      const link = linkOf(stated.from, stated.to);
+      expect(effectiveLayer(link)).toBe('routed');
+      expect(link.path!.segments.length).toBe(1);
+      const head = pillOf(stated.from), tail = pillOf(stated.to);
+      const cell = all.get(id('link', link.id))!;
+      expect(cell.source).toBe(head.cell);
+      expect(cell.target).toBe(tail.cell);
+      expect(cell.value).toBe(stated.value);
+      expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
+      expect(cell.style['jettySize']).toBe('0');
+      expect(cell.points).toEqual([]);
+      const ends = [endOf(cell, 'exit', head), endOf(cell, 'entry', tail)] as const;
+      expect(ends[0][stated.along]).toBeCloseTo(ends[1][stated.along], 6);
+      expect(Math.abs(ends[0][stated.across] - ends[1][stated.across])).toBeGreaterThan(1);
+    }
+
+    // The overlay joins a top pill to a bottom pill that share neither x nor y. It stays square all
+    // the same, and the route is the exact one the two reserved boxes give: out of each head by the
+    // clearance, then down the middle of the gap the two boxes leave on x.
+    const overlay = linkOf('b.lo', 'c.lo');
+    expect(effectiveLayer(overlay)).toBe('overlay');
+    expect(overlay.path!.segments.length).toBe(1);
+    const head = pillOf('b.lo'), tail = pillOf('c.lo');
+    const cell = all.get(id('link', overlay.id))!;
+    expect([head.side, tail.side]).toEqual(['top', 'bottom']);
+    expect(cell.source).toBe(head.cell);
+    expect(cell.target).toBe(tail.cell);
+    expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
+    expect(cell.style['jettySize']).toBe('0');
+    const ends = [endOf(cell, 'exit', head), endOf(cell, 'entry', tail)] as const;
+    expect(Math.abs(ends[0].x - ends[1].x)).toBeGreaterThan(1);
+    expect(Math.abs(ends[0].y - ends[1].y)).toBeGreaterThan(1);
+    const middle = (Math.max(head.x, tail.x)
+      + Math.min(head.x + head.width, tail.x + tail.width)) / 2;
+    const above = ends[0].y - CLEARANCE, below = ends[1].y + CLEARANCE;
+    expect(cell.points).toEqual([
+      { x: ends[0].x, y: above }, { x: middle, y: above },
+      { x: middle, y: below }, { x: ends[1].x, y: below },
+    ]);
+    // And that route is square end to end, and reaches inside neither pill box.
+    const path = [ends[0], ...cell.points, ends[1]];
+    for (const [index, point] of path.slice(1).entries()) {
+      const before = path[index]!;
+      expect(Math.abs(point.x - before.x) < 1e-6 || Math.abs(point.y - before.y) < 1e-6).toBe(true);
+      for (const pill of [head, tail]) {
+        expect(Math.max(before.x, point.x) > pill.x && Math.min(before.x, point.x) < pill.x + pill.width
+          && Math.max(before.y, point.y) > pill.y && Math.min(before.y, point.y) < pill.y + pill.height).toBe(false);
+      }
+    }
+  }, 60000);
+});
