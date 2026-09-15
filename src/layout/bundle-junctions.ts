@@ -3,8 +3,9 @@ import type { PortRef } from '../model/document.js';
 import { portId } from './skeleton-graph.js';
 import { MEMBER_GAP, axis, bundleFanRows, clone, coordinate, facing, fanCohorts, fanEnd, fanPitch, fanRows, junctionId, normal, type Member } from './bundle-geometry.js';
 import { placementWarning } from './regions.js';
+import { STRAIGHT_PATH_CLEARANCE, findPort } from './row-paths.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
-import { nodeObstacleReach, routedStroke, stemReach } from './bands.js';
+import { GROUP_LABEL_GEOMETRY, nodeObstacleReach, routedStroke, stemReach } from './bands.js';
 
 export interface BundleFans {
   members: Member[];
@@ -106,25 +107,44 @@ export function bundleFans(model: LayoutModel, bundle: Bundle, list: Member[], q
  * of one can then never land inside another, which is what makes the step terminate and makes the
  * answer independent of the order the nodes were read in.
  */
-function blockedTracks(model: LayoutModel, port: LayoutPort, band: { from: number; to: number }): { lo: number; hi: number }[] {
+function blockedTracks(model: LayoutModel, port: LayoutPort, band: { from: number; to: number },
+  exempt: ReadonlySet<string>): { lo: number; hi: number }[] {
   const n = normal(port.side!), tangent = axis(port.side!), stroke = routedStroke(model);
   const low = Math.min(band.from, band.to), high = Math.max(band.from, band.to);
   const pillGap = (stroke + DEFAULT_STROKE_WIDTHS.pill) / 2;
   const grow = (box: Rect, by: number): Rect =>
     ({ x: box.x - by, y: box.y - by, width: box.width + 2 * by, height: box.height + 2 * by });
   const found: { lo: number; hi: number }[] = [];
+  const span = (box: { x: number; y: number; right: number; bottom: number }): void => {
+    const depths = tangent === 'y' ? [n.x * (box.x - port.anchor!.x), n.x * (box.right - port.anchor!.x)]
+      : [n.y * (box.y - port.anchor!.y), n.y * (box.bottom - port.anchor!.y)];
+    if (Math.max(...depths) <= low + 1e-6 || Math.min(...depths) >= high - 1e-6) return;
+    found.push(tangent === 'y' ? { lo: box.y, hi: box.bottom } : { lo: box.x, hi: box.right });
+  };
+  // Every routed attachment holds an outward stem, whether a rule has claimed its path or not
+  // (ADR-0015, sixth amendment). A fan branch may not turn inside one: the link that owns that stem
+  // would then have no route to its own port, and stage 8 fails outright rather than failing a gate.
+  // The two ports the branch itself uses are its own and are left out.
+  const margin = GROUP_LABEL_GEOMETRY.nodeClearance + stroke;
+  for (const link of model.links) {
+    if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
+    for (const end of ['from', 'to'] as const) {
+      const ref = link.attachments[end], at = findPort(model, ref);
+      if (!at?.anchor || at.side === undefined || exempt.has(portId(ref))) continue;
+      const out = normal(at.side), reach = stemReach(model, model.nodes[ref.node]!);
+      const tip = { x: at.anchor.x + out.x * reach, y: at.anchor.y + out.y * reach };
+      span({ x: Math.min(at.anchor.x, tip.x) - margin, y: Math.min(at.anchor.y, tip.y) - margin,
+        right: Math.max(at.anchor.x, tip.x) + margin, bottom: Math.max(at.anchor.y, tip.y) + margin });
+    }
+  }
   for (const node of Object.values(model.nodes)) {
     if (!node.bounds || node.layer === 'overlay' || node.id === port.ref.node) continue;
     const boxes = [grow(node.bounds, nodeObstacleReach(model, node, stroke)),
       ...node.ports.filter(item => item.pill && item.pill.layer !== 'overlay').map(item => grow(item.pill!.bounds, pillGap))];
     const x = Math.min(...boxes.map(box => box.x)), y = Math.min(...boxes.map(box => box.y));
-    const box = { x, y, right: Math.max(...boxes.map(box => box.x + box.width)), bottom: Math.max(...boxes.map(box => box.y + box.height)) };
     // The box mapped onto the side's own two axes: how deep it reaches out of the side, and where it
     // stands along it.
-    const depths = tangent === 'y' ? [n.x * (box.x - port.anchor!.x), n.x * (box.right - port.anchor!.x)]
-      : [n.y * (box.y - port.anchor!.y), n.y * (box.bottom - port.anchor!.y)];
-    if (Math.max(...depths) <= low + 1e-6 || Math.min(...depths) >= high - 1e-6) continue;
-    found.push(tangent === 'y' ? { lo: box.y, hi: box.bottom } : { lo: box.x, hi: box.right });
+    span({ x, y, right: Math.max(...boxes.map(box => box.x + box.width)), bottom: Math.max(...boxes.map(box => box.y + box.height)) });
   }
   const result: { lo: number; hi: number }[] = [];
   for (const span of found.sort((a, b) => a.lo - b.lo || a.hi - b.hi)) {
@@ -177,24 +197,74 @@ export function crossBundleFans(model: LayoutModel): void {
     // the same rows 7d used to split a fixed member's path. The tracks are spaced inside the corridor
     // these rows name, so both are known before either is used.
     const rows = fanRows(model, port, links), end = fanEnd(model, port, links);
+    /**
+     * Whether another link's reserved run already covers the checkpoint this member's far port must
+     * be approached from. Nothing this fan reserves can then reach that checkpoint: the run is a
+     * wall stage 8 may not cross, and the route fails outright instead of failing a gate. Such a
+     * member keeps the plain coordinate and the tree's common end — what the fan drew before
+     * ADR-0018 rule 3 — and the gates report what is left. A gate failure is recoverable.
+     *
+     * Only runs already reserved are seen, so the fan built first keeps its geometry and the one
+     * built after it gives way, exactly as a lane gives way to the corridor reserved before it.
+     */
+    const mine = new Set(items.map(one => one.link.id));
+    const checkpoint = (port: LayoutPort): Point => {
+      const out = normal(port.side!), stem = stemReach(model, model.nodes[port.ref.node]!);
+      return { x: port.anchor!.x + out.x * stem, y: port.anchor!.y + out.y * stem };
+    };
+    const owed = (item: typeof items[number]): boolean => {
+      const half = routedStroke(model) / 2, at = checkpoint(item.far);
+      return model.links.some(other => {
+        if (other.layer === 'overlay' || mine.has(other.id)) return false;
+        const margin = linkStrokeWidth(other) / 2 + half + STRAIGHT_PATH_CLEARANCE.path;
+        return [...(other.path?.fixed === true ? other.path.segments : []), ...(other.fixedSegments ?? []),
+          ...(other.sharedRuns?.from ?? []), ...(other.sharedRuns?.to ?? [])].some(run =>
+          at.x > Math.min(run.from.x, run.to.x) - margin + 1e-6 && at.x < Math.max(run.from.x, run.to.x) + margin - 1e-6
+          && at.y > Math.min(run.from.y, run.to.y) - margin + 1e-6 && at.y < Math.max(run.from.y, run.to.y) + margin - 1e-6);
+      });
+    };
+    const blocked = new Set(items.filter(owed).map(item => item.link.id));
     // Where a member's own approach starts. A far port that faces this side stands at its own
     // coordinate along it. A far port whose normal runs *along* this side stands on its node's edge
     // instead, so a branch that turned there would run along that node: the coordinate such a
     // member wants is its outward checkpoint, where its own approach begins (ADR-0018 rule 3).
     const approach = (item: typeof items[number]): number => {
       const side = item.far.side!;
-      if (axis(side) === tangent) return item.far.anchor![tangent];
+      if (axis(side) === tangent || blocked.has(item.link.id)) return item.far.anchor![tangent];
       return item.far.anchor![tangent] + normal(side)[tangent] * stemReach(model, model.nodes[item.far.ref.node]!);
     };
-    // How deep out of the side a branch's own run goes. Every branch reaches the tree's common end,
-    // except one whose far port's normal runs along this side: that branch turns out of the fan and
-    // then travels along the far port's own normal, so its run stops where that normal stands. Ending
-    // it at the common end beyond that would make stage 8 retrace the reserved run to come back.
-    const stop = (item: typeof items[number], row: number): number => {
-      const side = item.far.side!;
-      if (item.link.path?.fixed === true || axis(side) === tangent) return end;
-      const depth = tangent === 'y' ? n.x * (item.far.anchor!.x - port.anchor!.x) : n.y * (item.far.anchor!.y - port.anchor!.y);
-      return Math.min(end, Math.max(row, depth));
+    /** How deep out of this side a world point stands. */
+    const depthOf = (p: Point): number => tangent === 'y' ? n.x * (p.x - port.anchor!.x) : n.y * (p.y - port.anchor!.y);
+    /**
+     * How deep out of the side a branch's own run goes. A branch reaches the tree's common end, but
+     * never past the depth at which its far port's **own approach** begins: beyond that the run
+     * covers the piece stage 8 has to come back along, and the router either retraces the reserved
+     * run or loops round it. Never short of the branch's own peel row either, since that is where it
+     * leaves the tree.
+     *
+     * The approach begins at the far port's outward checkpoint where that checkpoint moves along
+     * this side's normal — a port facing this side, or one turned the same way as it — and at the
+     * far port's own depth where it moves along the tangent instead, which is the whole of the
+     * branch's travel in that direction.
+     *
+     * An approach that begins *behind* the branch's peel row cannot be reached by travelling outward
+     * at all. Such a branch hands over on its peel row, where it arrives travelling along the side —
+     * but only while its own track has not passed the far port's coordinate, so that travelling on
+     * is still travelling towards it. Where the track has passed it, the branch keeps the tree's
+     * common end instead and hands over pointing outward, with room to turn; handing over on the
+     * corner of its own descent there leaves the router no way on but back along it.
+     */
+    const reachOf = (item: typeof items[number]): number => {
+      const out = normal(item.far.side!);
+      const facing = tangent === 'y' ? n.x * out.x : n.y * out.y;
+      return depthOf(item.far.anchor!) + facing * stemReach(model, model.nodes[item.far.ref.node]!);
+    };
+    const stop = (item: typeof items[number], row: number, track: number): number => {
+      if (item.link.path?.fixed === true || blocked.has(item.link.id)) return end;
+      const reach = reachOf(item);
+      if (reach > row + 1e-6) return Math.min(end, reach);
+      const onward = (track - coordinate(port)) * (item.far.anchor![tangent] - track);
+      return onward > 1e-6 ? row : end;
     };
     // A member whose path a rule fixed is the straight-through leaf (ADR-0016): its target is the
     // port's own coordinate, so it is peeled last and its stems are its path's leading segments.
@@ -224,6 +294,13 @@ export function crossBundleFans(model: LayoutModel): void {
       .map(other => ({ at: other.anchor![tangent], stroke: Math.max(...atPort(other.ref).map(linkStrokeWidth)) }));
     const occupied = [...(reserved === undefined ? [] : [{ at: reserved, stroke: routedStroke(model) }]), ...siblings]
       .sort((x, y) => x.at - y.at);
+    // The row each member peels at, which is the depth its own run leaves the tree from. The peel
+    // loop below takes the farthest track first and the fixed member last; it reads the tracks this
+    // pass is about to choose, so the rank is taken from the coordinates they are chosen for.
+    const peelRank = new Map([...ordered]
+      .sort((a, b) => (Number(a === fixedItem) - Number(b === fixedItem))
+        || Math.abs(wanted(b) - coordinate(port)) - Math.abs(wanted(a) - coordinate(port)))
+      .map((item, index) => [item, index] as const));
     let prior = -Infinity;
     for (const item of ordered) {
       if (item === fixedItem) continue;
@@ -242,10 +319,12 @@ export function crossBundleFans(model: LayoutModel): void {
         return slot;
       };
       // ADR-0018 rule 3 (ticket 45): a track is measured against the nodes beside the side as well
-      // as against the rows on it. The corridor a branch's outward run crosses is the band from the
-      // fan's first row to where that branch stops, and every node standing in that band is a wall
-      // the track steps past, to the edge of it nearer the coordinate the member wanted.
-      const walls = blockedTracks(model, port, { from: rows[0]!, to: stop(item, rows[0]!) });
+      // as against the rows on it. The corridor a branch's own run occupies is the band from the row
+      // it peels at to where that run stops, and every node standing in it is a wall the track steps
+      // past, to the edge of it nearer the coordinate the member wanted.
+      const peel = rows[Math.min(peelRank.get(item) ?? 0, rows.length - 1)]!;
+      const walls = blockedTracks(model, port, { from: peel, to: stop(item, peel, wanted(item)) },
+        new Set([portId(port.ref), portId(item.far.ref)]));
       const base = clearOfRows(Math.max(wanted(item), prior + q));
       let slot = base;
       for (let guard = 0; guard < walls.length + 1; guard++) {
@@ -281,7 +360,7 @@ export function crossBundleFans(model: LayoutModel): void {
         || Math.abs(target.get(b.link.id)! - coordinate(port)) - Math.abs(target.get(a.link.id)! - coordinate(port)))[0]!;
       const elbow = world(target.get(leaf.link.id)!, rows[depth]!);
       push(leaf.link.id, point, elbow, owner);
-      push(leaf.link.id, elbow, world(target.get(leaf.link.id)!, stop(leaf, rows[depth]!)), leaf.link.owner);
+      push(leaf.link.id, elbow, world(target.get(leaf.link.id)!, stop(leaf, rows[depth]!, target.get(leaf.link.id)!)), leaf.link.owner);
       peeled = target.get(leaf.link.id)!;
       active = active.filter(i => i !== leaf); cursor = point; parent = id; depth++;
     }
@@ -300,11 +379,11 @@ export function crossBundleFans(model: LayoutModel): void {
       // junction like every other branch there; G6 excuses a branch at a tree vertex, not a stray run.
       push(last.link.id, cursor, turn, owner);
       push(last.link.id, turn, elbow, last.link.owner);
-      push(last.link.id, elbow, world(goal, stop(last, rows[depth]!)), last.link.owner);
+      push(last.link.id, elbow, world(goal, stop(last, rows[depth]!, goal)), last.link.owner);
     } else {
       const elbow = world(goal, rows[depth - 1]!);
       push(last.link.id, cursor, elbow, owner);
-      push(last.link.id, elbow, world(goal, stop(last, rows[depth - 1] ?? rows[0]!)), goal === here ? owner : last.link.owner);
+      push(last.link.id, elbow, world(goal, stop(last, rows[depth - 1] ?? rows[0]!, goal)), goal === here ? owner : last.link.owner);
     }
     for (const item of items) {
       item.link.sharedRuns ??= {};
