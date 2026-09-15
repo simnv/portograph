@@ -843,7 +843,8 @@ it crosses precisely so that the line stays whole. The label is the thing that c
 cannot dodge it in return: a link label's box is measured here, after stage 8 built the path. Where
 the whole ladder is covered the ladder runs once more with overlay runs ignored, because a label that
 is drawn beats a line that is whole; the mask then carries the crossing, as it always did. Node
-bodies, pills and labels on the overlay *layer* stay out of the set: they are not drawn.
+bodies and pills on the overlay *layer* stay out of the set: they are not drawn. Every placed label
+is in it, whatever layer its link is on.
 
 The transaction owns the whole production, as 7f owns group labels: a callback may not author a
 label. It adds labels, their diagnostics and canvas extent only — placement, every path, every
