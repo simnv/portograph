@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { RouteDeadlineError, RouteSession, withRouteSession, systemRouteClock,
   type CreateRouteAttempt, type RouteWorker } from '../../src/route/worker.js';
-import type { RouteBatch } from '../../src/route/types.js';
+import { ALL_DIRECTIONS, DIRECTION_BITS, type RouteBatch } from '../../src/route/types.js';
 import { disjointShapes } from '../../src/route/plan.js';
 import { avoidAssets, createAvoidAttempt, spawnAvoidWorker } from './fixture.js';
 
@@ -173,6 +173,25 @@ describe('libavoid-js 0.5.0-beta.5 runtime contract', () => {
     response => replies.push(response));
     expect(replies).toEqual([{ kind: 'portograph-routed', id: 7, ok: false,
       error: 'Connector endpoint references unknown obstacle missing' }]);
+  });
+
+  it('keeps a checkpoint whose direction mask this build cannot meet', () => {
+    // A blind corridor around (100, 100), open at the top only: every route through the checkpoint
+    // has to enter and leave through that one opening. The host names the entry side in screen
+    // coordinates — `top`, DIRECTION_BITS.top — while this build names its two vertical sides the
+    // other way round, so the mask is unsatisfiable and libavoid drops the whole checkpoint. The
+    // point is a reservation the host verifies, so the adapter asks again without the mask.
+    const walls = [
+      { id: 'w-bottom', bounds: rect(70, 120, 60, 10) },
+      { id: 'w-left', bounds: rect(70, 70, 10, 60) },
+      { id: 'w-right', bounds: rect(120, 70, 10, 60) },
+    ];
+    for (const [arrival, departure] of [[DIRECTION_BITS.top, ALL_DIRECTIONS], [ALL_DIRECTIONS, DIRECTION_BITS.top]]) {
+      const points = worker.routeBatch(avoid, batch([{ id: 'blind-corridor',
+        from: { kind: 'point', x: 20, y: 20 }, to: { kind: 'point', x: 180, y: 20 },
+        checkpoints: [{ x: 100, y: 100, arrival: arrival!, departure: departure! }] }], walls))[0]!.points;
+      expect(points.some(point => point.x === 100 && point.y === 100)).toBe(true);
+    }
   });
 });
 

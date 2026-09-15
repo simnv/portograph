@@ -666,6 +666,22 @@ exists to the requested port, the adapter re-solves once without that final hint
 coordinates to a returned path. The host still checks every original checkpoint, attachment,
 reservation and stem, so a changed route that misses any requirement is rejected.
 
+**A dropped checkpoint, and the direction mask that causes it.** A checkpoint carries two things: a
+point, which is a reservation the host verifies, and a direction mask, which is a hint —
+`checkpointsHonoured` reads the point only. This build's `Avoid.Checkpoint` names its two *vertical*
+sides the other way round from the rest of its API: measured with a blind corridor open on one side
+only, a checkpoint entered through its top side is honoured with bit 2 and dropped with bit 1, and
+the reverse for one entered through its bottom side, while the two horizontal bits need no change.
+A `ShapeConnectionPin` reads the same bits in the host's own screen convention, so the two cannot be
+expressed alike. A mask the build cannot meet makes it drop the whole checkpoint, without a word, so
+the host sees only a route that misses a reservation. The adapter therefore re-solves a connector
+once, with the same points and no masks, when the answer misses a checkpoint it asked for. That
+costs one more transaction on a batch that would otherwise fail the command. Swapping the vertical
+bits instead would make every mask bite, which turns each stem checkpoint from a minimum into a
+pinned turn — measured, that puts two runs 3.5 px apart where nothing reserves the pitch between
+them (ADR-0015 rule 1 reserves it in a row gap only), so the masks stay advisory until that room is
+reserved.
+
 
 ## Stage 9 — link labels
 

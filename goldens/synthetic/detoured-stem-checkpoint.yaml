@@ -1,0 +1,19 @@
+# Expected: Keep every reserved stem checkpoint when an earlier batch's path forces the route to detour.
+portograph: 2
+groups:
+  g-upper: { tier: 5, label: "Upper" }
+  g-left: { tier: 6, label: "Left" }
+  g-right: { tier: 6, label: "Right" }
+  g-mid: { tier: 6, label: "Middle" }
+  g-lower: { tier: 9, label: "Lower" }
+nodes:
+  a1: { group: g-lower, class: rr, label: "a1" }
+  a2: { group: g-left, class: provider, label: "a2" }
+  b1: { group: g-right, class: router, label: "b1" }
+  b2: { group: g-upper, class: rr, label: "b2" }
+  b3: { group: g-upper, class: provider, label: "b3" }
+  b4: { group: g-mid, class: tbr, label: "b4" }
+links:
+  - [b1, b2]
+  - [b1, b3]
+  - [b3, b4]
