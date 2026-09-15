@@ -51,9 +51,11 @@ interface Obstacle {
   /** Required clear distance beyond the rectangle; zero for a label box. */
   clearance: number;
   segment?: PathSegment;
-  /** Set only for a routed path segment, so a supporting reference can waive its clearance zone. */
+  /** Set only for a path segment, so a supporting reference can waive its clearance zone. */
   link?: string;
   index?: number;
+  /** A drawn overlay run, which a label avoids when it can and crosses when it must. */
+  overlay?: true;
 }
 
 /** Stroke-expanded obstacle rectangles, queried without materializing a candidate list. */
@@ -91,9 +93,13 @@ const halfStroke = (path: LayoutPath | undefined): number =>
  * Everything a candidate box must clear, indexed once per producer run. Placed labels join it as
  * they are accepted, so an earlier accepted label is an obstacle for every later one.
  *
- * Only routed-layer segments participate: G3 measures labels against routed geometry, and the
- * renderer masks the overlay layer out of link labels. Every placed label is an obstacle whatever
- * its layer, which is stricter than G3 and never draws text over text.
+ * **A drawn overlay run is an obstacle too**, which is stricter than G3 — the gate measures a label
+ * against routed geometry only. It used to be left out because the renderer masks the overlay layer
+ * out of every drawn link label, so the label stayed readable. What that hid is the other side of
+ * the same collision: the mask cuts the *overlay* wherever a label sits on it, and since the overlay
+ * became an orthogonal path round the shapes it crosses (synthetics review ticket 01) the line it
+ * cuts is a line the rule went to some trouble to keep whole. A label is the thing that can move, so
+ * the label moves. Node bodies and pills on the overlay layer stay out: they are not drawn.
  */
 function buildObstacles(model: LayoutModel): ObstacleIndex {
   const items: Obstacle[] = [];
@@ -110,10 +116,11 @@ function buildObstacles(model: LayoutModel): ObstacleIndex {
     items.push({ bounds: label.bounds, clearance: 0 });
   }
   for (const link of model.links) {
-    if (effectiveLayer(link) !== 'routed' || link.technique === 'stub' || !link.path) continue;
-    const half = halfStroke(link.path);
+    if (link.technique === 'stub' || !link.path) continue;
+    const half = halfStroke(link.path), overlay = effectiveLayer(link) === 'overlay';
     for (const [i, segment] of link.path.segments.entries()) {
-      items.push({ bounds: segmentBounds(segment), clearance: half, segment, link: link.id, index: i });
+      items.push({ bounds: segmentBounds(segment), clearance: half, segment, link: link.id, index: i,
+        ...(overlay ? { overlay: true as const } : {}) });
     }
   }
   return new ObstacleIndex(items);
@@ -123,8 +130,10 @@ function buildObstacles(model: LayoutModel): ObstacleIndex {
  * True when G3 would report this box, plus a hair: every predicate rejects at `+ EPS` where G3
  * fails at `- EPS`, so an accepted placement cannot become a label hit.
  */
-function collides(index: ObstacleIndex, box: Rect, support: LabelSupport | undefined): boolean {
+function collides(index: ObstacleIndex, box: Rect, support: LabelSupport | undefined,
+  overlayCounts = true): boolean {
   return index.some(box, item => {
+    if (item.overlay && !overlayCounts) return false;
     if (!item.segment) return rectDistance(box, item.bounds) < item.clearance + EPS;
     if (segmentRect(item.segment, box)) return true;
     const supporting = support?.kind === 'link-segment' && support.link === item.link && support.segment === item.index;
@@ -224,8 +233,15 @@ function shorten(widths: ReturnType<typeof prefixWidths>, limit: number): string
  * segment in descending length order, then the opposite side across that order, then the same two
  * passes with shortened text. Above and right are the deterministic first sides; ties break on the
  * source-to-target segment index.
+ *
+ * `overlayCounts` runs the whole ladder with drawn overlay runs as obstacles. The caller runs it
+ * that way first and only once more without, so a label moves off an overlay whenever it has
+ * anywhere to move to. The relaxed pass exists because the ladder does not slide a label along its
+ * run — it is the midpoint of a segment or nothing — and losing a label is a worse diagram than a
+ * mask cut in the line under it.
  */
-function placeLabel(index: ObstacleIndex, supported: Supported, text: string, shortenable: boolean): Placement | undefined {
+function placeLabel(index: ObstacleIndex, supported: Supported, text: string, shortenable: boolean,
+  overlayCounts: boolean): Placement | undefined {
   const ordered = supported.segments
     .map((segment, at) => ({ segment, at, length: segmentLength(segment) }))
     .filter(item => item.length > EPS)
@@ -248,7 +264,7 @@ function placeLabel(index: ObstacleIndex, supported: Supported, text: string, sh
         if (!measured.lines.length) continue;
         if (!shortened && widths && measured.width + 2 * LINK_LABEL_GEOMETRY.shortenMargin > length + EPS) continue;
         const { bounds, textRotation } = candidateBox(segment, supported.half, { width: measured.width, height: measured.height }, second);
-        if (collides(index, bounds, supported.support(at))) continue;
+        if (collides(index, bounds, supported.support(at), overlayCounts)) continue;
         const placement = { segment: at, bounds, textRotation, text: drawn, lines: measured.lines, lineHeight: measured.lineHeight };
         if (!shortened) return placement;
         if (!best || drawn.length > best.text.length) best = placement;
@@ -302,7 +318,9 @@ export function produceLinkLabels(model: LayoutModel): void {
   const produced: LayoutLabel[] = [], suppressed: string[] = [];
   const emit = (label: LayoutLabel, supported: Supported | undefined, shortenable: boolean): void => {
     const placement = supported && supported.segments.length
-      ? placeLabel(index, supported, label.text, shortenable) : undefined;
+      ? placeLabel(index, supported, label.text, shortenable, true)
+        ?? placeLabel(index, supported, label.text, shortenable, false)
+      : undefined;
     if (!placement) {
       produced.push(omitted(label));
       model.diagnostics.push(diagnostic('LINK_LABEL_OMITTED', 'warning',

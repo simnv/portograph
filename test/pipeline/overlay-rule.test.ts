@@ -60,11 +60,21 @@ describe('an overlay link is orthogonal in both renderers', () => {
       const before = points[index]!;
       expect(Math.abs(point.x - before.x) < EPS || Math.abs(point.y - before.y) < EPS).toBe(true);
     }
-    // Nothing between the two cleared ends reaches inside any node body or any pill, so the mask
-    // has nothing of this link to cut except the stub inside its own two pills.
+    // Nothing between the two cleared ends reaches inside any node body or any pill.
     for (const [index, point] of points.slice(2, -1).entries()) {
       for (const box of shapes(model)) expect(enters(points[index + 1]!, point, box)).toBe(false);
     }
+    // Review finding 3, stated rather than claimed away: one drawn label does cross the run, and the
+    // mask cuts the overlay under it. The `peer` label has nowhere else to go — the descent crosses
+    // the run it names at its midpoint, so both of the ladder's sides are covered — and a label that
+    // is drawn beats a line that is whole. Stage 9 moves a label off an overlay run wherever it can;
+    // `test/layout/link-labels.test.ts` holds that rule.
+    const labels = model.labels.filter(label => label.role === 'link' && !label.omitted && label.bounds);
+    expect(labels).toHaveLength(1);
+    const cut = points.slice(2, -1).filter((point, index) =>
+      enters(points[index + 1]!, point, labels[0]!.bounds!));
+    expect(cut).toHaveLength(1);
+    expect(labels[0]!.bounds!.height).toBeLessThan(12);
     expect(score(model).snapshot.passed).toBe(true);
   }, 60000);
 
@@ -74,6 +84,9 @@ describe('an overlay link is orthogonal in both renderers', () => {
     expect(points).toHaveLength(5);
     for (const [index, point] of points.slice(2, -1).entries()) {
       for (const box of shapes(model)) expect(enters(points[index + 1]!, point, box)).toBe(false);
+      for (const label of model.labels) {
+        if (!label.omitted && label.bounds) expect(enters(points[index + 1]!, point, label.bounds)).toBe(false);
+      }
     }
     // What the remark was about: the straight line was 65 px of which the mask left 9.5 px. The
     // drawn path is longer than the straight one now, and all of it but the two stubs is visible.
