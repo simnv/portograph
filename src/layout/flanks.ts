@@ -7,6 +7,7 @@ import { portId } from './skeleton-graph.js';
 import { moveGroup, validateSkeletonBands } from './skeleton-geometry.js';
 import { withLayoutMutation } from './mutation.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
+import { joinFanTrees } from './bundle-geometry.js';
 import { fitRegionGroup, placementWarning, rebuildRegions } from './regions.js';
 
 export interface FlankPair { link: LayoutLink; group: LayoutGroup; own: LayoutPort; peer: LayoutPort }
@@ -43,6 +44,7 @@ export function rebuildFlankPaths(model: LayoutModel): void {
     if (path) link.path = path;
     if (model.document.links[link.sourceIndex]?.route === undefined) link.technique = path ? 'straight' : 'orthogonal';
   }
+  joinFanTrees(model, candidates);
 }
 /**
  * Put primary bundle members in one compatible order on both facing sides. Only this block may

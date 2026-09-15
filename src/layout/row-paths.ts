@@ -5,6 +5,7 @@ import { EPS, length, segmentDistance, segmentRectDistance } from '../score/geom
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { groupConsumers } from '../score/model.js';
 import { portId } from './skeleton-graph.js';
+import { joinFanTrees } from './bundle-geometry.js';
 
 /**
  * Coordinate magnitude beyond which an obstacle is measured instead of rejected.
@@ -191,4 +192,5 @@ export function rebuildRowPaths(draft: LayoutModel): void {
     if (path) link.path = path;
     if (automatic(draft, link)) link.technique = path ? 'straight' : 'orthogonal';
   }
+  joinFanTrees(draft, candidates);
 }
