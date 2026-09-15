@@ -108,6 +108,29 @@ describe('overlay paths', () => {
       { x: 83, y: 41 }, { x: 83, y: 50 }, { x: 100, y: 50 }]);
   });
 
+  it('never walks back the way it came, however little the two heads differ', () => {
+    // Review finding 1. When the two cleared ends are less than one clearance apart along the
+    // source's normal, the single turn that carries on the way the source faces turns back toward
+    // its own pill head: it enters no box, ties in length with the clean turn and would win on
+    // order. A route that retraces is not a route, so the candidate is refused outright.
+    for (const gap of [0, 2, 3.9, 4, 6]) {
+      const ports = [{ node: 'a', name: 'p', side: 'bottom', anchor: { x: 20, y: 140 } },
+        { node: 'b', name: 'q', side: 'bottom', anchor: { x: 140, y: 140 + gap } }] as const;
+      const nodes = [{ id: 'a', bounds: { x: 0, y: 100, width: 60, height: 40 } },
+        { id: 'b', bounds: { x: 120, y: 100, width: 60, height: 40 + gap } }];
+      const below = 140 + gap + 13 + CLEARANCE;
+      // Below both heads, and the same polyline whichever end the author wrote first.
+      expect(path({ nodes, ports: [...ports],
+        links: [{ id: 'flow', from: 'b', to: 'a', layer: 'overlay',
+          points: [{ x: 140, y: 140 + gap }, { x: 20, y: 140 }] }] }))
+        .toEqual([{ x: 140, y: 140 + gap }, { x: 140, y: below }, { x: 20, y: below }, { x: 20, y: 140 }]);
+      expect(path({ nodes, ports: [...ports],
+        links: [{ id: 'flow', from: 'a', to: 'b', layer: 'overlay',
+          points: [{ x: 20, y: 140 }, { x: 140, y: 140 + gap }] }] }))
+        .toEqual([{ x: 20, y: 140 }, { x: 20, y: below }, { x: 140, y: below }, { x: 140, y: 140 + gap }]);
+    }
+  });
+
   it('leaves a port that draws no pill by the clearance beyond its node body', () => {
     // An anonymous port has no pill, so the box the link leaves is the node itself and the anchor is
     // already on its face. draw.io pins such an end to the same point, so the two renderers agree.

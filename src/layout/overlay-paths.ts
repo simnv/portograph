@@ -43,8 +43,8 @@ const compact = (points: readonly Point[]): Point[] =>
 /**
  * The same polyline with every point that turns nothing dropped. A point is dropped when it lies
  * **between** its two neighbours on one axis, which a point that doubles back does not — so a
- * candidate that reverses over its own pill keeps the reversal and is refused by the box test
- * rather than straightened into something it is not.
+ * candidate that walks back the way it came keeps the reversal and is refused by `reverses` rather
+ * than straightened into something it is not.
  */
 function straighten(points: readonly Point[]): Point[] {
   const out: Point[] = [];
@@ -130,6 +130,20 @@ function between(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers):
   ];
   const everySegment = (points: readonly Point[], blocked: (one: Point, two: Point) => boolean): boolean =>
     points.slice(1).every((point, index) => !blocked(points[index]!, point));
+  /**
+   * Whether the whole drawn polyline — the two stubs included — ever walks back along the way it
+   * came. A candidate can leave the source by the clearance and then turn back toward its own head,
+   * when the two cleared ends are less than one clearance apart along the source's normal: it enters
+   * no box, ties in length with the clean turn and would win on order. A route that retraces is not
+   * a route, and `route/validate` fails a routed path for exactly this.
+   */
+  const reverses = (points: readonly Point[]): boolean => {
+    const step = (one: Point, two: Point): Point =>
+      ({ x: Math.sign(two.x - one.x), y: Math.sign(two.y - one.y) });
+    const steps = points.slice(1).map((point, index) => step(points[index]!, point));
+    return steps.slice(1).some((one, index) =>
+      one.x === -steps[index]!.x && one.y === -steps[index]!.y && (one.x !== 0 || one.y !== 0));
+  };
   const clearOfAll = (points: readonly Point[]): boolean => everySegment(points, (one, two) => {
     const box = { x: Math.min(one.x, two.x), y: Math.min(one.y, two.y),
       width: Math.abs(two.x - one.x), height: Math.abs(two.y - one.y) };
@@ -138,8 +152,11 @@ function between(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers):
   const clearOfEnds = (points: readonly Point[]): boolean =>
     everySegment(points, (one, two) => boxes.some(box => enters(one, two, box)));
   // A way round can land on the line the two cleared points already share, and then it states a corner
-  // that is not one.
-  const candidates = ways.map(way => compact([from, ...way, to])).filter(axisAligned);
+  // that is not one. The reversal test reads the whole polyline, stubs included, because that is
+  // where the retrace lives; the box tests read the part between the cleared ends, because the
+  // stubs are the port's own reserved outward reach and cross nothing else.
+  const candidates = ways.map(way => compact([from, ...way, to]))
+    .filter(points => axisAligned(points) && !reverses(compact([head.anchor, ...points, tail.anchor])));
   const shortest = (clear: (points: readonly Point[]) => boolean): Point[] | undefined => {
     let best: { points: Point[]; length: number } | undefined;
     for (const points of candidates) {

@@ -196,6 +196,10 @@ export function validateRoutedPaths(model: LayoutModel, requireComplete = false)
       if (!equal(path.segments, overlayPath(model, link, blockers).segments)) {
         throw new Error(`Overlay path on ${link.id} is not the one its ports and their boxes state`);
       }
+      // The same rule every other path answers to: a route that walks back along a run it already
+      // drew is not a route. The comparison above already fixes the geometry, so this is the second
+      // reader of it — it fails the producer, not the model, if the rule ever states such a route.
+      retraces(link.id, path.segments);
       continue;
     }
     // A rule's own path is re-derived and compared by that rule; stage 8 owns every other one, and

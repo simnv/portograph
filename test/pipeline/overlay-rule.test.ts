@@ -102,6 +102,38 @@ describe('an overlay link is orthogonal in both renderers', () => {
     expect(score(model).snapshot.passed).toBe(true);
   }, 60000);
 
+  it('states one polyline for a pair of ports, whichever end the author wrote first', async () => {
+    // Review finding 1, through the whole pipeline. A route that turned back on itself by a quarter
+    // of a pixel used to survive here, and which end it turned back at depended on the order the
+    // author wrote the two ports in — so one diagram had two polylines and draw.io got two waypoints
+    // 0.25 px apart. `route/validate` now reads `retraces` over an overlay path as well.
+    const both = `portograph: 2
+groups: {upper: {tier: 0}, lower: {tier: 1}}
+nodes:
+  a: {group: upper, ports: [{name: d1, side: bottom}, {name: lo, side: left}]}
+  b: {group: lower, ports: [{name: u1, side: top}, {name: lo, side: left}]}
+  c: {group: lower, ports: [{name: lo, side: left}]}
+links:
+  - [a.d1, b.u1]
+  - [b.lo, c.lo, {route: overlay}]
+  - [REVERSIBLE, {route: overlay}]`;
+    const forward = await run(both.replace('REVERSIBLE', 'b.lo, a.lo'));
+    const backward = await run(both.replace('REVERSIBLE', 'a.lo, b.lo'));
+    // `link-3` is the third declaration, the one written both ways round.
+    const pick = (model: LayoutModel): Point[] => pointsOf(model.links.find(link => link.id === 'link-3')!);
+    expect(pick(forward)).toEqual([...pick(backward)].reverse());
+    for (const model of [forward, backward]) {
+      for (const link of model.links.filter(item => (item.layer ?? item.family) === 'overlay')) {
+        const points = pointsOf(link);
+        const steps = points.slice(1).map((point, index) =>
+          ({ x: Math.sign(point.x - points[index]!.x), y: Math.sign(point.y - points[index]!.y) }));
+        expect(steps.slice(1).some((one, index) =>
+          one.x === -steps[index]!.x && one.y === -steps[index]!.y)).toBe(false);
+      }
+      expect(score(model).snapshot.passed).toBe(true);
+    }
+  }, 60000);
+
   it('draws one geometry in both renderers, and states none of its own in either', async () => {
     const model = await run(fixture('drawio-direct-lines'));
     const link = overlayOf(model), points = pointsOf(link), canvas = model.canvas!;
