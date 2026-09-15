@@ -175,12 +175,16 @@ export function routeObstacles(model: LayoutModel): RouteObstacle[] {
   }
   // A label band reserves placement space, not a solid barrier across the whole group.
   // Its measured label is protected above, including against the group's own attachments.
+  //
+  // A lane obstructs its owner too. The corridor admits the owner's collinear run and nothing else
+  // (`laneRuns`), and that run is already the owner's own obstacle exemption below, so the owner
+  // needs no second exemption here. Without this the router treats the whole corridor as free space
+  // for the one link that must respect it most: measured, a gap crossed its own lane sideways and
+  // another descended 16 px off its centre, and the stitcher then refused geometry that occupied a
+  // reservation placement had made.
   for (const lane of model.lanes) {
     if (lane.layer === 'overlay') continue;
-    const owner = lane.owner;
-    const consumers = owner.kind === 'link' ? [owner.id]
-      : owner.kind === 'bundle' ? (model.bundles.find(bundle => bundle.id === owner.id)?.members ?? []) : [];
-    push({ id: lane.id, bounds: expand(lane.bounds, half), consumers: [...consumers] });
+    push({ id: lane.id, bounds: expand(lane.bounds, half), consumers: [] });
   }
   for (const bundle of model.bundles) {
     if (bundle.layer === 'overlay') continue;

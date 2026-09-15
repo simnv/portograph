@@ -256,7 +256,8 @@ may move and what it must therefore re-validate.
 For every link whose path must transit a tier it does not terminate in: reserve a **lane** —
 a vertical corridor of width `laneW = pillW + gap` — in the margin of the intermediate group on
 the side nearer the source x. Lanes have an **owner** (the link) and a vertical-run reservation;
-the lane is an obstacle to every *other* link. For a non-bundle owner the route segment through
+the lane is an obstacle to every link, the owner included. The owner enters it only as that
+vertical run, which stage 8 stitches back unchanged. For a non-bundle owner the route segment through
 the lane is fixed here. For a bundle member, 7a records only the owned lane x and extent; stage 7e
 consumes that reservation when it creates the member path. Capacity uses actual occupied geometry, measured pills, and participating strokes. Corridor width is
 `max(34, endpoint pill widths + 10, 20 + path stroke + maximum node stroke)` in pixels.
@@ -607,7 +608,23 @@ Registered as obstacles, each expanded once in the adapter and never in the mode
   coverage; the trimmed ends keep butt caps. A chain of 36 px or less protects nothing, which is
   the explicit limit of the trim constant;
 - **lanes**, **group and node labels**, **bundle envelopes** and model
-  obstacles, each expanded by the routed half stroke.
+  obstacles, each expanded by the routed half stroke;
+- **the reserved outward stem of every link no batch has routed yet**, covered by the same
+  `10 + (its stroke + widest routed stroke) / 2` clearance. A stem is left out on a node the current
+  batch attaches to as well, because two ports on one node side share that strip. These rectangles
+  are added per batch. They never enter the ownership exclusions, so they cannot change a batch. The
+  head-on approach to a lane is a reservation of the same kind and is **not** covered: measured over
+  322 diagrams, covering it repaired 8 more and broke 4, so it waits for the per-gap allocation
+  ADR-0015 rule 1 describes.
+
+**A lane obstructs its owner too.** The corridor admits the owner's collinear run and nothing else.
+Stage 8 stitches that run back. It never routes it. The owner therefore needs no exemption here.
+Without the obstacle the router treats the corridor as free space. Measured, one gap then crossed
+its own lane sideways. Another descended beside the centre. The stitcher refuses both.
+A gap that meets a lane starts or ends at a terminal of that lane. That terminal lies half the
+widest routed stroke inside the expanded rectangle. libavoid connects an endpoint inside a shape to
+that shape's boundary, so the run stays reachable. The approach checkpoint keeps the entry head-on.
+Its direction mask cannot carry the rule in this build. The mask is advisory (see below).
 
 A rectangle that lies wholly inside another is dropped before routing. libavoid's orthogonal
 visibility sweep assumes no obstacle is contained in another: a contained rectangle opens a false
@@ -622,9 +639,10 @@ routes around them. A left-edge sweep with two-dimensional prefix maxima finds s
 containers in O(S log² S) time and O(S log S) space. Exact duplicates keep their first input ID,
 and surviving shapes retain input order. An exactly contained attachment shape is an error.
 
-Ownership is exact. A link may pass only through the reservations it already owns: its own transit
-lanes, its own bundle envelope, its own reserved runs. Owning the endpoint group does not open a
-label band. Links whose exclusion sets differ cannot share one router, because the binding has no
+Ownership is exact. A link may pass only through the reservations it already owns: its own bundle
+envelope and its own reserved runs, its lane runs included. A transit lane is not one of them: the
+corridor holds the owner's run, and stage 8 stitches that run back rather than route it. Owning the
+endpoint group does not open a label band. Links whose exclusion sets differ cannot share one router, because the binding has no
 per-connector shape-ignore API, so they run as an ordered sequence of **ownership batches**, and
 every completed route becomes a protective obstacle for the batches after it.
 
