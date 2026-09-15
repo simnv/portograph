@@ -4,6 +4,8 @@ import { EPS, bottom, contains, horizontal, length, near, pointRect, right, same
 
 export interface Segment { segment: PathSegment; link: LayoutLink; index: number; stroke: number }
 export const refEqual = (a: PortRef, b: PortRef): boolean => a.node === b.node && a.ordinal === b.ordinal && a.name === b.name && a.anonymous === b.anonymous;
+/** Exactly the identity `refEqual` compares, as one map key, so an index can replace a scan. */
+export const refKey = (ref: PortRef): string => JSON.stringify([ref.node, ref.ordinal ?? null, ref.name ?? null, ref.anonymous ?? null]);
 export const endpoints = (link: LayoutLink): { from: PortRef; to: PortRef } => {
   if (link.attachments) return link.attachments;
   if (link.from.node !== undefined && link.to.node !== undefined) return { from: link.from, to: link.to };

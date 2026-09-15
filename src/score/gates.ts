@@ -1,7 +1,7 @@
-import type { LayoutModel, LayoutNode, PathSegment } from '../model/index.js';
+import type { LayoutModel, LayoutNode, PathSegment, Point } from '../model/index.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
 import { EPS, bottom, contains, horizontal, intersection, length, near, overlapSegment, rectDistance, rectOverlap, samePoint, segmentDistance, segmentRect, segmentRectDistance, vertical } from './geometry.js';
-import { anchorOnBoundary, barContact, bundlePair, endpoints, groupConsumers, incident, junctionFan, mergedRun, outward, port, refEqual, sharedStem } from './model.js';
+import { anchorOnBoundary, barContact, bundlePair, endpoints, groupConsumers, incident, junctionFan, mergedRun, outward, port, refEqual, refKey, sharedStem } from './model.js';
 import type { Segment } from './model.js';
 import type { GateId, GateResult, ScoreCounters } from './types.js';
 
@@ -36,11 +36,15 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
   const result: Record<GateId, GateResult> = { G1: gate(), G2: gate(), G3: gate(nodes.length > 300), G4: gate(), G5: gate(), G6: gate(), G7: gate(), G8: gate() };
   const fail = (id: GateId, code: string, elements: string[], message: string): void => { result[id].passed = false; result[id].violations.push({ code, elements, message }); };
   const nodeStroke = (n: LayoutNode): number => n.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node;
+  // `routed` holds one entry per segment, so "does this link have a routed segment?" was a scan of
+  // every segment; the set answers it once.
+  const routedLinks = new Set(routed.map(s => s.link));
   for (let i = 0; i < nodes.length; i++) {
     const a = nodes[i]!;
     const group = a.owner.kind === 'group' ? model.groups[a.owner.id] : undefined;
     if (!group || !group.nodes.includes(a.id) || !contains(group.bounds!, a.bounds!)) fail('G1', 'node-containment', [a.id], 'Node must lie inside its owning group');
-    for (const b of nodes.slice(i + 1)) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const b = nodes[j]!;
       if (rectOverlap(a.bounds!, b.bounds!)) fail('G1', 'node-overlap', [a.id, b.id], 'Node rectangles overlap');
       if (a.layer !== 'overlay' && b.layer !== 'overlay' && rectDistance(a.bounds!, b.bounds!) - (nodeStroke(a) + nodeStroke(b)) / 2 < 20 - EPS) fail('G6', 'node-clearance', [a.id, b.id], 'Node clearance is below 20 px');
     }
@@ -52,7 +56,10 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       fail('G1', 'group-containment', [group.id], 'Group must lie inside its tier band');
       fail('G8', 'group-tier', [group.id], 'Group must lie inside its tier band');
     }
-    for (const b of groups.slice(i + 1)) if (rectOverlap(group.bounds!, b.bounds!)) fail('G1', 'group-overlap', [group.id, b.id], 'Group rectangles overlap');
+    for (let j = i + 1; j < groups.length; j++) {
+      const b = groups[j]!;
+      if (rectOverlap(group.bounds!, b.bounds!)) fail('G1', 'group-overlap', [group.id, b.id], 'Group rectangles overlap');
+    }
   }
   const bands = [...model.tierBands].sort((a, b) => a.tier - b.tier);
   for (let i = 1; i < bands.length; i++) {
@@ -101,7 +108,10 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       && associatedPill.owner.kind === 'node' && associatedPill.owner.id === label.port.node
       && contains(associatedPill.bounds, label.bounds!);
     const hit = (other: string): void => { counters.labelHits++; fail('G3', 'label-collision', [label.id, other], 'Label intersects unrelated geometry'); };
-    for (const other of labels.slice(i + 1)) if (rectOverlap(label.bounds!, other.bounds!)) hit(other.id);
+    for (let j = i + 1; j < labels.length; j++) {
+      const other = labels[j]!;
+      if (rectOverlap(label.bounds!, other.bounds!)) hit(other.id);
+    }
     for (const node of nodes) {
       const owns = label.owner.kind === 'node' && label.owner.id === node.id;
       const ownedExtent = owns && (label.role === 'pill' ? containedOwnPill : contains(node.bounds!, label.bounds!));
@@ -150,7 +160,7 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       if (!samePoint(path[0]!.from, from.anchor!) || !samePoint(path.at(-1)!.to, to.anchor!)) fail('G7', 'endpoint-anchor', [link.id], 'Link endpoints must equal port anchors');
       for (let i = 1; i < path.length; i++) if (!samePoint(path[i - 1]!.to, path[i]!.from)) fail('G7', 'disconnected-path', [link.id], 'Consecutive routed segments must connect');
     }
-    if (!routed.some(s => s.link === link)) continue;
+    if (!routedLinks.has(link)) continue;
     if (!outward(from, path![0]!, true) || !outward(to, path!.at(-1)!, false) || length(path![0]!) < 15 - EPS || length(path!.at(-1)!) < 15 - EPS) fail('G5', 'port-stem', [link.id], 'Port stems must exit perpendicular and extend at least 15 px');
     // A declared diagonal is legal only on a member of a bundle that owns the segment (ADR-0017);
     // anywhere else `straight: true` is an unowned claim and the gate treats it as a bent path.
@@ -165,18 +175,36 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
     // its own and reserves geometry no stage measured.
     if (path!.filter(s => s.straight === true).length > 1) fail('G5', 'orthogonal-path', [link.id], 'A member may declare only one straight segment');
   }
+  // Every port's far anchors, recorded in one pass over the routed links. The port-order gate below
+  // reads this index; scanning every link for every port made the gate quadratic in the diagram.
+  // A link is seen from both of its ends, exactly as the gate saw it, and a link whose far port is
+  // missing contributes nothing, as before.
+  const farAnchors = new Map<string, Point[]>();
+  for (const link of model.links) {
+    if (!routedLinks.has(link)) continue;
+    const ends = endpoints(link);
+    for (const [near, far] of [[ends.from, ends.to], [ends.to, ends.from]] as const) {
+      const target = port(model, far);
+      if (!target) continue;
+      const at = refKey(near), list = farAnchors.get(at);
+      if (list) list.push(target.anchor!); else farAnchors.set(at, [target.anchor!]);
+    }
+  }
   for (const node of nodes) for (const side of ['top', 'right', 'bottom', 'left'] as const) {
+    const alongX = side === 'top' || side === 'bottom';
     const positions = node.ports.filter(p => p.side === side && p.authorOrder === undefined).flatMap(p => {
-      const peers = model.links.filter(l => routed.some(s => s.link === l)).flatMap(l => {
-        const ends = endpoints(l), other = refEqual(ends.from, p.ref) ? ends.to : refEqual(ends.to, p.ref) ? ends.from : undefined;
-        const target = other && port(model, other);
-        return target ? [side === 'top' || side === 'bottom' ? target.anchor!.x : target.anchor!.y] : [];
-      });
-      return peers.length ? [{ own: side === 'top' || side === 'bottom' ? p.anchor!.x : p.anchor!.y,
-        min: Math.min(...peers), max: Math.max(...peers) }] : [];
+      const peers = farAnchors.get(refKey(p.ref));
+      if (!peers?.length) return [];
+      let min = Infinity, max = -Infinity;
+      for (const anchor of peers) {
+        const at = alongX ? anchor.x : anchor.y;
+        if (at < min) min = at;
+        if (at > max) max = at;
+      }
+      return [{ own: alongX ? p.anchor!.x : p.anchor!.y, min, max }];
     });
-    for (let i = 0; i < positions.length; i++) for (const b of positions.slice(i + 1)) {
-      const a = positions[i]!;
+    for (let i = 0; i < positions.length; i++) for (let j = i + 1; j < positions.length; j++) {
+      const a = positions[i]!, b = positions[j]!;
       if (a.own < b.own - EPS && a.min > b.max + EPS || b.own < a.own - EPS && b.min > a.max + EPS)
         fail('G5', 'port-order', [node.id], 'Port order must match strictly separated far-end ranges unless authored');
     }
@@ -186,8 +214,8 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       fail('G5', 'author-port-order', [node.id], 'Physical port order reverses unequal authored keys');
   }
 
-  for (let i = 0; i < routed.length; i++) for (const b of routed.slice(i + 1)) {
-    const a = routed[i]!;
+  for (let i = 0; i < routed.length; i++) for (let j = i + 1; j < routed.length; j++) {
+    const a = routed[i]!, b = routed[j]!;
     if (a.link.id === b.link.id && Math.abs(a.index - b.index) <= 1) continue;
     // Axis-aligned pairs on the same axis, and any pair where a declared straight bundle member is
     // involved (ADR-0017): a diagonal has no axis, so its clearance is measured by distance against
