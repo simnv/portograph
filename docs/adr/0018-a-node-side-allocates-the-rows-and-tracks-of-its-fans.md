@@ -140,7 +140,35 @@ byte-identical.
 checkpoint, and no reproducer reaches it. A branch whose far port stands *behind* its own peel row
 keeps the sub-pitch jog to that port; that piece is the port's own approach, which stage 8 owns.
 
+**A track never steps past a sibling row.** Rule 2 says a track stays on the side of a sibling row
+its own far end is on, because stepping past one reorders the members against their endpoints. Where
+a wall leaves no slot on that side, the fan keeps the track rule 2 gave it and the gates report the
+node the branch meets. A gate failure is recoverable; a reordered bundle throws.
+
+**What is still left to stage 8.** A branch whose far port stands *beyond* the tree's common end
+stops at that end, and the run from there to the port is stage 8's. It cannot be reserved here: the
+depth beyond `fanEnd` is room `fanDepth` never reserved, which is exactly the failure option (b) was
+measured into and rejected for. Turning at the far port's outward checkpoint keeps that unreserved
+piece clear of the far node, which is what the defect above was about; reserving it outright is a
+reservation of depth, and it belongs with rule 3's first clause.
+
 **The first clause is still open.** "Stage 3 grows `sidePitch` and the node box" is not implemented,
 and `mutation.ts` still lets only the `flanks` rule change `sidePitch`. Nothing above needs it: a
 track moves along the side, not out of it, so it consumes no room `fanDepth` reserved. A fan that
-cannot find a clear track on its own side will need it.
+cannot find a clear track on its own side will need it, and so will a branch whose far port stands
+beyond the tree's end.
+
+## Amendment (2026-09-15, from ticket 37): a row gap holds two fans, not one fan and a stem
+
+A pinned row path whose two ports both carry a fan is the straight-through leaf of *both* trees, and
+each end splits the one path from its own side. `rowGap` reserved the deeper side's `fanEnd` plus the
+far side's **stem**, which is the room for one continuation, so the second split re-owned the stems
+the first had written and the first tree then claimed a run its own member no longer drew (G4, and a
+result that depended on the authored direction). The gap now also reserves `fanEnd + fanEnd` wherever
+a link joins a fan port on one side to a fan port on the other. Where that room is absent — a flank
+path, a gap another rule fixed — `joinFanTrees` joins the deeper tree only, and the other reports the
+member with `FAN_MEMBER_UNRESERVED`, which is the behaviour before ticket 37.
+
+Two fans that face each other across a gap still take one row, because ADR-0018 allocates per node
+side and two facing sides are two sides. That is ticket 46, and it is the same family as ticket 44
+one gap over.
