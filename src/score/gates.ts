@@ -1,6 +1,6 @@
-import type { LayoutModel, LayoutNode, PathSegment, Point } from '../model/index.js';
+import type { LayoutModel, LayoutNode, PathSegment, Point, Rect } from '../model/index.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
-import { EPS, bottom, contains, horizontal, intersection, length, near, overlapSegment, rectDistance, rectOverlap, samePoint, segmentDistance, segmentRect, segmentRectDistance, vertical } from './geometry.js';
+import { EPS, bottom, bounds, contains, horizontal, intersection, length, near, overlapSegment, rectDistance, rectOverlap, right, samePoint, segmentDistance, segmentRect, segmentRectDistance, vertical } from './geometry.js';
 import { anchorOnBoundary, barContact, bundlePair, endpoints, groupConsumers, incident, junctionFan, mergedRun, outward, port, refEqual, refKey, sharedStem } from './model.js';
 import type { Segment } from './model.js';
 import type { GateId, GateResult, ScoreCounters } from './types.js';
@@ -39,6 +39,29 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
   // `routed` holds one entry per segment, so "does this link have a routed segment?" was a scan of
   // every segment; the set answers it once.
   const routedLinks = new Set(routed.map(s => s.link));
+  // Every gate that pairs one segment or one label with one box fires only when the two are close,
+  // and each exact test is dear: two port lookups, a segment-to-rectangle distance, or both. A box
+  // grown by the clearance the test uses contains everything that could fire, so a pair it rejects
+  // needs no test at all. The loops still walk the model in model order, so the violations they
+  // report, and the order they report them in, do not change. The extra pixel covers the EPS the
+  // exact tests carry.
+  const segmentBounds = routed.map(item => bounds(item.segment));
+  const apart = (a: Rect, b: Rect, reach: number): boolean => a.x - right(b) > reach
+    || b.x - right(a) > reach || a.y - bottom(b) > reach || b.y - bottom(a) > reach;
+  let widestNodeStroke: number = DEFAULT_STROKE_WIDTHS.node;
+  for (const node of nodes) { const width = nodeStroke(node); if (width > widestNodeStroke) widestNodeStroke = width; }
+  // A named port's pill stands outside its node, so one node's whole block is governed by the union
+  // of its rectangle and its pills.
+  const nodeExtent = nodes.map(node => {
+    let box = node.bounds!;
+    for (const item of node.ports) {
+      if (!item.pill) continue;
+      const other = item.pill.bounds, x = Math.min(box.x, other.x), y = Math.min(box.y, other.y);
+      box = { x, y, width: Math.max(right(box), right(other)) - x, height: Math.max(bottom(box), bottom(other)) - y };
+    }
+    return box;
+  });
+  const labelNodeReach = Math.max(widestNodeStroke, DEFAULT_STROKE_WIDTHS.pill) / 2 + 1;
   for (let i = 0; i < nodes.length; i++) {
     const a = nodes[i]!;
     const group = a.owner.kind === 'group' ? model.groups[a.owner.id] : undefined;
@@ -67,9 +90,10 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
     if (a.tier === b.tier || bottom(a.bounds!) > b.bounds!.y + EPS) fail('G8', 'tier-order', [String(a.tier), String(b.tier)], 'Tier bands must be ordered and non-overlapping');
   }
   const crossedBars = new Set<string>();
-  for (const s of routed) {
+  for (const [index, s] of routed.entries()) {
+    const box = segmentBounds[index]!, reach = 10 + (s.stroke + widestNodeStroke) / 2 + 1;
     for (const node of nodes) {
-      if (node.layer === 'overlay') continue;
+      if (node.layer === 'overlay' || apart(box, node.bounds!, reach)) continue;
       const owned = incident(model, s, node.id), bar = barContact(model, s, node.id);
       const distance = segmentRectDistance(s.segment, node.bounds!);
       if (bar && distance <= EPS) crossedBars.add(`${s.link.id}:${node.id}`);
@@ -112,7 +136,9 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       const other = labels[j]!;
       if (rectOverlap(label.bounds!, other.bounds!)) hit(other.id);
     }
-    for (const node of nodes) {
+    for (let n = 0; n < nodes.length; n++) {
+      const node = nodes[n]!;
+      if (apart(label.bounds!, nodeExtent[n]!, labelNodeReach)) continue;
       const owns = label.owner.kind === 'node' && label.owner.id === node.id;
       const ownedExtent = owns && (label.role === 'pill' ? containedOwnPill : contains(node.bounds!, label.bounds!));
       if (node.layer !== 'overlay' && !ownedExtent && (rectDistance(label.bounds!, node.bounds!) < nodeStroke(node) / 2 - EPS || rectOverlap(label.bounds!, node.bounds!))) hit(node.id);
@@ -122,7 +148,11 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
         if (!ownPill && (rectOverlap(label.bounds!, p.pill.bounds) || rectDistance(label.bounds!, p.pill.bounds) < DEFAULT_STROKE_WIDTHS.pill / 2 - EPS)) hit(`pill:${node.id}:${p.ref.ordinal}`);
       }
     }
-    for (const s of routed) {
+    // A group title owns a link-free margin beyond its stroke-aware edge.
+    const margin = label.role === 'group' ? GROUP_LABEL_LINK_CLEARANCE : 0;
+    for (let k = 0; k < routed.length; k++) {
+      const s = routed[k]!;
+      if (apart(label.bounds!, segmentBounds[k]!, s.stroke / 2 + margin + 1)) continue;
       // A pill's own incident stem runs behind the pill text by construction.
       if (containedOwnPill && label.port && incident(model, s, label.port.node)
         && [endpoints(s.link).from, endpoints(s.link).to].some(ref => refEqual(ref, label.port!))) continue;
@@ -134,8 +164,6 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       const support = label.support;
       if (support?.kind === 'link-segment' && label.owner.kind === 'link' && label.owner.id === support.link
         && support.link === s.link.id && support.segment === s.index) continue;
-      // A group title owns a link-free margin beyond its stroke-aware edge.
-      const margin = label.role === 'group' ? GROUP_LABEL_LINK_CLEARANCE : 0;
       if (segmentRectDistance(s.segment, label.bounds!) < s.stroke / 2 + margin - EPS) hit(s.link.id);
     }
   }
