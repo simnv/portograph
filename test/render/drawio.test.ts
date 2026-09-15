@@ -595,21 +595,26 @@ links: []
     }
   }, 60000);
 
-  it('anchors a label to the segment it sits beside, not to the first that reaches it', async () => {
-    // Codex round 4: two positions can reach the same point exactly, one from the segment the label
-    // sits on and one from a parallel segment 200px away with a perpendicular of -200. Both drew
-    // the label in the right place, and only one of them kept it there when the shape moved.
-    const run = [point(100, 100), point(300, 100), point(300, 300), point(100, 300)];
-    const model = probe(await blank(), [{ id: 'facing', runs: [run], labels: [{ at: point(200, 320), support: 2 }] }]);
-    const xml = drawio(model, { labels: 'on-run' });
-    const all = cells(xml);
-    const edge = all.get(id('link', 'facing'))!;
-    expect(landing(xml, all, edge, edge)).toEqual({ x: 200, y: 300 });
-    // On its run means a perpendicular of zero — against the supporting segment, not against the
-    // one that faces it. Drag that segment 100px down and the label goes with it.
-    expect(Number(edge.geometry['y'])).toBeCloseTo(0, 9);
-    const moved = [run[0]!, run[1]!, point(300, 400), point(100, 400)];
-    expect(getPoint(moved, { x: Number(edge.geometry['x']), y: Number(edge.geometry['y']) }).y).toBe(400);
+  it('anchors a label to its supporting segment, not to a parallel one that reaches it', async () => {
+    // Codex rounds 4 and 5: two positions can reach the same point, one from the segment stage 9
+    // measured the label against and one from a parallel segment 200px away with a perpendicular
+    // of -200. Both draw the label in the right place, and only one keeps it there when the shape
+    // moves. Whole lengths made it a tie; a fractional length let the far segment win outright.
+    for (const depth of [300, 300.4]) {
+      const run = [point(100, 100), point(300, 100), point(300, depth), point(100, depth)];
+      const model = probe(await blank(),
+        [{ id: 'facing', runs: [run], labels: [{ at: point(200, depth + 20), support: 2 }] }]);
+      const xml = drawio(model, { labels: 'on-run' });
+      const all = cells(xml);
+      const edge = all.get(id('link', 'facing'))!;
+      expect(landing(xml, all, edge, edge)).toEqual({ x: 200, y: depth });
+      // On its run means a perpendicular of zero — against the supporting segment, not against the
+      // one that faces it. Drag that segment 100px down and the label goes with it.
+      expect(Number(edge.geometry['y'])).toBeCloseTo(0, 9);
+      const moved = [run[0]!, run[1]!, point(300, depth + 100), point(100, depth + 100)];
+      expect(getPoint(moved, { x: Number(edge.geometry['x']), y: Number(edge.geometry['y']) }).y)
+        .toBeCloseTo(depth + 100, 9);
+    }
   }, 60000);
 
   it('reaches a label beyond a run shorter than a pixel without an absolute offset', async () => {

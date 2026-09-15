@@ -723,6 +723,17 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     return best;
   };
 
+  /**
+   * The supporting segment's place in a run's own polyline, when that run really draws it. It is
+   * the segment stage 9 measured the label against, and stating the label against it is what keeps
+   * the label on it when the diagram is edited.
+   */
+  const supportIn = (label: LayoutLabel, run: Run): number | undefined => {
+    if (label.support?.kind !== 'link-segment') return undefined;
+    const at = label.support.segment;
+    return at >= run.first && at <= run.last ? at - run.first : undefined;
+  };
+
   const taken = new Set<string>();
   for (const link of drawn) {
     const layer = effectiveLayer(link) === 'overlay' ? layerId('overlay') : layerId('links');
@@ -754,7 +765,8 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const id = shown[index]!.id;
       // The connector's own label, on the run that draws the segment it was measured against.
       const carried = mine && index === mineRun
-        ? { label: mine, at: edgeLabel(shown[index]!.points, labelPoint(mine, link)) } : undefined;
+        ? { label: mine, at: edgeLabel(shown[index]!.points, labelPoint(mine, link), supportIn(mine, shown[index]!)) }
+        : undefined;
       if (carried) taken.add(carried.label.id);
       // A connector holds one polyline; a path whose segment chain breaks becomes one connector per
       // run, each dangling where the chain did. Only the ends that are really ends are pinned.
@@ -819,7 +831,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     }
     const run = ids[runFor(label, link, ids)]!;
     const at = labelPoint(label, link);
-    const relativeAt = edgeLabel(run.points, at);
+    const relativeAt = edgeLabel(run.points, at, supportIn(label, run));
     cells.push(element('mxCell', {
       id: claim(cellId('linkLabel', label.id)), value: htmlText(label.lines ?? [label.text]),
       style: styleString(['edgeLabel'], {
@@ -997,14 +1009,19 @@ function decodeEdgeLabel(points: readonly Point[], label: EdgeLabel): Point {
  * (no arc length reaches it), a label at a corner (the joint decodes onto the later segment, whose
  * normal points elsewhere), and a zero-length polyline (there is no direction at all).
  *
- * Every whole-pixel position that could carry the label is read back the way draw.io reads it, and
- * the one leaving the smallest remainder wins. Between two that leave the same remainder the one
- * nearer the line wins, because that is the segment the label really sits beside and the one it
- * keeps following. The result is exact wherever the format allows it and exact by remainder
+ * Every whole-pixel position that could carry the label is read back the way draw.io reads it.
+ * `support` names the segment stage 9 measured the label against, and a position that decodes onto
+ * that segment wins outright: the label belongs to that segment and must keep following it, where
+ * a position on a parallel segment far away can draw the label in the same place today and leave
+ * it behind tomorrow. The remainder it costs is the rounding alone, under half a pixel, as long as
+ * the label really was measured beside the segment it names — which is what stage 9 gives. A label
+ * measured past the end of its own supporting segment pays the whole overshoot instead, and that
+ * is the honest price of saying which segment carries it. Otherwise the smallest remainder wins,
+ * and between two equal remainders the one nearer the line. The result is exact wherever the format allows it and exact by remainder
  * everywhere else. The work is linear in the number of segments: the candidates are read in
  * ascending order and draw.io's own walk only ever moves forward, so it is walked once.
  */
-function edgeLabel(points: readonly Point[], at: Point): EdgeLabel {
+function edgeLabel(points: readonly Point[], at: Point, support?: number): EdgeLabel {
   const spans = spansOf(points);
   const total = spans.reduce((sum, span) => sum + span, 0);
   const start = points[0] ?? at;
@@ -1030,8 +1047,12 @@ function edgeLabel(points: readonly Point[], at: Point): EdgeLabel {
     }
     walked += span;
   }
+  type Candidate = { label: EdgeLabel; left: number; beside: number };
+  const closer = (candidate: Candidate, than: Candidate | undefined): boolean =>
+    than === undefined || candidate.left < than.left - EPS
+    || Math.abs(candidate.left - than.left) <= EPS && candidate.beside < than.beside - EPS;
   let span = spans[0] ?? 0, before = 0, index = 1;
-  let best: { label: EdgeLabel; left: number; beside: number } | undefined;
+  let best: Candidate | undefined, onSupport: Candidate | undefined;
   for (const x of [...wanted].sort((a, b) => a - b)) {
     // Read the position back the way draw.io will, so the chosen segment is the one it will choose.
     const dist = Math.round((x / 2 + 0.5) * total);
@@ -1048,14 +1069,14 @@ function edgeLabel(points: readonly Point[], at: Point): EdgeLabel {
     const y = span === 0 ? 0 : ((at.x - on.x) * dy - (at.y - on.y) * dx) / span;
     const left = span === 0 ? Math.hypot(at.x - on.x, at.y - on.y)
       : Math.abs(((at.x - on.x) * dx + (at.y - on.y) * dy) / span);
-    if (best === undefined || left < best.left - EPS
-      || Math.abs(left - best.left) <= EPS && Math.abs(y) < best.beside - EPS) {
-      best = { label: { x, y }, left, beside: Math.abs(y) };
-    }
+    const candidate = { label: { x, y }, left, beside: Math.abs(y) };
+    if (closer(candidate, best)) best = candidate;
+    // A zero-length supporting segment states no direction, so it can carry nothing.
+    if (index - 1 === support && span > 0 && closer(candidate, onSupport)) onSupport = candidate;
   }
-  const label = best!.label;
-  if (best!.left <= EPS) return label;
-  const drawn = decodeEdgeLabel(points, label);
-  return { ...label, offset: { x: at.x - drawn.x, y: at.y - drawn.y } };
+  const chosen = onSupport ?? best!;
+  if (chosen.left <= EPS) return chosen.label;
+  const drawn = decodeEdgeLabel(points, chosen.label);
+  return { ...chosen.label, offset: { x: at.x - drawn.x, y: at.y - drawn.y } };
 }
 
