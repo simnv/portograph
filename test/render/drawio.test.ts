@@ -570,3 +570,252 @@ describe('node text', () => {
     expect(secondTop(trailing)).toBeCloseTo(secondTop(model), 9);
   }, 60000);
 });
+
+describe('link labels', () => {
+  /**
+   * `mxGraphView.getPoint`, written out here from what drawio-desktop 31.4.5 really does rather
+   * than borrowed from the exporter, so a test can say where a label will land. Two properties of
+   * it are what these cases are about: the arc-length position is rounded to a **whole pixel**
+   * before the walk along the polyline, and a position that lands on a joint decodes onto the
+   * *later* segment — and then takes that segment's normal, not the earlier one's.
+   */
+  const getPoint = (points: readonly Point[], at: { x: number; y: number; offset?: Point }): Point => {
+    const spans = points.slice(1).map((point, index) => Math.hypot(point.x - points[index]!.x, point.y - points[index]!.y));
+    const total = spans.reduce((sum, span) => sum + span, 0);
+    const dist = Math.round((at.x / 2 + 0.5) * total);
+    let span = spans[0] ?? 0, walked = 0, index = 1;
+    while (dist >= Math.round(walked + span) && index < points.length - 1) {
+      walked += span;
+      span = spans[index]!;
+      index += 1;
+    }
+    const from = points[index - 1]!, to = points[index]!;
+    const dx = to.x - from.x, dy = to.y - from.y;
+    const factor = span === 0 ? 0 : (dist - walked) / span;
+    return {
+      x: from.x + dx * factor + (span === 0 ? 0 : dy / span) * at.y + (at.offset?.x ?? 0),
+      y: from.y + dy * factor - (span === 0 ? 0 : dx / span) * at.y + (at.offset?.y ?? 0),
+    };
+  };
+
+  /** A cell's box in page space: a child geometry is always relative to its parent's top-left. */
+  const absolute = (all: Map<string, Cell>, key: string): { x: number; y: number; width: number; height: number } => {
+    let at: Cell | undefined = all.get(key), x = 0, y = 0;
+    while (at) {
+      x += Number(at.geometry['x'] ?? 0);
+      y += Number(at.geometry['y'] ?? 0);
+      at = at.parent === undefined ? undefined : all.get(at.parent);
+    }
+    return { ...box(all.get(key)!), x, y };
+  };
+
+  /**
+   * The polyline draw.io really draws for a connector: the exported waypoints, with each pinned end
+   * resolved against the cell it is pinned to. A pinned end sits on the pill's outward edge, which
+   * is not where the model's own polyline starts — and an edge label is a fraction of *this*.
+   */
+  const drawnBy = (xml: string, all: Map<string, Cell>, cell: Cell): Point[] => {
+    const end = (as: 'sourcePoint' | 'targetPoint'): Point => {
+      const body = new RegExp(`<mxCell id="${cell.id.replace(/[%]/g, '\\$&')}"[\\s\\S]*?</mxCell>`).exec(xml)![0];
+      const match = new RegExp(`<mxPoint x="([^"]*)" y="([^"]*)" as="${as}"/>`).exec(body)!;
+      return { x: Number(match[1]), y: Number(match[2]) };
+    };
+    const pin = (key: string | undefined, prefix: 'exit' | 'entry'): Point | undefined => {
+      if (key === undefined || cell.style[`${prefix}X`] === undefined) return undefined;
+      const on = absolute(all, key);
+      return { x: on.x + Number(cell.style[`${prefix}X`]) * on.width,
+        y: on.y + Number(cell.style[`${prefix}Y`]) * on.height };
+    };
+    return [pin(cell.source, 'exit') ?? end('sourcePoint'), ...cell.points,
+      pin(cell.target, 'entry') ?? end('targetPoint')];
+  };
+
+  /** Where a label carried by `edge` lands, read back the way draw.io reads it. */
+  const landing = (xml: string, all: Map<string, Cell>, edge: Cell, label: Cell): Point =>
+    getPoint(drawnBy(xml, all, edge), {
+      x: Number(label.geometry['x'] ?? 0), y: Number(label.geometry['y'] ?? 0),
+      ...(label.offset ? { offset: label.offset } : {}),
+    });
+
+  const point = (x: number, y: number): Point => ({ x, y });
+
+  /**
+   * A model holding nothing but the given links and their labels, so a run can be stated outright.
+   * The canvas starts at the origin, which keeps the exported numbers the same as the written ones.
+   */
+  const probe = (base: LayoutModel, cases: readonly {
+    id: string; runs: Point[][]; labels: { at: Point; support?: number }[];
+  }[]): LayoutModel => ({
+    ...base,
+    document: { ...base.document, nodes: {}, groups: {}, links: cases.map(() => ({})) as never },
+    nodes: {}, groups: {}, lanes: [], labelBands: [], tierBands: [], bundles: [], junctions: [],
+    barDrops: [], groupLinks: [], regions: [], obstacles: [],
+    canvas: { x: 0, y: 0, width: 800, height: 700 },
+    links: cases.map((item, index) => {
+      const owner = { kind: 'link', id: item.id } as const;
+      return {
+        id: item.id, sourceIndex: index, owner,
+        from: { node: 'from', name: 'a', ordinal: 1 }, to: { node: 'to', name: 'b', ordinal: 1 },
+        family: 'routed', layer: 'routed', technique: 'orthogonal',
+        path: { owner, layer: 'routed', fixed: true, segments: item.runs.flatMap(run =>
+          run.slice(1).map((to, step) => ({ from: run[step]!, to, owner }))) },
+      } as const;
+    }),
+    labels: cases.flatMap(item => item.labels.map((label, index) => ({
+      id: `${item.id}-${index}`, owner: { kind: 'link', id: item.id } as const,
+      layer: 'routed' as const, role: 'link' as const,
+      text: `${item.id}-${index}`, lines: [`${item.id}-${index}`], fontSize: 9, fontWeight: 400 as const,
+      bounds: { x: label.at.x - 20, y: label.at.y - 6, width: 40, height: 12 },
+      ...(label.support === undefined ? {}
+        : { support: { kind: 'link-segment' as const, link: item.id, segment: label.support } }),
+    }))),
+  });
+
+  const blank = (): Promise<LayoutModel> => pipeline(`
+portograph: 2
+groups: {g: {tier: 0}}
+nodes: {a: {group: g}}
+links: []
+`);
+
+  it('states a label against the polyline draw.io draws, terminals included', async () => {
+    // Codex round 3: the fractions were computed from the model's own polyline, whose ends are the
+    // port anchors — but the exporter moves each pinned end onto the pill's outward edge, so
+    // draw.io resolved the same fraction of a shorter line and the label slid along the run.
+    const model = await pipeline(fixture('drawio-constructs'));
+    const label = model.labels.find(item => item.role === 'link' && !item.omitted
+      && item.support?.kind === 'link-segment')!;
+    const owner = (label.owner as { id: string }).id;
+    const link = model.links.find(item => item.id === owner)!;
+    const xml = drawio(model, { labels: 'measured' });
+    const all = cells(xml);
+    const edge = all.get(id('link', owner))!;
+
+    const reserved = [link.path!.segments[0]!.from, ...link.path!.segments.map(segment => segment.to)]
+      .map(at => ({ x: at.x - model.canvas!.x, y: at.y - model.canvas!.y }));
+    const drawn = drawnBy(xml, all, edge);
+    // The case is only worth making if the two polylines really do differ at the ends.
+    expect(drawn[0]).not.toEqual(reserved[0]);
+    expect(drawn.length).toBe(reserved.length);
+    // `measured` asks for the box stage 9 placed, so that centre is what draw.io must resolve to.
+    const want = { x: label.bounds!.x + label.bounds!.width / 2 - model.canvas!.x,
+      y: label.bounds!.y + label.bounds!.height / 2 - model.canvas!.y };
+    expect(landing(xml, all, edge, edge).x).toBeCloseTo(want.x, 9);
+    expect(landing(xml, all, edge, edge).y).toBeCloseTo(want.y, 9);
+    // Read against the reserved polyline instead — what the exporter used to state — and the same
+    // numbers land somewhere else. That difference is the whole of this finding.
+    const wrong = getPoint(reserved, { x: Number(edge.geometry['x']), y: Number(edge.geometry['y']),
+      ...(edge.offset ? { offset: edge.offset } : {}) });
+    expect(Math.hypot(wrong.x - want.x, wrong.y - want.y)).toBeGreaterThan(1);
+  }, 60000);
+
+  it('keeps a residual offset for a position the relative pair cannot reach', async () => {
+    // Codex round 3: an arc-length fraction clamps at an endpoint, a corner decodes onto the later
+    // segment and takes its normal, and a zero-length polyline has no direction at all. Each loses
+    // part of the measured displacement, and the loss was silent. The relative pair still carries
+    // everything it can — that is what makes a label follow its connector — and `offset` carries
+    // only the remainder.
+    const cases = [
+      { id: 'inside', runs: [[point(100, 100), point(300, 100)]], labels: [{ at: point(180, 80) }] },
+      { id: 'beyond', runs: [[point(100, 180), point(300, 180)]], labels: [{ at: point(350, 160) }] },
+      { id: 'corner', runs: [[point(500, 250), point(700, 250), point(700, 350)]],
+        labels: [{ at: point(700, 230) }] },
+      { id: 'zero-first', runs: [[point(100, 400), point(100, 400), point(300, 400)]],
+        labels: [{ at: point(100, 380) }] },
+      { id: 'zero-total', runs: [[point(400, 400), point(400, 400)]], labels: [{ at: point(440, 380) }] },
+    ];
+    const xml = drawio(probe(await blank(), cases), { labels: 'measured' });
+    const all = cells(xml);
+    for (const item of cases) {
+      const edge = all.get(id('link', item.id))!;
+      const at = landing(xml, all, edge, edge);
+      const want = item.labels[0]!.at;
+      expect([item.id, at.x, at.y]).toEqual([item.id, want.x, want.y]);
+      // `x` stays a fraction of the whole, as the format states it.
+      expect(Number(edge.geometry['x'])).toBeGreaterThanOrEqual(-1);
+      expect(Number(edge.geometry['x'])).toBeLessThanOrEqual(1);
+    }
+    // An ordinary interior position needs no remainder at all, so one is not written.
+    expect(all.get(id('link', 'inside'))!.offset).toBeUndefined();
+    // The corner label is north of the joint, which only the eastbound segment's normal reaches.
+    // Stating the position *at* the joint would hand it to the southbound segment, whose normal
+    // points east, so the arc length steps back one whole pixel and the remainder is that pixel.
+    expect(all.get(id('link', 'corner'))!.offset).toEqual({ x: 1, y: 0 });
+  }, 60000);
+
+  it('attaches a label to the connector that draws its supporting segment', async () => {
+    // Codex round 3: a path whose segment chain breaks becomes one connector per run, and every
+    // label went to run 0 — so a label supported by a later run was stated against a polyline that
+    // does not contain it, 300px away in the reproducer.
+    const runs = [[point(100, 500), point(200, 500)], [point(400, 500), point(600, 500)]];
+    const model = probe(await blank(), [
+      { id: 'own', runs, labels: [{ at: point(500, 480), support: 1 }] },
+      { id: 'children', runs,
+        labels: [{ at: point(150, 480), support: 0 }, { at: point(500, 480), support: 1 }] },
+    ]);
+    const xml = drawio(model, { labels: 'measured' });
+    const all = cells(xml);
+    // The connector's own label, carried by the run that draws segment 1.
+    const later = all.get(id('link', 'own', '1'))!;
+    expect(later.value).toBe('own-0');
+    expect(all.get(id('link', 'own', '0'))!.value).toBeUndefined();
+    expect(landing(xml, all, later, later)).toEqual({ x: 500, y: 480 });
+    // A child label follows the same rule: two eligible labels on one link are both children, and
+    // each belongs to the connector that draws the segment it was measured against.
+    for (const [index, want] of [point(150, 480), point(500, 480)].entries()) {
+      const child = all.get(id('linkLabel', `children-${index}`))!;
+      expect(child.parent).toBe(id('link', 'children', String(index)));
+      expect(landing(xml, all, all.get(child.parent!)!, child)).toEqual(want);
+    }
+  }, 60000);
+
+  it('anchors a label to its supporting segment, not to a parallel one that reaches it', async () => {
+    // Codex rounds 4 and 5: two positions can reach the same point, one from the segment stage 9
+    // measured the label against and one from a parallel segment 200px away with a perpendicular
+    // of -200. Both draw the label in the right place, and only one keeps it there when the shape
+    // moves. Whole lengths made it a tie; a fractional length let the far segment win outright.
+    for (const depth of [300, 300.4]) {
+      const run = [point(100, 100), point(300, 100), point(300, depth), point(100, depth)];
+      const model = probe(await blank(),
+        [{ id: 'facing', runs: [run], labels: [{ at: point(200, depth + 20), support: 2 }] }]);
+      const xml = drawio(model, { labels: 'on-run' });
+      const all = cells(xml);
+      const edge = all.get(id('link', 'facing'))!;
+      expect(landing(xml, all, edge, edge)).toEqual({ x: 200, y: depth });
+      // On its run means a perpendicular of zero — against the supporting segment, not against the
+      // one that faces it. Drag that segment 100px down and the label goes with it.
+      expect(Number(edge.geometry['y'])).toBeCloseTo(0, 9);
+      const moved = [run[0]!, run[1]!, point(300, depth + 100), point(100, depth + 100)];
+      expect(getPoint(moved, { x: Number(edge.geometry['x']), y: Number(edge.geometry['y']) }).y)
+        .toBeCloseTo(depth + 100, 9);
+    }
+  }, 60000);
+
+  it('reaches a label beyond a run shorter than a pixel without an absolute offset', async () => {
+    // Codex round 4: the arc length was held to whole pixels inside the run, but draw.io rounds the
+    // fraction it is given, so x=1 on a 0.8px run resolves a fraction past the last point. Holding
+    // the candidates short of that spent an absolute offset on a position the pair could reach.
+    const model = probe(await blank(), [
+      { id: 'short', runs: [[point(100, 100), point(100.8, 100)]], labels: [{ at: point(101, 120) }] },
+    ]);
+    const all = cells(drawio(model, { labels: 'measured' }));
+    expect(all.get(id('link', 'short'))!.offset).toBeUndefined();
+    expect(Number(all.get(id('link', 'short'))!.geometry['x'])).toBeLessThanOrEqual(1);
+  }, 60000);
+
+  it('states a label in time linear in the length of its run', async () => {
+    // Codex round 4: every candidate position walked the whole polyline, and the candidates grow
+    // with it, so a 500-segment path cost 37x what it did before. The candidates are read in
+    // ascending order and draw.io's walk only moves forward, so one walk serves them all.
+    const long = (count: number): Point[] =>
+      Array.from({ length: count + 1 }, (_, step) => point(30 * step, 100 + 30 * (step % 2)));
+    const model = probe(await blank(), Array.from({ length: 60 }, (_, index) => ({
+      id: `long-${index}`, runs: [long(400)], labels: [{ at: point(6000.3, 130.2) }],
+    })));
+    const started = Date.now();
+    const all = cells(drawio(model, { labels: 'measured' }));
+    // Generous by design: the point is the shape of the growth, not the machine it ran on.
+    expect(Date.now() - started).toBeLessThan(4000);
+    expect(all.get(id('link', 'long-0'))!.value).toBe('long-0-0');
+  }, 60000);
+});
