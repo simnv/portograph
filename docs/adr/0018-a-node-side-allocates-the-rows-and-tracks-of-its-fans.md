@@ -132,8 +132,15 @@ every node standing in the corridor that run crosses.** Three parts, all in 7e:
    its own peel row. Ending it at the common end beyond that leaves stage 8 to retrace the reserved
    run to come back, which `validateRoutedPaths` rejects outright.
 
-Stage 8 is then left with the port's own approach and nothing else. The approved golden is
-byte-identical.
+Stage 8 is then left with the port's own approach, and with whatever lies beyond the fan's own
+depth. The two limits are named below.
+
+A branch stops where its far port's own approach *begins*, not at that port: a port that faces the
+side is approached along the side's normal, so its approach begins one router stem short of it. An
+approach that begins behind the branch's peel row cannot be reached by travelling outward at all;
+such a branch hands over on its peel row while its own track still travels towards the far port, and
+keeps the tree's common end otherwise, so that it hands over pointing outward with room to turn
+rather than on the corner of its own descent.
 
 **Scope.** This is `crossBundleFans`, the plain-fan producer, as rule 2 is. `bundleFans`' own
 `outputs` map is untouched: a bundle's members reach a channel their bundle placed, not a far port's
@@ -172,3 +179,19 @@ member with `FAN_MEMBER_UNRESERVED`, which is the behaviour before ticket 37.
 Two fans that face each other across a gap still take one row, because ADR-0018 allocates per node
 side and two facing sides are two sides. That is ticket 46, and it is the same family as ticket 44
 one gap over.
+
+## Limits of rule 3 as built (2026-09-15, from the in-house review of tickets 37 and 45)
+
+1. **A track is tested, a run is not.** `blockedTracks` measures the coordinate a branch turns at
+   against the nodes and the reserved attachment stems in the corridor. It does not measure the
+   descent from the port to that coordinate, nor the outward run to where the branch stops.
+   `legClear` (`sides-two.ts`) is the check that measures a whole leg and is not used here.
+2. **A side port never aims at its own lane.** `laneX` reads a lane only for a top or bottom port, so
+   a branch out of a left or right side that transits a tier descends on its fan's row instead of on
+   the lane reserved for it, and stage 8 climbs back. Measured: a descent at x = 181 beside a lane at
+   x = 166, with the router climbing 215 px; the same on `main`, so it is not this work's, but the
+   sentence above would otherwise claim more than the rule does.
+3. **A gate failure is recoverable and a throw is not, and the room this reserves can turn one into
+   the other.** Reserving `fanEnd + fanEnd` in a row gap moves the nodes beside it, and on one
+   measured shape that move puts two top ports of one node across another fan's row, which stage 8
+   cannot route (`Routed gap does not meet its reserved endpoints`). Ticket 46 carries it.
