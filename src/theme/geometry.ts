@@ -58,8 +58,24 @@ export const GROUP_LABEL_LINK_CLEARANCE = 8;
  */
 export const GROUP_EDGE_LINK_CLEARANCE = 10;
 
-/** The widest routed stroke a placement must keep clear; reservations may not assume less. */
+/**
+ * The widest routed stroke a placement must keep clear; reservations may not assume less.
+ *
+ * Memoised on the link array, because placement asks for this number inside per-node, per-port and
+ * per-pair loops, and the scan is over every link. One array identity has one answer: `family`,
+ * `layer` and `strokeWidth` are resolved in stage 1 and the mutation transaction holds them equal
+ * from then on, and a path built later carries its own link's width (`pathStrokeWidth`).
+ */
+const widestRoutedStroke = new WeakMap<readonly LayoutLink[], number>();
 export function routedStrokeWidth(model: Pick<LayoutModel, 'links'>): number {
-  return Math.max(DEFAULT_STROKE_WIDTHS.path,
-    ...model.links.filter(link => (link.layer ?? link.family) !== 'overlay').map(linkStrokeWidth));
+  const memo = widestRoutedStroke.get(model.links);
+  if (memo !== undefined) return memo;
+  let widest: number = DEFAULT_STROKE_WIDTHS.path;
+  for (const link of model.links) {
+    if ((link.layer ?? link.family) === 'overlay') continue;
+    const width = linkStrokeWidth(link);
+    if (width > widest) widest = width;
+  }
+  widestRoutedStroke.set(model.links, widest);
+  return widest;
 }

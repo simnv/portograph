@@ -60,10 +60,25 @@ function measurement(model: LayoutModel, groupId: string) {
     { fontSize: GROUP_LABEL_GEOMETRY.fontSize, weight: GROUP_LABEL_GEOMETRY.fontWeight });
 }
 
-/** Widest routed stroke this placement must keep clear; stage 8 may not exceed it. */
+/**
+ * Widest routed stroke this placement must keep clear; stage 8 may not exceed it.
+ *
+ * Memoised on the link array for the same reason as `routedStrokeWidth`: every reservation that is
+ * stroke-aware asks for this number, many of them inside per-port or per-pair loops, and `layer`
+ * and `strokeWidth` cannot change while one link array lives.
+ */
+const widestRoutedStroke = new WeakMap<readonly LayoutModel['links'][number][], number>();
 export function routedStroke(model: LayoutModel): number {
-  return Math.max(DEFAULT_STROKE_WIDTHS.path, ...model.links.filter(link => link.layer === 'routed')
-    .map(linkStrokeWidth));
+  const memo = widestRoutedStroke.get(model.links);
+  if (memo !== undefined) return memo;
+  let widest: number = DEFAULT_STROKE_WIDTHS.path;
+  for (const link of model.links) {
+    if (link.layer !== 'routed') continue;
+    const width = linkStrokeWidth(link);
+    if (width > widest) widest = width;
+  }
+  widestRoutedStroke.set(model.links, widest);
+  return widest;
 }
 function strokeAllowance(model: LayoutModel): number { return routedStroke(model) / 2; }
 
