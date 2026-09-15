@@ -1,0 +1,35 @@
+# Expected: An overlay link that cannot go round every shape. Both loopback ports face left and
+# Border B's own body lies between them, so none of the eight ways the two pill boxes offer clears
+# every node and pill. The rule falls back one step and takes the shortest way that clears its own
+# two pill boxes: out of each pill head by the clearance, and one run across above both of them,
+# which crosses Border B. The SVG mask keeps that body readable, as it did before the rule existed.
+# Every gate passes.
+# Test-only input owned by synthetics-review ticket 01; the whole pipeline runs, so no stage
+# precondition is needed.
+portograph: 2
+groups:
+  upper: { tier: 0, label: Upper }
+  lower: { tier: 1, label: Lower }
+nodes:
+  a:
+    group: upper
+    class: router
+    label: Router A
+    ports:
+      - { name: d1, side: bottom, class: downlink }
+  b:
+    group: lower
+    class: tbr
+    label: Border B
+    ports:
+      - { name: u1, side: top, class: uplink }
+      - { name: lo, side: left, class: loopback }
+  c:
+    group: lower
+    class: rr
+    label: Reflector C
+    ports:
+      - { name: lo, side: left, class: loopback }
+links:
+  - [a.d1, b.u1]
+  - [b.lo, c.lo, { route: overlay }]
