@@ -12,6 +12,10 @@
 # it has, to the right of `c`. 7a therefore passes tier 2 on `c`'s right (ticket 03): the corridor
 # takes the side that faces the target, and `c` moves into the margin the plan opens. The two runs
 # no longer share the column they crossed on, and the diagram has no crossing.
+#
+# `d` is still not under that corridor, and 7f leaves the corridor where it is (ticket 02): moving
+# it to `d`'s port x opens an alignment 7c could not reach, and the centring invariant would then
+# read the published placement as unfinished work. Q = 0.5977927949356053.
 portograph: 2
 groups:
   ga: {tier: 0}

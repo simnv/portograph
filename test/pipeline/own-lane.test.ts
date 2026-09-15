@@ -18,6 +18,12 @@ const barEnd = readFileSync(new URL('../../goldens/synthetic/a-bar-end-keeps-its
  * and the stitcher refused the geometry. A lane admits only its owner's collinear run, so it is now
  * an obstacle for the owner as well, and the reserved stems of the links a batch has not routed yet
  * are obstacles too.
+ *
+ * Since ticket 02 the corridor of the unseated child follows it, so `link-3` descends on its own
+ * corridor rather than reaching it sideways. The rule this test states is the one that survives
+ * either geometry: whatever a link's path does inside one of its own corridors, it does on that
+ * corridor's centre. `link-1` and `link-3` each still run the whole length of theirs, and the
+ * assertion below is checked against that rather than passing on an empty selection.
  */
 it('keeps a routed gap out of the corridor its own link reserved', async () => {
   const before = bands(bundles(bars(centre(flanks(lanes(rows(await placed(fixture))))))));
@@ -27,10 +33,13 @@ it('keeps a routed gap out of the corridor its own link reserved', async () => {
   expect(plan.batches.length).toBeGreaterThan(1);
 
   const model = linkLabels(await route(before, { createAttempt: createAvoidAttempt }));
-  // Every routed segment that meets one of its link's own lanes runs along that lane's centre.
+  // Every routed segment that meets one of its link's own lanes runs along that lane's centre, and
+  // every owned lane really is met, so none of these assertions is checked against nothing.
   for (const link of model.links) {
     for (const lane of ownedLanes(model, link)) {
-      for (const segment of link.path!.segments.filter(item => segmentRect(item, lane.bounds))) {
+      const met = link.path!.segments.filter(item => segmentRect(item, lane.bounds));
+      expect([link.id, lane.id, met.length > 0]).toEqual([link.id, lane.id, true]);
+      for (const segment of met) {
         expect([link.id, lane.id, segment.from.x, segment.to.x]).toEqual([link.id, lane.id, lane.x, lane.x]);
       }
     }

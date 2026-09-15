@@ -168,9 +168,13 @@ function corridorFree(model: LayoutModel, lane: Lane, link: LayoutLink, child: P
     const box = group.bounds!;
     if (overlaps(box) && box.y < bottom(span) - 1e-6 && bottom(box) > span.y + 1e-6) return false;
   }
+  // Every reserved run of another link, in the three forms placement writes: a pinned path, the
+  // corridor runs of 7a, and the shared runs 7e cuts for a fan. The gap allocation counts all
+  // three, so a corridor that ignored one would stand where a reserved run already does.
   for (const other of model.links) {
     if (other.id === link.id) continue;
-    const runs = [...other.path?.fixed ? other.path.segments : [], ...other.fixedSegments ?? []];
+    const runs = [...other.path?.fixed ? other.path.segments : [], ...other.fixedSegments ?? [],
+      ...other.sharedRuns?.from ?? [], ...other.sharedRuns?.to ?? []];
     for (const segment of runs) if (segmentRectDistance(segment, span) < linkStrokeWidth(other) / 2 - 1e-6) return false;
   }
   // A group title keeps its link-free margin from every link, this link included (ADR-0013).
@@ -194,6 +198,9 @@ function corridorFree(model: LayoutModel, lane: Lane, link: LayoutLink, child: P
  */
 export function reseatLanes(model: LayoutModel): boolean {
   let moved = false;
+  // The corridors are taken in reservation order and each candidate is measured against the ones
+  // already moved, the same serialization 7a allocates in. A corridor is never measured against a
+  // move that has not been made.
   for (const lane of model.lanes) {
     if (lane.owner.kind !== 'link') continue;
     const link = model.links.find(item => item.id === (lane.owner as { id: string }).id);

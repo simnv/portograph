@@ -1,16 +1,18 @@
-# Expected: `node-ba002` cannot be seated under the lane 7a reserved for it, so stage 8 must route
-# the gap from its port sideways to the lane terminal. The lane is that link's own reservation, and
-# a lane admits only its owner's collinear run. The router therefore treats it as an obstacle for
-# the owner as well, and the gap reaches the terminal from below instead of crossing the corridor.
-# The stem `node-aa002` keeps for its own link is an obstacle too, so the earlier batch cannot
-# take it.
+# Expected: `node-ba002` cannot be seated under the lane 7a reserved for it — 7c leaves its port
+# 233.78 px right of the corridor at x 103. Two rules answer that, and the fixture holds both.
 #
-# 7c leaves `node-ba002` 233.78 px right of that lane, so 7f moves the corridor to the child's port
-# x instead (ticket 02): the corridor there is free, the two corridors of the tier keep the order of
-# the children they serve, and the rule runs after the last centring replay, so nothing else moves.
-# The link then descends straight into its port and turns once, in the tier gap above. The one
-# crossing left is the child's other link, which jogs across that descent to reach `node-aa002`.
-# Every gate passes.
+# A lane is its owner's reservation and admits only the owner's collinear run, so the router treats
+# it as an obstacle for the owner as well. The stem `node-aa002` keeps for its own link is an
+# obstacle too, so the earlier batch cannot take it (stress ticket 02).
+#
+# 7f then moves the corridor to the child's port x (ticket 02): the corridor at 336.78 is free, the
+# two corridors of the tier keep the order of the children they serve, the gap the new row lands in
+# can seat it, and the rule runs after the last centring replay, so nothing else moves. The link
+# descends straight from its port and turns once, at y 131.75 in the tier gap above. The one
+# crossing left is the child's other link, which jogs across that descent to reach `node-aa002`;
+# it is the port order stage 5 fixed from the far parent anchors, not a seating question
+# (synthetics-review ticket 04).
+# Every gate passes. Q = 0.6704306872522211.
 portograph: 2
 groups:
   up-a: { tier: 7, label: "Upper Zone" }

@@ -283,6 +283,11 @@ no such x, and the corridor then keeps the side the source asks for, exactly as 
   source's tier, neither end in a flank (that is the same test `feeds` makes in 7c). A wrapped
   port — one on the side away from its peer — fails it, and its target keeps the x it has;
 - a target the **transited tier itself feeds** — it travels with the groups this stage moves aside.
+
+The fourth and fifth read the target's *node*. 7c centres the target's whole group, so a sibling's
+feed can still carry the target sideways after this stage reads it — measured at 105–157 px on two
+probes, with no side flipped by it. The rule is not tightened for that: the corridor that ends up
+away from its child is the case the move in 7f answers, and that move is the safety net here.
 Before fixing any lane x, expand occupied intermediate margins through horizontal group/node/flank
 translations and expand the canvas. Preserve transit source anchors and the groups' internal order.
 Plan displacement outward from the insertion gap and propagate it through neighboring groups.

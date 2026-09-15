@@ -46,8 +46,14 @@ function same(a: unknown, b: unknown, message: string): void { if (!equal(a, b))
  * for, so a later reservation change that makes one of these owe more room owes it room nothing
  * will reserve.
  */
-function shortGaps(model: LayoutModel): number {
-  return tierGapRoom(model).filter(room => room.rows > 0 && !room.refuses && room.seated < room.rows).length;
+function shortGaps(model: LayoutModel): string[] {
+  return tierGapRoom(model).filter(room => room.rows > 0 && !room.refuses && room.seated < room.rows)
+    .map(room => `gap:${room.above}:${room.below}`);
+}
+/** Whether `after` names nothing `before` does not. A trade of one item for another is not "no worse". */
+function noNewItems(after: readonly string[], before: readonly string[]): boolean {
+  const held = new Set(before);
+  return after.every(item => held.has(item));
 }
 function pick<T extends object, K extends keyof T>(value: T, keys: readonly K[]): Pick<T, K> {
   return Object.fromEntries(keys.filter(key => Object.hasOwn(value, key)).map(key => [key, value[key]])) as Pick<T, K>;
@@ -674,11 +680,15 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
       // column into a row, and the height rule has already measured that gap: a gap that cannot
       // seat the new row would owe room nothing reserves. Measure both ways and keep the corridors
       // where they were rather than publish either contradiction.
-      const followed = clone(draft.lanes), after = [centreViolations(draft).length, shortGaps(draft)];
+      // Both are compared as sets, not as counts: a move that trades one unverified alignment or
+      // one short gap for another is not "no worse", it is a different diagram with the same tally.
+      const followed = clone(draft.lanes);
+      const after = { centring: centreViolations(draft), gaps: shortGaps(draft) };
       draft.lanes = heldLanes; rebuildLaneExtents(draft);
-      const held = [centreViolations(draft).length, shortGaps(draft)];
-      if (after[0]! <= held[0]! && after[1]! <= held[1]!) { draft.lanes = followed; rebuildLaneExtents(draft); }
-      else draft.diagnostics = draft.diagnostics.filter(item => item.code !== 'LANE_FOLLOWS_ITS_CHILD');
+      const held = { centring: centreViolations(draft), gaps: shortGaps(draft) };
+      if (noNewItems(after.centring, held.centring) && noNewItems(after.gaps, held.gaps)) {
+        draft.lanes = followed; rebuildLaneExtents(draft);
+      } else draft.diagnostics = draft.diagnostics.filter(item => item.code !== 'LANE_FOLLOWS_ITS_CHILD');
     }
   }
   else if (rule === 'link-labels') produceLinkLabels(draft);
