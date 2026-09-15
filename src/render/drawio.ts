@@ -358,11 +358,12 @@ export interface DrawioOptions {
    */
   labels?: 'measured' | 'on-run';
   /**
-   * Which glyphs the icons use. `profile` draws the network profile's own five, as the SVG does.
-   * `cisco19` uses draw.io's bundled Cisco-19 shapes where one matches, which are native shapes and
-   * so take the palette — and therefore adapt to dark, which an embedded image never can.
+   * Which glyphs the icons use. `cisco19`, the default, uses draw.io's bundled Cisco-19 shapes
+   * where one matches. They resolve from the style string alone and take paired `light-dark()`
+   * colours, so they follow draw.io's dark appearance. `profile` draws the network profile's own
+   * five, as the SVG does, as an embedded `shape=image` data URI, which cannot adapt at all.
    */
-  icons?: 'profile' | 'cisco19';
+  icons?: 'cisco19' | 'profile';
   /**
    * Which palette the file carries. `auto`, the default, writes every colour as a
    * `light-dark(light, dark)` pair and lets draw.io pick — one file that is exact in both
@@ -521,7 +522,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   const adaptive = chosen === 'auto';
   const mode: ThemeMode = adaptive ? 'light' : chosen;
   const placement = options.labels ?? 'on-run';
-  const iconSet = options.icons ?? 'profile';
+  const iconSet = options.icons ?? 'cisco19';
   /** One resolution of something the palette decides, adapted to both appearances when asked. */
   const dual = <T,>(pick: (of: ThemeMode) => T): T => adaptive ? adapt(pick('light'), pick('dark')) : pick(mode);
   const paint = dual(of => NETWORK_THEME[of]);
@@ -799,7 +800,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         }
         // A profile glyph is a stroked 24-unit path with no bundled equivalent, so it is carried as
         // its own image. An embedded image is the one thing here that cannot adapt to dark — draw.io
-        // has no way into it — which is the reason `cisco19` exists as an option at all.
+        // has no way into it — which is the reason `cisco19` is the default.
         const inner = shrink(tile, ICON_INSET);
         if (inner) {
           const glyph = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">`

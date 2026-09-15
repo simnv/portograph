@@ -60,7 +60,7 @@ export interface Command {
   theme?: ThemeMode | 'auto';
   /** `render --format drawio` only. Absent means `on-run`. */
   labels?: LabelPlacement;
-  /** `render --format drawio` only. Absent means `profile`. */
+  /** `render --format drawio` only. Absent means `cisco19`. */
   icons?: IconSet;
 }
 
@@ -79,7 +79,7 @@ const OPTIONS: Record<string, OptionSpec> = {
   '--format': { verbs: ['render'], value: true, summary: 'Primary artifact format: svg (default) or drawio' },
   '--theme': { verbs: ['render'], value: true, summary: 'draw.io palette: auto (default, light and dark in one file), light, dark or print' },
   '--labels': { verbs: ['render'], value: true, summary: 'draw.io link labels: on-run (default) or measured, the box stage 9 placed' },
-  '--icons': { verbs: ['render'], value: true, summary: "draw.io glyphs: profile (default) or cisco19, draw.io's own Cisco shapes" },
+  '--icons': { verbs: ['render'], value: true, summary: "draw.io glyphs: cisco19 (default), draw.io's own Cisco shapes, which follow its dark appearance, or profile, an embedded image that cannot" },
 };
 
 /** Both spellings of `-o X`, `--output X` and `--output=X`, in the order a user would try them. */
@@ -137,11 +137,11 @@ export const LABEL_PLACEMENTS = ['on-run', 'measured'] as const;
 export type LabelPlacement = (typeof LABEL_PLACEMENTS)[number];
 
 /** Which glyphs a draw.io export draws; see `DrawioOptions.icons`. */
-export const ICON_SETS = ['profile', 'cisco19'] as const;
+export const ICON_SETS = ['cisco19', 'profile'] as const;
 export type IconSet = (typeof ICON_SETS)[number];
 
 function parseIcons(value: string): IconSet {
-  if (!ICON_SETS.includes(value as IconSet)) throw new UsageError(`--icons does not know '${value}'; use profile or cisco19`);
+  if (!ICON_SETS.includes(value as IconSet)) throw new UsageError(`--icons does not know '${value}'; use cisco19 or profile`);
   return value as IconSet;
 }
 

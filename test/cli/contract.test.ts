@@ -21,7 +21,7 @@ describe('CLI contract', () => {
   it('help documents every option, the file position rule and all four exit codes', () => {
     const help = helpText();
     for (const option of ['--output', '--force', '--allow-gate-failures', '--layers', '--format',
-      '--theme', '-h, --help', '-V, --version']) {
+      '--theme', '--labels', '--icons', '-h, --help', '-V, --version']) {
       expect(help).toContain(option);
     }
     expect(help).toContain('Options may come before or after the file');
@@ -96,6 +96,21 @@ describe('render formats', () => {
     expect(parseCommand('render', ['a.yaml']).format).toBeUndefined();
     expect(() => parseCommand('render', ['a.yaml', '--format', 'pdf'])).toThrow(UsageError);
     expect(() => parseCommand('layout', ['a.yaml', '--format', 'drawio'])).toThrow(UsageError);
+  });
+
+  it('names cisco19 as the icon default, and takes the option only where it can apply', () => {
+    // The claim: a draw.io export defaults to draw.io's own `mxgraph.cisco19.*` stencils. They
+    // resolve from the style string and take paired `light-dark()` colours, so they follow the
+    // reader's dark appearance; the `profile` set is an embedded `shape=image` data URI, which
+    // cannot adapt by any means. The help says so, and `DrawioOptions.icons` holds the same
+    // default, so a library caller and a CLI caller get the same file.
+    expect(helpText()).toContain('cisco19 (default)');
+    expect(parseCommand('render', ['a.yaml', '--format', 'drawio', '--icons', 'profile']).icons).toBe('profile');
+    // Absent means the exporter's own default; the CLI states no second opinion about it.
+    expect(parseCommand('render', ['a.yaml', '--format', 'drawio']).icons).toBeUndefined();
+    expect(() => parseCommand('render', ['a.yaml', '--icons', 'cisco19'])).toThrow(UsageError);
+    expect(() => parseCommand('render', ['a.yaml', '--format', 'svg', '--icons', 'cisco19'])).toThrow(UsageError);
+    expect(() => parseCommand('render', ['a.yaml', '--format', 'drawio', '--icons', 'aws'])).toThrow(UsageError);
   });
 
   it('refuses a theme for a format that carries every palette at once', () => {

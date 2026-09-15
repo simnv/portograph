@@ -323,7 +323,7 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
     expect(light.get(key)!.style['fillColor']).not.toContain('light-dark');
   }, 60000);
 
-  it('draws draw.io\u2019s own Cisco shapes when asked, in their native proportions', async () => {
+  it('letterboxes draw.io\u2019s own Cisco shapes into the tile, in their native proportions', async () => {
     const model = await pipeline(fixture('drawio-constructs'));
     const all = cells(drawio(model, { icons: 'cisco19' }));
     const node = Object.entries(model.nodes).find(([, item]) => item.icon !== undefined)!;
@@ -338,6 +338,24 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
     expect(drawn.width).toBeLessThanOrEqual(tile.width + 1e-9);
     expect(drawn.height).toBeLessThanOrEqual(tile.height + 1e-9);
     expect(Math.min(drawn.width / tile.width, drawn.height / tile.height)).toBeGreaterThan(0.5);
+  }, 60000);
+
+  it('defaults to the bundled stencils, and embeds the profile glyph only when that is asked for', async () => {
+    const model = await pipeline(fixture('drawio-constructs'));
+    const node = Object.entries(model.nodes).find(([, item]) => item.icon !== undefined)!;
+    // The claim: an export written with no icon set named carries `cisco19`. A bundled stencil
+    // resolves from the style string and takes a paired `light-dark()` colour, so it follows
+    // draw.io's own dark appearance. Library and CLI agree: `bin/compute.mjs` passes the option
+    // through only when the command names it, so an unnamed option lands on this same default.
+    const byDefault = cells(drawio(model)).get(id('icon', node[0]))!;
+    expect(byDefault.style['shape']).toMatch(/^mxgraph\.cisco19\./);
+    // `profile` is still reachable, and is what the SVG draws: a stroked 24-unit path carried as
+    // an embedded data URI. That image is the one thing here no appearance can adapt, which is the
+    // reason it is no longer the default.
+    const asked = cells(drawio(model, { icons: 'profile' })).get(id('icon', node[0]))!;
+    expect(asked.style['shape']).toBe('image');
+    expect(asked.style['image']!.startsWith('data:image/svg+xml,')).toBe(true);
+    expect(asked.style['prIcon']).toBeUndefined();
   }, 60000);
 
   it('gives every text to the shape that owns it, rather than parking a box on top', async () => {

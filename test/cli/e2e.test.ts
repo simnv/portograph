@@ -63,6 +63,11 @@ describe('real CLI', () => {
     expect(xml).not.toContain('compressed="true"');
     // The two mandatory root cells, and the sidecars named from the stem of either extension.
     expect(xml).toContain('<mxCell id="0"/>');
+    // With no `--icons`, the icons are draw.io's own bundled stencils, which resolve from the style
+    // string and take paired `light-dark()` colours. No glyph is an embedded image, because an
+    // embedded image cannot follow draw.io's dark appearance by any means.
+    expect(xml).toContain('shape=mxgraph.cisco19.');
+    expect(xml).not.toContain('shape=image');
     expect(JSON.parse(readFileSync(join(temp, 'diagram.layout.json'), 'utf8')))
       .toEqual(JSON.parse(readFileSync(jsonPath, 'utf8')));
     expect(JSON.parse(readFileSync(join(temp, 'diagram.score.json'), 'utf8')))
