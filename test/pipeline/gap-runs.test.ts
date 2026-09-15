@@ -25,18 +25,18 @@ it('allocates every run of a tier gap two transit links share', async () => {
   const runs = allocateGapRuns(before);
   expect(runs.length).toBeGreaterThanOrEqual(2);
 
-  // Two rows of one gap keep the pitch, and two stubs on one x never share length.
+  // Two rows of one gap keep the pitch, and two vertical segments on one x never share length.
   const pitch = MEMBER_GAP + routedStroke(before);
   const rowsOf = runs.flatMap(run => run.segments.filter(horizontal).map(segment => segment.from.y));
   for (const [index, y] of rowsOf.entries()) {
     for (const other of rowsOf.slice(index + 1)) expect(Math.abs(other - y)).toBeGreaterThanOrEqual(pitch - 1e-9);
   }
-  const stems = runs.flatMap(run => run.segments.filter(vertical)
+  const verticals = runs.flatMap(run => run.segments.filter(vertical)
     .map(segment => ({ x: segment.from.x, low: Math.min(segment.from.y, segment.to.y), high: Math.max(segment.from.y, segment.to.y) })));
-  for (const [index, stem] of stems.entries()) {
-    for (const other of stems.slice(index + 1)) {
-      if (Math.abs(other.x - stem.x) > 1e-9) continue;
-      expect(Math.min(stem.high, other.high) - Math.max(stem.low, other.low)).toBeLessThanOrEqual(1e-9);
+  for (const [index, one] of verticals.entries()) {
+    for (const other of verticals.slice(index + 1)) {
+      if (Math.abs(other.x - one.x) > 1e-9) continue;
+      expect(Math.min(one.high, other.high) - Math.max(one.low, other.low)).toBeLessThanOrEqual(1e-9);
     }
   }
 

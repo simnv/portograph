@@ -67,6 +67,7 @@ const drawn = (link: LayoutLink): boolean => link.technique !== 'stub' && link.a
   && link.layer === 'routed' && link.path === undefined;
 const grow = (box: Rect, by: number): Rect => ({ x: box.x - by, y: box.y - by, width: box.width + 2 * by, height: box.height + 2 * by });
 const OUTWARD: Record<Side, number> = { top: -1, bottom: 1, left: 0, right: 0 };
+const OUTWARD_X: Record<Side, number> = { top: 0, bottom: 0, left: -1, right: 1 };
 
 /**
  * The tier gaps of this diagram, low to high. A lane overhangs its band, so the room a run really
@@ -143,8 +144,11 @@ function reachOf(model: LayoutModel, link: LayoutLink, end: 'from' | 'to', far: 
  */
 interface Approach { link: string; x: number; edge: 'low' | 'high' }
 
-/** What one tier gap holds: the runs it can place, the approaches it owes, and its crossers. */
-interface GapUsers { items: Participant[]; approaches: Approach[]; crossers: Set<string> }
+/** One link's crossing of a tier gap it has no allocation in, with the x its two ends stand at. */
+interface Crossing { link: string; low: number; high: number }
+
+/** What one tier gap holds: the runs it can place, the approaches it owes, and its crossings. */
+interface GapUsers { items: Participant[]; approaches: Approach[]; crossers: Crossing[] }
 
 /**
  * The planned gaps of every routed link that must cross a tier gap, grouped by the gap.
@@ -155,7 +159,7 @@ interface GapUsers { items: Participant[]; approaches: Approach[]; crossers: Set
  * do not obstruct it.
  */
 function gapUsers(model: LayoutModel, gaps: TierGap[]): Map<number, GapUsers> {
-  const result = new Map<number, GapUsers>(gaps.map((gap, key) => [key, { items: [], approaches: [], crossers: new Set<string>() }]));
+  const result = new Map<number, GapUsers>(gaps.map((gap, key) => [key, { items: [], approaches: [], crossers: [] }]));
   for (const link of model.links) {
     if (!drawn(link)) continue;
     const stops = stopsOf(model, link);
@@ -164,11 +168,12 @@ function gapUsers(model: LayoutModel, gaps: TierGap[]): Map<number, GapUsers> {
       const low = Math.min(a.point.y, b.point.y), high = Math.max(a.point.y, b.point.y);
       const found = gaps.flatMap((gap, key) => gap.low > low - EPS && gap.high < high + EPS ? [key] : []);
       if (!found.length) continue;
-      if (found.length > 1) { for (const key of found) result.get(key)!.crossers.add(link.id); continue; }
+      const across = { link: link.id, low: Math.min(a.point.x, b.point.x), high: Math.max(a.point.x, b.point.x) };
+      if (found.length > 1) { for (const key of found) result.get(key)!.crossers.push(across); continue; }
       const key = found[0]!, gap = gaps[key]!, users = result.get(key)!;
       const edgeA = a.kind === 'lane' ? edgeOf(gap, a.point) : undefined;
       const edgeB = b.kind === 'lane' ? edgeOf(gap, b.point) : undefined;
-      if (edgeA === undefined && edgeB === undefined) { users.crossers.add(link.id); continue; }
+      if (edgeA === undefined && edgeB === undefined) { users.crossers.push(across); continue; }
       const nearFirst = edgeA !== undefined;
       const near = nearFirst ? a : b, far = nearFirst ? b : a;
       const item: Participant = { link, index, near: near.point, far: far.point, nearFirst,
@@ -181,7 +186,7 @@ function gapUsers(model: LayoutModel, gaps: TierGap[]): Map<number, GapUsers> {
         const reach = far.kind === 'port'
           ? reachOf(model, link, nearFirst ? 'to' : 'from', far.point, item.nearEdge === 'low' ? gap.high : gap.low)
           : undefined;
-        if (!reach) { users.crossers.add(link.id); continue; }
+        if (!reach) { users.crossers.push(across); continue; }
         item.reach = reach.point;
       }
       users.items.push(item);
@@ -249,13 +254,13 @@ function rowOrder(rows: Participant[]): Participant[] | undefined {
 function runSegments(item: Participant, gap: TierGap, row: number | undefined): PathSegment[] {
   const owner = { kind: 'link' as const, id: item.link.id };
   const at = (x: number, y: number): Point => ({ x, y });
-  // A run reaches the far lane terminal, or the gap's far boundary where it crosses on one x. A row
-  // that ends at a port stops on the row at that port's x: the piece out to the port is the port's
-  // own approach, which placement cannot fix, and `reach` is where it has to arrive.
+  // A run reaches the far lane terminal, or the far port's own outward checkpoint. Reaching the
+  // checkpoint leaves stage 8 the port's stem and nothing else: the piece between is the one an
+  // earlier batch could otherwise take, and the one the gates measure against the run's own link.
   const far = item.farOnEdge ? item.far.y : item.nearEdge === 'low' ? gap.high : gap.low;
   const points: Point[] = row === undefined
     ? [item.near, at(item.near.x, far)]
-    : [item.near, at(item.near.x, row), at(item.far.x, row), ...(item.farOnEdge ? [item.far] : [])];
+    : [item.near, at(item.near.x, row), at(item.far.x, row), at(item.far.x, far)];
   const ordered = item.nearFirst ? points : [...points].reverse();
   const segments: PathSegment[] = [];
   for (let index = 0; index + 1 < ordered.length; index++) {
@@ -360,6 +365,17 @@ function blockers(model: LayoutModel): Blocker[] {
     for (const run of reservedRuns(link)) {
       result.push({ owners, bounds: grow({ x: Math.min(run.from.x, run.to.x), y: Math.min(run.from.y, run.to.y),
         width: Math.abs(run.to.x - run.from.x), height: Math.abs(run.to.y - run.from.y) }, margin) });
+    }
+    // Every routed attachment holds an outward stem, whether a rule has claimed its path or not.
+    // An allocated run may not stand in one: the link that owns it then has no route to its port.
+    if (!drawn(link)) continue;
+    for (const end of ['from', 'to'] as const) {
+      const port = findPort(model, link.attachments![end]);
+      if (!port?.anchor || port.side === undefined) continue;
+      const stem = stemReach(model, model.nodes[link.attachments![end].node]!);
+      const tip = { x: port.anchor.x + OUTWARD_X[port.side] * stem, y: port.anchor.y + OUTWARD[port.side] * stem };
+      result.push({ owners, bounds: grow({ x: Math.min(port.anchor.x, tip.x), y: Math.min(port.anchor.y, tip.y),
+        width: Math.abs(tip.x - port.anchor.x), height: Math.abs(tip.y - port.anchor.y) }, margin) });
     }
   }
   return result;
@@ -505,10 +521,13 @@ export function allocateGapRuns(model: LayoutModel): GapRun[] {
     const allocated = allocateGap(model, near, gap, entry);
     if (!allocated.size) continue;
     // A run this gap could not seat keeps the route it has today, so it crosses the seated ones.
-    for (const item of items) if (!allocated.has(item)) crossers.add(item.link.id);
+    for (const item of items) {
+      if (allocated.has(item)) continue;
+      crossers.push({ link: item.link.id, low: Math.min(item.near.x, item.far.x), high: Math.max(item.near.x, item.far.x) });
+    }
     for (const [item, segments] of allocated) {
       result.push({ link: item.link.id, index: item.index, segments,
-        crossers: [...crossers].filter(id => id !== item.link.id).sort() });
+        crossers: [...new Set(crossers.filter(cross => cross.link !== item.link.id).map(cross => cross.link))].sort() });
     }
   }
   return result;

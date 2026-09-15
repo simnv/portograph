@@ -121,8 +121,9 @@ allocated:
 
 - a **column** where the run's two ends share one x — the straight segment across the gap;
 - a **row** where they do not — a horizontal line in the gap, with a vertical segment at each end;
-- a **tail** where the far end is a port beyond the gap — the row reaches that port's x and stops;
-  the piece out to the port stays routed, and the allocation is made only where it is clear.
+- a **tail** where the far end is a port beyond the gap — the run reaches the gap's far boundary on
+  that port's x; the port's own approach beyond it stays routed, and the allocation is made only
+  where that approach is clear.
 
 Rows pack from the low boundary, one pitch (`16 px + widest routed stroke`) apart, each at the first
 row clear of frozen placement geometry. The order is forced wherever two runs stand on one x: the
@@ -133,7 +134,12 @@ no run needs a row allocates nothing.
 **Two allocated runs of one gap may cross, and the crossing is reserved.** Neither run is routed, so
 neither needs an exemption from the other's obstacle. A run *along* a gap is a wall along it and
 never across it: the links that must cross the gap without an allocation of their own are given the
-crossing, which is rule 3 applied to the obstacle set instead of to the batches.
+**row**, which is rule 3 applied to the obstacle set instead of to the batches. The run's vertical
+segments still obstruct them, and a route can pass those by.
+
+An allocated run also keeps the gate's clearance from two things the router would otherwise have to
+discover: every reserved run of its own link that runs the same way and never meets it, and the
+outward stem of every routed attachment in the diagram.
 
 **What this supersedes.** The lane-approach cover measured in stress ticket 02 (12 repaired, 4
 broken over 322 diagrams) is not reinstated: it was a rectangle standing in for a reservation, and

@@ -283,9 +283,9 @@ and reads the same frozen placement.
 
 A run whose two ends share one x takes that **column**, straight across the gap. A run whose ends
 differ takes a **row**: a horizontal line inside the gap. A vertical segment joins the row to each
-end that stands on a boundary. Where the far end is a port beyond the gap, the row reaches that
-port's x and stops. The piece from the row out to the port stays routed, and the gap allocates only
-where that piece is clear.
+end. Where the far end is a port beyond the gap, that segment reaches the gap's far boundary at the
+port's x. The piece from the boundary out to the port is the port's own approach. It stays routed,
+and the gap allocates only where it is clear.
 
 Rows pack from the low boundary. The pitch between two of them is `16 px + widest routed stroke`.
 Each row takes the first position clear of frozen geometry at or beyond that pitch past the one
@@ -302,6 +302,10 @@ transit links all descend on one x is therefore untouched.
 An allocated run also keeps that clearance from every reserved run of its own link that runs the
 same way and never meets it. A pair that meets at a corner is one turn of one path. A pair that runs
 the same way and does not meet is the pair G6 measures, whichever link owns it.
+
+Every routed attachment holds an outward stem, whether a rule has claimed its path or not. An
+allocated run may not stand in one. The link that owns that stem would otherwise have no route to
+its own port.
 
 Two allocated runs of one gap may **cross**. Neither is routed, so the crossing is reserved rather
 than discovered and neither needs an exemption from the other. A link that must cross the gap

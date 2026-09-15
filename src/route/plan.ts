@@ -36,7 +36,7 @@ export interface LinkPlan {
   connectors: RouteConnector[];
   /** The two nodes this link attaches to, shared-run ends included. */
   nodes: string[];
-  /** The node sides it attaches to, as `node|side`; a shared-run end contributes none. */
+  /** The node sides it attaches to, as `node|side`, a shared-run end included. */
   sides: string[];
   /** Obstacle IDs this link already owns; two links may share a batch only when these agree. */
   exclusions: string[];
