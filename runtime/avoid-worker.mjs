@@ -37,6 +37,60 @@ export function loadAvoid(moduleUrl, wasmUrl, importModule = specifier => import
 /** All directions; libavoid's ConnDirFlags are top 1, bottom 2, left 4, right 8. */
 const ALL_DIRECTIONS = 15;
 
+/**
+ * Collision tolerance. This is `EPS` in `src/score/geometry.ts`, and it must stay that value: the
+ * adapter has to reach the same answer as the host about a visited checkpoint, or it re-solves a
+ * route the host would have taken.
+ */
+const EPS = 1e-7;
+
+/**
+ * Whether a segment touches a point, boundary contact included. This is `segmentRect` from
+ * `src/score/geometry.ts` against a rectangle of zero size, written out here because the worker
+ * loads as plain JavaScript and imports nothing from the library.
+ */
+function segmentTouches(from, to, point) {
+  let low = 0, high = 1;
+  for (const [origin, delta, at] of [[from.x, to.x - from.x, point.x], [from.y, to.y - from.y, point.y]]) {
+    if (delta === 0) { if (origin < at - EPS || origin > at + EPS) return false; }
+    else {
+      const a = (at - EPS - origin) / delta, b = (at + EPS - origin) / delta;
+      low = Math.max(low, Math.min(a, b));
+      high = Math.min(high, Math.max(a, b));
+    }
+  }
+  return low <= high;
+}
+
+/**
+ * Whether a returned polyline really passes through every checkpoint, in the order they were asked
+ * for. This is the host's own test — `polylineDistance` and `checkpointsHonoured` in
+ * `src/route/paths.ts` — repeated here so the adapter can see a dropped checkpoint while it can
+ * still ask again, and it must give the same answer the host will. Distance is measured along the
+ * whole route, not along one segment, so two checkpoints on one straight run stay ordered.
+ */
+export function checkpointsVisited(points, checkpoints) {
+  const at = (point, after) => {
+    let travelled = 0;
+    for (let index = 0; index + 1 < points.length; index++) {
+      const from = points[index], to = points[index + 1];
+      if (segmentTouches(from, to, point)) {
+        const reached = travelled + Math.hypot(point.x - from.x, point.y - from.y);
+        if (reached >= after - EPS) return reached;
+      }
+      travelled += Math.hypot(to.x - from.x, to.y - from.y);
+    }
+    return -1;
+  };
+  let cursor = -1;
+  for (const checkpoint of checkpoints) {
+    const reached = at(checkpoint, cursor);
+    if (reached < 0) return false;
+    cursor = reached;
+  }
+  return true;
+}
+
 /** Exact straight visibility against the already expanded obstacle set. */
 function directRoute(batch, connector) {
   const endpoint = value => {
@@ -125,7 +179,8 @@ export function routeBatch(Avoid, batch) {
       // the transaction, but omit redundant hints; the host still checks every requested one.
       const checkpoints = direct ? [] : connector.checkpoints || [];
       if (checkpoints.length) setCheckpoints(ref, checkpoints);
-      return { id: connector.id, ref, connector, checkpoints };
+      // `asked` is what this connector currently holds; a retry below narrows it.
+      return { id: connector.id, ref, connector, checkpoints, asked: checkpoints };
     });
     router.processTransaction();
     // `displayRoute()` and `at()` hand back independent native copies in this binding, so each one
@@ -152,10 +207,25 @@ export function routeBatch(Avoid, batch) {
       // guessed endpoint to returned geometry. The host still checks every requested checkpoint.
       const continuation = directRoute(batch, { from: { kind: 'point', ...checkpoint }, to: item.connector.to, checkpoints: [] });
       if (!continuation) continue;
-      setCheckpoints(item.ref, item.checkpoints.slice(0, -1));
+      item.asked = item.checkpoints.slice(0, -1);
+      setCheckpoints(item.ref, item.asked);
       retry = true;
     }
     if (retry) { router.processTransaction(); routes = connectors.map(extract); }
+    // A checkpoint carries two things: the point, which is a reservation the host verifies, and a
+    // direction mask, which is only a hint — `checkpointsHonoured` never reads it. This build drops
+    // the whole checkpoint, silently, when it cannot meet the mask, and the host then has to reject
+    // a route that missed a reservation. So when a checkpoint is missing from the answer, ask once
+    // more for the same points with no mask. Nothing here invents geometry: the host still checks
+    // every point it asked for, and still rejects the route when one is absent.
+    let relaxed = false;
+    for (const [index, item] of connectors.entries()) {
+      if (!item.asked.length || checkpointsVisited(routes[index].points, item.asked)) continue;
+      item.asked = item.asked.map(checkpoint => ({ ...checkpoint, arrival: ALL_DIRECTIONS, departure: ALL_DIRECTIONS }));
+      setCheckpoints(item.ref, item.asked);
+      relaxed = true;
+    }
+    if (relaxed) { router.processTransaction(); routes = connectors.map(extract); }
     return routes;
   } finally {
     // Release every temporary even if one of them is already gone, so the Router itself is always
