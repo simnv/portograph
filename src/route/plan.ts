@@ -162,7 +162,12 @@ export function planRoute(model: LayoutModel): RoutePlan {
     for (const [index, item] of covers.entries()) {
       const segment = run.segments[index]!;
       const across = paired && Math.abs(segment.from.y - segment.to.y) < 1e-9;
-      obstacles.push({ ...item, consumers: [...item.consumers, ...(across ? run.crossers : [])] });
+      // The owner's own route reaches this run at its two terminals and nowhere else. The end
+      // rectangles therefore keep it as a consumer, so the gap beside the run can start inside one
+      // of them; the rectangles between do not, or the owner's other gaps could run along the run
+      // the stitcher inserts verbatim.
+      const terminal = index === 0 || index === covers.length - 1;
+      obstacles.push({ ...item, consumers: [...(terminal ? item.consumers : []), ...(across ? run.crossers : [])] });
     }
   }
   const owned = new Map<string, string[]>();

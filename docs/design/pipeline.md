@@ -305,7 +305,9 @@ the same way and does not meet is the pair G6 measures, whichever link owns it.
 
 Every routed attachment holds an outward stem, whether a rule has claimed its path or not. An
 allocated run may not stand in one. The link that owns that stem would otherwise have no route to
-its own port.
+its own port. A run also stays out of the link-free margin every group edge keeps (ADR-0013). A link that
+attaches inside a group crosses its boundary at its own port. G6 still refuses a segment that *runs
+along* that edge from on or outside the box.
 
 Two allocated runs of one gap may **cross**. Neither is routed, so the crossing is reserved rather
 than discovered and neither needs an exemption from the other. A link that must cross the gap
@@ -656,8 +658,10 @@ Registered as obstacles, each expanded once in the adapter and never in the mode
   every batch from the first. This is the head-on approach to a lane, reserved rather than covered
   by a rectangle. Measured over 322 diagrams, a 23 × 38 px cover repaired 8 failures and broke 4:
   the wall it put in a tier gap pushed other links into routes their own checkpoints could not meet.
-  A run's **row** does not obstruct the links that must cross that gap, which the allocation names;
-  its vertical segments obstruct them, and a route can pass those by.
+  A run's **row** does not obstruct the links that must cross that gap, which the allocation names.
+  Its vertical segments obstruct them, and a route can pass those by. The owner is not given the row
+  either: its route meets the run at the two terminals, so the end rectangles keep it and the ones
+  between do not.
 
 **A lane obstructs its owner too.** The corridor admits the owner's collinear run and nothing else.
 Stage 8 stitches that run back. It never routes it. The owner therefore needs no exemption here.
@@ -710,7 +714,9 @@ and the stage rejects the route rather than publish geometry that occupies a res
 Each link is stitched back in source-to-target order: its reserved runs byte-for-byte, with their
 owner, lane and `barCross` annotations, the tier-gap runs the allocation made for it, and the routed
 gaps between them. An allocated run is not a claim the lanes rule wrote on the model, so the
-stitcher names the corridor it leaves exactly as it names a routed gap that meets one. Where a gap meets one of
+stitcher names the corridor it leaves exactly as it names a routed gap that meets one. Where an
+allocated run and the gap beyond it are one straight run, the stitcher joins them. A run a rule
+wrote on the model is reproduced exactly and is never joined. Where a gap meets one of
 its own lanes it is split at the corridor boundaries and each piece names the one lane it touches,
 the same shape the region rules produce. Publication and restore then check the result
 structurally — complete anchored path, orthogonal and connected, exact reserved runs, perpendicular

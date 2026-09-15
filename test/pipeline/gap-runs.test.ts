@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { allocateGapRuns, bands, bars, bundles, centre, flanks, lanes, linkLabels, planRoute, route, rows, score } from '../../src/index.js';
-import type { LayoutModel } from '../../src/model/layout.js';
+import type { LayoutModel, PathSegment } from '../../src/model/layout.js';
 import { ownedLanes } from '../../src/route/paths.js';
 import { MEMBER_GAP } from '../../src/layout/bundle-geometry.js';
 import { routedStroke } from '../../src/layout/bands.js';
@@ -41,13 +41,21 @@ it('allocates every run of a tier gap two transit links share', async () => {
   }
 
   const model = linkLabels(await route(before, { createAttempt: createAvoidAttempt }));
-  // Every allocated run is in the published path exactly as it was reserved.
+  // The published path runs through every allocated run. A piece of one may be joined to the gap
+  // beyond it where the two are one straight run, so each is covered rather than repeated.
+  const covers = (item: PathSegment, run: PathSegment): boolean => {
+    const on = Math.abs(item.from.x - item.to.x) <= 1e-9 ? Math.abs(item.from.x - run.from.x) <= 1e-9
+      && Math.abs(run.from.x - run.to.x) <= 1e-9 : Math.abs(item.from.y - run.from.y) <= 1e-9
+      && Math.abs(run.from.y - run.to.y) <= 1e-9;
+    if (!on) return false;
+    const along = (point: { x: number; y: number }): boolean =>
+      point.x >= Math.min(item.from.x, item.to.x) - 1e-9 && point.x <= Math.max(item.from.x, item.to.x) + 1e-9
+      && point.y >= Math.min(item.from.y, item.to.y) - 1e-9 && point.y <= Math.max(item.from.y, item.to.y) + 1e-9;
+    return along(run.from) && along(run.to);
+  };
   for (const run of runs) {
     const path = model.links.find(item => item.id === run.link)!.path!.segments;
-    for (const segment of run.segments) {
-      expect(path.some(item => item.from.x === segment.from.x && item.from.y === segment.from.y
-        && item.to.x === segment.to.x && item.to.y === segment.to.y)).toBe(true);
-    }
+    for (const segment of run.segments) expect(path.some(item => covers(item, segment))).toBe(true);
   }
   expect(Number.isFinite(score(model).snapshot.Q)).toBe(true);
 }, 60000);

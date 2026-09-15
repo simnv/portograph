@@ -109,11 +109,11 @@ input that needs it.
 ## Sixth amendment (2026-09-15, from the stress test; stress ticket 04)
 
 **Rule 1 also allocates a tier gap.** The row gap between two row neighbours was the first unit the
-rule reserved; the **tier gap** — the open band between two adjacent tier bands — is the second, and
-it is the one the Enterprise NTP stress test names. Three fixes on 2026-09-15 (stress tickets 01 and
+rule reserved. The **tier gap** — the open band between two adjacent tier bands — is the second. It
+is the one the Enterprise NTP stress test names. Three fixes on 2026-09-15 (stress tickets 01 and
 02) each handed the router one more reservation it was being judged against. The item behind all
-three is this: nothing allocated the runs that cross a tier gap, so the first ownership batch to
-reach the gap took whatever room it liked and the next link found its own corridor closed.
+three is this: nothing allocated the runs that cross a tier gap. The first ownership batch to reach
+the gap therefore took whatever room it liked, and the next link found its own corridor closed.
 
 The unit is the run, not the link. A tier gap is bounded by the lane extents that face it. Every
 planned routed gap that straddles it, and has a lane terminal on one of its boundaries, is
@@ -133,13 +133,18 @@ no run needs a row allocates nothing.
 
 **Two allocated runs of one gap may cross, and the crossing is reserved.** Neither run is routed, so
 neither needs an exemption from the other's obstacle. A run *along* a gap is a wall along it and
-never across it: the links that must cross the gap without an allocation of their own are given the
-**row**, which is rule 3 applied to the obstacle set instead of to the batches. The run's vertical
-segments still obstruct them, and a route can pass those by.
+never across it. The links that must cross the gap without an allocation of their own are therefore
+given the **row**. That is rule 3 applied to the obstacle set instead of to the batches. The run's
+vertical segments still obstruct those links, and a route can pass them by.
+
+The run's owner is not given the row either. Its route meets the run at the two terminals, so the
+end rectangles keep the owner and the ones between do not. Otherwise its own other gaps could run
+back along geometry the stitcher inserts verbatim.
 
 An allocated run also keeps the gate's clearance from two things the router would otherwise have to
-discover: every reserved run of its own link that runs the same way and never meets it, and the
-outward stem of every routed attachment in the diagram.
+discover. The first is every reserved run of its own link that runs the same way and never meets it.
+The second is the outward stem of every routed attachment in the diagram. It also stays out of the
+link-free margin every group edge keeps (ADR-0013), whichever link the group belongs to.
 
 **What this supersedes.** The lane-approach cover measured in stress ticket 02 (12 repaired, 4
 broken over 322 diagrams) is not reinstated: it was a rectangle standing in for a reservation, and

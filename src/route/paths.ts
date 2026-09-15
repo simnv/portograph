@@ -126,20 +126,50 @@ function gapSegments(model: LayoutModel, link: LayoutLink, points: Point[], from
 export function stitchPath(model: LayoutModel, plan: LinkPlan, routes: Map<string, Point[]>): LayoutPath {
   const link = model.links.find(item => item.id === plan.link)!;
   const segments: PathSegment[] = [];
+  // Which of the assembled segments a rule wrote on the model. Those are reproduced exactly; an
+  // allocated run and a routed gap are this pass's own geometry and may be joined where they meet.
+  const claimed: boolean[] = [];
+  const add = (list: PathSegment[], fixed: boolean): void => {
+    for (const segment of list) { segments.push(segment); claimed.push(fixed); }
+  };
   for (const piece of plan.pieces) {
-    if (piece.kind === 'reserved') { segments.push(...clone(piece.segments)); continue; }
+    if (piece.kind === 'reserved') { add(clone(piece.segments), true); continue; }
     // An allocated tier-gap run leaves a lane terminal, so it names the corridor it starts in
     // exactly as the routed gap it replaces did.
-    if (piece.kind === 'allocated') { segments.push(...clone(piece.segments).flatMap(segment => laneRuns(model, link, segment))); continue; }
+    if (piece.kind === 'allocated') { add(clone(piece.segments).flatMap(segment => laneRuns(model, link, segment)), false); continue; }
     const points = routes.get(piece.connector);
     if (!points) throw new Error(`Router returned no route for ${piece.connector}`);
     const connector = plan.connectors.find(item => item.id === piece.connector)!;
     if (!checkpointsHonoured(points, connector.checkpoints)) {
       throw new Error(`Router skipped a required checkpoint on ${piece.connector}`);
     }
-    segments.push(...gapSegments(model, link, points, piece.from, piece.to));
+    add(gapSegments(model, link, points, piece.from, piece.to), false);
   }
-  return { owner: { ...link.owner }, layer: 'routed', fixed: false, segments, ...pathStrokeWidth(link) };
+  return { owner: { ...link.owner }, layer: 'routed', fixed: false, segments: joinSeams(segments, claimed),
+    ...pathStrokeWidth(link) };
+}
+
+/**
+ * Join two consecutive pieces of this pass's own geometry where they are one straight run. The seam
+ * between an allocated tier-gap run and the gap beyond it is such a place: left in two, the pair
+ * reads as a staircase the clearance gate then measures against itself. A run a rule wrote on the
+ * model is reproduced exactly and is never joined.
+ */
+function joinSeams(segments: PathSegment[], claimed: readonly boolean[]): PathSegment[] {
+  const result: PathSegment[] = [], owned: boolean[] = [];
+  for (const [index, segment] of segments.entries()) {
+    const last = result.at(-1);
+    const straight = last !== undefined && !claimed[index] && owned.at(-1) === false
+      && ((Math.abs(last.from.x - last.to.x) <= EPS && Math.abs(segment.from.x - segment.to.x) <= EPS
+        && Math.abs(last.to.x - segment.from.x) <= EPS)
+        || (Math.abs(last.from.y - last.to.y) <= EPS && Math.abs(segment.from.y - segment.to.y) <= EPS
+          && Math.abs(last.to.y - segment.from.y) <= EPS))
+      && samePoint(last.to, segment.from) && last.lane === segment.lane && last.barCross === segment.barCross;
+    if (straight) { result[result.length - 1] = { ...last, to: { ...segment.to } }; continue; }
+    result.push(segment);
+    owned.push(claimed[index] === true);
+  }
+  return result;
 }
 
 /** Overlay links are drawn straight between their anchors and never enter the router. */
