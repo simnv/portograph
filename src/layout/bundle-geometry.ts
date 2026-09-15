@@ -392,11 +392,22 @@ export function joinFanTrees(model: LayoutModel, candidates: readonly LayoutLink
   for (const link of candidates) {
     const waiting = pending.get(link.id);
     if (!waiting || !link.path) continue;
-    let segments = [...link.path.segments];
-    for (const at of waiting.ports) {
+    const mine = waiting.ports.flatMap(at => {
       const cohort = cohorts.find(item => portId(item.port.ref) === at && item.links.includes(link));
-      if (cohort) segments = splitUnderJunctions(model, cohort.port, cohort.links, link, segments, pending);
-    }
+      return cohort ? [{ at, cohort, end: fanEnd(model, cohort.port, cohort.links, pending) }] : [];
+    });
+    // Two trees split the one path from opposite ends. A path shorter than the two continuations
+    // together cannot hold both: the second split would re-own the stems the first wrote, and the
+    // first tree would then claim a run its own member no longer draws. `rowGap` reserves the room
+    // for a pair of row neighbours; where it is not there — a flank path, a gap another rule fixed —
+    // the deeper tree keeps the member and the other reports it with `FAN_MEMBER_UNRESERVED`, which
+    // is the behaviour before this ticket.
+    const room = link.path.segments.reduce((sum, item) => sum + Math.hypot(item.to.x - item.from.x, item.to.y - item.from.y), 0);
+    const joined = mine.length === 2 && mine[0]!.end + mine[1]!.end > room + 1e-6
+      ? [[...mine].sort((one, other) => other.end - one.end || (one.at < other.at ? -1 : 1))[0]!]
+      : mine;
+    let segments = [...link.path.segments];
+    for (const { cohort } of joined) segments = splitUnderJunctions(model, cohort.port, cohort.links, link, segments, pending);
     if (segments !== link.path.segments) link.path = { ...link.path, segments };
   }
 }

@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 import { layout, parse, restoreFinalLayout, score } from '../../src/index.js';
 import { MIN_STEM, edgeMargin, fanPitch, priorSideRows, sideRowBudget } from '../../src/layout/bundle-geometry.js';
 import { DEFAULT_STROKE_WIDTHS, routedStrokeWidth } from '../../src/theme/geometry.js';
-import type { LayoutModel } from '../../src/index.js';
+import type { LayoutModel, Owner } from '../../src/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -245,4 +245,30 @@ it('ticket 45: a fan branch reserves the run it takes, clear of the nodes beside
     expect(Math.min(run.from.y, run.to.y)).toBeLessThan(target.bounds!.y);
     expect(Math.max(run.from.y, run.to.y)).toBeLessThanOrEqual(target.bounds!.y - 15);
   }
+}, 60000);
+
+it('ticket 37: a pinned path between two fans gives each tree its own half of the run', async () => {
+  // Both of the path's ports carry a fan, so both trees split the one path, from opposite ends. The
+  // row gap reserves the two continuations rather than one of them and the far side's stem; with one
+  // stem's room the second split re-owned the stems the first wrote, and the first tree then claimed
+  // a run its own member no longer drew.
+  const model = await run(fixture('a-pinned-path-between-two-fans'));
+  expect(score(model).snapshot.gates.G4!.violations).toEqual([]);
+  const pinned = model.links[0]!;
+  const roots = ['hub', 'peer'].map(node => model.junctions.find(junction => junction.port.node === node)!);
+  expect(roots.every(root => root.links.includes(pinned.id))).toBe(true);
+  // Every reserved run of each tree is a stretch the pinned path really draws, under that tree's own
+  // name. `to` records its runs outward from its port, so the ends are compared unordered.
+  const span = (run: { from: { x: number }; to: { x: number } }): string =>
+    `${Math.min(run.from.x, run.to.x)}:${Math.max(run.from.x, run.to.x)}`;
+  const name = (owner: Owner): string => 'id' in owner ? owner.id : owner.kind;
+  const drawn = pinned.path!.segments.map(segment => `${name(segment.owner)}@${span(segment)}`);
+  for (const end of ['from', 'to'] as const) {
+    for (const reserved of pinned.sharedRuns![end]!) expect(drawn).toContain(`${name(reserved.owner)}@${span(reserved)}`);
+  }
+  // The two halves meet in the middle, and no stretch is claimed by both junctions.
+  const owners = pinned.path!.segments.map(segment => name(segment.owner));
+  expect(new Set(owners).size).toBe(3);
+  expect(owners[0]).toBe(roots[0]!.id);
+  expect(owners.at(-1)).toBe(roots[1]!.id);
 }, 60000);

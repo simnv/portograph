@@ -507,21 +507,33 @@ export function rowGap(model: LayoutModel, a: string, b: string): number {
   // `fanEnd` is where that fan's leaves actually finish; the far side still needs its own stem past
   // them. Reserved here because two nodes in one row are separated here and nowhere else — moving
   // their group moves both. Read back by `edgeAwareRows`, never discovered.
-  const fanReach = (id: string, side: 'left' | 'right'): number => {
-    const node = model.nodes[id];
-    if (!node) return 0;
-    let deepest = 0;
+  const fanPorts = (id: string, side: 'left' | 'right'): Map<string, number> => {
+    const result = new Map<string, number>(), node = model.nodes[id];
+    if (!node) return result;
     for (const port of node.ports) {
       if (port.side !== side || !port.anchor) continue;
       const links = model.links.filter(link => link.layer === 'routed' && link.technique !== 'stub' && link.attachments
         && [link.attachments.from, link.attachments.to].some(ref => key(ref) === key(port.ref)));
-      if (links.length >= 2) deepest = Math.max(deepest, fanEnd(model, port, links));
+      if (links.length >= 2) result.set(key(port.ref), fanEnd(model, port, links));
     }
-    return deepest;
+    return result;
   };
-  const reachA = fanReach(a, 'right'), reachB = fanReach(b, 'left');
+  const fansA = fanPorts(a, 'right'), fansB = fanPorts(b, 'left');
+  const reachA = Math.max(0, ...fansA.values()), reachB = Math.max(0, ...fansB.values());
+  // A link between two fan ports across this gap is the straight-through leaf of *both* trees
+  // (ticket 37): each end splits its own continuation out of the one path, from its own side. The
+  // gap has to hold the two continuations, not one of them and the far side's stem, or the second
+  // split re-owns the stems the first wrote.
+  let shared = 0;
+  for (const link of fansA.size && fansB.size ? model.links : []) {
+    if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
+    for (const [one, other] of [[link.attachments.from, link.attachments.to], [link.attachments.to, link.attachments.from]] as const) {
+      const here = fansA.get(key(one)), there = fansB.get(key(other));
+      if (here !== undefined && there !== undefined) shared = Math.max(shared, here + there);
+    }
+  }
   const fans = Math.max(reachA ? reachA + stemReach(model, model.nodes[b]!) : 0,
-    reachB ? reachB + stemReach(model, model.nodes[a]!) : 0);
+    reachB ? reachB + stemReach(model, model.nodes[a]!) : 0, shared);
   return Math.max(nodeGap(model, a, b), left + right + (left > 0 && right > 0 ? PILL_WIRE_GAP : 0),
     passByStem(b, 'left', a), passByStem(a, 'right', b), turning, fans);
 }

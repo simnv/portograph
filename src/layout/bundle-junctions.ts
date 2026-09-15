@@ -97,19 +97,22 @@ export function bundleFans(model: LayoutModel, bundle: Bundle, list: Member[], q
  * along the side (ADR-0018 rule 3, ticket 45). Rule 2 spaces a track against the rows on its own
  * side; this is what spaces it against the nodes beside it.
  *
- * The reach is `routeObstacles`' own — the enclosing rectangle of the expanded body and of every
- * expanded pill, since the router owns the corners between them — so the room the fan reserves is
- * the room the gates then measure. The fan's own node is left out: a branch leaves that node's port,
- * and G2 exempts that one outward stem.
+ * The reach is `routeObstacles`' own — the widest routed stroke, and the enclosing rectangle of the
+ * expanded body and of every expanded pill, since the router owns the corners between them — so the
+ * room the fan reserves is the room stage 8 and the gates then measure. The fan's own node is left
+ * out: a branch leaves that node's port, and G2 exempts that one outward stem.
+ *
+ * The spans are merged, so they are disjoint and no two of them touch. A track stepped to the edge
+ * of one can then never land inside another, which is what makes the step terminate and makes the
+ * answer independent of the order the nodes were read in.
  */
-function blockedTracks(model: LayoutModel, port: LayoutPort, band: { from: number; to: number },
-  stroke: number): { lo: number; hi: number }[] {
-  const n = normal(port.side!), tangent = axis(port.side!);
+function blockedTracks(model: LayoutModel, port: LayoutPort, band: { from: number; to: number }): { lo: number; hi: number }[] {
+  const n = normal(port.side!), tangent = axis(port.side!), stroke = routedStroke(model);
   const low = Math.min(band.from, band.to), high = Math.max(band.from, band.to);
   const pillGap = (stroke + DEFAULT_STROKE_WIDTHS.pill) / 2;
   const grow = (box: Rect, by: number): Rect =>
     ({ x: box.x - by, y: box.y - by, width: box.width + 2 * by, height: box.height + 2 * by });
-  const result: { lo: number; hi: number }[] = [];
+  const found: { lo: number; hi: number }[] = [];
   for (const node of Object.values(model.nodes)) {
     if (!node.bounds || node.layer === 'overlay' || node.id === port.ref.node) continue;
     const boxes = [grow(node.bounds, nodeObstacleReach(model, node, stroke)),
@@ -121,7 +124,13 @@ function blockedTracks(model: LayoutModel, port: LayoutPort, band: { from: numbe
     const depths = tangent === 'y' ? [n.x * (box.x - port.anchor!.x), n.x * (box.right - port.anchor!.x)]
       : [n.y * (box.y - port.anchor!.y), n.y * (box.bottom - port.anchor!.y)];
     if (Math.max(...depths) <= low + 1e-6 || Math.min(...depths) >= high - 1e-6) continue;
-    result.push(tangent === 'y' ? { lo: box.y, hi: box.bottom } : { lo: box.x, hi: box.right });
+    found.push(tangent === 'y' ? { lo: box.y, hi: box.bottom } : { lo: box.x, hi: box.right });
+  }
+  const result: { lo: number; hi: number }[] = [];
+  for (const span of found.sort((a, b) => a.lo - b.lo || a.hi - b.hi)) {
+    const last = result.at(-1);
+    if (last && span.lo <= last.hi + 1e-6) last.hi = Math.max(last.hi, span.hi);
+    else result.push({ ...span });
   }
   return result;
 }
@@ -219,27 +228,39 @@ export function crossBundleFans(model: LayoutModel): void {
     for (const item of ordered) {
       if (item === fixedItem) continue;
       const own = linkStrokeWidth(item.link);
-      // ADR-0018 rule 3 (ticket 45): a track is measured against the nodes beside the side as well
-      // as against the rows on it. The corridor a branch's outward run crosses is the band from the
-      // fan's first row to its end, and every node standing in that band is a wall the track steps
-      // past, on the side its own far end is on.
-      const walls = blockedTracks(model, port, { from: rows[0]!, to: stop(item, rows[0]!) }, own);
-      let slot = Math.max(wanted(item), prior + q);
       // Re-check every row after any move: a step taken for one row can carry the slot onto another
       // it already passed. Bounded, since each pass only moves the slot away from the target's side.
-      for (let guard = 0; guard < occupied.length + walls.length + 1; guard++) {
-        const hit = occupied.find(row => Math.abs(slot - row.at) < MEMBER_GAP + (own + row.stroke) / 2 - 1e-6);
-        if (hit) {
+      const clearOfRows = (start: number): number => {
+        let slot = start;
+        for (let guard = 0; guard < occupied.length + 1; guard++) {
+          const hit = occupied.find(row => Math.abs(slot - row.at) < MEMBER_GAP + (own + row.stroke) / 2 - 1e-6);
+          if (!hit) break;
           const clearance = MEMBER_GAP + (own + hit.stroke) / 2;
           const keep = wanted(item) <= hit.at ? hit.at - clearance : hit.at + clearance;
           slot = keep >= prior + q - 1e-6 ? keep : hit.at + clearance;
-          continue;
         }
-        const wall = walls.find(span => slot > span.lo - 1e-6 && slot < span.hi + 1e-6);
+        return slot;
+      };
+      // ADR-0018 rule 3 (ticket 45): a track is measured against the nodes beside the side as well
+      // as against the rows on it. The corridor a branch's outward run crosses is the band from the
+      // fan's first row to where that branch stops, and every node standing in that band is a wall
+      // the track steps past, to the edge of it nearer the coordinate the member wanted.
+      const walls = blockedTracks(model, port, { from: rows[0]!, to: stop(item, rows[0]!) });
+      const base = clearOfRows(Math.max(wanted(item), prior + q));
+      let slot = base;
+      for (let guard = 0; guard < walls.length + 1; guard++) {
+        const wall = walls.find(span => slot > span.lo + 1e-6 && slot < span.hi - 1e-6);
         if (!wall) break;
         const keep = Math.abs(wanted(item) - wall.lo) <= Math.abs(wanted(item) - wall.hi) ? wall.lo : wall.hi;
-        slot = keep >= prior + q - 1e-6 ? keep : wall.hi;
+        const next = clearOfRows(keep >= prior + q - 1e-6 ? keep : wall.hi);
+        if (Math.abs(next - slot) < 1e-6) break;
+        slot = next;
       }
+      // A step that carries the track past another port's row on this side reorders the members
+      // against their endpoints, which is the topology change rule 2 exists to prevent. Where the
+      // corridor leaves no slot on the near side of that row, the fan keeps the track rule 2 gave
+      // it and the gates report the node it meets.
+      if (occupied.some(row => (row.at - base) * (row.at - slot) < -1e-6)) slot = base;
       target.set(item.link.id, slot); prior = slot;
     }
     const isFixed = (id: string): boolean => links.find(link => link.id === id)?.path?.fixed === true;
