@@ -2,8 +2,22 @@ import type { LayoutModel, LayoutNode, PathSegment, Point, Rect } from '../model
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
 import { EPS, bottom, contains, horizontal, intersection, length, near, overlapSegment, rectDistance, rectOverlap, right, samePoint, segmentDistance, segmentRect, segmentRectDistance, vertical } from './geometry.js';
 
-/** A rejection box kept by its far edges; see `gates`. */
-interface Span { x: number; y: number; right: number; bottom: number }
+/** A rejection box kept by its far edges; see `gates`. `measurable` is false beyond `REJECT_LIMIT`. */
+interface Span { x: number; y: number; right: number; bottom: number; measurable: boolean }
+
+/**
+ * Coordinate magnitude beyond which a pair is measured instead of rejected.
+ *
+ * The measured tests build parametric slabs and projections from differences of coordinates. Two
+ * coordinates further apart than this cancel, and the test can then report a contact that is not
+ * there. A rejection bound cannot reproduce such an answer, so a pair that reaches this magnitude
+ * skips the reject and is measured, exactly as it was before. Below it one subtraction is accurate
+ * to 2^-27 px, which the reject's own one-pixel margin covers many times over. No diagram this
+ * pipeline lays out comes near the limit.
+ */
+const REJECT_LIMIT = 2 ** 26;
+const measurable = (x: number, y: number, right: number, bottom: number): boolean =>
+  x > -REJECT_LIMIT && y > -REJECT_LIMIT && right < REJECT_LIMIT && bottom < REJECT_LIMIT;
 import { anchorOnBoundary, barContact, bundlePair, endpoints, groupConsumers, incident, junctionFan, mergedRun, outward, port, refEqual, refKey, sharedStem } from './model.js';
 import type { Segment } from './model.js';
 import type { GateId, GateResult, ScoreCounters } from './types.js';
@@ -52,28 +66,29 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
   // the edge the far endpoint really has, and a reject computed from it could drop a pair the
   // exact test would have failed. A rectangle's far edge is `right()` and `bottom()`, which is
   // what the exact tests read; a segment's is the larger of its two endpoints.
-  const rectSpan = (box: Rect): Span => ({ x: box.x, y: box.y, right: right(box), bottom: bottom(box) });
-  const segmentSpan = (item: PathSegment): Span => ({
-    x: Math.min(item.from.x, item.to.x), y: Math.min(item.from.y, item.to.y),
-    right: Math.max(item.from.x, item.to.x), bottom: Math.max(item.from.y, item.to.y),
-  });
+  const span = (x: number, y: number, far: number, low: number): Span =>
+    ({ x, y, right: far, bottom: low, measurable: measurable(x, y, far, low) });
+  const rectSpan = (box: Rect): Span => span(box.x, box.y, right(box), bottom(box));
+  const segmentSpan = (item: PathSegment): Span => span(
+    Math.min(item.from.x, item.to.x), Math.min(item.from.y, item.to.y),
+    Math.max(item.from.x, item.to.x), Math.max(item.from.y, item.to.y));
   const segmentSpans = routed.map(item => segmentSpan(item.segment));
-  const apart = (a: Span, b: Span, reach: number): boolean => a.x - b.right > reach
-    || b.x - a.right > reach || a.y - b.bottom > reach || b.y - a.bottom > reach;
+  const apart = (a: Span, b: Span, reach: number): boolean => a.measurable && b.measurable
+    && (a.x - b.right > reach || b.x - a.right > reach || a.y - b.bottom > reach || b.y - a.bottom > reach);
   const nodeSpans = nodes.map(node => rectSpan(node.bounds!));
   let widestNodeStroke: number = DEFAULT_STROKE_WIDTHS.node;
   for (const node of nodes) { const width = nodeStroke(node); if (width > widestNodeStroke) widestNodeStroke = width; }
   // A named port's pill stands outside its node, so one node's whole block is governed by the union
   // of its rectangle and its pills.
   const nodeExtent = nodes.map((node, index) => {
-    let span = nodeSpans[index]!;
+    let box = nodeSpans[index]!;
     for (const item of node.ports) {
       if (!item.pill) continue;
       const other = item.pill.bounds;
-      span = { x: Math.min(span.x, other.x), y: Math.min(span.y, other.y),
-        right: Math.max(span.right, right(other)), bottom: Math.max(span.bottom, bottom(other)) };
+      box = span(Math.min(box.x, other.x), Math.min(box.y, other.y),
+        Math.max(box.right, right(other)), Math.max(box.bottom, bottom(other)));
     }
-    return span;
+    return box;
   });
   const labelNodeReach = Math.max(widestNodeStroke, DEFAULT_STROKE_WIDTHS.pill) / 2 + 1;
   for (let i = 0; i < nodes.length; i++) {

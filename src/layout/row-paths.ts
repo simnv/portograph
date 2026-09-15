@@ -6,6 +6,20 @@ import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEA
 import { groupConsumers } from '../score/model.js';
 import { portId } from './skeleton-graph.js';
 
+/**
+ * Coordinate magnitude beyond which an obstacle is measured instead of rejected.
+ *
+ * `segmentRectDistance` and `segmentDistance` build parametric slabs and projections from
+ * coordinate differences. Two coordinates further apart than this cancel, and the measurement can
+ * then report a contact that is not there. A rejection bound cannot reproduce such an answer, so a
+ * shape that reaches this magnitude is measured, exactly as it was before. Below it one
+ * subtraction is accurate to 2^-27 px, which the reject's own one-pixel margin covers many times
+ * over. No diagram this pipeline lays out comes near the limit.
+ */
+const REJECT_LIMIT = 2 ** 26;
+const measurable = (x: number, y: number, right: number, bottom: number): boolean =>
+  x > -REJECT_LIMIT && y > -REJECT_LIMIT && right < REJECT_LIMIT && bottom < REJECT_LIMIT;
+
 /** Stroke-aware clearances that the final gates require between a routed segment and foreign geometry. */
 export const STRAIGHT_PATH_CLEARANCE = { node: 10, path: 10 } as const;
 /** A pinned single segment serves as both port stems. */
@@ -82,11 +96,18 @@ export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segm
   // read. Another run's far edges are the larger of its two endpoints: at a large coordinate
   // `x + width` does not return the edge the endpoint really has, and a reject computed from it
   // could drop a run the measured test would have rejected the corridor for.
-  const beyond = (box: Rect, reach: number): boolean => low.x - (box.x + box.width) > reach
-    || box.x - high.x > reach || low.y - (box.y + box.height) > reach || box.y - high.y > reach;
-  const beyondRun = (run: PathSegment, reach: number): boolean =>
-    low.x - Math.max(run.from.x, run.to.x) > reach || Math.min(run.from.x, run.to.x) - high.x > reach
-    || low.y - Math.max(run.from.y, run.to.y) > reach || Math.min(run.from.y, run.to.y) - high.y > reach;
+  const near = measurable(low.x, low.y, high.x, high.y);
+  const beyond = (box: Rect, reach: number): boolean => {
+    const far = box.x + box.width, bottom = box.y + box.height;
+    return near && measurable(box.x, box.y, far, bottom)
+      && (low.x - far > reach || box.x - high.x > reach || low.y - bottom > reach || box.y - high.y > reach);
+  };
+  const beyondRun = (run: PathSegment, reach: number): boolean => {
+    const runLeft = Math.min(run.from.x, run.to.x), runRight = Math.max(run.from.x, run.to.x);
+    const runTop = Math.min(run.from.y, run.to.y), runBottom = Math.max(run.from.y, run.to.y);
+    return near && measurable(runLeft, runTop, runRight, runBottom)
+      && (low.x - runRight > reach || runLeft - high.x > reach || low.y - runBottom > reach || runTop - high.y > reach);
+  };
   const pillReach = (stroke + DEFAULT_STROKE_WIDTHS.pill) / 2 + 1, laneReach = stroke / 2 + 1;
   const labelReach = stroke / 2 + GROUP_LABEL_LINK_CLEARANCE + 1;
   const groupReach = GROUP_EDGE_LINK_CLEARANCE + stroke / 2 + 1;
