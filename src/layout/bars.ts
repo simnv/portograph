@@ -391,7 +391,7 @@ export function rebuildBarDrops(model: LayoutModel): void {
     built.set(item.link.id, { item, slotX, physical, crossed, traversed: traversalPath(item, physical) });
   }
   const pending = new Map([...built.values()].filter(entry => !entry.item.link.bundle)
-    .map(entry => [entry.item.link.id, { port: portId(entry.item.external.ref), segments: entry.traversed }] as const));
+    .map(entry => [entry.item.link.id, { ports: [portId(entry.item.external.ref)], segments: entry.traversed }] as const));
   const cohorts = treeCohorts(model, pending);
   for (const entry of built.values()) {
     const { item, slotX, crossed } = entry;

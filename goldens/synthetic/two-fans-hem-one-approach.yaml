@@ -1,0 +1,21 @@
+# Expected: two fans face each other and both descend into the same node one tier below, on two of
+# its top ports. A fan reserves its branches one cohort at a time, so the hub fan's descent closes
+# the checkpoint `sub.a` must be approached from — the two runs never meet, they only leave the
+# router less room than it nudges a route by — and stage 8 could route neither link.
+#
+# Both give way: the branch that hems and every branch of the link it hems keep their trees' shared
+# stems, and stage 8 routes the rest. The diagram is produced and fails G6 between the two
+# remainders, which is ticket 46: nothing allocates a row across a gap. `FAN_BRANCH_HEMMED` says why.
+portograph: 2
+profile: network
+groups:
+  row-group: { tier: 0 }
+  lower: { tier: 1 }
+nodes:
+  hub: { group: row-group, ports: [{ name: p, side: right }] }
+  peer: { group: row-group, ports: [{ name: q, side: left }] }
+  sub: { group: lower, ports: [{ name: a, side: top }, { name: q, side: top }] }
+links:
+  - [hub.p, peer.q]
+  - [hub.p, sub.q]
+  - [peer.q, sub.a]

@@ -1,7 +1,7 @@
 import type { Point, Rect, Side } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel, LayoutPort, PathSegment } from '../model/layout.js';
 import { linkStrokeWidth } from '../theme/geometry.js';
-import { GROUP_LABEL_GEOMETRY, routedStroke } from '../layout/bands.js';
+import { GROUP_LABEL_GEOMETRY, nudgingDistance, routedStroke } from '../layout/bands.js';
 import { legReservation, stemPlan, type GapPlan } from '../layout/sides-two.js';
 import { allocateGapRuns } from '../layout/gap-runs.js';
 import { findPort } from '../layout/row-paths.js';
@@ -65,10 +65,11 @@ export const ROUTE_PARAMETERS: Record<string, number> = { segmentPenalty: 50 };
  * libavoid parameters for one diagram. Two remainders routed in one batch that turn side by side are
  * nudged apart by `idealNudgingDistance`; its default of 4 px is below G6's 10 px, so the distance is
  * the gate clearance plus the widest routed stroke (ADR-0015 rule 2). That is the clearance the gate
- * demands, not rule 1's wider nested-stem pitch, which placement reserves in the row gap.
+ * demands, not rule 1's wider nested-stem pitch, which placement reserves in the row gap. Placement
+ * reads the same figure through `nudgingDistance`.
  */
 export function routeParameters(model: LayoutModel): Record<string, number> {
-  return { ...ROUTE_PARAMETERS, idealNudgingDistance: GROUP_LABEL_GEOMETRY.nodeClearance + routedStroke(model) };
+  return { ...ROUTE_PARAMETERS, idealNudgingDistance: nudgingDistance(model) };
 }
 
 export const effectiveLayer = (link: LayoutLink): 'routed' | 'overlay' => link.layer ?? link.family ?? 'routed';

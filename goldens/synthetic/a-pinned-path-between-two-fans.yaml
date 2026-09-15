@@ -1,0 +1,24 @@
+# Expected: the pinned row path `hub.p -> peer.q` is the straight-through leaf of a fan at *each* of
+# its ports, and the two trees split the one path from opposite ends. The row gap therefore reserves
+# both continuations, not one of them and the far side's stem: with one stem's room the second split
+# re-owned the stems the first wrote, and the first tree claimed a run its own member no longer drew
+# (G4). Each junction now owns its own half and the path is coherent.
+#
+# The diagram still fails G6 `parallel-clearance` between the two remainders: the fan at each port
+# takes the row one pitch past its own anchor, and the two anchors face each other across the gap, so
+# the two rows are the same line. Nothing allocates a row across a gap — ADR-0018 allocates per node
+# side. That defect is its own ticket and is unchanged by the rule this fixture is for. The diagram
+# is produced.
+portograph: 2
+profile: network
+groups:
+  row-group: { tier: 0 }
+nodes:
+  hub: { group: row-group, ports: [{ name: p, side: right }] }
+  peer: { group: row-group, ports: [{ name: q, side: left }] }
+  spur: { group: row-group, ports: [{ name: q, side: left }] }
+  mate: { group: row-group, ports: [{ name: p, side: right }] }
+links:
+  - [hub.p, peer.q]
+  - [hub.p, spur.q]
+  - [mate.p, peer.q]

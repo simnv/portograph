@@ -231,3 +231,22 @@ hold the room their seating asks for and seat **every** row they owe. Three refu
 amendment's own reason — an approach beyond a boundary the gap cannot leave clear — and the tenth
 seats none although it refuses nothing, because no row can stand clear of frozen geometry anywhere
 in it. Neither is a question of room; both are stress ticket 06.
+
+## Eighth amendment (2026-09-15, from tickets 37 and 45): a fan branch's descent is not a gap run
+
+The sixth amendment allocates every run that crosses a **tier gap** beside a lane. Ticket 37's
+tier-below reproducer crosses a tier gap and is not allocated, and it should not be. Both reasons
+are properties of the allocation, not gaps in it:
+
+- **Its near end is not a lane terminal on a gap boundary.** The run leaves a fan junction inside a
+  tier band, 15 px out of its port. `gapUsers` admits a participant only where a lane terminal
+  stands on a boundary, because only a corridor opens into a gap; a port anchor can sit on a
+  boundary as well, and a run from there is that link's own stem.
+- **The run is already reserved.** 7e writes the whole descent into `sharedRuns`, so by the time
+  the allocation reads frozen placement there is no planned routed gap left to seat. The defect was
+  never that the coordinate was unallocated; it was that the fan chose it without measuring it.
+
+A fan branch's descent is therefore the fan's to reserve, and it is reserved where the fan is built
+(ADR-0018 rule 3, amended 2026-09-15). Checked before a second mechanism was written: allocating it
+here as a column on the target port's x would need the allocation to accept a shared-run terminal
+inside a band, and would then have to re-cut geometry 7e had already fixed.

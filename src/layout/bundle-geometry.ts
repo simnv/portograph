@@ -262,8 +262,12 @@ function carriesRoot(port: LayoutPort, segments: readonly PathSegment[]): boolea
   return at?.owner.kind === 'shared-stem' && at.owner.id === junctionId(port, 0);
 }
 
-/** Traversals stage 7d is still building, by link id, with the port each one may be split at. */
-export type PendingFixed = ReadonlyMap<string, { port: string; segments: readonly PathSegment[] }>;
+/**
+ * Paths a stage is still building, by link id, with the ports each one may be split at. A bar drop
+ * names one port; a path a rule pinned between two ports names both, because either end may be a
+ * fan root and a port where one path starts and another ends has to see the cohort 7e will see.
+ */
+export type PendingFixed = ReadonlyMap<string, { ports: readonly string[]; segments: readonly PathSegment[] }>;
 
 /**
  * The ports stage 7e gives a junction tree, with the links that join it: two or more routed links
@@ -305,7 +309,7 @@ export function fanCohorts(model: LayoutModel, pending?: PendingFixed): { cohort
        */
       const fixedRun = (link: LayoutLink): { run: number; eligible: boolean } | undefined => {
         const waiting = pending?.get(link.id);
-        if (waiting) return waiting.port === at ? { run: leadingRun(port, waiting.segments), eligible: true } : { run: -1, eligible: false };
+        if (waiting) return waiting.ports.includes(at) ? { run: leadingRun(port, waiting.segments), eligible: true } : { run: -1, eligible: false };
         if (link.path?.fixed !== true) return undefined;
         return carriesRoot(port, link.path.segments) ? { run: leadingRun(port, link.path.segments), eligible: true } : { run: -1, eligible: false };
       };
@@ -356,13 +360,56 @@ export function fanEnd(model: LayoutModel, port: LayoutPort, links: readonly Lay
   const at = portId(port.ref);
   const runs = links.map(link => {
     const waiting = pending?.get(link.id);
-    if (waiting && waiting.port === at) return leadingRun(port, waiting.segments);
+    if (waiting && waiting.ports.includes(at)) return leadingRun(port, waiting.segments);
     return link.path?.fixed === true ? leadingRun(port, link.path.segments) : Infinity;
   });
   // The continuation must clear the last peel row by a pitch: a fixed member that turns at the row
   // itself would touch the branch peeling there, which no junction exemption covers.
   const shortest = Math.min(end, ...runs);
   return shortest >= last + fanPitch(links) - 1e-6 ? shortest : end;
+}
+
+/**
+ * Join every straight path a rule pinned at a shared port to that port's fan tree (ticket 37,
+ * ADR-0016). Without this a pinned path keeps its own stem out of the port, which is exactly where
+ * the tree's root runs, and G4 reports the overlap that no rule reserved.
+ *
+ * Both of a path's ports are offered, because a path runs between two of them and either end may be
+ * a fan root. The cohorts are computed once, from the pending map, so the decision every member sees
+ * is the same one — a member adopted at one end changes the rows at the other.
+ */
+export function joinFanTrees(model: LayoutModel, candidates: readonly LayoutLink[]): void {
+  const pending = new Map<string, { ports: readonly string[]; segments: readonly PathSegment[] }>();
+  for (const link of candidates) {
+    if (!link.path || link.bundle !== undefined || !link.attachments) continue;
+    pending.set(link.id, {
+      ports: [portId(link.attachments.from), portId(link.attachments.to)],
+      segments: link.path.segments,
+    });
+  }
+  if (!pending.size) return;
+  const cohorts = treeCohorts(model, pending);
+  for (const link of candidates) {
+    const waiting = pending.get(link.id);
+    if (!waiting || !link.path) continue;
+    const mine = waiting.ports.flatMap(at => {
+      const cohort = cohorts.find(item => portId(item.port.ref) === at && item.links.includes(link));
+      return cohort ? [{ at, cohort, end: fanEnd(model, cohort.port, cohort.links, pending) }] : [];
+    });
+    // Two trees split the one path from opposite ends. A path shorter than the two continuations
+    // together cannot hold both: the second split would re-own the stems the first wrote, and the
+    // first tree would then claim a run its own member no longer draws. `rowGap` reserves the room
+    // for a pair of row neighbours; where it is not there — a flank path, a gap another rule fixed —
+    // the deeper tree keeps the member and the other reports it with `FAN_MEMBER_UNRESERVED`, which
+    // is the behaviour before this ticket.
+    const room = link.path.segments.reduce((sum, item) => sum + Math.hypot(item.to.x - item.from.x, item.to.y - item.from.y), 0);
+    const joined = mine.length === 2 && mine[0]!.end + mine[1]!.end > room + 1e-6
+      ? [[...mine].sort((one, other) => other.end - one.end || (one.at < other.at ? -1 : 1))[0]!]
+      : mine;
+    let segments = [...link.path.segments];
+    for (const { cohort } of joined) segments = splitUnderJunctions(model, cohort.port, cohort.links, link, segments, pending);
+    if (segments !== link.path.segments) link.path = { ...link.path, segments };
+  }
 }
 
 /**

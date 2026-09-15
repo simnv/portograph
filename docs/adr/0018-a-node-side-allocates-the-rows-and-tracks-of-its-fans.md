@@ -106,3 +106,102 @@ ADR does.** Its two rows are node port anchors in different nodes, fixed by stag
 centring (`node-geometry.ts:39`) and merely exposed by stage 6's top-alignment (`rows.ts:30-42`).
 None of option (a)'s three clauses compares one node's anchor with another's; a side's own budget
 cannot separate them. It needs a decision of its own and blocks nothing here.
+
+## Amendment (2026-09-15, from tickets 37 and 45): rule 3's second clause is a reservation, not a move
+
+Rules 1 and 2 shipped with tickets 44 and 42. Rule 3 reads "stage 5 keeps the corridor beside the
+side clear of foreign nodes to the side's deepest row". Measured against ticket 37's tier-below
+reproducer, that sentence names the wrong stage and the wrong remedy: the corridor there is the
+whole height of a tier gap, and no placement move can clear it. What the reproducer needs is what
+the fan does *inside* the corridor. Rule 3's second clause therefore reads:
+
+**A fan reserves the run each branch takes, at a coordinate that keeps the gate's clearance from
+every node standing in the corridor that run crosses.** Three parts, all in 7e:
+
+1. *Where a branch turns.* A far port that faces the side stands at its own coordinate along it. A
+   far port whose normal runs *along* the side stands on its own node's edge, so a branch that
+   turned there would run along that node by construction. Such a branch turns at that port's
+   **outward checkpoint** instead, which is where the port's own approach begins.
+2. *What a track is measured against.* Rule 2 spaces a track against the other port rows on the
+   side. It is now also spaced against the nodes beside the side: every node whose routing obstacle
+   stands in the band the branch's run crosses is a wall, and the track steps to the side of it its
+   own far end is on. The reach is `routeObstacles`' own, so the room the fan reserves is the room
+   the gates measure.
+3. *Where a branch stops.* A branch reaches the tree's common end, except one whose far port's
+   normal runs along the side: that branch stops where the far port's normal stands, never short of
+   its own peel row. Ending it at the common end beyond that leaves stage 8 to retrace the reserved
+   run to come back, which `validateRoutedPaths` rejects outright.
+
+Stage 8 is then left with the port's own approach, and with whatever lies beyond the fan's own
+depth. The two limits are named below.
+
+A branch stops where its far port's own approach *begins*, not at that port: a port that faces the
+side is approached along the side's normal, so its approach begins one router stem short of it. An
+approach that begins behind the branch's peel row cannot be reached by travelling outward at all;
+such a branch hands over on its peel row while its own track still travels towards the far port, and
+keeps the tree's common end otherwise, so that it hands over pointing outward with room to turn
+rather than on the corner of its own descent.
+
+**Scope.** This is `crossBundleFans`, the plain-fan producer, as rule 2 is. `bundleFans`' own
+`outputs` map is untouched: a bundle's members reach a channel their bundle placed, not a far port's
+checkpoint, and no reproducer reaches it. A branch whose far port stands *behind* its own peel row
+keeps the sub-pitch jog to that port; that piece is the port's own approach, which stage 8 owns.
+
+**A track never steps past a sibling row.** Rule 2 says a track stays on the side of a sibling row
+its own far end is on, because stepping past one reorders the members against their endpoints. Where
+a wall leaves no slot on that side, the fan keeps the track rule 2 gave it and the gates report the
+node the branch meets. A gate failure is recoverable; a reordered bundle throws.
+
+**What is still left to stage 8.** A branch whose far port stands *beyond* the tree's common end
+stops at that end, and the run from there to the port is stage 8's. It cannot be reserved here: the
+depth beyond `fanEnd` is room `fanDepth` never reserved, which is exactly the failure option (b) was
+measured into and rejected for. Turning at the far port's outward checkpoint keeps that unreserved
+piece clear of the far node, which is what the defect above was about; reserving it outright is a
+reservation of depth, and it belongs with rule 3's first clause.
+
+**The first clause is still open.** "Stage 3 grows `sidePitch` and the node box" is not implemented,
+and `mutation.ts` still lets only the `flanks` rule change `sidePitch`. Nothing above needs it: a
+track moves along the side, not out of it, so it consumes no room `fanDepth` reserved. A fan that
+cannot find a clear track on its own side will need it, and so will a branch whose far port stands
+beyond the tree's end.
+
+## Amendment (2026-09-15, from ticket 37): a row gap holds two fans, not one fan and a stem
+
+A pinned row path whose two ports both carry a fan is the straight-through leaf of *both* trees, and
+each end splits the one path from its own side. `rowGap` reserved the deeper side's `fanEnd` plus the
+far side's **stem**, which is the room for one continuation, so the second split re-owned the stems
+the first had written and the first tree then claimed a run its own member no longer drew (G4, and a
+result that depended on the authored direction). The gap now also reserves `fanEnd + fanEnd` wherever
+a link joins a fan port on one side to a fan port on the other. Where that room is absent — a flank
+path, a gap another rule fixed — `joinFanTrees` joins the deeper tree only, and the other reports the
+member with `FAN_MEMBER_UNRESERVED`, which is the behaviour before ticket 37.
+
+Two fans that face each other across a gap still take one row, because ADR-0018 allocates per node
+side and two facing sides are two sides. That is ticket 46, and it is the same family as ticket 44
+one gap over.
+
+## Limits of rule 3 as built (2026-09-15, from the in-house review of tickets 37 and 45)
+
+1. **A track is tested, a run is not.** `blockedTracks` measures the coordinate a branch turns at
+   against the nodes and the reserved attachment stems in the corridor. It does not measure the
+   descent from the port to that coordinate, nor the outward run to where the branch stops.
+   `legClear` (`sides-two.ts`) is the check that measures a whole leg and is not used here.
+2. **A side port never aims at its own lane.** `laneX` reads a lane only for a top or bottom port, so
+   a branch out of a left or right side that transits a tier descends on its fan's row instead of on
+   the lane reserved for it, and stage 8 climbs back. Measured: a descent at x = 181 beside a lane at
+   x = 166, with the router climbing 215 px; the same on `main`, so it is not this work's, but the
+   sentence above would otherwise claim more than the rule does.
+3. **A gate failure is recoverable and a throw is not, so a branch the router cannot work with is
+   released rather than reserved.** Two cases are built, both of them fail-closed and both of them
+   guesses that the measurement in (1) would settle properly:
+
+   - A branch whose far port stands in the corridor and whose own run would end deeper than that
+     port's approach begins keeps the tree's shared stem and nothing else (`FAN_BRANCH_UNRESERVED`).
+     A far port *behind* the fan is left alone: the fan's own node lies across any line back, so the
+     run is not retraced, and releasing it costs ticket 41's fixture a gate.
+   - A fan reserves its branches one cohort at a time, so a run one cohort lays can close the
+     checkpoint another link's port has to be approached from — the runs need not meet, it is enough
+     that they leave the router less room than it nudges by. A post-pass releases the branch that
+     hems and every branch of the link it hems (`FAN_BRANCH_HEMMED`). Ports on the hemming fan's own
+     node side are exempt, because a fan's own siblings stand a pitch away by construction and
+     treating them as hemmed undoes the tracks rules 1 and 2 reserve.

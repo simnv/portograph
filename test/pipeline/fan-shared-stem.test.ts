@@ -3,7 +3,9 @@ import { expect, it } from 'vitest';
 import { layout, parse, restoreFinalLayout, score } from '../../src/index.js';
 import { MIN_STEM, edgeMargin, fanPitch, priorSideRows, sideRowBudget } from '../../src/layout/bundle-geometry.js';
 import { DEFAULT_STROKE_WIDTHS, routedStrokeWidth } from '../../src/theme/geometry.js';
-import type { LayoutModel } from '../../src/index.js';
+import { nudgingDistance } from '../../src/layout/bands.js';
+import { routeParameters } from '../../src/route/plan.js';
+import type { LayoutModel, Owner } from '../../src/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -201,4 +203,156 @@ links: [[a.p, b.t], [a.r, b.s], [a.r, c.p]]`);
     .find(segment => segment.owner.kind === 'link' && segment.from.y === segment.to.y)!.from.y;
   expect(track('link-3')).toBe(row - q);
   expect(track('link-2')).toBe(row + q);
+}, 60000);
+
+it('ticket 37: a pinned row path joins its port\'s fan tree as the straight-through leaf', async () => {
+  // Stages 6 and 7b pin a straight path at a port. Until ticket 37 that path stayed outside the
+  // tree, so its own first 15 px lay on the tree's root and G4 reported the overlap. The producers
+  // now offer their candidates to `treeCohorts`, and the pinned path becomes the straight leaf.
+  const model = await run(fixture('pinned-path-joins-its-fan'));
+  const report = score(model).snapshot;
+  expect(report.passed).toBe(true);
+  expect(report.gates.G4!.violations).toEqual([]);
+  const port = model.nodes['hub']!.ports[0]!;
+  expect(model.junctions).toHaveLength(1);
+  expect(model.junctions[0]!.links).toEqual(['link-1', 'link-2']);
+  // Both members leave the anchor on the one reserved root stem, and only then part.
+  const stems = model.links.map(link => link.sharedRuns!.from![0]!);
+  expect(stems[0]).toEqual(stems[1]);
+  expect(stems[0]!.from).toEqual(port.anchor);
+  // The pinned path keeps the port's own track; the remainder takes one of its own.
+  expect(model.links[0]!.path!.segments.every(segment => segment.from.y === port.anchor!.y)).toBe(true);
+  expect(model.links[1]!.sharedRuns!.from!.at(-1)!.to.y).not.toBe(port.anchor!.y);
+}, 60000);
+
+it('ticket 45: a fan branch reserves the run it takes, clear of the nodes beside the side (ADR-0018 rule 3)', async () => {
+  // The remainder's far port faces up from the tier below, so its anchor stands on its own node's
+  // top edge. A branch that turned there ran along that edge — G2 `through-node` — and the router
+  // then looped back to enter the port. The branch now turns at that port's outward checkpoint and
+  // stops where the port's normal stands, so nothing it takes was discovered during routing.
+  const model = await run(fixture('a-fan-branch-reserves-its-descent'));
+  const report = score(model).snapshot;
+  expect(report.passed).toBe(true);
+  for (const gate of ['G2', 'G3', 'G4', 'G6'] as const) expect(report.gates[gate]!.violations).toEqual([]);
+  const target = model.nodes['sub']!, port = target.ports[0]!;
+  const branch = model.links[1]!;
+  // The reserved run ends on the far port's own x, one router stem short of it, and stage 8 has only
+  // that stem left to draw.
+  const terminal = branch.sharedRuns!.from!.at(-1)!.to;
+  expect(terminal.x).toBe(port.anchor!.x);
+  expect(port.anchor!.y - terminal.y).toBe(15);
+  expect(branch.path!.segments.at(-1)).toMatchObject({ from: terminal, to: port.anchor });
+  // Nothing the fan reserved touches the node it is travelling to.
+  for (const run of branch.sharedRuns!.from!) {
+    expect(Math.min(run.from.y, run.to.y)).toBeLessThan(target.bounds!.y);
+    expect(Math.max(run.from.y, run.to.y)).toBeLessThanOrEqual(target.bounds!.y - 15);
+  }
+}, 60000);
+
+it('ticket 37: a pinned path between two fans gives each tree its own half of the run', async () => {
+  // Both of the path's ports carry a fan, so both trees split the one path, from opposite ends. The
+  // row gap reserves the two continuations rather than one of them and the far side's stem; with one
+  // stem's room the second split re-owned the stems the first wrote, and the first tree then claimed
+  // a run its own member no longer drew.
+  const model = await run(fixture('a-pinned-path-between-two-fans'));
+  expect(score(model).snapshot.gates.G4!.violations).toEqual([]);
+  const pinned = model.links[0]!;
+  const roots = ['hub', 'peer'].map(node => model.junctions.find(junction => junction.port.node === node)!);
+  expect(roots.every(root => root.links.includes(pinned.id))).toBe(true);
+  // Every reserved run of each tree is a stretch the pinned path really draws, under that tree's own
+  // name. `to` records its runs outward from its port, so the ends are compared unordered.
+  const span = (run: { from: { x: number }; to: { x: number } }): string =>
+    `${Math.min(run.from.x, run.to.x)}:${Math.max(run.from.x, run.to.x)}`;
+  const name = (owner: Owner): string => 'id' in owner ? owner.id : owner.kind;
+  const drawn = pinned.path!.segments.map(segment => `${name(segment.owner)}@${span(segment)}`);
+  for (const end of ['from', 'to'] as const) {
+    for (const reserved of pinned.sharedRuns![end]!) expect(drawn).toContain(`${name(reserved.owner)}@${span(reserved)}`);
+  }
+  // The two halves meet in the middle, and no stretch is claimed by both junctions.
+  const owners = pinned.path!.segments.map(segment => name(segment.owner));
+  expect(new Set(owners).size).toBe(3);
+  expect(owners[0]).toBe(roots[0]!.id);
+  expect(owners.at(-1)).toBe(roots[1]!.id);
+}, 60000);
+
+it('ticket 45: a branch whose far port faces back stops on its peel row (ADR-0018 rule 3)', async () => {
+  // `sub.q` faces left, so its own approach begins at a depth the branch has already passed. Running
+  // out to the tree's common end would hand over past the target and leave stage 8 to come back
+  // along the reserved run, which `validateRoutedPaths` refuses.
+  const model = await run(fixture('a-fan-branch-stops-at-its-approach'));
+  expect(score(model).snapshot.passed).toBe(true);
+  const branch = model.links[1]!, port = model.nodes['sub']!.ports[0]!;
+  const runs = branch.sharedRuns!.from!;
+  // The reserved run is the root stem and the descent, and nothing beyond: it ends on the row the
+  // branch peels at, not one pitch further out.
+  expect(runs).toHaveLength(2);
+  expect(runs[1]!.to.x).toBe(model.nodes['hub']!.ports[0]!.anchor!.x + MIN_STEM);
+  // The track was stepped clear of the target node, so the route turns once into the port.
+  expect(runs[1]!.to.y).toBeLessThan(model.nodes['sub']!.bounds!.y);
+  expect(branch.path!.segments.at(-1)).toMatchObject({ to: port.anchor });
+}, 60000);
+
+it('ticket 45: a fan track steps past the node standing in its corridor (ADR-0018 rule 3)', async () => {
+  // A wide node under the hub covers the coordinate the branch wants, so the branch would turn on
+  // that node and run along it. The track steps to the edge of the node nearer the coordinate it
+  // wanted, which is the wall step rule 3 is about.
+  const model = await run(fixture('a-fan-track-steps-past-a-wall'));
+  const report = score(model).snapshot;
+  expect(report.passed).toBe(true);
+  for (const gate of ['G2', 'G4', 'G6'] as const) expect(report.gates[gate]!.violations).toEqual([]);
+  const wall = model.nodes['wide']!.bounds!, target = model.nodes['sub']!.ports[0]!.anchor!;
+  const track = model.links[1]!.sharedRuns!.from!.at(-1)!.to.y;
+  // The coordinate the branch wanted is inside the wall; the track it took is clear of it, on the
+  // side the branch came from.
+  expect(target.y - 15).toBeGreaterThan(wall.y);
+  expect(track).toBeLessThanOrEqual(wall.y - 10);
+  // The reserved run really crosses the wall's own span, so the step was not free.
+  const reach = model.links[1]!.sharedRuns!.from!.at(-1)!;
+  expect(Math.max(reach.from.x, reach.to.x)).toBeGreaterThan(wall.x);
+}, 60000);
+
+it('ticket 48: a branch that would hand over beyond its port keeps the shared stem and nothing else', async () => {
+  // The track steps to the edge below the target node, so the branch's outward run points away from
+  // that port's own approach and stage 8 would come back along it. The branch keeps the tree's stem
+  // and the router owns the rest: a gate failure is recoverable and a throw is not.
+  const model = await run(fixture('a-hemmed-fan-branch-keeps-its-stem'));
+  expect(score(model).snapshot.passed).toBe(true);
+  const branch = model.links[1]!, anchor = model.nodes['hub']!.ports[0]!.anchor!;
+  const runs = branch.sharedRuns!.from!;
+  expect(runs).toHaveLength(1);
+  expect(runs[0]).toMatchObject({ from: anchor, to: { x: anchor.x + MIN_STEM, y: anchor.y } });
+  expect(runs[0]!.owner.kind).toBe('shared-stem');
+  // The tree still owns that stem for both members, so no first segment is drawn twice.
+  expect(model.links[0]!.sharedRuns!.from![0]).toEqual(runs[0]);
+  expect(model.diagnostics.some(item => item.code === 'FAN_BRANCH_UNRESERVED')).toBe(true);
+}, 60000);
+
+it('ticket 46: a branch that hems another link\'s approach gives way, and so does the link it hems', async () => {
+  // The hub fan's descent closes the checkpoint `sub.a` must be approached from, and stage 8 could
+  // route neither link. Both keep their shared stems and the diagram is produced: the G6 that is
+  // left is ticket 46's own defect, two fans facing across a gap taking one row.
+  const model = await run(fixture('two-fans-hem-one-approach'));
+  const report = score(model).snapshot;
+  expect(report.gates.G2!.violations).toEqual([]);
+  expect(report.gates.G4!.violations).toEqual([]);
+  expect(model.diagnostics.some(item => item.code === 'FAN_BRANCH_HEMMED')).toBe(true);
+  // Neither fan reserves anything past its own stems, so the checkpoint every port needs is clear.
+  const onStems = (item: LayoutModel): void => {
+    for (const link of item.links) {
+      for (const end of ['from', 'to'] as const) {
+        for (const run of link.sharedRuns?.[end] ?? []) expect(run.from.y).toBe(run.to.y);
+      }
+    }
+  };
+  onStems(model);
+  // The room the pass leaves is the room the router insists on, so an unrelated link heavy enough to
+  // widen what the router demands widens this too. A literal margin would have stayed where it was.
+  const heavy = await run(`${fixture('two-fans-hem-one-approach')}  - { from: heavyA.x, to: heavyB.x, weight: 5 }\n`
+    .replace('  lower: { tier: 1 }\n', '  lower: { tier: 1 }\n  heavy: { tier: 2 }\n')
+    .replace('links:\n', '  heavyA: { group: heavy, ports: [{ name: x, side: right }] }\n'
+      + '  heavyB: { group: heavy, ports: [{ name: x, side: left }] }\nlinks:\n'));
+  expect(nudgingDistance(heavy)).toBeGreaterThan(nudgingDistance(model));
+  expect(routeParameters(heavy).idealNudgingDistance).toBe(nudgingDistance(heavy));
+  expect(heavy.diagnostics.some(item => item.code === 'FAN_BRANCH_HEMMED')).toBe(true);
+  onStems(heavy);
 }, 60000);

@@ -27,10 +27,16 @@ peel order is unchanged.
 ## Scope in M1
 
 Bar drops (7d) whose straight run reaches the tree's rows are split and join it. Row and flank
-straight paths (6, 7b), a drop at its bar end, and a drop that jogs before the rows need work in
-their own producers; until ticket 37 delivers that, they stay outside the tree, the cohort is formed
-without them, and stage 7e reports each with a `FAN_MEMBER_UNRESERVED` warning — their own stem still
-covers the tree's root, so G4 reports that overlap and the model says why.
+straight paths (6, 7b) join it too, since ticket 37 (2026-09-15): `joinFanTrees` offers each pinned
+path to `treeCohorts` at **both** of its ports, and where the two ports both carry a fan the row gap
+reserves both continuations so the two trees split the one path from opposite ends without either
+re-owning the other's stems.
+
+A drop at its bar end and a drop that jogs before the rows still need work in their own producers
+(ticket 47). Until that lands they stay outside the tree, the cohort is formed without them, and
+stage 7e reports each with a `FAN_MEMBER_UNRESERVED` warning — their own stem still covers the tree's
+root, so G4 reports that overlap and the model says why. No input has yet been found that reaches
+either shape; ticket 47 asks for one before the geometry is written.
 
 ## Consequences
 

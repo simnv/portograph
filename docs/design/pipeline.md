@@ -463,12 +463,17 @@ already split that run into the tree's stems and the continuation under the junc
 (`junction:<port>:shared:<depth>`, ADR-0016), the continuation ending where the drop turns if that is
 before the tree's usual end, so the scorer sees one owner on every shared segment. At most one fixed
 member joins a port — the first by source order whose run fits the rows its cohort would have — and
-it is always peeled last. A drop whose run is too short, a drop at its bar end, and the straight row
-and flank paths of stages 6 and 7b (ticket 37) stay outside the tree, and the cohort shrinks
-accordingly — one rule (`treeCohorts`) decides this in 7d from the traversals under construction, and
-in 7e and on restore from the root junction id a split path carries. An excluded member keeps its own
-stem out of the port, which covers the tree's root: 7e reports it with `FAN_MEMBER_UNRESERVED` and G4
-reports the overlap, until ticket 37 adopts every fixed member. `LayoutLink.sharedRuns.from/to` records its outward partial runs. A checkpoint
+it is always peeled last. The straight row and flank paths of stages 6 and 7b join the same way
+(ticket 37): each producer offers its candidates to `treeCohorts` through the same pending map, and
+a pinned path is offered at **both** of its ports, because either end may be a fan root. Where both
+ends carry one, the two trees split the one path from opposite sides, so the row gap reserves both
+continuations (`rowGap`) instead of one of them and the far side's stem; where that room is not
+there, the deeper tree keeps the member. A drop whose run is too short and a drop at its bar end
+stay outside the tree, and the cohort shrinks accordingly — one rule (`treeCohorts`) decides this in
+7d from the traversals under construction, and in 7e and on restore from the root junction id a split
+path carries. An excluded member keeps its own stem out of the port, which covers the tree's root:
+7e reports it with `FAN_MEMBER_UNRESERVED` and G4 reports the overlap, until ticket 47 adopts the
+last two shapes. `LayoutLink.sharedRuns.from/to` records its outward partial runs. A checkpoint
 the reserved run already passes through — a lane's approach point that a deep leaf has reached — is
 consumed by the run and not asked of the router. Stage 13 consumes `from` outward and `to` in reverse order and direction;
 a partial run never becomes a complete `path`. G4 exempts only validated shared runs. G6's fan
