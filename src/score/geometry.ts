@@ -83,3 +83,46 @@ export function overlapSegment(a: PathSegment, b: PathSegment): PathSegment | un
   const at = (d: number): Point => ({ x: a.from.x + ux * d, y: a.from.y + uy * d });
   return { from: at(low), to: at(high), owner: a.owner };
 }
+
+/**
+ * Whether a chain of axis-aligned runs ever walks back along a run it already drew. An exact
+ * reversal of the step before is only the simplest way to do it: two runs that share a line and
+ * overlap retrace each other however many corners lie between them. One interval sweep per exact
+ * line answers it for the whole chain, and stays linear however many runs share the line.
+ *
+ * Two pieces of one route may touch at a bend, never share length. Two lines closer than `EPS` are
+ * the same line, so those groups are swept together as well — in real geometry there are none.
+ *
+ * `route/validate` fails a published path for this, and `layout/overlay-paths` refuses a candidate
+ * for it, so the producer and the validator read one rule.
+ */
+export function retracingRuns(runs: readonly { from: Point; to: Point }[]): boolean {
+  type Span = { low: number; high: number };
+  const overlaps = (spans: Span[]): boolean => {
+    let reach = -Infinity;
+    for (const span of [...spans].sort((a, b) => a.low - b.low)) {
+      if (span.low < reach - EPS) return true;
+      reach = Math.max(reach, span.high);
+    }
+    return false;
+  };
+  for (const along of [true, false]) {
+    const lines = new Map<number, Span[]>();
+    for (const run of runs) {
+      if (along ? !near(run.from.y, run.to.y) : !near(run.from.x, run.to.x)) continue;
+      const line = along ? run.from.y : run.from.x;
+      const a = along ? run.from.x : run.from.y, b = along ? run.to.x : run.to.y;
+      const group = lines.get(line) ?? [];
+      group.push({ low: Math.min(a, b), high: Math.max(a, b) });
+      lines.set(line, group);
+    }
+    const values = [...lines.keys()].sort((a, b) => a - b);
+    for (const [index, value] of values.entries()) {
+      if (overlaps(lines.get(value)!)) return true;
+      for (let next = index + 1; next < values.length && values[next]! - value <= EPS; next++) {
+        if (overlaps([...lines.get(value)!, ...lines.get(values[next]!)!])) return true;
+      }
+    }
+  }
+  return false;
+}

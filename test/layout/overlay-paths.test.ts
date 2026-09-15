@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel, Point } from '../../src/model/index.js';
 import { OVERLAY_PILL_CLEARANCE, overlayPath } from '../../src/layout/overlay-paths.js';
+import { retraces } from '../../src/route/validate.js';
 import { scene, type Scene } from '../render/fixture.js';
 
 /**
@@ -29,6 +30,9 @@ describe('overlay paths', () => {
     }
     expect(built.layer).toBe('overlay');
     expect(built.fixed).toBe(false);
+    // Ticket 04 A: the rule may not state a path its own validator throws on. `retraces` reads every
+    // published overlay path, so every case here is measured by it as well.
+    retraces(link.id, built.segments);
     const points = [built.segments[0]!.from, ...built.segments.map(segment => segment.to)];
     // G7 `endpoint-anchor`: a path starts and ends at its two port anchors, an overlay included.
     expect(points[0]).toEqual(model.nodes[link.attachments!.from.node]!.ports
@@ -129,6 +133,39 @@ describe('overlay paths', () => {
           points: [{ x: 20, y: 140 }, { x: 140, y: 140 + gap }] }] }))
         .toEqual([{ x: 20, y: 140 }, { x: 20, y: below }, { x: 140, y: below }, { x: 140, y: 140 + gap }]);
     }
+  });
+
+  /**
+   * Ticket 04 A. Two ports that face each other across a gap narrower than their two clearances put
+   * the cleared ends the wrong way round, and every one of the eight ways then walks back along a
+   * stub. `reverses` read one corner at a time and passed such a way; `retraces` sweeps the whole
+   * polyline and refuses it, as `route/validate` does. Both ends clear their own face instead.
+   */
+  const facingPair = (blocker?: { id: string; bounds: { x: number; y: number; width: number; height: number } }): Scene => ({
+    nodes: [{ id: 'a', bounds: { x: 0, y: 100, width: 60, height: 40 } },
+      { id: 'b', bounds: { x: 90, y: 100, width: 60, height: 40 } }, ...(blocker ? [blocker] : [])],
+    ports: [{ node: 'a', name: 'p', side: 'right', anchor: { x: 60, y: 120 } },
+      { node: 'b', name: 'q', side: 'left', anchor: { x: 90, y: 120 } }],
+    links: [{ id: 'flow', from: 'a', to: 'b', layer: 'overlay',
+      points: [{ x: 60, y: 120 }, { x: 90, y: 120 }] }],
+  });
+
+  it('stays one straight segment when a facing pair is closer than its two clearances', () => {
+    // The two pill faces are 4 px apart and each clearance is 4 px, so the cleared ends cross: the
+    // old candidate test let a way round win and it drew two stubs over each other. The axis between
+    // the two faces is clear, so the pair keeps the one segment the maintainer's direct-line rule asks
+    // for — exactly what it draws when the gap is wide.
+    expect(path(facingPair())).toEqual([{ x: 60, y: 120 }, { x: 90, y: 120 }]);
+  });
+
+  it('goes round a facing pair that is too close when the axis between the faces is blocked', () => {
+    // The window between two faces closer than the two clearances is narrower than 8 px by
+    // definition, so the only shape that blocks the axis and leaves a way round is a thin one. The
+    // route then rides each face outward, goes over both pills one clearance above them, and comes
+    // back down: it enters no box and no run covers another.
+    expect(path(facingPair({ id: 'c', bounds: { x: 74, y: 112, width: 2, height: 16 } })))
+      .toEqual([{ x: 60, y: 120 }, { x: 73, y: 120 }, { x: 73, y: 111 },
+        { x: 77, y: 111 }, { x: 77, y: 120 }, { x: 90, y: 120 }]);
   });
 
   it('leaves a port that draws no pill by the clearance beyond its node body', () => {

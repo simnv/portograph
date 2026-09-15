@@ -1,6 +1,6 @@
 import type { Point, Rect, Side } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel, LayoutNode, LayoutPath, LayoutPort, PathSegment } from '../model/layout.js';
-import { bottom, EPS, right, samePoint } from '../score/geometry.js';
+import { bottom, EPS, retracingRuns, right, samePoint } from '../score/geometry.js';
 import { OVERLAY_ENDPOINT_RADIUS, pathStrokeWidth } from '../theme/geometry.js';
 import { RectangleIndex } from './rectangle-index.js';
 import { findPort } from './row-paths.js';
@@ -43,7 +43,7 @@ const compact = (points: readonly Point[]): Point[] =>
 /**
  * The same polyline with every point that turns nothing dropped. A point is dropped when it lies
  * **between** its two neighbours on one axis, which a point that doubles back does not — so a
- * candidate that walks back the way it came keeps the reversal and is refused by `reverses` rather
+ * candidate that walks back the way it came keeps the reversal and is refused by `retraces` rather
  * than straightened into something it is not.
  */
 function straighten(points: readonly Point[]): Point[] {
@@ -68,10 +68,11 @@ const polylineLength = (points: readonly Point[]): number => points.slice(1)
 
 /**
  * One end of an overlay link: the anchor the path must start from, the box the link leaves — the
- * pill when the port draws one, the node body when it does not — and the point one clearance beyond
- * that box's outward face, which is where the route between the two ends begins.
+ * pill when the port draws one, the node body when it does not — the point on that box's outward
+ * face, and the point one clearance beyond it, which is where the route between the two ends
+ * begins.
  */
-interface OverlayEnd { anchor: Point; box: Rect; clear: Point; out: Point }
+interface OverlayEnd { anchor: Point; box: Rect; face: Point; clear: Point; out: Point }
 
 function overlayEnd(node: LayoutNode, port: LayoutPort): OverlayEnd | undefined {
   if (!port.anchor || !port.side || !node.bounds) return undefined;
@@ -80,9 +81,24 @@ function overlayEnd(node: LayoutNode, port: LayoutPort): OverlayEnd | undefined 
   // The outward face of the box on this side, plus the clearance, measured from the anchor.
   const face = port.side === 'top' ? box.y : port.side === 'bottom' ? bottom(box)
     : port.side === 'left' ? box.x : right(box);
-  const reach = Math.abs((out.x !== 0 ? port.anchor.x : port.anchor.y) - face) + OVERLAY_PILL_CLEARANCE;
-  return { anchor: { ...port.anchor }, box,
-    clear: { x: port.anchor.x + out.x * reach, y: port.anchor.y + out.y * reach }, out };
+  const depth = Math.abs((out.x !== 0 ? port.anchor.x : port.anchor.y) - face);
+  const outward = (by: number): Point => ({ x: port.anchor!.x + out.x * by, y: port.anchor!.y + out.y * by });
+  return { anchor: { ...port.anchor }, box, face: outward(depth), clear: outward(depth + OVERLAY_PILL_CLEARANCE), out };
+}
+
+/**
+ * Whether the two ends face each other **on one line** across a gap narrower than their two
+ * clearances. Each end leaves its own outward face by `OVERLAY_PILL_CLEARANCE`, so such a pair
+ * states the two cleared ends the wrong way round, and both stubs lie on the line the two anchors
+ * share: every one of the eight ways then walks back along the run the other stub already drew, the
+ * sweep refuses all of them, and the link loses its route. A pair that faces across two different
+ * lines keeps its clearance — its stubs cannot cover each other, so a way round is still open.
+ */
+function tooClose(head: OverlayEnd, tail: OverlayEnd): boolean {
+  const along = (from: Point, to: Point): number => (to.x - from.x) * head.out.x + (to.y - from.y) * head.out.y;
+  const across = (head.anchor.x - tail.anchor.x) * head.out.y - (head.anchor.y - tail.anchor.y) * head.out.x;
+  return head.out.x === -tail.out.x && head.out.y === -tail.out.y && Math.abs(across) <= EPS
+    && along(head.anchor, tail.anchor) > EPS && along(head.clear, tail.clear) < -EPS;
 }
 
 /**
@@ -131,19 +147,16 @@ function between(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers):
   const everySegment = (points: readonly Point[], blocked: (one: Point, two: Point) => boolean): boolean =>
     points.slice(1).every((point, index) => !blocked(points[index]!, point));
   /**
-   * Whether the whole drawn polyline — the two stubs included — ever walks back along the way it
-   * came. A candidate can leave the source by the clearance and then turn back toward its own head,
-   * when the two cleared ends are less than one clearance apart along the source's normal: it enters
-   * no box, ties in length with the clean turn and would win on order. A route that retraces is not
-   * a route, and `route/validate` fails a routed path for exactly this.
+   * Whether the whole drawn polyline — the two stubs included — ever walks back along a run it
+   * already drew. A candidate can leave the source by the clearance and then turn back toward its
+   * own head, when the two cleared ends are less than one clearance apart along the source's
+   * normal: it enters no box, ties in length with the clean turn and would win on order. A route
+   * that retraces is not a route, and `route/validate` fails every path — an overlay path included
+   * — by the same sweep, so the candidate is measured with `retracingRuns` and not by the steps at
+   * one corner: two stubs that share a line overlap without ever being adjacent (ticket 04 A).
    */
-  const reverses = (points: readonly Point[]): boolean => {
-    const step = (one: Point, two: Point): Point =>
-      ({ x: Math.sign(two.x - one.x), y: Math.sign(two.y - one.y) });
-    const steps = points.slice(1).map((point, index) => step(points[index]!, point));
-    return steps.slice(1).some((one, index) =>
-      one.x === -steps[index]!.x && one.y === -steps[index]!.y && (one.x !== 0 || one.y !== 0));
-  };
+  const retraces = (points: readonly Point[]): boolean =>
+    retracingRuns(points.slice(1).map((point, index) => ({ from: points[index]!, to: point })));
   const clearOfAll = (points: readonly Point[]): boolean => everySegment(points, (one, two) => {
     const box = { x: Math.min(one.x, two.x), y: Math.min(one.y, two.y),
       width: Math.abs(two.x - one.x), height: Math.abs(two.y - one.y) };
@@ -152,11 +165,11 @@ function between(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers):
   const clearOfEnds = (points: readonly Point[]): boolean =>
     everySegment(points, (one, two) => boxes.some(box => enters(one, two, box)));
   // A way round can land on the line the two cleared points already share, and then it states a corner
-  // that is not one. The reversal test reads the whole polyline, stubs included, because that is
+  // that is not one. The retrace test reads the whole drawn polyline, stubs included, because that is
   // where the retrace lives; the box tests read the part between the cleared ends, because the
   // stubs are the port's own reserved outward reach and cross nothing else.
   const candidates = ways.map(way => compact([from, ...way, to]))
-    .filter(points => axisAligned(points) && !reverses(compact([head.anchor, ...points, tail.anchor])));
+    .filter(points => axisAligned(points) && !retraces(straighten(compact([head.anchor, ...points, tail.anchor]))));
   const shortest = (clear: (points: readonly Point[]) => boolean): Point[] | undefined => {
     let best: { points: Point[]; length: number } | undefined;
     for (const points of candidates) {
@@ -179,6 +192,13 @@ function between(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers):
  * stage 8 publishes it at the seam that used to publish the straight segment, and an overlay link
  * still never reaches the router.
  *
+ * Two ports that face each other across a gap narrower than their two clearances clear their own
+ * outward **face** instead, because the clearance would put the two ends the wrong way round and
+ * every route between them would then walk back over a stub (ticket 04 A). The path still enters
+ * neither pill — it rides the face — the two ends keep their order, and the eight ways decide as
+ * they always do: the straight run when the axis between the two faces is clear, a way round the
+ * pair when it is not.
+ *
  * When no candidate is clear — two pills that overlap on both axes, or a diagram that blocks every
  * way round — the link keeps the straight anchor-to-anchor segment, which is what every release before
  * this one drew, and the renderer's mask carries it.
@@ -186,8 +206,11 @@ function between(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers):
 export function overlayPath(model: LayoutModel, link: LayoutLink, blockers?: OverlayBlockers): LayoutPath {
   const attachments = link.attachments!;
   const from = findPort(model, attachments.from), to = findPort(model, attachments.to);
-  const head = from && overlayEnd(model.nodes[attachments.from.node]!, from);
-  const tail = to && overlayEnd(model.nodes[attachments.to.node]!, to);
+  const one = from && overlayEnd(model.nodes[attachments.from.node]!, from);
+  const two = to && overlayEnd(model.nodes[attachments.to.node]!, to);
+  const { head, tail } = one && two && tooClose(one, two)
+    ? { head: { ...one, clear: one.face }, tail: { ...two, clear: two.face } }
+    : { head: one, tail: two };
   const middle = head && tail ? between(head, tail, blockers ?? overlayBlockers(model)) : undefined;
   const points = head && tail && middle
     ? straighten(compact([head.anchor, ...middle, tail.anchor]))
