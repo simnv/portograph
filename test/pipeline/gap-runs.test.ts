@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
-import { allocateGapRuns, bands, bars, bundles, centre, flanks, lanes, linkLabels, planRoute, route, rows, score } from '../../src/index.js';
+import { allocateGapRuns, bands, bars, bundles, centre, flanks, growTierGaps, lanes, linkLabels, planRoute, route, rows, score, tierGapRoom } from '../../src/index.js';
+import type { TierGapRoom } from '../../src/index.js';
+import type { Rect } from '../../src/model/geometry.js';
 import type { LayoutModel, PathSegment } from '../../src/model/layout.js';
 import { ownedLanes } from '../../src/route/paths.js';
 import { MEMBER_GAP } from '../../src/layout/bundle-geometry.js';
@@ -98,4 +100,39 @@ it('allocates nothing where every run of a gap keeps one x', async () => {
   expect(before.lanes.length).toBe(4);
   expect(allocateGapRuns(before)).toEqual([]);
   expect(planRoute(before).obstacles.some(item => item.id.startsWith('gap:'))).toBe(false);
+  // Every gap of the golden already seats the rows it owes, so 7f grows nothing and the approved
+  // geometry stands (`.scratch/stress/issues/05`).
+  for (const room of tierGapRoom(before)) expect(room.rows).toBe(0);
+  expect(growTierGaps(structuredClone(before) as LayoutModel)).toBe(false);
 }, 60000);
+
+/** The band gap `stackBands` left between the two bands one tier gap lies between. */
+const bandGapOf = (model: LayoutModel, room: TierGapRoom): number => {
+  const box = (tier: number): Rect => model.tierBands.find(band => band.tier === tier)!.bounds!;
+  return box(room.below).y - (box(room.above).y + box(room.above).height);
+};
+
+it('grows a tier gap to the rows it must seat', async () => {
+  // Stress ticket 05. Four runs cross one tier gap and not one of them keeps a single x, so the gap
+  // owes four rows. The 60 px band gap leaves 49.25 px between the lane extents, which seats two.
+  const model = await place(read('a-tier-gap-grows-to-its-rows.yaml'));
+  const rooms = tierGapRoom(model);
+  const grown = rooms.filter(room => room.rows > 0);
+  expect(grown.map(room => room.rows)).toEqual([4]);
+
+  // The gap's height is the rows it seats times the pitch, plus the margin the lane overhangs take.
+  for (const room of grown) {
+    expect(bandGapOf(model, room)).toBeCloseTo(room.rows * room.pitch + room.margins, 9);
+    expect(room.high - room.low).toBeCloseTo(room.rows * room.pitch, 9);
+  }
+  // No gap of the diagram is left short of the rows it owes, and a gap that owes none keeps its
+  // band gap: growth is a reservation this rule makes, never one it takes back.
+  for (const room of rooms) {
+    expect(room.high - room.low).toBeGreaterThanOrEqual(room.required - 1e-9);
+    if (!room.rows) expect(bandGapOf(model, room)).toBeCloseTo(60, 9);
+  }
+  expect(growTierGaps(structuredClone(model) as LayoutModel)).toBe(false);
+
+  const routed = linkLabels(await route(model, { createAttempt: createAvoidAttempt }));
+  expect(Number.isFinite(score(routed).snapshot.Q)).toBe(true);
+}, 120000);
