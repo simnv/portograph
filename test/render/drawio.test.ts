@@ -1258,6 +1258,42 @@ describe('maintainer edit principles', () => {
     expect(cell.style['jettySize']).toBeUndefined();
   }, 60000);
 
+  it('leaves an overlay end that draws no pill by the node it terminates on', async () => {
+    // Review finding 6. A link written to a bare node gets an anonymous port, which draws no pill:
+    // the box the overlay leaves is the node body and the anchor is already on its face, so the path
+    // steps out by the clearance from there. draw.io pins such an end to the same point — the
+    // node-relative anchor — so the connector is square and carries the model's own interior points.
+    // Before the geometry moved into the model this link exported `edgeStyle=none` with no waypoint
+    // at all, because the exporter's own detour needed two pills.
+    const model = await pipeline(`
+portograph: 2
+groups: {upper: {tier: 0}, lower: {tier: 1}}
+nodes:
+  a: {group: upper, ports: [{name: d1, side: bottom}]}
+  b: {group: lower, ports: [{name: u1, side: top}]}
+  c: {group: lower, ports: [{name: lo, side: bottom}]}
+links:
+  - [a.d1, b.u1]
+  - [b, c.lo, {route: overlay}]
+`);
+    const link = model.links.find(item => effectiveLayer(item) === 'overlay')!;
+    const bare = model.nodes['b']!.ports.find(port => port.ref.anonymous === true)!;
+    expect(bare.pill).toBeUndefined();
+    const points = [link.path!.segments[0]!.from, ...link.path!.segments.map(segment => segment.to)];
+    expect(points[0]).toEqual(bare.anchor);
+    expect(points[1]).toEqual({ x: bare.anchor!.x + CLEARANCE, y: bare.anchor!.y });
+    const canvas = model.canvas!, cell = cells(drawio(model)).get(id('link', link.id))!;
+    expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
+    expect(cell.style['jettySize']).toBe('0');
+    expect(cell.points).toEqual(points.slice(1, -1)
+      .map(point => ({ x: point.x - canvas.x, y: point.y - canvas.y })));
+    // A port with no pill has no shape to hang its mark on, so that one mark stays on the layer.
+    const marks = cells(drawio(model));
+    expect(marks.get(id('overlayMark', link.id, 'from'))!.parent).toBe(id('layer', 'overlay'));
+    expect(marks.get(id('overlayMark', link.id, 'to'))!.parent)
+      .toBe(id('port', 'c', 'lo', '1'));
+  }, 60000);
+
   it('routes an overlay link around the pill heads instead of along them', async () => {
     // The SVG masks an overlay stroke out of every pill it crosses; mxGraph has no mask. So the
     // connector leaves each pill head outward by the clearance and crosses above them. Every number
