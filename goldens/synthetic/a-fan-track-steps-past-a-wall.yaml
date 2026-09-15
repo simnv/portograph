@@ -1,0 +1,19 @@
+# Expected: a wide node stands under the hub, across the corridor the remainder's branch crosses on
+# its way to a left port beyond it. The track the branch wants — that port's own approach — is inside
+# the wide node's span, so the branch would turn on it and run along it. ADR-0018 rule 3 steps the
+# track to the edge of that node nearer the coordinate it wanted, and the branch turns above the node
+# instead. Every gate passes; without the step the diagram fails G4 and G6.
+portograph: 2
+profile: network
+groups:
+  row-group: { tier: 0 }
+  lower: { tier: 1 }
+nodes:
+  hub: { group: row-group, ports: [{ name: p, side: right }] }
+  peer: { group: row-group, ports: [{ name: q, side: left }] }
+  wide: { group: lower, label: "a rather wide node label here" }
+  sub: { group: lower, ports: [{ name: q, side: left }] }
+links:
+  - [hub.p, peer.q]
+  - [hub.p, sub.q]
+  - [hub, wide]

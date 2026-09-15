@@ -138,6 +138,9 @@ is a standalone schema-v2 document. `stage-inputs.yaml` is separate test data.
 | [a-fan-branch-reserves-its-descent](synthetic/a-fan-branch-reserves-its-descent.yaml) | 7e | The same fan with its remainder's target one tier down, on a port facing up. The branch turns at that port's own outward checkpoint, keeps the gate's clearance from every node in the corridor it crosses, and stops where the port's normal stands, so stage 8 draws only the 15 px approach. Every gate passes. |
 | [a-pinned-path-between-two-fans](synthetic/a-pinned-path-between-two-fans.yaml) | 5, 6, 7e | The pinned path is the straight leaf of a fan at each of its two ports, so both trees split it from opposite ends. The row gap reserves both continuations instead of one and the far side's stem, and each junction owns its own half. The diagram still fails G6 between the two remainders, whose facing fans take one row; that is a separate defect. The diagram is produced. |
 
+| [a-fan-branch-stops-at-its-approach](synthetic/a-fan-branch-stops-at-its-approach.yaml) | 7e | The remainder's target is one tier down on a left port, so that port's approach begins at a depth the branch has passed. The branch stops on the row it peels at and its track steps clear of the target node, instead of handing over past the target for stage 8 to come back along the reserved run. Every gate passes. |
+| [a-fan-track-steps-past-a-wall](synthetic/a-fan-track-steps-past-a-wall.yaml) | 7e | A wide node stands across the corridor a fan branch crosses, on the coordinate that branch wanted. The track steps to the edge of that node nearer the coordinate it wanted. Every gate passes; without the step the diagram fails G4 and G6. |
+
 The first 14 diagrams are ticket 00's approved counter-examples. `fitting-link-label` is the
 test-only successful-label input ticket 14 added beside them; it needs no stage precondition,
 because the whole pipeline runs on it.

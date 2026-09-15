@@ -272,3 +272,39 @@ it('ticket 37: a pinned path between two fans gives each tree its own half of th
   expect(owners[0]).toBe(roots[0]!.id);
   expect(owners.at(-1)).toBe(roots[1]!.id);
 }, 60000);
+
+it('ticket 45: a branch whose far port faces back stops on its peel row (ADR-0018 rule 3)', async () => {
+  // `sub.q` faces left, so its own approach begins at a depth the branch has already passed. Running
+  // out to the tree's common end would hand over past the target and leave stage 8 to come back
+  // along the reserved run, which `validateRoutedPaths` refuses.
+  const model = await run(fixture('a-fan-branch-stops-at-its-approach'));
+  expect(score(model).snapshot.passed).toBe(true);
+  const branch = model.links[1]!, port = model.nodes['sub']!.ports[0]!;
+  const runs = branch.sharedRuns!.from!;
+  // The reserved run is the root stem and the descent, and nothing beyond: it ends on the row the
+  // branch peels at, not one pitch further out.
+  expect(runs).toHaveLength(2);
+  expect(runs[1]!.to.x).toBe(model.nodes['hub']!.ports[0]!.anchor!.x + MIN_STEM);
+  // The track was stepped clear of the target node, so the route turns once into the port.
+  expect(runs[1]!.to.y).toBeLessThan(model.nodes['sub']!.bounds!.y);
+  expect(branch.path!.segments.at(-1)).toMatchObject({ to: port.anchor });
+}, 60000);
+
+it('ticket 45: a fan track steps past the node standing in its corridor (ADR-0018 rule 3)', async () => {
+  // A wide node under the hub covers the coordinate the branch wants, so the branch would turn on
+  // that node and run along it. The track steps to the edge of the node nearer the coordinate it
+  // wanted, which is the wall step rule 3 is about.
+  const model = await run(fixture('a-fan-track-steps-past-a-wall'));
+  const report = score(model).snapshot;
+  expect(report.passed).toBe(true);
+  for (const gate of ['G2', 'G4', 'G6'] as const) expect(report.gates[gate]!.violations).toEqual([]);
+  const wall = model.nodes['wide']!.bounds!, target = model.nodes['sub']!.ports[0]!.anchor!;
+  const track = model.links[1]!.sharedRuns!.from!.at(-1)!.to.y;
+  // The coordinate the branch wanted is inside the wall; the track it took is clear of it, on the
+  // side the branch came from.
+  expect(target.y - 15).toBeGreaterThan(wall.y);
+  expect(track).toBeLessThanOrEqual(wall.y - 10);
+  // The reserved run really crosses the wall's own span, so the step was not free.
+  const reach = model.links[1]!.sharedRuns!.from!.at(-1)!;
+  expect(Math.max(reach.from.x, reach.to.x)).toBeGreaterThan(wall.x);
+}, 60000);

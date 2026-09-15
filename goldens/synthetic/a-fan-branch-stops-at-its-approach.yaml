@@ -1,0 +1,18 @@
+# Expected: the remainder's target is one tier down and its port faces *left*, so that port's own
+# approach begins at a depth the branch has already passed. A branch that ran out to the tree's
+# common end would hand over past its own target and stage 8 would come back along the reserved run
+# (`Routed path retraces itself`). The branch stops on the row it peels at instead, and its track is
+# stepped clear of the target node, so the route leaves the fan travelling on and turns once into the
+# port. Every gate passes.
+portograph: 2
+profile: network
+groups:
+  row-group: { tier: 0 }
+  lower: { tier: 1 }
+nodes:
+  hub: { group: row-group, ports: [{ name: p, side: right }] }
+  peer: { group: row-group, ports: [{ name: q, side: left }] }
+  sub: { group: lower, ports: [{ name: q, side: left }] }
+links:
+  - [hub.p, peer.q]
+  - [hub.p, sub.q]
