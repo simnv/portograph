@@ -250,3 +250,48 @@ A fan branch's descent is therefore the fan's to reserve, and it is reserved whe
 (ADR-0018 rule 3, amended 2026-09-15). Checked before a second mechanism was written: allocating it
 here as a column on the target port's x would need the allocation to accept a shared-run terminal
 inside a band, and would then have to re-cut geometry 7e had already fixed.
+
+## Ninth amendment (2026-09-16, from the stress test; stress ticket 06): a refused position moves the search on, and the height is measured with the labels in front of it
+
+Two items the seventh amendment left, both measured on the Enterprise NTP sheet.
+
+**A row refused for a reason that names no distance takes the next position the pitch allows.** The
+sixth amendment says rows pack from the low boundary, one pitch apart, "each at the first row clear
+of frozen placement geometry". The implementation honoured that for an obstacle **rectangle** only:
+a rectangle names how far to advance, so the search went past its bottom. The three other refusals —
+the row runs along a group edge (ADR-0013), the row meets a corridor the link owns, the row meets a
+reserved run of the link's own — were answered after the search had settled, and a failure there
+left the run out. A gap with one row to seat and four positions the pitch allowed therefore tried
+one position, was refused for running along a group edge, and allocated **nothing**.
+
+A group edge names only "not here". So does a corridor, and so does an own run. The search advances
+by one pitch on each of them and gives up only at the gap's limit. That is the sixth amendment's own
+packing rule, read as it is written, and the rule itself does not change. Measured on
+`goldens/synthetic/a-row-steps-past-a-group-edge.yaml`: the gap is y 121.00 … 190.25, the first
+position is 129.75 and lies 8.75 px under a group edge that keeps 10.75 px, and the row is seated at
+147.25, one pitch on. The nine-node reproducer publishes. On the Enterprise NTP sheet the gap that
+seated none of its four rows now seats six runs of six.
+
+**A tier gap is measured with the group labels of its own diagram in front of it.** The seventh
+amendment made the height rule 7f's first act, "before any group label is placed, because the growth
+moves whole bands and a label placed first would stay behind". The reason is sound and the ordering
+was not: a group label is an obstacle in the tier gap beside it, so a gap measured before the labels
+grows for rows the labels then refuse. Measured, that cost the Enterprise NTP sheet 715 px of canvas
+for a gap that seats nothing.
+
+7f therefore places its group labels, measures, and places them again. `produceGroupLabelBands`
+strips every group label and re-plans it on each call, so the last step answers the seventh
+amendment's objection exactly: no label stays behind, because no label survives the third call. It
+runs only where the measurement moved a band. The measurement itself moves each group's label band
+and placed label with the group, so the probe reads the geometry the move produces rather than the
+geometry it left.
+
+**What this leaves open, measured and filed as stress ticket 06's residue.** The Enterprise NTP
+sheet still does not publish. With the labels in front of it, three of its twelve gaps refuse, all
+three on one clause and for one reason: the port's own approach beyond a boundary is blocked, and
+the rectangle that blocks it is a **group label** in all three cases (gaps 5/6, 6/7 and 8/9 by tier
+index). The sixth amendment's answer to that is wholesale — "a gap that cannot leave every one of
+its approaches clear allocates nothing" — so a gap of 48 rows allocates none because one approach is
+covered. Measured by leaving only the covered run out, which the allocation can already do (it owes
+that run its head-on approach and keeps the rows clear of it): 5/6 seats 47 of 48 and 8/9 seats 33
+of 34. That is a change to this amendment's own decline rule and it is not taken here.

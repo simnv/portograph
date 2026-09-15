@@ -291,7 +291,12 @@ and the gap allocates only where it is clear.
 
 Rows pack from the low boundary. The pitch between two of them is `16 px + widest routed stroke`.
 Each row takes the first position clear of frozen geometry at or beyond that pitch past the one
-before it. The first and the last keep half a pitch from their own boundary. Two runs that stand on
+before it. The search advances by what refused the position. An obstacle rectangle names a
+distance, so the next position tried is the one past its bottom. A group edge the row would run
+along, a corridor the link owns and a reserved run of the link's own name only "not here", so the
+next position tried is one pitch on. A run is left out only when the gap's limit is reached: a
+single refused position never costs the gap its whole allocation.
+The first and the last keep half a pitch from their own boundary. Two runs that stand on
 one x would share length there. A lane can sit under a lane of the same x in the band above, and a
 port can sit over a lane's mouth. The one that leaves the low boundary turns first. Two such runs
 from one boundary have no clean order, and the gap allocates neither.
@@ -513,10 +518,16 @@ and coincident lateral runs even when unrelated ports create unequal endpoint sp
 projection onto a common endpoint block is declined if its full side capacity would cross a sibling
 or immutable lane; local slots remain valid and the bundle bends instead.
 
-### 7f — tier gap room, then group label bands
+### 7f — group label bands, tier gap room, group label bands again
 
-**A tier gap grows to the rows it must seat (ADR-0015 rule 1).** This is 7f's first act, before any
-label is placed. `bandGap` is one number for the whole diagram, chosen in stage 4 from the node
+**A tier gap grows to the rows it must seat (ADR-0015 rule 1).** 7f places its group labels, then
+measures the gaps, then places its group labels again. The middle step is the reservation, and it
+needs the labels in front of it: a group label is an obstacle in the tier gap beside it, so a gap
+measured before the labels can grow for rows the labels then refuse. The last step is needed
+because the growth moves whole bands down and a label placed first would stay behind;
+`produceGroupLabelBands` strips every group label and re-plans it on each call, so the third step
+costs a replay and nothing else. It runs only where the second step moved a band.
+`bandGap` is one number for the whole diagram, chosen in stage 4 from the node
 clearance and the widest stroke. The room a tier gap needs is a property of that gap: the rows 7a's
 allocation must seat in it (`allocateGapRuns`). A gap short of that room grows by exactly the
 shortfall, and every band below it moves down by the running total. Nothing moves horizontally,
@@ -550,10 +561,9 @@ The count is taken here and not at 7a, where the gap's own bounds are fixed, bec
 a column: 7c aligns a child under its lane, 7d spans a bar across its ports, and 7e orders a
 bundle's ports. Measured: the M1 golden's one populated tier gap owes four rows after 7a and none
 after 7d, so a count taken at 7a would grow a gap the finished diagram does not need. 7f is the last
-placement rule, so its count is the one stage 8 receives. Two things 7f itself does afterwards the
-rule cannot see: it may move a group horizontally for a label band, which changes the count, and the
-group labels it places become obstacles in the tier gaps, which can make a gap refuse after it grew.
-Nothing re-reserves after that.
+placement rule, so its count is the one stage 8 receives. One thing 7f still does afterwards the
+rule cannot see: the third step may move a group horizontally for a label band, which turns a
+column into a row and changes the count. Nothing re-reserves after that.
 
 For every group: band height = label height + 8, inside the padding of the **title edge**: the
 horizontal edge with fewer incident routed link ports, so a group fed from above carries its title
