@@ -648,8 +648,11 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     // (ADR-0015 rule 1) before any label is placed, because the growth moves whole bands down and
     // a label placed first would stay behind. The replay then rebuilds every claim the movement
     // touched, exactly as a reservation change does anywhere else in 7f.
-    if (growTierGaps(draft)) rebuildRegionGeometry(draft, undefined, undefined, true);
     produceGroupLabelBands(draft);
+    if (growTierGaps(draft)) {
+      rebuildRegionGeometry(draft, undefined, undefined, true);
+      produceGroupLabelBands(draft);
+    }
   }
   else if (rule === 'link-labels') produceLinkLabels(draft);
   else if (changed || ['rows', 'lanes', 'flanks', 'centre', 'bundles'].includes(rule)) {

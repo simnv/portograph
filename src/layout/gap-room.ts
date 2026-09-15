@@ -96,13 +96,21 @@ function measured(model: LayoutModel, extra: ReadonlyMap<number, number>): Layou
   return probe;
 }
 
-/** Move every band down by the running total of the room the gaps above it gained. */
+/**
+ * Move every band down by the running total of the room the gaps above it gained. A group's label
+ * band and its placed label sit in the group's own padding, so they travel with it: a label left
+ * behind would stand in the gap the move just opened, as an obstacle nothing owns.
+ */
 function moveBands(model: LayoutModel, extra: ReadonlyMap<number, number>): void {
   let shift = 0;
   for (const band of [...model.tierBands].sort((a, b) => a.bounds!.y - b.bounds!.y)) {
     shift += extra.get(band.tier) ?? 0;
     if (shift <= EPS) continue;
-    for (const id of band.groups) moveGroup(model, model.groups[id]!, 0, shift);
+    for (const id of band.groups) {
+      moveGroup(model, model.groups[id]!, 0, shift);
+      for (const entry of model.labelBands) if (entry.group === id) entry.bounds.y += shift;
+      for (const label of model.labels) if (label.role === 'group' && label.id === `label:group:${id}` && label.bounds) label.bounds.y += shift;
+    }
   }
   rebuildNodeGeometry(model, Object.keys(model.nodes), 'current');
   rebuildRegions(model);
