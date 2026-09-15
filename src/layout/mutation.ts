@@ -22,6 +22,7 @@ import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
 import { produceGroupLabelBands, validateGroupLabelBands } from './bands.js';
 import { growTierGaps } from './gap-room.js';
+import { tierGapRoom } from './gap-runs.js';
 import { produceLinkLabels, validateLinkLabels } from './link-labels.js';
 import { validateRoutedPaths } from '../route/validate.js';
 
@@ -40,6 +41,14 @@ function jsonValue(value: unknown): void {
   }
 }
 function same(a: unknown, b: unknown, message: string): void { if (!equal(a, b)) throw new Error(message); }
+/**
+ * The tier gaps that owe a row they cannot seat. 7f has already reserved the room every gap asks
+ * for, so a later reservation change that makes one of these owe more room owes it room nothing
+ * will reserve.
+ */
+function shortGaps(model: LayoutModel): number {
+  return tierGapRoom(model).filter(room => room.rows > 0 && !room.refuses && room.seated < room.rows).length;
+}
 function pick<T extends object, K extends keyof T>(value: T, keys: readonly K[]): Pick<T, K> {
   return Object.fromEntries(keys.filter(key => Object.hasOwn(value, key)).map(key => [key, value[key]])) as Pick<T, K>;
 }
@@ -655,16 +664,20 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     // callback, exactly as the growth above does. It runs last in 7f, after every centring replay,
     // because each replay reads lane x as that feed's authoritative x: a corridor moved before one
     // is a corridor the replay chases, and the child's node stretches after it. Nothing moves here,
-    // so the label bands 7f has just placed stay where they are — the corridor keeps clear of them.
+    // so the label bands 7f has just placed stay where they are.
     const heldLanes = clone(draft.lanes);
     if (reseatLanes(draft)) {
       rebuildLaneExtents(draft);
-      // A corridor that follows its child may open an alignment 7c could not reach, and the
-      // centring invariant would then read the published placement as unfinished work. Measure it
-      // both ways and keep the corridors where they were rather than publish that contradiction.
-      const followed = clone(draft.lanes), after = centreViolations(draft).length;
+      // Two things the move can spoil, and it is refused rather than allowed to. It may open an
+      // alignment 7c could not reach, and the centring invariant would then read the published
+      // placement as unfinished work. It also turns the run in the gap beside the corridor from a
+      // column into a row, and the height rule has already measured that gap: a gap that cannot
+      // seat the new row would owe room nothing reserves. Measure both ways and keep the corridors
+      // where they were rather than publish either contradiction.
+      const followed = clone(draft.lanes), after = [centreViolations(draft).length, shortGaps(draft)];
       draft.lanes = heldLanes; rebuildLaneExtents(draft);
-      if (after <= centreViolations(draft).length) { draft.lanes = followed; rebuildLaneExtents(draft); }
+      const held = [centreViolations(draft).length, shortGaps(draft)];
+      if (after[0]! <= held[0]! && after[1]! <= held[1]!) { draft.lanes = followed; rebuildLaneExtents(draft); }
       else draft.diagnostics = draft.diagnostics.filter(item => item.code !== 'LANE_FOLLOWS_ITS_CHILD');
     }
   }

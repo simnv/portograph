@@ -320,16 +320,26 @@ The move is made only when every one of these holds:
 - the move leaves the **centring invariant no worse**. A corridor that follows its child can open
   an alignment 7c could not reach, and the invariant would then read the published placement as
   unfinished work. The rule measures `centreViolations` both ways and keeps the corridors where
-  they were rather than publish that contradiction.
+  they were rather than publish that contradiction;
+- the move leaves **no tier gap owing a row it cannot seat**. The move turns the run in the gap
+  beside the corridor from a column into a row, and 7f has already reserved the room every gap
+  asks for. The rule counts the gaps where `rows > 0`, the allocation refuses nothing and the
+  seating falls short, both ways, and keeps the corridors where they were when the move adds one.
 
 **The move runs last in 7f**, after the tier-gap growth and after the group label bands, and that
 is a measured choice. Every centring replay reads lane x as that feed's authoritative x, so a
 corridor moved before one is a corridor the replay chases: on
 `goldens/synthetic/own-lane-is-an-obstacle.yaml` the same move made at 7c widened the child node
-from 145.78 to 1150.89 px and the canvas from 500.05 to 1505.16, and made before the label bands,
-to 622.9 px and 977.16. Made last, nothing moves at all: the corridor alone changes, and crossings
-go 3 → 1 with Q 0.5122 → 0.6704. Nothing else moves either, so the label bands 7f has just placed
-stay where they are, and the corridor is measured clear of them.
+from 145.78 to 1150.89 px and the canvas from 500.05 to 1505.16, and made before the tier-gap
+growth, to 622.89 px and 977.16 — the growth's own replay chases it. Made last, nothing moves at
+all: the corridor alone changes, and crossings go 3 → 1 with Q 0.5122 → 0.6704. Nothing else moves
+either, so the label bands 7f has just placed stay where they are, and the corridor is measured
+clear of them.
+
+The row the move creates is therefore **refused, not reserved**: the gap keeps the room 7f gave it
+and the corridor moves only where that room seats the new row. Running the move before the growth
+so the height rule counts the row was measured and rejected for the number above — the golden is
+byte-identical either way, but the fixture the rule exists for loses its whole point.
 
 The reservation follows the corridor: extents and `fixedSegments` are rebuilt from the new x, so
 the per-gap allocation that reads lane x after 7a and 7c reads the moved one. A moved corridor
@@ -575,6 +585,13 @@ projection onto a common endpoint block is declined if its full side capacity wo
 or immutable lane; local slots remain valid and the bundle bends instead.
 
 ### 7f — tier gap room, then group label bands
+
+7f does three things, in this order: it grows each tier gap to the rows it must seat, it places the
+group label bands, and it lets a corridor whose child 7c could not seat follow that child (§ 7a).
+The corridor move is last because every centring replay before it — 7c's own, the growth's and the
+label bands' — reads lane x as that feed's authoritative x and chases a corridor that has moved.
+It therefore reserves no room: the gap keeps the room this stage gave it, and a move whose new row
+that room cannot seat is refused (§ 7a states the whole condition).
 
 **A tier gap grows to the rows it must seat (ADR-0015 rule 1).** This is 7f's first act, before any
 label is placed. `bandGap` is one number for the whole diagram, chosen in stage 4 from the node
