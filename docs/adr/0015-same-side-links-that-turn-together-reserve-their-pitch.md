@@ -105,3 +105,74 @@ reachable in principle even though no M1 input reaches it, and because withdrawi
 to reverse than leaving one unverified. Treat it the way ADR-0001 treats finding 42: recorded, not
 resolved, and not a dependency of any ticket. Anything that claims rule 4 must first produce the
 input that needs it.
+
+## Sixth amendment (2026-09-15, from the stress test; stress ticket 04)
+
+**Rule 1 also allocates a tier gap.** The row gap between two row neighbours was the first unit the
+rule reserved. The **tier gap** — the open band between two adjacent tier bands — is the second. It
+is the one the Enterprise NTP stress test names. Three fixes on 2026-09-15 (stress tickets 01 and
+02) each handed the router one more reservation it was being judged against. The item behind all
+three is this: nothing allocated the runs that cross a tier gap. The first ownership batch to reach
+the gap therefore took whatever room it liked, and the next link found its own corridor closed.
+
+The unit is the run, not the link. A tier gap is bounded by the lane extents that face it. Every
+planned routed gap that straddles it, and has a lane terminal on one of its boundaries, is
+allocated:
+
+- a **column** where the run's two ends share one x — the straight segment across the gap;
+- a **row** where they do not — a horizontal line in the gap, with a vertical segment at each end;
+- a **tail** where the far end is a port beyond the gap — the run reaches the gap's far boundary on
+  that port's x; the port's own approach beyond it stays routed, and the allocation is made only
+  where that approach is clear.
+
+Rows pack from the low boundary, one pitch (`16 px + widest routed stroke`) apart, each at the first
+row clear of frozen placement geometry. The order is forced wherever two runs stand on one x: the
+one leaving the low boundary turns first, or their vertical segments share length. A run the gap leaves out
+still owes its own head-on approach of one router stem, and the rows keep clear of it. A gap where
+no run needs a row allocates nothing.
+
+**Two allocated runs of one gap may cross, and the crossing is reserved.** Neither run is routed, so
+neither needs an exemption from the other's obstacle. A run *along* a gap is a wall along it and
+never across it. The links that must cross the gap without an allocation of their own are therefore
+given the **row**. That is rule 3 applied to the obstacle set instead of to the batches. The run's
+vertical segments still obstruct those links, and a route can pass them by.
+
+The run's owner is not given the row either. Its route meets the run at the two terminals, so the
+end rectangles keep the owner and the ones between do not. Otherwise its own other gaps could run
+back along geometry the stitcher inserts verbatim.
+
+An allocated run also keeps the gate's clearance from two things the router would otherwise have to
+discover. The first is every reserved run of its own link that runs the same way and never meets it.
+The second is the outward stem of every routed attachment in the diagram. It also stays out of the
+link-free margin every group edge keeps (ADR-0013), whichever link the group belongs to.
+
+**What this supersedes.** The lane-approach cover measured in stress ticket 02 (12 repaired, 4
+broken over 322 diagrams) is not reinstated: it was a rectangle standing in for a reservation, and
+this is the reservation. The pending-stem rectangles of stress ticket 02 stay for the attachments no
+gap allocation reaches. The adapter's re-solve without direction masks stays: it is a property of
+this libavoid build, not of the reservation model.
+
+**What it does not do.** It does not grow a tier gap. A gap that cannot seat a row leaves that run
+exactly as it is today. The Enterprise NTP diagram needs about 40 runs in one 38.5 px tier gap, so
+it still fails; growing the band gap to the room its runs need is placement work above 7a and is
+the next ticket.
+
+The golden is unchanged: its four transit links descend on the x of their own lanes, so no run in
+either of its tier gaps needs a row.
+
+**Consequence measured, for the maintainer.** A reserved row crosses whatever descends through its
+tier gap, where an unreserved route could detour around. On
+`goldens/synthetic/own-lane-is-an-obstacle.yaml` that trade is: crossings 0 → 3, bends 12 → 6,
+continuity 0.33 → 1, G6 two violations → every gate passing, and Q 0.6046 → 0.5122. Every row that
+gap can seat meets the same two descents, so the score cannot be recovered without giving up the
+reservation. Recorded under decision Q32 as a metric regression a note waives.
+
+**What the sixth amendment does not settle.** Seven adversarial review rounds over about 20,000
+generated variants (stress ticket 04) left seven items open, and five of them are one question in
+five forms: **a reservation is a wall, and nothing in this pipeline separates crossing a wall from
+travelling along it.** Rule 3 names that rule for the batch planner. The obstacle set has no
+per-connector form of it, because the binding has no per-connector shape-ignore API (`pipeline.md`
+§ 8), so the allocation gives a crossing by removing a whole rectangle for a whole batch. Where that
+is too much, a route runs along a reservation; where it is too little, a route has no way through.
+The other two items are the limit of reserving room without routing: a run the allocation displaces
+can displace a second, and the second can seal a third link's approach.

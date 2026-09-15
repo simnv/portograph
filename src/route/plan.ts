@@ -3,6 +3,7 @@ import type { LayoutLink, LayoutModel, LayoutPort, PathSegment } from '../model/
 import { linkStrokeWidth } from '../theme/geometry.js';
 import { GROUP_LABEL_GEOMETRY, routedStroke } from '../layout/bands.js';
 import { legReservation, stemPlan, type GapPlan } from '../layout/sides-two.js';
+import { allocateGapRuns } from '../layout/gap-runs.js';
 import { findPort } from '../layout/row-paths.js';
 import { portId } from '../layout/skeleton-graph.js';
 import { samePoint } from '../score/geometry.js';
@@ -18,9 +19,15 @@ const OUTWARD: Record<Side, Point> = {
 };
 const OPPOSITE: Record<Side, Side> = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' };
 
-/** One piece of a stitched path: reserved geometry kept exactly, or a gap the router fills. */
+/**
+ * One piece of a stitched path: reserved geometry kept exactly, a tier-gap run this pass allocated,
+ * or a gap the router fills. An allocated run is reserved the same way, but it is not a claim the
+ * lanes rule wrote on the model, so the stitcher annotates it against the lanes it meets exactly as
+ * it annotates a routed gap.
+ */
 export type RoutePiece =
   | { kind: 'reserved'; segments: PathSegment[] }
+  | { kind: 'allocated'; segments: PathSegment[] }
   | { kind: 'gap'; connector: string; from: Point; to: Point };
 
 export interface LinkPlan {
@@ -29,11 +36,13 @@ export interface LinkPlan {
   connectors: RouteConnector[];
   /** The two nodes this link attaches to, shared-run ends included. */
   nodes: string[];
+  /** The node sides it attaches to, as `node|side`, a shared-run end included. */
+  sides: string[];
   /** Obstacle IDs this link already owns; two links may share a batch only when these agree. */
   exclusions: string[];
 }
 /** One link's reserved outward stem at one attachment, with the clearance a reserved run carries. */
-export interface StemReservation { link: string; node: string; bounds: Rect }
+export interface StemReservation { link: string; node: string; side: Side; bounds: Rect }
 
 export interface RoutePlan {
   /** Routed links with no path after stage 7f, in model order. These need libavoid. */
@@ -130,6 +139,37 @@ export function planRoute(model: LayoutModel): RoutePlan {
     legs.set(link.id, leg);
     obstacles.push(...completedRouteObstacles(model, link, `leg:${link.id}`, [leg.from, leg.to]));
   }
+  // The tier gaps a transit link crosses are allocated the same way and for the same reason
+  // (ADR-0015 rule 1): the room is reserved before the first batch runs, so no batch can consume
+  // the corridor another link's own lane opens into.
+  const gapRuns = new Map<string, Map<number, PathSegment[]>>();
+  for (const run of allocateGapRuns(model)) {
+    // A link that turns in a row gap holds one reserved run, and its leg is that one. `gapPlan`
+    // declines a gap whose legs own a lane, so the two never meet; this keeps the obstacle set and
+    // the stitched pieces agreed if they ever do.
+    if (legs.has(run.link)) continue;
+    const link = model.links.find(item => item.id === run.link)!;
+    const runs = gapRuns.get(run.link) ?? new Map<number, PathSegment[]>();
+    runs.set(run.index, run.segments);
+    gapRuns.set(run.link, runs);
+    const points = [run.segments[0]!.from, ...run.segments.map(segment => segment.to)];
+    // `completedRouteObstacles` covers one rectangle per segment, in order, and trims only an end
+    // that is the link's own port anchor — an allocated run has neither. A link that must cross the
+    // gap is given the row and nothing else; a rectangle whose segment cannot be identified keeps
+    // the full protection.
+    const covers = completedRouteObstacles(model, link, `gap:${run.link}:${run.index}`, points);
+    const paired = covers.length === run.segments.length;
+    for (const [index, item] of covers.entries()) {
+      const segment = run.segments[index]!;
+      const across = paired && Math.abs(segment.from.y - segment.to.y) < 1e-9;
+      // The owner's own route reaches this run at its two terminals and nowhere else. The end
+      // rectangles therefore keep it as a consumer, so the gap beside the run can start inside one
+      // of them; the rectangles between do not, or the owner's other gaps could run along the run
+      // the stitcher inserts verbatim.
+      const terminal = index === 0 || index === covers.length - 1;
+      obstacles.push({ ...item, consumers: [...(terminal ? item.consumers : []), ...(across ? run.crossers : [])] });
+    }
+  }
   const owned = new Map<string, string[]>();
   for (const item of obstacles) for (const consumer of item.consumers) {
     owned.set(consumer, [...(owned.get(consumer) ?? []), item.id]);
@@ -146,7 +186,9 @@ export function planRoute(model: LayoutModel): RoutePlan {
     // gaps around it (ADR-0015 rule 1). `gapPlan` declines a gap whose legs already own a lane, so
     // the two reservations never meet and the traversal order stays the one the lanes rule wrote.
     const leg = legs.get(link.id);
-    const fixed = leg ? [...(link.fixedSegments ?? []), leg] : link.fixedSegments ?? [];
+    const woven = leg ? { segments: [...(link.fixedSegments ?? []), leg], allocated: new Set<number>() }
+      : interleave(link.fixedSegments ?? [], gapRuns.get(link.id));
+    const fixed = woven.segments;
     const stops: { endpoint: RouteEndpoint; point: Point }[] = [
       { endpoint: from.endpoint, point: from.point },
       ...fixed.flatMap(segment => [{ endpoint: asPoint(segment.from), point: segment.from },
@@ -163,9 +205,9 @@ export function planRoute(model: LayoutModel): RoutePlan {
         // A reserved corridor admits only its owner's collinear run, so the gap beside it joins
         // head-on: one approach checkpoint the standard stem away, outside the reservation. Each
         // checkpoint carries the reach placement reserved for it, from the terminal it belongs to.
-        const asked: { checkpoint: RouteCheckpoint; terminal: Point; node?: string }[] = [
+        const asked: { checkpoint: RouteCheckpoint; terminal: Point; node?: string; side?: Side }[] = [
           ...(first && from.checkpoint ? [{ checkpoint: { ...from.checkpoint, arrival: DIRECTION_BITS[OPPOSITE[from.port!.side!]], departure: ALL_DIRECTIONS },
-            terminal: from.point, node: from.port!.ref.node }] : []),
+            terminal: from.point, node: from.port!.ref.node, side: from.port!.side! }] : []),
           // Only a lane is a corridor that admits its owner's run alone, so only a lane asks the gap
           // beside it to join head-on. A leg's run is entered from the side by construction — the
           // stem reaches its slot and turns into it — and an approach point on the leg's own line
@@ -173,7 +215,7 @@ export function planRoute(model: LayoutModel): RoutePlan {
           ...(first || fixed[index - 1]!.lane === undefined ? [] : [{ checkpoint: approachCheckpoint(fixed[index - 1]!, 'to'), terminal: fixed[index - 1]!.to }]),
           ...(last || fixed[index]!.lane === undefined ? [] : [{ checkpoint: approachCheckpoint(fixed[index]!, 'from'), terminal: fixed[index]!.from }]),
           ...(last && to.checkpoint ? [{ checkpoint: { ...to.checkpoint, arrival: ALL_DIRECTIONS, departure: DIRECTION_BITS[OPPOSITE[to.port!.side!]] },
-            terminal: to.point, node: to.port!.ref.node }] : []),
+            terminal: to.point, node: to.port!.ref.node, side: to.port!.side! }] : []),
           // A checkpoint the adjacent reserved run already passes through, head-on and strictly
           // inside a segment, is consumed by that run: a junction leaf that reaches deeper than a
           // lane's approach point has honoured it, and the gap starting at the leaf could only
@@ -182,18 +224,25 @@ export function planRoute(model: LayoutModel): RoutePlan {
         // Only an attachment stem is reserved against the batches still to run. Reserving the lane
         // approach as well was measured and left out; see `.scratch/stress/issues/02`.
         for (const item of asked) {
-          if (item.node === undefined) continue;
-          stems.push({ link: link.id, node: item.node, bounds: stemBounds(model, link, item.terminal, item.checkpoint) });
+          if (item.node === undefined || item.side === undefined) continue;
+          stems.push({ link: link.id, node: item.node, side: item.side,
+            bounds: stemBounds(model, link, item.terminal, item.checkpoint) });
         }
         connectors.push({ id, from: start.endpoint, to: end.endpoint, checkpoints: asked.map(item => item.checkpoint) });
         pieces.push({ kind: 'gap', connector: id, from: start.point, to: end.point });
       }
-      if (!last) pieces.push({ kind: 'reserved', segments: [fixed[index]!] });
+      if (!last) pieces.push({ kind: woven.allocated.has(index) ? 'allocated' : 'reserved', segments: [fixed[index]!] });
     }
     if (link.sharedRuns?.to?.length) pieces.push({ kind: 'reserved', segments: reversedRuns(link.sharedRuns.to) });
     const exclusions = [...(owned.get(link.id) ?? [])].sort();
-    links.push({ link: link.id, pieces, connectors,
-      nodes: [link.attachments!.from.node, link.attachments!.to.node], exclusions });
+    links.push({ link: link.id, pieces, connectors, exclusions,
+      nodes: [link.attachments!.from.node, link.attachments!.to.node],
+      // Read from the link, not from the endpoints: an end that consumes a shared run reserves no
+      // stem of its own, and its node side is still shared space its batch may use.
+      sides: (['from', 'to'] as const).flatMap(end => {
+        const side = findPort(model, link.attachments![end])?.side;
+        return side === undefined ? [] : [`${link.attachments![end].node}|${side}`];
+      }) });
   }
   for (const [node, list] of pins) {
     const shape = obstacles.find(item => item.id === `node:${node}`);
@@ -225,18 +274,36 @@ function stemBounds(model: LayoutModel, link: LayoutLink, terminal: Point, check
  * earlier batch is otherwise free to run through the outward stem of a link it has never seen, and
  * that link then has no route to its own port.
  *
- * A stem on a node this batch also attaches to is left out. Two ports on one node side share that
- * strip, and a rectangle over one of them blocks the other. The attachment is read from the link,
- * not from the stems, because an end that consumes a shared run starts at the run's terminal and
- * reserves no stem of its own.
+ * A stem on a node **side** this batch also attaches to is left out, because two ports of one node
+ * side share that strip and a rectangle over one of them blocks the other. A port on another side
+ * of the same node stands in its own strip and keeps its reservation. The attachment is read from
+ * the link, not from the stems, because an end that consumes a shared run starts at the run's
+ * terminal and reserves no stem of its own.
  */
 export function pendingStemObstacles(plan: RoutePlan, batch: { links: string[] }, pending: Set<string>): RouteObstacle[] {
-  const nodes = new Set(plan.links.filter(item => batch.links.includes(item.link)).flatMap(item => item.nodes));
-  return plan.stems.flatMap((stem, index) => pending.has(stem.link) && !nodes.has(stem.node)
+  const sides = new Set(plan.links.filter(item => batch.links.includes(item.link)).flatMap(item => item.sides));
+  return plan.stems.flatMap((stem, index) => pending.has(stem.link) && !sides.has(`${stem.node}|${stem.side}`)
     ? [{ id: `stem:${index}:${stem.link}`, bounds: stem.bounds, consumers: [] }] : []);
 }
 
 const asPoint = (point: Point): RouteEndpoint => ({ kind: 'point', x: point.x, y: point.y });
+
+/**
+ * One link's reserved runs in traversal order: the lane runs the lanes rule fixed, each preceded by
+ * the tier-gap run allocated for the planned gap that leads into it, and the last allocation after
+ * them all. A gap the allocation declined contributes nothing and the router still fills it.
+ */
+function interleave(fixed: PathSegment[], runs: Map<number, PathSegment[]> | undefined):
+{ segments: PathSegment[]; allocated: Set<number> } {
+  const allocated = new Set<number>();
+  if (!runs?.size) return { segments: fixed, allocated };
+  const segments: PathSegment[] = [];
+  for (let index = 0; index <= fixed.length; index++) {
+    for (const run of runs.get(index) ?? []) { allocated.add(segments.length); segments.push(run); }
+    if (index < fixed.length) segments.push(fixed[index]!);
+  }
+  return { segments, allocated };
+}
 
 /**
  * Whether the reserved runs adjacent to a gap pass through a checkpoint strictly inside one of their

@@ -88,9 +88,9 @@ function strokeAllowance(model: LayoutModel): number { return routedStroke(model
  * of that distance; `route/obstacles` builds the rectangle itself from the same constants, and
  * placement reserves against it before any path exists.
  */
-export function nodeObstacleReach(model: LayoutModel, node: LayoutModel['nodes'][string]): number {
-  return GROUP_LABEL_GEOMETRY.nodeClearance
-    + ((node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node) + routedStroke(model)) / 2;
+export function nodeObstacleReach(model: LayoutModel, node: LayoutModel['nodes'][string],
+  stroke = routedStroke(model)): number {
+  return GROUP_LABEL_GEOMETRY.nodeClearance + ((node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node) + stroke) / 2;
 }
 
 /**

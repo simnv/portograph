@@ -276,6 +276,47 @@ corridor without moving those owners.
 An existing lane's identity, owner, x and width cannot change in later stages. Extents follow the
 current intermediate band with `10 + pathStroke / 2` padding before placement freezes.
 
+**The runs between the lanes are allocated too (ADR-0015 rule 1).** A **tier gap** is the open band
+between two adjacent tier bands. The lane extents that face it bound it. Every run that crosses one
+is allocated before the first ownership batch runs. The rule that owns the lanes owns this too,
+and reads the same frozen placement.
+
+A run whose two ends share one x takes that **column**, straight across the gap. A run whose ends
+differ takes a **row**: a horizontal line inside the gap. A vertical segment joins the row to each
+end. Where the far end is a port beyond the gap, that segment reaches the gap's far boundary at the
+port's x. The piece from the boundary out to the port is the port's own approach. It stays routed,
+and the gap allocates only where it is clear.
+
+Rows pack from the low boundary. The pitch between two of them is `16 px + widest routed stroke`.
+Each row takes the first position clear of frozen geometry at or beyond that pitch past the one
+before it. The first and the last keep half a pitch from their own boundary. Two runs that stand on
+one x would share length there. A lane can sit under a lane of the same x in the band above, and a
+port can sit over a lane's mouth. The one that leaves the low boundary turns first. Two such runs
+from one boundary have no clean order, and the gap allocates neither.
+
+Every run with a lane terminal on a boundary owes a head-on approach of one router stem on the
+lane's own x. It owes it whether the gap seats that run or not, and every seated row keeps the
+gate's clearance from it. A gap allocates nothing when no run in it needs a row. A diagram whose
+transit links all descend on one x is therefore untouched.
+
+An allocated run also keeps that clearance from every reserved run of its own link that runs the
+same way and never meets it. A pair that meets at a corner is one turn of one path. A pair that runs
+the same way and does not meet is the pair G6 measures, whichever link owns it.
+
+Every routed attachment holds an outward stem, whether a rule has claimed its path or not. An
+allocated run may not stand in one. The link that owns that stem would otherwise have no route to
+its own port. A run also stays out of the link-free margin every group edge keeps (ADR-0013). That margin is not
+an obstacle for a link the group holds, because such a link has to reach a port inside the box. G6
+still refuses a segment that *runs along* the edge from on or outside it, whoever owns the group.
+The allocation therefore keeps the margin on the edge a run would follow. The edge a run crosses is
+free.
+
+Two allocated runs of one gap may **cross**. Neither is routed, so the crossing is reserved rather
+than discovered and neither needs an exemption from the other. A link that must cross the gap
+without a lane terminal on either boundary keeps the route it has today. The rows do not obstruct
+it: a run along a gap is a wall along it and never across it (ADR-0015 rule 3). A gap that cannot
+leave every one of its approaches clear allocates nothing.
+
 A link transiting several tiers reserves a lane at each, ordered from source to target even for
 upward links. Prefer in-span corridors. When they do not fit, retain source geometry, reserve an
 outside-span corridor, and warn that routing must complete its attachment jog. Non-bundle runs
@@ -610,12 +651,19 @@ Registered as obstacles, each expanded once in the adapter and never in the mode
 - **lanes**, **group and node labels**, **bundle envelopes** and model
   obstacles, each expanded by the routed half stroke;
 - **the reserved outward stem of every link no batch has routed yet**, covered by the same
-  `10 + (its stroke + widest routed stroke) / 2` clearance. A stem is left out on a node the current
-  batch attaches to as well, because two ports on one node side share that strip. These rectangles
-  are added per batch. They never enter the ownership exclusions, so they cannot change a batch. The
-  head-on approach to a lane is a reservation of the same kind and is **not** covered: measured over
-  322 diagrams, covering it repaired 8 more and broke 4, so it waits for the per-gap allocation
-  ADR-0015 rule 1 describes.
+  `10 + (its stroke + widest routed stroke) / 2` clearance. A stem is left out on a node **side**
+  the current batch attaches to as well. Two ports of one node side share that strip. A port on
+  another side of the same node stands in its own strip and keeps its reservation.
+  These rectangles are added per batch. They never enter the ownership exclusions, so they cannot
+  change a batch; they remain for the attachments no gap allocation reaches.
+- **every allocated tier-gap run** (§ 7a), covered by the clearance a reserved run carries, for
+  every batch from the first. This is the head-on approach to a lane, reserved rather than covered
+  by a rectangle. Measured over 322 diagrams, a 23 × 38 px cover repaired 8 failures and broke 4.
+  The wall it put in a tier gap pushed other links into routes their own checkpoints could not meet.
+  A run's **row** does not obstruct the links that must cross that gap, which the allocation names.
+  Its vertical segments obstruct them, and a route can pass those by. The owner is not given the row
+  either. Its route meets the run at the two terminals, so the end rectangles keep the owner and the
+  ones between do not.
 
 **A lane obstructs its owner too.** The corridor admits the owner's collinear run and nothing else.
 Stage 8 stitches that run back. It never routes it. The owner therefore needs no exemption here.
@@ -640,11 +688,12 @@ containers in O(S log² S) time and O(S log S) space. Exact duplicates keep thei
 and surviving shapes retain input order. An exactly contained attachment shape is an error.
 
 Ownership is exact. A link may pass only through the reservations it already owns: its own bundle
-envelope and its own reserved runs, its lane runs included. A transit lane is not one of them: the
-corridor holds the owner's run, and stage 8 stitches that run back rather than route it. Owning the
-endpoint group does not open a label band. Links whose exclusion sets differ cannot share one router, because the binding has no
-per-connector shape-ignore API, so they run as an ordered sequence of **ownership batches**, and
-every completed route becomes a protective obstacle for the batches after it.
+envelope, its own reserved runs, its lane runs included, and the row of a tier-gap run its own route
+must cross. A transit lane is not one of them: the corridor holds the owner's run, and stage 8
+stitches that run back rather than route it. Owning the endpoint group does not open a label band.
+Links whose exclusion sets differ cannot share one router, because the binding has no per-connector
+shape-ignore API. They run as an ordered sequence of **ownership batches**, and every completed
+route becomes a protective obstacle for the batches after it.
 
 Ports are `ShapeConnectionPin`s, one non-zero class id per port (its ordinal after the topology
 freeze), direction = the side, **`setExclusive(false)` for any port carrying more than one link
@@ -665,7 +714,11 @@ skip a checkpoint it cannot reach, so every required one is verified against the
 and the stage rejects the route rather than publish geometry that occupies a reservation.
 
 Each link is stitched back in source-to-target order: its reserved runs byte-for-byte, with their
-owner, lane and `barCross` annotations, and the routed gaps between them. Where a gap meets one of
+owner, lane and `barCross` annotations, the tier-gap runs the allocation made for it, and the routed
+gaps between them. An allocated run is not a claim the lanes rule wrote on the model, so the
+stitcher names the corridor it leaves exactly as it names a routed gap that meets one. Where an
+allocated run and the gap beyond it are one straight run, the stitcher joins them. A run a rule
+wrote on the model is reproduced exactly and is never joined. Where a gap meets one of
 its own lanes it is split at the corridor boundaries and each piece names the one lane it touches,
 the same shape the region rules produce. Publication and restore then check the result
 structurally — complete anchored path, orthogonal and connected, exact reserved runs, perpendicular
@@ -712,8 +765,8 @@ once, with the same points and no masks, when the answer misses a checkpoint it 
 costs one more transaction on a batch that would otherwise fail the command. Swapping the vertical
 bits instead would make every mask bite, which turns each stem checkpoint from a minimum into a
 pinned turn — measured, that puts two runs 3.5 px apart where nothing reserves the pitch between
-them (ADR-0015 rule 1 reserves it in a row gap only), so the masks stay advisory until that room is
-reserved.
+them. ADR-0015 rule 1 reserves that room in a row gap and in a tier gap, not beside a node side, so
+the masks stay advisory until the room a pinned turn needs is reserved there too.
 
 
 ## Stage 9 — link labels
