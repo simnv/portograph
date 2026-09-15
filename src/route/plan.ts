@@ -274,7 +274,7 @@ function stemBounds(model: LayoutModel, link: LayoutLink, terminal: Point, check
  * earlier batch is otherwise free to run through the outward stem of a link it has never seen, and
  * that link then has no route to its own port.
  *
- * A stem on a node **side** this batch also attaches to is left out, because two ports on one node
+ * A stem on a node **side** this batch also attaches to is left out, because two ports of one node
  * side share that strip and a rectangle over one of them blocks the other. A port on another side
  * of the same node stands in its own strip and keeps its reservation. The attachment is read from
  * the link, not from the stems, because an end that consumes a shared run starts at the run's

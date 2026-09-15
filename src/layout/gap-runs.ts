@@ -11,12 +11,12 @@ import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
  * ADR-0015 rule 1, per gap: the room every run that crosses a **tier gap** needs, allocated before
  * the first ownership batch runs rather than discovered by whichever batch reaches the gap first.
  *
- * A tier gap is the open band between two adjacent tier bands, bounded by the reservations that
- * face it: the bottom of each lane that ends at its upper side and the top of each lane that begins
- * at its lower side. Every planned routed gap of a transit link that straddles it is allocated
- * here — a **column** where its two ends share one x, a **row** at its own pitch where they do
- * not — and stage 8 receives the result as reserved geometry it routes through and as an obstacle
- * to every other link. Nothing inside the gap is left for a batch to take.
+ * A tier gap is the open band between two adjacent tier bands. The reservations that face it bound
+ * it: the bottom of each lane that ends at its upper side, and the top of each lane that begins at
+ * its lower side. Every planned routed gap of a transit link that straddles it is allocated here.
+ * A run whose two ends share one x takes that **column**; a run whose ends differ takes a **row**
+ * at its own pitch. Stage 8 receives the result as reserved geometry it routes through, and as an
+ * obstacle to every other link. Nothing inside the gap is left for a batch to take.
  *
  * The allocation reads frozen placement and writes no model geometry, exactly as rule 1's leg
  * reservation does (`legReservation`) and for the same reason: `fixedSegments` belongs to the lanes
@@ -403,6 +403,14 @@ function blockers(model: LayoutModel): Blocker[] {
     // An allocated run may not stand in one: the link that owns it then has no route to its port.
     if (!drawn(link)) continue;
     for (const end of ['from', 'to'] as const) {
+      const runs = link.sharedRuns?.[end];
+      if (runs?.length) {
+        // An end that consumes a shared run leaves that run's terminal instead of a port, and the
+        // route beyond it needs the same room. A run standing on the terminal takes it.
+        const terminal = runs.at(-1)!.to;
+        result.push({ owners, bounds: grow({ x: terminal.x, y: terminal.y, width: 0, height: 0 }, margin) });
+        continue;
+      }
       const port = findPort(model, link.attachments![end]);
       if (!port?.anchor || port.side === undefined) continue;
       const stem = stemReach(model, model.nodes[link.attachments![end].node]!);
@@ -463,24 +471,18 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
   // the same figure the router nudges a same-batch pair apart by.
   const clearance = GROUP_LABEL_GEOMETRY.nodeClearance + routedStroke(model);
   /**
-   * How far a row must stand from the approaches a link outside the allocation still owes. A run
-   * the gap does not seat leaves its corridor head-on for one router stem, on the lane's own x, and
-   * a run seated over that stem would share length with it.
+   * The approaches the gap owes to the runs it leaves out, as rectangles. A run the gap does not
+   * seat still leaves its own corridor head-on for one router stem, on the lane's own x, and an
+   * allocated run that comes within the gate's clearance of that stem takes it.
    */
-  const window = (item: Participant, absent: ReadonlySet<string>): { low: number; high: number } => {
+  const owed = (absent: ReadonlySet<string>): Blocker[] => approaches.flatMap(item => {
+    if (!absent.has(item.link)) return [];
     const stem = GROUP_LABEL_GEOMETRY.routerStem;
-    let low = gap.low + pitch / 2, high = limit;
-    for (const end of ends(item)) {
-      for (const owed of approaches) {
-        if (owed.link === item.link.id || !absent.has(owed.link) || !same(owed.x, end.x)) continue;
-        if (owed.edge === end.edge) return { low: Infinity, high: -Infinity };
-        if (owed.edge === 'low') low = Math.max(low, gap.low + stem + clearance);
-        else high = Math.min(high, gap.high - stem - clearance);
-      }
-    }
-    return { low, high };
-  };
-  const clear = (item: Participant, row: number | undefined): boolean => {
+    const from = item.edge === 'low' ? gap.low : gap.high, to = item.edge === 'low' ? gap.low + stem : gap.high - stem;
+    return [{ owners: new Set([item.link]), bounds: grow({ x: item.x, y: Math.min(from, to), width: 0,
+      height: Math.abs(to - from) }, clearance) }];
+  });
+  const clear = (item: Participant, row: number | undefined, full: readonly Blocker[]): boolean => {
     const segments = runSegments(item, gap, row);
     if (!segments.length) return false;
     // A corridor admits its owner's collinear run alone, so a row that met one of the link's own
@@ -488,18 +490,19 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
     if (segments.some(segment => same(segment.from.y, segment.to.y) && meetsOwnLane(model, item.link, segment))) return false;
     // The link's own reserved runs are its exemption only where the allocated run meets them. A run
     // this one merely passes is geometry the gates measure against it like any other.
-    return !segments.some(line => firstBlock(list, item.link, line, attachedOf(item)))
+    return !segments.some(line => firstBlock(full, item.link, line, attachedOf(item)))
       && !segments.some(line => alongGroupEdge(model, line))
       && !meetsOwnRun(model, item, segments);
   };
   const seat = (absent: ReadonlySet<string>): Map<Participant, number> => {
+    const full = [...list, ...owed(absent)];
     const at = new Map<Participant, number>();
     let next = gap.low + pitch / 2;
     for (const item of order) {
-      const attached = attachedOf(item), bounds = window(item, absent);
-      let row = Math.max(next, bounds.low), seated = false;
-      while (row <= bounds.high + EPS) {
-        const blocked = runSegments(item, gap, row).map(line => firstBlock(list, item.link, line, attached))
+      const attached = attachedOf(item);
+      let row = next, seated = false;
+      while (row <= limit + EPS) {
+        const blocked = runSegments(item, gap, row).map(line => firstBlock(full, item.link, line, attached))
           .filter((found): found is Blocker => found !== undefined);
         if (!blocked.length) { seated = true; break; }
         const past = Math.max(...blocked.map(found => bottom(found.bounds)));
@@ -507,7 +510,7 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
         row = past;
       }
       // A run the gap cannot seat keeps the route it has today and crosses the rows it did seat.
-      if (!seated || row > bounds.high + EPS || !clear(item, row)) continue;
+      if (!seated || row > limit + EPS || !clear(item, row, full)) continue;
       at.set(item, row);
       next = row + pitch;
     }
@@ -525,9 +528,10 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
   }
   if (!at.size) return empty;
   const result = new Map<Participant, PathSegment[]>();
+  const settled = [...list, ...owed(absent)];
   for (const item of items) {
     if (needsRow(item) && !at.has(item)) continue;
-    if (!clear(item, at.get(item))) continue;
+    if (!clear(item, at.get(item), settled)) continue;
     result.set(item, runSegments(item, gap, at.get(item)));
   }
   return result;

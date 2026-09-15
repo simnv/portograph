@@ -305,9 +305,10 @@ the same way and does not meet is the pair G6 measures, whichever link owns it.
 
 Every routed attachment holds an outward stem, whether a rule has claimed its path or not. An
 allocated run may not stand in one. The link that owns that stem would otherwise have no route to
-its own port. A run also stays out of the link-free margin every group edge keeps (ADR-0013). A link that
-attaches inside a group crosses its boundary at its own port. G6 still refuses a segment that *runs
-along* that edge from on or outside the box.
+its own port. A run also stays out of the link-free margin every group edge keeps (ADR-0013). That margin is not
+an obstacle for a link the group holds, because such a link has to reach a port inside the box. G6
+still refuses a segment that *runs along* the edge from on or outside it, whoever owns the group, so
+the allocation keeps the margin on the edge a run would follow. The edge a run crosses is free.
 
 Two allocated runs of one gap may **cross**. Neither is routed, so the crossing is reserved rather
 than discovered and neither needs an exemption from the other. A link that must cross the gap
@@ -686,12 +687,12 @@ containers in O(S log² S) time and O(S log S) space. Exact duplicates keep thei
 and surviving shapes retain input order. An exactly contained attachment shape is an error.
 
 Ownership is exact. A link may pass only through the reservations it already owns: its own bundle
-envelope, its own reserved runs, its lane runs included, and the tier-gap runs of a gap its own
-route must cross. A transit lane is not one of them: the
-corridor holds the owner's run, and stage 8 stitches that run back rather than route it. Owning the
-endpoint group does not open a label band. Links whose exclusion sets differ cannot share one router, because the binding has no
-per-connector shape-ignore API, so they run as an ordered sequence of **ownership batches**, and
-every completed route becomes a protective obstacle for the batches after it.
+envelope, its own reserved runs, its lane runs included, and the row of a tier-gap run its own route
+must cross. A transit lane is not one of them: the corridor holds the owner's run, and stage 8
+stitches that run back rather than route it. Owning the endpoint group does not open a label band.
+Links whose exclusion sets differ cannot share one router, because the binding has no per-connector
+shape-ignore API. They run as an ordered sequence of **ownership batches**, and every completed
+route becomes a protective obstacle for the batches after it.
 
 Ports are `ShapeConnectionPin`s, one non-zero class id per port (its ordinal after the topology
 freeze), direction = the side, **`setExclusive(false)` for any port carrying more than one link

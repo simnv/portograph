@@ -159,11 +159,14 @@ function joinSeams(segments: PathSegment[], claimed: readonly boolean[]): PathSe
   const result: PathSegment[] = [], owned: boolean[] = [];
   for (const [index, segment] of segments.entries()) {
     const last = result.at(-1);
+    // One straight run means one line and one direction of travel. A pair that turns back on itself
+    // is a retrace, and joining it would delete the length the gates must see.
+    const along = (one: PathSegment, axis: 'x' | 'y'): number => Math.sign(one.to[axis] - one.from[axis]);
     const straight = last !== undefined && !claimed[index] && owned.at(-1) === false
       && ((Math.abs(last.from.x - last.to.x) <= EPS && Math.abs(segment.from.x - segment.to.x) <= EPS
-        && Math.abs(last.to.x - segment.from.x) <= EPS)
+        && Math.abs(last.to.x - segment.from.x) <= EPS && along(last, 'y') === along(segment, 'y'))
         || (Math.abs(last.from.y - last.to.y) <= EPS && Math.abs(segment.from.y - segment.to.y) <= EPS
-          && Math.abs(last.to.y - segment.from.y) <= EPS))
+          && Math.abs(last.to.y - segment.from.y) <= EPS && along(last, 'x') === along(segment, 'x')))
       && samePoint(last.to, segment.from) && last.lane === segment.lane && last.barCross === segment.barCross;
     if (straight) { result[result.length - 1] = { ...last, to: { ...segment.to } }; continue; }
     result.push(segment);
