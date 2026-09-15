@@ -1,5 +1,6 @@
-import type { Point, Side } from '../model/geometry.js';
+import type { Point, Rect, Side } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel, LayoutPort, PathSegment } from '../model/layout.js';
+import { linkStrokeWidth } from '../theme/geometry.js';
 import { GROUP_LABEL_GEOMETRY, routedStroke } from '../layout/bands.js';
 import { legReservation, stemPlan, type GapPlan } from '../layout/sides-two.js';
 import { findPort } from '../layout/row-paths.js';
@@ -26,9 +27,14 @@ export interface LinkPlan {
   link: string;
   pieces: RoutePiece[];
   connectors: RouteConnector[];
+  /** The two nodes this link attaches to, shared-run ends included. */
+  nodes: string[];
   /** Obstacle IDs this link already owns; two links may share a batch only when these agree. */
   exclusions: string[];
 }
+/** One link's reserved outward stem at one attachment, with the clearance a reserved run carries. */
+export interface StemReservation { link: string; node: string; bounds: Rect }
+
 export interface RoutePlan {
   /** Routed links with no path after stage 7f, in model order. These need libavoid. */
   remainders: string[];
@@ -37,6 +43,8 @@ export interface RoutePlan {
   links: LinkPlan[];
   batches: { id: string; links: string[] }[];
   obstacles: RouteObstacle[];
+  /** Reserved outward stems, in plan order; a batch avoids those of the links still to be routed. */
+  stems: StemReservation[];
   /** libavoid parameters for this diagram (`routeParameters`). */
   parameters: Record<string, number>;
 }
@@ -127,7 +135,7 @@ export function planRoute(model: LayoutModel): RoutePlan {
     owned.set(consumer, [...(owned.get(consumer) ?? []), item.id]);
   }
   const usage = portUsage(model), pins = new Map<string, RoutePin[]>();
-  const remainders: string[] = [], overlay: string[] = [], links: LinkPlan[] = [];
+  const remainders: string[] = [], overlay: string[] = [], links: LinkPlan[] = [], stems: StemReservation[] = [];
   for (const link of model.links) {
     if (link.path || !drawn(link)) continue;
     if (effectiveLayer(link) === 'overlay') { overlay.push(link.id); continue; }
@@ -153,29 +161,39 @@ export function planRoute(model: LayoutModel): RoutePlan {
       if (!(start.endpoint.kind === 'point' && end.endpoint.kind === 'point' && samePoint(start.point, end.point))) {
         const id = `${link.id}#${index}`;
         // A reserved corridor admits only its owner's collinear run, so the gap beside it joins
-        // head-on: one approach checkpoint the standard stem away, outside the reservation.
-        const checkpoints = [
-          ...(first && from.checkpoint ? [{ ...from.checkpoint, arrival: DIRECTION_BITS[OPPOSITE[from.port!.side!]], departure: ALL_DIRECTIONS }] : []),
+        // head-on: one approach checkpoint the standard stem away, outside the reservation. Each
+        // checkpoint carries the reach placement reserved for it, from the terminal it belongs to.
+        const asked: { checkpoint: RouteCheckpoint; terminal: Point; node?: string }[] = [
+          ...(first && from.checkpoint ? [{ checkpoint: { ...from.checkpoint, arrival: DIRECTION_BITS[OPPOSITE[from.port!.side!]], departure: ALL_DIRECTIONS },
+            terminal: from.point, node: from.port!.ref.node }] : []),
           // Only a lane is a corridor that admits its owner's run alone, so only a lane asks the gap
           // beside it to join head-on. A leg's run is entered from the side by construction — the
           // stem reaches its slot and turns into it — and an approach point on the leg's own line
           // is one the router cannot reach (ADR-0015 rule 1).
-          ...(first || fixed[index - 1]!.lane === undefined ? [] : [approachCheckpoint(fixed[index - 1]!, 'to')]),
-          ...(last || fixed[index]!.lane === undefined ? [] : [approachCheckpoint(fixed[index]!, 'from')]),
-          ...(last && to.checkpoint ? [{ ...to.checkpoint, arrival: ALL_DIRECTIONS, departure: DIRECTION_BITS[OPPOSITE[to.port!.side!]] }] : []),
+          ...(first || fixed[index - 1]!.lane === undefined ? [] : [{ checkpoint: approachCheckpoint(fixed[index - 1]!, 'to'), terminal: fixed[index - 1]!.to }]),
+          ...(last || fixed[index]!.lane === undefined ? [] : [{ checkpoint: approachCheckpoint(fixed[index]!, 'from'), terminal: fixed[index]!.from }]),
+          ...(last && to.checkpoint ? [{ checkpoint: { ...to.checkpoint, arrival: ALL_DIRECTIONS, departure: DIRECTION_BITS[OPPOSITE[to.port!.side!]] },
+            terminal: to.point, node: to.port!.ref.node }] : []),
           // A checkpoint the adjacent reserved run already passes through, head-on and strictly
           // inside a segment, is consumed by that run: a junction leaf that reaches deeper than a
           // lane's approach point has honoured it, and the gap starting at the leaf could only
           // reach it by turning back (ticket 20).
-        ].filter(checkpoint => !reservedPasses(first ? link.sharedRuns?.from : last ? link.sharedRuns?.to : undefined, checkpoint));
-        connectors.push({ id, from: start.endpoint, to: end.endpoint, checkpoints });
+        ].filter(item => !reservedPasses(first ? link.sharedRuns?.from : last ? link.sharedRuns?.to : undefined, item.checkpoint));
+        // Only an attachment stem is reserved against the batches still to run. Reserving the lane
+        // approach as well was measured and left out; see `.scratch/stress/issues/02`.
+        for (const item of asked) {
+          if (item.node === undefined) continue;
+          stems.push({ link: link.id, node: item.node, bounds: stemBounds(model, link, item.terminal, item.checkpoint) });
+        }
+        connectors.push({ id, from: start.endpoint, to: end.endpoint, checkpoints: asked.map(item => item.checkpoint) });
         pieces.push({ kind: 'gap', connector: id, from: start.point, to: end.point });
       }
       if (!last) pieces.push({ kind: 'reserved', segments: [fixed[index]!] });
     }
     if (link.sharedRuns?.to?.length) pieces.push({ kind: 'reserved', segments: reversedRuns(link.sharedRuns.to) });
     const exclusions = [...(owned.get(link.id) ?? [])].sort();
-    links.push({ link: link.id, pieces, connectors, exclusions });
+    links.push({ link: link.id, pieces, connectors,
+      nodes: [link.attachments!.from.node, link.attachments!.to.node], exclusions });
   }
   for (const [node, list] of pins) {
     const shape = obstacles.find(item => item.id === `node:${node}`);
@@ -186,8 +204,36 @@ export function planRoute(model: LayoutModel): RoutePlan {
     const key = JSON.stringify(plan.exclusions);
     batches.set(key, [...(batches.get(key) ?? []), plan.link]);
   }
-  return { remainders, overlay, links, obstacles, parameters: routeParameters(model),
+  return { remainders, overlay, links, obstacles, stems, parameters: routeParameters(model),
     batches: [...batches.values()].map((ids, index) => ({ id: `batch-${index}`, links: ids })) };
+}
+
+/**
+ * The rectangle one reserved outward stem occupies, with the clearance every reserved run carries.
+ * Placement reserves that stem; the router must keep a foreign centreline out of it, or a later
+ * batch finds its own reservation already taken and has no route left to ask for.
+ */
+function stemBounds(model: LayoutModel, link: LayoutLink, terminal: Point, checkpoint: Point): Rect {
+  const clearance = GROUP_LABEL_GEOMETRY.nodeClearance + (linkStrokeWidth(link) + routedStroke(model)) / 2;
+  const x = Math.min(terminal.x, checkpoint.x) - clearance, y = Math.min(terminal.y, checkpoint.y) - clearance;
+  return { x, y, width: Math.abs(checkpoint.x - terminal.x) + 2 * clearance,
+    height: Math.abs(checkpoint.y - terminal.y) + 2 * clearance };
+}
+
+/**
+ * The reserved stems a batch must leave alone: those of the links no batch has routed yet. An
+ * earlier batch is otherwise free to run through the outward stem of a link it has never seen, and
+ * that link then has no route to its own port.
+ *
+ * A stem on a node this batch also attaches to is left out. Two ports on one node side share that
+ * strip, and a rectangle over one of them blocks the other. The attachment is read from the link,
+ * not from the stems, because an end that consumes a shared run starts at the run's terminal and
+ * reserves no stem of its own.
+ */
+export function pendingStemObstacles(plan: RoutePlan, batch: { links: string[] }, pending: Set<string>): RouteObstacle[] {
+  const nodes = new Set(plan.links.filter(item => batch.links.includes(item.link)).flatMap(item => item.nodes));
+  return plan.stems.flatMap((stem, index) => pending.has(stem.link) && !nodes.has(stem.node)
+    ? [{ id: `stem:${index}:${stem.link}`, bounds: stem.bounds, consumers: [] }] : []);
 }
 
 const asPoint = (point: Point): RouteEndpoint => ({ kind: 'point', x: point.x, y: point.y });

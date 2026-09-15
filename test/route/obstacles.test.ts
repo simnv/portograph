@@ -1,7 +1,8 @@
-import { GROUP_LABEL_LINK_CLEARANCE } from '../../src/theme/geometry.js';
+import { GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../../src/theme/geometry.js';
+import { GROUP_LABEL_GEOMETRY, routedStroke } from '../../src/layout/bands.js';
 import { describe, expect, it } from 'vitest';
 import { bands, bars, bundles, centre, flanks, lanes, rows } from '../../src/index.js';
-import { batchRequest, disjointShapes, planRoute, stemCheckpoint } from '../../src/route/plan.js';
+import { batchRequest, disjointShapes, pendingStemObstacles, planRoute, stemCheckpoint } from '../../src/route/plan.js';
 import { nodeClearance, routeObstacles, trimChain, TERMINAL_TRIM } from '../../src/route/obstacles.js';
 import { checkpointsHonoured, simplify } from '../../src/route/paths.js';
 import { retraces } from '../../src/route/validate.js';
@@ -167,18 +168,73 @@ links: [[a.p, b.p], [m.q, c.p]]`);
     const plan = planRoute(model);
     expect(plan.remainders).toEqual(['link-1', 'link-2']);
     const lane = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === 'link-1')!;
-    expect(routeObstacles(model).find(item => item.id === lane.id)!.consumers).toEqual(['link-1']);
-    expect(plan.links.find(item => item.link === 'link-1')!.exclusions).toContain(lane.id);
+    // A corridor admits its owner's collinear run and nothing else, so it obstructs the owner too.
+    // The owner's exemption is that run, which the stitcher keeps exactly.
+    expect(routeObstacles(model).find(item => item.id === lane.id)!.consumers).toEqual([]);
+    expect(plan.links.find(item => item.link === 'link-1')!.exclusions).not.toContain(lane.id);
+    expect(plan.links.find(item => item.link === 'link-1')!.exclusions).toContain('link-1:fixed:0:0');
     expect(plan.links.find(item => item.link === 'link-2')!.exclusions).not.toContain(lane.id);
     // Different exclusion sets cannot share one router, so they become ordered ownership batches.
     expect(plan.batches).toEqual([{ id: 'batch-0', links: ['link-1'] }, { id: 'batch-1', links: ['link-2'] }]);
-    const owner = batchRequest(plan, plan.batches[0]!, []);
-    expect(owner.shapes.some(shape => shape.id === lane.id)).toBe(false);
-    expect(batchRequest(plan, plan.batches[1]!, []).shapes.some(shape => shape.id === lane.id)).toBe(true);
+    for (const batch of plan.batches) {
+      expect([batch.id, batchRequest(plan, batch, []).shapes.some(shape => shape.id === lane.id)]).toEqual([batch.id, true]);
+    }
     // The lane run is a reserved gap between two routed pieces, not a connector.
     const pieces = plan.links.find(item => item.link === 'link-1')!.pieces;
     expect(pieces.map(piece => piece.kind)).toEqual(['gap', 'reserved', 'gap']);
     expect((pieces[1] as { segments: unknown }).segments).toEqual(model.links[0]!.fixedSegments);
+  });
+
+  it('protects the reserved stem of every link a batch has not routed yet', async () => {
+    const model = await throughBands(`portograph: 2
+groups: {top-group: {tier: 0}, mid: {tier: 1}, low: {tier: 2}}
+nodes:
+  a: {group: top-group, ports: [{name: p, side: bottom}]}
+  m: {group: mid, ports: [{name: q, side: bottom}]}
+  b: {group: low, ports: [{name: p, side: top}]}
+  c: {group: low, ports: [{name: p, side: top}]}
+links: [[a.p, b.p], [m.q, c.p]]`);
+    const plan = planRoute(model);
+    expect(plan.batches).toEqual([{ id: 'batch-0', links: ['link-1'] }, { id: 'batch-1', links: ['link-2'] }]);
+    // Each remainder reserves one stem at each of its two ports, and nothing else: the approach to
+    // a lane is measured and deliberately left out (`.scratch/stress/issues/02`).
+    expect(plan.stems.map(item => [item.link, item.node]))
+      .toEqual([['link-1', 'a'], ['link-1', 'b'], ['link-2', 'm'], ['link-2', 'c']]);
+    // A stem covers its reserved reach with the clearance a reserved run carries.
+    const port = findPort(model, model.links[1]!.attachments!.to)!;
+    const tip = stemCheckpoint(model, port);
+    const clearance = GROUP_LABEL_GEOMETRY.nodeClearance + (linkStrokeWidth(model.links[1]!) + routedStroke(model)) / 2;
+    expect(plan.stems[3]!.bounds).toEqual({ x: port.anchor!.x - clearance, y: tip.y - clearance,
+      width: 2 * clearance, height: port.anchor!.y - tip.y + 2 * clearance });
+    // The first batch avoids the stems of the link it has not routed; the second has none left.
+    const pending = new Set(['link-2']);
+    expect(pendingStemObstacles(plan, plan.batches[0]!, pending).map(item => item.id))
+      .toEqual(['stem:2:link-2', 'stem:3:link-2']);
+    expect(pendingStemObstacles(plan, plan.batches[1]!, new Set<string>())).toEqual([]);
+    // A stem on a node this batch also attaches to is left out: one node side is shared space.
+    expect(pendingStemObstacles(plan, { links: ['link-1', 'link-2'] }, pending)).toEqual([]);
+  });
+
+  it('reads the attachment from the link, so a shared-run end still exempts its node', async () => {
+    const model = await throughBands(`portograph: 2
+groups: {ga: {tier: 0}, gb: {tier: 1}}
+nodes:
+  a: {group: ga, ports: [{name: p, side: bottom}, {name: q, side: bottom}]}
+  b: {group: gb, ports: [p]}
+  c: {group: gb, ports: [p]}
+  d: {group: gb, ports: [p]}
+links: [[a.p, b.p], [a.p, c.p], [a.q, d.p]]`);
+    const plan = planRoute(model);
+    // The two links on `a.p` consume a shared run, so neither reserves a stem at `a`.
+    expect(plan.stems.filter(stem => stem.node === 'a').map(stem => stem.link)).toEqual(['link-3']);
+    const shared = plan.links.find(item => item.link === 'link-1')!;
+    expect(shared.nodes).toEqual(['a', 'b']);
+    // Its batch still attaches to `a`, so the stem `link-3` reserved there is not an obstacle for
+    // it; the stem `link-3` reserved at its own target still is.
+    const batch = plan.batches.find(item => item.links.includes('link-1'))!;
+    const index = (node: string) => plan.stems.findIndex(stem => stem.link === 'link-3' && stem.node === node);
+    expect(pendingStemObstacles(plan, batch, new Set(['link-3'])).map(item => item.id))
+      .toEqual([`stem:${index('d')}:link-3`]);
   });
 
   it('marks a shared port non-exclusive and counts link ends already fixed by a rule', async () => {

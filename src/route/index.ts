@@ -2,13 +2,13 @@ import type { Point } from '../model/geometry.js';
 import type { LayoutModel } from '../model/layout.js';
 import { withLayoutMutation } from '../layout/mutation.js';
 import { completedRouteObstacles, type RouteObstacle } from './obstacles.js';
-import { batchRequest, planRoute, type RoutePlan } from './plan.js';
+import { batchRequest, pendingStemObstacles, planRoute, type RoutePlan } from './plan.js';
 import { stitchPaths, stubCandidate } from './paths.js';
 import { ROUTE_BUDGET_MS, systemRouteClock, withRouteSession, type CreateRouteAttempt, type RouteClock } from './worker.js';
 
 export type { RouteObstacle } from './obstacles.js';
-export type { LinkPlan, RoutePiece, RoutePlan } from './plan.js';
-export { batchRequest, planRoute, effectiveLayer, stemCheckpoint, ROUTE_PARAMETERS, SHAPE_BUFFER_DISTANCE } from './plan.js';
+export type { LinkPlan, RoutePiece, RoutePlan, StemReservation } from './plan.js';
+export { batchRequest, pendingStemObstacles, planRoute, effectiveLayer, stemCheckpoint, ROUTE_PARAMETERS, SHAPE_BUFFER_DISTANCE } from './plan.js';
 export { nodeClearance, routeObstacles, trimChain, TERMINAL_TRIM } from './obstacles.js';
 export { checkpointsHonoured, crossedTiers, overlayPath, simplify, stitchPath, stitchPaths, stubCandidate } from './paths.js';
 export type { RoutedLinkPath } from './paths.js';
@@ -38,8 +38,10 @@ async function runRouter(model: LayoutModel, plan: RoutePlan, options: RouteOpti
     async route => {
       const protectedRuns: RouteObstacle[] = [];
       // Ownership batches run in a fixed order and every completed route protects the next batch.
-      for (const batch of plan.batches) {
-        const routed = await route(batchRequest(plan, batch, protectedRuns));
+      for (const [index, batch] of plan.batches.entries()) {
+        // A later batch's reserved stems protect it the same way, before it has a route of its own.
+        const pending = new Set(plan.batches.slice(index + 1).flatMap(item => item.links));
+        const routed = await route(batchRequest(plan, batch, [...protectedRuns, ...pendingStemObstacles(plan, batch, pending)]));
         for (const item of routed) {
           if (routes.has(item.connector)) throw new Error(`Router returned ${item.connector} twice`);
           routes.set(item.connector, item.points);

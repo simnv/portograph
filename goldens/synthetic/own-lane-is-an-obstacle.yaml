@@ -1,0 +1,27 @@
+# Expected: `node-ba002` cannot be seated under the lane 7a reserved for it, so stage 8 must route
+# the gap from its port sideways to the lane terminal. The lane is that link's own reservation, and
+# a lane admits only its owner's collinear run. The router therefore treats it as an obstacle for
+# the owner as well, and the gap reaches the terminal from below instead of crossing the corridor.
+# The stem `node-aa002` keeps for its own link is an obstacle too, so the earlier batch cannot
+# take it.
+# The diagram is poor and fails gates; it is produced.
+portograph: 2
+groups:
+  up-a: { tier: 7, label: "Upper Zone" }
+  up-b: { tier: 7, label: "Row 13" }
+  mid: { tier: 8, label: "Row 14" }
+  low-a: { tier: 9, label: "Zone 16" }
+  low-b: { tier: 9, label: "Row 15" }
+  tail: { tier: 12, label: "Edge Outlets" }
+nodes:
+  node-ca002: { group: up-b, class: provider, label: "node-ca002" }
+  node-aa001: { group: up-a, class: router, label: "node-aa001" }
+  node-aa002: { group: mid, class: tbr, label: "node-aa002" }
+  node-ba001: { group: low-b, class: rr, label: "node-ba001" }
+  node-ba002: { group: low-a, class: provider, label: "node-ba002" }
+  edge-outlet1: { group: tail, class: tbr, label: "Edge outlet1" }
+links:
+  - [node-ba001, node-aa001]
+  - [node-ba001, node-aa002]
+  - [node-ba002, node-aa001]
+  - [node-ba002, node-aa002]

@@ -131,6 +131,7 @@ is a standalone schema-v2 document. `stage-inputs.yaml` is separate test data.
 | [drawio-node-text](synthetic/drawio-node-text.yaml) | 11 | Carry a node's text in each shape the draw.io export must place: a name alone, a name with a description, and a description with no name. |
 | [drawio-overlay-sides](synthetic/drawio-overlay-sides.yaml) | 11 | An overlay link whose two pills face different ways, which the draw.io export routes round both pill boxes with one turn instead of the three-segment detour two pills on one side take. |
 | [detoured-stem-checkpoint](synthetic/detoured-stem-checkpoint.yaml) | 8 | Two crossing links in two ownership batches: the second detours round the first and still visits both reserved stem checkpoints. The diagram fails G6; it is produced. |
+| [own-lane-is-an-obstacle](synthetic/own-lane-is-an-obstacle.yaml) | 7a, 7c, 8 | A child 7c cannot seat under its own lane: the routed gap reaches the corridor from below instead of crossing it, and the earlier batch leaves the reserved stem of the next link alone. The diagram is produced. |
 
 The first 14 diagrams are ticket 00's approved counter-examples. `fitting-link-label` is the
 test-only successful-label input ticket 14 added beside them; it needs no stage precondition,
