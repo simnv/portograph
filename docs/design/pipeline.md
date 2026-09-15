@@ -307,8 +307,9 @@ Every routed attachment holds an outward stem, whether a rule has claimed its pa
 allocated run may not stand in one. The link that owns that stem would otherwise have no route to
 its own port. A run also stays out of the link-free margin every group edge keeps (ADR-0013). That margin is not
 an obstacle for a link the group holds, because such a link has to reach a port inside the box. G6
-still refuses a segment that *runs along* the edge from on or outside it, whoever owns the group, so
-the allocation keeps the margin on the edge a run would follow. The edge a run crosses is free.
+still refuses a segment that *runs along* the edge from on or outside it, whoever owns the group.
+The allocation therefore keeps the margin on the edge a run would follow. The edge a run crosses is
+free.
 
 Two allocated runs of one gap may **cross**. Neither is routed, so the crossing is reserved rather
 than discovered and neither needs an exemption from the other. A link that must cross the gap

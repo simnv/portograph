@@ -405,10 +405,16 @@ function blockers(model: LayoutModel): Blocker[] {
     for (const end of ['from', 'to'] as const) {
       const runs = link.sharedRuns?.[end];
       if (runs?.length) {
-        // An end that consumes a shared run leaves that run's terminal instead of a port, and the
-        // route beyond it needs the same room. A run standing on the terminal takes it.
-        const terminal = runs.at(-1)!.to;
-        result.push({ owners, bounds: grow({ x: terminal.x, y: terminal.y, width: 0, height: 0 }, margin) });
+        // An end that consumes a shared run leaves that run's terminal instead of a port. It needs
+        // the room a port stem needs, on the line the run arrives along, or the route beyond the
+        // terminal has nowhere to start.
+        const last = runs.at(-1)!, terminal = last.to;
+        const span = Math.hypot(terminal.x - last.from.x, terminal.y - last.from.y) || 1;
+        const stem = GROUP_LABEL_GEOMETRY.routerStem;
+        const tip = { x: terminal.x + (terminal.x - last.from.x) / span * stem,
+          y: terminal.y + (terminal.y - last.from.y) / span * stem };
+        result.push({ owners, bounds: grow({ x: Math.min(terminal.x, tip.x), y: Math.min(terminal.y, tip.y),
+          width: Math.abs(tip.x - terminal.x), height: Math.abs(tip.y - terminal.y) }, margin) });
         continue;
       }
       const port = findPort(model, link.attachments![end]);
@@ -472,7 +478,7 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
   const clearance = GROUP_LABEL_GEOMETRY.nodeClearance + routedStroke(model);
   /**
    * The approaches the gap owes to the runs it leaves out, as rectangles. A run the gap does not
-   * seat still leaves its own corridor head-on for one router stem, on the lane's own x, and an
+   * seat still leaves its own corridor head-on for one router stem, on the lane's own x. An
    * allocated run that comes within the gate's clearance of that stem takes it.
    */
   const owed = (absent: ReadonlySet<string>): Blocker[] => approaches.flatMap(item => {
@@ -533,6 +539,24 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
     if (needsRow(item) && !at.has(item)) continue;
     if (!clear(item, at.get(item), settled)) continue;
     result.set(item, runSegments(item, gap, at.get(item)));
+  }
+  // The approaches were answered against frozen placement, before the runs of this gap existed.
+  // A run this gap seats can cover the boundary terminal of the one beside it, and that link then
+  // has no route to its own port. A gap that cannot leave every approach clear allocates nothing.
+  const peers: Blocker[] = [];
+  const margin = routedStroke(model) / 2 + STRAIGHT_PATH_CLEARANCE.path;
+  for (const [item, segments] of result) {
+    const owners = new Set([item.link.id]);
+    for (const run of segments) {
+      peers.push({ owners, bounds: grow({ x: Math.min(run.from.x, run.to.x), y: Math.min(run.from.y, run.to.y),
+        width: Math.abs(run.to.x - run.from.x), height: Math.abs(run.to.y - run.from.y) },
+      linkStrokeWidth(item.link) / 2 + margin) });
+    }
+  }
+  for (const item of result.keys()) {
+    if (!item.reach) continue;
+    const edge = { x: item.far.x, y: item.nearEdge === 'low' ? gap.high : gap.low };
+    if (firstBlock(peers, item.link, { from: edge, to: item.reach }, attachedOf(item))) return empty;
   }
   return result;
 }
