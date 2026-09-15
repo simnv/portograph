@@ -949,6 +949,26 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     points.filter((point, index) => index === 0 || !samePoint(points[index - 1]!, point));
 
   /**
+   * The same polyline with every point that turns nothing dropped; for a detour candidate only.
+   * A point is dropped when it lies **between** its two neighbours on one axis, which a point that
+   * doubles back does not — so a candidate that reverses over its own pill keeps the reversal and is
+   * refused by the box test rather than straightened into something it is not.
+   */
+  const straighten = (points: readonly Point[]): Point[] => {
+    const out: Point[] = [];
+    for (const [index, point] of points.entries()) {
+      const before = out[out.length - 1], after = points[index + 1];
+      const flat = before !== undefined && after !== undefined
+        && (Math.abs(before.x - point.x) <= EPS && Math.abs(point.x - after.x) <= EPS
+          && (point.y - before.y) * (after.y - point.y) > 0
+          || Math.abs(before.y - point.y) <= EPS && Math.abs(point.y - after.y) <= EPS
+          && (point.x - before.x) * (after.x - point.x) > 0);
+      if (!flat) out.push(point);
+    }
+    return out;
+  };
+
+  /**
    * An overlay connector routed **around** the two pills it joins instead of along them: out of the
    * source pill's head by `OVERLAY_PILL_CLEARANCE`, across, and back into the target pill's head.
    *
@@ -959,12 +979,14 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
    * endpoint mark. No box is grown, no route is searched, and no other shape is consulted, so the
    * pipeline's rule still holds — nothing is found here that placement did not reserve.
    *
-   * Six candidates are tried, all of them read off the two boxes. The first two turn once between
-   * the cleared points; the other four go right round the pair, along a lane one clearance outside
-   * the pair's own extent on each of the four sides. The shortest that enters neither pill box wins,
-   * and a tie goes to the one listed first — the single turn that carries on the way the source pill
-   * faces, which is the three-segment detour the maintainer drew when both pills face the same way.
-   * Two pills that overlap can leave nothing usable; then the link keeps the model's own polyline,
+   * Eight candidates are tried, all of them read off the two boxes. The first two turn once between
+   * the cleared points. Four go right round the pair, along a lane one clearance outside the pair's
+   * own extent on each of the four sides. Two more run down the middle of the gap between the boxes,
+   * on each axis — the case two heads that face away from each other over a gap need, and the one no
+   * outside lane reaches. The shortest that enters neither pill box wins, and a tie goes to the one
+   * listed first: the single turn that carries on the way the source pill faces, which is the
+   * three-segment detour the maintainer drew when both pills face the same way. Two pills that
+   * overlap on both axes can leave nothing usable; then the link keeps the model's own polyline,
    * which is what every release before this one drew.
    */
   const overlayPath = (head: PillEnd, tail: PillEnd): Point[] | undefined => {
@@ -980,6 +1002,11 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       Math.max(...boxes.map(of)) + OVERLAY_PILL_CLEARANCE;
     const above = before(box => box.y), below = after(box => box.y + box.height);
     const left = before(box => box.x), right = after(box => box.x + box.width);
+    /** The middle of the gap the two boxes leave on one axis; inside a box when they overlap on it. */
+    const gap = (low: (box: Rect) => number, high: (box: Rect) => number): number =>
+      (Math.max(...boxes.map(low)) + Math.min(...boxes.map(high))) / 2;
+    const midX = gap(box => box.x, box => box.x + box.width);
+    const midY = gap(box => box.y, box => box.y + box.height);
     const turn = { x: to.x, y: from.y }, bend = { x: from.x, y: to.y };
     const ways: Point[][] = [
       // One turn, starting the way the source pill faces.
@@ -989,10 +1016,17 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       [{ x: from.x, y: below }, { x: to.x, y: below }],
       [{ x: left, y: from.y }, { x: left, y: to.y }],
       [{ x: right, y: from.y }, { x: right, y: to.y }],
+      // Down the middle of the gap between them, on each axis. A lane that falls inside a box —
+      // which is what an overlap gives — is refused by the same test as every other candidate.
+      [{ x: midX, y: from.y }, { x: midX, y: to.y }],
+      [{ x: from.x, y: midY }, { x: to.x, y: midY }],
     ];
     let best: { points: Point[]; length: number } | undefined;
     for (const way of ways) {
-      const points = compact([head.at, from, ...way, to, tail.at]);
+      // A lane can land on the line the two cleared points already share, and then it states a
+      // corner that is not one. This is the exporter's own polyline, not the reserved waypoints —
+      // those keep every collinear point they were given, because a hand drag needs them.
+      const points = straighten(compact([head.at, from, ...way, to, tail.at]));
       if (!axisAligned(points)) continue;
       if (points.slice(1).some((point, index) =>
         enters(points[index]!, point, head.box) || enters(points[index]!, point, tail.box))) continue;

@@ -1293,6 +1293,37 @@ links:
     square(path, [head, tail]);
   }, 60000);
 
+  it('goes down the middle when the two heads face away over a gap', async () => {
+    // Codex round 2: two heads facing away from each other with a gap between the boxes have no
+    // single turn and no way round the *outside* of the pair — the route has to run down the gap.
+    // The geometry is codex's own: a top head at x 100..110 and a bottom head at x 40..50.
+    const model = await pipeline(fixture('drawio-constructs'));
+    const link = model.links.find(item => effectiveLayer(item) === 'overlay')!;
+    const facing = structuredClone(model);
+    const place = (ref: { node: string; name?: string; ordinal: number },
+      side: 'top' | 'bottom', box: { x: number; y: number }): Point => {
+      const port = facing.nodes[ref.node]!.ports.find(item => item.ref.name === ref.name
+        && item.ref.ordinal === ref.ordinal)!;
+      port.side = side;
+      port.pill!.bounds = { x: box.x, y: box.y, width: 10, height: 24 };
+      port.anchor = { x: box.x + 5, y: box.y + 12 };
+      return { x: box.x + 5, y: side === 'top' ? box.y : box.y + 24 };
+    };
+    const head = place(link.attachments!.from, 'top', { x: 100, y: 100 });
+    const tail = place(link.attachments!.to, 'bottom', { x: 40, y: 80 });
+    const path = facing.links.find(item => item.id === link.id)!.path!;
+    const anchors = { from: { x: 105, y: 112 }, to: { x: 45, y: 92 } };
+    path.segments = [{ ...path.segments[0]!, from: anchors.from, to: anchors.to }];
+    const cell = cells(drawio({ ...facing, canvas: { x: 0, y: 0, width: 400, height: 400 } }))
+      .get(id('link', link.id))!;
+    expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
+    // Out of each head by the clearance, then down the middle of the 50 px gap between the boxes.
+    expect([head, ...cell.points, tail]).toEqual([
+      { x: 105, y: 100 }, { x: 105, y: 96 }, { x: 75, y: 96 },
+      { x: 75, y: 108 }, { x: 45, y: 108 }, { x: 45, y: 104 },
+    ]);
+  }, 60000);
+
   it('states a detoured overlay label against the run the connector really draws', async () => {
     // Codex round 1: the label kept naming the model's segment, which a detoured overlay no longer
     // draws, so `on-run` parked it beside the 4 px source stem and 16 px off the line. The detour's
