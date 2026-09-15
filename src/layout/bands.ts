@@ -728,12 +728,20 @@ export function produceGroupLabelBands(model: LayoutModel): void {
  * reservation and a repeat of the reservation would move geometry the measurement has already been
  * taken against. A pure vertical translation leaves every band's height and clearance where they
  * were, so the reservation still holds; where it does not, the full producer runs and reserves.
+ *
+ * The fallback is given the bands the **first** step reserved, not the ones measured here.
+ * `reserveInitialSpace` reads the room a group already holds from the bands the model carries, so a
+ * model carrying the new bands would measure each of them against itself, reserve nothing for a
+ * clearance that grew between the two steps, and leave the fit to box growth into the gap the
+ * measurement has just opened.
  */
 export function replanGroupLabels(model: LayoutModel): void {
-  if (syncBands(model)) { produceGroupLabelBands(model); return; }
+  const reserved = clone(model.labelBands);
+  const reserveAgain = (): void => { model.labelBands = reserved; produceGroupLabelBands(model); };
+  if (syncBands(model)) { reserveAgain(); return; }
   const retained = model.labels.filter(label => label.role !== 'group');
   const plan = planLabels({ ...model, labels: retained }, true);
-  if (plan.growth) { produceGroupLabelBands(model); return; }
+  if (plan.growth) { reserveAgain(); return; }
   model.labels = [...retained, ...plan.labels];
   diagnoseBlocked(model, plan.blocked);
 }
