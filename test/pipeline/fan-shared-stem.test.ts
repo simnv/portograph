@@ -324,3 +324,22 @@ it('ticket 48: a branch that would hand over beyond its port keeps the shared st
   expect(model.links[0]!.sharedRuns!.from![0]).toEqual(runs[0]);
   expect(model.diagnostics.some(item => item.code === 'FAN_BRANCH_UNRESERVED')).toBe(true);
 }, 60000);
+
+it('ticket 46: a branch that hems another link\'s approach gives way, and so does the link it hems', async () => {
+  // The hub fan's descent closes the checkpoint `sub.a` must be approached from, and stage 8 could
+  // route neither link. Both keep their shared stems and the diagram is produced: the G6 that is
+  // left is ticket 46's own defect, two fans facing across a gap taking one row.
+  const model = await run(fixture('two-fans-hem-one-approach'));
+  const report = score(model).snapshot;
+  expect(report.gates.G2!.violations).toEqual([]);
+  expect(report.gates.G4!.violations).toEqual([]);
+  expect(model.diagnostics.some(item => item.code === 'FAN_BRANCH_HEMMED')).toBe(true);
+  // Neither fan reserves anything past its own stems, so the checkpoint every port needs is clear.
+  for (const link of model.links) {
+    for (const end of ['from', 'to'] as const) {
+      const runs = link.sharedRuns?.[end];
+      if (!runs) continue;
+      for (const item of runs) expect(item.from.y).toBe(item.to.y);
+    }
+  }
+}, 60000);

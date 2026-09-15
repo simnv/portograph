@@ -143,6 +143,8 @@ is a standalone schema-v2 document. `stage-inputs.yaml` is separate test data.
 
 | [a-hemmed-fan-branch-keeps-its-stem](synthetic/a-hemmed-fan-branch-keeps-its-stem.yaml) | 7e | The branch's track steps to the edge below its target node, so its outward run would hand over beyond that port's own approach and stage 8 would come back along the reserved run. The branch keeps the tree's shared stem and nothing else, reports `FAN_BRANCH_UNRESERVED`, and every gate passes. |
 
+| [two-fans-hem-one-approach](synthetic/two-fans-hem-one-approach.yaml) | 7e | Two fans face each other and both descend into one node below. The hub fan's branch closes the checkpoint the peer's target must be approached from, and stage 8 could route neither link. Both give way to their shared stems (`FAN_BRANCH_HEMMED`) and the diagram is produced; the G6 that is left is ticket 46. |
+
 The first 14 diagrams are ticket 00's approved counter-examples. `fitting-link-label` is the
 test-only successful-label input ticket 14 added beside them; it needs no stage precondition,
 because the whole pipeline runs on it.

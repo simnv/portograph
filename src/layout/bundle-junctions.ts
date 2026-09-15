@@ -219,8 +219,8 @@ export function crossBundleFans(model: LayoutModel): void {
         const margin = linkStrokeWidth(other) / 2 + half + STRAIGHT_PATH_CLEARANCE.path;
         return [...(other.path?.fixed === true ? other.path.segments : []), ...(other.fixedSegments ?? []),
           ...(other.sharedRuns?.from ?? []), ...(other.sharedRuns?.to ?? [])].some(run =>
-          at.x > Math.min(run.from.x, run.to.x) - margin + 1e-6 && at.x < Math.max(run.from.x, run.to.x) + margin - 1e-6
-          && at.y > Math.min(run.from.y, run.to.y) - margin + 1e-6 && at.y < Math.max(run.from.y, run.to.y) + margin - 1e-6);
+          at.x > Math.min(run.from.x, run.to.x) - margin - 1e-6 && at.x < Math.max(run.from.x, run.to.x) + margin + 1e-6
+          && at.y > Math.min(run.from.y, run.to.y) - margin - 1e-6 && at.y < Math.max(run.from.y, run.to.y) + margin + 1e-6);
       });
     };
     const blocked = new Set(items.filter(owed).map(item => item.link.id));
@@ -416,5 +416,79 @@ export function crossBundleFans(model: LayoutModel): void {
       // A fixed member's runs are the same stems and straight continuation 7d wrote into its path.
       item.link.sharedRuns[item.end] = paths.get(item.link.id)!;
     }
+  }
+  releaseHemmedFans(model);
+}
+
+/** How many leading segments of a reserved fan run are the tree's stems: those along the port's own normal. */
+function stemCount(port: LayoutPort, runs: readonly PathSegment[]): number {
+  const tangent = axis(port.side!);
+  let count = 0;
+  for (const run of runs) {
+    const across = tangent === 'x' ? Math.abs(run.to.x - run.from.x) : Math.abs(run.to.y - run.from.y);
+    if (across > 1e-6 || run.owner.kind !== 'shared-stem') break;
+    count++;
+  }
+  return count;
+}
+
+/**
+ * Release every fan branch that hems another link's approach, and the branch of the link it hems.
+ *
+ * A fan reserves its branches one cohort at a time, so the run one cohort lays can close the
+ * checkpoint another link's port has to be approached from. The two runs need not meet: it is enough
+ * that they leave the router less room than it nudges a route by. Neither link can then be routed
+ * and stage 8 fails outright, where a diagram that reserved nothing would have failed a gate.
+ *
+ * Both give way, down to their trees' shared stems, because the pair is symmetric: the fan built
+ * first has no way to see the one built after it. Ports on the hemming fan's own node side are left
+ * out — a fan's own siblings stand a pitch away by construction (ADR-0018 rules 1 and 2), and
+ * treating them as hemmed would undo the tracks those rules reserve. A member whose path a rule
+ * fixed keeps its run, since its `sharedRuns` are the prefix of that path (ADR-0016).
+ */
+function releaseHemmedFans(model: LayoutModel): void {
+  const half = routedStroke(model) / 2, tolerance = 1;
+  const drawn = (link: LayoutLink): boolean => link.layer === 'routed' && link.technique !== 'stub' && link.attachments !== undefined;
+  const branches: { link: LayoutLink; end: 'from' | 'to'; port: LayoutPort; runs: PathSegment[] }[] = [];
+  for (const link of model.links) {
+    if (!drawn(link) || link.path?.fixed === true || link.bundle !== undefined) continue;
+    for (const end of ['from', 'to'] as const) {
+      const runs = link.sharedRuns?.[end], port = findPort(model, link.attachments![end]);
+      if (!runs?.length || !port?.anchor || port.side === undefined) continue;
+      const beyond = runs.slice(stemCount(port, runs));
+      if (beyond.length) branches.push({ link, end, port, runs: beyond });
+    }
+  }
+  if (!branches.length) return;
+  const release = new Set<string>();
+  for (const link of model.links) {
+    if (!drawn(link)) continue;
+    for (const end of ['from', 'to'] as const) {
+      const ref = link.attachments![end], port = findPort(model, ref);
+      if (!port?.anchor || port.side === undefined) continue;
+      const out = normal(port.side), reach = stemReach(model, model.nodes[ref.node]!);
+      const at = { x: port.anchor.x + out.x * reach, y: port.anchor.y + out.y * reach };
+      for (const branch of branches) {
+        if (branch.link.id === link.id) continue;
+        if (branch.port.ref.node === port.ref.node && branch.port.side === port.side) continue;
+        const margin = linkStrokeWidth(branch.link) / 2 + half + STRAIGHT_PATH_CLEARANCE.path + tolerance;
+        if (!branch.runs.some(run => at.x > Math.min(run.from.x, run.to.x) - margin
+          && at.x < Math.max(run.from.x, run.to.x) + margin
+          && at.y > Math.min(run.from.y, run.to.y) - margin
+          && at.y < Math.max(run.from.y, run.to.y) + margin)) continue;
+        release.add(`${branch.link.id}:${branch.end}`);
+        // The hemmed link gives way at whichever end its own fan reserved, which is not the end the
+        // closed checkpoint belongs to.
+        for (const own of ['from', 'to'] as const) release.add(`${link.id}:${own}`);
+        placementWarning(model, 'FAN_BRANCH_HEMMED',
+          `${branch.link.id}'s reserved branch closes the approach to ${ref.node}.${ref.name ?? '*'}; `
+          + 'both keep their shared stems and stage 8 routes the rest (ticket 46).', [branch.link.id, link.id]);
+      }
+    }
+  }
+  for (const item of branches) {
+    if (!release.has(`${item.link.id}:${item.end}`)) continue;
+    const runs = item.link.sharedRuns![item.end]!;
+    item.link.sharedRuns![item.end] = runs.slice(0, stemCount(item.port, runs));
   }
 }

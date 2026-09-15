@@ -191,7 +191,17 @@ one gap over.
    the lane reserved for it, and stage 8 climbs back. Measured: a descent at x = 181 beside a lane at
    x = 166, with the router climbing 215 px; the same on `main`, so it is not this work's, but the
    sentence above would otherwise claim more than the rule does.
-3. **A gate failure is recoverable and a throw is not, and the room this reserves can turn one into
-   the other.** Reserving `fanEnd + fanEnd` in a row gap moves the nodes beside it, and on one
-   measured shape that move puts two top ports of one node across another fan's row, which stage 8
-   cannot route (`Routed gap does not meet its reserved endpoints`). Ticket 46 carries it.
+3. **A gate failure is recoverable and a throw is not, so a branch the router cannot work with is
+   released rather than reserved.** Two cases are built, both of them fail-closed and both of them
+   guesses that the measurement in (1) would settle properly:
+
+   - A branch whose far port stands in the corridor and whose own run would end deeper than that
+     port's approach begins keeps the tree's shared stem and nothing else (`FAN_BRANCH_UNRESERVED`).
+     A far port *behind* the fan is left alone: the fan's own node lies across any line back, so the
+     run is not retraced, and releasing it costs ticket 41's fixture a gate.
+   - A fan reserves its branches one cohort at a time, so a run one cohort lays can close the
+     checkpoint another link's port has to be approached from — the runs need not meet, it is enough
+     that they leave the router less room than it nudges by. A post-pass releases the branch that
+     hems and every branch of the link it hems (`FAN_BRANCH_HEMMED`). Ports on the hemming fan's own
+     node side are exempt, because a fan's own siblings stand a pitch away by construction and
+     treating them as hemmed undoes the tracks rules 1 and 2 reserve.
