@@ -177,11 +177,130 @@ interface Connector extends Run { id: string }
 const residualPoint = (label: EdgeLabel | undefined): string =>
   label?.offset ? element('mxPoint', { x: label.offset.x, y: label.offset.y, as: 'offset' }) : '';
 
+/**
+ * A box with room in it. draw.io accepts a negative or `NaN` size in an `mxGeometry` and then draws
+ * nothing for that cell — no error, no warning, an empty group in the exported SVG — so a box that
+ * cannot hold a glyph is refused here instead of being written out.
+ */
+const positive = (box: Rect): boolean =>
+  box.width > 0 && box.height > 0 && Number.isFinite(box.x) && Number.isFinite(box.y);
+
+/** `box` pulled in by `by` on every side, or nothing when the box is smaller than twice the inset. */
+function shrink(box: Rect, by: number): Rect | undefined {
+  const inner = { x: box.x + by, y: box.y + by, width: box.width - 2 * by, height: box.height - 2 * by };
+  return positive(inner) ? inner : undefined;
+}
+
+/**
+ * Where a native shape is drawn inside its measured tile, or nothing when the tile has no room for
+ * it. A badge replaces the tile and takes the whole of it; a silhouette sits on the tile and keeps
+ * the glyph inset, which is what a tile thinner than `2 × ICON_INSET` cannot give it.
+ */
+function glyphBox(tile: Rect, native: { kind: 'badge' | 'silhouette'; width: number; height: number }): Rect | undefined {
+  const box = native.kind === 'badge' ? (positive(tile) ? tile : undefined) : shrink(tile, ICON_INSET);
+  return box === undefined ? undefined : letterbox(box, native);
+}
+
 /** A side's outward direction as a fraction of a box: the point a link leaves its port from. */
 const OUTWARD: Readonly<Record<Side, Point>> = {
   top: { x: 0.5, y: 0 }, bottom: { x: 0.5, y: 1 },
   left: { x: 0, y: 0.5 }, right: { x: 1, y: 0.5 },
 };
+
+/**
+ * How many connection points one side may offer beyond its real anchors. This is a guard against a
+ * pitch that has no sensible relation to its side, not a budget: the widest node in the measured
+ * corpus asks for about seventy points on its long side, and a pitch of 1e-8 on a 55 px side asks
+ * for 5.5 billion. Anything below the bound is written in full.
+ */
+const MAX_SIDE_ANCHORS = 512;
+
+/** How finely two anchors must agree before they count as slots of the same reserved run. */
+const PHASE_GRAIN = 1e-4;
+
+/**
+ * The offset the most anchors agree on, modulo the pitch — the reserved run the side really holds.
+ *
+ * A later rule may move a single anchor off that run, and then the anchors no longer share one
+ * phase. The run the rest of them still stand on is the grid; the moved anchor keeps its own
+ * explicit connection point and nothing else moves with it. Ties go to the lowest offset, so one
+ * anchor on each of two runs gives a deterministic answer rather than an arbitrary one.
+ */
+function modalPhase(offsets: readonly number[], pitch: number): number {
+  const sorted = offsets.map(offset => {
+    // `offset % pitch` already has the magnitude wanted and the sign of `offset`, so only a
+    // negative one needs the pitch added. Adding it to every residue and taking the remainder
+    // again overflows to Infinity, and then to NaN, for an offset near the top of the range.
+    const rest = offset % pitch;
+    return { offset, residue: rest < 0 ? rest + pitch : rest };
+  }).sort((left, right) => left.residue - right.residue || left.offset - right.offset);
+  // Grouped by proximity, never by a rounding key. A key splits two residues that straddle a bucket
+  // edge however close they are, and the case this has to hold together is exactly a run whose
+  // anchors differ by a float ulp. Each residue joins the run before it while it is within the
+  // grain of it, so a run is a chain rather than a bucket.
+  const runs: { phase: number; count: number; low: number; high: number }[] = [];
+  for (const item of sorted) {
+    const last = runs[runs.length - 1];
+    if (last !== undefined && item.residue - last.high <= PHASE_GRAIN) {
+      last.count += 1;
+      last.phase = Math.min(last.phase, item.offset);
+      last.high = item.residue;
+    } else runs.push({ phase: item.offset, count: 1, low: item.residue, high: item.residue });
+  }
+  // A residue just below the pitch and one just above zero name the same run, one whole pitch apart.
+  // The gap that closes runs from the last run's **highest** residue to the first run's **lowest**.
+  const first = runs[0]!, last = runs[runs.length - 1]!;
+  if (runs.length > 1 && pitch - last.high + first.low <= PHASE_GRAIN) {
+    first.count += last.count;
+    first.phase = Math.min(first.phase, last.phase);
+    runs.pop();
+  }
+  let best = runs[0]!;
+  for (const run of runs) {
+    if (run.count > best.count || (run.count === best.count && run.phase < best.phase)) best = run;
+  }
+  return best.phase;
+}
+
+/**
+ * The reserved-slot grid of one side, less the slots its ports already hold. `offsets` are the real
+ * anchors measured along the side from its low end, and the result is measured the same way.
+ *
+ * The pipeline does not count slots from a corner. `rebuildNodeGeometry` centres them, at
+ * `(length − (ports − 1) × pitch) / 2 + index × pitch`, so consecutive slots are one pitch apart but
+ * the run as a whole is centred on the side. The grid is therefore the real anchors, continued by
+ * whole pitches in **both** directions to the ends of the side. Start it at a corner instead and
+ * every offered point misses every real port by the same fraction of a pitch — which is the one
+ * thing the grid promises not to do.
+ */
+function sideGrid(offsets: readonly number[], along: number, pitch: number): number[] {
+  if (!(along > 0) || !(pitch > 0) || !Number.isFinite(along) || !Number.isFinite(pitch)) return [];
+  // An anchor off its own side is geometry `rebuildNodeGeometry` refuses outright, and it carries no
+  // phase worth keeping. With none left, the slot the pipeline reserves for a single port is the
+  // middle of the side.
+  const on = offsets.filter(offset => offset >= -EPS && offset <= along + EPS);
+  const phase = on.length > 0 ? modalPhase(on, pitch) : along / 2;
+  if (!Number.isFinite(phase)) return [];
+  const first = Math.ceil(-phase / pitch - EPS), last = Math.floor((along - phase) / pitch + EPS);
+  const count = last - first + 1;
+  if (!(count >= 1) || count > MAX_SIDE_ANCHORS) return [];
+  const grid: number[] = [];
+  // Counted, and each point indexed from the phase. Neither `at` nor `step` may be accumulated: past
+  // 2^53 a sum stops advancing — `at + pitch === at`, and `step + 1 === step` — and a loop that
+  // tests the accumulator then runs for ever. Only `index` is small enough to be trusted to grow.
+  for (let index = 0; index < count; index += 1) {
+    const raw = phase + (first + index) * pitch;
+    if (!Number.isFinite(raw) || raw < -EPS || raw > along + EPS) continue;
+    // A point within a rounding error of an end **is** that end. Two sides share a corner, and
+    // they agree on it only if both name it exactly: `120.99999999999999` and `121` are one corner
+    // to a reader and two connection points to draw.io. Snapped before the slot is tested for a
+    // port, so a point that lands on an anchor once snapped is dropped rather than offered beside it.
+    const at = raw < EPS ? 0 : raw > along - EPS ? along : raw;
+    if (on.some(offset => Math.abs(offset - at) <= EPS)) continue;
+    grid.push(at);
+  }
+  return grid;
+}
 
 export interface DrawioOptions {
   /** Effective link families to export; see `RenderOptions.layers`, whose rule this shares. */
@@ -517,26 +636,30 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     // Every port anchor is mirrored into `points=` so the editor offers the anchors the pipeline
     // actually used. It constrains nothing — the edges pin themselves — but without it a user
     // dragging a new connector gets draw.io's four default anchors instead of this node's ports.
-    const anchors = node.ports.filter(port => port.anchor !== undefined).map(port => {
+    // A `Set` because two sides meet at a corner and would each offer it, and a real anchor on a
+    // corner would be offered again by the next side's grid. Insertion order is kept, so a real
+    // anchor is always the one that stays and the grid point is the copy that goes.
+    const anchors = new Set(node.ports.filter(port => port.anchor !== undefined).map(port => {
       const at = port.anchor!;
       return `[${num((at.x - node.bounds!.x) / node.bounds!.width)},`
         + `${num((at.y - node.bounds!.y) / node.bounds!.height)},0]`;
-    });
+    }));
     // Beyond the ports in use, each side offers the rest of its own grid: the slots `sidePitch`
-    // divides that side into. A hand-placed pill or a hand-drawn connector then lands where the
-    // pipeline would have put one, instead of wherever the pointer was.
+    // divides that side into, in the phase the pipeline reserved them in. A hand-placed pill or a
+    // hand-drawn connector then lands where the pipeline would have put one, instead of wherever
+    // the pointer was. See `sideGrid` for why the phase is the anchors and not the corner.
     for (const side of ['top', 'bottom', 'left', 'right'] as const) {
       const pitch = node.sidePitch?.[side];
-      if (pitch === undefined || pitch <= 0) continue;
-      const along = side === 'top' || side === 'bottom' ? node.bounds!.width : node.bounds!.height;
-      const base = side === 'top' || side === 'bottom' ? node.bounds!.x : node.bounds!.y;
-      const fixed = side === 'left' ? 0 : side === 'right' ? 1 : side === 'top' ? 0 : 1;
-      for (let at = base + pitch; at < base + along - 1e-6; at += pitch) {
-        const fraction = (at - base) / along;
-        const taken = node.ports.some(port => port.anchor !== undefined && port.side === side
-          && Math.abs((side === 'top' || side === 'bottom' ? port.anchor.x : port.anchor.y) - at) < 1e-6);
-        if (taken) continue;
-        anchors.push(side === 'top' || side === 'bottom'
+      if (pitch === undefined) continue;
+      const horizontal = side === 'top' || side === 'bottom';
+      const along = horizontal ? node.bounds!.width : node.bounds!.height;
+      const base = horizontal ? node.bounds!.x : node.bounds!.y;
+      const fixed = side === 'left' || side === 'top' ? 0 : 1;
+      const offsets = node.ports.filter(port => port.side === side && port.anchor !== undefined)
+        .map(port => (horizontal ? port.anchor!.x : port.anchor!.y) - base);
+      for (const at of sideGrid(offsets, along, pitch)) {
+        const fraction = at / along;
+        anchors.add(horizontal
           ? `[${num(fraction)},${num(fixed)},0]` : `[${num(fixed)},${num(fraction)},0]`);
       }
     }
@@ -568,7 +691,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.node * 2,
       whiteSpace: 'nowrap', fillColor: paint.node.fill, strokeColor: paint.node.stroke,
       strokeWidth: node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node,
-      points: `[${anchors.join(',')}]`,
+      points: `[${[...anchors].join(',')}]`,
       ...(text === '' ? {} : {
         align: 'center', verticalAlign: 'top', overflow: 'visible',
         // The offset is signed. draw.io honours a negative `spacingTop` — measured — and a node
@@ -589,40 +712,47 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const native = iconSet === 'cisco19' ? CISCO19[iconKey(node.icon.icon)] : undefined;
       if (native) {
         // A badge carries its own frame, so it replaces the tile; a silhouette keeps it.
-        if (native.kind === 'silhouette') {
+        if (native.kind === 'silhouette' && positive(tile)) {
           vertex(cellId('iconTile', id), cellId('node', id), styleString([], {
             html: 1, rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
             fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
           }), tile);
         }
-        const box = letterbox(native.kind === 'badge' ? tile
-          : { x: tile.x + ICON_INSET, y: tile.y + ICON_INSET,
-            width: tile.width - 2 * ICON_INSET, height: tile.height - 2 * ICON_INSET }, native);
-        vertex(cellId('icon', id), cellId('node', id), styleString([], {
-          sketch: 0, html: 1, aspect: 'fixed', points: '[]',
-          shape: native.kind === 'badge' ? 'mxgraph.cisco19.rect' : `mxgraph.cisco19.${native.shape}`,
-          ...(native.kind === 'badge' ? { prIcon: native.shape } : {}),
-          // On a badge `fillColor` is the frame and `strokeColor` is the glyph; a silhouette is
-          // filled with the glyph colour and has no frame to stroke.
-          fillColor: native.kind === 'badge' ? resolved.tile.fill : resolved.glyph,
-          strokeColor: native.kind === 'badge' ? resolved.glyph : 'none',
-        }), box);
+        // A tile with no room for the glyph inset leaves the glyph out. Subtracting the inset from
+        // a tile thinner than it gives a negative width, which draw.io writes and then draws as
+        // nothing at all — so the whole icon would go, silently, rather than just the inset.
+        const box = glyphBox(tile, native);
+        if (box) {
+          vertex(cellId('icon', id), cellId('node', id), styleString([], {
+            sketch: 0, html: 1, aspect: 'fixed', points: '[]',
+            shape: native.kind === 'badge' ? 'mxgraph.cisco19.rect' : `mxgraph.cisco19.${native.shape}`,
+            ...(native.kind === 'badge' ? { prIcon: native.shape } : {}),
+            // On a badge `fillColor` is the frame and `strokeColor` is the glyph; a silhouette is
+            // filled with the glyph colour and has no frame to stroke.
+            fillColor: native.kind === 'badge' ? resolved.tile.fill : resolved.glyph,
+            strokeColor: native.kind === 'badge' ? resolved.glyph : 'none',
+          }), box);
+        }
       } else {
-        vertex(cellId('iconTile', id), cellId('node', id), styleString([], {
-          html: 1, rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
-          fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
-        }), tile);
+        if (positive(tile)) {
+          vertex(cellId('iconTile', id), cellId('node', id), styleString([], {
+            html: 1, rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
+            fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
+          }), tile);
+        }
         // A profile glyph is a stroked 24-unit path with no bundled equivalent, so it is carried as
         // its own image. An embedded image is the one thing here that cannot adapt to dark — draw.io
         // has no way into it — which is the reason `cisco19` exists as an option at all.
-        const glyph = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">`
-          + `<path d="${iconPath(node.icon.icon)}" fill="none" stroke="${pick(mode).glyph}"`
-          + ` stroke-width="${num(GLYPH_STROKE)}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-        vertex(cellId('icon', id), cellId('node', id), styleString([], {
-          shape: 'image', html: 1, imageAspect: 0, points: '[]',
-          image: svgImage(glyph),
-        }), { x: tile.x + ICON_INSET, y: tile.y + ICON_INSET,
-          width: tile.width - 2 * ICON_INSET, height: tile.height - 2 * ICON_INSET });
+        const inner = shrink(tile, ICON_INSET);
+        if (inner) {
+          const glyph = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">`
+            + `<path d="${iconPath(node.icon.icon)}" fill="none" stroke="${pick(mode).glyph}"`
+            + ` stroke-width="${num(GLYPH_STROKE)}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+          vertex(cellId('icon', id), cellId('node', id), styleString([], {
+            shape: 'image', html: 1, imageAspect: 0, points: '[]',
+            image: svgImage(glyph),
+          }), inner);
+        }
       }
     }
 
@@ -641,6 +771,15 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       // The pill's name is the pill's own label, not a text box parked on top of it: one cell that
       // moves, copies and is renamed as one thing. A quarter turn is `horizontal=0`, which is how a
       // vertical pill reads in the SVG too.
+      //
+      // `horizontal=0` is the only turn a vertex's own label takes on its own: measured against
+      // drawio-desktop 31.4.5, it turns the label −90 and leaves the shape where it is, while
+      // `rotation=` turns the shape and carries the label round with it. A pill needs no other
+      // angle — `PillGeometry.textRotation` is `-90 | 0`, and `placePortPill` is its one producer,
+      // which sets −90 on a top or bottom side and 0 on a left or right one. Were +90 ever
+      // reserved it would be `horizontal=0` **and** `rotation=180`: the two compose, and a pill is
+      // a rounded rectangle of uniform radius, fill and stroke, so a half turn of the shape is
+      // invisible. Also measured.
       vertex(cellId('port', ...identity), cellId('node', id), styleString([], {
         html: 1, rounded: 1, absoluteArcSize: 1, arcSize: port.pill.radius * 2,
         fillColor: resolved.fill, strokeColor: resolved.stroke,
@@ -754,8 +893,25 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     return shift(project({ x: measured.x + canvas.x, y: measured.y + canvas.y }, support));
   };
 
-  /** The paint and turn a link label takes, wherever it is carried. */
-  const labelStyle = (label: LayoutLabel, at: Point): Readonly<Record<string, StyleValue>> => {
+  /**
+   * The paint and turn a link label takes, on whichever of the two carriers holds it. The two do
+   * **not** take the same keys, measured against drawio-desktop 31.4.5 on a horizontal edge:
+   *
+   * | style | edge's own label | child `edgeLabel` cell |
+   * | --- | --- | --- |
+   * | `horizontal=0` | `rotate(-90 …)` | `rotate(-90 …)` |
+   * | `rotation=-90` | no transform | `rotate(-90 …)` |
+   * | `rotation=90` | no transform | `rotate(90 …)` |
+   * | `rotation=180` | no transform | `rotate(180 …)` |
+   * | `rotation=45` | no transform | `rotate(45 …)` |
+   * | `horizontal=0;rotation=180` | `rotate(-90 …)` | `rotate(90 …)` |
+   *
+   * So an edge's own label takes `horizontal=0` and ignores `rotation=` outright — it can express
+   * −90 and nothing else. A child cell takes `rotation=` at any angle, and `horizontal=0` adds a
+   * further −90 on top of it rather than replacing it, so a child states its angle once, in
+   * `rotation=`, and never sets `horizontal`.
+   */
+  const labelStyle = (label: LayoutLabel, at: Point, carrier: 'edge' | 'child'): Readonly<Record<string, StyleValue>> => {
     const on = placement === 'on-run' && label.support?.kind === 'link-segment';
     const multiplicity = label.support?.kind === 'merge-run';
     const inside = Object.values(layout.groups).some(group => group.bounds
@@ -775,16 +931,23 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       fontFamily: FONT_FAMILY, fontSize: label.fontSize,
       fontColor: multiplicity ? paint.link.multiplicity : paint.link.label,
       fontStyle: label.fontWeight === 700 ? 1 : undefined,
-      horizontal: label.textRotation === -90 || label.textRotation === 90 ? 0 : undefined,
+      ...(carrier === 'edge'
+        ? { horizontal: label.textRotation === -90 ? 0 : undefined }
+        : { rotation: label.textRotation ? label.textRotation : undefined }),
     };
   };
 
   /**
    * The one label an edge can carry as its own. draw.io gives a shape its text, and an edge is a
-   * shape: a reader who double-clicks a connector expects to be editing its label. A quarter turn
-   * is `horizontal=0`, which — contrary to what the format's own notes suggest — really does rotate
-   * an edge's own label; measured. Anything else, an arbitrary reserved angle or a second label on
-   * one link, stays a child cell, which is draw.io's own answer for exactly those cases.
+   * shape: a reader who double-clicks a connector expects to be editing its label. An edge's own
+   * label takes exactly two turns — none, and the `horizontal=0` quarter turn, which — contrary to
+   * what the format's own notes suggest — really does rotate it; measured. `rotation=` on an edge
+   * is ignored, so +90, 180 and every arbitrary reserved angle stay child cells, along with a
+   * second label on one link. That is draw.io's own answer for exactly those cases, and a child
+   * cell does take `rotation=` at any angle. See `labelStyle` for the measured table.
+   *
+   * ADR-0014 reserves 0° and −90° for a link label, so the common diagram loses nothing here: only
+   * a straight bundle member's own run angle (ADR-0017) leaves the edge and becomes a child.
    */
   const ownLabel = new Map<string, LayoutLabel>();
   for (const label of layout.labels) {
@@ -793,7 +956,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       : label.owner.kind === 'link' ? label.owner.id : undefined;
     if (owner === undefined) continue;
     const turn = label.textRotation ?? 0;
-    if (turn !== 0 && turn !== -90 && turn !== 90) continue;
+    if (turn !== 0 && turn !== -90) continue;
     if (ownLabel.has(owner)) { ownLabel.delete(owner); continue; }
     ownLabel.set(owner, label);
   }
@@ -876,7 +1039,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         ...dashEntries(overlay ? undefined : klass.dash),
         ...(source?.style ?? {}),
         ...(target?.style ?? {}),
-        ...(carried ? labelStyle(carried.label, labelPoint(carried.label, link)) : {}),
+        ...(carried ? labelStyle(carried.label, labelPoint(carried.label, link), 'edge') : {}),
       });
       edgeCell(id, layer, style, run.points, {
         source: source?.cell,
@@ -936,9 +1099,8 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         // `edgeLabel` is a named style in draw.io's bundled sheet and brings
         // `labelBackgroundColor=default` with it — the white box the SVG does not draw.
         html: 1, resizable: 0, points: '[]',
-        ...labelStyle(label, at),
-        // A turn `horizontal=0` cannot express is stated outright.
-        rotation: label.textRotation && label.textRotation % 90 !== 0 ? label.textRotation : undefined,
+        // A child cell states its whole turn in `rotation=`, at any angle. `labelStyle` carries it.
+        ...labelStyle(label, at, 'child'),
       }),
       vertex: 1, connectable: 0, parent: run.id,
     }, element('mxGeometry', { x: relativeAt.x, y: relativeAt.y, relative: 1, as: 'geometry' },
@@ -997,34 +1159,41 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         const resolved = dual(pick);
         const native = iconSet === 'cisco19' ? CISCO19[iconKey(entry.icon)] : undefined;
         if (native) {
-          // The legend has to name what the diagram draws, so it takes the same glyph.
-          if (native.kind === 'silhouette') {
+          // The legend has to name what the diagram draws, so it takes the same glyph — and the
+          // same guard: a swatch with no room for the inset keeps its tile and drops the glyph,
+          // rather than writing a negative box draw.io silently draws as nothing.
+          if (native.kind === 'silhouette' && positive(swatch)) {
             vertex(cellId('legendTile', entry.id), cellId('legendRow', entry.id), styleString([], {
               html: 1, rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
               fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
             }), swatch);
           }
-          vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
-            sketch: 0, html: 1, aspect: 'fixed', points: '[]',
-            shape: native.kind === 'badge' ? 'mxgraph.cisco19.rect' : `mxgraph.cisco19.${native.shape}`,
-            ...(native.kind === 'badge' ? { prIcon: native.shape } : {}),
-            fillColor: native.kind === 'badge' ? resolved.tile.fill : resolved.glyph,
-            strokeColor: native.kind === 'badge' ? resolved.glyph : 'none',
-          }), letterbox(native.kind === 'badge' ? swatch
-            : { x: swatch.x + ICON_INSET, y: swatch.y + ICON_INSET,
-              width: swatch.width - 2 * ICON_INSET, height: swatch.height - 2 * ICON_INSET }, native));
+          const box = glyphBox(swatch, native);
+          if (box) {
+            vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
+              sketch: 0, html: 1, aspect: 'fixed', points: '[]',
+              shape: native.kind === 'badge' ? 'mxgraph.cisco19.rect' : `mxgraph.cisco19.${native.shape}`,
+              ...(native.kind === 'badge' ? { prIcon: native.shape } : {}),
+              fillColor: native.kind === 'badge' ? resolved.tile.fill : resolved.glyph,
+              strokeColor: native.kind === 'badge' ? resolved.glyph : 'none',
+            }), box);
+          }
         } else {
-        vertex(cellId('legendTile', entry.id), cellId('legendRow', entry.id), styleString([], {
-          html: 1, rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
-          fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
-        }), swatch);
-        const glyph = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">`
-          + `<path d="${iconPath(entry.icon)}" fill="none" stroke="${pick(mode).glyph}"`
-          + ` stroke-width="${num(GLYPH_STROKE)}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-        vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
-          shape: 'image', html: 1, imageAspect: 0, points: '[]', image: svgImage(glyph),
-        }), { x: swatch.x + ICON_INSET, y: swatch.y + ICON_INSET,
-          width: swatch.width - 2 * ICON_INSET, height: swatch.height - 2 * ICON_INSET });
+          if (positive(swatch)) {
+            vertex(cellId('legendTile', entry.id), cellId('legendRow', entry.id), styleString([], {
+              html: 1, rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
+              fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
+            }), swatch);
+          }
+          const inner = shrink(swatch, ICON_INSET);
+          if (inner) {
+            const glyph = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">`
+              + `<path d="${iconPath(entry.icon)}" fill="none" stroke="${pick(mode).glyph}"`
+              + ` stroke-width="${num(GLYPH_STROKE)}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+            vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
+              shape: 'image', html: 1, imageAspect: 0, points: '[]', image: svgImage(glyph),
+            }), inner);
+          }
         }
       }
     }
