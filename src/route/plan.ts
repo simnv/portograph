@@ -142,6 +142,10 @@ export function planRoute(model: LayoutModel): RoutePlan {
   // the corridor another link's own lane opens into.
   const gapRuns = new Map<string, Map<number, PathSegment[]>>();
   for (const run of allocateGapRuns(model)) {
+    // A link that turns in a row gap holds one reserved run, and its leg is that one. `gapPlan`
+    // declines a gap whose legs own a lane, so the two never meet; this keeps the obstacle set and
+    // the stitched pieces agreed if they ever do.
+    if (legs.has(run.link)) continue;
     const link = model.links.find(item => item.id === run.link)!;
     const runs = gapRuns.get(run.link) ?? new Map<number, PathSegment[]>();
     runs.set(run.index, run.segments);

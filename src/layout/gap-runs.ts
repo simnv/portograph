@@ -96,16 +96,20 @@ function tierGaps(model: LayoutModel): TierGap[] {
  * ends of the runs the lanes rule fixed. An end that consumes a declared shared run starts at that
  * run's terminal, not at its port anchor.
  */
-function stopsOf(model: LayoutModel, link: LayoutLink): { point: Point; port: boolean }[] {
+function stopsOf(model: LayoutModel, link: LayoutLink): { point: Point; kind: 'port' | 'shared' | 'lane' }[] {
   const ends = (['from', 'to'] as const).map(end => {
     const runs = link.sharedRuns?.[end];
-    if (runs?.length) return { point: runs.at(-1)!.to, port: false };
+    if (runs?.length) return { point: runs.at(-1)!.to, kind: 'shared' as const };
     const anchor = findPort(model, link.attachments![end])?.anchor;
-    return anchor ? { point: anchor, port: true } : undefined;
+    return anchor ? { point: anchor, kind: 'port' as const } : undefined;
   });
   if (!ends[0] || !ends[1]) return [];
+  // Every reserved run keeps its place, so the index of each planned gap is the one `planRoute`
+  // plans from. Only a lane terminal opens into a tier gap: a port anchor can sit on a boundary as
+  // well — a band's extent is the union of its nodes — and a run from there is that link's own stem.
+  const kindOf = (segment: PathSegment): 'shared' | 'lane' => segment.lane === undefined ? 'shared' : 'lane';
   return [ends[0], ...(link.fixedSegments ?? []).flatMap(segment =>
-    [{ point: segment.from, port: false }, { point: segment.to, port: false }]), ends[1]];
+    [{ point: segment.from, kind: kindOf(segment) }, { point: segment.to, kind: kindOf(segment) }]), ends[1]];
 }
 
 /** The gap boundary a point stands on, or undefined when it stands on neither. */
@@ -154,16 +158,15 @@ function gapUsers(model: LayoutModel, gaps: TierGap[]): Map<number, GapUsers> {
       if (!found.length) continue;
       if (found.length > 1) { for (const key of found) result.get(key)!.crossers.add(link.id); continue; }
       const key = found[0]!, gap = gaps[key]!, users = result.get(key)!;
-      const edgeA = edgeOf(gap, a.point), edgeB = edgeOf(gap, b.point);
-      // A run between two points of one boundary never crosses the gap at all.
-      if (edgeA !== undefined && edgeA === edgeB) continue;
+      const edgeA = a.kind === 'lane' ? edgeOf(gap, a.point) : undefined;
+      const edgeB = b.kind === 'lane' ? edgeOf(gap, b.point) : undefined;
       if (edgeA === undefined && edgeB === undefined) { users.crossers.add(link.id); continue; }
       const nearFirst = edgeA !== undefined;
       const near = nearFirst ? a : b, far = nearFirst ? b : a;
       const item: Participant = { link, index, near: near.point, far: far.point, nearFirst,
         nearEdge: (nearFirst ? edgeA : edgeB)!, farOnEdge: edgeA !== undefined && edgeB !== undefined };
       if (!item.farOnEdge) {
-        const tail = far.port
+        const tail = far.kind === 'port'
           ? tailOf(model, link, nearFirst ? 'to' : 'from', far.point, item.nearEdge === 'low' ? gap.high : gap.low)
           : undefined;
         if (!tail) { users.crossers.add(link.id); continue; }
