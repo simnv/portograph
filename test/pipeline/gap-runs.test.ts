@@ -120,13 +120,21 @@ it('grows a tier gap to the rows it must seat', async () => {
   const grown = rooms.filter(room => room.rows > 0);
   expect(grown.map(room => room.rows)).toEqual([4]);
 
-  // The gap's height is the rows it seats times the pitch, plus the margin the lane overhangs take.
+  // The rows the gap grew for are the rows it seats. `rows x pitch` would not do it: that is the
+  // packing with nothing in the way, and the lane runs standing on both boundaries take 11.5 px of
+  // the gap each, so at 70 px this gap seated two of its four.
+  const seats = allocateGapRuns(model).flatMap(run => run.segments.filter(horizontal).map(segment => segment.from.y));
   for (const room of grown) {
-    expect(bandGapOf(model, room)).toBeCloseTo(room.rows * room.pitch + room.margins, 9);
-    expect(room.high - room.low).toBeCloseTo(room.rows * room.pitch, 9);
+    const inside = seats.filter(y => y > room.low && y < room.high);
+    expect(inside.length).toBe(room.rows);
+    // The gap holds what the seating landed in and no more: the last row, plus the headroom the
+    // high boundary keeps for an approach standing on it.
+    expect(Math.max(...inside) - room.low + room.headroom).toBeCloseTo(room.high - room.low, 9);
+    expect(room.high - room.low).toBeGreaterThan(room.rows * room.pitch);
+    expect(bandGapOf(model, room)).toBeCloseTo(room.high - room.low + room.margins, 9);
   }
-  // No gap of the diagram is left short of the rows it owes, and a gap that owes none keeps its
-  // band gap: growth is a reservation this rule makes, never one it takes back.
+  // A gap that owes no row keeps its band gap: growth is a reservation this rule makes, never one
+  // it takes back. And the reservation is stable, so a second pass over it grows nothing.
   for (const room of rooms) {
     expect(room.high - room.low).toBeGreaterThanOrEqual(room.required - 1e-9);
     if (!room.rows) expect(bandGapOf(model, room)).toBeCloseTo(60, 9);

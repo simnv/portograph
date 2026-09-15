@@ -1,15 +1,19 @@
 # Expected: four links cross the middle tier to reach four nodes below it, wired so that no
 # horizontal move puts a run on one x. Each is therefore a **row** in the tier gap under the middle
-# tier, not a column, and four rows need `4 x 17.5 = 70 px`.
+# tier, not a column, and the gap owes four rows.
 #
 # The band gap is 60 px for the whole diagram, and the lanes that face the gap overhang their band
-# by 10.75 px, so the room a run really had was 49.25 px: two rows. The allocation seated two and
-# left the rest to stage 8, the first ownership batch took the corridor the third needed, and the
-# diagram did not publish: `Routed gap on link-4 crosses reserved lane lane:"link-4":1 sideways`.
+# by 10.75 px, so the room a run really had was 49.25 px. The allocation seated one row and left
+# the rest to stage 8, the first ownership batch took the corridor another needed, and the diagram
+# did not publish: `Routed gap on link-4 crosses reserved lane lane:"link-4":1 sideways`.
 #
-# ADR-0015 rule 1 now grows the gap to the rows it must seat: 7f measures four rows, moves the
-# bottom tier down 20.75 px, and the gap holds 70 px between the lane extents - the rows times the
-# pitch, plus the 10.75 px of margin the overhang takes. The diagram publishes.
+# ADR-0015 rule 1 now grows the gap to the rows it must seat. Not to `4 x 17.5 = 70 px`: that is
+# the packing with nothing in the way, and each lane's reserved run stands on a boundary and takes
+# 11.5 px of the gap, so 70 px seats two of the four. 7f measures the seating in a gap opened past
+# anything it can ask for, and reserves what it lands in - the last of the four rows, plus the
+# 26.5 px of headroom the high boundary keeps for an approach standing on it. The gap ends at
+# 90.5 px between the lane extents, 101.25 px of band gap, and seats all four. The diagram
+# publishes.
 portograph: 2
 groups:
   g0: { tier: 0 }
