@@ -62,7 +62,7 @@ export function growTierGaps(model: LayoutModel): boolean {
     // Room is reserved only where the probe shows it buys a seat. A gap that seats no more with the
     // boundary out of its way is one the allocation refuses for a reason of its own, and moving
     // every band below it would buy no route at all.
-    if (!opened.has(entry.below) || entry.seated <= seats.get(entry.below)!) continue;
+    if (!opened.has(entry.below) || entry.refuses || entry.seated <= seats.get(entry.below)!) continue;
     const extra = entry.required - room.get(entry.below)!;
     if (extra > EPS) grown.set(entry.below, extra);
   }
@@ -80,10 +80,12 @@ export function growTierGaps(model: LayoutModel): boolean {
 }
 
 /**
- * Whether a gap asks for more room than it has: it owes a row the seating did not reach.
+ * Whether a gap asks for more room than it has. A gap that owes no row asks for nothing, and so
+ * does one the allocation refuses for a reason of its own — it seats nothing however tall it is,
+ * and growing it would move every band below for no route at all.
  */
 function needsRoom(room: TierGapRoom): boolean {
-  return room.rows > 0 && room.seated < room.rows;
+  return room.rows > 0 && !room.refuses && room.seated < room.rows;
 }
 
 /** A copy of the model with the given room added to each gap, ready to be measured. */

@@ -72,6 +72,18 @@ export interface GapRun {
 /** One rectangle stage 8 must respect, with the links a rule has already let through it. */
 interface Blocker { bounds: Rect; owners: ReadonlySet<string>; node?: string }
 
+/** What one tier gap allocated, and whether more room could have changed the answer. */
+interface GapAllocation {
+  runs: Map<Participant, PathSegment[]>;
+  /**
+   * `true` when the gap refused its whole allocation for a reason room cannot answer: the rows have
+   * no clean order, or a port's own approach beyond a boundary is blocked. Both are read from
+   * frozen placement, so a taller gap gives the same answer, and the rule that reserves the gap's
+   * height must leave such a gap alone.
+   */
+  refused: boolean;
+}
+
 const same = (a: number, b: number): boolean => Math.abs(a - b) <= EPS;
 const drawn = (link: LayoutLink): boolean => link.technique !== 'stub' && link.attachments !== undefined
   && link.layer === 'routed' && link.path === undefined;
@@ -471,13 +483,16 @@ function firstBlock(list: readonly Blocker[], link: LayoutLink, line: { from: Po
  * pitch allows.
  */
 function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
-  users: GapUsers): Map<Participant, PathSegment[]> {
+  users: GapUsers): GapAllocation {
   const { items, approaches } = users;
   const empty = new Map<Participant, PathSegment[]>();
+  // A refusal the room cannot answer is marked, because the rule that reserves the gap's height
+  // (`gap-room.ts`) must not grow a gap this one has already refused for a reason of its own.
+  const refuse = (refused: boolean): GapAllocation => ({ runs: empty, refused });
   const rows = items.filter(needsRow);
-  if (!rows.length) return empty;
+  if (!rows.length) return refuse(false);
   const order = rowOrder(rows);
-  if (!order) return empty;
+  if (!order) return refuse(true);
   const attachedOf = (item: Participant): Set<string> =>
     new Set([item.link.attachments!.from.node, item.link.attachments!.to.node]);
   // The line beyond a boundary is the port's own approach. It does not move with the row, so it is
@@ -486,7 +501,7 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
   for (const item of items) {
     if (!item.reach) continue;
     const edge = { x: item.far.x, y: item.nearEdge === 'low' ? gap.high : gap.low };
-    if (firstBlock(list, item.link, { from: edge, to: item.reach }, attachedOf(item))) return empty;
+    if (firstBlock(list, item.link, { from: edge, to: item.reach }, attachedOf(item))) return refuse(true);
   }
   const pitch = MEMBER_GAP + routedStroke(model), limit = gap.high - pitch / 2;
   // Two centrelines that run side by side keep the gate's clearance plus the widest routed stroke,
@@ -548,7 +563,7 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
     absent = missing;
     at = seat(absent);
   }
-  if (!at.size) return empty;
+  if (!at.size) return refuse(false);
   const result = new Map<Participant, PathSegment[]>();
   const settled = [...list, ...owed(absent)];
   for (const item of items) {
@@ -572,9 +587,9 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
   for (const item of result.keys()) {
     if (!item.reach) continue;
     const edge = { x: item.far.x, y: item.nearEdge === 'low' ? gap.high : gap.low };
-    if (firstBlock(peers, item.link, { from: edge, to: item.reach }, attachedOf(item))) return empty;
+    if (firstBlock(peers, item.link, { from: edge, to: item.reach }, attachedOf(item))) return refuse(false);
   }
-  return result;
+  return { runs: result, refused: false };
 }
 
 /** The room one tier gap has, and the room the runs that cross it need. */
@@ -609,6 +624,11 @@ export interface TierGapRoom {
    * row starts deeper and the last lands past where `rows × pitch` puts it.
    */
   required: number;
+  /**
+   * `true` when the allocation refused this gap for a reason room cannot answer. A gap that refuses
+   * seats nothing however tall it is, so the height rule leaves it alone.
+   */
+  refuses: boolean;
 }
 
 /**
@@ -618,10 +638,11 @@ export interface TierGapRoom {
  * (`gap-room.ts`). The allocation below is the consumer of the grown gap, never its owner: it reads
  * the room the gap has and seats what fits in it.
  *
- * The demand is the seating itself, run against the room the gap has now. A gap whose high boundary
- * is what stops the seating therefore under-reports, because the rows it could not reach are not in
- * the answer — so the caller opens the gap on a probe first and measures there, where the boundary
- * cannot bind.
+ * The demand is the seating itself, run against the room the gap has now. Two things follow. A gap
+ * the allocation **refuses** for a reason of its own asks for nothing, because a taller gap gives
+ * the same refusal. And a gap whose high boundary is what stops the seating under-reports, because
+ * the rows it could not reach are not in the answer — so the caller opens the gap on a probe first
+ * and measures there, where the boundary cannot bind.
  *
  * The row count is taken after lane x is fixed, because that is what separates a **column** (both
  * ends on one x, no row needed) from a **row**. Before it, every crossing run would have to be
@@ -642,10 +663,11 @@ export function tierGapRoom(model: LayoutModel): TierGapRoom[] {
     const entry = users.get(key)!;
     const rows = entry.items.filter(needsRow).length;
     const margins = below.y - bottom(above) - (gap.high - gap.low);
-    const nothing = { ...gap, margins, rows, seated: 0, pitch, headroom, required: 0 };
+    const nothing = { ...gap, margins, rows, seated: 0, pitch, headroom, required: 0, refuses: false };
     if (!rows) return nothing;
-    const runs = allocateGap(model, nearBlockers(list, gap, entry.items), gap, entry);
-    const seats = [...runs.values()].flatMap(segments =>
+    const allocation = allocateGap(model, nearBlockers(list, gap, entry.items), gap, entry);
+    if (allocation.refused) return { ...nothing, refuses: true };
+    const seats = [...allocation.runs.values()].flatMap(segments =>
       segments.filter(segment => same(segment.from.y, segment.to.y)).map(segment => segment.from.y));
     if (!seats.length) return nothing;
     return { ...nothing, seated: seats.length, required: Math.max(...seats) - gap.low + headroom };
@@ -667,7 +689,7 @@ export function allocateGapRuns(model: LayoutModel): GapRun[] {
     const { items, crossers } = entry;
     if (!items.length) continue;
     const gap = gaps[key]!;
-    const allocated = allocateGap(model, nearBlockers(list, gap, items), gap, entry);
+    const allocated = allocateGap(model, nearBlockers(list, gap, items), gap, entry).runs;
     if (!allocated.size) continue;
     // A run this gap could not seat keeps the route it has today, so it crosses the seated ones.
     for (const item of items) {
