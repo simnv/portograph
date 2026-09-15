@@ -300,7 +300,10 @@ child port under the lane the feed owns (§ 7c). Where it could not, the child's
 the corridor sideways, and it crosses whatever stands between them. The corridor then moves to the
 child's port x instead. Only the corridor in the tier next to the child moves; the corridors before
 it carry the link across tiers it has left behind, and the jog between two corridors is what this
-stage already accepts.
+stage already accepts. "Next to the child" is read from the child, not from the transit order: that
+order runs from the authored source to the authored target, so its last tier is the child's
+neighbour only when the child is the authored target, and reading it the other way would make the
+answer follow the authoring.
 
 The move is made only when every one of these holds:
 

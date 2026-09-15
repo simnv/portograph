@@ -204,9 +204,13 @@ export function reseatLanes(model: LayoutModel): boolean {
     // publication replays would then contradict the declaration-order geometry it re-derives.
     if (link.sharedRuns || [link.attachments.from, link.attachments.to]
       .some(end => shared(model, end) || isBarNode(model, end.node))) continue;
+    const child = laneChild(model, link);
+    // `transitTiers` runs from the authored source to the authored target. The corridor that may
+    // move is the one next to the *child*, which is that order's last tier only when the child is
+    // the authored target; read it from the child so the answer does not follow the authoring.
     const order = transitTiers(model, link);
-    if (order[order.length - 1] !== lane.tier) continue;
-    const child = laneChild(model, link), anchor = findPort(model, child)?.anchor;
+    if ((child === link.attachments.to ? order.at(-1) : order[0]) !== lane.tier) continue;
+    const anchor = findPort(model, child)?.anchor;
     if (!anchor || Math.abs(anchor.x - lane.x) < 0.5) continue;
     if (!corridorFree(model, lane, link, child, anchor.x) || !feedOrderHolds(model, lane, link, anchor.x)) continue;
     const group = Object.values(model.groups).filter(item => item.tier === lane.tier)

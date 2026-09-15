@@ -102,3 +102,55 @@ it('leaves a corridor whose link has a bar end where 7a put it', async () => {
   expect(model.diagnostics.map(item => item.code)).not.toContain('LANE_FOLLOWS_ITS_CHILD');
   expect(model.lanes.map(item => item.x)).toEqual([229, 263]);
 }, 60000);
+
+/**
+ * `transitTiers` runs from the authored source to the authored target, so its last tier is the one
+ * next to the child only when the child is the authored target. Reading it from the child instead
+ * keeps the answer out of the authoring: both directions move the corridor next to the child and
+ * leave the corridor next to the alignment end where 7a put it.
+ */
+const twoTierTransit = (reversed: boolean): string => {
+  const pair = (a: string, b: string) => reversed ? `[${b}, ${a}]` : `[${a}, ${b}]`;
+  return `portograph: 2
+groups:
+  up-a: {tier: 7}
+  up-b: {tier: 7}
+  mid: {tier: 8}
+  mid2: {tier: 9}
+  low-a: {tier: 10}
+  low-b: {tier: 10}
+  tail: {tier: 12}
+nodes:
+  node-ca002: {group: up-b, class: provider, label: node-ca002}
+  node-aa001: {group: up-a, class: router, label: node-aa001}
+  node-aa002: {group: mid, class: tbr, label: node-aa002}
+  filler: {group: mid2, class: rr, label: filler}
+  node-ba001: {group: low-b, class: rr, label: node-ba001}
+  node-ba002: {group: low-a, class: provider, label: node-ba002}
+  edge-outlet1: {group: tail, class: tbr, label: Edge outlet1}
+links:
+  - ${pair('node-ba001', 'node-aa001')}
+  - ${pair('node-ba001', 'node-aa002')}
+  - ${pair('node-ba002', 'node-aa001')}
+  - ${pair('node-ba002', 'node-aa002')}
+  - ${pair('filler', 'node-aa002')}`;
+};
+
+it('moves the corridor next to the child whichever way the link is authored', async () => {
+  for (const reversed of [false, true]) {
+    const model = bands(bundles(bars(centre(flanks(lanes(rows(await placed(twoTierTransit(reversed)))))))));
+    const owned = model.lanes.filter(item => item.owner.kind === 'link' && item.owner.id === 'link-1')
+      .sort((a, b) => a.tier - b.tier);
+    expect([reversed, owned.length]).toEqual([reversed, 2]);
+    expect([reversed, model.diagnostics.map(item => item.code)].flat()).toContain('LANE_FOLLOWS_ITS_CHILD');
+    // The child is the low-tier end, whichever way the link was authored. Its corridor is the one
+    // in the tier next to it, and that corridor alone took the child port's x.
+    const link = model.links.find(item => item.id === 'link-1')!;
+    const ends = [link.attachments!.from, link.attachments!.to];
+    const childRef = ends.find(end => end.node === 'node-ba001')!;
+    const child = model.nodes[childRef.node]!.ports.find(port => port.ref.ordinal === childRef.ordinal)!.anchor!.x;
+    expect([reversed, owned.map(item => item.tier)]).toEqual([reversed, [1, 2]]);
+    expect([reversed, owned.at(-1)!.x]).toEqual([reversed, child]);
+    expect([reversed, owned[0]!.x === child]).toEqual([reversed, false]);
+  }
+}, 120000);
