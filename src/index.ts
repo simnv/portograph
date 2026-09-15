@@ -46,8 +46,8 @@ export { rebuildRowPaths, expectedRowPath, straightCorridorClear, facingPair, ro
 export type { FacingPair } from './layout/row-paths.js';
 
 export { lanes, allocateLanes, rebuildLaneExtents, laneWidth, validateLanes } from './layout/lanes.js';
-export { allocateGapRuns } from './layout/gap-runs.js';
-export type { GapRun } from './layout/gap-runs.js';
+export { allocateGapRuns, tierGapRoom } from './layout/gap-runs.js';
+export type { GapRun, TierGapRoom } from './layout/gap-runs.js';
 export { flanks, alignFlanks, rebuildFlankPaths, flankPair, flankPathCandidate, expectedFlankPath } from './layout/flanks.js';
 export { centre, centreDraft, createCentreBudget, selectAnchorTier } from './layout/centre.js';
 export type { CentreBudget } from './layout/centre.js';
@@ -56,6 +56,7 @@ export { rebuildRegionGeometry } from './layout/region-rebuild.js';
 export { bars, shapeBars, rebuildBarDrops, barLink, BAR_PADDING } from './layout/bars.js';
 export { bundles, prepareBundleGeometry, rebuildBundlePaths, BundleFeasibilityError } from './layout/bundles.js';
 export { bands, GROUP_LABEL_GEOMETRY } from './layout/bands.js';
+export { growTierGaps } from './layout/gap-room.js';
 export { linkLabels, produceLinkLabels, validateLinkLabels, overlayDensity, overlayLabelsSuppressed,
   LINK_LABEL_GEOMETRY, LINK_LABEL_CODES, OVERLAY_LABEL_DENSITY } from './layout/link-labels.js';
 export { diagramBounds, drawnBoxes, legendBoxes, legendRequired, legendVariants, paintedSwatch, portRoles, produceLegend } from './layout/legend.js';

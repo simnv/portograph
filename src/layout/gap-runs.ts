@@ -24,7 +24,13 @@ import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
  */
 
 /** A gap a run may be allocated in: the open band between two tier bands, clipped to the lanes. */
-interface TierGap { low: number; high: number }
+interface TierGap {
+  low: number;
+  high: number;
+  /** The tier of the band above the gap, and of the band below it. */
+  above: number;
+  below: number;
+}
 
 /** One planned routed gap of one link that straddles a tier gap. */
 interface Participant {
@@ -78,10 +84,10 @@ const OUTWARD_X: Record<Side, number> = { top: 0, bottom: 0, left: -1, right: 1 
  * has is the band gap clipped to the lane bounds that face it.
  */
 function tierGaps(model: LayoutModel): TierGap[] {
-  const bands = model.tierBands.filter(band => band.bounds).map(band => band.bounds!).sort((a, b) => a.y - b.y);
+  const bands = model.tierBands.filter(band => band.bounds).sort((a, b) => a.bounds!.y - b.bounds!.y);
   const result: TierGap[] = [];
-  for (const [index, band] of bands.entries()) {
-    const next = bands[index + 1];
+  for (const [index, entry] of bands.entries()) {
+    const band = entry.bounds!, following = bands[index + 1], next = following?.bounds;
     if (!next || bottom(band) >= next.y - EPS) continue;
     let low = bottom(band), high = next.y;
     for (const lane of model.lanes) {
@@ -92,7 +98,7 @@ function tierGaps(model: LayoutModel): TierGap[] {
       if (lane.layer === 'overlay') continue;
       if (lane.bounds.y > low + EPS && lane.bounds.y < high - EPS) high = lane.bounds.y;
     }
-    if (high > low + EPS) result.push({ low, high });
+    if (high > low + EPS) result.push({ low, high, above: entry.tier, below: following.tier });
   }
   return result;
 }
@@ -559,6 +565,51 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
     if (firstBlock(peers, item.link, { from: edge, to: item.reach }, attachedOf(item))) return empty;
   }
   return result;
+}
+
+/** The room one tier gap has, and the room the runs that cross it need. */
+export interface TierGapRoom {
+  /** The tier of the band above the gap, and of the band below it. */
+  above: number;
+  below: number;
+  /** The open band the facing lane extents leave between the two bands. */
+  low: number;
+  high: number;
+  /** What the lane overhangs take from the band gap: `band gap − (high − low)`. */
+  margins: number;
+  /** The runs of this gap whose two ends do not share one x, so each needs a row of its own. */
+  rows: number;
+  /** The distance one row keeps from the next. */
+  pitch: number;
+  /** The room those rows need: `rows × pitch`. */
+  required: number;
+}
+
+/**
+ * ADR-0015 rule 1, measured before the gap is allocated: the rows each tier gap must seat.
+ *
+ * This is the demand, not the allocation. The lanes rule (7a) owns the tier gap — the lane extents
+ * that bound it, the runs inside it, and its height — and calls this to grow a gap to the rows it
+ * must seat. The allocation below is the consumer of the grown gap, never its owner: it reads the
+ * room the gap has and seats what fits.
+ *
+ * The count is taken after lane x is fixed, because that is what separates a **column** (both ends
+ * on one x, no row needed) from a **row**. Before it, every crossing run would have to be counted
+ * as a row, and a diagram whose transit links all descend on one x — the M1 golden — would grow a
+ * gap it does not need.
+ */
+export function tierGapRoom(model: LayoutModel): TierGapRoom[] {
+  const bands = model.tierBands.filter(band => band.bounds).sort((a, b) => a.bounds!.y - b.bounds!.y);
+  const gaps = tierGaps(model);
+  if (!gaps.length) return [];
+  const users = gapUsers(model, gaps);
+  const pitch = MEMBER_GAP + routedStroke(model);
+  return gaps.map((gap, key) => {
+    const above = bands.find(band => band.tier === gap.above)!.bounds!;
+    const below = bands.find(band => band.tier === gap.below)!.bounds!;
+    const rows = (users.get(key)?.items ?? []).filter(needsRow).length;
+    return { ...gap, margins: below.y - bottom(above) - (gap.high - gap.low), rows, pitch, required: rows * pitch };
+  });
 }
 
 /**

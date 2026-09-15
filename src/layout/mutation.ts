@@ -21,6 +21,7 @@ import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
 import { produceGroupLabelBands, validateGroupLabelBands } from './bands.js';
+import { growTierGaps } from './gap-room.js';
 import { produceLinkLabels, validateLinkLabels } from './link-labels.js';
 import { validateRoutedPaths } from '../route/validate.js';
 
@@ -642,7 +643,14 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     rebuildRegions(draft);
     if (rule !== 'lanes') rebuildLaneExtents(draft);
   }
-  if (rule === 'bands') produceGroupLabelBands(draft);
+  if (rule === 'bands') {
+    // 7f reserves two things. A tier gap grows to the rows the allocation must seat in it
+    // (ADR-0015 rule 1) before any label is placed, because the growth moves whole bands down and
+    // a label placed first would stay behind. The replay then rebuilds every claim the movement
+    // touched, exactly as a reservation change does anywhere else in 7f.
+    if (growTierGaps(draft)) rebuildRegionGeometry(draft, undefined, undefined, true);
+    produceGroupLabelBands(draft);
+  }
   else if (rule === 'link-labels') produceLinkLabels(draft);
   else if (changed || ['rows', 'lanes', 'flanks', 'centre', 'bundles'].includes(rule)) {
     if (stages.indexOf(rule) >= stages.indexOf('flanks')) {
