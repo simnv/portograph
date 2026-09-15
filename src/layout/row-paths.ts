@@ -78,8 +78,15 @@ export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segm
   // measured before. The extra pixel covers the EPS the measured tests carry.
   const low = { x: Math.min(segment.from.x, segment.to.x), y: Math.min(segment.from.y, segment.to.y) };
   const high = { x: Math.max(segment.from.x, segment.to.x), y: Math.max(segment.from.y, segment.to.y) };
+  // A rectangle's far edges are `x + width` and `y + height`, which is what the measured tests
+  // read. Another run's far edges are the larger of its two endpoints: at a large coordinate
+  // `x + width` does not return the edge the endpoint really has, and a reject computed from it
+  // could drop a run the measured test would have rejected the corridor for.
   const beyond = (box: Rect, reach: number): boolean => low.x - (box.x + box.width) > reach
     || box.x - high.x > reach || low.y - (box.y + box.height) > reach || box.y - high.y > reach;
+  const beyondRun = (run: PathSegment, reach: number): boolean =>
+    low.x - Math.max(run.from.x, run.to.x) > reach || Math.min(run.from.x, run.to.x) - high.x > reach
+    || low.y - Math.max(run.from.y, run.to.y) > reach || Math.min(run.from.y, run.to.y) - high.y > reach;
   const pillReach = (stroke + DEFAULT_STROKE_WIDTHS.pill) / 2 + 1, laneReach = stroke / 2 + 1;
   const labelReach = stroke / 2 + GROUP_LABEL_LINK_CLEARANCE + 1;
   const groupReach = GROUP_EDGE_LINK_CLEARANCE + stroke / 2 + 1;
@@ -119,8 +126,7 @@ export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segm
     // let routing retract a placement decision, which the pipeline's load-bearing rule forbids.
     const foreign = other.path?.fixed === false ? [] : other.path?.segments ?? [];
     for (const run of [...foreign, ...(other.fixedSegments ?? [])]) {
-      const x = Math.min(run.from.x, run.to.x), y = Math.min(run.from.y, run.to.y);
-      if (beyond({ x, y, width: Math.abs(run.to.x - run.from.x), height: Math.abs(run.to.y - run.from.y) }, runReach)) continue;
+      if (beyondRun(run, runReach)) continue;
       if (segmentDistance(segment, run) - (stroke + otherStroke) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return false;
     }
   }

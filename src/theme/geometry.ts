@@ -63,8 +63,13 @@ export const GROUP_EDGE_LINK_CLEARANCE = 10;
  *
  * Memoised on the link array, because placement asks for this number inside per-node, per-port and
  * per-pair loops, and the scan is over every link. One array identity has one answer: `family`,
- * `layer` and `strokeWidth` are resolved in stage 1 and the mutation transaction holds them equal
- * from then on, and a path built later carries its own link's width (`pathStrokeWidth`).
+ * `layer` and `strokeWidth` are written by `resolve` in stage 1 alone, the mutation transaction's
+ * `semantics()` equality holds all three from stage 5 on, and a path built later carries its own
+ * link's width (`pathStrokeWidth`, which `route/validate` enforces).
+ *
+ * The rule a future caller must keep: do not write `family`, `layer` or `strokeWidth` on a link
+ * after stage 1 and then read this on the same array. Replace the array instead, as every
+ * transaction does.
  */
 const widestRoutedStroke = new WeakMap<readonly LayoutLink[], number>();
 export function routedStrokeWidth(model: Pick<LayoutModel, 'links'>): number {

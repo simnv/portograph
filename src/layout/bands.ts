@@ -63,9 +63,10 @@ function measurement(model: LayoutModel, groupId: string) {
 /**
  * Widest routed stroke this placement must keep clear; stage 8 may not exceed it.
  *
- * Memoised on the link array for the same reason as `routedStrokeWidth`: every reservation that is
- * stroke-aware asks for this number, many of them inside per-port or per-pair loops, and `layer`
- * and `strokeWidth` cannot change while one link array lives.
+ * Memoised on the link array for the same reason as `routedStrokeWidth`, and under the same rule:
+ * every reservation that is stroke-aware asks for this number, many of them inside per-port or
+ * per-pair loops, and `layer` and `strokeWidth` are written in stage 1 alone, so one array
+ * identity has one answer.
  */
 const widestRoutedStroke = new WeakMap<readonly LayoutModel['links'][number][], number>();
 export function routedStroke(model: LayoutModel): number {

@@ -1,6 +1,9 @@
 import type { LayoutModel, LayoutNode, PathSegment, Point, Rect } from '../model/index.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
-import { EPS, bottom, bounds, contains, horizontal, intersection, length, near, overlapSegment, rectDistance, rectOverlap, right, samePoint, segmentDistance, segmentRect, segmentRectDistance, vertical } from './geometry.js';
+import { EPS, bottom, contains, horizontal, intersection, length, near, overlapSegment, rectDistance, rectOverlap, right, samePoint, segmentDistance, segmentRect, segmentRectDistance, vertical } from './geometry.js';
+
+/** A rejection box kept by its far edges; see `gates`. */
+interface Span { x: number; y: number; right: number; bottom: number }
 import { anchorOnBoundary, barContact, bundlePair, endpoints, groupConsumers, incident, junctionFan, mergedRun, outward, port, refEqual, refKey, sharedStem } from './model.js';
 import type { Segment } from './model.js';
 import type { GateId, GateResult, ScoreCounters } from './types.js';
@@ -45,21 +48,32 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
   // needs no test at all. The loops still walk the model in model order, so the violations they
   // report, and the order they report them in, do not change. The extra pixel covers the EPS the
   // exact tests carry.
-  const segmentBounds = routed.map(item => bounds(item.segment));
-  const apart = (a: Rect, b: Rect, reach: number): boolean => a.x - right(b) > reach
-    || b.x - right(a) > reach || a.y - bottom(b) > reach || b.y - bottom(a) > reach;
+  // A span keeps its far edges, never a width: at a large coordinate `x + width` does not return
+  // the edge the far endpoint really has, and a reject computed from it could drop a pair the
+  // exact test would have failed. A rectangle's far edge is `right()` and `bottom()`, which is
+  // what the exact tests read; a segment's is the larger of its two endpoints.
+  const rectSpan = (box: Rect): Span => ({ x: box.x, y: box.y, right: right(box), bottom: bottom(box) });
+  const segmentSpan = (item: PathSegment): Span => ({
+    x: Math.min(item.from.x, item.to.x), y: Math.min(item.from.y, item.to.y),
+    right: Math.max(item.from.x, item.to.x), bottom: Math.max(item.from.y, item.to.y),
+  });
+  const segmentSpans = routed.map(item => segmentSpan(item.segment));
+  const apart = (a: Span, b: Span, reach: number): boolean => a.x - b.right > reach
+    || b.x - a.right > reach || a.y - b.bottom > reach || b.y - a.bottom > reach;
+  const nodeSpans = nodes.map(node => rectSpan(node.bounds!));
   let widestNodeStroke: number = DEFAULT_STROKE_WIDTHS.node;
   for (const node of nodes) { const width = nodeStroke(node); if (width > widestNodeStroke) widestNodeStroke = width; }
   // A named port's pill stands outside its node, so one node's whole block is governed by the union
   // of its rectangle and its pills.
-  const nodeExtent = nodes.map(node => {
-    let box = node.bounds!;
+  const nodeExtent = nodes.map((node, index) => {
+    let span = nodeSpans[index]!;
     for (const item of node.ports) {
       if (!item.pill) continue;
-      const other = item.pill.bounds, x = Math.min(box.x, other.x), y = Math.min(box.y, other.y);
-      box = { x, y, width: Math.max(right(box), right(other)) - x, height: Math.max(bottom(box), bottom(other)) - y };
+      const other = item.pill.bounds;
+      span = { x: Math.min(span.x, other.x), y: Math.min(span.y, other.y),
+        right: Math.max(span.right, right(other)), bottom: Math.max(span.bottom, bottom(other)) };
     }
-    return box;
+    return span;
   });
   const labelNodeReach = Math.max(widestNodeStroke, DEFAULT_STROKE_WIDTHS.pill) / 2 + 1;
   for (let i = 0; i < nodes.length; i++) {
@@ -91,9 +105,10 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
   }
   const crossedBars = new Set<string>();
   for (const [index, s] of routed.entries()) {
-    const box = segmentBounds[index]!, reach = 10 + (s.stroke + widestNodeStroke) / 2 + 1;
-    for (const node of nodes) {
-      if (node.layer === 'overlay' || apart(box, node.bounds!, reach)) continue;
+    const box = segmentSpans[index]!, reach = 10 + (s.stroke + widestNodeStroke) / 2 + 1;
+    for (let n = 0; n < nodes.length; n++) {
+      const node = nodes[n]!;
+      if (node.layer === 'overlay' || apart(box, nodeSpans[n]!, reach)) continue;
       const owned = incident(model, s, node.id), bar = barContact(model, s, node.id);
       const distance = segmentRectDistance(s.segment, node.bounds!);
       if (bar && distance <= EPS) crossedBars.add(`${s.link.id}:${node.id}`);
@@ -132,13 +147,14 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       && associatedPill.owner.kind === 'node' && associatedPill.owner.id === label.port.node
       && contains(associatedPill.bounds, label.bounds!);
     const hit = (other: string): void => { counters.labelHits++; fail('G3', 'label-collision', [label.id, other], 'Label intersects unrelated geometry'); };
+    const labelSpan = rectSpan(label.bounds!);
     for (let j = i + 1; j < labels.length; j++) {
       const other = labels[j]!;
       if (rectOverlap(label.bounds!, other.bounds!)) hit(other.id);
     }
     for (let n = 0; n < nodes.length; n++) {
       const node = nodes[n]!;
-      if (apart(label.bounds!, nodeExtent[n]!, labelNodeReach)) continue;
+      if (apart(labelSpan, nodeExtent[n]!, labelNodeReach)) continue;
       const owns = label.owner.kind === 'node' && label.owner.id === node.id;
       const ownedExtent = owns && (label.role === 'pill' ? containedOwnPill : contains(node.bounds!, label.bounds!));
       if (node.layer !== 'overlay' && !ownedExtent && (rectDistance(label.bounds!, node.bounds!) < nodeStroke(node) / 2 - EPS || rectOverlap(label.bounds!, node.bounds!))) hit(node.id);
@@ -152,7 +168,7 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
     const margin = label.role === 'group' ? GROUP_LABEL_LINK_CLEARANCE : 0;
     for (let k = 0; k < routed.length; k++) {
       const s = routed[k]!;
-      if (apart(label.bounds!, segmentBounds[k]!, s.stroke / 2 + margin + 1)) continue;
+      if (apart(labelSpan, segmentSpans[k]!, s.stroke / 2 + margin + 1)) continue;
       // A pill's own incident stem runs behind the pill text by construction.
       if (containedOwnPill && label.port && incident(model, s, label.port.node)
         && [endpoints(s.link).from, endpoints(s.link).to].some(ref => refEqual(ref, label.port!))) continue;
