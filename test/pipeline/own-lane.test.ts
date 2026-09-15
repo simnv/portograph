@@ -8,6 +8,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
 
 const fixture = readFileSync(new URL('../../goldens/synthetic/own-lane-is-an-obstacle.yaml', import.meta.url), 'utf8');
 const twoRuns = readFileSync(new URL('../../goldens/synthetic/two-runs-share-a-tier-gap.yaml', import.meta.url), 'utf8');
+const barEnd = readFileSync(new URL('../../goldens/synthetic/a-bar-end-keeps-its-corridor.yaml', import.meta.url), 'utf8');
 
 /**
  * Stress-test reproducer (`.scratch/stress/issues/02`). Two groups of one tier are fed from nearly
@@ -84,4 +85,20 @@ it('keeps a corridor that would leave the centring invariant unverified', async 
   expect(lane.x).toBe(59);
   expect(model.diagnostics.map(item => item.code)).not.toContain('LANE_FOLLOWS_ITS_CHILD');
   expect(model.diagnostics.map(item => item.code)).not.toContain('CENTRE_INVARIANT_UNVERIFIED');
+}, 60000);
+
+/**
+ * A bar takes its port x from the corridor the drop's link owns (7d), so a corridor that followed
+ * its child would move the bar port derived from it, and the bar rebuild every publication replays
+ * would contradict the declaration-order geometry it re-derives. Without the exclusion this input
+ * raises `Bar group core contradicts declaration-order geometry` at the bands stage.
+ */
+it('leaves a corridor whose link has a bar end where 7a put it', async () => {
+  const model = bands(bundles(bars(centre(flanks(lanes(rows(await placed(barEnd))))))));
+  // The precondition: a child really is off its corridor here as well.
+  const lane = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === 'link-1')!;
+  expect(model.nodes.c1!.ports[0]!.anchor!.x).not.toBe(lane.x);
+  expect(model.diagnostics.map(item => item.code)).toContain('PLACEMENT_NON_CONVERGENCE');
+  expect(model.diagnostics.map(item => item.code)).not.toContain('LANE_FOLLOWS_ITS_CHILD');
+  expect(model.lanes.map(item => item.x)).toEqual([229, 263]);
 }, 60000);

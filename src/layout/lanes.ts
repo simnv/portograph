@@ -134,6 +134,10 @@ function feedOrderHolds(model: LayoutModel, lane: Lane, link: LayoutLink, cx: nu
   }
   return true;
 }
+/** Whether a node is drawn as a bar, whose port x stage 7d derives instead of placing. */
+function isBarNode(model: LayoutModel, id: string): boolean {
+  return model.document.groups[model.document.nodes[id]!.group]!.shape === 'bar';
+}
 /** Whether more than one routed link attaches to a port, which makes it a fan (ticket 20). */
 function shared(model: LayoutModel, ref: PortRef): boolean {
   const key = portId(ref);
@@ -195,8 +199,11 @@ export function reseatLanes(model: LayoutModel): boolean {
     const link = model.links.find(item => item.id === (lane.owner as { id: string }).id);
     if (!link || link.bundle || !link.attachments) continue;
     // 7e has already cut the geometry of a link that shares a run, and a shared port's tree is
-    // reserved against the corridor this rule would move. Both keep their corridor.
-    if (link.sharedRuns || [link.attachments.from, link.attachments.to].some(end => shared(model, end))) continue;
+    // reserved against the corridor this rule would move. Both keep their corridor. So does a link
+    // with a bar end: 7d takes that port's x from this very corridor, and the bar rebuild every
+    // publication replays would then contradict the declaration-order geometry it re-derives.
+    if (link.sharedRuns || [link.attachments.from, link.attachments.to]
+      .some(end => shared(model, end) || isBarNode(model, end.node))) continue;
     const order = transitTiers(model, link);
     if (order[order.length - 1] !== lane.tier) continue;
     const child = laneChild(model, link), anchor = findPort(model, child)?.anchor;

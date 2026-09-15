@@ -1,0 +1,27 @@
+# Expected: `spine` is a bar, and a bar takes each of its port x from the corridor the drop's link
+# owns (7d). Two children two tiers below are fed from it through corridors of `mid`, and 7c seats
+# neither under its own corridor: `c1`'s port stands 107 px right of the corridor at x 263.
+#
+# The rule that lets a corridor follow its child (7a, ticket 02) must leave these two alone. Moving
+# one moves the bar port 7d derives from it, and the bar rebuild every publication replays then
+# contradicts the declaration-order geometry it re-derives — `Bar group core contradicts
+# declaration-order geometry`, measured. A link with a bar end therefore keeps its corridor
+# whichever end the bar is on, and no `LANE_FOLLOWS_ITS_CHILD` is reported here.
+# The diagram is produced, G2 fails on the drop that reaches past the bar. Q = 0.8173697496505876.
+portograph: 2
+groups:
+  core: { tier: 0, shape: bar }
+  other: { tier: 0 }
+  mid: { tier: 1 }
+  low-a: { tier: 2 }
+  low-b: { tier: 2 }
+nodes:
+  spine: { group: core, ports: [{ name: p, side: bottom }, { name: q, side: bottom }] }
+  x0: { group: other }
+  m: { group: mid }
+  c1: { group: low-b }
+  c2: { group: low-a }
+links:
+  - [c1, spine.p]
+  - [c2, spine.q]
+  - [c2, m]

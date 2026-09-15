@@ -310,8 +310,10 @@ The move is made only when every one of these holds:
   link and no group title with its link-free margin (ADR-0013);
 - the **child node keeps its feed order**: two corridors of one tier may not swap the children they
   serve, because each link's descent would then cross the other's;
-- neither end is a **shared port** and the link holds no **shared run** — 7e has already cut that
-  geometry against the corridor where it stands;
+- neither end is a **shared port**, neither end is in a **bar** group, and the link holds no
+  **shared run** — 7e has already cut that geometry against the corridor where it stands, and 7d
+  takes a bar's port x from this very corridor, so a move would make the bar rebuild every
+  publication replays contradict the declaration-order geometry it re-derives;
 - the move leaves the **centring invariant no worse**. A corridor that follows its child can open
   an alignment 7c could not reach, and the invariant would then read the published placement as
   unfinished work. The rule measures `centreViolations` both ways and keeps the corridors where
