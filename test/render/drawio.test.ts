@@ -396,3 +396,308 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
     expect(print.style['strokeColor']).not.toBe(light.style['strokeColor']);
   }, 60000);
 });
+
+describe('connection grid, rotation and tiles', () => {
+  /** The `points=` of one node, as fractions of its box, the way draw.io reads them. */
+  const listed = (all: Map<string, Cell>, key: string): Point[] =>
+    [...all.get(id('node', key))!.style['points']!.matchAll(/\[([-\d.]+),([-\d.]+),0\]/g)]
+      .map(match => ({ x: Number(match[1]), y: Number(match[2]) }));
+
+  it('puts the side grid in the phase the pipeline reserved its slots in', async () => {
+    const model = await pipeline(fixture('drawio-constructs'));
+    const node = model.nodes['a']!, bounds = node.bounds!;
+    const points = listed(cells(drawio(model)), 'a');
+    const bottom = points.filter(point => point.y === 1).map(point => bounds.x + point.x * bounds.width);
+    const anchors = node.ports.filter(port => port.side === 'bottom' && port.anchor)
+      .map(port => port.anchor!.x).sort((a, b) => a - b);
+    const pitch = node.sidePitch!.bottom!;
+    expect(anchors.length).toBeGreaterThan(1);
+
+    // The claim: the pipeline centres a side's slots — `(length - (ports - 1) * pitch) / 2 +
+    // index * pitch` in `src/layout/node-geometry.ts` — so the grid is the reserved anchors carried
+    // on by whole pitches, not the box corner plus a pitch. Counted from the corner, every offered
+    // point misses every real port by the same fraction of a pitch: the pills fixture put them
+    // 1.25 px out, which is near enough to look right and far enough to be wrong.
+    for (const at of bottom) {
+      const steps = (at - anchors[0]!) / pitch;
+      expect(Math.abs(steps - Math.round(steps))).toBeLessThan(1e-6);
+    }
+    // Every real anchor is on the grid, and the grid reaches past the outermost port in both
+    // directions — which is what "the rest of this side's slots" has to mean.
+    for (const anchor of anchors) expect(bottom.some(at => Math.abs(at - anchor) < 1e-6)).toBe(true);
+    expect(bottom.some(at => at < anchors[0]! - pitch / 2)).toBe(true);
+    expect(bottom.some(at => at > anchors[anchors.length - 1]! + pitch / 2)).toBe(true);
+
+    // A side with no port at all takes the slot the pipeline would reserve for a single port: the
+    // middle of the side. `a` has no top port, and the top grid is centred on the node.
+    expect(node.ports.some(port => port.side === 'top')).toBe(false);
+    const top = points.filter(point => point.y === 0).map(point => point.x);
+    expect(top.some(at => Math.abs(at - 0.5) < 1e-9)).toBe(true);
+  }, 60000);
+
+  it('keeps the phase the rest of the anchors still agree on', async () => {
+    const model = await pipeline(fixture('author-ordered-bundle'));
+    const node = model.nodes['source']!, bounds = node.bounds!, pitch = node.sidePitch!.bottom!;
+    const order = node.ports.filter(port => port.side === 'bottom' && port.anchor)
+      .map(port => port.ref.ordinal).sort((left, right) => left - right);
+    expect(order.length).toBe(3);
+
+    // A rule may move one anchor off the reserved run. Taking the lowest anchor as the phase hands
+    // the whole grid to the one slot that moved, and every offered point then misses the anchors
+    // that did not move. The run the rest of them still stand on is the grid instead.
+    const moved = structuredClone(model);
+    const first = moved.nodes['source']!.ports.find(port => port.ref.ordinal === order[0])!;
+    first.anchor!.x -= pitch / 4;
+    const points = listed(cells(drawio(moved)), 'source')
+      .filter(point => point.y === 1).map(point => bounds.x + point.x * bounds.width);
+    const kept = node.ports.find(port => port.ref.ordinal === order[1])!.anchor!.x;
+    for (const at of points) {
+      // Every point is either the moved anchor, which keeps its own explicit point, or a slot of
+      // the run the two unmoved anchors still hold.
+      if (Math.abs(at - first.anchor!.x) < 1e-6) continue;
+      const steps = (at - kept) / pitch;
+      expect(Math.abs(steps - Math.round(steps))).toBeLessThan(1e-6);
+    }
+    expect(points.some(at => Math.abs(at - first.anchor!.x) < 1e-6)).toBe(true);
+    // Nothing else moves with it: the slot the moved anchor left is still offered.
+    expect(points.some(at => Math.abs(at - node.ports.find(port => port.ref.ordinal === order[0])!.anchor!.x) < 1e-6))
+      .toBe(true);
+  }, 60000);
+
+  it('bounds the side grid instead of walking a pitch that never advances', async () => {
+    const model = await pipeline(fixture('drawio-constructs'));
+    // Three shapes `validate()` accepts and the old loop could not leave. A pitch of 1e-8 on a
+    // 55 px side asks for 5.5 billion points. At x=1e20 the sum `at + pitch` equals `at`, so an
+    // accumulating loop appends one fraction for ever — and an anchor at 1e20 does the same to the
+    // step index, since `step + 1 === step` there too. All three are refused by counting the slots
+    // first and then indexing each one from the phase by a counter small enough to grow.
+    for (const patch of [
+      { pitch: 1e-8, x: undefined, width: undefined, anchor: undefined },
+      { pitch: 1, x: 1e20, width: 1e7, anchor: undefined },
+      { pitch: 1, x: undefined, width: 55, anchor: 1e20 },
+    ]) {
+      const probe = structuredClone(model);
+      const node = probe.nodes['a']!;
+      if (patch.anchor === undefined) node.ports = [];
+      else for (const port of node.ports) { port.side = 'top'; port.anchor = { x: patch.anchor, y: node.bounds!.y }; }
+      node.sidePitch = { top: patch.pitch };
+      if (patch.x !== undefined) node.bounds!.x = patch.x;
+      if (patch.width !== undefined) node.bounds!.width = patch.width;
+      const started = Date.now();
+      const all = cells(drawio(probe));
+      expect(Date.now() - started).toBeLessThan(2000);
+      expect(listed(all, 'a').length).toBeLessThanOrEqual(node.ports.length + 512);
+    }
+    // An ordinary side still offers its slots, so the bound is a guard and not a switch.
+    expect(listed(cells(drawio(model)), 'a').length).toBeGreaterThan(2);
+  }, 60000);
+
+  /** The top-side grid of `drawio-constructs`'s node `a`, given anchors of our own to reason from. */
+  const topGrid = (source: LayoutModel, at: readonly number[], width: number, pitch: number): number[] => {
+    const probe = structuredClone(source);
+    const node = probe.nodes['a']!;
+    node.bounds = { x: 0, y: 0, width, height: 48 };
+    node.sidePitch = { top: pitch };
+    const first = node.ports[0]!;
+    node.ports = at.map((x, index) => {
+      const copy = structuredClone(first);
+      copy.side = 'top';
+      copy.anchor = { x, y: 0 };
+      copy.ref = { node: copy.ref.node, name: `p${index}`, ordinal: index + 1 };
+      delete copy.pill;
+      return copy;
+    });
+    return listed(cells(drawio(probe)), 'a').filter(point => point.y === 0).map(point => point.x * width);
+  };
+
+  /** The offered points that are not one of the node's own anchors: the grid the export added. */
+  const added = (points: readonly number[], at: readonly number[]): number[] =>
+    points.filter(point => !at.some(anchor => Math.abs(point - anchor) < 1e-6));
+
+  /** Whether `at` stands on the run through `phase`, one pitch to a slot. */
+  const onRun = (at: number, phase: number, pitch: number): boolean => {
+    const steps = (at - phase) / pitch;
+    return Math.abs(steps - Math.round(steps)) < 1e-6;
+  };
+
+  it('holds a run together across a rounding boundary', async () => {
+    const source = await pipeline(fixture('drawio-constructs'));
+    // Two anchors one pitch apart, on a residue a bucket key rounds to two different keys. Grouping
+    // by a key splits that majority and hands the grid to the single stray anchor at 1.
+    const split = [1, 12.00005, 24.00005];
+    const grid = added(topGrid(source, split, 60, 12), split);
+    expect(grid.length).toBeGreaterThan(0);
+    for (const at of grid) expect(onRun(at, 12.00005, 12)).toBe(true);
+
+    // Four anchors of one run whose residues straddle zero: two just below the pitch and two just
+    // above it. They are one run and outnumber the three at residue 2, but only if the gap that
+    // closes the wrap is measured from the last group's highest residue to the first group's
+    // lowest. Measured from the wrong end of the first group, the merge is missed by 0.00009 and
+    // the minority takes the grid.
+    const wrap = [10, 20.00009, 9.99995, 19.99996, 2, 12, 22];
+    const wrapped = added(topGrid(source, wrap, 50, 10), wrap);
+    expect(wrapped.length).toBeGreaterThan(0);
+    for (const at of wrapped) expect(onRun(at, 9.99995, 10)).toBe(true);
+  }, 60000);
+
+  it('does not offer a slot beside an anchor it snapped onto', async () => {
+    const source = await pipeline(fixture('drawio-constructs'));
+    // The candidate at 48.0000009 clears the port test, then snaps to the side's end at 48 — where
+    // the anchor at 47.9999991 already is. Snapped after the test, both are offered, a rounding
+    // error apart. The test now sees the snapped point, so the slot is dropped instead.
+    const points = topGrid(source, [12.0000009, 24.0000009, 47.9999991], 48, 12);
+    for (const at of points) expect(points.filter(other => Math.abs(other - at) < 1e-3).length).toBe(1);
+  }, 60000);
+
+  it('still offers a wide node its grid, and each corner only once', async () => {
+    // 800 px of node at the pipeline's own 12 px pitch is 67 slots a side. A bound that a measured
+    // diagram reaches is not a guard against a degenerate pitch — it is a silent loss of the grid.
+    const model = await pipeline([
+      'portograph: 2', 'groups: { g: { tier: 0 } }',
+      'nodes: { a: { group: g, label: Wide, size: { width: 800, height: 50 } } }', 'links: []',
+    ].join('\n'));
+    const points = listed(cells(drawio(model)), 'a');
+    expect(points.filter(point => point.y === 0).length).toBeGreaterThan(60);
+    // Two sides meet at a corner and each would offer it. draw.io keeps both, and the file carries
+    // a point a pointer can never choose twice.
+    const seen = points.map(point => `${point.x},${point.y}`);
+    expect(new Set(seen).size).toBe(seen.length);
+
+    // A corner two sides reach by different arithmetic: a 51 px side at a 0.3 px pitch lands the
+    // top grid's last slot on 50.99999999999999, which is the same corner as the right side's 51
+    // to a reader and a second connection point to draw.io.
+    const source = await pipeline(fixture('drawio-constructs'));
+    const probe = structuredClone(source);
+    const node = probe.nodes['a']!;
+    node.bounds = { x: 0, y: 0, width: 51, height: 48 };
+    node.sidePitch = { top: 0.3, right: 12 };
+    node.ports = node.ports.slice(0, 1).map(port => {
+      const copy = structuredClone(port);
+      copy.side = 'top';
+      copy.anchor = { x: 0.3, y: 0 };
+      delete copy.pill;
+      return copy;
+    });
+    const corners = listed(cells(drawio(probe)), 'a');
+    // Two points a reader cannot tell apart are one point. A `Set` of the written strings does not
+    // catch this on its own: `0.9999999999999999` and `1` are two strings and one corner.
+    for (const [index, point] of corners.entries()) {
+      for (const other of corners.slice(index + 1)) {
+        expect(Math.abs(point.x - other.x) > 1e-9 || Math.abs(point.y - other.y) > 1e-9).toBe(true);
+      }
+    }
+    expect(corners.filter(point => point.x === 1 && point.y === 0).length).toBe(1);
+  }, 60000);
+
+  /** One link label at `angle`, and the cells the export makes of it. */
+  const turned = (source: LayoutModel, angle: number): { all: Map<string, Cell>; label: string; link: string } => {
+    const model = structuredClone(source);
+    const label = model.labels.find(item => item.role === 'link' && !item.omitted && item.bounds)!;
+    label.textRotation = angle;
+    return { all: cells(drawio(model)), label: label.id, link: (label.owner as { id: string }).id };
+  };
+
+  it('encodes a link label turn on the carrier that honours it', async () => {
+    const source = await pipeline(fixture('drawio-constructs'));
+    // Measured against drawio-desktop 31.4.5, on a horizontal edge, reading the `transform` of the
+    // exported SVG. An edge's own label takes `horizontal=0` (-90) and ignores `rotation=` outright;
+    // a child `edgeLabel` cell takes `rotation=` at any angle, and `horizontal=0` then adds a
+    // further -90 on top rather than replacing it. So -90 stays on the edge and every other angle
+    // becomes a child, which is where `rotation=` is read.
+    const minus = turned(source, -90);
+    const edge = minus.all.get(id('link', minus.link))!;
+    expect(edge.style['horizontal']).toBe('0');
+    expect(edge.style['rotation']).toBeUndefined();
+    expect(minus.all.has(id('linkLabel', minus.label))).toBe(false);
+
+    for (const angle of [90, 180, 45]) {
+      const probe = turned(source, angle);
+      // +90 written as `horizontal=0` rendered as -90, and 180 was dropped altogether by a fallback
+      // that skipped every multiple of 90. Both now state their own angle, once.
+      expect(probe.all.get(id('link', probe.link))!.style['horizontal']).toBeUndefined();
+      const child = probe.all.get(id('linkLabel', probe.label))!;
+      expect(child.style['rotation']).toBe(String(angle));
+      expect(child.style['horizontal']).toBeUndefined();
+    }
+
+    // An unturned label needs neither key.
+    const flat = turned(source, 0);
+    expect(flat.all.get(id('link', flat.link))!.style['horizontal']).toBeUndefined();
+    expect(flat.all.get(id('link', flat.link))!.style['rotation']).toBeUndefined();
+  }, 120000);
+
+  it('turns a pill label with the one key a vertex honours', async () => {
+    const model = await pipeline(fixture('drawio-constructs'));
+    const all = cells(drawio(model));
+    // `PillGeometry.textRotation` is `-90 | 0`: `placePortPill` is its one producer and it turns a
+    // pill only on a top or bottom side. On a vertex `rotation=` would turn the shape as well, so
+    // `horizontal=0` is both the right key and the only one.
+    let checked = 0;
+    for (const [key, node] of Object.entries(model.nodes)) {
+      for (const port of node.ports) {
+        if (!port.pill || port.ref.anonymous === true) continue;
+        const cell = all.get(id('port', key, port.ref.name!, String(port.ref.ordinal)))!;
+        expect(cell.style['horizontal']).toBe(port.pill.textRotation === -90 ? '0' : undefined);
+        expect(cell.style['rotation']).toBeUndefined();
+        checked += 1;
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+
+    const flat = structuredClone(model);
+    const upright = Object.values(flat.nodes).flatMap(node => node.ports).find(port => port.pill)!;
+    upright.pill!.textRotation = 0;
+    const cell = cells(drawio(flat)).get(id('port', upright.ref.node, upright.ref.name!, String(upright.ref.ordinal)))!;
+    expect(cell.style['horizontal']).toBeUndefined();
+  }, 60000);
+
+  it('leaves out a glyph a tile has no room for, rather than writing a negative box', async () => {
+    const model = await pipeline(fixture('drawio-constructs'));
+    for (const icons of ['profile', 'cisco19'] as const) {
+      const normal = cells(drawio(model, { icons }));
+      expect(normal.has(id('icon', 'a'))).toBe(true);
+      for (const cell of normal.values()) {
+        expect(box(cell).width).toBeGreaterThanOrEqual(0);
+        expect(box(cell).height).toBeGreaterThanOrEqual(0);
+      }
+
+      // A zero-width tile: subtracting the 1.5 px inset from it gives width -3, which draw.io
+      // writes without complaint and then draws as nothing at all — an empty group where the icon
+      // was. The whole icon goes rather than only its inset, so the tile is dropped with it.
+      const thin = structuredClone(model);
+      thin.nodes['a']!.icon!.bounds.width = 0;
+      thin.nodes['a']!.icon!.icon = 'cloud';
+      const all = cells(drawio(thin, { icons }));
+      expect(all.has(id('icon', 'a'))).toBe(false);
+      expect(all.has(id('iconTile', 'a'))).toBe(false);
+      for (const cell of all.values()) {
+        expect(Number.isNaN(box(cell).width)).toBe(false);
+        expect(box(cell).width).toBeGreaterThanOrEqual(0);
+        expect(box(cell).height).toBeGreaterThanOrEqual(0);
+      }
+
+      // A tile 2 px across keeps the tile and drops the glyph: there is something to draw, and no
+      // room inside it for the inset the glyph needs.
+      const tight = structuredClone(model);
+      tight.nodes['a']!.icon!.bounds.width = 2;
+      tight.nodes['a']!.icon!.icon = 'cloud';
+      const some = cells(drawio(tight, { icons }));
+      expect(some.has(id('iconTile', 'a'))).toBe(true);
+      expect(some.has(id('icon', 'a'))).toBe(false);
+    }
+  }, 60000);
+
+  it('applies the same guard to a legend swatch', async () => {
+    const model = await pipeline(fixture('drawio-constructs'));
+    const entry = model.legend!.entries.find(item => item.kind === 'symbol' && item.icon)!;
+    for (const icons of ['profile', 'cisco19'] as const) {
+      expect(cells(drawio(model, { icons })).has(id('legendSwatch', entry.id))).toBe(true);
+      const thin = structuredClone(model);
+      thin.legend!.entries.find(item => item.id === entry.id)!.swatch.width = 0;
+      const all = cells(drawio(thin, { icons }));
+      expect(all.has(id('legendSwatch', entry.id))).toBe(false);
+      expect(all.has(id('legendTile', entry.id))).toBe(false);
+      for (const cell of all.values()) expect(box(cell).width).toBeGreaterThanOrEqual(0);
+    }
+  }, 60000);
+});
