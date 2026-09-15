@@ -597,8 +597,10 @@ function overlayRunMid(model: LayoutModel, link: LayoutLink, axis: 'x' | 'y'): n
 /**
  * A link's description influences its length (ADR-0014): the run a label will follow must be long
  * enough for the measured text plus the shortening margins before anything is routed. Stage 9
- * centres the label on the run's midpoint, so the room is measured symmetrically about the anchor
- * midpoint out to the nearer pill face (or node edge). A link between two tiers moves every lower
+ * centres the label on the run's midpoint, so the room is measured symmetrically about that
+ * midpoint: for a routed link the anchor midpoint out to the nearer pill face (or node edge); for
+ * an overlay link the midpoint of the longest run of the path `overlayPath` will publish, since
+ * that is the run the label follows. A link between two tiers moves every lower
  * tier down by the deficit. A link between two ends of one tier inserts the room at the gap itself:
  * every group starting at or beyond the split moves right, in every tier; in a straddling group a
  * node of the link's own tier moves when it starts beyond the split (a node the detour passes stays
