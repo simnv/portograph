@@ -329,6 +329,21 @@ Iterate child-widening → sibling push → re-centre at most 8 times, ε = 0.5 
 keep the last state and report. *Moves:* child groups, child widths. *Re-validate:* lanes (7a
 positions are fixed; if a child now overlaps a lane, push the child, not the lane).
 
+**The sibling push covers the whole tier.** A widening takes the space of the groups after it.
+Those groups move right. This includes a group the step does not centre. It also includes a group
+whose own window is too narrow to hold it.
+
+Reserve that room before you grant the widening. Pack the later groups backwards against their own
+windows. Decline a widening the reservation cannot hold.
+
+A reserved lane and a flank bound the push. The window holds the group box and the stroke-aware
+reach of its nodes and pills. That is the extent the lane validator measures. A group that cannot
+clear its left neighbour inside the window keeps its box. Report it as
+`CENTRE_TIER_PACK_INFEASIBLE`.
+
+Two overlapping group boxes are not a poor diagram. They are an input stage 8 refuses. A foreign
+group obstacle would then contain an attachment shape.
+
 Bar groups do not participate in row centering: stage 7d owns their stacked spans and source-derived
 port positions, including on later replay. Repacking their bars as a row would widen the group
 again after every replay.
