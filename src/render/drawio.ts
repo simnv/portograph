@@ -415,6 +415,24 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       return `[${num((at.x - node.bounds!.x) / node.bounds!.width)},`
         + `${num((at.y - node.bounds!.y) / node.bounds!.height)},0]`;
     });
+    // Beyond the ports in use, each side offers the rest of its own grid: the slots `sidePitch`
+    // divides that side into. A hand-placed pill or a hand-drawn connector then lands where the
+    // pipeline would have put one, instead of wherever the pointer was.
+    for (const side of ['top', 'bottom', 'left', 'right'] as const) {
+      const pitch = node.sidePitch?.[side];
+      if (pitch === undefined || pitch <= 0) continue;
+      const along = side === 'top' || side === 'bottom' ? node.bounds!.width : node.bounds!.height;
+      const base = side === 'top' || side === 'bottom' ? node.bounds!.x : node.bounds!.y;
+      const fixed = side === 'left' ? 0 : side === 'right' ? 1 : side === 'top' ? 0 : 1;
+      for (let at = base + pitch; at < base + along - 1e-6; at += pitch) {
+        const fraction = (at - base) / along;
+        const taken = node.ports.some(port => port.anchor !== undefined && port.side === side
+          && Math.abs((side === 'top' || side === 'bottom' ? port.anchor.x : port.anchor.y) - at) < 1e-6);
+        if (taken) continue;
+        anchors.push(side === 'top' || side === 'bottom'
+          ? `[${num(fraction)},${num(fixed)},0]` : `[${num(fixed)},${num(fraction)},0]`);
+      }
+    }
     // The node's name is the node's own label, and its description follows it in the same label:
     // a shape carries its text in draw.io, and a reader who double-clicks the node expects to be
     // renaming the node. The description is a styled line rather than a second cell, and its colour
@@ -514,6 +532,10 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         fillColor: resolved.fill, strokeColor: resolved.stroke,
         strokeWidth: DEFAULT_STROKE_WIDTHS.pill,
         points: outward ? `[[${num(outward.x)},${num(outward.y)},0]]` : '[]',
+        // A pill dragged loose snaps back onto one of the node's connection points, which are the
+        // port anchors the pipeline itself allocated — so a hand edit lands on the grid the layout
+        // reserved rather than near it.
+        snapToPoint: 1,
         opacity: resolved.opacity === undefined ? undefined : Math.round(resolved.opacity * 100),
         ...dashEntries(resolved.dash),
         ...(shown ? {
@@ -579,18 +601,17 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   const edgeCell = (id: string, layer: string, style: string, points: readonly Point[],
     ends: { source?: string | undefined; target?: string | undefined;
       sourcePoint?: Point | undefined; targetPoint?: Point | undefined },
-    label?: { value: string; offset: Point }): void => {
+    label?: { value: string; at: { x: number; y: number } }): void => {
     const waypoints = points.length > 2
       ? element('Array', { as: 'points' },
         points.slice(1, -1).map(point => element('mxPoint', { x: point.x, y: point.y })).join(''))
       : '';
     const dangling = (ends.sourcePoint ? element('mxPoint', { x: ends.sourcePoint.x, y: ends.sourcePoint.y, as: 'sourcePoint' }) : '')
       + (ends.targetPoint ? element('mxPoint', { x: ends.targetPoint.x, y: ends.targetPoint.y, as: 'targetPoint' }) : '');
-    const offset = label ? element('mxPoint', { x: label.offset.x, y: label.offset.y, as: 'offset' }) : '';
     cells.push(element('mxCell', { id: claim(id), value: label?.value, style, edge: 1, parent: layer,
       source: ends.source, target: ends.target },
-    element('mxGeometry', { ...(label ? { x: 0, y: 0 } : {}), relative: 1, as: 'geometry' },
-      waypoints + dangling + offset)));
+    element('mxGeometry', { ...(label ? { x: label.at.x, y: label.at.y } : {}), relative: 1, as: 'geometry' },
+      waypoints + dangling)));
   };
 
   const drawn = layout.links.filter(link => link.technique !== 'stub' && link.path && visible(link));
@@ -665,8 +686,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       ids.push(id);
       // The connector's own label, on the first run, where a reader would look for it.
       const mine = first ? ownLabel.get(link.id) : undefined;
-      const anchor = mine ? midpoint(run) : undefined;
-      const carried = mine && anchor ? { label: mine, at: labelPoint(mine, link), anchor } : undefined;
+      const carried = mine ? { label: mine, at: alongPolyline(run, labelPoint(mine, link)) } : undefined;
       if (carried) taken.add(mine!.id);
       // A connector holds one polyline; a path whose segment chain breaks becomes one connector per
       // run, each dangling where the chain did. Only the ends that are really ends are pinned.
@@ -678,7 +698,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         ...dashEntries(overlay ? undefined : klass.dash),
         ...(source?.style ?? {}),
         ...(target?.style ?? {}),
-        ...(carried ? labelStyle(carried.label, carried.at) : {}),
+        ...(carried ? labelStyle(carried.label, labelPoint(carried.label, link)) : {}),
       });
       edgeCell(id, layer, style, run, {
         source: source?.cell,
@@ -687,7 +707,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         targetPoint: target ? undefined : run[run.length - 1],
       }, carried ? {
         value: htmlText(carried.label.lines ?? [carried.label.text]),
-        offset: { x: carried.at.x - carried.anchor.x, y: carried.at.y - carried.anchor.y },
+        at: carried.at,
       } : undefined);
     });
     edgeIds.set(link.id, ids);
@@ -731,9 +751,10 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         paint.link.multiplicity);
       continue;
     }
-    const anchor = midpoint(polylines(link.path!.segments)[0] ?? []);
-    if (!anchor) continue;
+    const run = polylines(link.path!.segments)[0];
+    if (!run) continue;
     const at = labelPoint(label, link);
+    const relativeAt = alongPolyline(run, at);
     cells.push(element('mxCell', {
       id: claim(cellId('linkLabel', label.id)), value: htmlText(label.lines ?? [label.text]),
       style: styleString(['edgeLabel'], {
@@ -745,8 +766,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         rotation: label.textRotation && label.textRotation % 90 !== 0 ? label.textRotation : undefined,
       }),
       vertex: 1, connectable: 0, parent: ids[0]!,
-    }, element('mxGeometry', { x: 0, y: 0, relative: 1, as: 'geometry' },
-      element('mxPoint', { x: at.x - anchor.x, y: at.y - anchor.y, as: 'offset' }))));
+    }, element('mxGeometry', { x: relativeAt.x, y: relativeAt.y, relative: 1, as: 'geometry' })));
   }
 
   // ---- legend -------------------------------------------------------------------------------
@@ -855,21 +875,34 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       element('diagram', { id: 'pg-diagram', name: title }, model)) + '\n';
 }
 
-/** The point half way along a polyline by arc length: where draw.io anchors an edge label at x=0. */
-function midpoint(points: readonly Point[]): Point | undefined {
-  if (points.length < 2) return points[0];
-  const spans = points.slice(1).map((point, index) =>
-    Math.hypot(point.x - points[index]!.x, point.y - points[index]!.y));
+/**
+ * Where a point sits on a polyline, in the terms draw.io states an edge label in: `x` is arc length
+ * as a fraction of the whole, from -1 at the source to 1 at the target, and `y` is the signed
+ * perpendicular distance, positive to the **left** of the direction of travel.
+ *
+ * These are the format's own relative coordinates, and that is the point of using them: a label
+ * placed this way follows its connector when a shape moves, where one placed by `offset` — which is
+ * absolute screen pixels — stays where it was written and drifts off the line.
+ */
+function alongPolyline(points: readonly Point[], at: Point): { x: number; y: number } {
+  const spans = points.slice(1).map((point, index) => Math.hypot(point.x - points[index]!.x, point.y - points[index]!.y));
   const total = spans.reduce((sum, span) => sum + span, 0);
-  if (total === 0) return points[0];
-  let walked = 0;
-  for (let i = 0; i < spans.length; i++) {
-    if (walked + spans[i]! >= total / 2) {
-      const ratio = spans[i] === 0 ? 0 : (total / 2 - walked) / spans[i]!;
-      return { x: points[i]!.x + (points[i + 1]!.x - points[i]!.x) * ratio,
-        y: points[i]!.y + (points[i + 1]!.y - points[i]!.y) * ratio };
+  if (total === 0) return { x: 0, y: 0 };
+  let walked = 0, best = { distance: Infinity, along: 0, side: 0 };
+  for (const [index, span] of spans.entries()) {
+    const from = points[index]!, to = points[index + 1]!;
+    const dx = to.x - from.x, dy = to.y - from.y;
+    const ratio = span === 0 ? 0
+      : Math.min(1, Math.max(0, ((at.x - from.x) * dx + (at.y - from.y) * dy) / (span * span)));
+    const on = { x: from.x + dx * ratio, y: from.y + dy * ratio };
+    const distance = Math.hypot(at.x - on.x, at.y - on.y);
+    if (distance < best.distance) {
+      // The left normal of a travel direction, in screen axes where y grows downward.
+      const side = span === 0 ? 0 : ((at.x - on.x) * dy - (at.y - on.y) * dx) / span;
+      best = { distance, along: walked + span * ratio, side };
     }
-    walked += spans[i]!;
+    walked += span;
   }
-  return points[points.length - 1];
+  return { x: 2 * (best.along / total) - 1, y: best.side };
 }
+

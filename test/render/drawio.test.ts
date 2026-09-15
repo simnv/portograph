@@ -278,26 +278,15 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
     expect(on.value).toBe(label.text);
     expect(measured.style['labelBackgroundColor']).toBe('none');
     expect(on.style['labelBackgroundColor']).toMatch(/^(#[0-9a-f]{6}|light-dark\(#[0-9a-f]{6},#[0-9a-f]{6}\))$/);
-    expect(on.offset).not.toEqual(measured.offset);
-    // On-run is a projection onto a known segment, so it keeps its distance along the run and gives
-    // up only its offset beside it: the moved label is no further from the line than it was.
-    const segment = model.links.find(item => item.id === owner)!
-      .path!.segments[(label.support as { segment: number }).segment]!;
-    const gap = (point: { x: number; y: number }): number => {
-      const dx = segment.to.x - segment.from.x, dy = segment.to.y - segment.from.y;
-      const length = Math.hypot(dx, dy);
-      return length === 0 ? Math.hypot(point.x - segment.from.x, point.y - segment.from.y)
-        : Math.abs(dy * (point.x - segment.from.x) - dx * (point.y - segment.from.y)) / length;
-    };
-    // Both offsets are measured from the same anchor, so their difference is the distance the
-    // label moved. Applied to the box stage 9 placed, it gives where the label now sits.
-    const moved = {
-      x: label.bounds!.x + label.bounds!.width / 2 + (on.offset!.x - measured.offset!.x),
-      y: label.bounds!.y + label.bounds!.height / 2 + (on.offset!.y - measured.offset!.y),
-    };
-    expect(gap(moved)).toBeCloseTo(0, 9);
-    expect(gap({ x: label.bounds!.x + label.bounds!.width / 2, y: label.bounds!.y + label.bounds!.height / 2 }))
-      .toBeGreaterThan(1);
+    // The claim: a label is stated in the edge's own relative terms — `x` arc length along it, `y`
+    // signed perpendicular — so it follows its connector when a shape moves. `offset` would be
+    // absolute screen pixels, which is why it is not used: the label would stay put and drift off
+    // the line. On the run means a perpendicular of zero; measured keeps the distance stage 9 gave.
+    expect(Number(on.geometry['y'])).toBeCloseTo(0, 9);
+    expect(Math.abs(Number(measured.geometry['y']))).toBeGreaterThan(1);
+    expect(Number(on.geometry['x'])).toBeGreaterThanOrEqual(-1);
+    expect(Number(on.geometry['x'])).toBeLessThanOrEqual(1);
+    expect(on.offset).toBeUndefined();
   }, 60000);
 
   it('carries both appearances in one file, because draw.io inverts a colour it is given alone', async () => {
@@ -367,6 +356,27 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
       const owner = (turned.owner as { id: string }).id;
       expect(all.get(id('link', owner))!.style['horizontal']).toBe('0');
     }
+  }, 60000);
+
+  it('offers a node the rest of its own side grid as connection points', async () => {
+    const model = await pipeline(fixture('drawio-constructs'));
+    const all = cells(drawio(model));
+    const [key, node] = Object.entries(model.nodes).find(([, item]) => item.ports.length > 0)!;
+    // A `points=` value holds no `;`, so the style parser hands it back whole.
+    const listed = [...all.get(id('node', key))!.style['points']!.matchAll(/\[([-\d.]+),([-\d.]+),0\]/g)]
+      .map(match => ({ x: Number(match[1]), y: Number(match[2]) }));
+    // Every port the pipeline placed is offered...
+    for (const port of node.ports) {
+      if (!port.anchor) continue;
+      const at = { x: (port.anchor.x - node.bounds!.x) / node.bounds!.width,
+        y: (port.anchor.y - node.bounds!.y) / node.bounds!.height };
+      expect(listed.some(item => Math.abs(item.x - at.x) < 1e-9 && Math.abs(item.y - at.y) < 1e-9)).toBe(true);
+    }
+    // ...and so are the side's remaining slots, so a hand edit lands on the grid the layout
+    // reserved rather than near it. A pill snaps to them.
+    expect(listed.length).toBeGreaterThan(node.ports.filter(port => port.anchor).length);
+    const port = node.ports.find(item => item.pill && item.ref.anonymous !== true)!;
+    expect(all.get(id('port', key, port.ref.name!, String(port.ref.ordinal)))!.style['snapToPoint']).toBe('1');
   }, 60000);
 
   it('leaves the model untouched and gives the same bytes twice', async () => {
