@@ -1390,18 +1390,23 @@ links:
       { end: 'from', at: segments[0]!.from, ref: link.attachments!.from },
       { end: 'to', at: segments[segments.length - 1]!.to, ref: link.attachments!.to },
     ] as const;
+    const outward = { top: { x: 0.5, y: 0 }, bottom: { x: 0.5, y: 1 }, left: { x: 0, y: 0.5 }, right: { x: 1, y: 0.5 } };
     for (const { end, at, ref } of ends) {
       const port = model.nodes[ref.node]!.ports.find(item => item.ref.name === ref.name
         && item.ref.ordinal === ref.ordinal)!;
       const pill = port.pill!.bounds;
       const cell = all.get(id('overlayMark', link.id, end))!;
       expect(cell.parent).toBe(id('port', ref.node, ref.name!, String(ref.ordinal)));
-      // Relative to the pill's own top-left, which is what makes the mark move with the pill.
+      // The mark sits on the pill's outward point, where the connector really ends — not on the
+      // anchor, which is the pill's centre and the port's name. Relative to the pill's own
+      // top-left, which is what makes the mark move with the pill.
+      const tip = outward[port.side!];
       expect(box(cell)).toEqual({
-        x: at.x - pill.x - OVERLAY_ENDPOINT_RADIUS, y: at.y - pill.y - OVERLAY_ENDPOINT_RADIUS,
+        x: tip.x * pill.width - OVERLAY_ENDPOINT_RADIUS, y: tip.y * pill.height - OVERLAY_ENDPOINT_RADIUS,
         width: 2 * OVERLAY_ENDPOINT_RADIUS, height: 2 * OVERLAY_ENDPOINT_RADIUS,
       });
-      // The mark lies inside its own pill, so the connector routed clear of that pill never meets it.
+      // The anchor the model ends on lies inside the pill, so the mark on the pill's edge is on the
+      // pill the connector was routed clear of, and the connector never meets it.
       expect(at.x).toBeGreaterThanOrEqual(pill.x);
       expect(at.x).toBeLessThanOrEqual(pill.x + pill.width);
       expect(at.y).toBeGreaterThanOrEqual(pill.y);

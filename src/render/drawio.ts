@@ -1284,14 +1284,16 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       // link ends on, so it is a child of that port's pill, stated from the pill's own top-left: a
       // pill moved by hand carries its mark with it, where an absolute mark stayed behind. It keeps
       // the overlay layer's paint; what it no longer keeps is the overlay layer's parent. A port
-      // that draws no pill has no shape to belong to, so its mark stays on the layer.
+      // that draws no pill has no shape to belong to, so its mark stays on the layer, at the anchor.
+      // On a pill the mark sits on the pill's outward point, where the connector really ends: the
+      // anchor is the pill's centre, and a mark there covers the port's name (maintainer, 2026-09-15).
       const ends = link.path!.segments;
       const marks = [
         { end: 'from', at: ends[0]!.from, host: headPill },
         { end: 'to', at: ends[ends.length - 1]!.to, host: tailPill },
       ] as const;
       for (const mark of marks) {
-        const at = shift(mark.at);
+        const at = mark.host ? mark.host.at : shift(mark.at);
         const box = { x: at.x - OVERLAY_ENDPOINT_RADIUS, y: at.y - OVERLAY_ENDPOINT_RADIUS,
           width: 2 * OVERLAY_ENDPOINT_RADIUS, height: 2 * OVERLAY_ENDPOINT_RADIUS };
         vertex(cellId('overlayMark', link.id, mark.end), mark.host?.cell ?? layerId('overlay'),
