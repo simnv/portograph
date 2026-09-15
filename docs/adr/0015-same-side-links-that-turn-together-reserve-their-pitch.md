@@ -166,3 +166,13 @@ tier gap, where an unreserved route could detour around. On
 continuity 0.33 → 1, G6 two violations → every gate passing, and Q 0.6046 → 0.5122. Every row that
 gap can seat meets the same two descents, so the score cannot be recovered without giving up the
 reservation. Recorded under decision Q32 as a metric regression a note waives.
+
+**What the sixth amendment does not settle.** Seven adversarial review rounds over about 20,000
+generated variants (stress ticket 04) left seven items open, and five of them are one question in
+five forms: **a reservation is a wall, and nothing in this pipeline separates crossing a wall from
+travelling along it.** Rule 3 names that rule for the batch planner. The obstacle set has no
+per-connector form of it, because the binding has no per-connector shape-ignore API (`pipeline.md`
+§ 8), so the allocation gives a crossing by removing a whole rectangle for a whole batch. Where that
+is too much, a route runs along a reservation; where it is too little, a route has no way through.
+The other two items are the limit of reserving room without routing: a run the allocation displaces
+can displace a second, and the second can seal a third link's approach.

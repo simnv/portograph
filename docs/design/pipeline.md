@@ -651,19 +651,19 @@ Registered as obstacles, each expanded once in the adapter and never in the mode
 - **lanes**, **group and node labels**, **bundle envelopes** and model
   obstacles, each expanded by the routed half stroke;
 - **the reserved outward stem of every link no batch has routed yet**, covered by the same
-  `10 + (its stroke + widest routed stroke) / 2` clearance. A stem is left out on a node the current
-  batch attaches to on the same **side** as well, because two ports of one node side share that
-  strip. A port on another side of the same node stands in its own strip and keeps its reservation.
+  `10 + (its stroke + widest routed stroke) / 2` clearance. A stem is left out on a node **side**
+  the current batch attaches to as well. Two ports of one node side share that strip. A port on
+  another side of the same node stands in its own strip and keeps its reservation.
   These rectangles are added per batch. They never enter the ownership exclusions, so they cannot
   change a batch; they remain for the attachments no gap allocation reaches.
 - **every allocated tier-gap run** (§ 7a), covered by the clearance a reserved run carries, for
   every batch from the first. This is the head-on approach to a lane, reserved rather than covered
-  by a rectangle. Measured over 322 diagrams, a 23 × 38 px cover repaired 8 failures and broke 4:
-  the wall it put in a tier gap pushed other links into routes their own checkpoints could not meet.
+  by a rectangle. Measured over 322 diagrams, a 23 × 38 px cover repaired 8 failures and broke 4.
+  The wall it put in a tier gap pushed other links into routes their own checkpoints could not meet.
   A run's **row** does not obstruct the links that must cross that gap, which the allocation names.
   Its vertical segments obstruct them, and a route can pass those by. The owner is not given the row
-  either: its route meets the run at the two terminals, so the end rectangles keep it and the ones
-  between do not.
+  either. Its route meets the run at the two terminals, so the end rectangles keep the owner and the
+  ones between do not.
 
 **A lane obstructs its owner too.** The corridor admits the owner's collinear run and nothing else.
 Stage 8 stitches that run back. It never routes it. The owner therefore needs no exemption here.

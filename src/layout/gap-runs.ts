@@ -541,8 +541,8 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
     result.set(item, runSegments(item, gap, at.get(item)));
   }
   // The approaches were answered against frozen placement, before the runs of this gap existed.
-  // A run this gap seats can cover the boundary terminal of the one beside it, and that link then
-  // has no route to its own port. A gap that cannot leave every approach clear allocates nothing.
+  // A run this gap seats can cover the boundary terminal of the one beside it. That link then has
+  // no route to its own port, so a gap that cannot leave every approach clear allocates nothing.
   const peers: Blocker[] = [];
   const margin = routedStroke(model) / 2 + STRAIGHT_PATH_CLEARANCE.path;
   for (const [item, segments] of result) {
