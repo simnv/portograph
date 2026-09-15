@@ -1,0 +1,216 @@
+# Expected: three links climb to one node in tier 3. Two start in the lowest tiers and transit the
+# tiers between through lanes of their own; the third starts *inside* one of those tiers, so its
+# approach has to travel along a tier gap to reach the mouth of its own lane.
+#
+# Nothing allocated that travel. The two earlier ownership batches routed their own approaches
+# across it, sealed the only corridor between the two reserved lanes, and libavoid returned its
+# degenerate answer: `Router skipped a required checkpoint on link-3#0`.
+#
+# ADR-0015 rule 1 per tier gap allocates one row for the third link and reserves the two lane-to-lane
+# columns beside it, so the corridor exists before the first batch runs. Delta-debugged against the
+# exact message; every group is load-bearing for the tier geometry.
+portograph: 2
+groups:
+  group-00:
+    tier: 0
+    label: Group 00
+  group-01:
+    tier: 1
+    label: Group 01
+  group-02:
+    tier: 2
+    label: Group 02
+  group-03:
+    tier: 2
+    label: Group 03
+  group-04:
+    tier: 2
+    label: Group 04
+  group-05:
+    tier: 3
+    label: Group 05
+  group-06:
+    tier: 4
+    label: Group 06
+  group-07:
+    tier: 5
+    label: Group 07
+  group-08:
+    tier: 6
+    label: Group 08
+  group-09:
+    tier: 6
+    label: Group 09
+  group-10:
+    tier: 6
+    label: Group 10
+  group-11:
+    tier: 7
+    label: Group 11
+  group-12:
+    tier: 7
+    label: Group 12
+  group-13:
+    tier: 7
+    label: Group 13
+  group-14:
+    tier: 8
+    label: Group 14
+  group-15:
+    tier: 8
+    label: Group 15
+  group-16:
+    tier: 9
+    label: Group 16
+  group-17:
+    tier: 9
+    label: Group 17
+  group-18:
+    tier: 9
+    label: Group 18
+  group-19:
+    tier: 10
+    label: Group 19
+  group-20:
+    tier: 10
+    label: Group 20
+  group-21:
+    tier: 10
+    label: Group 21
+  group-22:
+    tier: 11
+    label: Group 22
+  group-23:
+    tier: 11
+    label: Group 23
+  group-24:
+    tier: 12
+    label: Group 24
+nodes:
+  node-aa001:
+    group: group-01
+    class: rr
+    label: node-aa001
+  node-ab002:
+    group: group-00
+    class: router
+    label: node-ab002
+  node-ac003:
+    group: group-05
+    class: tbr
+    label: node-ac003
+  node-ad004:
+    group: group-02
+    class: router
+    label: node-ad004
+  node-ae005:
+    group: group-03
+    class: tbr
+    label: node-ae005
+  node-af006:
+    group: group-04
+    class: provider
+    label: node-af006
+  node-ag007:
+    group: group-04
+    class: router
+    label: node-ag007
+  node-ah008:
+    group: group-04
+    class: tbr
+    label: node-ah008
+  node-ai009:
+    group: group-04
+    class: rr
+    label: node-ai009
+  node-ba001:
+    group: group-04
+    class: provider
+    label: node-ba001
+  node-bb002:
+    group: group-11
+    class: router
+    label: node-bb002
+  node-bc003:
+    group: group-16
+    class: provider
+    label: node-bc003
+  node-bd004:
+    group: group-10
+    class: router
+    label: node-bd004
+  node-be005:
+    group: group-10
+    class: tbr
+    label: node-be005
+  node-bf006:
+    group: group-12
+    class: router
+    label: node-bf006
+  node-bg007:
+    group: group-06
+    class: tbr
+    label: node-bg007
+  node-bh008:
+    group: group-07
+    class: rr
+    label: node-bh008
+  node-bi009:
+    group: group-15
+    class: tbr
+    label: node-bi009
+  node-ca001:
+    group: group-17
+    class: provider
+    label: node-ca001
+  node-cb002:
+    group: group-18
+    class: rr
+    label: node-cb002
+  node-cc003:
+    group: group-08
+    class: router
+    label: node-cc003
+  node-cd004:
+    group: group-13
+    class: provider
+    label: node-cd004
+  node-ce005:
+    group: group-14
+    class: tbr
+    label: node-ce005
+  node-cf006:
+    group: group-09
+    class: provider
+    label: node-cf006
+  node-cg007:
+    group: group-21
+    class: rr
+    label: node-cg007
+  node-ch008:
+    group: group-23
+    class: router
+    label: node-ch008
+  node-ci009:
+    group: group-20
+    class: router
+    label: node-ci009
+  node-da001:
+    group: group-22
+    class: tbr
+    label: node-da001
+  node-db002:
+    group: group-24
+    class: rr
+    label: node-db002
+  node-dc003:
+    group: group-19
+    class: provider
+    label: node-dc003
+links:
+- - node-bb002
+  - node-ac003
+- - node-bf006
+  - node-ac003
+- - node-cc003
+  - node-ac003

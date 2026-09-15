@@ -46,6 +46,8 @@ export { rebuildRowPaths, expectedRowPath, straightCorridorClear, facingPair, ro
 export type { FacingPair } from './layout/row-paths.js';
 
 export { lanes, allocateLanes, rebuildLaneExtents, laneWidth, validateLanes } from './layout/lanes.js';
+export { allocateGapRuns } from './layout/gap-runs.js';
+export type { GapRun } from './layout/gap-runs.js';
 export { flanks, alignFlanks, rebuildFlankPaths, flankPair, flankPathCandidate, expectedFlankPath } from './layout/flanks.js';
 export { centre, centreDraft, createCentreBudget, selectAnchorTier } from './layout/centre.js';
 export type { CentreBudget } from './layout/centre.js';

@@ -1,0 +1,26 @@
+# Expected: node `a` feeds three tiers. Two of its links transit a tier they do not end in, so 7a
+# reserves a lane for each, and both lanes open into the same tier gap. `link-2` leaves its own lane
+# there for a port below, and `link-3` jogs from one of its lanes to the next. Nothing allocated
+# either run, so the batch that routed first took the whole gap and the other had to reach its
+# corridor sideways: `Routed gap on link-3 crosses reserved lane lane:"link-3":1 sideways`.
+#
+# ADR-0015 rule 1 per tier gap allocates both: `link-2` turns on the row nearer the gap's low
+# boundary, `link-3` one pitch beyond it, because their two runs stand on one x and would otherwise
+# share length there.
+portograph: 2
+groups:
+  ga: {tier: 0}
+  gb: {tier: 1}
+  gc: {tier: 2}
+  gd: {tier: 3}
+nodes:
+  a:
+    group: ga
+    ports: [{name: p, side: bottom}, {name: q, side: top}]
+  b: {group: gb, ports: [p]}
+  c: {group: gc, ports: [p]}
+  d: {group: gd, ports: [p]}
+links:
+  - [a.p, b.p]
+  - [a.p, c.p]
+  - [a.q, d.p]

@@ -128,6 +128,9 @@ export function stitchPath(model: LayoutModel, plan: LinkPlan, routes: Map<strin
   const segments: PathSegment[] = [];
   for (const piece of plan.pieces) {
     if (piece.kind === 'reserved') { segments.push(...clone(piece.segments)); continue; }
+    // An allocated tier-gap run leaves a lane terminal, so it names the corridor it starts in
+    // exactly as the routed gap it replaces did.
+    if (piece.kind === 'allocated') { segments.push(...clone(piece.segments).flatMap(segment => laneRuns(model, link, segment))); continue; }
     const points = routes.get(piece.connector);
     if (!points) throw new Error(`Router returned no route for ${piece.connector}`);
     const connector = plan.connectors.find(item => item.id === piece.connector)!;

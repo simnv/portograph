@@ -276,6 +276,26 @@ corridor without moving those owners.
 An existing lane's identity, owner, x and width cannot change in later stages. Extents follow the
 current intermediate band with `10 + pathStroke / 2` padding before placement freezes.
 
+**The runs between the lanes are allocated too (ADR-0015 rule 1).** A **tier gap** is the open band
+between two adjacent tier bands, bounded by the lane extents that face it. Every run that crosses
+one — a jog from one lane to the next, a lane's approach to a port beyond the gap — is allocated
+before the first ownership batch runs, by the same rule that owns the lanes and from the same frozen
+placement. A run whose two ends share one x takes that **column**; a run whose ends differ takes a
+**row**, a horizontal line inside the gap with a vertical stub at each end. Rows pack from the low
+boundary: each takes the first row clear of frozen geometry at or beyond one pitch
+(`16 px + widest routed stroke`) past the one before it, half a pitch inside each boundary. Where
+two runs stand on one x — a lane under a lane of the same x in the band above, or a port over a
+lane's mouth — the one leaving the low boundary turns first, or their stubs would share length; two
+runs standing on one x from one boundary have no clean order and are not allocated. A gap allocates
+nothing when no run in it needs a row, so a diagram whose transit links all descend on one x is
+untouched.
+
+Two allocated runs of one gap may **cross**. Neither is routed, so the crossing is reserved rather
+than discovered and neither needs an exemption from the other. A run a gap cannot seat, and a link
+that must cross the gap without a lane terminal on either boundary, keeps the route it has today:
+the allocated runs do not obstruct it, because a run along a gap is a wall along the gap and never
+across it (ADR-0015 rule 3).
+
 A link transiting several tiers reserves a lane at each, ordered from source to target even for
 upward links. Prefer in-span corridors. When they do not fit, retain source geometry, reserve an
 outside-span corridor, and warn that routing must complete its attachment jog. Non-bundle runs
@@ -612,10 +632,14 @@ Registered as obstacles, each expanded once in the adapter and never in the mode
 - **the reserved outward stem of every link no batch has routed yet**, covered by the same
   `10 + (its stroke + widest routed stroke) / 2` clearance. A stem is left out on a node the current
   batch attaches to as well, because two ports on one node side share that strip. These rectangles
-  are added per batch. They never enter the ownership exclusions, so they cannot change a batch. The
-  head-on approach to a lane is a reservation of the same kind and is **not** covered: measured over
-  322 diagrams, covering it repaired 8 more and broke 4, so it waits for the per-gap allocation
-  ADR-0015 rule 1 describes.
+  are added per batch. They never enter the ownership exclusions, so they cannot change a batch;
+  they remain for the attachments no gap allocation reaches.
+- **every allocated tier-gap run** (§ 7a), covered by the clearance a reserved run carries, for
+  every batch from the first. This is the head-on approach to a lane, reserved rather than covered
+  by a rectangle: measured over 322 diagrams, a 23 × 38 px cover repaired 8 failures and broke 4,
+  because the wall it put in a tier gap pushed other links into routes their own checkpoints could
+  not meet. An allocated run obstructs every link except the ones that must cross that gap, which
+  the allocation names.
 
 **A lane obstructs its owner too.** The corridor admits the owner's collinear run and nothing else.
 Stage 8 stitches that run back. It never routes it. The owner therefore needs no exemption here.
@@ -640,7 +664,8 @@ containers in O(S log² S) time and O(S log S) space. Exact duplicates keep thei
 and surviving shapes retain input order. An exactly contained attachment shape is an error.
 
 Ownership is exact. A link may pass only through the reservations it already owns: its own bundle
-envelope and its own reserved runs, its lane runs included. A transit lane is not one of them: the
+envelope, its own reserved runs, its lane runs included, and the tier-gap runs of a gap its own
+route must cross. A transit lane is not one of them: the
 corridor holds the owner's run, and stage 8 stitches that run back rather than route it. Owning the
 endpoint group does not open a label band. Links whose exclusion sets differ cannot share one router, because the binding has no
 per-connector shape-ignore API, so they run as an ordered sequence of **ownership batches**, and
@@ -665,7 +690,9 @@ skip a checkpoint it cannot reach, so every required one is verified against the
 and the stage rejects the route rather than publish geometry that occupies a reservation.
 
 Each link is stitched back in source-to-target order: its reserved runs byte-for-byte, with their
-owner, lane and `barCross` annotations, and the routed gaps between them. Where a gap meets one of
+owner, lane and `barCross` annotations, the tier-gap runs the allocation made for it, and the routed
+gaps between them. An allocated run is not a claim the lanes rule wrote on the model, so the
+stitcher names the corridor it leaves exactly as it names a routed gap that meets one. Where a gap meets one of
 its own lanes it is split at the corridor boundaries and each piece names the one lane it touches,
 the same shape the region rules produce. Publication and restore then check the result
 structurally — complete anchored path, orthogonal and connected, exact reserved runs, perpendicular
@@ -712,8 +739,8 @@ once, with the same points and no masks, when the answer misses a checkpoint it 
 costs one more transaction on a batch that would otherwise fail the command. Swapping the vertical
 bits instead would make every mask bite, which turns each stem checkpoint from a minimum into a
 pinned turn — measured, that puts two runs 3.5 px apart where nothing reserves the pitch between
-them (ADR-0015 rule 1 reserves it in a row gap only), so the masks stay advisory until that room is
-reserved.
+them. ADR-0015 rule 1 reserves that room in a row gap and in a tier gap, not beside a node side, so
+the masks stay advisory until the room a pinned turn needs is reserved there too.
 
 
 ## Stage 9 — link labels

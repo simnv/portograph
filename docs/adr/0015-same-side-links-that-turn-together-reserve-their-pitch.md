@@ -105,3 +105,45 @@ reachable in principle even though no M1 input reaches it, and because withdrawi
 to reverse than leaving one unverified. Treat it the way ADR-0001 treats finding 42: recorded, not
 resolved, and not a dependency of any ticket. Anything that claims rule 4 must first produce the
 input that needs it.
+
+## Sixth amendment (2026-09-15, from the stress test; stress ticket 04)
+
+**Rule 1 also allocates a tier gap.** The row gap between two row neighbours was the first unit the
+rule reserved; the **tier gap** — the open band between two adjacent tier bands — is the second, and
+it is the one the Enterprise NTP stress test names. Three fixes on 2026-09-15 (stress tickets 01 and
+02) each handed the router one more reservation it was being judged against. The item behind all
+three is this: nothing allocated the runs that cross a tier gap, so the first ownership batch to
+reach the gap took whatever room it liked and the next link found its own corridor closed.
+
+The unit is the run, not the link. A tier gap is bounded by the lane extents that face it. Every
+planned routed gap that straddles it, and has a lane terminal on one of its boundaries, is
+allocated:
+
+- a **column** where the run's two ends share one x — the straight segment across the gap;
+- a **row** where they do not — a horizontal line in the gap with a vertical stub at each end;
+- a **tail** where the far end is a port beyond the gap — the run is reserved to the gap boundary at
+  the port's x and the router fills the rest.
+
+Rows pack from the low boundary, one pitch (`16 px + widest routed stroke`) apart, each at the first
+row clear of frozen placement geometry. The order is forced wherever two runs stand on one x: the
+one leaving the low boundary turns first, or their stubs share length. A gap where no run needs a
+row allocates nothing.
+
+**Two allocated runs of one gap may cross, and the crossing is reserved.** Neither run is routed, so
+neither needs an exemption from the other's obstacle. A run *along* a gap is a wall along it and
+never across it: the links that must cross the gap without an allocation of their own are given the
+crossing, which is rule 3 applied to the obstacle set instead of to the batches.
+
+**What this supersedes.** The lane-approach cover measured in stress ticket 02 (12 repaired, 4
+broken over 322 diagrams) is not reinstated: it was a rectangle standing in for a reservation, and
+this is the reservation. The pending-stem rectangles of stress ticket 02 stay for the attachments no
+gap allocation reaches. The adapter's re-solve without direction masks stays: it is a property of
+this libavoid build, not of the reservation model.
+
+**What it does not do.** It does not grow a tier gap. A gap that cannot seat a row leaves that run
+exactly as it is today. The Enterprise NTP diagram needs about 40 runs in one 38.5 px tier gap, so
+it still fails; growing the band gap to the room its runs need is placement work above 7a and is
+the next ticket.
+
+The golden is unchanged: its four transit links descend on the x of their own lanes, so no run in
+either of its tier gaps needs a row.
