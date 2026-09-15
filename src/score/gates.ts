@@ -1,7 +1,24 @@
-import type { LayoutModel, LayoutNode, PathSegment } from '../model/index.js';
+import type { LayoutModel, LayoutNode, PathSegment, Point, Rect } from '../model/index.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
-import { EPS, bottom, contains, horizontal, intersection, length, near, overlapSegment, rectDistance, rectOverlap, samePoint, segmentDistance, segmentRect, segmentRectDistance, vertical } from './geometry.js';
-import { anchorOnBoundary, barContact, bundlePair, endpoints, groupConsumers, incident, junctionFan, mergedRun, outward, port, refEqual, sharedStem } from './model.js';
+import { EPS, bottom, contains, horizontal, intersection, length, near, overlapSegment, rectDistance, rectOverlap, right, samePoint, segmentDistance, segmentRect, segmentRectDistance, vertical } from './geometry.js';
+
+/** A rejection box kept by its far edges; see `gates`. `measurable` is false beyond `REJECT_LIMIT`. */
+interface Span { x: number; y: number; right: number; bottom: number; measurable: boolean }
+
+/**
+ * Coordinate magnitude beyond which a pair is measured instead of rejected.
+ *
+ * The measured tests build parametric slabs and projections from differences of coordinates. Two
+ * coordinates further apart than this cancel, and the test can then report a contact that is not
+ * there. A rejection bound cannot reproduce such an answer, so a pair that reaches this magnitude
+ * skips the reject and is measured, exactly as it was before. Below it one subtraction is accurate
+ * to 2^-27 px, which the reject's own one-pixel margin covers many times over. No diagram this
+ * pipeline lays out comes near the limit.
+ */
+const REJECT_LIMIT = 2 ** 26;
+const measurable = (x: number, y: number, right: number, bottom: number): boolean =>
+  x > -REJECT_LIMIT && y > -REJECT_LIMIT && right < REJECT_LIMIT && bottom < REJECT_LIMIT;
+import { anchorOnBoundary, barContact, bundlePair, endpoints, groupConsumers, incident, junctionFan, mergedRun, outward, port, refEqual, refKey, sharedStem } from './model.js';
 import type { Segment } from './model.js';
 import type { GateId, GateResult, ScoreCounters } from './types.js';
 
@@ -36,11 +53,50 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
   const result: Record<GateId, GateResult> = { G1: gate(), G2: gate(), G3: gate(nodes.length > 300), G4: gate(), G5: gate(), G6: gate(), G7: gate(), G8: gate() };
   const fail = (id: GateId, code: string, elements: string[], message: string): void => { result[id].passed = false; result[id].violations.push({ code, elements, message }); };
   const nodeStroke = (n: LayoutNode): number => n.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node;
+  // `routed` holds one entry per segment, so "does this link have a routed segment?" was a scan of
+  // every segment; the set answers it once.
+  const routedLinks = new Set(routed.map(s => s.link));
+  // Every gate that pairs one segment or one label with one box fires only when the two are close,
+  // and each exact test is dear: two port lookups, a segment-to-rectangle distance, or both. A box
+  // grown by the clearance the test uses contains everything that could fire, so a pair it rejects
+  // needs no test at all. The loops still walk the model in model order, so the violations they
+  // report, and the order they report them in, do not change. The extra pixel covers the EPS the
+  // exact tests carry.
+  // A span keeps its far edges, never a width: at a large coordinate `x + width` does not return
+  // the edge the far endpoint really has, and a reject computed from it could drop a pair the
+  // exact test would have failed. A rectangle's far edge is `right()` and `bottom()`, which is
+  // what the exact tests read; a segment's is the larger of its two endpoints.
+  const span = (x: number, y: number, far: number, low: number): Span =>
+    ({ x, y, right: far, bottom: low, measurable: measurable(x, y, far, low) });
+  const rectSpan = (box: Rect): Span => span(box.x, box.y, right(box), bottom(box));
+  const segmentSpan = (item: PathSegment): Span => span(
+    Math.min(item.from.x, item.to.x), Math.min(item.from.y, item.to.y),
+    Math.max(item.from.x, item.to.x), Math.max(item.from.y, item.to.y));
+  const segmentSpans = routed.map(item => segmentSpan(item.segment));
+  const apart = (a: Span, b: Span, reach: number): boolean => a.measurable && b.measurable
+    && (a.x - b.right > reach || b.x - a.right > reach || a.y - b.bottom > reach || b.y - a.bottom > reach);
+  const nodeSpans = nodes.map(node => rectSpan(node.bounds!));
+  let widestNodeStroke: number = DEFAULT_STROKE_WIDTHS.node;
+  for (const node of nodes) { const width = nodeStroke(node); if (width > widestNodeStroke) widestNodeStroke = width; }
+  // A named port's pill stands outside its node, so one node's whole block is governed by the union
+  // of its rectangle and its pills.
+  const nodeExtent = nodes.map((node, index) => {
+    let box = nodeSpans[index]!;
+    for (const item of node.ports) {
+      if (!item.pill) continue;
+      const other = item.pill.bounds;
+      box = span(Math.min(box.x, other.x), Math.min(box.y, other.y),
+        Math.max(box.right, right(other)), Math.max(box.bottom, bottom(other)));
+    }
+    return box;
+  });
+  const labelNodeReach = Math.max(widestNodeStroke, DEFAULT_STROKE_WIDTHS.pill) / 2 + 1;
   for (let i = 0; i < nodes.length; i++) {
     const a = nodes[i]!;
     const group = a.owner.kind === 'group' ? model.groups[a.owner.id] : undefined;
     if (!group || !group.nodes.includes(a.id) || !contains(group.bounds!, a.bounds!)) fail('G1', 'node-containment', [a.id], 'Node must lie inside its owning group');
-    for (const b of nodes.slice(i + 1)) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const b = nodes[j]!;
       if (rectOverlap(a.bounds!, b.bounds!)) fail('G1', 'node-overlap', [a.id, b.id], 'Node rectangles overlap');
       if (a.layer !== 'overlay' && b.layer !== 'overlay' && rectDistance(a.bounds!, b.bounds!) - (nodeStroke(a) + nodeStroke(b)) / 2 < 20 - EPS) fail('G6', 'node-clearance', [a.id, b.id], 'Node clearance is below 20 px');
     }
@@ -52,7 +108,10 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       fail('G1', 'group-containment', [group.id], 'Group must lie inside its tier band');
       fail('G8', 'group-tier', [group.id], 'Group must lie inside its tier band');
     }
-    for (const b of groups.slice(i + 1)) if (rectOverlap(group.bounds!, b.bounds!)) fail('G1', 'group-overlap', [group.id, b.id], 'Group rectangles overlap');
+    for (let j = i + 1; j < groups.length; j++) {
+      const b = groups[j]!;
+      if (rectOverlap(group.bounds!, b.bounds!)) fail('G1', 'group-overlap', [group.id, b.id], 'Group rectangles overlap');
+    }
   }
   const bands = [...model.tierBands].sort((a, b) => a.tier - b.tier);
   for (let i = 1; i < bands.length; i++) {
@@ -60,9 +119,11 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
     if (a.tier === b.tier || bottom(a.bounds!) > b.bounds!.y + EPS) fail('G8', 'tier-order', [String(a.tier), String(b.tier)], 'Tier bands must be ordered and non-overlapping');
   }
   const crossedBars = new Set<string>();
-  for (const s of routed) {
-    for (const node of nodes) {
-      if (node.layer === 'overlay') continue;
+  for (const [index, s] of routed.entries()) {
+    const box = segmentSpans[index]!, reach = 10 + (s.stroke + widestNodeStroke) / 2 + 1;
+    for (let n = 0; n < nodes.length; n++) {
+      const node = nodes[n]!;
+      if (node.layer === 'overlay' || apart(box, nodeSpans[n]!, reach)) continue;
       const owned = incident(model, s, node.id), bar = barContact(model, s, node.id);
       const distance = segmentRectDistance(s.segment, node.bounds!);
       if (bar && distance <= EPS) crossedBars.add(`${s.link.id}:${node.id}`);
@@ -101,8 +162,14 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       && associatedPill.owner.kind === 'node' && associatedPill.owner.id === label.port.node
       && contains(associatedPill.bounds, label.bounds!);
     const hit = (other: string): void => { counters.labelHits++; fail('G3', 'label-collision', [label.id, other], 'Label intersects unrelated geometry'); };
-    for (const other of labels.slice(i + 1)) if (rectOverlap(label.bounds!, other.bounds!)) hit(other.id);
-    for (const node of nodes) {
+    const labelSpan = rectSpan(label.bounds!);
+    for (let j = i + 1; j < labels.length; j++) {
+      const other = labels[j]!;
+      if (rectOverlap(label.bounds!, other.bounds!)) hit(other.id);
+    }
+    for (let n = 0; n < nodes.length; n++) {
+      const node = nodes[n]!;
+      if (apart(labelSpan, nodeExtent[n]!, labelNodeReach)) continue;
       const owns = label.owner.kind === 'node' && label.owner.id === node.id;
       const ownedExtent = owns && (label.role === 'pill' ? containedOwnPill : contains(node.bounds!, label.bounds!));
       if (node.layer !== 'overlay' && !ownedExtent && (rectDistance(label.bounds!, node.bounds!) < nodeStroke(node) / 2 - EPS || rectOverlap(label.bounds!, node.bounds!))) hit(node.id);
@@ -112,7 +179,11 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
         if (!ownPill && (rectOverlap(label.bounds!, p.pill.bounds) || rectDistance(label.bounds!, p.pill.bounds) < DEFAULT_STROKE_WIDTHS.pill / 2 - EPS)) hit(`pill:${node.id}:${p.ref.ordinal}`);
       }
     }
-    for (const s of routed) {
+    // A group title owns a link-free margin beyond its stroke-aware edge.
+    const margin = label.role === 'group' ? GROUP_LABEL_LINK_CLEARANCE : 0;
+    for (let k = 0; k < routed.length; k++) {
+      const s = routed[k]!;
+      if (apart(labelSpan, segmentSpans[k]!, s.stroke / 2 + margin + 1)) continue;
       // A pill's own incident stem runs behind the pill text by construction.
       if (containedOwnPill && label.port && incident(model, s, label.port.node)
         && [endpoints(s.link).from, endpoints(s.link).to].some(ref => refEqual(ref, label.port!))) continue;
@@ -124,8 +195,6 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       const support = label.support;
       if (support?.kind === 'link-segment' && label.owner.kind === 'link' && label.owner.id === support.link
         && support.link === s.link.id && support.segment === s.index) continue;
-      // A group title owns a link-free margin beyond its stroke-aware edge.
-      const margin = label.role === 'group' ? GROUP_LABEL_LINK_CLEARANCE : 0;
       if (segmentRectDistance(s.segment, label.bounds!) < s.stroke / 2 + margin - EPS) hit(s.link.id);
     }
   }
@@ -150,7 +219,7 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       if (!samePoint(path[0]!.from, from.anchor!) || !samePoint(path.at(-1)!.to, to.anchor!)) fail('G7', 'endpoint-anchor', [link.id], 'Link endpoints must equal port anchors');
       for (let i = 1; i < path.length; i++) if (!samePoint(path[i - 1]!.to, path[i]!.from)) fail('G7', 'disconnected-path', [link.id], 'Consecutive routed segments must connect');
     }
-    if (!routed.some(s => s.link === link)) continue;
+    if (!routedLinks.has(link)) continue;
     if (!outward(from, path![0]!, true) || !outward(to, path!.at(-1)!, false) || length(path![0]!) < 15 - EPS || length(path!.at(-1)!) < 15 - EPS) fail('G5', 'port-stem', [link.id], 'Port stems must exit perpendicular and extend at least 15 px');
     // A declared diagonal is legal only on a member of a bundle that owns the segment (ADR-0017);
     // anywhere else `straight: true` is an unowned claim and the gate treats it as a bent path.
@@ -165,18 +234,36 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
     // its own and reserves geometry no stage measured.
     if (path!.filter(s => s.straight === true).length > 1) fail('G5', 'orthogonal-path', [link.id], 'A member may declare only one straight segment');
   }
+  // Every port's far anchors, recorded in one pass over the routed links. The port-order gate below
+  // reads this index; scanning every link for every port made the gate quadratic in the diagram.
+  // A link is seen from both of its ends, exactly as the gate saw it, and a link whose far port is
+  // missing contributes nothing, as before.
+  const farAnchors = new Map<string, Point[]>();
+  for (const link of model.links) {
+    if (!routedLinks.has(link)) continue;
+    const ends = endpoints(link);
+    for (const [near, far] of [[ends.from, ends.to], [ends.to, ends.from]] as const) {
+      const target = port(model, far);
+      if (!target) continue;
+      const at = refKey(near), list = farAnchors.get(at);
+      if (list) list.push(target.anchor!); else farAnchors.set(at, [target.anchor!]);
+    }
+  }
   for (const node of nodes) for (const side of ['top', 'right', 'bottom', 'left'] as const) {
+    const alongX = side === 'top' || side === 'bottom';
     const positions = node.ports.filter(p => p.side === side && p.authorOrder === undefined).flatMap(p => {
-      const peers = model.links.filter(l => routed.some(s => s.link === l)).flatMap(l => {
-        const ends = endpoints(l), other = refEqual(ends.from, p.ref) ? ends.to : refEqual(ends.to, p.ref) ? ends.from : undefined;
-        const target = other && port(model, other);
-        return target ? [side === 'top' || side === 'bottom' ? target.anchor!.x : target.anchor!.y] : [];
-      });
-      return peers.length ? [{ own: side === 'top' || side === 'bottom' ? p.anchor!.x : p.anchor!.y,
-        min: Math.min(...peers), max: Math.max(...peers) }] : [];
+      const peers = farAnchors.get(refKey(p.ref));
+      if (!peers?.length) return [];
+      let min = Infinity, max = -Infinity;
+      for (const anchor of peers) {
+        const at = alongX ? anchor.x : anchor.y;
+        if (at < min) min = at;
+        if (at > max) max = at;
+      }
+      return [{ own: alongX ? p.anchor!.x : p.anchor!.y, min, max }];
     });
-    for (let i = 0; i < positions.length; i++) for (const b of positions.slice(i + 1)) {
-      const a = positions[i]!;
+    for (let i = 0; i < positions.length; i++) for (let j = i + 1; j < positions.length; j++) {
+      const a = positions[i]!, b = positions[j]!;
       if (a.own < b.own - EPS && a.min > b.max + EPS || b.own < a.own - EPS && b.min > a.max + EPS)
         fail('G5', 'port-order', [node.id], 'Port order must match strictly separated far-end ranges unless authored');
     }
@@ -186,8 +273,8 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       fail('G5', 'author-port-order', [node.id], 'Physical port order reverses unequal authored keys');
   }
 
-  for (let i = 0; i < routed.length; i++) for (const b of routed.slice(i + 1)) {
-    const a = routed[i]!;
+  for (let i = 0; i < routed.length; i++) for (let j = i + 1; j < routed.length; j++) {
+    const a = routed[i]!, b = routed[j]!;
     if (a.link.id === b.link.id && Math.abs(a.index - b.index) <= 1) continue;
     // Axis-aligned pairs on the same axis, and any pair where a declared straight bundle member is
     // involved (ADR-0017): a diagonal has no axis, so its clearance is measured by distance against

@@ -332,6 +332,11 @@ export function centreViolations(model: LayoutModel): string[] {
   const drops = new Set(model.barDrops.map(drop => drop.link));
   const isBar = (node: string): boolean => model.document.groups[model.document.nodes[node]!.group]!.shape === 'bar';
   const result: string[] = [];
+  const byId = new Map(model.links.map(link => [link.id, link]));
+  // The replay reads placement geometry alone; nothing it calls reads the freeze block, and on a
+  // large model that block is more than a third of the JSON the per-group copy below would carry.
+  const { freeze: _frozen, ...replayed } = model;
+  void _frozen;
   for (const { tier, authority } of context.steps) {
     const list = feeds(model, tier, authority), order = context.groupOrder.get(tier)!;
     const tail = tailReservation(model, context, tier, order);
@@ -340,17 +345,25 @@ export function centreViolations(model: LayoutModel): string[] {
       const group = model.groups[id]!;
       const owned = groupFeeds(model, context, tier, list, id, false);
       if (model.document.groups[id]!.shape === 'bar' || !owned.own.length) { previous = group; continue; }
-      const trial = JSON.parse(JSON.stringify(model)) as LayoutModel;
+      const trial = JSON.parse(JSON.stringify(replayed)) as LayoutModel;
       const step = centreGroupStep(trial, centreContext(trial, anchor), tier, feeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, tail);
       previous = group;
+      // Both lookups below read one key per wanted child; keying them once keeps the scan of the
+      // group's own feeds and ports out of the loop. First entry wins, as `find` did.
+      const ownFeeds = new Map<string, Feed>();
+      for (const item of owned.own) { const at = portId(item.child.ref); if (!ownFeeds.has(at)) ownFeeds.set(at, item); }
+      const groupPorts = new Map<string, LayoutPort>();
+      for (const nodeId of group.nodes) for (const item of model.nodes[nodeId]!.ports) {
+        const at = portId(item.ref); if (!groupPorts.has(at)) groupPorts.set(at, item);
+      }
       for (const [child, x] of owned.wanted) {
         // Only the ports the producer's own step could not resolve are excused, never their siblings.
         if (step.unresolved.has(child)) continue;
-        const feed = owned.own.find(item => portId(item.child.ref) === child)!;
-        if (model.links.find(link => link.id === feed.link)?.bundle || drops.has(feed.link)) continue;
+        const feed = ownFeeds.get(child)!;
+        if (byId.get(feed.link)?.bundle || drops.has(feed.link)) continue;
         if ((afterBundles && bundled.has(child)) || (atBundles && bundled.has(portId(feed.parent.ref)))) continue;
         if (isBar(feed.child.ref.node) || isBar(feed.parent.ref.node)) continue;
-        const port = group.nodes.flatMap(nodeId => model.nodes[nodeId]!.ports).find(port => portId(port.ref) === child)!;
+        const port = groupPorts.get(child)!;
         if (Math.abs(port.anchor!.x - x) > 0.5) result.push(`${feed.link}: ${child} sits at x ${port.anchor!.x} instead of its feed x ${x}`);
       }
     }
