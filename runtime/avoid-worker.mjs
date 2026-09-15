@@ -38,24 +38,47 @@ export function loadAvoid(moduleUrl, wasmUrl, importModule = specifier => import
 const ALL_DIRECTIONS = 15;
 
 /**
- * Whether a returned polyline really passes through every checkpoint, in the order they were asked
- * for. This is the host's own test (`checkpointsHonoured`), repeated here so the adapter can see a
- * dropped checkpoint while it can still ask again. Distance is measured along the whole route, not
- * along one segment, so two checkpoints on one straight run stay ordered.
+ * Collision tolerance. This is `EPS` in `src/score/geometry.ts`, and it must stay that value: the
+ * adapter has to reach the same answer as the host about a visited checkpoint, or it re-solves a
+ * route the host would have taken.
  */
-function checkpointsVisited(points, checkpoints) {
+const EPS = 1e-7;
+
+/**
+ * Whether a segment touches a point, boundary contact included. This is `segmentRect` from
+ * `src/score/geometry.ts` against a rectangle of zero size, written out here because the worker
+ * loads as plain JavaScript and imports nothing from the library.
+ */
+function segmentTouches(from, to, point) {
+  let low = 0, high = 1;
+  for (const [origin, delta, at] of [[from.x, to.x - from.x, point.x], [from.y, to.y - from.y, point.y]]) {
+    if (delta === 0) { if (origin < at - EPS || origin > at + EPS) return false; }
+    else {
+      const a = (at - EPS - origin) / delta, b = (at + EPS - origin) / delta;
+      low = Math.max(low, Math.min(a, b));
+      high = Math.min(high, Math.max(a, b));
+    }
+  }
+  return low <= high;
+}
+
+/**
+ * Whether a returned polyline really passes through every checkpoint, in the order they were asked
+ * for. This is the host's own test — `polylineDistance` and `checkpointsHonoured` in
+ * `src/route/paths.ts` — repeated here so the adapter can see a dropped checkpoint while it can
+ * still ask again, and it must give the same answer the host will. Distance is measured along the
+ * whole route, not along one segment, so two checkpoints on one straight run stay ordered.
+ */
+export function checkpointsVisited(points, checkpoints) {
   const at = (point, after) => {
     let travelled = 0;
     for (let index = 0; index + 1 < points.length; index++) {
       const from = points[index], to = points[index + 1];
-      const low = { x: Math.min(from.x, to.x), y: Math.min(from.y, to.y) };
-      const high = { x: Math.max(from.x, to.x), y: Math.max(from.y, to.y) };
-      const span = Math.hypot(to.x - from.x, to.y - from.y);
-      if (point.x >= low.x - 1e-9 && point.x <= high.x + 1e-9 && point.y >= low.y - 1e-9 && point.y <= high.y + 1e-9) {
+      if (segmentTouches(from, to, point)) {
         const reached = travelled + Math.hypot(point.x - from.x, point.y - from.y);
-        if (reached >= after - 1e-9) return reached;
+        if (reached >= after - EPS) return reached;
       }
-      travelled += span;
+      travelled += Math.hypot(to.x - from.x, to.y - from.y);
     }
     return -1;
   };

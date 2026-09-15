@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { RouteDeadlineError, RouteSession, withRouteSession, systemRouteClock,
   type CreateRouteAttempt, type RouteWorker } from '../../src/route/worker.js';
-import { ALL_DIRECTIONS, DIRECTION_BITS, type RouteBatch } from '../../src/route/types.js';
+import { ALL_DIRECTIONS, DIRECTION_BITS, type RouteBatch, type RouteCheckpoint } from '../../src/route/types.js';
+import { checkpointsHonoured } from '../../src/route/paths.js';
 import { disjointShapes } from '../../src/route/plan.js';
 import { avoidAssets, createAvoidAttempt, spawnAvoidWorker } from './fixture.js';
 
@@ -10,6 +11,7 @@ interface WorkerApi {
   loadAvoid(moduleUrl: string, wasmUrl: string, importModule?: (specifier: string) => Promise<unknown>): Promise<Record<string, never>>;
   routeBatch(avoid: unknown, batch: RouteBatch): { connector: string; points: AvoidPoint[] }[];
   handleRouteMessage(message: unknown, reply: (response: unknown) => void): Promise<void>;
+  checkpointsVisited(points: AvoidPoint[], checkpoints: RouteCheckpoint[]): boolean;
 }
 // The worker is plain JavaScript with no published declarations, so it loads through a URL.
 const worker = await import(new URL('../../runtime/avoid-worker.mjs', import.meta.url).href) as WorkerApi;
@@ -175,6 +177,34 @@ describe('libavoid-js 0.5.0-beta.5 runtime contract', () => {
       error: 'Connector endpoint references unknown obstacle missing' }]);
   });
 
+  it('asks the same question about a visited checkpoint as the host does', () => {
+    // The adapter re-solves a route the host would reject. It must therefore reach the host's own
+    // answer on every polyline, tolerance included: a stricter worker re-solves a route the host
+    // already accepts, and a looser one lets a dropped checkpoint through to the host.
+    const point = (x: number, y: number): RouteCheckpoint => ({ x, y, arrival: ALL_DIRECTIONS, departure: ALL_DIRECTIONS });
+    const straight = [{ x: 0, y: 0 }, { x: 100, y: 0 }];
+    const bent = [{ x: 0, y: 0 }, { x: 0, y: 50 }, { x: 100, y: 50 }, { x: 100, y: 0 }];
+    const cases: [AvoidPoint[], RouteCheckpoint[]][] = [
+      // Within the collision tolerance, so both must accept. A 1e-9 worker rejected this one.
+      [straight, [point(50, 5e-8)]],
+      [straight, [point(50, 5e-6)]],
+      [straight, [point(50, 0)]],
+      [straight, [point(120, 0)]],
+      // Order along the route, not along one segment.
+      [straight, [point(70, 0), point(30, 0)]],
+      [straight, [point(30, 0), point(70, 0)]],
+      [bent, [point(0, 50), point(100, 50)]],
+      [bent, [point(100, 50), point(0, 50)]],
+      [bent, [point(50, 50), point(50, 0)]],
+      [bent, []],
+      [[], [point(0, 0)]],
+    ];
+    for (const [points, checkpoints] of cases) {
+      expect([points, checkpoints, worker.checkpointsVisited(points, checkpoints)])
+        .toEqual([points, checkpoints, checkpointsHonoured(points, checkpoints)]);
+    }
+  });
+
   it('keeps a checkpoint whose direction mask this build cannot meet', () => {
     // A blind corridor around (100, 100), open at the top only: every route through the checkpoint
     // has to enter and leave through that one opening. The host names the entry side in screen
@@ -186,7 +216,10 @@ describe('libavoid-js 0.5.0-beta.5 runtime contract', () => {
       { id: 'w-left', bounds: rect(70, 70, 10, 60) },
       { id: 'w-right', bounds: rect(120, 70, 10, 60) },
     ];
-    for (const [arrival, departure] of [[DIRECTION_BITS.top, ALL_DIRECTIONS], [ALL_DIRECTIONS, DIRECTION_BITS.top]]) {
+    // The third pair asks for an entry through the left side, which the walls make impossible in
+    // any convention: the recovery is general, not a correction of the vertical bits alone.
+    for (const [arrival, departure] of [[DIRECTION_BITS.top, ALL_DIRECTIONS], [ALL_DIRECTIONS, DIRECTION_BITS.top],
+      [DIRECTION_BITS.left, ALL_DIRECTIONS]]) {
       const points = worker.routeBatch(avoid, batch([{ id: 'blind-corridor',
         from: { kind: 'point', x: 20, y: 20 }, to: { kind: 'point', x: 180, y: 20 },
         checkpoints: [{ x: 100, y: 100, arrival: arrival!, departure: departure! }] }], walls))[0]!.points;

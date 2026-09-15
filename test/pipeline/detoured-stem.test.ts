@@ -35,4 +35,6 @@ it('keeps every reserved stem checkpoint on a route forced round an earlier batc
   // A failed gate is a judgement about one; a failed pipeline is the absence of one.
   const report = score(model).snapshot;
   expect(Number.isFinite(report.Q)).toBe(true);
+  expect(Object.entries(report.gates).flatMap(([id, gate]) => gate.violations.map(item => [id, item.code, item.elements])))
+    .toEqual([['G6', 'segment-group-edge', ['link-1', 'g-right']]]);
 }, 60000);
