@@ -1,0 +1,29 @@
+# Expected: A described overlay link whose long run does not sit where the pair's anchors do. The
+# two ports face each other but are not level, because the source carries a second right-side port,
+# so the overlay rule turns once: the run the label rides starts at the source anchor and ends at
+# the turn, and its midpoint is 16.5 px left of the anchor midpoint. 7f reserves the room where that
+# run is — it runs the same producer stage 8 will run, on pills it has already frozen — so the label
+# is drawn in full, one shorten margin clear of the pill it used to overhang (synthetics review
+# ticket 04 B). Reserving symmetric about the anchor midpoint dropped the label to a tooltip.
+# Every gate passes; Q is 0.7871352744129312, against 0.7902663476195246 for the diagram that lost
+# the label — the reserved room is 25 px of width, and the soft score reads what the diagram draws.
+portograph: 2
+profile: network
+groups:
+  g: { tier: 0, label: Row }
+nodes:
+  a:
+    group: g
+    class: router
+    label: Router A
+    ports:
+      - { name: management0, side: right }
+      - { name: aux, side: right }
+  b:
+    group: g
+    class: router
+    label: Border B
+    ports:
+      - { name: management0, side: left }
+links:
+  - [a.management0, b.management0, { class: flow, label: time synchronisation from the site clock }]

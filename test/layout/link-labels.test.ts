@@ -160,6 +160,31 @@ describe('stage 9 authored labels', () => {
     expect(both.bounds).toEqual(clear.bounds);
   });
 
+  it('crosses an overlay run at full text before it shortens to dodge one', () => {
+    // Ticket 04 C. The ladder ran the whole strict pass, shortened rung included, before the relaxed
+    // pass ever offered the full text, so a label was truncated to dodge an overlay run it could
+    // have crossed whole. The mask cuts the overlay back under a whole label; nothing gives a
+    // shortened label its characters back. Two overlay runs cover both sides of the long run, and
+    // the descent is short enough to carry only a shortened text.
+    const model = bench([{ id: 'a', bounds: { x: 0, y: 100, width: 40, height: 40 } },
+      { id: 'b', bounds: { x: 300, y: 100, width: 40, height: 40 } },
+      { id: 'p', bounds: { x: 0, y: 300, width: 40, height: 40 } },
+      { id: 'q', bounds: { x: 300, y: 300, width: 40, height: 40 } }],
+    [{ id: 'wire', from: 'a', to: 'b', sides: ['right', 'left'], label: 'peer-uplink',
+      points: [{ x: 40, y: 120 }, { x: 300, y: 120 }, { x: 300, y: 150 }] },
+    ...[105.25, 131].map((y, index) => ({ id: `flow-${index}`, from: 'p', to: 'q',
+      sides: ['right', 'left'] as [Side, Side], layer: 'overlay' as const,
+      points: [{ x: 100, y }, { x: 240, y }] }))]);
+    produceLinkLabels(model);
+    const label = linkLabelsOf(model)[0]!;
+    expect(label.text).toBe('peer-uplink');
+    expect(label.omitted).toBeUndefined();
+    expect(model.diagnostics.map(item => item.code)).not.toContain('LINK_LABEL_SHORTENED');
+    // On the long run, the ladder's first side, where the first overlay run covers it.
+    expect(label.support).toEqual({ kind: 'link-segment', link: 'wire', segment: 0 });
+    expect(label.bounds!.y).toBeLessThan(120);
+  });
+
   it('does not prune a stroke collision when a large negative bound loses its padding to rounding', () => {
     const right = -(2 ** 51), middle = right + 2.5, left = middle - 180, end = middle + 180;
     const model = bench([

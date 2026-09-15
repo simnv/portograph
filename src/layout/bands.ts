@@ -1,7 +1,7 @@
 import type { Point, Rect, Side } from '../model/geometry.js';
 import { stemDepth, type GapPlan } from './sides-two.js';
 import type { PortRef } from '../model/document.js';
-import type { LabelBand, LayoutGroup, LayoutLabel, LayoutModel, LayoutNode, LayoutPort, Owner, PathSegment } from '../model/layout.js';
+import type { LabelBand, LayoutGroup, LayoutLabel, LayoutLink, LayoutModel, LayoutNode, LayoutPort, Owner, PathSegment } from '../model/layout.js';
 import { equal } from '../model/json-equality.js';
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 import { orderedGroupIds } from '../model/model.js';
@@ -18,7 +18,7 @@ import { bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placementWarning, 
 import { withLayoutMutation } from './mutation.js';
 import { effectiveLayer } from '../score/model.js';
 import { LINK_LABEL_GEOMETRY, overlayLabelsSuppressed } from './link-labels.js';
-import { OVERLAY_PILL_CLEARANCE } from './overlay-paths.js';
+import { overlayPath } from './overlay-paths.js';
 
 const EPS = 1e-6;
 export const GROUP_LABEL_GEOMETRY = {
@@ -573,6 +573,28 @@ export function alignLinkedGroupGrid(model: LayoutModel): boolean {
 
 
 /**
+ * The coordinate an overlay link's label will be centred on: the midpoint of the longest run of the
+ * path the overlay rule derives, on the axis this reservation grows.
+ *
+ * The rule reads its eight ways off the two end boxes alone, and 7f holds the pills frozen, so
+ * placement can run the very producer stage 8 will run rather than assume the shape the run takes
+ * (ticket 04 B; ticket 01 recorded the `2 × OVERLAY_PILL_CLEARANCE` proxy it replaces). `undefined`
+ * where the long run lies on the other axis — the way round the pair and the run down the middle of
+ * the gap — because there is then nothing for 7f to widen and the stage 9 ladder decides, exactly as
+ * it does for a link whose room lies beyond a reserved lane.
+ */
+function overlayRunMid(model: LayoutModel, link: LayoutLink, axis: 'x' | 'y'): number | undefined {
+  const across = axis === 'x' ? 'y' : 'x';
+  let run: PathSegment | undefined, longest = 0;
+  for (const segment of overlayPath(model, link).segments) {
+    const reach = Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y);
+    if (reach > longest + EPS) { longest = reach; run = segment; }
+  }
+  if (!run || Math.abs(run.to[across] - run.from[across]) > EPS) return undefined;
+  return (run.from[axis] + run.to[axis]) / 2;
+}
+
+/**
  * A link's description influences its length (ADR-0014): the run a label will follow must be long
  * enough for the measured text plus the shortening margins before anything is routed. Stage 9
  * centres the label on the run's midpoint, so the room is measured symmetrically about the anchor
@@ -605,16 +627,14 @@ export function reserveLinkLabelRoom(model: LayoutModel): boolean {
     const unreserved = (why: string): void => placementWarning(model, 'LINK_LABEL_ROOM_UNRESERVED', `${link.id} ${why}; its label room cannot be reserved and the stage 9 ladder decides.`, [link.id]);
     if (fromNode === toNode) { unreserved('returns to its own node'); continue; }
     const measured = measureText(text, { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight });
-    // An overlay link leaves each port one clearance beyond its own outward face before it turns, so
-    // the run its label rides starts that far in from each face (synthetics review ticket 01). Where
-    // the detour puts the long run on the other axis entirely, 7f cannot reserve for it at all and
-    // the stage 9 ladder decides, as it does for a link whose room lies beyond a reserved lane.
-    const required = measured.width + 2 * LINK_LABEL_GEOMETRY.shortenMargin
-      + (effectiveLayer(link) === 'overlay' ? 2 * OVERLAY_PILL_CLEARANCE : 0);
+    const required = measured.width + 2 * LINK_LABEL_GEOMETRY.shortenMargin;
+    const overlay = effectiveLayer(link) === 'overlay';
     if (fromGroup.tier !== toGroup.tier) {
       const [upper, lower, upperPort, lowerPort] = fromNode.bounds!.y <= toNode.bounds!.y ? [fromNode, toNode, from, to] : [toNode, fromNode, to, from];
       const upperTier = model.groups[model.document.nodes[upper.id]!.group]!.tier!;
-      const mid = (upperPort.anchor!.y + lowerPort.anchor!.y) / 2;
+      const centre = overlay ? overlayRunMid(model, link, 'y') : (upperPort.anchor!.y + lowerPort.anchor!.y) / 2;
+      if (centre === undefined) { unreserved('draws its longest overlay run across the tier gap, not along it'); continue; }
+      const mid = centre;
       const room = 2 * Math.min(mid - Math.max(bottom(upper.bounds!), bottom(outer(upperPort, upper))), Math.min(lower.bounds!.y, outer(lowerPort, lower).y) - mid);
       const deficit = required - room;
       if (deficit <= EPS) continue;
@@ -627,13 +647,15 @@ export function reserveLinkLabelRoom(model: LayoutModel): boolean {
     const ends = sameTierEnds(from, fromNode, to, toNode);
     if ('unreservable' in ends) { unreserved(ends.unreservable); continue; }
     const { leftPort, leftNode, rightPort, rightNode } = ends;
-    const low = leftPort.anchor!.x, high = rightPort.anchor!.x, mid = (low + high) / 2;
+    const centre = overlay ? overlayRunMid(model, link, 'x') : (leftPort.anchor!.x + rightPort.anchor!.x) / 2;
+    if (centre === undefined) { unreserved('draws its longest overlay run across the row, not along it'); continue; }
+    const mid = centre;
     // A routed link detours when its ends are not level or when the straight run between them is not
     // clear — the same stroke-aware reading of nodes, pills, foreign group boxes with their margin,
     // lanes, fixed runs and bundle rows and envelopes that pins row paths and reserves corridors
     // (`straightCorridorClear`).
     const straight: PathSegment = { from: { ...leftPort.anchor! }, to: { ...rightPort.anchor! }, owner: { ...link.owner } };
-    const detour = effectiveLayer(link) !== 'overlay'
+    const detour = !overlay
       && (Math.abs(leftPort.anchor!.y - rightPort.anchor!.y) > EPS || !straightCorridorClear(model, link, straight));
     const room = 2 * Math.min(mid - Math.max(right(leftNode.bounds!), right(outer(leftPort, leftNode))), Math.min(rightNode.bounds!.x, outer(rightPort, rightNode).x) - mid);
     // A detour's long run ends at an anchor on one side and at a turn on the other, so its midpoint is

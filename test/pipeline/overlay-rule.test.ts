@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { drawio, layout, parse, render, score } from '../../src/index.js';
 import type { LayoutLink, LayoutModel, Point, Rect } from '../../src/index.js';
+import { LINK_LABEL_GEOMETRY } from '../../src/layout/link-labels.js';
 import { OVERLAY_PILL_CLEARANCE } from '../../src/layout/overlay-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -112,6 +113,31 @@ describe('an overlay link is orthogonal in both renderers', () => {
     for (const box of bodies) {
       expect(mask).toContain(`x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}"`);
     }
+    expect(score(model).snapshot.passed).toBe(true);
+  }, 60000);
+
+  it('reserves a described overlay link the room its longest run really has', async () => {
+    // Ticket 04 B, `goldens/synthetic/labelled-overlay-run.yaml`. 7f used to reserve symmetric about
+    // the anchor midpoint and add two clearances. The rule's run starts at the source anchor —
+    // `straighten` merges the head stub into it — and ends at the turn, so the label box overhung the
+    // source pill on both of the ladder's sides and the label was dropped to a tooltip. The
+    // reservation now reads the run off the producer itself, which 7f can do because the eight ways
+    // come off pills placement has already frozen.
+    const model = await run(fixture('labelled-overlay-run'));
+    const link = overlayOf(model), points = pointsOf(link);
+    const label = model.labels.find(item => item.role === 'link' && item.owner.kind === 'link' && item.owner.id === link.id)!;
+    expect(label.omitted).toBeUndefined();
+    expect(label.text).toBe('time synchronisation from the site clock');
+    expect(model.diagnostics.map(item => item.code)).not.toContain('LINK_LABEL_OMITTED');
+    // Centred on the long run, which is not the run between the two anchors.
+    const runs = link.path!.segments.map(segment => ({ segment,
+      length: Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y) }));
+    const longest = runs.reduce((best, item) => item.length > best.length ? item : best).segment;
+    expect(longest.from.y).toBeCloseTo(longest.to.y, 9);
+    expect(label.bounds!.x + label.bounds!.width / 2).toBeCloseTo((longest.from.x + longest.to.x) / 2, 9);
+    expect(label.bounds!.x + label.bounds!.width / 2).not.toBeCloseTo((points[0]!.x + points.at(-1)!.x) / 2, 3);
+    // And one shorten margin clear of the source pill it used to overhang.
+    expect(label.bounds!.x - right(endBoxes(model, link)[0]!)).toBeCloseTo(LINK_LABEL_GEOMETRY.shortenMargin, 9);
     expect(score(model).snapshot.passed).toBe(true);
   }, 60000);
 

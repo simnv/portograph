@@ -680,9 +680,8 @@ stroke-aware rectangles with identical ownership collapse to one entry.
 
 **A described link is long enough for its description (ADR-0014).** Before labels are planned,
 every authored link label (bars and unsuppressed overlay links included; bundle members excluded) is
-measured and its link's run — symmetric about the anchor midpoint, out to the nearer pill face or
-node edge — is made at least the label width plus both 8 px shortening margins, plus
-`2 × OVERLAY_PILL_CLEARANCE` for an overlay link, whose run begins one clearance beyond each face: a link between tiers
+measured and its link's run — symmetric about the midpoint the label will take, out to the nearer
+pill face or node edge — is made at least the label width plus both 8 px shortening margins: a link between tiers
 moves every lower tier down by the deficit; a link between two ends of one tier inserts the room at
 the gap: every group in every tier at or beyond the split between the two pill faces moves right,
 and a group straddling the split shifts only the nodes beyond it — in the link's own tier those that
@@ -691,8 +690,14 @@ bar-to-source slots all survive and nothing moves left into a preceding group; a
 beyond the split makes the link unreservable. A routed link will detour when its ends are not level
 or when the straight run between them is not clear by the corridor check — a node, pill, foreign group
 box with its margin, lane, fixed run, bundle row or bundle envelope in the way — and its run is then reserved with both stroke-aware
-router stems and twice the anchor-side pill protrusion on top of the label. Self-links, same-tier links
-through top/bottom ports, pairs whose ports do not face each other across the gap, and links whose room
+router stems and twice the anchor-side pill protrusion on top of the label. That midpoint is the
+anchor midpoint for a routed link. For an **overlay** link it is the midpoint of the longest run of
+the path the overlay rule derives: the rule reads its eight ways off the two end boxes alone and 7f
+holds the pills frozen, so placement runs the very producer stage 8 will run instead of assuming the
+shape (synthetics review ticket 04 B). Where that run lies on the other axis — a way round the pair,
+or the run down the middle of the gap — there is nothing for 7f to widen. Self-links, same-tier links
+through top/bottom ports, pairs whose ports do not face each other across the gap, overlay links
+whose longest run crosses the axis the room grows on, and links whose room
 lies beyond a reserved lane are diagnosed `LINK_LABEL_ROOM_UNRESERVED`. Moves settle pills before the next link measures; the
 reservation re-runs after the grid inside the 7f loop and any movement replays the region producers. That group's band clearance also
 reserves the label's room beside the detour run under the title. Publication and restore re-run the
@@ -873,8 +878,11 @@ reservation the link does not own — because route geometry cannot be re-derive
 it: from each port anchor outward past that port's own outward face — the pill's, or the node's when
 the port draws none — by `OVERLAY_PILL_CLEARANCE` (2 × the endpoint mark's radius), then the shortest
 of eight ways read off the two end boxes that enters no node body and no pill, and no candidate that
-walks back the way it came. Ties go to the single turn that carries on the way the source faces. Two
-ports facing each other on a clear axis collapse to one straight segment. When every way is blocked
+walks back along a run it already drew — the same interval sweep `route/validate` fails a path by,
+because two stubs that share a line cover each other without ever being adjacent (ticket 04 A). Ties
+go to the single turn that carries on the way the source faces. Two ports facing each other on one
+line closer than their two clearances turn on their own faces instead, which keeps the two ends in
+order; two ports facing each other on a clear axis collapse to one straight segment. When every way is blocked
 the shortest that clears the link's own two end boxes is taken, and when an end states no side the
 straight anchor-to-anchor segment is kept; the renderer's mask carries both. `route/validate`
 re-derives the path, compares it and reads `retraces` over it. Stub candidates: after routing, a link whose route passes through
@@ -935,8 +943,11 @@ only, and the renderer masks the overlay layer out of every drawn label, so a la
 stays readable — but the mask cuts the *overlay* under it, and an overlay path goes round the shapes
 it crosses precisely so that the line stays whole. The label is the thing that can move, and the path
 cannot dodge it in return: a link label's box is measured here, after stage 8 built the path. Where
-the whole ladder is covered the ladder runs once more with overlay runs ignored, because a label that
-is drawn beats a line that is whole; the mask then carries the crossing, as it always did. Node
+both sides of every segment are covered the ladder runs again with overlay runs ignored, because a
+label that is drawn beats a line that is whole; the mask then carries the crossing, as it always
+did. That second run comes **before** the shortened text, not after it: a truncated label is the
+last thing tried, because the mask gives the overlay back under a whole label and nothing gives a
+shortened label its characters back (synthetics review ticket 04 C). Node
 bodies and pills on the overlay *layer* stay out of the set: they are not drawn. Every placed label
 is in it, whatever layer its link is on.
 
@@ -961,9 +972,11 @@ zero-length segments are skipped. The first side — *above* for a horizontal se
 vertical one — is tried across every segment before the opposite side is tried across that same
 order; a segment carries the full text only when it is at least the text plus the 8 px shorten
 margin at each end long, so a placed label never reaches past both ends of its run (ticket 30);
-then both passes repeat with the shortened text, and among the clear shortened candidates the
+then the same two passes run with drawn overlay runs ignored; then the pair repeats with the
+shortened text, strict first and relaxed after, and among the clear shortened candidates the
 one keeping the most characters wins (ADR-0014); then the label is omitted with its full text as
-`tooltip`. Authored labels run in link order, then merge runs in bundle and run order, so
+`tooltip`. Four rungs in all: whole text clear of the overlay, whole text across it, shortened text
+clear of it, shortened text across it. Authored labels run in link order, then merge runs in bundle and run order, so
 an accepted label is an obstacle for every later one.
 
 **What a candidate must clear.** Visible nodes and their stroke, visible pills, every already

@@ -229,50 +229,44 @@ function shorten(widths: ReturnType<typeof prefixWidths>, limit: number): string
 }
 
 /**
- * The ladder of `pipeline.md` stage 9, in the order the parent fixed: the first side across every
- * segment in descending length order, then the opposite side across that order, then the same two
- * passes with shortened text. Above and right are the deterministic first sides; ties break on the
- * source-to-target segment index.
+ * One rung of the ladder of `pipeline.md` stage 9: the first side across every segment in descending
+ * length order, then the opposite side across that order. Above and right are the deterministic
+ * first sides; ties break on the source-to-target segment index.
  *
- * `overlayCounts` runs the whole ladder with drawn overlay runs as obstacles. The caller runs it
- * that way first and only once more without, so a label moves off an overlay whenever it has
- * anywhere to move to. The relaxed pass exists because the ladder does not slide a label along its
- * run — it is the midpoint of a segment or nothing — and losing a label is a worse diagram than a
- * mask cut in the line under it.
+ * `shortened` chooses the text the rung offers, and `overlayCounts` whether drawn overlay runs are
+ * obstacles on it. The caller decides the order of the four, because the two choices are not nested
+ * (ticket 04 C).
  */
 function placeLabel(index: ObstacleIndex, supported: Supported, text: string, shortenable: boolean,
-  overlayCounts: boolean): Placement | undefined {
+  shortened: boolean, overlayCounts: boolean): Placement | undefined {
   const ordered = supported.segments
     .map((segment, at) => ({ segment, at, length: segmentLength(segment) }))
     .filter(item => item.length > EPS)
     .sort((a, b) => b.length - a.length || a.at - b.at);
-  const widths = shortenable ? prefixWidths(text) : undefined;
-  for (const shortened of widths ? [false, true] : [false]) {
-    // An authored description takes the first clear candidate in ladder order whose segment is long
-    // enough to carry it: the text plus the shorten margin at each end, so a label never overhangs
-    // both ends of the run it names (ticket 30). A multiplicity count is not shortenable and keeps
-    // its trunk however short — a count-2 run one member pitch long is 17.5 px, less than `2` plus
-    // both margins — so the length guard is the shortenable labels' alone. A shortened text takes
-    // the clear candidate that keeps the most characters, so the best location is found
-    // automatically rather than the first short stub of a segment; ties keep ladder order.
-    let best: Placement | undefined;
-    for (const second of [false, true]) {
-      for (const { segment, at, length } of ordered) {
-        const drawn = shortened ? shorten(widths!, length - LINK_LABEL_GEOMETRY.shortenMargin) : text;
-        if (drawn === undefined) continue;
-        const measured = measure(drawn);
-        if (!measured.lines.length) continue;
-        if (!shortened && widths && measured.width + 2 * LINK_LABEL_GEOMETRY.shortenMargin > length + EPS) continue;
-        const { bounds, textRotation } = candidateBox(segment, supported.half, { width: measured.width, height: measured.height }, second);
-        if (collides(index, bounds, supported.support(at), overlayCounts)) continue;
-        const placement = { segment: at, bounds, textRotation, text: drawn, lines: measured.lines, lineHeight: measured.lineHeight };
-        if (!shortened) return placement;
-        if (!best || drawn.length > best.text.length) best = placement;
-      }
+  const widths = shortened ? prefixWidths(text) : undefined;
+  // An authored description takes the first clear candidate in ladder order whose segment is long
+  // enough to carry it: the text plus the shorten margin at each end, so a label never overhangs
+  // both ends of the run it names (ticket 30). A multiplicity count is not shortenable and keeps
+  // its trunk however short — a count-2 run one member pitch long is 17.5 px, less than `2` plus
+  // both margins — so the length guard is the shortenable labels' alone. A shortened text takes
+  // the clear candidate that keeps the most characters, so the best location is found
+  // automatically rather than the first short stub of a segment; ties keep ladder order.
+  let best: Placement | undefined;
+  for (const second of [false, true]) {
+    for (const { segment, at, length } of ordered) {
+      const drawn = shortened ? shorten(widths!, length - LINK_LABEL_GEOMETRY.shortenMargin) : text;
+      if (drawn === undefined) continue;
+      const measured = measure(drawn);
+      if (!measured.lines.length) continue;
+      if (!shortened && shortenable && measured.width + 2 * LINK_LABEL_GEOMETRY.shortenMargin > length + EPS) continue;
+      const { bounds, textRotation } = candidateBox(segment, supported.half, { width: measured.width, height: measured.height }, second);
+      if (collides(index, bounds, supported.support(at), overlayCounts)) continue;
+      const placement = { segment: at, bounds, textRotation, text: drawn, lines: measured.lines, lineHeight: measured.lineHeight };
+      if (!shortened) return placement;
+      if (!best || drawn.length > best.text.length) best = placement;
     }
-    if (best) return best;
   }
-  return undefined;
+  return best;
 }
 
 function baseLabel(id: string, owner: LayoutLabel['owner'], layer: LayoutLabel['layer'], text: string): LayoutLabel {
@@ -316,11 +310,20 @@ export function produceLinkLabels(model: LayoutModel): void {
   const index = buildObstacles(model);
   const suppressOverlay = overlayLabelsSuppressed(model);
   const produced: LayoutLabel[] = [], suppressed: string[] = [];
+  /**
+   * The four rungs, in the order the diagram is best read in: the whole text clear of every drawn
+   * overlay run, the whole text allowed to cross one, then the same two with shortened text
+   * (ticket 04 C). The relaxed rungs exist because the ladder does not slide a label along its run —
+   * it is the midpoint of a segment or nothing — and a label that is drawn beats a line that is
+   * whole. A truncated label is the last thing tried, because the mask cuts the overlay back under
+   * a whole label but nothing gives a shortened one its characters back.
+   */
   const emit = (label: LayoutLabel, supported: Supported | undefined, shortenable: boolean): void => {
-    const placement = supported && supported.segments.length
-      ? placeLabel(index, supported, label.text, shortenable, true)
-        ?? placeLabel(index, supported, label.text, shortenable, false)
-      : undefined;
+    const rung = (shortened: boolean, overlayCounts: boolean): Placement | undefined =>
+      supported && supported.segments.length
+        ? placeLabel(index, supported, label.text, shortenable, shortened, overlayCounts) : undefined;
+    const placement = rung(false, true) ?? rung(false, false)
+      ?? (shortenable ? rung(true, true) ?? rung(true, false) : undefined);
     if (!placement) {
       produced.push(omitted(label));
       model.diagnostics.push(diagnostic('LINK_LABEL_OMITTED', 'warning',

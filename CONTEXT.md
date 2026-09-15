@@ -69,7 +69,7 @@ drew it. Network diagrams first; software architecture and electrical panels nex
 | Linked-group grid | groups joined by vertical links share x-extent and width, by horizontal links y-extent and height, when neither is smaller than the union by more than 30 % | ADR-0012, maintainer 2026-09-12 |
 | Group edge link-margin | 10 px beyond half the link stroke: foreign group boxes are routing obstacles grown by it (G2 `through-group`); no segment runs along a group edge from on or outside the box within it (G6 `segment-group-edge`) | ADR-0013, maintainer 2026-09-12 |
 | Link label heading | follows the supporting segment: 0° on horizontal runs, −90° (reads bottom-to-top) on vertical runs — gravity, never upside down | ADR-0014, maintainer 2026-09-13 |
-| Link label room | a described link's run is at least label width + 2 × 8 px, symmetric about the anchor midpoint out to the nearer pill face, reserved in 7f; a detour under a title also reserves band room | ADR-0014, maintainer 2026-09-13 |
+| Link label room | a described link's run is at least label width + 2 × 8 px, symmetric about the midpoint the label will take — the anchor midpoint for a routed link, the midpoint of the derived path's longest run for an overlay one — out to the nearer pill face, reserved in 7f; a detour under a title also reserves band room | ADR-0014, maintainer 2026-09-13; ticket 04 |
 | Group title link-margin | 8 px around the measured title, link-free: labels keep it from reserved link geometry, routing treats it as an obstacle, G3 fails a segment inside it | maintainer M1 visual review, 2026-09-11 |
 | Node minimum | 50 × 35 px | d3-fd |
 | Port pill | 24 × 10 px, r 2 (was 3) | d3-fd; ticket 34 |
@@ -84,7 +84,7 @@ drew it. Network diagrams first; software architecture and electrical panels nex
 | Legend type and spacing | `FONT_FAMILY` 9 px, weight 400; 20 px gap below the drawn diagram; 12 × 12 symbol swatch, 24 px line swatch, 6 px swatch gap, 18 px column gap, 6 px row gap | render-theme notes, ticket 16 |
 | Canvas margin | 12 px between everything drawn (strokes included) and every canvas edge; stage 9 refits the canvas to that after the legend is placed | ticket 28 |
 | Overlay endpoint mark | 2 px radius, drawn above the masked overlay layer | pipeline stage 11 |
-| Overlay port clearance | 4 px (2 × the endpoint mark radius) beyond a port's own outward face, where an overlay path turns; 7f reserves twice it for a described overlay link | synthetics review ticket 01, maintainer 2026-09-15 |
+| Overlay port clearance | 4 px (2 × the endpoint mark radius) beyond a port's own outward face, where an overlay path turns; a pair facing each other on one line closer than twice it turns on the faces instead | synthetics review tickets 01 and 04, maintainer 2026-09-15 |
 | Clearances (gates) | node–node 20, edge–foreign-node 10, parallel edge–edge 10 px, stroke-aware, with ownership exceptions | ELK defaults; codex review |
 | Port stem | ≥ 15 px, perpendicular to side | yFiles convention |
 | "Beautiful" ceiling | ~30 nodes | Störrle 2014/2016, Kobourov 2014 |

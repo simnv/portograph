@@ -5,7 +5,7 @@ import { routedStroke, stemReach } from '../layout/bands.js';
 import { findPort } from '../layout/row-paths.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
 import { groupConsumers } from '../score/model.js';
-import { EPS, horizontal, length, samePoint, segmentRect, vertical } from '../score/geometry.js';
+import { EPS, horizontal, length, retracingRuns, samePoint, segmentRect, vertical } from '../score/geometry.js';
 import { outward } from '../score/model.js';
 import { effectiveLayer, reversedRuns } from './plan.js';
 import { overlayBlockers, overlayPath, type OverlayBlockers } from '../layout/overlay-paths.js';
@@ -112,40 +112,12 @@ const drawn = (link: LayoutLink): boolean => link.technique !== 'stub' && link.a
 
 /**
  * A route that walks back along a run it already drew is not a path — an exact reversal is only
- * the simplest way to do it. One interval sweep per line answers this for the whole path: two
- * pieces of the same route may touch at a bend, never share length.
+ * the simplest way to do it. `retracingRuns` sweeps the whole path, one interval sweep per line:
+ * two pieces of the same route may touch at a bend, never share length. The overlay rule refuses a
+ * candidate by the same sweep, so the producer cannot state a path this rejects.
  */
 export function retraces(id: string, segments: PathSegment[]): void {
-  type Span = { low: number; high: number };
-  const overlaps = (spans: Span[]): boolean => {
-    let reach = -Infinity;
-    for (const span of [...spans].sort((a, b) => a.low - b.low)) {
-      if (span.low < reach - EPS) return true;
-      reach = Math.max(reach, span.high);
-    }
-    return false;
-  };
-  for (const along of [true, false]) {
-    // One group per exact line, swept in one pass: that is where a real retrace lives, and it stays
-    // linear however many runs share the line. Two lines closer than EPS are the same line, so
-    // those groups are swept together as well — in real geometry there are none.
-    const lines = new Map<number, Span[]>();
-    for (const segment of segments) {
-      if (along ? !horizontal(segment) : !vertical(segment)) continue;
-      const line = along ? segment.from.y : segment.from.x;
-      const a = along ? segment.from.x : segment.from.y, b = along ? segment.to.x : segment.to.y;
-      const group = lines.get(line) ?? [];
-      group.push({ low: Math.min(a, b), high: Math.max(a, b) });
-      lines.set(line, group);
-    }
-    const values = [...lines.keys()].sort((a, b) => a - b);
-    for (const [index, value] of values.entries()) {
-      if (overlaps(lines.get(value)!)) throw new Error(`Routed path on ${id} retraces itself`);
-      for (let next = index + 1; next < values.length && values[next]! - value <= EPS; next++) {
-        if (overlaps([...lines.get(value)!, ...lines.get(values[next]!)!])) throw new Error(`Routed path on ${id} retraces itself`);
-      }
-    }
-  }
+  if (retracingRuns(segments)) throw new Error(`Routed path on ${id} retraces itself`);
 }
 
 /**
