@@ -36,7 +36,7 @@ import {
   linkClassStyle, nodeClassPaint, nodeClassStyle, portRolePaint, portRoleStyle,
 } from '../profiles/network/theme.js';
 import { effectiveLayer, validate } from '../score/model.js';
-import { FONT_FAMILY } from '../text/index.js';
+import { FONT_FAMILY, measureText } from '../text/index.js';
 import { CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, linkStrokeWidth } from '../theme/geometry.js';
 import { linkVisible } from './index.js';
 import { authorClass, element, num } from './svg.js';
@@ -53,6 +53,17 @@ const LABEL_MARGIN = 5;
 
 /** draw.io's own default label spacing, which `spacingTop` adds to rather than replaces. */
 const LABEL_SPACING = 2;
+
+/**
+ * draw.io's `mxText.baseSpacingTop`: a further 5 px every top-aligned label starts below the shape,
+ * on top of `spacing` and `spacingTop`. The application sets it, mxGraph's own default is 0, so a
+ * label positioned from the library's formula alone lands 5 px too low. Measured against
+ * drawio-desktop 31.4.5 and read back from its bundle.
+ */
+const BASE_SPACING_TOP = 5;
+
+/** The node-name size the profile uses when a label does not state its own. */
+const NODE_NAME_SIZE = 9;
 
 /** The description size the profile uses when a label does not state its own. */
 const NODE_DESCRIPTION_SIZE = 7;
@@ -206,6 +217,86 @@ const HTML_ENTITIES: Readonly<Record<string, string>> = { '&': '&amp;', '<': '&l
  */
 const htmlText = (lines: readonly string[]): string =>
   lines.map(line => line.replace(HTML, character => HTML_ENTITIES[character]!)).join('<br>');
+
+/** One measured label of a node's own text, in the form draw.io lays text out in. */
+interface TextBlock {
+  /** The block's lines, HTML-escaped and joined the way a cell value joins them. */
+  html: string;
+  /** The pitch stage 9 put between two lines of this label, which is also its CSS `line-height`. */
+  pitch: number;
+  /** Where the block's first line box has to start for its baseline to land on the measured one. */
+  top: number;
+  /** One pitch per line: the box the next block is placed below, whatever the lines then do. */
+  height: number;
+  fontSize: number;
+  fontWeight: 400 | 700;
+  /** Stated only when the block does not take the cell's own `fontColor`. */
+  colour?: string;
+}
+
+/**
+ * A quantity a model states, or one derived from it, kept finite: no draw.io attribute can carry an
+ * infinity, and a model far outside the contract is better exported than refused.
+ */
+const finite = (value: number): number => Number.isFinite(value) ? value : 0;
+
+/**
+ * A measured label as a draw.io text block, or nothing when the label draws no line.
+ *
+ * draw.io lays a label out as CSS line boxes, and a CSS line box centres its glyphs in the leading:
+ * the baseline sits half a leading plus one ascent below the box top. The pipeline puts the first
+ * baseline exactly one ascent below the box it measured, with all the leading underneath. So the
+ * block states the pipeline's own line pitch as `line-height` — which also keeps a wrapped label's
+ * further lines at the measured pitch — and starts half a leading higher, which puts every baseline
+ * back where stage 9 measured it. Measured against drawio-desktop 31.4.5.
+ *
+ * The font table supplies the leading and the model supplies the box, which is the division of
+ * labour `render` already uses to put a baseline inside a measured label. Nothing here sizes,
+ * moves or grows anything: the same box is expressed in draw.io's own layout language. The table is
+ * read for one pixel of type and scaled, so a model that states an absurd font size is exported
+ * rather than refused.
+ */
+function textBlock(label: LayoutLabel, size: number, weight: 400 | 700, colour?: string): TextBlock | undefined {
+  const lines = label.lines ?? (label.text === '' ? [] : [label.text]);
+  if (lines.length === 0) return undefined;
+  const fontSize = finite(label.fontSize ?? size);
+  // The model knows two weights. Anything else is out of contract and reads as the regular one.
+  const fontWeight = (label.fontWeight ?? weight) === 700 ? 700 : 400;
+  const unit = measureText('', { fontSize: 1, weight: fontWeight });
+  const glyphs = finite((unit.ascent + unit.descent) * fontSize);
+  // A pitch is a length. A negative or infinite one is not CSS, and the arithmetic below and the
+  // browser have to agree, so both use the clamped value.
+  const pitch = Math.max(0, finite(label.lineHeight ?? label.bounds!.height / lines.length));
+  return {
+    html: htmlText(lines), pitch, top: finite(label.bounds!.y - (pitch - glyphs) / 2),
+    height: finite(pitch * lines.length), fontSize, fontWeight,
+    ...(colour === undefined ? {} : { colour }),
+  };
+}
+
+/**
+ * The blocks as one cell value: a `<div>` each, stacked by the gaps the pipeline measured.
+ *
+ * One `<div>` per block rather than one run of `<br>`-separated spans, because a block carries its
+ * own weight, size and line pitch, and a `<span>` inside a shared line inherits the cell's weight —
+ * which is how a 400-weight description came out bold beside a 700-weight name.
+ *
+ * Each block states its measured height as well as its pitch. A browser counts line boxes its own
+ * way — a trailing `<br>` opens none — so the block that follows is placed below the height stage 9
+ * measured, and never below a height the text happened to occupy.
+ */
+function blockValue(blocks: readonly TextBlock[]): string {
+  return blocks.map((block, index) => {
+    const previous = blocks[index - 1];
+    const margin = previous === undefined ? undefined
+      : finite(block.top - (previous.top + previous.height));
+    return `<div style="line-height:${num(block.pitch)}px;height:${num(block.height)}px;`
+      + `font-size:${num(block.fontSize)}px;font-weight:${block.fontWeight}`
+      + (block.colour === undefined ? '' : `;color:${block.colour}`)
+      + (margin === undefined ? '' : `;margin-top:${num(margin)}px`)
+      + `">${block.html}</div>`;
+  }).join('');
+}
 
 /** A data URI draw.io can use as an image, with no `;` or `=` to break the style string. */
 const svgImage = (svg: string): string => `data:image/svg+xml,${encodeURIComponent(svg)}`;
@@ -435,20 +526,25 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     }
     // The node's name is the node's own label, and its description follows it in the same label:
     // a shape carries its text in draw.io, and a reader who double-clicks the node expects to be
-    // renaming the node. The description is a styled line rather than a second cell, and its colour
-    // is a CSS `light-dark()` so it adapts with everything else.
+    // renaming the node. The description is a styled block rather than a second cell, and its
+    // colour is a CSS `light-dark()` so it adapts with everything else.
     const named = layout.labels.find(item => item.owner.kind === 'node' && item.owner.id === id
       && item.role === 'node' && !item.omitted);
     const described = layout.labels.find(item => item.owner.kind === 'node' && item.owner.id === id
       && item.role === 'description' && !item.omitted);
-    const description = described === undefined ? '' : `<span style="font-size:`
-      + `${num(described.fontSize ?? NODE_DESCRIPTION_SIZE)}px;color:${paint.node.description}">`
-      + `${htmlText(described.lines ?? [described.text])}</span>`;
-    const text = [named ? htmlText(named.lines ?? [named.text]) : '', description]
-      .filter(part => part !== '').join('<br>');
-    // Stage 3 sized the box around these lines and stage 9 measured where they sit; `spacingTop`
-    // states that offset so draw.io lays them out from the same place rather than centring them.
-    const top = named?.bounds ? named.bounds.y - node.bounds!.y - LABEL_SPACING : undefined;
+    // A node may carry a description and no name, so the geometry and the base font come from the
+    // first block that draws, whichever it is, and not from the name.
+    const blocks = [
+      named === undefined ? undefined : textBlock(named, NODE_NAME_SIZE, 700),
+      described === undefined ? undefined : textBlock(described, NODE_DESCRIPTION_SIZE, 400, paint.node.description),
+    ].filter((block): block is TextBlock => block !== undefined);
+    const text = blockValue(blocks);
+    // Stage 3 sized the box around these blocks and stage 9 measured where they sit. `spacingTop`
+    // states that offset, and it is stated in full: draw.io adds `spacing` and its own
+    // `baseSpacingTop` to it, so a label that names only the measured offset lands 7 px low.
+    const first = blocks[0];
+    const top = first === undefined ? undefined
+      : finite(first.top - node.bounds!.y - BASE_SPACING_TOP - LABEL_SPACING);
     vertex(cellId('node', id), group, styleString([], {
       // A node really does contain its ports and its icon, so it says so: a container moves,
       // copies and accepts a drop as one thing, which is what a node is.
@@ -459,9 +555,11 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       points: `[${anchors.join(',')}]`,
       ...(text === '' ? {} : {
         align: 'center', verticalAlign: 'top', overflow: 'visible',
-        spacingTop: top === undefined ? undefined : Math.max(0, top),
-        fontFamily: FONT_FAMILY, fontSize: named?.fontSize, fontColor: paint.node.text,
-        fontStyle: named?.fontWeight === 700 ? 1 : undefined,
+        // The offset is signed. draw.io honours a negative `spacingTop` — measured — and a node
+        // whose first line starts within 7 px of its top edge needs one.
+        spacingTop: top,
+        fontFamily: FONT_FAMILY, fontSize: first?.fontSize, fontColor: paint.node.text,
+        fontStyle: first?.fontWeight === 700 ? 1 : undefined,
       }),
     }), relative(box, origin), text === '' ? undefined : text);
 
