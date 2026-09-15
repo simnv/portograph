@@ -1,5 +1,6 @@
 import type { PortRef } from '../model/document.js';
 import type { LayoutLink, LayoutModel, LayoutNode, LayoutPath, LayoutPort, PathSegment } from '../model/layout.js';
+import type { Rect } from '../model/geometry.js';
 import { EPS, length, segmentDistance, segmentRectDistance } from '../score/geometry.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { groupConsumers } from '../score/model.js';
@@ -70,46 +71,66 @@ export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segm
   const endNodes = new Set([ends.from.node, ends.to.node]);
   const endPorts = new Set([portId(ends.from), portId(ends.to)]);
   const ownsObstacle = (owner: { kind: string; id?: string }): boolean => owner.kind === 'link' && owner.id === link.id;
+  // The corridor is closed by whatever comes nearer than a clearance, so anything further than the
+  // clearance from the segment's own bounding box cannot close it. Rejecting such a shape by four
+  // comparisons keeps the measured distance for the few shapes that can. The answer is a single
+  // boolean, so the tests may be taken in any order; each one below still measures exactly what it
+  // measured before. The extra pixel covers the EPS the measured tests carry.
+  const low = { x: Math.min(segment.from.x, segment.to.x), y: Math.min(segment.from.y, segment.to.y) };
+  const high = { x: Math.max(segment.from.x, segment.to.x), y: Math.max(segment.from.y, segment.to.y) };
+  const beyond = (box: Rect, reach: number): boolean => low.x - (box.x + box.width) > reach
+    || box.x - high.x > reach || low.y - (box.y + box.height) > reach || box.y - high.y > reach;
+  const pillReach = (stroke + DEFAULT_STROKE_WIDTHS.pill) / 2 + 1, laneReach = stroke / 2 + 1;
+  const labelReach = stroke / 2 + GROUP_LABEL_LINK_CLEARANCE + 1;
+  const groupReach = GROUP_EDGE_LINK_CLEARANCE + stroke / 2 + 1;
   for (const node of Object.values(model.nodes)) {
     if (node.layer === 'overlay' || !node.bounds) continue;
-    if (!endNodes.has(node.id)
-      && segmentRectDistance(segment, node.bounds) - (stroke + (node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node)) / 2 < STRAIGHT_PATH_CLEARANCE.node - EPS) return false;
+    const nodeStroke = node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node;
+    if (!beyond(node.bounds, STRAIGHT_PATH_CLEARANCE.node + (stroke + nodeStroke) / 2 + 1) && !endNodes.has(node.id)
+      && segmentRectDistance(segment, node.bounds) - (stroke + nodeStroke) / 2 < STRAIGHT_PATH_CLEARANCE.node - EPS) return false;
     for (const port of node.ports) {
-      if (!port.pill || port.pill.layer === 'overlay' || endPorts.has(portId(port.ref))) continue;
+      if (!port.pill || port.pill.layer === 'overlay' || beyond(port.pill.bounds, pillReach) || endPorts.has(portId(port.ref))) continue;
       if (segmentRectDistance(segment, port.pill.bounds) - (stroke + DEFAULT_STROKE_WIDTHS.pill) / 2 < -EPS) return false;
     }
   }
   for (const label of model.labels) {
-    if (label.omitted || !label.bounds || label.layer === 'overlay' || ownsObstacle(label.owner)) continue;
+    if (label.omitted || !label.bounds || label.layer === 'overlay' || beyond(label.bounds, labelReach) || ownsObstacle(label.owner)) continue;
     if (label.role === 'pill' && label.port && endPorts.has(portId(label.port))) continue;
     if (segmentRectDistance(segment, label.bounds) < stroke / 2 + (label.role === 'group' ? GROUP_LABEL_LINK_CLEARANCE : 0) - EPS) return false;
   }
   for (const lane of model.lanes) {
-    if (lane.layer === 'overlay' || ownsObstacle(lane.owner)) continue;
+    if (lane.layer === 'overlay' || beyond(lane.bounds, laneReach) || ownsObstacle(lane.owner)) continue;
     if (segmentRectDistance(segment, lane.bounds) < stroke / 2 - EPS) return false;
   }
   // A foreign group box, with its edge margin, is closed to this link (ADR-0013): placement must
-  // not reserve a straight corridor that stage 8 would then be forbidden to use.
+  // not reserve a straight corridor that stage 8 would then be forbidden to use. The consumer test
+  // reads every link, so it is asked only about a group near enough to close the corridor.
   for (const [id, group] of Object.entries(model.groups)) {
-    if (!group.bounds || !group.nodes.length || groupConsumers(model, id).includes(link.id)) continue;
+    if (!group.bounds || !group.nodes.length || beyond(group.bounds, groupReach)) continue;
+    if (groupConsumers(model, id).includes(link.id)) continue;
     if (segmentRectDistance(segment, group.bounds) < GROUP_EDGE_LINK_CLEARANCE + stroke / 2 - EPS) return false;
   }
   for (const other of model.links) {
     if (other.id === link.id || other.layer === 'overlay') continue;
     const otherStroke = linkStrokeWidth(other);
+    const runReach = STRAIGHT_PATH_CLEARANCE.path + (stroke + otherStroke) / 2 + 1;
     // A stage-8 remainder (`fixed: false`) is routed around this corridor, so it is not an
     // obstacle to the rule that reserved the corridor first. Re-deriving the pin against it would
     // let routing retract a placement decision, which the pipeline's load-bearing rule forbids.
     const foreign = other.path?.fixed === false ? [] : other.path?.segments ?? [];
     for (const run of [...foreign, ...(other.fixedSegments ?? [])]) {
+      const x = Math.min(run.from.x, run.to.x), y = Math.min(run.from.y, run.to.y);
+      if (beyond({ x, y, width: Math.abs(run.to.x - run.from.x), height: Math.abs(run.to.y - run.from.y) }, runReach)) continue;
       if (segmentDistance(segment, run) - (stroke + otherStroke) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return false;
     }
   }
   for (const bundle of model.bundles) {
-    for (const zone of [bundle.rows, bundle.envelope]) if (zone && segmentRectDistance(segment, zone) < stroke / 2 - EPS) return false;
+    for (const zone of [bundle.rows, bundle.envelope]) {
+      if (zone && !beyond(zone, laneReach) && segmentRectDistance(segment, zone) < stroke / 2 - EPS) return false;
+    }
   }
   for (const obstacle of model.obstacles) {
-    if (ownsObstacle(obstacle.owner)) continue;
+    if (beyond(obstacle.bounds, laneReach) || ownsObstacle(obstacle.owner)) continue;
     if (segmentRectDistance(segment, obstacle.bounds) < stroke / 2 - EPS) return false;
   }
   return true;
