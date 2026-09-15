@@ -184,12 +184,31 @@ a tier gap, and says of the gap's height only that "it does not grow a tier gap"
 the Enterprise NTP sheet then named: one 38.5 px gap seating two rows where sixteen needed one, and
 about 280 px of row at the pitch. A gap cannot allocate room it does not have.
 
-The gap's height is therefore a reservation like every other room in this ADR. A gap short of
-`rows × pitch` grows by the shortfall, and every band below it moves down by the running total. The
-margin the facing lane extents take (`10 + pathStroke / 2` on each side that has a lane) is not
-part of the room, so the band gap a grown gap ends with is `rows × pitch + margins`. Nothing moves
-horizontally, nothing moves up, so lane x, the groups' order and every earlier reservation stand;
-the lane extents follow their bands.
+The gap's height is therefore a reservation like every other room in this ADR. The room a gap asks
+for is **what its seating lands in**: the last row the allocation seats, measured from the low
+boundary, plus the **headroom** the high boundary keeps — one router stem and the gate's clearance,
+which is what an approach standing on that boundary asks for. It is not `rows × pitch`: that is the
+packing of rows half a pitch inside each boundary with nothing in the way, and a gap with a lane
+never gets it, because every lane's reserved run stands on a boundary and reaches the gate's
+clearance into the gap. Measured on `goldens/synthetic/a-tier-gap-grows-to-its-rows.yaml`,
+`rows × pitch` gave 70 px and seated two of the four rows the gap owed; the room the seating lands
+in is 90.5 px and seats four.
+
+The seating a gap gets in its own room is the seating its own room allows, so the rule measures on a
+**probe** — a copy of the model with the band below each short gap moved down past anything its
+seating can ask for. The answer is then independent of the room the gap has now, which is what keeps
+the reservation monotone: a second pass over the reserved geometry measures the same need and grows
+nothing. Room is reserved only where the probe shows it buys the gap a seat.
+
+A gap the allocation **refuses** for a reason room cannot answer keeps its band gap. Two of the
+refusals are read from frozen placement — the rows have no clean order, and a port's own approach
+beyond a boundary is blocked — and a taller gap gives the same answer, so growing it would move
+every band below it for no route at all.
+
+A gap short of its room grows by the shortfall, and every band below it moves down by the running
+total. The margin the facing lane extents take (`10 + pathStroke / 2` on each side that has a lane)
+is not part of the room. Nothing moves horizontally, nothing moves up, so lane x, the groups' order
+and every earlier reservation stand; the lane extents follow their bands.
 
 **The rule runs in 7f, and that is a measured choice, not the obvious one.** The count separates a
 **column** — both ends on one x, no row needed — from a **row**, so it cannot be taken before 7a
@@ -201,11 +220,14 @@ measured). 7f is the last placement rule, so its count is the one stage 8 receiv
 before any group label is placed because the growth moves whole bands and a label placed first
 would stay behind.
 
-**What it does not settle.** 7f itself may move a group horizontally to fit a label band, and
-nothing re-reserves after that. The rule reserves `rows × pitch`, which is the room the rows need
-when they pack from the low boundary with nothing in the way; a row the seating has to push past a
-blocker can still fall outside the gap, so a grown gap seats *more* rows, not always all of them.
-Measured on the Enterprise NTP sheet, every one of its twelve gaps ends with the room its rows ask
-for, six gaps seat every row they owe or all but one or two, and three seat none — those decline
-for the sixth amendment's own reason, an approach beyond the boundary the gap cannot leave clear,
-which is not a question of room. That decline is stress ticket 06.
+**What it does not settle.** 7f itself does two things afterwards that the rule cannot see: it may
+move a group horizontally to fit a label band, which changes the count, and the group labels it
+places become obstacles in the tier gaps, which can make a gap refuse after it grew for its rows.
+Measured on the Enterprise NTP sheet, that second one costs one gap of twelve the allocation it
+grew for. Nothing re-reserves after 7f.
+
+Measured on the Enterprise NTP sheet with the rule in place: ten of its twelve gaps owe rows. Six
+hold the room their seating asks for and seat **every** row they owe. Three refuse for the sixth
+amendment's own reason — an approach beyond a boundary the gap cannot leave clear — and the tenth
+seats none although it refuses nothing, because no row can stand clear of frozen geometry anywhere
+in it. Neither is a question of room; both are stress ticket 06.

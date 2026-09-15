@@ -513,11 +513,28 @@ or immutable lane; local slots remain valid and the bundle bends instead.
 **A tier gap grows to the rows it must seat (ADR-0015 rule 1).** This is 7f's first act, before any
 label is placed. `bandGap` is one number for the whole diagram, chosen in stage 4 from the node
 clearance and the widest stroke. The room a tier gap needs is a property of that gap: the rows 7a's
-allocation must seat in it (`allocateGapRuns`), one pitch apart. A gap short of `rows × pitch` grows
-by exactly the shortfall, and every band below it moves down by the running total. Nothing moves
-horizontally, nothing moves up, so lane x, the groups' order and every reservation 7a–7e made are
-untouched; the lane extents follow their bands and the replay rebuilds every claim the movement
-touched. A gap whose rows already fit grows by nothing.
+allocation must seat in it (`allocateGapRuns`). A gap short of that room grows by exactly the
+shortfall, and every band below it moves down by the running total. Nothing moves horizontally,
+nothing moves up, so lane x, the groups' order and every reservation 7a–7e made are untouched; the
+lane extents follow their bands and the replay rebuilds every claim the movement touched. A gap
+whose rows already fit grows by nothing.
+
+The room a gap asks for is **what its seating lands in**, not `rows × pitch`. That formula is the
+packing of rows half a pitch inside each boundary with nothing in the way, and a gap with a lane
+never gets it: every lane's reserved run stands on a boundary and reaches `10 + (its stroke +
+widest routed stroke) / 2` into the gap, so the first row starts deeper than half a pitch and the
+last lands past where the formula puts it. The reservation is the last row the seating seats, plus
+the **headroom** the high boundary keeps — one router stem and the gate's clearance, which is what
+an approach standing on that boundary asks for.
+
+The seating a gap gets in its own room is the seating its own room allows, so the rule measures on
+a **probe**: a copy of the model with the band below each short gap moved down past anything its
+seating can ask for. The answer is then independent of the room the gap has, which is what keeps
+the reservation monotone — a second pass over the reserved geometry measures the same need and
+grows nothing. Room is reserved only where the probe shows it buys the gap a seat, and a gap the
+allocation **refuses** for a reason room cannot answer — the rows have no clean order, or a port's
+own approach beyond a boundary is blocked — is left alone, because a taller gap gives the same
+refusal.
 
 The height is a reservation, not a discovery: stage 8 receives a gap that already holds its rows.
 The allocation is the **consumer** of the grown gap and never its owner — it reads the room the gap
@@ -528,8 +545,10 @@ The count is taken here and not at 7a, where the gap's own bounds are fixed, bec
 a column: 7c aligns a child under its lane, 7d spans a bar across its ports, and 7e orders a
 bundle's ports. Measured: the M1 golden's one populated tier gap owes four rows after 7a and none
 after 7d, so a count taken at 7a would grow a gap the finished diagram does not need. 7f is the last
-placement rule, so its count is the one stage 8 receives. What 7f itself then moves horizontally for
-a label band can still change the count, and nothing re-reserves after that.
+placement rule, so its count is the one stage 8 receives. Two things 7f itself does afterwards the
+rule cannot see: it may move a group horizontally for a label band, which changes the count, and the
+group labels it places become obstacles in the tier gaps, which can make a gap refuse after it grew.
+Nothing re-reserves after that.
 
 For every group: band height = label height + 8, inside the padding of the **title edge**: the
 horizontal edge with fewer incident routed link ports, so a group fed from above carries its title
