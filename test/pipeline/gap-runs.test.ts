@@ -6,7 +6,8 @@ import type { Rect } from '../../src/model/geometry.js';
 import type { LayoutModel, PathSegment } from '../../src/model/layout.js';
 import { ownedLanes } from '../../src/route/paths.js';
 import { MEMBER_GAP } from '../../src/layout/bundle-geometry.js';
-import { routedStroke } from '../../src/layout/bands.js';
+import { produceGroupLabelBands, routedStroke } from '../../src/layout/bands.js';
+import { GROUP_EDGE_LINK_CLEARANCE } from '../../src/theme/geometry.js';
 import { horizontal, segmentRect, vertical } from '../../src/score/geometry.js';
 import { placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -16,6 +17,10 @@ const read = (name: string): string =>
 
 const place = async (fixture: string): Promise<LayoutModel> =>
   bands(bundles(bars(centre(flanks(lanes(rows(await placed(fixture))))))));
+
+/** The model 7f receives: every placement rule before it, and no group label yet. */
+const beforeBands = async (fixture: string): Promise<LayoutModel> =>
+  bundles(bars(centre(flanks(lanes(rows(await placed(fixture)))))));
 
 /**
  * Stress-test reproducers (`.scratch/stress/issues/04`). ADR-0015 rule 1 allocates the runs that
@@ -143,4 +148,61 @@ it('grows a tier gap to the rows it must seat', async () => {
 
   const routed = linkLabels(await route(model, { createAttempt: createAvoidAttempt }));
   expect(Number.isFinite(score(routed).snapshot.Q)).toBe(true);
+}, 120000);
+
+it('steps a row past a group edge instead of ending the search', async () => {
+  // Stress ticket 06. One tier gap owes a single row, and the first position the pitch allows for
+  // it runs along the top group's edge. `seat` advanced past a blocker rectangle but not past that
+  // refusal, so the gap allocated nothing and the diagram did not publish.
+  const model = await place(read('a-row-steps-past-a-group-edge.yaml'));
+  const room = tierGapRoom(model).find(entry => entry.rows > 0)!;
+  expect([room.rows, room.seated]).toEqual([1, 1]);
+
+  const seats = allocateGapRuns(model)
+    .flatMap(run => run.segments.filter(horizontal).map(segment => segment.from.y))
+    .filter(y => y > room.low && y < room.high);
+  expect(seats.length).toBe(1);
+  // The rows pack half a pitch inside the low boundary. That position is refused here, so the row
+  // stands at the next one the pitch allows.
+  const row = seats[0]!;
+  expect(row).toBeCloseTo(room.low + room.pitch / 2 + room.pitch, 9);
+
+  // And it stands clear of the link-free margin every group edge keeps (ADR-0013).
+  const margin = GROUP_EDGE_LINK_CLEARANCE + routedStroke(model) / 2;
+  for (const group of Object.values(model.groups)) {
+    if (!group.bounds || !group.nodes.length) continue;
+    for (const edge of [group.bounds.y, group.bounds.y + group.bounds.height]) {
+      expect(Math.abs(row - edge)).toBeGreaterThanOrEqual(margin - 1e-9);
+    }
+  }
+
+  const published = linkLabels(await route(model, { createAttempt: createAvoidAttempt }));
+  expect(Number.isFinite(score(published).snapshot.Q)).toBe(true);
+}, 120000);
+
+it('carries a group label with the band the gap room moves', async () => {
+  // Stress ticket 06. 7f places its group labels, measures the gaps, and places them again: a group
+  // label is an obstacle in the tier gap beside it, so a gap measured before them grows for rows
+  // they then refuse. The measurement therefore moves each group's label band and label with it.
+  // A published model is frozen; 7f's own producers run on the transaction's draft.
+  const model = structuredClone(await beforeBands(read('a-tier-gap-grows-to-its-rows.yaml'))) as LayoutModel;
+  produceGroupLabelBands(model);
+  expect(model.labels.filter(label => label.role === 'group').length).toBeGreaterThan(0);
+  expect(model.labelBands.length).toBeGreaterThan(0);
+
+  const groupY = new Map(Object.entries(model.groups).map(([id, group]) => [id, group.bounds!.y]));
+  const labelY = new Map(model.labels.filter(item => item.role === 'group').map(item => [item.id, item.bounds!.y]));
+  const bandY = new Map(model.labelBands.map(band => [band.group, band.bounds.y]));
+
+  expect(growTierGaps(model)).toBe(true);
+  const shift = (id: string): number => model.groups[id]!.bounds!.y - groupY.get(id)!;
+  expect(Object.keys(model.groups).filter(id => shift(id) > 1e-9).length).toBeGreaterThan(0);
+  // Each label and each band moved by exactly the shift of the group it belongs to.
+  for (const label of model.labels.filter(item => item.role === 'group')) {
+    const id = label.id.slice('label:group:'.length);
+    expect(label.bounds!.y - labelY.get(label.id)!).toBeCloseTo(shift(id), 9);
+  }
+  for (const band of model.labelBands) {
+    expect(band.bounds.y - bandY.get(band.group)!).toBeCloseTo(shift(band.group), 9);
+  }
 }, 120000);

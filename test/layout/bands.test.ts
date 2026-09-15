@@ -9,16 +9,21 @@ import { bundles } from '../../src/layout/bundles.js';
 import { centre } from '../../src/layout/centre.js';
 import { flanks } from '../../src/layout/flanks.js';
 import { laneSidesHold, lanes, transitTiers, validateLanes } from '../../src/layout/lanes.js';
-import { bandEntryConflicts, groupLabelObstacles, routerEntryPoints } from '../../src/layout/bands.js';
+import { bandEntryConflicts, GROUP_LABEL_GEOMETRY, groupLabelObstacles, produceGroupLabelBands, replanGroupLabels, routerEntryPoints } from '../../src/layout/bands.js';
+import { growTierGaps } from '../../src/layout/gap-room.js';
+import { rebuildRegionGeometry } from '../../src/layout/region-rebuild.js';
 import { restoreLayoutModel, withLayoutMutation } from '../../src/layout/mutation.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { rows } from '../../src/layout/rows.js';
 import { moveGroup, rebuildBands, union } from '../../src/layout/skeleton-geometry.js';
 import { score } from '../../src/score/index.js';
 import { FONT_FAMILY, measurePortPill, measureText } from '../../src/text/index.js';
+import { orderedGroupIds } from '../../src/model/model.js';
 import { placed } from './phase-two-fixture.js';
 
 const golden = readFileSync(new URL('../../goldens/m1-sip-edge.yaml', import.meta.url), 'utf8');
+/** Stress ticket 05's fixture: one tier gap owes four rows, so 7f's third step really runs. */
+const rowsOwed = readFileSync(new URL('../../goldens/synthetic/a-tier-gap-grows-to-its-rows.yaml', import.meta.url), 'utf8');
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const right = (box: Rect): number => box.x + box.width;
 const bottom = (box: Rect): number => box.y + box.height;
@@ -657,3 +662,78 @@ links: [[a.p, b.p], [b.q, a.p]]`;
     })).toThrow(/Lanes may expand only occupied intermediate tiers/);
   });
 });
+
+it('reserves a group label band once, however often 7f places its labels', async () => {
+  // Stress ticket 06. 7f places its group labels, measures the tier gaps and places them again.
+  // `reserveInitialSpace` measured the band against the ordinary padding instead of against the
+  // room the group already holds, so a repeated call reserved the whole band a second time: every
+  // node moved down by it and every box grew by it, without bound.
+  for (const source of [golden, enclosedByLanes]) {
+    const model = copy(await throughBundles(source));
+    const vertical = (): string => JSON.stringify([
+      Object.entries(model.groups).map(([id, group]) => [id, group.bounds!.y, group.bounds!.height]),
+      Object.entries(model.nodes).map(([id, node]) => [id, node.bounds!.y, node.ports.map(port => port.anchor!.y)]),
+      model.labelBands.map(band => [band.group, band.side, band.bounds.y, band.bounds.height, band.clearance]),
+    ]);
+    produceGroupLabelBands(model);
+    const once = vertical();
+    produceGroupLabelBands(model);
+    expect(vertical()).toEqual(once);
+    produceGroupLabelBands(model);
+    expect(vertical()).toEqual(once);
+  }
+}, 120000);
+
+it('plans a group label again where the tier gap room moved its band, and reserves nothing', async () => {
+  // The third step of 7f plans and does not reserve: the measurement that grew the gaps was taken
+  // against the reservation the first step made, so nothing it moved may move again. A model that
+  // owes no row never reaches the step, so this one owes four (stress ticket 05's fixture).
+  const model = copy(await throughBundles(rowsOwed));
+  produceGroupLabelBands(model);
+  const bandY = new Map(model.labelBands.map(band => [band.group, band.bounds.y]));
+  const labelY = new Map(model.labels.filter(label => label.role === 'group').map(label => [label.id, label.bounds!.y]));
+
+  expect(growTierGaps(model)).toBe(true);
+  // Exactly what 7f does between the two. The replay may move a group horizontally; this fixture's
+  // does not, so the move is made here as well — a carried label keeps the x of the box it left.
+  rebuildRegionGeometry(model, undefined, undefined, true);
+  const shifted = model.groups[orderedGroupIds(model.document)[0]!]!;
+  moveGroup(model, shifted, 40, 0);
+  rebuildNodeGeometry(model, shifted.nodes, 'current');
+  const carried = new Map(model.labels.filter(label => label.role === 'group').map(label => [label.id, { ...label.bounds! }]));
+  replanGroupLabels(model);
+
+  // At least one band really moved, or the step would be trivially satisfied.
+  expect(model.labelBands.some(band => Math.abs(band.bounds.y - bandY.get(band.group)!) > 1e-6)).toBe(true);
+  const labels = model.labels.filter(label => label.role === 'group');
+  expect(labels.length).toBe(model.labelBands.length);
+  expect(labels.some(label => Math.abs(label.bounds!.y - labelY.get(label.id)!) > 1e-6)).toBe(true);
+  // Every label sits its own inset inside the band the move left it in, and inside its group's box.
+  for (const label of labels) {
+    const group = label.id.slice('label:group:'.length);
+    const band = model.labelBands.find(item => item.group === group)!;
+    expect(label.bounds!.y).toBeCloseTo(band.bounds.y + GROUP_LABEL_GEOMETRY.verticalInset, 9);
+    expect(label.bounds!.x).toBeGreaterThanOrEqual(model.groups[group]!.bounds!.x + GROUP_LABEL_GEOMETRY.horizontalInset - 1e-6);
+    expect(right(label.bounds!)).toBeLessThanOrEqual(right(model.groups[group]!.bounds!) - GROUP_LABEL_GEOMETRY.horizontalInset + 1e-6);
+  }
+
+  // The label of the moved group was left behind by the move and is planned again inside its box;
+  // every other label is where it was, because the replan reserves nothing and moves nothing else.
+  const movedLabel = `label:group:${shifted.id}`;
+  expect(model.labels.find(label => label.id === movedLabel)!.bounds!.x)
+    .not.toBeCloseTo(carried.get(movedLabel)!.x, 9);
+  for (const label of labels) {
+    if (label.id === movedLabel) continue;
+    expect(label.bounds!.x).toBeCloseTo(carried.get(label.id)!.x, 9);
+  }
+
+  // And the step is a fixed point: a second one reserves nothing and moves nothing.
+  const shape = (): string => JSON.stringify([
+    Object.entries(model.groups).map(([id, group]) => [id, group.bounds]),
+    Object.entries(model.nodes).map(([id, node]) => [id, node.bounds, node.ports.map(port => port.anchor)]),
+    model.labelBands, model.labels.filter(label => label.role === 'group'),
+  ]);
+  const settled = shape();
+  replanGroupLabels(model);
+  expect(shape()).toEqual(settled);
+}, 120000);

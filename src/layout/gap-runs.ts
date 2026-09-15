@@ -541,13 +541,26 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
       while (row <= limit + EPS) {
         const blocked = runSegments(item, gap, row).map(line => firstBlock(full, item.link, line, attached))
           .filter((found): found is Blocker => found !== undefined);
-        if (!blocked.length) { seated = true; break; }
-        const past = Math.max(...blocked.map(found => bottom(found.bounds)));
-        if (past <= row + EPS) break;
-        row = past;
+        if (blocked.length) {
+          // A rectangle names how far to advance: the row cannot stand in it, and the first row
+          // that clears it is the one past its bottom.
+          const past = Math.max(...blocked.map(found => bottom(found.bounds)));
+          if (past <= row + EPS) break;
+          row = past;
+          continue;
+        }
+        if (clear(item, row, full)) { seated = true; break; }
+        // Every other refusal names only "not here": a group edge the row would run along, a
+        // corridor the link owns, a reserved run of its own. None of them names a distance, so the
+        // search takes the next position the pitch allows and keeps the packing rule. A group edge
+        // costs at most two pitches, because the margin it keeps is under one and over half of one
+        // (ADR-0015, ninth amendment). The other two do not move with the row at all where the
+        // run's ends decide them, so the walk to the limit is what ends it — at most `room / pitch`
+        // turns, and not a search that can succeed on a later one.
+        row += pitch;
       }
       // A run the gap cannot seat keeps the route it has today and crosses the rows it did seat.
-      if (!seated || row > limit + EPS || !clear(item, row, full)) continue;
+      if (!seated) continue;
       at.set(item, row);
       next = row + pitch;
     }
