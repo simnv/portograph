@@ -278,17 +278,23 @@ current intermediate band with `10 + pathStroke / 2` padding before placement fr
 
 **The runs between the lanes are allocated too (ADR-0015 rule 1).** A **tier gap** is the open band
 between two adjacent tier bands, bounded by the lane extents that face it. Every run that crosses
-one — a jog from one lane to the next, a lane's approach to a port beyond the gap — is allocated
-before the first ownership batch runs, by the same rule that owns the lanes and from the same frozen
-placement. A run whose two ends share one x takes that **column**; a run whose ends differ takes a
-**row**, a horizontal line inside the gap with a vertical stub at each end. Rows pack from the low
-boundary: each takes the first row clear of frozen geometry at or beyond one pitch
-(`16 px + widest routed stroke`) past the one before it, half a pitch inside each boundary. Where
-two runs stand on one x — a lane under a lane of the same x in the band above, or a port over a
-lane's mouth — the one leaving the low boundary turns first, or their stubs would share length; two
-runs standing on one x from one boundary have no clean order and are not allocated. A gap allocates
-nothing when no run in it needs a row, so a diagram whose transit links all descend on one x is
-untouched.
+one is allocated before the first ownership batch runs. The rule that owns the lanes owns this too,
+and reads the same frozen placement.
+
+A run whose two ends share one x takes that **column**, straight across the gap. A run whose ends
+differ takes a **row**: a horizontal line inside the gap, with a vertical stub down to it from each
+end that stands on a boundary. Where the far end is a port beyond the gap, the row reaches that
+port's x and stops there; the piece from the row out to the port stays routed, and the allocation is
+made only where that piece is clear.
+
+Rows pack from the low boundary. Each takes the first row clear of frozen geometry at or beyond one
+pitch (`16 px + widest routed stroke`) past the one before it, half a pitch inside each boundary.
+Two runs that stand on one x — a lane under a lane of the same x in the band above, or a port over a
+lane's mouth — would share length there. The one that leaves the low boundary turns first; two such
+runs from one boundary have no clean order, and the gap allocates neither. A run the gap leaves out
+still leaves its own corridor head-on for one router stem, and the rows keep clear of that stem. A
+gap allocates nothing when no run in it needs a row, so a diagram whose transit links all descend on
+one x is untouched.
 
 Two allocated runs of one gap may **cross**. Neither is routed, so the crossing is reserved rather
 than discovered and neither needs an exemption from the other. A run a gap cannot seat, and a link

@@ -121,13 +121,14 @@ allocated:
 
 - a **column** where the run's two ends share one x — the straight segment across the gap;
 - a **row** where they do not — a horizontal line in the gap with a vertical stub at each end;
-- a **tail** where the far end is a port beyond the gap — the run is reserved to the gap boundary at
-  the port's x and the router fills the rest.
+- a **tail** where the far end is a port beyond the gap — the row reaches that port's x and stops;
+  the piece out to the port stays routed, and the allocation is made only where it is clear.
 
 Rows pack from the low boundary, one pitch (`16 px + widest routed stroke`) apart, each at the first
 row clear of frozen placement geometry. The order is forced wherever two runs stand on one x: the
-one leaving the low boundary turns first, or their stubs share length. A gap where no run needs a
-row allocates nothing.
+one leaving the low boundary turns first, or their stubs share length. A run the gap leaves out
+still owes its own head-on approach of one router stem, and the rows keep clear of it. A gap where
+no run needs a row allocates nothing.
 
 **Two allocated runs of one gap may cross, and the crossing is reserved.** Neither run is routed, so
 neither needs an exemption from the other's obstacle. A run *along* a gap is a wall along it and
@@ -147,3 +148,10 @@ the next ticket.
 
 The golden is unchanged: its four transit links descend on the x of their own lanes, so no run in
 either of its tier gaps needs a row.
+
+**Consequence measured, for the maintainer.** A reserved row crosses whatever descends through its
+tier gap, where an unreserved route could detour around. On
+`goldens/synthetic/own-lane-is-an-obstacle.yaml` that trade is: crossings 0 → 3, bends 12 → 6,
+continuity 0.33 → 1, G6 two violations → every gate passing, and Q 0.6046 → 0.5122. Every row that
+gap can seat meets the same two descents, so the score cannot be recovered without giving up the
+reservation. Recorded under decision Q32 as a metric regression a note waives.
