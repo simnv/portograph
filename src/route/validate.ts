@@ -8,6 +8,7 @@ import { groupConsumers } from '../score/model.js';
 import { EPS, horizontal, length, samePoint, segmentRect, vertical } from '../score/geometry.js';
 import { outward } from '../score/model.js';
 import { effectiveLayer, reversedRuns } from './plan.js';
+import { overlayBlockers, overlayPath, type OverlayBlockers } from '../layout/overlay-paths.js';
 import { ownedLanes, stubCandidate } from './paths.js';
 
 /** Minimum port stem, the same number G5 enforces on final geometry. */
@@ -154,6 +155,8 @@ export function retraces(id: string, segments: PathSegment[]): void {
  * reservations the public gates do not cover.
  */
 export function validateRoutedPaths(model: LayoutModel, requireComplete = false): void {
+  // Built on the first overlay link and shared by the rest; a diagram with none pays nothing.
+  let blockers: OverlayBlockers | undefined;
   for (const link of model.links) {
     if (!drawn(link)) {
       if (link.path) throw new Error(`Link ${link.id} must not carry a path`);
@@ -185,11 +188,18 @@ export function validateRoutedPaths(model: LayoutModel, requireComplete = false)
       throw new Error(`Path width on ${link.id} contradicts its resolved link width`);
     }
     if (effectiveLayer(link) !== 'routed') {
-      // An overlay link is drawn straight between its anchors on its own layer, never routed.
-      if (path.segments.length !== 1) throw new Error(`Overlay path on ${link.id} is not a single straight segment`);
-      const only = path.segments[0]!;
-      if (only.owner.kind !== 'link' || only.owner.id !== link.id) throw new Error(`Overlay segment on ${link.id} claims foreign ownership`);
-      if (only.lane !== undefined || only.barCross !== undefined) throw new Error(`Overlay segment on ${link.id} claims reserved geometry`);
+      // An overlay link is never routed: its path is derived from the boxes placement reserved, so
+      // the one deterministic producer is re-run and the published geometry has to be exactly it.
+      // Ownership, the absence of a lane or `barCross` claim, and the orthogonal shape all follow
+      // from the comparison, and a hand-written layout JSON cannot state a line of its own.
+      blockers ??= overlayBlockers(model);
+      if (!equal(path.segments, overlayPath(model, link, blockers).segments)) {
+        throw new Error(`Overlay path on ${link.id} is not the one its ports and their boxes state`);
+      }
+      // The same rule every other path answers to: a route that walks back along a run it already
+      // drew is not a route. The comparison above already fixes the geometry, so this is the second
+      // reader of it — it fails the producer, not the model, if the rule ever states such a route.
+      retraces(link.id, path.segments);
       continue;
     }
     // A rule's own path is re-derived and compared by that rule; stage 8 owns every other one, and

@@ -1,7 +1,8 @@
 # Expected: An overlay link whose two pills face different ways. `drawio-constructs.yaml` has both
 # overlay ends on a top side, which is the three-segment detour; here one end leaves a left side and
-# the other a top side, which is the L-shaped branch of the draw.io exporter's overlay route. Every
-# gate passes.
+# the other a top side, which is the L-shaped branch of the overlay route: the turn the source pill
+# faces would cross Reflector C's body, so the other one wins. Every gate passes; Q is
+# 0.8382821220986563.
 # Test-only input owned by drawio-export ticket 02; the whole pipeline runs, so no stage
 # precondition is needed.
 portograph: 2

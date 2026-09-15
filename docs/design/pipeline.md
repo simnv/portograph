@@ -587,7 +587,8 @@ stroke-aware rectangles with identical ownership collapse to one entry.
 **A described link is long enough for its description (ADR-0014).** Before labels are planned,
 every authored link label (bars and unsuppressed overlay links included; bundle members excluded) is
 measured and its link's run — symmetric about the anchor midpoint, out to the nearer pill face or
-node edge — is made at least the label width plus both 8 px shortening margins: a link between tiers
+node edge — is made at least the label width plus both 8 px shortening margins, plus
+`2 × OVERLAY_PILL_CLEARANCE` for an overlay link, whose run begins one clearance beyond each face: a link between tiers
 moves every lower tier down by the deficit; a link between two ends of one tier inserts the room at
 the gap: every group in every tier at or beyond the split between the two pill faces moves right,
 and a group straddling the split shifts only the nodes beyond it — in the link's own tier those that
@@ -773,8 +774,16 @@ structurally — complete anchored path, orthogonal and connected, exact reserve
 stems of at least the reserved reach, link ownership of every routed gap, and no entry into a
 reservation the link does not own — because route geometry cannot be re-derived without the router.
 
-`overlay` links: one straight segment between the port anchors on the overlay layer, never routed
-and never sent to the worker. Stub candidates: after routing, a link whose route passes through
+`overlay` links: never routed and never sent to the worker. Their path is the one
+`src/layout/overlay-paths.ts` derives from the boxes placement reserved, and stage 8 only publishes
+it: from each port anchor outward past that port's own outward face — the pill's, or the node's when
+the port draws none — by `OVERLAY_PILL_CLEARANCE` (2 × the endpoint mark's radius), then the shortest
+of eight ways read off the two end boxes that enters no node body and no pill, and no candidate that
+walks back the way it came. Ties go to the single turn that carries on the way the source faces. Two
+ports facing each other on a clear axis collapse to one straight segment. When every way is blocked
+the shortest that clears the link's own two end boxes is taken, and when an end states no side the
+straight anchor-to-anchor segment is kept; the renderer's mask carries both. `route/validate`
+re-derives the path, compares it and reads `retraces` over it. Stub candidates: after routing, a link whose route passes through
 more than two intermediate tier bands (measured by their vertical extent, since a reserved lane
 sits in the margin beside its tier) or whose arc length exceeds 3× the direct anchor distance is
 marked `stubCandidate` and warned about; M1 keeps the technique and the full routed path.
@@ -826,6 +835,15 @@ collides is dropped to a tooltip and reported (`labelsOmitted`). Overlay-layer l
 suppressed when overlay density (overlay links per node, over `max(1, nodes)`) exceeds the
 profile's threshold (default 3). A suppressed label leaves no record at all, so it is not an
 omission.
+
+**A drawn overlay run is an obstacle for a label.** G3 measures a label against routed geometry
+only, and the renderer masks the overlay layer out of every drawn label, so a label over an overlay
+stays readable — but the mask cuts the *overlay* under it, and an overlay path goes round the shapes
+it crosses precisely so that the line stays whole. The label is the thing that can move, and the path
+cannot dodge it in return: a link label's box is measured here, after stage 8 built the path. Where
+the whole ladder is covered the ladder runs once more with overlay runs ignored, because a label that
+is drawn beats a line that is whole; the mask then carries the crossing, as it always did. Node
+bodies, pills and labels on the overlay *layer* stay out of the set: they are not drawn.
 
 The transaction owns the whole production, as 7f owns group labels: a callback may not author a
 label. It adds labels, their diagnostics and canvas extent only — placement, every path, every

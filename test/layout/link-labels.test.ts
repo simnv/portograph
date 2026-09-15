@@ -2,7 +2,7 @@ import { APPROVED_Q } from '../golden-baseline.js';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import * as api from '../../src/index.js';
-import type { GateId, LayoutLabel, LayoutModel, PathSegment, Rect } from '../../src/index.js';
+import type { GateId, LayoutLabel, LayoutModel, PathSegment, Rect, Side } from '../../src/index.js';
 import { bands } from '../../src/layout/bands.js';
 import { bars } from '../../src/layout/bars.js';
 import { bundles } from '../../src/layout/bundles.js';
@@ -120,6 +120,46 @@ describe('stage 9 golden', () => {
 });
 
 describe('stage 9 authored labels', () => {
+  /**
+   * Review finding 3. A drawn overlay run is an obstacle for a link label, so the label moves off it
+   * when it can; the ladder does not slide a label along its run, so when every candidate is covered
+   * the label is placed anyway and the renderer's mask cuts the overlay under it. Losing a label is
+   * a worse diagram than a cut in the line beneath it.
+   */
+  const overlaidLabel = (runs: { x: number; y: number }[][]): LayoutModel => {
+    const model = bench([{ id: 'a', bounds: { x: 0, y: 100, width: 40, height: 40 } },
+      { id: 'b', bounds: { x: 300, y: 100, width: 40, height: 40 } },
+      { id: 'p', bounds: { x: 0, y: 300, width: 40, height: 40 } },
+      { id: 'q', bounds: { x: 300, y: 300, width: 40, height: 40 } }],
+    [{ id: 'wire', from: 'a', to: 'b', sides: ['right', 'left'], label: 'peer',
+      points: [{ x: 40, y: 120 }, { x: 300, y: 120 }] },
+    ...runs.map((points, index) => ({ id: `flow-${index}`, from: 'p', to: 'q', sides: ['right', 'left'] as [Side, Side],
+      layer: 'overlay' as const, points }))]);
+    produceLinkLabels(model);
+    return model;
+  };
+
+  it('moves a link label off a drawn overlay run, and keeps it when every side is covered', () => {
+    const clear = linkLabelsOf(overlaidLabel([]))[0]!;
+    expect(clear.omitted).toBeUndefined();
+    // The ladder's first side for a horizontal run is above it.
+    expect(clear.bounds!.y).toBeLessThan(120);
+
+    // One overlay run laid across the first-side box: the label takes the other side, which is
+    // clear, and its own text is untouched.
+    const moved = linkLabelsOf(overlaidLabel([[{ x: 40, y: clear.bounds!.y + 1 }, { x: 300, y: clear.bounds!.y + 1 }]]))[0]!;
+    expect(moved.omitted).toBeUndefined();
+    expect(moved.text).toBe('peer');
+    expect(moved.bounds!.y).toBeGreaterThan(120);
+
+    // Both sides covered: the label is still drawn, on the first side, and the mask cuts the run.
+    const both = linkLabelsOf(overlaidLabel([
+      [{ x: 40, y: clear.bounds!.y + 1 }, { x: 300, y: clear.bounds!.y + 1 }],
+      [{ x: 40, y: 131 }, { x: 300, y: 131 }]]))[0]!;
+    expect(both.omitted).toBeUndefined();
+    expect(both.bounds).toEqual(clear.bounds);
+  });
+
   it('does not prune a stroke collision when a large negative bound loses its padding to rounding', () => {
     const right = -(2 ** 51), middle = right + 2.5, left = middle - 180, end = middle + 180;
     const model = bench([
