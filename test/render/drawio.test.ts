@@ -134,13 +134,13 @@ describe('draw.io export', () => {
       const outward = { top: [0.5, 0], bottom: [0.5, 1], left: [0, 0.5], right: [1, 0.5] }[port.side!]!;
       // Both fractions must be present or draw.io drops the constraint entirely, and
       // `exitPerimeter` defaults to 1, which would project the point onto the perimeter.
-      expect(Number(cell.style['exitX'])).toBe(outward[0]);
-      expect(Number(cell.style['exitY'])).toBe(outward[1]);
+      expect(Number(cell.style['exitX'])).toBe(outward[0]!);
+      expect(Number(cell.style['exitY'])).toBe(outward[1]!);
       expect(cell.style['exitPerimeter']).toBe('0');
       // That endpoint is the pill's outward edge, which is the anchor moved out by half the pill's
       // depth — so the waypoints are untouched and only the visible stub changes.
       const pill = port.pill!.bounds;
-      const at = { x: pill.x + outward[0] * pill.width, y: pill.y + outward[1] * pill.height };
+      const at = { x: pill.x + outward[0]! * pill.width, y: pill.y + outward[1]! * pill.height };
       const away = port.side === 'left' || port.side === 'right'
         ? Math.abs(at.x - port.anchor!.x) : Math.abs(at.y - port.anchor!.y);
       expect(away).toBeCloseTo(port.side === 'left' || port.side === 'right'
@@ -173,8 +173,8 @@ describe('draw.io export', () => {
     const order = [...all.keys()].filter(key => key.startsWith('pg-layer~'));
     // mxGraph paints in tree order, so layer declaration order is z-order. A container paints with
     // its children, so this stack is the only place the SVG renderer's z-order can be expressed.
-    expect(order).toEqual([id('layer', 'diagram'), id('layer', 'overlay'), id('layer', 'links'),
-      id('layer', 'labels'), id('layer', 'legend')]);
+    expect(order).toEqual([id('layer', 'canvas'), id('layer', 'diagram'), id('layer', 'overlay'),
+      id('layer', 'links'), id('layer', 'labels'), id('layer', 'legend')]);
     const overlay = model.links.find(link => link.technique === 'overlay' || link.layer === 'overlay')!;
     expect(layerOf(all, id('link', overlay.id))).toBe(id('layer', 'overlay'));
     const routed = model.links.find(link => link.path && link.technique !== 'stub' && link.id !== overlay.id)!;
@@ -272,7 +272,7 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
     const on = cells(drawio(model, { labels: 'on-run' })).get(id('linkLabel', label.id))!;
     const measured = cells(drawio(model, { labels: 'measured' })).get(id('linkLabel', label.id))!;
     expect(measured.style['labelBackgroundColor']).toBe('none');
-    expect(on.style['labelBackgroundColor']).toMatch(/^#[0-9a-f]{6}$/);
+    expect(on.style['labelBackgroundColor']).toMatch(/^(#[0-9a-f]{6}|light-dark\(#[0-9a-f]{6},#[0-9a-f]{6}\))$/);
     expect(on.offset).not.toEqual(measured.offset);
     // On-run is a projection onto a known segment, so it keeps its distance along the run and gives
     // up only its offset beside it: the moved label is no further from the line than it was.
@@ -293,6 +293,28 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
     expect(gap(moved)).toBeCloseTo(0, 9);
     expect(gap({ x: label.bounds!.x + label.bounds!.width / 2, y: label.bounds!.y + label.bounds!.height / 2 }))
       .toBeGreaterThan(1);
+  }, 60000);
+
+  it('carries both appearances in one file, because draw.io inverts a colour it is given alone', async () => {
+    const model = await pipeline(fixture('drawio-constructs'));
+    const auto = cells(drawio(model));
+    const light = cells(drawio(model, { theme: 'light' }));
+    const dark = cells(drawio(model, { theme: 'dark' }));
+    const key = id('node', 'a');
+    // The claim: `auto` states both palettes rather than one. draw.io does not leave an explicit
+    // colour alone in dark mode — it puts it through a lightness inversion — so a single-palette
+    // file is not faithful there. A `light-dark()` value short-circuits that, and both sides are
+    // exactly the values the profile holds.
+    const [, lightValue, darkValue] = /^light-dark\((#[0-9a-f]{6}),(#[0-9a-f]{6})\)$/
+      .exec(auto.get(key)!.style['fillColor']!)!;
+    expect(lightValue).toBe(light.get(key)!.style['fillColor']);
+    expect(darkValue).toBe(dark.get(key)!.style['fillColor']);
+    // A dash pattern is a string too; pairing it would be nonsense, so only colours are paired.
+    for (const cell of auto.values()) {
+      expect(cell.style['dashPattern'] ?? '').not.toContain('light-dark');
+    }
+    // Naming a mode pins the file to it, for a reader older than draw.io 26.0.0.
+    expect(light.get(key)!.style['fillColor']).not.toContain('light-dark');
   }, 60000);
 
   it('leaves the model untouched and gives the same bytes twice', async () => {

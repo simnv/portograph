@@ -56,8 +56,8 @@ export interface Command {
   layers?: Layer[];
   /** `render` only. Absent means SVG. */
   format?: Format;
-  /** `render` only, and only for a format that carries one palette. Absent means light. */
-  theme?: ThemeMode;
+  /** `render --format drawio` only. Absent means `auto`: every colour as a light/dark pair. */
+  theme?: ThemeMode | 'auto';
   /** `render --format drawio` only. Absent means `on-run`. */
   labels?: LabelPlacement;
 }
@@ -75,7 +75,7 @@ const OPTIONS: Record<string, OptionSpec> = {
   '--allow-gate-failures': { verbs: ['render', 'score'], value: false, summary: 'Report a failed gate but exit 0' },
   '--layers': { verbs: ['render'], value: true, summary: 'Draw only these link families: routed, overlay (comma separated)' },
   '--format': { verbs: ['render'], value: true, summary: 'Primary artifact format: svg (default) or drawio' },
-  '--theme': { verbs: ['render'], value: true, summary: 'Palette a single-palette format carries: light (default), dark or print' },
+  '--theme': { verbs: ['render'], value: true, summary: 'draw.io palette: auto (default, light and dark in one file), light, dark or print' },
   '--labels': { verbs: ['render'], value: true, summary: 'draw.io link labels: on-run (default) or measured, the box stage 9 placed' },
 };
 
@@ -127,7 +127,7 @@ const LAYERS: readonly Layer[] = ['routed', 'overlay'];
 /** The formats `render` can write. The SVG carries all three palettes; a draw.io file carries one. */
 export const FORMATS = ['svg', 'drawio'] as const;
 export type Format = (typeof FORMATS)[number];
-const THEMES: readonly ThemeMode[] = ['light', 'dark', 'print'];
+const THEMES: readonly (ThemeMode | 'auto')[] = ['auto', 'light', 'dark', 'print'];
 
 /** Where a draw.io link label sits; see `DrawioOptions.labels`. */
 export const LABEL_PLACEMENTS = ['on-run', 'measured'] as const;
@@ -143,9 +143,9 @@ function parseFormat(value: string): Format {
   return value as Format;
 }
 
-function parseTheme(value: string): ThemeMode {
-  if (!THEMES.includes(value as ThemeMode)) throw new UsageError(`--theme does not know '${value}'; use light, dark or print`);
-  return value as ThemeMode;
+function parseTheme(value: string): ThemeMode | 'auto' {
+  if (!THEMES.includes(value as ThemeMode)) throw new UsageError(`--theme does not know '${value}'; use auto, light, dark or print`);
+  return value as ThemeMode | 'auto';
 }
 
 function parseLayers(value: string): Layer[] {

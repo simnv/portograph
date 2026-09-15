@@ -73,6 +73,36 @@ function project(at: Point, segment: PathSegment): Point {
   return { x: segment.from.x + dx * ratio, y: segment.from.y + dy * ratio };
 }
 
+/** A colour draw.io will resolve, as opposed to a dash pattern or a keyword that merely looks alike. */
+const isColour = (value: string): boolean => /^#[0-9a-fA-F]{3,8}$/.test(value);
+
+/**
+ * Pair every colour of two same-shaped resolutions into one `light-dark(light, dark)` value.
+ *
+ * This is not a nicety. draw.io does **not** leave an explicit colour alone in dark mode: it puts
+ * it through `mxUtils.getInverseColor`, a lightness inversion that keeps the hue and moves
+ * everything else, so a generated palette comes out wrong rather than dark. A `light-dark()` value
+ * short-circuits that (`mxUtils.parseLightDarkColor`) and both sides are exact. Supported from
+ * draw.io 26.0.0 (December 2024).
+ *
+ * Only values that really are colours are paired. A dash pattern is a string too, and
+ * `dashPattern=light-dark(2 2,2 2)` would be nonsense; equal colours are left alone, as draw.io's
+ * own writer does.
+ */
+function adapt<T>(light: T, dark: T): T {
+  if (typeof light === 'string' && typeof dark === 'string') {
+    return (light === dark || !isColour(light) || !isColour(dark) ? light : `light-dark(${light},${dark})`) as T;
+  }
+  if (light !== null && typeof light === 'object' && dark !== null && typeof dark === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(light as object)) {
+      out[key] = adapt((light as Record<string, unknown>)[key], (dark as Record<string, unknown>)[key]);
+    }
+    return out as T;
+  }
+  return light;
+}
+
 /** A side's outward direction as a fraction of a box: the point a link leaves its port from. */
 const OUTWARD: Readonly<Record<Side, Point>> = {
   top: { x: 0.5, y: 0 }, bottom: { x: 0.5, y: 1 },
@@ -90,11 +120,12 @@ export interface DrawioOptions {
    */
   labels?: 'measured' | 'on-run';
   /**
-   * Which of the profile's three palettes to resolve. A draw.io file carries one set of colours —
-   * it has no equivalent of the SVG sheet's `prefers-color-scheme` override — so the mode is chosen
-   * at export rather than by the reader.
+   * Which palette the file carries. `auto`, the default, writes every colour as a
+   * `light-dark(light, dark)` pair and lets draw.io pick — one file that is exact in both
+   * appearances. Naming a mode pins the file to that one palette instead, which is what a reader
+   * older than draw.io 26.0.0 needs, and the only way to get `print`.
    */
-  theme?: ThemeMode;
+  theme?: ThemeMode | 'auto';
 }
 
 type StyleValue = string | number | undefined;
@@ -150,9 +181,13 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   validate(layout);
   const canvas = layout.canvas;
   if (!canvas) throw new Error('A draw.io export requires a final canvas');
-  const mode = options.theme ?? 'light';
+  const chosen = options.theme ?? 'auto';
+  const adaptive = chosen === 'auto';
+  const mode: ThemeMode = adaptive ? 'light' : chosen;
   const placement = options.labels ?? 'on-run';
-  const paint = NETWORK_THEME[mode];
+  /** One resolution of something the palette decides, adapted to both appearances when asked. */
+  const dual = <T,>(pick: (of: ThemeMode) => T): T => adaptive ? adapt(pick('light'), pick('dark')) : pick(mode);
+  const paint = dual(of => NETWORK_THEME[of]);
   const document = layout.document;
   const visible = (link: LayoutLink): boolean =>
     linkVisible(layout, link, options.layers ? { layers: options.layers } : {});
@@ -203,15 +238,15 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
 
   const nodeClassOf = (id: string): string | undefined => authorClass(document.nodes[id]?.class);
 
-  const pillPaint = (nodeClass: string | undefined, port: LayoutPort):
+  const pillPaintIn = (of: ThemeMode, nodeClass: string | undefined, port: LayoutPort):
   { fill: string; stroke: string; text: string; dash: string | undefined; opacity: number | undefined } => {
-    let result = { ...paint.pill, dash: undefined as string | undefined, opacity: undefined as number | undefined };
+    let result = { ...NETWORK_THEME[of].pill, dash: undefined as string | undefined, opacity: undefined as number | undefined };
     const known = nodeClassStyle(nodeClass);
-    if (known) result = { ...result, ...nodeClassPaint(known, mode).pill };
+    if (known) result = { ...result, ...nodeClassPaint(known, of).pill };
     for (const token of portTokens(port)) {
       const role = portRoleStyle(token);
       if (!role) continue;
-      const rolePaint = portRolePaint(role, mode);
+      const rolePaint = portRolePaint(role, of);
       result = rolePaint.stroke === undefined
         ? { ...result, fill: rolePaint.fill, text: rolePaint.text }
         : { ...result, fill: 'none', stroke: rolePaint.stroke };
@@ -221,14 +256,16 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       if (!status) continue;
       if (status.kind === 'fade') { result = { ...result, opacity: status.opacity }; continue; }
       result = {
-        ...result, stroke: status.stroke[mode],
-        dash: status.dash ? status.dash[mode] : result.dash,
-        fill: status.fill ? status.fill[mode] : result.fill,
-        text: status.text ? status.text[mode] : result.text,
+        ...result, stroke: status.stroke[of],
+        dash: status.dash ? status.dash[of] : result.dash,
+        fill: status.fill ? status.fill[of] : result.fill,
+        text: status.text ? status.text[of] : result.text,
       };
     }
     return result;
   };
+  const pillPaint = (nodeClass: string | undefined, port: LayoutPort): ReturnType<typeof pillPaintIn> =>
+    dual(of => pillPaintIn(of, nodeClass, port));
 
   /** A dash pattern the model states in absolute pixels; `fixDash` stops draw.io scaling it. */
   const dashEntries = (dash: string | undefined): Readonly<Record<string, StyleValue>> =>
@@ -245,11 +282,22 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   // same reasoning puts the overlay layer above the diagram: below it, an overlay stroke is all
   // but invisible. The SVG masks overlay strokes out of the boxes they would obscure; mxGraph has
   // no mask, so they are drawn over instead of under.
-  const LAYERS = ['diagram', 'overlay', 'links', 'labels', 'legend'] as const;
+  const LAYERS = ['canvas', 'diagram', 'overlay', 'links', 'labels', 'legend'] as const;
   const LAYER_NAMES: Readonly<Record<(typeof LAYERS)[number], string>> = {
-    overlay: 'Overlay', diagram: 'Diagram', links: 'Links', labels: 'Labels', legend: 'Legend',
+    canvas: 'Canvas', overlay: 'Overlay', diagram: 'Diagram', links: 'Links', labels: 'Labels', legend: 'Legend',
   };
   const layerId = (name: (typeof LAYERS)[number]): string => cellId('layer', name);
+
+  // The SVG paints the canvas as a rectangle rather than leaving it to the reader, and so does
+  // this. The page `background` is an *attribute*, and jgraph's schema pins that to a plain colour,
+  // so an attribute alone would leave the backdrop to draw.io's own inversion while every other
+  // colour in the file is exact — and a label's backdrop fill would then not match what is behind
+  // it. The rectangle is inert: it takes no pointer events and is locked, so it is backdrop rather
+  // than furniture.
+  vertex(cellId('canvas'), layerId('canvas'), styleString([], {
+    html: 1, fillColor: paint.background, strokeColor: 'none', points: '[]',
+    pointerEvents: 0, locked: 1, movable: 0, resizable: 0, deletable: 0, editable: 0, connectable: 0,
+  }), { x: 0, y: 0, width: canvas.width, height: canvas.height });
 
   // ---- groups and their nodes ---------------------------------------------------------------
   const groupTitle = (group: LayoutGroup): LayoutLabel | undefined =>
@@ -325,8 +373,11 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
 
     if (node.icon) {
       const tile = relative(shiftRect(node.icon.bounds), shift(node.bounds!));
-      const known = nodeClassStyle(authored);
-      const resolved = known ? nodeClassPaint(known, mode) : { tile: paint.tile, glyph: paint.glyph };
+      const pick = (of: ThemeMode): { tile: { fill: string; stroke: string }; glyph: string } => {
+        const known = nodeClassStyle(authored);
+        return known ? nodeClassPaint(known, of) : { tile: NETWORK_THEME[of].tile, glyph: NETWORK_THEME[of].glyph };
+      };
+      const resolved = dual(pick);
       vertex(cellId('iconTile', id), cellId('node', id), styleString([], {
         html: 1, rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
         fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
@@ -334,7 +385,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       // The glyphs are stroked 24-unit paths with no draw.io stencil equivalent, so each is carried
       // as its own image: exact, self-contained, and independent of any shape library being present.
       const glyph = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">`
-        + `<path d="${iconPath(node.icon.icon)}" fill="none" stroke="${resolved.glyph}"`
+        + `<path d="${iconPath(node.icon.icon)}" fill="none" stroke="${pick(mode).glyph}"`
         + ` stroke-width="${num(GLYPH_STROKE)}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
       vertex(cellId('icon', id), cellId('node', id), styleString([], {
         shape: 'image', html: 1, imageAspect: 0, points: '[]',
@@ -458,7 +509,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       // run, each dangling where the chain did. Only the ends that are really ends are pinned.
       const style = styleString([], {
         edgeStyle: 'none', rounded: 0, html: 1, endArrow: 'none', startArrow: 'none',
-        strokeColor: overlay ? paint.overlay.stroke : klass.strokes[mode],
+        strokeColor: dual(of => overlay ? NETWORK_THEME[of].overlay.stroke : klass.strokes[of]),
         strokeWidth: linkStrokeWidth(link),
         opacity: overlay ? Math.round(paint.overlay.opacity * 100) : undefined,
         ...dashEntries(overlay ? undefined : klass.dash),
@@ -531,7 +582,8 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const box = Object.values(layout.groups).find(group => group.bounds
         && at.x >= group.bounds.x - canvas.x && at.x <= group.bounds.x - canvas.x + group.bounds.width
         && at.y >= group.bounds.y - canvas.y && at.y <= group.bounds.y - canvas.y + group.bounds.height);
-      return box ? composite(paint.group.fill, paint.background, paint.group.fillOpacity) : paint.background;
+      return dual(of => box ? composite(NETWORK_THEME[of].group.fill, NETWORK_THEME[of].background, NETWORK_THEME[of].group.fillOpacity)
+        : NETWORK_THEME[of].background);
     };
     cells.push(element('mxCell', {
       id: claim(cellId('linkLabel', label.id)), value: htmlText(label.lines ?? [label.text]),
@@ -560,12 +612,12 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         const middle = swatch.y + swatch.height / 2;
         edgeCell(cellId('legendSwatch', entry.id), cellId('legend'), styleString([], {
           edgeStyle: 'none', rounded: 0, html: 1, endArrow: 'none', startArrow: 'none',
-          strokeColor: klass.strokes[mode], strokeWidth: entry.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path,
+          strokeColor: dual(of => klass.strokes[of]), strokeWidth: entry.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path,
           ...dashEntries(klass.dash),
         }), [], { sourcePoint: { x: swatch.x, y: middle }, targetPoint: { x: swatch.x + swatch.width, y: middle } });
       } else if (entry.kind === 'port') {
         const role = portRoleStyle(entry.key);
-        const resolved = role ? portRolePaint(role, mode) : undefined;
+        const resolved = role ? dual(of => portRolePaint(role, of)) : undefined;
         vertex(cellId('legendSwatch', entry.id), cellId('legend'), styleString([], {
           html: 1, rounded: 1, absoluteArcSize: 1,
           arcSize: (entry.radius ?? CORNER_RADII.pill) * 2,
@@ -574,14 +626,17 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           strokeWidth: DEFAULT_STROKE_WIDTHS.pill, points: '[]',
         }), swatch);
       } else if (entry.icon) {
-        const known = nodeClassStyle(entry.key);
-        const resolved = known ? nodeClassPaint(known, mode) : { tile: paint.tile, glyph: paint.glyph };
+        const pick = (of: ThemeMode): { tile: { fill: string; stroke: string }; glyph: string } => {
+          const known = nodeClassStyle(entry.key);
+          return known ? nodeClassPaint(known, of) : { tile: NETWORK_THEME[of].tile, glyph: NETWORK_THEME[of].glyph };
+        };
+        const resolved = dual(pick);
         vertex(cellId('legendTile', entry.id), cellId('legend'), styleString([], {
           html: 1, rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
           fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
         }), swatch);
         const glyph = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">`
-          + `<path d="${iconPath(entry.icon)}" fill="none" stroke="${resolved.glyph}"`
+          + `<path d="${iconPath(entry.icon)}" fill="none" stroke="${pick(mode).glyph}"`
           + ` stroke-width="${num(GLYPH_STROKE)}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
         vertex(cellId('legendSwatch', entry.id), cellId('legend'), styleString([], {
           shape: 'image', html: 1, imageAspect: 0, points: '[]', image: svgImage(glyph),
@@ -605,7 +660,11 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   const model = element('mxGraphModel', {
     dx: 0, dy: 0, grid: 0, gridSize: 10, guides: 1, tooltips: 1, connect: 1, arrows: 0, fold: 1,
     page: 1, pageScale: 1, pageWidth: Math.ceil(canvas.width), pageHeight: Math.ceil(canvas.height),
-    math: 0, shadow: 0, background: paint.background,
+    // The page background is an *attribute*, and jgraph's published schema pins it to a plain
+    // colour — `light-dark()` belongs in a style string, which is where every other colour here
+    // goes. So this one states the chosen palette's backdrop and lets draw.io's own inversion
+    // darken it, which for a flat backdrop is exactly what inversion is good at.
+    math: 0, shadow: 0, background: NETWORK_THEME[mode].background,
   }, element('root', {}, element('mxCell', { id: claim('0') }) + layers + cells.join('')));
   const title = document.title ?? 'portograph';
   return `<?xml version="1.0" encoding="UTF-8"?>\n`
