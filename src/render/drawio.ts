@@ -230,9 +230,23 @@ const NORMAL: Readonly<Record<Side, Point>> = {
 };
 
 /** Whether every segment of a polyline runs along one axis, which is all a square route may hold. */
-const axisAligned = (points: readonly Point[]): boolean =>
+const axisAligned = (points: readonly Point[], within = EPS): boolean =>
   points.slice(1).every((point, index) =>
-    Math.abs(point.x - points[index]!.x) <= EPS || Math.abs(point.y - points[index]!.y) <= EPS);
+    Math.abs(point.x - points[index]!.x) <= within || Math.abs(point.y - points[index]!.y) <= within);
+
+/**
+ * How far a **drawn** endpoint may sit off its segment's axis and still count as a square route.
+ *
+ * The waypoints are square or they are not, and that is tested exactly. The two ends are not
+ * waypoints: draw.io resolves them from the terminal cell's own box, and the export puts a pill's
+ * outward midpoint up to half a pixel off the model's stem axis — a defect with its own ticket,
+ * present under `edgeStyle=none` as well. Both styles draw that residue at the same size: the
+ * orthogonal router as a half-pixel jog, `edgeStyle=none` as a half-pixel diagonal, and the measured
+ * 0.51 px worst case is exactly it. Anything larger is a real corner, and there the router would
+ * invent a turn nothing reserved — so the link keeps `edgeStyle=none` and the line is drawn as
+ * stated. A port that draws no pill and terminates on its node's box is the case that needs this.
+ */
+const SQUARE_ENDPOINT_TOLERANCE = 1;
 
 /** The walked length of a polyline. */
 const polylineLength = (points: readonly Point[]): number =>
@@ -945,11 +959,13 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
    * endpoint mark. No box is grown, no route is searched, and no other shape is consulted, so the
    * pipeline's rule still holds — nothing is found here that placement did not reserve.
    *
-   * With both pills on the same side of their nodes this is the three-segment detour the maintainer
-   * drew. With the pills facing different ways there are two orthogonal paths that leave each head
-   * outward; the shorter of the two that enters neither pill box wins, and a tie goes to the one
-   * that carries on in the source's own outward direction. With neither usable the link keeps the
-   * model's own polyline.
+   * Six candidates are tried, all of them read off the two boxes. The first two turn once between
+   * the cleared points; the other four go right round the pair, along a lane one clearance outside
+   * the pair's own extent on each of the four sides. The shortest that enters neither pill box wins,
+   * and a tie goes to the one listed first — the single turn that carries on the way the source pill
+   * faces, which is the three-segment detour the maintainer drew when both pills face the same way.
+   * Two pills that overlap can leave nothing usable; then the link keeps the model's own polyline,
+   * which is what every release before this one drew.
    */
   const overlayPath = (head: PillEnd, tail: PillEnd): Point[] | undefined => {
     const clear = (end: PillEnd): Point => ({
@@ -957,14 +973,27 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       y: end.at.y + end.out.y * OVERLAY_PILL_CLEARANCE,
     });
     const from = clear(head), to = clear(tail);
-    // Each corner turns once between the two cleared points. The first listed keeps going the way
-    // the source pill faces, which is the detour a reader expects to see drawn.
-    const corners: Point[] = head.out.x !== 0
-      ? [{ x: to.x, y: from.y }, { x: from.x, y: to.y }]
-      : [{ x: from.x, y: to.y }, { x: to.x, y: from.y }];
+    const boxes = [head.box, tail.box];
+    const before = (of: (box: Rect) => number): number =>
+      Math.min(...boxes.map(of)) - OVERLAY_PILL_CLEARANCE;
+    const after = (of: (box: Rect) => number): number =>
+      Math.max(...boxes.map(of)) + OVERLAY_PILL_CLEARANCE;
+    const above = before(box => box.y), below = after(box => box.y + box.height);
+    const left = before(box => box.x), right = after(box => box.x + box.width);
+    const turn = { x: to.x, y: from.y }, bend = { x: from.x, y: to.y };
+    const ways: Point[][] = [
+      // One turn, starting the way the source pill faces.
+      ...(head.out.x !== 0 ? [[turn], [bend]] : [[bend], [turn]]),
+      // Right round the pair, on each of its four sides.
+      [{ x: from.x, y: above }, { x: to.x, y: above }],
+      [{ x: from.x, y: below }, { x: to.x, y: below }],
+      [{ x: left, y: from.y }, { x: left, y: to.y }],
+      [{ x: right, y: from.y }, { x: right, y: to.y }],
+    ];
     let best: { points: Point[]; length: number } | undefined;
-    for (const corner of corners) {
-      const points = compact([head.at, from, corner, to, tail.at]);
+    for (const way of ways) {
+      const points = compact([head.at, from, ...way, to, tail.at]);
+      if (!axisAligned(points)) continue;
       if (points.slice(1).some((point, index) =>
         enters(points[index]!, point, head.box) || enters(points[index]!, point, tail.box))) continue;
       const length = polylineLength(points);
@@ -993,12 +1022,41 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   /** Every connector a link became, with the polyline draw.io will really draw for each. */
   const edgeRuns = new Map<string, Connector[]>();
 
+  /** An overlay link's detour, with the run of it a label measured against the model now names. */
+  interface Detour { points: Point[]; carrier: { index: number; from: Point; to: Point } }
+
+  /**
+   * The overlay links that are routed round their pills, resolved once, before anything states a
+   * label. A label names a *model* segment, and a detoured connector no longer draws that segment,
+   * so the naming has to be carried over rather than reused: the detour's longest run is the one the
+   * model's straight pill-to-pill segment became, and it is the run the label was measured beside.
+   * Every other link draws its model polyline and is absent from here.
+   */
+  const detours = new Map<string, Detour>();
+  for (const link of drawn) {
+    if (effectiveLayer(link) !== 'overlay') continue;
+    const from = link.attachments?.from, to = link.attachments?.to;
+    const head = from ? pillEnd(from) : undefined, tail = to ? pillEnd(to) : undefined;
+    if (!head || !tail || polylines(link.path!.segments).length !== 1) continue;
+    const points = overlayPath(head, tail);
+    if (!points) continue;
+    let index = 0, longest = -1;
+    for (const [at, point] of points.slice(1).entries()) {
+      const span = Math.hypot(point.x - points[at]!.x, point.y - points[at]!.y);
+      if (span > longest) { longest = span; index = at; }
+    }
+    detours.set(link.id, { points, carrier: { index, from: points[index]!, to: points[index + 1]! } });
+  }
+
   /** Where a link label sits: on its supporting segment, or the box stage 9 measured. */
   const labelPoint = (label: LayoutLabel, link: LayoutLink): Point => {
-    const support = label.support?.kind === 'link-segment'
-      ? link.path!.segments[label.support.segment] : undefined;
     const measured = centre(shiftRect(label.bounds!));
-    if (placement !== 'on-run' || support === undefined) return measured;
+    if (placement !== 'on-run' || label.support?.kind !== 'link-segment') return measured;
+    // A detour is already in page space; the model's own segments are not.
+    const detour = detours.get(link.id);
+    if (detour) return project(measured, detour.carrier);
+    const support = link.path!.segments[label.support.segment];
+    if (support === undefined) return measured;
     return shift(project({ x: measured.x + canvas.x, y: measured.y + canvas.y }, support));
   };
 
@@ -1096,10 +1154,13 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   /**
    * The supporting segment's place in a run's own polyline, when that run really draws it. It is
    * the segment stage 9 measured the label against, and stating the label against it is what keeps
-   * the label on it when the diagram is edited.
+   * the label on it when the diagram is edited. A detoured overlay draws none of its model segments,
+   * so there the carrier the detour states takes the model segment's place.
    */
-  const supportIn = (label: LayoutLabel, run: Run): number | undefined => {
+  const supportIn = (label: LayoutLabel, link: LayoutLink, run: Run): number | undefined => {
     if (label.support?.kind !== 'link-segment') return undefined;
+    const detour = detours.get(link.id);
+    if (detour) return detour.carrier.index;
     const at = label.support.segment;
     return at >= run.first && at <= run.last ? at - run.first : undefined;
   };
@@ -1115,14 +1176,13 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     const head = from ? terminal('exit', from) : undefined;
     const tail = to ? terminal('entry', to) : undefined;
     // An overlay link is the one connector whose exported polyline is not the model's: it is routed
-    // around the two pills instead of along them. See `overlayPath`. Every other link exports the
-    // reserved waypoints verbatim, collinear ones included.
+    // around the two pills instead of along them. See `overlayPath` and `detours`. Every other link
+    // exports the reserved waypoints verbatim, collinear ones included.
     const headPill = overlay && from ? pillEnd(from) : undefined;
     const tailPill = overlay && to ? pillEnd(to) : undefined;
-    const detour = runs.length === 1 && headPill && tailPill
-      ? overlayPath(headPill, tailPill) : undefined;
+    const detour = detours.get(link.id);
     /** The polyline each connector really carries, run by run. */
-    const written = runs.map((run, index) => detour && index === 0 ? detour : run.points);
+    const written = runs.map((run, index) => detour && index === 0 ? detour.points : run.points);
     // What draw.io draws is not what the model holds: a pinned end sits on the pill's outward edge,
     // not on the port anchor the waypoints start from. An edge label's coordinates are fractions of
     // that drawn polyline, so it is resolved here — the waypoints themselves are untouched.
@@ -1144,7 +1204,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const id = shown[index]!.id;
       // The connector's own label, on the run that draws the segment it was measured against.
       const carried = mine && index === mineRun
-        ? { label: mine, at: edgeLabel(shown[index]!.points, labelPoint(mine, link), supportIn(mine, shown[index]!)) }
+        ? { label: mine, at: edgeLabel(shown[index]!.points, labelPoint(mine, link), supportIn(mine, link, shown[index]!)) }
         : undefined;
       if (carried) taken.add(carried.label.id);
       const points = written[index]!;
@@ -1153,7 +1213,12 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       // the supplied waypoints and does not re-route them, and `jettySize=0` keeps it from adding a
       // stub of its own; see fact 1 in the header for the numbers. A polyline that is not
       // axis-aligned is outside that router's vocabulary, so it keeps `edgeStyle=none`.
-      const square = axisAligned(points);
+      //
+      // Both polylines are tested, because they differ: the waypoints exactly, and the polyline
+      // draw.io really draws — the pinned terminals included — within the endpoint tolerance. A port
+      // that draws no pill terminates on its node's box, which can leave the drawn line diagonal
+      // while every waypoint is square, and that is a corner the router would invent.
+      const square = axisAligned(points) && axisAligned(shown[index]!.points, SQUARE_ENDPOINT_TOLERANCE);
       // A connector holds one polyline; a path whose segment chain breaks becomes one connector per
       // run, each dangling where the chain did. Only the ends that are really ends are pinned.
       const style = styleString([], {
@@ -1228,7 +1293,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     }
     const run = ids[runFor(label, link, ids)]!;
     const at = labelPoint(label, link);
-    const relativeAt = edgeLabel(run.points, at, supportIn(label, run));
+    const relativeAt = edgeLabel(run.points, at, supportIn(label, link, run));
     cells.push(element('mxCell', {
       id: claim(cellId('linkLabel', label.id)), value: htmlText(label.lines ?? [label.text]),
       style: styleString(['edgeLabel'], {
