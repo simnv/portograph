@@ -434,6 +434,16 @@ function blockers(model: LayoutModel): Blocker[] {
   return result;
 }
 
+/**
+ * The rectangles one tier gap can meet. The lines it measures reach past its own boundaries
+ * wherever a run ends at a port, so the band it filters by is the gap grown to those reaches.
+ */
+function nearBlockers(list: readonly Blocker[], gap: TierGap, items: readonly Participant[]): Blocker[] {
+  const reach = items.flatMap(item => item.reach ? [item.reach.y] : []);
+  const low = Math.min(gap.low, ...reach), high = Math.max(gap.high, ...reach);
+  return list.filter(item => item.bounds.y < high - EPS && bottom(item.bounds) > low + EPS);
+}
+
 /** The first rectangle in this run's way, or undefined when nothing stands in it. */
 function firstBlock(list: readonly Blocker[], link: LayoutLink, line: { from: Point; to: Point },
   attached: ReadonlySet<string>): Blocker | undefined {
@@ -579,24 +589,44 @@ export interface TierGapRoom {
   margins: number;
   /** The runs of this gap whose two ends do not share one x, so each needs a row of its own. */
   rows: number;
+  /** The rows the allocation seats in the room this gap has now. */
+  seated: number;
   /** The distance one row keeps from the next. */
   pitch: number;
-  /** The room those rows need: `rows × pitch`. */
+  /**
+   * The clear room the high boundary keeps beyond the last row: one router stem and the gate's
+   * clearance. That is what an approach standing on the boundary asks for, and it is the deepest
+   * any boundary geometry reaches into the gap.
+   */
+  headroom: number;
+  /**
+   * The room the seating lands in: the last row it seats, measured from the low boundary, plus the
+   * headroom. Zero where the gap seats nothing.
+   *
+   * It is **not** `rows × pitch`. That is the packing of rows half a pitch inside each boundary
+   * with nothing in the way, and a gap with a lane never gets it: every lane's reserved run stands
+   * on a boundary and reaches `10 + (stroke + widest routed stroke) / 2` into the gap, so the first
+   * row starts deeper and the last lands past where `rows × pitch` puts it.
+   */
   required: number;
 }
 
 /**
- * ADR-0015 rule 1, measured before the gap is allocated: the rows each tier gap must seat.
+ * ADR-0015 rule 1, measured before the gap's height is fixed: what each tier gap's seating needs.
  *
- * This is the demand, not the allocation. The lanes rule (7a) owns the tier gap — the lane extents
- * that bound it, the runs inside it, and its height — and calls this to grow a gap to the rows it
- * must seat. The allocation below is the consumer of the grown gap, never its owner: it reads the
- * room the gap has and seats what fits.
+ * This is the demand the **bands rule (7f)** reads to grow a gap to the rows it must seat
+ * (`gap-room.ts`). The allocation below is the consumer of the grown gap, never its owner: it reads
+ * the room the gap has and seats what fits in it.
  *
- * The count is taken after lane x is fixed, because that is what separates a **column** (both ends
- * on one x, no row needed) from a **row**. Before it, every crossing run would have to be counted
- * as a row, and a diagram whose transit links all descend on one x — the M1 golden — would grow a
- * gap it does not need.
+ * The demand is the seating itself, run against the room the gap has now. A gap whose high boundary
+ * is what stops the seating therefore under-reports, because the rows it could not reach are not in
+ * the answer — so the caller opens the gap on a probe first and measures there, where the boundary
+ * cannot bind.
+ *
+ * The row count is taken after lane x is fixed, because that is what separates a **column** (both
+ * ends on one x, no row needed) from a **row**. Before it, every crossing run would have to be
+ * counted as a row, and a diagram whose transit links all descend on one x — the M1 golden — would
+ * grow a gap it does not need.
  */
 export function tierGapRoom(model: LayoutModel): TierGapRoom[] {
   const bands = model.tierBands.filter(band => band.bounds).sort((a, b) => a.bounds!.y - b.bounds!.y);
@@ -604,11 +634,21 @@ export function tierGapRoom(model: LayoutModel): TierGapRoom[] {
   if (!gaps.length) return [];
   const users = gapUsers(model, gaps);
   const pitch = MEMBER_GAP + routedStroke(model);
+  const headroom = GROUP_LABEL_GEOMETRY.routerStem + GROUP_LABEL_GEOMETRY.nodeClearance + routedStroke(model);
+  const list = blockers(model);
   return gaps.map((gap, key) => {
     const above = bands.find(band => band.tier === gap.above)!.bounds!;
     const below = bands.find(band => band.tier === gap.below)!.bounds!;
-    const rows = (users.get(key)?.items ?? []).filter(needsRow).length;
-    return { ...gap, margins: below.y - bottom(above) - (gap.high - gap.low), rows, pitch, required: rows * pitch };
+    const entry = users.get(key)!;
+    const rows = entry.items.filter(needsRow).length;
+    const margins = below.y - bottom(above) - (gap.high - gap.low);
+    const nothing = { ...gap, margins, rows, seated: 0, pitch, headroom, required: 0 };
+    if (!rows) return nothing;
+    const runs = allocateGap(model, nearBlockers(list, gap, entry.items), gap, entry);
+    const seats = [...runs.values()].flatMap(segments =>
+      segments.filter(segment => same(segment.from.y, segment.to.y)).map(segment => segment.from.y));
+    if (!seats.length) return nothing;
+    return { ...nothing, seated: seats.length, required: Math.max(...seats) - gap.low + headroom };
   });
 }
 
@@ -627,11 +667,7 @@ export function allocateGapRuns(model: LayoutModel): GapRun[] {
     const { items, crossers } = entry;
     if (!items.length) continue;
     const gap = gaps[key]!;
-    // The lines this gap measures reach past its own boundaries wherever a run ends at a port.
-    const reach = items.flatMap(item => item.reach ? [item.reach.y] : []);
-    const low = Math.min(gap.low, ...reach), high = Math.max(gap.high, ...reach);
-    const near = list.filter(item => item.bounds.y < high - EPS && bottom(item.bounds) > low + EPS);
-    const allocated = allocateGap(model, near, gap, entry);
+    const allocated = allocateGap(model, nearBlockers(list, gap, items), gap, entry);
     if (!allocated.size) continue;
     // A run this gap could not seat keeps the route it has today, so it crosses the seated ones.
     for (const item of items) {
