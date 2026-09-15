@@ -7,6 +7,7 @@ import type { LayoutModel, PathSegment } from '../../src/model/layout.js';
 import { ownedLanes } from '../../src/route/paths.js';
 import { MEMBER_GAP } from '../../src/layout/bundle-geometry.js';
 import { routedStroke } from '../../src/layout/bands.js';
+import { GROUP_EDGE_LINK_CLEARANCE } from '../../src/theme/geometry.js';
 import { horizontal, segmentRect, vertical } from '../../src/score/geometry.js';
 import { placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -143,4 +144,34 @@ it('grows a tier gap to the rows it must seat', async () => {
 
   const routed = linkLabels(await route(model, { createAttempt: createAvoidAttempt }));
   expect(Number.isFinite(score(routed).snapshot.Q)).toBe(true);
+}, 120000);
+
+it('steps a row past a group edge instead of ending the search', async () => {
+  // Stress ticket 06. One tier gap owes a single row, and the first position the pitch allows for
+  // it runs along the top group's edge. `seat` advanced past a blocker rectangle but not past that
+  // refusal, so the gap allocated nothing and the diagram did not publish.
+  const model = await place(read('a-row-steps-past-a-group-edge.yaml'));
+  const room = tierGapRoom(model).find(entry => entry.rows > 0)!;
+  expect([room.rows, room.seated]).toEqual([1, 1]);
+
+  const seats = allocateGapRuns(model)
+    .flatMap(run => run.segments.filter(horizontal).map(segment => segment.from.y))
+    .filter(y => y > room.low && y < room.high);
+  expect(seats.length).toBe(1);
+  // The rows pack half a pitch inside the low boundary. That position is refused here, so the row
+  // stands at the next one the pitch allows.
+  const row = seats[0]!;
+  expect(row).toBeCloseTo(room.low + room.pitch / 2 + room.pitch, 9);
+
+  // And it stands clear of the link-free margin every group edge keeps (ADR-0013).
+  const margin = GROUP_EDGE_LINK_CLEARANCE + routedStroke(model) / 2;
+  for (const group of Object.values(model.groups)) {
+    if (!group.bounds || !group.nodes.length) continue;
+    for (const edge of [group.bounds.y, group.bounds.y + group.bounds.height]) {
+      expect(Math.abs(row - edge)).toBeGreaterThanOrEqual(margin - 1e-9);
+    }
+  }
+
+  const published = linkLabels(await route(model, { createAttempt: createAvoidAttempt }));
+  expect(Number.isFinite(score(published).snapshot.Q)).toBe(true);
 }, 120000);

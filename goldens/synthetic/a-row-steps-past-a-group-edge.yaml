@@ -1,0 +1,40 @@
+# Expected: one tier gap owes a single row, and the first position the pitch allows for it runs
+# along a group edge.
+#
+# The gap between the top band and the middle band is 69.25 px between the lane extents, and one
+# row needs 17.5 px, so room was never the question. The rows pack from the low boundary, so the
+# first position is half a pitch inside it, at y 129.75. The top group's box ends at y 121.00 and
+# keeps a link-free margin of 10.75 px (ADR-0013), so a row at 129.75 runs along that edge from
+# outside the box and G6 refuses it.
+#
+# The search used to stop there: it advanced past a blocker rectangle, by that rectangle's bottom,
+# and treated every other refusal as "this run is not seated". The gap then allocated nothing, the
+# run kept the route it had, an earlier batch took the corridor it needed and the diagram did not
+# publish: `Router skipped a required checkpoint on link-3#0`.
+#
+# A group edge names no distance, only "not here", so the search now takes the next position the
+# pitch allows. The row is seated at y 147.25, one pitch on and 26.25 px clear of the group edge,
+# and the diagram publishes.
+portograph: 2
+groups:
+  ga: { tier: 0, label: "Top A" }
+  gb: { tier: 0, label: "Top B" }
+  gc: { tier: 1, label: "Middle" }
+  gd: { tier: 2, label: "Foot A" }
+  ge: { tier: 2, label: "Foot B" }
+  gf: { tier: 2, label: "Foot C" }
+nodes:
+  n1: { group: gf, class: rr, label: "n1" }
+  n2: { group: gd, class: provider, label: "n2" }
+  n3: { group: ga, class: router, label: "n3" }
+  n4: { group: gc, class: tbr, label: "n4" }
+  n5: { group: gf, class: rr, label: "n5" }
+  n6: { group: ge, class: provider, label: "n6" }
+  n7: { group: gb, class: provider, label: "n7" }
+  n8: { group: gc, class: tbr, label: "n8" }
+  n9: { group: ga, class: provider, label: "n9" }
+links:
+  - [n7, n8]
+  - [n5, n3]
+  - [n5, n4]
+  - [n9, n8]
