@@ -1,0 +1,33 @@
+# Expected: An overlay link whose two pills face different ways. `drawio-constructs.yaml` has both
+# overlay ends on a top side, which is the three-segment detour; here one end leaves a left side and
+# the other a top side, which is the L-shaped branch of the draw.io exporter's overlay route. Every
+# gate passes.
+# Test-only input owned by drawio-export ticket 02; the whole pipeline runs, so no stage
+# precondition is needed.
+portograph: 2
+groups:
+  upper: { tier: 0, label: Upper }
+  lower: { tier: 1, label: Lower }
+nodes:
+  a:
+    group: upper
+    class: router
+    label: Router A
+    ports:
+      - { name: down, side: bottom, class: downlink up }
+  b:
+    group: lower
+    class: tbr
+    label: Border B
+    ports:
+      - { name: up, side: top, class: uplink up }
+      - { name: west, side: left, class: peer up }
+  c:
+    group: lower
+    class: rr
+    label: Reflector C
+    ports:
+      - { name: up, side: top, class: loopback }
+links:
+  - [a.down, b.up]
+  - [b.west, c.up, { route: overlay }]

@@ -128,6 +128,7 @@ is a standalone schema-v2 document. `stage-inputs.yaml` is separate test data.
 | [widened-child-packs-tier](synthetic/widened-child-packs-tier.yaml) | 7c, 8 | A widened child covers the group beside it; the tier is packed again, so no group obstacle contains an attachment shape. |
 | [drawio-constructs](synthetic/drawio-constructs.yaml) | 11 | Carry every construct the draw.io export must translate that the golden does not exercise together: a title band on each edge, a port role and status on one pill, a dotted and a dashed class, a labelled link, and an overlay link. |
 | [drawio-node-text](synthetic/drawio-node-text.yaml) | 11 | Carry a node's text in each shape the draw.io export must place: a name alone, a name with a description, and a description with no name. |
+| [drawio-overlay-sides](synthetic/drawio-overlay-sides.yaml) | 11 | An overlay link whose two pills face different ways, which the draw.io export routes round both pill boxes with one turn instead of the three-segment detour two pills on one side take. |
 | [detoured-stem-checkpoint](synthetic/detoured-stem-checkpoint.yaml) | 8 | Two crossing links in two ownership batches: the second detours round the first and still visits both reserved stem checkpoints. The diagram fails G6; it is produced. |
 
 The first 14 diagrams are ticket 00's approved counter-examples. `fitting-link-label` is the

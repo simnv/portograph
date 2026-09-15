@@ -10,7 +10,10 @@ import { flanks } from '../../src/layout/flanks.js';
 import { lanes } from '../../src/layout/lanes.js';
 import { linkLabels } from '../../src/layout/link-labels.js';
 import { rows } from '../../src/layout/rows.js';
+import { NETWORK_THEME, portRolePaint, portRoleStyle } from '../../src/profiles/network/theme.js';
 import { route } from '../../src/route/index.js';
+import { effectiveLayer } from '../../src/score/model.js';
+import { OVERLAY_ENDPOINT_RADIUS } from '../../src/theme/geometry.js';
 import { placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -114,10 +117,12 @@ describe('draw.io export', () => {
       if (link.technique === 'stub' || !link.path) continue;
       const cell = all.get(id('link', link.id));
       if (!cell) continue;
-      // The claim: the connector carries the reserved polyline verbatim. `edgeStyle=none` is the
-      // only setting that reproduces given waypoints — every registered style treats them as hints
-      // and re-routes — so this assertion and the one below it stand or fall together.
-      expect(cell.style['edgeStyle']).toBe('none');
+      // The claim: the connector carries the reserved polyline verbatim, under the orthogonal
+      // router that keeps it square when a shape is moved. An overlay link is the one exception —
+      // it is routed around its pills — and `maintainer edit principles` below covers it.
+      if (effectiveLayer(link) === 'overlay') continue;
+      expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
+      expect(cell.style['jettySize']).toBe('0');
       const interior = link.path.segments.slice(0, -1)
         .map(segment => ({ x: segment.to.x - canvas.x, y: segment.to.y - canvas.y }));
       expect(cell.points).toEqual(interior);
@@ -1121,6 +1126,288 @@ describe('connection grid, rotation and tiles', () => {
       expect(all.has(id('legendSwatch', entry.id))).toBe(false);
       expect(all.has(id('legendTile', entry.id))).toBe(false);
       for (const cell of all.values()) expect(box(cell).width).toBeGreaterThanOrEqual(0);
+    }
+  }, 60000);
+});
+
+describe('maintainer edit principles', () => {
+  /** Twice the endpoint mark's radius, which is the stand-off `overlayPath` keeps off a pill head. */
+  const CLEARANCE = 2 * OVERLAY_ENDPOINT_RADIUS;
+
+  /** One pill of an overlay end, in page space: the side it sits on and the box placement reserved. */
+  interface Pill { side: string; x: number; y: number; width: number; height: number }
+
+  /** The overlay link of a diagram with its connector cell, its two pills and the drawn polyline. */
+  async function overlayOf(yaml: string): Promise<{ cell: Cell; head: Pill; tail: Pill; path: Point[] }> {
+    const model = await pipeline(yaml);
+    const all = cells(drawio(model));
+    const origin = model.canvas!;
+    const link = model.links.find(item => effectiveLayer(item) === 'overlay' && item.path)!;
+    const pillOf = (ref: { node: string; name?: string; ordinal: number }): Pill => {
+      const port = model.nodes[ref.node]!.ports.find(item => item.ref.name === ref.name
+        && item.ref.ordinal === ref.ordinal)!;
+      const pill = port.pill!.bounds;
+      return { side: port.side!, x: pill.x - origin.x, y: pill.y - origin.y,
+        width: pill.width, height: pill.height };
+    };
+    const outward = (pill: Pill): Point => ({
+      x: pill.x + (pill.side === 'right' ? pill.width : pill.side === 'left' ? 0 : pill.width / 2),
+      y: pill.y + (pill.side === 'bottom' ? pill.height : pill.side === 'top' ? 0 : pill.height / 2),
+    });
+    const cell = all.get(id('link', link.id))!;
+    const head = pillOf(link.attachments!.from), tail = pillOf(link.attachments!.to);
+    return { cell, head, tail, path: [outward(head), ...cell.points, outward(tail)] };
+  }
+
+  /** A point one clearance outward of `at`, the way a pill on `side` faces. */
+  const out = (at: Point, side: string): Point => ({
+    x: at.x + (side === 'left' ? -CLEARANCE : side === 'right' ? CLEARANCE : 0),
+    y: at.y + (side === 'top' ? -CLEARANCE : side === 'bottom' ? CLEARANCE : 0),
+  });
+
+  /** Every segment of the drawn polyline runs on one axis and reaches inside neither pill. */
+  const square = (path: readonly Point[], pills: readonly Pill[]): void => {
+    for (const [index, point] of path.slice(1).entries()) {
+      const before = path[index]!;
+      expect(Math.abs(point.x - before.x) < 1e-6 || Math.abs(point.y - before.y) < 1e-6).toBe(true);
+      for (const pill of pills) {
+        expect(Math.max(before.x, point.x) > pill.x && Math.min(before.x, point.x) < pill.x + pill.width
+          && Math.max(before.y, point.y) > pill.y && Math.min(before.y, point.y) < pill.y + pill.height).toBe(false);
+      }
+    }
+  };
+
+  it('writes a square route as a square connector, waypoints and all', async () => {
+    // The maintainer's words: "if it's routed square, style should also be like that." Measured on
+    // drawio-desktop 31.4.5 over 61 link edges in four diagrams: `orthogonalEdgeStyle;jettySize=0`
+    // draws every one of them on the pipeline's route — 59 within 0.05 px, 2 within 0.51 px, which
+    // is an endpoint defect `edgeStyle=none` shares. Collinear midpoints stay: pruning them moves
+    // the crossover a hand drag produces out of the reserved stem band into mid-span.
+    const model = await pipeline(fixture('drawio-constructs'));
+    const all = cells(drawio(model));
+    const canvas = model.canvas!;
+    let square = 0;
+    for (const link of model.links) {
+      if (link.technique === 'stub' || !link.path || effectiveLayer(link) === 'overlay') continue;
+      const cell = all.get(id('link', link.id))!;
+      expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
+      expect(cell.style['jettySize']).toBe('0');
+      expect(cell.points).toEqual(link.path.segments.slice(0, -1)
+        .map(segment => ({ x: segment.to.x - canvas.x, y: segment.to.y - canvas.y })));
+      square += 1;
+    }
+    expect(square).toBeGreaterThan(0);
+  }, 60000);
+
+  it('keeps `edgeStyle=none` for a polyline the orthogonal router cannot hold', async () => {
+    // The guard. No diagram in the corpus routes a diagonal today, but the orthogonal router reads
+    // a waypoint one coordinate at a time, so a segment on neither axis would be re-routed rather
+    // than drawn. Such a link keeps the style that reproduces any polyline verbatim.
+    const model = await pipeline(fixture('drawio-constructs'));
+    const straight = model.links.find(link => link.path && link.technique !== 'stub'
+      && effectiveLayer(link) === 'routed')!;
+    const bent = structuredClone(model);
+    const path = bent.links.find(link => link.id === straight.id)!.path!;
+    // One midpoint pushed off both axes, which leaves the two segments around it diagonal.
+    const corner = path.segments[0]!;
+    const off = { x: corner.to.x + 7, y: corner.to.y + 3 };
+    path.segments = [{ ...corner, to: off }, { ...corner, from: off }, ...path.segments.slice(1)];
+    const cell = cells(drawio(bent)).get(id('link', straight.id))!;
+    expect(cell.style['edgeStyle']).toBe('none');
+    expect(cell.style['jettySize']).toBeUndefined();
+    // The waypoints are still the stated ones: the guard changes the style, never the geometry.
+    expect(cell.points[0]).toEqual({ x: off.x - model.canvas!.x, y: off.y - model.canvas!.y });
+  }, 60000);
+
+  it('reads the guard off the polyline draw.io draws, terminals included', async () => {
+    // Codex round 1: the guard read the waypoints alone. A port that draws no pill terminates on its
+    // node's box rather than on a pill head, and that moves an endpoint *across* the stem axis — so
+    // a link whose every waypoint is square can still be drawn as a diagonal, and the orthogonal
+    // router would answer it with a corner nothing reserved.
+    const model = await pipeline(fixture('drawio-constructs'));
+    const link = model.links.find(item => effectiveLayer(item) === 'overlay' && item.path)!;
+    const square = cells(drawio(model)).get(id('link', link.id))!;
+    expect(square.style['edgeStyle']).toBe('orthogonalEdgeStyle');
+    const bare = structuredClone(model);
+    const ref = link.attachments!.from;
+    delete bare.nodes[ref.node]!.ports.find(item => item.ref.name === ref.name
+      && item.ref.ordinal === ref.ordinal)!.pill;
+    const cell = cells(drawio(bare)).get(id('link', link.id))!;
+    // No pill to route round and no pill to end on: the model polyline is square, the drawn one is
+    // not, and the honest style is the one that draws the line exactly as stated.
+    expect(cell.points).toEqual([]);
+    expect(cell.style['edgeStyle']).toBe('none');
+    expect(cell.style['jettySize']).toBeUndefined();
+  }, 60000);
+
+  it('routes an overlay link around the pill heads instead of along them', async () => {
+    // The SVG masks an overlay stroke out of every pill it crosses; mxGraph has no mask. So the
+    // connector leaves each pill head outward by the clearance and crosses above them. Every number
+    // comes off the two pill boxes placement reserved — nothing is discovered here.
+    const { cell, head, tail, path } = await overlayOf(fixture('drawio-constructs'));
+    expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
+    expect(cell.style['jettySize']).toBe('0');
+    // Both pills sit on a top side here, so this is the three-segment detour the maintainer drew.
+    expect([head.side, tail.side]).toEqual(['top', 'top']);
+    const across = Math.min(head.y, tail.y) - CLEARANCE;
+    expect(cell.points).toEqual([
+      { x: head.x + head.width / 2, y: across },
+      { x: tail.x + tail.width / 2, y: across },
+    ]);
+    square(path, [head, tail]);
+  }, 60000);
+
+  it('turns once when the two overlay pills face different ways', async () => {
+    // The other branch: no single cross-run clears both heads, so the shortest orthogonal path that
+    // leaves each head outward and enters neither box wins. `drawio-overlay-sides` is that fixture.
+    const { cell, head, tail, path } = await overlayOf(fixture('drawio-overlay-sides'));
+    expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
+    expect(new Set([head.side, tail.side]).size).toBe(2);
+    // Out of each head by the clearance, then one turn between the two cleared points.
+    expect(path[1]).toEqual(out(path[0]!, head.side));
+    expect(path.length).toBe(5);
+    square(path, [head, tail]);
+  }, 60000);
+
+  it('goes right round the pair when no single turn clears both pills', async () => {
+    // Codex round 1: with both heads facing away from each other, neither single turn clears the
+    // source pill, and the fall-back was the model's own straight segment — which runs through it.
+    // Four more ways round the pair, one per side, answer the case; the shortest still wins.
+    const { cell, head, tail, path } = await overlayOf(`
+portograph: 2
+groups: {upper: {tier: 0}, lower: {tier: 1}}
+nodes:
+  a: {group: upper, ports: [{name: down, side: bottom}]}
+  b: {group: lower, ports: [{name: up, side: top}, {name: west, side: left}]}
+  c: {group: lower, ports: [{name: up, side: top}, {name: west, side: left}]}
+links:
+  - [a.down, b.up]
+  - [b.west, c.west, {route: overlay}]
+`);
+    expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
+    expect([head.side, tail.side]).toEqual(['left', 'left']);
+    // Each end still leaves its own head outward, and the run between clears both boxes.
+    expect(path[1]).toEqual(out(path[0]!, head.side));
+    expect(path[path.length - 2]).toEqual(out(path[path.length - 1]!, tail.side));
+    expect(path.length).toBe(6);
+    square(path, [head, tail]);
+  }, 60000);
+
+  it('goes down the middle when the two heads face away over a gap', async () => {
+    // Codex round 2: two heads facing away from each other with a gap between the boxes have no
+    // single turn and no way round the *outside* of the pair — the route has to run down the gap.
+    // The geometry is codex's own: a top head at x 100..110 and a bottom head at x 40..50.
+    const model = await pipeline(fixture('drawio-constructs'));
+    const link = model.links.find(item => effectiveLayer(item) === 'overlay')!;
+    const facing = structuredClone(model);
+    const place = (ref: { node: string; name?: string; ordinal: number },
+      side: 'top' | 'bottom', box: { x: number; y: number }): Point => {
+      const port = facing.nodes[ref.node]!.ports.find(item => item.ref.name === ref.name
+        && item.ref.ordinal === ref.ordinal)!;
+      port.side = side;
+      port.pill!.bounds = { x: box.x, y: box.y, width: 10, height: 24 };
+      port.anchor = { x: box.x + 5, y: box.y + 12 };
+      return { x: box.x + 5, y: side === 'top' ? box.y : box.y + 24 };
+    };
+    const head = place(link.attachments!.from, 'top', { x: 100, y: 100 });
+    const tail = place(link.attachments!.to, 'bottom', { x: 40, y: 80 });
+    const path = facing.links.find(item => item.id === link.id)!.path!;
+    const anchors = { from: { x: 105, y: 112 }, to: { x: 45, y: 92 } };
+    path.segments = [{ ...path.segments[0]!, from: anchors.from, to: anchors.to }];
+    const cell = cells(drawio({ ...facing, canvas: { x: 0, y: 0, width: 400, height: 400 } }))
+      .get(id('link', link.id))!;
+    expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
+    // Out of each head by the clearance, then down the middle of the 50 px gap between the boxes.
+    expect([head, ...cell.points, tail]).toEqual([
+      { x: 105, y: 100 }, { x: 105, y: 96 }, { x: 75, y: 96 },
+      { x: 75, y: 108 }, { x: 45, y: 108 }, { x: 45, y: 104 },
+    ]);
+  }, 60000);
+
+  it('states a detoured overlay label against the run the connector really draws', async () => {
+    // Codex round 1: the label kept naming the model's segment, which a detoured overlay no longer
+    // draws, so `on-run` parked it beside the 4 px source stem and 16 px off the line. The detour's
+    // longest run is what that segment became, and the label rides it.
+    const model = await pipeline(`
+portograph: 2
+groups: {upper: {tier: 0}, lower: {tier: 1}}
+nodes:
+  a: {group: upper, ports: [{name: down, side: bottom}]}
+  b: {group: lower, ports: [{name: up, side: top}, {name: alt, side: top}]}
+  c: {group: lower, ports: [{name: up, side: top}]}
+links:
+  - [a.down, b.up]
+  - [b.alt, c.up, {route: overlay, label: sync}]
+`);
+    const link = model.links.find(item => effectiveLayer(item) === 'overlay')!;
+    const cell = cells(drawio(model)).get(id('link', link.id))!;
+    expect(cell.value).toBe('sync');
+    // `y` is the signed perpendicular distance from the drawn polyline, so on the run means nearly
+    // zero — and what the relative pair cannot reach is left as an absolute offset, which here is
+    // the rounding alone.
+    expect(Math.abs(Number(cell.geometry['y'] ?? 0))).toBeLessThanOrEqual(1);
+    expect(Math.hypot(cell.offset?.x ?? 0, cell.offset?.y ?? 0)).toBeLessThanOrEqual(1);
+  }, 60000);
+
+  it('paints every pill opaque, the outlined role included', async () => {
+    // Nothing may show through a pill. draw.io has no mask and no `fill:none` a reader can see the
+    // node body through, so the outlined role paints the colour the SVG reveals under it.
+    const model = await pipeline(fixture('drawio-constructs'));
+    const all = cells(drawio(model));
+    const body = `light-dark(${NETWORK_THEME.light.node.fill},${NETWORK_THEME.dark.node.fill})`;
+    const loopback = portRoleStyle('loopback')!;
+    let outlined = 0;
+    for (const [key, node] of Object.entries(model.nodes)) {
+      for (const port of node.ports) {
+        if (!port.pill || port.ref.anonymous === true) continue;
+        const cell = all.get(id('port', key, port.ref.name!, String(port.ref.ordinal)))!;
+        expect(cell.style['fillColor']).not.toBe('none');
+        if (!(port.class ?? '').split(/\s+/).includes('loopback')) continue;
+        expect(cell.style['fillColor']).toBe(body);
+        expect(cell.style['strokeColor']).toBe(`light-dark(${portRolePaint(loopback, 'light').stroke!},`
+          + `${portRolePaint(loopback, 'dark').stroke!})`);
+        outlined += 1;
+      }
+    }
+    expect(outlined).toBeGreaterThan(0);
+    // The legend has to name what the diagram draws, so its swatch takes the same body.
+    const entry = model.legend?.entries.find(item => item.kind === 'port' && item.key === 'loopback');
+    if (entry) expect(all.get(id('legendSwatch', entry.id))!.style['fillColor']).toBe(body);
+    // And no pill anywhere in the file is a hole.
+    for (const cell of all.values()) {
+      if (cell.id.startsWith('pg-port~')) expect(cell.style['fillColor']).not.toBe('none');
+    }
+  }, 60000);
+
+  it('hangs an overlay endpoint mark on the pill it sits on, so the pill carries it', async () => {
+    // A mark that belongs to a shape is a child of the shape. It keeps the overlay layer's paint;
+    // what it gives up is the overlay layer's parent, so a pill moved by hand takes its mark along.
+    const model = await pipeline(fixture('drawio-constructs'));
+    const all = cells(drawio(model));
+    const link = model.links.find(item => effectiveLayer(item) === 'overlay' && item.path)!;
+    const segments = link.path!.segments;
+    const ends = [
+      { end: 'from', at: segments[0]!.from, ref: link.attachments!.from },
+      { end: 'to', at: segments[segments.length - 1]!.to, ref: link.attachments!.to },
+    ] as const;
+    for (const { end, at, ref } of ends) {
+      const port = model.nodes[ref.node]!.ports.find(item => item.ref.name === ref.name
+        && item.ref.ordinal === ref.ordinal)!;
+      const pill = port.pill!.bounds;
+      const cell = all.get(id('overlayMark', link.id, end))!;
+      expect(cell.parent).toBe(id('port', ref.node, ref.name!, String(ref.ordinal)));
+      // Relative to the pill's own top-left, which is what makes the mark move with the pill.
+      expect(box(cell)).toEqual({
+        x: at.x - pill.x - OVERLAY_ENDPOINT_RADIUS, y: at.y - pill.y - OVERLAY_ENDPOINT_RADIUS,
+        width: 2 * OVERLAY_ENDPOINT_RADIUS, height: 2 * OVERLAY_ENDPOINT_RADIUS,
+      });
+      // The mark lies inside its own pill, so the connector routed clear of that pill never meets it.
+      expect(at.x).toBeGreaterThanOrEqual(pill.x);
+      expect(at.x).toBeLessThanOrEqual(pill.x + pill.width);
+      expect(at.y).toBeGreaterThanOrEqual(pill.y);
+      expect(at.y).toBeLessThanOrEqual(pill.y + pill.height);
+      expect(cell.style['fillColor']).toBe(
+        `light-dark(${NETWORK_THEME.light.overlay.mark},${NETWORK_THEME.dark.overlay.mark})`);
     }
   }, 60000);
 });
