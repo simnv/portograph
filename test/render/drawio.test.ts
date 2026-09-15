@@ -528,7 +528,13 @@ describe('node text', () => {
     const description = odd.labels.find(item => item.owner.kind === 'node'
       && item.owner.id === 'both' && item.role === 'description')!;
     description.lineHeight = 1e308;
+    // An offset the model states can overflow when it is combined, not only when it is stated.
+    const far = odd.labels.find(item => item.owner.kind === 'node'
+      && item.owner.id === 'named' && item.role === 'node')!;
+    far.bounds!.y = -1e308;
+    far.lineHeight = 1.7e308;
     const xml = drawio(odd, { theme: 'light' });
+    expect(Number.isFinite(Number(cells(xml).get(id('node', 'named'))!.style['spacingTop']))).toBe(true);
     expect(xml).not.toMatch(/Infinity|NaN/);
     const blocks = blocksOf(cells(xml).get(id('node', 'both'))!.value!);
     expect(blocks).toHaveLength(2);

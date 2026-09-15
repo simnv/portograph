@@ -234,7 +234,10 @@ interface TextBlock {
   colour?: string;
 }
 
-/** A quantity a model states, kept finite: no draw.io attribute can carry an infinity. */
+/**
+ * A quantity a model states, or one derived from it, kept finite: no draw.io attribute can carry an
+ * infinity, and a model far outside the contract is better exported than refused.
+ */
 const finite = (value: number): number => Number.isFinite(value) ? value : 0;
 
 /**
@@ -265,7 +268,7 @@ function textBlock(label: LayoutLabel, size: number, weight: 400 | 700, colour?:
   // browser have to agree, so both use the clamped value.
   const pitch = Math.max(0, finite(label.lineHeight ?? label.bounds!.height / lines.length));
   return {
-    html: htmlText(lines), pitch, top: label.bounds!.y - (pitch - glyphs) / 2,
+    html: htmlText(lines), pitch, top: finite(label.bounds!.y - (pitch - glyphs) / 2),
     height: finite(pitch * lines.length), fontSize, fontWeight,
     ...(colour === undefined ? {} : { colour }),
   };
@@ -285,7 +288,8 @@ function textBlock(label: LayoutLabel, size: number, weight: 400 | 700, colour?:
 function blockValue(blocks: readonly TextBlock[]): string {
   return blocks.map((block, index) => {
     const previous = blocks[index - 1];
-    const margin = previous === undefined ? undefined : block.top - (previous.top + previous.height);
+    const margin = previous === undefined ? undefined
+      : finite(block.top - (previous.top + previous.height));
     return `<div style="line-height:${num(block.pitch)}px;height:${num(block.height)}px;`
       + `font-size:${num(block.fontSize)}px;font-weight:${block.fontWeight}`
       + (block.colour === undefined ? '' : `;color:${block.colour}`)
@@ -540,7 +544,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     // `baseSpacingTop` to it, so a label that names only the measured offset lands 7 px low.
     const first = blocks[0];
     const top = first === undefined ? undefined
-      : first.top - node.bounds!.y - BASE_SPACING_TOP - LABEL_SPACING;
+      : finite(first.top - node.bounds!.y - BASE_SPACING_TOP - LABEL_SPACING);
     vertex(cellId('node', id), group, styleString([], {
       // A node really does contain its ports and its icon, so it says so: a container moves,
       // copies and accepts a drop as one thing, which is what a node is.
