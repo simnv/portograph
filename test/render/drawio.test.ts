@@ -191,7 +191,7 @@ describe('draw.io export', () => {
       ? { ...item, text: 'a <b> & c', lines: ['a <b> & c'] } : item) };
     const xml = drawio(angled);
     // Escaped once, draw.io's innerHTML assignment would swallow everything from `<` to `>`.
-    expect(xml).toContain('value="a &amp;lt;b&amp;gt; &amp;amp; c"');
+    expect(xml).toContain('a &amp;lt;b&amp;gt; &amp;amp; c');
     expect(xml).not.toContain('value="a &lt;b&gt; &amp; c"');
   }, 60000);
 
@@ -213,7 +213,9 @@ links: []
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).toContain(id('node', 'a'));
     expect(ids).toContain(id('node', 'node-a'));
-    expect(ids).toContain(id('nodeLabel', 'a'));
+    // A node's name is the node's own label now, so there is no `nodeLabel` cell to collide with —
+    // which is what made the original collision possible. The scheme still has to be injective.
+    expect(ids).not.toContain(id('nodeLabel', 'a'));
     // A separator an author could otherwise smuggle in is escaped, not passed through.
     expect(id('node', 'a~b')).not.toBe(id('node', 'a', 'b'));
   }, 60000);
@@ -269,14 +271,17 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
     // The claim: `on-run` moves a label onto the segment stage 9 says carries it, and nothing else.
     // A label centred on a line has to hide the line behind its glyphs, so it takes the colour that
     // is really behind it; `measured` keeps the box stage 9 placed and needs no fill at all.
-    const on = cells(drawio(model, { labels: 'on-run' })).get(id('linkLabel', label.id))!;
-    const measured = cells(drawio(model, { labels: 'measured' })).get(id('linkLabel', label.id))!;
+    // The label is the connector's own, so it is the edge cell that carries it.
+    const owner = (label.owner as { id: string }).id;
+    const on = cells(drawio(model, { labels: 'on-run' })).get(id('link', owner))!;
+    const measured = cells(drawio(model, { labels: 'measured' })).get(id('link', owner))!;
+    expect(on.value).toBe(label.text);
     expect(measured.style['labelBackgroundColor']).toBe('none');
     expect(on.style['labelBackgroundColor']).toMatch(/^(#[0-9a-f]{6}|light-dark\(#[0-9a-f]{6},#[0-9a-f]{6}\))$/);
     expect(on.offset).not.toEqual(measured.offset);
     // On-run is a projection onto a known segment, so it keeps its distance along the run and gives
     // up only its offset beside it: the moved label is no further from the line than it was.
-    const segment = model.links.find(item => item.id === (label.owner as { id: string }).id)!
+    const segment = model.links.find(item => item.id === owner)!
       .path!.segments[(label.support as { segment: number }).segment]!;
     const gap = (point: { x: number; y: number }): number => {
       const dx = segment.to.x - segment.from.x, dy = segment.to.y - segment.from.y;
@@ -339,6 +344,29 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
     expect(drawn.width).toBeLessThanOrEqual(tile.width + 1e-9);
     expect(drawn.height).toBeLessThanOrEqual(tile.height + 1e-9);
     expect(Math.min(drawn.width / tile.width, drawn.height / tile.height)).toBeGreaterThan(0.5);
+  }, 60000);
+
+  it('gives every text to the shape that owns it, rather than parking a box on top', async () => {
+    const model = await pipeline(fixture('drawio-constructs'));
+    const xml = drawio(model);
+    const all = cells(xml);
+    // The claim: a node's name, a port's name and a link's label are the *values* of the node, the
+    // pill and the connector. draw.io gives a shape its text, so one cell moves, copies and is
+    // renamed as one thing; a separate text box only looks the same until someone drags it.
+    expect([...all.keys()].filter(key => key.startsWith('pg-nodeLabel~')
+      || key.startsWith('pg-portLabel~') || key.startsWith('pg-nodeDescription~'))).toEqual([]);
+    const named = model.labels.find(item => item.role === 'node' && !item.omitted)!;
+    expect(all.get(id('node', (named.owner as { id: string }).id))!.value).toContain(named.text);
+    const pill = model.labels.find(item => item.role === 'pill' && !item.omitted && item.port)!;
+    const port = pill.port!;
+    expect(all.get(id('port', port.node, port.name!, String(port.ordinal)))!.value).toBe(pill.text);
+    // A quarter turn is the shape's own `horizontal=0`, which really does turn an edge's label too.
+    const turned = model.labels.find(item => item.role === 'link' && !item.omitted
+      && item.textRotation === -90);
+    if (turned) {
+      const owner = (turned.owner as { id: string }).id;
+      expect(all.get(id('link', owner))!.style['horizontal']).toBe('0');
+    }
   }, 60000);
 
   it('leaves the model untouched and gives the same bytes twice', async () => {

@@ -51,6 +51,12 @@ const EPS = 1e-6;
 /** Clear space a label on its run keeps around its glyphs, so the stroke it covers stays covered. */
 const LABEL_MARGIN = 5;
 
+/** draw.io's own default label spacing, which `spacingTop` adds to rather than replaces. */
+const LABEL_SPACING = 2;
+
+/** The description size the profile uses when a label does not state its own. */
+const NODE_DESCRIPTION_SIZE = 7;
+
 /** `#rrggbb` to its three channels; anything else (a name, `none`) has no channels to mix. */
 function channels(colour: string): [number, number, number] | undefined {
   const hex = /^#([0-9a-f]{6})$/i.exec(colour.trim());
@@ -403,15 +409,37 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       return `[${num((at.x - node.bounds!.x) / node.bounds!.width)},`
         + `${num((at.y - node.bounds!.y) / node.bounds!.height)},0]`;
     });
+    // The node's name is the node's own label, and its description follows it in the same label:
+    // a shape carries its text in draw.io, and a reader who double-clicks the node expects to be
+    // renaming the node. The description is a styled line rather than a second cell, and its colour
+    // is a CSS `light-dark()` so it adapts with everything else.
+    const named = layout.labels.find(item => item.owner.kind === 'node' && item.owner.id === id
+      && item.role === 'node' && !item.omitted);
+    const described = layout.labels.find(item => item.owner.kind === 'node' && item.owner.id === id
+      && item.role === 'description' && !item.omitted);
+    const description = described === undefined ? '' : `<span style="font-size:`
+      + `${num(described.fontSize ?? NODE_DESCRIPTION_SIZE)}px;color:${paint.node.description}">`
+      + `${htmlText(described.lines ?? [described.text])}</span>`;
+    const text = [named ? htmlText(named.lines ?? [named.text]) : '', description]
+      .filter(part => part !== '').join('<br>');
+    // Stage 3 sized the box around these lines and stage 9 measured where they sit; `spacingTop`
+    // states that offset so draw.io lays them out from the same place rather than centring them.
+    const top = named?.bounds ? named.bounds.y - node.bounds!.y - LABEL_SPACING : undefined;
     vertex(cellId('node', id), group, styleString([], {
-      // A node really does contain its ports, its icon and its text, so it says so: a container
-      // moves, copies and accepts a drop as one thing, which is what a node is.
+      // A node really does contain its ports and its icon, so it says so: a container moves,
+      // copies and accepts a drop as one thing, which is what a node is.
       html: 1, container: 1, collapsible: 0, recursiveResize: 0,
       rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.node * 2,
       whiteSpace: 'nowrap', fillColor: paint.node.fill, strokeColor: paint.node.stroke,
       strokeWidth: node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node,
       points: `[${anchors.join(',')}]`,
-    }), relative(box, origin));
+      ...(text === '' ? {} : {
+        align: 'center', verticalAlign: 'top', overflow: 'visible',
+        spacingTop: top === undefined ? undefined : Math.max(0, top),
+        fontFamily: FONT_FAMILY, fontSize: named?.fontSize, fontColor: paint.node.text,
+        fontStyle: named?.fontWeight === 700 ? 1 : undefined,
+      }),
+    }), relative(box, origin), text === '' ? undefined : text);
 
     if (node.icon) {
       const tile = relative(shiftRect(node.icon.bounds), shift(node.bounds!));
@@ -460,14 +488,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       }
     }
 
-    for (const label of layout.labels) {
-      if (label.owner.kind !== 'node' || label.owner.id !== id) continue;
-      if (label.role !== 'node' && label.role !== 'description') continue;
-      if (label.omitted) continue;
-      textCell(cellId(label.role === 'node' ? 'nodeLabel' : 'nodeDescription', id), cellId('node', id), label,
-        relative(shiftRect(label.bounds!), shift(node.bounds!)),
-        label.role === 'node' ? paint.node.text : paint.node.description);
-    }
+
 
     for (const port of node.ports) {
       if (!port.pill || port.ref.anonymous === true) continue;
@@ -476,6 +497,12 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       // The editor offers the one anchor this port's links leave from, so a connector a user draws
       // by hand starts where every exported connector starts.
       const outward = port.side ? OUTWARD[port.side] : undefined;
+      const label = layout.labels.find(item => item.role === 'pill' && item.port !== undefined
+        && item.port.node === id && item.port.name === port.ref.name && item.port.ordinal === port.ref.ordinal);
+      const shown = label && !label.omitted ? label : undefined;
+      // The pill's name is the pill's own label, not a text box parked on top of it: one cell that
+      // moves, copies and is renamed as one thing. A quarter turn is `horizontal=0`, which is how a
+      // vertical pill reads in the SVG too.
       vertex(cellId('port', ...identity), cellId('node', id), styleString([], {
         html: 1, rounded: 1, absoluteArcSize: 1, arcSize: port.pill.radius * 2,
         fillColor: resolved.fill, strokeColor: resolved.stroke,
@@ -483,13 +510,14 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         points: outward ? `[[${num(outward.x)},${num(outward.y)},0]]` : '[]',
         opacity: resolved.opacity === undefined ? undefined : Math.round(resolved.opacity * 100),
         ...dashEntries(resolved.dash),
-      }), relative(shiftRect(port.pill.bounds), shift(node.bounds!)));
-      const label = layout.labels.find(item => item.role === 'pill' && item.port !== undefined
-        && item.port.node === id && item.port.name === port.ref.name && item.port.ordinal === port.ref.ordinal);
-      if (label && !label.omitted) {
-        textCell(cellId('portLabel', ...identity), cellId('node', id), label,
-          relative(shiftRect(label.bounds!), shift(node.bounds!)), resolved.text);
-      }
+        ...(shown ? {
+          verticalAlign: 'middle', align: 'center', whiteSpace: 'nowrap', overflow: 'visible',
+          fontFamily: FONT_FAMILY, fontSize: shown.fontSize, fontColor: resolved.text,
+          fontStyle: shown.fontWeight === 700 ? 1 : undefined,
+          horizontal: port.pill.textRotation === -90 ? 0 : undefined,
+        } : {}),
+      }), relative(shiftRect(port.pill.bounds), shift(node.bounds!)),
+      shown ? htmlText(shown.lines ?? [shown.text]) : undefined);
     }
   }
 
@@ -544,19 +572,77 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
 
   const edgeCell = (id: string, layer: string, style: string, points: readonly Point[],
     ends: { source?: string | undefined; target?: string | undefined;
-      sourcePoint?: Point | undefined; targetPoint?: Point | undefined }): void => {
+      sourcePoint?: Point | undefined; targetPoint?: Point | undefined },
+    label?: { value: string; offset: Point }): void => {
     const waypoints = points.length > 2
       ? element('Array', { as: 'points' },
         points.slice(1, -1).map(point => element('mxPoint', { x: point.x, y: point.y })).join(''))
       : '';
     const dangling = (ends.sourcePoint ? element('mxPoint', { x: ends.sourcePoint.x, y: ends.sourcePoint.y, as: 'sourcePoint' }) : '')
       + (ends.targetPoint ? element('mxPoint', { x: ends.targetPoint.x, y: ends.targetPoint.y, as: 'targetPoint' }) : '');
-    cells.push(element('mxCell', { id: claim(id), style, edge: 1, parent: layer, source: ends.source, target: ends.target },
-      element('mxGeometry', { relative: 1, as: 'geometry' }, waypoints + dangling)));
+    const offset = label ? element('mxPoint', { x: label.offset.x, y: label.offset.y, as: 'offset' }) : '';
+    cells.push(element('mxCell', { id: claim(id), value: label?.value, style, edge: 1, parent: layer,
+      source: ends.source, target: ends.target },
+    element('mxGeometry', { ...(label ? { x: 0, y: 0 } : {}), relative: 1, as: 'geometry' },
+      waypoints + dangling + offset)));
   };
 
   const drawn = layout.links.filter(link => link.technique !== 'stub' && link.path && visible(link));
   const edgeIds = new Map<string, string[]>();
+
+  /** Where a link label sits: on its supporting segment, or the box stage 9 measured. */
+  const labelPoint = (label: LayoutLabel, link: LayoutLink): Point => {
+    const support = label.support?.kind === 'link-segment'
+      ? link.path!.segments[label.support.segment] : undefined;
+    const measured = centre(shiftRect(label.bounds!));
+    if (placement !== 'on-run' || support === undefined) return measured;
+    return shift(project({ x: measured.x + canvas.x, y: measured.y + canvas.y }, support));
+  };
+
+  /** The paint and turn a link label takes, wherever it is carried. */
+  const labelStyle = (label: LayoutLabel, at: Point): Readonly<Record<string, StyleValue>> => {
+    const on = placement === 'on-run' && label.support?.kind === 'link-segment';
+    const multiplicity = label.support?.kind === 'merge-run';
+    const inside = Object.values(layout.groups).some(group => group.bounds
+      && at.x >= group.bounds.x - canvas.x && at.x <= group.bounds.x - canvas.x + group.bounds.width
+      && at.y >= group.bounds.y - canvas.y && at.y <= group.bounds.y - canvas.y + group.bounds.height);
+    return {
+      // A label on the line must hide the line behind its glyphs, and the honest colour to do that
+      // with is whatever is really behind it: the group's tint composited over the canvas, or the
+      // canvas. Sitting clear of its run, it fills nothing and needs no margin either.
+      labelBackgroundColor: on
+        ? dual(of => inside
+          ? composite(NETWORK_THEME[of].group.fill, NETWORK_THEME[of].background, NETWORK_THEME[of].group.fillOpacity)
+          : NETWORK_THEME[of].background)
+        : 'none',
+      ...(on ? { spacing: LABEL_MARGIN } : {}),
+      align: 'center', verticalAlign: 'middle',
+      fontFamily: FONT_FAMILY, fontSize: label.fontSize,
+      fontColor: multiplicity ? paint.link.multiplicity : paint.link.label,
+      fontStyle: label.fontWeight === 700 ? 1 : undefined,
+      horizontal: label.textRotation === -90 || label.textRotation === 90 ? 0 : undefined,
+    };
+  };
+
+  /**
+   * The one label an edge can carry as its own. draw.io gives a shape its text, and an edge is a
+   * shape: a reader who double-clicks a connector expects to be editing its label. A quarter turn
+   * is `horizontal=0`, which — contrary to what the format's own notes suggest — really does rotate
+   * an edge's own label; measured. Anything else, an arbitrary reserved angle or a second label on
+   * one link, stays a child cell, which is draw.io's own answer for exactly those cases.
+   */
+  const ownLabel = new Map<string, LayoutLabel>();
+  for (const label of layout.labels) {
+    if (label.role !== 'link' || label.omitted || !label.bounds) continue;
+    const owner = label.owner.kind === 'barCross' ? label.owner.link
+      : label.owner.kind === 'link' ? label.owner.id : undefined;
+    if (owner === undefined) continue;
+    const turn = label.textRotation ?? 0;
+    if (turn !== 0 && turn !== -90 && turn !== 90) continue;
+    if (ownLabel.has(owner)) { ownLabel.delete(owner); continue; }
+    ownLabel.set(owner, label);
+  }
+  const taken = new Set<string>();
   for (const link of drawn) {
     const layer = effectiveLayer(link) === 'overlay' ? layerId('overlay') : layerId('links');
     const authored = linkClass(link);
@@ -571,6 +657,11 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const target = last && to ? terminal('entry', to) : undefined;
       const id = runs.length === 1 ? cellId('link', link.id) : cellId('link', link.id, String(index));
       ids.push(id);
+      // The connector's own label, on the first run, where a reader would look for it.
+      const mine = first ? ownLabel.get(link.id) : undefined;
+      const anchor = mine ? midpoint(run) : undefined;
+      const carried = mine && anchor ? { label: mine, at: labelPoint(mine, link), anchor } : undefined;
+      if (carried) taken.add(mine!.id);
       // A connector holds one polyline; a path whose segment chain breaks becomes one connector per
       // run, each dangling where the chain did. Only the ends that are really ends are pinned.
       const style = styleString([], {
@@ -581,13 +672,17 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         ...dashEntries(overlay ? undefined : klass.dash),
         ...(source?.style ?? {}),
         ...(target?.style ?? {}),
+        ...(carried ? labelStyle(carried.label, carried.at) : {}),
       });
       edgeCell(id, layer, style, run, {
         source: source?.cell,
         target: target?.cell,
         sourcePoint: source ? undefined : run[0],
         targetPoint: target ? undefined : run[run.length - 1],
-      });
+      }, carried ? {
+        value: htmlText(carried.label.lines ?? [carried.label.text]),
+        offset: { x: carried.at.x - carried.anchor.x, y: carried.at.y - carried.anchor.y },
+      } : undefined);
     });
     edgeIds.set(link.id, ids);
 
@@ -606,13 +701,14 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   }
 
   // ---- link labels --------------------------------------------------------------------------
-  // An edge label's `x` is arc length along the polyline and its `y` a signed perpendicular offset,
-  // positive to the left of travel. Both are left at zero and the whole displacement goes in
-  // `offset`, which is measured in screen axes: exact, and free of the sign convention.
+  // What is left after the edges took their own: a counted merge label, whose owner is a bundle,
+  // and any label at an angle no shape's own label can take. An edge label's `x` is arc length
+  // along the polyline and its `y` a signed perpendicular offset, positive to the left of travel;
+  // both are left at zero and the whole displacement goes in `offset`, which is measured in screen
+  // axes, exact, and free of the sign convention.
   for (const label of layout.labels) {
     if (label.role !== 'link' || label.omitted || !label.bounds) continue;
-    const multiplicity = label.support?.kind === 'merge-run';
-    const colour = multiplicity ? paint.link.multiplicity : paint.link.label;
+    if (taken.has(label.id)) continue;
     const owner = label.owner.kind === 'barCross' ? label.owner.link
       : label.owner.kind === 'link' ? label.owner.id : undefined;
     const link = owner === undefined ? undefined : byId.get(owner);
@@ -621,52 +717,28 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       // A counted merge label is owned by its bundle, not by any one link: it names the shared
       // trunk, and no connector here is that trunk, because each member exports its whole path.
       // Attaching the count to an arbitrary member would say something false about which link
-      // carries it, so it keeps its measured box in the label layer instead. Dropping it was the
-      // defect: the count is a datum stage 9 placed, and it has to survive the export.
+      // carries it, so it keeps its measured box in the label layer instead.
       if (label.owner.kind !== 'bundle') continue;
       const bundle = label.owner.id;
       if (!drawn.some(item => item.bundle === bundle)) continue;
-      textCell(cellId('linkLabel', label.id), layerId('labels'), label, shiftRect(label.bounds), colour);
+      textCell(cellId('linkLabel', label.id), layerId('labels'), label, shiftRect(label.bounds),
+        paint.link.multiplicity);
       continue;
     }
-    const parent = ids[0]!;
     const anchor = midpoint(polylines(link.path!.segments)[0] ?? []);
     if (!anchor) continue;
-    // `on-run` slides the label along its own supporting segment's normal until it is centred on
-    // the line. Stage 9 states which segment carries it, so this is a projection onto known
-    // geometry rather than a search: the label keeps its distance along the run and gives up only
-    // its offset beside it.
-    const support = label.support?.kind === 'link-segment'
-      ? link.path!.segments[label.support.segment] : undefined;
-    const measured = centre(shiftRect(label.bounds));
-    const on = placement === 'on-run' && support !== undefined;
-    const at = on ? shift(project({ x: measured.x + canvas.x, y: measured.y + canvas.y }, support!)) : measured;
-    // A label on the line must hide the line behind its glyphs, and the honest colour to do that
-    // with is whatever is really behind it: the group's tint composited over the canvas, or the
-    // canvas itself. `labelBackgroundColor=none` is right only when the label sits clear of its run.
-    const behind = (): string => {
-      const box = Object.values(layout.groups).find(group => group.bounds
-        && at.x >= group.bounds.x - canvas.x && at.x <= group.bounds.x - canvas.x + group.bounds.width
-        && at.y >= group.bounds.y - canvas.y && at.y <= group.bounds.y - canvas.y + group.bounds.height);
-      return dual(of => box ? composite(NETWORK_THEME[of].group.fill, NETWORK_THEME[of].background, NETWORK_THEME[of].group.fillOpacity)
-        : NETWORK_THEME[of].background);
-    };
+    const at = labelPoint(label, link);
     cells.push(element('mxCell', {
       id: claim(cellId('linkLabel', label.id)), value: htmlText(label.lines ?? [label.text]),
       style: styleString(['edgeLabel'], {
         // `edgeLabel` is a named style in draw.io's bundled sheet and brings
         // `labelBackgroundColor=default` with it — the white box the SVG does not draw.
-        html: 1, labelBackgroundColor: on ? behind() : 'none',
-        // The backdrop is sized from the label's spacing, which defaults to 2 px and leaves the
-        // line touching the glyphs. A label sitting on its run has to clear the stroke it covers,
-        // so it takes a margin of its own; one sitting beside the run fills nothing and needs none.
-        ...(on ? { spacing: LABEL_MARGIN } : {}),
-        align: 'center', verticalAlign: 'middle', resizable: 0, points: '[]',
-        fontFamily: FONT_FAMILY, fontSize: label.fontSize, fontColor: colour,
-        fontStyle: label.fontWeight === 700 ? 1 : undefined,
-        rotation: label.textRotation ? label.textRotation : undefined,
+        html: 1, resizable: 0, points: '[]',
+        ...labelStyle(label, at),
+        // A turn `horizontal=0` cannot express is stated outright.
+        rotation: label.textRotation && label.textRotation % 90 !== 0 ? label.textRotation : undefined,
       }),
-      vertex: 1, connectable: 0, parent,
+      vertex: 1, connectable: 0, parent: ids[0]!,
     }, element('mxGeometry', { x: 0, y: 0, relative: 1, as: 'geometry' },
       element('mxPoint', { x: at.x - anchor.x, y: at.y - anchor.y, as: 'offset' }))));
   }
