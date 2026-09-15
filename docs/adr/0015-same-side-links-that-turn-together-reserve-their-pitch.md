@@ -279,12 +279,22 @@ was not: a group label is an obstacle in the tier gap beside it, so a gap measur
 grows for rows the labels then refuse. Measured, that cost the Enterprise NTP sheet 715 px of canvas
 for a gap that seats nothing.
 
-7f therefore places its group labels, measures, and places them again. `produceGroupLabelBands`
-strips every group label and re-plans it on each call, so the last step answers the seventh
-amendment's objection exactly: no label stays behind, because no label survives the third call. It
-runs only where the measurement moved a band. The measurement itself moves each group's label band
-and placed label with the group, so the probe reads the geometry the move produces rather than the
-geometry it left.
+7f therefore places its group labels, measures, and places them again. The last step answers the
+seventh amendment's objection exactly: no label stays behind, because the step strips every group
+label and plans it again in the geometry the growth produced. It runs only where the measurement
+moved a band, and it **plans only** — the measurement was taken against the first step's
+reservation, so a repeat of the reservation would move geometry the measurement has already been
+taken against. The measurement itself moves each group's label band and placed label with the
+group, so no label is left standing in the gap the move opens.
+
+The probe does **not** read the geometry the move finally produces. `measured` rebuilds the region
+geometry with no budget of its own, which allocates a fresh centring budget and re-runs the centring
+for eight passes; the rebuild after the real move does the same. Measured on the Enterprise NTP
+sheet, the probe moves one group's x by +46.26 px and widens another by the same, and the real
+rebuild then repeats it — so the probe reads an x the model reaches one step later. The rule is
+stated for a vertical reservation and that is what it measures; the horizontal creep is a candidate
+mechanism for a probe that seats fewer rows than the gap it opened, and it is recorded with the rest
+of that item in stress ticket 07.
 
 **What this leaves open, measured and filed as stress ticket 06's residue.** The Enterprise NTP
 sheet still does not publish. With the labels in front of it, three of its twelve gaps refuse, all
