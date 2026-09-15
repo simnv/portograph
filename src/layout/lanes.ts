@@ -44,14 +44,26 @@ export function laneWidth(model: LayoutModel, link: LayoutLink): number {
   return Math.max(24 + 10, ...pills.map(port => (port?.ref.name !== undefined ? measurePortPill(port.ref.name).width : 0) + 10), 20 + routedStrokeWidth(model) + maxNodeStroke);
 }
 function occupied(model: LayoutModel, group: LayoutGroup) {
+  // One routed-stroke lookup for the whole group: it reads every link, and a per-node call makes
+  // this measurement cost the link count once for each node and pill.
+  const routed = routedStrokeWidth(model), gap = (stroke.pill + routed) / 2;
   return union([group.bounds!, ...group.nodes.flatMap(id => {
-    const node = model.nodes[id]!, box = node.bounds!, clearance = 10 + ((node.strokeWidth ?? stroke.node) + routedStrokeWidth(model)) / 2;
+    const node = model.nodes[id]!, box = node.bounds!, clearance = 10 + ((node.strokeWidth ?? stroke.node) + routed) / 2;
     return [{ x: box.x - clearance, y: box.y, width: box.width + 2 * clearance, height: box.height },
       ...node.ports.filter(port => port.pill).map(port => {
-        const pill = port.pill!.bounds, gap = (stroke.pill + routedStrokeWidth(model)) / 2;
+        const pill = port.pill!.bounds;
         return { x: pill.x - gap, y: pill.y, width: pill.width + 2 * gap, height: pill.height };
       })];
   })]);
+}
+/**
+ * How far the stroke-aware occupied extent of a group reaches past its box, on each side. A rule
+ * that moves the group inside a lane window must keep this reach out of the lane too, because
+ * `validateLanes` measures the same extent.
+ */
+export function occupiedOverhang(model: LayoutModel, group: LayoutGroup): { left: number; right: number } {
+  const box = occupied(model, group);
+  return { left: group.bounds!.x - box.x, right: right(box) - right(group.bounds!) };
 }
 /**
  * The occupied box a group would have at `bounds`. Its nodes and pills translate with the group, so

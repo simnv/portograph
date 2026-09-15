@@ -1,0 +1,29 @@
+# Expected: Centring (7c) widens the node of `wide` to put its two top ports under their two parent
+# ports. That box then covers the x ELK gave `middle`. `middle` cannot centre either: the room
+# between the widened `wide` and the fixed `edge` is narrower than its own box. It must still give
+# way. After 7c the tier keeps its band gap between every pair of groups. Stage 8 then receives no
+# foreign group obstacle that contains an attachment shape. The unresolved alignments are reported,
+# not repaired. Ticket 01, from the Enterprise NTP stress test.
+portograph: 2
+groups:
+  feed-a: { tier: 0, label: "Feed A" }
+  feed-b: { tier: 0, label: "Feed B" }
+  wide: { tier: 1, label: "Wide" }
+  middle: { tier: 1, label: "Middle" }
+  edge: { tier: 1, label: "Edge" }
+nodes:
+  a1: { group: feed-a, class: router, label: "a1" }
+  a2: { group: feed-a, class: router, label: "a2" }
+  a3: { group: feed-a, class: router, label: "a3" }
+  b1: { group: feed-b, class: router, label: "b1" }
+  b2: { group: feed-b, class: router, label: "b2" }
+  b3: { group: feed-b, class: router, label: "b3" }
+  w1: { group: wide, class: rr, label: "w1" }
+  m1: { group: middle, class: provider, label: "m1" }
+  e1: { group: edge, class: provider, label: "e1" }
+links:
+  - [w1, a1]
+  - [w1, b3]
+  - [m1, a1]
+  - [m1, b1]
+  - [e1, m1]

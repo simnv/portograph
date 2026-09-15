@@ -1,7 +1,7 @@
 import type { LayoutGroup, LayoutModel, LayoutNode, LayoutPort } from '../model/layout.js';
 import type { Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
-import { nodeTier, selectAnchorTier } from './lanes.js';
+import { laneSidesHold, nodeTier, occupiedOverhang, selectAnchorTier } from './lanes.js';
 import { findPort } from './row-paths.js';
 import { portId, bandGap } from './skeleton-graph.js';
 import { moveGroup } from './skeleton-geometry.js';
@@ -102,6 +102,8 @@ interface CentreContext {
   winners: Map<string, string>;
   groupOrder: Map<number, string[]>;
   limits: Map<string, { low: number; high: number }>;
+  /** The flank window of each tier, measured once: 7c never moves or resizes a flank. */
+  flankLimits: Map<number, WideningLimit>;
 }
 /** Everything one centring pass reads but never writes: step order, winners, group order, lane windows. */
 function centreContext(model: LayoutModel, anchor: number): CentreContext {
@@ -124,8 +126,70 @@ function centreContext(model: LayoutModel, anchor: number): CentreContext {
     }
     limits.set(group.id, { low, high });
   }
-  return { steps, winners, groupOrder, limits };
+  const flankLimits = new Map<number, WideningLimit>(model.tierBands.map(band => [band.tier, { low: -Infinity, high: Infinity }]));
+  for (const flank of Object.values(model.groups)) {
+    const limit = flank.flank && flankLimits.get(flank.tier!);
+    if (!limit) continue;
+    if (flank.flank!.align === 'left') limit.low = Math.max(limit.low, right(flank.bounds!) + bandGap(model));
+    else limit.high = Math.min(limit.high, flank.bounds!.x - bandGap(model));
+  }
+  return { steps, winners, groupOrder, limits, flankLimits };
 }
+/**
+ * The window a group of `tier` may never leave. A fixed lane of 7a stays on the side that holds it,
+ * and a flank beside the tier keeps its band gap. The window holds the box of the group and the
+ * stroke-aware reach of its nodes and pills, which `validateLanes` measures as well.
+ */
+function reservedWindow(model: LayoutModel, context: CentreContext, tier: number, id: string): WideningLimit {
+  const limit = context.limits.get(id)!, flank = context.flankLimits.get(tier) ?? { low: -Infinity, high: Infinity };
+  const low = Math.max(limit.low, flank.low), high = Math.min(limit.high, flank.high);
+  // An unbounded window needs no measurement, and measuring one costs a pass over the group.
+  if (low === -Infinity && high === Infinity) return { low, high };
+  const reach = occupiedOverhang(model, model.groups[id]!);
+  return { low: low + reach.left, high: high - reach.right };
+}
+
+/**
+ * The rightmost edge a group of `tier` may take before the groups after it have nowhere to go.
+ * A widening makes them give way (`packClear`), but they never cross a reserved lane or a flank.
+ * One backwards sweep packs them against their own windows and reserves the room that needs.
+ * Space before use: a widening this room cannot hold is declined here. It is not discovered as an
+ * overlap at stage 8.
+ */
+function tailReservation(model: LayoutModel, context: CentreContext, tier: number, order: string[]): Map<string, number> {
+  const result = new Map<string, number>();
+  let bound = Infinity;
+  // The step of one group never moves or resizes the groups after it. One sweep therefore stays
+  // exact for the whole tier step. It costs one pass over the groups of the tier.
+  for (const id of [...order].reverse()) {
+    result.set(id, bound);
+    bound = Math.min(bound, reservedWindow(model, context, tier, id).high) - model.groups[id]!.bounds!.width - bandGap(model);
+  }
+  return result;
+}
+
+/**
+ * Keep the tier packed left to right. Centring widens a group into the space of the groups after
+ * it. Those groups must give way, also when this step does not centre them, and when their own
+ * centring window is too narrow to hold them. Two overlapping group boxes are not a poor diagram.
+ * They are an input stage 8 refuses, because a foreign group obstacle then contains an attachment
+ * shape.
+ */
+function packClear(model: LayoutModel, context: CentreContext, tier: number, group: LayoutGroup, previous: LayoutGroup | undefined): void {
+  if (!previous) return;
+  const window = reservedWindow(model, context, tier, group.id);
+  const low = Math.max(window.low, right(previous.bounds!) + bandGap(model));
+  if (group.bounds!.x >= low - EPS) return;
+  const bounds = { ...group.bounds!, x: low };
+  if (low + group.bounds!.width > window.high + EPS || !laneSidesHold(model, [{ group, bounds }])) {
+    placementWarning(model, 'CENTRE_TIER_PACK_INFEASIBLE',
+      `${group.id} cannot clear ${previous.id} inside its reserved lane and flank window; the final gates judge the result.`,
+      [group.id], 'group');
+    return;
+  }
+  moveGroup(model, group, low - group.bounds!.x, 0);
+}
+
 /** The feeds of one group in one step, with the x each child port wants and the transits that yield. */
 function groupFeeds(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, warn: boolean): { own: Feed[]; wanted: Map<string, number>; yielded: Set<Feed>; conflicts: Set<string> } {
   const own = list.filter(feed => model.document.nodes[feed.child.ref.node]!.group === id);
@@ -155,7 +219,7 @@ function groupFeeds(model: LayoutModel, context: CentreContext, tier: number, li
  * moved it off its feed — so a check can excuse those and no others. Shared by the producer pass and
  * by the publication/restore check, so both read one definition.
  */
-function centreGroupStep(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean): { unresolved: Set<string>; group: LayoutGroup } {
+function centreGroupStep(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>): { unresolved: Set<string>; group: LayoutGroup } {
   const group = model.groups[id]!, order = context.groupOrder.get(tier)!;
   const { own, wanted, yielded, conflicts } = groupFeeds(model, context, tier, list, id, warn);
   const unresolved = new Set<string>(conflicts);
@@ -188,18 +252,19 @@ function centreGroupStep(model: LayoutModel, context: CentreContext, tier: numbe
     if (b.bounds!.x < minimum) shiftNode(b, minimum - b.bounds!.x);
   }
   fitRegionGroup(model, group);
-  const limit = context.limits.get(id)!, low = Math.max(limit.low, previous ? right(previous.bounds!) + bandGap(model) : -Infinity);
-  let high = limit.high;
+  // The window is the same one the push respects. A left flank bounds this group as a right flank
+  // does, and the final clamp reads `low`. A bound that only moves the group first is undone.
+  const window = reservedWindow(model, context, tier, id);
+  const low = Math.max(window.low, previous ? right(previous.bounds!) + bandGap(model) : -Infinity);
+  let high = Math.min(window.high, tail.get(id)!);
   const nextFixed = order.slice(order.indexOf(id) + 1).map(id => model.groups[id]!).find(other => !list.some(feed => model.document.nodes[feed.child.ref.node]!.group === other.id));
   if (nextFixed) high = Math.min(high, nextFixed.bounds!.x - bandGap(model));
-  for (const flank of Object.values(model.groups).filter(group => group.flank && group.tier === tier)) {
-    if (flank.flank!.align === 'left') {
-      if (group.bounds!.x < right(flank.bounds!) + bandGap(model)) moveGroup(model, group, right(flank.bounds!) + bandGap(model) - group.bounds!.x, 0);
-    } else high = Math.min(high, flank.bounds!.x - bandGap(model));
-  }
   if (group.bounds!.width > high - low) {
     model.groups[id] = saved.group;
     for (const node of saved.nodes) model.nodes[node.id] = node;
+    // The window cannot hold this group, but the group before it has already taken its space, so
+    // the saved geometry alone would overlap. Decline the alignment and keep the tier packed.
+    packClear(model, context, tier, saved.group, previous);
     return { unresolved: new Set(wanted.keys()), group: saved.group };
   }
   const x = Math.max(low, Math.min(group.bounds!.x, high - group.bounds!.width));
@@ -223,13 +288,18 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
     budget.remaining--; budget.passes++;
     const before = geometry(model); unresolved = new Set();
     for (const { tier, authority } of context.steps) {
-      const list = feeds(model, tier, authority);
+      const list = feeds(model, tier, authority), order = context.groupOrder.get(tier)!;
+      const tail = tailReservation(model, context, tier, order);
       let previous: LayoutGroup | undefined;
-      for (const id of context.groupOrder.get(tier)!) {
+      for (const id of order) {
         const group = model.groups[id]!;
-        // Bar shaping owns their source-derived slots and stacked spans; row centering cannot repack them.
-        if (model.document.groups[id]!.shape === 'bar' || !list.some(feed => model.document.nodes[feed.child.ref.node]!.group === id)) { previous = group; continue; }
-        const result = centreGroupStep(model, context, tier, list, id, previous, true);
+        // Bar shaping owns their source-derived slots and stacked spans; row centering cannot repack
+        // them. A group this step does not centre still yields the space a widened neighbour took.
+        if (model.document.groups[id]!.shape === 'bar' || !list.some(feed => model.document.nodes[feed.child.ref.node]!.group === id)) {
+          packClear(model, context, tier, group, previous);
+          previous = group; continue;
+        }
+        const result = centreGroupStep(model, context, tier, list, id, previous, true, tail);
         if (result.unresolved.size) unresolved.add(id);
         previous = result.group;
       }
@@ -263,14 +333,15 @@ export function centreViolations(model: LayoutModel): string[] {
   const isBar = (node: string): boolean => model.document.groups[model.document.nodes[node]!.group]!.shape === 'bar';
   const result: string[] = [];
   for (const { tier, authority } of context.steps) {
-    const list = feeds(model, tier, authority);
+    const list = feeds(model, tier, authority), order = context.groupOrder.get(tier)!;
+    const tail = tailReservation(model, context, tier, order);
     let previous: LayoutGroup | undefined;
-    for (const id of context.groupOrder.get(tier)!) {
+    for (const id of order) {
       const group = model.groups[id]!;
       const owned = groupFeeds(model, context, tier, list, id, false);
       if (model.document.groups[id]!.shape === 'bar' || !owned.own.length) { previous = group; continue; }
       const trial = JSON.parse(JSON.stringify(model)) as LayoutModel;
-      const step = centreGroupStep(trial, centreContext(trial, anchor), tier, feeds(trial, tier, authority), id, previous && trial.groups[previous.id], false);
+      const step = centreGroupStep(trial, centreContext(trial, anchor), tier, feeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, tail);
       previous = group;
       for (const [child, x] of owned.wanted) {
         // Only the ports the producer's own step could not resolve are excused, never their siblings.

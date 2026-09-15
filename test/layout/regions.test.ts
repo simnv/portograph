@@ -6,6 +6,11 @@ import { rows } from '../../src/layout/rows.js';
 import { lanes, laneWidth, validateLanes } from '../../src/layout/lanes.js';
 import { flanks, flankPair, flankPathCandidate } from '../../src/layout/flanks.js';
 import { centre, centreDraft, createCentreBudget, selectAnchorTier } from '../../src/layout/centre.js';
+import { bars } from '../../src/layout/bars.js';
+import { bundles } from '../../src/layout/bundles.js';
+import { bands } from '../../src/layout/bands.js';
+import { batchRequest, planRoute } from '../../src/route/plan.js';
+import { right } from '../../src/layout/regions.js';
 import { restoreLayoutModel, withLayoutMutation } from '../../src/layout/mutation.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { sizeNodes } from '../../src/layout/size.js';
@@ -319,6 +324,39 @@ links: [[a.p, c.p], [a.q, b.p]]`;
     expect(model.nodes.b!.bounds!.x + model.nodes.b!.bounds!.width).toBeLessThan(model.lanes[0]!.bounds.x);
     expect(model.diagnostics.filter(d => d.code === 'PLACEMENT_NON_CONVERGENCE')).toHaveLength(1);
     expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
+  });
+  it('ticket 01: packs the tier when a widened child swallows the group beside it', async () => {
+    const input = flanks(lanes(rows(await placed(fixture('widened-child-packs-tier')))));
+    const model = bands(bundles(bars(centre(input))));
+    const tier = Object.values(model.groups).filter(group => group.tier === 1).sort((a, b) => a.bounds!.x - b.bounds!.x);
+    expect(tier.map(group => group.id)).toEqual(['wide', 'middle', 'edge']);
+    // `wide` really grows over the x ELK gave `middle`. `middle` cannot centre in what is left.
+    expect(model.nodes.w1!.bounds!.width).toBeGreaterThan(input.nodes.w1!.bounds!.width + 100);
+    expect(right(model.groups.wide!.bounds!)).toBeGreaterThan(input.groups.middle!.bounds!.x);
+    expect(model.diagnostics.map(d => d.code)).toEqual(['PLACEMENT_NON_CONVERGENCE']);
+    // No foreign group obstacle contains an attachment shape. Every group keeps the band gap.
+    const plan = planRoute(model);
+    for (const batch of plan.batches) expect(() => batchRequest(plan, batch, [])).not.toThrow();
+    for (const [index, group] of tier.slice(1).entries()) {
+      expect(group.bounds!.x - right(tier[index]!.bounds!)).toBeGreaterThanOrEqual(60);
+    }
+    expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
+  });
+  it('ticket 01: keeps the packed tier clear of the flanks beside it', async () => {
+    // The same widening with a flank on each side: the window is finite here, and the final clamp
+    // may not put the group back across the left flank.
+    const yaml = fixture('widened-child-packs-tier')
+      .replace('nodes:', '  lf: { align: left, of: wide }\n  rf: { align: right, of: edge }\nnodes:')
+      .replace('links:', '  l: { group: lf }\n  r: { group: rf }\nlinks:')
+      .concat('  - [e1, a3]\n  - [l, w1]\n  - [e1, r]\n');
+    const model = bands(bundles(bars(centre(flanks(lanes(rows(await placed(yaml))))))));
+    const boxes = Object.values(model.groups).filter(group => group.tier === 1).map(group => group.bounds!);
+    for (const a of boxes) for (const b of boxes) {
+      if (a === b) continue;
+      expect(Math.min(right(a), right(b)) - Math.max(a.x, b.x)).toBeLessThanOrEqual(0);
+    }
+    const plan = planRoute(model);
+    for (const batch of plan.batches) expect(() => batchRequest(plan, batch, [])).not.toThrow();
   });
   it('replaces flank claims after a permitted peer translation and rebuilds content once', async () => {
     const yaml = lateral.replace('g: {tier: 0}', 'anchor: {tier: 0}, g: {tier: 1}').replace('nodes:', 'nodes:\n  extra: {group: anchor}\n  spare: {group: anchor}');

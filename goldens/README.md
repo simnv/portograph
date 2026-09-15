@@ -125,6 +125,7 @@ is a standalone schema-v2 document. `stage-inputs.yaml` is separate test data.
 | [fitting-link-label](synthetic/fitting-link-label.yaml) | 9 | Place the measured label along the longest segment — rotated to read bottom-to-top on a vertical run — with no collision. |
 | [long-label-portless-node](synthetic/long-label-portless-node.yaml) | 3 | Grow the node to contain its measured label and description. |
 | [zero-link-diagram](synthetic/zero-link-diagram.yaml) | 10 | Produce finite scores and use 1 for empty routed-link metrics. |
+| [widened-child-packs-tier](synthetic/widened-child-packs-tier.yaml) | 7c, 8 | A widened child covers the group beside it; the tier is packed again, so no group obstacle contains an attachment shape. |
 | [drawio-constructs](synthetic/drawio-constructs.yaml) | 11 | Carry every construct the draw.io export must translate that the golden does not exercise together: a title band on each edge, a port role and status on one pill, a dotted and a dashed class, a labelled link, and an overlay link. |
 | [drawio-node-text](synthetic/drawio-node-text.yaml) | 11 | Carry a node's text in each shape the draw.io export must place: a name alone, a name with a description, and a description with no name. |
 | [detoured-stem-checkpoint](synthetic/detoured-stem-checkpoint.yaml) | 8 | Two crossing links in two ownership batches: the second detours round the first and still visits both reserved stem checkpoints. The diagram fails G6; it is produced. |
