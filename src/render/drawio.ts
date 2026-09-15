@@ -24,7 +24,7 @@
  * the palette lives here and every cell carries its own resolved style string.
  */
 
-import type { Point, Rect } from '../model/geometry.js';
+import type { Point, Rect, Side } from '../model/geometry.js';
 import type {
   Layer, LayoutGroup, LayoutLabel, LayoutLink, LayoutModel, LayoutPort, PathSegment,
 } from '../model/layout.js';
@@ -48,9 +48,47 @@ const GLYPH_STROKE = DEFAULT_STROKE_WIDTHS.glyph;
 /** Points closer than this in both axes are the same point, as `render` treats them. */
 const EPS = 1e-6;
 
+/** `#rrggbb` to its three channels; anything else (a name, `none`) has no channels to mix. */
+function channels(colour: string): [number, number, number] | undefined {
+  const hex = /^#([0-9a-f]{6})$/i.exec(colour.trim());
+  if (!hex) return undefined;
+  const value = Number.parseInt(hex[1]!, 16);
+  return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+}
+
+/** `over` painted at `alpha` on `under`, as one opaque colour: what a reader actually sees. */
+function composite(over: string, under: string, alpha: number): string {
+  const a = channels(over), b = channels(under);
+  if (!a || !b) return over;
+  const mix = a.map((value, index) => Math.round(value * alpha + b[index]! * (1 - alpha)));
+  return `#${mix.map(value => value.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** The point on `segment` nearest `at`: where a label sits when it sits on its run. */
+function project(at: Point, segment: PathSegment): Point {
+  const dx = segment.to.x - segment.from.x, dy = segment.to.y - segment.from.y;
+  const length = dx * dx + dy * dy;
+  if (length === 0) return { ...segment.from };
+  const ratio = Math.min(1, Math.max(0, ((at.x - segment.from.x) * dx + (at.y - segment.from.y) * dy) / length));
+  return { x: segment.from.x + dx * ratio, y: segment.from.y + dy * ratio };
+}
+
+/** A side's outward direction as a fraction of a box: the point a link leaves its port from. */
+const OUTWARD: Readonly<Record<Side, Point>> = {
+  top: { x: 0.5, y: 0 }, bottom: { x: 0.5, y: 1 },
+  left: { x: 0, y: 0.5 }, right: { x: 1, y: 0.5 },
+};
+
 export interface DrawioOptions {
   /** Effective link families to export; see `RenderOptions.layers`, whose rule this shares. */
   layers?: readonly Layer[];
+  /**
+   * Where a link label sits. `measured` keeps the box stage 9 placed, beside its run, which is what
+   * the SVG draws. `on-run` centres it on the supporting segment instead and gives it the backdrop
+   * behind it as a fill, so it costs a crowded diagram no room beside the line. `on-run` is the one
+   * deliberate departure from the measured geometry, and it moves a label only — never a route.
+   */
+  labels?: 'measured' | 'on-run';
   /**
    * Which of the profile's three palettes to resolve. A draw.io file carries one set of colours —
    * it has no equivalent of the SVG sheet's `prefers-color-scheme` override — so the mode is chosen
@@ -113,6 +151,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   const canvas = layout.canvas;
   if (!canvas) throw new Error('A draw.io export requires a final canvas');
   const mode = options.theme ?? 'light';
+  const placement = options.labels ?? 'on-run';
   const paint = NETWORK_THEME[mode];
   const document = layout.document;
   const visible = (link: LayoutLink): boolean =>
@@ -244,13 +283,13 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         // On a swimlane `fillColor` paints the head and `swimlaneFillColor` the body, the reverse
         // of what the format's own style reference says. Both take the group fill.
         fillColor: paint.group.fill, swimlaneFillColor: paint.group.fill,
-        strokeColor: paint.group.stroke, opacity: Math.round(paint.group.fillOpacity * 100),
+        strokeColor: paint.group.stroke, fillOpacity: Math.round(paint.group.fillOpacity * 100),
       })
       : styleString([], {
         html: 1, container: 1, collapsible: 0, rounded: 1,
         absoluteArcSize: 1, arcSize: CORNER_RADII.group * 2,
         fillColor: paint.group.fill, strokeColor: paint.group.stroke,
-        opacity: Math.round(paint.group.fillOpacity * 100),
+        fillOpacity: Math.round(paint.group.fillOpacity * 100),
         verticalAlign: 'top', align: 'center',
       });
     vertex(cellId('group', id), layerId('diagram'), style, box, swimlane ? htmlText(title!.lines ?? [title!.text]) : undefined);
@@ -275,7 +314,10 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         + `${num((at.y - node.bounds!.y) / node.bounds!.height)},0]`;
     });
     vertex(cellId('node', id), group, styleString([], {
-      html: 1, rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.node * 2,
+      // A node really does contain its ports, its icon and its text, so it says so: a container
+      // moves, copies and accepts a drop as one thing, which is what a node is.
+      html: 1, container: 1, collapsible: 0, recursiveResize: 0,
+      rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.node * 2,
       whiteSpace: 'nowrap', fillColor: paint.node.fill, strokeColor: paint.node.stroke,
       strokeWidth: node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node,
       points: `[${anchors.join(',')}]`,
@@ -314,10 +356,14 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       if (!port.pill || port.ref.anonymous === true) continue;
       const identity = [id, port.ref.name!, String(port.ref.ordinal)];
       const resolved = pillPaint(authored, port);
+      // The editor offers the one anchor this port's links leave from, so a connector a user draws
+      // by hand starts where every exported connector starts.
+      const outward = port.side ? OUTWARD[port.side] : undefined;
       vertex(cellId('port', ...identity), cellId('node', id), styleString([], {
         html: 1, rounded: 1, absoluteArcSize: 1, arcSize: port.pill.radius * 2,
         fillColor: resolved.fill, strokeColor: resolved.stroke,
-        strokeWidth: DEFAULT_STROKE_WIDTHS.pill, points: '[]',
+        strokeWidth: DEFAULT_STROKE_WIDTHS.pill,
+        points: outward ? `[[${num(outward.x)},${num(outward.y)},0]]` : '[]',
         opacity: resolved.opacity === undefined ? undefined : Math.round(resolved.opacity * 100),
         ...dashEntries(resolved.dash),
       }), relative(shiftRect(port.pill.bounds), shift(node.bounds!)));
@@ -351,20 +397,32 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     return runs.filter(run => run.length > 1).map(run => run.map(shift));
   }
 
-  /** The fraction of a node's box at which a port sits, which is how an edge pins an endpoint. */
-  const pin = (end: 'exit' | 'entry', ref: { node: string; name?: string; ordinal: number }):
-  Readonly<Record<string, StyleValue>> => {
+  /**
+   * Where an edge terminates, and on which cell. A port that draws a pill terminates on the **pill**,
+   * at the middle of its outward edge, for two reasons. It makes the connector a real connection:
+   * the pill is the port, so moving the port or its node carries the line, which pinning to the
+   * node's box never did. And it is what the SVG makes visible — a pill straddles the boundary and
+   * is painted over the inner half of its own stem, so the stroke the reader sees starts at the
+   * pill's outer edge. The reserved waypoints are untouched; only the endpoint moves, by the pill's
+   * half depth, onto the point the diagram already showed.
+   */
+  const terminal = (end: 'exit' | 'entry', ref: { node: string; name?: string; ordinal: number }):
+  { cell: string; style: Readonly<Record<string, StyleValue>> } | undefined => {
     const node = layout.nodes[ref.node];
     const port = node?.ports.find(item => item.ref.node === ref.node && item.ref.name === ref.name
       && item.ref.ordinal === ref.ordinal);
-    if (!node?.bounds || !port?.anchor) return {};
+    if (!node?.bounds || !port?.anchor) return undefined;
     // Both fractions must be present or draw.io drops the constraint entirely, and `exitPerimeter`
-    // defaults to 1, which would project the anchor onto the perimeter instead of using it.
-    return {
-      [`${end}X`]: (port.anchor.x - node.bounds.x) / node.bounds.width,
-      [`${end}Y`]: (port.anchor.y - node.bounds.y) / node.bounds.height,
-      [`${end}Dx`]: 0, [`${end}Dy`]: 0, [`${end}Perimeter`]: 0,
-    };
+    // defaults to 1, which would project the point onto the perimeter instead of using it.
+    const fix = (at: Point): Readonly<Record<string, StyleValue>> =>
+      ({ [`${end}X`]: at.x, [`${end}Y`]: at.y, [`${end}Dx`]: 0, [`${end}Dy`]: 0, [`${end}Perimeter`]: 0 });
+    if (port.pill && port.ref.anonymous !== true && port.side) {
+      return { cell: cellId('port', ref.node, ref.name!, String(ref.ordinal)), style: fix(OUTWARD[port.side]) };
+    }
+    return { cell: cellId('node', ref.node), style: fix({
+      x: (port.anchor.x - node.bounds.x) / node.bounds.width,
+      y: (port.anchor.y - node.bounds.y) / node.bounds.height,
+    }) };
   };
 
   const edgeCell = (id: string, layer: string, style: string, points: readonly Point[],
@@ -392,6 +450,8 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     runs.forEach((run, index) => {
       const first = index === 0, last = index === runs.length - 1;
       const from = link.attachments?.from, to = link.attachments?.to;
+      const source = first && from ? terminal('exit', from) : undefined;
+      const target = last && to ? terminal('entry', to) : undefined;
       const id = runs.length === 1 ? cellId('link', link.id) : cellId('link', link.id, String(index));
       ids.push(id);
       // A connector holds one polyline; a path whose segment chain breaks becomes one connector per
@@ -402,14 +462,14 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         strokeWidth: linkStrokeWidth(link),
         opacity: overlay ? Math.round(paint.overlay.opacity * 100) : undefined,
         ...dashEntries(overlay ? undefined : klass.dash),
-        ...(first && from ? pin('exit', from) : {}),
-        ...(last && to ? pin('entry', to) : {}),
+        ...(source?.style ?? {}),
+        ...(target?.style ?? {}),
       });
       edgeCell(id, layer, style, run, {
-        source: first && from ? cellId('node', from.node) : undefined,
-        target: last && to ? cellId('node', to.node) : undefined,
-        sourcePoint: first && from ? undefined : run[0],
-        targetPoint: last && to ? undefined : run[run.length - 1],
+        source: source?.cell,
+        target: target?.cell,
+        sourcePoint: source ? undefined : run[0],
+        targetPoint: target ? undefined : run[run.length - 1],
       });
     });
     edgeIds.set(link.id, ids);
@@ -455,11 +515,31 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     const parent = ids[0]!;
     const anchor = midpoint(polylines(link.path!.segments)[0] ?? []);
     if (!anchor) continue;
-    const at = centre(shiftRect(label.bounds));
+    // `on-run` slides the label along its own supporting segment's normal until it is centred on
+    // the line. Stage 9 states which segment carries it, so this is a projection onto known
+    // geometry rather than a search: the label keeps its distance along the run and gives up only
+    // its offset beside it.
+    const support = label.support?.kind === 'link-segment'
+      ? link.path!.segments[label.support.segment] : undefined;
+    const measured = centre(shiftRect(label.bounds));
+    const on = placement === 'on-run' && support !== undefined;
+    const at = on ? shift(project({ x: measured.x + canvas.x, y: measured.y + canvas.y }, support!)) : measured;
+    // A label on the line must hide the line behind its glyphs, and the honest colour to do that
+    // with is whatever is really behind it: the group's tint composited over the canvas, or the
+    // canvas itself. `labelBackgroundColor=none` is right only when the label sits clear of its run.
+    const behind = (): string => {
+      const box = Object.values(layout.groups).find(group => group.bounds
+        && at.x >= group.bounds.x - canvas.x && at.x <= group.bounds.x - canvas.x + group.bounds.width
+        && at.y >= group.bounds.y - canvas.y && at.y <= group.bounds.y - canvas.y + group.bounds.height);
+      return box ? composite(paint.group.fill, paint.background, paint.group.fillOpacity) : paint.background;
+    };
     cells.push(element('mxCell', {
       id: claim(cellId('linkLabel', label.id)), value: htmlText(label.lines ?? [label.text]),
       style: styleString(['edgeLabel'], {
-        html: 1, align: 'center', verticalAlign: 'middle', resizable: 0, points: '[]',
+        // `edgeLabel` is a named style in draw.io's bundled sheet and brings
+        // `labelBackgroundColor=default` with it — the white box the SVG does not draw.
+        html: 1, labelBackgroundColor: on ? behind() : 'none',
+        align: 'center', verticalAlign: 'middle', resizable: 0, points: '[]',
         fontFamily: FONT_FAMILY, fontSize: label.fontSize, fontColor: colour,
         fontStyle: label.fontWeight === 700 ? 1 : undefined,
         rotation: label.textRotation ? label.textRotation : undefined,

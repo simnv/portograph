@@ -58,6 +58,8 @@ export interface Command {
   format?: Format;
   /** `render` only, and only for a format that carries one palette. Absent means light. */
   theme?: ThemeMode;
+  /** `render --format drawio` only. Absent means `on-run`. */
+  labels?: LabelPlacement;
 }
 
 interface OptionSpec {
@@ -74,6 +76,7 @@ const OPTIONS: Record<string, OptionSpec> = {
   '--layers': { verbs: ['render'], value: true, summary: 'Draw only these link families: routed, overlay (comma separated)' },
   '--format': { verbs: ['render'], value: true, summary: 'Primary artifact format: svg (default) or drawio' },
   '--theme': { verbs: ['render'], value: true, summary: 'Palette a single-palette format carries: light (default), dark or print' },
+  '--labels': { verbs: ['render'], value: true, summary: 'draw.io link labels: on-run (default) or measured, the box stage 9 placed' },
 };
 
 /** Both spellings of `-o X`, `--output X` and `--output=X`, in the order a user would try them. */
@@ -125,6 +128,15 @@ const LAYERS: readonly Layer[] = ['routed', 'overlay'];
 export const FORMATS = ['svg', 'drawio'] as const;
 export type Format = (typeof FORMATS)[number];
 const THEMES: readonly ThemeMode[] = ['light', 'dark', 'print'];
+
+/** Where a draw.io link label sits; see `DrawioOptions.labels`. */
+export const LABEL_PLACEMENTS = ['on-run', 'measured'] as const;
+export type LabelPlacement = (typeof LABEL_PLACEMENTS)[number];
+
+function parseLabels(value: string): LabelPlacement {
+  if (!LABEL_PLACEMENTS.includes(value as LabelPlacement)) throw new UsageError(`--labels does not know '${value}'; use on-run or measured`);
+  return value as LabelPlacement;
+}
 
 function parseFormat(value: string): Format {
   if (!FORMATS.includes(value as Format)) throw new UsageError(`--format does not know '${value}'; use svg or drawio`);
@@ -181,6 +193,10 @@ export function parseCommand(verb: Verb, args: readonly string[]): Command {
   const layers = values.get('--layers');
   const format = values.get('--format');
   const theme = values.get('--theme');
+  const labels = values.get('--labels');
+  if (labels !== undefined && (format === undefined || parseFormat(format) === 'svg')) {
+    throw new UsageError('--labels applies to --format drawio; an SVG draws the label box stage 9 measured');
+  }
   // An SVG carries every palette behind `prefers-color-scheme`, so choosing one at the command line
   // would state something the artifact cannot hold; the option belongs to the formats that can.
   if (theme !== undefined && (format === undefined || parseFormat(format) === 'svg')) {
@@ -195,6 +211,7 @@ export function parseCommand(verb: Verb, args: readonly string[]): Command {
     ...(layers === undefined ? {} : { layers: parseLayers(layers) }),
     ...(format === undefined ? {} : { format: parseFormat(format) }),
     ...(theme === undefined ? {} : { theme: parseTheme(theme) }),
+    ...(labels === undefined ? {} : { labels: parseLabels(labels) }),
   };
 }
 

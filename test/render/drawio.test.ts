@@ -39,6 +39,7 @@ interface Cell {
   target?: string;
   geometry: Record<string, string>;
   points: Point[];
+  offset?: Point;
 }
 
 /** Every `<mxCell>`, with its style string split the way draw.io splits it. */
@@ -51,6 +52,7 @@ function cells(xml: string): Map<string, Cell> {
     const geometry: Record<string, string> = {};
     const geometryTag = /<mxGeometry\b([^>]*)/.exec(body);
     if (geometryTag) for (const pair of geometryTag[1]!.matchAll(/([\w:-]+)="([^"]*)"/g)) geometry[pair[1]!] = pair[2]!;
+    const offsetTag = /<mxPoint x="([^"]*)" y="([^"]*)" as="offset"\/>/.exec(body);
     const array = /<Array as="points">([\s\S]*?)<\/Array>/.exec(body);
     const points: Point[] = [...(array?.[1] ?? '').matchAll(/<mxPoint x="([^"]*)" y="([^"]*)"\/>/g)]
       .map(point => ({ x: Number(point[1]), y: Number(point[2]) }));
@@ -69,6 +71,7 @@ function cells(xml: string): Map<string, Cell> {
       ...(attributes['source'] === undefined ? {} : { source: attributes['source'] }),
       ...(attributes['target'] === undefined ? {} : { target: attributes['target'] }),
       geometry, points,
+      ...(offsetTag ? { offset: { x: Number(offsetTag[1]), y: Number(offsetTag[2]) } } : {}),
     });
   }
   return found;
@@ -123,12 +126,25 @@ describe('draw.io export', () => {
       if (!from) continue;
       const node = model.nodes[from.node]!;
       const port = node.ports.find(item => item.ref.name === from.name && item.ref.ordinal === from.ordinal)!;
-      expect(cell.source).toBe(id('node', from.node));
+      // The claim: a connector terminates on the *port*, not on its node's box. That is what makes
+      // it a connection — moving the port or the node carries the line — and it is the point the
+      // SVG makes visible, since a pill straddles the boundary and is painted over the inner half
+      // of its own stem. The endpoint is the middle of the pill's outward edge.
+      expect(cell.source).toBe(id('port', from.node, from.name!, String(from.ordinal)));
+      const outward = { top: [0.5, 0], bottom: [0.5, 1], left: [0, 0.5], right: [1, 0.5] }[port.side!]!;
       // Both fractions must be present or draw.io drops the constraint entirely, and
-      // `exitPerimeter` defaults to 1, which would project the anchor onto the perimeter.
-      expect(Number(cell.style['exitX'])).toBeCloseTo((port.anchor!.x - node.bounds!.x) / node.bounds!.width, 12);
-      expect(Number(cell.style['exitY'])).toBeCloseTo((port.anchor!.y - node.bounds!.y) / node.bounds!.height, 12);
+      // `exitPerimeter` defaults to 1, which would project the point onto the perimeter.
+      expect(Number(cell.style['exitX'])).toBe(outward[0]);
+      expect(Number(cell.style['exitY'])).toBe(outward[1]);
       expect(cell.style['exitPerimeter']).toBe('0');
+      // That endpoint is the pill's outward edge, which is the anchor moved out by half the pill's
+      // depth — so the waypoints are untouched and only the visible stub changes.
+      const pill = port.pill!.bounds;
+      const at = { x: pill.x + outward[0] * pill.width, y: pill.y + outward[1] * pill.height };
+      const away = port.side === 'left' || port.side === 'right'
+        ? Math.abs(at.x - port.anchor!.x) : Math.abs(at.y - port.anchor!.y);
+      expect(away).toBeCloseTo(port.side === 'left' || port.side === 'right'
+        ? pill.width / 2 : pill.height / 2, 9);
       pinned += 1;
     }
     expect(pinned).toBeGreaterThan(0);
@@ -243,6 +259,40 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
       x: count.bounds!.x - model.canvas!.x, y: count.bounds!.y - model.canvas!.y,
       width: count.bounds!.width, height: count.bounds!.height,
     });
+  }, 60000);
+
+  it('puts a link label on its run, and gives it the backdrop it covers', async () => {
+    const model = await pipeline(fixture('drawio-constructs'));
+    const label = model.labels.find(item => item.role === 'link' && !item.omitted
+      && item.support?.kind === 'link-segment')!;
+    expect(label).toBeDefined();
+    // The claim: `on-run` moves a label onto the segment stage 9 says carries it, and nothing else.
+    // A label centred on a line has to hide the line behind its glyphs, so it takes the colour that
+    // is really behind it; `measured` keeps the box stage 9 placed and needs no fill at all.
+    const on = cells(drawio(model, { labels: 'on-run' })).get(id('linkLabel', label.id))!;
+    const measured = cells(drawio(model, { labels: 'measured' })).get(id('linkLabel', label.id))!;
+    expect(measured.style['labelBackgroundColor']).toBe('none');
+    expect(on.style['labelBackgroundColor']).toMatch(/^#[0-9a-f]{6}$/);
+    expect(on.offset).not.toEqual(measured.offset);
+    // On-run is a projection onto a known segment, so it keeps its distance along the run and gives
+    // up only its offset beside it: the moved label is no further from the line than it was.
+    const segment = model.links.find(item => item.id === (label.owner as { id: string }).id)!
+      .path!.segments[(label.support as { segment: number }).segment]!;
+    const gap = (point: { x: number; y: number }): number => {
+      const dx = segment.to.x - segment.from.x, dy = segment.to.y - segment.from.y;
+      const length = Math.hypot(dx, dy);
+      return length === 0 ? Math.hypot(point.x - segment.from.x, point.y - segment.from.y)
+        : Math.abs(dy * (point.x - segment.from.x) - dx * (point.y - segment.from.y)) / length;
+    };
+    // Both offsets are measured from the same anchor, so their difference is the distance the
+    // label moved. Applied to the box stage 9 placed, it gives where the label now sits.
+    const moved = {
+      x: label.bounds!.x + label.bounds!.width / 2 + (on.offset!.x - measured.offset!.x),
+      y: label.bounds!.y + label.bounds!.height / 2 + (on.offset!.y - measured.offset!.y),
+    };
+    expect(gap(moved)).toBeCloseTo(0, 9);
+    expect(gap({ x: label.bounds!.x + label.bounds!.width / 2, y: label.bounds!.y + label.bounds!.height / 2 }))
+      .toBeGreaterThan(1);
   }, 60000);
 
   it('leaves the model untouched and gives the same bytes twice', async () => {
