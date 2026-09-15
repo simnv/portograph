@@ -87,7 +87,7 @@ drew it. Network diagrams first; software architecture and electrical panels nex
 | Clearances (gates) | node–node 20, edge–foreign-node 10, parallel edge–edge 10 px, stroke-aware, with ownership exceptions | ELK defaults; codex review |
 | Port stem | ≥ 15 px, perpendicular to side | yFiles convention |
 | "Beautiful" ceiling | ~30 nodes | Störrle 2014/2016, Kobourov 2014 |
-| "Workable" ceiling | ~1,000 nodes; per-stage deadlines (ELK 10 s ≤ 300 nodes, 20 s above); 30 s whole-command deadline; generated hub/wide-tier/transit cases at 100, 300 and 1,000 nodes currently hit it (ticket 17) | prototype: `elk.layout()` alone 2 s at 1,000 without partitioning |
+| "Workable" ceiling | ~1,000 nodes; per-stage deadlines (ELK 10 s ≤ 300 nodes, 20 s above); 30 s whole-command deadline; generated hub/wide-tier/transit cases at 100, 300 and 1,000 nodes currently hit it (ticket 17); a generated tiers × fan-out diagram of 300 nodes and 810 links needs 51 s | prototype: `elk.layout()` alone 2 s at 1,000 without partitioning; 51 s measured 2026-09-15, `.scratch/stress/spec.md` |
 | Bundle member gap | 16 px visible clearance; minimum centreline pitch = gap + maximum member stroke, 17.5 px at defaults | prototype `tall3`, stroke-aware G6 |
 | Fixed-path obstacle trim | 18 px at each end | prototype `tall3` |
 | Straight-link eligibility | ports face each other, collinear normals, clear path, length < 2× larger node dimension | Q30 as amended by codex |

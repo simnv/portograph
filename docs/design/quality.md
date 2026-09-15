@@ -87,13 +87,38 @@ the snapshot block) layout time per stage.
 | Aspect | ≥ 0.5 | ≥ 0.4 | advisory (the prototype measured 0.496; the JPEG golden baseline is pending) |
 | `Q` vs approved baseline | ± 0.05 | ± 0.05 | **assertion** |
 
-## Gate enforcement by size
+## Size bands: gate enforcement and time
 
-| Nodes | G1 G2 G4 G5 G6 G7 G8 | G3 |
+The whole-command deadline is 30 s (`COMMAND_DEADLINE_MS` in `src/cli.ts`). It did not move; the
+band claim below did. Three generated workloads, measured 2026-09-15 on the maintainer's machine:
+
+| Nodes | Links | Shape | Time | Measured outcome |
+|---|---|---|---|---|
+| 120 | 200 | tiers × fan-out | 4.0 s | publishes, 989 draw.io cells |
+| 300 | 810 | tiers × fan-out | **51 s** | publishes, 3,363 draw.io cells |
+| 100 | 389 | degree-64 hub, wide tier, transit | 30.0 s | takes the deadline path, no artifact |
+
+Evidence: `.scratch/stress/spec.md` for the first two rows, ticket 17 for the third. The first two
+are pipeline times measured with the deadline out of the way: the layout is produced, and the row
+says what it produced. Under the default command the 51 s row is a failure — 51 s is past 30 s, so
+the CLI ends the run and writes nothing. The third row was measured under the deadline and reached
+it.
+
+So node count alone does not decide the time; link count and degree decide it beside the node
+count. 100 is a **policy choice, not a measured ceiling**: it is where the threshold table above
+stops scoring, and the nearest measurements do not contradict it — 120 nodes at 4.0 s is inside the
+deadline, and the only measurement that failed at 100 nodes is the degree-64 hub.
+
+| Nodes | G1 G2 G4 G5 G6 G7 G8 | G3 | Whole-command time |
 |---|---|---|---|
-| ≤ 300 | enforced | enforced |
-| 301–1,000 | enforced | warning |
-| > 1,000 | `--force` only | warning |
+| ≤ 100 | enforced | enforced | the claimed band; a dense shape can still reach the deadline |
+| 101–300 | enforced | enforced | not bounded — `--force` territory |
+| 301–1,000 | enforced | warning | not bounded — `--force` territory |
+| > 1,000 | `--force` only | warning | not bounded |
+
+The supported band ends at 100 nodes, where it was 300 before. `--force` itself is only required
+above 1,000 nodes (`src/parse/index.ts`, ADR-0006); between 101 and 1,000 nodes nothing refuses the
+command, the time is simply not a promise.
 
 ## Test design
 
