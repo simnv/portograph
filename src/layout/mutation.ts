@@ -20,7 +20,7 @@ import { centreViolations, selectAnchorTier } from './centre.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
-import { produceGroupLabelBands, replanGroupLabels, validateGroupLabelBands } from './bands.js';
+import { alignLinkedGroupGrid, produceGroupLabelBands, replanGroupLabels, validateGroupLabelBands } from './bands.js';
 import { growTierGaps } from './gap-room.js';
 import { tierGapRoom } from './gap-runs.js';
 import { produceLinkLabels, validateLinkLabels } from './link-labels.js';
@@ -666,6 +666,13 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     produceGroupLabelBands(draft);
     if (growTierGaps(draft)) {
       rebuildRegionGeometry(draft, undefined, undefined, true);
+      // The replay refits every group box to its content, so a linked pair the first step gave one
+      // x-extent (ADR-0012) holds two again and the published model would not be the grid's fixed
+      // point — which is what `validateGroupLabelBands` demands. The grid is settled here, before
+      // the labels are planned in these boxes, because it belongs to the replay and not to the
+      // third step: it only grows box extents onto edges that already exist and moves no node, and
+      // a label planned in the narrower box would be centred on the box the grid then widens.
+      alignLinkedGroupGrid(draft);
       replanGroupLabels(draft);
     }
     // 7c seats each transit feed's child under the corridor its link owns; where it could not, the

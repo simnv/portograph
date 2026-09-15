@@ -9,7 +9,7 @@ import { bundles } from '../../src/layout/bundles.js';
 import { centre } from '../../src/layout/centre.js';
 import { flanks } from '../../src/layout/flanks.js';
 import { laneSidesHold, lanes, transitTiers, validateLanes } from '../../src/layout/lanes.js';
-import { bandEntryConflicts, GROUP_LABEL_GEOMETRY, groupLabelObstacles, produceGroupLabelBands, replanGroupLabels, routerEntryPoints } from '../../src/layout/bands.js';
+import { alignLinkedGroupGrid, bandEntryConflicts, GROUP_LABEL_GEOMETRY, groupLabelObstacles, produceGroupLabelBands, replanGroupLabels, routerEntryPoints } from '../../src/layout/bands.js';
 import { growTierGaps } from '../../src/layout/gap-room.js';
 import { rebuildRegionGeometry } from '../../src/layout/region-rebuild.js';
 import { restoreLayoutModel, withLayoutMutation } from '../../src/layout/mutation.js';
@@ -19,6 +19,7 @@ import { moveGroup, rebuildBands, union } from '../../src/layout/skeleton-geomet
 import { score } from '../../src/score/index.js';
 import { FONT_FAMILY, measurePortPill, measureText } from '../../src/text/index.js';
 import { orderedGroupIds } from '../../src/model/model.js';
+import { generateScaleYaml } from '../../scripts/scale-input.mjs';
 import { placed } from './phase-two-fixture.js';
 
 const golden = readFileSync(new URL('../../goldens/m1-sip-edge.yaml', import.meta.url), 'utf8');
@@ -736,4 +737,21 @@ it('plans a group label again where the tier gap room moved its band, and reserv
   const settled = shape();
   replanGroupLabels(model);
   expect(shape()).toEqual(settled);
+}, 120000);
+
+it('settles the linked-group grid again after the tier gap room replay', async () => {
+  // Stress ticket 06. The growth replay refits every group box to its content, so a pair of linked
+  // groups that shared one x-extent (ADR-0012) holds two extents again. 7f's third step plans and
+  // reserves nothing, so it cannot close that itself and the replay settles the grid. Without it
+  // this fan fails publication on `Linked groups do not share the grid their links require`, and so
+  // does the 40-node one of `bundle-scale`, where the refit leaves `access` at 1975 px beside the
+  // 1976.81 of `hubs` and `sinks` at 2730.5 beside the 2731.80 of `sources`. Twenty-four nodes is
+  // the smallest fan of this generator that shows it.
+  const model = run(await throughBundles(generateScaleYaml({ nodes: 24, multiplicity: 3 }).yaml));
+  // The published model is the grid's own fixed point, and every linked pair really shares an
+  // extent: an empty pair list would satisfy the first expectation by itself.
+  expect(alignLinkedGroupGrid(copy(model))).toBe(false);
+  const width = (id: string): number => model.groups[id]!.bounds!.width;
+  expect(width('access')).toBeCloseTo(width('hubs'), 9);
+  expect(width('sinks')).toBeCloseTo(width('sources'), 9);
 }, 120000);
