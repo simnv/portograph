@@ -859,8 +859,11 @@ only, and the renderer masks the overlay layer out of every drawn label, so a la
 stays readable — but the mask cuts the *overlay* under it, and an overlay path goes round the shapes
 it crosses precisely so that the line stays whole. The label is the thing that can move, and the path
 cannot dodge it in return: a link label's box is measured here, after stage 8 built the path. Where
-the whole ladder is covered the ladder runs once more with overlay runs ignored, because a label that
-is drawn beats a line that is whole; the mask then carries the crossing, as it always did. Node
+both sides of every segment are covered the ladder runs again with overlay runs ignored, because a
+label that is drawn beats a line that is whole; the mask then carries the crossing, as it always
+did. That second run comes **before** the shortened text, not after it: a truncated label is the
+last thing tried, because the mask gives the overlay back under a whole label and nothing gives a
+shortened label its characters back (synthetics review ticket 04 C). Node
 bodies and pills on the overlay *layer* stay out of the set: they are not drawn. Every placed label
 is in it, whatever layer its link is on.
 
@@ -885,9 +888,11 @@ zero-length segments are skipped. The first side — *above* for a horizontal se
 vertical one — is tried across every segment before the opposite side is tried across that same
 order; a segment carries the full text only when it is at least the text plus the 8 px shorten
 margin at each end long, so a placed label never reaches past both ends of its run (ticket 30);
-then both passes repeat with the shortened text, and among the clear shortened candidates the
+then the same two passes run with drawn overlay runs ignored; then the pair repeats with the
+shortened text, strict first and relaxed after, and among the clear shortened candidates the
 one keeping the most characters wins (ADR-0014); then the label is omitted with its full text as
-`tooltip`. Authored labels run in link order, then merge runs in bundle and run order, so
+`tooltip`. Four rungs in all: whole text clear of the overlay, whole text across it, shortened text
+clear of it, shortened text across it. Authored labels run in link order, then merge runs in bundle and run order, so
 an accepted label is an obstacle for every later one.
 
 **What a candidate must clear.** Visible nodes and their stroke, visible pills, every already
