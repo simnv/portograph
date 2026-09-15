@@ -396,3 +396,121 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
     expect(print.style['strokeColor']).not.toBe(light.style['strokeColor']);
   }, 60000);
 });
+
+describe('node text', () => {
+  // Arial's own metrics, stated here rather than read from the font table, so the expected
+  // positions are independent of the code that produces them.
+  const UNITS_PER_EM = 2048, ASCENT = 1854, DESCENT = 434;
+  /** The height the glyphs of one line occupy: what a CSS line box centres in its own leading. */
+  const content = (fontSize: number): number => (ASCENT + DESCENT) * fontSize / UNITS_PER_EM;
+  /** The first baseline, one ascent below the box stage 9 measured. */
+  const ascentOf = (fontSize: number): number => ASCENT * fontSize / UNITS_PER_EM;
+
+  /**
+   * draw.io starts a top-aligned label at `bounds.y + baseSpacingTop + spacing + spacingTop`.
+   * `baseSpacingTop` is 5 and the default `spacing` is 2 in drawio-desktop 31.4.5 — mxGraph's own
+   * `baseSpacingTop` is 0, and reading the formula from the library alone puts the label 5 px low.
+   */
+  const DRAWIO_TOP = 7;
+
+  /** Every `<div>` of a cell value, with its inline style split into declarations. */
+  const blocksOf = (value: string): Record<string, string>[] =>
+    [...value.matchAll(/&lt;div style=&quot;([^&]*)&quot;&gt;/g)].map(match => {
+      const style: Record<string, string> = {};
+      for (const part of match[1]!.split(';')) {
+        const at = part.indexOf(':');
+        if (at !== -1) style[part.slice(0, at)] = part.slice(at + 1);
+      }
+      return style;
+    });
+
+  const nodeLabel = (model: LayoutModel, node: string, role: 'node' | 'description') =>
+    model.labels.find(item => item.owner.kind === 'node' && item.owner.id === node
+      && item.role === role && !item.omitted);
+
+  it('puts the first baseline where the pipeline measured it, not a line box lower', async () => {
+    const model = await pipeline(fixture('drawio-node-text'));
+    const all = cells(drawio(model, { theme: 'light' }));
+    for (const [key, node] of Object.entries(model.nodes)) {
+      const first = nodeLabel(model, key, 'node') ?? nodeLabel(model, key, 'description');
+      if (!first) continue;
+      const cell = all.get(id('node', key))!;
+      const blocks = blocksOf(cell.value!);
+      expect(blocks.length).toBeGreaterThan(0);
+      const size = first.fontSize!;
+      const pitch = first.bounds!.height / (first.lines ?? [first.text]).length;
+      // A CSS line box centres its glyphs in the leading; the pipeline puts the baseline one full
+      // ascent below its box and leaves the rest of the leading underneath. So the block starts
+      // half a leading higher, and the two baselines then coincide.
+      const lift = (pitch - content(size)) / 2;
+      const top = Number(cell.style['spacingTop']) + node.bounds!.y + DRAWIO_TOP;
+      expect(top + lift + ascentOf(size)).toBeCloseTo(first.bounds!.y + ascentOf(size), 9);
+      // The line pitch is stated, so a wrapped label keeps the pitch stage 9 measured as well.
+      expect(Number(blocks[0]!['line-height']!.replace('px', ''))).toBeCloseTo(pitch, 9);
+    }
+  }, 60000);
+
+  it('takes the offset and the base font from the first block that draws, name or not', async () => {
+    const model = await pipeline(fixture('drawio-node-text'));
+    const all = cells(drawio(model, { theme: 'light' }));
+    // A node with a description and no name: everything used to come from the name, so the node
+    // carried no offset at all and its description was drawn against the icon.
+    const description = nodeLabel(model, 'described', 'description')!;
+    expect(nodeLabel(model, 'described', 'node')).toBeUndefined();
+    const cell = all.get(id('node', 'described'))!;
+    expect(cell.style['fontSize']).toBe(String(description.fontSize));
+    expect(cell.style['fontStyle']).toBeUndefined();
+    const lift = (description.bounds!.height - content(description.fontSize!)) / 2;
+    expect(Number(cell.style['spacingTop'])).toBeCloseTo(
+      description.bounds!.y - model.nodes['described']!.bounds!.y - DRAWIO_TOP - lift, 9);
+    // A node with a name keeps the name's size and its bold.
+    const named = all.get(id('node', 'named'))!;
+    expect(named.style['fontSize']).toBe(String(nodeLabel(model, 'named', 'node')!.fontSize));
+    expect(named.style['fontStyle']).toBe('1');
+  }, 60000);
+
+  it('keeps each block at its own weight and at the measured gap below the block above', async () => {
+    const model = await pipeline(fixture('drawio-node-text'));
+    const all = cells(drawio(model, { theme: 'light' }));
+    const name = nodeLabel(model, 'both', 'node')!;
+    const description = nodeLabel(model, 'both', 'description')!;
+    const blocks = blocksOf(all.get(id('node', 'both'))!.value!);
+    expect(blocks).toHaveLength(2);
+    // A `<span>` inside the name's own line inherits the cell's bold, which made a 400-weight
+    // description render bold. Each block is its own `<div>` and states its own weight.
+    expect(blocks[0]!['font-weight']).toBe(String(name.fontWeight));
+    expect(blocks[1]!['font-weight']).toBe(String(description.fontWeight));
+    expect(blocks[0]!['font-weight']).not.toBe(blocks[1]!['font-weight']);
+    expect(blocks[1]!['font-size']).toBe(`${description.fontSize}px`);
+    // The gap between the two blocks is the measured one: the description's own lift, minus the
+    // name's, minus the name's full height.
+    const nameLift = (name.bounds!.height - content(name.fontSize!)) / 2;
+    const descriptionLift = (description.bounds!.height - content(description.fontSize!)) / 2;
+    const margin = (description.bounds!.y - descriptionLift)
+      - (name.bounds!.y - nameLift + name.bounds!.height);
+    expect(Number(blocks[1]!['margin-top']!.replace('px', ''))).toBeCloseTo(margin, 9);
+  }, 60000);
+
+  it('emits no value and no text style for a node that draws no text', async () => {
+    const model = await pipeline(fixture('drawio-node-text'));
+    const silent = JSON.parse(JSON.stringify(model)) as LayoutModel;
+    silent.labels = silent.labels.filter(item => !(item.owner.kind === 'node'
+      && item.owner.id === 'named' && item.role === 'node'));
+    const cell = cells(drawio(silent, { theme: 'light' })).get(id('node', 'named'))!;
+    expect(cell.value).toBeUndefined();
+    expect(cell.style['spacingTop']).toBeUndefined();
+    expect(cell.style['verticalAlign']).toBeUndefined();
+  }, 60000);
+
+  it('signs the offset, because a first line within 7 px of the node top needs a negative one', async () => {
+    const model = await pipeline(fixture('drawio-node-text'));
+    // draw.io honours a negative `spacingTop` — measured on drawio-desktop 31.4.5 — so the offset
+    // is written as the arithmetic gives it. Clamping it at zero would drop the text down instead.
+    const moved = JSON.parse(JSON.stringify(model)) as LayoutModel;
+    const label = moved.labels.find(item => item.owner.kind === 'node'
+      && item.owner.id === 'named' && item.role === 'node')!;
+    label.bounds!.y = moved.nodes['named']!.bounds!.y + 1;
+    const cell = cells(drawio(moved, { theme: 'light' })).get(id('node', 'named'))!;
+    expect(Number(cell.style['spacingTop'])).toBeLessThan(0);
+  }, 60000);
+});

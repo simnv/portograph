@@ -1,0 +1,42 @@
+# Expected: Node text in each of the three shapes the draw.io exporter must place it in — a name
+# alone, a name with a description under it, and a description with no name at all. The exporter
+# takes its offset and its base font from the first block that draws, whichever block that is.
+# Test-only input owned by drawio-export ticket 01; the whole pipeline runs, so no stage
+# precondition is needed.
+portograph: 2
+groups:
+  upper: { tier: 0, label: Upper }
+  lower: { tier: 1, label: Lower }
+nodes:
+  named:
+    group: upper
+    class: router
+    label: Alpha
+    ports:
+      - { name: down, side: bottom }
+  both:
+    group: upper
+    class: router
+    label: Beta
+    description: rev 2
+    ports:
+      - { name: down, side: bottom }
+  described:
+    group: upper
+    class: router
+    label: ""
+    description: slot 4
+    ports:
+      - { name: down, side: bottom }
+  sink:
+    group: lower
+    class: tbr
+    label: Delta
+    ports:
+      - { name: one, side: top }
+      - { name: two, side: top }
+      - { name: three, side: top }
+links:
+  - [named.down, sink.one]
+  - [both.down, sink.two]
+  - [described.down, sink.three]
