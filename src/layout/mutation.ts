@@ -14,7 +14,7 @@ import { nodeGap } from './skeleton-graph.js';
 import { rebuildBands, union, validateSkeletonBands } from './skeleton-geometry.js';
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, flankPair } from './flanks.js';
-import { rebuildLaneExtents, validateLanes, transitTiers } from './lanes.js';
+import { rebuildLaneExtents, reseatLanes, validateLanes, transitTiers } from './lanes.js';
 import { rebuildRegions } from './regions.js';
 import { centreViolations, selectAnchorTier } from './centre.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
@@ -650,6 +650,23 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     // touched, exactly as a reservation change does anywhere else in 7f.
     if (growTierGaps(draft)) rebuildRegionGeometry(draft, undefined, undefined, true);
     produceGroupLabelBands(draft);
+    // 7c seats each transit feed's child under the corridor its link owns; where it could not, the
+    // corridor follows the child (ticket 02). The move belongs to the transaction, not to the
+    // callback, exactly as the growth above does. It runs last in 7f, after every centring replay,
+    // because each replay reads lane x as that feed's authoritative x: a corridor moved before one
+    // is a corridor the replay chases, and the child's node stretches after it. Nothing moves here,
+    // so the label bands 7f has just placed stay where they are — the corridor keeps clear of them.
+    const heldLanes = clone(draft.lanes);
+    if (reseatLanes(draft)) {
+      rebuildLaneExtents(draft);
+      // A corridor that follows its child may open an alignment 7c could not reach, and the
+      // centring invariant would then read the published placement as unfinished work. Measure it
+      // both ways and keep the corridors where they were rather than publish that contradiction.
+      const followed = clone(draft.lanes), after = centreViolations(draft).length;
+      draft.lanes = heldLanes; rebuildLaneExtents(draft);
+      if (after <= centreViolations(draft).length) { draft.lanes = followed; rebuildLaneExtents(draft); }
+      else draft.diagnostics = draft.diagnostics.filter(item => item.code !== 'LANE_FOLLOWS_ITS_CHILD');
+    }
   }
   else if (rule === 'link-labels') produceLinkLabels(draft);
   else if (changed || ['rows', 'lanes', 'flanks', 'centre', 'bundles'].includes(rule)) {

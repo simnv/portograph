@@ -291,8 +291,44 @@ final group delta, avoiding accumulated rounding under the exact translation gua
 A corridor's centre cannot decide displacement direction when the corridor contains an entire
 neighbor. If a transit source or an existing corridor blocks propagation, use a clear exterior
 corridor without moving those owners.
-An existing lane's identity, owner, x and width cannot change in later stages. Extents follow the
-current intermediate band with `10 + pathStroke / 2` padding before placement freezes.
+An existing lane's identity, owner and width cannot change in later stages, and its x cannot either
+except under the one rule below. Extents follow the current intermediate band with
+`10 + pathStroke / 2` padding before placement freezes.
+
+**A corridor whose child cannot sit under it follows the child.** 7c aligns each transit feed's
+child port under the lane the feed owns (§ 7c). Where it could not, the child's route has to reach
+the corridor sideways, and it crosses whatever stands between them. The corridor then moves to the
+child's port x instead. Only the corridor in the tier next to the child moves; the corridors before
+it carry the link across tiers it has left behind, and the jog between two corridors is what this
+stage already accepts.
+
+The move is made only when every one of these holds:
+
+- the **corridor at the child's port x is free of foreign geometry** over the whole distance it
+  runs — no occupied group of the transited tier, no other corridor of that tier, and, from the
+  band out to the child's port, no foreign node, no foreign group box, no reserved run of another
+  link and no group title with its link-free margin (ADR-0013);
+- the **child node keeps its feed order**: two corridors of one tier may not swap the children they
+  serve, because each link's descent would then cross the other's;
+- neither end is a **shared port** and the link holds no **shared run** — 7e has already cut that
+  geometry against the corridor where it stands;
+- the move leaves the **centring invariant no worse**. A corridor that follows its child can open
+  an alignment 7c could not reach, and the invariant would then read the published placement as
+  unfinished work. The rule measures `centreViolations` both ways and keeps the corridors where
+  they were rather than publish that contradiction.
+
+**The move runs last in 7f**, after the tier-gap growth and after the group label bands, and that
+is a measured choice. Every centring replay reads lane x as that feed's authoritative x, so a
+corridor moved before one is a corridor the replay chases: on
+`goldens/synthetic/own-lane-is-an-obstacle.yaml` the same move made at 7c widened the child node
+from 145.78 to 1150.89 px and the canvas from 500.05 to 1505.16, and made before the label bands,
+to 622.9 px and 977.16. Made last, nothing moves at all: the corridor alone changes, and crossings
+go 3 → 1 with Q 0.5122 → 0.6704. Nothing else moves either, so the label bands 7f has just placed
+stay where they are, and the corridor is measured clear of them.
+
+The reservation follows the corridor: extents and `fixedSegments` are rebuilt from the new x, so
+the per-gap allocation that reads lane x after 7a and 7c reads the moved one. A moved corridor
+reports `LANE_FOLLOWS_ITS_CHILD`.
 
 **The runs between the lanes are allocated too (ADR-0015 rule 1).** A **tier gap** is the open band
 between two adjacent tier bands. The lane extents that face it bound it. Every run that crosses one
@@ -389,7 +425,9 @@ reserves for every port with two or more routed links (ticket 20; a rule-fixed m
 ADR-0016).
 Iterate child-widening → sibling push → re-centre at most 8 times, ε = 0.5 px; on non-convergence
 keep the last state and report. *Moves:* child groups, child widths. *Re-validate:* lanes (7a
-positions are fixed; if a child now overlaps a lane, push the child, not the lane).
+positions are fixed; if a child now overlaps a lane, push the child, not the lane). A child this
+step leaves off its lane is not left there for good: 7f moves the corridor to it under the rule
+§ 7a states, after the last replay of this step.
 
 **The sibling push covers the whole tier.** A widening takes the space of the groups after it.
 Those groups move right. This includes a group the step does not centre. It also includes a group

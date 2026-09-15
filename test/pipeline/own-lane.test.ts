@@ -7,6 +7,7 @@ import { placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 const fixture = readFileSync(new URL('../../goldens/synthetic/own-lane-is-an-obstacle.yaml', import.meta.url), 'utf8');
+const twoRuns = readFileSync(new URL('../../goldens/synthetic/two-runs-share-a-tier-gap.yaml', import.meta.url), 'utf8');
 
 /**
  * Stress-test reproducer (`.scratch/stress/issues/02`). Two groups of one tier are fed from nearly
@@ -41,4 +42,46 @@ it('keeps a routed gap out of the corridor its own link reserved', async () => {
   }
   // The diagram is poor, but it is a diagram: a failed gate is a judgement, a failed pipeline is not.
   expect(Number.isFinite(score(model).snapshot.Q)).toBe(true);
+}, 60000);
+
+/**
+ * Ticket 02 of `.scratch/synthetics-review`. The child 7c could not seat is the same one, and the
+ * corridor now follows it: 7f moves the lane to the child's port x, because the corridor there is
+ * free and the corridors of the tier keep the order of the children they serve. The link then
+ * descends straight into its port and turns once, in the tier gap above.
+ */
+it('moves a corridor to the child 7c could not seat under it', async () => {
+  const model = bands(bundles(bars(centre(flanks(lanes(rows(await placed(fixture))))))));
+  const link = model.links.find(item => item.id === 'link-3')!;
+  const lane = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === 'link-3')!;
+  const child = model.nodes['node-ba002']!.ports[0]!;
+  expect(model.diagnostics.map(item => item.code)).toContain('LANE_FOLLOWS_ITS_CHILD');
+  expect(lane.x).toBe(child.anchor!.x);
+  expect(lane.bounds.x).toBe(lane.x - lane.bounds.width / 2);
+  expect(lane.side).toBe('right');
+  // The reservation and its extents follow the corridor, so the allocation that reads lane x after
+  // 7a and 7c reads the new one.
+  expect(link.fixedSegments!.map(run => [run.from.x, run.to.x])).toEqual([[lane.x, lane.x]]);
+  // The other corridor of the tier keeps its own child, and the two keep the children's order.
+  const other = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === 'link-1')!;
+  expect(other.x).toBe(model.nodes['node-ba001']!.ports[0]!.anchor!.x);
+  expect(other.x).toBeLessThan(lane.x);
+  // Nothing moved for the corridor: the rule runs after the last centring replay, so the child's
+  // node keeps the width and the canvas keeps the extent 7f published.
+  expect(model.nodes['node-ba002']!.bounds!.width).toBeCloseTo(145.775146484375, 6);
+}, 60000);
+
+/**
+ * The refusal. `two-runs-share-a-tier-gap` has an unseated child and a free corridor at its port x
+ * as well, but following it opens an alignment 7c could not reach, and the centring invariant would
+ * then read the published placement as unfinished work. The corridor stays where 7a put it.
+ */
+it('keeps a corridor that would leave the centring invariant unverified', async () => {
+  const model = bands(bundles(bars(centre(flanks(lanes(rows(await placed(twoRuns))))))));
+  const lane = model.lanes.find(item => item.id === 'lane:"link-3":2')!;
+  const child = model.nodes.d!.ports[0]!;
+  expect(child.anchor!.x).not.toBe(lane.x);
+  expect(lane.x).toBe(59);
+  expect(model.diagnostics.map(item => item.code)).not.toContain('LANE_FOLLOWS_ITS_CHILD');
+  expect(model.diagnostics.map(item => item.code)).not.toContain('CENTRE_INVARIANT_UNVERIFIED');
 }, 60000);

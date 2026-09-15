@@ -4,7 +4,13 @@
 # the owner as well, and the gap reaches the terminal from below instead of crossing the corridor.
 # The stem `node-aa002` keeps for its own link is an obstacle too, so the earlier batch cannot
 # take it.
-# The diagram is poor and fails gates; it is produced.
+#
+# 7c leaves `node-ba002` 233.78 px right of that lane, so 7f moves the corridor to the child's port
+# x instead (ticket 02): the corridor there is free, the two corridors of the tier keep the order of
+# the children they serve, and the rule runs after the last centring replay, so nothing else moves.
+# The link then descends straight into its port and turns once, in the tier gap above. The one
+# crossing left is the child's other link, which jogs across that descent to reach `node-aa002`.
+# Every gate passes.
 portograph: 2
 groups:
   up-a: { tier: 7, label: "Upper Zone" }

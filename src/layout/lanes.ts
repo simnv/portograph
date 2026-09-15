@@ -3,7 +3,7 @@ import { equal } from '../model/json-equality.js';
 import type { Rect } from '../model/geometry.js';
 import type { Lane, LayoutGroup, LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import type { PortRef } from '../model/document.js';
-import { DEFAULT_STROKE_WIDTHS as stroke, linkStrokeWidth, routedStrokeWidth } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS as stroke, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth, routedStrokeWidth } from '../theme/geometry.js';
 import { segmentRectDistance } from '../score/geometry.js';
 import { findPort } from './row-paths.js';
 import { portId } from './skeleton-graph.js';
@@ -110,6 +110,111 @@ export function rebuildLaneExtents(model: LayoutModel): void {
     if (owned.length) link.fixedSegments = owned.map(lane => reservation(model, link, lane));
   }
   expandCanvas(model);
+}
+/** The end of a transit a lane does not align to: the one 7c has to bring under the corridor. */
+function laneChild(model: LayoutModel, link: LayoutLink): PortRef {
+  const source = laneSource(model, link);
+  return source === link.attachments!.from ? link.attachments!.to : link.attachments!.from;
+}
+/**
+ * Whether the child node keeps its feed order. The order the move can break is the order of the
+ * corridors of one tier against the order of the children they serve: two that swap put each
+ * link's descent across the other's. The order of a *node's* feeds cannot break here, because this
+ * rule runs after the last centring replay — the measurement behind the rule's condition is in
+ * decisions-log Q48.
+ */
+function feedOrderHolds(model: LayoutModel, lane: Lane, link: LayoutLink, cx: number): boolean {
+  const anchor = findPort(model, laneChild(model, link))!.anchor!;
+  for (const other of model.lanes) {
+    if (other === lane || other.tier !== lane.tier || other.owner.kind !== 'link') continue;
+    const peer = model.links.find(item => item.id === (other.owner as { id: string }).id);
+    if (!peer || peer.bundle || !peer.attachments) continue;
+    const peerChild = findPort(model, laneChild(model, peer))?.anchor;
+    if (peerChild && (cx - other.x) * (anchor.x - peerChild.x) < -1e-9) return false;
+  }
+  return true;
+}
+/** Whether more than one routed link attaches to a port, which makes it a fan (ticket 20). */
+function shared(model: LayoutModel, ref: PortRef): boolean {
+  const key = portId(ref);
+  return model.links.filter(link => link.layer === 'routed' && link.attachments
+    && [link.attachments.from, link.attachments.to].some(end => portId(end) === key)).length > 1;
+}
+/** Every box a corridor may not stand in, other than the geometry the moving link owns. */
+function corridorFree(model: LayoutModel, lane: Lane, link: LayoutLink, child: PortRef, x: number): boolean {
+  const half = lane.bounds.width / 2, window = { x: x - half, width: lane.bounds.width };
+  const overlaps = (box: { x: number; width: number }) => box.x < window.x + window.width - 1e-6 && box.x + box.width > window.x + 1e-6;
+  // Inside the transited band the corridor is the reservation `validateLanes` measures.
+  for (const group of Object.values(model.groups)) if (group.tier === lane.tier && overlaps(occupied(model, group))) return false;
+  for (const other of model.lanes) if (other !== lane && other.tier === lane.tier
+    && Math.abs(other.x - x) < (other.bounds.width + lane.bounds.width) / 2 - 1e-6) return false;
+  // Beyond the band the corridor is the child's own descent. It may enter the child's group and
+  // nothing else: a foreign node, a foreign group box or a reserved run of another link stops it.
+  const anchor = findPort(model, child)!.anchor!;
+  const low = Math.min(lane.bounds.y, anchor.y), high = Math.max(bottom(lane.bounds), anchor.y);
+  const span = { x: window.x, y: low, width: window.width, height: high - low };
+  const childGroup = model.document.nodes[child.node]!.group;
+  for (const node of Object.values(model.nodes)) {
+    if (node.id === child.node) continue;
+    const box = node.bounds!;
+    if (overlaps(box) && box.y < bottom(span) - 1e-6 && bottom(box) > span.y + 1e-6) return false;
+  }
+  for (const group of Object.values(model.groups)) {
+    if (group.id === childGroup || group.tier === lane.tier) continue;
+    const box = group.bounds!;
+    if (overlaps(box) && box.y < bottom(span) - 1e-6 && bottom(box) > span.y + 1e-6) return false;
+  }
+  for (const other of model.links) {
+    if (other.id === link.id) continue;
+    const runs = [...other.path?.fixed ? other.path.segments : [], ...other.fixedSegments ?? []];
+    for (const segment of runs) if (segmentRectDistance(segment, span) < linkStrokeWidth(other) / 2 - 1e-6) return false;
+  }
+  // A group title keeps its link-free margin from every link, this link included (ADR-0013).
+  for (const label of model.labels) {
+    if (label.role !== 'group' || label.omitted || !label.bounds) continue;
+    const box = {
+      x: label.bounds.x - GROUP_LABEL_LINK_CLEARANCE, y: label.bounds.y - GROUP_LABEL_LINK_CLEARANCE,
+      width: label.bounds.width + 2 * GROUP_LABEL_LINK_CLEARANCE, height: label.bounds.height + 2 * GROUP_LABEL_LINK_CLEARANCE,
+    };
+    if (overlaps(box) && box.y < bottom(span) - 1e-6 && bottom(box) > span.y + 1e-6) return false;
+  }
+  return true;
+}
+/**
+ * 7c seats a transit feed's child under the corridor its link owns. Where it could not, the
+ * corridor follows the child instead of the child's route crossing back to it (ticket 02). Only
+ * the corridor in the tier next to the child may move, and only when the corridor at the child's
+ * port x is free of foreign geometry, and the move keeps the child node's feed order. Only the
+ * corridor in the tier next to the child may move: the corridors before it carry the link across
+ * tiers it has left behind, and the jog between two corridors is what § 7a already accepts.
+ */
+export function reseatLanes(model: LayoutModel): boolean {
+  let moved = false;
+  for (const lane of model.lanes) {
+    if (lane.owner.kind !== 'link') continue;
+    const link = model.links.find(item => item.id === (lane.owner as { id: string }).id);
+    if (!link || link.bundle || !link.attachments) continue;
+    // 7e has already cut the geometry of a link that shares a run, and a shared port's tree is
+    // reserved against the corridor this rule would move. Both keep their corridor.
+    if (link.sharedRuns || [link.attachments.from, link.attachments.to].some(end => shared(model, end))) continue;
+    const order = transitTiers(model, link);
+    if (order[order.length - 1] !== lane.tier) continue;
+    const child = laneChild(model, link), anchor = findPort(model, child)?.anchor;
+    if (!anchor || Math.abs(anchor.x - lane.x) < 0.5) continue;
+    if (!corridorFree(model, lane, link, child, anchor.x) || !feedOrderHolds(model, lane, link, anchor.x)) continue;
+    const group = Object.values(model.groups).filter(item => item.tier === lane.tier)
+      .sort((a, b) => Math.abs(anchor.x - (a.bounds!.x + a.bounds!.width / 2)) - Math.abs(anchor.x - (b.bounds!.x + b.bounds!.width / 2)))[0];
+    if (!group) continue;
+    lane.x = anchor.x;
+    lane.bounds.x = anchor.x - lane.bounds.width / 2;
+    lane.group = group.id;
+    lane.side = anchor.x < group.bounds!.x ? 'left' : 'right';
+    moved = true;
+    placementWarning(model, 'LANE_FOLLOWS_ITS_CHILD',
+      `${link.id} could not be seated under its corridor at tier ${lane.tier}; the corridor follows the child port.`, [link.id]);
+  }
+  if (moved) rebuildLaneExtents(model);
+  return moved;
 }
 /** Prefer the nearest in-span slot that leaves room for the remaining members of this source. */
 function inSpanSlot(model: LayoutModel, link: LayoutLink, core: { x: number; width: number }, width: number,
