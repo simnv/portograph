@@ -513,4 +513,54 @@ describe('node text', () => {
     const cell = cells(drawio(moved, { theme: 'light' })).get(id('node', 'named'))!;
     expect(Number(cell.style['spacingTop'])).toBeLessThan(0);
   }, 60000);
+
+  it('exports label metrics that are out of contract, and states no length a browser rejects', async () => {
+    const model = await pipeline(fixture('drawio-node-text'));
+    // `validate()` checks the boxes, not the type metrics, so a hand-made model can carry a zero
+    // font size, a negative pitch or one that overflows when it is multiplied by the line count.
+    // The exporter states a length the browser and its own arithmetic agree on, and exports.
+    const odd = JSON.parse(JSON.stringify(model)) as LayoutModel;
+    const name = odd.labels.find(item => item.owner.kind === 'node'
+      && item.owner.id === 'both' && item.role === 'node')!;
+    name.lines = ['Beta', ''];
+    name.lineHeight = -1;
+    name.fontSize = 0;
+    const description = odd.labels.find(item => item.owner.kind === 'node'
+      && item.owner.id === 'both' && item.role === 'description')!;
+    description.lineHeight = 1e308;
+    const xml = drawio(odd, { theme: 'light' });
+    expect(xml).not.toMatch(/Infinity|NaN/);
+    const blocks = blocksOf(cells(xml).get(id('node', 'both'))!.value!);
+    expect(blocks).toHaveLength(2);
+    for (const block of blocks) {
+      const length = (key: string): number => Number(block[key]!.replace('px', ''));
+      expect(length('line-height')).toBeGreaterThanOrEqual(0);
+      expect(length('height')).toBeGreaterThanOrEqual(0);
+      expect(Number.isFinite(length('height'))).toBe(true);
+    }
+    expect(Number.isFinite(Number(blocks[1]!['margin-top']!.replace('px', '')))).toBe(true);
+  }, 60000);
+
+  it('places the block below from the measured height, not from the line boxes the text opens', async () => {
+    const model = await pipeline(fixture('drawio-node-text'));
+    /** Where the second block starts, as draw.io adds the cell's own offsets up. */
+    const secondTop = (from: LayoutModel): number => {
+      const cell = cells(drawio(from, { theme: 'light' })).get(id('node', 'both'))!;
+      const blocks = blocksOf(cell.value!);
+      const length = (index: number, key: string): number => Number(blocks[index]![key]!.replace('px', ''));
+      return from.nodes['both']!.bounds!.y + DRAWIO_TOP + Number(cell.style['spacingTop'])
+        + length(0, 'height') + length(1, 'margin-top');
+    };
+    // A browser counts line boxes its own way: a trailing `<br>` opens none. Each block states the
+    // height stage 9 measured, so the description stays where it was measured even then.
+    const trailing = JSON.parse(JSON.stringify(model)) as LayoutModel;
+    const name = trailing.labels.find(item => item.owner.kind === 'node'
+      && item.owner.id === 'both' && item.role === 'node')!;
+    name.lines = [name.text, ''];
+    name.lineHeight = name.bounds!.height / 2;
+    const blocks = blocksOf(cells(drawio(trailing, { theme: 'light' })).get(id('node', 'both'))!.value!);
+    // The stated height is one pitch per measured line, which is the box stage 9 reserved.
+    expect(Number(blocks[0]!['height']!.replace('px', ''))).toBeCloseTo(name.bounds!.height, 9);
+    expect(secondTop(trailing)).toBeCloseTo(secondTop(model), 9);
+  }, 60000);
 });

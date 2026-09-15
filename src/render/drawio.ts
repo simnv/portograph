@@ -226,13 +226,16 @@ interface TextBlock {
   pitch: number;
   /** Where the block's first line box has to start for its baseline to land on the measured one. */
   top: number;
-  /** One pitch per line: what the next block has to be placed below. */
+  /** One pitch per line: the box the next block is placed below, whatever the lines then do. */
   height: number;
   fontSize: number;
   fontWeight: 400 | 700;
   /** Stated only when the block does not take the cell's own `fontColor`. */
   colour?: string;
 }
+
+/** A quantity a model states, kept finite: no draw.io attribute can carry an infinity. */
+const finite = (value: number): number => Number.isFinite(value) ? value : 0;
 
 /**
  * A measured label as a draw.io text block, or nothing when the label draws no line.
@@ -243,18 +246,28 @@ interface TextBlock {
  * block states the pipeline's own line pitch as `line-height` — which also keeps a wrapped label's
  * further lines at the measured pitch — and starts half a leading higher, which puts every baseline
  * back where stage 9 measured it. Measured against drawio-desktop 31.4.5.
+ *
+ * The font table supplies the leading and the model supplies the box, which is the division of
+ * labour `render` already uses to put a baseline inside a measured label. Nothing here sizes,
+ * moves or grows anything: the same box is expressed in draw.io's own layout language. The table is
+ * read for one pixel of type and scaled, so a model that states an absurd font size is exported
+ * rather than refused.
  */
 function textBlock(label: LayoutLabel, size: number, weight: 400 | 700, colour?: string): TextBlock | undefined {
   const lines = label.lines ?? (label.text === '' ? [] : [label.text]);
   if (lines.length === 0) return undefined;
-  const fontSize = label.fontSize ?? size;
-  const fontWeight = label.fontWeight ?? weight;
-  const font = measureText('', { fontSize, weight: fontWeight });
-  const pitch = label.lineHeight ?? label.bounds!.height / lines.length;
-  const leading = pitch - (font.ascent + font.descent);
+  const fontSize = finite(label.fontSize ?? size);
+  // The model knows two weights. Anything else is out of contract and reads as the regular one.
+  const fontWeight = (label.fontWeight ?? weight) === 700 ? 700 : 400;
+  const unit = measureText('', { fontSize: 1, weight: fontWeight });
+  const glyphs = finite((unit.ascent + unit.descent) * fontSize);
+  // A pitch is a length. A negative or infinite one is not CSS, and the arithmetic below and the
+  // browser have to agree, so both use the clamped value.
+  const pitch = Math.max(0, finite(label.lineHeight ?? label.bounds!.height / lines.length));
   return {
-    html: htmlText(lines), pitch, top: label.bounds!.y - leading / 2, height: pitch * lines.length,
-    fontSize, fontWeight, ...(colour === undefined ? {} : { colour }),
+    html: htmlText(lines), pitch, top: label.bounds!.y - (pitch - glyphs) / 2,
+    height: finite(pitch * lines.length), fontSize, fontWeight,
+    ...(colour === undefined ? {} : { colour }),
   };
 }
 
@@ -264,13 +277,17 @@ function textBlock(label: LayoutLabel, size: number, weight: 400 | 700, colour?:
  * One `<div>` per block rather than one run of `<br>`-separated spans, because a block carries its
  * own weight, size and line pitch, and a `<span>` inside a shared line inherits the cell's weight —
  * which is how a 400-weight description came out bold beside a 700-weight name.
+ *
+ * Each block states its measured height as well as its pitch. A browser counts line boxes its own
+ * way — a trailing `<br>` opens none — so the block that follows is placed below the height stage 9
+ * measured, and never below a height the text happened to occupy.
  */
 function blockValue(blocks: readonly TextBlock[]): string {
   return blocks.map((block, index) => {
     const previous = blocks[index - 1];
     const margin = previous === undefined ? undefined : block.top - (previous.top + previous.height);
-    return `<div style="line-height:${num(block.pitch)}px;font-size:${num(block.fontSize)}px;`
-      + `font-weight:${block.fontWeight}`
+    return `<div style="line-height:${num(block.pitch)}px;height:${num(block.height)}px;`
+      + `font-size:${num(block.fontSize)}px;font-weight:${block.fontWeight}`
       + (block.colour === undefined ? '' : `;color:${block.colour}`)
       + (margin === undefined ? '' : `;margin-top:${num(margin)}px`)
       + `">${block.html}</div>`;
