@@ -134,6 +134,33 @@ links: [[a.p, c.p], [a.q, c.q], [a.r, c.r]]`;
     expect(model.diagnostics.some(d => d.code === 'LANE_OUTSIDE_SOURCE_SPAN')).toBe(false);
     expect(model.nodes.a).toEqual(input.nodes.a);
   });
+  it('ticket 03: takes the column on the side of the transited group the target stands on', async () => {
+    // `a.q` is a top port, so 7c never seats `c` under the lane and the x `c` has here is the x it
+    // keeps. The lane therefore passes `mid` on the side `c` stands on, and the same staging with
+    // `c` on the other side takes the other column. `a.q` stays right of `mid` in both.
+    const yaml = `portograph: 2
+groups: {up: {tier: 0}, mid: {tier: 1}, down: {tier: 2}}
+nodes:
+  a: {group: up, label: A, ports: [{name: q, side: top}]}
+  s: {group: up, label: S}
+  b: {group: mid, label: B}
+  c: {group: down, label: C, ports: [{name: p, side: top}]}
+links: [[a.q, c.p]]`;
+    const staged = async (childX: number): Promise<LayoutModel> => stageInput(await placed(yaml), draft => {
+      const a = draft.nodes.a!, b = draft.nodes.b!, c = draft.nodes.c!, s = draft.nodes.s!;
+      const shift = (node: typeof a, x: number) => { const dx = x - node.bounds!.x; node.bounds!.x = x; for (const port of node.ports) port.anchor!.x += dx; };
+      shift(a, 225); shift(s, 320); shift(b, 100); shift(c, childX);
+      for (const id of ['up', 'mid', 'down']) { const box = union(draft.groups[id]!.nodes.map(id => draft.nodes[id]!.bounds!)); draft.groups[id]!.bounds = { x: box.x - 12, y: box.y - 12, width: box.width + 24, height: box.height + 24 }; }
+    });
+    for (const [childX, side] of [[20, 'left'], [420, 'right']] as const) {
+      const input = await staged(childX), model = lanes(rows(input));
+      const mid = model.groups.mid!, lane = model.lanes[0]!;
+      expect([childX, model.nodes.c!.ports[0]!.anchor!.x < mid.bounds!.x]).toEqual([childX, side === 'left']);
+      expect([childX, lane.side]).toEqual([childX, side]);
+      expect([childX, side === 'left' ? right(lane.bounds) <= mid.bounds!.x : lane.bounds.x >= right(mid.bounds!)]).toEqual([childX, true]);
+      validateLanes(model);
+    }
+  });
   it('expands both occupied margins with actual translations and stroke-aware capacity', async () => {
     const data = parseYaml(readFileSync(new URL('../../goldens/synthetic/stage-inputs.yaml', import.meta.url), 'utf8')) as Record<string, {
       'group-boxes': Record<string, number[]>; 'node-boxes': Record<string, number[]>; 'port-anchors': Record<string, number[]>;
@@ -310,12 +337,15 @@ nodes:
   c: {group: down, label: C, ports: [{name: p, side: top}]}
 links: [[a.p, c.p], [a.q, b.p]]`;
     const input = stageInput(await placed(yaml), draft => {
-      const a = draft.nodes.a!, b = draft.nodes.b!, spare = draft.nodes.spare!;
+      const a = draft.nodes.a!, b = draft.nodes.b!, c = draft.nodes.c!, spare = draft.nodes.spare!;
       const shift = (node: typeof a, x: number) => { const dx = x - node.bounds!.x; node.bounds!.x = x; for (const port of node.ports) port.anchor!.x += dx; };
       shift(a, 0); a.bounds!.width = 320; a.size!.width = 320; a.ports[0]!.anchor!.x = 250; a.ports[1]!.anchor!.x = 250 + a.sidePitch!.bottom!;
       shift(spare, 360); shift(b, 100);
+      // The transit target stands under the corridor its link owns, so 7a's target-side rule reads
+      // the same side the source does and the corridor keeps `mid`'s right margin (ticket 03).
+      shift(c, 250 - (c.ports[0]!.anchor!.x - c.bounds!.x));
       draft.groups.up!.rowOrder = ['a', 'spare'];
-      for (const id of ['up', 'mid']) { const box = union(draft.groups[id]!.nodes.map(id => draft.nodes[id]!.bounds!)); draft.groups[id]!.bounds = { x: box.x - 12, y: box.y - 12, width: box.width + 24, height: box.height + 24 }; }
+      for (const id of ['up', 'mid', 'down']) { const box = union(draft.groups[id]!.nodes.map(id => draft.nodes[id]!.bounds!)); draft.groups[id]!.bounds = { x: box.x - 12, y: box.y - 12, width: box.width + 24, height: box.height + 24 }; }
     });
     const ready = flanks(lanes(rows(input))), model = centre(ready);
     expect(model.lanes[0]!.x).toBe(250);

@@ -7,6 +7,11 @@
 # ADR-0015 rule 1 per tier gap allocates both: `link-2` turns on the row nearer the gap's low
 # boundary, `link-3` one pitch beyond it, because their two runs stand on one x and would otherwise
 # share length there.
+#
+# `link-3` leaves `a` through a top port, so 7c never seats `d` under the lane and `d` keeps the x
+# it has, to the right of `c`. 7a therefore passes tier 2 on `c`'s right (ticket 03): the corridor
+# takes the side that faces the target, and `c` moves into the margin the plan opens. The two runs
+# no longer share the column they crossed on, and the diagram has no crossing.
 portograph: 2
 groups:
   ga: {tier: 0}

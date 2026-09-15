@@ -261,10 +261,28 @@ vertical run, which stage 8 stitches back unchanged. For a non-bundle owner the 
 the lane is fixed here. For a bundle member, 7a records only the owned lane x and extent; stage 7e
 consumes that reservation when it creates the member path. Capacity uses actual occupied geometry, measured pills, and participating strokes. Corridor width is
 `max(34, endpoint pill widths + 10, 20 + path stroke + maximum node stroke)` in pixels.
-The lane's **alignment end** is the endpoint nearer the anchor tier (7c), because 7c holds that end fixed and aligns the other end under the lane; when both ends are equidistant, and for bundle members (7e owns their geometry), it is the authored source. "Source" in this stage means that end. First try the source port x, considering every insertion gap in the intermediate group order.
+The lane's **alignment end** is the endpoint nearer the anchor tier (7c), because 7c holds that end fixed and aligns the other end under the lane; when both ends are equidistant, and for bundle members (7e owns their geometry), it is the authored source. "Source" in this stage means that end. The other end is the **target**. First try the source port x, considering every insertion gap in the intermediate group order.
 Choose the feasible outward translation plan with the least total displacement, keeping all
 previous corridors and transit source groups fixed. If no such plan exists, use the in-span
 allocation and then the exterior fallback described below.
+
+**A corridor passes its tier on the side that faces the target.** The source decides where inside
+that side the column goes; the target decides which side. Of the insertion gaps, the in-span slots
+and the two exterior columns, take the one that leaves the transited group between the corridor and
+the target, so the run leaves the tier already on the side it has to reach.
+
+The rule reads the target only where placement already knows the x it will keep. Five targets have
+no such x, and the corridor then keeps the side the source asks for, exactly as before:
+
+- a **bundle member** — it keeps the authored source and 7e owns its geometry;
+- a target in a **bar** group — 7d takes its port x from the other end of the drop;
+- a **shared port** — it is a fan, and 7c settles its x from all of its peers at once;
+- a target **7c seats under the lane** — it takes the lane's own x, so reading it here would read
+  this rule's own answer back. 7c seats it when the two ports face each other across the tiers: the
+  source port on the side towards the target's tier and the target port on the side towards the
+  source's tier, neither end in a flank (that is the same test `feeds` makes in 7c). A wrapped
+  port — one on the side away from its peer — fails it, and its target keeps the x it has;
+- a target the **transited tier itself feeds** — it travels with the groups this stage moves aside.
 Before fixing any lane x, expand occupied intermediate margins through horizontal group/node/flank
 translations and expand the canvas. Preserve transit source anchors and the groups' internal order.
 Plan displacement outward from the insertion gap and propagate it through neighboring groups.

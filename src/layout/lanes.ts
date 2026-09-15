@@ -6,6 +6,7 @@ import type { PortRef } from '../model/document.js';
 import { DEFAULT_STROKE_WIDTHS as stroke, linkStrokeWidth, routedStrokeWidth } from '../theme/geometry.js';
 import { segmentRectDistance } from '../score/geometry.js';
 import { findPort } from './row-paths.js';
+import { portId } from './skeleton-graph.js';
 import { moveGroup, union } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { withLayoutMutation } from './mutation.js';
@@ -183,9 +184,51 @@ export function allocateLanes(model: LayoutModel): void {
   // Retain the source-side order through every intermediate tier, including same-node bundles.
   // Links sharing one alignment-end anchor follow their far ends' x, so the lanes of a fan from one
   // port keep the children's row order and 7c can align every child under its own lane.
-  const farX = (link: LayoutLink) => {
-    const source = laneSource(model, link), far = source === link.attachments!.from ? link.attachments!.to : link.attachments!.from;
-    return findPort(model, far)!.anchor!.x;
+  const farEnd = (link: LayoutLink) => {
+    const source = laneSource(model, link);
+    return source === link.attachments!.from ? link.attachments!.to : link.attachments!.from;
+  };
+  const farX = (link: LayoutLink) => findPort(model, farEnd(link))!.anchor!.x;
+  const isBar = (port: PortRef) => model.document.groups[model.document.nodes[port.node]!.group]!.shape === 'bar';
+  const portLoad = new Map<string, number>();
+  const peerTiers = new Map<string, Set<number>>();
+  for (const link of model.links) if (link.layer === 'routed' && link.attachments) {
+    const ends = [link.attachments.from, link.attachments.to] as const;
+    for (const end of ends) portLoad.set(portId(end), (portLoad.get(portId(end)) ?? 0) + 1);
+    for (const [end, peer] of [ends, [ends[1], ends[0]] as const]) {
+      if (!peerTiers.has(end.node)) peerTiers.set(end.node, new Set());
+      peerTiers.get(end.node)!.add(nodeTier(model, peer.node));
+    }
+  }
+  /**
+   * Whether 7c will seat the far end under the lane as a transit feed. It reads the same two port
+   * sides `feeds` reads: the run leaves the alignment end towards the far tier, and enters the far
+   * port from that side. A wrapped port fails this, and its far end keeps the x it has.
+   */
+  const anchorTier = selectAnchorTier(model);
+  const seatedByCentre = (link: LayoutLink): boolean => {
+    if (anchorTier === undefined) return false;
+    const parent = laneSource(model, link), child = farEnd(link);
+    if ([parent, child].some(end => model.groups[model.document.nodes[end.node]!.group]!.flank)) return false;
+    const below = nodeTier(model, child.node) > anchorTier;
+    return findPort(model, parent)!.side === (below ? 'bottom' : 'top')
+      && findPort(model, child)!.side === (below ? 'top' : 'bottom');
+  };
+  /**
+   * The x the link's target holds once placement freezes, where placement already knows it. The
+   * target is the far end: 7c brings it under the lane, and where it cannot, the run out of the
+   * lane travels to it. Five far ends have no x to read yet, and the rule that reads the target
+   * takes no opinion from them: a bundle member keeps the authored source and 7e owns its geometry,
+   * a bar takes its port x from the other end in 7d, a port that several links share is a fan whose
+   * x 7c settles from all of its peers at once, a far end 7c seats under the lane takes the lane's
+   * own x, so reading it here would only read this rule's own answer back, and a far end the
+   * transited tier itself feeds travels with the groups this stage moves aside.
+   */
+  const targetX = (link: LayoutLink, tier: number): number | undefined => {
+    if (link.bundle || seatedByCentre(link)) return undefined;
+    const far = farEnd(link);
+    return isBar(far) || (portLoad.get(portId(far)) ?? 0) > 1 || peerTiers.get(far.node)!.has(tier)
+      ? undefined : findPort(model, far)!.anchor!.x;
   };
   const links = model.links.filter(link => transitTiers(model, link).length).sort((a, b) =>
     findPort(model, laneSource(model, a))!.anchor!.x - findPort(model, laneSource(model, b))!.anchor!.x || farX(a) - farX(b) || a.sourceIndex - b.sourceIndex);
@@ -200,8 +243,12 @@ export function allocateLanes(model: LayoutModel): void {
       const nearest = [...main].sort((a, b) => Math.min(Math.abs(sx - a.bounds!.x), Math.abs(sx - right(a.bounds!)))
         - Math.min(Math.abs(sx - b.bounds!.x), Math.abs(sx - right(b.bounds!))))[0] ?? groups[0]!;
       const core = occupied(model, nearest);
-      const side = sx < core.x + core.width / 2 ? 'left' : 'right';
-      let x = side === 'left' ? Math.min(sx, core.x - half) : Math.max(sx, right(core) + half);
+      // A corridor passes its tier on the side of the transited group that faces the link's target
+      // (ticket 03), so the run leaves the tier already on the side its far end stands on. Where the
+      // target has no x to read, the corridor keeps the side the source asks for.
+      const target = targetX(link, tier);
+      const side = target === undefined ? undefined : target < core.x + core.width / 2 ? 'left' : 'right';
+      let x = sx < core.x + core.width / 2 ? Math.min(sx, core.x - half) : Math.max(sx, right(core) + half);
       // Reserve in transported source order. Previous corridors are immutable even during planning.
       const prior = pending.filter(lane => lane.tier === tier);
       for (const lane of prior) if (Math.abs(x - lane.x) < (width + lane.bounds.width) / 2) {
@@ -209,25 +256,30 @@ export function allocateLanes(model: LayoutModel): void {
       }
       // A corridor directly below its source avoids an approach jog. Before ownership freezes,
       // move intermediate groups aside where that preserves prior corridors and source groups.
-      const direct = Array.from({ length: groups.length + 1 }, (_, split) =>
-        marginTranslations(model, groups, split, sx, width, prior, fixedSources))
-        .filter((shift): shift is number[] => shift !== undefined)
-        .sort((a, b) => a.reduce((sum, dx) => sum + Math.abs(dx), 0) - b.reduce((sum, dx) => sum + Math.abs(dx), 0))[0];
+      // An insertion gap that leaves the transited group on the target side is taken first; a plan
+      // on the other side is taken only where the target side has none.
+      const at = groups.indexOf(nearest);
+      const offSide = (split: number): number => side === undefined ? 0 : Number(side === 'left' ? split > at : split <= at);
+      const direct = Array.from({ length: groups.length + 1 }, (_, split) => split)
+        .map(split => ({ split, shift: marginTranslations(model, groups, split, sx, width, prior, fixedSources) }))
+        .filter((plan): plan is { split: number; shift: number[] } => plan.shift !== undefined)
+        .sort((a, b) => offSide(a.split) - offSide(b.split)
+          || a.shift.reduce((sum, dx) => sum + Math.abs(dx), 0) - b.shift.reduce((sum, dx) => sum + Math.abs(dx), 0))[0]?.shift;
       let shifts: number[] | undefined;
       if (direct) { x = sx; shifts = direct; }
       else {
         // Prefer a full in-span allocation for the remaining same-source members when it fits.
         x = inSpanSlot(model, link, core, width, prior, tierLinks.slice(index)) ?? x;
-        // If exterior packing crossed the main group, take its other margin.
-        if (x + half > core.x && x - half < right(core)) x = right(core) + half;
-        const split = groups.indexOf(nearest) + (x > right(core) ? 1 : 0);
+        // If exterior packing crossed the main group, take the margin the target side asks for.
+        if (x + half > core.x && x - half < right(core)) x = side === 'left' ? core.x - half : right(core) + half;
+        const split = at + (x > right(core) ? 1 : 0);
         shifts = marginTranslations(model, groups, split, x, width, prior, fixedSources);
       }
       if (!shifts) {
         // A source or earlier corridor blocks propagation. An exterior corridor needs no movement.
         const left = Math.min(...groups.map(group => occupied(model, group).x), ...prior.map(lane => lane.bounds.x)) - half;
         const rightX = Math.max(...groups.map(group => right(occupied(model, group))), ...prior.map(lane => right(lane.bounds))) + half;
-        x = Math.abs(left - sx) <= Math.abs(rightX - sx) ? left : rightX;
+        x = side === undefined ? (Math.abs(left - sx) <= Math.abs(rightX - sx) ? left : rightX) : side === 'left' ? left : rightX;
         shifts = groups.map(() => 0);
       }
       const moved: string[] = [];
