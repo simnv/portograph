@@ -343,6 +343,28 @@ export function crossBundleFans(model: LayoutModel): void {
       target.set(item.link.id, slot); prior = slot;
     }
     const isFixed = (id: string): boolean => links.find(link => link.id === id)?.path?.fixed === true;
+    /**
+     * Whether a branch's own run would leave stage 8 no way on but back along it. The branch hands
+     * over at its own depth on its own track; where its far port's checkpoint stands *shallower*
+     * than that, the route has to come back the way it was handed, on that same line, and the
+     * router retraces the reserved run rather than failing a gate.
+     *
+     * Such a member keeps the tree's stems and nothing else. Stage 8 routes the whole of it, as it
+     * did before this rule, and the gates report what that costs: a gate failure is recoverable and
+     * a throw is not. Measuring the run itself rather than the corner it turns at is ticket 48.
+     */
+    const hemmed = (item: typeof items[number], row: number, track: number): boolean => {
+      const depth = stop(item, row, track);
+      // With no outward run there is nothing for the route to come back along; and a far port
+      // *behind* the fan is reached by leaving the corridor altogether, with the fan's own node in
+      // the way of any line back. Only a far port standing in the corridor can be overshot.
+      if (depth <= row + 1e-6 || depthOf(item.far.anchor!) <= row + 1e-6) return false;
+      return depthOf(checkpoint(item.far)) < depth - 1e-6;
+    };
+    const release = (item: typeof items[number]): void => placementWarning(model, 'FAN_BRANCH_UNRESERVED',
+      `${item.link.id} keeps only the shared stem at ${port.ref.node}.${port.ref.name ?? '*'}: a branch to `
+      + `${item.far.ref.node}.${item.far.ref.name ?? '*'} would hand over beyond that port's own approach, `
+      + 'and stage 8 would come back along the reserved run (ticket 48).', [item.link.id]);
     let active = [...ordered], cursor = { ...port.anchor! }, parent: string | undefined, depth = 0;
     let peeled: number | undefined;
     const paths = new Map(items.map(item => [item.link.id, [] as PathSegment[]]));
@@ -358,10 +380,13 @@ export function crossBundleFans(model: LayoutModel): void {
       // Farthest track first; a fixed member is never peeled while another member remains.
       const leaf = [...active].sort((a, b) => (Number(isFixed(a.link.id)) - Number(isFixed(b.link.id)))
         || Math.abs(target.get(b.link.id)! - coordinate(port)) - Math.abs(target.get(a.link.id)! - coordinate(port)))[0]!;
-      const elbow = world(target.get(leaf.link.id)!, rows[depth]!);
-      push(leaf.link.id, point, elbow, owner);
-      push(leaf.link.id, elbow, world(target.get(leaf.link.id)!, stop(leaf, rows[depth]!, target.get(leaf.link.id)!)), leaf.link.owner);
-      peeled = target.get(leaf.link.id)!;
+      const at = target.get(leaf.link.id)!, elbow = world(at, rows[depth]!);
+      if (hemmed(leaf, rows[depth]!, at)) release(leaf);
+      else {
+        push(leaf.link.id, point, elbow, owner);
+        push(leaf.link.id, elbow, world(at, stop(leaf, rows[depth]!, at)), leaf.link.owner);
+        peeled = at;
+      }
       active = active.filter(i => i !== leaf); cursor = point; parent = id; depth++;
     }
     // The member left over turns at the last junction's own row, which the branch that peeled there
@@ -372,8 +397,9 @@ export function crossBundleFans(model: LayoutModel): void {
     // a straight-through leaf turns nowhere, so both keep the shorter path they had.
     const last = active[0]!, owner = { kind: 'shared-stem' as const, id: parent! };
     const goal = target.get(last.link.id)!, here = coordinate(port);
-    const shares = goal !== here && Math.sign(goal - here) === Math.sign(peeled! - here);
-    if (shares) {
+    const shares = goal !== here && peeled !== undefined && Math.sign(goal - here) === Math.sign(peeled - here);
+    if (hemmed(last, rows[shares ? depth : Math.max(depth - 1, 0)]!, goal)) release(last);
+    else if (shares) {
       const turn = world(here, rows[depth]!), elbow = world(goal, rows[depth]!);
       // The extension leaves the last junction's point along the shared normal, so it claims that
       // junction like every other branch there; G6 excuses a branch at a tree vertex, not a stray run.

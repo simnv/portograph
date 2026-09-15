@@ -1,0 +1,21 @@
+# Expected: the target one tier down carries two left ports, and the branch goes to the lower of
+# them. The track steps to the edge of that node nearer the coordinate it wanted, which is *below*
+# the node, so the branch's outward run points away from the port's own approach: stage 8 would come
+# back along the reserved run and refuse the path (`Routed path retraces itself`).
+#
+# A branch that would hand over beyond its far port's approach keeps the tree's shared stem and
+# nothing else, and stage 8 routes the whole of it, as it did before ADR-0018 rule 3. The model says
+# so with `FAN_BRANCH_UNRESERVED`. Every gate passes. Measuring the run rather than the corner the
+# branch turns at is ticket 48; until then this is the fail-closed case.
+portograph: 2
+profile: network
+groups:
+  row-group: { tier: 0 }
+  lower: { tier: 1 }
+nodes:
+  hub: { group: row-group, ports: [{ name: p, side: right }] }
+  peer: { group: row-group, ports: [{ name: q, side: left }] }
+  sub: { group: lower, ports: [{ name: a, side: left, order: 1 }, { name: q, side: left, order: 2 }] }
+links:
+  - [hub.p, peer.q]
+  - [hub.p, sub.q]

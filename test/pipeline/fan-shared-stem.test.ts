@@ -308,3 +308,19 @@ it('ticket 45: a fan track steps past the node standing in its corridor (ADR-001
   const reach = model.links[1]!.sharedRuns!.from!.at(-1)!;
   expect(Math.max(reach.from.x, reach.to.x)).toBeGreaterThan(wall.x);
 }, 60000);
+
+it('ticket 48: a branch that would hand over beyond its port keeps the shared stem and nothing else', async () => {
+  // The track steps to the edge below the target node, so the branch's outward run points away from
+  // that port's own approach and stage 8 would come back along it. The branch keeps the tree's stem
+  // and the router owns the rest: a gate failure is recoverable and a throw is not.
+  const model = await run(fixture('a-hemmed-fan-branch-keeps-its-stem'));
+  expect(score(model).snapshot.passed).toBe(true);
+  const branch = model.links[1]!, anchor = model.nodes['hub']!.ports[0]!.anchor!;
+  const runs = branch.sharedRuns!.from!;
+  expect(runs).toHaveLength(1);
+  expect(runs[0]).toMatchObject({ from: anchor, to: { x: anchor.x + MIN_STEM, y: anchor.y } });
+  expect(runs[0]!.owner.kind).toBe('shared-stem');
+  // The tree still owns that stem for both members, so no first segment is drawn twice.
+  expect(model.links[0]!.sharedRuns!.from![0]).toEqual(runs[0]);
+  expect(model.diagnostics.some(item => item.code === 'FAN_BRANCH_UNRESERVED')).toBe(true);
+}, 60000);
