@@ -40,8 +40,8 @@ interface Participant {
   nearEdge: 'low' | 'high';
   /** `true` when `far` also stands on the opposite boundary, so the whole run is determined. */
   farOnEdge: boolean;
-  /** Where the router still has to reach beyond the gap, when the far end is a port. */
-  tail?: { from: Point; to: Point };
+  /** The far port's own outward checkpoint, when the far end is a port beyond the gap. */
+  reach?: Point;
 }
 
 /** One allocated run: the reserved geometry, and the links that may cross it. */
@@ -51,9 +51,10 @@ export interface GapRun {
   index: number;
   segments: PathSegment[];
   /**
-   * Links whose own route must cross this tier gap. A run along a gap is a wall along it, never
-   * across it, so the links that have to get through are given the crossing rather than a dead end
-   * (ADR-0015 rule 3). They are the only links this run does not obstruct.
+   * Links whose own route must cross this tier gap. A run **along** a gap is a wall along it and
+   * never across it, so the links that have to get through are given the crossing rather than a
+   * dead end (ADR-0015 rule 3). The crossing is of the row alone: the vertical parts of the run
+   * still obstruct them, and a route can pass those by.
    */
   crossers: string[];
 }
@@ -120,19 +121,19 @@ function edgeOf(gap: TierGap, point: Point): 'low' | 'high' | undefined {
 }
 
 /**
- * The line the router is left with when a participant's far end is a port: from the boundary the
- * allocation reaches out to that port's own outward checkpoint. It exists only where the port faces
- * the gap — a port on a node's other side, or an end that consumes a shared run, leaves a route
- * placement cannot see, and its gap declines.
+ * The outward checkpoint of a participant's far port, when the far end is a port beyond the gap.
+ * The run reaches that point, so the router is left with the port's own stem and nothing else. It
+ * exists only where the port faces the gap: a port on a node's other side, or an end that consumes
+ * a shared run, leaves a route placement cannot see, and the gap leaves that run out.
  */
-function tailOf(model: LayoutModel, link: LayoutLink, end: 'from' | 'to', far: Point, edge: number):
-{ from: Point; to: Point } | undefined {
+function reachOf(model: LayoutModel, link: LayoutLink, end: 'from' | 'to', far: Point, edge: number):
+{ point: Point } | undefined {
   const port = findPort(model, link.attachments![end]);
   if (!port?.anchor || port.side === undefined) return undefined;
   const travel = Math.sign(far.y - edge);
   if (travel === 0 || OUTWARD[port.side] !== -travel) return undefined;
-  const reach = stemReach(model, model.nodes[link.attachments![end].node]!);
-  return { from: { x: far.x, y: edge }, to: { x: far.x, y: far.y - travel * reach } };
+  const stem = stemReach(model, model.nodes[link.attachments![end].node]!);
+  return { point: { x: far.x, y: far.y - travel * stem } };
 }
 
 /**
@@ -173,15 +174,15 @@ function gapUsers(model: LayoutModel, gaps: TierGap[]): Map<number, GapUsers> {
       const item: Participant = { link, index, near: near.point, far: far.point, nearFirst,
         nearEdge: (nearFirst ? edgeA : edgeB)!, farOnEdge: edgeA !== undefined && edgeB !== undefined };
       // The approach is owed whether this run is seated or not: a run the gap declines still leaves
-      // its corridor head-on, and a stub seated over that stem would share length with it.
+      // its corridor head-on, and a run seated over that stem would share length with it.
       users.approaches.push({ link: link.id, x: item.near.x, edge: item.nearEdge });
       if (item.farOnEdge) users.approaches.push({ link: link.id, x: item.far.x, edge: item.nearEdge === 'low' ? 'high' : 'low' });
       if (!item.farOnEdge) {
-        const tail = far.kind === 'port'
-          ? tailOf(model, link, nearFirst ? 'to' : 'from', far.point, item.nearEdge === 'low' ? gap.high : gap.low)
+        const reach = far.kind === 'port'
+          ? reachOf(model, link, nearFirst ? 'to' : 'from', far.point, item.nearEdge === 'low' ? gap.high : gap.low)
           : undefined;
-        if (!tail) { users.crossers.add(link.id); continue; }
-        item.tail = tail;
+        if (!reach) { users.crossers.add(link.id); continue; }
+        item.reach = reach.point;
       }
       users.items.push(item);
     }
@@ -192,8 +193,8 @@ function gapUsers(model: LayoutModel, gaps: TierGap[]): Map<number, GapUsers> {
 /** Whether this participant needs a row of its own: its two ends do not share one x. */
 const needsRow = (item: Participant): boolean => !same(item.near.x, item.far.x);
 
-/** Where a participant stands on each gap boundary. */
-function stubs(item: Participant): { x: number; edge: 'low' | 'high' }[] {
+/** Where a participant stands on each gap boundary, one entry per vertical segment. */
+function ends(item: Participant): { x: number; edge: 'low' | 'high' }[] {
   const far: 'low' | 'high' = item.nearEdge === 'low' ? 'high' : 'low';
   return [{ x: item.near.x, edge: item.nearEdge }, { x: item.far.x, edge: far }];
 }
@@ -204,7 +205,8 @@ function stubs(item: Participant): { x: number; edge: 'low' | 'high' }[] {
  *
  * Two runs that stand on one x — a lane under a lane of the same x in the band above, or a port
  * over a lane's mouth — would share length there unless the one leaving the low boundary turns
- * first. That is the only forced constraint. A row crossing another run's stub is a crossing, and
+ * first. That is the only forced constraint. A row that crosses another run's vertical segment is a
+ * crossing, and
  * a crossing between two allocated runs is reserved rather than discovered.
  */
 function rowOrder(rows: Participant[]): Participant[] | undefined {
@@ -213,8 +215,8 @@ function rowOrder(rows: Participant[]): Participant[] | undefined {
   for (const one of rows) {
     for (const other of rows) {
       if (other === one) continue;
-      for (const mine of stubs(one)) {
-        for (const theirs of stubs(other)) {
+      for (const mine of ends(one)) {
+        for (const theirs of ends(other)) {
           if (!same(mine.x, theirs.x)) continue;
           // Two runs standing on one x from one boundary share length whichever rows they take.
           if (mine.edge === theirs.edge) return undefined;
@@ -247,6 +249,9 @@ function rowOrder(rows: Participant[]): Participant[] | undefined {
 function runSegments(item: Participant, gap: TierGap, row: number | undefined): PathSegment[] {
   const owner = { kind: 'link' as const, id: item.link.id };
   const at = (x: number, y: number): Point => ({ x, y });
+  // A run reaches the far lane terminal, or the gap's far boundary where it crosses on one x. A row
+  // that ends at a port stops on the row at that port's x: the piece out to the port is the port's
+  // own approach, which placement cannot fix, and `reach` is where it has to arrive.
   const far = item.farOnEdge ? item.far.y : item.nearEdge === 'low' ? gap.high : gap.low;
   const points: Point[] = row === undefined
     ? [item.near, at(item.near.x, far)]
@@ -259,6 +264,30 @@ function runSegments(item: Participant, gap: TierGap, row: number | undefined): 
     segments.push({ from: { ...from }, to: { ...to }, owner: { ...owner } });
   }
   return segments;
+}
+
+/**
+ * Whether an allocated run comes closer to one of its own link's reserved runs than the gates allow.
+ * A pair that meets at a corner is one turn of one path and is left out; a pair that runs the same
+ * way and never meets is the pair G6 measures, whichever link owns it.
+ */
+function meetsOwnRun(model: LayoutModel, item: Participant, segments: PathSegment[]): boolean {
+  const margin = linkStrokeWidth(item.link) / 2 + routedStroke(model) / 2 + STRAIGHT_PATH_CLEARANCE.path;
+  const alongY = (run: { from: Point; to: Point }): boolean => same(run.from.x, run.to.x);
+  const meet = (a: { from: Point; to: Point }, b: { from: Point; to: Point }): boolean =>
+    [a.from, a.to].some(one => [b.from, b.to].some(other => same(one.x, other.x) && same(one.y, other.y)));
+  return reservedRuns(item.link).some(run => {
+    const box = grow({ x: Math.min(run.from.x, run.to.x), y: Math.min(run.from.y, run.to.y),
+      width: Math.abs(run.to.x - run.from.x), height: Math.abs(run.to.y - run.from.y) }, margin);
+    return segments.some(segment => {
+      // Two segments that meet at a corner are one turn of one path; two that run the same way and
+      // never meet are the pair G6 measures.
+      if (alongY(segment) !== alongY(run) || meet(segment, run)) return false;
+      const low = { x: Math.min(segment.from.x, segment.to.x), y: Math.min(segment.from.y, segment.to.y) };
+      const high = { x: Math.max(segment.from.x, segment.to.x), y: Math.max(segment.from.y, segment.to.y) };
+      return high.x > box.x + EPS && low.x < right(box) - EPS && high.y > box.y + EPS && low.y < bottom(box) - EPS;
+    });
+  });
 }
 
 /** Whether a run meets a corridor its own link owns. Only a collinear vertical run may. */
@@ -372,6 +401,14 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
   if (!order) return empty;
   const attachedOf = (item: Participant): Set<string> =>
     new Set([item.link.attachments!.from.node, item.link.attachments!.to.node]);
+  // The line beyond a boundary is the port's own approach. It does not move with the row, so it is
+  // answered once, and a gap that cannot leave one of them clear allocates nothing: the run it
+  // would have to leave out is the one another batch then takes.
+  for (const item of items) {
+    if (!item.reach) continue;
+    const edge = { x: item.far.x, y: item.nearEdge === 'low' ? gap.high : gap.low };
+    if (firstBlock(list, item.link, { from: edge, to: item.reach }, attachedOf(item))) return empty;
+  }
   const pitch = MEMBER_GAP + routedStroke(model), limit = gap.high - pitch / 2;
   // Two centrelines that run side by side keep the gate's clearance plus the widest routed stroke,
   // the same figure the router nudges a same-batch pair apart by.
@@ -379,15 +416,15 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
   /**
    * How far a row must stand from the approaches a link outside the allocation still owes. A run
    * the gap does not seat leaves its corridor head-on for one router stem, on the lane's own x, and
-   * a stub seated over that stem would share length with it.
+   * a run seated over that stem would share length with it.
    */
   const window = (item: Participant, absent: ReadonlySet<string>): { low: number; high: number } => {
     const stem = GROUP_LABEL_GEOMETRY.routerStem;
     let low = gap.low + pitch / 2, high = limit;
-    for (const stub of stubs(item)) {
+    for (const end of ends(item)) {
       for (const owed of approaches) {
-        if (owed.link === item.link.id || !absent.has(owed.link) || !same(owed.x, stub.x)) continue;
-        if (owed.edge === stub.edge) return { low: Infinity, high: -Infinity };
+        if (owed.link === item.link.id || !absent.has(owed.link) || !same(owed.x, end.x)) continue;
+        if (owed.edge === end.edge) return { low: Infinity, high: -Infinity };
         if (owed.edge === 'low') low = Math.max(low, gap.low + stem + clearance);
         else high = Math.min(high, gap.high - stem - clearance);
       }
@@ -400,8 +437,10 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
     // A corridor admits its owner's collinear run alone, so a row that met one of the link's own
     // lanes would enter it sideways. Nothing places a lane inside a gap; this keeps it so.
     if (segments.some(segment => same(segment.from.y, segment.to.y) && meetsOwnLane(model, item.link, segment))) return false;
+    // The link's own reserved runs are its exemption only where the allocated run meets them. A run
+    // this one merely passes is geometry the gates measure against it like any other.
     return !segments.some(line => firstBlock(list, item.link, line, attachedOf(item)))
-      && !(item.tail && firstBlock(list, item.link, item.tail, attachedOf(item)));
+      && !meetsOwnRun(model, item, segments);
   };
   const seat = (absent: ReadonlySet<string>): Map<Participant, number> => {
     const at = new Map<Participant, number>();
@@ -460,7 +499,7 @@ export function allocateGapRuns(model: LayoutModel): GapRun[] {
     if (!items.length) continue;
     const gap = gaps[key]!;
     // The lines this gap measures reach past its own boundaries wherever a run ends at a port.
-    const reach = items.flatMap(item => item.tail ? [item.tail.from.y, item.tail.to.y] : []);
+    const reach = items.flatMap(item => item.reach ? [item.reach.y] : []);
     const low = Math.min(gap.low, ...reach), high = Math.max(gap.high, ...reach);
     const near = list.filter(item => item.bounds.y < high - EPS && bottom(item.bounds) > low + EPS);
     const allocated = allocateGap(model, near, gap, entry);

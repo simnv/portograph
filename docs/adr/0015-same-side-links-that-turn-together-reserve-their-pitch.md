@@ -120,13 +120,13 @@ planned routed gap that straddles it, and has a lane terminal on one of its boun
 allocated:
 
 - a **column** where the run's two ends share one x — the straight segment across the gap;
-- a **row** where they do not — a horizontal line in the gap with a vertical stub at each end;
+- a **row** where they do not — a horizontal line in the gap, with a vertical segment at each end;
 - a **tail** where the far end is a port beyond the gap — the row reaches that port's x and stops;
   the piece out to the port stays routed, and the allocation is made only where it is clear.
 
 Rows pack from the low boundary, one pitch (`16 px + widest routed stroke`) apart, each at the first
 row clear of frozen placement geometry. The order is forced wherever two runs stand on one x: the
-one leaving the low boundary turns first, or their stubs share length. A run the gap leaves out
+one leaving the low boundary turns first, or their vertical segments share length. A run the gap leaves out
 still owes its own head-on approach of one router stem, and the rows keep clear of it. A gap where
 no run needs a row allocates nothing.
 

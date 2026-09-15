@@ -277,30 +277,37 @@ An existing lane's identity, owner, x and width cannot change in later stages. E
 current intermediate band with `10 + pathStroke / 2` padding before placement freezes.
 
 **The runs between the lanes are allocated too (ADR-0015 rule 1).** A **tier gap** is the open band
-between two adjacent tier bands, bounded by the lane extents that face it. Every run that crosses
-one is allocated before the first ownership batch runs. The rule that owns the lanes owns this too,
+between two adjacent tier bands. The lane extents that face it bound it. Every run that crosses one
+is allocated before the first ownership batch runs. The rule that owns the lanes owns this too,
 and reads the same frozen placement.
 
 A run whose two ends share one x takes that **column**, straight across the gap. A run whose ends
-differ takes a **row**: a horizontal line inside the gap, with a vertical stub down to it from each
+differ takes a **row**: a horizontal line inside the gap. A vertical segment joins the row to each
 end that stands on a boundary. Where the far end is a port beyond the gap, the row reaches that
-port's x and stops there; the piece from the row out to the port stays routed, and the allocation is
-made only where that piece is clear.
+port's x and stops. The piece from the row out to the port stays routed, and the gap allocates only
+where that piece is clear.
 
-Rows pack from the low boundary. Each takes the first row clear of frozen geometry at or beyond one
-pitch (`16 px + widest routed stroke`) past the one before it, half a pitch inside each boundary.
-Two runs that stand on one x — a lane under a lane of the same x in the band above, or a port over a
-lane's mouth — would share length there. The one that leaves the low boundary turns first; two such
-runs from one boundary have no clean order, and the gap allocates neither. A run the gap leaves out
-still leaves its own corridor head-on for one router stem, and the rows keep clear of that stem. A
-gap allocates nothing when no run in it needs a row, so a diagram whose transit links all descend on
-one x is untouched.
+Rows pack from the low boundary. The pitch between two of them is `16 px + widest routed stroke`.
+Each row takes the first position clear of frozen geometry at or beyond that pitch past the one
+before it. The first and the last keep half a pitch from their own boundary. Two runs that stand on
+one x would share length there. A lane can sit under a lane of the same x in the band above, and a
+port can sit over a lane's mouth. The one that leaves the low boundary turns first. Two such runs
+from one boundary have no clean order, and the gap allocates neither.
+
+Every run with a lane terminal on a boundary owes a head-on approach of one router stem on the
+lane's own x. It owes it whether the gap seats that run or not, and every seated row keeps the
+gate's clearance from it. A gap allocates nothing when no run in it needs a row. A diagram whose
+transit links all descend on one x is therefore untouched.
+
+An allocated run also keeps that clearance from every reserved run of its own link that runs the
+same way and never meets it. A pair that meets at a corner is one turn of one path. A pair that runs
+the same way and does not meet is the pair G6 measures, whichever link owns it.
 
 Two allocated runs of one gap may **cross**. Neither is routed, so the crossing is reserved rather
-than discovered and neither needs an exemption from the other. A run a gap cannot seat, and a link
-that must cross the gap without a lane terminal on either boundary, keeps the route it has today:
-the allocated runs do not obstruct it, because a run along a gap is a wall along the gap and never
-across it (ADR-0015 rule 3).
+than discovered and neither needs an exemption from the other. A link that must cross the gap
+without a lane terminal on either boundary keeps the route it has today. The rows do not obstruct
+it: a run along a gap is a wall along it and never across it (ADR-0015 rule 3). A gap that cannot
+leave every one of its approaches clear allocates nothing.
 
 A link transiting several tiers reserves a lane at each, ordered from source to target even for
 upward links. Prefer in-span corridors. When they do not fit, retain source geometry, reserve an
@@ -637,15 +644,16 @@ Registered as obstacles, each expanded once in the adapter and never in the mode
   obstacles, each expanded by the routed half stroke;
 - **the reserved outward stem of every link no batch has routed yet**, covered by the same
   `10 + (its stroke + widest routed stroke) / 2` clearance. A stem is left out on a node the current
-  batch attaches to as well, because two ports on one node side share that strip. These rectangles
-  are added per batch. They never enter the ownership exclusions, so they cannot change a batch;
-  they remain for the attachments no gap allocation reaches.
+  batch attaches to on the same **side** as well, because two ports of one node side share that
+  strip. A port on another side of the same node stands in its own strip and keeps its reservation.
+  These rectangles are added per batch. They never enter the ownership exclusions, so they cannot
+  change a batch; they remain for the attachments no gap allocation reaches.
 - **every allocated tier-gap run** (§ 7a), covered by the clearance a reserved run carries, for
   every batch from the first. This is the head-on approach to a lane, reserved rather than covered
-  by a rectangle: measured over 322 diagrams, a 23 × 38 px cover repaired 8 failures and broke 4,
-  because the wall it put in a tier gap pushed other links into routes their own checkpoints could
-  not meet. An allocated run obstructs every link except the ones that must cross that gap, which
-  the allocation names.
+  by a rectangle. Measured over 322 diagrams, a 23 × 38 px cover repaired 8 failures and broke 4:
+  the wall it put in a tier gap pushed other links into routes their own checkpoints could not meet.
+  A run's **row** does not obstruct the links that must cross that gap, which the allocation names;
+  its vertical segments obstruct them, and a route can pass those by.
 
 **A lane obstructs its owner too.** The corridor admits the owner's collinear run and nothing else.
 Stage 8 stitches that run back. It never routes it. The owner therefore needs no exemption here.
