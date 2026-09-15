@@ -15,6 +15,10 @@
 # A group edge names no distance, only "not here", so the search now takes the next position the
 # pitch allows. The row is seated at y 147.25, one pitch on and 26.25 px clear of the group edge,
 # and the diagram publishes.
+#
+# It publishes at Q 0.4921 and fails G5 `port-order` on n5, whose two links leave one side in an
+# order the far-end ranges do not separate. That is not this rule's and is left as it is: the
+# fixture exists for the seating, and the seating is what the test asserts.
 portograph: 2
 groups:
   ga: { tier: 0, label: "Top A" }
