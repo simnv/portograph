@@ -594,4 +594,49 @@ links: []
       expect(landing(xml, all, all.get(child.parent!)!, child)).toEqual(want);
     }
   }, 60000);
+
+  it('anchors a label to the segment it sits beside, not to the first that reaches it', async () => {
+    // Codex round 4: two positions can reach the same point exactly, one from the segment the label
+    // sits on and one from a parallel segment 200px away with a perpendicular of -200. Both drew
+    // the label in the right place, and only one of them kept it there when the shape moved.
+    const run = [point(100, 100), point(300, 100), point(300, 300), point(100, 300)];
+    const model = probe(await blank(), [{ id: 'facing', runs: [run], labels: [{ at: point(200, 320), support: 2 }] }]);
+    const xml = drawio(model, { labels: 'on-run' });
+    const all = cells(xml);
+    const edge = all.get(id('link', 'facing'))!;
+    expect(landing(xml, all, edge, edge)).toEqual({ x: 200, y: 300 });
+    // On its run means a perpendicular of zero — against the supporting segment, not against the
+    // one that faces it. Drag that segment 100px down and the label goes with it.
+    expect(Number(edge.geometry['y'])).toBeCloseTo(0, 9);
+    const moved = [run[0]!, run[1]!, point(300, 400), point(100, 400)];
+    expect(getPoint(moved, { x: Number(edge.geometry['x']), y: Number(edge.geometry['y']) }).y).toBe(400);
+  }, 60000);
+
+  it('reaches a label beyond a run shorter than a pixel without an absolute offset', async () => {
+    // Codex round 4: the arc length was held to whole pixels inside the run, but draw.io rounds the
+    // fraction it is given, so x=1 on a 0.8px run resolves a fraction past the last point. Holding
+    // the candidates short of that spent an absolute offset on a position the pair could reach.
+    const model = probe(await blank(), [
+      { id: 'short', runs: [[point(100, 100), point(100.8, 100)]], labels: [{ at: point(101, 120) }] },
+    ]);
+    const all = cells(drawio(model, { labels: 'measured' }));
+    expect(all.get(id('link', 'short'))!.offset).toBeUndefined();
+    expect(Number(all.get(id('link', 'short'))!.geometry['x'])).toBeLessThanOrEqual(1);
+  }, 60000);
+
+  it('states a label in time linear in the length of its run', async () => {
+    // Codex round 4: every candidate position walked the whole polyline, and the candidates grow
+    // with it, so a 500-segment path cost 37x what it did before. The candidates are read in
+    // ascending order and draw.io's walk only moves forward, so one walk serves them all.
+    const long = (count: number): Point[] =>
+      Array.from({ length: count + 1 }, (_, step) => point(30 * step, 100 + 30 * (step % 2)));
+    const model = probe(await blank(), Array.from({ length: 60 }, (_, index) => ({
+      id: `long-${index}`, runs: [long(400)], labels: [{ at: point(6000.3, 130.2) }],
+    })));
+    const started = Date.now();
+    const all = cells(drawio(model, { labels: 'measured' }));
+    // Generous by design: the point is the shape of the growth, not the machine it ran on.
+    expect(Date.now() - started).toBeLessThan(4000);
+    expect(all.get(id('link', 'long-0'))!.value).toBe('long-0-0');
+  }, 60000);
 });

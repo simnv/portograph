@@ -997,18 +997,24 @@ function decodeEdgeLabel(points: readonly Point[], label: EdgeLabel): Point {
  * (no arc length reaches it), a label at a corner (the joint decodes onto the later segment, whose
  * normal points elsewhere), and a zero-length polyline (there is no direction at all).
  *
- * Every whole-pixel position that could carry the label is measured with the decoder above, and the
- * one leaving the smallest remainder wins. The result is exact wherever the format allows it and
- * exact by remainder everywhere else.
+ * Every whole-pixel position that could carry the label is read back the way draw.io reads it, and
+ * the one leaving the smallest remainder wins. Between two that leave the same remainder the one
+ * nearer the line wins, because that is the segment the label really sits beside and the one it
+ * keeps following. The result is exact wherever the format allows it and exact by remainder
+ * everywhere else. The work is linear in the number of segments: the candidates are read in
+ * ascending order and draw.io's own walk only ever moves forward, so it is walked once.
  */
 function edgeLabel(points: readonly Point[], at: Point): EdgeLabel {
   const spans = spansOf(points);
   const total = spans.reduce((sum, span) => sum + span, 0);
   const start = points[0] ?? at;
   if (total === 0) return { x: 0, y: 0, offset: { x: at.x - start.x, y: at.y - start.y } };
-  // `x` stays inside the stated -1..1, so the arc length never runs past the last point.
-  const limit = Math.floor(total);
-  const wanted = new Set<number>([0, limit]);
+  // `x` stays inside the stated -1..1. Both ends of that range are candidates in their own right:
+  // at the far end the rounded arc length runs a fraction *past* the last point, which is the only
+  // way a label beyond the end is reached without an absolute offset at all.
+  const limit = Math.round(total);
+  const fraction = (pixel: number): number => Math.min(1, Math.max(-1, 2 * (pixel / total) - 1));
+  const wanted = new Set<number>([fraction(0), fraction(limit)]);
   let walked = 0;
   for (const [index, span] of spans.entries()) {
     if (span > 0) {
@@ -1018,26 +1024,34 @@ function edgeLabel(points: readonly Point[], at: Point): EdgeLabel {
       // Either whole pixel around the wanted position, and one either side of those: a position on
       // a joint has to be able to step back into the earlier segment to keep that segment's normal.
       for (const step of [-1, 0, 1]) {
-        wanted.add(Math.min(limit, Math.max(0, Math.floor(along) + step)));
-        wanted.add(Math.min(limit, Math.max(0, Math.ceil(along) + step)));
+        wanted.add(fraction(Math.min(limit, Math.max(0, Math.floor(along) + step))));
+        wanted.add(fraction(Math.min(limit, Math.max(0, Math.ceil(along) + step))));
       }
     }
     walked += span;
   }
-  let best: { label: EdgeLabel; left: number } | undefined;
-  for (const wholePixel of [...wanted].sort((a, b) => a - b)) {
-    const x = 2 * (wholePixel / total) - 1;
+  let span = spans[0] ?? 0, before = 0, index = 1;
+  let best: { label: EdgeLabel; left: number; beside: number } | undefined;
+  for (const x of [...wanted].sort((a, b) => a - b)) {
     // Read the position back the way draw.io will, so the chosen segment is the one it will choose.
     const dist = Math.round((x / 2 + 0.5) * total);
-    const { index, walked: before, span } = decodeSegment(points, spans, dist);
+    while (dist >= Math.round(before + span) && index < points.length - 1) {
+      before += span;
+      span = spans[index]!;
+      index += 1;
+    }
     const from = points[index - 1]!, to = points[index]!;
     const dx = to.x - from.x, dy = to.y - from.y;
     const factor = span === 0 ? 0 : (dist - before) / span;
     const on = { x: from.x + dx * factor, y: from.y + dy * factor };
+    // What the relative pair reaches is the perpendicular; what it leaves behind is the tangent.
     const y = span === 0 ? 0 : ((at.x - on.x) * dy - (at.y - on.y) * dx) / span;
-    const drawn = decodeEdgeLabel(points, { x, y });
-    const left = Math.hypot(at.x - drawn.x, at.y - drawn.y);
-    if (best === undefined || left < best.left - EPS) best = { label: { x, y }, left };
+    const left = span === 0 ? Math.hypot(at.x - on.x, at.y - on.y)
+      : Math.abs(((at.x - on.x) * dx + (at.y - on.y) * dy) / span);
+    if (best === undefined || left < best.left - EPS
+      || Math.abs(left - best.left) <= EPS && Math.abs(y) < best.beside - EPS) {
+      best = { label: { x, y }, left, beside: Math.abs(y) };
+    }
   }
   const label = best!.label;
   if (best!.left <= EPS) return label;
