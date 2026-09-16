@@ -1,4 +1,6 @@
-import type { LayoutGroup, LayoutModel } from '../model/layout.js';
+import type { GroupShape, PortRef } from '../model/document.js';
+import type { Side } from '../model/geometry.js';
+import type { Bundle, LayoutGroup, LayoutModel } from '../model/layout.js';
 import { orderedGroupIds } from '../model/model.js';
 import { bandGap, compareId, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
@@ -14,8 +16,130 @@ import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
  * Everything this file decides is decided during placement: the column count, the column x, the row
  * y and both gaps. Nothing here is discovered while routing.
  */
-export const isGridGroup = (model: LayoutModel, id: string): boolean =>
-  model.document.groups[id]?.shape === 'grid';
+export const isGridGroup = (model: LayoutModel, id: string): boolean => groupShape(model, id) === 'grid';
+
+/**
+ * The shape a group really takes: the authored one, unless it holds both ends of a **bundle**
+ * (`enclosedBundle`), in which case it takes `row`.
+ *
+ * One function, because a declined group has to be a `row` to **every** rule and not only to the
+ * packer: `rows.ts` repacks `row` groups, `row-paths.ts` pins a straight path between two nodes of
+ * one, `sides-two.ts` reads a row neighbour's gap back, and `mutation.ts` guards that the rows rule
+ * touches nothing else. Read through `document.groups[id].shape` directly, a declined group would
+ * be neither a grid nor a row, and its own link would reach stage 8 with no row path — `Router
+ * skipped a required checkpoint`.
+ *
+ * `parse` already answers `ring` and `free` with `row` and a diagnostic; this is the same answer
+ * one stage later, where the links are known. It cannot *reach* `ring` or `free`, because
+ * `parse/index.ts` maps every shape outside `row`/`bar`/`grid` to `row` before this runs: what
+ * carries over to a future stacked shape is the rule, not this code path.
+ */
+export function groupShape(model: LayoutModel, id: string): GroupShape {
+  const shape = model.document.groups[id]?.shape ?? 'row';
+  return shape === 'grid' && enclosedBundle(model, id) !== undefined ? 'row' : shape;
+}
+
+/** The side the author fixed on the port `ref` names, read from the document so no stage can move it. */
+function authoredSide(model: LayoutModel, ref: PortRef): Side | undefined {
+  return model.document.nodes[ref.node]?.ports.find(port => port.ordinal === ref.ordinal
+    && (port.name ?? undefined) === (ref.name ?? undefined)
+    && (port.anonymous ?? false) === (ref.anonymous ?? false))?.side;
+}
+
+/**
+ * The bundle whose whole channel lies inside `id` — both endpoint nodes are its own — or
+ * `undefined`.
+ *
+ * **A group that holds both ends of a link owes that link the space between its two endpoint
+ * bodies.** A `row` gives it for nothing, because every node of a row stands on one line. A shape
+ * that stacks its nodes has to earn it, and for a **bundle** it cannot: a bundle's members turn in
+ * a **channel**, the space between the two endpoint bodies along the bundle's own normal, and the
+ * rows are stacked before the bundle rules **grow** a body across them. `parallelPaths`
+ * (`bundle-paths.ts`) and `straightPaths` beside it both read that channel as the signed difference
+ * of the two port faces, minus a stem at each end, and neither asks whether the two faces are in
+ * order.
+ *
+ * Measured on the gridded golden with `shape: grid` on `datacenter`, both arrangements fail:
+ *
+ * - **In one row and adjacent**, which is the arrangement the column count really picks
+ *   (`[EAC-01 EAC-02] / [EBR-01 EBR-02]`, 35 px between the two bodies): `EAC-02` shares a column
+ *   with `EBR-02` and grows to 322.75 px tall, so its body covers `EBR-02` outright and the channel
+ *   with it — `BUNDLE_CHANNEL_BLOCKED`.
+ * - **In different rows**: shipped pre-ticket-31 code packs
+ *   `[EAC-01 EBR-01 EAC-02] / [EBR-02]` and reports `have -368.25` — the two faces out of order,
+ *   reported as a shortfall of turning room, which is not what it is.
+ *
+ * The first is why this is a **refusal** and not an arrangement rule: keeping the two endpoints in
+ * one row is already what the grid does there, and the bundle still fails. No row order could save
+ * it, because what crosses the channel is a body the rows were stacked before it grew. The
+ * authored-side fault next door is the opposite case — an arrangement *does* save it, so
+ * `likeSidePairs` constrains the count instead of refusing the shape.
+ *
+ * Incomplete, and measured to be: the predicate is "both ends in this group", so a bundle between a
+ * **flank** and one grid node cannot be seen. Delete the two `EBR-01`↔`EBR-02` links from the
+ * gridded golden and `datacenter` keeps the grid, where `TBR-002`'s two cross-group bundles stack
+ * their blocks into two different rows and fail `Nodes EBR-02 and EAC-02 violate clearance` — on
+ * `main` too. Stress ticket 32 records it; the gridded golden survives because it happens to carry
+ * an intra-group bundle.
+ */
+export function enclosedBundle(model: LayoutModel, id: string): Bundle | undefined {
+  return model.bundles.find(bundle => bundle.nodes.every(node => model.document.nodes[node]?.group === id));
+}
+
+/**
+ * Pairs of the group's own nodes that a grid may not put in **one column**: joined by a routed link
+ * whose two ports the author fixed to `top`.
+ *
+ * Nodes of one column share the column's x and are left-aligned in it, so two of them overlap in x.
+ * The lower one's `top` stem then points straight into the upper one's body, and the upper one's
+ * `top` port is on the far side of that body — above the **first row**, where the group has only its
+ * own top padding and a label band, not the tier gap. The path has to climb round all of it, and
+ * nothing reserved that. In two different columns the two x ranges are disjoint by the node gap and
+ * the stem meets nothing; that is why the predicate is a **column** and not a row.
+ *
+ * Measured, and each line of the table is why the predicate is no wider (stress ticket 32):
+ *
+ * | pair | arrangement | result |
+ * |---|---|---|
+ * | `top`/`top` | one column | `Router skipped a required checkpoint` (`label-no-gap.yaml` gridded) |
+ * | `top`/`top` | two columns, two rows | publishes — a 20-node grid packs 5 × 4 at 408 × 785; forcing one row instead gives a 1 480.5 px ribbon |
+ * | `top`/`top` | side by side | publishes (`a-grid-already-seats-a-like-side-pair.yaml`) |
+ * | `bottom`/`bottom` | one column | **publishes**, Q 0.5586682246067611, in the identical arrangement `top`/`top` fails in |
+ * | `right`/`left` | one column | publishes — both stems leave the column and join outside it |
+ * | `right`/`left` | side by side | publishes; declining it cost Q 0.8476 → 0.6472 and a canvas 2.62× wider |
+ *
+ * `bottom`/`bottom` is the asymmetry worth naming: below the lower row lie the group's bottom
+ * padding **and** the tier gap, so the way round the lower body is room something already reserved,
+ * where above the first row there is none. The predicate is therefore `top` only — the direction the
+ * measurement justifies — and not "the same vertical side".
+ *
+ * Only **routed** links count. An overlay link is unrouted and exempt from the clearance gates, so
+ * it cannot produce the checkpoint fault this exists to prevent; `exitRanks` next door skips a stub
+ * for the same kind of reason. Stress ticket 34 is the same shape of fault in the both-ways floor.
+ *
+ * An end the author left **free** is not counted either: the same-group side vote reads the packed
+ * geometry and follows the arrangement. A pair with one end authored and one free is untested rather
+ * than allowed on purpose.
+ */
+export function likeSidePairs(model: LayoutModel, group: LayoutGroup): [string, string][] {
+  const own = new Set(group.nodes);
+  const pairs: [string, string][] = [];
+  for (const link of model.links) {
+    const ends = link.attachments;
+    if (link.layer !== 'routed' || link.technique === 'stub') continue;
+    if (!ends || !own.has(ends.from.node) || !own.has(ends.to.node) || ends.from.node === ends.to.node) continue;
+    if (authoredSide(model, ends.from) !== 'top' || authoredSide(model, ends.to) !== 'top') continue;
+    pairs.push([ends.from.node, ends.to.node]);
+  }
+  return pairs;
+}
+
+/** Whether `rows` keeps the two nodes of every pair out of one column. */
+function partsPairs(rows: readonly (readonly (string | undefined)[])[], pairs: readonly [string, string][]): boolean {
+  const column = new Map<string, number>();
+  rows.forEach(item => item.forEach((id, index) => { if (id !== undefined) column.set(id, index); }));
+  return pairs.every(([one, other]) => column.get(one) !== column.get(other));
+}
 
 /**
  * The gap between two grid rows. It is `bandGap` — the same room the pipeline reserves between two
@@ -106,15 +230,25 @@ export function gridMetrics(model: LayoutModel, rows: GridCells, gap: (a: string
  * the proportions of the original Enterprise NTP diagram, which draws its locations portrait. A
  * portrait target is one constant away if the maintainer wants it; stress ticket 26 measures what
  * the difference costs on that sheet, and names the input each of its figures came from.
+ *
+ * A count that would put a **like-facing `top` pair in one column** is not a candidate at all
+ * (stress ticket 32, `likeSidePairs`). That is a filter and not a floor: a larger count is not
+ * always the answer, and the one-row count — which every filter survivor used to collapse to — is
+ * the ribbon this whole file exists to avoid. The pair is read off the **seated** cells, so a
+ * ragged row packed against a right flank cannot move a node into a column the score never saw.
+ * `order.length` is one row of *n* and no two of its nodes share a column, so a candidate always
+ * survives and the search cannot come back empty.
  */
 export function gridColumns(model: LayoutModel, group: LayoutGroup, order: readonly string[],
   ranks: ExitRanks): number {
   if (order.length <= 1) return 1;
   const gap = gridNodeGap(model, group), rowGap = gridRowGap(model);
-  const floor = gridColumnFloor(order, ranks);
+  const floor = gridColumnFloor(order, ranks), pairs = likeSidePairs(model, group);
   let best = floor, bestScore = Infinity;
   for (let columns = floor; columns <= order.length; columns++) {
-    const metrics = gridMetrics(model, gridRows(order, ranks, columns), () => gap, rowGap);
+    const rows = gridRows(order, ranks, columns);
+    if (pairs.length && !partsPairs(seatFlankPeers(model, group, gridRows(order, ranks, columns), columns), pairs)) continue;
+    const metrics = gridMetrics(model, rows, () => gap, rowGap);
     if (metrics.width <= 0 || metrics.height <= 0) continue;
     const score = Math.abs(Math.log(metrics.width / metrics.height));
     if (score < bestScore - 1e-9) { bestScore = score; best = columns; }

@@ -1,0 +1,20 @@
+# Expected: Keep `a` and `b` on one line, because the author fixed both ends of the link between
+# them to the same vertical side. Two like-facing `top` stems never meet across a stack: the lower
+# node's stem points straight at the upper node's body, and the upper node's port is on the far side
+# of its own box. Closest-to-square alone picks one column here — `exitRanks` skips a link whose peer
+# is a group member, so `a` and `b` rank "neither way" and the floor is 1 — and the link then fails
+# `Router skipped a required checkpoint on link-1#0`. The count is therefore chosen from the counts
+# that seat the pair in one row. The group stays a grid.
+portograph: 2
+profile: network
+groups:
+  place: { tier: 0, shape: grid }
+  lower: { tier: 1 }
+nodes:
+  a: { group: place, ports: [{ name: p, side: top }] }
+  b: { group: place, ports: [{ name: p, side: top }] }
+  c: { group: place, ports: [{ name: q, side: bottom }] }
+  sink: { group: lower, ports: [{ name: p, side: top }] }
+links:
+  - [a.p, b.p]
+  - [c.q, sink.p]

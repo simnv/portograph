@@ -1,0 +1,25 @@
+# Expected: Decline the grid shape on `place` and keep its nodes on one line, because `place` holds
+# both ends of a bundle. A bundle's members turn in a channel, and the channel is the space between
+# its two endpoint bodies: `a` leaves the group upward and `d` and `b` downward, so a column is a
+# corridor, the floor is two columns, and the ranks put `a` in the first row and `d` in the last.
+# Stacked, the bundle then reserves its member pitch on the two bodies' left and right sides, which
+# grows both of them in y until they meet — `Nodes a and d violate clearance`. Report
+# `GROUP_SHAPE_DECLINED` naming the bundle, and lay the group out as the row it became.
+portograph: 2
+profile: network
+groups:
+  upper: { tier: 0 }
+  place: { tier: 1, shape: grid }
+  lower: { tier: 2 }
+nodes:
+  head: { group: upper, ports: [{ name: p, side: bottom }] }
+  a: { group: place, ports: [{ name: p, side: top }, { name: q, side: right }, { name: r, side: right }] }
+  d: { group: place, ports: [{ name: p, side: bottom }, { name: q, side: left }, { name: r, side: left }] }
+  b: { group: place, ports: [{ name: p, side: bottom }] }
+  rail: { group: lower, ports: { side: top, list: [p, p] } }
+links:
+  - [head.p, a.p]
+  - [a.q, d.q]
+  - [a.r, d.r]
+  - [d.p, rail.p#1]
+  - [b.p, rail.p#2]

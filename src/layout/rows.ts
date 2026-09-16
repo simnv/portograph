@@ -1,5 +1,6 @@
 import type { Rect, Side } from '../model/geometry.js';
 import type { LayoutGroup, LayoutModel, LayoutNode } from '../model/layout.js';
+import { groupShape } from './grid.js';
 import { bandGap, compareId, portId } from './skeleton-graph.js';
 import { moveGroup, rebuildBands, union } from './skeleton-geometry.js';
 import { groupInsets } from './regions.js';
@@ -18,7 +19,7 @@ function moveNode(draft: LayoutModel, id: string, dx: number, dy: number): void 
   for (const port of node.ports) if (port.anchor) { port.anchor.x += dx; port.anchor.y += dy; }
 }
 function rowGroups(draft: LayoutModel, band: { groups: string[] }): LayoutGroup[] {
-  return band.groups.map(id => draft.groups[id]!).filter(group => !group.flank && draft.document.groups[group.id]!.shape === 'row' && group.nodes.length > 0);
+  return band.groups.map(id => draft.groups[id]!).filter(group => !group.flank && groupShape(draft, group.id) === 'row' && group.nodes.length > 0);
 }
 /** Keep the left edge and width; fit the vertical extent to the flattened nodes with standard padding. */
 function fitGroupBox(draft: LayoutModel, group: LayoutGroup): void {

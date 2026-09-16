@@ -15,7 +15,7 @@ import { MEMBER_GAP, fanEnd } from './bundle-geometry.js';
 import { laneSource, laneWidth, transitTiers } from './lanes.js';
 import { fitRegionGroup } from './regions.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
-import { gridCells, gridRowGap, isGridGroup, packGridRows } from './grid.js';
+import { gridCells, gridRowGap, groupShape, isGridGroup, packGridRows } from './grid.js';
 import { freezePortTopology } from './mutation.js';
 const key = portId;
 
@@ -98,7 +98,9 @@ export function gapLegs(model: LayoutModel, node: string, side: 'left' | 'right'
  */
 function rowNeighbour(model: LayoutModel, node: string, side: 'left' | 'right'): string | undefined {
   const id = model.document.nodes[node]!.group, group = model.groups[id];
-  if (!group || group.flank || model.document.groups[id]!.shape !== 'row') return undefined;
+  // `groupShape`, not the authored shape: a group that declined the grid is packed by the rows rule
+  // and so does have gaps `rowGap` sized, and reading it as a non-row would break that read-back.
+  if (!group || group.flank || groupShape(model, id) !== 'row') return undefined;
   const order = group.rowOrder ?? group.nodes;
   const at = order.indexOf(node);
   if (at < 0) return undefined;

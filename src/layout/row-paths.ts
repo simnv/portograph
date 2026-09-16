@@ -5,6 +5,7 @@ import { EPS, length, segmentDistance, segmentRectDistance } from '../score/geom
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { groupConsumers } from '../score/model.js';
 import { portId } from './skeleton-graph.js';
+import { groupShape } from './grid.js';
 import { joinFanTrees } from './bundle-geometry.js';
 
 /**
@@ -41,7 +42,7 @@ export function findPort(model: LayoutModel, ref: PortRef): LayoutPort | undefin
 function rowNode(model: LayoutModel, id: string): boolean {
   const document = model.document.nodes[id];
   const group = document === undefined ? undefined : model.groups[document.group];
-  return group !== undefined && group.flank === undefined && model.document.groups[group.id]?.shape === 'row';
+  return group !== undefined && group.flank === undefined && groupShape(model, group.id) === 'row';
 }
 function tierOf(model: LayoutModel, id: string): number | undefined {
   return model.groups[model.document.nodes[id]!.group]?.tier;

@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 import { layout, parse, restoreLayoutModel, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { rebuildBarDrops } from '../../src/layout/bars.js';
-import { gridCells, gridChunks, gridColumnFloor, gridRows, packRowsOf } from '../../src/layout/grid.js';
+import { enclosedBundle, gridCells, gridChunks, gridColumnFloor, gridRows, groupShape, isGridGroup, likeSidePairs, packRowsOf } from '../../src/layout/grid.js';
 import { nodeGap } from '../../src/layout/skeleton-graph.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -209,3 +209,96 @@ it('a grid holds all three ranks at once, and a short row that is not the last',
   expect(failed(model)).toEqual([]);
   expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
 }, 60000);
+
+it('a group that holds both ends of a bundle declines the grid and says which bundle asked', async () => {
+  const model = await run(fixture('a-group-holds-both-ends-of-a-bundle'));
+  // Stage 1 reports the refusal and `isGridGroup` enforces it, so the two cannot disagree.
+  expect(enclosedBundle(model, 'place')?.id).toBe('bundle-1');
+  expect(isGridGroup(model, 'place')).toBe(false);
+  const declined = model.diagnostics.filter(item => item.code === 'GROUP_SHAPE_DECLINED');
+  expect(declined.map(item => item.severity)).toEqual(['warning']);
+  expect(declined[0]!.message).toContain('bundle-1');
+  expect(declined[0]!.message).toContain('between a and d');
+  // One line, which is what the channel needs: `a` leaves the group upward, `d` and `b` downward,
+  // so the ranks would have put `a` in the first row and `d` in the last.
+  expect(rows(model, 'place')).toHaveLength(1);
+  // The group is a row to every rule and not only to the packer: `rows.ts` and `row-paths.ts` read
+  // the same effective shape, so the declined group is not left between the two.
+  expect(groupShape(model, 'place')).toBe('row');
+  // The two endpoint bodies stand beside each other along the bundle's own normal, which is what
+  // the channel is.
+  expect(box(model, 'a').x + box(model, 'a').width).toBeLessThanOrEqual(box(model, 'd').x);
+  expect(failed(model)).toEqual([]);
+  expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
+}, 60000);
+
+it('the count keeps a like-facing top pair out of one column, and the group stays a grid', async () => {
+  const model = await run(fixture('a-grid-would-stack-two-ports-the-author-fixed'));
+  // A pair, not a refusal: an arrangement does answer this one, so the shape is kept.
+  expect(likeSidePairs(model, model.groups.place!)).toEqual([['a', 'b']]);
+  expect(groupShape(model, 'place')).toBe('grid');
+  expect(model.diagnostics.filter(item => item.code === 'GROUP_SHAPE_DECLINED')).toEqual([]);
+  // Closest-to-square alone takes one column here, which stacks them in it; the filtered count
+  // does not. The two x ranges are disjoint, which is the whole of the predicate.
+  const a = box(model, 'a'), b = box(model, 'b');
+  expect(Math.min(a.x + a.width, b.x + b.width)).toBeLessThanOrEqual(Math.max(a.x, b.x));
+  expect(failed(model)).toEqual([]);
+  expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
+}, 60000);
+
+it('a like-facing top pair in different rows is no fault when it is in different columns', async () => {
+  const model = await run(fixture('a-grid-keeps-a-like-side-pair-out-of-one-column'));
+  expect(likeSidePairs(model, model.groups.place!)).toEqual([['n01', 'n02']]);
+  // `n01` exits upward and `n02` downward, so the ranks separate their rows and no count below the
+  // node count can seat them in one. Reading the filter as "different rows" would collapse the grid
+  // to one row of eight; reading it as "one column" keeps the pack, because the two x ranges are
+  // disjoint and neither stem meets the other body.
+  const grid = rows(model, 'place');
+  expect(grid.length).toBeGreaterThan(1);
+  expect(grid.find(row => row.includes('n01'))).not.toContain('n02');
+  const one = box(model, 'n01'), other = box(model, 'n02');
+  expect(one.x).not.toBe(other.x);
+  expect(Math.min(one.x + one.width, other.x + other.width)).toBeLessThanOrEqual(Math.max(one.x, other.x));
+  expect(failed(model)).toEqual([]);
+  expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
+}, 60000);
+
+it('a like-facing pair the count already seats in one row costs the grid nothing', async () => {
+  const model = await run(fixture('a-grid-already-seats-a-like-side-pair'));
+  expect(likeSidePairs(model, model.groups.place!)).toEqual([['n01', 'n02']]);
+  // Three columns by two rows, which is what closest-to-square picks with no pair to satisfy: the
+  // rule filters candidate counts, it does not push the count up.
+  const grid = rows(model, 'place');
+  expect(grid.map(row => row.length)).toEqual([3, 3]);
+  expect(grid[0]).toContain('n01');
+  expect(grid[0]).toContain('n02');
+  expect(groupShape(model, 'place')).toBe('grid');
+  expect(failed(model)).toEqual([]);
+  expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
+}, 60000);
+
+it('a bundle with one end outside the group leaves the shape alone, and a free side is no pair', () => {
+  const stub = (fromGroup: string, toGroup: string, fromSide?: string, toSide?: string, layer = 'routed') => ({
+    bundles: [{ id: 'bundle-1', nodes: ['x', 'y'] }],
+    links: [{ id: 'link-1', layer, owner: { kind: 'link', id: 'link-1' },
+      attachments: { from: { node: 'x', name: 'p', ordinal: 1 }, to: { node: 'y', name: 'p', ordinal: 1 } } }],
+    groups: { g: { nodes: ['x', 'y'] } },
+    document: { groups: { g: { shape: 'grid' } }, nodes: {
+      x: { group: fromGroup, ports: [{ name: 'p', ordinal: 1, ...(fromSide ? { side: fromSide } : {}) }] },
+      y: { group: toGroup, ports: [{ name: 'p', ordinal: 1, ...(toSide ? { side: toSide } : {}) }] } } },
+  } as unknown as LayoutModel);
+  // The bundle's channel runs between two groups, so no one group's shape can take it away.
+  expect(enclosedBundle(stub('g', 'h'), 'g')).toBeUndefined();
+  expect(isGridGroup(stub('g', 'h'), 'g')).toBe(true);
+  expect(enclosedBundle(stub('g', 'g'), 'g')?.id).toBe('bundle-1');
+  // A pair needs both ends authored `top` on a routed link. A free end follows the packed geometry
+  // through the same-group vote; a horizontal stem routes round a stack; `bottom`/`bottom` is
+  // measured to publish in the very arrangement `top`/`top` fails in; and an overlay link is
+  // unrouted and exempt from the clearance gates, so it can never produce the fault.
+  const group = { id: 'g', nodes: ['x', 'y'] } as unknown as Parameters<typeof likeSidePairs>[1];
+  expect(likeSidePairs(stub('g', 'g', 'top', 'top'), group)).toEqual([['x', 'y']]);
+  expect(likeSidePairs(stub('g', 'g', 'top'), group)).toEqual([]);
+  expect(likeSidePairs(stub('g', 'g', 'right', 'left'), group)).toEqual([]);
+  expect(likeSidePairs(stub('g', 'g', 'bottom', 'bottom'), group)).toEqual([]);
+  expect(likeSidePairs(stub('g', 'g', 'top', 'top', 'overlay'), group)).toEqual([]);
+});

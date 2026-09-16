@@ -154,7 +154,7 @@ single-node row satisfies both ends and needs no conflict warning.
 
 **Grid groups repack after ELK, and move every band.** ELK is given one row per group, because its
 layered pass is what *orders* the nodes; a `shape: grid` group then takes that order and packs it
-into columns and rows (`src/layout/grid.ts`, stress ticket 26). Three consequences are settled here
+into columns and rows (`src/layout/grid.ts`, stress ticket 26). Four consequences are settled here
 and not left for a later stage to discover.
 
 1. The rows follow the exits, not the reading order alone. A node whose links leave the group
@@ -188,7 +188,70 @@ and not left for a later stage to discover.
 2. A flank's stored primary peer takes the outer end of **its own row**, which is what the lateral
    link runs along; a ragged row that holds a right-aligned peer is packed against the right columns
    rather than the left.
-3. A grid box is narrower and taller than the ribbon ELK sized its band for, so the tier is packed
+3. **A group that holds both ends of a link owes that link its space, and a stacked shape has to
+   earn it** (stress ticket 32). A row gives it for nothing — every node of a row stands on one
+   line, so the two bodies are beside each other in an order the row fixes, with only the row gap
+   between them. Two faults, and **two different answers**, because the measurements give two
+   different answers.
+
+   **A bundle: refuse the shape.** Its members turn in a **channel**, the space between the two
+   endpoint bodies along the bundle's own normal; `parallelPaths` reads it as the signed difference
+   of the two port faces, and `straightPaths` beside it reads the same difference for
+   `BUNDLE_CROSSOVER_CAPACITY`, and neither asks whether the two faces are in order. Measured on the
+   gridded golden with `shape: grid` on `datacenter`: with the endpoints in one row and adjacent,
+   which is the arrangement the count picks, `EAC-02` grows to 322.75 px tall in `EBR-02`'s own
+   column and covers it — `BUNDLE_CHANNEL_BLOCKED`; with them in different rows, shipped
+   pre-ticket-31 code packs `[EAC-01 EBR-01 EAC-02] / [EBR-02]` and reports `have -368.25`, two
+   faces out of order reported as a shortfall of turning room. Keeping the endpoints in one row is
+   therefore **not** the rule: the grid already does that there and the bundle still fails, because
+   what crosses the channel is a body the rows were stacked before it grew. No arrangement answers
+   it, so the group declines the shape and takes `row`, and `GROUP_SHAPE_DECLINED` names the bundle.
+
+   That refusal is **incomplete, by construction**: its predicate is "both ends in this group", so a
+   bundle between a **flank** and one node of the grid cannot be seen. Delete the two
+   `EBR-01`↔`EBR-02` links from the gridded golden and `datacenter` keeps the grid, where
+   `TBR-002`'s two cross-group bundles stack their reserved blocks into two different rows and fail
+   `Nodes EBR-02 and EAC-02 violate clearance` — on `main` too. The gridded golden survives because
+   it happens to carry an intra-group bundle.
+
+   **A like-facing `top` pair in one column: constrain the count.** Nodes of one column share the
+   column's x and are left-aligned in it, so two of them overlap in x: the lower one's `top` stem
+   points straight into the upper one's body, and the upper one's `top` port is on the far side of
+   that body — above the **first row**, where the group has only its own top padding and a label
+   band. `label-no-gap.yaml` gridded is the case: `exitRanks` skips a link whose peer is a group
+   member, so both nodes rank "neither way", the floor is 1, closest-to-square takes one column, and
+   stage 8 fails `Router skipped a required checkpoint`. Here an arrangement *does* answer it, so a
+   count that would put such a pair in one column is not a candidate. A **filter, not a floor**: a
+   count that already keeps them apart is unchanged, and one row of *n* has no two nodes in a
+   column, so a candidate always survives.
+
+   The predicate is a **column**, not a row, and it is `top`, not "the same vertical side". Both
+   halves are measured, and getting either wrong is expensive:
+
+   | pair | arrangement | result |
+   |---|---|---|
+   | `top`/`top` | one column | `Router skipped a required checkpoint` |
+   | `top`/`top` | different rows, different columns | publishes. A 20-node grid packs 5 × 4 at 408 × 785; read as "different rows" the filter collapses it to one row of 20, a **1 480.5 × 498** canvas — the ribbon this whole rule exists to avoid, and silently |
+   | `top`/`top` | side by side | publishes, count untouched (`a-grid-already-seats-a-like-side-pair`) |
+   | `bottom`/`bottom` | one column | **publishes**, Q 0.5586682246067611, in the identical arrangement `top`/`top` fails in |
+   | `right`/`left` | one column | publishes — both stems leave the column and join outside it |
+   | `right`/`left` | side by side | publishes; declining it cost a 12-node grid Q 0.8476 → 0.6472 and a canvas 2.62 × wider |
+
+   `bottom`/`bottom` is the asymmetry worth naming: below the last row lie the group's bottom padding
+   **and** the tier gap, so the way round the lower body is room a rule already reserved, where above
+   the first row there is none. Only **routed** links count — an overlay link is unrouted and exempt
+   from the clearance gates, so it can never produce the fault, the same kinship stress ticket 34
+   names in the both-ways floor. An end the author left **free** is not counted either: the
+   same-group vote reads the packed geometry, so `a-grid-of-twelve-keeps-its-columns` links `n01` to
+   `n02` in its own row and to `n05` in the row below and stays a 4 × 3 grid.
+
+   A declined group takes `row` **to every rule** — `groupShape` is the one reader, because
+   `rows.ts`, `row-paths.ts`, `sides-two.ts` and `mutation.ts` each test `shape === 'row'`, and a
+   group that is neither grid nor row reaches stage 8 with no row path. `parse` already answers
+   `ring` and `free` with `row` and a diagnostic, so `groupShape` can never see them; what carries
+   over to a future stacked shape is the rule, stated about the link's own space, not this code
+   path.
+4. A grid box is narrower and taller than the ribbon ELK sized its band for, so the tier is packed
    left to right again — otherwise the width the grid gives back never reaches the canvas — and the
    bands are **re-stacked** in place of the ordinary rebuild. That last part is global: **one grid
    group anywhere discards ELK's vertical placement for every tier**, so a sheet cannot adopt the
