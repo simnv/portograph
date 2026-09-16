@@ -1,5 +1,5 @@
 import type { Point, Rect, Side } from '../model/geometry.js';
-import { stemDepth, type GapPlan } from './sides-two.js';
+import { stemCache, stemDepth } from './sides-two.js';
 import type { PortRef } from '../model/document.js';
 import type { LabelBand, LayoutGroup, LayoutLabel, LayoutLink, LayoutModel, LayoutNode, LayoutPort, Owner, PathSegment } from '../model/layout.js';
 import { equal } from '../model/json-equality.js';
@@ -114,14 +114,23 @@ export function stemReach(model: LayoutModel, node: LayoutModel['nodes'][string]
 }
 
 /**
- * Every outward point stage 8 must consume: the ordinary 15 px checkpoint of each routed
- * attachment and each vertex of its mandatory shared prefix. Neither input depends on whether the
- * link already carries a path, so completing a remainder in stage 8 cannot retire the reservation.
+ * Every outward point stage 8 must consume: the outward checkpoint of each routed attachment and
+ * each vertex of its mandatory shared prefix. Neither input depends on whether the link already
+ * carries a path, so completing a remainder in stage 8 cannot retire the reservation.
+ *
+ * The checkpoint is the one `stemCheckpoint` really asks for, not a flat 15 px: the ordinary stem,
+ * unless the node's expanded obstacle reaches further, deeper still where a row gap gave the leg a
+ * slot (ADR-0015 rule 1) or where a node side nested its stems (its twelfth amendment). Reading it
+ * from one place is what keeps the figure `clearanceFor` reserves and the figure stage 8 receives
+ * the same one. A nested side's depth is measurably inert here today — a side that carries its
+ * group's title never nests, and `clearanceFor` reads only the entries on the band's own side, so
+ * over 1 103 corpus inputs no band moves for one — and it is read all the same, so the two figures
+ * cannot drift apart later.
  */
 export function routerEntryPoints(model: LayoutModel): RouterEntryPoint[] {
   const result: RouterEntryPoint[] = [];
   // One gap plan per row gap for this pass; nothing moves while it runs.
-  const gaps = new Map<string, GapPlan | undefined>();
+  const gaps = stemCache();
   for (const link of model.links) {
     if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
     for (const end of ['from', 'to'] as const) {

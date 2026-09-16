@@ -238,7 +238,17 @@ function recordAggregations(model: LayoutModel, aggregations: Aggregation[]): vo
     // A group-link is one line standing for the whole set, so it is drawn on the set's own layer:
     // a set of overlay members is an overlay group-link. Aggregation decides how many lines are
     // drawn, never on which layer — the class chose that, and only an authored `route:` moves it.
-    const layer: Layer = members.every(link => link.layer === 'overlay') ? 'overlay' : 'routed';
+    //
+    // That "the set's own layer" is single-valued is an eligibility invariant, not an arithmetic
+    // one: `findAggregations` refuses a set whose members differ in class or family, and an
+    // explicit group-link expands one authored link. Loosening eligibility — to admit a member
+    // carrying `route: overlay` because overrides win, say — would otherwise record a routed
+    // group-link over overlay members, the exact contradiction this rule exists to remove. State
+    // it here so the next change to eligibility fails loudly instead of drawing the wrong layer.
+    const layer: Layer | undefined = members[0]!.layer;
+    if (layer === undefined || members.some(link => link.layer !== layer)) {
+      throw new Error(`Group-link ${id} aggregates members that do not share one settled layer`);
+    }
     model.groupLinks.push({ id, groups, members: members.map(link => link.id), owner: { kind: 'group-link', id }, layer });
     for (const link of members) {
       link.groupLink = id;

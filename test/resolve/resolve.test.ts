@@ -147,6 +147,26 @@ describe('semantic resolution', () => {
     expect(new Set(model.links.map(link => link.id)).size).toBe(model.links.length);
   });
 
+  // Q30 sequences bundles after aggregation, so a routed group-link member that also stands between
+  // a bundled node pair is rewritten from the M1 `orthogonal` fallback to `bundle`. The layer rule
+  // of stress ticket 23 does not touch that: a member keeps its family's layer, and a routed one is
+  // still offered to `groupBundles`. This is the only assertion that holds the two rules together.
+  it('lets bundling rewrite the technique of a routed group-link member', () => {
+    const model = resolve(input(['[a, c]', '[upper, lower, {route: group-link}]']));
+    expect(model.groupLinks[0]?.layer).toBe('routed');
+    const shared = model.links.find(link => link.groupLink !== undefined
+      && link.attachments?.from.node === 'a' && link.attachments.to.node === 'c')!;
+    expect(shared).toMatchObject({ layer: 'routed', technique: 'bundle', groupLink: model.groupLinks[0]?.id, bundle: model.bundles[0]?.id });
+    expect(model.bundles[0]?.members).toEqual(['link-1', shared.id]);
+    // Every other member of the same aggregation keeps the fallback, so the rewrite is per link.
+    expect(model.links.filter(link => link.groupLink !== undefined && link.id !== shared.id)
+      .every(link => link.technique === 'orthogonal' && link.bundle === undefined)).toBe(true);
+    // The same shape on the overlay family bundles nothing: `groupBundles` skips a non-routed layer.
+    const overlay = resolve(input(['[a, c, {class: flow}]', '[upper, lower, {route: group-link, class: flow}]']));
+    expect(overlay.bundles).toEqual([]);
+    expect(overlay.links.every(link => link.layer === 'overlay' && link.technique === 'overlay')).toBe(true);
+  });
+
   it('expands group endpoints in integer-like author declaration order', () => {
     const doc = parse(`portograph: 2
 groups: {20: {tier: 0}, 3: {tier: 1}}

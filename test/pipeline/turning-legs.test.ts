@@ -1,9 +1,17 @@
+import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import { routedStroke, stemReach } from '../../src/layout/bands.js';
 import { MEMBER_GAP } from '../../src/layout/bundle-geometry.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
-import { gapLegs, rowGap } from '../../src/layout/sides-two.js';
+import { gapLegs, rowGap, sidePlan } from '../../src/layout/sides-two.js';
+import { portId } from '../../src/layout/skeleton-graph.js';
+import { bands } from '../../src/layout/bands.js';
+import { bars } from '../../src/layout/bars.js';
+import { bundles } from '../../src/layout/bundles.js';
+import { centre } from '../../src/layout/centre.js';
+import { flanks } from '../../src/layout/flanks.js';
+import { lanes } from '../../src/layout/lanes.js';
 import { rows } from '../../src/layout/rows.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -136,3 +144,27 @@ links: [${pairs.map(([x, y]) => `[a.a${x}, b.b${y}]`).join(', ')}]
     expect(b.bounds!.x - (a.bounds!.x + a.bounds!.width)).toBeGreaterThanOrEqual(rowGap(model, 'a', 'b') - 1e-6);
   }
 }, 120000);
+
+/**
+ * ADR-0015 rule 1 on a node side that feeds a tier gap (stress ticket 08). `m1|top` carries two
+ * ports one port pitch apart, and the link on the right one travels over the left one's column, so
+ * the two turns cannot stand at one depth: at one depth the batch routed first covers the other
+ * port's stem and the later link has a reserved turn no route can reach.
+ */
+it('stress ticket 08: a leg that travels over another port of its own side turns one pitch beyond it', async () => {
+  const yaml = readFileSync(new URL('../../goldens/synthetic/widened-child-packs-tier.yaml', import.meta.url), 'utf8');
+  const model = bands(bundles(bars(centre(flanks(lanes(rows(await placed(yaml))))))));
+  const node = model.nodes['m1']!;
+  const plan = sidePlan(model, 'm1', 'top')!;
+  const ports = node.ports.filter(port => port.side === 'top').sort((a, b) => a.anchor!.x - b.anchor!.x);
+  expect(ports).toHaveLength(2);
+  // The left port's link runs on past the right port's column and never over it, so it leaves at
+  // the plain reach; the right port's link passes over the left port and leaves one pitch beyond.
+  expect(plan.depth.get(portId(ports[0]!.ref))).toBeCloseTo(stemReach(model, node), 6);
+  expect(plan.depth.get(portId(ports[1]!.ref))).toBeCloseTo(stemReach(model, node) + MEMBER_GAP + routedStroke(model), 6);
+  // The two feeding sides above carry one port each and reach over nothing, so nothing nests there.
+  expect(sidePlan(model, 'b1', 'bottom')).toBeUndefined();
+  // A side is nested only where an order is forced: `w1|top` carries two ports whose links descend
+  // on their own columns, so it keeps the flat stems it had.
+  expect(sidePlan(model, 'w1', 'top')).toBeUndefined();
+}, 60000);
