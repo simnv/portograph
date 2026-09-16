@@ -19,8 +19,8 @@ import { withLayoutMutation } from './mutation.js';
 import { effectiveLayer } from '../score/model.js';
 import { LINK_LABEL_GEOMETRY, overlayLabelsSuppressed } from './link-labels.js';
 import { overlayPath } from './overlay-paths.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 
-const EPS = 1e-6;
 export const GROUP_LABEL_GEOMETRY = {
   fontFamily: FONT_FAMILY,
   fontSize: 12,
@@ -156,8 +156,8 @@ export function bandEntryConflicts(model: LayoutModel, entries = routerEntryPoin
   const allowance = strokeAllowance(model), result: { band: LabelBand; entry: RouterEntryPoint }[] = [];
   for (const entry of entries) for (const band of model.labelBands) {
     const box = band.bounds;
-    if (entry.point.x >= box.x - allowance - EPS && entry.point.x <= right(box) + allowance + EPS
-      && entry.point.y >= box.y - allowance - EPS && entry.point.y <= bottom(box) + allowance + EPS) result.push({ band, entry });
+    if (entry.point.x >= box.x - allowance - PLACEMENT_EPS && entry.point.x <= right(box) + allowance + PLACEMENT_EPS
+      && entry.point.y >= box.y - allowance - PLACEMENT_EPS && entry.point.y <= bottom(box) + allowance + PLACEMENT_EPS) result.push({ band, entry });
   }
   return result;
 }
@@ -255,11 +255,11 @@ function bandFor(model: LayoutModel, groupId: string, entries: RouterEntryPoint[
 function syncBands(model: LayoutModel, entries = routerEntryPoints(model)): boolean {
   const before = new Map(model.labelBands.map(band => [band.group, band.clearance]));
   model.labelBands = orderedGroupIds(model.document).map(id => bandFor(model, id, entries));
-  return model.labelBands.some(band => before.has(band.group) && Math.abs(before.get(band.group)! - band.clearance) > EPS);
+  return model.labelBands.some(band => before.has(band.group) && Math.abs(before.get(band.group)! - band.clearance) > PLACEMENT_EPS);
 }
 
 function intersectsY(rect: Rect, y: number, height: number): boolean {
-  return rect.y <= y + height + EPS && bottom(rect) >= y - EPS;
+  return rect.y <= y + height + PLACEMENT_EPS && bottom(rect) >= y - PLACEMENT_EPS;
 }
 
 /** Identity of one owned rectangle, taken from semantic fields so key order cannot change it. */
@@ -351,7 +351,7 @@ function feedCorridorRects(model: LayoutModel, link: LayoutModel['links'][number
   const from = findPort(model, link.attachments.from), to = findPort(model, link.attachments.to);
   if (!from?.anchor || !to?.anchor || !from.side || !to.side) return [];
   const vertical = (from.side === 'bottom' && to.side === 'top') || (from.side === 'top' && to.side === 'bottom');
-  if (!vertical || Math.abs(from.anchor.x - to.anchor.x) > EPS) return [];
+  if (!vertical || Math.abs(from.anchor.x - to.anchor.x) > PLACEMENT_EPS) return [];
   const segment: PathSegment = { from: { ...from.anchor }, to: { ...to.anchor }, owner: { kind: 'link', id: link.id } };
   const stageNine = (role: string | undefined): boolean => role === 'link' || role === 'legend';
   const view: LayoutModel = { ...model, labels: model.labels.filter(label => label.role !== 'group' && !stageNine(label.role)) };
@@ -367,18 +367,32 @@ function intervals(model: LayoutModel, placed: LayoutLabel[], y: number, height:
   const merged: ForbiddenInterval[] = [];
   for (const item of raw) {
     const prior = merged.at(-1);
-    if (prior && item.low <= prior.high + EPS) prior.high = Math.max(prior.high, item.high);
+    if (prior && item.low <= prior.high + PLACEMENT_EPS) prior.high = Math.max(prior.high, item.high);
     else merged.push({ ...item });
   }
   return merged;
 }
 
+/**
+ * How far past a forbidden range a label's left edge is placed to be clear of it. The filter below
+ * refuses an x within one tolerance of a range, so clearing one costs two: at `high + PLACEMENT_EPS`
+ * the range is still a hit.
+ *
+ * It is one constant because `planLabels` has two producers of the same x — the candidate list and
+ * the `firstFree` walk — and a value produced by one and re-derived by the other then differs by
+ * exactly one tolerance, which is the difference `equal` refused on the Enterprise NTP sheet (stress
+ * ticket 19). `firstFree` also sets the width a blocked group asks to grow to, so the two stepping
+ * one tolerance apart made the producer ask for a box one tolerance narrower than the x it then
+ * emitted needs, and the label came to rest that far outside its own inset.
+ */
+const LABEL_CLEARANCE_STEP = 2 * PLACEMENT_EPS;
+
 function firstFree(start: number, ranges: ForbiddenInterval[]): number {
   let candidate = start;
   for (const range of ranges) {
-    if (range.high < candidate - EPS) continue;
-    if (range.low > candidate + EPS) break;
-    candidate = range.high + EPS;
+    if (range.high < candidate - PLACEMENT_EPS) continue;
+    if (range.low > candidate + PLACEMENT_EPS) break;
+    candidate = range.high + LABEL_CLEARANCE_STEP;
   }
   return candidate;
 }
@@ -393,13 +407,13 @@ function growthPlan(model: LayoutModel, grown: LayoutGroup, width: number): Grou
   const groups = Object.values(model.groups).filter(group => group.tier === grown.tier)
     .sort((a, b) => a.bounds!.x - b.bounds!.x || a.id.localeCompare(b.id));
   const at = groups.indexOf(grown);
-  if (at < 0 || width <= grown.bounds!.width + EPS) return undefined;
+  if (at < 0 || width <= grown.bounds!.width + PLACEMENT_EPS) return undefined;
   const gaps = groups.slice(0, -1).map((group, index) => groups[index + 1]!.bounds!.x - right(group.bounds!));
   const plan: GroupPlacement[] = groups.map(group => ({ group, x: group.bounds!.x, width: group.bounds!.width }));
   plan[at]!.width = width;
   for (let index = at + 1; index < plan.length; index++) {
     const prior = plan[index - 1]!, minimum = prior.x + prior.width + Math.max(gaps[index - 1]!, bandGap(model));
-    if (plan[index]!.x < minimum - EPS) plan[index]!.x = minimum;
+    if (plan[index]!.x < minimum - PLACEMENT_EPS) plan[index]!.x = minimum;
   }
   return laneSidesHold(model, plan.map(item => ({ group: item.group,
     bounds: { ...item.group.bounds!, x: item.x, width: item.width } }))) ? plan : undefined;
@@ -415,11 +429,11 @@ function planLabels(model: LayoutModel, permitGrowth: boolean): LabelPlan {
     const limit = right(group.bounds!) - GROUP_LABEL_GEOMETRY.horizontalInset - measured.width;
     const ranges = intervals(model, labels, y, measured.height, measured.width);
     const centre = group.bounds!.x + (group.bounds!.width - measured.width) / 2;
-    const candidates = [centre, start, limit, ...ranges.flatMap(range => [range.low - 2 * EPS, range.high + 2 * EPS])]
-      .filter(x => x >= start - EPS && x <= limit + EPS && ranges.every(range => x < range.low - EPS || x > range.high + EPS))
+    const candidates = [centre, start, limit, ...ranges.flatMap(range => [range.low - LABEL_CLEARANCE_STEP, range.high + LABEL_CLEARANCE_STEP])]
+      .filter(x => x >= start - PLACEMENT_EPS && x <= limit + PLACEMENT_EPS && ranges.every(range => x < range.low - PLACEMENT_EPS || x > range.high + PLACEMENT_EPS))
       .sort((a, b) => Math.abs(a - centre) - Math.abs(b - centre) || a - b);
     const x = candidates[0] ?? firstFree(start, ranges);
-    if (x > limit + EPS) {
+    if (x > limit + PLACEMENT_EPS) {
       // Classify every group that needs to grow, so an exhausted budget still reports the ones
       // that no budget could have repaired.
       const width = x + measured.width + GROUP_LABEL_GEOMETRY.horizontalInset - group.bounds!.x;
@@ -430,7 +444,7 @@ function planLabels(model: LayoutModel, permitGrowth: boolean): LabelPlan {
       text: model.document.groups[id]!.label, fontFamily: GROUP_LABEL_GEOMETRY.fontFamily,
       fontSize: GROUP_LABEL_GEOMETRY.fontSize, fontWeight: GROUP_LABEL_GEOMETRY.fontWeight,
       lineHeight: measured.lineHeight, lines: measured.lines, textRotation: 0,
-      bounds: { x: x <= limit + EPS ? x : group.bounds!.x + GROUP_LABEL_GEOMETRY.horizontalInset,
+      bounds: { x: x <= limit + PLACEMENT_EPS ? x : group.bounds!.x + GROUP_LABEL_GEOMETRY.horizontalInset,
         y, width: measured.width, height: measured.height } });
   }
   return { labels, blocked };
@@ -539,7 +553,7 @@ function linkedGroupPairs(model: LayoutModel): LinkedPair[] {
   }
   return result;
 }
-const rectOverlap = (p: Rect, q: Rect): boolean => p.x < right(q) - EPS && q.x < right(p) - EPS && p.y < bottom(q) - EPS && q.y < bottom(p) - EPS;
+const rectOverlap = (p: Rect, q: Rect): boolean => p.x < right(q) - PLACEMENT_EPS && q.x < right(p) - PLACEMENT_EPS && p.y < bottom(q) - PLACEMENT_EPS && q.y < bottom(p) - PLACEMENT_EPS;
 
 /**
  * Linked groups share a grid (ADR-0012): two groups joined by vertical links take one x-extent, two
@@ -563,9 +577,9 @@ export function alignLinkedGroupGrid(model: LayoutModel): boolean {
       const low = Math.min(a.bounds![pos], b.bounds![pos]);
       const high = Math.max(a.bounds![pos] + a.bounds![len], b.bounds![pos] + b.bounds![len]);
       const extent = high - low;
-      if (Math.abs(a.bounds![len] - extent) <= EPS && Math.abs(b.bounds![len] - extent) <= EPS) continue;
-      if ((extent - a.bounds![len]) / extent > GROUP_GRID_MAX_GROWTH + EPS
-        || (extent - b.bounds![len]) / extent > GROUP_GRID_MAX_GROWTH + EPS) continue;
+      if (Math.abs(a.bounds![len] - extent) <= PLACEMENT_EPS && Math.abs(b.bounds![len] - extent) <= PLACEMENT_EPS) continue;
+      if ((extent - a.bounds![len]) / extent > GROUP_GRID_MAX_GROWTH + PLACEMENT_EPS
+        || (extent - b.bounds![len]) / extent > GROUP_GRID_MAX_GROWTH + PLACEMENT_EPS) continue;
       const proposed = [a, b].map(group => ({ group, bounds: { ...group.bounds!, [pos]: low, [len]: extent } as Rect }));
       const others = Object.values(model.groups).filter(group => group !== a && group !== b);
       if (proposed.some(item => others.some(other => rectOverlap(item.bounds, other.bounds!)))) continue;
@@ -604,9 +618,9 @@ function overlayRunMid(model: LayoutModel, link: LayoutLink, axis: 'x' | 'y'): n
   let run: PathSegment | undefined, longest = 0;
   for (const segment of overlayPath(model, link).segments) {
     const reach = Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y);
-    if (reach > longest + EPS) { longest = reach; run = segment; }
+    if (reach > longest + PLACEMENT_EPS) { longest = reach; run = segment; }
   }
-  if (!run || Math.abs(run.to[axis] - run.from[axis]) <= EPS) return undefined;
+  if (!run || Math.abs(run.to[axis] - run.from[axis]) <= PLACEMENT_EPS) return undefined;
   return (run.from[axis] + run.to[axis]) / 2;
 }
 
@@ -629,8 +643,14 @@ function overlayRunMid(model: LayoutModel, link: LayoutLink, axis: 'x' | 'y'): n
  * not face each other and links whose room lies beyond a reserved lane are diagnosed and left to the
  * stage 9 ladder.
  */
-export function reserveLinkLabelRoom(model: LayoutModel): boolean {
+export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: string[] = []): boolean {
   let changed = false;
+  // What each reservation was for. The replay that refuses a published model throws on the return
+  // value alone, and the sentence named neither the link nor the amount: three rebuilds to find one
+  // number, which is the same cost tickets 13 and 14 recorded for their own messages.
+  const record = (link: LayoutLink, axis: 'row' | 'tier gap', required: number, room: number): void => {
+    shortfalls.push(`${link.id} needs ${required} px along its ${axis} and holds ${room} px`);
+  };
   const suppressed = overlayLabelsSuppressed(model);
   const outer = (port: LayoutPort, node: LayoutNode): Rect => port.pill ? port.pill.bounds : node.bounds!;
   const settle = (nodes: string[]): void => { if (nodes.length) rebuildNodeGeometry(model, nodes, 'current'); };
@@ -660,10 +680,11 @@ export function reserveLinkLabelRoom(model: LayoutModel): boolean {
       const mid = centre;
       const room = 2 * Math.min(mid - Math.max(bottom(upper.bounds!), bottom(outer(upperPort, upper))), Math.min(lower.bounds!.y, outer(lowerPort, lower).y) - mid);
       const deficit = required - room;
-      if (deficit <= EPS) continue;
+      if (deficit <= PLACEMENT_EPS) continue;
       const moved = Object.values(model.groups).filter(group => group.tier! > upperTier);
       for (const group of moved) moveGroup(model, group, 0, deficit);
       settle(moved.flatMap(group => group.nodes));
+      record(link, 'tier gap', required, room);
       changed = true;
       continue;
     }
@@ -679,30 +700,31 @@ export function reserveLinkLabelRoom(model: LayoutModel): boolean {
     // (`straightCorridorClear`).
     const straight: PathSegment = { from: { ...leftPort.anchor! }, to: { ...rightPort.anchor! }, owner: { ...link.owner } };
     const detour = !overlay
-      && (Math.abs(leftPort.anchor!.y - rightPort.anchor!.y) > EPS || !straightCorridorClear(model, link, straight));
+      && (Math.abs(leftPort.anchor!.y - rightPort.anchor!.y) > PLACEMENT_EPS || !straightCorridorClear(model, link, straight));
     const room = 2 * Math.min(mid - Math.max(right(leftNode.bounds!), right(outer(leftPort, leftNode))), Math.min(rightNode.bounds!.x, outer(rightPort, rightNode).x) - mid);
     // A detour's long run ends at an anchor on one side and at a turn on the other, so its midpoint is
     // not the pill-face midpoint: the label centred there must clear the pill on the anchor side.
     const protrusion = Math.max(right(outer(leftPort, leftNode)) - leftPort.anchor!.x, rightPort.anchor!.x - outer(rightPort, rightNode).x, 0);
-    const deficit = required + (detour ? stemReach(model, leftNode) + stemReach(model, rightNode) + 2 * protrusion : 0) - room;
-    if (deficit <= EPS) continue;
+    const wanted = required + (detour ? stemReach(model, leftNode) + stemReach(model, rightNode) + 2 * protrusion : 0);
+    const deficit = wanted - room;
+    if (deficit <= PLACEMENT_EPS) continue;
     // Insert the room at the gap itself: everything at or right of the split — in every tier — moves
     // right together, and a group straddling the split shifts only its nodes beyond it. Alignments,
     // flank sides and bar-to-source slots all survive because both ends of each of them move alike;
     // nothing ever moves left into a preceding group. A reserved lane at or beyond the split cannot
     // move, so such a link is diagnosed instead.
     const split = (Math.max(right(leftNode.bounds!), right(outer(leftPort, leftNode))) + Math.min(rightNode.bounds!.x, outer(rightPort, rightNode).x)) / 2;
-    if (model.lanes.some(lane => lane.x >= split - EPS)) { unreserved('needs room beyond a reserved lane'); continue; }
+    if (model.lanes.some(lane => lane.x >= split - PLACEMENT_EPS)) { unreserved('needs room beyond a reserved lane'); continue; }
     const moved: string[] = [];
     for (const group of Object.values(model.groups)) {
-      if (group.bounds!.x >= split - EPS) { moveGroup(model, group, deficit, 0); moved.push(...group.nodes); continue; }
-      if (right(group.bounds!) <= split + EPS) continue;
+      if (group.bounds!.x >= split - PLACEMENT_EPS) { moveGroup(model, group, deficit, 0); moved.push(...group.nodes); continue; }
+      if (right(group.bounds!) <= split + PLACEMENT_EPS) continue;
       // In the link's own tier a node moves only when it starts beyond the split: a node the detour
       // must pass stays by the left end, so the run over it spans the whole gap. In any other tier a
       // node with any part beyond the split moves, so a wide source straddling the cut moves with the
       // bar slotted under its port and 7d's replay finds that slot where it left it.
       const shifted = group.nodes.filter(id => group.tier === fromGroup.tier
-        ? model.nodes[id]!.bounds!.x >= split - EPS : right(model.nodes[id]!.bounds!) > split + EPS);
+        ? model.nodes[id]!.bounds!.x >= split - PLACEMENT_EPS : right(model.nodes[id]!.bounds!) > split + PLACEMENT_EPS);
       for (const id of shifted) {
         const node = model.nodes[id]!;
         node.bounds!.x += deficit;
@@ -711,6 +733,7 @@ export function reserveLinkLabelRoom(model: LayoutModel): boolean {
       if (shifted.length) { moved.push(...shifted); fitRegionGroup(model, group); }
     }
     settle(moved);
+    record(link, 'row', wanted, room);
     changed = true;
   }
   if (changed) { rebuildBands(model); rebuildRegions(model); }
@@ -801,19 +824,26 @@ export function replanGroupLabels(model: LayoutModel): void {
 export function validateGroupLabelBands(model: LayoutModel): void {
   // Replay the grid on a copy: a settled model does not change; a genuinely unsettled chain exhausts
   // the pass bound again. A serialized diagnostic alone proves nothing.
-  if (reserveLinkLabelRoom(clone(model))) throw new Error('A labelled link is shorter than the run its label reserved');
+  const shortfalls: string[] = [];
+  if (reserveLinkLabelRoom(clone(model), shortfalls)) {
+    throw new Error(`A labelled link is shorter than the run its label reserved: ${shortfalls.join('; ')}`);
+  }
   const trial = clone(model);
   trial.diagnostics = trial.diagnostics.filter(item => item.code !== 'GROUP_GRID_NON_CONVERGENCE');
   const changed = alignLinkedGroupGrid(trial), exhausted = trial.diagnostics.some(item => item.code === 'GROUP_GRID_NON_CONVERGENCE');
-  if (changed && !exhausted) throw new Error('Linked groups do not share the grid their links require');
+  if (changed && !exhausted) {
+    const moved = orderedGroupIds(model.document).filter(id => !equal(model.groups[id]!.bounds, trial.groups[id]!.bounds))
+      .map(id => `${id} ${JSON.stringify(model.groups[id]!.bounds)} would be ${JSON.stringify(trial.groups[id]!.bounds)}`);
+    throw new Error(`Linked groups do not share the grid their links require: ${moved.join('; ')}`);
+  }
   const entries = routerEntryPoints(model);
   const expectedBands = orderedGroupIds(model.document).map(id => bandFor(model, id, entries));
   if (!equal(model.labelBands, expectedBands)) throw new Error('Group label bands contradict final group geometry');
   for (const band of model.labelBands) {
-    if (!Number.isFinite(band.clearance) || band.clearance < GROUP_PADDING - EPS) throw new Error(`Group ${band.group} reserves less than the ordinary padding below its label band`);
+    if (!Number.isFinite(band.clearance) || band.clearance < GROUP_PADDING - PLACEMENT_EPS) throw new Error(`Group ${band.group} reserves less than the ordinary padding below its label band`);
     for (const nodeId of model.groups[band.group]!.nodes) {
       const box = model.nodes[nodeId]!.bounds!;
-      const clear = band.side === 'top' ? box.y >= bottom(band.bounds) + band.clearance - EPS : bottom(box) <= band.bounds.y - band.clearance + EPS;
+      const clear = band.side === 'top' ? box.y >= bottom(band.bounds) + band.clearance - PLACEMENT_EPS : bottom(box) <= band.bounds.y - band.clearance + PLACEMENT_EPS;
       if (!clear) throw new Error(`Group ${band.group} does not retain its reserved clearance beside its label band`);
     }
   }
@@ -827,7 +857,17 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   const plan = planLabels(expected, !model.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE'));
   if (plan.growth) throw new Error(`Group label ${plan.growth.group.id} has no reserved free gap`);
   const actual = model.labels.filter(label => label.role === 'group');
-  if (!equal(actual, plan.labels)) throw new Error('Group labels contradict measured left-first placement');
+  if (!equal(actual, plan.labels)) {
+    // The sentence named neither the label nor the amount, and the first difference is the one that
+    // caused every later one: `intervals` is fed the labels placed so far, so one label that moves
+    // shifts the ranges every label after it is planned against.
+    const at = plan.labels.findIndex((label, index) => !equal(actual[index], label));
+    const placed = actual[at]?.bounds, planned = plan.labels[at]?.bounds;
+    const first = at < 0 ? `${actual.length} placed against ${plan.labels.length} planned`
+      : `${plan.labels[at]!.id} planned at x ${planned?.x} and placed at x ${placed?.x}`
+        + (placed && planned ? `, a difference of ${planned.x - placed.x} px` : '');
+    throw new Error(`Group labels contradict measured left-first placement: ${first}`);
+  }
 }
 
 /** Stage 7f: reserve and place deterministic group labels, then freeze final placement. */
