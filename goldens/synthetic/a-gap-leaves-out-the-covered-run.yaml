@@ -5,11 +5,12 @@
 # move puts a run on one x, and each node of the lower tier also feeds the tier under it. The lower
 # group therefore carries its title on its top edge (ADR-0011), where the four approaches arrive.
 #
-# The gap between the middle band and the lower band is y 347.00 ... 434.75. Three of its four runs
-# reach their port on a clear line. The fourth, `link-1`, arrives at (282.50, 489.25) and its
-# approach from the high boundary crosses the lower group's title: a label of 66.01 x 14 px at
-# (243.50, 438.75), which routing grows by `GROUP_LABEL_LINK_CLEARANCE + routedStroke / 2` =
-# 8.75 px to x 234.75 ... 318.25, y 430.00 ... 461.50. Nothing owns that rectangle - a group label
+# The gap between the middle band and the lower band is y 361.75 ... 449.50. Three of its four runs
+# reach their port on a clear line. The fourth, `link-1`, arrives at the port anchor (282.50,
+# 504.00), and its approach - the line from the gap's high boundary to that port's own outward
+# checkpoint at (282.50, 489.00) - crosses the lower group's title: a label of 66.01 x 14 px at
+# (243.50, 453.50), which routing grows by `GROUP_LABEL_LINK_CLEARANCE + routedStroke / 2` =
+# 8.75 px to x 234.75 ... 318.25, y 444.75 ... 476.25. Nothing owns that rectangle - a group label
 # is nobody's to cross.
 #
 # ADR-0015's sixth amendment used to answer that wholesale: a gap that cannot leave every one of
@@ -21,9 +22,12 @@
 # keeps the route it has today: it is a crosser of the three rows, and the gap owes it the head-on
 # approach its own corridor needs, which the three rows keep clear of. The diagram publishes.
 #
-# It publishes at Q 0.4079 and fails G6 with two `segment-group-edge` and two `parallel-clearance`
-# violations. Those are not this rule's: the fixture exists for the seating, and the seating is
-# what the test asserts.
+# It publishes at Q 0.45644825442136716 and fails G6 with two `parallel-clearance` violations,
+# `[link-1, link-3]` at x 290.50 / 288.50 and `[link-2, link-4]` at x 217.00 / 215.00. Those are not
+# this rule's: two allocated runs of one gap may stand 2 px apart, because the row order forbids
+# only an exact shared x and the clearance scan never measures a candidate against the other runs of
+# its own gap. It is present on `main` at 0288048 too. Stress ticket 14 owns it. The fixture exists
+# for the seating, and the seating is what the test asserts.
 portograph: 2
 groups:
   g0: { tier: 0 }

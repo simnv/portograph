@@ -1,51 +1,71 @@
-# Expected: a tier gap seats a row exactly on the edge of the approach it reserved for the run
-# beside it, and stage 8 claims that approach straight through the touch.
+# Expected: a tier gap seats a row one cover margin inside its low boundary, so that row's cover
+# ends exactly on the boundary, and stage 8 claims the run standing there straight through the touch.
 #
-# The gap under tier 0 owes two rows. The run that leaves its high boundary at x 189.92 owes its
-# own port an approach of one router stem beyond the low boundary, and the gap reserves it: a
-# rectangle of zero width grown by the clearance a reserved run carries. The first row is refused
-# inside it and seated past its bottom edge — at y 151.00, which is the gap boundary at 139.50
-# plus that same clearance. The row is therefore clear of the approach by exactly the 10 px of
-# visible clearance G6 asks for, and no more.
+# Three transit links descend from `n5_2` to tiers 0, 2 and 3, so the tier gaps they cross each owe
+# rows. The gap between tier 3 and tier 4 is y 768.25 ... 841.25 and seats all three of its rows, at
+# y 779.75, 797.25 and 814.75. The first of them is `link-17`'s, and its cover — the run grown by
+# `10 + (the two strokes) / 2` = 11.5 px — is x 66.60 ... 330.60, y 768.25 ... 791.25. Its top edge
+# is the gap's own low boundary, and that is arithmetic, not luck. The gap reserves each run's own
+# approach beyond the far boundary as a rectangle grown by 11.5 px, so the search refuses the first
+# position the pitch allows and takes the one past that rectangle's edge — 11.5 px inside the
+# boundary, which is the row's own cover margin. The cover's edge then lands on the boundary
+# exactly, and every run that stands there touches it.
 #
-# The approach is a straight piece with one checkpoint on its own line, so stage 8 claims it
-# (ADR-0015 tenth amendment) — except that the claim scanned the reserved covers with
-# `segmentRect`, which counts a zero-area touch as a hit. The claim was declined, the piece went to
-# libavoid, and libavoid answered with a route that stops at the checkpoint and never reaches the
-# port: `Routed gap on link-11 does not meet its reserved endpoints`.
+# `link-18` stands on that boundary at x 112.10. Its piece from there to its own port is a straight
+# run with one checkpoint on its own line, so stage 8 claims it (ADR-0015 tenth amendment) — except
+# that the claim scanned the reserved covers with `segmentRect`, which grows the rectangle it is
+# given by EPS and so counts a zero-area touch as a hit. The claim was declined, the piece went to
+# libavoid, and libavoid answered with a route that never reaches the reserved end:
+# `Routed gap on link-18 does not meet its reserved endpoints`.
 #
-# A run on a cover edge is clear of the cover, so the scan now asks for an overlap of area. The
-# claim is made, the piece is one straight segment, and the diagram is produced at Q 0.4729 with
-# G4, G5 and G6 failing — none of them this rule.
+# A run on a cover edge is clear of the cover, so the scan asks for an overlap of area. The claim is
+# made, the piece is one straight segment from (112.10, 768.25) to (112.10, 725.00), and the diagram
+# is produced at Q 0.4132939050368625 with G4, G5 and G6 failing — none of them this rule.
+#
+# Shrunk from the generated corpus input `transit-t6-p3-f1-s3`, which fails the same way.
 portograph: 2
 groups:
   t0: { tier: 0, label: Tier 0 }
   t1: { tier: 1, label: Tier 1 }
   t2: { tier: 2, label: Tier 2 }
   t3: { tier: 3, label: Tier 3 }
+  t4: { tier: 4, label: Tier 4 }
+  t5: { tier: 5, label: Tier 5 }
 nodes:
   n0_0: { group: t0, class: router, label: N0_0, ports: [{ name: d0, side: bottom }] }
   n0_1: { group: t0, class: tbr, label: N0_1, ports: [{ name: d0, side: bottom }] }
+  n0_2: { group: t0, class: rr, label: N0_2, ports: [{ name: d0, side: bottom }] }
   n1_0: { group: t1, class: tbr, label: N1_0, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
   n1_1: { group: t1, class: rr, label: N1_1, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n1_2: { group: t1, class: provider, label: N1_2, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
   n2_0: { group: t2, class: rr, label: N2_0, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
   n2_1: { group: t2, class: provider, label: N2_1, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
   n2_2: { group: t2, class: router, label: N2_2, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
-  n2_3: { group: t2, class: tbr, label: N2_3, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
-  n2_4: { group: t2, class: rr, label: N2_4, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
-  n2_5: { group: t2, class: provider, label: N2_5, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
-  n3_0: { group: t3, class: provider, label: N3_0, ports: [{ name: u0, side: top }] }
-  n3_1: { group: t3, class: router, label: N3_1, ports: [{ name: u0, side: top }] }
+  n3_0: { group: t3, class: provider, label: N3_0, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n3_1: { group: t3, class: router, label: N3_1, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n3_2: { group: t3, class: tbr, label: N3_2, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n4_0: { group: t4, class: router, label: N4_0, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n4_1: { group: t4, class: tbr, label: N4_1, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n4_2: { group: t4, class: rr, label: N4_2, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n5_0: { group: t5, class: tbr, label: N5_0, ports: [{ name: u0, side: top }] }
+  n5_1: { group: t5, class: rr, label: N5_1, ports: [{ name: u0, side: top }] }
+  n5_2: { group: t5, class: provider, label: N5_2, ports: [{ name: u0, side: top }] }
 links:
   - [n0_0.d0, n1_0.u0]
   - [n0_1.d0, n1_1.u0]
+  - [n0_2.d0, n1_2.u0]
   - [n1_0.d0, n2_0.u0]
   - [n1_1.d0, n2_1.u0]
+  - [n1_2.d0, n2_2.u0]
   - [n2_0.d0, n3_0.u0]
   - [n2_1.d0, n3_1.u0]
-  - [n2_2.d0, n3_0.u0]
-  - [n2_3.d0, n3_1.u0]
-  - [n2_4.d0, n3_0.u0]
-  - [n2_5.d0, n3_1.u0]
-  - [n2_0, n0_1]
-  - [n2_2, n0_0]
+  - [n2_2.d0, n3_2.u0]
+  - [n3_0.d0, n4_0.u0]
+  - [n3_1.d0, n4_1.u0]
+  - [n3_2.d0, n4_2.u0]
+  - [n4_0.d0, n5_0.u0]
+  - [n4_1.d0, n5_1.u0]
+  - [n4_2.d0, n5_2.u0]
+  - [n5_2, n0_0]
+  - [n5_2, n2_0]
+  - [n5_2, n3_0]
