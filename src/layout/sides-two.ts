@@ -10,7 +10,7 @@ import { sizeNodes } from './size.js';
 import { bandGap, nodeGap, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { moveGroup, stackBands } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
-import { nodeObstacleReach, routedStroke, stemReach } from './bands.js';
+import { bandSide, nodeObstacleReach, routedStroke, stemReach } from './bands.js';
 import { MEMBER_GAP, fanEnd } from './bundle-geometry.js';
 import { laneSource, laneWidth, transitTiers } from './lanes.js';
 import { fitRegionGroup } from './regions.js';
@@ -353,6 +353,13 @@ const FACING: Record<'top' | 'bottom', Side> = { top: 'bottom', bottom: 'top' };
 export function sidePlan(model: LayoutModel, node: string, side: 'top' | 'bottom'): SidePlan | undefined {
   const owner = model.nodes[node];
   if (!owner?.bounds) return undefined;
+  // The side that carries its group's title nests nothing. Stage 7f places that title after the
+  // depth is chosen, in the room the deeper stem would turn in, and it is then an obstacle the turn
+  // is not clear of: measured, a nested side under a title routes into the title's reservation and
+  // the diagram fails. The title's edge is read from frozen port topology, so this decline answers
+  // the same before 7f moves anything and on every re-derivation after it.
+  const owning = model.groups[model.document.nodes[node]!.group];
+  if (owning && bandSide(model, owning) === side) return undefined;
   const peers = unreservedPeers(model), tier = (id: string): number | undefined =>
     model.groups[model.document.nodes[id]!.group]?.tier;
   // One entry per port: its anchor along the side, and how far its legs travel along it.
