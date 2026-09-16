@@ -65,8 +65,9 @@ async function runRouter(model: LayoutModel, plan: RoutePlan, options: RouteOpti
  */
 export async function route(model: LayoutModel, options: RouteOptions = {}): Promise<LayoutModel> {
   const plan = planRoute(model);
-  // Overlay links need no WASM, so a diagram without a routed remainder never initializes it.
-  const routes = plan.remainders.length ? await runRouter(model, plan, options) : new Map<string, Point[]>();
+  // Overlay links need no WASM, and neither does a remainder every piece of which stage 8 claimed,
+  // so a diagram with no batch never initializes it.
+  const routes = plan.batches.length ? await runRouter(model, plan, options) : new Map<string, Point[]>();
   const paths = stitchPaths(model, plan, routes);
   return withLayoutMutation(model, 'route', draft => {
     for (const { link, path } of paths) draft.links.find(item => item.id === link)!.path = path;
