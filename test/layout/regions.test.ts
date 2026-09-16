@@ -355,6 +355,21 @@ links: [[a.p, c.p], [a.q, b.p]]`;
     expect(model.diagnostics.filter(d => d.code === 'PLACEMENT_NON_CONVERGENCE')).toHaveLength(1);
     expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
   });
+  it('stress ticket 14: keeps the exact width of a node whose centring moves neither edge', async () => {
+    const input = flanks(lanes(rows(await placed(fixture('centring-keeps-a-width-it-recomputes')))));
+    // Every leaf port lands inside its own node box, so centring aligns the three feeds without
+    // moving an edge. Recovering the width through the right edge threw `Centring cannot shrink
+    // width` on `leaf-b`, whose box starts below 1024 and ends above it.
+    const model = centre(input);
+    for (const id of Object.keys(model.nodes)) {
+      expect(model.nodes[id]!.size!.width).toBe(input.nodes[id]!.size!.width);
+      expect(model.nodes[id]!.bounds!.width).toBe(input.nodes[id]!.size!.width);
+    }
+    const box = model.nodes['leaf-b']!.bounds!;
+    expect(box.x).toBeLessThan(1024);
+    expect(right(box)).toBeGreaterThan(1024);
+    expect(right(box) - box.x).not.toBe(box.width);
+  });
   it('ticket 01: packs the tier when a widened child swallows the group beside it', async () => {
     const input = flanks(lanes(rows(await placed(fixture('widened-child-packs-tier')))));
     const model = bands(bundles(bars(centre(input))));

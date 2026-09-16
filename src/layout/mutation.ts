@@ -325,7 +325,7 @@ function validateGeometry(model: LayoutModel, allowNonConvergence = false): void
     const saved = model.freeze?.floors.find(floor => floor.node === id)?.size;
     for (const dim of ['width', 'height'] as const) {
       if ((saved !== undefined && saved[dim] < measured.sizeFloor![dim]) || node.sizeFloor[dim] < measured.sizeFloor![dim] || node.sizeFloor[dim] < (saved?.[dim] ?? 0)
-        || node.size[dim] < node.sizeFloor[dim]) throw new Error(`Node ${id} violates ${dim} floor`);
+        || node.size[dim] < node.sizeFloor[dim]) throw new Error(`Node ${id} violates ${dim} floor: size ${node.size[dim]}, floor ${node.sizeFloor[dim]}, measured ${measured.sizeFloor![dim]}, frozen ${saved?.[dim] ?? 'none'}`);
     }
     for (const side of SIDE_TIE_ORDER) {
       const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
@@ -623,7 +623,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     if (rule === 'centre') {
       same(node.bounds!.y, old.bounds!.y, 'Centring cannot change y');
       same(node.size!.height, old.size!.height, 'Centring cannot change height');
-      if (node.size!.width < old.size!.width) throw new Error('Centring cannot shrink width');
+      if (node.size!.width < old.size!.width) throw new Error(`Centring cannot shrink ${id}: width ${node.size!.width} < ${old.size!.width}`);
       const group = model.groups[model.document.nodes[id]!.group]!;
       if (group.tier === draft.anchorTier || group.flank) same(node, old, 'Centring cannot move anchor tier or flanks');
     }

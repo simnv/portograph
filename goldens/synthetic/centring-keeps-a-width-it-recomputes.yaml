@@ -1,0 +1,23 @@
+# Expected: Centring (7c) puts the three leaf nodes under their three spine feeds. Every leaf port
+# already sits inside its own node box, so no box edge moves and each node keeps the width it had.
+# `leaf-b` stands below x 1024 and reaches past it, so recovering its width through its right edge —
+# `(x + width) - x` — returns one ULP less than the width it kept. Centring must widen a node by the
+# distance each edge moved, never by re-subtracting two absolute edges. Stress ticket 14.
+portograph: 2
+groups:
+  spine: { tier: 0, label: "Spine" }
+  leaf: { tier: 1, label: "Leaf" }
+nodes:
+  s1: { group: spine, class: router, size: { width: 210, height: 40 } }
+  s2: { group: spine, class: router, size: { width: 210, height: 40 } }
+  s3: { group: spine, class: router, size: { width: 210, height: 40 } }
+  s4: { group: spine, class: router, size: { width: 210, height: 40 } }
+  s5: { group: spine, class: router, size: { width: 210, height: 40 } }
+  s6: { group: spine, class: router, size: { width: 210, height: 40 } }
+  leaf-a: { group: leaf, class: router, size: { width: 300, height: 40 } }
+  leaf-b: { group: leaf, class: router, size: { width: 300, height: 40 } }
+  leaf-c: { group: leaf, class: router, size: { width: 300, height: 40 } }
+links:
+  - [s3, leaf-a]
+  - [s4, leaf-b]
+  - [s6, leaf-c]
