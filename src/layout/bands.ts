@@ -1,5 +1,5 @@
 import type { Point, Rect, Side } from '../model/geometry.js';
-import { stemDepth, type GapPlan } from './sides-two.js';
+import { stemCache, stemDepth } from './sides-two.js';
 import type { PortRef } from '../model/document.js';
 import type { LabelBand, LayoutGroup, LayoutLabel, LayoutLink, LayoutModel, LayoutNode, LayoutPort, Owner, PathSegment } from '../model/layout.js';
 import { equal } from '../model/json-equality.js';
@@ -121,7 +121,7 @@ export function stemReach(model: LayoutModel, node: LayoutModel['nodes'][string]
 export function routerEntryPoints(model: LayoutModel): RouterEntryPoint[] {
   const result: RouterEntryPoint[] = [];
   // One gap plan per row gap for this pass; nothing moves while it runs.
-  const gaps = new Map<string, GapPlan | undefined>();
+  const gaps = stemCache();
   for (const link of model.links) {
     if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
     for (const end of ['from', 'to'] as const) {
