@@ -1,8 +1,10 @@
 # Expected: The child's two feeds sit at opposite ends of the row above it, 1 017 px apart, so
-# seating a port under each would stretch its 50 px body over twenty times its own width. The
-# alignment allowance declines both: the body keeps the width the node itself needs, each feed is
-# reported CENTRE_ALIGNMENT_INFEASIBLE, the eight passes are spent on an alignment none of them can
-# reach, and stage 8 routes the two links. Every gate passes.
+# seating a port under each would stretch its 50 px body over twenty times its own width — 1 051.31 px
+# before ticket 29, which is how this input used to converge. The alignment allowance declines both:
+# the body keeps its 50 px, each feed is reported CENTRE_ALIGNMENT_INFEASIBLE, no pass can settle an
+# alignment none of them may reach so the eight are spent and PLACEMENT_NON_CONVERGENCE is reported
+# as well, and stage 8 routes the two links. The canvas is the same 1 140.56 x 308 either way: the
+# row above sets it. Every gate passes.
 # Ticket 29; the whole pipeline runs, so no stage precondition is needed.
 portograph: 2
 groups:

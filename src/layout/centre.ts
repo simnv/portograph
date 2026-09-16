@@ -337,10 +337,11 @@ function centreGroupStep(model: LayoutModel, context: CentreContext, tier: numbe
     model.groups[id] = saved.group;
     for (const node of saved.nodes) model.nodes[node.id] = node;
     packClear(model, context, tier, saved.group, previous);
-    // The ports are back where this step found them, so what is unresolved is measured again there:
-    // a port the move had seated is not seated any more, and the publication check excuses exactly
-    // the ports this producer really leaves off their feed.
-    for (const [key, value] of misses()) if (value > 0.5) unresolved.add(key);
+    // `unresolved` already holds every wanted port: nothing was kept, so the loop above added them
+    // all. It is returned as it stands, and the publication check excuses the whole group — which is
+    // what the geometry now says, since the ports are back where this step found them. The cost is
+    // that the step can never report itself settled, so the pass loop below spends all eight and
+    // reports `PLACEMENT_NON_CONVERGENCE`: a stable non-convergence instead of a growing one.
     return { unresolved, group: saved.group };
   }
   return { unresolved, group };
