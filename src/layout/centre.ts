@@ -6,6 +6,7 @@ import { findPort } from './row-paths.js';
 import { portId, bandGap } from './skeleton-graph.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { rowGap } from './sides-two.js';
+import { alignmentAllowance } from './size.js';
 import { withLayoutMutation } from './mutation.js';
 import { fitRegionGroup, placementWarning, rebuildRegions, right } from './regions.js';
 import { EPS } from '../score/geometry.js';
@@ -64,20 +65,40 @@ function siblingLimit(model: LayoutModel, group: LayoutGroup, node: LayoutNode):
   return limit;
 }
 
-/** Keep compatible targets that fit between siblings; other ports retain their legal slots. */
+/**
+ * Keep compatible targets that fit between siblings and inside the node's own alignment allowance;
+ * other ports retain their legal slots.
+ *
+ * A target is kept only when reaching it leaves the body no wider than `alignmentAllowance` — the
+ * third bound on a widening, beside the siblings of the row and the reserved lane and flank window
+ * of `reservedWindow`, and the one that says the node has to stay something a reader still reads as
+ * this node (ticket 29). What gives way is the alignment: the port keeps its legal slot, the feed is
+ * reported `CENTRE_ALIGNMENT_INFEASIBLE` like any other alignment the row cannot hold, and stage 8
+ * routes the link instead of receiving it pinned. Two targets that each fit alone but not together —
+ * one parent far to the left, one far to the right — decline the whole side, because widening to the
+ * outer one is the same growth by another name.
+ */
 function alignSide(node: LayoutNode, side: Side, targets: Map<string, number>, limit: WideningLimit): Set<string> {
   const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
   const pitch = node.sidePitch![side]!, kept: { index: number; x: number; key: string }[] = [];
   const box = node.bounds!, oldRight = right(box);
   if (box.x < limit.low - EPS || oldRight > limit.high + EPS) return new Set();
+  const allowance = alignmentAllowance(node, side);
+  /** The width the body ends with when the port at `index` is aligned to `x`. */
+  const reach = (index: number, x: number): number =>
+    Math.max(oldRight, x + (ports.length - 1 - index) * pitch + 10 + pitch / 2)
+    - Math.min(box.x, x - index * pitch - 10 - pitch / 2);
   for (const [index, port] of ports.entries()) {
     const key = portId(port.ref), x = targets.get(key), last = kept[kept.length - 1];
     if (x !== undefined && (x - index * pitch - 10 - pitch / 2 < limit.low - EPS
       || x + (ports.length - 1 - index) * pitch + 10 + pitch / 2 > limit.high + EPS)) continue;
+    if (x !== undefined && reach(index, x) > allowance + EPS) continue;
     if (x !== undefined && (!last || x - last.x >= (index - last.index) * pitch)) kept.push({ index, x, key });
   }
   if (!kept.length) return new Set();
   const first = kept[0]!, last = kept[kept.length - 1]!;
+  if (Math.max(oldRight, last.x + (ports.length - 1 - last.index) * pitch + 10 + pitch / 2)
+    - Math.min(box.x, first.x - first.index * pitch - 10 - pitch / 2) > allowance + EPS) return new Set();
   // The width the alignment needs is what each edge moved outward, added to the width the node
   // already has. `Math.max(oldRight, grown) - box.x` states the same thing through two absolute
   // edges, and a rectangle recovered through an edge it was not stored with does not come back:
@@ -242,6 +263,13 @@ function centreGroupStep(model: LayoutModel, context: CentreContext, tier: numbe
   const distinctParents = new Map(chosen.map(feed => [feed.key, feed.x]));
   const distinctChildren = new Map(chosen.map(feed => [portId(feed.child.ref), feed.child.anchor!.x]));
   const mean = (values: Iterable<number>) => { const xs = [...values]; return xs.reduce((sum, x) => sum + x, 0) / xs.length; };
+  /** How far each wanted port is from the x its feed asks for, in the model as it now stands. */
+  const misses = (): Map<string, number> => new Map([...wanted].map(([key, want]) => {
+    const port = group.nodes.flatMap(node => model.nodes[node]!.ports).find(port => portId(port.ref) === key);
+    return [key, port?.anchor ? Math.abs(port.anchor.x - want) : 0];
+  }));
+  const total = (values: Map<string, number>): number => [...values.values()].reduce((sum, value) => sum + value, 0);
+  const missBefore = total(misses());
   moveGroup(model, group, mean(distinctParents.values()) - mean(distinctChildren.values()), 0);
   const aligned = new Set<string>();
   for (const nodeId of group.rowOrder!) {
@@ -283,6 +311,32 @@ function centreGroupStep(model: LayoutModel, context: CentreContext, tier: numbe
   for (const [key, want] of wanted) {
     const port = group.nodes.flatMap(id => model.nodes[id]!.ports).find(port => portId(port.ref) === key)!;
     if (Math.abs(port.anchor!.x - want) > 0.5) unresolved.add(key);
+  }
+  // A step that aligns nothing and brings no feed closer to its x moves nothing. The passes are an
+  // iterative solver: the move puts the group under the mean of its feeds, the widenings below it
+  // reach what the row and the allowance let them reach, and the next pass starts from where this
+  // one left the group. A step that keeps no target, ends with every port off its feed and no
+  // nearer it than it found them, has solved nothing and has only given the next pass a new place
+  // to chase the mean from. That is the loop this ticket was filed for: `bar-fan` walked a 50 px
+  // body to 3 014 px, 123.8 px a pass, through all eight, carrying its one port away from the feed
+  // it started on every time (ticket 29).
+  //
+  // All three conditions are needed. A single feed is made vertical by the move alone, with nothing
+  // for `alignSide` to keep, so the kept targets cannot be read on their own; a step that does not
+  // converge here may still converge two passes later, so progress is measured rather than assumed;
+  // and a transit feed asks for a **reserved lane x**, which the child has to reach and 7f's
+  // corridor follows (`LANE_FOLLOWS_ITS_CHILD`) — putting that group back leaves the corridor
+  // without the child it was moved for.
+  const missAfter = total(misses());
+  if (wanted.size && !aligned.size && !own.some(feed => feed.transit) && missAfter > 0.5 && missAfter >= missBefore - 0.5) {
+    model.groups[id] = saved.group;
+    for (const node of saved.nodes) model.nodes[node.id] = node;
+    packClear(model, context, tier, saved.group, previous);
+    // The ports are back where this step found them, so what is unresolved is measured again there:
+    // a port the move had seated is not seated any more, and the publication check excuses exactly
+    // the ports this producer really leaves off their feed.
+    for (const [key, value] of misses()) if (value > 0.5) unresolved.add(key);
+    return { unresolved, group: saved.group };
   }
   return { unresolved, group };
 }
