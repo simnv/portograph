@@ -379,3 +379,61 @@ that edge is a free visibility line — so the effect is a geometry change of un
 dead end. A claimed run also enters its own link's exclusions, so a partially claimed link becomes a
 singleton batch.
 
+
+## Eleventh amendment (2026-09-16, from the stress test; stress ticket 08): rule 1 also reserves a node side
+
+Rule 1's first sentence names "ports on one side of a node whose links turn the same way". Every
+implementation of it so far has been a **gap** rule: the row gap between two row neighbours (fourth
+amendment), then the tier gap between two bands (sixth). The subject the first sentence names — the
+node side itself — was never reserved, and the third amendment already asked whether rule 1 owed a
+reservation to ports no row gap covers. It does.
+
+**What was unreserved.** A stem strip is `2 * (10 + (stroke + widest routed stroke) / 2)` wide, 23 px
+at defaults, and two ports of one side stand one port pitch — 12 px — apart. Stage 8's pending-stem
+cover therefore left a strip out whenever the batch it protects attaches to the same side: a
+rectangle over one port would have sealed its neighbour. An earlier batch was then free to turn at
+the flat depth every stem turns at and run straight across the other port's stem. Its completed
+route is the cover the next batch is measured against, libavoid cannot reach the checkpoint inside
+it, drops the whole checkpoint without a word, and answers with the two node centres.
+
+Measured on `goldens/synthetic/widened-child-packs-tier.yaml`: `m1|top` carries the two ports at
+x 491 and x 479, `link-3` leaves the first for `a1` at x 356 and `link-4` the second for `b1` at
+x 57. Both turned at y 218, the 15 px depth. `link-3` routed first, its horizontal run covered
+x 429.375 … 488 at y 206.5 … 229.5, and `link-4`'s reserved turn at (479, 218) stood inside it.
+
+**The reservation.** The unit is the **port**: a side carries one stem per port, and the links that
+share a port share it. The order is forced wherever one leg's travel along the side passes over
+another port's column — the leg that reaches across must turn beyond that port, or it crosses the
+port's own stem — which is the first amendment's rule read on a column instead of a row. Port `p`
+turns `stemReach + rank(p) * pitch` out, `rank` being the longest chain of ports it must turn
+beyond, `pitch` the rule's own `16 px + widest routed stroke`. `link-3` turns at y 200.5 and
+`link-4` keeps y 218.
+
+What is reserved is the **depth**, not the run. Where a leg goes after it turns is routing's
+business here exactly as it is in a row gap; what placement owes is a turn the router cannot take
+from another link. Each strip is then a corridor of one port's own, so stage 8 covers it for every
+batch that has not routed its owner, with a per-port exemption. A side placement left flat keeps
+the old side-wide exemption, because the reason for it still holds there.
+
+**What it declines.** A side nests nothing where no leg reaches over another port, where two legs
+each reach over the other so no order is clean, where a leg's shape is not wholly known — its far
+end is not the facing side of a node in another tier, or a rule has already fixed its geometry —
+or where a nested stem would stand in frozen geometry, judged by `legClear` against the obstacles
+stage 8 itself reads. A declined side keeps the flat stems it had. Nothing grows for a nested stem:
+the depth is taken in the room the gap has, and a side whose deeper stem does not fit is declined
+rather than given room.
+
+**What it costs.** The golden is byte-identical and Q is unchanged: no side of it has a leg that
+reaches over another port. Across the suite one diagram changes, and it improves.
+`goldens/synthetic/a-straight-gap-needs-no-router.yaml` is the tenth amendment's own fixture; its
+two crossing links leave one side of `h1` and one of them travels over the other's port. Nested,
+they stop running along each other: two G4 `collinear-overlap` and three G6 `parallel-clearance`
+findings between `link-1` and `link-2` are gone, and the one left is `link-1` following the `hub`
+group edge, which no reservation on that side answers. The nine-node reproducer publishes with
+every gate passing at Q 0.7703205341782031.
+
+**What it does not settle.** The Enterprise NTP sheet still does not publish, and the failure is no
+longer this one. Its gap between y 3492 and y 3637.5 owes 48 rows and refuses the whole allocation,
+so every run that crosses it is routed and the first ownership batch takes the room. That is the
+ninth amendment's own recorded residue — the sixth amendment's wholesale decline rule — and it is
+stress ticket 09.

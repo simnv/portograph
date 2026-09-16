@@ -398,6 +398,23 @@ without a lane terminal on either boundary keeps the route it has today. The row
 it: a run along a gap is a wall along it and never across it (ADR-0015 rule 3). A gap that cannot
 leave every one of its approaches clear allocates nothing.
 
+**A node side that feeds a tier gap nests its own stems (ADR-0015 rule 1).** A side carries one
+stem per port, and a leg travels along that side after it turns. Where the travel passes over a
+second port of the same side, the two turns may not stand at one depth: the first route laid covers
+the second port's stem, and the second link is left with a reserved turn no route can reach. The
+order is forced there — the leg that reaches over another port's column turns beyond it — so port
+`p` turns `stemReach + rank(p) * pitch` out of its node, `rank` being the longest chain of ports it
+must turn beyond and `pitch` the same `16 px + widest routed stroke`. That is the depth stage 7f
+reserves below a label band and the depth stage 8 gives the checkpoint, read from one rule.
+
+The reservation is a **depth**, not a run: where the leg goes after it turns stays routing's
+business, as it does in a row gap. A side keeps the flat stems it had when no leg reaches over
+another port, when two legs each reach over the other so no order is clean, when a leg's shape is
+not wholly known here — its far end is not the facing side of a node in another tier, or a rule has
+already fixed its geometry — or when a nested stem would stand in frozen geometry, which is measured
+against the obstacles stage 8 itself reads. A gap does not grow for a nested stem: the depth is
+taken in the room the gap has.
+
 A link transiting several tiers reserves a lane at each, ordered from source to target even for
 upward links. Prefer in-span corridors. When they do not fit, retain source geometry, reserve an
 outside-span corridor, and warn that routing must complete its attachment jog. Non-bundle runs
@@ -798,9 +815,14 @@ Registered as obstacles, each expanded once in the adapter and never in the mode
 - **lanes**, **group and node labels**, **bundle envelopes** and model
   obstacles, each expanded by the routed half stroke;
 - **the reserved outward stem of every link no batch has routed yet**, covered by the same
-  `10 + (its stroke + widest routed stroke) / 2` clearance. A stem is left out on a node **side**
-  the current batch attaches to as well. Two ports of one node side share that strip. A port on
-  another side of the same node stands in its own strip and keeps its reservation.
+  `10 + (its stroke + widest routed stroke) / 2` clearance. A stem is left out at a **port** the
+  current batch attaches to: one port carries one stem, and the links that share the port share it.
+  A stem on a node **side** the batch attaches to elsewhere is left out as well, but only where
+  placement left that side's stems flat. Two ports of one side stand one port pitch apart and the
+  strip is wider than that pitch, so a rectangle over one of them blocks the other. Where § 7a
+  nested the side, each port turns at a depth of its own, the strip is that port's corridor, and it
+  is covered for every batch that has not routed its owner. A port on another side of the same node
+  stands in its own strip and keeps its reservation.
   These rectangles are added per batch. They never enter the ownership exclusions, so they cannot
   change a batch; they remain for the attachments no gap allocation reaches.
 - **every allocated tier-gap run** (§ 7a, in the room § 7f reserved for it), covered by the
@@ -948,8 +970,9 @@ once, with the same points and no masks, when the answer misses a checkpoint it 
 costs one more transaction on a batch that would otherwise fail the command. Swapping the vertical
 bits instead would make every mask bite, which turns each stem checkpoint from a minimum into a
 pinned turn — measured, that puts two runs 3.5 px apart where nothing reserves the pitch between
-them. ADR-0015 rule 1 reserves that room in a row gap and in a tier gap, not beside a node side, so
-the masks stay advisory until the room a pinned turn needs is reserved there too.
+them. ADR-0015 rule 1 now reserves that room in a row gap, in a tier gap and on a node side that
+feeds one, but only where an order is forced; a side it leaves flat still has no room reserved for a
+pinned turn, so the masks stay advisory.
 
 
 ## Stage 9 — link labels
