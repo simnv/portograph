@@ -40,15 +40,15 @@ it('stitches a straight gap between two reserved endpoints without asking the ro
       && Math.min(segment.from.x, segment.to.x) < from.x && Math.max(segment.from.x, segment.to.x) > from.x);
   expect(crossing).toHaveLength(1);
 
-  // The diagram is produced. What it still fails is the pair of links that share the one corridor
-  // this tier gap offers, and none of it touches the claimed run: `link-1` and `link-2` run along
-  // each other, and `link-1` follows the `hub` group edge. That is a separate defect.
+  // The diagram is produced. The pair of links that share the one corridor this tier gap offers no
+  // longer runs along itself: the two leave one side of `h1`, one of them travels over the other's
+  // port, and rule 1 now nests those two stems (stress ticket 08), so the five G4 and G6 findings
+  // between `link-1` and `link-2` are gone. What is left is `link-1` following the `hub` group
+  // edge, which no reservation on that side answers.
   const report = score(model).snapshot;
   expect(Number.isFinite(report.Q)).toBe(true);
   expect(Object.entries(report.gates).flatMap(([id, gate]) => gate.violations.map(item => [id, item.code, item.elements])))
-    .toEqual([['G4', 'collinear-overlap', ['link-1', 'link-2']], ['G4', 'collinear-overlap', ['link-1', 'link-2']],
-      ['G6', 'segment-group-edge', ['link-1', 'hub']], ['G6', 'parallel-clearance', ['link-1', 'link-2']],
-      ['G6', 'parallel-clearance', ['link-1', 'link-2']], ['G6', 'parallel-clearance', ['link-1', 'link-2']]]);
+    .toEqual([['G6', 'segment-group-edge', ['link-1', 'hub']]]);
 }, 60000);
 
 /**

@@ -10,6 +10,9 @@ import { bars } from '../../src/layout/bars.js';
 import { bundles } from '../../src/layout/bundles.js';
 import { bands } from '../../src/layout/bands.js';
 import { batchRequest, planRoute } from '../../src/route/plan.js';
+import { route } from '../../src/route/index.js';
+import { score } from '../../src/score/index.js';
+import { createAvoidAttempt } from '../route/fixture.js';
 import { right } from '../../src/layout/regions.js';
 import { restoreLayoutModel, withLayoutMutation } from '../../src/layout/mutation.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
@@ -371,7 +374,18 @@ links: [[a.p, c.p], [a.q, b.p]]`;
       expect(group.bounds!.x - right(tier[index]!.bounds!)).toBeGreaterThanOrEqual(60);
     }
     expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
-  });
+
+    // Stress ticket 08: `m1|top` carries the two links, 12 px apart, and `link-3` travels over
+    // `link-4`'s port. Rule 1 nests the two stems, so the earlier batch's route no longer covers
+    // the later link's reserved turn, and the diagram publishes.
+    const stems = new Map(plan.stems.filter(stem => stem.node === 'm1').map(stem => [stem.link, stem.bounds]));
+    expect([...stems.keys()].sort()).toEqual(['link-3', 'link-4']);
+    expect(stems.get('link-3')!.height).toBeGreaterThan(stems.get('link-4')!.height + 17);
+    const routed = await route(model, { createAttempt: createAvoidAttempt });
+    for (const link of routed.links) expect(link.path, link.id).toBeDefined();
+    const report = score(routed).snapshot;
+    expect(Object.values(report.gates).every(gate => gate.passed)).toBe(true);
+  }, 60000);
   it('ticket 01: keeps the packed tier clear of the flanks beside it', async () => {
     // The same widening with a flank on each side: the window is finite here, and the final clamp
     // may not put the group back across the left flank.
