@@ -9,7 +9,7 @@ import { bundles } from '../../src/layout/bundles.js';
 import { centre } from '../../src/layout/centre.js';
 import { flanks } from '../../src/layout/flanks.js';
 import { laneSidesHold, lanes, transitTiers, validateLanes } from '../../src/layout/lanes.js';
-import { alignLinkedGroupGrid, bandEntryConflicts, GROUP_LABEL_GEOMETRY, groupLabelObstacles, produceGroupLabelBands, replanGroupLabels, routerEntryPoints } from '../../src/layout/bands.js';
+import { alignLinkedGroupGrid, bandEntryConflicts, GROUP_GRID_MAX_GROWTH, GROUP_LABEL_GEOMETRY, groupLabelObstacles, produceGroupLabelBands, replanGroupLabels, routerEntryPoints } from '../../src/layout/bands.js';
 import { growTierGaps } from '../../src/layout/gap-room.js';
 import { rebuildRegionGeometry } from '../../src/layout/region-rebuild.js';
 import { restoreLayoutModel, withLayoutMutation } from '../../src/layout/mutation.js';
@@ -755,7 +755,14 @@ it('settles the linked-group grid again after the tier gap room replay', async (
   expect(alignLinkedGroupGrid(copy(model))).toBe(false);
   const width = (id: string): number => model.groups[id]!.bounds!.width;
   expect(width('access')).toBeCloseTo(width('hubs'), 9);
-  expect(width('sinks')).toBeCloseTo(width('sources'), 9);
+  // Ticket 29: `sources` is no longer widened across the tier to seat its feeds, so it and `sinks`
+  // are too far apart in width for one extent — the grid declines them by its own
+  // `GROUP_GRID_MAX_GROWTH` rather than inflating the smaller box to the larger (ADR-0012). That
+  // is the rule holding, which is what this test is about; before the allowance both boxes were
+  // widened past 2 730 px and the union cost nothing.
+  const box = (id: string) => model.groups[id]!.bounds!;
+  const extent = Math.max(right(box('sinks')), right(box('sources'))) - Math.min(box('sinks').x, box('sources').x);
+  expect((extent - Math.min(width('sinks'), width('sources'))) / extent).toBeGreaterThan(GROUP_GRID_MAX_GROWTH);
 }, 120000);
 
 it('holds the group that set a band edge, which x + width does not return exactly', async () => {
