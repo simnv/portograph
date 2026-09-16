@@ -538,6 +538,18 @@ clears the shallower strip's top by `17.5 − 11.5` = 6 px, which is what stops 
 from crossing the shallower stem. Neither number is a coincidence of this fixture: both are the
 pitch arithmetic.
 
+**How wide is this rule? Four inputs.** Say it here, before the rule, because an amendment that
+reads as a general rule and applies to four diagrams must say so itself. Of the 1 103 inputs of the
+geometry corpus (`corpus`, `corpus2`, `corpus3` and `goldens/synthetic`) exactly **four** nest a
+side at all — `a-band-holds-the-group-that-set-its-edge`, `a-row-steps-past-a-group-edge`,
+`a-straight-gap-needs-no-router` and `widened-child-packs-tier` — and all four are
+`goldens/synthetic/`. **None of the 1 056 generated inputs does.** The reason is arithmetic: the
+group-edge condition below asks for a group that holds its node with room to spare, the ordinary
+padding is 20 px beyond a node's body and its pills, and the first pitch of nesting is 32.5 px, so a
+tier that packs its nodes at the ordinary padding refuses the first rank. Generated tiers all do.
+The rule is therefore narrow by measurement, not by intent, and what it leaves unreserved is the
+residue recorded at the end of this amendment.
+
 **What it declines.** A declined side keeps the flat stems it had and the old side-wide exemption.
 It declines where
 
@@ -548,36 +560,66 @@ It declines where
   a leg is passed over rather than declined: it is already an obstacle `legClear` reads, so it
   neither takes a slot nor stops the side from nesting. A **bundle member** is passed over in the
   same way and one step earlier, by `unreservedPeers`, because stage 7e owns its path;
-- the side carries its group's **title**. Stage 7f places that title after the depths are chosen,
-  in the room a deeper stem turns in, and it is then an obstacle the turn is not clear of;
+- the side carries its group's **title**;
 - a nested turn would stand in frozen geometry, judged by `legClear` against the obstacles stage 8
   itself reads;
 - a nested turn would stand where G6 `segment-group-edge` refuses to let its leg travel away from
-  it — on the leg's **own** group box edge, or within `GROUP_EDGE_LINK_CLEARANCE` plus a half
-  stroke beyond it. Strictly inside the box a link turns in the group's padding and owes nothing;
-  further out it owes that margin. That reading is G6's own.
+  it.
 
-The last two are what the first attempt at this amendment got wrong, and both were measured.
-Reading the placed title as an ordinary obstacle instead of declining the side made the plan answer
-one way when it was first read and another on the re-derivation `validateGroupLabelBands` makes at
-every stage from `bands` on: 11 corpus inputs then threw `Group label bands contradict final group
-geometry`. Admitting the title instead — excluding it from `legClear`, or dropping `legClear`
-altogether — was worse, not better: 103 inputs broken, 19 of them routing into the title's own
-reservation. And the group-edge case is arithmetic: the ordinary padding is 20 px beyond a node's
-body and its pills, so on a group that holds its node tightly the **first** pitch of nesting lands
-the turn on the box edge exactly. On `corpus2/s3-p2-f1-k2-i2` that cost `link-8` its route: it had
-to leave the box before it could travel, overshot its own far checkpoint at (202.5, 139.5) and
-answered with a path that retraces itself.
+The last three are what the first attempt at this amendment got wrong. Each is measured, and the
+measurements are the reason to keep them.
+
+**The title side, and why the decline is read from the freeze.** Stage 7f places a group title
+*after* these depths are chosen, in the room a deeper stem turns in, and it is then an obstacle the
+turn is not clear of. Two ways of admitting that were built and swept over the corpus, and both are
+far worse than declining:
+
+| what the title is to a nested stem | broken |
+| --- | ---: |
+| declined: a side under a title does not nest | **0** |
+| excluded from `legClear`, so the stem may cross it | 103 |
+| `legClear` dropped from the side plan altogether | 103 |
+
+Of those 103, **19 publish a route into the title's own reservation** (`Routed path on link-3 enters
+reserved label:group:t1`) and 21 answer a gap that misses its reserved endpoints. That is the
+strongest evidence in this round: the title is not a formality the rule may route through, and the
+only safe answer is not to nest under one.
+
+Which edge carries the title is therefore read from `bandSide`, which counts incident routed link
+ports over **frozen port topology** (invariant 4) — never from `model.labelBands`. That distinction
+is the whole of it. `labelBands` does not exist before stage 7f, `syncBands` rewrites it repeatedly
+inside 7f, and `reserveInitialSpace` rewrites it again after moving whole tiers; a decline read from
+it would answer *nothing* before 7f, one thing during it and another on the re-derivation
+`validateGroupLabelBands` makes at every stage from `bands` on. That is exactly the trap this
+amendment's first attempt fell into one layer down, reading `link.path` where the rule means
+`path.fixed`, and it cost 117 corpus inputs a `Group label bands contradict final group geometry`.
+A derived plan that a later stage re-derives may read only what is frozen when both readings happen.
+Reading the *placed* title, rather than declining on the frozen edge, is the same fault again: it
+admitted the side when the plan was first read and declined it on the re-derivation, for 11 more
+inputs.
+
+**The group edge, and which predicate it borrows.** `legClear` excludes the leg's own group box, so
+that a leg may cross its own box; nothing then stopped a nested turn from landing on that box's
+edge. The guard is **G6 `segment-group-edge`'s own predicate**, applied to the horizontal run the
+turn starts: strictly inside the box a link turns in the group's padding and owes nothing; on or
+outside the edge it owes `GROUP_EDGE_LINK_CLEARANCE` plus its half stroke, 10.75 px at the defaults.
+Only a turn in the band between the two is refused. It is not a proxy — it is the gate's own
+arithmetic read one stage earlier, which is what placement owes routing.
+
+Measured on `corpus2/s3-p2-f1-k2-i2`: the padding above `n1_0` is 32.5 px and the first pitch puts
+the turn at exactly 32.5, on the edge. `link-8` then had to leave the box before it could travel,
+overshot its own far checkpoint at (202.5, 139.5) and answered with a path that retraces itself. The
+reproducer's own turn stands 9.5 px **inside** its box and `a-straight-gap-needs-no-router`'s
+12.5 px beyond a 20 px padding, which clears the 10.75 px margin; both keep nesting.
 
 **Nothing grows for it, and that is now a property rather than a hope.** `clearanceFor` reads only
 the entry points on the band's **own** side, and a side that carries its group's title never nests,
-so no nested depth can reach a band. Measured: over 1 102 corpus inputs the geometry differential
+so no nested depth can reach a band. Measured: over 1 103 corpus inputs the geometry differential
 against `main` — node boxes, group boxes, label bands, group labels and the canvas — moves
-**0 inputs**; the two published fixtures that do nest a side, `a-straight-gap-needs-no-router` and
-`a-row-steps-past-a-group-edge`, carry byte-identical digests.
+**0 inputs**; the three published fixtures that nest a side carry byte-identical digests.
 
-**What it costs.** Over the same 1 102 inputs: **1 repaired, 0 broken, 0 message-changed,
-0 geometry-moved, 1 101 identical**. The one repair is the reproducer, which publishes with every
+**What it costs.** Over the same 1 103 inputs: **1 repaired, 0 broken, 0 message-changed,
+0 geometry-moved, 1 102 identical**. The one repair is the reproducer, which publishes with every
 gate passing at Q 0.7703205341782031. The golden is byte-identical at Q 0.8986107135065587: no side
 of it has a leg that reaches another port's strip. One diagram changes and it improves —
 `goldens/synthetic/a-straight-gap-needs-no-router.yaml`, the tenth amendment's own fixture, whose
@@ -585,15 +627,10 @@ two crossing links leave one side of `h1`; nested, they stop running along each 
 `collinear-overlap` and three G6 `parallel-clearance` findings are gone, and the one left is
 `link-1` following the `hub` group edge, which no reservation on that side answers.
 
-**How often it fires: 3 of 1 102.** Only `a-row-steps-past-a-group-edge`,
-`a-straight-gap-needs-no-router` and `widened-child-packs-tier` nest a side at all, and all three
-are `goldens/synthetic/`. None of the 1 056 generated corpus inputs does, because the group-edge
-condition asks for a group that holds its node with room to spare, and a generated tier packs its
-nodes at the ordinary padding. The rule is therefore narrow by measurement, not by intent.
-
 **How deep it can go.** Port `p` turns `stemReach + rank(p) * pitch` out — 15, 32.5, 50, 67.5 px at
 the default strokes — and a strip reaches 11.5 px past its own turn. Nothing reserves that depth
-except the two conditions above, which bound it by the room the leg's own group box has rather than
+except the frozen-geometry and group-edge conditions above, which bound it by the room the leg's own
+group box has rather than
 by a number: a rank that lands its turn in the refused band declines the **whole** side, since the
 other ports are spaced against it. Every nested stem measured today is rank 1 at 32.5 px; no input
 in the corpus or the suite reaches rank 2, so the deeper ranks are arithmetic and not yet
@@ -604,7 +641,7 @@ depths and to the defect this amendment exists for. That is the shape of the res
 **What it does not settle.** Two things.
 
 The Enterprise NTP sheet still does not publish, and this rule changes nothing about it: on `main`
-at 3601a2c and on this branch alike it fails with `Router skipped a required checkpoint on
+at 58271be and on this branch alike it fails with `Router skipped a required checkpoint on
 link-43#0`, the checkpoint at (834.241, 6352.5). That is stress ticket 12, filed from ticket 09's
 own residue — a link whose two ports face each other inside one tier band.
 
@@ -616,6 +653,6 @@ One risk is bounded by measurement rather than by argument. The frozen-geometry 
 geometry — foreign nodes, foreign group boxes and **foreign** group titles — and stage 7f moves some
 of it after these depths are first read. The title of the leg's *own* group was the case that bit,
 and it is a decline now rather than an obstacle; a foreign one could in principle answer differently
-on the re-derivation the same way. Over 1 102 corpus inputs and the whole suite none does, and the
-three fixtures that nest are stable across every stage from `bands` on. If one ever did, the answer
+on the re-derivation the same way. Over 1 103 corpus inputs and the whole suite none does, and the
+four sides that nest are stable across every stage from `bands` on. If one ever did, the answer
 is the same as the title's: decline on something frozen, not on something placed.

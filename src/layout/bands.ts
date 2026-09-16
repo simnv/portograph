@@ -124,7 +124,7 @@ export function stemReach(model: LayoutModel, node: LayoutModel['nodes'][string]
  * from one place is what keeps the figure `clearanceFor` reserves and the figure stage 8 receives
  * the same one. A nested side's depth is measurably inert here today — a side that carries its
  * group's title never nests, and `clearanceFor` reads only the entries on the band's own side, so
- * over 1 102 corpus inputs no band moves for one — and it is read all the same, so the two figures
+ * over 1 103 corpus inputs no band moves for one — and it is read all the same, so the two figures
  * cannot drift apart later.
  */
 export function routerEntryPoints(model: LayoutModel): RouterEntryPoint[] {

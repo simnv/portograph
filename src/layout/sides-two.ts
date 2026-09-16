@@ -362,9 +362,14 @@ export function sidePlan(model: LayoutModel, node: string, side: 'top' | 'bottom
   if (!owner?.bounds) return undefined;
   // The side that carries its group's title nests nothing. Stage 7f places that title after the
   // depth is chosen, in the room the deeper stem would turn in, and it is then an obstacle the turn
-  // is not clear of: measured, a nested side under a title routes into the title's reservation and
-  // the diagram fails. The title's edge is read from frozen port topology, so this decline answers
-  // the same before 7f moves anything and on every re-derivation after it.
+  // is not clear of: measured, admitting it instead breaks 103 corpus inputs, 19 of them publishing
+  // a route into the title's own reservation.
+  //
+  // `bandSide` counts incident routed link ports over frozen port topology. Never read this from
+  // `model.labelBands`: it does not exist before 7f, `syncBands` rewrites it inside 7f and
+  // `reserveInitialSpace` rewrites it again after moving tiers, so the decline would answer nothing
+  // before 7f, one thing during it and another on the re-derivation `validateGroupLabelBands` makes
+  // at every stage from `bands` on. That is the `link.path` trap below, one layer up.
   const owning = model.groups[model.document.nodes[node]!.group];
   if (owning && bandSide(model, owning) === side) return undefined;
   const peers = unreservedPeers(model), tier = (id: string): number | undefined =>
