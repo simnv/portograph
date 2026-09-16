@@ -49,3 +49,29 @@ it('stitches a straight gap between two reserved endpoints without asking the ro
       ['G6', 'segment-group-edge', ['link-1', 'hub']], ['G6', 'parallel-clearance', ['link-1', 'link-2']],
       ['G6', 'parallel-clearance', ['link-1', 'link-2']], ['G6', 'parallel-clearance', ['link-1', 'link-2']]]);
 }, 60000);
+
+/**
+ * The same claim, refused. Three links meet at `b.p`, so each one's remaining gap starts at the
+ * terminal of the shared run 7e reserved below `b`. `a → b.p` is then a piece from a port anchor
+ * above `b` to a terminal below it, on one x, with `b` in between. `b` is the link's own end node
+ * and it is not an end of this piece: a claim owns only the pins the piece really attaches to.
+ */
+it('claims no run through a node the piece does not attach to', async () => {
+  const yaml = readFileSync(new URL('../../goldens/synthetic/a-claimed-run-owns-only-its-pins.yaml', import.meta.url), 'utf8');
+  const before = bands(bundles(bars(centre(flanks(lanes(rows(await placed(yaml))))))));
+  const plan = planRoute(before);
+  const item = plan.links.find(entry => entry.link === 'link-1')!;
+  expect(item.pieces.map(piece => piece.kind)).toEqual(['gap', 'reserved']);
+  expect(item.connectors).toHaveLength(1);
+
+  const model = await route(before, { createAttempt: createAvoidAttempt });
+  const box = model.nodes.b!.bounds!;
+  const path = model.links.find(entry => entry.id === 'link-1')!.path!;
+  // Every segment of the published path clears the node the straight line went through.
+  for (const segment of path.segments) {
+    const acrossX = Math.min(segment.from.x, segment.to.x) < box.x + box.width && Math.max(segment.from.x, segment.to.x) > box.x;
+    const acrossY = Math.min(segment.from.y, segment.to.y) < box.y + box.height && Math.max(segment.from.y, segment.to.y) > box.y;
+    expect([segment.from, segment.to, acrossX && acrossY]).toEqual([segment.from, segment.to, false]);
+  }
+  expect(Number.isFinite(score(model).snapshot.Q)).toBe(true);
+}, 60000);

@@ -229,7 +229,12 @@ export function planRoute(model: LayoutModel): RoutePlan {
         // everything placement froze. See `straightRun`.
         const run = straightRun(start.point, end.point, first ? from.directions : ALL_DIRECTIONS,
           last ? to.directions : ALL_DIRECTIONS, asked.map(item => item.checkpoint));
-        if (run && corridorFree(model, link, run, passReserved)) {
+        // Only the pin ends of this piece are its own. A piece that begins or ends at a reserved
+        // terminal has no attachment there, and the node behind that end is foreign geometry it
+        // must keep out of — it can stand between the two ends of the piece.
+        const pins = [...(first && from.port ? [from.port] : []), ...(last && to.port ? [to.port] : [])];
+        const attached = { nodes: pins.map(port => port.ref.node), ports: pins.map(port => portId(port.ref)) };
+        if (run && corridorFree(model, link, run, attached, passReserved)) {
           pieces.push({ kind: 'straight', segments: [{ ...run, owner: { kind: 'link' as const, id: link.id } }] });
           reserve(completedRouteObstacles(model, link, id, [run.from, run.to])
             .map((cover, at) => ({ ...cover, id: `straight:${id}:${at}` })));
@@ -326,9 +331,10 @@ function straightRun(from: Point, to: Point, fromDirections: number, toDirection
  * an earlier claim each carry the clearance a reserved run carries, and a run allowed to cross one
  * of them stands among its consumers (ADR-0015 rule 3).
  */
-function corridorFree(model: LayoutModel, link: LayoutLink, run: PathSegment, reserved: RouteObstacle[]): boolean {
+function corridorFree(model: LayoutModel, link: LayoutLink, run: PathSegment,
+  attached: { nodes: string[]; ports: string[] }, reserved: RouteObstacle[]): boolean {
   const segment: PathSegment = { ...run, owner: { kind: 'link', id: link.id } };
-  if (!straightCorridorClear(model, link, segment)) return false;
+  if (!straightCorridorClear(model, link, segment, { attached })) return false;
   return !reserved.some(item => !item.consumers.includes(link.id) && segmentRect(segment, item.bounds));
 }
 
