@@ -209,8 +209,12 @@ export function placeFlanksAndPeers(model: LayoutModel): void {
       order = order.filter(id => id !== peer);
       if (group.flank!.align === 'left') order.unshift(peer); else order.push(peer);
     }
-    // A grid repacks as a grid: the promoted peer takes the first or the last cell in reading
-    // order, which is the outer column of the first or the last row, on the flank's own side.
+    // The `unshift`/`push` above is the row's answer, and it is **not** the grid's: reading order
+    // packs a ragged row against the left, so pushing a right flank's peer last would leave it in
+    // column 0 of a partial last row, and the lateral link would run the width of the group box to
+    // reach it. `packGrid` does not consume this end position — `seatFlankPeers` reads the stored
+    // peer and its alignment itself, and seats it at the outer end of whichever row its exit rank
+    // put it in (stress ticket 26 finding B2).
     packGroup(model, peerGroup, order);
   }
   // Repacked rows can grow. Retain group order and move only groups that would collide.

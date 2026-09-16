@@ -300,6 +300,11 @@ function crosses(model: LayoutModel, segments: PathSegment[], endpoint: string):
  *
  * It is a report, not a claim: nothing downstream reads it, and the drop keeps the geometry it had.
  * The bounding-box test is exact, because every drop segment is axis-aligned.
+ *
+ * It reports **penetration only, never clearance**. A drop threaded 10.75 px between two last-row
+ * bodies says nothing here and fails G4 and G6 instead. The gates are the complete signal; this is a
+ * hint that names the link and the node at the place the reservation was made, which is what the
+ * silent case lacked (stress ticket 26 re-check).
  */
 function obstructedBodies(model: LayoutModel, segments: PathSegment[], item: BarLink): string[] {
   const ends = new Set([item.link.attachments!.from.node, item.link.attachments!.to.node]);

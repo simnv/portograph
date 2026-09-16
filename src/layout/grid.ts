@@ -83,11 +83,13 @@ export function gridMetrics(model: LayoutModel, rows: GridCells, gap: (a: string
  *
  * Two things the caller has to know. The box measured here is the **stage-4** box: the count is
  * chosen from the sizes the nodes have before stage 5 grows them to their final port capacity, and
- * stage 5 then re-lays the same count out at the larger sizes. The published box is therefore near
- * square, not square — the seven nodes of `loc1` on the Enterprise NTP sheet take **three** columns
- * and land at 454 × 341, aspect 1.33. And the target is a square, not the original's proportions:
- * the original draws its locations portrait, two columns of seven, ≈ 323 × 680. A portrait target is
- * one constant away if the maintainer wants it (stress ticket 26).
+ * stage 5 then re-lays the same count out at the larger sizes, so the published box is near square
+ * and not square. Measured on the shipped fixtures: four nodes take two columns and publish at
+ * 161.5 × 206.5, twelve take four and publish at 313 × 308.5
+ * (`goldens/synthetic/a-grid-of-twelve-keeps-its-columns.yaml`). And the target is a **square**, not
+ * the proportions of the original Enterprise NTP diagram, which draws its locations portrait. A
+ * portrait target is one constant away if the maintainer wants it; stress ticket 26 measures what
+ * the difference costs on that sheet, and names the input each of its figures came from.
  */
 export function gridColumns(model: LayoutModel, group: LayoutGroup, order: readonly string[]): number {
   if (order.length <= 1) return 1;
@@ -147,9 +149,11 @@ export function packGridRows(model: LayoutModel, group: LayoutGroup, rows: GridC
  * a reader can see it. `shapeBars` warns `BAR_DROP_OBSTRUCTED` when the reservation still meets a
  * node, so neither case is silent again.
  *
- * Sides are read as `side ?? sizingSide`: stage 2 has decided or guessed every side before stage 4,
- * and stage 5 may still move an undecided one. A rank taken from a guess costs a row order, never a
- * reservation.
+ * Sides are read as `side ?? sizingSide` — the same expression `skeleton-graph.ts` dereferences to
+ * hand ELK its port sides, so it is settled by the time this runs. Stage 5 may still move an
+ * undecided side, and a rank taken from the guess it overturns can land a reservation on a body
+ * after all. What that costs is a G2 `through-node` failure **and** the warning below, which is a
+ * reader's two signals; it is never the silence this rule was written for.
  */
 function exitRank(model: LayoutModel, group: LayoutGroup, id: string): number {
   let up = false, down = false;
@@ -180,6 +184,12 @@ function exitRank(model: LayoutModel, group: LayoutGroup, id: string): number {
  * 3 × 3 × 1, so that is the common case and not a corner. A ragged row that holds a right-aligned
  * peer is therefore packed against the right columns instead, which leaves the empty cells on the
  * side the link does not come from.
+ *
+ * Untested corner, recorded rather than guarded: two flanks whose primary peers land in the same
+ * ragged row. Both would be spliced and the row right-padded, so the left peer would leave column 0,
+ * and `FLANK_PRIMARY_CONFLICT` does not cover it — that covers a shared *peer*, not a shared row.
+ * `placeFlanksAndPeers` sends the two peers to opposite ends of the reading order, which is why no
+ * probe has reached it (stress ticket 26 re-check).
  */
 function seatFlankPeers(model: LayoutModel, group: LayoutGroup, rows: string[][], columns: number): GridCells {
   const rightAligned = new Set<number>();

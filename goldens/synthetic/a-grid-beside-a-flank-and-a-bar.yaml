@@ -1,5 +1,7 @@
-# Expected: Repack the grid with its flank's primary peer in the outer cell of the first row, leave
-# the flank and the bar to their own rules, and keep every group box clear of the others.
+# Expected: Rank `a` into the last row, because its links leave the group downward to the bar, and
+# seat it at the left cell of that row, because it is the left flank's stored primary peer. The
+# reserved drop then meets no node body. Leave the flank and the bar to their own rules, and keep
+# every group box clear of the others.
 portograph: 2
 profile: network
 groups:
