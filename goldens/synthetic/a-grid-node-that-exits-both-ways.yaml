@@ -1,9 +1,9 @@
-# Expected: The shape's remaining limit, kept as a counter-example rather than hidden. `a` links to
-# the bar above it and to the bar below it, so it needs the first row and the last row at once and
-# takes the last, because a downward reservation is the one that used to publish in silence. The
-# column floor cannot answer this one — a node that exits both ways crosses the rows above it at any
-# column count short of a single row — so `BAR_DROP_OBSTRUCTED` names the link and the node instead.
-# The diagram is produced and fails G2, G3 and G6.
+# Expected: The corridor rule one step further. `a` links to the bar above it and to the bar below
+# it, so it needs the first row and the last row at once, and the one count that gives it both is a
+# single row: the column floor answers a node that exits both ways with the node count. Every gate
+# passes. Ranked into the last row of a two-column grid instead — which is what the count did before
+# the floor — `a`'s upward reservation ran through `c`, and the diagram published G2, G3, G6 and one
+# `BAR_DROP_OBSTRUCTED`.
 portograph: 2
 profile: network
 groups:

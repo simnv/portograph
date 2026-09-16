@@ -1,7 +1,9 @@
 # Expected: Every one of the twelve nodes drops to the bar below, so the column floor is twelve and
 # the grid publishes one row — the `row` shape, which is what one corridor per downward exit means.
-# The shape does not lose compaction here; it never had it. Packed four by three, eight of the twelve
-# drops are reserved through a node body and the diagram publishes fifty-six gate violations.
+# Every gate passes. The shape does not lose compaction here; it never had it. Without the floor the
+# same twelve packed four by three, eight of the drops were reserved through a node body, and the
+# diagram published fifty-six gate violations; that is the build this fixture guards against, never
+# this one.
 portograph: 2
 profile: network
 groups:

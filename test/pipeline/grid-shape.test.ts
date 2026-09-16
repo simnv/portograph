@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { layout, parse, restoreLayoutModel, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
+import { rebuildBarDrops } from '../../src/layout/bars.js';
 import { gridCells, gridChunks, gridColumnFloor, gridRows, packRowsOf } from '../../src/layout/grid.js';
 import { nodeGap } from '../../src/layout/skeleton-graph.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -167,6 +168,30 @@ it('a node that exits both ways forces a single row', async () => {
   expect(model.links.flatMap(link => throughBodies(model, link.id))).toEqual([]);
   expect(model.diagnostics.filter(item => item.code === 'BAR_DROP_OBSTRUCTED')).toEqual([]);
   expect(failed(model)).toEqual([]);
+}, 60000);
+
+it('BAR_DROP_OBSTRUCTED fires on the reservation itself, not on a grid arrangement', async () => {
+  // The column floor removes every arrangement that reached this warning, so no fixture publishes
+  // it any more. What it still guards is a body standing in a reserved drop for a reason placement
+  // did not choose — the one the ranks cannot see is a side stage 5 overturns. That is not
+  // reachable from an input, so the predicate is exercised here instead: take a model whose drops
+  // are all clear, move a foreign body into one drop's column, and rebuild the reservations.
+  const placed = await run(fixture('a-grid-gives-every-drop-its-own-column'));
+  expect(placed.diagnostics.filter(item => item.code === 'BAR_DROP_OBSTRUCTED')).toEqual([]);
+  const model = JSON.parse(JSON.stringify(placed)) as LayoutModel;
+  const drop = model.links.find(link => link.attachments!.from.node === 'a')!;
+  const x = Math.min(...drop.path!.segments.map(segment => Math.min(segment.from.x, segment.to.x)));
+  const above = box(model, 'a'), rail = box(model, 'rail');
+  model.nodes.d!.bounds = { x: x - 10, y: above.y + above.height + 10, width: 40,
+    height: rail.y - (above.y + above.height) - 20 };
+  rebuildBarDrops(model);
+  const warnings = model.diagnostics.filter(item => item.code === 'BAR_DROP_OBSTRUCTED');
+  expect(warnings.length).toBe(1);
+  expect(warnings[0]!.severity).toBe('warning');
+  expect(warnings[0]!.message).toBe(`Reserved drop of ${drop.id} runs through d; `
+    + 'the drop keeps its slot and the final gates judge the result.');
+  // A report, never a repair: the drop keeps the geometry it had.
+  expect(throughBodies(model, drop.id)).toEqual(['d']);
 }, 60000);
 
 it('a grid holds all three ranks at once, and a short row that is not the last', async () => {
