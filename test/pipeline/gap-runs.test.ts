@@ -7,7 +7,7 @@ import type { LayoutModel, PathSegment } from '../../src/model/layout.js';
 import { ownedLanes } from '../../src/route/paths.js';
 import { MEMBER_GAP } from '../../src/layout/bundle-geometry.js';
 import { produceGroupLabelBands, routedStroke } from '../../src/layout/bands.js';
-import { GROUP_EDGE_LINK_CLEARANCE } from '../../src/theme/geometry.js';
+import { GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../../src/theme/geometry.js';
 import { horizontal, segmentRect, vertical } from '../../src/score/geometry.js';
 import { placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -175,6 +175,34 @@ it('steps a row past a group edge instead of ending the search', async () => {
       expect(Math.abs(row - edge)).toBeGreaterThanOrEqual(margin - 1e-9);
     }
   }
+
+  const published = linkLabels(await route(model, { createAttempt: createAvoidAttempt }));
+  expect(Number.isFinite(score(published).snapshot.Q)).toBe(true);
+}, 120000);
+
+it('leaves out the run a group label covers and seats the rest', async () => {
+  // Stress ticket 09. A group label covers the approach one of four runs owes its own port. The
+  // sixth amendment answered that wholesale and the gap allocated nothing; the decline is now per
+  // run, so the three clear runs are seated and the covered one alone is left to stage 8.
+  const model = await place(read('a-gap-leaves-out-the-covered-run.yaml'));
+  const room = tierGapRoom(model).find(entry => entry.rows === 4 && entry.seated > 0 && entry.seated < 4)!;
+  expect([room.rows, room.seated, room.refuses]).toEqual([4, 3, false]);
+
+  const runs = allocateGapRuns(model);
+  const inside = runs.filter(run => run.segments.some(segment =>
+    horizontal(segment) && segment.from.y > room.low && segment.from.y < room.high));
+  expect(inside.map(run => run.link).sort()).toEqual(['link-2', 'link-3', 'link-4']);
+
+  // The covered run keeps the route it has today, and it crosses every row the gap did seat.
+  for (const run of inside) expect(run.crossers).toContain('link-1');
+
+  // The rectangle that covers it is the lower group's own title, and nothing owns a group label.
+  const label = model.labels.find(item => item.id === 'label:group:g2')!;
+  const margin = GROUP_LABEL_LINK_CLEARANCE + routedStroke(model) / 2;
+  const port = model.nodes.t2!.ports.find(item => item.side === 'top')!;
+  expect(port.anchor!.x).toBeGreaterThan(label.bounds!.x - margin);
+  expect(port.anchor!.x).toBeLessThan(label.bounds!.x + label.bounds!.width + margin);
+  expect(label.bounds!.y - margin).toBeLessThan(room.high + 1e-9);
 
   const published = linkLabels(await route(model, { createAttempt: createAvoidAttempt }));
   expect(Number.isFinite(score(published).snapshot.Q)).toBe(true);
