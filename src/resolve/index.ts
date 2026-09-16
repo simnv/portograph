@@ -1,5 +1,5 @@
 import {
-  createLayoutModel, orderedGroupIds, orderedNodeIds,
+  createLayoutModel, orderedGroupIds, orderedNodeIds, unsupportedMessage,
   type Diagnostic, type Endpoint, type Layer, type LayoutLink, type LayoutModel,
   type NormalisedDocument, type Owner, type PortRef,
 } from '../model/index.js';
@@ -91,7 +91,7 @@ function unsupported(model: LayoutModel, sourceIndex: number, technique: 'stub' 
   const path = `$.links[${sourceIndex}].route`;
   if (model.diagnostics.some(diagnostic => diagnostic.code === 'ROUTE_UNSUPPORTED'
     && 'path' in diagnostic && diagnostic.path === path)) return;
-  report(model, 'ROUTE_UNSUPPORTED', `M1 falls back to routed for ${technique}`, owners, 'warning');
+  report(model, 'ROUTE_UNSUPPORTED', unsupportedMessage(technique), owners, 'warning');
 }
 
 interface Aggregation {
@@ -105,13 +105,18 @@ function expandEndpoints(model: LayoutModel, groupOrder: Map<string, number>): A
   for (const link of model.links) {
     const authored = model.document.links[link.sourceIndex]!;
     link.family = family(authored.class);
-    link.layer = authored.route === undefined ? link.family : authored.route === 'overlay' ? 'overlay' : 'routed';
+    // `overlay` names a layer, and every other routed technique implies one. `group-link` names an
+    // aggregation — how many lines stand for the set — and decides nothing about which layer they
+    // are drawn on, so the class's family still does (Q30: overrides → aggregation, and aggregation
+    // is not a layer decision). `stub` is a visibility decision and keeps its M1 routed fallback.
+    link.layer = authored.route === undefined || authored.route === 'group-link' ? link.family
+      : authored.route === 'overlay' ? 'overlay' : 'routed';
     const width = strokeWidth(authored.weight);
     if (width !== undefined) link.strokeWidth = width;
     if (authored.route !== undefined) link.technique = authored.route;
     else if (link.family === 'overlay') link.technique = 'overlay';
     if (authored.route === 'stub' || authored.route === 'group-link') {
-      link.technique = 'orthogonal';
+      link.technique = link.layer === 'overlay' ? 'overlay' : 'orthogonal';
     }
     if (link.from.group === undefined && link.to.group === undefined) {
       link.attachments = { from: { ...link.from }, to: { ...link.to } };
@@ -124,8 +129,10 @@ function expandEndpoints(model: LayoutModel, groupOrder: Map<string, number>): A
     const isGroupLink = link.from.group !== undefined && link.to.group !== undefined
       && link.from.group !== link.to.group && from.length >= 2 && to.length >= 2
       && (authored.route === undefined || authored.route === 'group-link');
-    if (authored.route === undefined) {
-      link.layer = 'routed';
+    // Expanding a group endpoint multiplies the line, it does not change what the line is: an
+    // overlay-family member keeps its layer and its derived path. A routed one takes the M1
+    // orthogonal fallback rather than a geometry-selected technique.
+    if (authored.route === undefined && link.layer === 'routed') {
       link.technique = 'orthogonal';
     }
     const members: LayoutLink[] = [];
@@ -228,9 +235,24 @@ function recordAggregations(model: LayoutModel, aggregations: Aggregation[]): vo
   aggregations.sort((a, b) => a.members[0]!.sourceIndex - b.members[0]!.sourceIndex);
   for (const { groups, members } of aggregations) {
     const id = `group-link-${model.groupLinks.length + 1}`;
-    model.groupLinks.push({ id, groups, members: members.map(link => link.id), owner: { kind: 'group-link', id }, layer: 'routed' });
+    // A group-link is one line standing for the whole set, so it is drawn on the set's own layer:
+    // a set of overlay members is an overlay group-link. Aggregation decides how many lines are
+    // drawn, never on which layer — the class chose that, and only an authored `route:` moves it.
+    //
+    // That "the set's own layer" is single-valued is an eligibility invariant, not an arithmetic
+    // one: `findAggregations` refuses a set whose members differ in class or family, and an
+    // explicit group-link expands one authored link. Loosening eligibility — to admit a member
+    // carrying `route: overlay` because overrides win, say — would otherwise record a routed
+    // group-link over overlay members, the exact contradiction this rule exists to remove. State
+    // it here so the next change to eligibility fails loudly instead of drawing the wrong layer.
+    const layer: Layer | undefined = members[0]!.layer;
+    if (layer === undefined || members.some(link => link.layer !== layer)) {
+      throw new Error(`Group-link ${id} aggregates members that do not share one settled layer`);
+    }
+    model.groupLinks.push({ id, groups, members: members.map(link => link.id), owner: { kind: 'group-link', id }, layer });
     for (const link of members) {
       link.groupLink = id;
+      if (link.layer === 'overlay') continue;
       link.layer = 'routed';
       link.technique = 'orthogonal';
     }

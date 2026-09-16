@@ -10,4 +10,4 @@ export type {
   LayoutPort, LayoutRuntime, LayoutStage, Legend, LegendEntry, Obstacle, OwnedElement, Owner,
   PathSegment, PillGeometry, PlacementSnapshot, Region, TierBand,
 } from './layout.js';
-export { createLayoutModel, orderedGroupIds, orderedNodeIds, serializeLayoutModel, serializeLayoutSnapshot } from './model.js';
+export { createLayoutModel, orderedGroupIds, orderedNodeIds, serializeLayoutModel, serializeLayoutSnapshot, unsupportedMessage } from './model.js';

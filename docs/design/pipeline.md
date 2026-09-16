@@ -43,11 +43,16 @@ For every link, in this fixed order, from the document only:
 
 1. **Author `route:`** — selected first. Syntax and `group-link` endpoint shape are validated now;
    `merge` membership is validated after bundle grouping in step 4.
-2. **Aggregation** — a set of links forms a group-link only if: both endpoint groups have ≥ 2
+2. **Family** — from class via the profile: `routed` or `overlay`. Resolved before aggregation,
+   because aggregation's eligibility reads it; Q30's precedence names only the steps that may
+   *override* a family, and this is the step that establishes one.
+3. **Aggregation** — a set of links forms a group-link only if: both endpoint groups have ≥ 2
    nodes, the links are the **complete** bipartite set between them, all share one class and
    family, and none carries an override. Membership (every member link, its ports, class) is
-   retained in the model and rendered as a tooltip/legend entry, never discarded.
-3. **Family** — from class via the profile: `routed` or `overlay`.
+   retained in the model and rendered as a tooltip/legend entry, never discarded. Aggregation
+   decides **how many lines stand for the set, never on which layer they are drawn**: the
+   group-link takes its members' family layer, and each member keeps its own. An authored
+   `route: group-link` names the aggregation and leaves the family's layer alone.
 4. **Bundle membership** — ≥ 2 routed links between the same node pair (ports may differ) that
    leave each shared node on one authored side; links whose authored sides differ at a shared node
    form separate cohorts, and a cohort of one stays routed with a `BUNDLE_MIXED_SIDES` warning
@@ -56,19 +61,24 @@ For every link, in this fixed order, from the document only:
    model-time error.
 5. **Stub** — deferred: needs a trial route (stage 8 marks candidates; stage 9 applies).
 
-**M1 behaviour:** `stub` and `group-link` are parsed and recorded but not applied; a warning
-says so and the links are drawn routed. This is explicit, not silent.
+**M1 behaviour:** `stub` and `group-link` are parsed and recorded but not applied; a warning says
+so. A `stub` falls back to a routed line. A `group-link` falls back to its members, each drawn on
+the layer its own family chose — an overlay set stays overlay (stress ticket 23). This is explicit,
+not silent.
 
 The layout link's `family` records its class-derived family; `layer` is the effective drawing
 layer after the override and M1 fallback. Gates and routing use that effective layer. `technique`
 also records the effective behavior: an M1 stub/group-link request remains on the source document
-link, while its concrete members use orthogonal or bundle paths. A recorded request therefore
+link, while its concrete members use orthogonal, bundle or — for an overlay family — overlay
+paths. A recorded request therefore
 does not receive the missing-path exemption of an actually applied stub.
 
 Group endpoints expand to concrete member-node attachments before placement. Empty groups cannot
 supply an attachment and produce a model error. Explicit `group-link` requires two distinct groups
-with at least two nodes each. Other group endpoints may expand to ordinary routed members with a
-warning; they do not acquire group-link eligibility solely by using group endpoint syntax.
+with at least two nodes each. Other group endpoints may expand to ordinary members with a warning;
+they do not acquire group-link eligibility solely by using group endpoint syntax. Expansion
+multiplies a line, it does not change what the line is: an overlay-family member keeps the overlay
+layer and its derived path, a routed one takes the M1 orthogonal fallback.
 
 ## Stage 2 — sides, phase one
 

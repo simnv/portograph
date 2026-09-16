@@ -1,5 +1,5 @@
 import type { Endpoint, GroupContent, NormalisedDocument, NormalisedLink, NormalisedNode, NormalisedPort, Side } from '../model/index.js';
-import { orderedGroupIds, orderedNodeIds } from '../model/index.js';
+import { orderedGroupIds, orderedNodeIds, unsupportedMessage } from '../model/index.js';
 import { filterCss } from './css.js';
 import { own, ParseError, put, Validation } from './validation.js';
 import type { SourceDiagnostic } from './validation.js';
@@ -242,7 +242,7 @@ function links(value: unknown, doc: NormalisedDocument, v: Validation): void {
       const route = v.choice(fields.get('route'), routes, `${path}.route`);
       if (route !== undefined) options.route = route;
       if (route === 'group-link' && (from?.group === undefined || to?.group === undefined)) v.report('GROUP_LINK_ENDPOINTS', `${path}.route`, 'group-link requires two group endpoints');
-      if (route === 'stub' || route === 'group-link') v.report('ROUTE_UNSUPPORTED', `${path}.route`, `M1 falls back to routed for ${route}`, 'warning', 'model');
+      if (route === 'stub' || route === 'group-link') v.report('ROUTE_UNSUPPORTED', `${path}.route`, unsupportedMessage(route), 'warning', 'model');
     }
     if (fields.has('weight')) {
       const weight = v.number(fields.get('weight'), `${path}.weight`, false, 0);

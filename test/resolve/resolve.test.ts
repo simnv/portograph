@@ -36,15 +36,23 @@ describe('semantic resolution', () => {
     expect(model.groups['tbr-right']?.tier).toBe(1);
   });
 
-  it('retains a complete 2×2 aggregation and routes its members with a warning in M1', () => {
+  it('retains a complete 2×2 aggregation of overlay members on the overlay layer', () => {
     const doc = input(['[a, c, {class: flow}]', '[d, a, {class: flow}]', '[b, c, {class: flow}]', '[b, d, {class: flow}]']);
     const model = resolve(doc);
     expect(model.groupLinks).toHaveLength(1);
-    expect(model.groupLinks[0]).toMatchObject({ groups: ['upper', 'lower'], members: ['link-1', 'link-2', 'link-3', 'link-4'] });
+    expect(model.groupLinks[0]).toMatchObject({ groups: ['upper', 'lower'], members: ['link-1', 'link-2', 'link-3', 'link-4'], layer: 'overlay' });
     expect(model.groupLinks[0]?.owner).toEqual({ kind: 'group-link', id: model.groupLinks[0]?.id });
-    expect(model.links.every(link => link.family === 'overlay' && link.layer === 'routed' && link.technique === 'orthogonal')).toBe(true);
+    expect(model.links.every(link => link.family === 'overlay' && link.layer === 'overlay' && link.technique === 'overlay')).toBe(true);
     expect(model.links.every(link => link.groupLink === model.groupLinks[0]?.id)).toBe(true);
     expect(model.links.map(link => link.from)).toEqual(doc.links.map(link => link.from));
+    expect(model.diagnostics).toContainEqual(expect.objectContaining({ stage: 'model', severity: 'warning', code: 'ROUTE_UNSUPPORTED' }));
+  });
+
+  it('routes the members of a complete 2×2 aggregation of routed links with a warning in M1', () => {
+    const model = resolve(input(['[a, c]', '[d, a]', '[b, c]', '[b, d]']));
+    expect(model.groupLinks).toHaveLength(1);
+    expect(model.groupLinks[0]).toMatchObject({ groups: ['upper', 'lower'], layer: 'routed' });
+    expect(model.links.every(link => link.family === 'routed' && link.layer === 'routed' && link.technique === 'orthogonal')).toBe(true);
     expect(model.diagnostics).toContainEqual(expect.objectContaining({ stage: 'model', severity: 'warning', code: 'ROUTE_UNSUPPORTED' }));
   });
 
@@ -123,7 +131,9 @@ describe('semantic resolution', () => {
     expect(members).toHaveLength(4);
     expect(members.map(link => [link.attachments?.from.node, link.attachments?.to.node])).toEqual([['a', 'c'], ['a', 'd'], ['b', 'c'], ['b', 'd']]);
     expect(members.every(link => link.from.group === 'upper' && link.to.group === 'lower')).toBe(true);
-    expect(members.every(link => link.layer === 'routed' && ['bundle', 'orthogonal'].includes(link.technique ?? ''))).toBe(true);
+    // `class: flow` is the overlay family, and `route: group-link` is an aggregation, not a layer.
+    expect(members.every(link => link.family === 'overlay' && link.layer === 'overlay' && link.technique === 'overlay')).toBe(true);
+    expect(model.groupLinks[0]?.layer).toBe('overlay');
     for (const link of members) {
       for (const end of [link.attachments!.from, link.attachments!.to]) {
         expect(end.anonymous).toBe(true);
@@ -135,6 +145,26 @@ describe('semantic resolution', () => {
     expect(model.document).toEqual(doc);
     expect(doc.nodes.a?.ports).toHaveLength(1);
     expect(new Set(model.links.map(link => link.id)).size).toBe(model.links.length);
+  });
+
+  // Q30 sequences bundles after aggregation, so a routed group-link member that also stands between
+  // a bundled node pair is rewritten from the M1 `orthogonal` fallback to `bundle`. The layer rule
+  // of stress ticket 23 does not touch that: a member keeps its family's layer, and a routed one is
+  // still offered to `groupBundles`. This is the only assertion that holds the two rules together.
+  it('lets bundling rewrite the technique of a routed group-link member', () => {
+    const model = resolve(input(['[a, c]', '[upper, lower, {route: group-link}]']));
+    expect(model.groupLinks[0]?.layer).toBe('routed');
+    const shared = model.links.find(link => link.groupLink !== undefined
+      && link.attachments?.from.node === 'a' && link.attachments.to.node === 'c')!;
+    expect(shared).toMatchObject({ layer: 'routed', technique: 'bundle', groupLink: model.groupLinks[0]?.id, bundle: model.bundles[0]?.id });
+    expect(model.bundles[0]?.members).toEqual(['link-1', shared.id]);
+    // Every other member of the same aggregation keeps the fallback, so the rewrite is per link.
+    expect(model.links.filter(link => link.groupLink !== undefined && link.id !== shared.id)
+      .every(link => link.technique === 'orthogonal' && link.bundle === undefined)).toBe(true);
+    // The same shape on the overlay family bundles nothing: `groupBundles` skips a non-routed layer.
+    const overlay = resolve(input(['[a, c, {class: flow}]', '[upper, lower, {route: group-link, class: flow}]']));
+    expect(overlay.bundles).toEqual([]);
+    expect(overlay.links.every(link => link.layer === 'overlay' && link.technique === 'overlay')).toBe(true);
   });
 
   it('expands group endpoints in integer-like author declaration order', () => {
@@ -266,7 +296,11 @@ links:
   it('records a bare complete group-to-group link and respects an explicit overlay on that shape', () => {
     const bare = resolve(input(['[upper, lower, {class: flow}]']));
     expect(bare.groupLinks).toHaveLength(1);
-    expect(bare.links.every(link => link.technique === 'orthogonal' && link.family === 'overlay' && link.layer === 'routed')).toBe(true);
+    expect(bare.groupLinks[0]?.layer).toBe('overlay');
+    expect(bare.links.every(link => link.technique === 'overlay' && link.family === 'overlay' && link.layer === 'overlay')).toBe(true);
+    const routed = resolve(input(['[upper, lower, {class: physical}]']));
+    expect(routed.groupLinks[0]?.layer).toBe('routed');
+    expect(routed.links.every(link => link.technique === 'orthogonal' && link.family === 'routed' && link.layer === 'routed')).toBe(true);
     const overlay = resolve(input(['[upper, lower, {route: overlay}]']));
     expect(overlay.groupLinks).toEqual([]);
     expect(overlay.links).toHaveLength(4);
