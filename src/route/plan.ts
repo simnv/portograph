@@ -15,11 +15,18 @@ import { ALL_DIRECTIONS, DIRECTION_BITS, type RouteBatch, type RouteCheckpoint, 
 /** Shape buffer stays at zero; every obstacle already carries its exact clearance. */
 export const SHAPE_BUFFER_DISTANCE = 0;
 /**
- * How far inside a reservation's cover a claim has to reach before the cover refuses it. Four
- * `EPS`, which is 4e-7 px: enough that `segmentRect`'s own `EPS` slack on each side cannot make a
- * run lying on the cover's edge read as inside it, and far below any distance the gates measure.
+ * How far inside a reservation's cover a claim has to reach before the cover refuses it, as the
+ * amount `corridorFree` shrinks the cover by before it scans.
+ *
+ * `segmentRect` grows the rectangle it is given by `EPS` on every side, so shrinking by `EPS` would
+ * scan the cover unchanged and a run lying exactly on its edge would still read as inside it. Two
+ * `EPS` is the tightest bound that admits the edge itself: the cover refuses a centreline `EPS`
+ * (1e-7 px) or more inside it, and admits one within `EPS` of its edge — the coincidence tolerance
+ * `same` and the gates use everywhere else. Nothing that bound admits can fail the gate it stands
+ * for: a cover is its run grown by `10 + (the two strokes) / 2`, so a centreline less than `EPS`
+ * inside it leaves more than `10 − EPS` of visible clearance, and G6 fails at `distance < 10 − EPS`.
  */
-const TOUCH = 4 * EPS;
+const TOUCH = 2 * EPS;
 const OUTWARD: Record<Side, Point> = {
   top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 },
 };
@@ -352,11 +359,16 @@ function corridorFree(model: LayoutModel, link: LayoutLink, run: PathSegment,
   //
   // A run that lies exactly on a cover's edge is **clear of it**, not inside it. A cover is its run
   // grown by `10 + (the two strokes) / 2`, so a centreline on that edge keeps the 10 px of visible
-  // clearance G6 asks for and nothing more is owed. The case is not a rounding accident: a rule that
-  // seats a run past a reservation puts it on that edge by construction, and `segmentRect` counts a
-  // zero-area touch as a hit. The scan therefore asks for an overlap of area.
-  const inside = (box: Rect): Rect =>
-    ({ x: box.x + TOUCH, y: box.y + TOUCH, width: box.width - 2 * TOUCH, height: box.height - 2 * TOUCH });
+  // clearance G6 asks for and nothing more is owed. The case is not a rounding accident: a row
+  // seated half a pitch inside a gap boundary puts its cover's edge on that boundary, and every run
+  // that stands there touches it. `segmentRect` counts that zero-area touch as a hit, so the scan
+  // shrinks each cover by `TOUCH` and asks for an overlap of area.
+  // A cover too thin to shrink keeps its own bounds: an inverted rectangle blocks nothing at all,
+  // and a cover exists to be a wall. Every reservation in `reserved` is grown by at least the run
+  // clearance, so no cover is near this thin today; the guard is what makes that an invariant
+  // rather than an assumption (`validate.ts` guards the same shrink).
+  const inside = (box: Rect): Rect => box.width <= 2 * TOUCH || box.height <= 2 * TOUCH ? box
+    : { x: box.x + TOUCH, y: box.y + TOUCH, width: box.width - 2 * TOUCH, height: box.height - 2 * TOUCH };
   if (reserved.some(item => !item.consumers.includes(link.id) && segmentRect(segment, inside(item.bounds)))) return false;
   // Measured at the widest routed stroke, not this link's own. `routeObstacles` and
   // `reservationConflicts` expand every reservation by that width, so a thin link measured at its
