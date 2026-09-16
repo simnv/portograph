@@ -1,8 +1,10 @@
 # Expected: The tier-3 band is the union of edge-near and edge-far, and edge-far, which sets its
-# right edge, is inside it. The band keeps x and width, so reading the right edge back as x + width
-# loses one ULP at these coordinates and the band check must not refuse the rectangle it was built
-# from. Test-only input owned by stress ticket 13; the test stops after 7f, because stage 8 cannot
-# route this diagram (a separate defect).
+# right edge 1 624.76 px along from the band's x, is inside it. The band keeps x and width, so
+# reading the right edge back as x + width loses one ULP at these coordinates and the band check
+# must not refuse the rectangle it was built from. Test-only input owned by stress ticket 13. The
+# test calls validateSkeletonBands directly and stops after 7f: centre reports
+# PLACEMENT_NON_CONVERGENCE here, so the publication check is given allowNonConvergence and skips
+# the band check, and stage 8 then cannot route the diagram. Both are separate defects.
 portograph: 2
 profile: network
 groups:

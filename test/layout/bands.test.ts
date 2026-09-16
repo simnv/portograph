@@ -25,7 +25,7 @@ import { placed } from './phase-two-fixture.js';
 const golden = readFileSync(new URL('../../goldens/m1-sip-edge.yaml', import.meta.url), 'utf8');
 /** Stress ticket 05's fixture: one tier gap owes four rows, so 7f's third step really runs. */
 const rowsOwed = readFileSync(new URL('../../goldens/synthetic/a-tier-gap-grows-to-its-rows.yaml', import.meta.url), 'utf8');
-/** Stress ticket 13's fixture: a tier band whose rightmost group stands 3 000 px from its x. */
+/** Stress ticket 13's fixture: a tier band whose rightmost group starts 1 624.76 px from its x. */
 const bandEdgeResidue = readFileSync(new URL('../../goldens/synthetic/a-band-holds-the-group-that-set-its-edge.yaml', import.meta.url), 'utf8');
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const right = (box: Rect): number => box.x + box.width;
@@ -762,6 +762,12 @@ it('holds the group that set a band edge, which x + width does not return exactl
   // Stress ticket 13. A band keeps `x` and `width = max(right) - x`; reading its right edge back as
   // `x + width` loses up to one ULP, so the group that set that edge was reported outside the band
   // it is part of. `edge-far` here is 4.547473508864641e-13 past its own band's derived right edge.
+  //
+  // The first two expectations pin the artifact, not just the symptom: this fixture still carries
+  // the residue, and the repair tolerates it rather than removing it. A later repair that keeps the
+  // band's edges instead — stress ticket 14 is the candidate, it repairs the same class of
+  // recomputed edge — makes the residue zero or negative and breaks this line by design. Reading
+  // that failure as a regression would be wrong; the line below it is the invariant.
   const model = run(await throughBundles(bandEdgeResidue));
   const band = model.tierBands.find(tier => tier.tier === 3)!;
   const group = model.groups['edge-far']!.bounds!;

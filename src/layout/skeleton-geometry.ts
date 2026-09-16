@@ -3,26 +3,29 @@ import type { Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { orderedGroupIds } from '../model/model.js';
 import { bandGap, compareId, greatestPeers, groupId, nodeGap, nodeId, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
-/**
- * Stress ticket 13. These two carry the codebase's one rectangle tolerance (`EPS`, 1e-7 px); the
- * local copies they replace compared exactly. A band keeps `x` and `width = max(right) - x`, so
- * reading its right edge back as `x + width` loses up to one ULP — 4.547473508864641e-13 at the
- * 3 274 px of `goldens/synthetic/a-band-holds-the-group-that-set-its-edge.yaml` — and an exact
- * `contains` refused the very group the band was built from. The alternative, keeping the band's
- * edges so no rounding is reintroduced, repairs that one union and leaves both other users of these
- * predicates exact: the `ELK placed node … outside group …` guard below, which compares two ELK
- * rectangles and never sees a union, and the mirror `Groups A and B overlap`.
- *
- * What the tolerance costs those two: 1e-7 px is six orders of magnitude under the smallest
- * distance any placement rule names (1 px, `goldens/synthetic/one-px-sources.yaml`) and one under
- * the 1e-6 `mutation.ts` already allows for the same node-inside-group question. A node placed
- * outside its group, or two groups that really overlap, do so by a placement distance, so neither
- * guard can now pass what it used to refuse; only residues no rule could have produced.
- */
-import { contains, rectOverlap as overlaps } from '../score/geometry.js';
+import { bottom, contains as rectContains, EPS, rectOverlap, right } from '../score/geometry.js';
 
-const right = (rect: Rect): number => rect.x + rect.width;
-const bottom = (rect: Rect): number => rect.y + rect.height;
+/**
+ * The same comparators the published gates use, at the same tolerance. `gates.ts:107` has always
+ * answered "is this group inside its tier band?" with the tolerant `contains` (G1
+ * `group-containment`, G8 `group-tier`), and `gates.ts:113` "do these two groups overlap?" with
+ * `rectOverlap`. This file used to answer both questions with exact local copies, so stage 4 refused
+ * geometry the published gate accepts. Stress ticket 13 removed that divergence rather than
+ * loosening a rule.
+ *
+ * It matters because a band keeps `x` and `width = max(right) - x`: reading its right edge back as
+ * `x + width` loses up to one ULP — 4.547473508864641e-13 at the 3 271.71 px right edge of
+ * `goldens/synthetic/a-band-holds-the-group-that-set-its-edge.yaml` — so an exact `contains` refused
+ * the very group the band was built from.
+ *
+ * What the tolerance costs the two guards here: 1e-7 px is seven orders of magnitude under the
+ * smallest distance any placement rule names (1 px, `goldens/synthetic/one-px-sources.yaml`). A node
+ * ELK really placed outside its group, or two groups that really overlap, do so by a placement
+ * distance, so neither guard can now pass what it used to refuse — only residues no rule could have
+ * produced. (`mutation.ts:368` is a weaker precedent than the gates: it allows 1e-6 on the right and
+ * bottom edges only and still compares left and top exactly.)
+ */
+const contains = rectContains, overlaps = rectOverlap;
 const validRect = (r: Rect | undefined): r is Rect => r !== undefined && Object.values(r).every(Number.isFinite) && r.width > 0 && r.height > 0;
 export function union(rects: Rect[]): Rect {
   if (!rects.length) return { x: 0, y: 0, width: 2 * spacing.padding, height: 2 * spacing.padding };
@@ -85,8 +88,10 @@ export function validateSkeletonBands(model: LayoutModel, includeFlanks = true, 
   for (const [i, band] of bands.entries()) {
     if (!validRect(band.bounds)) errors.push(`Tier ${band.tier} has invalid bounds`);
     const previous = bands[i - 1];
+    // `bottom()` here is derived from the same union, so it carries the same residue. `gates.ts:119`
+    // asks this question with `+ EPS`; so does this, for the same reason the two above do.
     if (previous && validRect(previous.bounds) && validRect(band.bounds)
-      && (previous.tier === band.tier || bottom(previous.bounds) > band.bounds.y)) errors.push(`Tier ${band.tier} precedes or overlaps the previous band`);
+      && (previous.tier === band.tier || bottom(previous.bounds) > band.bounds.y + EPS)) errors.push(`Tier ${band.tier} precedes or overlaps the previous band`);
   }
   return errors;
 }
