@@ -76,15 +76,34 @@ function automatic(model: LayoutModel, link: LayoutLink): boolean {
   return model.document.links[link.sourceIndex]?.route === undefined;
 }
 
+/**
+ * What a corridor is measured for when the caller is not the rows rule.
+ *
+ * `stroke` replaces the link's own width. Stage 8 passes the widest routed stroke, because that is
+ * what `routeObstacles` and `reservationConflicts` expand every reservation by: a thin link measured
+ * at its own width could be claimed inside the band the router would have kept clear.
+ *
+ * `attached` replaces the two ends the corridor may pass through. A whole link's corridor leaves one
+ * of its ports and arrives at the other, so both are its own; one **piece** of a path may have a
+ * reserved terminal at either end, and the node behind such an end is then ordinary foreign
+ * geometry the piece has to keep out of.
+ */
+export interface CorridorOptions {
+  stroke?: number;
+  attached?: { nodes: readonly string[]; ports: readonly string[] };
+}
+
 /** Nothing foreign may lie inside the segment's gate clearances. Other pinned paths count as foreign. */
-export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segment: PathSegment): boolean {
+export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segment: PathSegment,
+  options: CorridorOptions = {}): boolean {
   // The corridor has to clear this link's own resolved width, not the theme default: a weighted
   // path measured at 1.5 px would be pinned where G6 then fails it.
-  const stroke = linkStrokeWidth(link);
+  const stroke = options.stroke ?? linkStrokeWidth(link);
   const ends = link.attachments;
   if (!ends) return false;
-  const endNodes = new Set([ends.from.node, ends.to.node]);
-  const endPorts = new Set([portId(ends.from), portId(ends.to)]);
+  const attached = options.attached ?? { nodes: [ends.from.node, ends.to.node], ports: [portId(ends.from), portId(ends.to)] };
+  const endNodes = new Set(attached.nodes);
+  const endPorts = new Set(attached.ports);
   const ownsObstacle = (owner: { kind: string; id?: string }): boolean => owner.kind === 'link' && owner.id === link.id;
   // The corridor is closed by whatever comes nearer than a clearance, so anything further than the
   // clearance from the segment's own bounding box cannot close it. Rejecting such a shape by four

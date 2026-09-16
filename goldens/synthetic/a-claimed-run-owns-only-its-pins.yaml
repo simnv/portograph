@@ -1,0 +1,20 @@
+# Expected: three links meet at `b.p`, so 7e reserves one shared run out of that port and each
+# link's remaining gap starts at the run's terminal, below `b`. `a -> b.p` is then a piece from a
+# port anchor above `b` to a terminal below it, and the two stand on one x. It is not a run stage 8
+# may claim: `b` is the link's own end node, but it is not the end of this piece, and the straight
+# line between the two points goes through the node. Only the pins a piece really attaches to are
+# its own. The gap is routed, `b` is detoured round, and the diagram is produced.
+portograph: 2
+groups:
+  up: { tier: 0, label: "Up" }
+  mid: { tier: 1, label: "Middle" }
+  low: { tier: 2, label: "Low" }
+nodes:
+  a: { group: up, class: router, label: "a" }
+  b: { group: mid, class: rr, label: "b", ports: [{ name: p, side: bottom }] }
+  c: { group: low, class: provider, label: "c" }
+  d: { group: low, class: provider, label: "d" }
+links:
+  - [a, b.p]
+  - [c, b.p]
+  - [d, b.p]

@@ -198,6 +198,19 @@ export function routeObstacles(model: LayoutModel): RouteObstacle[] {
     push({ id: `obstacle:${obstacle.id}`, bounds: expand(obstacle.bounds, half),
       consumers: obstacle.owner.kind === 'link' ? [obstacle.owner.id] : [] });
   }
+  for (const item of reservedRunObstacles(model)) push(item);
+  return result;
+}
+
+/**
+ * The cover of every reserved run the model already holds: a complete pinned path, a lane run, an
+ * outward shared prefix. These are the rectangles a route may not enter and the rectangles a run
+ * stage 8 claims for itself may not enter either, so the claim is measured against exactly the set
+ * `routeObstacles` puts in front of the router, with the same margins.
+ */
+export function reservedRunObstacles(model: LayoutModel): RouteObstacle[] {
+  const { push, result } = collector();
+  const stroke = routedStroke(model);
   for (const link of model.links) {
     if (link.layer === 'overlay' || link.technique === 'stub') continue;
     const clearance = runClearance(link, stroke), anchors = anchorsOf(model, link);

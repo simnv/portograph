@@ -20,20 +20,29 @@ export { ALL_DIRECTIONS, DIRECTION_BITS } from './types.js';
 export type { RouteBatch, RouteCheckpoint, RouteConnector, RouteEndpoint, RoutePin, RouteShape, RoutedConnector } from './types.js';
 
 export interface RouteOptions {
-  /** Required only when the diagram actually has a routed remainder. */
+  /**
+   * Required only when an ownership batch remains. A remainder every piece of which stage 8 claims
+   * asks the router for nothing, so a diagram can have remainders and no batch: the approved golden
+   * is one.
+   */
   createAttempt?: CreateRouteAttempt;
   /** Whole-stage budget; stage 17 injects the remaining pipeline budget. */
   routeBudgetMs?: number;
   clock?: RouteClock;
 }
 
-/** The links stage 7 left for the router, in model order. */
+/**
+ * The links stage 7 left for stage 8, in model order. Not every one of them reaches the router:
+ * stage 8 claims a piece whose route placement already fixed, and a link every piece of which is
+ * claimed joins no ownership batch.
+ */
 export function routeRemainders(model: LayoutModel): string[] { return planRoute(model).remainders; }
 
 async function runRouter(model: LayoutModel, plan: RoutePlan, options: RouteOptions): Promise<Map<string, Point[]>> {
   const routes = new Map<string, Point[]>();
   const createAttempt = options.createAttempt;
-  if (!createAttempt) throw new Error(`Routing ${plan.remainders.length} remaining link(s) requires a libavoid worker factory`);
+  const asked = plan.links.reduce((sum, item) => sum + item.connectors.length, 0);
+  if (!createAttempt) throw new Error(`Routing ${asked} remaining gap(s) requires a libavoid worker factory`);
   await withRouteSession(createAttempt, options.routeBudgetMs ?? ROUTE_BUDGET_MS, options.clock ?? systemRouteClock,
     async route => {
       const protectedRuns: RouteObstacle[] = [];
@@ -65,8 +74,9 @@ async function runRouter(model: LayoutModel, plan: RoutePlan, options: RouteOpti
  */
 export async function route(model: LayoutModel, options: RouteOptions = {}): Promise<LayoutModel> {
   const plan = planRoute(model);
-  // Overlay links need no WASM, so a diagram without a routed remainder never initializes it.
-  const routes = plan.remainders.length ? await runRouter(model, plan, options) : new Map<string, Point[]>();
+  // Overlay links need no WASM, and neither does a remainder every piece of which stage 8 claimed,
+  // so a diagram with no batch never initializes it.
+  const routes = plan.batches.length ? await runRouter(model, plan, options) : new Map<string, Point[]>();
   const paths = stitchPaths(model, plan, routes);
   return withLayoutMutation(model, 'route', draft => {
     for (const { link, path } of paths) draft.links.find(item => item.id === link)!.path = path;

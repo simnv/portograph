@@ -25,6 +25,18 @@ nodes:
   c: {group: low, ports: [{name: p, side: top}, {name: q, side: top}]}
 links: [[a.p, b.p], [m.p, c.p], [m.q, c.q]]`;
 
+/**
+ * Two tiers with one gap the router really has to answer. Stage 8 claims a gap whose two ends stand
+ * on one line and whose corridor is clear, so `threeTiers` never opens a route session; a right
+ * port feeding a top port has to turn.
+ */
+const bendingTiers = `portograph: 2
+groups: {top: {tier: 0}, low: {tier: 1}}
+nodes:
+  a: {group: top, ports: [{name: p, side: right}]}
+  b: {group: low, ports: [{name: p, side: top}]}
+links: [[a.p, b.p]]`;
+
 /** A clock whose `now` the test advances by hand, and which records every deadline asked of it. */
 function recordingClock(): { clock: ElkClock; deadlines: number[]; advance: (ms: number) => void; now: () => number } {
   let virtual = 0;
@@ -179,7 +191,7 @@ links: [[a.p, b.p]]`;
 
   it('hands the router what the command has left rather than a fresh stage budget', async () => {
     const { clock, deadlines, advance, now } = recordingClock();
-    const parsed = parseWithDiagnostics(threeTiers);
+    const parsed = parseWithDiagnostics(bendingTiers);
     if (!parsed.ok) throw new Error('fixture must parse');
     const elk = (): ElkAttempt => {
       const real = createAttempt();

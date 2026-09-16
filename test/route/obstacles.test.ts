@@ -12,6 +12,7 @@ import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { rebuildBands, union } from '../../src/layout/skeleton-geometry.js';
 import { findPort } from '../../src/layout/row-paths.js';
+import { segmentRect } from '../../src/score/geometry.js';
 import { placed } from '../layout/phase-two-fixture.js';
 
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
@@ -25,6 +26,18 @@ const twoTier = `portograph: 2
 groups: {up: {tier: 0}, low: {tier: 1, label: Lower}}
 nodes:
   a: {group: up, ports: [{name: p, side: bottom}]}
+  b: {group: low, ports: [{name: p, side: top}]}
+links: [[a.p, b.p]]`;
+
+/**
+ * The same two tiers with one gap the router really has to answer. Stage 8 claims a gap whose two
+ * ends stand on one line and whose corridor is clear, so the facing pair above reaches no batch at
+ * all; a right port feeding a top port has to turn.
+ */
+const twoTierBend = `portograph: 2
+groups: {up: {tier: 0}, low: {tier: 1, label: Lower}}
+nodes:
+  a: {group: up, ports: [{name: p, side: right}]}
   b: {group: low, ports: [{name: p, side: top}]}
 links: [[a.p, b.p]]`;
 
@@ -131,7 +144,7 @@ links: [[a.p, b.p], [a.p, b.q]]`);
   });
 
   it('drops an obstacle that lies wholly inside another and keeps the union identical', async () => {
-    const model = await throughBands(twoTier);
+    const model = await throughBands(twoTierBend);
     const plan = planRoute(model);
     const request = batchRequest(plan, plan.batches[0]!, []);
     for (const shape of request.shapes) {
@@ -157,11 +170,13 @@ links: [[a.p, b.p], [a.p, b.q]]`);
   });
 
   it('gives each reserved lane and shared run its exact owners, and batches links by them', async () => {
+    // Both sources leave sideways, so neither gap is the straight run stage 8 would claim and both
+    // links really reach the router.
     const model = await throughBands(`portograph: 2
 groups: {top-group: {tier: 0}, mid: {tier: 1}, low: {tier: 2}}
 nodes:
-  a: {group: top-group, ports: [{name: p, side: bottom}]}
-  m: {group: mid, ports: [{name: q, side: bottom}]}
+  a: {group: top-group, ports: [{name: p, side: right}]}
+  m: {group: mid, ports: [{name: q, side: right}]}
   b: {group: low, ports: [{name: p, side: top}]}
   c: {group: low, ports: [{name: p, side: top}]}
 links: [[a.p, b.p], [m.q, c.p]]`);
@@ -179,19 +194,24 @@ links: [[a.p, b.p], [m.q, c.p]]`);
     for (const batch of plan.batches) {
       expect([batch.id, batchRequest(plan, batch, []).shapes.some(shape => shape.id === lane.id)]).toEqual([batch.id, true]);
     }
-    // The lane run is a reserved gap between two routed pieces, not a connector.
+    // The lane run is the one reserved piece of the path, not a connector, and the router still
+    // answers for the pieces around it.
     const pieces = plan.links.find(item => item.link === 'link-1')!.pieces;
-    expect(pieces.map(piece => piece.kind)).toEqual(['gap', 'reserved', 'gap']);
-    expect((pieces[1] as { segments: unknown }).segments).toEqual(model.links[0]!.fixedSegments);
+    const reserved = pieces.filter(piece => piece.kind === 'reserved');
+    expect(reserved).toHaveLength(1);
+    expect((reserved[0] as { segments: unknown }).segments).toEqual(model.links[0]!.fixedSegments);
+    expect(pieces.some(piece => piece.kind === 'gap')).toBe(true);
   });
 
   it('protects the reserved stem of every link a batch has not routed yet', async () => {
+    // Every end leaves sideways or arrives sideways, so no gap here is the straight run stage 8
+    // claims and each of the four attachments reserves a stem of its own.
     const model = await throughBands(`portograph: 2
 groups: {top-group: {tier: 0}, mid: {tier: 1}, low: {tier: 2}}
 nodes:
-  a: {group: top-group, ports: [{name: p, side: bottom}]}
-  m: {group: mid, ports: [{name: q, side: bottom}]}
-  b: {group: low, ports: [{name: p, side: top}]}
+  a: {group: top-group, ports: [{name: p, side: right}]}
+  m: {group: mid, ports: [{name: q, side: right}]}
+  b: {group: low, ports: [{name: p, side: left}]}
   c: {group: low, ports: [{name: p, side: top}]}
 links: [[a.p, b.p], [m.q, c.p]]`);
     const plan = planRoute(model);
@@ -220,9 +240,9 @@ links: [[a.p, b.p], [m.q, c.p]]`);
 groups: {ga: {tier: 0}, gb: {tier: 1}}
 nodes:
   a: {group: ga, ports: [{name: p, side: bottom}, {name: q, side: bottom}]}
-  b: {group: gb, ports: [p]}
-  c: {group: gb, ports: [p]}
-  d: {group: gb, ports: [p]}
+  b: {group: gb, ports: [{name: p, side: left}]}
+  c: {group: gb, ports: [{name: p, side: right}]}
+  d: {group: gb, ports: [{name: p, side: left}]}
 links: [[a.p, b.p], [a.p, c.p], [a.q, d.p]]`);
     const plan = planRoute(model);
     // The two links on `a.p` consume a shared run, so neither reserves a stem at `a`.
@@ -243,15 +263,16 @@ groups: {ga: {tier: 0}, gb: {tier: 1}}
 nodes:
   a: {group: ga, ports: [{name: p, side: bottom}, {name: q, side: bottom}]}
   b: {group: gb, ports: [{name: p, side: top}, {name: q, side: top}]}
-  c: {group: gb, ports: [{name: p, side: top}]}
+  c: {group: gb, ports: [{name: p, side: right}]}
 links: [[a.p, b.p], [a.q, b.q], [c.p, a.p]]`);
     const plan = planRoute(model);
     expect(plan.remainders).toEqual(['link-3']);
     const shapes = batchRequest(plan, plan.batches[0]!, []).shapes;
     // link-3 consumes a shared prefix at a.p, so it attaches at c.p only; that pin carries one end.
+    // The port leaves sideways, so the gap is not the straight run stage 8 would claim.
     const pins = shapes.flatMap(shape => (shape.pins ?? []).map(pin => ({ shape: shape.id, ...pin })));
     expect(pins).toEqual([{ shape: 'node:c', classId: 1, x: model.nodes.c!.ports[0]!.anchor!.x,
-      y: model.nodes.c!.ports[0]!.anchor!.y, directions: 1, exclusive: true }]);
+      y: model.nodes.c!.ports[0]!.anchor!.y, directions: 8, exclusive: true }]);
     // `[c.p, a.p]` shares the target port, so the reserved prefix is traversed last.
     expect(plan.links[0]!.pieces.map(piece => piece.kind)).toEqual(['gap', 'reserved']);
   });
@@ -261,8 +282,8 @@ links: [[a.p, b.p], [a.q, b.q], [c.p, a.p]]`);
 groups: {ga: {tier: 0}, gb: {tier: 1}}
 nodes:
   a: {group: ga, ports: [{name: p, side: bottom}]}
-  b: {group: gb, ports: [{name: p, side: top}]}
-  c: {group: gb, ports: [{name: p, side: top}]}
+  b: {group: gb, ports: [{name: p, side: left}]}
+  c: {group: gb, ports: [{name: p, side: right}]}
 links: [[a.p, b.p], [a.p, c.p]]`);
     // Ticket 20: the shared port owns a junction tree, so neither remainder needs a pin on `a`.
     expect(model.junctions).toHaveLength(1);
@@ -297,18 +318,27 @@ links: [[a.p, hub.n], [hub.s, b.p], [c.p, hub.w], [hub.e, d.p]]`);
     expect(pins.map(pin => [pin.classId, pin.x, pin.y, pin.directions]))
       .toEqual(ports.map((port, index) => [index + 1, port.anchor!.x, port.anchor!.y,
         { top: 1, bottom: 2, left: 4, right: 8 }[port.side!]]));
-    // Each hub end has one outward checkpoint 15 px along its normal, entered or left head-on.
+    // Each hub end holds its outward reach 15 px along its normal: as a checkpoint entered or left
+    // head-on where the router answers the gap, and as the claimed run itself where stage 8 found
+    // the gap is one straight line and asked for no route at all.
     const outward: Record<string, [number, number]> = { top: [0, -1], bottom: [0, 1], left: [-1, 0], right: [1, 0] };
     for (const [index, port] of ports.entries()) {
       const link = model.links.find(item => [item.attachments!.from, item.attachments!.to]
         .some(ref => ref.name === port.ref.name && ref.node === 'hub'))!;
       const source = link.attachments!.from.node === 'hub';
       const [dx, dy] = outward[port.side!]!;
-      const checkpoints = plan.links.find(item => item.link === link.id)!.connectors.flatMap(item => item.checkpoints);
-      const own = checkpoints.find(point => point.x === port.anchor!.x + 15 * dx && point.y === port.anchor!.y + 15 * dy)!;
-      const inward = { top: 2, bottom: 1, left: 8, right: 4 }[port.side!];
-      expect([index, source ? own.arrival : own.departure]).toEqual([index, inward]);
-      expect(source ? own.departure : own.arrival).toBe(15);
+      const tip = { x: port.anchor!.x + 15 * dx, y: port.anchor!.y + 15 * dy };
+      const item = plan.links.find(entry => entry.link === link.id)!;
+      const own = item.connectors.flatMap(entry => entry.checkpoints)
+        .find(point => point.x === tip.x && point.y === tip.y);
+      if (own) {
+        const inward = { top: 2, bottom: 1, left: 8, right: 4 }[port.side!];
+        expect([index, source ? own.arrival : own.departure]).toEqual([index, inward]);
+        expect(source ? own.departure : own.arrival).toBe(15);
+        continue;
+      }
+      const runs = item.pieces.flatMap(piece => piece.kind === 'straight' ? piece.segments : []);
+      expect([index, runs.some(run => segmentRect(run, { x: tip.x, y: tip.y, width: 0, height: 0 }))]).toEqual([index, true]);
     }
   });
 

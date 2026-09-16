@@ -4,12 +4,12 @@ import { linkStrokeWidth } from '../theme/geometry.js';
 import { GROUP_LABEL_GEOMETRY, nudgingDistance, routedStroke } from '../layout/bands.js';
 import { legReservation, stemPlan, type GapPlan } from '../layout/sides-two.js';
 import { allocateGapRuns } from '../layout/gap-runs.js';
-import { findPort } from '../layout/row-paths.js';
+import { findPort, straightCorridorClear } from '../layout/row-paths.js';
 import { portId } from '../layout/skeleton-graph.js';
-import { samePoint } from '../score/geometry.js';
+import { EPS, samePoint, segmentRect } from '../score/geometry.js';
 import { disjointShapes } from './containment.js';
 export { disjointShapes } from './containment.js';
-import { completedRouteObstacles, routeObstacles, type RouteObstacle } from './obstacles.js';
+import { completedRouteObstacles, reservedRunObstacles, routeObstacles, type RouteObstacle } from './obstacles.js';
 import { ALL_DIRECTIONS, DIRECTION_BITS, type RouteBatch, type RouteCheckpoint, type RouteConnector, type RouteEndpoint, type RoutePin, type RouteShape } from './types.js';
 
 /** Shape buffer stays at zero; every obstacle already carries its exact clearance. */
@@ -21,13 +21,14 @@ const OPPOSITE: Record<Side, Side> = { top: 'bottom', bottom: 'top', left: 'righ
 
 /**
  * One piece of a stitched path: reserved geometry kept exactly, a tier-gap run this pass allocated,
- * or a gap the router fills. An allocated run is reserved the same way, but it is not a claim the
- * lanes rule wrote on the model, so the stitcher annotates it against the lanes it meets exactly as
- * it annotates a routed gap.
+ * a straight run this pass claimed, or a gap the router fills. An allocated or claimed run is
+ * reserved the same way, but it is not a claim the lanes rule wrote on the model, so the stitcher
+ * annotates it against the lanes it meets exactly as it annotates a routed gap.
  */
 export type RoutePiece =
   | { kind: 'reserved'; segments: PathSegment[] }
   | { kind: 'allocated'; segments: PathSegment[] }
+  | { kind: 'straight'; segments: PathSegment[] }
   | { kind: 'gap'; connector: string; from: Point; to: Point };
 
 export interface LinkPlan {
@@ -45,7 +46,10 @@ export interface LinkPlan {
 export interface StemReservation { link: string; node: string; side: Side; bounds: Rect }
 
 export interface RoutePlan {
-  /** Routed links with no path after stage 7f, in model order. These need libavoid. */
+  /**
+   * Routed links with no path after stage 7f, in model order. Not every one reaches libavoid: a
+   * link every piece of which this stage claims carries no connector and joins no batch.
+   */
   remainders: string[];
   /** Overlay links that receive a straight unrouted segment; they never reach the router. */
   overlay: string[];
@@ -100,11 +104,11 @@ export function stemCheckpoint(model: LayoutModel, port: LayoutPort, cache?: Map
 
 function endpointFor(model: LayoutModel, link: LayoutLink, end: 'from' | 'to',
   pins: Map<string, RoutePin[]>, usage: Map<string, number>,
-  cache: Map<string, GapPlan | undefined>): { endpoint: RouteEndpoint; point: Point; checkpoint?: Point; port?: LayoutPort } {
+  cache: Map<string, GapPlan | undefined>): { endpoint: RouteEndpoint; point: Point; directions: number; checkpoint?: Point; port?: LayoutPort } {
   const runs = link.sharedRuns?.[end];
   if (runs?.length) {
     const terminal = runs.at(-1)!.to;
-    return { endpoint: { kind: 'point', x: terminal.x, y: terminal.y }, point: { ...terminal } };
+    return { endpoint: { kind: 'point', x: terminal.x, y: terminal.y }, point: { ...terminal }, directions: ALL_DIRECTIONS };
   }
   const ref = link.attachments![end], port = findPort(model, ref)!;
   const node = model.nodes[ref.node]!;
@@ -116,7 +120,7 @@ function endpointFor(model: LayoutModel, link: LayoutLink, end: 'from' | 'to',
     pins.set(ref.node, list);
   }
   return { endpoint: { kind: 'pin', shape: `node:${ref.node}`, classId }, point: { ...port.anchor! },
-    checkpoint: stemCheckpoint(model, port, cache), port };
+    directions: DIRECTION_BITS[port.side!], checkpoint: stemCheckpoint(model, port, cache), port };
 }
 
 /**
@@ -134,11 +138,18 @@ export function planRoute(model: LayoutModel): RoutePlan {
   // is an obstacle to every link but its own from the start — a batch that ran earlier, or one this
   // link shares, would otherwise be free to cross geometry the stitcher inserts verbatim.
   const legs = new Map<string, PathSegment>();
+  // Every reserved run a claim must keep out of: the ones the model already holds — a pinned path,
+  // a lane run, an outward shared prefix — and the ones this pass adds as it goes, a leg, a tier-gap
+  // allocation and an earlier claim. `straightCorridorClear` reads a link's `path` and
+  // `fixedSegments` only, so a shared run is invisible to it although the router is walled by one;
+  // this is the set with the margins the router is given, and the claim is judged by both.
+  const reserved: RouteObstacle[] = reservedRunObstacles(model);
+  const reserve = (items: RouteObstacle[]): void => { obstacles.push(...items); reserved.push(...items); };
   for (const link of model.links) {
     const leg = drawn(link) && !link.path ? legReservation(model, link, gaps) : undefined;
     if (!leg) continue;
     legs.set(link.id, leg);
-    obstacles.push(...completedRouteObstacles(model, link, `leg:${link.id}`, [leg.from, leg.to]));
+    reserve(completedRouteObstacles(model, link, `leg:${link.id}`, [leg.from, leg.to]));
   }
   // The tier gaps a transit link crosses are allocated the same way and for the same reason
   // (ADR-0015 rule 1): the room is reserved before the first batch runs, so no batch can consume
@@ -168,12 +179,8 @@ export function planRoute(model: LayoutModel): RoutePlan {
       // of them; the rectangles between do not, or the owner's other gaps could run along the run
       // the stitcher inserts verbatim.
       const terminal = index === 0 || index === covers.length - 1;
-      obstacles.push({ ...item, consumers: [...(terminal ? item.consumers : []), ...(across ? run.crossers : [])] });
+      reserve([{ ...item, consumers: [...(terminal ? item.consumers : []), ...(across ? run.crossers : [])] }]);
     }
-  }
-  const owned = new Map<string, string[]>();
-  for (const item of obstacles) for (const consumer of item.consumers) {
-    owned.set(consumer, [...(owned.get(consumer) ?? []), item.id]);
   }
   const usage = portUsage(model), pins = new Map<string, RoutePin[]>();
   const remainders: string[] = [], overlay: string[] = [], links: LinkPlan[] = [], stems: StemReservation[] = [];
@@ -222,21 +229,38 @@ export function planRoute(model: LayoutModel): RoutePlan {
           // lane's approach point has honoured it, and the gap starting at the leaf could only
           // reach it by turning back (ticket 20).
         ].filter(item => !reservedPasses(first ? link.sharedRuns?.from : last ? link.sharedRuns?.to : undefined, item.checkpoint));
-        // Only an attachment stem is reserved against the batches still to run. Reserving the lane
-        // approach as well was measured and left out; see `.scratch/stress/issues/02`.
-        for (const item of asked) {
-          if (item.node === undefined || item.side === undefined) continue;
-          stems.push({ link: link.id, node: item.node, side: item.side,
-            bounds: stemBounds(model, link, item.terminal, item.checkpoint) });
+        // A piece the router has nothing to choose about is claimed here instead of asked for: its
+        // two ends and every checkpoint stand on one line, and the run between them is clear of
+        // everything placement froze. See `straightRun`.
+        const run = straightRun(start.point, end.point, first ? from.directions : ALL_DIRECTIONS,
+          last ? to.directions : ALL_DIRECTIONS, asked.map(item => item.checkpoint));
+        // Only the pin ends of this piece are its own. A piece that begins or ends at a reserved
+        // terminal has no attachment there, and the node behind that end is foreign geometry it
+        // must keep out of — it can stand between the two ends of the piece.
+        const pins = [...(first && from.port ? [from.port] : []), ...(last && to.port ? [to.port] : [])];
+        const attached = { nodes: pins.map(port => port.ref.node), ports: pins.map(port => portId(port.ref)) };
+        if (run && corridorFree(model, link, run, attached, reserved)) {
+          pieces.push({ kind: 'straight', segments: [{ ...run, owner: { kind: 'link' as const, id: link.id } }] });
+          // `routed:` is `completedRouteObstacles`' own prefix for a chain it was handed, which the
+          // leg and the tier-gap allocation carry for the same reason. It names the producer, not
+          // the geometry: every cover this pass adds is under it, whoever fixed the run.
+          reserve(completedRouteObstacles(model, link, `straight:${id}`, [run.from, run.to]));
+        } else {
+          // Only an attachment stem is reserved against the batches still to run. Reserving the lane
+          // approach as well was measured and left out; see `.scratch/stress/issues/02`.
+          for (const item of asked) {
+            if (item.node === undefined || item.side === undefined) continue;
+            stems.push({ link: link.id, node: item.node, side: item.side,
+              bounds: stemBounds(model, link, item.terminal, item.checkpoint) });
+          }
+          connectors.push({ id, from: start.endpoint, to: end.endpoint, checkpoints: asked.map(item => item.checkpoint) });
+          pieces.push({ kind: 'gap', connector: id, from: start.point, to: end.point });
         }
-        connectors.push({ id, from: start.endpoint, to: end.endpoint, checkpoints: asked.map(item => item.checkpoint) });
-        pieces.push({ kind: 'gap', connector: id, from: start.point, to: end.point });
       }
       if (!last) pieces.push({ kind: woven.allocated.has(index) ? 'allocated' : 'reserved', segments: [fixed[index]!] });
     }
     if (link.sharedRuns?.to?.length) pieces.push({ kind: 'reserved', segments: reversedRuns(link.sharedRuns.to) });
-    const exclusions = [...(owned.get(link.id) ?? [])].sort();
-    links.push({ link: link.id, pieces, connectors, exclusions,
+    links.push({ link: link.id, pieces, connectors, exclusions: [],
       nodes: [link.attachments!.from.node, link.attachments!.to.node],
       // Read from the link, not from the endpoints: an end that consumes a shared run reserves no
       // stem of its own, and its node side is still shared space its batch may use.
@@ -249,13 +273,82 @@ export function planRoute(model: LayoutModel): RoutePlan {
     const shape = obstacles.find(item => item.id === `node:${node}`);
     if (shape) shape.pins = [...list].sort((a, b) => a.classId - b.classId);
   }
+  // The exclusions are read after the link loop, because a straight piece claimed inside it adds a
+  // cover its own link must pass through: the gap beyond such a piece starts at the piece's own
+  // terminal, which lies inside that cover wherever the terminal is not a port anchor.
+  const owned = new Map<string, string[]>();
+  for (const item of obstacles) for (const consumer of item.consumers) {
+    owned.set(consumer, [...(owned.get(consumer) ?? []), item.id]);
+  }
+  for (const plan of links) plan.exclusions = [...(owned.get(plan.link) ?? [])].sort();
   const batches = new Map<string, string[]>();
+  // A link whose every piece is reserved asks the router for nothing, so it joins no batch and a
+  // diagram made only of such links never loads the WASM.
   for (const plan of links) {
+    if (!plan.connectors.length) continue;
     const key = JSON.stringify(plan.exclusions);
     batches.set(key, [...(batches.get(key) ?? []), plan.link]);
   }
   return { remainders, overlay, links, obstacles, stems, parameters: routeParameters(model),
     batches: [...batches.values()].map((ids, index) => ({ id: `batch-${index}`, links: ids })) };
+}
+
+/**
+ * The straight run a planned gap can only be, or `undefined` when the router still has a choice.
+ *
+ * A gap qualifies when its two ends stand on one axis-aligned line, both ends may travel along it,
+ * and every checkpoint it would have asked for stands on that same line, between the ends, in the
+ * order asked and with masks that line allows. There is then exactly one route, and stage 8 reads
+ * it rather than discovering it: placement fixed both ends, so the run is a reservation, and the
+ * pipeline's load-bearing rule keeps a reservation out of the router. Stage 7f already reserves the
+ * corridor of a collinear top/bottom feed against its group labels for this very reason.
+ *
+ * This is the host's own form of `directRoute` in `runtime/avoid-worker.mjs`, which asks the same
+ * question of the same numbers. The worker asks it to omit redundant hints; the host asks it to
+ * keep the piece out of the batch, because an earlier ownership batch is otherwise free to lay its
+ * own route across the corridor. libavoid then cannot reach the checkpoint, drops it without a
+ * word, and answers with the two port anchors and a diagonal between them.
+ */
+function straightRun(from: Point, to: Point, fromDirections: number, toDirections: number,
+  checkpoints: RouteCheckpoint[]): PathSegment | undefined {
+  const alongY = Math.abs(from.x - to.x) <= EPS, alongX = Math.abs(from.y - to.y) <= EPS;
+  // Both true is a zero-length gap and neither is a gap that has to turn; only one line qualifies.
+  if (alongY === alongX) return undefined;
+  const axis = alongY ? 'y' : 'x', cross = alongY ? 'x' : 'y';
+  const travel = alongY ? (to.y > from.y ? DIRECTION_BITS.bottom : DIRECTION_BITS.top)
+    : (to.x > from.x ? DIRECTION_BITS.right : DIRECTION_BITS.left);
+  const back = OPPOSITE_BIT[travel]!;
+  if (!(fromDirections & travel) || !(toDirections & back)) return undefined;
+  const sign = Math.sign(to[axis] - from[axis]), span = Math.abs(to[axis] - from[axis]);
+  let cursor = 0;
+  for (const checkpoint of checkpoints) {
+    const reached = (checkpoint[axis] - from[axis]) * sign;
+    if (Math.abs(checkpoint[cross] - from[cross]) > EPS || reached < cursor - EPS || reached > span + EPS
+      || !(checkpoint.arrival & back) || !(checkpoint.departure & travel)) return undefined;
+    cursor = reached;
+  }
+  return { from: { ...from }, to: { ...to }, owner: { kind: 'link' as const, id: '' } };
+}
+
+/**
+ * Whether a candidate straight run holds every clearance the final gates measure. Frozen placement
+ * is judged by `straightCorridorClear`, the same predicate the rows rule and stage 7f's feed
+ * corridor use, so a corridor 7f reserved against its labels is the corridor claimed here. The runs
+ * this pass has already reserved are judged by their own covers: a leg, a tier-gap allocation and
+ * an earlier claim each carry the clearance a reserved run carries, and a run allowed to cross one
+ * of them stands among its consumers (ADR-0015 rule 3).
+ */
+function corridorFree(model: LayoutModel, link: LayoutLink, run: PathSegment,
+  attached: { nodes: string[]; ports: string[] }, reserved: RouteObstacle[]): boolean {
+  const segment: PathSegment = { ...run, owner: { kind: 'link', id: link.id } };
+  // The cover scan first: it is a rectangle test per reservation, where the predicate below measures
+  // every node, pill, label, lane, group box and reserved run in the diagram.
+  if (reserved.some(item => !item.consumers.includes(link.id) && segmentRect(segment, item.bounds))) return false;
+  // Measured at the widest routed stroke, not this link's own. `routeObstacles` and
+  // `reservationConflicts` expand every reservation by that width, so a thin link measured at its
+  // own could be claimed inside the band the router would have kept clear and then be refused by
+  // `Routed path on ... enters reserved ...` after the fact.
+  return straightCorridorClear(model, link, segment, { attached, stroke: Math.max(linkStrokeWidth(link), routedStroke(model)) });
 }
 
 /**

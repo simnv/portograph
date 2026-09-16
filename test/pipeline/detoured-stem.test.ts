@@ -15,9 +15,10 @@ const fixture = readFileSync(new URL('../../goldens/synthetic/detoured-stem-chec
  */
 it('keeps every reserved stem checkpoint on a route forced round an earlier batch', async () => {
   const before = bands(bundles(bars(centre(flanks(lanes(rows(await placed(fixture))))))));
-  // The precondition: the crossing pair really is split across two ownership batches.
+  // The precondition: the crossing pair really is split across two ownership batches. `link-2` is
+  // one straight run between two anchors on one x, which stage 8 claims, so it joins no batch.
   const plan = planRoute(before);
-  expect(plan.batches.map(batch => batch.links)).toEqual([['link-1', 'link-2'], ['link-3']]);
+  expect(plan.batches.map(batch => batch.links)).toEqual([['link-1'], ['link-3']]);
 
   const model = linkLabels(await route(before, { createAttempt: createAvoidAttempt }));
   for (const item of plan.links) {
@@ -31,10 +32,11 @@ it('keeps every reserved stem checkpoint on a route forced round an earlier batc
       expect(Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y)).toBeGreaterThanOrEqual(15 - 1e-9);
     }
   }
-  // The diagram is poor — the detour runs along a foreign group edge — but it is a diagram.
-  // A failed gate is a judgement about one; a failed pipeline is the absence of one.
+  // The detour ran along a foreign group edge while `link-2` shared the first batch. Stage 8 now
+  // claims that straight run instead of routing it, the batch is one connector smaller, and the
+  // detour it leaves passes every gate.
   const report = score(model).snapshot;
   expect(Number.isFinite(report.Q)).toBe(true);
   expect(Object.entries(report.gates).flatMap(([id, gate]) => gate.violations.map(item => [id, item.code, item.elements])))
-    .toEqual([['G6', 'segment-group-edge', ['link-1', 'g-right']]]);
+    .toEqual([]);
 }, 60000);

@@ -861,6 +861,28 @@ version; `ConnRef.setFixedRoute` and a real `JunctionRef` class do not (ADR-0003
 skip a checkpoint it cannot reach, so every required one is verified against the returned polyline
 and the stage rejects the route rather than publish geometry that occupies a reservation.
 
+**A gap with one possible route is claimed, not asked for.** A planned gap whose two ends stand on
+one axis-aligned line, whose two ends may both travel along it, and every checkpoint of which stands
+on that line, between the ends and in the order asked, has exactly one route. Where the run between
+the two ends is also clear of everything placement froze — judged by `straightCorridorClear`, the
+predicate the rows rule and 7f's feed corridor already use — stage 8 reserves it and asks the router
+for nothing. It is then a reserved run like any other: covered for every batch from the first, with
+the same 18 px trim at an end that is its own port anchor, and stitched in exactly.
+
+The reason is the pipeline's load-bearing rule. Placement fixed both ends, so the run is a
+reservation, and an ownership batch that runs earlier is otherwise free to lay its own route across
+it. libavoid then cannot reach the checkpoint inside that route's cover, drops the whole checkpoint
+without a word, and answers with the two **node centres** and a diagonal between them — measured on
+`goldens/synthetic/a-straight-gap-needs-no-router.yaml`, where the gap asked for
+(132.50, 270.00) → (132.50, 370.00) and the answer was (138.50, 246.50) → (132.50, 393.50), which is
+neither reserved endpoint. 7f already states this claim for one shape of it: the feed corridor it
+reserves against its group labels is "a top/bottom feed whose two anchors already share an x … will
+be routed as that straight line in stage 8" (§ 7f). This is that sentence made true, for every piece
+of a path rather than for a whole link.
+
+A link every piece of which is claimed asks the router for nothing and joins no ownership batch, so
+a diagram made only of such links never loads the WASM.
+
 Each link is stitched back in source-to-target order: its reserved runs byte-for-byte, with their
 owner, lane and `barCross` annotations, the tier-gap runs the allocation made for it, and the routed
 gaps between them. An allocated run is not a claim the lanes rule wrote on the model, so the
@@ -891,9 +913,11 @@ sits in the margin beside its tier) or whose arc length exceeds 3× the direct a
 marked `stubCandidate` and warned about; M1 keeps the technique and the full routed path.
 
 **Measured on the JPEG golden:** stage 7 leaves exactly two links, `link-1` and `link-2`, the two
-provider feeds into EAC-01 and EAC-02. This is a deviation from the prototype run, where the rules
-claimed every link and libavoid was idle; the rules claim 24 of 26 here. Both really invoke
-libavoid, in one ownership batch, and the complete 26-link diagram passes G1–G8 with 0 crossings,
+provider feeds into EAC-01 and EAC-02; the rules claim 24 of 26. Each of the two is one straight run
+between two anchors on one x with a clear corridor, so stage 8 claims both and no ownership batch is
+formed: the prototype's idle router, reached by a different road. The geometry is byte-for-byte the
+one libavoid returned before the claim — what the router was answering with was the geometry
+placement had already fixed. The complete 26-link diagram passes G1–G8 with 0 crossings,
 0 overlaps, 0 label hits and Q 0.8424281545245618 (before link-label placement). The previous
 candidate's Q was 0.818586208746674; allowing the feeds through unused band space removes the
 avoidable detours. Node, port and group placement remains unchanged.
