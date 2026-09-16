@@ -1,0 +1,22 @@
+# Expected: Repack the grid with its flank's primary peer in the outer cell of the first row, leave
+# the flank and the bar to their own rules, and keep every group box clear of the others.
+portograph: 2
+profile: network
+groups:
+  upper: { tier: 0 }
+  place: { tier: 1, shape: grid }
+  side: { align: left, of: place }
+  rails: { tier: 2, shape: bar }
+nodes:
+  head: { group: upper, ports: [{ name: p, side: bottom }] }
+  s1: { group: side, ports: [{ name: p, side: right }] }
+  a: { group: place, ports: [{ name: p, side: left }, { name: q, side: top }, { name: r, side: bottom }] }
+  b: { group: place }
+  c: { group: place }
+  d: { group: place }
+  e: { group: place }
+  rail: { group: rails, ports: [{ name: p, side: top }] }
+links:
+  - [head.p, a.q]
+  - [s1.p, a.p]
+  - [a.r, rail.p]

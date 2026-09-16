@@ -1,0 +1,16 @@
+# Expected: Pack the four nodes of the grid group into two columns and two rows rather than one
+# line, take the column count from the aspect the packed box reaches, and keep the box no wider
+# than the two columns need.
+portograph: 2
+profile: network
+groups:
+  upper: { tier: 0 }
+  place: { tier: 1, shape: grid }
+nodes:
+  head: { group: upper, ports: [{ name: p, side: bottom }] }
+  a: { group: place, ports: [{ name: p, side: top }] }
+  b: { group: place }
+  c: { group: place }
+  d: { group: place }
+links:
+  - [head.p, a.p]
