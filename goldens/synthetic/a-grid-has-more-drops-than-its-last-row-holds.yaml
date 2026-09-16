@@ -1,0 +1,19 @@
+# Expected: Three of the four nodes drop to the bar below and the last row of a two-column grid
+# holds two, so one drop is reserved through the node standing under it. The drop keeps its slot and
+# `BAR_DROP_OBSTRUCTED` says so; without the warning the model published a fixed path through a node
+# body and an empty `barCross`.
+portograph: 2
+profile: network
+groups:
+  place: { tier: 0, shape: grid }
+  rails: { tier: 1, shape: bar }
+nodes:
+  a: { group: place, ports: [{ name: p, side: bottom }] }
+  b: { group: place, ports: [{ name: p, side: bottom }] }
+  c: { group: place, ports: [{ name: p, side: bottom }] }
+  d: { group: place }
+  rail: { group: rails, ports: { side: top, list: [p, p, p] } }
+links:
+  - [a.p, rail.p#1]
+  - [b.p, rail.p#2]
+  - [c.p, rail.p#3]

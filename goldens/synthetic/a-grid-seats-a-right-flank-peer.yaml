@@ -1,0 +1,20 @@
+# Expected: Seven nodes pack three by three by one, so the last row is ragged. The right flank's
+# stored primary peer must end the row it is in and stand in the outer column, so the ragged row is
+# packed against the right columns; packed against the left it would leave the lateral link running
+# the whole width of the group box over empty cells.
+portograph: 2
+profile: network
+groups:
+  place: { tier: 0, shape: grid }
+  side: { align: right, of: place }
+nodes:
+  a: { group: place }
+  b: { group: place }
+  c: { group: place }
+  d: { group: place }
+  e: { group: place }
+  f: { group: place }
+  g: { group: place, ports: [{ name: p, side: right }] }
+  s1: { group: side, ports: [{ name: p, side: left }] }
+links:
+  - [g.p, s1.p]

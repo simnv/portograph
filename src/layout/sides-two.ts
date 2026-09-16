@@ -15,7 +15,7 @@ import { MEMBER_GAP, fanEnd } from './bundle-geometry.js';
 import { laneSource, laneWidth, transitTiers } from './lanes.js';
 import { fitRegionGroup } from './regions.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
-import { gridRows, gridRowGap, isGridGroup, packGridRows } from './grid.js';
+import { gridCells, gridRowGap, isGridGroup, packGridRows } from './grid.js';
 import { freezePortTopology } from './mutation.js';
 const key = portId;
 
@@ -775,7 +775,7 @@ export function sidesTwo(model: LayoutModel): LayoutModel {
     // both the columns and the rows are laid out again from the new sizes at the gaps the rows rule
     // reserves — rather than pushed onto one line, which is what the loop below would do.
     if (isGridGroup(model, groupId) && group.nodes.length) {
-      packGridRows(model, group, gridRows(model, group), (a, b) => rowGap(model, a, b), gridRowGap(model));
+      packGridRows(model, group, gridCells(model, group), (a, b) => rowGap(model, a, b), gridRowGap(model));
       continue;
     }
     let x = group.bounds!.x + spacing.padding;

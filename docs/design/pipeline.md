@@ -152,6 +152,27 @@ one placement warning identifying the competing flanks and peer. This is an expl
 to the outer-end contract for the other flank; its obstructed links remain for routing. A
 single-node row satisfies both ends and needs no conflict warning.
 
+**Grid groups repack after ELK, and move every band.** ELK is given one row per group, because its
+layered pass is what *orders* the nodes; a `shape: grid` group then takes that order and packs it
+into columns and rows (`src/layout/grid.ts`, stress ticket 26). Three consequences are settled here
+and not left for a later stage to discover.
+
+1. The rows follow the exits, not the reading order alone. A node whose links leave the group
+   **upward** takes the first row, one whose links leave **downward** takes the last, the rest sit
+   between them, and ELK's order survives inside each rank. A grid has rows below its rows, so a
+   downward port that is not in the last row descends through them, and nothing reserves that —
+   `bars.ts` `crosses` tests bar nodes alone. Where the ranks cannot seat every exit, stage 7d warns
+   `BAR_DROP_OBSTRUCTED` rather than publishing a reserved run through a node body in silence.
+2. A flank's stored primary peer takes the outer end of **its own row**, which is what the lateral
+   link runs along; a ragged row that holds a right-aligned peer is packed against the right columns
+   rather than the left.
+3. A grid box is narrower and taller than the ribbon ELK sized its band for, so the tier is packed
+   left to right again — otherwise the width the grid gives back never reaches the canvas — and the
+   bands are **re-stacked** in place of the ordinary rebuild. That last part is global: **one grid
+   group anywhere discards ELK's vertical placement for every tier**, so a sheet cannot adopt the
+   shape group by group without re-reading the whole sheet. An input with no grid group keeps ELK's
+   geometry untouched.
+
 **Time and failure:** ELK runs in a worker with a deadline (`layoutBudgetMs`, default 10 s at
 ≤ 300 nodes, 20 s above). On exception **or deadline**, terminate the worker and run the
 fallback: one ELK run per tier band without partitioning, bands stacked in tier order with the
@@ -164,9 +185,13 @@ Output: absolute group boxes, node positions, in-row order.
 ## Stage 5 — sides, phase two; resize; repack
 
 Immediately after the skeleton, before anything is pinned. Undecided same-tier directions take
-`left`/`right` from the in-row order; shared ports then recompute their majority across all peer
+`left`/`right` from the in-row order — except inside a **grid**, where a peer may stand above or
+below as well as beside, and the vote reads the packed geometry instead: a peer that overlaps this
+node's y span votes `left`/`right` by x, one that does not votes `top`/`bottom` by y. Shared ports
+then recompute their majority across all peer
 directions, including already-known higher/lower-tier directions. Nodes are **re-sized** (stage 3 formula) if a side gained ports. Each row is
-then **repacked horizontally** in ELK's order, and group boxes are recomputed. The gap is at
+then **repacked horizontally** in ELK's order — a grid is laid out again as a grid at the same
+column count, at these gaps between columns and the band gap between rows — and group boxes are recomputed. The gap is at
 least 20 px plus the two node half-strokes. Where facing named pills protrude farther, use the
 sum of their measured half-widths and half-strokes instead. Adjacent groups and tier bands move
 as needed to contain the resized rows. Each side receives a provisional engine order by far-end x (for top/bottom) or y

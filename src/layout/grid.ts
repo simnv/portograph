@@ -1,5 +1,6 @@
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
-import { bandGap, compareId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
+import { orderedGroupIds } from '../model/model.js';
+import { bandGap, compareId, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 
 /**
@@ -32,6 +33,13 @@ export function gridNodeGap(model: LayoutModel, group: LayoutGroup): number {
   return spacing.nodeClearance + stroke;
 }
 
+/**
+ * One row of a packed grid, by column. A cell is empty where the row is shorter than the grid is
+ * wide: a ragged row is not always packed against the left column, because a right flank's peer has
+ * to sit at the outer end of the row it is in (`seatFlankPeers`).
+ */
+export type GridCells = (string | undefined)[][];
+
 /** Cut `order` into `columns`-wide rows, reading order preserved. */
 export function gridChunks(order: readonly string[], columns: number): string[][] {
   const rows: string[][] = [];
@@ -46,7 +54,7 @@ interface GridMetrics { columnX: number[]; columnWidth: number[]; rowY: number[]
  * row — a node is placed at its column's x, not packed against its own left neighbour — so the grid
  * reads as a grid and every later rule that repacks it lands on the same coordinates.
  */
-export function gridMetrics(model: LayoutModel, rows: string[][], gap: (a: string, b: string) => number, rowGap: number): GridMetrics {
+export function gridMetrics(model: LayoutModel, rows: GridCells, gap: (a: string, b: string) => number, rowGap: number): GridMetrics {
   const columns = Math.max(0, ...rows.map(row => row.length));
   const columnWidth: number[] = [], columnX: number[] = [];
   for (let c = 0; c < columns; c++) {
@@ -58,7 +66,7 @@ export function gridMetrics(model: LayoutModel, rows: string[][], gap: (a: strin
     const pairs = rows.filter(row => row[c] !== undefined && row[c + 1] !== undefined).map(row => gap(row[c]!, row[c + 1]!));
     x += columnWidth[c]! + (pairs.length ? Math.max(...pairs) : 0);
   }
-  const rowHeight = rows.map(row => Math.max(0, ...row.map(id => model.nodes[id]!.size!.height)));
+  const rowHeight = rows.map(row => Math.max(0, ...row.filter((id): id is string => id !== undefined).map(id => model.nodes[id]!.size!.height)));
   const rowY: number[] = [];
   let y = 0;
   for (const [i, height] of rowHeight.entries()) { rowY.push(y); y += height + (i + 1 < rows.length ? rowGap : 0); }
@@ -71,9 +79,15 @@ export function gridMetrics(model: LayoutModel, rows: string[][], gap: (a: strin
  *
  * The count is the one whose packed box comes closest to square, ties to the fewer columns. Nothing
  * is fixed: the answer follows the measured node sizes and the two gaps, so a group of wide nodes
- * takes fewer columns than a group of narrow ones of the same count. On the maintainer's Enterprise
- * NTP locations — seven nodes about 130 × 70 — it answers two columns, which is what the original
- * draws.
+ * takes fewer columns than a group of narrow ones of the same count.
+ *
+ * Two things the caller has to know. The box measured here is the **stage-4** box: the count is
+ * chosen from the sizes the nodes have before stage 5 grows them to their final port capacity, and
+ * stage 5 then re-lays the same count out at the larger sizes. The published box is therefore near
+ * square, not square — the seven nodes of `loc1` on the Enterprise NTP sheet take **three** columns
+ * and land at 454 × 341, aspect 1.33. And the target is a square, not the original's proportions:
+ * the original draws its locations portrait, two columns of seven, ≈ 323 × 680. A portrait target is
+ * one constant away if the maintainer wants it (stress ticket 26).
  */
 export function gridColumns(model: LayoutModel, group: LayoutGroup, order: readonly string[]): number {
   if (order.length <= 1) return 1;
@@ -98,41 +112,120 @@ function moveNodeTo(model: LayoutModel, id: string, x: number, y: number): void 
  * Place `rows` inside `group`, top-left at the group's own padded origin, and refit the box.
  *
  * Every node of a row takes the row's y, so the rows can always be read back off the geometry
- * (`gridRows`) without a stored field the mutation boundary would have to carry.
+ * (`gridCells`) without a stored field the mutation boundary would have to carry.
  */
-export function packGridRows(model: LayoutModel, group: LayoutGroup, rows: string[][],
+export function packGridRows(model: LayoutModel, group: LayoutGroup, rows: GridCells,
   gap: (a: string, b: string) => number, rowGap: number): void {
   const original = group.bounds ?? { x: 0, y: 0, width: 0, height: 0 };
   const metrics = gridMetrics(model, rows, gap, rowGap);
   const originX = original.x + spacing.padding, originY = original.y + spacing.padding;
   for (const [r, row] of rows.entries()) {
-    for (const [c, id] of row.entries()) moveNodeTo(model, id, originX + metrics.columnX[c]!, originY + metrics.rowY[r]!);
+    for (const [c, id] of row.entries()) {
+      if (id !== undefined) moveNodeTo(model, id, originX + metrics.columnX[c]!, originY + metrics.rowY[r]!);
+    }
   }
-  group.rowOrder = rows.flat();
+  group.rowOrder = rows.flat().filter((id): id is string => id !== undefined);
   group.bounds = { x: original.x, y: original.y,
     width: Math.max(2 * spacing.padding, metrics.width + 2 * spacing.padding),
     height: Math.max(2 * spacing.padding, metrics.height + 2 * spacing.padding) };
 }
 
-/** Pack `order` into the column count the aspect rule chooses, at the skeleton's node clearance. */
-export function packGrid(model: LayoutModel, group: LayoutGroup, order: string[]): void {
-  const gap = gridNodeGap(model, group);
-  packGridRows(model, group, gridChunks(order, gridColumns(model, group, order)), () => gap, gridRowGap(model));
+/**
+ * Which grid row a node belongs in, from the way its links leave the group.
+ *
+ * A row group has nothing above or below its nodes, so a port that leaves on `top` or `bottom` has
+ * a clear way out by construction. A grid has rows, and a port that leaves downward from a row that
+ * is not the last has to cross every row below it — which nothing reserves, and which `bars.ts`
+ * does not even test for, because `crosses` looks only at nodes in `bar` groups (its filter is the
+ * whole obstacle test a drop gets). So the exits decide the rows: a node whose links leave upward
+ * takes the first row, one whose links leave downward takes the last, and the rest sit between
+ * them. Stable within each rank, so ELK's crossing-minimised order survives inside a rank.
+ *
+ * A node that leaves **both** ways is ranked downward. It cannot satisfy both, and the downward
+ * exit is the one that is reserved silently: a bar drop publishes a `fixed` path and an empty
+ * `barCross` whatever stands under it, where an upward link goes to stage 8 and fails a gate where
+ * a reader can see it. `shapeBars` warns `BAR_DROP_OBSTRUCTED` when the reservation still meets a
+ * node, so neither case is silent again.
+ *
+ * Sides are read as `side ?? sizingSide`: stage 2 has decided or guessed every side before stage 4,
+ * and stage 5 may still move an undecided one. A rank taken from a guess costs a row order, never a
+ * reservation.
+ */
+function exitRank(model: LayoutModel, group: LayoutGroup, id: string): number {
+  let up = false, down = false;
+  const members = new Set(group.nodes);
+  for (const link of model.links) {
+    const ends = link.attachments;
+    if (!ends || link.technique === 'stub') continue;
+    for (const [own, peer] of [[ends.from, ends.to], [ends.to, ends.from]] as const) {
+      if (own.node !== id || members.has(peer.node)) continue;
+      const port = model.nodes[id]!.ports.find(item => portId(item.ref) === portId(own));
+      const side = port?.side ?? port?.sizingSide;
+      if (side === 'top') up = true;
+      if (side === 'bottom') down = true;
+    }
+  }
+  return down ? 2 : up ? 0 : 1;
 }
 
 /**
- * The rows of a packed grid, read back from the geometry. Nodes of one row share a y exactly, so
- * the clustering is exact rather than tolerant; no later rule moves one node of a row in y without
- * the others (centring cannot change y at all, and the bundle and band rules move whole tiers).
+ * Put each attached flank's stored primary peer at the outer end of its own row, and pack that row
+ * against the flank's own side when the row is ragged.
+ *
+ * The lateral link runs at the peer's own y, so what it must not cross is a node of the peer's
+ * **row**; a node two rows up stands at another y and is no obstacle. That alone would already pass
+ * every gate — but on a ragged row it leaves a right flank's peer in **column 0**, because reading
+ * order packs a short row against the left, and the link then runs the whole width of the group box
+ * over empty cells to reach it. The three 7-node locations of the Enterprise NTP sheet all pack
+ * 3 × 3 × 1, so that is the common case and not a corner. A ragged row that holds a right-aligned
+ * peer is therefore packed against the right columns instead, which leaves the empty cells on the
+ * side the link does not come from.
  */
-export function gridRows(model: LayoutModel, group: LayoutGroup): string[][] {
-  const byY = new Map<number, string[]>();
-  for (const id of group.nodes) {
-    const y = model.nodes[id]!.bounds!.y;
-    const list = byY.get(y) ?? []; list.push(id); byY.set(y, list);
+function seatFlankPeers(model: LayoutModel, group: LayoutGroup, rows: string[][], columns: number): GridCells {
+  const rightAligned = new Set<number>();
+  for (const flank of orderedGroupIds(model.document).map(id => model.groups[id]!)) {
+    const peer = flank.flank?.of === group.id ? flank.flank.primaryPeer ?? flank.flank.proxyPeer : undefined;
+    if (peer === undefined) continue;
+    const index = rows.findIndex(item => item.includes(peer));
+    if (index < 0) continue;
+    const row = rows[index]!, align = flank.flank!.align;
+    row.splice(row.indexOf(peer), 1);
+    row.splice(align === 'left' ? 0 : row.length, 0, peer);
+    if (align === 'right') rightAligned.add(index);
   }
-  return [...byY.entries()].sort((a, b) => a[0] - b[0]).map(([, ids]) =>
-    ids.sort((a, b) => model.nodes[a]!.bounds!.x - model.nodes[b]!.bounds!.x || compareId(a, b)));
+  return rows.map((row, index) => rightAligned.has(index) && row.length < columns
+    ? [...new Array<undefined>(columns - row.length), ...row] : row);
+}
+
+/** Pack `order` into the column count the aspect rule chooses, at the skeleton's node clearance. */
+export function packGrid(model: LayoutModel, group: LayoutGroup, order: string[]): void {
+  const gap = gridNodeGap(model, group);
+  const ranked = [...order].map((id, index) => ({ id, index, rank: exitRank(model, group, id) }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index).map(item => item.id);
+  const columns = gridColumns(model, group, ranked);
+  const cells = seatFlankPeers(model, group, gridChunks(ranked, columns), columns);
+  packGridRows(model, group, cells, () => gap, gridRowGap(model));
+}
+
+/**
+ * The cells of a packed grid, read back from the geometry.
+ *
+ * Nodes of one row share a y exactly and nodes of one column share an x exactly, so both clusterings
+ * are exact rather than tolerant, and an empty cell — the gap a ragged row packed against the right
+ * leaves — comes back as one. No later rule moves one node of a row in y without the others
+ * (centring cannot change y at all, and the bundle and band rules move whole tiers). Centring may
+ * widen a node leftwards, which can split a shared column x; that only ever adds a column to this
+ * reading, and the two readers below want rows in x order, which stays right either way.
+ */
+export function gridCells(model: LayoutModel, group: LayoutGroup): GridCells {
+  const xs = [...new Set(group.nodes.map(id => model.nodes[id]!.bounds!.x))].sort((a, b) => a - b);
+  const ys = [...new Set(group.nodes.map(id => model.nodes[id]!.bounds!.y))].sort((a, b) => a - b);
+  const cells: GridCells = ys.map(() => new Array<string | undefined>(xs.length).fill(undefined));
+  for (const id of [...group.nodes].sort(compareId)) {
+    const box = model.nodes[id]!.bounds!;
+    cells[ys.indexOf(box.y)]![xs.indexOf(box.x)] = id;
+  }
+  return cells;
 }
 
 /**
@@ -141,5 +234,7 @@ export function gridRows(model: LayoutModel, group: LayoutGroup): string[][] {
  * clear of the last node of the row above it — they do not share a line.
  */
 export function packRowsOf(model: LayoutModel, group: LayoutGroup): string[][] {
-  return isGridGroup(model, group.id) ? gridRows(model, group) : [group.rowOrder ?? group.nodes];
+  return isGridGroup(model, group.id)
+    ? gridCells(model, group).map(row => row.filter((id): id is string => id !== undefined))
+    : [group.rowOrder ?? group.nodes];
 }
