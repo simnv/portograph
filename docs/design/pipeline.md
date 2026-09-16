@@ -154,7 +154,7 @@ single-node row satisfies both ends and needs no conflict warning.
 
 **Grid groups repack after ELK, and move every band.** ELK is given one row per group, because its
 layered pass is what *orders* the nodes; a `shape: grid` group then takes that order and packs it
-into columns and rows (`src/layout/grid.ts`, stress ticket 26). Three consequences are settled here
+into columns and rows (`src/layout/grid.ts`, stress ticket 26). Four consequences are settled here
 and not left for a later stage to discover.
 
 1. The rows follow the exits, not the reading order alone. A node whose links leave the group
@@ -188,7 +188,25 @@ and not left for a later stage to discover.
 2. A flank's stored primary peer takes the outer end of **its own row**, which is what the lateral
    link runs along; a ragged row that holds a right-aligned peer is packed against the right columns
    rather than the left.
-3. A grid box is narrower and taller than the ribbon ELK sized its band for, so the tier is packed
+3. **A group that holds both ends of a bundle does not take the shape at all** (stress ticket 32).
+   A bundle's members turn in a **channel**, the space between its two endpoint bodies along the
+   bundle's own normal, and the channel exists only where the two bodies stand beside each other
+   across that normal, in that order, with nothing of the group between them. A row gives all of
+   that for nothing. A shape that stacks its nodes gives none of it, and not by a small margin: the
+   rows are stacked from the sizes the nodes have at the time, and the bundle rules then **grow** a
+   body — a left- or right-side bundle reserves its member pitch in y, and a flank stacks its second
+   block below the first one's bottom — so a body of one row reaches into the row below.
+
+   Measured on the gridded golden with `shape: grid` on `datacenter`, both halves fail. With the
+   endpoints in one row and adjacent, which is the arrangement the count picks, `EAC-02` grows to
+   322.75 px tall in `EBR-02`'s own column and covers it: `BUNDLE_CHANNEL_BLOCKED`. With the
+   endpoints in different rows, `EBR-01`'s bottom face lands below `EBR-02`'s top face and the
+   channel reads `-52.75` — the two faces out of order, reported as a shortfall of turning room.
+   Keeping the endpoints in one row is therefore **not** the rule: the grid already does that here
+   and the bundle still fails. The group declines the shape instead, reports
+   `GROUP_SHAPE_DECLINED` naming the bundle, and takes `row`. The rule is written about the channel
+   rather than about `grid`, so `ring` and `free` inherit it rather than rediscover it.
+4. A grid box is narrower and taller than the ribbon ELK sized its band for, so the tier is packed
    left to right again — otherwise the width the grid gives back never reaches the canvas — and the
    bands are **re-stacked** in place of the ordinary rebuild. That last part is global: **one grid
    group anywhere discards ELK's vertical placement for every tier**, so a sheet cannot adopt the
