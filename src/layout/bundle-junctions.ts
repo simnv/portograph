@@ -450,10 +450,13 @@ function stemCount(port: LayoutPort, runs: readonly PathSegment[]): number {
  * **Only an end that reserved nothing can be hemmed.** An end whose own fan reserved a run is not
  * approached at the port at all: stage 8 stitches that run back and starts the gap at the run's
  * terminal (`endpointFor`), so the port's own outward checkpoint stands inside a reservation the
- * link owns and closing it costs the link nothing. A foreign run that crosses the reservation itself
- * is an overlap of two reserved runs, which G4 and G6 measure — recoverable, where a throw is not.
- * An end that reserved nothing has the router for its whole approach and no gate to fall back on,
- * and that is the throw this pass exists to prevent.
+ * link owns and closing it costs the link nothing. Such an end can still be shut at the terminal —
+ * of 1 099 corpus inputs, 35 hold a reserved terminal inside a foreign reserved run's margin and 27
+ * of the 35 fail the pipeline — but a release does not open it. Measured over those 35, releasing on
+ * a closed terminal as well repaired none of them and broke 8 (stress ticket 11 owns the shape, with
+ * `wide-t3-p3-f2-s1` for its reproducer). An end that reserved nothing is the one case a release
+ * does answer: nothing there was placed, so giving the router the whole approach is the only move
+ * left, and that is the throw this pass exists to prevent.
  *
  * Measuring the port at every end released branches whose approaches were never shut, and the links
  * the release then handed to the router walled each other in: the route of the first laid across the
