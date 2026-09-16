@@ -1,0 +1,32 @@
+# Expected: An overlay pair whose two ports face each other on a clear axis. A bottom `sync` port and
+# a top `sync` port on two nodes one routed link holds in column share an x, so both stubs are
+# collinear with the segment between them, `straighten` drops them, and the path is the one straight
+# 125 px segment from (57.34, 107) to (57.34, 232). This is the case the stub-and-diagonal rule
+# degenerates to: measured against the orthogonal derivation it supersedes, the polyline, the canvas
+# and Q are identical to the last digit, so a diagram whose overlay ports line up does not move
+# (stress ticket 20, question 2). Every gate passes; Q is 0.8335929892966935.
+# Test-only input owned by stress ticket 20; the whole pipeline runs, so no stage precondition is
+# needed.
+portograph: 2
+profile: network
+groups:
+  upper: { tier: 0, label: Upper }
+  lower: { tier: 1, label: Lower }
+nodes:
+  a:
+    group: upper
+    class: router
+    label: Router A
+    ports:
+      - { name: d1, side: bottom, class: downlink }
+      - { name: sync, side: bottom }
+  b:
+    group: lower
+    class: rr
+    label: Reflector B
+    ports:
+      - { name: u1, side: top, class: uplink }
+      - { name: sync, side: top }
+links:
+  - [a.d1, b.u1]
+  - [a.sync, b.sync, { route: overlay }]

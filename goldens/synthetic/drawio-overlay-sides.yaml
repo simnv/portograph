@@ -1,8 +1,11 @@
 # Expected: An overlay link whose two pills face different ways. `drawio-constructs.yaml` has both
-# overlay ends on a top side, which is the three-segment detour; here one end leaves a left side and
-# the other a top side, which is the L-shaped branch of the overlay route: the turn the source pill
-# faces would cross Reflector C's body, so the other one wins. Every gate passes; Q is
-# 0.8382821220986563.
+# overlay ends on a top side, so its two stub ends are level and the segment between them is
+# horizontal; here one end leaves a left side and the other a top side, the two stub ends fall on two
+# different lines, and the 58.03 px segment between them is a diagonal from (118.01, 260.5) to
+# (78.51, 218). It is the one connector in the corpus draw.io exports with `edgeStyle=none`, because
+# a polyline that is not axis-aligned is outside the orthogonal router's vocabulary (stress ticket
+# 20). Drawn length 90.03 px against the 61.51 px straight line, of which the mask left 9.5 px before
+# the rule existed. Every gate passes; Q is 0.8382821220986563 — unchanged from the staircase.
 # Test-only input owned by drawio-export ticket 02; the whole pipeline runs, so no stage
 # precondition is needed.
 portograph: 2

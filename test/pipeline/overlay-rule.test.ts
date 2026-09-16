@@ -111,6 +111,31 @@ describe('an overlay link is a stub and one diagonal, in both renderers', () => 
     expect(score(model).snapshot.passed).toBe(true);
   }, 60000);
 
+  it('stays one straight segment for a pair that lines up, and turns nowhere', async () => {
+    // Stress ticket 20, question 2. `goldens/synthetic/overlay-ports-that-line-up.yaml`: two `sync`
+    // ports facing each other on one x. Both stubs are collinear with the segment between them, so
+    // `straighten` drops them and the path is the single segment the orthogonal derivation drew —
+    // measured against it, the polyline, the canvas and Q are identical to the last digit.
+    const model = await run(fixture('overlay-ports-that-line-up'));
+    const points = pointsOf(overlayOf(model));
+    expect(points).toEqual([{ x: 57.336669921875, y: 107 }, { x: 57.336669921875, y: 232 }]);
+    expect(score(model).snapshot.Q).toBe(0.8335929892966935);
+    expect(score(model).snapshot.passed).toBe(true);
+  }, 60000);
+
+  it('is a stub and one diagonal for a pair that does not line up', async () => {
+    // The same pair with the target on a second node, 75.51 px away on x.
+    // `goldens/synthetic/overlay-ports-that-do-not-line-up.yaml` is the shape the maintainer chose.
+    const model = await run(fixture('overlay-ports-that-do-not-line-up'));
+    const link = overlayOf(model), points = stubAndOne(model, link);
+    expect(span(points[0]!, points[1]!)).toBeCloseTo(16, 9);
+    expect(span(points[2]!, points[3]!)).toBeCloseTo(16, 9);
+    expect(span(points[1]!, points[2]!)).toBeCloseTo(119.7948, 3);
+    expect(axisAligned(points[1]!, points[2]!)).toBe(false);
+    expect(score(model).snapshot.Q).toBe(0.8391492903118092);
+    expect(score(model).snapshot.passed).toBe(true);
+  }, 60000);
+
   it('answers "line is not very visible" on drawio-overlay-sides', async () => {
     const model = await run(fixture('drawio-overlay-sides'));
     const link = overlayOf(model), points = stubAndOne(model, link);

@@ -1,7 +1,11 @@
 # Expected: One small diagram carrying every construct the draw.io exporter has to translate that
 # the golden does not exercise together: a group whose title band the pipeline puts at the bottom,
 # a port role and a port status on one pill, a dotted and a dashed link class, a labelled link, and
-# an overlay link that the SVG masks and a draw.io file cannot. Every gate passes.
+# an overlay link that the SVG masks and a draw.io file cannot. Both overlay ends sit on a top side,
+# so the two stub ends are level and the segment between them is horizontal: the overlay rule
+# degenerates to the three-segment shape it always drew, and the connector stays
+# `orthogonalEdgeStyle;jettySize=0` (stress ticket 20, question 2). Every gate passes; Q is
+# 0.7705517318633934.
 # Test-only input owned by drawio-export ticket 01; the whole pipeline runs, so no stage
 # precondition is needed.
 portograph: 2

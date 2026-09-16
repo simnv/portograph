@@ -1,12 +1,13 @@
-# Expected: A described overlay link whose long run does not sit where the pair's anchors do. The
-# two ports face each other but are not level, because the source carries a second right-side port,
-# so the overlay rule turns once: the run the label rides starts at the source anchor and ends at
-# the turn, and its midpoint is 16.5 px left of the anchor midpoint. 7f reserves the room where that
-# run is — it runs the same producer stage 8 will run, on pills it has already frozen — so the label
-# is drawn in full, one shorten margin clear of the pill it used to overhang (synthetics review
-# ticket 04 B). Reserving symmetric about the anchor midpoint dropped the label to a tooltip.
-# Every gate passes; Q is 0.7871352744129312, against 0.7902663476195246 for the diagram that lost
-# the label — the reserved room is 25 px of width, and the soft score reads what the diagram draws.
+# Expected: A described overlay link whose long run is a diagonal. The two ports face each other but
+# are not level, because the source carries a second right-side port, so the path is a 33 px stub out
+# of each pill and one 199.17 px segment between the two stub ends, from (175.5, 71) to (374.56,
+# 77.5). That segment is the longest run, and 7f grows label room on one axis only, so it reserves
+# nothing and says so: `LINK_LABEL_ROOM_UNRESERVED`, and the stage 9 ladder places the label instead
+# (stress ticket 20, question 4). The label is drawn in full all the same, upright, centred on the
+# diagonal's own midpoint at x 275.03 and one normal gap above it, 25 px clear of the pill it used
+# to overhang. Every gate passes; Q is 0.7870176474414954, against 0.7871352744129312 for the
+# staircase the rule drew before — the soft score reads what the diagram draws, and a drift here is
+# not a regression.
 portograph: 2
 profile: network
 groups:
