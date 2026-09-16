@@ -38,7 +38,7 @@ function groups(input: Map<string, unknown>, doc: NormalisedDocument, v: Validat
     optionalStrings(fields, content, ['label', 'class'], path, v);
     if (fields.has('shape')) {
       const shape = v.choice(fields.get('shape'), ['row', 'bar', 'grid', 'ring', 'free'], `${path}.shape`);
-      if (shape === 'row' || shape === 'bar') content.shape = shape;
+      if (shape === 'row' || shape === 'bar' || shape === 'grid') content.shape = shape;
       else if (shape !== undefined) v.report('UNSUPPORTED_SHAPE', `${path}.shape`, `M1 does not support ${shape} groups`);
     }
     if (fields.has('collapsed')) {

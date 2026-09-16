@@ -3,7 +3,7 @@ import { createBrowserElkFactory, elkDeadlineMs, ElkDeadlineError, runElkAttempt
   type CreateElkAttempt, type ElkClock } from './elk-worker.js';
 import { UNBOUNDED_BUDGET, type Budget } from '../pipeline/budget.js';
 import { buildSkeletonGraph } from './skeleton-graph.js';
-import { placeFlanksAndPeers, readSkeleton, rebuildBands, stackBands, validateSkeletonBands } from './skeleton-geometry.js';
+import { packGridGroups, placeFlanksAndPeers, readSkeleton, rebuildBands, stackBands, validateSkeletonBands } from './skeleton-geometry.js';
 export { buildSkeletonGraph } from './skeleton-graph.js';
 export { validateSkeletonBands } from './skeleton-geometry.js';
 export interface SkeletonOptions {
@@ -41,7 +41,9 @@ export async function skeleton(model: LayoutModel, options: SkeletonOptions = {}
       const result = await runElkAttempt(buildSkeletonGraph(work), createAttempt, attemptMs(), clock);
       try {
         readSkeleton(work, result);
-        rebuildBands(work, false);
+        // A grid is taller than the ribbon ELK sized its band for, so the bands are re-stacked
+        // before they are judged. An input with no grid group keeps ELK's geometry untouched.
+        if (packGridGroups(work)) stackBands(work, false); else rebuildBands(work, false);
         const errors = validateSkeletonBands(work, false);
         if (errors.length) throw new SkeletonError(errors.join('; '));
       } catch (error) {
@@ -62,6 +64,7 @@ export async function skeleton(model: LayoutModel, options: SkeletonOptions = {}
         try {
           const result = await runElkAttempt(buildSkeletonGraph(work, tier), createAttempt, attemptMs(), clock);
           readSkeleton(work, result, tier);
+          packGridGroups(work, tier);
           // Other bands may still be unplaced. Validate this band's output independently.
           const groups = Object.values(work.groups).filter(group => !group.flank && group.tier === tier);
           const bandModel = { ...work, groups: Object.fromEntries(groups.map(group => [group.id, group])) };

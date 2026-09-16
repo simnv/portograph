@@ -5,6 +5,7 @@ import { laneSidesHold, nodeTier, occupiedOverhang, selectAnchorTier } from './l
 import { findPort } from './row-paths.js';
 import { portId, bandGap } from './skeleton-graph.js';
 import { moveGroup } from './skeleton-geometry.js';
+import { packRowsOf } from './grid.js';
 import { rowGap } from './sides-two.js';
 import { alignmentAllowance } from './size.js';
 import { withLayoutMutation } from './mutation.js';
@@ -285,10 +286,14 @@ function centreGroupStep(model: LayoutModel, context: CentreContext, tier: numbe
       if (warn) placementWarning(model, 'CENTRE_ALIGNMENT_INFEASIBLE', `${feed.link} cannot align within its child's available row span; routing completes it.`, [feed.link]);
     }
   }
-  for (let i = 1; i < group.rowOrder!.length; i++) {
-    const a = model.nodes[group.rowOrder![i - 1]!]!, b = model.nodes[group.rowOrder![i]!]!;
-    const minimum = right(a.bounds!) + rowGap(model, a.id, b.id);
-    if (b.bounds!.x < minimum) shiftNode(b, minimum - b.bounds!.x);
+  // Per row, not per row order: the first node of a grid row does not have to clear the last node
+  // of the row above it, and pushing it clear would shear the grid into a staircase.
+  for (const row of packRowsOf(model, group)) {
+    for (let i = 1; i < row.length; i++) {
+      const a = model.nodes[row[i - 1]!]!, b = model.nodes[row[i]!]!;
+      const minimum = right(a.bounds!) + rowGap(model, a.id, b.id);
+      if (b.bounds!.x < minimum) shiftNode(b, minimum - b.bounds!.x);
+    }
   }
   fitRegionGroup(model, group);
   // The window is the same one the push respects. A left flank bounds this group as a right flank
