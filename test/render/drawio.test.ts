@@ -1253,9 +1253,13 @@ describe('maintainer edit principles', () => {
     expect(square.style['edgeStyle']).toBe('orthogonalEdgeStyle');
     const skewed = structuredClone(model);
     const ref = link.attachments!.from;
-    // The pill slid along its own side, away from the anchor the model's first segment leaves from.
+    // The pill grew outward, away from the face the model's one segment leaves from — a hand edit
+    // the model knows nothing about. Since stress ticket 30 the path starts on the face, so sliding
+    // the pill *along* its own side moves both the endpoint and the line it draws together and skews
+    // nothing; moving it **across** that side still moves the pinned endpoint off the line's axis,
+    // which is the case this guard is for.
     skewed.nodes[ref.node]!.ports.find(item => item.ref.name === ref.name
-      && item.ref.ordinal === ref.ordinal)!.pill!.bounds.x += 12;
+      && item.ref.ordinal === ref.ordinal)!.pill!.bounds.y += 12;
     const cell = cells(drawio(skewed)).get(id('link', link.id))!;
     expect(cell.points).toEqual(square.points);
     expect(cell.style['edgeStyle']).toBe('none');
@@ -1298,20 +1302,21 @@ links:
       .toBe(id('port', 'c', 'lo', '1'));
   }, 60000);
 
-  it('routes an overlay link around the pill heads instead of along them', async () => {
-    // The SVG masks an overlay stroke out of every pill it crosses; mxGraph has no mask. So the
-    // connector leaves each pill head outward by the clearance and crosses above them. Every number
-    // comes off the two pill boxes placement reserved — nothing is discovered here.
+  it('runs an overlay link face to face, with no waypoint of its own', async () => {
+    // The SVG masks an overlay stroke out of every pill it crosses; mxGraph has no mask, so the
+    // connector may not reach inside one. Both pills sit on a top side here and their two faces are
+    // level, so the one segment runs **along** both outward edges and inside neither — `crosses` is
+    // the open predicate and a line that rides a face is clear of it. The connector is that segment:
+    // two pinned terminals and no waypoint at all, where it used to carry the two of a detour over
+    // the heads (maintainer, 2026-09-16, *"no point in stub then"*, stress ticket 30).
     const { cell, head, tail, path } = await overlayOf(fixture('drawio-constructs'));
     expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
     expect(cell.style['jettySize']).toBe('0');
-    // Both pills sit on a top side here, so this is the three-segment detour the maintainer drew.
     expect([head.side, tail.side]).toEqual(['top', 'top']);
-    const across = Math.min(head.y, tail.y) - CLEARANCE;
-    expect(cell.points).toEqual([
-      { x: head.x + head.width / 2, y: across },
-      { x: tail.x + tail.width / 2, y: across },
-    ]);
+    expect(cell.points).toEqual([]);
+    expect(path).toHaveLength(2);
+    expect(path[0]).toEqual({ x: head.x + head.width / 2, y: head.y });
+    expect(path[1]).toEqual({ x: tail.x + tail.width / 2, y: tail.y });
     square(path, [head, tail]);
   }, 60000);
 
@@ -1332,19 +1337,18 @@ links:
   it('keeps `edgeStyle=none` for the overlay that stays straight and angled', async () => {
     // Stress ticket 20's default branch, which is the one case in the corpus that reaches the guard
     // of principle 1: `overlay-ports-that-do-not-line-up` has nothing between its two `sync` ports,
-    // so the segment between the two stub ends is drawn at its own angle — outside the orthogonal
-    // router's vocabulary. The connector reproduces the two stub ends as waypoints verbatim.
-    // Measured on drawio-desktop 31.4.5, the drawn polyline is within 0.005 px of these four points.
+    // so the segment between the two pill faces is drawn at its own angle — outside the orthogonal
+    // router's vocabulary. Since stress ticket 30 that segment is the whole link, so the connector
+    // is two pinned terminals, no waypoint and nothing to reproduce.
     const { cell, head, tail, path } = await overlayOf(fixture('overlay-ports-that-do-not-line-up'));
     expect(cell.style['edgeStyle']).toBe('none');
     expect(cell.style['jettySize']).toBeUndefined();
     expect([head.side, tail.side]).toEqual(['bottom', 'top']);
-    expect(path.length).toBe(4);
-    expect(path[1]).toEqual(out(path[0]!, head.side));
-    expect(path[2]).toEqual(out(path[3]!, tail.side));
-    expect(onOneAxis(path[0]!, path[1]!)).toBe(true);
-    expect(onOneAxis(path[2]!, path[3]!)).toBe(true);
-    expect(onOneAxis(path[1]!, path[2]!)).toBe(false);
+    expect(cell.points).toEqual([]);
+    expect(path.length).toBe(2);
+    expect(path[0]).toEqual({ x: head.x + head.width / 2, y: head.y + head.height });
+    expect(path[1]).toEqual({ x: tail.x + tail.width / 2, y: tail.y });
+    expect(onOneAxis(path[0]!, path[1]!)).toBe(false);
   }, 60000);
 
   it('goes right round the pair when no single turn clears both pills', async () => {

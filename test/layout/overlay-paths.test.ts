@@ -60,10 +60,11 @@ describe('overlay paths', () => {
     return points;
   };
 
-  it('crosses above two ports that both face up, in three segments', () => {
-    // Two stub ends that are level: the straight segment between them is horizontal, so the straight
-    // branch and the orthogonal one state the same thing. The shape the maintainer drew by hand in
-    // draw.io. `goldens/synthetic/drawio-constructs.yaml` is the fixture for it.
+  it('rides both pill faces when two ports that face up are level', () => {
+    // Two faces that are level, so the segment between them is horizontal and runs **along** both
+    // pills' outward edges. That is the boundary `crosses` is written open for — a line that rides a
+    // face is clear of it — so the straight branch answers with the one segment, where the stub used
+    // to lift it 4 px and make three. `goldens/synthetic/drawio-constructs.yaml` is the fixture.
     expect(path({
       nodes: [{ id: 'a', bounds: { x: 0, y: 100, width: 60, height: 40 } },
         { id: 'b', bounds: { x: 120, y: 100, width: 60, height: 40 } }],
@@ -71,7 +72,7 @@ describe('overlay paths', () => {
         { node: 'b', name: 'q', side: 'top', anchor: { x: 140, y: 100 } }],
       links: [{ id: 'flow', from: 'a', to: 'b', layer: 'overlay',
         points: [{ x: 20, y: 100 }, { x: 140, y: 100 }] }],
-    })).toEqual([{ x: 20, y: 87 }, { x: 20, y: 83 }, { x: 140, y: 83 }, { x: 140, y: 87 }]);
+    }, true)).toEqual([{ x: 20, y: 87 }, { x: 140, y: 87 }]);
   });
 
   it('turns once when the two ports face different ways, and clears the far node body', () => {
@@ -103,12 +104,17 @@ describe('overlay paths', () => {
       points: [{ x: 105, y: 112 }, { x: 45, y: 92 }] }],
   });
 
-  it('draws one straight segment between the two stub ends when nothing stands on it', () => {
-    // The default branch. The two ports face away from each other, so each stub points away from the
-    // other end, and the segment between the two stub ends passes above the source pill and below
-    // the target's — it enters no body and no pill, so it is drawn as it is, at its own angle.
-    expect(path(facingAway(), true))
-      .toEqual([{ x: 105, y: 99 }, { x: 105, y: 95 }, { x: 45, y: 109 }, { x: 45, y: 105 }]);
+  it('goes round when a port faces away from its partner, because its own pill is in the way', () => {
+    // The one shape stress ticket 30 moved. These two ports face **away** from each other, so the
+    // line from face to face turns back inward at both ends: leaving (105, 99) it drops into the
+    // source's own pill within 5 px, which is a pill in the way, and the straight branch refuses it.
+    // The stub used to lift the line clear of that pill before it turned, and there is no stub now.
+    // The orthogonal branch answers, stepping one clearance outward before it turns — the shape the
+    // same pair takes when a body stands on the segment, two tests below, and the reason the
+    // clearance survives on this branch.
+    expect(path(facingAway()))
+      .toEqual([{ x: 105, y: 99 }, { x: 105, y: 95 }, { x: 75, y: 95 },
+        { x: 75, y: 109 }, { x: 45, y: 109 }, { x: 45, y: 105 }]);
   });
 
   it('routes orthogonally when a node stands on that straight segment', () => {
@@ -186,27 +192,34 @@ describe('overlay paths', () => {
       { x: 83, y: 41 }, { x: 83, y: 50 }, { x: 87, y: 50 }]);
   });
 
-  it('never walks back the way it came, however little the two stub ends differ', () => {
-    // Review finding 1 of ticket 01, under the straight branch. Two ports that both face down, with
-    // the gap below them clear: the segment between the two stub ends is drawn as it is, and it
-    // stays a segment however small the difference between the two ends — it never doubles back
-    // along a stub, and the polyline is the same whichever end the author wrote first.
-    for (const gap of [0, 2, 3.9, 4, 6]) {
+  it('never walks back the way it came, and reads the same both ways round', () => {
+    // Review finding 1 of ticket 01, under the straight branch, and what stress ticket 30 did to it.
+    // Two ports that both face **down**, with the gap below them clear. Level, the line between the
+    // two faces is horizontal, rides both faces and is the one segment the straight branch states.
+    // Off level by anything at all, that same line tilts back **into** the lower pill — at a gap of
+    // 0.5 px it reaches 0.02 px inside it — and a pill in the way is the rule's own exception, so
+    // the orthogonal branch answers with a run one clearance below the lower face. The stub used to
+    // hold the line 4 px clear of both pills and absorb the tilt; there is no stub now.
+    //
+    // What the finding asked for still holds either way: the polyline never doubles back, and it is
+    // the same polyline whichever end the author wrote first.
+    for (const gap of [0, 0.5, 2, 3.9, 4, 6]) {
       const ports = [{ node: 'a', name: 'p', side: 'bottom', anchor: { x: 20, y: 140 } },
         { node: 'b', name: 'q', side: 'bottom', anchor: { x: 140, y: 140 + gap } }] as const;
       const nodes = [{ id: 'a', bounds: { x: 0, y: 100, width: 60, height: 40 } },
         { id: 'b', bounds: { x: 120, y: 100, width: 60, height: 40 + gap } }];
       const faceOne = 140 + 13, faceTwo = 140 + gap + 13;
-      const one = faceOne + CLEARANCE, two = faceTwo + CLEARANCE;
-      // Below both heads, and the same polyline whichever end the author wrote first.
-      expect(path({ nodes, ports: [...ports],
-        links: [{ id: 'flow', from: 'b', to: 'a', layer: 'overlay',
-          points: [{ x: 140, y: 140 + gap }, { x: 20, y: 140 }] }] }, true))
-        .toEqual([{ x: 140, y: faceTwo }, { x: 140, y: two }, { x: 20, y: one }, { x: 20, y: faceOne }]);
+      const below = faceTwo + CLEARANCE;
+      const fromA = gap === 0 ? [{ x: 20, y: faceOne }, { x: 140, y: faceTwo }]
+        : [{ x: 20, y: faceOne }, { x: 20, y: below }, { x: 140, y: below }, { x: 140, y: faceTwo }];
       expect(path({ nodes, ports: [...ports],
         links: [{ id: 'flow', from: 'a', to: 'b', layer: 'overlay',
-          points: [{ x: 20, y: 140 }, { x: 140, y: 140 + gap }] }] }, true))
-        .toEqual([{ x: 20, y: faceOne }, { x: 20, y: one }, { x: 140, y: two }, { x: 140, y: faceTwo }]);
+          points: [{ x: 20, y: 140 }, { x: 140, y: 140 + gap }] }] }))
+        .toEqual(fromA);
+      expect(path({ nodes, ports: [...ports],
+        links: [{ id: 'flow', from: 'b', to: 'a', layer: 'overlay',
+          points: [{ x: 140, y: 140 + gap }, { x: 20, y: 140 }] }] }))
+        .toEqual([...fromA].reverse());
     }
   });
 
@@ -243,9 +256,11 @@ describe('overlay paths', () => {
       .toEqual([{ x: 73, y: 120 }, { x: 73, y: 111 }, { x: 77, y: 111 }, { x: 77, y: 120 }]);
   });
 
-  it('leaves a port that draws no pill by the clearance beyond its node body', () => {
+  it('runs body edge to body edge for two ports that draw no pill', () => {
     // An anonymous port has no pill, so the box the link leaves is the node itself and the anchor is
-    // already on its face. draw.io pins such an end to the same point, so the two renderers agree.
+    // already on its face: the face **is** the anchor and this end never moved. The two faces are
+    // level, so the segment rides both node bodies' top edges and is clear of them. draw.io pins such
+    // an end to the same point, so the two renderers agree.
     const points = path({
       nodes: [{ id: 'k', bounds: { x: 0, y: 100, width: 60, height: 40 } },
         { id: 'l', bounds: { x: 120, y: 100, width: 60, height: 40 } }],
@@ -254,32 +269,31 @@ describe('overlay paths', () => {
       links: [{ id: 'flow', from: 'k', to: 'l', layer: 'overlay',
         points: [{ x: 20, y: 100 }, { x: 140, y: 100 }] }],
     });
-    expect(points).toEqual([{ x: 20, y: 100 }, { x: 20, y: 100 - CLEARANCE },
-      { x: 140, y: 100 - CLEARANCE }, { x: 140, y: 100 }]);
+    expect(points).toEqual([{ x: 20, y: 100 }, { x: 140, y: 100 }]);
   });
 
-  it('draws the whole stub and no more: the nub is one clearance, on both branches', () => {
-    // Stress ticket 30, question 3. The stub used to run anchor → clear, 13 + 4 = 17 px on this
-    // 26 px pill, and the mask cut the 13 px inside the pill: the reader saw 4 px. It now runs
-    // face → clear and is 4 px long, all of it drawn. The nub the maintainer approved is the same
-    // 4 px it was; what went is the run nobody saw, not the one they did.
-    const nub = (points: readonly Point[]): number[] => [[points[0]!, points[1]!],
-      [points[points.length - 1]!, points[points.length - 2]!]]
-      .map(([at, next]) => Math.hypot(next!.x - at!.x, next!.y - at!.y));
-    // The straight branch, and the orthogonal one it falls to when a body stands on the segment.
-    expect(nub(path(facingAway(), true))).toEqual([CLEARANCE, CLEARANCE]);
-    expect(nub(path(facingAway({ id: 'g', bounds: { x: 88, y: 96, width: 6, height: 6 } }))))
-      .toEqual([CLEARANCE, CLEARANCE]);
-    // And the port that draws no pill: its face is its anchor, so the stub was 4 px before and is
-    // 4 px now — the one case the change leaves exactly as it was.
-    expect(nub(path({
-      nodes: [{ id: 'k', bounds: { x: 0, y: 100, width: 60, height: 40 } },
-        { id: 'l', bounds: { x: 120, y: 100, width: 60, height: 40 } }],
-      ports: [{ node: 'k', name: 'p', side: 'top', anchor: { x: 20, y: 100 }, pill: false },
-        { node: 'l', name: 'q', side: 'top', anchor: { x: 140, y: 100 }, pill: false }],
-      links: [{ id: 'flow', from: 'k', to: 'l', layer: 'overlay',
-        points: [{ x: 20, y: 100 }, { x: 140, y: 100 }] }],
-    }))).toEqual([CLEARANCE, CLEARANCE]);
+  it('has no stub on the straight branch, and one clearance on the orthogonal one', () => {
+    // Stress ticket 30. The maintainer looked at the re-render and said *"no point in stub then"*:
+    // with the path starting on the pill face and the endpoint mark drawn there, a 4 px stub only
+    // put a kink under the dot. The straight branch is now two points and one segment, whatever the
+    // angle — measure the whole link, not a nub.
+    const straightPair = path({
+      nodes: [{ id: 'g', bounds: { x: 0, y: 0, width: 60, height: 40 } },
+        { id: 'h', bounds: { x: 0, y: 120, width: 60, height: 40 } }],
+      ports: [{ node: 'g', name: 'down', side: 'bottom', anchor: { x: 30, y: 40 } },
+        { node: 'h', name: 'up', side: 'top', anchor: { x: 30, y: 120 } }],
+      links: [{ id: 'flow', from: 'g', to: 'h', layer: 'overlay',
+        points: [{ x: 30, y: 40 }, { x: 30, y: 120 }] }],
+    }, true);
+    expect(straightPair).toHaveLength(2);
+
+    // The orthogonal branch keeps the clearance: it has to step outward before it can turn, so its
+    // first and last run are `OVERLAY_PILL_CLEARANCE` and the turn is one clearance outside the face.
+    const round = path(facingAway({ id: 'g', bounds: { x: 88, y: 96, width: 6, height: 6 } }));
+    for (const [at, next] of [[round[0]!, round[1]!],
+      [round[round.length - 1]!, round[round.length - 2]!]] as const) {
+      expect(Math.hypot(next.x - at.x, next.y - at.y)).toBeCloseTo(CLEARANCE, 9);
+    }
   });
 
   it('keeps the straight segment when an end states no side to leave by', () => {

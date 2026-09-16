@@ -239,8 +239,16 @@ function between(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers):
 }
 
 /**
- * The straight segment between the two stub ends, when nothing a reader would call a node stands in
- * its way; `undefined` when something does, and the orthogonal derivation answers instead.
+ * Whether the straight branch answers: **one segment, face to face**, and nothing between. The empty
+ * list is that answer — there is no point between the two ends — and `undefined` says a node stands
+ * on the line, so the orthogonal derivation is asked instead.
+ *
+ * There is no stub here (maintainer, 2026-09-16, *"no point in stub then"*, stress ticket 30). The
+ * stub had two jobs and the endpoint move retired both: it made the line meet the pill square rather
+ * than at an angle, and it kept the endpoint mark clear of the pill. The path now starts on the face
+ * and the mark is drawn there, so all the stub added was a 4 px kink under the dot. An overlay link
+ * is the pill face, one straight segment at whatever angle, and the pill face. The **orthogonal**
+ * branch keeps `OVERLAY_PILL_CLEARANCE`: it has to step outward before it can turn.
  *
  * **What counts as a node in the way** (stress ticket 20, the agent's reading of the maintainer's
  * *"only if link goes through node, we route it orthogonally"*, stated here so one word can correct
@@ -251,39 +259,41 @@ function between(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers):
  * other, and they are exempt from the clearance gates. Not a group box, not a lane, not a routed
  * path, not a label.
  *
- * The two stubs are not tested, which is the same reading the eight ways use. A stub is the port's
- * own reserved outward reach: it starts on the pill's outward face and ends `OVERLAY_PILL_CLEARANCE`
- * past it, so **the whole 4 px is outside the pill** and every bit of it is drawn (stress ticket 30).
- * Nothing else is known to stand in that 4 px, but nothing here checks either; it is an untested
- * run, pre-existing and shared with the orthogonal branch, not a claim that the stub cannot cross
- * anything.
+ * **An end's own pill and the segment that leaves it.** The segment now starts *on* that pill's
+ * outward edge, which is the boundary case `crosses` was written open for: a line that rides a face
+ * is clear of it. Where the two ports face each other the line leaves each face outward and is clear
+ * at once; where they are level on the same side it rides both faces and is clear; where a port
+ * faces **away** from its partner the line turns back inward and really does re-enter its own pill,
+ * and then this test refuses it and the orthogonal branch steps outward and goes round. That is the
+ * rule doing its job, not an accident: a line that would leave a port by crossing that port's own
+ * pill is a line through a node. The stub used to lift such a pair clear of its own pill before
+ * turning, which is the one shape the stub's removal moves (stress ticket 30).
  */
 function straightBetween(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers): Point[] | undefined {
-  const from = head.clear, to = tail.clear;
+  const from = head.face, to = tail.face;
   const window: Rect = { x: Math.min(from.x, to.x), y: Math.min(from.y, to.y),
     width: Math.abs(to.x - from.x), height: Math.abs(to.y - from.y) };
   if (blockers.some(window, box => crosses(from, to, box))) return undefined;
-  // The stub ends can still be the wrong way round — a pair on two lines whose ports face away from
-  // each other — and then the segment walks back along a stub. `route/validate` fails such a path,
-  // so the rule may not state one and the orthogonal derivation is asked instead.
-  const drawn = straighten(compact([head.face, from, to, tail.face]));
-  if (retracingRuns(drawn.slice(1).map((point, index) => ({ from: drawn[index]!, to: point })))) return undefined;
-  return [from, to];
+  // No retrace test: the branch publishes one segment, and one segment cannot walk back along a run
+  // it already drew. The test this replaces read two stubs that could be stated the wrong way round,
+  // and there are no stubs here.
+  return [];
 }
 
 /**
- * The polyline an overlay link draws: a stub out of each port, from its own outward face to
- * `OVERLAY_PILL_CLEARANCE` past it, and between the two stub ends **one straight segment** at
- * whatever angle that is — unless a node body or a pill stands on that segment, and then the
- * orthogonal derivation of `between` answers instead. Straight by default, orthogonal by exception,
- * and the exception is a node in the way (maintainer, 2026-09-16, stress ticket 20).
+ * The polyline an overlay link draws: **one straight segment from one pill face to the other**, at
+ * whatever angle that is — unless a node body or a pill stands on it, and then the orthogonal
+ * derivation of `between` answers instead, leaving each face outward by `OVERLAY_PILL_CLEARANCE`
+ * before it turns. Straight by default, orthogonal by exception, and the exception is a node in the
+ * way (maintainer, 2026-09-16, stress ticket 20).
  *
  * The path **begins and ends on the pill's face**, not on the port anchor at its centre: *"point
  * should be on a side of a pill"*, and *"path should also start on the point"* (maintainer,
  * 2026-09-16, stress ticket 30). The overlay layer is masked out of every pill, so an anchor-to-face
- * run was never drawn; now the polyline is exactly the line the reader sees at its two ends, the
- * **overlay endpoint mark** sits on the face where the line leaves, and the visible nub is the whole
- * stub — 4 px, the same 4 px the maintainer chose over the two other candidates in ticket 20.
+ * run was never drawn; the polyline is now exactly the line the reader sees, and the **overlay
+ * endpoint mark** sits on the face where the line leaves. The straight branch then lost its stub to
+ * the same review — *"no point in stub then"* — because the stub's two jobs were to square the
+ * meeting and to clear the mark, and the face does both.
  *
  * The straight branch is what placement is meant to make possible: positioning the nodes so that as
  * many overlay links as possible are straight is stress ticket 21's work, and this rule is the test
