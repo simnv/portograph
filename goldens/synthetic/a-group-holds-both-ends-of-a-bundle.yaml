@@ -1,0 +1,25 @@
+# Expected: Decline the grid shape on `place` and keep its nodes on one line, because `place` holds
+# both ends of a bundle. A bundle's members turn in a channel, and the channel is the space between
+# its two endpoint bodies: `a` leaves the group upward and `d` downward, so the grid's ranks would
+# put them in the first row and the last, and the two members would have to turn in the gap between
+# two columns instead. Report `GROUP_SHAPE_DECLINED` naming the bundle, and lay the group out as the
+# row it became.
+portograph: 2
+profile: network
+groups:
+  upper: { tier: 0 }
+  place: { tier: 1, shape: grid }
+  lower: { tier: 2 }
+nodes:
+  head: { group: upper, ports: [{ name: p, side: bottom }] }
+  a: { group: place, ports: [{ name: p, side: top }, { name: q, side: right }, { name: r, side: right }] }
+  b: { group: place }
+  c: { group: place }
+  e: { group: place }
+  d: { group: place, ports: [{ name: p, side: bottom }, { name: q, side: left }, { name: r, side: left }] }
+  rail: { group: lower, ports: [{ name: p, side: top }] }
+links:
+  - [head.p, a.p]
+  - [a.q, d.q]
+  - [a.r, d.r]
+  - [d.p, rail.p]
