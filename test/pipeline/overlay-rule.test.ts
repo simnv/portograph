@@ -25,6 +25,28 @@ const overlayOf = (model: LayoutModel): LayoutLink =>
 const pointsOf = (link: LayoutLink): Point[] =>
   [link.path!.segments[0]!.from, ...link.path!.segments.map(segment => segment.to)];
 
+/**
+ * Whether a segment of any angle reaches inside `box`, rather than only touching its edge: the
+ * parameter range that survives clipping against the box's four shrunken slabs. A diagonal needs
+ * this — its bounding box overlaps shapes the line itself misses.
+ */
+function crosses(one: Point, two: Point, box: Rect): boolean {
+  let low = 0, high = 1;
+  const slabs: [number, number][] = [[one.x - two.x, one.x - (box.x + EPS)], [two.x - one.x, right(box) - EPS - one.x],
+    [one.y - two.y, one.y - (box.y + EPS)], [two.y - one.y, bottom(box) - EPS - one.y]];
+  for (const [rate, room] of slabs) {
+    if (Math.abs(rate) < 1e-12) { if (room < 0) return false; continue; }
+    const at = room / rate;
+    if (rate < 0) { if (at > high) return false; if (at > low) low = at; }
+    else { if (at < low) return false; if (at < high) high = at; }
+  }
+  return high - low > EPS;
+}
+
+const axisAligned = (one: Point, two: Point): boolean =>
+  Math.abs(one.x - two.x) < EPS || Math.abs(one.y - two.y) < EPS;
+const span = (one: Point, two: Point): number => Math.hypot(two.x - one.x, two.y - one.y);
+
 /** Every node body and every drawn pill of the diagram, which is what the rule goes round. */
 function shapes(model: LayoutModel): Rect[] {
   const boxes: Rect[] = [];
@@ -41,15 +63,37 @@ const endBoxes = (model: LayoutModel, link: LayoutLink): Rect[] =>
     .find(port => port.ref.name === ref.name && port.ref.ordinal === ref.ordinal)!.pill!.bounds);
 
 /**
- * Synthetics review ticket 01, the maintainer's two remarks of 2026-09-15. An overlay link is an
- * orthogonal path that leaves each port outward and goes round the shapes it would otherwise cross,
- * and the SVG draws exactly the polyline the draw.io export draws, because both read the model.
+ * Synthetics review ticket 01, the maintainer's two remarks of 2026-09-15, and stress ticket 20,
+ * his rule of 2026-09-16: **straight by default, orthogonal by exception, and the exception is a
+ * node in the way.** An overlay link is a stub out of each port and one straight segment between the
+ * two stub ends; where a node body or a pill stands on that segment it is the orthogonal path these
+ * cases were written for, unchanged. The SVG draws exactly the polyline the draw.io export draws,
+ * because both read the model.
  */
-describe('an overlay link is orthogonal in both renderers', () => {
+describe('an overlay link is straight, or orthogonal round a node', () => {
   /** The `d` of the one path element of the SVG's overlay layer. */
   const overlayLine = (svg: string): string => {
     const layer = svg.slice(svg.indexOf('class="overlay-links"'), svg.indexOf('class="links"'));
     return /<path class="link-line overlay-line[^"]*" d="([^"]+)"/.exec(layer)![1]!;
+  };
+
+  /** How far a point sits outside a box; 0 anywhere inside it. */
+  const clearOf = (at: Point, box: Rect): number => Math.hypot(
+    Math.max(0, box.x - at.x, at.x - right(box)), Math.max(0, box.y - at.y, at.y - bottom(box)));
+
+  /**
+   * The straight branch, measured on a published path: a stub out of each port, one segment between
+   * the two stub ends, and each stub exactly `OVERLAY_PILL_CLEARANCE` beyond its own pill.
+   */
+  const stubAndOne = (model: LayoutModel, link: LayoutLink): Point[] => {
+    const points = pointsOf(link);
+    expect(points).toHaveLength(4);
+    const [head, tail] = endBoxes(model, link) as [Rect, Rect];
+    expect(axisAligned(points[0]!, points[1]!)).toBe(true);
+    expect(axisAligned(points[2]!, points[3]!)).toBe(true);
+    expect(clearOf(points[1]!, head)).toBeCloseTo(OVERLAY_PILL_CLEARANCE, 9);
+    expect(clearOf(points[2]!, tail)).toBeCloseTo(OVERLAY_PILL_CLEARANCE, 9);
+    return points;
   };
 
   it('answers "lo ports should be connected by orthogonal routed line?" on drawio-direct-lines', async () => {
@@ -116,28 +160,59 @@ describe('an overlay link is orthogonal in both renderers', () => {
     expect(score(model).snapshot.passed).toBe(true);
   }, 60000);
 
-  it('reserves a described overlay link the room its longest run really has', async () => {
-    // Ticket 04 B, `goldens/synthetic/labelled-overlay-run.yaml`. 7f used to reserve symmetric about
-    // the anchor midpoint and add two clearances. The rule's run starts at the source anchor —
-    // `straighten` merges the head stub into it — and ends at the turn, so the label box overhung the
-    // source pill on both of the ladder's sides and the label was dropped to a tooltip. The
-    // reservation now reads the run off the producer itself, which 7f can do because the eight ways
-    // come off pills placement has already frozen.
+  it('stays one straight segment for a pair that lines up, and turns nowhere', async () => {
+    // Stress ticket 20, question 2. `goldens/synthetic/overlay-ports-that-line-up.yaml`: two `sync`
+    // ports facing each other on one x, with nothing between them. Both stubs are collinear with the
+    // segment between them, `straighten` drops them, and the path is the single segment the
+    // orthogonal derivation drew — polyline, canvas and Q identical to the last digit.
+    const model = await run(fixture('overlay-ports-that-line-up'));
+    const points = pointsOf(overlayOf(model));
+    expect(points).toEqual([{ x: 57.336669921875, y: 107 }, { x: 57.336669921875, y: 232 }]);
+    expect(score(model).snapshot.Q).toBe(0.8335929892966935);
+    expect(score(model).snapshot.passed).toBe(true);
+  }, 60000);
+
+  it('is a stub and one diagonal for a pair that does not line up and has a clear line', async () => {
+    // `goldens/synthetic/overlay-ports-that-do-not-line-up.yaml`: the same pair with the target on a
+    // second node, 75.51 px away on x. Nothing stands on the segment between the two stub ends, so it
+    // is drawn at its own angle — the shape the maintainer chose.
+    const model = await run(fixture('overlay-ports-that-do-not-line-up'));
+    const link = overlayOf(model), points = stubAndOne(model, link);
+    expect(span(points[0]!, points[1]!)).toBeCloseTo(16, 9);
+    expect(span(points[2]!, points[3]!)).toBeCloseTo(16, 9);
+    expect(span(points[1]!, points[2]!)).toBeCloseTo(119.7948, 3);
+    expect(axisAligned(points[1]!, points[2]!)).toBe(false);
+    // And it really is clear: the segment enters no node body and no drawn pill.
+    for (const box of shapes(model)) expect(crosses(points[1]!, points[2]!, box)).toBe(false);
+    expect(score(model).snapshot.Q).toBe(0.8391492903118092);
+    expect(score(model).snapshot.passed).toBe(true);
+  }, 60000);
+
+  it('lets a described overlay link ride its diagonal, and diagnoses the room it cannot reserve', async () => {
+    // Ticket 04 B's fixture under the new rule. `goldens/synthetic/labelled-overlay-run.yaml`: the
+    // two ports face each other but are not level, nothing stands between them, so the path is a
+    // 33 px stub, one diagonal and a 33 px stub. `reserveLinkLabelRoom` measures an overlay link's
+    // room along the longest run, which is that diagonal, and 7f grows room on one axis only — so it
+    // reserves nothing, says so, and the stage 9 ladder places the label (stress ticket 20,
+    // question 4). The label still rides the run: upright text on the diagonal's own midpoint.
     const model = await run(fixture('labelled-overlay-run'));
-    const link = overlayOf(model), points = pointsOf(link);
+    const link = overlayOf(model), points = stubAndOne(model, link);
     const label = model.labels.find(item => item.role === 'link' && item.owner.kind === 'link' && item.owner.id === link.id)!;
     expect(label.omitted).toBeUndefined();
     expect(label.text).toBe('time synchronisation from the site clock');
+    expect(label.textRotation ?? 0).toBe(0);
     expect(model.diagnostics.map(item => item.code)).not.toContain('LINK_LABEL_OMITTED');
-    // Centred on the long run, which is not the run between the two anchors.
-    const runs = link.path!.segments.map(segment => ({ segment,
-      length: Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y) }));
+    expect(model.diagnostics.map(item => item.code)).toContain('LINK_LABEL_ROOM_UNRESERVED');
+    // The longest run is the diagonal, and the label box is centred on it, one normal gap above.
+    const runs = link.path!.segments.map(segment => ({ segment, length: span(segment.from, segment.to) }));
     const longest = runs.reduce((best, item) => item.length > best.length ? item : best).segment;
-    expect(longest.from.y).toBeCloseTo(longest.to.y, 9);
+    expect(axisAligned(longest.from, longest.to)).toBe(false);
     expect(label.bounds!.x + label.bounds!.width / 2).toBeCloseTo((longest.from.x + longest.to.x) / 2, 9);
-    expect(label.bounds!.x + label.bounds!.width / 2).not.toBeCloseTo((points[0]!.x + points.at(-1)!.x) / 2, 3);
-    // And one shorten margin clear of the source pill it used to overhang.
-    expect(label.bounds!.x - right(endBoxes(model, link)[0]!)).toBeCloseTo(LINK_LABEL_GEOMETRY.shortenMargin, 9);
+    expect(label.bounds!.y + label.bounds!.height).toBeCloseTo(
+      (longest.from.y + longest.to.y) / 2 - LINK_LABEL_GEOMETRY.normalGap - 0.75, 9);
+    // And clear of the source pill it used to overhang, by more than one shorten margin.
+    expect(label.bounds!.x - right(endBoxes(model, link)[0]!)).toBeGreaterThan(LINK_LABEL_GEOMETRY.shortenMargin);
+    expect(points[1]!.y).toBeCloseTo(points[0]!.y, 9);
     expect(score(model).snapshot.passed).toBe(true);
   }, 60000);
 

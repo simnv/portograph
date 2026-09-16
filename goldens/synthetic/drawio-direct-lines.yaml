@@ -1,10 +1,13 @@
 # Expected: Four direct lines — a link whose model path is one segment — of both kinds the draw.io
 # exporter has to tell apart. Two routed links run straight down and one runs straight across with a
-# label. A direct line is horizontal or vertical. Each of the three carries
-# `orthogonalEdgeStyle;jettySize=0` with no waypoint of its own. The overlay link joins a top pill to
-# a bottom pill that share neither x nor y. That is the unaligned pair. It takes the shortest
-# orthogonal detour that enters neither pill box. A dragged end then makes a Z-bend, never a
-# diagonal. Every gate passes; Q is 0.8236621295302419. The `peer` label crosses the overlay's
+# label. A routed direct line is horizontal or vertical. Each of the three carries
+# `orthogonalEdgeStyle;jettySize=0` with no waypoint of its own, and a dragged end makes a Z-bend,
+# never a diagonal. The overlay link joins a top pill to a bottom pill that share neither x nor y.
+# That is the unaligned pair, and it is the exception branch of the 2026-09-16 rule (stress
+# ticket 20): the straight segment between its two stub ends, from (83.75, 216) to (204.02, 307),
+# runs through both lower node bodies, so it takes the shortest orthogonal detour that enters neither
+# pill box instead — and the whole connector stays square.
+# Every gate passes; Q is 0.8236621295302419. The `peer` label crosses the overlay's
 # descent and the mask cuts 11 px of it: both of the label's candidate sides are covered, and a
 # label that is drawn beats a line that is whole (synthetics review ticket 01).
 # Test-only input owned by drawio-export ticket 02; the whole pipeline runs, so no stage

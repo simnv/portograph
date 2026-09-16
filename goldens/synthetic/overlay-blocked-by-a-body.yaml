@@ -1,8 +1,10 @@
-# Expected: An overlay link that cannot go round every shape. Both loopback ports face left and
-# Border B's own body lies between them, so none of the eight ways the two pill boxes offer clears
-# every node and pill. The rule falls back one step and takes the shortest way that clears its own
-# two pill boxes: out of each pill head by the clearance, and one run across above both of them,
-# which crosses Border B. The SVG mask keeps that body readable, as it did before the rule existed.
+# Expected: An overlay link that cannot go round every shape. Both loopback ports face left, so the
+# straight segment of the 2026-09-16 rule (stress ticket 20) is refused twice over — it runs through
+# both node bodies, and it covers both stubs, which `route/validate` throws on — and the link is
+# routed orthogonally. Border B's own body then lies between the two ports, so none of the eight ways
+# the two pill boxes offer clears every node and pill either. The rule falls back one step and takes
+# the shortest way that clears its own two pill boxes: out of each pill head by the clearance, and
+# one run across above both of them, which crosses Border B. The SVG mask keeps that body readable.
 # Every gate passes; Q is 0.8401068126850539. The detour reaches further than the straight line it
 # replaced, so `aspectRatio` reads a different bounding box and Q moves with it: the score reads
 # what the diagram draws, and a drift here is not a regression.
