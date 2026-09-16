@@ -16,7 +16,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
 import { right } from '../../src/layout/regions.js';
 import { restoreLayoutModel, withLayoutMutation } from '../../src/layout/mutation.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
-import { sizeNodes } from '../../src/layout/size.js';
+import { ALIGNMENT_MAX_GROWTH, ownSideWidth, sizeNodes } from '../../src/layout/size.js';
 import { rebuildBands, moveGroup, union } from '../../src/layout/skeleton-geometry.js';
 import { rebuildRegionGeometry } from '../../src/layout/region-rebuild.js';
 import { findPort } from '../../src/layout/row-paths.js';
@@ -409,6 +409,27 @@ links: [[a.p, c.p], [a.q, b.p]]`;
     const stems = new Map(plan.stems.filter(stem => stem.node === 'm1').map(stem => [stem.link, stem.bounds]));
     expect([...stems.keys()].sort()).toEqual(['link-3', 'link-4']);
     expect(stems.get('link-3')!.height).toBeGreaterThan(stems.get('link-4')!.height + 17);
+    const routed = await route(model, { createAttempt: createAvoidAttempt });
+    for (const link of routed.links) expect(link.path, link.id).toBeDefined();
+    const report = score(routed).snapshot;
+    expect(Object.values(report.gates).every(gate => gate.passed)).toBe(true);
+  }, 60000);
+  it('ticket 29: a body is not stretched across the sheet to reach two feeds at its ends', async () => {
+    const input = flanks(lanes(rows(await placed(fixture('two-feeds-at-opposite-ends')))));
+    const model = bands(bundles(bars(centre(input))));
+    const node = model.nodes.target!, side = 'top' as const;
+    // Its two feeds are 1 017 px apart and its own width is 50 px, so seating a port under each
+    // needs a body twenty times what the node is. The allowance declines both, and the body keeps
+    // the width its own content and its two ports need.
+    const own = ownSideWidth(node, side);
+    expect(node.bounds!.width).toBeLessThanOrEqual(ALIGNMENT_MAX_GROWTH * own);
+    expect(node.bounds!.width).toBe(input.nodes.target!.bounds!.width);
+    const feeds = ['feed-left', 'feed-right'].map(id => model.nodes[id]!.ports[0]!.anchor!.x);
+    expect(Math.max(...feeds) - Math.min(...feeds)).toBeGreaterThan(20 * own);
+    // Both feeds are reported, and the links are routed rather than pinned.
+    expect(model.diagnostics.filter(d => d.code === 'CENTRE_ALIGNMENT_INFEASIBLE')
+      .map(d => d.owners?.[0]).map(owner => owner && 'id' in owner ? owner.id : undefined))
+      .toEqual(['link-1', 'link-2']);
     const routed = await route(model, { createAttempt: createAvoidAttempt });
     for (const link of routed.links) expect(link.path, link.id).toBeDefined();
     const report = score(routed).snapshot;

@@ -531,12 +531,19 @@ not transit feeds; 7e owns their geometry. **Parents are authoritative:** parent
 horizontally under the barycentre of the feed set within the space between the lanes (7a) and
 neighbouring groups; then each child port x := its parent port x. A child port's x is feasible
 only if the child node can be widened to contain it without overlapping a sibling; if not, the
-link remains unpinned and is reported. Unequal-x top/bottom normals generally need two orthogonal bends; routing determines the actual count. A parent port feeding **two** children cannot be vertical to
+link remains unpinned and is reported. A widening is bounded a third way as well: the body may not
+end wider than `ALIGNMENT_MAX_GROWTH` × the width the node itself needs — its content and author
+floor, or its own ports on that side at their reserved pitch — and a body already wider than that,
+from a bar span or an earlier rule, aligns inside the width it has (ticket 29). Unequal-x top/bottom normals generally need two orthogonal bends; routing determines the actual count. A parent port feeding **two** children cannot be vertical to
 both: the first (by child x) is vertical, the rest fan through a shared stem — the junction tree 7e
 reserves for every port with two or more routed links (ticket 20; a rule-fixed member joins it under
 ADR-0016).
 Iterate child-widening → sibling push → re-centre at most 8 times, ε = 0.5 px; on non-convergence
-keep the last state and report. *Moves:* child groups, child widths. *Re-validate:* lanes (7a
+keep the last state and report. A step that keeps no target, and leaves every one of its feeds no
+nearer its x than it found it, puts its group back where it started and packs the tier instead: the
+passes are a solver, and a step that solves nothing only gives the next pass a new position to chase
+the barycentre from. A transit feed is exempt, because its x is a reserved lane the child must reach
+and 7f moves the corridor to the child it leaves behind (ticket 29). *Moves:* child groups, child widths. *Re-validate:* lanes (7a
 positions are fixed; if a child now overlaps a lane, push the child, not the lane). A child this
 step leaves off its lane is not left there for good: 7f moves the corridor to it under the rule
 § 7a states, after the last replay of this step.
