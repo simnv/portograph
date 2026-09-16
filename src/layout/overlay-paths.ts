@@ -11,10 +11,11 @@ import { findPort } from './row-paths.js';
  * (`.scratch/drawio-export/issues/02-maintainer-edit-principles.md`, principle 2).
  *
  * Measured from the **face**, not from the anchor: the anchor is the pill's centre and the renderer
- * masks the pill, so a stub measured from the anchor is shorter than the pill's own half-length
- * (13 px for the 26 px pills placement draws) and nothing of it is ever drawn. From the face, the
- * whole 4 px is drawn, the line meets the pill square, and the diagonal starts clear of it — which
- * is what the maintainer chose over the anchor-to-anchor line (stress ticket 20).
+ * masks the pill, so a stub measured from the anchor is shorter than the pill's own half-length —
+ * 12 px even for a two-character port name, and the pill grows with the name — and nothing of it is
+ * ever drawn. From the face, the whole 4 px is drawn, the line meets the pill square, and the
+ * diagonal starts clear of it, which is what the maintainer chose over the anchor-to-anchor line
+ * (stress ticket 20).
  */
 export const OVERLAY_PILL_CLEARANCE = 2 * OVERLAY_ENDPOINT_RADIUS;
 
