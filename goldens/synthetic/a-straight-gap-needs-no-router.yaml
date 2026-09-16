@@ -1,0 +1,24 @@
+# Expected: `m2 → l1` is one straight run between two port anchors on one x, and the two links out
+# of `h1` cross it at the depth every stem turns at. Routed in an earlier ownership batch, one of
+# those crossings covers the reserved 15 px approach of `m2 → l1`, libavoid cannot reach the
+# checkpoint, drops it without a word and answers with the two node centres and a diagonal. The gap
+# has nothing for a router to choose: stage 8 claims it as a reserved run and stitches it straight.
+# The diagram is produced. The two crossing links still share the one corridor this tier gap offers,
+# so G4 and G6 fail between them; the claimed run is in none of it. Stress ticket 07, from the
+# Enterprise NTP stress test.
+portograph: 2
+groups:
+  top: { tier: 2, label: "Top" }
+  mid: { tier: 5, label: "Middle" }
+  hub: { tier: 6, label: "Hub" }
+  low: { tier: 6, label: "Lower" }
+nodes:
+  t1: { group: top, class: tbr, label: "t1" }
+  h1: { group: hub, class: router, label: "h1" }
+  m1: { group: mid, class: rr, label: "m1" }
+  m2: { group: mid, class: provider, label: "m2" }
+  l1: { group: low, class: tbr, label: "l1" }
+links:
+  - [h1, m1]
+  - [h1, m2]
+  - [m2, l1]
