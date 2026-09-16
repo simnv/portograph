@@ -540,17 +540,27 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
     return [{ owners: new Set([item.link.id]), bounds: grow({ x: item.far.x, y: Math.min(edge, item.reach.y),
       width: 0, height: Math.abs(item.reach.y - edge) }, routedStroke(model) + STRAIGHT_PATH_CLEARANCE.path) }];
   });
+  /**
+   * Whether a row is refused by something that names no distance: a group edge it would run along,
+   * a corridor its own link owns, one of its own reserved runs, or a degenerate run. A rectangle is
+   * not among them — a rectangle names how far to advance, and the search reads that separately.
+   */
+  const refusedElsewhere = (item: Participant, row: number | undefined): boolean => {
+    const segments = runSegments(item, gap, row);
+    if (!segments.length) return true;
+    // A corridor admits its owner's collinear run alone, so a row that met one of the link's own
+    // lanes would enter it sideways. Nothing places a lane inside a gap; this keeps it so.
+    return segments.some(segment => same(segment.from.y, segment.to.y) && meetsOwnLane(model, item.link, segment))
+      || segments.some(line => alongGroupEdge(model, line))
+      // The link's own reserved runs are its exemption only where the allocated run meets them. A
+      // run this one merely passes is geometry the gates measure against it like any other.
+      || meetsOwnRun(model, item, segments);
+  };
   const clear = (item: Participant, row: number | undefined, full: readonly Blocker[]): boolean => {
     const segments = runSegments(item, gap, row);
     if (!segments.length) return false;
-    // A corridor admits its owner's collinear run alone, so a row that met one of the link's own
-    // lanes would enter it sideways. Nothing places a lane inside a gap; this keeps it so.
-    if (segments.some(segment => same(segment.from.y, segment.to.y) && meetsOwnLane(model, item.link, segment))) return false;
-    // The link's own reserved runs are its exemption only where the allocated run meets them. A run
-    // this one merely passes is geometry the gates measure against it like any other.
-    return !segments.some(line => firstBlock(full, item.link, line, attachedOf(item)))
-      && !segments.some(line => alongGroupEdge(model, line))
-      && !meetsOwnRun(model, item, segments);
+    if (refusedElsewhere(item, row)) return false;
+    return !segments.some(line => firstBlock(full, item.link, line, attachedOf(item)));
   };
   /** The runs the gap gives up for good: their own approach is covered by a run it seats. */
   const declined = new Set<Participant>();
@@ -570,7 +580,13 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
           // that clears it is the one past its bottom.
           const past = Math.max(...blocked.map(found => bottom(found.bounds)));
           if (past <= row + EPS) break;
-          row = past;
+          // **The search is monotone in its obstacles.** A rectangle names a distance and every
+          // other refusal names a pitch, so a rectangle over a position something else also refuses
+          // would offer the search a position the pitch walk had stepped over — and adding an
+          // obstacle would seat the row *earlier*. It is not a corner case: the reserved approaches
+          // below stand on a boundary, exactly where the first position the pitch allows is. Such a
+          // position costs the pitch as well, so the search takes the later of the two answers.
+          row = refusedElsewhere(item, row) ? Math.max(past, row + pitch) : past;
           continue;
         }
         if (clear(item, row, full)) { seated = true; break; }
