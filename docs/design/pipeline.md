@@ -188,24 +188,36 @@ and not left for a later stage to discover.
 2. A flank's stored primary peer takes the outer end of **its own row**, which is what the lateral
    link runs along; a ragged row that holds a right-aligned peer is packed against the right columns
    rather than the left.
-3. **A group that holds both ends of a bundle does not take the shape at all** (stress ticket 32).
-   A bundle's members turn in a **channel**, the space between its two endpoint bodies along the
-   bundle's own normal, and the channel exists only where the two bodies stand beside each other
-   across that normal, in that order, with nothing of the group between them. A row gives all of
-   that for nothing. A shape that stacks its nodes gives none of it, and not by a small margin: the
-   rows are stacked from the sizes the nodes have at the time, and the bundle rules then **grow** a
-   body — a left- or right-side bundle reserves its member pitch in y, and a flank stacks its second
-   block below the first one's bottom — so a body of one row reaches into the row below.
+3. **A group that holds both ends of a link owes that link its space, and a stacked shape cannot
+   promise it** (stress ticket 32). A row gives it for nothing — every node of a row stands on one
+   line, so the two bodies are beside each other in an order the row fixes, with only the row gap
+   between them. Two ways a stacked shape takes it away, both measured, and one refusal covers both.
 
-   Measured on the gridded golden with `shape: grid` on `datacenter`, both halves fail. With the
-   endpoints in one row and adjacent, which is the arrangement the count picks, `EAC-02` grows to
-   322.75 px tall in `EBR-02`'s own column and covers it: `BUNDLE_CHANNEL_BLOCKED`. With the
-   endpoints in different rows, `EBR-01`'s bottom face lands below `EBR-02`'s top face and the
-   channel reads `-52.75` — the two faces out of order, reported as a shortfall of turning room.
-   Keeping the endpoints in one row is therefore **not** the rule: the grid already does that here
-   and the bundle still fails. The group declines the shape instead, reports
-   `GROUP_SHAPE_DECLINED` naming the bundle, and takes `row`. The rule is written about the channel
-   rather than about `grid`, so `ring` and `free` inherit it rather than rediscover it.
+   **The link is a bundle member.** Its members turn in a **channel**, the space between the two
+   endpoint bodies along the bundle's own normal; `parallelPaths` reads it as the signed difference
+   of the two port faces and never asks whether they are in order. Measured on the gridded golden
+   with `shape: grid` on `datacenter`: with the endpoints in one row and adjacent, which is the
+   arrangement the count picks, `EAC-02` grows to 322.75 px tall in `EBR-02`'s own column and covers
+   it — `BUNDLE_CHANNEL_BLOCKED`; with them in different rows, `EBR-01`'s bottom face lands below
+   `EBR-02`'s top face and the channel reads `-52.75`, two faces out of order reported as a
+   shortfall of turning room. Keeping the endpoints in one row is therefore **not** the rule: the
+   grid already does that there and the bundle still fails, because what crosses the channel is a
+   body the rows were stacked before it grew.
+
+   **Either end's port side is authored.** The side is then not free to follow the arrangement.
+   `goldens/synthetic/label-no-gap.yaml` links two ports both authored `top`: side by side in a row
+   the link goes up and over, but gridded the two nodes stack — `exitRanks` skips a link whose peer
+   is a group member, so both rank "neither way" and the floor is 1 — and the lower node's stem has
+   to climb past the upper node's body, `Router skipped a required checkpoint`.
+
+   Where neither holds the shape keeps the link: the same-group side vote reads the packed geometry,
+   so `a-grid-of-twelve-keeps-its-columns` links `n01` to `n02` in its own row and to `n05` in the
+   row below and stays a 4 × 3 grid. A declined group takes `row` **to every rule** — `groupShape`
+   is the one reader, because `rows.ts`, `row-paths.ts` and `mutation.ts` each test `shape === 'row'`
+   and a group that is neither grid nor row reaches stage 8 with no row path. `parse` already
+   answers `ring` and `free` with `row` and a diagnostic; this is that answer one stage later, where
+   the links are known. The rule is written about the link's own space rather than about `grid`, so
+   `ring` and `free` inherit it rather than rediscover it.
 4. A grid box is narrower and taller than the ribbon ELK sized its band for, so the tier is packed
    left to right again — otherwise the width the grid gives back never reaches the canvas — and the
    bands are **re-stacked** in place of the ordinary rebuild. That last part is global: **one grid
