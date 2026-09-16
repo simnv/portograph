@@ -23,7 +23,10 @@
  *    **overlay** link is a stub out of each port and one segment between the two stub ends, which is
  *    angled whenever the two stub ends do not line up, so it takes the second (stress ticket 20).
  *    The boundary is the model's: the style is chosen from the published polyline, and this file
- *    states no shape of its own for either family.
+ *    states no shape of its own for either family. What `none` costs is a hand drag: it re-angles
+ *    the run a moved terminal is on, the stub included — measured, a pill dragged 30 px along its
+ *    side leaves an 82° kink where the stub was — which is the cost the maintainer took with the
+ *    three renders in front of him.
  * 2. `points=` on a shape does not constrain an edge — it only decides which anchors the editor
  *    offers. An endpoint is pinned by `exitX`/`exitY` on the edge, and `exitPerimeter` defaults to
  *    1, which projects the point onto the perimeter instead of using it.
