@@ -161,8 +161,23 @@ and not left for a later stage to discover.
    **upward** takes the first row, one whose links leave **downward** takes the last, the rest sit
    between them, and ELK's order survives inside each rank. A grid has rows below its rows, so a
    downward port that is not in the last row descends through them, and nothing reserves that —
-   `bars.ts` `crosses` tests bar nodes alone. Where the ranks cannot seat every exit, stage 7d warns
-   `BAR_DROP_OBSTRUCTED` rather than publishing a reserved run through a node body in silence.
+   `bars.ts` `crosses` tests bar nodes alone.
+
+   **A column is a corridor, so the count obeys the ranks too** (stress ticket 31). A rank cannot
+   separate two nodes that exit the same way: they share a rank, a rank is one row, and *k* like
+   exits in fewer than *k* columns put two of them in one column with one above the other. The
+   column count is therefore bounded below by `max(upward exits, downward exits)`, which forces a
+   group whose nodes all exit one way to a single row — the `row` shape, which is what one corridor
+   per exit means, and which measures better than the stacked grid it replaces. The bound is the
+   count only; the rows are then **built from the ranks** rather than sliced off the ranked order,
+   because a count that satisfies the bound can still chunk a downward exit into a row above the
+   last. Both the count and the rank read one `exitRanks` map, taken once from `side ?? sizingSide`,
+   so they cannot disagree (ADR-0015).
+
+   Two cases the bound does not reach. A node that exits **both** ways takes the last row and its
+   upward reservation crosses the rows above it; and a side stage 5 overturns was read by stage 4 as
+   something else. Stage 7d warns `BAR_DROP_OBSTRUCTED` for either rather than publishing a reserved
+   run through a node body in silence.
 2. A flank's stored primary peer takes the outer end of **its own row**, which is what the lateral
    link runs along; a ragged row that holds a right-aligned peer is packed against the right columns
    rather than the left.
