@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 import { layout, parse, restoreLayoutModel, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { rebuildBarDrops } from '../../src/layout/bars.js';
-import { gridCells, gridChunks, gridColumnFloor, gridRows, packRowsOf } from '../../src/layout/grid.js';
+import { enclosedBundle, gridCells, gridChunks, gridColumnFloor, gridRows, isGridGroup, packRowsOf } from '../../src/layout/grid.js';
 import { nodeGap } from '../../src/layout/skeleton-graph.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -209,3 +209,33 @@ it('a grid holds all three ranks at once, and a short row that is not the last',
   expect(failed(model)).toEqual([]);
   expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
 }, 60000);
+
+it('a group that holds both ends of a bundle declines the grid and says which bundle asked', async () => {
+  const model = await run(fixture('a-group-holds-both-ends-of-a-bundle'));
+  // Stage 1 reports the refusal and `isGridGroup` enforces it, so the two cannot disagree.
+  expect(enclosedBundle(model, 'place')?.id).toBe('bundle-1');
+  expect(isGridGroup(model, 'place')).toBe(false);
+  const declined = model.diagnostics.filter(item => item.code === 'GROUP_SHAPE_DECLINED');
+  expect(declined.map(item => item.severity)).toEqual(['warning']);
+  expect(declined[0]!.message).toContain('bundle-1');
+  expect(declined[0]!.message).toContain('between a and d');
+  // One line, which is what the channel needs: `a` leaves the group upward and `d` downward, so the
+  // ranks would have put them in the first row and the last.
+  expect(rows(model, 'place')).toHaveLength(1);
+  // Adjacency is not the predicate. `b` stands between the two endpoints in the row and the two
+  // members still turn, because the channel is the space between the two bodies along the bundle's
+  // own normal and `b` is not in it.
+  const order = [...model.groups.place!.nodes].sort((one, other) => box(model, one).x - box(model, other).x);
+  expect(order.indexOf('b')).toBeGreaterThan(order.indexOf('a'));
+  expect(order.indexOf('b')).toBeLessThan(order.indexOf('d'));
+  expect(failed(model)).toEqual([]);
+  expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
+}, 60000);
+
+it('a bundle with one end outside the group leaves the shape alone', () => {
+  const stub = { bundles: [{ id: 'bundle-1', nodes: ['x', 'y'] }],
+    document: { groups: { g: { shape: 'grid' } }, nodes: { x: { group: 'g' }, y: { group: 'h' } } } } as unknown as LayoutModel;
+  // Its channel runs between two groups, so no one group's shape can collapse it.
+  expect(enclosedBundle(stub, 'g')).toBeUndefined();
+  expect(isGridGroup(stub, 'g')).toBe(true);
+});

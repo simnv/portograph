@@ -3,6 +3,7 @@ import {
   type Diagnostic, type Endpoint, type Layer, type LayoutLink, type LayoutModel,
   type NormalisedDocument, type Owner, type PortRef,
 } from '../model/index.js';
+import { enclosedBundle } from '../layout/grid.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 
 export interface ResolveOptions {
@@ -306,6 +307,22 @@ function groupBundles(model: LayoutModel): void {
   }
 }
 
+/**
+ * Say, once and in the model, where a group's authored shape is declined because it would collapse
+ * a bundle's channel (`enclosedBundle`). The shape is read back through `isGridGroup`, which asks
+ * the same question, so the diagnostic and the geometry cannot disagree — this reports the answer,
+ * it does not decide it.
+ */
+function declineStackedShapes(model: LayoutModel): void {
+  for (const id of orderedGroupIds(model.document)) {
+    if (model.document.groups[id]!.shape !== 'grid') continue;
+    const bundle = enclosedBundle(model, id);
+    if (!bundle) continue;
+    report(model, 'GROUP_SHAPE_DECLINED', `${id} keeps the row shape instead of grid: it holds both ends of ${bundle.id}, between ${bundle.nodes[0]} and ${bundle.nodes[1]}, and a shape that stacks its nodes gives that bundle's channel no room`,
+      [{ kind: 'group', id }, bundle.owner], 'warning');
+  }
+}
+
 /** Resolve document semantics without placement, paths or geometry-dependent route choices. */
 export function resolve(input: NormalisedDocument, options: ResolveOptions = {}): LayoutModel {
   const model = createLayoutModel(input);
@@ -322,6 +339,7 @@ export function resolve(input: NormalisedDocument, options: ResolveOptions = {})
   warnAttachmentUsage(model);
   recordAggregations(model, [...explicit, ...findAggregations(model, groupOrder)]);
   groupBundles(model);
+  declineStackedShapes(model);
   stopOnErrors(model);
   model.stage = 'resolve';
   return model;

@@ -1,4 +1,4 @@
-import type { LayoutGroup, LayoutModel } from '../model/layout.js';
+import type { Bundle, LayoutGroup, LayoutModel } from '../model/layout.js';
 import { orderedGroupIds } from '../model/model.js';
 import { bandGap, compareId, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
@@ -15,7 +15,49 @@ import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
  * y and both gaps. Nothing here is discovered while routing.
  */
 export const isGridGroup = (model: LayoutModel, id: string): boolean =>
-  model.document.groups[id]?.shape === 'grid';
+  model.document.groups[id]?.shape === 'grid' && enclosedBundle(model, id) === undefined;
+
+/**
+ * The bundle whose whole **channel** lies inside `group` — both endpoint nodes are its own — or
+ * `undefined`.
+ *
+ * A bundle's members turn in a channel, and the channel is the space between the two endpoint
+ * **bodies** measured along the bundle's own normal. `parallelPaths` takes it as the signed
+ * difference of the two port faces along that normal, minus a stem at each end, and never asks
+ * whether the two faces are in order; `routeBundleChannel` then asks for an envelope-wide
+ * centreline through it. So the channel needs two things a **row** gives for nothing, because every
+ * node of a row stands on one line: the two bodies **beside** each other across the normal, in that
+ * order, and nothing else of the group between them.
+ *
+ * A shape that stacks its nodes gives neither, because the rows are stacked from the sizes the
+ * nodes have at the time and the bundle rules then **grow** a body: a bundle on a left or right
+ * side reserves its member pitch in y, and a flank stacks its second block below the first one's
+ * bottom. Measured on the maintainer's gridded golden with `shape: grid` on `datacenter`
+ * (stress ticket 32), which is where both halves fail:
+ *
+ * - The endpoints **in one row** and adjacent, which is the arrangement the column count really
+ *   picks here (`[EAC-01 EAC-02] / [EBR-01 EBR-02]`, 35 px between the two bodies): `EAC-02` shares
+ *   a column with `EBR-02` and grows to 322.75 px tall, so its body covers `EBR-02` outright and
+ *   the channel with it. `BUNDLE_CHANNEL_BLOCKED`.
+ * - The endpoints **in different rows**, forced to the pre-ticket-31 arrangement to measure it:
+ *   `EBR-01` grows to 172.75 px and its bottom face lands 22.75 px *below* the top face of
+ *   `EBR-02` in the row under it. `end - start` is then `-52.75` — the two faces out of order,
+ *   reported as a shortfall of turning room, which is not what it is.
+ *
+ * The first is why this is a refusal and not an arrangement rule: keeping the two endpoints in one
+ * row is already what the grid does there, and it does not save the bundle. No row order could,
+ * since what crosses the channel is a body the rows were stacked before it grew.
+ *
+ * So a group that holds both ends of a bundle keeps its nodes on one line — it takes the `row`
+ * shape — and `GROUP_SHAPE_DECLINED` says which bundle asked for it. The rule is written about the
+ * channel rather than about `grid` so that `ring` and `free` inherit it: `isGridGroup` is the only
+ * reader today, and the next stacked shape asks the same question.
+ * `goldens/synthetic/a-group-holds-both-ends-of-a-bundle.yaml` is the fixture; without the refusal
+ * it fails with the golden's own `BUNDLE_CHANNEL_BLOCKED`.
+ */
+export function enclosedBundle(model: LayoutModel, id: string): Bundle | undefined {
+  return model.bundles.find(bundle => bundle.nodes.every(node => model.document.nodes[node]?.group === id));
+}
 
 /**
  * The gap between two grid rows. It is `bandGap` — the same room the pipeline reserves between two
