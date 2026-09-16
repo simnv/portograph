@@ -1,0 +1,22 @@
+# Expected: the straight-gap diagram with both links out of `h1` on one port, so 7e reserves a
+# junction tree there and each branch takes a bar across the tier gap. `m2.b -> l1` is still one
+# straight run between two anchors on one x, and a junction bar crosses it. A shared run is a wall
+# like any other reservation, and neither G4 nor G6 measures a perpendicular crossing, so the claim
+# has to read it: it is judged against the covers `routeObstacles` puts in front of the router, with
+# the same margins. The run is not claimed, the router detours it, and the diagram is produced.
+portograph: 2
+groups:
+  top: { tier: 2, label: "Top" }
+  mid: { tier: 5, label: "Middle" }
+  hub: { tier: 6, label: "Hub" }
+  low: { tier: 6, label: "Lower" }
+nodes:
+  t1: { group: top, class: tbr, label: "t1" }
+  h1: { group: hub, class: router, label: "h1", ports: [{ name: p, side: top }] }
+  m1: { group: mid, class: rr, label: "m1" }
+  m2: { group: mid, class: provider, label: "m2", ports: [{ name: a, side: bottom, order: 1 }, { name: b, side: bottom, order: 2 }] }
+  l1: { group: low, class: tbr, label: "l1" }
+links:
+  - [h1.p, m1]
+  - [h1.p, m2.a]
+  - [m2.b, l1]

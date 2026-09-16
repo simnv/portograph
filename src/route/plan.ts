@@ -9,7 +9,7 @@ import { portId } from '../layout/skeleton-graph.js';
 import { EPS, samePoint, segmentRect } from '../score/geometry.js';
 import { disjointShapes } from './containment.js';
 export { disjointShapes } from './containment.js';
-import { completedRouteObstacles, routeObstacles, type RouteObstacle } from './obstacles.js';
+import { completedRouteObstacles, reservedRunObstacles, routeObstacles, type RouteObstacle } from './obstacles.js';
 import { ALL_DIRECTIONS, DIRECTION_BITS, type RouteBatch, type RouteCheckpoint, type RouteConnector, type RouteEndpoint, type RoutePin, type RouteShape } from './types.js';
 
 /** Shape buffer stays at zero; every obstacle already carries its exact clearance. */
@@ -135,11 +135,13 @@ export function planRoute(model: LayoutModel): RoutePlan {
   // is an obstacle to every link but its own from the start — a batch that ran earlier, or one this
   // link shares, would otherwise be free to cross geometry the stitcher inserts verbatim.
   const legs = new Map<string, PathSegment>();
-  // Every run this pass reserves rather than routes — a leg, a tier-gap allocation, a claimed
-  // straight piece — in the order it was made. A straight piece is claimed only where it keeps the
-  // gate's clearance from the ones already standing, which their own covers state exactly.
-  const passReserved: RouteObstacle[] = [];
-  const reserve = (items: RouteObstacle[]): void => { obstacles.push(...items); passReserved.push(...items); };
+  // Every reserved run a claim must keep out of: the ones the model already holds — a pinned path,
+  // a lane run, an outward shared prefix — and the ones this pass adds as it goes, a leg, a tier-gap
+  // allocation and an earlier claim. `straightCorridorClear` reads a link's `path` and
+  // `fixedSegments` only, so a shared run is invisible to it although the router is walled by one;
+  // this is the set with the margins the router is given, and the claim is judged by both.
+  const reserved: RouteObstacle[] = reservedRunObstacles(model);
+  const reserve = (items: RouteObstacle[]): void => { obstacles.push(...items); reserved.push(...items); };
   for (const link of model.links) {
     const leg = drawn(link) && !link.path ? legReservation(model, link, gaps) : undefined;
     if (!leg) continue;
@@ -234,7 +236,7 @@ export function planRoute(model: LayoutModel): RoutePlan {
         // must keep out of — it can stand between the two ends of the piece.
         const pins = [...(first && from.port ? [from.port] : []), ...(last && to.port ? [to.port] : [])];
         const attached = { nodes: pins.map(port => port.ref.node), ports: pins.map(port => portId(port.ref)) };
-        if (run && corridorFree(model, link, run, attached, passReserved)) {
+        if (run && corridorFree(model, link, run, attached, reserved)) {
           pieces.push({ kind: 'straight', segments: [{ ...run, owner: { kind: 'link' as const, id: link.id } }] });
           reserve(completedRouteObstacles(model, link, id, [run.from, run.to])
             .map((cover, at) => ({ ...cover, id: `straight:${id}:${at}` })));

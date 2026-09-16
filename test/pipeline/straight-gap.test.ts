@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { bands, bars, bundles, centre, flanks, lanes, linkLabels, planRoute, route, rows, score } from '../../src/index.js';
 import { findPort } from '../../src/layout/row-paths.js';
+import { segmentDistance } from '../../src/score/geometry.js';
 import { placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -72,6 +73,33 @@ it('claims no run through a node the piece does not attach to', async () => {
     const acrossX = Math.min(segment.from.x, segment.to.x) < box.x + box.width && Math.max(segment.from.x, segment.to.x) > box.x;
     const acrossY = Math.min(segment.from.y, segment.to.y) < box.y + box.height && Math.max(segment.from.y, segment.to.y) > box.y;
     expect([segment.from, segment.to, acrossX && acrossY]).toEqual([segment.from, segment.to, false]);
+  }
+  expect(Number.isFinite(score(model).snapshot.Q)).toBe(true);
+}, 60000);
+
+/**
+ * The same claim, refused for the other reason. Both links out of `h1` leave one port, so 7e
+ * reserves a junction tree there and one branch takes a bar across the tier gap. `m2.b → l1` is
+ * still one straight run between two anchors on one x, and the bar crosses it. A shared run is a
+ * wall like every other reservation, and neither G4 nor G6 measures a perpendicular crossing, so
+ * the claim has to read the covers `routeObstacles` puts in front of the router.
+ */
+it('claims no run across a reserved run the corridor predicate cannot see', async () => {
+  const yaml = readFileSync(new URL('../../goldens/synthetic/a-claimed-run-clears-a-shared-run.yaml', import.meta.url), 'utf8');
+  const before = bands(bundles(bars(centre(flanks(lanes(rows(await placed(yaml))))))));
+  const bar = before.links.find(item => item.id === 'link-2')!.sharedRuns!.from!;
+  const plan = planRoute(before);
+  expect(plan.links.find(item => item.link === 'link-3')!.pieces.map(piece => piece.kind)).toEqual(['gap']);
+
+  const model = await route(before, { createAttempt: createAvoidAttempt });
+  const link = model.links.find(item => item.id === 'link-3')!;
+  const from = findPort(model, link.attachments!.from)!.anchor!;
+  const to = findPort(model, link.attachments!.to)!.anchor!;
+  // The run the claim would have taken really crosses the reserved bar; the published one does not.
+  const straight = { from: { ...from }, to: { ...to }, owner: { kind: 'link' as const, id: 'link-3' } };
+  expect(bar.some(run => segmentDistance(straight, run) < 10)).toBe(true);
+  for (const segment of link.path!.segments) {
+    for (const run of bar) expect([segment.from, run.from, segmentDistance(segment, run) >= 10]).toEqual([segment.from, run.from, true]);
   }
   expect(Number.isFinite(score(model).snapshot.Q)).toBe(true);
 }, 60000);
