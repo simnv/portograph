@@ -998,14 +998,22 @@ it, and a path that starts on the face does both; all the stub added was a 4 px 
 it can turn. Placement's own job is to position nodes so that as many overlay links as possible take
 the straight branch.
 
-The exception is read on that one segment, against **every node body and every drawn port pill, the
-link's own two ends included**. The segment starts *on* a pill's outward edge, which is the boundary
-the open predicate is written for — a line that rides a face is clear of it. Two ports facing each
-other leave their faces outward and are clear at once; two level on the same side ride both faces and
-are clear; a port facing **away** from its partner turns back inward, really does re-enter its own
-pill, and takes the orthogonal branch. The stub used to lift such a pair clear of its own pill before
-it turned, so this is the one shape its removal moves, and the tilt at which it moves is small: level
-is one segment, half a pixel off level reaches 0.02 px inside the lower pill and goes round. Nothing else blocks: not another overlay line, which is drawn thin and translucent
+The straight branch has a condition of its own before any shape is consulted: **the segment must
+leave each port outward.** At both ends the segment's direction, taken out of that end, may not point
+back along that port's own outward normal. Level counts as leaving — the line rides both faces, which
+is what a reader sees a line on a pill's edge doing — and strictly inward does not, because a line
+leaving a port inward runs back **under that port's own pill**, and the overlay layer is masked out of
+every pill, so the mask would cut the line away from its own endpoint mark. A port that fails the
+condition is facing away from its partner, and the orthogonal branch answers it. The tilt this allows
+is generous and its limit is exact: a facing pair takes any angle up to and including the two faces
+being level, and stops there, not a fraction before.
+
+Because the condition holds, the segment's distance along each port's outward normal rises from zero
+and never falls, so it cannot re-enter the pill behind it. A link's **own two pills** therefore carry
+nothing the condition does not already have, and are **not** among the shapes the segment is tested
+against (maintainer, 2026-09-16) — testing them only restated the condition in sub-pixel arithmetic,
+where a tilt reaching 0.02 px inside a pill read as an obstruction. The exception is read on that one
+segment against **every node body, the link's own two included, and every other drawn port pill**. Nothing else blocks: not another overlay line, which is drawn thin and translucent
 precisely so that overlays may cross each other and is exempt from the clearance gates, and not a
 group box, a lane, a routed path or a label. A blocked segment is answered by the orthogonal
 derivation: the shortest of eight ways read off the two end boxes — two single turns, four ways
