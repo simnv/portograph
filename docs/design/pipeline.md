@@ -872,9 +872,10 @@ the same 18 px trim at an end that is its own port anchor, and stitched in exact
 The reason is the pipeline's load-bearing rule. Placement fixed both ends, so the run is a
 reservation, and an ownership batch that runs earlier is otherwise free to lay its own route across
 it. libavoid then cannot reach the checkpoint inside that route's cover, drops the whole checkpoint
-without a word, and answers with the two port anchors and a diagonal between them — measured on
-`goldens/synthetic/a-straight-gap-needs-no-router.yaml`, where the answer starts at one node's centre
-and ends at the other's. 7f already states this claim for one shape of it: the feed corridor it
+without a word, and answers with the two **node centres** and a diagonal between them — measured on
+`goldens/synthetic/a-straight-gap-needs-no-router.yaml`, where the gap asked for
+(132.50, 270.00) → (132.50, 370.00) and the answer was (138.50, 246.50) → (132.50, 393.50), which is
+neither reserved endpoint. 7f already states this claim for one shape of it: the feed corridor it
 reserves against its group labels is "a top/bottom feed whose two anchors already share an x … will
 be routed as that straight line in stage 8" (§ 7f). This is that sentence made true, for every piece
 of a path rather than for a whole link.

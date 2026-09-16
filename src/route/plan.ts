@@ -46,7 +46,10 @@ export interface LinkPlan {
 export interface StemReservation { link: string; node: string; side: Side; bounds: Rect }
 
 export interface RoutePlan {
-  /** Routed links with no path after stage 7f, in model order. These need libavoid. */
+  /**
+   * Routed links with no path after stage 7f, in model order. Not every one reaches libavoid: a
+   * link every piece of which this stage claims carries no connector and joins no batch.
+   */
   remainders: string[];
   /** Overlay links that receive a straight unrouted segment; they never reach the router. */
   overlay: string[];
@@ -238,8 +241,10 @@ export function planRoute(model: LayoutModel): RoutePlan {
         const attached = { nodes: pins.map(port => port.ref.node), ports: pins.map(port => portId(port.ref)) };
         if (run && corridorFree(model, link, run, attached, reserved)) {
           pieces.push({ kind: 'straight', segments: [{ ...run, owner: { kind: 'link' as const, id: link.id } }] });
-          reserve(completedRouteObstacles(model, link, id, [run.from, run.to])
-            .map((cover, at) => ({ ...cover, id: `straight:${id}:${at}` })));
+          // `routed:` is `completedRouteObstacles`' own prefix for a chain it was handed, which the
+          // leg and the tier-gap allocation carry for the same reason. It names the producer, not
+          // the geometry: every cover this pass adds is under it, whoever fixed the run.
+          reserve(completedRouteObstacles(model, link, `straight:${id}`, [run.from, run.to]));
         } else {
           // Only an attachment stem is reserved against the batches still to run. Reserving the lane
           // approach as well was measured and left out; see `.scratch/stress/issues/02`.
