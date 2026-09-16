@@ -1,5 +1,15 @@
 import type { PathSegment, Point, Rect } from '../model/index.js';
 
+/**
+ * The tolerance published geometry is compared at: does this rectangle contain, overlap or touch
+ * that one, at a few ULP of a coordinate (stress ticket 13).
+ *
+ * It is **not** the tolerance placement measures a reservation at. That one is ten times coarser and
+ * lives in `src/layout/tolerance.ts` as `PLACEMENT_EPS`; `render/drawio.ts` and a handful of inline
+ * `1e-6` literals in `layout/bundle-geometry.ts`, `route/obstacles.ts` and `route/validate.ts` are
+ * the same figure, still written out. Meeting one of those and this one in the same reading is the
+ * trap stress ticket 19 named: two numbers answering two questions, not two opinions about one.
+ */
 export const EPS = 1e-7;
 export const near = (a: number, b: number): boolean => Math.abs(a - b) <= EPS;
 export const samePoint = (a: Point, b: Point): boolean => near(a.x, b.x) && near(a.y, b.y);

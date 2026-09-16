@@ -704,27 +704,33 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
       // All three are compared as sets, not as counts: a move that trades one unverified alignment,
       // one short gap or one short run for another is not "no worse", it is a different diagram
       // with the same tally.
-      const followed = clone(draft.lanes);
+      //
+      // The three are measured on the **settled** model, not on the one the move leaves behind. A
+      // corridor is geometry two of 7f's own plans are derived from — `laneSidesHold` decides which
+      // linked pair may share an x-extent, so a corridor that leaves a group's window releases a
+      // merge the grid declined; and a lane rectangle is a forbidden range for a group label, so a
+      // corridor that moves changes where the label may stand — and both are therefore settled again
+      // against the corridors this move publishes, because `validateGroupLabelBands` re-derives both
+      // and the published model has to be their fixed point (ADR-0015: a derived plan a later stage
+      // re-derives may read only what is frozen when both readings happen). That settling is done on
+      // a trial *before* the decision, because all three criteria read what it changes:
+      // `straightCorridorClear` iterates the group boxes the grid widens and the labels the replan
+      // places, and on `a-corridor-moves-after-the-grid-settles` the grid really does widen a box by
+      // 29.03 px here. The accepted model is the trial itself, so nothing is re-derived twice.
+      const settled = clone(draft);
+      alignLinkedGroupGrid(settled);
+      replanGroupLabels(settled);
       const afterRoom: LinkLabelShortfall[] = [], heldRoom: LinkLabelShortfall[] = [];
-      reserveLinkLabelRoom(clone(draft), afterRoom);
-      const after = { centring: centreViolations(draft), gaps: shortGaps(draft) };
+      reserveLinkLabelRoom(clone(settled), afterRoom);
+      const after = { centring: centreViolations(settled), gaps: shortGaps(settled) };
       draft.lanes = heldLanes; rebuildLaneExtents(draft);
       reserveLinkLabelRoom(clone(draft), heldRoom);
       const held = { centring: centreViolations(draft), gaps: shortGaps(draft) };
       if (noNewItems(after.centring, held.centring) && noNewItems(after.gaps, held.gaps)
         && noNewItems(afterRoom.map(item => item.link), heldRoom.map(item => item.link))) {
-        draft.lanes = followed; rebuildLaneExtents(draft);
-        // A corridor is geometry two of 7f's own plans are derived from, and this move replaces the
-        // corridors both of them read. `laneSidesHold` decides which linked pair may share an
-        // x-extent, so a corridor that leaves a group's window releases a merge the grid declined;
-        // and a lane rectangle is a forbidden range for a group label, so a corridor that moves
-        // changes where the label may stand. Both are settled again here, against the corridors the
-        // diagram publishes, because `validateGroupLabelBands` re-derives both and the published
-        // model has to be their fixed point (ADR-0015: a derived plan a later stage re-derives may
-        // read only what is frozen when both readings happen). Neither moves a node: the grid grows
-        // box extents onto edges that already exist, and the replan places labels.
-        alignLinkedGroupGrid(draft);
-        replanGroupLabels(draft);
+        // Adopt the trial whole: `draft` is the object this transaction validates and returns, so it
+        // takes the settled state rather than repeating the two producers on itself.
+        Object.assign(draft, settled);
       } else draft.diagnostics = draft.diagnostics.filter(item => item.code !== 'LANE_FOLLOWS_ITS_CHILD');
     }
   }

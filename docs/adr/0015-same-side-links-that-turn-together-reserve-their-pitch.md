@@ -625,7 +625,11 @@ require`, stress ticket 37). The repair is not a tolerance and cannot be: what o
 the grid, which grows box extents onto edges that already exist, and the label plan — is settled
 again after the move; what would *move geometry* to settle — the label-room reservation, with the
 corridors by then fixed — makes the move refused instead, beside the centring and short-gap
-contradictions it was already refused for.
+contradictions it was already refused for. The settling is done on a **trial** taken before the
+decision, because all three refusal criteria read what it changes: `straightCorridorClear` iterates
+the group boxes the grid widens and the labels the replan places, and the accepted model is that
+trial. That is also what keeps the label replan's `reserveAgain` fallback honest — it can move nodes,
+and a short run it left behind is measured before the corridor move is adopted.
 
 **The group edge, and which predicate it borrows.** `legClear` excludes the leg's own group box, so
 that a leg may cross its own box; nothing then stopped a nested turn from landing on that box's
