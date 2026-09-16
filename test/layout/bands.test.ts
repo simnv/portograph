@@ -781,3 +781,28 @@ it('holds the group that set a band edge, which x + width does not return exactl
   expect(residue).toBeGreaterThan(-1e-9);
   expect(validateSkeletonBands(model)).toEqual([]);
 }, 120000);
+
+it('keeps the tolerance on the band comparators that the producer repair no longer exercises', () => {
+  // Stress ticket 13 put `EPS` on `contains` and `overlaps` here; stress ticket 14 then removed the
+  // residue at the producer, so the fixture above passes with exact comparators too and the
+  // tolerance became unguarded — a later edit could delete it and the suite would stay green. Five
+  // group-box producers still recover a width from an absolute edge (`fitRegionGroup`,
+  // `fitGroupBox`, `bars`, `rebuildBoxes`, and the region boxes), so the tolerance is still the
+  // contract and this is its own guard, stated directly rather than through a fixture.
+  const band = (bounds: Rect) => ({ tier: 0, groups: ['a', 'b'], bounds });
+  const model = (a: Rect, b: Rect, bounds: Rect) => ({
+    groups: { a: { id: 'a', tier: 0, nodes: [], bounds: a }, b: { id: 'b', tier: 0, nodes: [], bounds: b } },
+    tierBands: [band(bounds)],
+  } as unknown as LayoutModel);
+  const box = { x: 0, y: 0, width: 500, height: 100 }, beside = { x: 500, y: 0, width: 500, height: 100 };
+  const span = { x: 0, y: 0, width: 1000, height: 100 };
+  // A residue no placement rule could have produced is inside the band and clear of its neighbour.
+  expect(validateSkeletonBands(model({ ...box, x: -1e-9, width: 500 + 1e-9 }, beside, span))).toEqual([]);
+  expect(validateSkeletonBands(model(box, { ...beside, x: 500 - 1e-9 }, span))).toEqual([]);
+  // A placement distance is not, and neither guard may pass one: 1e-3 px is four orders under the
+  // smallest distance any rule names and still fails.
+  expect(validateSkeletonBands(model({ ...box, x: -1e-3, width: 500 + 1e-3 }, beside, span)))
+    .toEqual(['Group a is outside its tier band']);
+  expect(validateSkeletonBands(model(box, { ...beside, x: 500 - 1e-3, width: 500 + 1e-3 }, span)))
+    .toEqual(['Groups a and b overlap']);
+});
