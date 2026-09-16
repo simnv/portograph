@@ -1,0 +1,31 @@
+# Expected: two ports one tier down each carry a fan of two feeds, and the two trees peel on one
+# row across the gap. `left`'s branch descends along that row through the point 15 px above
+# `right.u`, which is the checkpoint stage 8 would use if `right`'s two links had reserved nothing.
+#
+# They did reserve: each of them keeps its own branch, and stage 8 starts its gap at that branch's
+# terminal, not at the port. A run that closes a checkpoint inside a link's own reservation closes
+# nothing, so no branch gives way. Releasing them handed the router two gaps whose ends were pinned
+# in the middle of the tier gap; the route it found for the first walled in the point the second had
+# to reach, libavoid dropped that end and answered with a diagonal, and stage 8 threw
+# `Routed gap on link-3 is not orthogonal`.
+#
+# The diagram is produced and fails G4 `collinear-overlap` and G6 `parallel-clearance` between the
+# two descents that share the row. That overlap is ticket 46: nothing allocates a row across a gap.
+# A gate failure is recoverable and a throw is not.
+portograph: 2
+profile: network
+groups:
+  upper: { tier: 0, label: Upper }
+  lower: { tier: 1, label: Lower }
+nodes:
+  feed-a: { group: upper, class: rr, ports: [{ name: u, side: top }, { name: d, side: bottom }] }
+  feed-b: { group: upper, class: provider, ports: [{ name: u, side: top }, { name: d, side: bottom }] }
+  feed-c: { group: upper, class: tbr, ports: [{ name: u, side: top }, { name: d, side: bottom }] }
+  feed-d: { group: upper, class: rr, ports: [{ name: u, side: top }, { name: d, side: bottom }] }
+  left: { group: lower, class: provider, ports: [{ name: u, side: top }, { name: d, side: bottom }] }
+  right: { group: lower, class: router, ports: [{ name: u, side: top }, { name: d, side: bottom }] }
+links:
+  - [feed-a.d, left.u]
+  - [feed-b.d, right.u]
+  - [feed-c.d, right.u]
+  - [feed-d.d, left.u]

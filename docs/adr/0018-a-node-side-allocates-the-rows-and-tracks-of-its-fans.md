@@ -205,3 +205,28 @@ one gap over.
      hems and every branch of the link it hems (`FAN_BRANCH_HEMMED`). Ports on the hemming fan's own
      node side are exempt, because a fan's own siblings stand a pitch away by construction and
      treating them as hemmed undoes the tracks rules 1 and 2 reserve.
+
+     **Only an end that reserved nothing can be hemmed** (stress ticket 10). An end whose own fan
+     reserved a run is approached at that run's terminal and not at the port, so the port's
+     checkpoint always stands inside a reservation the link itself owns and closing it costs the
+     link nothing. Measuring the port at every end released branches whose approaches were never
+     shut, and the release is not free: it pins the gap's end in the middle of the tier gap and the
+     route the router finds for one released link can wall in the point another has to reach.
+     Measured on five corpus inputs, libavoid then dropped that end without a word and answered with
+     a diagonal, which stage 8 refuses. The rule is that a release must leave the router a gap it can
+     answer orthogonally; where nothing is closed there is nothing to release.
+
+     A reserved terminal **can** be shut in turn, and this rule does not claim otherwise: of 1 099
+     corpus inputs, 35 hold a reserved terminal inside a foreign reserved run's margin and 27 of the
+     35 fail the pipeline — `wide-t3-p3-f2-s1` answers the gap (448, 313) → (461.667, 434.5) with the
+     diagonal ticket 10 is about, its terminal closed by runs at y = 427.75 and y = 445.25 against an
+     11.5 px margin. What is measured is that a release does not open it: built and swept over those
+     35, releasing on a closed terminal as well repaired none and broke 8 (`wide-t4-p2-f2-s2/s3`,
+     `wide-t4-p4-f2-s3`, `wide-t5-p2-f2-s2`, `wide-t6-p2-f2-s2/s3`, `wide-t6-p4-f2-s3`,
+     `wide-t8-p2-f2-s2`). A closed reserved terminal needs a rule that places the terminal, not one
+     that drops it; stress ticket 11 owns it.
+
+     A link the router never approaches cannot be hemmed at its port either: a rule-fixed path and a
+     bundle member both carry a complete path when stage 8 plans, so `planRoute` passes over them and
+     asks for no checkpoint at their ports. The exclusion is read from `path.fixed` and `bundle`,
+     never from the presence of a `path`, which after stage 8 every link carries.
