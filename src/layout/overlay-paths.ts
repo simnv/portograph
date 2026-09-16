@@ -2,13 +2,19 @@ import type { Point, Rect, Side } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel, LayoutNode, LayoutPath, LayoutPort, PathSegment } from '../model/layout.js';
 import { bottom, EPS, retracingRuns, right, samePoint } from '../score/geometry.js';
 import { OVERLAY_ENDPOINT_RADIUS, pathStrokeWidth } from '../theme/geometry.js';
-import { RectangleIndex } from './rectangle-index.js';
 import { findPort } from './row-paths.js';
 
 /**
- * How far outside a port's own outward face an overlay link turns. It is twice the overlay endpoint
- * mark's radius — the mark is the widest thing drawn at that end — so the rule introduces no number
- * of its own (`.scratch/drawio-export/issues/02-maintainer-edit-principles.md`, principle 2).
+ * How far past a port's own outward face an overlay link's **stub** reaches before the diagonal
+ * starts. It is twice the overlay endpoint mark's radius — the mark is the widest thing drawn at
+ * that end — so the rule introduces no number of its own
+ * (`.scratch/drawio-export/issues/02-maintainer-edit-principles.md`, principle 2).
+ *
+ * Measured from the **face**, not from the anchor: the anchor is the pill's centre and the renderer
+ * masks the pill, so a stub measured from the anchor is shorter than the pill's own half-length
+ * (13 px for the 26 px pills placement draws) and nothing of it is ever drawn. From the face, the
+ * whole 4 px is drawn, the line meets the pill square, and the diagonal starts clear of it — which
+ * is what the maintainer chose over the anchor-to-anchor line (stress ticket 20).
  */
 export const OVERLAY_PILL_CLEARANCE = 2 * OVERLAY_ENDPOINT_RADIUS;
 
@@ -16,25 +22,6 @@ export const OVERLAY_PILL_CLEARANCE = 2 * OVERLAY_ENDPOINT_RADIUS;
 const NORMAL: Readonly<Record<Side, Point>> = {
   top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 },
 };
-
-/** Every node body and every drawn port pill: the shapes an overlay link goes round. */
-export type OverlayBlockers = RectangleIndex<Rect>;
-
-export function overlayBlockers(model: LayoutModel): OverlayBlockers {
-  const boxes: { bounds: Rect; value: Rect }[] = [];
-  for (const node of Object.values(model.nodes)) {
-    if (node.bounds) boxes.push({ bounds: node.bounds, value: node.bounds });
-    for (const port of node.ports) {
-      if (port.pill && port.ref.anonymous !== true) boxes.push({ bounds: port.pill.bounds, value: port.pill.bounds });
-    }
-  }
-  return new RectangleIndex(boxes);
-}
-
-/** Whether an axis-aligned segment reaches inside `box`, rather than only touching its edge. */
-const enters = (from: Point, to: Point, box: Rect): boolean =>
-  Math.max(from.x, to.x) > box.x + EPS && Math.min(from.x, to.x) < right(box) - EPS
-  && Math.max(from.y, to.y) > box.y + EPS && Math.min(from.y, to.y) < bottom(box) - EPS;
 
 /** A polyline with no repeated point, so a degenerate corner leaves no zero-length segment. */
 const compact = (points: readonly Point[]): Point[] =>
@@ -60,17 +47,10 @@ function straighten(points: readonly Point[]): Point[] {
   return out;
 }
 
-const axisAligned = (points: readonly Point[]): boolean => points.slice(1).every((point, index) =>
-  Math.abs(point.x - points[index]!.x) <= EPS || Math.abs(point.y - points[index]!.y) <= EPS);
-
-const polylineLength = (points: readonly Point[]): number => points.slice(1)
-  .reduce((total, point, index) => total + Math.hypot(point.x - points[index]!.x, point.y - points[index]!.y), 0);
-
 /**
  * One end of an overlay link: the anchor the path must start from, the box the link leaves — the
  * pill when the port draws one, the node body when it does not — the point on that box's outward
- * face, and the point one clearance beyond it, which is where the route between the two ends
- * begins.
+ * face, and the point one stub beyond it, which is where the diagonal between the two ends begins.
  */
 interface OverlayEnd { anchor: Point; box: Rect; face: Point; clear: Point; out: Point }
 
@@ -78,7 +58,7 @@ function overlayEnd(node: LayoutNode, port: LayoutPort): OverlayEnd | undefined 
   if (!port.anchor || !port.side || !node.bounds) return undefined;
   const box = port.pill && port.ref.anonymous !== true ? port.pill.bounds : node.bounds;
   const out = NORMAL[port.side];
-  // The outward face of the box on this side, plus the clearance, measured from the anchor.
+  // The outward face of the box on this side, plus the stub, measured from the anchor.
   const face = port.side === 'top' ? box.y : port.side === 'bottom' ? bottom(box)
     : port.side === 'left' ? box.x : right(box);
   const depth = Math.abs((out.x !== 0 ? port.anchor.x : port.anchor.y) - face);
@@ -87,12 +67,12 @@ function overlayEnd(node: LayoutNode, port: LayoutPort): OverlayEnd | undefined 
 }
 
 /**
- * Whether the two ends face each other **on one line** across a gap narrower than their two
- * clearances. Each end leaves its own outward face by `OVERLAY_PILL_CLEARANCE`, so such a pair
- * states the two cleared ends the wrong way round, and both stubs lie on the line the two anchors
- * share: every one of the eight ways then walks back along the run the other stub already drew, the
- * sweep refuses all of them, and the link loses its route. A pair that faces across two different
- * lines keeps its clearance — its stubs cannot cover each other, so a way round is still open.
+ * Whether the two ends face each other **on one line** across a gap narrower than their two stubs.
+ * Each end leaves its own outward face by `OVERLAY_PILL_CLEARANCE`, so such a pair states the two
+ * stub ends the wrong way round and the segment between them walks back along both stubs. Riding
+ * the faces instead keeps the two ends in order, and the whole thing then collapses onto the line
+ * the two anchors already share (ticket 04 A). A pair that faces across two different lines keeps
+ * its stubs: they cannot cover each other, so the diagonal between them is a real segment.
  */
 function tooClose(head: OverlayEnd, tail: OverlayEnd): boolean {
   const along = (from: Point, to: Point): number => (to.x - from.x) * head.out.x + (to.y - from.y) * head.out.y;
@@ -102,108 +82,31 @@ function tooClose(head: OverlayEnd, tail: OverlayEnd): boolean {
 }
 
 /**
- * The route between the two cleared ends, or `undefined` when no candidate clears even the two end
- * boxes.
+ * The polyline an overlay link draws: a short **stub** straight out of each port, past that port's
+ * own outward face by `OVERLAY_PILL_CLEARANCE`, and **one straight segment** between the two stub
+ * ends, at whatever angle that is (maintainer, stress ticket 20). An overlay link is not routed and
+ * is not orthogonal; the orthogonal rule of 2026-09-15 governs the routed family only.
  *
- * Eight candidates, all of them read off the two end boxes. The first two turn once. Four go right
- * round the pair, on a run one clearance outside the pair's own extent on each of the four
- * sides. Two more run down the middle of the gap between the boxes, on each axis — the case two
- * ports that face away from each other over a gap need, and the one no outside run reaches.
+ * Three consequences, each chosen rather than inherited:
  *
- * They are judged twice, in a preference order. A route that enters **no node body and no pill**
- * wins outright; the shortest of those is taken, and a tie goes to the one listed first, which is
- * the single turn that carries on the way the source port faces — the three-segment detour the
- * maintainer drew by hand in draw.io. When every candidate is blocked, the shortest that clears the
- * link's own two end boxes is taken instead: the eight ways are read off those two boxes alone, so
- * a shape that lands on all of them cannot be dodged without searching, and going round the pill is
- * the principle that must survive (`.scratch/drawio-export/issues/02-maintainer-edit-principles.md`,
- * principle 2). Only when even that fails does the caller keep the straight segment.
- */
-function between(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers): Point[] | undefined {
-  const from = head.clear, to = tail.clear;
-  const boxes = [head.box, tail.box];
-  const before = (of: (box: Rect) => number): number => Math.min(...boxes.map(of)) - OVERLAY_PILL_CLEARANCE;
-  const after = (of: (box: Rect) => number): number => Math.max(...boxes.map(of)) + OVERLAY_PILL_CLEARANCE;
-  const above = before(box => box.y), below = after(bottom);
-  const left = before(box => box.x), far = after(right);
-  /** The middle of the gap the two boxes leave on one axis; inside a box when they overlap on it. */
-  const gap = (low: (box: Rect) => number, high: (box: Rect) => number): number =>
-    (Math.max(...boxes.map(low)) + Math.min(...boxes.map(high))) / 2;
-  const midX = gap(box => box.x, right), midY = gap(box => box.y, bottom);
-  const turn = { x: to.x, y: from.y }, bend = { x: from.x, y: to.y };
-  const ways: Point[][] = [
-    // One turn, starting the way the source port faces.
-    ...(head.out.x !== 0 ? [[turn], [bend]] : [[bend], [turn]]),
-    // Right round the pair, on each of its four sides.
-    [{ x: from.x, y: above }, { x: to.x, y: above }],
-    [{ x: from.x, y: below }, { x: to.x, y: below }],
-    [{ x: left, y: from.y }, { x: left, y: to.y }],
-    [{ x: far, y: from.y }, { x: far, y: to.y }],
-    // Down the middle of the gap between them, on each axis. A run that falls inside a box — which
-    // is what an overlap gives — is refused by the same test as every other candidate.
-    [{ x: midX, y: from.y }, { x: midX, y: to.y }],
-    [{ x: from.x, y: midY }, { x: to.x, y: midY }],
-  ];
-  const everySegment = (points: readonly Point[], blocked: (one: Point, two: Point) => boolean): boolean =>
-    points.slice(1).every((point, index) => !blocked(points[index]!, point));
-  /**
-   * Whether the whole drawn polyline — the two stubs included — ever walks back along a run it
-   * already drew. A candidate can leave the source by the clearance and then turn back toward its
-   * own head, when the two cleared ends are less than one clearance apart along the source's
-   * normal: it enters no box, ties in length with the clean turn and would win on order. A route
-   * that retraces is not a route, and `route/validate` fails every path — an overlay path included
-   * — by the same sweep, so the candidate is measured with `retracingRuns` and not by the steps at
-   * one corner: two stubs that share a line overlap without ever being adjacent (ticket 04 A).
-   */
-  const retraces = (points: readonly Point[]): boolean =>
-    retracingRuns(points.slice(1).map((point, index) => ({ from: points[index]!, to: point })));
-  const clearOfAll = (points: readonly Point[]): boolean => everySegment(points, (one, two) => {
-    const box = { x: Math.min(one.x, two.x), y: Math.min(one.y, two.y),
-      width: Math.abs(two.x - one.x), height: Math.abs(two.y - one.y) };
-    return blockers.some(box, blocker => enters(one, two, blocker));
-  });
-  const clearOfEnds = (points: readonly Point[]): boolean =>
-    everySegment(points, (one, two) => boxes.some(box => enters(one, two, box)));
-  // A way round can land on the line the two cleared points already share, and then it states a corner
-  // that is not one. The retrace test reads the whole drawn polyline, stubs included, because that is
-  // where the retrace lives; the box tests read the part between the cleared ends, because the
-  // stubs are the port's own reserved outward reach and cross nothing else.
-  const candidates = ways.map(way => compact([from, ...way, to]))
-    .filter(points => axisAligned(points) && !retraces(straighten(compact([head.anchor, ...points, tail.anchor]))));
-  const shortest = (clear: (points: readonly Point[]) => boolean): Point[] | undefined => {
-    let best: { points: Point[]; length: number } | undefined;
-    for (const points of candidates) {
-      if (!clear(points)) continue;
-      const length = polylineLength(points);
-      if (best === undefined || length < best.length - EPS) best = { points, length };
-    }
-    return best?.points;
-  };
-  return shortest(clearOfAll) ?? shortest(clearOfEnds);
-}
-
-/**
- * The polyline an overlay link draws: out of each port past its own outward face by
- * `OVERLAY_PILL_CLEARANCE`, and round every node body and port pill between the two.
+ * - **The diagonal does not dodge.** It draws through a node body or a pill in its way and the
+ *   renderer's mask keeps that shape readable, which is what the mask was always there for. Moving
+ *   the nodes so there is nothing to draw through is placement's job (stress ticket 21), not a
+ *   search here.
+ * - **A pair that lines up degenerates.** Two ports facing each other on a clear axis put all four
+ *   points on one line, `straighten` drops both stub ends, and the path is the one straight segment
+ *   the maintainer's direct-line rule asks for — byte for byte what the orthogonal derivation drew.
+ * - **A pair too close to hold its stubs rides its faces**, so the two ends keep their order
+ *   (ticket 04 A). Where even that walks back — two boxes that overlap along the axis — the link
+ *   keeps the straight anchor-to-anchor segment, as does an end that states no side to leave by.
  *
  * Nothing here is measured and no box is grown: every number is read off geometry placement already
  * reserved, so the path is derived rather than discovered and the pipeline's one rule holds. It
  * cannot be built before placement freezes, because placement moves pills until stage 7 closes;
  * stage 8 publishes it at the seam that used to publish the straight segment, and an overlay link
  * still never reaches the router.
- *
- * Two ports that face each other across a gap narrower than their two clearances clear their own
- * outward **face** instead, because the clearance would put the two ends the wrong way round and
- * every route between them would then walk back over a stub (ticket 04 A). The path still enters
- * neither pill — it rides the face — the two ends keep their order, and the eight ways decide as
- * they always do: the straight run when the axis between the two faces is clear, a way round the
- * pair when it is not.
- *
- * When no candidate is clear — two pills that overlap on both axes, or a diagram that blocks every
- * way round — the link keeps the straight anchor-to-anchor segment, which is what every release before
- * this one drew, and the renderer's mask carries it.
  */
-export function overlayPath(model: LayoutModel, link: LayoutLink, blockers?: OverlayBlockers): LayoutPath {
+export function overlayPath(model: LayoutModel, link: LayoutLink): LayoutPath {
   const attachments = link.attachments!;
   const from = findPort(model, attachments.from), to = findPort(model, attachments.to);
   const one = from && overlayEnd(model.nodes[attachments.from.node]!, from);
@@ -211,10 +114,16 @@ export function overlayPath(model: LayoutModel, link: LayoutLink, blockers?: Ove
   const { head, tail } = one && two && tooClose(one, two)
     ? { head: { ...one, clear: one.face }, tail: { ...two, clear: two.face } }
     : { head: one, tail: two };
-  const middle = head && tail ? between(head, tail, blockers ?? overlayBlockers(model)) : undefined;
-  const points = head && tail && middle
-    ? straighten(compact([head.anchor, ...middle, tail.anchor]))
-    : [{ ...from!.anchor! }, { ...to!.anchor! }];
+  const stubbed = head && tail
+    ? straighten(compact([head.anchor, head.clear, tail.clear, tail.anchor]))
+    : undefined;
+  // A route that walks back along a run it already drew is not a route, and `route/validate` fails
+  // every path — an overlay path included — by the same interval sweep, so the producer may not
+  // state one: two stubs that share a line cover each other without ever being adjacent
+  // (ticket 04 A).
+  const retraces = stubbed !== undefined
+    && retracingRuns(stubbed.slice(1).map((point, index) => ({ from: stubbed[index]!, to: point })));
+  const points = stubbed && !retraces ? stubbed : [{ ...from!.anchor! }, { ...to!.anchor! }];
   const segments: PathSegment[] = points.slice(1).map((point, index) =>
     ({ from: { ...points[index]! }, to: { ...point }, owner: { ...link.owner } }));
   return { owner: { ...link.owner }, layer: 'overlay', fixed: false, ...pathStrokeWidth(link), segments };
