@@ -1,5 +1,5 @@
-import type { Rect } from '../model/geometry.js';
-import type { LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
+import type { Point, Rect } from '../model/geometry.js';
+import type { LayoutLink, LayoutModel, LayoutPort, PathSegment } from '../model/layout.js';
 import { equal } from '../model/json-equality.js';
 import { routedStroke, stemReach } from '../layout/bands.js';
 import { findPort } from '../layout/row-paths.js';
@@ -8,7 +8,7 @@ import { groupConsumers } from '../score/model.js';
 import { EPS, horizontal, length, retracingRuns, samePoint, segmentRect, vertical } from '../score/geometry.js';
 import { outward } from '../score/model.js';
 import { effectiveLayer, reversedRuns } from './plan.js';
-import { overlayBlockers, overlayPath, type OverlayBlockers } from '../layout/overlay-paths.js';
+import { overlayBlockers, overlayEndpoint, overlayPath, type OverlayBlockers } from '../layout/overlay-paths.js';
 import { ownedLanes, stubCandidate } from './paths.js';
 
 /** Minimum port stem, the same number G5 enforces on final geometry. */
@@ -143,8 +143,17 @@ export function validateRoutedPaths(model: LayoutModel, requireComplete = false)
     const ends = link.attachments!;
     const from = findPort(model, ends.from), to = findPort(model, ends.to);
     if (!from?.anchor || !to?.anchor) throw new Error(`Link ${link.id} references a missing port`);
-    if (!samePoint(path.segments[0]!.from, from.anchor) || !samePoint(path.segments.at(-1)!.to, to.anchor)) {
-      throw new Error(`Path on ${link.id} does not start and end at its port anchors`);
+    // Where a path has to meet its two ports. A routed path ends on the anchor, and the pill is
+    // painted over the inner half of its stem. An overlay path ends on the port's own outward
+    // **face**, because the overlay layer is masked out of the pill and a run inside it would never
+    // be drawn (stress ticket 30); `overlayEndpoint` names that point, and an end with no side to
+    // leave by has no face and keeps its anchor. The rule is the same one in both families — a path
+    // starts and ends where its ports are — read at the point each family really draws.
+    const attach = (port: LayoutPort, node: string): Point => (effectiveLayer(link) === 'routed'
+      ? undefined : overlayEndpoint(model.nodes[node], port)) ?? port.anchor!;
+    if (!samePoint(path.segments[0]!.from, attach(from, ends.from.node))
+      || !samePoint(path.segments.at(-1)!.to, attach(to, ends.to.node))) {
+      throw new Error(`Path on ${link.id} does not start and end at its ports`);
     }
     // `fixed` decides which contract this path answers to, so a restored value that merely looks
     // true is not good enough.

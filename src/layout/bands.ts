@@ -591,15 +591,22 @@ export function alignLinkedGroupGrid(model: LayoutModel): boolean {
  * where the long run lies on the other axis — the way round the pair and the run down the middle of
  * the gap — because there is then nothing for 7f to widen and the stage 9 ladder decides, exactly as
  * it does for a link whose room lies beyond a reserved lane.
+ *
+ * "On the other axis" is read as *no reach at all* on the axis being grown. The straight branch is
+ * one **diagonal** from face to face (stress tickets 20 and 30) and it has reach on both; widening
+ * the axis lengthens it, so it is a run 7f can reserve for and the midpoint is its own on that axis.
+ * Testing for a perfectly axis-aligned run was written when every overlay path was orthogonal and
+ * threw the diagonal away with the cross-axis runs. This came out under stress ticket 30: while a
+ * stub ran from the anchor it was the longest run of a pair standing close together, and 7f reserved
+ * about the *stub's* midpoint, inside the source pill — a run no label ever follows.
  */
 function overlayRunMid(model: LayoutModel, link: LayoutLink, axis: 'x' | 'y'): number | undefined {
-  const across = axis === 'x' ? 'y' : 'x';
   let run: PathSegment | undefined, longest = 0;
   for (const segment of overlayPath(model, link).segments) {
     const reach = Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y);
     if (reach > longest + EPS) { longest = reach; run = segment; }
   }
-  if (!run || Math.abs(run.to[across] - run.from[across]) > EPS) return undefined;
+  if (!run || Math.abs(run.to[axis] - run.from[axis]) <= EPS) return undefined;
   return (run.from[axis] + run.to[axis]) / 2;
 }
 
@@ -638,8 +645,13 @@ export function reserveLinkLabelRoom(model: LayoutModel): boolean {
     const unreserved = (why: string): void => placementWarning(model, 'LINK_LABEL_ROOM_UNRESERVED', `${link.id} ${why}; its label room cannot be reserved and the stage 9 ladder decides.`, [link.id]);
     if (fromNode === toNode) { unreserved('returns to its own node'); continue; }
     const measured = measureText(text, { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight });
-    const required = measured.width + 2 * LINK_LABEL_GEOMETRY.shortenMargin;
     const overlay = effectiveLayer(link) === 'overlay';
+    // One figure for both families: the text and its two shortening margins. The room below is
+    // measured out to the two pill faces, and since stress ticket 30 an overlay link's straight run
+    // is measured between those same two faces — so the run the label rides is exactly the room,
+    // and the overlay case needs no allowance of its own. It did while the run started a stub beyond
+    // each face (synthetics review ticket 01's reading of ADR-0014); there is no stub now.
+    const required = measured.width + 2 * LINK_LABEL_GEOMETRY.shortenMargin;
     if (fromGroup.tier !== toGroup.tier) {
       const [upper, lower, upperPort, lowerPort] = fromNode.bounds!.y <= toNode.bounds!.y ? [fromNode, toNode, from, to] : [toNode, fromNode, to, from];
       const upperTier = model.groups[model.document.nodes[upper.id]!.group]!.tier!;

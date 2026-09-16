@@ -792,13 +792,18 @@ router stems and twice the anchor-side pill protrusion on top of the label. That
 anchor midpoint for a routed link. For an **overlay** link it is the midpoint of the longest run of
 the path the overlay rule derives: the rule reads both of its branches off boxes placement has
 already frozen, so placement runs the very producer stage 8 will run instead of assuming the shape
-(synthetics review ticket 04 B). 7f grows room on one axis, so it can reserve only where the longest
-run is axis-aligned — the whole orthogonal branch, and the straight branch where the pair lines up.
-An angled straight segment leaves nothing for 7f to widen, and the stage 9 ladder places the label
-instead: it rides the diagonal upright, on that run's own midpoint (stress ticket 20).
+(synthetics review ticket 04 B). 7f grows room on one axis, so it can reserve wherever the longest
+run has reach on that axis — the whole orthogonal branch, and the straight branch's diagonal, which
+widening lengthens. Only a run lying wholly across the axis leaves nothing to widen. The required
+room is one figure for both families — the text and its two shortening margins — because the room is
+measured out to the two pill faces and an overlay link's straight run is measured between those same
+two faces, so the run the label rides *is* the room. An overlay link once carried one
+`OVERLAY_PILL_CLEARANCE` per end on top (synthetics review ticket 01), which was true while its
+labelled run started a stub beyond each face; stress ticket 30 removed the stub, and the allowance
+with it, as 8 px of over-reservation.
 Self-links, same-tier links
 through top/bottom ports, pairs whose ports do not face each other across the gap, overlay links
-whose longest run crosses the axis the room grows on, and links whose room
+whose longest run lies wholly across the axis the room grows on, and links whose room
 lies beyond a reserved lane are diagnosed `LINK_LABEL_ROOM_UNRESERVED`. Moves settle pills before the next link measures; the
 reservation re-runs after the grid inside the 7f loop and any movement replays the region producers. That group's band clearance also
 reserves the label's room beside the detour run under the title. Publication and restore re-run the
@@ -1006,31 +1011,53 @@ reservation the link does not own — because route geometry cannot be re-derive
 `overlay` links: never routed and never sent to the worker. Their path is the one
 `src/layout/overlay-paths.ts` derives from the two ports placement froze, and stage 8 only publishes
 it. **Straight by default, orthogonal by exception, and the exception is a node in the way**
-(maintainer, 2026-09-16). An **overlay stub** leaves each port anchor outward past that port's own
-outward face — the pill's, or the node's when the port draws none — by `OVERLAY_PILL_CLEARANCE`
-(2 × the endpoint mark's radius), and **one straight segment** joins the two stub ends, at whatever
-angle that is. Two ports facing each other on a clear axis put all four points on one line and that
-path is the single segment it always was. Placement's own job is to position nodes so that as many
-overlay links as possible take this branch.
+(maintainer, 2026-09-16). The default branch is **one straight segment** joining the two ports'
+outward faces — the pill's, or the node's when the port draws none — at whatever angle that is, and
+nothing else. The path **begins and ends on that face**, which is also where the endpoint mark is
+drawn: the anchor is the pill's centre, the overlay layer is masked out of every pill, and a run from
+the anchor was never drawn (*"path should also start on the point"*, maintainer, 2026-09-16, stress
+ticket 30). `overlayEndpoint` names the point; `route/validate` and G7 `endpoint-anchor` read it, so
+both still name exactly one point per end, and an end that states no side has no face to read and
+keeps its anchor.
 
-The exception is read on that segment alone — the two stubs are the ports' own reserved outward
-reach and are not tested — against **every node body and every drawn port pill, the link's own two
-ends included**. Nothing else blocks: not another overlay line, which is drawn thin and translucent
+There is **no stub on this branch**. The same review removed it — *"no point in stub then"* — because
+the stub's two jobs were to make the line meet the pill square and to keep the endpoint mark clear of
+it, and a path that starts on the face does both; all the stub added was a 4 px kink under the mark.
+`OVERLAY_PILL_CLEARANCE` belongs to the **orthogonal** branch alone, which has to step outward before
+it can turn. Placement's own job is to position nodes so that as many overlay links as possible take
+the straight branch.
+
+The straight branch has a condition of its own before any shape is consulted: **the segment must
+leave each port outward.** At both ends the segment's direction, taken out of that end, may not point
+back along that port's own outward normal. Level counts as leaving — the line rides both faces, which
+is what a reader sees a line on a pill's edge doing — and strictly inward does not, because a line
+leaving a port inward runs back **under that port's own pill**, and the overlay layer is masked out of
+every pill, so the mask would cut the line away from its own endpoint mark. A port that fails the
+condition is facing away from its partner, and the orthogonal branch answers it. The tilt this allows
+is generous and its limit is exact: a facing pair takes any angle up to and including the two faces
+being level, and stops there, not a fraction before.
+
+Because the condition holds, the segment's distance along each port's outward normal rises from zero
+and never falls, so it cannot re-enter the pill behind it. A link's **own two pills** therefore carry
+nothing the condition does not already have, and are **not** among the shapes the segment is tested
+against (maintainer, 2026-09-16) — testing them only restated the condition in sub-pixel arithmetic,
+where a tilt reaching 0.02 px inside a pill read as an obstruction. The exception is read on that one
+segment against **every node body, the link's own two included, and every other drawn port pill**. Nothing else blocks: not another overlay line, which is drawn thin and translucent
 precisely so that overlays may cross each other and is exempt from the clearance gates, and not a
 group box, a lane, a routed path or a label. A blocked segment is answered by the orthogonal
 derivation: the shortest of eight ways read off the two end boxes — two single turns, four ways
-right round the pair one stub outside its own extent, two down the middle of the gap the pair leaves
+right round the pair one clearance outside its own extent, two down the middle of the gap the pair leaves
 — that enters no node body and no pill, with ties going to the single turn that carries on the way
 the source faces, and with no candidate that walks back along a run it already drew. When every way
 is blocked the shortest that clears the link's own two end boxes is taken, and the renderer's mask
 carries the body it then crosses.
 
 Two ports facing each other on one line closer than their
-two stubs ride their own faces instead, which keeps the two ends in order (ticket 04 A). Where the
-straight polyline would walk back along a run it already drew — the same interval sweep
-`route/validate` fails a path by, because two stubs that share a line cover each other without ever
-being adjacent — the orthogonal branch answers it, and where an end states no side to leave by,
-the straight anchor-to-anchor segment is kept and the mask carries it. `route/validate`
+two clearances ride their own faces on the orthogonal branch instead, which keeps its two ends in
+order (ticket 04 A). The straight branch reads no retrace test: it publishes one segment, and one
+segment cannot walk back along a run it already drew — the test that stood there read two stubs that
+could be stated the wrong way round. Where an end states no side to leave by,
+the one straight segment is kept and the mask carries it, that end at its anchor. `route/validate`
 re-derives the path, compares it and reads `retraces` over it; it checks no orthogonality on an
 overlay path, because the straight branch is not orthogonal. Stub candidates: after routing, a link whose route passes through
 more than two intermediate tier bands (measured by their vertical extent, since a reserved lane
@@ -1267,7 +1294,10 @@ gate scope are untouched, and the legend keeps its recorded full class set and g
 
 Emission order: `<defs>` (style, icon symbols, overlay mask), canvas background, group boxes,
 masked overlay paths, crossed bar bodies, routed paths and merge trunks, nodes with icons, text and
-pills, group and link labels, unmasked overlay endpoint marks, generated legend.
+pills, group and link labels, unmasked overlay endpoint marks, generated legend. An endpoint mark is
+drawn at its overlay path's own first and last point, which is the port's outward face, so it sits on
+the pill's side where the line leaves it rather than over the port's name (stress ticket 30). draw.io
+already put its own mark there, on 2026-09-15, and the two renderers now agree.
 
 ---
 

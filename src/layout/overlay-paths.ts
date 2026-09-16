@@ -101,23 +101,47 @@ const polylineLength = (points: readonly Point[]): number => points.slice(1)
   .reduce((total, point, index) => total + Math.hypot(point.x - points[index]!.x, point.y - points[index]!.y), 0);
 
 /**
- * One end of an overlay link: the anchor the path must start from, the box the link leaves — the
- * pill when the port draws one, the node body when it does not — the point on that box's outward
- * face, and the point one clearance beyond it, which is where the route between the two ends
- * begins.
+ * One end of an overlay link: the port's anchor, the box the link leaves — the pill when the port
+ * draws one, the node body when it does not — the point on that box's outward face, which is where
+ * the path starts, and the point one clearance beyond it, which is where the route between the two
+ * ends begins. `pill` is that box again when it really is a pill, and `undefined` when the port
+ * draws none: the straight branch drops its own two pills from the shapes it tests against, and a
+ * node body is not one of them.
  */
-interface OverlayEnd { anchor: Point; box: Rect; face: Point; clear: Point; out: Point }
+interface OverlayEnd { anchor: Point; box: Rect; pill: Rect | undefined; face: Point; clear: Point; out: Point }
 
 function overlayEnd(node: LayoutNode, port: LayoutPort): OverlayEnd | undefined {
   if (!port.anchor || !port.side || !node.bounds) return undefined;
-  const box = port.pill && port.ref.anonymous !== true ? port.pill.bounds : node.bounds;
+  const pill = port.pill && port.ref.anonymous !== true ? port.pill.bounds : undefined;
+  const box = pill ?? node.bounds;
   const out = NORMAL[port.side];
   // The outward face of the box on this side, plus the clearance, measured from the anchor.
   const face = port.side === 'top' ? box.y : port.side === 'bottom' ? bottom(box)
     : port.side === 'left' ? box.x : right(box);
   const depth = Math.abs((out.x !== 0 ? port.anchor.x : port.anchor.y) - face);
   const outward = (by: number): Point => ({ x: port.anchor!.x + out.x * by, y: port.anchor!.y + out.y * by });
-  return { anchor: { ...port.anchor }, box, face: outward(depth), clear: outward(depth + OVERLAY_PILL_CLEARANCE), out };
+  return { anchor: { ...port.anchor }, box, pill,
+    face: outward(depth), clear: outward(depth + OVERLAY_PILL_CLEARANCE), out };
+}
+
+/**
+ * Where an overlay link's path **begins and ends**: the point on the port's own outward face the
+ * line leaves by, which is the pill's outward edge at the anchor's own offset along the side, or the
+ * node body's edge — and so the anchor itself — where the port draws no pill.
+ *
+ * *"point should be on a side of a pill"*, and *"path should also start on the point"* (maintainer,
+ * 2026-09-16, stress ticket 30). The anchor is the pill's centre and the renderer masks the pill, so
+ * a path that started there carried a run no reader ever saw and put the **overlay endpoint mark**
+ * — drawn above the mask — in the middle of the port's own name. From the face the path is exactly
+ * what is drawn at its two ends, and the mark sits where the line meets the pill.
+ *
+ * `undefined` when the end states no side, no anchor or no node box: there is then no outward face
+ * to read, that end keeps its anchor, and the link falls back to the one straight segment every
+ * release before this one drew. `route/validate` and G7 `endpoint-anchor` read this same function,
+ * so the gate still names one point per end and the producer cannot drift from it.
+ */
+export function overlayEndpoint(node: LayoutNode | undefined, port: LayoutPort | undefined): Point | undefined {
+  return node && port ? overlayEnd(node, port)?.face : undefined;
 }
 
 /**
@@ -191,6 +215,16 @@ function between(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers):
    */
   const retraces = (points: readonly Point[]): boolean =>
     retracingRuns(points.slice(1).map((point, index) => ({ from: points[index]!, to: point })));
+  /**
+   * The whole polyline this candidate publishes, its two outward steps included — **from face to
+   * face**, which is what is published and so what `route/validate` re-derives and reads `retraces`
+   * over. That is a change, not a restatement: this filter used to close the polyline at the two
+   * anchors while the validator read what stage 8 published, so the two measured different lines and
+   * the filter's was the longer by a pill half-depth at each end (stress ticket 30). They now read
+   * the same one, which is the only way the producer can be sure it never states a path its own
+   * validator throws on.
+   */
+  const whole = (points: readonly Point[]): Point[] => straighten(compact([head.face, ...points, tail.face]));
   const clearOfAll = (points: readonly Point[]): boolean => everySegment(points, (one, two) => {
     const box = { x: Math.min(one.x, two.x), y: Math.min(one.y, two.y),
       width: Math.abs(two.x - one.x), height: Math.abs(two.y - one.y) };
@@ -203,7 +237,7 @@ function between(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers):
   // where the retrace lives; the box tests read the part between the cleared ends, because the
   // stubs are the port's own reserved outward reach and cross nothing else.
   const candidates = ways.map(way => compact([from, ...way, to]))
-    .filter(points => axisAligned(points) && !retraces(straighten(compact([head.anchor, ...points, tail.anchor]))));
+    .filter(points => axisAligned(points) && !retraces(whole(points)));
   const shortest = (clear: (points: readonly Point[]) => boolean): Point[] | undefined => {
     let best: { points: Point[]; length: number } | undefined;
     for (const points of candidates) {
@@ -217,8 +251,16 @@ function between(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers):
 }
 
 /**
- * The straight segment between the two stub ends, when nothing a reader would call a node stands in
- * its way; `undefined` when something does, and the orthogonal derivation answers instead.
+ * Whether the straight branch answers: **one segment, face to face**, and nothing between. The empty
+ * list is that answer — there is no point between the two ends — and `undefined` says a node stands
+ * on the line, so the orthogonal derivation is asked instead.
+ *
+ * There is no stub here (maintainer, 2026-09-16, *"no point in stub then"*, stress ticket 30). The
+ * stub had two jobs and the endpoint move retired both: it made the line meet the pill square rather
+ * than at an angle, and it kept the endpoint mark clear of the pill. The path now starts on the face
+ * and the mark is drawn there, so all the stub added was a 4 px kink under the dot. An overlay link
+ * is the pill face, one straight segment at whatever angle, and the pill face. The **orthogonal**
+ * branch keeps `OVERLAY_PILL_CLEARANCE`: it has to step outward before it can turn.
  *
  * **What counts as a node in the way** (stress ticket 20, the agent's reading of the maintainer's
  * *"only if link goes through node, we route it orthogonally"*, stated here so one word can correct
@@ -229,32 +271,59 @@ function between(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers):
  * other, and they are exempt from the clearance gates. Not a group box, not a lane, not a routed
  * path, not a label.
  *
- * The two stubs are not tested, which is the same reading the eight ways use. A stub is the port's
- * own reserved outward reach: it starts at the anchor, which is its own pill's centre, and ends
- * `OVERLAY_PILL_CLEARANCE` past that pill's outward face — so most of it is inside the pill and the
- * **last 4 px is outside it**, by construction. Nothing else is known to stand in that 4 px, but
- * nothing here checks either; it is an untested run, pre-existing and shared with the orthogonal
- * branch, not a claim that the stub cannot cross anything.
+ * **The segment must leave each port outward.** This is the branch's own condition, not a detail of
+ * the test above: at both ends the segment's direction, taken *out of* that end, may not point back
+ * along the port's own outward normal. Zero is allowed, and is what two ports level on one side
+ * make — the line rides both faces, which is what a reader sees as leaving them. Strictly inward is
+ * a port that **faces away** from its partner, and a line leaving such a port runs back under that
+ * port's own pill; the overlay layer is masked out of every pill, so the mask would cut the line
+ * away from its own endpoint mark. The orthogonal branch answers those, stepping outward before it
+ * turns, and that is the one shape removing the stub moves (stress ticket 30).
+ *
+ * **So a link's own two pills are dropped from the shapes it is tested against** (maintainer,
+ * 2026-09-16). They carry nothing the guard does not already have: leaving a face outward means the
+ * segment's distance along that normal rises from zero and never falls, so it cannot re-enter the
+ * pill behind it, and riding the face is the open boundary `crosses` already calls clear. Keeping
+ * them only restated the guard's job in sub-pixel arithmetic — a tilt reaching 0.02 px inside a pill
+ * read as an obstruction. Every node **body** stays, the link's own two included: a port on the far
+ * side of its own body still has that body in the way.
  */
 function straightBetween(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers): Point[] | undefined {
-  const from = head.clear, to = tail.clear;
+  const from = head.face, to = tail.face;
+  /** Whether the segment leaves this end outward rather than turning back into its own port. */
+  const leaves = (end: OverlayEnd, towards: Point, away: Point): boolean =>
+    (towards.x - away.x) * end.out.x + (towards.y - away.y) * end.out.y >= -EPS;
+  if (!leaves(head, to, from) || !leaves(tail, from, to)) return undefined;
+  // The link's own two pills, matched by **geometry** rather than by object identity. The index is
+  // usually built from the very model these ends were read from, so identity would work today — and
+  // would fail silently the first time a caller passed an index built from a structurally equal
+  // clone, quietly putting the own-pill test back. Two drawn pills cannot share a rectangle, since
+  // that would mean two ports drawn on top of each other, so equal geometry is the same pill.
+  const own = (box: Rect): boolean => [head.pill, tail.pill].some(pill => pill !== undefined
+    && pill.x === box.x && pill.y === box.y && pill.width === box.width && pill.height === box.height);
   const window: Rect = { x: Math.min(from.x, to.x), y: Math.min(from.y, to.y),
     width: Math.abs(to.x - from.x), height: Math.abs(to.y - from.y) };
-  if (blockers.some(window, box => crosses(from, to, box))) return undefined;
-  // The stub ends can still be the wrong way round — a pair on two lines whose ports face away from
-  // each other — and then the segment walks back along a stub. `route/validate` fails such a path,
-  // so the rule may not state one and the orthogonal derivation is asked instead.
-  const drawn = straighten(compact([head.anchor, from, to, tail.anchor]));
-  if (retracingRuns(drawn.slice(1).map((point, index) => ({ from: drawn[index]!, to: point })))) return undefined;
-  return [from, to];
+  if (blockers.some(window, box => !own(box) && crosses(from, to, box))) return undefined;
+  // No retrace test: the branch publishes one segment, and one segment cannot walk back along a run
+  // it already drew. The test this replaces read two stubs that could be stated the wrong way round,
+  // and there are no stubs here.
+  return [];
 }
 
 /**
- * The polyline an overlay link draws: a stub out of each port, past its own outward face by
- * `OVERLAY_PILL_CLEARANCE`, and between the two stub ends **one straight segment** at whatever angle
- * that is — unless a node body or a pill stands on that segment, and then the orthogonal derivation
- * of `between` answers instead. Straight by default, orthogonal by exception, and the exception is a
- * node in the way (maintainer, 2026-09-16, stress ticket 20).
+ * The polyline an overlay link draws: **one straight segment from one pill face to the other**, at
+ * whatever angle that is — unless a node body or a pill stands on it, and then the orthogonal
+ * derivation of `between` answers instead, leaving each face outward by `OVERLAY_PILL_CLEARANCE`
+ * before it turns. Straight by default, orthogonal by exception, and the exception is a node in the
+ * way (maintainer, 2026-09-16, stress ticket 20).
+ *
+ * The path **begins and ends on the pill's face**, not on the port anchor at its centre: *"point
+ * should be on a side of a pill"*, and *"path should also start on the point"* (maintainer,
+ * 2026-09-16, stress ticket 30). The overlay layer is masked out of every pill, so an anchor-to-face
+ * run was never drawn; the polyline is now exactly the line the reader sees, and the **overlay
+ * endpoint mark** sits on the face where the line leaves. The straight branch then lost its stub to
+ * the same review — *"no point in stub then"* — because the stub's two jobs were to square the
+ * meeting and to clear the mark, and the face does both.
  *
  * The straight branch is what placement is meant to make possible: positioning the nodes so that as
  * many overlay links as possible are straight is stress ticket 21's work, and this rule is the test
@@ -273,8 +342,10 @@ function straightBetween(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBl
  * neither pill — it rides the face — and the two ends keep their order.
  *
  * When neither branch answers — two pills that overlap on both axes, or a diagram that blocks every
- * way round — the link keeps the straight anchor-to-anchor segment, which is what every release before
- * this one drew, and the renderer's mask carries it.
+ * way round — the link keeps the one straight segment every release before this one drew, now
+ * between the two faces, and the renderer's mask carries the shapes it crosses. An end that states
+ * no side has no outward face to read and keeps its anchor, which is the one point `overlayEndpoint`
+ * leaves as it was.
  */
 export function overlayPath(model: LayoutModel, link: LayoutLink, blockers?: OverlayBlockers): LayoutPath {
   const attachments = link.attachments!;
@@ -287,9 +358,17 @@ export function overlayPath(model: LayoutModel, link: LayoutLink, blockers?: Ove
   const shapes = head && tail ? blockers ?? overlayBlockers(model) : undefined;
   const middle = head && tail && shapes
     ? straightBetween(head, tail, shapes) ?? between(head, tail, shapes) : undefined;
-  const points = head && tail && middle
-    ? straighten(compact([head.anchor, ...middle, tail.anchor]))
-    : [{ ...from!.anchor! }, { ...to!.anchor! }];
+  // The two ends of the drawn line, whichever branch answers: the port's own outward face, and the
+  // anchor only where there is no face to read — an end that states no side. G7 `endpoint-anchor`
+  // and `route/validate` read `overlayEndpoint`, which is this same pair.
+  const ends = [{ end: one, port: from! }, { end: two, port: to! }]
+    .map(({ end, port }) => end ? { ...end.face } : { ...port.anchor! });
+  const built = head && tail && middle
+    ? straighten(compact([head.face, ...middle, tail.face])) : ends;
+  // Two pill faces that meet exactly leave the tooClose branch nothing between them and `compact`
+  // drops the repeat, so the one point is restated as the degenerate segment it is: a published
+  // path is never empty, and both ends of this one are still the face the gate names.
+  const points = built.length > 1 ? built : [built[0]!, { ...built[0]! }];
   const segments: PathSegment[] = points.slice(1).map((point, index) =>
     ({ from: { ...points[index]! }, to: { ...point }, owner: { ...link.owner } }));
   return { owner: { ...link.owner }, layer: 'overlay', fixed: false, ...pathStrokeWidth(link), segments };

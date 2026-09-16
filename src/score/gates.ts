@@ -18,7 +18,8 @@ interface Span { x: number; y: number; right: number; bottom: number; measurable
 const REJECT_LIMIT = 2 ** 26;
 const measurable = (x: number, y: number, right: number, bottom: number): boolean =>
   x > -REJECT_LIMIT && y > -REJECT_LIMIT && right < REJECT_LIMIT && bottom < REJECT_LIMIT;
-import { anchorOnBoundary, barContact, bundlePair, endpoints, groupConsumers, incident, junctionFan, mergedRun, outward, port, refEqual, refKey, sharedStem } from './model.js';
+import { anchorOnBoundary, barContact, bundlePair, effectiveLayer, endpoints, groupConsumers, incident, junctionFan, mergedRun, outward, port, refEqual, refKey, sharedStem } from './model.js';
+import { overlayEndpoint } from '../layout/overlay-paths.js';
 import type { Segment } from './model.js';
 import type { GateId, GateResult, ScoreCounters } from './types.js';
 
@@ -216,7 +217,16 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
     const ends = endpoints(link), from = port(model, ends.from), to = port(model, ends.to), path = link.path?.segments;
     if (!from || !to) { fail('G7', 'missing-port', [link.id], 'Link attachment references a missing port'); continue; }
     if (path?.length) {
-      if (!samePoint(path[0]!.from, from.anchor!) || !samePoint(path.at(-1)!.to, to.anchor!)) fail('G7', 'endpoint-anchor', [link.id], 'Link endpoints must equal port anchors');
+      // Where each family really meets its port. A routed path ends on the anchor, under its own
+      // pill. An overlay path ends on the port's outward **face**: the overlay layer is masked out
+      // of the pill, so an anchor-to-face run is never drawn, and the maintainer asked for the line
+      // and its endpoint mark to start on the pill's side (stress ticket 30). The gate still names
+      // exactly one point per end — `overlayEndpoint`, the producer's own — and an end that states
+      // no side has no face to read and keeps its anchor.
+      const overlay = effectiveLayer(link) !== 'routed';
+      const at = (item: typeof from, ref: { node: string }): Point =>
+        (overlay ? overlayEndpoint(model.nodes[ref.node], item) : undefined) ?? item.anchor!;
+      if (!samePoint(path[0]!.from, at(from, ends.from)) || !samePoint(path.at(-1)!.to, at(to, ends.to))) fail('G7', 'endpoint-anchor', [link.id], 'Link endpoints must equal the point their ports state');
       for (let i = 1; i < path.length; i++) if (!samePoint(path[i - 1]!.to, path[i]!.from)) fail('G7', 'disconnected-path', [link.id], 'Consecutive routed segments must connect');
     }
     if (!routedLinks.has(link)) continue;

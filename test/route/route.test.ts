@@ -177,10 +177,15 @@ links: [[a.p, b.p, {route: overlay}]]`);
     const model = await route(before, { createAttempt: refuse });
     const path = model.links[0]!.path!;
     // The two ports face each other on one axis with nothing between, so every turn the overlay
-    // rule offers collapses onto the line the anchors already share (synthetics review ticket 01).
+    // rule offers collapses onto the line the two anchors share (synthetics review ticket 01), and
+    // the one segment runs face to face — from the bottom pill's outward edge to the top pill's,
+    // 12 px inside each anchor (stress ticket 30). `overlayEndpoint` names both ends, and G7 below
+    // reads that same pair.
     expect(path).toEqual({ owner: { kind: 'link', id: 'link-1' }, layer: 'overlay', fixed: false,
-      segments: [{ from: before.nodes.a!.ports[0]!.anchor, to: before.nodes.b!.ports[0]!.anchor,
+      segments: [{ from: { x: 57, y: 103 }, to: { x: 57, y: 226 },
         owner: { kind: 'link', id: 'link-1' } }] });
+    expect(before.nodes.a!.ports[0]!.anchor).toEqual({ x: 57, y: 91 });
+    expect(before.nodes.b!.ports[0]!.anchor).toEqual({ x: 57, y: 238 });
     expect(model.links[0]!.technique).toBe('overlay');
     expect(model.links[0]!.stubCandidate).toBeUndefined();
     expect(score(model).snapshot.gates.G7.passed).toBe(true);
