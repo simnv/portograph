@@ -1,10 +1,13 @@
 # Expected: An overlay pair whose two ports face each other on a clear axis. A bottom `sync` port and
 # a top `sync` port on two nodes one routed link holds in column share an x, so both stubs are
-# collinear with the segment between them, `straighten` drops them, and the path is the one straight
-# 125 px segment from (57.34, 107) to (57.34, 232). This is the case the stub-and-one-segment rule
-# degenerates to: measured against the orthogonal derivation that is now its exception branch, the
-# polyline, the canvas and Q are identical to the last digit, so a diagram whose overlay ports line
-# up does not move (stress ticket 20, question 2). Every gate passes; Q is 0.8335929892966935.
+# collinear with the segment between them, `straighten` drops them, and the path is one straight
+# segment. This is the case the stub-and-one-segment rule degenerates to (stress ticket 20,
+# question 2). That segment now runs face to face — 101 px, from (57.34, 119) to (57.34, 220) —
+# where it ran anchor to anchor, 125 px from (57.34, 107) to (57.34, 232): stress ticket 30 took a
+# 12 px pill half-depth off each end, and those 24 px are exactly what the overlay mask cut out of
+# the two pills and never drew. The endpoint mark, drawn above the mask, moves with the path onto
+# the pill's face. The canvas and Q are unchanged to the last digit, so a diagram whose overlay
+# ports line up still does not move. Every gate passes; Q is 0.8335929892966935.
 # Test-only input owned by stress ticket 20; the whole pipeline runs, so no stage precondition is
 # needed.
 portograph: 2

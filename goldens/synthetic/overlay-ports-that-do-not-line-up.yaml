@@ -1,9 +1,12 @@
 # Expected: An overlay pair whose two ports do not line up, with nothing between them. The `sync`
 # ports sit on two nodes 75.51 px apart on x and the straight segment between the two stub ends
 # enters no node body and no pill, so the default branch of the 2026-09-16 rule (stress ticket 20)
-# answers: a 16 px stub straight out of each pill and one 119.79 px diagonal from (80.01, 123) to
+# answers: a 4 px stub straight out of each pill face and one 119.79 px diagonal from (80.01, 123) to
 # (155.52, 216). That is the shape the maintainer chose over both the orthogonal staircase and the
-# bare anchor-to-anchor line; the stub is what keeps the line meeting the pill square. The orthogonal
+# bare anchor-to-anchor line; the stub is what keeps the line meeting the pill square. The whole path
+# is (80.01, 119) (80.01, 123) (155.52, 216) (155.52, 220): it begins and ends on the two pill faces,
+# where the endpoint marks are drawn (stress ticket 30). The stub measured 16 px while it ran from
+# the anchor, of which the mask cut 12 and drew 4 — the same 4 px nub it is now. The orthogonal
 # derivation, which is now the exception branch, drew
 # (80.01, 107) (80.01, 216) (155.52, 216) (155.52, 232) on this same input; the two ends and the
 # bounding box are the same, so the canvas and Q are unchanged. Every gate passes; Q is

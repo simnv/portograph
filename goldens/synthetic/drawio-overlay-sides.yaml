@@ -4,8 +4,10 @@
 # is routed orthogonally instead. `drawio-constructs.yaml` has both overlay ends on a top side, which
 # keeps its two stub ends level and its segment clear; here one end leaves a left side and the other
 # a top side, which is the L-shaped branch of the orthogonal route: the turn the source pill faces
-# would cross Reflector C's body, so the other one wins. Every gate passes; Q is
-# 0.8382821220986563.
+# would cross Reflector C's body, so the other one wins. The whole path is (122.01, 260.5)
+# (118.01, 260.5) (118.01, 218) (78.51, 218) (78.51, 222) — 4, 42.5, 39.51 and 4 px — beginning and
+# ending on the two pill faces, where the endpoint marks are drawn and where the exporter already
+# pinned both ends (stress ticket 30). Every gate passes; Q is 0.8382821220986563.
 # Test-only input owned by drawio-export ticket 02; the whole pipeline runs, so no stage
 # precondition is needed.
 portograph: 2

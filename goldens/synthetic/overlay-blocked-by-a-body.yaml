@@ -3,8 +3,12 @@
 # both node bodies, and it covers both stubs, which `route/validate` throws on — and the link is
 # routed orthogonally. Border B's own body then lies between the two ports, so none of the eight ways
 # the two pill boxes offer clears every node and pill either. The rule falls back one step and takes
-# the shortest way that clears its own two pill boxes: out of each pill head by the clearance, and
+# the shortest way that clears its own two pill boxes: out of each pill face by the clearance, and
 # one run across above both of them, which crosses Border B. The SVG mask keeps that body readable.
+# The whole path is (32.5, 258.5) (28.5, 258.5) (28.5, 246.5) (114.5, 246.5) (114.5, 255.5)
+# (118.5, 255.5) — 4, 12, 86, 9 and 4 px — so it begins and ends on the two pill faces, where the
+# endpoint marks are drawn, and the 4 px stub at each end is the whole of what is drawn there
+# (stress ticket 30).
 # Every gate passes; Q is 0.8401068126850539. The detour reaches further than the straight line it
 # replaced, so `aspectRatio` reads a different bounding box and Q moves with it: the score reads
 # what the diagram draws, and a drift here is not a regression.
