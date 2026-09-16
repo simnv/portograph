@@ -368,8 +368,12 @@ Each row takes the first position clear of frozen geometry at or beyond that pit
 before it. The search advances by what refused the position. An obstacle rectangle names a
 distance, so the next position tried is the one past its bottom. A group edge the row would run
 along, a corridor the link owns and a reserved run of the link's own name only "not here", so the
-next position tried is one pitch on. A run is left out only when the gap's limit is reached: a
-single refused position never costs the gap its whole allocation.
+next position tried is one pitch on. Where both refuse one position, the search takes the later of
+the two answers: it is **monotone in its obstacles**, and one more obstacle can only ever move a row
+down. Without that a rectangle handed the search a position the pitch walk had stepped over, a gap
+given one more obstacle seated its row earlier, and the room the height rule reserves — the room the
+seating lands in — no longer held the seating. A run is left out only when the gap's limit is
+reached: a single refused position never costs the gap its whole allocation.
 The first and the last keep half a pitch from their own boundary. Two runs that stand on
 one x would share length there. A lane can sit under a lane of the same x in the band above, and a
 port can sit over a lane's mouth. The one that leaves the low boundary turns first. Two such runs
@@ -402,7 +406,14 @@ without a lane terminal on either boundary keeps the route it has today. The row
 it: a run along a gap is a wall along it and never across it (ADR-0015 rule 3). A run whose own
 approach the gap cannot leave clear is left out the same way, **alone**: it keeps the route it has
 today, it crosses the rows the gap did seat, and the gap seats every other run whose approach is
-clear. The gap allocates nothing only where that leaves nothing at all.
+clear. The gap allocates nothing only where that leaves nothing at all. A gap that seats no row at
+all still reserves its **columns**: placement fixed a column end to end, so no search decides it and
+leaving it to a batch buys nothing.
+
+A left-out run is a crosser of every row the gap seated, and a crosser's exemption is of the whole
+horizontal cover — nothing separates crossing a row from travelling along one. Rows pack at 17.5 px
+with ±11.5 px covers, so a packed gap leaves such a run no clear band to traverse in. Stress
+ticket 13.
 
 A link transiting several tiers reserves a lane at each, ordered from source to target even for
 upward links. Prefer in-span corridors. When they do not fit, retain source geometry, reserve an

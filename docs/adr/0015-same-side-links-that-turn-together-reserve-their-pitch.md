@@ -420,8 +420,26 @@ at the default stroke, and any run standing on that boundary under the row loses
 Both approaches — the near-side stem and the far-side reach — are therefore rectangles the row
 search reads like any other, so a position that covers one is refused and the search takes the next
 the pitch allows. Measured on the Enterprise NTP sheet, the gap that owes 52 rows goes from 43 seats
-to 51; 5/6 seats 47 of 48, 8/9 seats 33 of 34, and all twelve gaps allocate where three used to
+to 51; 5/6 seats 47 of 48, 8/9 seats 15 of 16, and all twelve gaps allocate where three used to
 refuse.
+
+**And the search is monotone in its obstacles.** The two rectangles above stand on a gap's
+boundaries, which is exactly where the first position the pitch allows is, so they are the case that
+exposed the sixth amendment's search: a rectangle names how far to advance and every other refusal
+names one pitch, so a rectangle over a position something *else* also refuses handed the search a
+position the pitch walk had stepped over — and a gap given one more obstacle seated its row
+**earlier**. That breaks the seventh amendment's own contract, because the room the height rule
+reserves is the room the seating lands in: measured on `a-claim-lies-on-a-cover-edge`, the first row
+seated 14.75 px early, both rows then fitted the ungrown 49.25 px, the gap never grew, and it held
+49.25 px where its own seating asked for 55.50. The search therefore takes the later of the two
+answers where both refuse the position — the rectangle's distance and one pitch — and a refusal can
+only ever move a row down.
+
+**A gap that seats no row still reserves its columns.** The sixth amendment gave up the whole
+allocation when the seating placed nothing, columns included. A column is a run whose two ends share
+one x: placement fixed it end to end and no row search decides it, so leaving it to a batch reserves
+nothing and buys nothing. It is now kept whatever the rows do. The gap's `seated` count is unchanged
+by it — only a row is a seat — so the height rule still reads the same demand.
 
 **And a run that lies on a reservation's cover edge is clear of it.** The two rules above put a run
 there by construction: the search seats a row past a reserved approach, which lands it exactly one
@@ -430,13 +448,41 @@ cover margin from the boundary the approach stands on. A cover is its run grown 
 asks for and owes nothing more. The tenth amendment's claim scanned those covers with `segmentRect`,
 which counts a zero-area touch as a hit, so the approach was handed to libavoid instead of claimed,
 and libavoid answered with a route that stops at the checkpoint and never reaches the port. The scan
-now asks for an overlap of area. Two generated corpus inputs are the reproducer;
-`goldens/synthetic/a-claim-lies-on-a-cover-edge.yaml` is the smaller.
+now asks for an overlap of area, at a bound of two `EPS`: `segmentRect` grows the rectangle it is
+given by `EPS` on every side, so a cover shrunk by one `EPS` would scan unchanged. The bound is
+therefore *a centreline `EPS` (1e-7 px) or more inside the cover is refused, one within `EPS` of its
+edge is admitted* — and nothing it admits can fail the gate it stands for, because a centreline less
+than `EPS` inside a cover leaves more than `10 − EPS` of clearance and G6 fails at `< 10 − EPS`.
+
+The reproducers are two generated corpus inputs, `transit-t6-p3-f1-s3` and `transit-t6-p3-f2-s3`:
+each publishes with the rule and throws `Routed gap on … does not meet its reserved endpoints`
+without it. `goldens/synthetic/a-claim-lies-on-a-cover-edge.yaml` is the first of them shrunk by
+three links, and fails the same way. Of the 360 inputs of `corpus`, 15 hold a claim that touches a
+cover edge; those two are the ones the touch decides. The rule is **not** made redundant by the
+monotone search above: it was re-measured after it.
 
 **What it does not settle.** The Enterprise NTP sheet still does not publish. Its next failure is
 not an allocation: a link whose two ports face each other **inside** one tier band has no way left
 across it — a node body on the line, an earlier batch's route above, ten reserved stems below, a
 lane across, and a full tier gap at each of the band's two exits — and the router truncates its
-route (stress ticket 11). That is the sixth amendment's open item, a reservation is a wall and
+route (stress ticket 12). That is the sixth amendment's open item, a reservation is a wall and
 nothing separates crossing one from travelling along it, with four walls round one link and no rule
 that says which of them gives way.
+
+And it makes one open item the normal case rather than the exception. A run the gap leaves out is a
+**crosser** of every row it seated, and the exemption a crosser holds is of the whole horizontal
+cover — the rule that lets a run *cross* a row also lets it *travel along* one. Before this
+amendment a left-out run was rare; it is now what every covered approach produces. Rows pack at
+17.5 px with ±11.5 px covers, so a packed gap has no clear band by arithmetic: measured on the
+Enterprise NTP sheet, gaps 5/6, 6/7 and 9/10 each leave the left-out run a 15.00 px strip at the
+top, which is the headroom the high boundary owes the approaches standing on it. Both places the
+traverse can go are room reserved for something else, and libavoid chooses between them. Stress
+ticket 13; it is stress ticket 12 seen from the other side.
+
+A second item this amendment does not touch: two allocated runs of **one** gap may stand 2 px apart.
+The row order forbids only an exact shared x, and the clearance scan measures a candidate against
+frozen placement, the reserved approaches and the owed stems — never against the other runs of its
+own gap. On `a-gap-leaves-out-the-covered-run` that is 52.50 px of shared length at 2.00 px of
+centreline distance, and the diagram fails G6 `parallel-clearance`. It is present on `main` at
+0288048 and is not a regression, but it is worse than a discovery: a spacing **reserved** during
+placement that the gate refuses, which a taller gap cannot repair. Stress ticket 14.
