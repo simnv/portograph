@@ -11,6 +11,7 @@ import { rebuildNodeGeometry } from './node-geometry.js';
 import { measureText } from '../text/index.js';
 import { NODE_CONTENT_GEOMETRY } from '../theme/content.js';
 import { nodeGap } from './skeleton-graph.js';
+import { groupShape } from './grid.js';
 import { rebuildBands, span, union, validateSkeletonBands } from './skeleton-geometry.js';
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, flankPair } from './flanks.js';
@@ -174,7 +175,7 @@ function validatePlacementStructure(model: LayoutModel): void {
   for (const group of Object.values(model.groups)) {
     validateRect(group.bounds, `group ${group.id}`);
     same([...(group.rowOrder ?? [])].sort(), [...group.nodes].sort(), 'Invalid row order');
-    if (model.document.groups[group.id]!.shape === 'row') {
+    if (groupShape(model, group.id) === 'row') {
       for (let i = 1; i < group.rowOrder!.length; i++) {
         if (model.nodes[group.rowOrder![i - 1]!]!.bounds!.x > model.nodes[group.rowOrder![i]!]!.bounds!.x + 1e-6) throw new Error('Physical row order contradicts rowOrder');
       }
@@ -580,7 +581,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
   for (const [id, group] of Object.entries(draft.groups)) {
     same(omit(group, ['bounds']), omit(model.groups[id]!, ['bounds']), 'Undeclared group field changed');
     if (rule === 'rows' && group.flank) same(group, model.groups[id], 'Rows cannot move flank groups');
-    if (rule === 'rows' && !group.flank && draft.document.groups[id]!.shape !== 'row') same(group, model.groups[id], 'Rows cannot change non-row groups');
+    if (rule === 'rows' && !group.flank && groupShape(draft, id) !== 'row') same(group, model.groups[id], 'Rows cannot change non-row groups');
     if (rule === 'flanks' && group.flank) same(group.bounds!.x, model.groups[id]!.bounds!.x, 'Flanks cannot translate groups horizontally');
     if (rule === 'bars' && draft.document.groups[id]!.shape !== 'bar') same(group, model.groups[id], 'Bars cannot move another group');
     if (rule === 'flanks' && !group.flank && !Object.values(model.groups).some(g => g.flank?.of === id)) same(group, model.groups[id], 'Flanks cannot move another group');
@@ -615,7 +616,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     if (rule === 'rows') {
       same(node.size, old.size, 'Rows cannot resize nodes');
       if (model.groups[model.document.nodes[id]!.group]!.flank) same(node, old, 'Rows cannot move flank nodes');
-      if (draft.document.groups[draft.document.nodes[id]!.group]!.shape !== 'row') same(node, old, 'Rows cannot move bar nodes');
+      if (groupShape(draft, draft.document.nodes[id]!.group) !== 'row') same(node, old, 'Rows cannot move bar nodes');
     }
     if (rule === 'lanes') {
       same(node.size, old.size, 'Lanes cannot resize nodes');
