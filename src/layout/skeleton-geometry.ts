@@ -9,10 +9,29 @@ const bottom = (rect: Rect): number => rect.y + rect.height;
 const contains = (a: Rect, b: Rect): boolean => a.x <= b.x && a.y <= b.y && right(a) >= right(b) && bottom(a) >= bottom(b);
 const overlaps = (a: Rect, b: Rect): boolean => a.x < right(b) && b.x < right(a) && a.y < bottom(b) && b.y < bottom(a);
 const validRect = (r: Rect | undefined): r is Rect => r !== undefined && Object.values(r).every(Number.isFinite) && r.width > 0 && r.height > 0;
+const bits = new DataView(new ArrayBuffer(8));
+/** The next double above `value`; `value` itself when there is none (zero and the infinities). */
+function nextUp(value: number): number {
+  if (!Number.isFinite(value) || value === 0) return value;
+  bits.setFloat64(0, value);
+  bits.setBigUint64(0, bits.getBigUint64(0) + (value > 0 ? 1n : -1n));
+  return bits.getFloat64(0);
+}
+/**
+ * The width a box at `x` needs to reach `edge`. `edge - x` is not always it: a rectangle kept as
+ * `x` and `width` is read back through `x + width`, and the difference of two absolute edges can
+ * round down, leaving the box one ULP short of the box it was built from. The residue grows with
+ * the coordinate and the span. One step up is the smallest width that really reaches `edge`
+ * (stress ticket 14; ticket 13 measured the same residue through `contains`).
+ */
+const span = (x: number, edge: number): number => {
+  const width = edge - x;
+  return x + width < edge ? nextUp(width) : width;
+};
 export function union(rects: Rect[]): Rect {
   if (!rects.length) return { x: 0, y: 0, width: 2 * spacing.padding, height: 2 * spacing.padding };
   const x = Math.min(...rects.map(r => r.x)), y = Math.min(...rects.map(r => r.y));
-  return { x, y, width: Math.max(...rects.map(right)) - x, height: Math.max(...rects.map(bottom)) - y };
+  return { x, y, width: span(x, Math.max(...rects.map(right))), height: span(y, Math.max(...rects.map(bottom))) };
 }
 function elkRect(node: ElkNode): Rect {
   const rect = { x: node.x!, y: node.y!, width: node.width!, height: node.height! };
