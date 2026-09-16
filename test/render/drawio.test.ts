@@ -1457,13 +1457,14 @@ links:
 });
 
 describe('direct lines', () => {
-  it('keeps every direct line square, the unaligned overlay detour included', async () => {
+  it('keeps every routed direct line square, and the overlay diagonal angled', async () => {
     // A direct line is a link whose model path is one segment. The maintainer's rule, verbatim:
     // "straight direct line should be horizontal or vertical. angled direct lines should be
-    // straight." — then "orthogonal then maybe?". The decision taken on 2026-09-15 is all
-    // orthogonal. A direct line the pipeline routed on one axis carries that axis and nothing else.
-    // An overlay between two pill heads that share neither axis takes the shortest orthogonal
-    // detour round both pill boxes. A dragged end then makes a Z-bend, never a diagonal.
+    // straight." — then "orthogonal then maybe?". The decision taken on 2026-09-15 was all
+    // orthogonal; stress ticket 20 narrows it to the **routed** family. A routed direct line the
+    // pipeline laid on one axis carries that axis and nothing else, and a dragged end makes a
+    // Z-bend, never a diagonal. An overlay between two pill heads that share neither axis is a stub
+    // out of each head and one diagonal between the two stub ends.
     //
     // Every number below is read out of the exported file and only then compared with the model,
     // because a test that states the model against itself agrees with any export at all.

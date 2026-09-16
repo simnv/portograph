@@ -19,7 +19,11 @@
  *    the perimeter spacing keys are no-ops; `elbowEdgeStyle` re-routes by up to 265 px and is
  *    refused. A polyline with a segment that is not axis-aligned is outside that router's vocabulary
  *    and keeps `edgeStyle=none`, which reproduces any waypoints verbatim. Measured against
- *    drawio-desktop 31.4.5.
+ *    drawio-desktop 31.4.5. The routed family is orthogonal, so it takes the first style; an
+ *    **overlay** link is a stub out of each port and one segment between the two stub ends, which is
+ *    angled whenever the two stub ends do not line up, so it takes the second (stress ticket 20).
+ *    The boundary is the model's: the style is chosen from the published polyline, and this file
+ *    states no shape of its own for either family.
  * 2. `points=` on a shape does not constrain an edge — it only decides which anchors the editor
  *    offers. An endpoint is pinned by `exitX`/`exitY` on the edge, and `exitPerimeter` defaults to
  *    1, which projects the point onto the perimeter instead of using it.
@@ -1099,7 +1103,8 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       // moved by hand, where `edgeStyle=none` leaves a diagonal stub. The orthogonal router draws
       // the supplied waypoints and does not re-route them, and `jettySize=0` keeps it from adding a
       // stub of its own; see fact 1 in the header for the numbers. A polyline that is not
-      // axis-aligned is outside that router's vocabulary, so it keeps `edgeStyle=none`.
+      // axis-aligned is outside that router's vocabulary, so it keeps `edgeStyle=none` — which is
+      // every overlay link whose two stub ends do not line up, and no routed link at all.
       //
       // Both polylines are tested, because they differ: the waypoints exactly, and the polyline
       // draw.io really draws — the pinned terminals included — within the endpoint tolerance. A port
