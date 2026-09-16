@@ -215,7 +215,15 @@ function between(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers):
    */
   const retraces = (points: readonly Point[]): boolean =>
     retracingRuns(points.slice(1).map((point, index) => ({ from: points[index]!, to: point })));
-  /** The whole polyline this candidate publishes: the two stubs, from face to face, included. */
+  /**
+   * The whole polyline this candidate publishes, its two outward steps included — **from face to
+   * face**, which is what is published and so what `route/validate` re-derives and reads `retraces`
+   * over. That is a change, not a restatement: this filter used to close the polyline at the two
+   * anchors while the validator read what stage 8 published, so the two measured different lines and
+   * the filter's was the longer by a pill half-depth at each end (stress ticket 30). They now read
+   * the same one, which is the only way the producer can be sure it never states a path its own
+   * validator throws on.
+   */
   const whole = (points: readonly Point[]): Point[] => straighten(compact([head.face, ...points, tail.face]));
   const clearOfAll = (points: readonly Point[]): boolean => everySegment(points, (one, two) => {
     const box = { x: Math.min(one.x, two.x), y: Math.min(one.y, two.y),
@@ -286,10 +294,16 @@ function straightBetween(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBl
   const leaves = (end: OverlayEnd, towards: Point, away: Point): boolean =>
     (towards.x - away.x) * end.out.x + (towards.y - away.y) * end.out.y >= -EPS;
   if (!leaves(head, to, from) || !leaves(tail, from, to)) return undefined;
-  const own = [head.pill, tail.pill];
+  // The link's own two pills, matched by **geometry** rather than by object identity. The index is
+  // usually built from the very model these ends were read from, so identity would work today — and
+  // would fail silently the first time a caller passed an index built from a structurally equal
+  // clone, quietly putting the own-pill test back. Two drawn pills cannot share a rectangle, since
+  // that would mean two ports drawn on top of each other, so equal geometry is the same pill.
+  const own = (box: Rect): boolean => [head.pill, tail.pill].some(pill => pill !== undefined
+    && pill.x === box.x && pill.y === box.y && pill.width === box.width && pill.height === box.height);
   const window: Rect = { x: Math.min(from.x, to.x), y: Math.min(from.y, to.y),
     width: Math.abs(to.x - from.x), height: Math.abs(to.y - from.y) };
-  if (blockers.some(window, box => !own.includes(box) && crosses(from, to, box))) return undefined;
+  if (blockers.some(window, box => !own(box) && crosses(from, to, box))) return undefined;
   // No retrace test: the branch publishes one segment, and one segment cannot walk back along a run
   // it already drew. The test this replaces read two stubs that could be stated the wrong way round,
   // and there are no stubs here.

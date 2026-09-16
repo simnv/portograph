@@ -769,9 +769,13 @@ the path the overlay rule derives: the rule reads both of its branches off boxes
 already frozen, so placement runs the very producer stage 8 will run instead of assuming the shape
 (synthetics review ticket 04 B). 7f grows room on one axis, so it can reserve wherever the longest
 run has reach on that axis — the whole orthogonal branch, and the straight branch's diagonal, which
-widening lengthens. Only a run lying wholly across the axis leaves nothing to widen. An overlay
-link's required room also carries one `OVERLAY_PILL_CLEARANCE` for each end, because its labelled
-run starts a stub beyond the face the room is measured out to (synthetics review ticket 01).
+widening lengthens. Only a run lying wholly across the axis leaves nothing to widen. The required
+room is one figure for both families — the text and its two shortening margins — because the room is
+measured out to the two pill faces and an overlay link's straight run is measured between those same
+two faces, so the run the label rides *is* the room. An overlay link once carried one
+`OVERLAY_PILL_CLEARANCE` per end on top (synthetics review ticket 01), which was true while its
+labelled run started a stub beyond each face; stress ticket 30 removed the stub, and the allowance
+with it, as 8 px of over-reservation.
 Self-links, same-tier links
 through top/bottom ports, pairs whose ports do not face each other across the gap, overlay links
 whose longest run lies wholly across the axis the room grows on, and links whose room
