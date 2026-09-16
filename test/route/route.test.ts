@@ -40,6 +40,18 @@ nodes:
   c: {group: low, ports: [{name: p, side: top}, {name: q, side: top}]}
 links: [[a.p, b.p], [m.p, c.p], [m.q, c.q]]`;
 
+/**
+ * One gap the router really has to answer. Stage 8 claims a gap whose two ends stand on one line
+ * and whose corridor is clear, so a facing pair reaches no batch at all; a right port feeding a top
+ * port has to turn, which is what the tests below need the worker for.
+ */
+const bending = `portograph: 2
+groups: {up: {tier: 0}, low: {tier: 1}}
+nodes:
+  a: {group: up, ports: [{name: p, side: right}]}
+  b: {group: low, ports: [{name: p, side: top}]}
+links: [[a.p, b.p]]`;
+
 describe('stage 8 routing', () => {
   it('routes the three-tier irregular cross-link through libavoid and passes every gate', async () => {
     const before = await throughBands(irregular);
@@ -224,8 +236,8 @@ links: [[a.p, b.p]]`);
     const before = await throughBands(`portograph: 2
 groups: {top-group: {tier: 0}, mid: {tier: 1}, low: {tier: 2}, low2: {tier: 2}}
 nodes:
-  a: {group: top-group, ports: [{name: p, side: bottom}]}
-  m: {group: mid, ports: [{name: p, side: bottom}, {name: q, side: bottom}, {name: r, side: bottom}]}
+  a: {group: top-group, ports: [{name: p, side: right}]}
+  m: {group: mid, ports: [{name: p, side: bottom}, {name: q, side: bottom}, {name: r, side: right}]}
   b: {group: low, ports: [{name: p, side: top}]}
   c: {group: low, ports: [{name: p, side: top}, {name: q, side: top}]}
   b2: {group: low2, ports: [{name: p, side: top}]}
@@ -239,14 +251,16 @@ links: [[a.p, b.p], [m.p, c.p], [m.q, c.q], [m.r, b2.p]]`);
 
     // The second batch receives the first batch's routes as trimmed protective obstacles. These
     // two links do not compete for space in this layout, so the assertion is on what batch-1 was
-    // given: without the hand-off its request would carry no `routed:` shape at all.
+    // given: without the hand-off its request would carry no cover of a routed gap at all. The
+    // prefix names the connector, because the tier-gap runs this pass allocates are covered under
+    // `routed:gap:` before any batch runs and are not the hand-off this test measures.
     const first = model.links[0]!;
     const expected = exchange.received.filter(item => item.connector.startsWith('link-1#'))
       .flatMap(item => completedRouteObstacles(before, first, item.connector, item.points));
     expect(expected.length).toBeGreaterThan(1);
-    const covers = exchange.sent[1]!.shapes.filter(shape => shape.id.startsWith('routed:'));
+    const covers = exchange.sent[1]!.shapes.filter(shape => shape.id.startsWith('routed:link-1#'));
     expect(covers).toEqual(expected.map(item => ({ id: item.id, bounds: item.bounds })));
-    expect(exchange.sent[0]!.shapes.some(shape => shape.id.startsWith('routed:'))).toBe(false);
+    expect(exchange.sent[0]!.shapes.some(shape => shape.id.startsWith('routed:link-1#'))).toBe(false);
     // The covers protect the route's interior and leave its two terminals reachable.
     const holds = (box: Rect, point: Point): boolean => point.x >= box.x && point.x <= box.x + box.width
       && point.y >= box.y && point.y <= box.y + box.height;
@@ -278,7 +292,7 @@ links: [[a.p, b.p], [m.p, c.p], [m.q, c.q], [m.r, b2.p]]`);
   });
 
   it('rejects router output that misses a checkpoint or stops short, and keeps the input model', async () => {
-    const before = await throughBands(irregular);
+    const before = await throughBands(bending);
     const snapshot = JSON.stringify(before);
     const truncate = (points: Point[]): Point[] => points.slice(0, -1);
     await expect(route(before, { createAttempt: forgingAttempt(truncate) })).rejects.toThrow(/does not meet its reserved endpoints|checkpoint/);
@@ -370,7 +384,7 @@ links: [[a.p, b.p, {route: overlay}]]`);
   });
 
   it('terminates a real worker that never replies when the budget expires', async () => {
-    const before = await throughBands(irregular);
+    const before = await throughBands(bending);
     let terminated = 0;
     const stall: CreateRouteAttempt = () => {
       const worker = spawnAvoidWorker('data:text/javascript,while(true){}');
@@ -385,14 +399,14 @@ links: [[a.p, b.p, {route: overlay}]]`);
   });
 
   it('reports a missing WASM asset instead of waiting for the deadline', async () => {
-    const before = await throughBands(irregular);
+    const before = await throughBands(bending);
     const missing: CreateRouteAttempt = () => ({ worker: spawnAvoidWorker(avoidAssets.workerUrl),
       assets: { ...avoidAssets, wasmUrl: `${avoidAssets.wasmUrl}.missing` } });
     await expect(route(before, { createAttempt: missing, routeBudgetMs: 20000 })).rejects.not.toBeInstanceOf(RouteDeadlineError);
   });
 
   it('refuses to route a remainder without a worker factory and rejects an invalid budget', async () => {
-    const before = await throughBands(irregular);
+    const before = await throughBands(bending);
     await expect(route(before)).rejects.toThrow(/requires a libavoid worker factory/);
     await expect(route(before, { createAttempt: createAvoidAttempt, routeBudgetMs: 0 })).rejects.toThrow(/budget must be positive/);
   });
