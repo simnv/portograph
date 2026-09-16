@@ -1177,6 +1177,10 @@ describe('maintainer edit principles', () => {
     return { cell, head, tail, path: [outward(head), ...cell.points, outward(tail)] };
   }
 
+  /** Whether two points of the drawn polyline share an axis. */
+  const onOneAxis = (one: Point, two: Point): boolean =>
+    Math.abs(one.x - two.x) < 1e-6 || Math.abs(one.y - two.y) < 1e-6;
+
   /** A point one clearance outward of `at`, the way a pill on `side` faces. */
   const out = (at: Point, side: string): Point => ({
     x: at.x + (side === 'left' ? -CLEARANCE : side === 'right' ? CLEARANCE : 0),
@@ -1312,8 +1316,10 @@ links:
   }, 60000);
 
   it('turns once when the two overlay pills face different ways', async () => {
-    // The other branch: no single cross-run clears both heads, so the shortest orthogonal path that
-    // leaves each head outward and enters neither box wins. `drawio-overlay-sides` is that fixture.
+    // The exception branch of stress ticket 20: the straight segment between the two stub ends
+    // enters Reflector C's own body, so the link is routed orthogonally — and there no single
+    // cross-run clears both heads, so the shortest path that leaves each head outward and enters
+    // neither box wins. `drawio-overlay-sides` is that fixture, and it stays a square connector.
     const { cell, head, tail, path } = await overlayOf(fixture('drawio-overlay-sides'));
     expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
     expect(new Set([head.side, tail.side]).size).toBe(2);
@@ -1321,6 +1327,24 @@ links:
     expect(path[1]).toEqual(out(path[0]!, head.side));
     expect(path.length).toBe(5);
     square(path, [head, tail]);
+  }, 60000);
+
+  it('keeps `edgeStyle=none` for the overlay that stays straight and angled', async () => {
+    // Stress ticket 20's default branch, which is the one case in the corpus that reaches the guard
+    // of principle 1: `overlay-ports-that-do-not-line-up` has nothing between its two `sync` ports,
+    // so the segment between the two stub ends is drawn at its own angle — outside the orthogonal
+    // router's vocabulary. The connector reproduces the two stub ends as waypoints verbatim.
+    // Measured on drawio-desktop 31.4.5, the drawn polyline is within 0.005 px of these four points.
+    const { cell, head, tail, path } = await overlayOf(fixture('overlay-ports-that-do-not-line-up'));
+    expect(cell.style['edgeStyle']).toBe('none');
+    expect(cell.style['jettySize']).toBeUndefined();
+    expect([head.side, tail.side]).toEqual(['bottom', 'top']);
+    expect(path.length).toBe(4);
+    expect(path[1]).toEqual(out(path[0]!, head.side));
+    expect(path[2]).toEqual(out(path[3]!, tail.side));
+    expect(onOneAxis(path[0]!, path[1]!)).toBe(true);
+    expect(onOneAxis(path[2]!, path[3]!)).toBe(true);
+    expect(onOneAxis(path[1]!, path[2]!)).toBe(false);
   }, 60000);
 
   it('goes right round the pair when no single turn clears both pills', async () => {
@@ -1444,10 +1468,12 @@ describe('direct lines', () => {
   it('keeps every direct line square, the unaligned overlay detour included', async () => {
     // A direct line is a link whose model path is one segment. The maintainer's rule, verbatim:
     // "straight direct line should be horizontal or vertical. angled direct lines should be
-    // straight." — then "orthogonal then maybe?". The decision taken on 2026-09-15 is all
-    // orthogonal. A direct line the pipeline routed on one axis carries that axis and nothing else.
-    // An overlay between two pill heads that share neither axis takes the shortest orthogonal
-    // detour round both pill boxes. A dragged end then makes a Z-bend, never a diagonal.
+    // straight." — then "orthogonal then maybe?". The decision taken on 2026-09-15 was all
+    // orthogonal; stress ticket 20 narrows it to the **routed** family. A routed direct line the
+    // pipeline laid on one axis carries that axis and nothing else, and a dragged end makes a
+    // Z-bend, never a diagonal. The overlay between two pill heads that share neither axis is
+    // straight by default here too — but its straight segment runs through two node bodies, so this
+    // one takes the orthogonal detour round both pill boxes and the whole file stays square.
     //
     // Every number below is read out of the exported file and only then compared with the model,
     // because a test that states the model against itself agrees with any export at all.

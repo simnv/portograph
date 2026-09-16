@@ -1,0 +1,40 @@
+# Expected: An overlay pair whose two ports do not line up, with nothing between them. The `sync`
+# ports sit on two nodes 75.51 px apart on x and the straight segment between the two stub ends
+# enters no node body and no pill, so the default branch of the 2026-09-16 rule (stress ticket 20)
+# answers: a 16 px stub straight out of each pill and one 119.79 px diagonal from (80.01, 123) to
+# (155.52, 216). That is the shape the maintainer chose over both the orthogonal staircase and the
+# bare anchor-to-anchor line; the stub is what keeps the line meeting the pill square. The orthogonal
+# derivation, which is now the exception branch, drew
+# (80.01, 107) (80.01, 216) (155.52, 216) (155.52, 232) on this same input; the two ends and the
+# bounding box are the same, so the canvas and Q are unchanged. Every gate passes; Q is
+# 0.8391492903118092.
+# Test-only input owned by stress ticket 20; the whole pipeline runs, so no stage precondition is
+# needed.
+portograph: 2
+profile: network
+groups:
+  upper: { tier: 0, label: Upper }
+  lower: { tier: 1, label: Lower }
+nodes:
+  a:
+    group: upper
+    class: router
+    label: Router A
+    ports:
+      - { name: d1, side: bottom, class: downlink }
+      - { name: sync, side: bottom }
+  b:
+    group: lower
+    class: rr
+    label: Reflector B
+    ports:
+      - { name: u1, side: top, class: uplink }
+  c:
+    group: lower
+    class: rr
+    label: Reflector C
+    ports:
+      - { name: sync, side: top }
+links:
+  - [a.d1, b.u1]
+  - [a.sync, c.sync, { route: overlay }]
