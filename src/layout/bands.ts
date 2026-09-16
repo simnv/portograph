@@ -787,15 +787,7 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   if (changed && !exhausted) throw new Error('Linked groups do not share the grid their links require');
   const entries = routerEntryPoints(model);
   const expectedBands = orderedGroupIds(model.document).map(id => bandFor(model, id, entries));
-  if (!equal(model.labelBands, expectedBands)) {
-    if (process.env.PROBE_DEBUG) {
-      for (const [index, band] of model.labelBands.entries()) {
-        if (!equal(band, expectedBands[index])) console.log('BANDDIFF held', JSON.stringify(band), 'expected', JSON.stringify(expectedBands[index]));
-      }
-      console.log('ENTRIES', JSON.stringify(entries.filter(e => e.kind === 'stem' && e.outward > 15).map(e => [e.link, e.node, e.side, e.outward])));
-    }
-    throw new Error('Group label bands contradict final group geometry');
-  }
+  if (!equal(model.labelBands, expectedBands)) throw new Error('Group label bands contradict final group geometry');
   for (const band of model.labelBands) {
     if (!Number.isFinite(band.clearance) || band.clearance < GROUP_PADDING - EPS) throw new Error(`Group ${band.group} reserves less than the ordinary padding below its label band`);
     for (const nodeId of model.groups[band.group]!.nodes) {
