@@ -3,7 +3,7 @@ import {
   type Diagnostic, type Endpoint, type Layer, type LayoutLink, type LayoutModel,
   type NormalisedDocument, type Owner, type PortRef,
 } from '../model/index.js';
-import { enclosedLink } from '../layout/grid.js';
+import { enclosedBundle } from '../layout/grid.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 
 export interface ResolveOptions {
@@ -309,21 +309,22 @@ function groupBundles(model: LayoutModel): void {
 
 /**
  * Say, once and in the model, where a group's authored shape is declined because the group holds
- * both ends of a link whose space a stacked arrangement cannot promise (`enclosedLink`). The shape
- * is read back through `isGridGroup`, which asks that same question of the same document, so the
- * diagnostic and the geometry cannot disagree — this reports the answer, it does not decide it.
+ * both ends of a bundle whose channel a stacked arrangement cannot promise (`enclosedBundle`). The
+ * shape is read back through `groupShape`, which asks that same question of the same document, so
+ * the diagnostic and the geometry cannot disagree — this reports the answer, it does not decide it.
+ *
+ * Stage 1 reads a layout module here. That is the wrong way round for the layering, and it is
+ * deliberate: the predicate has exactly one definition, and `grid.ts` is where the shape rules
+ * live. `grid.ts` imports nothing from `resolve`, so there is no cycle; if one ever appears, move
+ * the predicate to `model/` rather than copying it.
  */
 function declineStackedShapes(model: LayoutModel): void {
   for (const id of orderedGroupIds(model.document)) {
     if (model.document.groups[id]!.shape !== 'grid') continue;
-    const found = enclosedLink(model, id);
-    if (!found) continue;
-    const [from, to] = found.nodes;
-    const why = found.bundle
-      ? `it holds both ends of ${found.bundle.id}, between ${from} and ${to}, and a stacked arrangement gives that bundle's channel no room`
-      : `it holds both ends of ${found.link.id}, between ${from} and ${to}, whose port side the author fixed, so a stacked arrangement cannot re-vote it`;
-    report(model, 'GROUP_SHAPE_DECLINED', `${id} keeps the row shape instead of grid: ${why}`,
-      [{ kind: 'group', id }, found.bundle?.owner ?? found.link.owner], 'warning');
+    const bundle = enclosedBundle(model, id);
+    if (!bundle) continue;
+    report(model, 'GROUP_SHAPE_DECLINED', `${id} keeps the row shape instead of grid: it holds both ends of ${bundle.id}, between ${bundle.nodes[0]} and ${bundle.nodes[1]}, and a stacked arrangement gives that bundle's channel no room`,
+      [{ kind: 'group', id }, bundle.owner], 'warning');
   }
 }
 

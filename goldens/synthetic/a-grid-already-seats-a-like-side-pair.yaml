@@ -1,0 +1,21 @@
+# Expected: Change nothing. `n01` and `n02` carry the same like-facing `top` pair the fixture beside
+# this one constrains, but closest-to-square already packs the six nodes three columns by two rows
+# and seats the pair in the first of them, so the count does not move. The rule is a filter on the
+# candidate counts, not a floor under them: an authored side the grid already satisfies costs the
+# grid nothing, and the published box is the one the aspect rule chose on its own.
+portograph: 2
+profile: network
+groups:
+  place: { tier: 0, shape: grid }
+  lower: { tier: 1 }
+nodes:
+  n01: { group: place, ports: [{ name: q, side: top }] }
+  n02: { group: place, ports: [{ name: q, side: top }] }
+  n03: { group: place }
+  n04: { group: place }
+  n05: { group: place }
+  n06: { group: place, ports: [{ name: d, side: bottom }] }
+  sink: { group: lower, ports: [{ name: p, side: top }] }
+links:
+  - [n01.q, n02.q]
+  - [n06.d, sink.p]
