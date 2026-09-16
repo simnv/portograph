@@ -554,7 +554,15 @@ stay outside the tree, and the cohort shrinks accordingly — one rule (`treeCoh
 7d from the traversals under construction, and in 7e and on restore from the root junction id a split
 path carries. An excluded member keeps its own stem out of the port, which covers the tree's root:
 7e reports it with `FAN_MEMBER_UNRESERVED` and G4 reports the overlap, until ticket 47 adopts the
-last two shapes. `LayoutLink.sharedRuns.from/to` records its outward partial runs. A checkpoint
+last two shapes. A last pass releases the branch whose reserved run closes the checkpoint another
+link's port must be approached from, and every branch of the link it hems (`FAN_BRANCH_HEMMED`,
+ADR-0018 rule 3). **Only an end that reserved nothing is measured there.** An end whose own fan
+reserved a run is approached at that run's terminal, so the port's checkpoint stands inside the
+link's own reservation and a foreign run across it is an overlap G4 and G6 report rather than a
+route stage 8 cannot draw. A release pins the gap's end in the middle of the tier gap, where the
+route the router finds for one released link can wall in the point another has to reach; it must
+leave the router a gap it can answer orthogonally (stress ticket 10).
+`LayoutLink.sharedRuns.from/to` records its outward partial runs. A checkpoint
 the reserved run already passes through — a lane's approach point that a deep leaf has reached — is
 consumed by the run and not asked of the router. Stage 13 consumes `from` outward and `to` in reverse order and direction;
 a partial run never becomes a complete `path`. G4 exempts only validated shared runs. G6's fan

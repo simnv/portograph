@@ -205,3 +205,14 @@ one gap over.
      hems and every branch of the link it hems (`FAN_BRANCH_HEMMED`). Ports on the hemming fan's own
      node side are exempt, because a fan's own siblings stand a pitch away by construction and
      treating them as hemmed undoes the tracks rules 1 and 2 reserve.
+
+     **Only an end that reserved nothing can be hemmed** (stress ticket 10). An end whose own fan
+     reserved a run is approached at that run's terminal and not at the port, so the port's
+     checkpoint always stands inside a reservation the link itself owns and closing it costs the
+     link nothing; a foreign run across the reservation is an overlap of two reserved runs, which G4
+     and G6 measure. Measuring the port at every end released branches whose approaches were never
+     shut, and the release is not free: it pins the gap's end in the middle of the tier gap and the
+     route the router finds for one released link can wall in the point another has to reach.
+     Measured on five corpus inputs, libavoid then dropped that end without a word and answered with
+     a diagonal, which stage 8 refuses. The rule is that a release must leave the router a gap it can
+     answer orthogonally; where nothing is closed there is nothing to release.
