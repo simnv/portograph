@@ -362,8 +362,8 @@ export function sidePlan(model: LayoutModel, node: string, side: 'top' | 'bottom
   if (!owner?.bounds) return undefined;
   // The side that carries its group's title nests nothing. Stage 7f places that title after the
   // depth is chosen, in the room the deeper stem would turn in, and it is then an obstacle the turn
-  // is not clear of: measured, admitting it instead breaks 103 corpus inputs, 19 of them publishing
-  // a route into the title's own reservation.
+  // is not clear of: measured over 1 103 corpus inputs, admitting it instead breaks 192 of them —
+  // 188 because a group no longer retains the clearance beside its own label band.
   //
   // `bandSide` counts incident routed link ports over frozen port topology. Never read this from
   // `model.labelBands`: it does not exist before 7f, `syncBands` rewrites it inside 7f and
