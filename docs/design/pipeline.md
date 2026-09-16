@@ -982,35 +982,44 @@ reservation the link does not own — because route geometry cannot be re-derive
 `overlay` links: never routed and never sent to the worker. Their path is the one
 `src/layout/overlay-paths.ts` derives from the two ports placement froze, and stage 8 only publishes
 it. **Straight by default, orthogonal by exception, and the exception is a node in the way**
-(maintainer, 2026-09-16). An **overlay stub** leaves that port's own outward face — the pill's, or
-the node's when the port draws none — outward by `OVERLAY_PILL_CLEARANCE` (2 × the endpoint mark's
-radius), and **one straight segment** joins the two stub ends, at whatever angle that is. The path
-**begins and ends on that face**, which is also where the endpoint mark is drawn: the anchor is the
-pill's centre, the overlay layer is masked out of every pill, and a run from the anchor was never
-drawn (*"path should also start on the point"*, maintainer, 2026-09-16, stress ticket 30). So the
-whole stub is visible and the nub is the 4 px it always drew. `overlayEndpoint` names the point;
-`route/validate` and G7 `endpoint-anchor` read it, so both still name exactly one point per end, and
-an end that states no side has no face to read and keeps its anchor. Two ports facing each other on a clear axis put all four points on one line and that
-path is the single segment it always was. Placement's own job is to position nodes so that as many
-overlay links as possible take this branch.
+(maintainer, 2026-09-16). The default branch is **one straight segment** joining the two ports'
+outward faces — the pill's, or the node's when the port draws none — at whatever angle that is, and
+nothing else. The path **begins and ends on that face**, which is also where the endpoint mark is
+drawn: the anchor is the pill's centre, the overlay layer is masked out of every pill, and a run from
+the anchor was never drawn (*"path should also start on the point"*, maintainer, 2026-09-16, stress
+ticket 30). `overlayEndpoint` names the point; `route/validate` and G7 `endpoint-anchor` read it, so
+both still name exactly one point per end, and an end that states no side has no face to read and
+keeps its anchor.
 
-The exception is read on that segment alone — the two stubs are the ports' own reserved outward
-reach and are not tested — against **every node body and every drawn port pill, the link's own two
-ends included**. Nothing else blocks: not another overlay line, which is drawn thin and translucent
+There is **no stub on this branch**. The same review removed it — *"no point in stub then"* — because
+the stub's two jobs were to make the line meet the pill square and to keep the endpoint mark clear of
+it, and a path that starts on the face does both; all the stub added was a 4 px kink under the mark.
+`OVERLAY_PILL_CLEARANCE` belongs to the **orthogonal** branch alone, which has to step outward before
+it can turn. Placement's own job is to position nodes so that as many overlay links as possible take
+the straight branch.
+
+The exception is read on that one segment, against **every node body and every drawn port pill, the
+link's own two ends included**. The segment starts *on* a pill's outward edge, which is the boundary
+the open predicate is written for — a line that rides a face is clear of it. Two ports facing each
+other leave their faces outward and are clear at once; two level on the same side ride both faces and
+are clear; a port facing **away** from its partner turns back inward, really does re-enter its own
+pill, and takes the orthogonal branch. The stub used to lift such a pair clear of its own pill before
+it turned, so this is the one shape its removal moves, and the tilt at which it moves is small: level
+is one segment, half a pixel off level reaches 0.02 px inside the lower pill and goes round. Nothing else blocks: not another overlay line, which is drawn thin and translucent
 precisely so that overlays may cross each other and is exempt from the clearance gates, and not a
 group box, a lane, a routed path or a label. A blocked segment is answered by the orthogonal
 derivation: the shortest of eight ways read off the two end boxes — two single turns, four ways
-right round the pair one stub outside its own extent, two down the middle of the gap the pair leaves
+right round the pair one clearance outside its own extent, two down the middle of the gap the pair leaves
 — that enters no node body and no pill, with ties going to the single turn that carries on the way
 the source faces, and with no candidate that walks back along a run it already drew. When every way
 is blocked the shortest that clears the link's own two end boxes is taken, and the renderer's mask
 carries the body it then crosses.
 
 Two ports facing each other on one line closer than their
-two stubs ride their own faces instead, which keeps the two ends in order (ticket 04 A). Where the
-straight polyline would walk back along a run it already drew — the same interval sweep
-`route/validate` fails a path by, because two stubs that share a line cover each other without ever
-being adjacent — the orthogonal branch answers it, and where an end states no side to leave by,
+two clearances ride their own faces on the orthogonal branch instead, which keeps its two ends in
+order (ticket 04 A). The straight branch reads no retrace test: it publishes one segment, and one
+segment cannot walk back along a run it already drew — the test that stood there read two stubs that
+could be stated the wrong way round. Where an end states no side to leave by,
 the one straight segment is kept and the mask carries it, that end at its anchor. `route/validate`
 re-derives the path, compares it and reads `retraces` over it; it checks no orthogonality on an
 overlay path, because the straight branch is not orthogonal. Stub candidates: after routing, a link whose route passes through

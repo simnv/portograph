@@ -1,25 +1,25 @@
-# Expected: A described overlay link whose long run is a diagonal. The two ports face each other but
-# are not level, because the source carries a second right-side port, and nothing stands between
-# them — so the default branch of the 2026-09-16 rule (stress ticket 20) answers: a 4 px stub out of
-# each pill face and one 173.18 px segment between the two stub ends, from (175.5, 71) to
-# (348.56, 77.5). The whole path is (171.5, 71) (175.5, 71) (348.56, 77.5) (352.56, 77.5): it begins
-# and ends on the two pill faces, where the endpoint marks are drawn (stress ticket 30).
+# Expected: A described overlay link that is one diagonal. The two ports face each other but are not
+# level, because the source carries a second right-side port, and nothing stands between them — so
+# the default branch of the 2026-09-16 rule (stress tickets 20 and 30) answers with the whole link in
+# one segment: **173.18 px from (171.5, 71) to (344.56, 77.5)**, pill face to pill face, with the
+# endpoint marks at its two ends.
 #
-# That diagonal is the longest run and the one the label rides, and 7f reserves for it: the label's
-# text plus two shortening margins plus the clearance each end of the run starts beyond, which comes
-# to 173.06 px on the axis 7f grows, and the diagonal reaches exactly that on x. The label is drawn
-# in full, upright, centred on the diagonal's own midpoint at x 262.03 and one normal gap above it,
-# 12 px clear of the pill it used to overhang, and no diagnostic is raised.
+# That run is the one the label rides, and 7f reserves for it exactly: the text and its two
+# shortening margins, 173.06 px, and the run reaches 173.06 px on the axis 7f grows. No allowance of
+# its own is needed — the room is measured between the two pill faces and since the stub went so is
+# the run, so they are the same figure. The label is drawn in full, upright, centred on the
+# diagonal's own midpoint at x 258.03 and one normal gap above it, exactly one shortening margin
+# clear of the pill it used to overhang, and no diagnostic is raised.
 #
 # Stress ticket 30 is what made that reservation possible. While an overlay stub ran from the port
 # anchor it was 33 px, which was the longest run of a pair standing this close, so 7f reserved about
 # the *stub's* midpoint — a point inside the source pill, on a run no label follows — overshot to a
 # 199.17 px diagonal, and then warned `LINK_LABEL_ROOM_UNRESERVED` because the diagonal that had
-# become the longest run was not axis-aligned. A 4 px stub is never the longest run, so the diagonal
-# is read from the first pass; a run with reach on the axis 7f grows is a run 7f can reserve for.
-# Every gate passes; Q is 0.7902663476195246, against 0.7870176474414954 for the 26 px of overshoot
-# this replaces and 0.7871352744129312 for the orthogonal staircase before it — the soft score reads
-# what the diagram draws, and a tighter diagram scoring higher is not a regression.
+# become the longest run was not axis-aligned. There is one run now and it is a diagonal, so the fix
+# is the same either way: a run with reach on the axis 7f grows is a run 7f can reserve for.
+# Every gate passes; Q is 0.7913523029318137, against 0.7870176474414954 for the 26 px of overshoot
+# this replaces and 0.7871352744129312 for the orthogonal staircase before that — the soft score
+# reads what the diagram draws, and a tighter diagram scoring higher is not a regression.
 portograph: 2
 profile: network
 groups:
