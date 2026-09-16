@@ -10,7 +10,7 @@ import { sizeNodes } from './size.js';
 import { bandGap, nodeGap, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { moveGroup, stackBands } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
-import { bandSide, nodeObstacleReach, routedStroke, stemReach } from './bands.js';
+import { bandSide, nodeObstacleReach, nudgingDistance, routedStroke, stemReach } from './bands.js';
 import { MEMBER_GAP, fanEnd } from './bundle-geometry.js';
 import { laneSource, laneWidth, transitTiers } from './lanes.js';
 import { fitRegionGroup } from './regions.js';
@@ -386,10 +386,17 @@ export function sidePlan(model: LayoutModel, node: string, side: 'top' | 'bottom
     }
   }
   if (legs.size < 2) return undefined;
-  // `beyond.get(p)` holds the ports `p` must turn beyond: those its own travel passes over.
+  // `beyond.get(p)` holds the ports `p` must turn beyond: those its own travel reaches. A leg that
+  // stops short of another port's column still reaches that port's strip, which is half a strip
+  // wide on each side of the column — the cover `stemBounds` gives it, at the widest routed stroke.
+  // A leg that stops inside it is a leg the batch's own exemption would have to answer for, so the
+  // travel is read out to the strip's near edge and not to the column.
+  const strip = nudgingDistance(model);
   const beyond = new Map([...legs.keys()].map(id => [id, [] as string[]]));
   for (const [id, leg] of legs) for (const [other, peer] of legs) {
-    if (other !== id && peer.at > leg.low + EPS && peer.at < leg.high - EPS) beyond.get(id)!.push(other);
+    const low = leg.low < leg.at - EPS ? leg.low - strip : leg.low;
+    const high = leg.high > leg.at + EPS ? leg.high + strip : leg.high;
+    if (other !== id && peer.at > low + EPS && peer.at < high - EPS) beyond.get(id)!.push(other);
   }
   // Longest chain below each port. Two ports that must each turn beyond the other have no clean
   // order, and the side keeps its flat stems, exactly as a row gap does.
