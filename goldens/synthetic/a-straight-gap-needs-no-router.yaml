@@ -3,9 +3,10 @@
 # those crossings covers the reserved 15 px approach of `m2 → l1`, libavoid cannot reach the
 # checkpoint, drops it without a word and answers with the two node centres and a diagonal. The gap
 # has nothing for a router to choose: stage 8 claims it as a reserved run and stitches it straight.
-# The diagram is produced. The two crossing links still share the one corridor this tier gap offers,
-# so G4 and G6 fail between them; the claimed run is in none of it. Stress ticket 07, from the
-# Enterprise NTP stress test.
+# The diagram is produced. The two crossing links leave one side of `h1` and one of them travels
+# over the other's port, so rule 1 nests their two stems (stress ticket 08) and they no longer run
+# along each other; what is left is `link-1` following the `hub` group edge. Stress ticket 07, from
+# the Enterprise NTP stress test.
 portograph: 2
 groups:
   top: { tier: 2, label: "Top" }
