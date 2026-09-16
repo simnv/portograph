@@ -22,6 +22,7 @@ import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
 import { alignLinkedGroupGrid, produceGroupLabelBands, replanGroupLabels, validateGroupLabelBands } from './bands.js';
 import { growTierGaps } from './gap-room.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 import { tierGapRoom } from './gap-runs.js';
 import { produceLinkLabels, validateLinkLabels } from './link-labels.js';
 import { validateRoutedPaths } from '../route/validate.js';
@@ -479,17 +480,16 @@ function hasUnsupportedClaims(model: LayoutModel): boolean {
       && !(labelStage && (label.role === 'link' || label.role === 'legend')));
 }
 function rebuildBoxes(model: LayoutModel): void {
-  const EPS = 1e-6;
   for (const group of Object.values(model.groups)) {
     if (!group.nodes.length) continue;
     const box = union(group.nodes.map(id => model.nodes[id]!.bounds!)), old = group.bounds!;
     const derivedLeft = box.x - 12, derivedTop = box.y - 12;
     const oldRight = old.x + old.width, oldBottom = old.y + old.height;
     const derivedRight = box.x + box.width + 12, derivedBottom = box.y + box.height + 12;
-    const x = derivedLeft < old.x - EPS ? derivedLeft : old.x;
-    const y = derivedTop < old.y - EPS ? derivedTop : old.y;
-    const farX = derivedRight > oldRight + EPS ? derivedRight : oldRight;
-    const farY = derivedBottom > oldBottom + EPS ? derivedBottom : oldBottom;
+    const x = derivedLeft < old.x - PLACEMENT_EPS ? derivedLeft : old.x;
+    const y = derivedTop < old.y - PLACEMENT_EPS ? derivedTop : old.y;
+    const farX = derivedRight > oldRight + PLACEMENT_EPS ? derivedRight : oldRight;
+    const farY = derivedBottom > oldBottom + PLACEMENT_EPS ? derivedBottom : oldBottom;
     group.bounds = { x, y, width: farX - x, height: farY - y };
   }
   rebuildBands(model);
@@ -704,6 +704,17 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
       const held = { centring: centreViolations(draft), gaps: shortGaps(draft) };
       if (noNewItems(after.centring, held.centring) && noNewItems(after.gaps, held.gaps)) {
         draft.lanes = followed; rebuildLaneExtents(draft);
+        // A corridor is geometry two of 7f's own plans are derived from, and this move replaces the
+        // corridors both of them read. `laneSidesHold` decides which linked pair may share an
+        // x-extent, so a corridor that leaves a group's window releases a merge the grid declined;
+        // and a lane rectangle is a forbidden range for a group label, so a corridor that moves
+        // changes where the label may stand. Both are settled again here, against the corridors the
+        // diagram publishes, because `validateGroupLabelBands` re-derives both and the published
+        // model has to be their fixed point (ADR-0015: a derived plan a later stage re-derives may
+        // read only what is frozen when both readings happen). Neither moves a node: the grid grows
+        // box extents onto edges that already exist, and the replan places labels.
+        alignLinkedGroupGrid(draft);
+        replanGroupLabels(draft);
       } else draft.diagnostics = draft.diagnostics.filter(item => item.code !== 'LANE_FOLLOWS_ITS_CHILD');
     }
   }
