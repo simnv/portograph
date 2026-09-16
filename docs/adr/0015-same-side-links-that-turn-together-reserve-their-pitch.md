@@ -312,3 +312,49 @@ its approaches clear allocates nothing" — so a gap of 48 rows allocates none b
 covered. Measured by leaving only the covered run out, which the allocation can already do (it owes
 that run its head-on approach and keeps the rows clear of it): 5/6 seats 47 of 48 and 8/9 seats 33
 of 34. That is a change to this amendment's own decline rule and it is not taken here.
+
+## Tenth amendment (2026-09-16, from the stress test; stress ticket 07): a gap with one possible route is a reservation
+
+Every amendment above gives the router one more reservation and then judges its answer against it.
+This one takes a piece away from it instead.
+
+A planned gap whose two ends stand on one axis-aligned line, whose two ends may both travel along
+that line, and every checkpoint of which stands on that line — between the ends, in the order asked,
+with masks the line allows — has exactly **one** route. Where the run between the two ends is also
+clear of everything placement froze, stage 8 reserves it and asks for nothing. The predicate is
+`straightCorridorClear`, which the rows rule uses to pin a straight row path and which 7f already
+uses to reserve a collinear feed's corridor against its own group labels.
+
+**The reason is this ADR's own subject read the other way round.** A reservation is a wall, and the
+obstacle set has no per-connector form of that wall (sixth amendment). Where two links must cross
+and their ownership sets differ, they cannot share a batch, the first one routed becomes a wall, and
+the second has no way through. Rule 3 answers that for the batch planner where it can. It cannot
+answer it here: the crossing link's route is the wall, and it is a route, not a reservation, so
+there is nothing to hand the later link. What there is instead is the knowledge that the later
+link's own run was never the router's to choose.
+
+Measured on `goldens/synthetic/a-straight-gap-needs-no-router.yaml`: the gap asked for
+(132.50, 270.00) → (132.50, 370.00) with checkpoints at (132.50, 285.00) and (132.50, 355.00), and
+libavoid answered (138.50, 246.50) → (132.50, 393.50) — the two node centres, a diagonal, and
+neither reserved endpoint. The worker's own warning names the cause: `skipping checkpoint for
+connector 13 at (132.5, 285)`. The rectangle that holds that point is the cover of the horizontal
+run an earlier ownership batch had already routed at the depth every stem turns at. Claimed instead,
+the gap is one segment between its two reserved endpoints and the other link crosses it.
+
+**What the claim keeps.** The claimed run is a reserved run: covered for every batch from the first
+with the clearance a reserved run carries, trimmed 18 px at an end that is its own port anchor, and
+stitched in exactly. Nothing about `checkpointsHonoured` or the endpoint contract is relaxed; a gap
+the claim declines is routed and judged exactly as before.
+
+**What it costs.** The router is left only the gaps that must turn. On the approved golden that is
+every gap: both remainders are such runs, the snapshot is byte-identical and Q is unchanged, so what
+stage 8 recorded as libavoid answering for the golden was libavoid returning the geometry placement
+had already fixed. Across the suite no geometry changed and one diagram improved:
+`detoured-stem-checkpoint` loses the `segment-group-edge` violation its detour used to draw, because
+the batch it shared is one connector smaller.
+
+**What it does not settle.** A claimed run is a wall to every other link, and a link that must cross
+it has only the 18 px terminal trim to pass through. That trim is why the reproducer's crossing
+survives, and it is not a rule. Where a claimed run dead-ends a crossing link, the answer is the
+sixth amendment's: give the cover its crossers, as the tier-gap allocation does. No input reaches
+that yet, so nothing implements it.
