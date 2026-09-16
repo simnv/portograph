@@ -174,10 +174,17 @@ and not left for a later stage to discover.
    last. Both the count and the rank read one `exitRanks` map, taken once from `side ?? sizingSide`,
    so they cannot disagree (ADR-0015).
 
-   Two cases the bound does not reach. A node that exits **both** ways takes the last row and its
-   upward reservation crosses the rows above it; and a side stage 5 overturns was read by stage 4 as
-   something else. Stage 7d warns `BAR_DROP_OBSTRUCTED` for either rather than publishing a reserved
-   run through a node body in silence.
+   A node that exits **both** ways is the same rule one step further: it needs the first row and the
+   last at once, so the only count that answers it is the node count, and such a group takes one row
+   too. Measured, the answer is one-sided — the shipped both-ways fixture publishes 3 violations at
+   Q 0.8030 as a grid and 0 at Q 0.9081 as one row.
+
+   One case the bound does not reach: a side stage 5 overturns was read by stage 4 as something
+   else. Stage 7d warns `BAR_DROP_OBSTRUCTED` for it rather than publishing a reserved run through a
+   node body in silence; no shipped fixture reaches it.
+
+   The count is also now scored on the arrangement the grid will really pack, which changes which
+   counts tie. The tie still goes to the fewer columns.
 2. A flank's stored primary peer takes the outer end of **its own row**, which is what the lateral
    link runs along; a ragged row that holds a right-aligned peer is packed against the right columns
    rather than the left.

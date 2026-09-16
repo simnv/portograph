@@ -27,8 +27,11 @@ function throughBodies(model: LayoutModel, link: string): string[] {
 
 it('the floor and the rows read one rank map, so a like exit never lands outside its rank row', () => {
   const order = ['m1', 'm2', 'm3', 'm4', 'm5', 'd1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7'];
-  const ranks = new Map(order.map(id => [id, id.startsWith('d') ? 2 : 1]));
+  const rank = new Map(order.map(id => [id, id.startsWith('d') ? 2 : 1]));
+  const ranks = { rank, bothWays: new Set<string>() };
   expect(gridColumnFloor(order, ranks)).toBe(7);
+  // A node that exits both ways needs the first row and the last, so only one row answers it.
+  expect(gridColumnFloor(order, { rank, bothWays: new Set(['d1']) })).toBe(12);
   // Seven columns satisfy the floor, and slicing the ranked order seven wide still stacks two
   // drops: `d1` and `d2` land in the first row. The rows are built from the ranks instead.
   expect(gridChunks(order, 7)[0]).toContain('d1');
@@ -38,9 +41,12 @@ it('the floor and the rows read one rank map, so a like exit never lands outside
   expect(gridRows(order, ranks, 8)).toEqual([['m1', 'm2', 'm3', 'm4'],
     ['m5', 'd1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7']]);
   // With no vertical exit at all the answer is the chunking it always was.
-  const flat = new Map(order.map(id => [id, 1]));
+  const flat = { rank: new Map(order.map(id => [id, 1])), bothWays: new Set<string>() };
   expect(gridRows(order, flat, 5)).toEqual(gridChunks(order, 5));
   expect(gridColumnFloor(order, flat)).toBe(1);
+  // An id the rank map does not carry is a middle node, the same default `packGrid` applies, so no
+  // node is dropped on a disagreement between the two.
+  expect(gridRows(order, { rank: new Map(), bothWays: new Set() }, 5)).toEqual(gridChunks(order, 5));
 });
 
 it('a grid group of four takes two columns and two rows, not one line', async () => {
@@ -88,9 +94,11 @@ it('a grid of twelve holds every row on one y and every column on one x, a tier 
 it('a downward exit takes the last grid row, so its reserved bar drop crosses no node', async () => {
   const model = await run(fixture('a-grid-beside-a-flank-and-a-bar'));
   const grid = rows(model, 'place');
-  expect(grid.map(row => row.length)).toEqual([2, 3]);
-  // `a` carries the drop to the bar, so it is ranked into the last row; it is also the flank's
-  // stored primary peer, so within that row it takes the left cell the flank faces.
+  expect(grid.map(row => row.length)).toEqual([3, 2]);
+  // Head and tail rows at once: `b` leaves upward and takes the first row, `a` leaves downward and
+  // takes the last. `a` is also the flank's stored primary peer, so within that row it takes the
+  // left cell the flank faces.
+  expect(grid[0]).toContain('b');
   expect(model.groups.side!.flank!.primaryPeer).toBe('a');
   expect(grid.at(-1)![0]).toBe('a');
   // The reservation itself, not only the gates: a bar drop publishes a fixed path and its own
@@ -151,16 +159,28 @@ it('a grid whose nodes all exit one way publishes one row', async () => {
   expect(failed(model)).toEqual([]);
 }, 60000);
 
-it('a node that exits both ways keeps its slot and says so', async () => {
+it('a node that exits both ways forces a single row', async () => {
   const model = await run(fixture('a-grid-node-that-exits-both-ways'));
-  // `a` needs the first row and the last at once and takes the last, so its upward reservation
-  // crosses the row above. No column count answers that, which is why the warning stays.
+  // `a` links to the bar above and the bar below, so it needs the first row and the last at once.
+  // One row is the only count that gives it both, and the floor answers with `order.length`.
+  expect(rows(model, 'place').map(row => row.length)).toEqual([4]);
+  expect(model.links.flatMap(link => throughBodies(model, link.id))).toEqual([]);
+  expect(model.diagnostics.filter(item => item.code === 'BAR_DROP_OBSTRUCTED')).toEqual([]);
+  expect(failed(model)).toEqual([]);
+}, 60000);
+
+it('a grid holds all three ranks at once, and a short row that is not the last', async () => {
+  const model = await run(fixture('a-grid-holds-three-ranks'));
   const grid = rows(model, 'place');
-  expect(grid.at(-1)).toContain('a');
-  const warnings = model.diagnostics.filter(item => item.code === 'BAR_DROP_OBSTRUCTED');
-  expect(warnings.length).toBe(1);
-  expect(warnings[0]!.severity).toBe('warning');
-  expect(warnings[0]!.message).toMatch(/^Reserved drop of link-\d+ runs through c;/);
-  // Pinned so the defect cannot change shape or spread unnoticed.
-  expect(failed(model)).toEqual(['G2', 'G3', 'G6']);
+  // Two upward exits fill the first row with one middle node, three downward exits take the last,
+  // and the two middle nodes left over make an interior row narrower than the grid is wide —
+  // which slicing the ranked order could never produce.
+  expect(grid).toEqual([['u1', 'u2', 'm1'], ['m2', 'm3'], ['d1', 'd2', 'd3']]);
+  for (const row of grid) expect(new Set(row.map(id => box(model, id).y)).size).toBe(1);
+  // The short row leaves its trailing cells empty, and the geometry reads them back as empty.
+  expect(gridCells(model, model.groups.place!)[1]).toEqual(['m2', 'm3', undefined]);
+  expect(model.links.flatMap(link => throughBodies(model, link.id))).toEqual([]);
+  expect(model.diagnostics.filter(item => item.code === 'BAR_DROP_OBSTRUCTED')).toEqual([]);
+  expect(failed(model)).toEqual([]);
+  expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
 }, 60000);

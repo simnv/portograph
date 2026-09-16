@@ -47,8 +47,13 @@ export function gridChunks(order: readonly string[], columns: number): string[][
   return rows;
 }
 
-/** The exit rank of every node of a grid group: 0 upward, 1 neither, 2 downward. */
-export type ExitRanks = ReadonlyMap<string, number>;
+/** How the nodes of one grid group leave it, read once (`exitRanks`) and consumed by both rules. */
+export interface ExitRanks {
+  /** 0 upward, 1 neither way, 2 downward. A node that leaves **both** ways ranks downward. */
+  readonly rank: ReadonlyMap<string, number>;
+  /** The nodes that leave both ways, which rank 2 on its own cannot tell from a plain drop. */
+  readonly bothWays: ReadonlySet<string>;
+}
 
 interface GridMetrics { columnX: number[]; columnWidth: number[]; rowY: number[]; rowHeight: number[]; width: number; height: number }
 
@@ -86,7 +91,11 @@ export function gridMetrics(model: LayoutModel, rows: GridCells, gap: (a: string
  * than a group of narrow ones of the same count.
  *
  * The box each candidate is measured on is the one `gridRows` will actually pack, ranks and all, so
- * the count and the arrangement are one decision rather than two that can disagree.
+ * the count and the arrangement are one decision rather than two that can disagree. **That is a
+ * behaviour change in its own right, not only a bound.** Scoring the ranked arrangement rather than
+ * `gridChunks` changes which counts tie, and the tie goes to the fewer columns: the golden's
+ * `datacenter`, gridded alone, took three columns in a 3 / 1 split before and takes two in a 2 / 2
+ * split now, although its floor is 2 either way and 1 was never in the running (stress ticket 31).
  *
  * Two things the caller has to know. The box measured here is the **stage-4** box: the count is
  * chosen from the sizes the nodes have before stage 5 grows them to their final port capacity, and
@@ -145,9 +154,10 @@ export function packGridRows(model: LayoutModel, group: LayoutGroup, rows: GridC
  * Which grid row every node of `group` belongs in, from the way its links leave the group: 0 upward,
  * 1 neither way, 2 downward.
  *
- * One map for the whole group, read once and handed to both consumers. The rank picks the row and
- * `gridColumnFloor` counts the same map for the column count, so a rank taken from one reading of
- * the sides and a count taken from another cannot disagree (ADR-0015; stress ticket 31).
+ * One reading for the whole group, one pass over `model.links`, handed to both consumers. The rank
+ * picks the row and `gridColumnFloor` counts the same reading for the column count, so a rank taken
+ * from one reading of the sides and a count taken from another cannot disagree (ADR-0015; stress
+ * ticket 31). It replaced a per-node scan of every link, so the pack is one pass rather than *n*.
  *
  * A row group has nothing above or below its nodes, so a port that leaves on `top` or `bottom` has
  * a clear way out by construction. A grid has rows, and a port that leaves downward from a row that
@@ -157,11 +167,12 @@ export function packGridRows(model: LayoutModel, group: LayoutGroup, rows: GridC
  * takes the first row, one whose links leave downward takes the last, and the rest sit between
  * them. Stable within each rank, so ELK's crossing-minimised order survives inside a rank.
  *
- * A node that leaves **both** ways is ranked downward. It cannot satisfy both, and the downward
- * exit is the one that is reserved silently: a bar drop publishes a `fixed` path and an empty
- * `barCross` whatever stands under it, where an upward link goes to stage 8 and fails a gate where
- * a reader can see it. `shapeBars` warns `BAR_DROP_OBSTRUCTED` when the reservation still meets a
- * node, so neither case is silent again.
+ * A node that leaves **both** ways is ranked downward, because the downward exit is the one that is
+ * reserved silently: a bar drop publishes a `fixed` path and an empty `barCross` whatever stands
+ * under it, where an upward link goes to stage 8 and fails a gate where a reader can see it. The
+ * rank cannot satisfy both, so `bothWays` is reported beside it and `gridColumnFloor` answers the
+ * node with a single row. `shapeBars` still warns `BAR_DROP_OBSTRUCTED` where a reservation meets a
+ * node, for the sides stage 5 overturns.
  *
  * Sides are read as `side ?? sizingSide` — the same expression `skeleton-graph.ts` dereferences to
  * hand ELK its port sides, so it is settled by the time this runs. Stage 5 may still move an
@@ -183,12 +194,23 @@ export function exitRanks(model: LayoutModel, group: LayoutGroup): ExitRanks {
       if (side === 'bottom') down.add(own.node);
     }
   }
-  return new Map(group.nodes.map(id => [id, down.has(id) ? 2 : up.has(id) ? 0 : 1]));
+  return { rank: new Map(group.nodes.map(id => [id, down.has(id) ? 2 : up.has(id) ? 0 : 1])),
+    bothWays: new Set(group.nodes.filter(id => up.has(id) && down.has(id))) };
 }
 
 /**
  * The fewest columns a grid of these exits may take: **a column is a corridor**, so it holds at most
  * one node that exits downward and at most one that exits upward.
+ *
+ * A node that exits **both** ways needs the first row and the last at once, so the only count that
+ * answers it is `order.length` — a single row. Measured three ways on this branch, and the answer is
+ * one-sided every time: `a-grid-node-that-exits-both-ways` publishes 3 violations at Q 0.8030 as a
+ * grid and **0 at Q 0.9081** as one row; `a-grid-beside-a-flank-and-a-bar` with its drop and its
+ * flank link on one node published 0 violations at Q 0.6888 and **0 at Q 0.9245** as one row; and a
+ * twelve-node grid with four both-way nodes publishes **14 violations at Q 0.3437** and **0 at
+ * Q 0.9245** as one row. The cheaper answer — keep the grid and reserve the cells *above* a both-way
+ * node empty — is not taken: it needs one empty cell per row above each such node, which in that
+ * twelve-node case is eight holes in a twelve-cell grid, and it was not measured end to end.
  *
  * `exitRank` decides *which row* a node takes and stops there. It cannot separate two nodes that
  * exit the same way — they share a rank, the rank is one row, and a row of *k* like exits in a grid
@@ -217,8 +239,9 @@ export function exitRanks(model: LayoutModel, group: LayoutGroup): ExitRanks {
  * readings of one map, taken in one call, so they cannot disagree.
  */
 export function gridColumnFloor(order: readonly string[], ranks: ExitRanks): number {
+  if (order.some(id => ranks.bothWays.has(id))) return order.length;
   let up = 0, down = 0;
-  for (const id of order) { const rank = ranks.get(id); if (rank === 0) up++; if (rank === 2) down++; }
+  for (const id of order) { const rank = ranks.rank.get(id); if (rank === 0) up++; if (rank === 2) down++; }
   return Math.max(1, up, down);
 }
 
@@ -237,13 +260,20 @@ export function gridColumnFloor(order: readonly string[], ranks: ExitRanks): num
  *
  * A rank the floor cannot seat (more like exits than columns) chunks across rows as before rather
  * than widening the grid behind the count's back; `BAR_DROP_OBSTRUCTED` reports what that costs.
+ *
+ * **A short row is no longer only the last one.** `gridChunks` could leave a remainder at the end
+ * and nowhere else; filling a rank row can leave the *middle* short instead, so a grid may hold an
+ * interior row narrower than its columns. `gridMetrics` and `gridCells` both take a row's own
+ * length and read empty cells back, so the geometry round trip is the same either way; the shipped
+ * case is `goldens/synthetic/a-grid-holds-three-ranks.yaml`.
  */
 export function gridRows(order: readonly string[], ranks: ExitRanks, columns: number): string[][] {
   if (order.length === 0) return [];
   if (columns < 1 || order.length <= columns) return [[...order]];
-  const head = gridChunks(order.filter(id => ranks.get(id) === 0), columns);
-  const tail = gridChunks(order.filter(id => ranks.get(id) === 2), columns);
-  let middle = order.filter(id => ranks.get(id) === 1);
+  const rank = (id: string) => ranks.rank.get(id) ?? 1;
+  const head = gridChunks(order.filter(id => rank(id) === 0), columns);
+  const tail = gridChunks(order.filter(id => rank(id) === 2), columns);
+  let middle = order.filter(id => rank(id) === 1);
   const headRoom = Math.min(middle.length, columns - (head.at(-1)?.length ?? columns));
   if (headRoom > 0) { head[head.length - 1] = [...head.at(-1)!, ...middle.slice(0, headRoom)]; middle = middle.slice(headRoom); }
   const tailRoom = Math.min(middle.length, columns - (tail[0]?.length ?? columns));
@@ -263,6 +293,13 @@ export function gridRows(order: readonly string[], ranks: ExitRanks, columns: nu
  * 3 × 3 × 1, so that is the common case and not a corner. A ragged row that holds a right-aligned
  * peer is therefore packed against the right columns instead, which leaves the empty cells on the
  * side the link does not come from.
+ *
+ * `columns` is the chosen count, which can exceed the widest row `rows` actually holds — a grid of
+ * `n` nodes in `n` columns is one row of `n`, and `gridRows` never pads it. The right-pad below
+ * would then insert cells past the last column. It is unreachable: a count whose widest row is
+ * short ties with the count one smaller, and the strict `< bestScore - 1e-9` in `gridColumns` hands
+ * a tie to the smaller, so the chosen count always equals its widest row. An empty leading column
+ * costs nothing anyway — `gridMetrics` gives it width 0 and no gap — so this is a note, not a guard.
  *
  * Untested corner, recorded rather than guarded: two flanks whose primary peers land in the same
  * ragged row. Both would be spliced and the row right-padded, so the left peer would leave column 0,
@@ -290,7 +327,7 @@ function seatFlankPeers(model: LayoutModel, group: LayoutGroup, rows: string[][]
 export function packGrid(model: LayoutModel, group: LayoutGroup, order: string[]): void {
   const gap = gridNodeGap(model, group);
   const ranks = exitRanks(model, group);
-  const ranked = [...order].map((id, index) => ({ id, index, rank: ranks.get(id) ?? 1 }))
+  const ranked = [...order].map((id, index) => ({ id, index, rank: ranks.rank.get(id) ?? 1 }))
     .sort((a, b) => a.rank - b.rank || a.index - b.index).map(item => item.id);
   const columns = gridColumns(model, group, ranked, ranks);
   const cells = seatFlankPeers(model, group, gridRows(ranked, ranks, columns), columns);

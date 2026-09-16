@@ -1,0 +1,29 @@
+# Expected: All three ranks at once, and a short row that is not the last. Two nodes leave upward
+# and take the first row, three leave downward and take the last, and the three that leave no way
+# fill the room the first row has left over before the rest take a row between them. That middle row
+# is narrower than the grid is wide, which reading order alone could never produce: `gridChunks`
+# leaves a remainder at the end and nowhere else. Every row still holds one y, every column one x,
+# and the empty cells read back off the geometry.
+portograph: 2
+profile: network
+groups:
+  upper: { tier: 0 }
+  place: { tier: 1, shape: grid }
+  rails: { tier: 2, shape: bar }
+nodes:
+  head: { group: upper, ports: { side: bottom, list: [p, p] } }
+  u1: { group: place, ports: [{ name: q, side: top }] }
+  u2: { group: place, ports: [{ name: q, side: top }] }
+  m1: { group: place }
+  m2: { group: place }
+  m3: { group: place }
+  d1: { group: place, ports: [{ name: r, side: bottom }] }
+  d2: { group: place, ports: [{ name: r, side: bottom }] }
+  d3: { group: place, ports: [{ name: r, side: bottom }] }
+  rail: { group: rails, ports: { side: top, list: [p, p, p] } }
+links:
+  - [head.p#1, u1.q]
+  - [head.p#2, u2.q]
+  - [d1.r, rail.p#1]
+  - [d2.r, rail.p#2]
+  - [d3.r, rail.p#3]
