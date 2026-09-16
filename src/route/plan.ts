@@ -336,8 +336,14 @@ function straightRun(from: Point, to: Point, fromDirections: number, toDirection
 function corridorFree(model: LayoutModel, link: LayoutLink, run: PathSegment,
   attached: { nodes: string[]; ports: string[] }, reserved: RouteObstacle[]): boolean {
   const segment: PathSegment = { ...run, owner: { kind: 'link', id: link.id } };
-  if (!straightCorridorClear(model, link, segment, { attached })) return false;
-  return !reserved.some(item => !item.consumers.includes(link.id) && segmentRect(segment, item.bounds));
+  // The cover scan first: it is a rectangle test per reservation, where the predicate below measures
+  // every node, pill, label, lane, group box and reserved run in the diagram.
+  if (reserved.some(item => !item.consumers.includes(link.id) && segmentRect(segment, item.bounds))) return false;
+  // Measured at the widest routed stroke, not this link's own. `routeObstacles` and
+  // `reservationConflicts` expand every reservation by that width, so a thin link measured at its
+  // own could be claimed inside the band the router would have kept clear and then be refused by
+  // `Routed path on ... enters reserved ...` after the fact.
+  return straightCorridorClear(model, link, segment, { attached, stroke: Math.max(linkStrokeWidth(link), routedStroke(model)) });
 }
 
 /**
