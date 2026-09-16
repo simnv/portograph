@@ -346,6 +346,17 @@ with the clearance a reserved run carries, trimmed 18 px at an end that is its o
 stitched in exactly. Nothing about `checkpointsHonoured` or the endpoint contract is relaxed; a gap
 the claim declines is routed and judged exactly as before.
 
+**What the claim owns, and what it is measured against.** A piece owns only the pins it really
+attaches to. A whole link's corridor leaves one of its ports and arrives at the other, so both are
+its own; a piece that begins or ends at a reserved terminal has no attachment there, and the node
+behind that end can stand between the two ends of the piece. It is measured against the covers
+`routeObstacles` puts in front of the router — every reserved run in the model, and every run this
+pass reserves before it — at the widest routed stroke, the width those covers carry. The corridor
+predicate alone is not enough: it reads a foreign link's `path` and `fixedSegments` only, so a
+junction tree's shared run is invisible to it, and a perpendicular crossing of one is neither a G4
+overlap nor a G6 clearance. Both counter-examples are fixtures:
+`a-claimed-run-owns-only-its-pins` and `a-claimed-run-clears-a-shared-run`.
+
 **What it costs.** The router is left only the gaps that must turn. On the approved golden that is
 every gap: both remainders are such runs, the snapshot is byte-identical and Q is unchanged, so what
 stage 8 recorded as libavoid answering for the golden was libavoid returning the geometry placement
@@ -358,3 +369,13 @@ it has only the 18 px terminal trim to pass through. That trim is why the reprod
 survives, and it is not a rule. Where a claimed run dead-ends a crossing link, the answer is the
 sixth amendment's: give the cover its crossers, as the tier-gap allocation does. No input reaches
 that yet, so nothing implements it.
+
+**What the claim changes for the links it leaves behind.** Two links of one ownership batch used to
+cross each other softly, libavoid resolving the crossing with a penalty. A claimed run leaves the
+batch and becomes an obstacle, so its former batchmates are re-solved against a wall. Measured: on
+`detoured-stem-checkpoint` that is the whole of the change, and it improves the diagram. The wall is
+passable where it matters — its terminal trim leaves the 18 px at each own port anchor open, and
+that edge is a free visibility line — so the effect is a geometry change of unbounded sign, not a
+dead end. A claimed run also enters its own link's exclusions, so a partially claimed link becomes a
+singleton batch.
+
