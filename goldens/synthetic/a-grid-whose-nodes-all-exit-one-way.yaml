@@ -1,0 +1,36 @@
+# Expected: Every one of the twelve nodes drops to the bar below, so the column floor is twelve and
+# the grid publishes one row — the `row` shape, which is what one corridor per downward exit means.
+# The shape does not lose compaction here; it never had it. Packed four by three, eight of the twelve
+# drops are reserved through a node body and the diagram publishes fifty-six gate violations.
+portograph: 2
+profile: network
+groups:
+  place: { tier: 0, shape: grid }
+  rails: { tier: 1, shape: bar }
+nodes:
+  n01: { group: place, ports: [{ name: p, side: bottom }] }
+  n02: { group: place, ports: [{ name: p, side: bottom }] }
+  n03: { group: place, ports: [{ name: p, side: bottom }] }
+  n04: { group: place, ports: [{ name: p, side: bottom }] }
+  n05: { group: place, ports: [{ name: p, side: bottom }] }
+  n06: { group: place, ports: [{ name: p, side: bottom }] }
+  n07: { group: place, ports: [{ name: p, side: bottom }] }
+  n08: { group: place, ports: [{ name: p, side: bottom }] }
+  n09: { group: place, ports: [{ name: p, side: bottom }] }
+  n10: { group: place, ports: [{ name: p, side: bottom }] }
+  n11: { group: place, ports: [{ name: p, side: bottom }] }
+  n12: { group: place, ports: [{ name: p, side: bottom }] }
+  rail: { group: rails, ports: { side: top, list: [p, p, p, p, p, p, p, p, p, p, p, p] } }
+links:
+  - [n01.p, rail.p#1]
+  - [n02.p, rail.p#2]
+  - [n03.p, rail.p#3]
+  - [n04.p, rail.p#4]
+  - [n05.p, rail.p#5]
+  - [n06.p, rail.p#6]
+  - [n07.p, rail.p#7]
+  - [n08.p, rail.p#8]
+  - [n09.p, rail.p#9]
+  - [n10.p, rail.p#10]
+  - [n11.p, rail.p#11]
+  - [n12.p, rail.p#12]

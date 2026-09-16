@@ -1,7 +1,8 @@
-# Expected: Three of the four nodes drop to the bar below and the last row of a two-column grid
-# holds two, so one drop is reserved through the node standing under it. The drop keeps its slot and
-# `BAR_DROP_OBSTRUCTED` says so; without the warning the model published a fixed path through a node
-# body and an empty `barCross`.
+# Expected: Three of the four nodes drop to the bar below, so the grid takes at least three columns
+# — a column is a corridor, and it holds one downward exit — and the three drops share the last row
+# rather than stacking two of them in one column. The fourth node, which exits no way, fills the row
+# above. Reading order alone would not do it: chunked three wide, the ranked order `d a b c` puts
+# `a` and `b` in the first row, so the rows are built from the ranks instead.
 portograph: 2
 profile: network
 groups:

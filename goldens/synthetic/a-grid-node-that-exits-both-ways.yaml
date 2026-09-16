@@ -1,0 +1,22 @@
+# Expected: The shape's remaining limit, kept as a counter-example rather than hidden. `a` links to
+# the bar above it and to the bar below it, so it needs the first row and the last row at once and
+# takes the last, because a downward reservation is the one that used to publish in silence. The
+# column floor cannot answer this one — a node that exits both ways crosses the rows above it at any
+# column count short of a single row — so `BAR_DROP_OBSTRUCTED` names the link and the node instead.
+# The diagram is produced and fails G2, G3 and G6.
+portograph: 2
+profile: network
+groups:
+  above: { tier: 0, shape: bar }
+  place: { tier: 1, shape: grid }
+  below: { tier: 2, shape: bar }
+nodes:
+  topRail: { group: above, ports: [{ name: p, side: bottom }] }
+  a: { group: place, ports: [{ name: u, side: top }, { name: d, side: bottom }] }
+  b: { group: place }
+  c: { group: place }
+  d: { group: place }
+  botRail: { group: below, ports: [{ name: p, side: top }] }
+links:
+  - [a.u, topRail.p]
+  - [a.d, botRail.p]
