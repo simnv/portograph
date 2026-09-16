@@ -6,6 +6,7 @@ import { placementWarning } from './regions.js';
 import { STRAIGHT_PATH_CLEARANCE, findPort } from './row-paths.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { GROUP_LABEL_GEOMETRY, nodeObstacleReach, nudgingDistance, routedStroke, stemReach } from './bands.js';
+import { stemPlan, type GapPlan } from './sides-two.js';
 
 export interface BundleFans {
   members: Member[];
@@ -466,6 +467,11 @@ function releaseHemmedFans(model: LayoutModel): void {
   // `routeParameters` hands libavoid. A literal here would drift from it: an unrelated heavy link
   // widens what the router demands and would leave this pass looking at the wrong distance.
   const margin = nudgingDistance(model);
+  // The outward depth stage 8 really asks for at a bare port, which is `stemCheckpoint`'s own: the
+  // 15 px stem, unless the node's expanded obstacle reaches further, and deeper still where a side's
+  // stems nest. One plan per row gap for the whole pass, because recomputing it per link end is
+  // cubic in the size of a turning cohort.
+  const gaps = new Map<string, GapPlan | undefined>();
   const drawn = (link: LayoutLink): boolean => link.layer === 'routed' && link.technique !== 'stub' && link.attachments !== undefined;
   const branches: { link: LayoutLink; end: 'from' | 'to'; port: LayoutPort; runs: PathSegment[] }[] = [];
   for (const link of model.links) {
@@ -492,10 +498,10 @@ function releaseHemmedFans(model: LayoutModel): void {
     for (const end of ['from', 'to'] as const) {
       const ref = link.attachments![end], port = findPort(model, ref);
       if (!port?.anchor || port.side === undefined) continue;
-      const out = normal(port.side), reach = stemReach(model, model.nodes[ref.node]!);
       // An end whose own fan reserved a run is approached at that run's terminal, not at the port,
       // so the port's checkpoint stands inside the link's own reservation and nothing closes it.
       if (link.sharedRuns?.[end]?.length) continue;
+      const out = normal(port.side), reach = stemPlan(model, port, gaps).depth;
       const at = { x: port.anchor.x + out.x * reach, y: port.anchor.y + out.y * reach };
       for (const branch of branches) {
         if (branch.link.id === link.id) continue;
