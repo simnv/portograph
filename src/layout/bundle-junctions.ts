@@ -445,6 +445,17 @@ function stemCount(port: LayoutPort, runs: readonly PathSegment[]): number {
  * out — a fan's own siblings stand a pitch away by construction (ADR-0018 rules 1 and 2), and
  * treating them as hemmed would undo the tracks those rules reserve. A member whose path a rule
  * fixed keeps its run, since its `sharedRuns` are the prefix of that path (ADR-0016).
+ *
+ * **The approach is where placement handed over, not the port.** An end whose own fan reserved a run
+ * is not approached at the port at all: stage 8 stitches that run back and starts the gap at its
+ * terminal (`endpointFor`), so the port's own outward checkpoint stands *inside* a reservation the
+ * link owns and closing it costs the link nothing. Measuring the port there released three branches
+ * whose approaches were never shut, and the two links the release then handed to the router walled
+ * each other in — the first route laid across the second one's only way to its own stem terminal,
+ * libavoid dropped the endpoint without a word and answered with a diagonal (ticket 10, stress).
+ * A release must leave the router a gap it can answer orthogonally; where nothing is closed there is
+ * nothing to release, and the overlap the two reservations do have is a gate failure, which is
+ * recoverable, rather than a throw, which is not.
  */
 function releaseHemmedFans(model: LayoutModel): void {
   // The room the *router* insists on beside a route it still has to draw, read from the one figure
@@ -470,7 +481,11 @@ function releaseHemmedFans(model: LayoutModel): void {
       const ref = link.attachments![end], port = findPort(model, ref);
       if (!port?.anchor || port.side === undefined) continue;
       const out = normal(port.side), reach = stemReach(model, model.nodes[ref.node]!);
-      const at = { x: port.anchor.x + out.x * reach, y: port.anchor.y + out.y * reach };
+      // The point stage 8 has to reach at this end: the terminal of whatever placement reserved
+      // here, and the port's own outward checkpoint only where placement reserved nothing.
+      const here = link.sharedRuns?.[end];
+      const at = here?.length ? { ...here.at(-1)!.to }
+        : { x: port.anchor.x + out.x * reach, y: port.anchor.y + out.y * reach };
       for (const branch of branches) {
         if (branch.link.id === link.id) continue;
         if (branch.port.ref.node === port.ref.node && branch.port.side === port.side) continue;
