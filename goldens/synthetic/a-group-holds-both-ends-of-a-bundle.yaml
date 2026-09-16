@@ -1,9 +1,10 @@
 # Expected: Decline the grid shape on `place` and keep its nodes on one line, because `place` holds
 # both ends of a bundle. A bundle's members turn in a channel, and the channel is the space between
-# its two endpoint bodies: `a` leaves the group upward and `d` downward, so the grid's ranks would
-# put them in the first row and the last, and the two members would have to turn in the gap between
-# two columns instead. Report `GROUP_SHAPE_DECLINED` naming the bundle, and lay the group out as the
-# row it became.
+# its two endpoint bodies: `a` leaves the group upward and `d` and `b` downward, so a column is a
+# corridor, the floor is two columns, and the ranks put `a` in the first row and `d` in the last.
+# Stacked, the bundle then reserves its member pitch on the two bodies' left and right sides, which
+# grows both of them in y until they meet — `Nodes a and d violate clearance`. Report
+# `GROUP_SHAPE_DECLINED` naming the bundle, and lay the group out as the row it became.
 portograph: 2
 profile: network
 groups:
@@ -13,13 +14,12 @@ groups:
 nodes:
   head: { group: upper, ports: [{ name: p, side: bottom }] }
   a: { group: place, ports: [{ name: p, side: top }, { name: q, side: right }, { name: r, side: right }] }
-  b: { group: place }
-  c: { group: place }
-  e: { group: place }
   d: { group: place, ports: [{ name: p, side: bottom }, { name: q, side: left }, { name: r, side: left }] }
-  rail: { group: lower, ports: [{ name: p, side: top }] }
+  b: { group: place, ports: [{ name: p, side: bottom }] }
+  rail: { group: lower, ports: { side: top, list: [p, p] } }
 links:
   - [head.p, a.p]
   - [a.q, d.q]
   - [a.r, d.r]
-  - [d.p, rail.p]
+  - [d.p, rail.p#1]
+  - [b.p, rail.p#2]

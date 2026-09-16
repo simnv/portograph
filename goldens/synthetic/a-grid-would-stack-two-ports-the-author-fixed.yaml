@@ -1,0 +1,19 @@
+# Expected: Decline the grid shape on `place` and keep its nodes on one line, because `place` holds
+# both ends of a link whose port side the author fixed. `a.p` and `b.p` are both `top`: side by side
+# in a row the link goes up and over, but the grid stacks the two nodes — `exitRanks` skips a link
+# whose peer is a group member, so both rank "neither way", the floor is 1, and the closest-to-square
+# count is one column — and the lower node's stem then has to climb past the upper node's body.
+# Report `GROUP_SHAPE_DECLINED` naming the link, and lay the group out as the row it became.
+portograph: 2
+profile: network
+groups:
+  place: { tier: 0, shape: grid }
+  lower: { tier: 1 }
+nodes:
+  a: { group: place, ports: [{ name: p, side: top }] }
+  b: { group: place, ports: [{ name: p, side: top }] }
+  c: { group: place, ports: [{ name: q, side: bottom }] }
+  sink: { group: lower, ports: [{ name: p, side: top }] }
+links:
+  - [a.p, b.p]
+  - [c.q, sink.p]
