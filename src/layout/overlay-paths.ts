@@ -104,20 +104,24 @@ const polylineLength = (points: readonly Point[]): number => points.slice(1)
  * One end of an overlay link: the port's anchor, the box the link leaves — the pill when the port
  * draws one, the node body when it does not — the point on that box's outward face, which is where
  * the path starts, and the point one clearance beyond it, which is where the route between the two
- * ends begins.
+ * ends begins. `pill` is that box again when it really is a pill, and `undefined` when the port
+ * draws none: the straight branch drops its own two pills from the shapes it tests against, and a
+ * node body is not one of them.
  */
-interface OverlayEnd { anchor: Point; box: Rect; face: Point; clear: Point; out: Point }
+interface OverlayEnd { anchor: Point; box: Rect; pill: Rect | undefined; face: Point; clear: Point; out: Point }
 
 function overlayEnd(node: LayoutNode, port: LayoutPort): OverlayEnd | undefined {
   if (!port.anchor || !port.side || !node.bounds) return undefined;
-  const box = port.pill && port.ref.anonymous !== true ? port.pill.bounds : node.bounds;
+  const pill = port.pill && port.ref.anonymous !== true ? port.pill.bounds : undefined;
+  const box = pill ?? node.bounds;
   const out = NORMAL[port.side];
   // The outward face of the box on this side, plus the clearance, measured from the anchor.
   const face = port.side === 'top' ? box.y : port.side === 'bottom' ? bottom(box)
     : port.side === 'left' ? box.x : right(box);
   const depth = Math.abs((out.x !== 0 ? port.anchor.x : port.anchor.y) - face);
   const outward = (by: number): Point => ({ x: port.anchor!.x + out.x * by, y: port.anchor!.y + out.y * by });
-  return { anchor: { ...port.anchor }, box, face: outward(depth), clear: outward(depth + OVERLAY_PILL_CLEARANCE), out };
+  return { anchor: { ...port.anchor }, box, pill,
+    face: outward(depth), clear: outward(depth + OVERLAY_PILL_CLEARANCE), out };
 }
 
 /**
@@ -259,21 +263,33 @@ function between(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers):
  * other, and they are exempt from the clearance gates. Not a group box, not a lane, not a routed
  * path, not a label.
  *
- * **An end's own pill and the segment that leaves it.** The segment now starts *on* that pill's
- * outward edge, which is the boundary case `crosses` was written open for: a line that rides a face
- * is clear of it. Where the two ports face each other the line leaves each face outward and is clear
- * at once; where they are level on the same side it rides both faces and is clear; where a port
- * faces **away** from its partner the line turns back inward and really does re-enter its own pill,
- * and then this test refuses it and the orthogonal branch steps outward and goes round. That is the
- * rule doing its job, not an accident: a line that would leave a port by crossing that port's own
- * pill is a line through a node. The stub used to lift such a pair clear of its own pill before
- * turning, which is the one shape the stub's removal moves (stress ticket 30).
+ * **The segment must leave each port outward.** This is the branch's own condition, not a detail of
+ * the test above: at both ends the segment's direction, taken *out of* that end, may not point back
+ * along the port's own outward normal. Zero is allowed, and is what two ports level on one side
+ * make — the line rides both faces, which is what a reader sees as leaving them. Strictly inward is
+ * a port that **faces away** from its partner, and a line leaving such a port runs back under that
+ * port's own pill; the overlay layer is masked out of every pill, so the mask would cut the line
+ * away from its own endpoint mark. The orthogonal branch answers those, stepping outward before it
+ * turns, and that is the one shape removing the stub moves (stress ticket 30).
+ *
+ * **So a link's own two pills are dropped from the shapes it is tested against** (maintainer,
+ * 2026-09-16). They carry nothing the guard does not already have: leaving a face outward means the
+ * segment's distance along that normal rises from zero and never falls, so it cannot re-enter the
+ * pill behind it, and riding the face is the open boundary `crosses` already calls clear. Keeping
+ * them only restated the guard's job in sub-pixel arithmetic — a tilt reaching 0.02 px inside a pill
+ * read as an obstruction. Every node **body** stays, the link's own two included: a port on the far
+ * side of its own body still has that body in the way.
  */
 function straightBetween(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers): Point[] | undefined {
   const from = head.face, to = tail.face;
+  /** Whether the segment leaves this end outward rather than turning back into its own port. */
+  const leaves = (end: OverlayEnd, towards: Point, away: Point): boolean =>
+    (towards.x - away.x) * end.out.x + (towards.y - away.y) * end.out.y >= -EPS;
+  if (!leaves(head, to, from) || !leaves(tail, from, to)) return undefined;
+  const own = [head.pill, tail.pill];
   const window: Rect = { x: Math.min(from.x, to.x), y: Math.min(from.y, to.y),
     width: Math.abs(to.x - from.x), height: Math.abs(to.y - from.y) };
-  if (blockers.some(window, box => crosses(from, to, box))) return undefined;
+  if (blockers.some(window, box => !own.includes(box) && crosses(from, to, box))) return undefined;
   // No retrace test: the branch publishes one segment, and one segment cannot walk back along a run
   // it already drew. The test this replaces read two stubs that could be stated the wrong way round,
   // and there are no stubs here.

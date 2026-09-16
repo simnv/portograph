@@ -29,19 +29,18 @@ describe('overlay paths', () => {
     const link = model.links.find(item => item.layer === 'overlay')!;
     const built = overlayPath(model, link);
     // Every segment is the link's own and claims no reserved geometry. The orthogonal branch follows
-    // one axis throughout; the straight branch's two stubs do, and the segment between them need not.
-    for (const [index, segment] of built.segments.entries()) {
+    // one axis throughout; the straight branch is one segment at whatever angle it likes.
+    for (const segment of built.segments) {
       expect(segment.owner).toEqual({ kind: 'link', id: link.id });
       expect(segment.lane).toBeUndefined();
       expect(segment.barCross).toBeUndefined();
-      const stub = index === 0 || index === built.segments.length - 1;
-      if (!straight || stub) {
+      if (!straight) {
         expect(Math.abs(segment.to.x - segment.from.x) < 1e-9 || Math.abs(segment.to.y - segment.from.y) < 1e-9).toBe(true);
       }
       expect(Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y)).toBeGreaterThan(1e-9);
     }
-    // Straight is a stub, one segment and a stub, or less where a stub collapses onto the segment.
-    if (straight) expect(built.segments.length).toBeLessThanOrEqual(3);
+    // The straight branch is the whole link: two points, no stub (stress ticket 30).
+    if (straight) expect(built.segments).toHaveLength(1);
     expect(built.layer).toBe('overlay');
     expect(built.fixed).toBe(false);
     // Ticket 04 A: the rule may not state a path its own validator throws on. `retraces` reads every
@@ -104,17 +103,52 @@ describe('overlay paths', () => {
       points: [{ x: 105, y: 112 }, { x: 45, y: 92 }] }],
   });
 
-  it('goes round when a port faces away from its partner, because its own pill is in the way', () => {
-    // The one shape stress ticket 30 moved. These two ports face **away** from each other, so the
-    // line from face to face turns back inward at both ends: leaving (105, 99) it drops into the
-    // source's own pill within 5 px, which is a pill in the way, and the straight branch refuses it.
-    // The stub used to lift the line clear of that pill before it turned, and there is no stub now.
-    // The orthogonal branch answers, stepping one clearance outward before it turns — the shape the
-    // same pair takes when a body stands on the segment, two tests below, and the reason the
-    // clearance survives on this branch.
+  it('goes round when a port faces away from its partner', () => {
+    // The straight branch's own condition: the segment has to **leave each port outward**. These two
+    // ports face away from each other, so the line from face to face turns back inward at both ends
+    // — leaving (105, 99) it drops away from the way that port faces — and a line that leaves a port
+    // inward runs back under that port's own pill, where the overlay mask would cut it away from its
+    // own endpoint mark. The orthogonal branch answers, stepping one clearance outward before it
+    // turns: the shape this same pair takes when a body stands on the segment, one test below, and
+    // the reason the clearance survives on that branch.
+    //
+    // The stub used to lift the line clear before it turned, so this is the one shape stress
+    // ticket 30 moved.
     expect(path(facingAway()))
       .toEqual([{ x: 105, y: 99 }, { x: 105, y: 95 }, { x: 75, y: 95 },
         { x: 75, y: 109 }, { x: 45, y: 109 }, { x: 45, y: 105 }]);
+  });
+
+  it('tilts as far as level and no further, and its own pills never decide it', () => {
+    // What bounds the straight branch (maintainer, 2026-09-16: a link's own two pills do not block
+    // its own straight segment; the outward-leave condition is the real one, so they carry nothing
+    // it does not already have).
+    //
+    // A facing pair takes **any** tilt. The target slides 5 000 px sideways across a 94 px drop —
+    // a line 2 px off horizontal over 5 000 — and it is still the one segment, because both ends
+    // still leave outward.
+    const facing = (x: number, y: number): Point[] => path({
+      nodes: [{ id: 'a', bounds: { x: 0, y: 100, width: 60, height: 40 } },
+        { id: 'b', bounds: { x, y, width: 60, height: 40 } }],
+      ports: [{ node: 'a', name: 'p', side: 'bottom', anchor: { x: 30, y: 140 } },
+        { node: 'b', name: 'q', side: 'top', anchor: { x: x + 30, y } }],
+      links: [{ id: 'flow', from: 'a', to: 'b', layer: 'overlay',
+        points: [{ x: 30, y: 140 }, { x: x + 30, y }] }],
+    }, true);
+    expect(facing(5000, 260)).toEqual([{ x: 30, y: 153 }, { x: 5030, y: 247 }]);
+    // It stops exactly where the two faces come level, not a fraction before: the source's face is
+    // at y 153 and the target's is at y − 13, so y 166 puts them level and the segment is horizontal,
+    // while y 165.9 puts the target's face above the source's and the line would leave a downward
+    // port upward. Nothing is 0.02 px inside a pill here; the condition is the direction itself.
+    expect(facing(300, 166)).toEqual([{ x: 30, y: 153 }, { x: 330, y: 153 }]);
+    expect(path({
+      nodes: [{ id: 'a', bounds: { x: 0, y: 100, width: 60, height: 40 } },
+        { id: 'b', bounds: { x: 300, y: 165.9, width: 60, height: 40 } }],
+      ports: [{ node: 'a', name: 'p', side: 'bottom', anchor: { x: 30, y: 140 } },
+        { node: 'b', name: 'q', side: 'top', anchor: { x: 330, y: 165.9 } }],
+      links: [{ id: 'flow', from: 'a', to: 'b', layer: 'overlay',
+        points: [{ x: 30, y: 140 }, { x: 330, y: 165.9 } ] }],
+    })).toHaveLength(6);
   });
 
   it('routes orthogonally when a node stands on that straight segment', () => {
