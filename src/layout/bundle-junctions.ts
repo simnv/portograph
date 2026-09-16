@@ -480,7 +480,15 @@ function releaseHemmedFans(model: LayoutModel): void {
   if (!branches.length) return;
   const release = new Set<string>();
   for (const link of model.links) {
-    if (!drawn(link)) continue;
+    // Stage 8 approaches a port only for a link it routes, and `planRoute` passes over every link
+    // that already holds a complete path — one a rule pinned, and a bundle member, whose path
+    // `rebuildBundlePaths` deletes just before this pass and assigns again straight after it.
+    // Neither is ever given a checkpoint at its port, so neither can be hemmed at one. That is the
+    // exclusion the branch loop above already makes, and it is read the same way: `fixed` and
+    // `bundle` hold whatever stage the model is restored at, where the presence of a `path` does
+    // not — after stage 8 every link carries one, and a guard on that would make this pass answer
+    // differently on the re-derivation `checkedLayoutMutation` compares against.
+    if (!drawn(link) || link.path?.fixed === true || link.bundle !== undefined) continue;
     for (const end of ['from', 'to'] as const) {
       const ref = link.attachments![end], port = findPort(model, ref);
       if (!port?.anchor || port.side === undefined) continue;
