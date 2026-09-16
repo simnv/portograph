@@ -332,16 +332,23 @@ function gapStem(model: LayoutModel, id: string, own: LayoutPort[],
 }
 
 /**
- * Where every stem of one node side that feeds a tier gap turns (ADR-0015 rule 1, eleventh
+ * Where every stem of one node side that feeds another tier turns (ADR-0015 rule 1, twelfth
  * amendment). The unit is the **port**: a side carries one stem per port, and a port that carries
  * two links carries one stem for both.
  *
- * A leg travels along its own side after it turns. Where that travel passes over a second port of
- * the same side, the two turns cannot stand at one depth: the first route laid covers the second
- * port's stem, and the second link is left with a checkpoint no route can reach. The order is
- * forced there — the leg that reaches over another port's column turns beyond it — so port `p`
- * turns `stemReach + rank(p) * pitch` out, `rank` being the longest chain of ports it must turn
- * beyond. A side no leg reaches across nests nothing and keeps the flat stems it had.
+ * A leg travels along its own side after it turns. Where that travel reaches a second port of the
+ * same side, the two turns cannot stand at one depth: the first route laid covers the second port's
+ * stem, and the second link is left with a checkpoint no route can reach. The order is forced there
+ * — the leg that reaches another port turns beyond it — so port `p` turns `stemReach + rank(p) *
+ * pitch` out, `rank` being the longest chain of ports it must turn beyond. The travel is read to
+ * the near edge of the other port's **strip**, not to its column, because a leg that stops between
+ * the two still ends in a cover its own batch is no longer exempt from.
+ *
+ * A side nests nothing and keeps the flat stems it had where no order is forced, where no order is
+ * clean, where a leg's shape is not wholly known here, where the side carries its group's title, or
+ * where a nested turn would stand in frozen geometry or where G6 refuses to let its leg travel away
+ * from it. Each decline below says which it is. A leg whose geometry a rule has fixed, and a bundle
+ * member, are passed over rather than declined: both are already obstacles this pass reads.
  */
 export interface SidePlan { depth: Map<string, number> }
 /** The plans one pass reads: one per row gap, one per node side. Placement does not move while it runs. */
@@ -377,9 +384,10 @@ export function sidePlan(model: LayoutModel, node: string, side: 'top' | 'bottom
       if (link.path?.fixed === true || link.fixedSegments?.length
         || link.sharedRuns?.from?.length || link.sharedRuns?.to?.length) continue;
       const far = findPort(model, item.peer);
-      // A leg is reserved only where placement knows its whole shape: it leaves this side, crosses
-      // one tier gap and arrives on the facing side of a node in another tier. Anything else may
-      // travel along this side for reasons placement cannot see, so the whole side keeps flat stems.
+      // A leg is reserved only where placement knows its whole shape: it leaves this side and
+      // arrives on the facing side of a node in another tier — any other tier, either way, adjacent
+      // or not; what it crosses on the way is not read here. Anything else may travel along this
+      // side for reasons placement cannot see, so the whole side keeps flat stems.
       if (!far?.anchor || far.side !== FACING[side] || tier(node) === tier(item.peer.node)) return undefined;
       const seen = legs.get(key(port.ref)) ?? { at: port.anchor.x, low: port.anchor.x, high: port.anchor.x };
       legs.set(key(port.ref), { at: seen.at, low: Math.min(seen.low, far.anchor.x), high: Math.max(seen.high, far.anchor.x) });
