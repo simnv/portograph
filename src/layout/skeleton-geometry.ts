@@ -3,11 +3,26 @@ import type { Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { orderedGroupIds } from '../model/model.js';
 import { bandGap, compareId, greatestPeers, groupId, nodeGap, nodeId, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
+/**
+ * Stress ticket 13. These two carry the codebase's one rectangle tolerance (`EPS`, 1e-7 px); the
+ * local copies they replace compared exactly. A band keeps `x` and `width = max(right) - x`, so
+ * reading its right edge back as `x + width` loses up to one ULP — 4.547473508864641e-13 at the
+ * 3 274 px of `goldens/synthetic/a-band-holds-the-group-that-set-its-edge.yaml` — and an exact
+ * `contains` refused the very group the band was built from. The alternative, keeping the band's
+ * edges so no rounding is reintroduced, repairs that one union and leaves both other users of these
+ * predicates exact: the `ELK placed node … outside group …` guard below, which compares two ELK
+ * rectangles and never sees a union, and the mirror `Groups A and B overlap`.
+ *
+ * What the tolerance costs those two: 1e-7 px is six orders of magnitude under the smallest
+ * distance any placement rule names (1 px, `goldens/synthetic/one-px-sources.yaml`) and one under
+ * the 1e-6 `mutation.ts` already allows for the same node-inside-group question. A node placed
+ * outside its group, or two groups that really overlap, do so by a placement distance, so neither
+ * guard can now pass what it used to refuse; only residues no rule could have produced.
+ */
+import { contains, rectOverlap as overlaps } from '../score/geometry.js';
 
 const right = (rect: Rect): number => rect.x + rect.width;
 const bottom = (rect: Rect): number => rect.y + rect.height;
-const contains = (a: Rect, b: Rect): boolean => a.x <= b.x && a.y <= b.y && right(a) >= right(b) && bottom(a) >= bottom(b);
-const overlaps = (a: Rect, b: Rect): boolean => a.x < right(b) && b.x < right(a) && a.y < bottom(b) && b.y < bottom(a);
 const validRect = (r: Rect | undefined): r is Rect => r !== undefined && Object.values(r).every(Number.isFinite) && r.width > 0 && r.height > 0;
 export function union(rects: Rect[]): Rect {
   if (!rects.length) return { x: 0, y: 0, width: 2 * spacing.padding, height: 2 * spacing.padding };
