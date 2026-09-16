@@ -1,0 +1,91 @@
+# Expected: The tier-3 band is the union of edge-near and edge-far, and edge-far, which sets its
+# right edge 1 624.76 px along from the band's x, is inside it. The band keeps x and width, so
+# reading the right edge back as x + width loses one ULP at these coordinates and the band check
+# must not refuse the rectangle it was built from. Test-only input owned by stress ticket 13. The
+# test calls validateSkeletonBands directly and stops after 7f: centre reports
+# PLACEMENT_NON_CONVERGENCE here, so the publication check is given allowNonConvergence and skips
+# the band check, and stage 8 then cannot route the diagram. Both are separate defects.
+portograph: 2
+profile: network
+groups:
+  sources: { tier: 0 }
+  hubs: { tier: 1 }
+  access: { tier: 2 }
+  edge-far: { tier: 3 }
+  edge-near: { tier: 3 }
+nodes:
+  src0: { group: sources, class: router, ports: [] }
+  src1: { group: sources, class: router, ports: [] }
+  src2: { group: sources, class: router, ports: [] }
+  src3: { group: sources, class: router, ports: [] }
+  src4: { group: sources, class: router, ports: [] }
+  hub0: { group: hubs, class: rr, ports: [] }
+  hub1: { group: hubs, class: rr, ports: [] }
+  acc00: { group: access, class: switch, ports: [] }
+  acc01: { group: access, class: switch, ports: [] }
+  acc02: { group: access, class: switch, ports: [] }
+  acc03: { group: access, class: switch, ports: [] }
+  acc04: { group: access, class: switch, ports: [] }
+  acc05: { group: access, class: switch, ports: [] }
+  acc06: { group: access, class: switch, ports: [] }
+  acc07: { group: access, class: switch, ports: [] }
+  acc08: { group: access, class: switch, ports: [] }
+  acc09: { group: access, class: switch, ports: [] }
+  acc10: { group: access, class: switch, ports: [] }
+  acc11: { group: access, class: switch, ports: [] }
+  acc12: { group: access, class: switch, ports: [] }
+  acc13: { group: access, class: switch, ports: [] }
+  acc14: { group: access, class: switch, ports: [] }
+  acc15: { group: access, class: switch, ports: [] }
+  acc16: { group: access, class: switch, ports: [] }
+  acc17: { group: access, class: switch, ports: [] }
+  acc18: { group: access, class: switch, ports: [] }
+  acc19: { group: access, class: switch, ports: [] }
+  acc20: { group: access, class: switch, ports: [] }
+  acc21: { group: access, class: switch, ports: [] }
+  acc22: { group: access, class: switch, ports: [] }
+  acc23: { group: access, class: switch, ports: [] }
+  snk0: { group: edge-near, class: server, ports: [] }
+  snk1: { group: edge-far, class: server, ports: [] }
+  snk2: { group: edge-near, class: server, ports: [] }
+  snk3: { group: edge-far, class: server, ports: [] }
+  snk4: { group: edge-near, class: server, ports: [] }
+links:
+  - [hub0, acc00]
+  - [hub0, acc01]
+  - [hub0, acc02]
+  - [hub0, acc03]
+  - [hub1, acc04]
+  - [hub1, acc05]
+  - [hub1, acc06]
+  - [hub1, acc07]
+  - [src0, hub0]
+  - [src1, hub1]
+  - [src2, hub0]
+  - [src3, hub1]
+  - [src4, hub0]
+  - [acc00, snk0]
+  - [acc01, snk1]
+  - [acc02, snk2]
+  - [acc03, snk3]
+  - [acc04, snk4]
+  - [acc05, snk0]
+  - [acc06, snk1]
+  - [acc07, snk2]
+  - [acc08, snk3]
+  - [acc09, snk4]
+  - [acc10, snk0]
+  - [acc11, snk1]
+  - [acc12, snk2]
+  - [acc13, snk3]
+  - [acc14, snk4]
+  - [acc15, snk0]
+  - [acc16, snk1]
+  - [acc17, snk2]
+  - [acc18, snk3]
+  - [acc19, snk4]
+  - [acc20, snk0]
+  - [acc21, snk1]
+  - [acc22, snk2]
+  - [acc23, snk3]
+  - [src0, snk0, { class: transit }]
