@@ -6,7 +6,7 @@ import type { Rect } from '../../src/model/geometry.js';
 import type { LayoutModel, PathSegment } from '../../src/model/layout.js';
 import { ownedLanes } from '../../src/route/paths.js';
 import { MEMBER_GAP } from '../../src/layout/bundle-geometry.js';
-import { produceGroupLabelBands, routedStroke } from '../../src/layout/bands.js';
+import { GROUP_LABEL_GEOMETRY, produceGroupLabelBands, routedStroke } from '../../src/layout/bands.js';
 import { GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../../src/theme/geometry.js';
 import { horizontal, segmentRect, vertical } from '../../src/score/geometry.js';
 import { placed } from '../layout/phase-two-fixture.js';
@@ -206,6 +206,27 @@ it('leaves out the run a group label covers and seats the rest', async () => {
 
   const published = linkLabels(await route(model, { createAttempt: createAvoidAttempt }));
   expect(Number.isFinite(score(published).snapshot.Q)).toBe(true);
+}, 120000);
+
+it('claims an approach a row stands exactly on the edge of', async () => {
+  // Stress ticket 09. The gap seats its first row past the approach it reserved for the run beside
+  // it, so the row lands exactly on that reservation's cover edge — clear of it by the 10 px G6
+  // asks for and no more. The claim's cover scan counted that zero-area touch as a hit, declined
+  // the straight approach, and libavoid answered with a route that never reached the port.
+  const model = await place(read('a-claim-lies-on-a-cover-edge.yaml'));
+  const room = tierGapRoom(model).find(entry => entry.rows > 0)!;
+  const runs = allocateGapRuns(model);
+  const seats = runs.flatMap(run => run.segments.filter(horizontal).map(segment => segment.from.y))
+    .filter(y => y > room.low && y < room.high);
+  expect(seats.length).toBe(2);
+  // The first row stands one reserved-run clearance past the low boundary, on the cover's own edge.
+  expect(Math.min(...seats)).toBeCloseTo(room.low + GROUP_LABEL_GEOMETRY.nodeClearance + routedStroke(model), 9);
+
+  const published = linkLabels(await route(model, { createAttempt: createAvoidAttempt }));
+  expect(Number.isFinite(score(published).snapshot.Q)).toBe(true);
+  // The approach is one straight segment from the gap boundary to its own port.
+  const claimed = published.links.find(item => item.id === 'link-11')!.path!.segments;
+  expect(claimed.every(segment => horizontal(segment) || vertical(segment))).toBe(true);
 }, 120000);
 
 it('carries a group label with the band the gap room moves', async () => {

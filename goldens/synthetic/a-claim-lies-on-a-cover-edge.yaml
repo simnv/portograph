@@ -1,0 +1,51 @@
+# Expected: a tier gap seats a row exactly on the edge of the approach it reserved for the run
+# beside it, and stage 8 claims that approach straight through the touch.
+#
+# The gap under tier 0 owes two rows. The run that leaves its high boundary at x 189.92 owes its
+# own port an approach of one router stem beyond the low boundary, and the gap reserves it: a
+# rectangle of zero width grown by the clearance a reserved run carries. The first row is refused
+# inside it and seated past its bottom edge — at y 151.00, which is the gap boundary at 139.50
+# plus that same clearance. The row is therefore clear of the approach by exactly the 10 px of
+# visible clearance G6 asks for, and no more.
+#
+# The approach is a straight piece with one checkpoint on its own line, so stage 8 claims it
+# (ADR-0015 tenth amendment) — except that the claim scanned the reserved covers with
+# `segmentRect`, which counts a zero-area touch as a hit. The claim was declined, the piece went to
+# libavoid, and libavoid answered with a route that stops at the checkpoint and never reaches the
+# port: `Routed gap on link-11 does not meet its reserved endpoints`.
+#
+# A run on a cover edge is clear of the cover, so the scan now asks for an overlap of area. The
+# claim is made, the piece is one straight segment, and the diagram is produced at Q 0.4729 with
+# G4, G5 and G6 failing — none of them this rule.
+portograph: 2
+groups:
+  t0: { tier: 0, label: Tier 0 }
+  t1: { tier: 1, label: Tier 1 }
+  t2: { tier: 2, label: Tier 2 }
+  t3: { tier: 3, label: Tier 3 }
+nodes:
+  n0_0: { group: t0, class: router, label: N0_0, ports: [{ name: d0, side: bottom }] }
+  n0_1: { group: t0, class: tbr, label: N0_1, ports: [{ name: d0, side: bottom }] }
+  n1_0: { group: t1, class: tbr, label: N1_0, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n1_1: { group: t1, class: rr, label: N1_1, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n2_0: { group: t2, class: rr, label: N2_0, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n2_1: { group: t2, class: provider, label: N2_1, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n2_2: { group: t2, class: router, label: N2_2, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n2_3: { group: t2, class: tbr, label: N2_3, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n2_4: { group: t2, class: rr, label: N2_4, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n2_5: { group: t2, class: provider, label: N2_5, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n3_0: { group: t3, class: provider, label: N3_0, ports: [{ name: u0, side: top }] }
+  n3_1: { group: t3, class: router, label: N3_1, ports: [{ name: u0, side: top }] }
+links:
+  - [n0_0.d0, n1_0.u0]
+  - [n0_1.d0, n1_1.u0]
+  - [n1_0.d0, n2_0.u0]
+  - [n1_1.d0, n2_1.u0]
+  - [n2_0.d0, n3_0.u0]
+  - [n2_1.d0, n3_1.u0]
+  - [n2_2.d0, n3_0.u0]
+  - [n2_3.d0, n3_1.u0]
+  - [n2_4.d0, n3_0.u0]
+  - [n2_5.d0, n3_1.u0]
+  - [n2_0, n0_1]
+  - [n2_2, n0_0]

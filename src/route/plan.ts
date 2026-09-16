@@ -14,6 +14,12 @@ import { ALL_DIRECTIONS, DIRECTION_BITS, type RouteBatch, type RouteCheckpoint, 
 
 /** Shape buffer stays at zero; every obstacle already carries its exact clearance. */
 export const SHAPE_BUFFER_DISTANCE = 0;
+/**
+ * How far inside a reservation's cover a claim has to reach before the cover refuses it. Four
+ * `EPS`, which is 4e-7 px: enough that `segmentRect`'s own `EPS` slack on each side cannot make a
+ * run lying on the cover's edge read as inside it, and far below any distance the gates measure.
+ */
+const TOUCH = 4 * EPS;
 const OUTWARD: Record<Side, Point> = {
   top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 },
 };
@@ -343,7 +349,15 @@ function corridorFree(model: LayoutModel, link: LayoutLink, run: PathSegment,
   const segment: PathSegment = { ...run, owner: { kind: 'link', id: link.id } };
   // The cover scan first: it is a rectangle test per reservation, where the predicate below measures
   // every node, pill, label, lane, group box and reserved run in the diagram.
-  if (reserved.some(item => !item.consumers.includes(link.id) && segmentRect(segment, item.bounds))) return false;
+  //
+  // A run that lies exactly on a cover's edge is **clear of it**, not inside it. A cover is its run
+  // grown by `10 + (the two strokes) / 2`, so a centreline on that edge keeps the 10 px of visible
+  // clearance G6 asks for and nothing more is owed. The case is not a rounding accident: a rule that
+  // seats a run past a reservation puts it on that edge by construction, and `segmentRect` counts a
+  // zero-area touch as a hit. The scan therefore asks for an overlap of area.
+  const inside = (box: Rect): Rect =>
+    ({ x: box.x + TOUCH, y: box.y + TOUCH, width: box.width - 2 * TOUCH, height: box.height - 2 * TOUCH });
+  if (reserved.some(item => !item.consumers.includes(link.id) && segmentRect(segment, inside(item.bounds)))) return false;
   // Measured at the widest routed stroke, not this link's own. `routeObstacles` and
   // `reservationConflicts` expand every reservation by that width, so a thin link measured at its
   // own could be claimed inside the band the router would have kept clear and then be refused by
