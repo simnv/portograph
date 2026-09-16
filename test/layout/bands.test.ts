@@ -15,7 +15,7 @@ import { rebuildRegionGeometry } from '../../src/layout/region-rebuild.js';
 import { restoreLayoutModel, withLayoutMutation } from '../../src/layout/mutation.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { rows } from '../../src/layout/rows.js';
-import { moveGroup, rebuildBands, union } from '../../src/layout/skeleton-geometry.js';
+import { moveGroup, rebuildBands, union, validateSkeletonBands } from '../../src/layout/skeleton-geometry.js';
 import { score } from '../../src/score/index.js';
 import { FONT_FAMILY, measurePortPill, measureText } from '../../src/text/index.js';
 import { orderedGroupIds } from '../../src/model/model.js';
@@ -25,6 +25,8 @@ import { placed } from './phase-two-fixture.js';
 const golden = readFileSync(new URL('../../goldens/m1-sip-edge.yaml', import.meta.url), 'utf8');
 /** Stress ticket 05's fixture: one tier gap owes four rows, so 7f's third step really runs. */
 const rowsOwed = readFileSync(new URL('../../goldens/synthetic/a-tier-gap-grows-to-its-rows.yaml', import.meta.url), 'utf8');
+/** Stress ticket 13's fixture: a tier band whose rightmost group stands 3 000 px from its x. */
+const bandEdgeResidue = readFileSync(new URL('../../goldens/synthetic/a-band-holds-the-group-that-set-its-edge.yaml', import.meta.url), 'utf8');
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const right = (box: Rect): number => box.x + box.width;
 const bottom = (box: Rect): number => box.y + box.height;
@@ -754,4 +756,17 @@ it('settles the linked-group grid again after the tier gap room replay', async (
   const width = (id: string): number => model.groups[id]!.bounds!.width;
   expect(width('access')).toBeCloseTo(width('hubs'), 9);
   expect(width('sinks')).toBeCloseTo(width('sources'), 9);
+}, 120000);
+
+it('holds the group that set a band edge, which x + width does not return exactly', async () => {
+  // Stress ticket 13. A band keeps `x` and `width = max(right) - x`; reading its right edge back as
+  // `x + width` loses up to one ULP, so the group that set that edge was reported outside the band
+  // it is part of. `edge-far` here is 4.547473508864641e-13 past its own band's derived right edge.
+  const model = run(await throughBundles(bandEdgeResidue));
+  const band = model.tierBands.find(tier => tier.tier === 3)!;
+  const group = model.groups['edge-far']!.bounds!;
+  const residue = right(group) - right(band.bounds!);
+  expect(residue).toBeGreaterThan(0);
+  expect(residue).toBeLessThan(1e-9);
+  expect(validateSkeletonBands(model)).toEqual([]);
 }, 120000);
