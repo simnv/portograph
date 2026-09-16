@@ -1,6 +1,16 @@
 import type { NormalisedDocument, NormalisedPort, PortRef } from './document.js';
 import type { LayoutGroup, LayoutModel, LayoutNode, LayoutPort } from './layout.js';
 
+/**
+ * What M1 really does with a technique it records but does not apply. A `stub` becomes a drawn line
+ * again, so it falls back to routed. A `group-link` is drawn as its members, each on the layer its
+ * own family chose — aggregation says how many lines stand for the set, never which layer draws
+ * them (stress ticket 23) — so naming a layer here would be wrong for an overlay set.
+ */
+export function unsupportedMessage(technique: 'stub' | 'group-link'): string {
+  return technique === 'stub' ? 'M1 falls back to routed for stub' : 'M1 draws the members for group-link';
+}
+
 function serialize(value: unknown): string {
   return JSON.stringify(value, (_key, field: unknown) => {
     if (typeof field === 'number' && !Number.isFinite(field)) {

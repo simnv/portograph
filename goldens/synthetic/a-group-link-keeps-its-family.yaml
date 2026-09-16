@@ -1,0 +1,26 @@
+# Expected: The complete bipartite set of four `class: sync` links between North and South is an
+# aggregation, so stage 1 records one group-link over it. Aggregation says how many lines stand for
+# the set; it does not say on which layer they are drawn. Every member is the overlay family, so the
+# group-link is overlay and its four members keep the overlay layer and the derived overlay path —
+# thin, translucent, unrouted, under the routed layer. The `physical` link from Charlie to Echo is
+# the routed contrast: it is the only link libavoid is given. Before stress ticket 23 the four
+# members were promoted to `layer: routed` and sent to the router as orthogonal links.
+# Test-only input owned by stress ticket 23; the whole pipeline runs, so no stage precondition is
+# needed.
+portograph: 2
+groups:
+  north: { tier: 0, label: North }
+  south: { tier: 1, label: South }
+  edge: { tier: 2, label: Edge }
+nodes:
+  alpha: { group: north, class: router, label: Alpha }
+  bravo: { group: north, class: router, label: Bravo }
+  charlie: { group: south, class: rr, label: Charlie }
+  delta: { group: south, class: rr, label: Delta }
+  echo: { group: edge, class: tbr, label: Echo }
+links:
+  - [alpha, charlie, { class: sync }]
+  - [alpha, delta, { class: sync }]
+  - [bravo, charlie, { class: sync }]
+  - [bravo, delta, { class: sync }]
+  - [charlie, echo, { class: physical }]
