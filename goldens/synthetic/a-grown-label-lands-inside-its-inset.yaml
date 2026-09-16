@@ -1,0 +1,28 @@
+# Expected: `lower`'s title is wider than the gap its own geometry leaves, so 7f grows the box and
+# plans the label again inside it. That is the one path where `planLabels` answers from the
+# `firstFree` walk rather than the candidate list: the node's downward feed corridor covers the whole
+# window — centre, start, limit and both edges of the one merged range — so the candidate list is
+# empty. The walk sets the width the group asks to grow to, and the candidate list places the label
+# in the box that growth produced, so the two have to step out of a forbidden range by the same
+# distance (stress ticket 19).
+#
+# `middle` carries two links up and one down, so the title takes the bottom edge (ADR-0011) — the
+# edge the downward corridor crosses. The build produces a group 330.489992234375 px wide holding a
+# label 239.361328125 px wide at x 106.63427934375: 75.128664109375 px of slack on the left and
+# **exactly 0 on the right**, the label's right edge on the inset the growth asked for. Before the
+# fix the two steps were one tolerance apart and the label came to rest 1e-6 px outside it.
+# Every gate passes.
+portograph: 2
+groups:
+  upper: { tier: 0, label: "Upper" }
+  lower: { tier: 1, label: "A group label that fills the box it asked for" }
+  under: { tier: 2, label: "Under" }
+nodes:
+  parent-a: { group: upper, class: router, label: "parent a" }
+  parent-b: { group: upper, class: router, label: "parent b" }
+  middle: { group: lower, class: router, label: "middle" }
+  under-a: { group: under, class: router, label: "under a" }
+links:
+  - [middle, parent-a]
+  - [middle, parent-b]
+  - [middle, under-a]

@@ -27,6 +27,8 @@ const golden = readFileSync(new URL('../../goldens/m1-sip-edge.yaml', import.met
 const rowsOwed = readFileSync(new URL('../../goldens/synthetic/a-tier-gap-grows-to-its-rows.yaml', import.meta.url), 'utf8');
 /** Stress ticket 13's fixture: a tier band whose rightmost group starts 1 624.76 px from its x. */
 const bandEdgeResidue = readFileSync(new URL('../../goldens/synthetic/a-band-holds-the-group-that-set-its-edge.yaml', import.meta.url), 'utf8');
+/** Stress ticket 19's fixture: the one shape whose label plan answers from the `firstFree` walk. */
+const grownLabel = readFileSync(new URL('../../goldens/synthetic/a-grown-label-lands-inside-its-inset.yaml', import.meta.url), 'utf8');
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const right = (box: Rect): number => box.x + box.width;
 const bottom = (box: Rect): number => box.y + box.height;
@@ -813,3 +815,24 @@ it('keeps the tolerance on the band comparators that the producer repair no long
   expect(validateSkeletonBands(model(box, { ...beside, x: 500 - 1e-3, width: 500 + 1e-3 }, span)))
     .toEqual(['Groups a and b overlap']);
 });
+
+it('stress ticket 19: a grown group label lands inside the inset the growth asked for', async () => {
+  // `planLabels` has two producers of a label's x: the candidate list, which steps `2 * EPS` clear
+  // of a forbidden range, and the `firstFree` walk, which stepped one. The walk is what sets the
+  // width a blocked group asks to grow to, and the candidate list is what places the label in the
+  // box that growth produced, so a group that goes down both paths asked for a box one tolerance
+  // narrower than the x it then emitted needs — and the label came to rest that far outside its own
+  // 8 px inset. Both now take `LABEL_CLEARANCE_STEP`.
+  //
+  // This fixture is the one shape that reaches the walk: the downward feed corridor of `middle`
+  // covers the whole window, so every candidate — centre, start, limit and both edges of the one
+  // merged range — is filtered and the list is empty.
+  const model = run(await throughBundles(grownLabel));
+  const group = model.groups['lower']!.bounds!;
+  const label = model.labels.find(item => item.id === 'label:group:lower')!.bounds!;
+  // The growth really happened: the box is wider than the label and its two insets.
+  expect(group.width).toBeGreaterThan(label.width + 2 * GROUP_LABEL_GEOMETRY.horizontalInset);
+  // And the label rests exactly on the inset, with no tolerance spent either way.
+  expect(right(group) - GROUP_LABEL_GEOMETRY.horizontalInset - right(label)).toBe(0);
+  expect(label.x).toBeGreaterThan(group.x + GROUP_LABEL_GEOMETRY.horizontalInset);
+}, 120000);

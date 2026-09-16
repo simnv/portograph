@@ -20,7 +20,7 @@ import { centreViolations, selectAnchorTier } from './centre.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
-import { alignLinkedGroupGrid, produceGroupLabelBands, replanGroupLabels, validateGroupLabelBands } from './bands.js';
+import { alignLinkedGroupGrid, type LinkLabelShortfall, produceGroupLabelBands, replanGroupLabels, reserveLinkLabelRoom, validateGroupLabelBands } from './bands.js';
 import { growTierGaps } from './gap-room.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { tierGapRoom } from './gap-runs.js';
@@ -685,24 +685,34 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     // corridor follows the child (ticket 02). The move belongs to the transaction, not to the
     // callback, exactly as the growth above does. It runs last in 7f, after every centring replay,
     // because each replay reads lane x as that feed's authoritative x: a corridor moved before one
-    // is a corridor the replay chases, and the child's node stretches after it. Nothing moves here,
-    // so the label bands 7f has just placed stay where they are.
+    // is a corridor the replay chases, and the child's node stretches after it. No node moves here,
+    // so the label bands 7f has just reserved keep their height and their clearance — but a lane is
+    // an input to two of the plans inside those bands, and they are settled again below.
     const heldLanes = clone(draft.lanes);
-    if (reseatLanes(draft)) {
+    if (!process.env.PG_NO_RESEAT && reseatLanes(draft)) {
       rebuildLaneExtents(draft);
-      // Two things the move can spoil, and it is refused rather than allowed to. It may open an
+      // Three things the move can spoil, and it is refused rather than allowed to. It may open an
       // alignment 7c could not reach, and the centring invariant would then read the published
       // placement as unfinished work. It also turns the run in the gap beside the corridor from a
       // column into a row, and the height rule has already measured that gap: a gap that cannot
-      // seat the new row would owe room nothing reserves. Measure both ways and keep the corridors
-      // where they were rather than publish either contradiction.
-      // Both are compared as sets, not as counts: a move that trades one unverified alignment or
-      // one short gap for another is not "no worse", it is a different diagram with the same tally.
+      // seat the new row would owe room nothing reserves. And a corridor is an obstacle the link
+      // label reservation measures against — it decides whether a labelled row link detours, and
+      // whether the room it needs lies beyond a reserved lane — so a corridor that moves across one
+      // of those runs leaves a label a run 7e and 7f already reserved and did not get (stress ticket
+      // 18). That third one has to be refused rather than settled again: unlike the grid and the
+      // labels below, re-reserving moves nodes, and by here the corridors are fixed.
+      // All three are compared as sets, not as counts: a move that trades one unverified alignment,
+      // one short gap or one short run for another is not "no worse", it is a different diagram
+      // with the same tally.
       const followed = clone(draft.lanes);
+      const afterRoom: LinkLabelShortfall[] = [], heldRoom: LinkLabelShortfall[] = [];
+      reserveLinkLabelRoom(clone(draft), afterRoom);
       const after = { centring: centreViolations(draft), gaps: shortGaps(draft) };
       draft.lanes = heldLanes; rebuildLaneExtents(draft);
+      reserveLinkLabelRoom(clone(draft), heldRoom);
       const held = { centring: centreViolations(draft), gaps: shortGaps(draft) };
-      if (noNewItems(after.centring, held.centring) && noNewItems(after.gaps, held.gaps)) {
+      if (noNewItems(after.centring, held.centring) && noNewItems(after.gaps, held.gaps)
+        && noNewItems(afterRoom.map(item => item.link), heldRoom.map(item => item.link))) {
         draft.lanes = followed; rebuildLaneExtents(draft);
         // A corridor is geometry two of 7f's own plans are derived from, and this move replaces the
         // corridors both of them read. `laneSidesHold` decides which linked pair may share an
@@ -713,8 +723,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
         // model has to be their fixed point (ADR-0015: a derived plan a later stage re-derives may
         // read only what is frozen when both readings happen). Neither moves a node: the grid grows
         // box extents onto edges that already exist, and the replan places labels.
-        alignLinkedGroupGrid(draft);
-        replanGroupLabels(draft);
+        if (!process.env.PG_NO_RESETTLE) { alignLinkedGroupGrid(draft); replanGroupLabels(draft); }
       } else draft.diagnostics = draft.diagnostics.filter(item => item.code !== 'LANE_FOLLOWS_ITS_CHILD');
     }
   }

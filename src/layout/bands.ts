@@ -577,13 +577,16 @@ export function alignLinkedGroupGrid(model: LayoutModel): boolean {
       const low = Math.min(a.bounds![pos], b.bounds![pos]);
       const high = Math.max(a.bounds![pos] + a.bounds![len], b.bounds![pos] + b.bounds![len]);
       const extent = high - low;
-      if (Math.abs(a.bounds![len] - extent) <= PLACEMENT_EPS && Math.abs(b.bounds![len] - extent) <= PLACEMENT_EPS) continue;
+      const dbg = process.env.PG_DEBUG_GRID ? (why: string) => console.error('GRID', a.id, b.id, axis, why,
+        'extent', extent, 'growA', (extent - a.bounds![len]) / extent, 'growB', (extent - b.bounds![len]) / extent) : () => {};
+      if (Math.abs(a.bounds![len] - extent) <= PLACEMENT_EPS && Math.abs(b.bounds![len] - extent) <= PLACEMENT_EPS) { dbg('settled'); continue; }
       if ((extent - a.bounds![len]) / extent > GROUP_GRID_MAX_GROWTH + PLACEMENT_EPS
-        || (extent - b.bounds![len]) / extent > GROUP_GRID_MAX_GROWTH + PLACEMENT_EPS) continue;
+        || (extent - b.bounds![len]) / extent > GROUP_GRID_MAX_GROWTH + PLACEMENT_EPS) { dbg('cap'); continue; }
       const proposed = [a, b].map(group => ({ group, bounds: { ...group.bounds!, [pos]: low, [len]: extent } as Rect }));
       const others = Object.values(model.groups).filter(group => group !== a && group !== b);
-      if (proposed.some(item => others.some(other => rectOverlap(item.bounds, other.bounds!)))) continue;
-      if (axis === 'x' && !laneSidesHold(model, proposed)) continue;
+      if (proposed.some(item => others.some(other => rectOverlap(item.bounds, other.bounds!)))) { dbg('overlap'); continue; }
+      if (axis === 'x' && !laneSidesHold(model, proposed)) { dbg('lanes ' + JSON.stringify(model.lanes.map(l => [l.tier, l.x]))); continue; }
+      dbg('merged');
       for (const item of proposed) item.group.bounds = item.bounds;
       moved = changed = true;
     }
@@ -624,6 +627,9 @@ function overlayRunMid(model: LayoutModel, link: LayoutLink, axis: 'x' | 'y'): n
   return (run.from[axis] + run.to[axis]) / 2;
 }
 
+/** One labelled link whose run is shorter than the label it carries needs, and by how much. */
+export interface LinkLabelShortfall { link: string; axis: 'row' | 'tier gap'; required: number; room: number }
+
 /**
  * A link's description influences its length (ADR-0014): the run a label will follow must be long
  * enough for the measured text plus the shortening margins before anything is routed. Stage 9
@@ -643,13 +649,15 @@ function overlayRunMid(model: LayoutModel, link: LayoutLink, axis: 'x' | 'y'): n
  * not face each other and links whose room lies beyond a reserved lane are diagnosed and left to the
  * stage 9 ladder.
  */
-export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: string[] = []): boolean {
+export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelShortfall[] = []): boolean {
   let changed = false;
   // What each reservation was for. The replay that refuses a published model throws on the return
   // value alone, and the sentence named neither the link nor the amount: three rebuilds to find one
-  // number, which is the same cost tickets 13 and 14 recorded for their own messages.
+  // number, which is the same cost tickets 13 and 14 recorded for their own messages. A caller that
+  // has to decide whether a move makes this pass reserve *more* than it already did reads the link
+  // names out of the same record.
   const record = (link: LayoutLink, axis: 'row' | 'tier gap', required: number, room: number): void => {
-    shortfalls.push(`${link.id} needs ${required} px along its ${axis} and holds ${room} px`);
+    shortfalls.push({ link: link.id, axis, required, room });
   };
   const suppressed = overlayLabelsSuppressed(model);
   const outer = (port: LayoutPort, node: LayoutNode): Rect => port.pill ? port.pill.bounds : node.bounds!;
@@ -824,9 +832,10 @@ export function replanGroupLabels(model: LayoutModel): void {
 export function validateGroupLabelBands(model: LayoutModel): void {
   // Replay the grid on a copy: a settled model does not change; a genuinely unsettled chain exhausts
   // the pass bound again. A serialized diagnostic alone proves nothing.
-  const shortfalls: string[] = [];
+  const shortfalls: LinkLabelShortfall[] = [];
   if (reserveLinkLabelRoom(clone(model), shortfalls)) {
-    throw new Error(`A labelled link is shorter than the run its label reserved: ${shortfalls.join('; ')}`);
+    throw new Error('A labelled link is shorter than the run its label reserved: '
+      + shortfalls.map(item => `${item.link} needs ${item.required} px along its ${item.axis} and holds ${item.room} px`).join('; '));
   }
   const trial = clone(model);
   trial.diagnostics = trial.diagnostics.filter(item => item.code !== 'GROUP_GRID_NON_CONVERGENCE');

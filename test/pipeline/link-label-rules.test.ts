@@ -71,6 +71,49 @@ links: [[flank.p, peer.p, {label: ${peering}}]]`);
   expect(reserveLinkLabelRoom(shortened)).toBe(true);
 }, 60000);
 
+it('stress ticket 18: a corridor at or beyond the split decides whether the room is reserved at all', async () => {
+  // The reservation declines a row link whose room lies beyond a reserved lane, because lane
+  // geometry cannot move. So the answer this pass gives depends on where the corridors are — and
+  // 7f's last step moves one (ticket 02). A corridor that crosses a split turns a link the
+  // production pass diagnosed into a link the publication replay reserves, and the replay throws
+  // `A labelled link is shorter than the run its label reserved` on a model nothing else touched.
+  // The move is refused for that reason in `mutation.ts`, beside the two contradictions it was
+  // already refused for. This is the premise of that refusal, stated directly: one corridor, two
+  // positions, two answers.
+  const text = 'a considerably longer description of this peering';
+  const model = await run(`portograph: 2
+groups: {tier-group: {tier: 0}, flank-group: {align: left, of: tier-group}}
+nodes:
+  peer: {group: tier-group, ports: [{name: p, side: left}]}
+  flank: {group: flank-group, ports: [{name: p, side: right}]}
+links: [[flank.p, peer.p, {label: ${text}}]]`);
+  const copy = (value: LayoutModel): LayoutModel => JSON.parse(JSON.stringify(value)) as LayoutModel;
+  // Pull the tier peer back over its own run: the reservation now owes the label room again.
+  const short = copy(model);
+  for (const group of Object.values(short.groups)) if (!group.flank) group.bounds!.x -= 60;
+  const peer = short.nodes.peer!;
+  peer.bounds!.x -= 60;
+  for (const port of peer.ports) { port.anchor!.x -= 60; if (port.pill) port.pill.bounds.x -= 60; }
+  expect(reserveLinkLabelRoom(copy(short))).toBe(true);
+
+  const flankPill = short.nodes.flank!.ports[0]!.pill!.bounds, peerPill = peer.ports[0]!.pill!.bounds;
+  const split = (Math.max(short.nodes.flank!.bounds!.x + short.nodes.flank!.bounds!.width, flankPill.x + flankPill.width)
+    + Math.min(peer.bounds!.x, peerPill.x)) / 2;
+  const corridor = (x: number) => ({ id: 'lane:"transit":9', owner: { kind: 'link' as const, id: 'transit' },
+    group: 'tier-group', tier: 9, side: 'right' as const, x, bounds: { x: x - 17, y: 0, width: 34, height: 10 } });
+
+  // A corridor at the split: the room lies beyond geometry that cannot move, so nothing is reserved.
+  const beyond = copy(short);
+  beyond.lanes.push(corridor(split));
+  expect(reserveLinkLabelRoom(beyond)).toBe(false);
+  expect(beyond.diagnostics.filter(d => d.code === 'LINK_LABEL_ROOM_UNRESERVED').map(d => d.message))
+    .toEqual([expect.stringMatching(/beyond a reserved lane/)]);
+  // The same corridor one pixel to the left of the split, which is where the move takes it: reserved.
+  const before = copy(short);
+  before.lanes.push(corridor(split - 1));
+  expect(reserveLinkLabelRoom(before)).toBe(true);
+}, 60000);
+
 it('ADR-0014: a described link that must detour over a neighbour carries its full label on the longest run', async () => {
   // The band under the title reserves room for the label, and the run is reserved with both detour
   // stems, so the whole text sits above the long top segment instead of a stub on a stem.
