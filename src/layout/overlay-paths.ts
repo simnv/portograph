@@ -132,9 +132,9 @@ function overlayEnd(node: LayoutNode, port: LayoutPort): OverlayEnd | undefined 
  * what is drawn at its two ends, and the mark sits where the line meets the pill.
  *
  * `undefined` when the end states no side, no anchor or no node box: there is then no outward face
- * to read, and the path keeps the straight anchor-to-anchor segment every release before this one
- * drew. `route/validate` and G7 `endpoint-anchor` read this same function, so the gate still names
- * one point per end and the producer cannot drift from it.
+ * to read, that end keeps its anchor, and the link falls back to the one straight segment every
+ * release before this one drew. `route/validate` and G7 `endpoint-anchor` read this same function,
+ * so the gate still names one point per end and the producer cannot drift from it.
  */
 export function overlayEndpoint(node: LayoutNode | undefined, port: LayoutPort | undefined): Point | undefined {
   return node && port ? overlayEnd(node, port)?.face : undefined;
