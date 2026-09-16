@@ -415,6 +415,41 @@ horizontal cover — nothing separates crossing a row from travelling along one.
 with ±11.5 px covers, so a packed gap leaves such a run no clear band to traverse in. Stress
 ticket 15.
 
+**A node side that feeds another tier nests its own stems (ADR-0015 rule 1).** A side carries one
+stem per port, and a leg travels along that side after it turns. Where the travel reaches a second
+port of the same side, the two turns may not stand at one depth: the first route laid covers the
+second port's stem, and the second link is left with a reserved turn no route can reach. The order
+is forced there — the leg that reaches another port turns beyond it — so port `p` turns
+`stemReach + rank(p) * pitch` out of its node, `rank` being the longest chain of ports it must turn
+beyond and `pitch` the same `16 px + widest routed stroke`. That is the depth stage 8 gives the
+checkpoint and the depth `routerEntryPoints` reports, read from one rule, so the two cannot drift.
+
+A leg's travel is measured to the near edge of the other port's **strip**, half a strip
+(`nudgingDistance`, 11.5 px at the default strokes) short of its column: a leg that stopped between
+the two would force no order and then run into a cover its own batch is no longer exempt from.
+
+The reservation is a **depth**, not a run: where the leg goes after it turns stays routing's
+business, as it does in a row gap. A side keeps the flat stems it had, and with them the side-wide
+exemption of § 8, when
+
+- no leg reaches another port's strip, or two legs each reach the other's so no order is clean;
+- a leg's shape is not wholly known here: its far end is not the facing side of a node in **another
+  tier** — any other tier, above or below, adjacent or not — or the port has no anchor;
+- the side carries its group's **title**, which stage 7f places after these depths are chosen, in
+  the room a deeper stem turns in;
+- a nested turn would stand in frozen geometry, measured against the obstacles stage 8 itself
+  reads;
+- a nested turn would stand where G6 `segment-group-edge` refuses to let its leg travel away from
+  it: on its own group box edge, or within the edge margin beyond it. Strictly inside the box a
+  link turns in the group's padding and owes nothing.
+
+A leg whose geometry a rule has already fixed — `path.fixed`, a fixed segment, a shared run — and a
+bundle member are **passed over**, not declined: each is already an obstacle the frozen-geometry
+test reads, so it neither takes a slot nor stops the side from nesting.
+
+A gap does not grow for a nested stem, and neither does a band: the label band's clearance reads
+only the entry points on its own side, and the side that carries the title never nests.
+
 A link transiting several tiers reserves a lane at each, ordered from source to target even for
 upward links. Prefer in-span corridors. When they do not fit, retain source geometry, reserve an
 outside-span corridor, and warn that routing must complete its attachment jog. Non-bundle runs
@@ -826,9 +861,16 @@ Registered as obstacles, each expanded once in the adapter and never in the mode
 - **lanes**, **group and node labels**, **bundle envelopes** and model
   obstacles, each expanded by the routed half stroke;
 - **the reserved outward stem of every link no batch has routed yet**, covered by the same
-  `10 + (its stroke + widest routed stroke) / 2` clearance. A stem is left out on a node **side**
-  the current batch attaches to as well. Two ports of one node side share that strip. A port on
-  another side of the same node stands in its own strip and keeps its reservation.
+  `10 + (its stroke + widest routed stroke) / 2` clearance. A stem is left out at a **port** the
+  current batch attaches to: one port carries one stem, and the links that share the port share it.
+  A stem on a node **side** the batch attaches to elsewhere is left out as well, but only where
+  placement left that side's stems flat. Two ports of one side stand one port pitch apart and the
+  strip is wider than that pitch, so a rectangle over one of them blocks the other. Where § 7a
+  nested the side, each port turns at a depth of its own and its strip is covered for every batch
+  that has not routed its owner: the strips still overlap, but a strip clears its neighbour's
+  **anchor column** by half a pitch less a half strip — 0.5 px at the defaults, and the pitch only
+  grows — so the router can always reach the port under one. A port on another side of the same node
+  stands in its own strip and keeps its reservation.
   These rectangles are added per batch. They never enter the ownership exclusions, so they cannot
   change a batch; they remain for the attachments no gap allocation reaches.
 - **every allocated tier-gap run** (§ 7a, in the room § 7f reserved for it), covered by the
@@ -976,8 +1018,9 @@ once, with the same points and no masks, when the answer misses a checkpoint it 
 costs one more transaction on a batch that would otherwise fail the command. Swapping the vertical
 bits instead would make every mask bite, which turns each stem checkpoint from a minimum into a
 pinned turn — measured, that puts two runs 3.5 px apart where nothing reserves the pitch between
-them. ADR-0015 rule 1 reserves that room in a row gap and in a tier gap, not beside a node side, so
-the masks stay advisory until the room a pinned turn needs is reserved there too.
+them. ADR-0015 rule 1 now reserves that room in a row gap, in a tier gap and on a node side that
+feeds one, but only where an order is forced; a side it leaves flat still has no room reserved for a
+pinned turn, so the masks stay advisory.
 
 
 ## Stage 9 — link labels

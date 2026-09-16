@@ -10,7 +10,7 @@ import { sizeNodes } from './size.js';
 import { bandGap, nodeGap, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { moveGroup, stackBands } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
-import { nodeObstacleReach, routedStroke, stemReach } from './bands.js';
+import { bandSide, nodeObstacleReach, nudgingDistance, routedStroke, stemReach } from './bands.js';
 import { MEMBER_GAP, fanEnd } from './bundle-geometry.js';
 import { laneSource, laneWidth, transitTiers } from './lanes.js';
 import { fitRegionGroup } from './regions.js';
@@ -332,23 +332,163 @@ function gapStem(model: LayoutModel, id: string, own: LayoutPort[],
 }
 
 /**
+ * Where every stem of one node side that feeds another tier turns (ADR-0015 rule 1, twelfth
+ * amendment). The unit is the **port**: a side carries one stem per port, and a port that carries
+ * two links carries one stem for both.
+ *
+ * A leg travels along its own side after it turns. Where that travel reaches a second port of the
+ * same side, the two turns cannot stand at one depth: the first route laid covers the second port's
+ * stem, and the second link is left with a checkpoint no route can reach. The order is forced there
+ * — the leg that reaches another port turns beyond it — so port `p` turns `stemReach + rank(p) *
+ * pitch` out, `rank` being the longest chain of ports it must turn beyond. The travel is read to
+ * the near edge of the other port's **strip**, not to its column, because a leg that stops between
+ * the two still ends in a cover its own batch is no longer exempt from.
+ *
+ * A side nests nothing and keeps the flat stems it had where no order is forced, where no order is
+ * clean, where a leg's shape is not wholly known here, where the side carries its group's title, or
+ * where a nested turn would stand in frozen geometry or where G6 refuses to let its leg travel away
+ * from it. Each decline below says which it is. A leg whose geometry a rule has fixed, and a bundle
+ * member, are passed over rather than declined: both are already obstacles this pass reads.
+ */
+export interface SidePlan { depth: Map<string, number> }
+/** The plans one pass reads: one per row gap, one per node side. Placement does not move while it runs. */
+export interface StemCache { gaps: Map<string, GapPlan | undefined>; sides: Map<string, SidePlan | undefined> }
+export const stemCache = (): StemCache => ({ gaps: new Map(), sides: new Map() });
+
+const FACING: Record<'top' | 'bottom', Side> = { top: 'bottom', bottom: 'top' };
+
+export function sidePlan(model: LayoutModel, node: string, side: 'top' | 'bottom'): SidePlan | undefined {
+  const owner = model.nodes[node];
+  if (!owner?.bounds) return undefined;
+  // The side that carries its group's title nests nothing. Stage 7f places that title after the
+  // depth is chosen, in the room the deeper stem would turn in, and it is then an obstacle the turn
+  // is not clear of: measured over 1 103 corpus inputs, admitting it instead breaks 192 of them —
+  // 188 because a group no longer retains the clearance beside its own label band.
+  //
+  // `bandSide` counts incident routed link ports over frozen port topology. Never read this from
+  // `model.labelBands`: it does not exist before 7f, `syncBands` rewrites it inside 7f and
+  // `reserveInitialSpace` rewrites it again after moving tiers, so the decline would answer nothing
+  // before 7f, one thing during it and another on the re-derivation `validateGroupLabelBands` makes
+  // at every stage from `bands` on. That is the `link.path` trap below, one layer up.
+  const owning = model.groups[model.document.nodes[node]!.group];
+  if (owning && bandSide(model, owning) === side) return undefined;
+  const peers = unreservedPeers(model), tier = (id: string): number | undefined =>
+    model.groups[model.document.nodes[id]!.group]?.tier;
+  // One entry per port: its anchor along the side, and how far its legs travel along it.
+  const legs = new Map<string, { at: number; low: number; high: number }>();
+  for (const port of owner.ports) {
+    if (port.side !== side || port.anchor === undefined) continue;
+    for (const item of peers.get(key(port.ref)) ?? []) {
+      const link = model.links.find(entry => entry.id === item.link)!;
+      // A link a rule has already given geometry to reserves no stem here and is already an
+      // obstacle `legClear` reads; it is passed over, so it neither takes a slot nor stops the side
+      // from nesting. Read from `path.fixed`, never from the presence of a `path`: after stage 8
+      // every link carries one, and a guard on that would make this plan answer differently on the
+      // re-derivation `checkedLayoutMutation` compares against — which is `validateGroupLabelBands`
+      // at every stage from `bands` on, and the bands it re-derives would then contradict the model.
+      if (link.path?.fixed === true || link.fixedSegments?.length
+        || link.sharedRuns?.from?.length || link.sharedRuns?.to?.length) continue;
+      const far = findPort(model, item.peer);
+      // A leg is reserved only where placement knows its whole shape: it leaves this side and
+      // arrives on the facing side of a node in another tier — any other tier, either way, adjacent
+      // or not; what it crosses on the way is not read here. Anything else may travel along this
+      // side for reasons placement cannot see, so the whole side keeps flat stems.
+      if (!far?.anchor || far.side !== FACING[side] || tier(node) === tier(item.peer.node)) return undefined;
+      const seen = legs.get(key(port.ref)) ?? { at: port.anchor.x, low: port.anchor.x, high: port.anchor.x };
+      legs.set(key(port.ref), { at: seen.at, low: Math.min(seen.low, far.anchor.x), high: Math.max(seen.high, far.anchor.x) });
+    }
+  }
+  if (legs.size < 2) return undefined;
+  // `beyond.get(p)` holds the ports `p` must turn beyond: those its own travel reaches. A leg that
+  // stops short of another port's column still reaches that port's strip, which is half a strip
+  // wide on each side of the column — the cover `stemBounds` gives it, at the widest routed stroke.
+  // A leg that stops inside it is a leg the batch's own exemption would have to answer for, so the
+  // travel is read out to the strip's near edge and not to the column.
+  const strip = nudgingDistance(model);
+  const beyond = new Map([...legs.keys()].map(id => [id, [] as string[]]));
+  for (const [id, leg] of legs) for (const [other, peer] of legs) {
+    const low = leg.low < leg.at - EPS ? leg.low - strip : leg.low;
+    const high = leg.high > leg.at + EPS ? leg.high + strip : leg.high;
+    if (other !== id && peer.at > low + EPS && peer.at < high - EPS) beyond.get(id)!.push(other);
+  }
+  // Longest chain below each port. Two ports that must each turn beyond the other have no clean
+  // order, and the side keeps its flat stems, exactly as a row gap does.
+  const rank = new Map<string, number>(), open = new Set<string>();
+  const depthOf = (id: string): number | undefined => {
+    const known = rank.get(id);
+    if (known !== undefined) return known;
+    if (open.has(id)) return undefined;
+    open.add(id);
+    let best = 0;
+    for (const other of beyond.get(id)!) {
+      const below = depthOf(other);
+      if (below === undefined) return undefined;
+      best = Math.max(best, below + 1);
+    }
+    open.delete(id);
+    rank.set(id, best);
+    return best;
+  };
+  for (const id of legs.keys()) if (depthOf(id) === undefined) return undefined;
+  if (![...rank.values()].some(value => value > 0)) return undefined;
+  const base = stemReach(model, owner), pitch = MEMBER_GAP + routedStroke(model);
+  const outward = side === 'top' ? -1 : 1, depth = new Map<string, number>();
+  for (const [id, steps] of rank) {
+    const reach = base + steps * pitch;
+    depth.set(id, reach);
+    // Only a nested stem is measured: one at the plain reach is the stem every port already has.
+    // `legClear` reads the same obstacles stage 8 does, so a nested slot is one the router can take.
+    const anchor = legs.get(id)!.at, from = side === 'top' ? owner.bounds.y : owner.bounds.y + owner.bounds.height;
+    if (steps > 0 && !legClear(model, node, anchor, from, from + outward * reach)) return undefined;
+    // The turn must also stand where G6 `segment-group-edge` lets the leg travel away from it, which
+    // `legClear` passes over: it excludes the owner's own group so that a leg may cross its own box.
+    // G6's own reading, on the run this turn starts: strictly inside the box a link turns in the
+    // group's padding and owes nothing; on or outside the edge it owes the edge margin. The
+    // ordinary padding is 20 px beyond the body and its pills, so the first pitch of nesting lands a
+    // turn on the edge of a group that holds its node tightly.
+    const edge = owning?.bounds ? side === 'top' ? owning.bounds.y : owning.bounds.y + owning.bounds.height : undefined;
+    const turn = from + outward * reach;
+    if (steps > 0 && edge !== undefined && outward * (turn - edge) > -EPS
+      && Math.abs(turn - edge) < GROUP_EDGE_LINK_CLEARANCE + routedStroke(model) / 2 - EPS) return undefined;
+  }
+  return { depth };
+}
+
+/**
  * How far out of its node `port`'s stem reaches before stage 8 turns it. A port whose link is a leg
  * in a row gap reaches that leg's slot (`gapPlan`); every other port keeps the plain reach. Derived,
  * never stored, so the figure stage 7f reserves and the figure stage 8 receives are the same one.
  */
 /** One gap plan per row gap for a whole pass; placement does not move while any pass runs. */
-function cachedPlan(model: LayoutModel, a: string, b: string,
-  cache?: Map<string, GapPlan | undefined>): GapPlan | undefined {
+function cachedPlan(model: LayoutModel, a: string, b: string, cache?: StemCache): GapPlan | undefined {
   const at = `${a}|${b}`;
-  if (cache?.has(at)) return cache.get(at);
+  if (cache?.gaps.has(at)) return cache.gaps.get(at);
   const plan = gapPlan(model, a, b);
-  cache?.set(at, plan);
+  cache?.gaps.set(at, plan);
   return plan;
 }
 
-export function stemPlan(model: LayoutModel, port: LayoutPort, cache?: Map<string, GapPlan | undefined>): { depth: number; turn?: 'top' | 'bottom' } {
+/** One side plan per node side for a whole pass; see `cachedPlan`. */
+function cachedSide(model: LayoutModel, node: string, side: 'top' | 'bottom', cache?: StemCache): SidePlan | undefined {
+  const at = `${node}|${side}`;
+  if (cache?.sides.has(at)) return cache.sides.get(at);
+  const plan = sidePlan(model, node, side);
+  cache?.sides.set(at, plan);
+  return plan;
+}
+
+/** Whether placement nested the stems of one node side, so each of them stands in a corridor of its own. */
+export function sideNested(model: LayoutModel, node: string, side: Side, cache?: StemCache): boolean {
+  return (side === 'top' || side === 'bottom') && cachedSide(model, node, side, cache) !== undefined;
+}
+
+export function stemPlan(model: LayoutModel, port: LayoutPort, cache?: StemCache): { depth: number; turn?: 'top' | 'bottom' } {
   const node = model.nodes[port.ref.node]!, base = stemReach(model, node);
   const side = port.side;
+  if ((side === 'top' || side === 'bottom') && node.bounds && port.anchor) {
+    const reach = cachedSide(model, port.ref.node, side, cache)?.depth.get(key(port.ref));
+    return { depth: reach === undefined ? base : Math.max(base, reach) };
+  }
   if (side !== 'left' && side !== 'right' || !node.bounds || !port.anchor) return { depth: base };
   const neighbour = rowNeighbour(model, port.ref.node, side);
   if (neighbour === undefined) return { depth: base };
@@ -408,7 +548,7 @@ function legGapCount(model: LayoutModel, link: LayoutLink): number {
  * is one the router can take.
  */
 export function legReservation(model: LayoutModel, link: LayoutLink,
-  cache?: Map<string, GapPlan | undefined>): PathSegment | undefined {
+  cache?: StemCache): PathSegment | undefined {
   const seen = legGaps(model, link).map(item => {
     if (!item) return undefined;
     const slot = cachedPlan(model, item.pair[0], item.pair[1], cache)?.slot.get(link.id);
@@ -441,7 +581,7 @@ export function legReservation(model: LayoutModel, link: LayoutLink,
 }
 
 /** The outward reach of `port`'s stem alone; see `stemPlan`. */
-export function stemDepth(model: LayoutModel, port: LayoutPort, cache?: Map<string, GapPlan | undefined>): number {
+export function stemDepth(model: LayoutModel, port: LayoutPort, cache?: StemCache): number {
   return stemPlan(model, port, cache).depth;
 }
 

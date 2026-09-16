@@ -6,7 +6,7 @@ import { placementWarning } from './regions.js';
 import { STRAIGHT_PATH_CLEARANCE, findPort } from './row-paths.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { GROUP_LABEL_GEOMETRY, nodeObstacleReach, nudgingDistance, routedStroke, stemReach } from './bands.js';
-import { stemPlan, type GapPlan } from './sides-two.js';
+import { stemCache, stemPlan } from './sides-two.js';
 
 export interface BundleFans {
   members: Member[];
@@ -474,7 +474,7 @@ function releaseHemmedFans(model: LayoutModel): void {
   // 15 px stem, unless the node's expanded obstacle reaches further, and deeper still where a side's
   // stems nest. One plan per row gap for the whole pass, because recomputing it per link end is
   // cubic in the size of a turning cohort.
-  const gaps = new Map<string, GapPlan | undefined>();
+  const gaps = stemCache();
   const drawn = (link: LayoutLink): boolean => link.layer === 'routed' && link.technique !== 'stub' && link.attachments !== undefined;
   const branches: { link: LayoutLink; end: 'from' | 'to'; port: LayoutPort; runs: PathSegment[] }[] = [];
   for (const link of model.links) {
