@@ -369,7 +369,11 @@ function validateGeometry(model: LayoutModel, allowNonConvergence = false): void
         || box.y + box.height > outer.y + outer.height + 1e-6)) throw new Error(`Node ${id} is outside its group`);
     }
   }
-  if (!allowNonConvergence && Object.keys(model.groups).length && validateSkeletonBands(model).length) throw new Error('Invalid group or tier geometry');
+  if (!allowNonConvergence && Object.keys(model.groups).length) {
+    // Report what the check found. A fixed sentence hid its own diagnosis and cost three rebuilds.
+    const bandErrors = validateSkeletonBands(model);
+    if (bandErrors.length) throw new Error(`Invalid group or tier geometry: ${bandErrors.join('; ')}`);
+  }
   if (!model.canvas || model.canvas.width < 0 || model.canvas.height < 0) throw new Error('Invalid canvas');
   same(model.tierBands.map(band => ({ tier: band.tier, groups: [...band.groups].sort() })),
     [...new Set(Object.values(model.groups).map(group => group.tier!))].sort((a, b) => a - b)
