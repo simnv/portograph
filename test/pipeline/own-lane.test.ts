@@ -30,7 +30,11 @@ it('keeps a routed gap out of the corridor its own link reserved', async () => {
   // The precondition: placement really did leave one child off its lane.
   expect(before.diagnostics.map(item => item.code)).toContain('PLACEMENT_NON_CONVERGENCE');
   const plan = planRoute(before);
-  expect(plan.batches.length).toBeGreaterThan(1);
+  // And the router still has work here. It used to be two batches; since the row this gap seats
+  // moved one pitch down (stress ticket 09 made the seating monotone in its obstacles), `link-3`'s
+  // descent below it is one straight run the plan claims rather than asks for, and the router is
+  // left the one link that still has to turn.
+  expect(plan.batches.map(batch => batch.links)).toEqual([['link-4']]);
 
   const model = linkLabels(await route(before, { createAttempt: createAvoidAttempt }));
   // Every routed segment that meets one of its link's own lanes runs along that lane's centre, and

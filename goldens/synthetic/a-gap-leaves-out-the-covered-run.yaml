@@ -1,0 +1,62 @@
+# Expected: one tier gap owes four rows, and a group label covers the approach of exactly one of
+# them. The gap seats the other three and leaves that one out.
+#
+# Four links cross the middle tier to reach four nodes in the lower tier, wired so no horizontal
+# move puts a run on one x, and each node of the lower tier also feeds the tier under it. The lower
+# group therefore carries its title on its top edge (ADR-0011), where the four approaches arrive.
+#
+# The gap between the middle band and the lower band is y 361.75 ... 449.50. Three of its four runs
+# reach their port on a clear line. The fourth, `link-1`, arrives at the port anchor (282.50,
+# 504.00), and its approach - the line from the gap's high boundary to that port's own outward
+# checkpoint at (282.50, 489.00) - crosses the lower group's title: a label of 66.01 x 14 px at
+# (243.50, 453.50), which routing grows by `GROUP_LABEL_LINK_CLEARANCE + routedStroke / 2` =
+# 8.75 px to x 234.75 ... 318.25, y 444.75 ... 476.25. Nothing owns that rectangle - a group label
+# is nobody's to cross.
+#
+# ADR-0015's sixth amendment used to answer that wholesale: a gap that cannot leave every one of
+# its approaches clear allocates nothing. All four runs were then left to stage 8, the first
+# ownership batch took the room, and on a sheet the size of the Enterprise NTP one that cost three
+# gaps of twelve every seat they owned - 48 rows given up for one covered approach.
+#
+# The decline is now per run. The gap seats `link-2`, `link-3` and `link-4`, and `link-1` alone
+# keeps the route it has today: it is a crosser of the three rows, and the gap owes it the head-on
+# approach its own corridor needs, which the three rows keep clear of. The diagram publishes.
+#
+# It publishes at Q 0.45644825442136716 and fails G6 with two `parallel-clearance` violations,
+# `[link-1, link-3]` at x 290.50 / 288.50 and `[link-2, link-4]` at x 217.00 / 215.00. Those are not
+# this rule's: two allocated runs of one gap may stand 2 px apart, because the row order forbids
+# only an exact shared x and the clearance scan never measures a candidate against the other runs of
+# its own gap. It is present on `main` at 0288048 too. Stress ticket 16 owns it. The fixture exists
+# for the seating, and the seating is what the test asserts.
+portograph: 2
+groups:
+  g0: { tier: 0 }
+  g1: { tier: 1 }
+  g2: { tier: 2, label: "Lower zone" }
+  g3: { tier: 3 }
+nodes:
+  s0: { group: g0, label: S, ports: [{ name: p, side: bottom }] }
+  s1: { group: g0, label: S, ports: [{ name: p, side: bottom }] }
+  s2: { group: g0, label: S, ports: [{ name: p, side: bottom }] }
+  s3: { group: g0, label: S, ports: [{ name: p, side: bottom }] }
+  m1: { group: g1, ports: [{ name: p, side: top }] }
+  t0: { group: g2, label: T, ports: [{ name: p, side: top }, { name: q, side: bottom }] }
+  t1: { group: g2, label: T, ports: [{ name: p, side: top }, { name: q, side: bottom }] }
+  t2: { group: g2, label: T, ports: [{ name: p, side: top }, { name: q, side: bottom }] }
+  t3: { group: g2, label: T, ports: [{ name: p, side: top }, { name: q, side: bottom }] }
+  u0: { group: g3, label: U, ports: [{ name: p, side: top }] }
+  u1: { group: g3, label: U, ports: [{ name: p, side: top }] }
+  u2: { group: g3, label: U, ports: [{ name: p, side: top }] }
+  u3: { group: g3, label: U, ports: [{ name: p, side: top }] }
+  # Unlinked, and load-bearing: it widens the lowest tier, which is what puts the lower group's
+  # title over `link-1`'s arrival rather than beside it.
+  u4: { group: g3, label: U }
+links:
+  - [s0.p, t2.p]
+  - [s1.p, t0.p]
+  - [s2.p, t3.p]
+  - [s3.p, t1.p]
+  - [t0.q, u0.p]
+  - [t1.q, u1.p]
+  - [t2.q, u2.p]
+  - [t3.q, u3.p]
