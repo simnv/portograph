@@ -13,10 +13,13 @@ import { bottom, contains as rectContains, EPS, rectOverlap, right } from '../sc
  * geometry the published gate accepts. Stress ticket 13 removed that divergence rather than
  * loosening a rule.
  *
- * It matters because a band keeps `x` and `width = max(right) - x`: reading its right edge back as
- * `x + width` loses up to one ULP — 4.547473508864641e-13 at the 3 271.71 px right edge of
+ * It mattered because a band kept `x` and `width = max(right) - x`: reading its right edge back as
+ * `x + width` lost up to one ULP — 4.547473508864641e-13 at the 3 271.71 px right edge of
  * `goldens/synthetic/a-band-holds-the-group-that-set-its-edge.yaml` — so an exact `contains` refused
- * the very group the band was built from.
+ * the very group the band was built from. `span` below removes that residue at the producer, so the
+ * band this file emits now contains its own rightmost group with no tolerance spent (stress ticket
+ * 14). The tolerance here stays: `fitRegionGroup`, `fitGroupBox` and `bars` still recover a group
+ * width from an absolute edge, and this comparator does not own them.
  *
  * What the tolerance costs the two guards here: 1e-7 px is seven orders of magnitude under the
  * smallest distance any placement rule names (1 px, `goldens/synthetic/one-px-sources.yaml`). A node
@@ -42,7 +45,7 @@ function nextUp(value: number): number {
  * the coordinate and the span. One step up is the smallest width that really reaches `edge`
  * (stress ticket 14; ticket 13 measured the same residue through `contains`).
  */
-const span = (x: number, edge: number): number => {
+export const span = (x: number, edge: number): number => {
   const width = edge - x;
   return x + width < edge ? nextUp(width) : width;
 };
