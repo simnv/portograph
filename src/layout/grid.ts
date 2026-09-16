@@ -87,46 +87,58 @@ export function enclosedBundle(model: LayoutModel, id: string): Bundle | undefin
 }
 
 /**
- * Pairs of the group's own nodes that a grid may not put in **different rows**: joined by a link
- * whose two ports the author fixed to the **same vertical side**, both `top` or both `bottom`.
+ * Pairs of the group's own nodes that a grid may not put in **one column**: joined by a routed link
+ * whose two ports the author fixed to `top`.
  *
- * Two like-facing vertical stems never meet across a stack. The lower node's `top` stem points
- * straight at the upper node's body, and the upper node's `top` port is on the far side of its own
- * box, so the path has to climb round it — which nothing reserves. Side by side that is the ordinary
- * "up and over" a `row` draws every day.
+ * Nodes of one column share the column's x and are left-aligned in it, so two of them overlap in x.
+ * The lower one's `top` stem then points straight into the upper one's body, and the upper one's
+ * `top` port is on the far side of that body — above the **first row**, where the group has only its
+ * own top padding and a label band, not the tier gap. The path has to climb round all of it, and
+ * nothing reserved that. In two different columns the two x ranges are disjoint by the node gap and
+ * the stem meets nothing; that is why the predicate is a **column** and not a row.
  *
- * Only that combination, and the measurements say why nothing wider is right (stress ticket 32):
+ * Measured, and each line of the table is why the predicate is no wider (stress ticket 32):
  *
  * | pair | arrangement | result |
  * |---|---|---|
- * | `top`/`top` | stacked | `Router skipped a required checkpoint` (`label-no-gap.yaml` gridded) |
+ * | `top`/`top` | one column | `Router skipped a required checkpoint` (`label-no-gap.yaml` gridded) |
+ * | `top`/`top` | two columns, two rows | publishes — a 20-node grid packs 5 × 4 at 408 × 785; forcing one row instead gives a 1 480.5 px ribbon |
  * | `top`/`top` | side by side | publishes (`a-grid-already-seats-a-like-side-pair.yaml`) |
- * | `right`/`left` | stacked | publishes — both stems leave the column and join outside it |
+ * | `bottom`/`bottom` | one column | **publishes**, Q 0.5586682246067611, in the identical arrangement `top`/`top` fails in |
+ * | `right`/`left` | one column | publishes — both stems leave the column and join outside it |
  * | `right`/`left` | side by side | publishes; declining it cost Q 0.8476 → 0.6472 and a canvas 2.62× wider |
  *
- * So the fault is the combination, not the authored side: a horizontal stem routes round a stack,
- * and a like vertical pair side by side is a row link. An end the author left **free** is not
- * counted, because the same-group side vote reads the packed geometry and follows the arrangement.
- * A pair with one end authored and one free is therefore untested rather than allowed on purpose.
+ * `bottom`/`bottom` is the asymmetry worth naming: below the lower row lie the group's bottom
+ * padding **and** the tier gap, so the way round the lower body is room something already reserved,
+ * where above the first row there is none. The predicate is therefore `top` only — the direction the
+ * measurement justifies — and not "the same vertical side".
+ *
+ * Only **routed** links count. An overlay link is unrouted and exempt from the clearance gates, so
+ * it cannot produce the checkpoint fault this exists to prevent; `exitRanks` next door skips a stub
+ * for the same kind of reason. Stress ticket 34 is the same shape of fault in the both-ways floor.
+ *
+ * An end the author left **free** is not counted either: the same-group side vote reads the packed
+ * geometry and follows the arrangement. A pair with one end authored and one free is untested rather
+ * than allowed on purpose.
  */
 export function likeSidePairs(model: LayoutModel, group: LayoutGroup): [string, string][] {
   const own = new Set(group.nodes);
   const pairs: [string, string][] = [];
   for (const link of model.links) {
     const ends = link.attachments;
+    if (link.layer !== 'routed' || link.technique === 'stub') continue;
     if (!ends || !own.has(ends.from.node) || !own.has(ends.to.node) || ends.from.node === ends.to.node) continue;
-    const side = authoredSide(model, ends.from);
-    if ((side !== 'top' && side !== 'bottom') || authoredSide(model, ends.to) !== side) continue;
+    if (authoredSide(model, ends.from) !== 'top' || authoredSide(model, ends.to) !== 'top') continue;
     pairs.push([ends.from.node, ends.to.node]);
   }
   return pairs;
 }
 
-/** Whether `rows` keeps both nodes of every pair on one line. */
-function seatsPairs(rows: readonly (readonly string[])[], pairs: readonly [string, string][]): boolean {
-  const row = new Map<string, number>();
-  rows.forEach((item, index) => item.forEach(id => row.set(id, index)));
-  return pairs.every(([one, other]) => row.get(one) === row.get(other));
+/** Whether `rows` keeps the two nodes of every pair out of one column. */
+function partsPairs(rows: readonly (readonly (string | undefined)[])[], pairs: readonly [string, string][]): boolean {
+  const column = new Map<string, number>();
+  rows.forEach(item => item.forEach((id, index) => { if (id !== undefined) column.set(id, index); }));
+  return pairs.every(([one, other]) => column.get(one) !== column.get(other));
 }
 
 /**
@@ -219,21 +231,23 @@ export function gridMetrics(model: LayoutModel, rows: GridCells, gap: (a: string
  * portrait target is one constant away if the maintainer wants it; stress ticket 26 measures what
  * the difference costs on that sheet, and names the input each of its figures came from.
  *
- * A count that would **stack a like-facing vertical pair** is not a candidate at all (stress ticket
- * 32, `likeSidePairs`). That is a filter and not a floor, because a larger count is not always the
- * answer: the pair has to share a row, and which counts give it one depends on the ranks. A count
- * always survives the filter — `order.length` puts every node on one line — so the search cannot
- * come back empty.
+ * A count that would put a **like-facing `top` pair in one column** is not a candidate at all
+ * (stress ticket 32, `likeSidePairs`). That is a filter and not a floor: a larger count is not
+ * always the answer, and the one-row count — which every filter survivor used to collapse to — is
+ * the ribbon this whole file exists to avoid. The pair is read off the **seated** cells, so a
+ * ragged row packed against a right flank cannot move a node into a column the score never saw.
+ * `order.length` is one row of *n* and no two of its nodes share a column, so a candidate always
+ * survives and the search cannot come back empty.
  */
 export function gridColumns(model: LayoutModel, group: LayoutGroup, order: readonly string[],
   ranks: ExitRanks): number {
   if (order.length <= 1) return 1;
   const gap = gridNodeGap(model, group), rowGap = gridRowGap(model);
   const floor = gridColumnFloor(order, ranks), pairs = likeSidePairs(model, group);
-  let best = order.length, bestScore = Infinity;
+  let best = floor, bestScore = Infinity;
   for (let columns = floor; columns <= order.length; columns++) {
     const rows = gridRows(order, ranks, columns);
-    if (!seatsPairs(rows, pairs)) continue;
+    if (pairs.length && !partsPairs(seatFlankPeers(model, group, gridRows(order, ranks, columns), columns), pairs)) continue;
     const metrics = gridMetrics(model, rows, () => gap, rowGap);
     if (metrics.width <= 0 || metrics.height <= 0) continue;
     const score = Math.abs(Math.log(metrics.width / metrics.height));

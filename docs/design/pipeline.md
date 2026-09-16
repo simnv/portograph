@@ -214,23 +214,36 @@ and not left for a later stage to discover.
    `Nodes EBR-02 and EAC-02 violate clearance` — on `main` too. The gridded golden survives because
    it happens to carry an intra-group bundle.
 
-   **A like-facing vertical pair: constrain the count.** Two ports the author fixed to the **same**
-   vertical side never meet across a stack — the lower node's stem points straight at the upper
-   node's body, and the upper node's port is on the far side of its own box. `label-no-gap.yaml`
-   gridded is the case: `exitRanks` skips a link whose peer is a group member, so both nodes rank
-   "neither way", the floor is 1, closest-to-square takes one column, and stage 8 fails `Router
-   skipped a required checkpoint`. Here an arrangement *does* answer it, so a count that would stack
-   such a pair is simply not a candidate. It is a **filter, not a floor**: a count that already
-   seats the pair in one row is kept unchanged, and `order.length` always survives the filter, so
-   the search cannot come back empty.
+   **A like-facing `top` pair in one column: constrain the count.** Nodes of one column share the
+   column's x and are left-aligned in it, so two of them overlap in x: the lower one's `top` stem
+   points straight into the upper one's body, and the upper one's `top` port is on the far side of
+   that body — above the **first row**, where the group has only its own top padding and a label
+   band. `label-no-gap.yaml` gridded is the case: `exitRanks` skips a link whose peer is a group
+   member, so both nodes rank "neither way", the floor is 1, closest-to-square takes one column, and
+   stage 8 fails `Router skipped a required checkpoint`. Here an arrangement *does* answer it, so a
+   count that would put such a pair in one column is not a candidate. A **filter, not a floor**: a
+   count that already keeps them apart is unchanged, and one row of *n* has no two nodes in a
+   column, so a candidate always survives.
 
-   Only that combination. A horizontal pair routes round a stack (`right`/`left` stacked publishes),
-   a like vertical pair side by side is the ordinary row link (`a-grid-already-seats-a-like-side-pair`
-   publishes with its count untouched), and an end the author left **free** follows the packed
-   geometry through the same-group vote — `a-grid-of-twelve-keeps-its-columns` links `n01` to `n02`
-   in its own row and to `n05` in the row below and stays a 4 × 3 grid. Declining on *any* authored
-   side was measured and rejected: it cost a 12-node grid Q 0.8476 → 0.6472 and a canvas 2.62 ×
-   wider for a link the grid routes correctly.
+   The predicate is a **column**, not a row, and it is `top`, not "the same vertical side". Both
+   halves are measured, and getting either wrong is expensive:
+
+   | pair | arrangement | result |
+   |---|---|---|
+   | `top`/`top` | one column | `Router skipped a required checkpoint` |
+   | `top`/`top` | different rows, different columns | publishes. A 20-node grid packs 5 × 4 at 408 × 785; read as "different rows" the filter collapses it to one row of 20, a **1 480.5 × 498** canvas — the ribbon this whole rule exists to avoid, and silently |
+   | `top`/`top` | side by side | publishes, count untouched (`a-grid-already-seats-a-like-side-pair`) |
+   | `bottom`/`bottom` | one column | **publishes**, Q 0.5586682246067611, in the identical arrangement `top`/`top` fails in |
+   | `right`/`left` | one column | publishes — both stems leave the column and join outside it |
+   | `right`/`left` | side by side | publishes; declining it cost a 12-node grid Q 0.8476 → 0.6472 and a canvas 2.62 × wider |
+
+   `bottom`/`bottom` is the asymmetry worth naming: below the last row lie the group's bottom padding
+   **and** the tier gap, so the way round the lower body is room a rule already reserved, where above
+   the first row there is none. Only **routed** links count — an overlay link is unrouted and exempt
+   from the clearance gates, so it can never produce the fault, the same kinship stress ticket 34
+   names in the both-ways floor. An end the author left **free** is not counted either: the
+   same-group vote reads the packed geometry, so `a-grid-of-twelve-keeps-its-columns` links `n01` to
+   `n02` in its own row and to `n05` in the row below and stays a 4 × 3 grid.
 
    A declined group takes `row` **to every rule** — `groupShape` is the one reader, because
    `rows.ts`, `row-paths.ts`, `sides-two.ts` and `mutation.ts` each test `shape === 'row'`, and a

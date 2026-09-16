@@ -1,0 +1,28 @@
+# Expected: Keep the packed 3 x 3 grid. `n01.q` and `n02.q` are the same authored `top` pair the
+# fixture beside this one constrains, but `n01` exits the group upward and `n02` downward, so the
+# ranks put them in the first row and the last and no count below the node count can seat them in
+# one row. Different rows is not the fault: the pair lands in different **columns**, their x ranges
+# are disjoint, and neither stem meets the other body. The count therefore stands — group box
+# 233 x 322, canvas 265 x 690. Read as "different rows" the same filter would collapse this to one
+# row of eight, a 590.5 x 130 ribbon in a 622.5 x 498 canvas, with no diagnostic to say why.
+portograph: 2
+profile: network
+groups:
+  upper: { tier: 0 }
+  place: { tier: 1, shape: grid }
+  lower: { tier: 2 }
+nodes:
+  head: { group: upper, ports: [{ name: p, side: bottom }] }
+  sink: { group: lower, ports: [{ name: p, side: top }] }
+  n01: { group: place, ports: [{ name: u, side: top }, { name: q, side: top }] }
+  n02: { group: place, ports: [{ name: d, side: bottom }, { name: q, side: top }] }
+  n03: { group: place }
+  n04: { group: place }
+  n05: { group: place }
+  n06: { group: place }
+  n07: { group: place }
+  n08: { group: place }
+links:
+  - [head.p, n01.u]
+  - [n02.d, sink.p]
+  - [n01.q, n02.q]
