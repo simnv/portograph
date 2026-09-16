@@ -755,13 +755,13 @@ or when the straight run between them is not clear by the corridor check — a n
 box with its margin, lane, fixed run, bundle row or bundle envelope in the way — and its run is then reserved with both stroke-aware
 router stems and twice the anchor-side pill protrusion on top of the label. That midpoint is the
 anchor midpoint for a routed link. For an **overlay** link it is the midpoint of the longest run of
-the path the overlay rule derives: the rule reads the stub and the segment off the two ports alone
-and 7f holds the pills frozen, so placement runs the very producer stage 8 will run instead of
-assuming the shape (synthetics review ticket 04 B). The longest run is the segment between the two
-stub ends, and 7f grows room on one axis, so it can reserve only where that segment is axis-aligned —
-which is the pair that lines up. An angled one leaves nothing for 7f to widen, and the stage 9 ladder
-places the label instead: it rides the diagonal upright, on that run's own midpoint (stress ticket
-20). Self-links, same-tier links
+the path the overlay rule derives: the rule reads both of its branches off boxes placement has
+already frozen, so placement runs the very producer stage 8 will run instead of assuming the shape
+(synthetics review ticket 04 B). 7f grows room on one axis, so it can reserve only where the longest
+run is axis-aligned — the whole orthogonal branch, and the straight branch where the pair lines up.
+An angled straight segment leaves nothing for 7f to widen, and the stage 9 ladder places the label
+instead: it rides the diagonal upright, on that run's own midpoint (stress ticket 20).
+Self-links, same-tier links
 through top/bottom ports, pairs whose ports do not face each other across the gap, overlay links
 whose longest run crosses the axis the room grows on, and links whose room
 lies beyond a reserved lane are diagnosed `LINK_LABEL_ROOM_UNRESERVED`. Moves settle pills before the next link measures; the
@@ -970,21 +970,34 @@ reservation the link does not own — because route geometry cannot be re-derive
 
 `overlay` links: never routed and never sent to the worker. Their path is the one
 `src/layout/overlay-paths.ts` derives from the two ports placement froze, and stage 8 only publishes
-it: an **overlay stub** from each port anchor outward past that port's own outward face — the pill's,
-or the node's when the port draws none — by `OVERLAY_PILL_CLEARANCE` (2 × the endpoint mark's
-radius), then **one straight segment** between the two stub ends, at whatever angle that is
-(maintainer, 2026-09-16). It is not orthogonal and it does not go round anything: a node body, a pill
-or a label under that segment is drawn through, and the renderer's mask keeps the shape readable —
-moving the nodes so there is nothing to draw through is placement's work, not a search here. Two
-ports facing each other on a clear axis put all four points on one line and the path degenerates to
-the one straight segment it always was. Two ports facing each other on one line closer than their
+it. **Straight by default, orthogonal by exception, and the exception is a node in the way**
+(maintainer, 2026-09-16). An **overlay stub** leaves each port anchor outward past that port's own
+outward face — the pill's, or the node's when the port draws none — by `OVERLAY_PILL_CLEARANCE`
+(2 × the endpoint mark's radius), and **one straight segment** joins the two stub ends, at whatever
+angle that is. Two ports facing each other on a clear axis put all four points on one line and that
+path is the single segment it always was. Placement's own job is to position nodes so that as many
+overlay links as possible take this branch.
+
+The exception is read on that segment alone — the two stubs are the ports' own reserved outward
+reach and are not tested — against **every node body and every drawn port pill, the link's own two
+ends included**. Nothing else blocks: not another overlay line, which is drawn thin and translucent
+precisely so that overlays may cross each other and is exempt from the clearance gates, and not a
+group box, a lane, a routed path or a label. A blocked segment is answered by the orthogonal
+derivation: the shortest of eight ways read off the two end boxes — two single turns, four ways
+right round the pair one stub outside its own extent, two down the middle of the gap the pair leaves
+— that enters no node body and no pill, with ties going to the single turn that carries on the way
+the source faces, and with no candidate that walks back along a run it already drew. When every way
+is blocked the shortest that clears the link's own two end boxes is taken, and the renderer's mask
+carries the body it then crosses.
+
+Two ports facing each other on one line closer than their
 two stubs ride their own faces instead, which keeps the two ends in order (ticket 04 A). Where the
-polyline would still walk back along a run it already drew — the same interval sweep `route/validate`
-fails a path by, because two stubs that share a line cover each other without ever being adjacent —
-and where an end states no side to leave by, the straight anchor-to-anchor segment is kept; the
-renderer's mask carries both. `route/validate`
+straight polyline would walk back along a run it already drew — the same interval sweep
+`route/validate` fails a path by, because two stubs that share a line cover each other without ever
+being adjacent — the orthogonal branch answers it, and where an end states no side to leave by,
+the straight anchor-to-anchor segment is kept and the mask carries it. `route/validate`
 re-derives the path, compares it and reads `retraces` over it; it checks no orthogonality on an
-overlay path, because the family is not orthogonal. Stub candidates: after routing, a link whose route passes through
+overlay path, because the straight branch is not orthogonal. Stub candidates: after routing, a link whose route passes through
 more than two intermediate tier bands (measured by their vertical extent, since a reserved lane
 sits in the margin beside its tier) or whose arc length exceeds 3× the direct anchor distance is
 marked `stubCandidate` and warned about; M1 keeps the technique and the full routed path.

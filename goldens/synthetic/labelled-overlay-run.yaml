@@ -1,13 +1,13 @@
 # Expected: A described overlay link whose long run is a diagonal. The two ports face each other but
-# are not level, because the source carries a second right-side port, so the path is a 33 px stub out
-# of each pill and one 199.17 px segment between the two stub ends, from (175.5, 71) to (374.56,
-# 77.5). That segment is the longest run, and 7f grows label room on one axis only, so it reserves
-# nothing and says so: `LINK_LABEL_ROOM_UNRESERVED`, and the stage 9 ladder places the label instead
-# (stress ticket 20, question 4). The label is drawn in full all the same, upright, centred on the
-# diagonal's own midpoint at x 275.03 and one normal gap above it, 25 px clear of the pill it used
-# to overhang. Every gate passes; Q is 0.7870176474414954, against 0.7871352744129312 for the
-# staircase the rule drew before — the soft score reads what the diagram draws, and a drift here is
-# not a regression.
+# are not level, because the source carries a second right-side port, and nothing stands between
+# them — so the default branch of the 2026-09-16 rule (stress ticket 20) answers: a 33 px stub out of
+# each pill and one 199.17 px segment between the two stub ends, from (175.5, 71) to (374.56, 77.5).
+# That segment is the longest run, and 7f grows label room on one axis only, so it reserves nothing
+# and says so: `LINK_LABEL_ROOM_UNRESERVED`, and the stage 9 ladder places the label instead. The
+# label is drawn in full all the same, upright, centred on the diagonal's own midpoint at x 275.03
+# and one normal gap above it, 25 px clear of the pill it used to overhang. Every gate passes; Q is
+# 0.7870176474414954, against 0.7871352744129312 for the orthogonal staircase this supersedes — the
+# soft score reads what the diagram draws, and a drift here is not a regression.
 portograph: 2
 profile: network
 groups:

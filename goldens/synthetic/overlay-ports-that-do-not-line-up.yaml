@@ -1,8 +1,10 @@
-# Expected: An overlay pair whose two ports do not line up. The `sync` ports sit on two nodes 75.51
-# px apart on x, so the path is a 16 px stub straight out of each pill and one 119.79 px diagonal
-# between the two stub ends, from (80.01, 123) to (155.52, 216) — the shape the maintainer chose on
-# 2026-09-16 over both the orthogonal staircase and the bare anchor-to-anchor line. The stub is what
-# keeps the line meeting the pill square. The orthogonal derivation it supersedes drew
+# Expected: An overlay pair whose two ports do not line up, with nothing between them. The `sync`
+# ports sit on two nodes 75.51 px apart on x and the straight segment between the two stub ends
+# enters no node body and no pill, so the default branch of the 2026-09-16 rule (stress ticket 20)
+# answers: a 16 px stub straight out of each pill and one 119.79 px diagonal from (80.01, 123) to
+# (155.52, 216). That is the shape the maintainer chose over both the orthogonal staircase and the
+# bare anchor-to-anchor line; the stub is what keeps the line meeting the pill square. The orthogonal
+# derivation, which is now the exception branch, drew
 # (80.01, 107) (80.01, 216) (155.52, 216) (155.52, 232) on this same input; the two ends and the
 # bounding box are the same, so the canvas and Q are unchanged. Every gate passes; Q is
 # 0.8391492903118092.

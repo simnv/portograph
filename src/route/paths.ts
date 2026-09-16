@@ -2,7 +2,7 @@ import type { Point } from '../model/geometry.js';
 import type { Lane, LayoutLink, LayoutModel, LayoutPath, PathSegment } from '../model/layout.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { findPort } from '../layout/row-paths.js';
-import { overlayPath } from '../layout/overlay-paths.js';
+import { overlayBlockers, overlayPath } from '../layout/overlay-paths.js';
 import { bottom, EPS, horizontal, length, samePoint, segmentRect, vertical } from '../score/geometry.js';
 import { effectiveLayer, type LinkPlan, type RoutePlan } from './plan.js';
 import type { RouteCheckpoint } from './types.js';
@@ -181,10 +181,11 @@ function joinSeams(segments: PathSegment[], claimed: readonly boolean[]): PathSe
 
 export function stitchPaths(model: LayoutModel, plan: RoutePlan, routes: Map<string, Point[]>): RoutedLinkPath[] {
   const result: RoutedLinkPath[] = plan.links.map(item => ({ link: item.link, path: stitchPath(model, item, routes) }));
-  // An overlay link never enters the router: its path is derived from the two ports placement froze,
-  // so stage 8 only publishes what `src/layout/overlay-paths.ts` states.
+  // An overlay link never enters the router: its path is derived from the boxes placement reserved,
+  // so stage 8 only publishes what `src/layout/overlay-paths.ts` states. One index serves them all.
+  const blockers = plan.overlay.length ? overlayBlockers(model) : undefined;
   for (const id of plan.overlay) {
-    result.push({ link: id, path: overlayPath(model, model.links.find(link => link.id === id)!) });
+    result.push({ link: id, path: overlayPath(model, model.links.find(link => link.id === id)!, blockers) });
   }
   return result;
 }
