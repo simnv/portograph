@@ -1195,6 +1195,10 @@ describe('maintainer edit principles', () => {
     }
   };
 
+  /** Whether two points of the drawn polyline share an axis. */
+  const onOneAxis = (one: Point, two: Point): boolean =>
+    Math.abs(one.x - two.x) < 1e-6 || Math.abs(one.y - two.y) < 1e-6;
+
   it('writes a square route as a square connector, waypoints and all', async () => {
     // The maintainer's words: "if it's routed square, style should also be like that." Measured on
     // drawio-desktop 31.4.5 over 61 link edges in four diagrams: `orthogonalEdgeStyle;jettySize=0`
@@ -1262,9 +1266,11 @@ describe('maintainer edit principles', () => {
     // Review finding 6. A link written to a bare node gets an anonymous port, which draws no pill:
     // the box the overlay leaves is the node body and the anchor is already on its face, so the path
     // steps out by the clearance from there. draw.io pins such an end to the same point — the
-    // node-relative anchor — so the connector is square and carries the model's own interior points.
-    // Before the geometry moved into the model this link exported `edgeStyle=none` with no waypoint
-    // at all, because the exporter's own detour needed two pills.
+    // node-relative anchor — so the connector carries the model's own interior points. Before the
+    // geometry moved into the model this link exported `edgeStyle=none` with no waypoint at all,
+    // because the exporter's own detour needed two pills; it keeps that style now because the
+    // segment between the two stub ends is a diagonal (stress ticket 20), but the two stubs are
+    // stated waypoints and a drag re-angles only the line between them.
     const model = await pipeline(`
 portograph: 2
 groups: {upper: {tier: 0}, lower: {tier: 1}}
@@ -1283,10 +1289,11 @@ links:
     expect(points[0]).toEqual(bare.anchor);
     expect(points[1]).toEqual({ x: bare.anchor!.x + CLEARANCE, y: bare.anchor!.y });
     const canvas = model.canvas!, cell = cells(drawio(model)).get(id('link', link.id))!;
-    expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
-    expect(cell.style['jettySize']).toBe('0');
+    expect(cell.style['edgeStyle']).toBe('none');
+    expect(cell.style['jettySize']).toBeUndefined();
     expect(cell.points).toEqual(points.slice(1, -1)
       .map(point => ({ x: point.x - canvas.x, y: point.y - canvas.y })));
+    expect(cell.points).toHaveLength(2);
     // A port with no pill has no shape to hang its mark on, so that one mark stays on the layer.
     const marks = cells(drawio(model));
     expect(marks.get(id('overlayMark', link.id, 'from'))!.parent).toBe(id('layer', 'overlay'));
@@ -1311,22 +1318,30 @@ links:
     square(path, [head, tail]);
   }, 60000);
 
-  it('turns once when the two overlay pills face different ways', async () => {
-    // The other branch: no single cross-run clears both heads, so the shortest orthogonal path that
-    // leaves each head outward and enters neither box wins. `drawio-overlay-sides` is that fixture.
+  it('draws one diagonal between the two stub ends when the overlay pills face different ways', async () => {
+    // Stress ticket 20. A left-side head and a top-side tail put their stub ends on two lines, so
+    // the segment between them is angled: outside the orthogonal router's vocabulary, and the
+    // connector therefore keeps `edgeStyle=none`, which reproduces the waypoints verbatim.
+    // `drawio-overlay-sides` is that fixture.
     const { cell, head, tail, path } = await overlayOf(fixture('drawio-overlay-sides'));
-    expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
+    expect(cell.style['edgeStyle']).toBe('none');
+    expect(cell.style['jettySize']).toBeUndefined();
     expect(new Set([head.side, tail.side]).size).toBe(2);
-    // Out of each head by the clearance, then one turn between the two cleared points.
+    // Out of each head by the clearance, and one segment between the two stub ends.
+    expect(path.length).toBe(4);
     expect(path[1]).toEqual(out(path[0]!, head.side));
-    expect(path.length).toBe(5);
-    square(path, [head, tail]);
+    expect(path[2]).toEqual(out(path[3]!, tail.side));
+    expect(onOneAxis(path[0]!, path[1]!)).toBe(true);
+    expect(onOneAxis(path[2]!, path[3]!)).toBe(true);
+    expect(onOneAxis(path[1]!, path[2]!)).toBe(false);
   }, 60000);
 
-  it('goes right round the pair when no single turn clears both pills', async () => {
-    // Codex round 1: with both heads facing away from each other, neither single turn clears the
-    // source pill, and the fall-back was the model's own straight segment — which runs through it.
-    // Four more ways round the pair, one per side, answer the case; the shortest still wins.
+  it('draws straight through when two overlay pills face the same way on one line', async () => {
+    // Both heads face left and their two anchors share a y, so the segment between the two stub
+    // ends would cover both stubs. A path that retraces is not a path, so the link gives up its
+    // stubs and states the straight anchor-to-anchor line instead — which here is horizontal, so
+    // the connector is square and has no waypoint at all. What it draws through, the SVG's mask
+    // carries and draw.io's opaque pills hide.
     const { cell, head, tail, path } = await overlayOf(`
 portograph: 2
 groups: {upper: {tier: 0}, lower: {tier: 1}}
@@ -1339,12 +1354,13 @@ links:
   - [b.west, c.west, {route: overlay}]
 `);
     expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
+    expect(cell.style['jettySize']).toBe('0');
     expect([head.side, tail.side]).toEqual(['left', 'left']);
-    // Each end still leaves its own head outward, and the run between clears both boxes.
-    expect(path[1]).toEqual(out(path[0]!, head.side));
-    expect(path[path.length - 2]).toEqual(out(path[path.length - 1]!, tail.side));
-    expect(path.length).toBe(6);
-    square(path, [head, tail]);
+    expect(cell.points).toEqual([]);
+    expect(path.length).toBe(2);
+    expect(path[0]!.y).toBeCloseTo(path[1]!.y, 6);
+    // It really does draw through: the line spans both pill boxes on x.
+    expect(Math.min(path[0]!.x, path[1]!.x)).toBeLessThan(Math.max(head.x, tail.x));
   }, 60000);
 
   it('states a detoured overlay label against the run the connector really draws', async () => {
@@ -1536,14 +1552,16 @@ describe('direct lines', () => {
       expect(Math.abs(ends[0][stated.across] - ends[1][stated.across])).toBeGreaterThan(1);
     }
 
-    // The overlay joins a top pill to a bottom pill that share neither x nor y. It stays square all
-    // the same, and the route is the exact one the two reserved boxes give: out of each head by the
-    // clearance, then down the middle of the gap the two boxes leave on x.
+    // The overlay joins a top pill to a bottom pill that share neither x nor y. Stress ticket 20
+    // narrows the 2026-09-15 decision to the routed family: an overlay is a stub out of each head
+    // and one straight segment between the two stub ends, so this connector is the one edge in the
+    // file that is not square, and it keeps `edgeStyle=none` — the style that reproduces a polyline
+    // verbatim — rather than a router that would answer a diagonal with a corner nothing reserved.
     const overlay = linkOf('b.lo', 'c.lo');
     expect(effectiveLayer(overlay)).toBe('overlay');
-    // The model holds that route, not the exporter: the waypoints are its own interior points, and
-    // the two stubs it leaves are the ones the pinned terminals stand for (synthetics review 01).
-    expect(overlay.path!.segments.length).toBe(5);
+    // The model holds that geometry, not the exporter: the waypoints are its own interior points,
+    // and the two stubs it leaves are the ones the pinned terminals stand for.
+    expect(overlay.path!.segments.length).toBe(3);
     expect(all.get(id('link', overlay.id))!.points).toEqual(overlay.path!.segments.slice(1)
       .map(segment => ({ x: segment.from.x - model.canvas!.x, y: segment.from.y - model.canvas!.y })));
     const head = pillOf('b.lo'), tail = pillOf('c.lo');
@@ -1551,26 +1569,26 @@ describe('direct lines', () => {
     expect([head.side, tail.side]).toEqual(['top', 'bottom']);
     expect(cell.source).toBe(head.cell);
     expect(cell.target).toBe(tail.cell);
-    expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
-    expect(cell.style['jettySize']).toBe('0');
+    expect(cell.style['edgeStyle']).toBe('none');
+    expect(cell.style['jettySize']).toBeUndefined();
     const ends = [endOf(cell, 'exit', head), endOf(cell, 'entry', tail)] as const;
     expect(Math.abs(ends[0].x - ends[1].x)).toBeGreaterThan(1);
     expect(Math.abs(ends[0].y - ends[1].y)).toBeGreaterThan(1);
-    const middle = (Math.max(head.x, tail.x)
-      + Math.min(head.x + head.width, tail.x + tail.width)) / 2;
-    const above = ends[0].y - CLEARANCE, below = ends[1].y + CLEARANCE;
+    // One stub out of each head, on that head's own normal, and one segment between them.
     expect(cell.points).toEqual([
-      { x: ends[0].x, y: above }, { x: middle, y: above },
-      { x: middle, y: below }, { x: ends[1].x, y: below },
+      { x: ends[0].x, y: ends[0].y - CLEARANCE }, { x: ends[1].x, y: ends[1].y + CLEARANCE },
     ]);
-    // And that route is square end to end, and reaches inside neither pill box.
     const path = [ends[0], ...cell.points, ends[1]];
-    for (const [index, point] of path.slice(1).entries()) {
-      const before = path[index]!;
-      expect(Math.abs(point.x - before.x) < 1e-6 || Math.abs(point.y - before.y) < 1e-6).toBe(true);
+    const level = (one: Point, two: Point): boolean =>
+      Math.abs(one.x - two.x) < 1e-6 || Math.abs(one.y - two.y) < 1e-6;
+    expect(level(path[0]!, path[1]!)).toBe(true);
+    expect(level(path[2]!, path[3]!)).toBe(true);
+    expect(level(path[1]!, path[2]!)).toBe(false);
+    // Each stub reaches inside neither pill box; the segment between them draws through what it must.
+    for (const [one, two] of [[path[0]!, path[1]!], [path[2]!, path[3]!]] as const) {
       for (const pill of [head, tail]) {
-        expect(Math.max(before.x, point.x) > pill.x && Math.min(before.x, point.x) < pill.x + pill.width
-          && Math.max(before.y, point.y) > pill.y && Math.min(before.y, point.y) < pill.y + pill.height).toBe(false);
+        expect(Math.max(one.x, two.x) > pill.x && Math.min(one.x, two.x) < pill.x + pill.width
+          && Math.max(one.y, two.y) > pill.y && Math.min(one.y, two.y) < pill.y + pill.height).toBe(false);
       }
     }
   }, 60000);
