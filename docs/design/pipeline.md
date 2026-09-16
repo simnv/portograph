@@ -377,8 +377,12 @@ from one boundary have no clean order, and the gap allocates neither.
 
 Every run with a lane terminal on a boundary owes a head-on approach of one router stem on the
 lane's own x. It owes it whether the gap seats that run or not, and every seated row keeps the
-gate's clearance from it. A gap allocates nothing when no run in it needs a row. A diagram whose
-transit links all descend on one x is therefore untouched.
+gate's clearance from it. A run whose far end is a port beyond the gap owes a second approach, from
+the far boundary out to that port's own stem, and the rows keep clear of that one too, seated or
+not: a row half a pitch inside a boundary reaches back across it by `margin − pitch / 2`, so
+without it the first row seated takes the approach of the run standing on that boundary. A gap
+allocates nothing when no run in it needs a row. A diagram whose transit links all descend on one x
+is therefore untouched.
 
 An allocated run also keeps that clearance from every reserved run of its own link that runs the
 same way and never meets it. A pair that meets at a corner is one turn of one path. A pair that runs
@@ -395,8 +399,10 @@ free.
 Two allocated runs of one gap may **cross**. Neither is routed, so the crossing is reserved rather
 than discovered and neither needs an exemption from the other. A link that must cross the gap
 without a lane terminal on either boundary keeps the route it has today. The rows do not obstruct
-it: a run along a gap is a wall along it and never across it (ADR-0015 rule 3). A gap that cannot
-leave every one of its approaches clear allocates nothing.
+it: a run along a gap is a wall along it and never across it (ADR-0015 rule 3). A run whose own
+approach the gap cannot leave clear is left out the same way, **alone**: it keeps the route it has
+today, it crosses the rows the gap did seat, and the gap seats every other run whose approach is
+clear. The gap allocates nothing only where that leaves nothing at all.
 
 A link transiting several tiers reserves a lane at each, ordered from source to target even for
 upward links. Prefer in-span corridors. When they do not fit, retain source geometry, reserve an
@@ -632,9 +638,10 @@ a **probe**: a copy of the model with the band below each short gap moved down p
 seating can ask for. The answer is then independent of the room the gap has, which is what keeps
 the reservation monotone — a second pass over the reserved geometry measures the same need and
 grows nothing. Room is reserved only where the probe shows it buys the gap a seat, and a gap the
-allocation **refuses** for a reason room cannot answer — the rows have no clean order, or a port's
-own approach beyond a boundary is blocked — is left alone, because a taller gap gives the same
-refusal.
+allocation **refuses** for a reason room cannot answer — the rows have no clean order, or every run
+the gap holds has its own approach beyond a boundary blocked — is left alone, because a taller gap
+gives the same refusal. One covered run is not a refusal: the gap leaves that run out and asks for
+the room the rest of its seating lands in.
 
 The height is a reservation, not a discovery: stage 8 receives a gap that already holds its rows.
 The allocation is the **consumer** of the grown gap and never its owner — it reads the room the gap

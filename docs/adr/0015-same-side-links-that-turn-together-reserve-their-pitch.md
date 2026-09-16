@@ -129,7 +129,9 @@ Rows pack from the low boundary, one pitch (`16 px + widest routed stroke`) apar
 row clear of frozen placement geometry. The order is forced wherever two runs stand on one x: the
 one leaving the low boundary turns first, or their vertical segments share length. A run the gap leaves out
 still owes its own head-on approach of one router stem, and the rows keep clear of it. A gap where
-no run needs a row allocates nothing.
+no run needs a row allocates nothing. (Amended by the eleventh amendment: the decline of a run
+whose approach is covered is per run, and every approach the gap owes is answered before the
+seating, not after it.)
 
 **Two allocated runs of one gap may cross, and the crossing is reserved.** Neither run is routed, so
 neither needs an exemption from the other's obstacle. A run *along* a gap is a wall along it and
@@ -311,7 +313,8 @@ index). The sixth amendment's answer to that is wholesale — "a gap that cannot
 its approaches clear allocates nothing" — so a gap of 48 rows allocates none because one approach is
 covered. Measured by leaving only the covered run out, which the allocation can already do (it owes
 that run its head-on approach and keeps the rows clear of it): 5/6 seats 47 of 48 and 8/9 seats 33
-of 34. That is a change to this amendment's own decline rule and it is not taken here.
+of 34. That is a change to this amendment's own decline rule and it is not taken here. (Taken by
+the eleventh amendment.)
 
 ## Tenth amendment (2026-09-16, from the stress test; stress ticket 07): a gap with one possible route is a reservation
 
@@ -379,3 +382,49 @@ that edge is a free visibility line — so the effect is a geometry change of un
 dead end. A claimed run also enters its own link's exclusions, so a partially claimed link becomes a
 singleton batch.
 
+
+## Eleventh amendment (2026-09-16, from the stress test; stress ticket 09): the gap leaves out the covered run, not its whole allocation
+
+The sixth amendment says a gap that cannot leave every one of its approaches clear allocates
+nothing, and the ninth recorded what that costs. Measured on the Enterprise NTP sheet at stage 8,
+three of its twelve gaps declined, each on one run and each to an **ownerless group label**:
+
+| gap (tiers) | y | room | runs | rows owed | seated | the run declined | the rectangle |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 5/6 | 3461.00 … 3606.50 | 145.50 | 48 | 48 | 0 | `link-292#0`, approach (878.25, 3606.50) → (878.25, 3644.25) | `label:group:loc7`, 77.51 × 31.50 at (807.75, 3612.50) |
+| 6/7 | 3737.00 … 3882.50 | 145.50 | 52 | 52 | 0 | `link-7#4`, approach (1508.74, 3882.50) → (1508.74, 3936.50) | `label:group:loc5`, 77.51 × 31.50 at (1435.84, 3888.50) |
+| 8/9 | 5099.50 … 7322.00 | 2222.50 | 34 | 16 | 0 | `link-265#0`, approach (4689.72, 7322.00) → (4689.72, 7359.75) | `label:group:loc5ntp`, 62.85 × 31.50 at (4664.30, 7328.00) |
+
+Each rectangle is a group label of 14 px grown by `GROUP_LABEL_LINK_CLEARANCE + routedStroke / 2` =
+8.75 px, and each carries **no owner at all**: a group label is nobody's to cross. One of them cost
+gap 5/6 all 48 of its rows, every run in it went to stage 8, batch 0 took the room, and the sheet
+failed with `Router skipped a required checkpoint on link-5#9`.
+
+**A covered run is left out alone.** It keeps the route it has today, exactly as a run the seating
+cannot place does; it becomes a **crosser** of the rows the gap did seat; and the gap owes it its
+head-on approach, which every seated row keeps clear of. That is the sixth amendment's own sentence
+about a run the gap leaves out, applied to this refusal instead of to the whole gap. The gap
+allocates nothing only where the covered runs are the whole of its seating, and `refused` — the flag
+that tells the height rule (seventh amendment) not to grow a gap — now means *every* run's approach
+is blocked, not *some* run's.
+
+**And every approach is answered before the seating, not after it.** The sixth amendment answers
+the near-side approach for the runs the gap leaves out. It left two holes. The approach beyond the
+**far** boundary was answered only for the runs the gap declined outright, so a seated run could
+take it; and a run's own approach was measured once against frozen placement, before the gap's own
+runs existed, with a second sweep afterwards that could only pay for a conflict by giving up a seat.
+The arithmetic makes it systematic: a row stands half a pitch inside a boundary and its cover
+reaches `margin` back across it, so it always overhangs the boundary by `margin − pitch / 2` = 3 px
+at the default stroke, and any run standing on that boundary under the row loses its approach.
+
+Both approaches — the near-side stem and the far-side reach — are therefore rectangles the row
+search reads like any other, so a position that covers one is refused and the search takes the next
+the pitch allows. Measured on the Enterprise NTP sheet, the gap that owes 52 rows goes from 43 seats
+to 51; 5/6 seats 47 of 48, 8/9 seats 33 of 34, and all twelve gaps allocate where three used to
+refuse.
+
+**What it does not settle.** The Enterprise NTP sheet still does not publish. Its next failure is
+not an allocation: a link whose two ports face each other **inside** one tier band is walled off
+from its own target by a reserved lane that spans the band, and the router truncates its route
+(stress ticket 11). That is the sixth amendment's open item — a reservation is a wall, and nothing
+separates crossing one from travelling along it — read for a lane instead of for a row.
