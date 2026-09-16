@@ -446,16 +446,20 @@ function stemCount(port: LayoutPort, runs: readonly PathSegment[]): number {
  * treating them as hemmed would undo the tracks those rules reserve. A member whose path a rule
  * fixed keeps its run, since its `sharedRuns` are the prefix of that path (ADR-0016).
  *
- * **The approach is where placement handed over, not the port.** An end whose own fan reserved a run
- * is not approached at the port at all: stage 8 stitches that run back and starts the gap at its
- * terminal (`endpointFor`), so the port's own outward checkpoint stands *inside* a reservation the
- * link owns and closing it costs the link nothing. Measuring the port there released three branches
- * whose approaches were never shut, and the two links the release then handed to the router walled
- * each other in — the first route laid across the second one's only way to its own stem terminal,
- * libavoid dropped the endpoint without a word and answered with a diagonal (ticket 10, stress).
- * A release must leave the router a gap it can answer orthogonally; where nothing is closed there is
- * nothing to release, and the overlap the two reservations do have is a gate failure, which is
- * recoverable, rather than a throw, which is not.
+ * **Only an end that reserved nothing can be hemmed.** An end whose own fan reserved a run is not
+ * approached at the port at all: stage 8 stitches that run back and starts the gap at the run's
+ * terminal (`endpointFor`), so the port's own outward checkpoint stands inside a reservation the
+ * link owns and closing it costs the link nothing. A foreign run that crosses the reservation itself
+ * is an overlap of two reserved runs, which G4 and G6 measure — recoverable, where a throw is not.
+ * An end that reserved nothing has the router for its whole approach and no gate to fall back on,
+ * and that is the throw this pass exists to prevent.
+ *
+ * Measuring the port at every end released branches whose approaches were never shut, and the links
+ * the release then handed to the router walled each other in: the route of the first laid across the
+ * only way to the second one's own stem terminal, libavoid dropped that endpoint without a word and
+ * answered with a diagonal, and `gapSegments` threw `Routed gap … is not orthogonal` on five inputs
+ * that published before the rule (stress ticket 10). A release must leave the router a gap it can
+ * answer orthogonally; where nothing is closed there is nothing to release.
  */
 function releaseHemmedFans(model: LayoutModel): void {
   // The room the *router* insists on beside a route it still has to draw, read from the one figure
@@ -481,11 +485,10 @@ function releaseHemmedFans(model: LayoutModel): void {
       const ref = link.attachments![end], port = findPort(model, ref);
       if (!port?.anchor || port.side === undefined) continue;
       const out = normal(port.side), reach = stemReach(model, model.nodes[ref.node]!);
-      // The point stage 8 has to reach at this end: the terminal of whatever placement reserved
-      // here, and the port's own outward checkpoint only where placement reserved nothing.
-      const here = link.sharedRuns?.[end];
-      const at = here?.length ? { ...here.at(-1)!.to }
-        : { x: port.anchor.x + out.x * reach, y: port.anchor.y + out.y * reach };
+      // An end whose own fan reserved a run is approached at that run's terminal, not at the port,
+      // so the port's checkpoint stands inside the link's own reservation and nothing closes it.
+      if (link.sharedRuns?.[end]?.length) continue;
+      const at = { x: port.anchor.x + out.x * reach, y: port.anchor.y + out.y * reach };
       for (const branch of branches) {
         if (branch.link.id === link.id) continue;
         if (branch.port.ref.node === port.ref.node && branch.port.side === port.side) continue;
@@ -496,8 +499,8 @@ function releaseHemmedFans(model: LayoutModel): void {
           && at.y > Math.min(run.from.y, run.to.y) - margin - 1e-6
           && at.y < Math.max(run.from.y, run.to.y) + margin + 1e-6)) continue;
         release.add(`${branch.link.id}:${branch.end}`);
-        // The hemmed link gives way at whichever end its own fan reserved, which is not the end the
-        // closed checkpoint belongs to.
+        // The hemmed link gives way at whichever end its own fan reserved, which is never this one:
+        // the end that was hemmed reserved nothing, or the pass would not have measured its port.
         for (const own of ['from', 'to'] as const) release.add(`${link.id}:${own}`);
         placementWarning(model, 'FAN_BRANCH_HEMMED',
           `${branch.link.id}'s reserved branch closes the approach to ${ref.node}.${ref.name ?? '*'}; `
