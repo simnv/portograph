@@ -611,3 +611,11 @@ own residue — a link whose two ports face each other inside one tier band.
 And a side the rule declines keeps the **side-wide** exemption, so an earlier batch is still free to
 run across a later link's stem there. The narrowed exemption is given only where the pitch could be
 reserved; everywhere else the original defect stands, unrepaired and now named. Stress ticket 19.
+
+One risk is bounded by measurement rather than by argument. The frozen-geometry test reads placed
+geometry — foreign nodes, foreign group boxes and **foreign** group titles — and stage 7f moves some
+of it after these depths are first read. The title of the leg's *own* group was the case that bit,
+and it is a decline now rather than an obstacle; a foreign one could in principle answer differently
+on the re-derivation the same way. Over 1 102 corpus inputs and the whole suite none does, and the
+three fixtures that nest are stable across every stage from `bands` on. If one ever did, the answer
+is the same as the title's: decline on something frozen, not on something placed.
