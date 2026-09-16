@@ -362,8 +362,13 @@ export function sidePlan(model: LayoutModel, node: string, side: 'top' | 'bottom
     for (const item of peers.get(key(port.ref)) ?? []) {
       const link = model.links.find(entry => entry.id === item.link)!;
       // A link a rule has already given geometry to reserves no stem here and is already an
-      // obstacle `legClear` reads; it neither takes a slot nor stops the side from nesting.
-      if (link.path || link.fixedSegments?.length || link.sharedRuns?.from?.length || link.sharedRuns?.to?.length) continue;
+      // obstacle `legClear` reads; it is passed over, so it neither takes a slot nor stops the side
+      // from nesting. Read from `path.fixed`, never from the presence of a `path`: after stage 8
+      // every link carries one, and a guard on that would make this plan answer differently on the
+      // re-derivation `checkedLayoutMutation` compares against — which is `validateGroupLabelBands`
+      // at every stage from `bands` on, and the bands it re-derives would then contradict the model.
+      if (link.path?.fixed === true || link.fixedSegments?.length
+        || link.sharedRuns?.from?.length || link.sharedRuns?.to?.length) continue;
       const far = findPort(model, item.peer);
       // A leg is reserved only where placement knows its whole shape: it leaves this side, crosses
       // one tier gap and arrives on the facing side of a node in another tier. Anything else may
