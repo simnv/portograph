@@ -77,9 +77,9 @@ interface GapAllocation {
   runs: Map<Participant, PathSegment[]>;
   /**
    * `true` when the gap refused its whole allocation for a reason room cannot answer: the rows have
-   * no clean order, or a port's own approach beyond a boundary is blocked. Both are read from
-   * frozen placement, so a taller gap gives the same answer, and the rule that reserves the gap's
-   * height must leave such a gap alone.
+   * no clean order, or every run it holds has its own approach beyond a boundary blocked. Both are
+   * read from frozen placement, so a taller gap gives the same answer, and the rule that reserves
+   * the gap's height must leave such a gap alone.
    */
   refused: boolean;
 }
@@ -472,10 +472,11 @@ function firstBlock(list: readonly Blocker[], link: LayoutLink, line: { from: Po
 }
 
 /**
- * The allocation of one tier gap. `runs` is empty and `refused` set when the gap declines it and
- * keeps the routed gaps it has today. A gap declines when no run needs a row — there is then nothing to allocate and no
- * diagram changes — when no clean order exists, when a row cannot be seated clear of frozen
- * placement geometry, or when the rows do not fit at their pitch inside the room the gap has.
+ * The allocation of one tier gap. A run the gap cannot place is left out **alone**: it keeps the
+ * route it has today, it crosses the rows the gap did seat, and the gap seats every other run whose
+ * own approach is clear. `runs` is empty only where that leaves nothing at all, and `refused` is set
+ * only where room cannot answer the reason — no clean order among the rows, or every run's own
+ * approach beyond a boundary blocked.
  *
  * The rows pack from the low boundary: each takes the first row that is clear at or beyond one
  * pitch past the one before it, half a pitch inside each boundary. A lane's own reserved run
@@ -489,20 +490,25 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
   // A refusal the room cannot answer is marked, because the rule that reserves the gap's height
   // (`gap-room.ts`) must not grow a gap this one has already refused for a reason of its own.
   const refuse = (refused: boolean): GapAllocation => ({ runs: empty, refused });
-  const rows = items.filter(needsRow);
-  if (!rows.length) return refuse(false);
-  const order = rowOrder(rows);
-  if (!order) return refuse(true);
   const attachedOf = (item: Participant): Set<string> =>
     new Set([item.link.attachments!.from.node, item.link.attachments!.to.node]);
   // The line beyond a boundary is the port's own approach. It does not move with the row, so it is
-  // answered once, and a gap that cannot leave one of them clear allocates nothing: the run it
-  // would have to leave out is the one another batch then takes.
+  // answered once — and it is answered per run. A run whose approach a rectangle covers is the one
+  // run the gap cannot help: it is left out alone and keeps the route it has today, exactly as a run
+  // the seating cannot place does. The gap still owes it its head-on approach, and every row it
+  // seats keeps clear of that, so leaving it out costs the other runs nothing.
+  const covered = new Set<Participant>();
   for (const item of items) {
     if (!item.reach) continue;
     const edge = { x: item.far.x, y: item.nearEdge === 'low' ? gap.high : gap.low };
-    if (firstBlock(list, item.link, { from: edge, to: item.reach }, attachedOf(item))) return refuse(true);
+    if (firstBlock(list, item.link, { from: edge, to: item.reach }, attachedOf(item))) covered.add(item);
   }
+  const seatable = items.filter(item => !covered.has(item));
+  const rows = seatable.filter(needsRow);
+  // Room answers nothing where the covered runs are the whole of the gap's seating.
+  if (!rows.length) return refuse(covered.size > 0 && !seatable.length);
+  const order = rowOrder(rows);
+  if (!order) return refuse(true);
   const pitch = MEMBER_GAP + routedStroke(model), limit = gap.high - pitch / 2;
   // Two centrelines that run side by side keep the gate's clearance plus the widest routed stroke,
   // the same figure the router nudges a same-batch pair apart by.
@@ -519,23 +525,51 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
     return [{ owners: new Set([item.link]), bounds: grow({ x: item.x, y: Math.min(from, to), width: 0,
       height: Math.abs(to - from) }, clearance) }];
   });
+  /**
+   * The approach beyond the far boundary that every participant owes its own port, seated or not,
+   * as a rectangle grown by what the router keeps between two centrelines.
+   *
+   * A row seated half a pitch inside a boundary reaches back across it by `margin − pitch / 2`, so
+   * the run that stands on that boundary loses the head-on approach to its own port to a run of the
+   * same gap. Answered here, the search reads it as any other rectangle and takes the next position
+   * the pitch allows; answered afterwards, it can only cost a seated run its seat.
+   */
+  const reaches: Blocker[] = items.flatMap(item => {
+    if (!item.reach) return [];
+    const edge = item.nearEdge === 'low' ? gap.high : gap.low;
+    return [{ owners: new Set([item.link.id]), bounds: grow({ x: item.far.x, y: Math.min(edge, item.reach.y),
+      width: 0, height: Math.abs(item.reach.y - edge) }, routedStroke(model) + STRAIGHT_PATH_CLEARANCE.path) }];
+  });
+  /**
+   * Whether a row is refused by something that names no distance: a group edge it would run along,
+   * a corridor its own link owns, one of its own reserved runs, or a degenerate run. A rectangle is
+   * not among them — a rectangle names how far to advance, and the search reads that separately.
+   */
+  const refusedElsewhere = (item: Participant, row: number | undefined): boolean => {
+    const segments = runSegments(item, gap, row);
+    if (!segments.length) return true;
+    // A corridor admits its owner's collinear run alone, so a row that met one of the link's own
+    // lanes would enter it sideways. Nothing places a lane inside a gap; this keeps it so.
+    return segments.some(segment => same(segment.from.y, segment.to.y) && meetsOwnLane(model, item.link, segment))
+      || segments.some(line => alongGroupEdge(model, line))
+      // The link's own reserved runs are its exemption only where the allocated run meets them. A
+      // run this one merely passes is geometry the gates measure against it like any other.
+      || meetsOwnRun(model, item, segments);
+  };
   const clear = (item: Participant, row: number | undefined, full: readonly Blocker[]): boolean => {
     const segments = runSegments(item, gap, row);
     if (!segments.length) return false;
-    // A corridor admits its owner's collinear run alone, so a row that met one of the link's own
-    // lanes would enter it sideways. Nothing places a lane inside a gap; this keeps it so.
-    if (segments.some(segment => same(segment.from.y, segment.to.y) && meetsOwnLane(model, item.link, segment))) return false;
-    // The link's own reserved runs are its exemption only where the allocated run meets them. A run
-    // this one merely passes is geometry the gates measure against it like any other.
-    return !segments.some(line => firstBlock(full, item.link, line, attachedOf(item)))
-      && !segments.some(line => alongGroupEdge(model, line))
-      && !meetsOwnRun(model, item, segments);
+    if (refusedElsewhere(item, row)) return false;
+    return !segments.some(line => firstBlock(full, item.link, line, attachedOf(item)));
   };
+  /** The runs the gap gives up for good: their own approach is covered by a run it seats. */
+  const declined = new Set<Participant>();
   const seat = (absent: ReadonlySet<string>): Map<Participant, number> => {
-    const full = [...list, ...owed(absent)];
+    const full = [...list, ...reaches, ...owed(absent)];
     const at = new Map<Participant, number>();
     let next = gap.low + pitch / 2;
     for (const item of order) {
+      if (declined.has(item)) continue;
       const attached = attachedOf(item);
       let row = next, seated = false;
       while (row <= limit + EPS) {
@@ -546,7 +580,13 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
           // that clears it is the one past its bottom.
           const past = Math.max(...blocked.map(found => bottom(found.bounds)));
           if (past <= row + EPS) break;
-          row = past;
+          // **The search is monotone in its obstacles.** A rectangle names a distance and every
+          // other refusal names a pitch, so a rectangle over a position something else also refuses
+          // would offer the search a position the pitch walk had stepped over — and adding an
+          // obstacle would seat the row *earlier*. It is not a corner case: the reserved approaches
+          // below stand on a boundary, exactly where the first position the pitch allows is. Such a
+          // position costs the pitch as well, so the search takes the later of the two answers.
+          row = refusedElsewhere(item, row) ? Math.max(past, row + pitch) : past;
           continue;
         }
         if (clear(item, row, full)) { seated = true; break; }
@@ -566,42 +606,54 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
     }
     return at;
   };
+  /**
+   * The runs of a settled allocation whose own approach one of its peers has taken.
+   *
+   * The approaches were answered against frozen placement, before the runs of this gap existed. A
+   * run this gap seats can cover the boundary terminal of the one beside it, and that link then has
+   * no route to its own port — so the covered run is the one the gap gives up. Left out, it is a
+   * crosser of the row that covers it, which is exactly what the reservation owes it.
+   */
+  const takenApproach = (runs: ReadonlyMap<Participant, PathSegment[]>): Participant[] => {
+    const peers: Blocker[] = [];
+    const margin = routedStroke(model) / 2 + STRAIGHT_PATH_CLEARANCE.path;
+    for (const [item, segments] of runs) {
+      const owners = new Set([item.link.id]);
+      for (const run of segments) {
+        peers.push({ owners, bounds: grow({ x: Math.min(run.from.x, run.to.x), y: Math.min(run.from.y, run.to.y),
+          width: Math.abs(run.to.x - run.from.x), height: Math.abs(run.to.y - run.from.y) },
+        linkStrokeWidth(item.link) / 2 + margin) });
+      }
+    }
+    return [...runs.keys()].filter(item => {
+      if (!item.reach) return false;
+      const edge = { x: item.far.x, y: item.nearEdge === 'low' ? gap.high : gap.low };
+      const hit = firstBlock(peers, item.link, { from: edge, to: item.reach }, attachedOf(item));
+      return hit !== undefined;
+    });
+  };
   // A run this pass leaves out owes its approach to the ones it seats, so the pass runs again with
   // that approach in hand. Each round leaves at least one more run out, so it terminates.
-  let absent = new Set(approaches.map(owed => owed.link).filter(id => !items.some(item => item.link.id === id)));
-  let at = seat(absent);
-  for (let round = 0; round < rows.length; round++) {
-    const missing = new Set([...absent, ...rows.filter(item => !at.has(item)).map(item => item.link.id)]);
-    if (missing.size === absent.size) break;
-    absent = missing;
-    at = seat(absent);
-  }
-  if (!at.size) return refuse(false);
-  const result = new Map<Participant, PathSegment[]>();
-  const settled = [...list, ...owed(absent)];
-  for (const item of items) {
-    if (needsRow(item) && !at.has(item)) continue;
-    if (!clear(item, at.get(item), settled)) continue;
-    result.set(item, runSegments(item, gap, at.get(item)));
-  }
-  // The approaches were answered against frozen placement, before the runs of this gap existed.
-  // A run this gap seats can cover the boundary terminal of the one beside it. That link then has
-  // no route to its own port, so a gap that cannot leave every approach clear allocates nothing.
-  const peers: Blocker[] = [];
-  const margin = routedStroke(model) / 2 + STRAIGHT_PATH_CLEARANCE.path;
-  for (const [item, segments] of result) {
-    const owners = new Set([item.link.id]);
-    for (const run of segments) {
-      peers.push({ owners, bounds: grow({ x: Math.min(run.from.x, run.to.x), y: Math.min(run.from.y, run.to.y),
-        width: Math.abs(run.to.x - run.from.x), height: Math.abs(run.to.y - run.from.y) },
-      linkStrokeWidth(item.link) / 2 + margin) });
+  // A covered run is absent from the start: it is routed, so the seating owes it its approach.
+  let absent = new Set(approaches.map(owed => owed.link).filter(id => !seatable.some(item => item.link.id === id)));
+  let result = new Map<Participant, PathSegment[]>();
+  for (let round = 0; round < 2 * items.length + 2; round++) {
+    const at = seat(absent);
+    const settled = [...list, ...reaches, ...owed(absent)];
+    result = new Map<Participant, PathSegment[]>();
+    for (const item of seatable) {
+      if (declined.has(item) || (needsRow(item) && !at.has(item))) continue;
+      if (!clear(item, at.get(item), settled)) continue;
+      result.set(item, runSegments(item, gap, at.get(item)));
     }
+    const taken = takenApproach(result);
+    for (const item of taken) declined.add(item);
+    const missing = new Set([...absent, ...taken.map(item => item.link.id),
+      ...rows.filter(item => !declined.has(item) && !at.has(item)).map(item => item.link.id)]);
+    if (!taken.length && missing.size === absent.size) break;
+    absent = missing;
   }
-  for (const item of result.keys()) {
-    if (!item.reach) continue;
-    const edge = { x: item.far.x, y: item.nearEdge === 'low' ? gap.high : gap.low };
-    if (firstBlock(peers, item.link, { from: edge, to: item.reach }, attachedOf(item))) return refuse(false);
-  }
+  if (!result.size) return refuse(false);
   return { runs: result, refused: false };
 }
 

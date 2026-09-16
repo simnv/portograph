@@ -368,8 +368,12 @@ Each row takes the first position clear of frozen geometry at or beyond that pit
 before it. The search advances by what refused the position. An obstacle rectangle names a
 distance, so the next position tried is the one past its bottom. A group edge the row would run
 along, a corridor the link owns and a reserved run of the link's own name only "not here", so the
-next position tried is one pitch on. A run is left out only when the gap's limit is reached: a
-single refused position never costs the gap its whole allocation.
+next position tried is one pitch on. Where both refuse one position, the search takes the later of
+the two answers: it is **monotone in its obstacles**, and one more obstacle can only ever move a row
+down. Without that a rectangle handed the search a position the pitch walk had stepped over, a gap
+given one more obstacle seated its row earlier, and the room the height rule reserves — the room the
+seating lands in — no longer held the seating. A run is left out only when the gap's limit is
+reached: a single refused position never costs the gap its whole allocation.
 The first and the last keep half a pitch from their own boundary. Two runs that stand on
 one x would share length there. A lane can sit under a lane of the same x in the band above, and a
 port can sit over a lane's mouth. The one that leaves the low boundary turns first. Two such runs
@@ -377,8 +381,12 @@ from one boundary have no clean order, and the gap allocates neither.
 
 Every run with a lane terminal on a boundary owes a head-on approach of one router stem on the
 lane's own x. It owes it whether the gap seats that run or not, and every seated row keeps the
-gate's clearance from it. A gap allocates nothing when no run in it needs a row. A diagram whose
-transit links all descend on one x is therefore untouched.
+gate's clearance from it. A run whose far end is a port beyond the gap owes a second approach, from
+the far boundary out to that port's own stem, and the rows keep clear of that one too, seated or
+not: a row half a pitch inside a boundary reaches back across it by `margin − pitch / 2`, so
+without it the first row seated takes the approach of the run standing on that boundary. A gap
+allocates nothing when no run in it needs a row. A diagram whose transit links all descend on one x
+is therefore untouched.
 
 An allocated run also keeps that clearance from every reserved run of its own link that runs the
 same way and never meets it. A pair that meets at a corner is one turn of one path. A pair that runs
@@ -395,8 +403,17 @@ free.
 Two allocated runs of one gap may **cross**. Neither is routed, so the crossing is reserved rather
 than discovered and neither needs an exemption from the other. A link that must cross the gap
 without a lane terminal on either boundary keeps the route it has today. The rows do not obstruct
-it: a run along a gap is a wall along it and never across it (ADR-0015 rule 3). A gap that cannot
-leave every one of its approaches clear allocates nothing.
+it: a run along a gap is a wall along it and never across it (ADR-0015 rule 3). A run whose own
+approach the gap cannot leave clear is left out the same way, **alone**: it keeps the route it has
+today, it crosses the rows the gap did seat, and the gap seats every other run whose approach is
+clear. The gap allocates nothing only where that leaves nothing at all. A gap that seats no row at
+all still reserves its **columns**: placement fixed a column end to end, so no search decides it and
+leaving it to a batch buys nothing.
+
+A left-out run is a crosser of every row the gap seated, and a crosser's exemption is of the whole
+horizontal cover — nothing separates crossing a row from travelling along one. Rows pack at 17.5 px
+with ±11.5 px covers, so a packed gap leaves such a run no clear band to traverse in. Stress
+ticket 15.
 
 **A node side that feeds a tier gap nests its own stems (ADR-0015 rule 1).** A side carries one
 stem per port, and a leg travels along that side after it turns. Where the travel passes over a
@@ -571,7 +588,17 @@ stay outside the tree, and the cohort shrinks accordingly — one rule (`treeCoh
 7d from the traversals under construction, and in 7e and on restore from the root junction id a split
 path carries. An excluded member keeps its own stem out of the port, which covers the tree's root:
 7e reports it with `FAN_MEMBER_UNRESERVED` and G4 reports the overlap, until ticket 47 adopts the
-last two shapes. `LayoutLink.sharedRuns.from/to` records its outward partial runs. A checkpoint
+last two shapes. A last pass releases the branch whose reserved run closes the checkpoint another
+link's port must be approached from, and every branch of the link it hems (`FAN_BRANCH_HEMMED`,
+ADR-0018 rule 3). **Only an end that reserved nothing is measured there**, and only for a link the
+router really approaches — never one whose path a rule fixed, and never a bundle member, since
+`planRoute` passes over a link that already holds a complete path. An end whose own fan reserved a
+run is approached at that run's terminal, so the port's checkpoint stands inside the link's own
+reservation. That terminal can be shut in turn and then throws (stress ticket 11), but a release
+does not open it: it pins the gap's end in the middle of the tier gap, where the route the router
+finds for one released link can wall in the point another has to reach. A release must leave the
+router a gap it can answer orthogonally (stress ticket 10).
+`LayoutLink.sharedRuns.from/to` records its outward partial runs. A checkpoint
 the reserved run already passes through — a lane's approach point that a deep leaf has reached — is
 consumed by the run and not asked of the router. Stage 13 consumes `from` outward and `to` in reverse order and direction;
 a partial run never becomes a complete `path`. G4 exempts only validated shared runs. G6's fan
@@ -649,9 +676,10 @@ a **probe**: a copy of the model with the band below each short gap moved down p
 seating can ask for. The answer is then independent of the room the gap has, which is what keeps
 the reservation monotone — a second pass over the reserved geometry measures the same need and
 grows nothing. Room is reserved only where the probe shows it buys the gap a seat, and a gap the
-allocation **refuses** for a reason room cannot answer — the rows have no clean order, or a port's
-own approach beyond a boundary is blocked — is left alone, because a taller gap gives the same
-refusal.
+allocation **refuses** for a reason room cannot answer — the rows have no clean order, or every run
+the gap holds has its own approach beyond a boundary blocked — is left alone, because a taller gap
+gives the same refusal. One covered run is not a refusal: the gap leaves that run out and asks for
+the room the rest of its seating lands in.
 
 The height is a reservation, not a discovery: stage 8 receives a gap that already holds its rows.
 The allocation is the **consumer** of the grown gap and never its owner — it reads the room the gap

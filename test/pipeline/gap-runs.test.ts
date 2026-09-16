@@ -6,9 +6,10 @@ import type { Rect } from '../../src/model/geometry.js';
 import type { LayoutModel, PathSegment } from '../../src/model/layout.js';
 import { ownedLanes } from '../../src/route/paths.js';
 import { MEMBER_GAP } from '../../src/layout/bundle-geometry.js';
-import { produceGroupLabelBands, routedStroke } from '../../src/layout/bands.js';
-import { GROUP_EDGE_LINK_CLEARANCE } from '../../src/theme/geometry.js';
+import { GROUP_LABEL_GEOMETRY, produceGroupLabelBands, routedStroke, stemReach } from '../../src/layout/bands.js';
+import { GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../../src/theme/geometry.js';
 import { horizontal, segmentRect, vertical } from '../../src/score/geometry.js';
+import { findPort } from '../../src/layout/row-paths.js';
 import { placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -178,6 +179,84 @@ it('steps a row past a group edge instead of ending the search', async () => {
 
   const published = linkLabels(await route(model, { createAttempt: createAvoidAttempt }));
   expect(Number.isFinite(score(published).snapshot.Q)).toBe(true);
+}, 120000);
+
+it('leaves out the run a group label covers and seats the rest', async () => {
+  // Stress ticket 09. A group label covers the approach one of four runs owes its own port. The
+  // sixth amendment answered that wholesale and the gap allocated nothing; the decline is now per
+  // run, so the three clear runs are seated and the covered one alone is left to stage 8.
+  const model = await place(read('a-gap-leaves-out-the-covered-run.yaml'));
+  // Named by its tiers, not found by the answer: the gap between the middle band and the lower one.
+  // A `find` on `seated` passes the moment the entry is missing, and any unrelated change to this
+  // gap then reads as a crash rather than as the rule failing.
+  const room = tierGapRoom(model).find(entry => entry.above === 1 && entry.below === 2);
+  expect([room?.rows, room?.seated, room?.refuses]).toEqual([4, 3, false]);
+
+  const runs = allocateGapRuns(model);
+  const inside = runs.filter(run => run.segments.some(segment =>
+    horizontal(segment) && segment.from.y > room!.low && segment.from.y < room!.high));
+  expect(inside.map(run => run.link).sort()).toEqual(['link-2', 'link-3', 'link-4']);
+
+  // The covered run keeps the route it has today, and it crosses every row the gap did seat.
+  for (const run of inside) expect(run.crossers).toContain('link-1');
+
+  // The rectangle that covers it is the lower group's own title, and it covers that run's approach
+  // and no other's. Each approach runs from the gap's far boundary to the port's own outward
+  // checkpoint, which is the line the allocation measures.
+  const label = model.labels.find(item => item.id === 'label:group:g2')!;
+  const title = { x: label.bounds!.x - GROUP_LABEL_LINK_CLEARANCE - routedStroke(model) / 2,
+    y: label.bounds!.y - GROUP_LABEL_LINK_CLEARANCE - routedStroke(model) / 2,
+    width: label.bounds!.width + 2 * (GROUP_LABEL_LINK_CLEARANCE + routedStroke(model) / 2),
+    height: label.bounds!.height + 2 * (GROUP_LABEL_LINK_CLEARANCE + routedStroke(model) / 2) };
+  const covered = ['link-1', 'link-2', 'link-3', 'link-4'].map(id => {
+    const link = model.links.find(item => item.id === id)!;
+    const node = model.nodes[link.attachments!.to.node]!;
+    const anchor = node.ports.find(port => port.side === 'top')!.anchor!;
+    const approach = { from: { x: anchor.x, y: room!.high }, to: { x: anchor.x, y: anchor.y - stemReach(model, node) },
+      owner: { kind: 'link' as const, id } };
+    return [id, segmentRect(approach, title)] as const;
+  });
+  expect(covered).toEqual([['link-1', true], ['link-2', false], ['link-3', false], ['link-4', false]]);
+
+  const published = linkLabels(await route(model, { createAttempt: createAvoidAttempt }));
+  expect(Number.isFinite(score(published).snapshot.Q)).toBe(true);
+}, 120000);
+
+it('claims an approach a row stands exactly on the edge of', async () => {
+  // Stress ticket 09. The gap seats a row one cover margin inside its low boundary, so that row's
+  // own cover ends exactly on the boundary — and the run standing there is clear of it by the 10 px
+  // G6 asks for and no more. The claim's cover scan counted that zero-area touch as a hit, declined
+  // the straight piece, and libavoid answered with a route that never reached the reserved end.
+  const model = await place(read('a-claim-lies-on-a-cover-edge.yaml'));
+  const room = tierGapRoom(model).find(entry => entry.above === 3 && entry.below === 4);
+  expect([room?.rows, room?.seated, room?.refuses]).toEqual([3, 3, false]);
+
+  const row = allocateGapRuns(model).find(run => run.link === 'link-17'
+    && run.segments.some(segment => horizontal(segment) && segment.from.y > room!.low && segment.from.y < room!.high));
+  const seat = row?.segments.find(horizontal);
+  expect(seat === undefined).toBe(false);
+  // The cover of a run is the run grown by the gate's clearance plus the two half strokes, so a row
+  // seated that far inside the boundary puts its cover's edge on the boundary exactly.
+  const margin = GROUP_LABEL_GEOMETRY.nodeClearance + routedStroke(model);
+  expect(seat!.from.y - margin).toBeCloseTo(room!.low, 9);
+
+  // `link-18` stands on that boundary inside the cover's own x range, and the piece from there to
+  // its port is one straight run stage 8 claims rather than asks the router for. Without the rule
+  // it is a `gap`, and the route libavoid answers with never reaches the reserved end.
+  const pieces = planRoute(model).links.find(item => item.link === 'link-18')!.pieces;
+  const last = pieces.at(-1)!;
+  expect(last.kind).toBe('straight');
+  const claim = (last as { segments: PathSegment[] }).segments[0]!;
+  expect(Math.max(claim.from.y, claim.to.y)).toBeCloseTo(room!.low, 9);
+  expect(claim.from.x).toBeGreaterThan(Math.min(seat!.from.x, seat!.to.x) - margin);
+  expect(claim.from.x).toBeLessThan(Math.max(seat!.from.x, seat!.to.x) + margin);
+
+  const published = linkLabels(await route(model, { createAttempt: createAvoidAttempt }));
+  expect(Number.isFinite(score(published).snapshot.Q)).toBe(true);
+  // And the published path really arrives at the port the claim was declined short of.
+  const path = published.links.find(item => item.id === 'link-18')!.path!.segments;
+  const port = findPort(published, published.links.find(item => item.id === 'link-18')!.attachments!.to)!;
+  expect([path.at(-1)!.to.x, path.at(-1)!.to.y]).toEqual([port.anchor!.x, port.anchor!.y]);
 }, 120000);
 
 it('carries a group label with the band the gap room moves', async () => {

@@ -6,6 +6,7 @@ import { placementWarning } from './regions.js';
 import { STRAIGHT_PATH_CLEARANCE, findPort } from './row-paths.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { GROUP_LABEL_GEOMETRY, nodeObstacleReach, nudgingDistance, routedStroke, stemReach } from './bands.js';
+import { stemCache, stemPlan } from './sides-two.js';
 
 export interface BundleFans {
   members: Member[];
@@ -445,12 +446,35 @@ function stemCount(port: LayoutPort, runs: readonly PathSegment[]): number {
  * out — a fan's own siblings stand a pitch away by construction (ADR-0018 rules 1 and 2), and
  * treating them as hemmed would undo the tracks those rules reserve. A member whose path a rule
  * fixed keeps its run, since its `sharedRuns` are the prefix of that path (ADR-0016).
+ *
+ * **Only an end that reserved nothing can be hemmed.** An end whose own fan reserved a run is not
+ * approached at the port at all: stage 8 stitches that run back and starts the gap at the run's
+ * terminal (`endpointFor`), so the port's own outward checkpoint stands inside a reservation the
+ * link owns and closing it costs the link nothing. Such an end can still be shut at the terminal —
+ * of 1 099 corpus inputs, 35 hold a reserved terminal inside a foreign reserved run's margin and 27
+ * of the 35 fail the pipeline — but a release does not open it. Measured over those 35, releasing on
+ * a closed terminal as well repaired none of them and broke 8 (stress ticket 11 owns the shape, with
+ * `wide-t3-p3-f2-s1` for its reproducer). An end that reserved nothing is the one case a release
+ * does answer: nothing there was placed, so giving the router the whole approach is the only move
+ * left, and that is the throw this pass exists to prevent.
+ *
+ * Measuring the port at every end released branches whose approaches were never shut, and the links
+ * the release then handed to the router walled each other in: the route of the first laid across the
+ * only way to the second one's own stem terminal, libavoid dropped that endpoint without a word and
+ * answered with a diagonal, and `gapSegments` threw `Routed gap … is not orthogonal` on five inputs
+ * that published before the rule (stress ticket 10). A release must leave the router a gap it can
+ * answer orthogonally; where nothing is closed there is nothing to release.
  */
 function releaseHemmedFans(model: LayoutModel): void {
   // The room the *router* insists on beside a route it still has to draw, read from the one figure
   // `routeParameters` hands libavoid. A literal here would drift from it: an unrelated heavy link
   // widens what the router demands and would leave this pass looking at the wrong distance.
   const margin = nudgingDistance(model);
+  // The outward depth stage 8 really asks for at a bare port, which is `stemCheckpoint`'s own: the
+  // 15 px stem, unless the node's expanded obstacle reaches further, and deeper still where a side's
+  // stems nest. One plan per row gap for the whole pass, because recomputing it per link end is
+  // cubic in the size of a turning cohort.
+  const gaps = stemCache();
   const drawn = (link: LayoutLink): boolean => link.layer === 'routed' && link.technique !== 'stub' && link.attachments !== undefined;
   const branches: { link: LayoutLink; end: 'from' | 'to'; port: LayoutPort; runs: PathSegment[] }[] = [];
   for (const link of model.links) {
@@ -465,11 +489,22 @@ function releaseHemmedFans(model: LayoutModel): void {
   if (!branches.length) return;
   const release = new Set<string>();
   for (const link of model.links) {
-    if (!drawn(link)) continue;
+    // Stage 8 approaches a port only for a link it routes, and `planRoute` passes over every link
+    // that already holds a complete path — one a rule pinned, and a bundle member, whose path
+    // `rebuildBundlePaths` deletes just before this pass and assigns again straight after it.
+    // Neither is ever given a checkpoint at its port, so neither can be hemmed at one. That is the
+    // exclusion the branch loop above already makes, and it is read the same way: `fixed` and
+    // `bundle` hold whatever stage the model is restored at, where the presence of a `path` does
+    // not — after stage 8 every link carries one, and a guard on that would make this pass answer
+    // differently on the re-derivation `checkedLayoutMutation` compares against.
+    if (!drawn(link) || link.path?.fixed === true || link.bundle !== undefined) continue;
     for (const end of ['from', 'to'] as const) {
       const ref = link.attachments![end], port = findPort(model, ref);
       if (!port?.anchor || port.side === undefined) continue;
-      const out = normal(port.side), reach = stemReach(model, model.nodes[ref.node]!);
+      // An end whose own fan reserved a run is approached at that run's terminal, not at the port,
+      // so the port's checkpoint stands inside the link's own reservation and nothing closes it.
+      if (link.sharedRuns?.[end]?.length) continue;
+      const out = normal(port.side), reach = stemPlan(model, port, gaps).depth;
       const at = { x: port.anchor.x + out.x * reach, y: port.anchor.y + out.y * reach };
       for (const branch of branches) {
         if (branch.link.id === link.id) continue;
@@ -481,8 +516,8 @@ function releaseHemmedFans(model: LayoutModel): void {
           && at.y > Math.min(run.from.y, run.to.y) - margin - 1e-6
           && at.y < Math.max(run.from.y, run.to.y) + margin + 1e-6)) continue;
         release.add(`${branch.link.id}:${branch.end}`);
-        // The hemmed link gives way at whichever end its own fan reserved, which is not the end the
-        // closed checkpoint belongs to.
+        // The hemmed link gives way at whichever end its own fan reserved, which is never this one:
+        // the end that was hemmed reserved nothing, or the pass would not have measured its port.
         for (const own of ['from', 'to'] as const) release.add(`${link.id}:${own}`);
         placementWarning(model, 'FAN_BRANCH_HEMMED',
           `${branch.link.id}'s reserved branch closes the approach to ${ref.node}.${ref.name ?? '*'}; `
