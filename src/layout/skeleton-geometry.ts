@@ -3,6 +3,7 @@ import type { Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { orderedGroupIds } from '../model/model.js';
 import { bandGap, compareId, greatestPeers, groupId, nodeGap, nodeId, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
+import { isGridGroup, packGrid } from './grid.js';
 import { bottom, contains as rectContains, EPS, rectOverlap, right } from '../score/geometry.js';
 
 /**
@@ -144,6 +145,38 @@ function packRow(model: LayoutModel, group: LayoutGroup, order: string[]): void 
     width: Math.max(2 * spacing.padding, x - original.x + spacing.padding),
     height: Math.max(0, ...order.map(id => model.nodes[id]!.size!.height)) + 2 * spacing.padding };
 }
+/** The shape the group declares decides how a rule that repacks it lays its nodes out. */
+function packGroup(model: LayoutModel, group: LayoutGroup, order: string[]): void {
+  if (isGridGroup(model, group.id)) packGrid(model, group, order); else packRow(model, group, order);
+}
+
+/**
+ * Stage 4 hands ELK one row per group, because ELK's layered pass is what orders the nodes. A grid
+ * group then takes that order and packs it into columns and rows (`grid.ts`), which makes the box
+ * narrower and taller than the one ELK measured. Two consequences are settled here rather than left
+ * for a later stage to discover: the tier is re-packed left to right, so the width a grid gave back
+ * is width the canvas gives back too, and the caller re-stacks the bands, because a taller box no
+ * longer fits the band ELK sized for a ribbon.
+ *
+ * Returns whether anything moved, so an input with no grid group keeps ELK's geometry exactly.
+ */
+export function packGridGroups(model: LayoutModel, tier?: number): boolean {
+  const groups = orderedGroupIds(model.document).map(id => model.groups[id]!)
+    .filter(group => !group.flank && (tier === undefined || group.tier === tier));
+  const grids = groups.filter(group => isGridGroup(model, group.id) && group.nodes.length > 0);
+  if (!grids.length) return false;
+  for (const group of grids) packGrid(model, group, group.rowOrder ?? [...group.nodes]);
+  const gap = bandGap(model);
+  for (const band of new Set(groups.map(group => group.tier))) {
+    const members = groups.filter(group => group.tier === band).sort((a, b) => a.bounds!.x - b.bounds!.x || compareId(a.id, b.id));
+    let x = Math.min(...members.map(group => group.bounds!.x));
+    for (const group of members) {
+      moveGroup(model, group, x - group.bounds!.x, 0);
+      x = right(group.bounds!) + gap;
+    }
+  }
+  return true;
+}
 
 /** Select all primary peers from the same ELK result before any repack changes distances. */
 export function placeFlanksAndPeers(model: LayoutModel): void {
@@ -176,7 +209,13 @@ export function placeFlanksAndPeers(model: LayoutModel): void {
       order = order.filter(id => id !== peer);
       if (group.flank!.align === 'left') order.unshift(peer); else order.push(peer);
     }
-    packRow(model, peerGroup, order);
+    // The `unshift`/`push` above is the row's answer, and it is **not** the grid's: reading order
+    // packs a ragged row against the left, so pushing a right flank's peer last would leave it in
+    // column 0 of a partial last row, and the lateral link would run the width of the group box to
+    // reach it. `packGrid` does not consume this end position — `seatFlankPeers` reads the stored
+    // peer and its alignment itself, and seats it at the outer end of whichever row its exit rank
+    // put it in (stress ticket 26 finding B2).
+    packGroup(model, peerGroup, order);
   }
   // Repacked rows can grow. Retain group order and move only groups that would collide.
   for (const tier of new Set(Object.values(model.groups).map(group => group.tier))) {
@@ -189,7 +228,7 @@ export function placeFlanksAndPeers(model: LayoutModel): void {
     const core = union(groups.map(group => group.bounds!));
     let left = core.x - gap, rightX = right(core) + gap;
     for (const flank of flanks.filter(group => group.tier === tier)) {
-      packRow(model, flank, [...flank.nodes]);
+      packGroup(model, flank, [...flank.nodes]);
       const x = flank.flank!.align === 'left' ? left - flank.bounds!.width : rightX;
       moveGroup(model, flank, x - flank.bounds!.x, core.y - flank.bounds!.y);
       if (flank.flank!.align === 'left') left = x - gap;

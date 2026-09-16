@@ -108,7 +108,7 @@ describe('parse diagnostics', () => {
     ['BAD_ENDPOINT', { links: [['a.p#0', 'b']] }],
     ['GROUP_LINK_ENDPOINTS', { links: [['a', 'b', { route: 'group-link' }]] }],
     ['UNSUPPORTED_PROFILE', { profile: 'architecture' }],
-    ['UNSUPPORTED_SHAPE', { groups: { g: { shape: 'grid' } } }],
+    ['UNSUPPORTED_SHAPE', { groups: { g: { shape: 'ring' } } }],
     ['UNKNOWN_KEY', { groups: { g: { tiers: 2 } } }],
   ])('%s: %j', (code, value) => {
     const result = parseWithDiagnostics(source(value));

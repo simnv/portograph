@@ -15,6 +15,7 @@ import { MEMBER_GAP, fanEnd } from './bundle-geometry.js';
 import { laneSource, laneWidth, transitTiers } from './lanes.js';
 import { fitRegionGroup } from './regions.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
+import { gridCells, gridRowGap, isGridGroup, packGridRows } from './grid.js';
 import { freezePortTopology } from './mutation.js';
 const key = portId;
 
@@ -699,6 +700,14 @@ export function sidesTwo(model: LayoutModel): LayoutModel {
       else if (otherGroup.tier! < group.tier!) side = 'top';
       else if (otherGroup.flank && !group.flank) side = otherGroup.flank.align;
       else if (group.flank && !otherGroup.flank) side = group.flank.align === 'left' ? 'right' : 'left';
+      // Inside a grid a peer may stand above or below as well as beside, so the vote reads the
+      // packed geometry: a peer that shares this node's row votes left or right, one that does not
+      // votes top or bottom. A `row` group has only one row and keeps the row-order answer.
+      else if (otherGroup.id === group.id && isGridGroup(model, group.id)) {
+        const own = node.bounds!, box = other.bounds!;
+        side = Math.min(own.y + own.height, box.y + box.height) > Math.max(own.y, box.y)
+          ? (box.x < own.x ? 'left' : 'right') : (box.y < own.y ? 'top' : 'bottom');
+      }
       else if (otherGroup.id === group.id) side = group.rowOrder!.indexOf(peer.node) < group.rowOrder!.indexOf(id) ? 'left' : 'right';
       else side = other.bounds!.x + other.bounds!.width / 2 < node.bounds!.x + node.bounds!.width / 2 ? 'left' : 'right';
       votes[side]++;
@@ -762,6 +771,13 @@ export function sidesTwo(model: LayoutModel): LayoutModel {
   sizeNodes(model);
   for (const groupId of orderedGroupIds(model.document)) {
     const group = model.groups[groupId]!, order = group.rowOrder ?? group.nodes;
+    // A grid repacks as a grid. The nodes have just been resized to their final port capacity, so
+    // both the columns and the rows are laid out again from the new sizes at the gaps the rows rule
+    // reserves — rather than pushed onto one line, which is what the loop below would do.
+    if (isGridGroup(model, groupId) && group.nodes.length) {
+      packGridRows(model, group, gridCells(model, group), (a, b) => rowGap(model, a, b), gridRowGap(model));
+      continue;
+    }
     let x = group.bounds!.x + spacing.padding;
     for (const [index, id] of order.entries()) {
       if (index) x += rowGap(model, order[index - 1]!, id);

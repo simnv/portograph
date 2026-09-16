@@ -1,0 +1,27 @@
+# Expected: Pack twelve nodes into aligned columns and rows, hold every row on one y and every
+# column on one x, reserve a tier gap between the rows for the stems that leave the lower rows, and
+# decide a same-group port side from the packed geometry: the peer below votes bottom, not right.
+portograph: 2
+profile: network
+groups:
+  upper: { tier: 0 }
+  place: { tier: 1, shape: grid }
+nodes:
+  head: { group: upper, ports: { side: bottom, list: [p, p] } }
+  n01: { group: place, ports: [{ name: p, side: top }] }
+  n02: { group: place, ports: [{ name: p, side: top }] }
+  n03: { group: place }
+  n04: { group: place }
+  n05: { group: place }
+  n06: { group: place }
+  n07: { group: place }
+  n08: { group: place }
+  n09: { group: place }
+  n10: { group: place }
+  n11: { group: place }
+  n12: { group: place }
+links:
+  - [head.p#1, n01.p]
+  - [head.p#2, n02.p]
+  - [n01, n02]
+  - [n01, n05]

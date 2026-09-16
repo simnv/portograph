@@ -1,13 +1,13 @@
 import { GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
 import type { LayoutLink, LayoutModel, LayoutNode, LayoutPort, PathSegment, Point, Rect } from '../model/index.js';
-import { orderedGroupIds } from '../model/model.js';
+import { orderedGroupIds, orderedNodeIds } from '../model/model.js';
 import { equal } from '../model/json-equality.js';
 import { measureText } from '../text/index.js';
 import { NODE_CONTENT_GEOMETRY } from '../theme/content.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { nodeGap, portId } from './skeleton-graph.js';
 import { splitUnderJunctions, treeCohorts } from './bundle-geometry.js';
-import { groupInsets } from './regions.js';
+import { groupInsets, placementWarning } from './regions.js';
 import { findPort } from './row-paths.js';
 import { withLayoutMutation } from './mutation.js';
 
@@ -288,6 +288,35 @@ function crosses(model: LayoutModel, segments: PathSegment[], endpoint: string):
   });
 }
 
+/**
+ * Node bodies a drop's reserved run really reaches into, outside the bars `crosses` already counts.
+ *
+ * `crosses` asks the question of bar nodes alone, because between an external port and its bar there
+ * was never anything else: a `row` group has nothing below its nodes, so the column under a bottom
+ * port is empty by construction. A `grid` group breaks that, and the rule wrote its `fixed` path and
+ * an empty `barCross` through whatever stood there, with no diagnostic (stress ticket 26). The row
+ * ranks of `grid.ts` keep a downward exit in the last row wherever they can; where they cannot —
+ * more downward exits than one row holds, or a node that leaves both ways — this says so.
+ *
+ * It is a report, not a claim: nothing downstream reads it, and the drop keeps the geometry it had.
+ * The bounding-box test is exact, because every drop segment is axis-aligned.
+ *
+ * It reports **penetration only, never clearance**. A drop threaded 10.75 px between two last-row
+ * bodies says nothing here and fails G4 and G6 instead. The gates are the complete signal; this is a
+ * hint that names the link and the node at the place the reservation was made, which is what the
+ * silent case lacked (stress ticket 26 re-check).
+ */
+function obstructedBodies(model: LayoutModel, segments: PathSegment[], item: BarLink): string[] {
+  const ends = new Set([item.link.attachments!.from.node, item.link.attachments!.to.node]);
+  return orderedNodeIds(model.document).filter(id => {
+    if (ends.has(id) || model.document.groups[model.document.nodes[id]!.group]!.shape === 'bar') return false;
+    const box = model.nodes[id]!.bounds;
+    return box !== undefined && segments.some(segment =>
+      Math.max(segment.from.x, segment.to.x) > box.x + EPS && Math.min(segment.from.x, segment.to.x) < right(box) - EPS
+      && Math.max(segment.from.y, segment.to.y) > box.y + EPS && Math.min(segment.from.y, segment.to.y) < bottom(box) - EPS);
+  });
+}
+
 function sourceStemLength(model: LayoutModel, item: BarLink, slotX: number): number {
   if (item.external.side !== 'top' && item.external.side !== 'bottom') return MIN_STEM;
   const x = item.external.anchor!.x, destination = adjacentLaneX(model, item) ?? slotX;
@@ -407,6 +436,10 @@ export function rebuildBarDrops(model: LayoutModel): void {
       source: { ...item.link.attachments!.from }, port: { ...item.link.attachments!.to },
       slotX, span, hint, barCross: crossed,
     };
+    const obstructed = obstructedBodies(model, traversed, item);
+    if (obstructed.length) placementWarning(model, 'BAR_DROP_OBSTRUCTED',
+      `Reserved drop of ${item.link.id} runs through ${obstructed.join(', ')}; the drop keeps its slot and the final gates judge the result.`,
+      [item.link.id]);
     if (crossed.length) for (const node of crossed) model.barDrops.push({
       ...base, id: dropId(item.link, node), owner: { kind: 'barCross', node, link: item.link.id },
     });
