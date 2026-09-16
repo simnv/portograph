@@ -19,14 +19,17 @@
  *    the perimeter spacing keys are no-ops; `elbowEdgeStyle` re-routes by up to 265 px and is
  *    refused. A polyline with a segment that is not axis-aligned is outside that router's vocabulary
  *    and keeps `edgeStyle=none`, which reproduces any waypoints verbatim. Measured against
- *    drawio-desktop 31.4.5. The routed family is orthogonal, so it always takes the first style. An
- *    **overlay** link is a stub out of each port and one straight segment between the two stub ends,
- *    and it takes the second whenever that segment is angled — which is whenever the two stub ends
- *    do not line up and no node stood in the way (stress ticket 20). The boundary is the model's:
- *    the style is chosen from the published polyline, and this file states no shape of its own for
- *    either family. What `none` costs is a hand drag: it re-angles the run a moved terminal is on,
- *    the stub included — measured, a pill dragged 30 px along its side leaves an 82° kink where the
- *    stub was — which is the cost the maintainer took with the three renders in front of him.
+ *    drawio-desktop 31.4.5. The style is chosen from the published polyline and from nothing else —
+ *    this file states no shape of its own — so **either family can reach either style**. A routed
+ *    link is orthogonal unless it is a declared straight bundle member (ADR-0017: stem, one
+ *    diagonal, stem); an **overlay** link is a stub out of each port and one straight segment
+ *    between the two stub ends, angled whenever those ends do not line up and no node stood in the
+ *    way (stress ticket 20). Measured over the 49 synthetic fixtures, four connectors take `none`:
+ *    `author-ordered-bundle` link-1 and link-3, both **routed** bundle members on the links layer,
+ *    and the overlay of `labelled-overlay-run` and `overlay-ports-that-do-not-line-up`. What `none`
+ *    costs is a hand drag: it re-angles the run a moved terminal is on, the stub included —
+ *    measured, a pill dragged 30 px along its side leaves an 82° kink where the stub was — which is
+ *    the cost the maintainer took with the three renders in front of him.
  * 2. `points=` on a shape does not constrain an edge — it only decides which anchors the editor
  *    offers. An endpoint is pinned by `exitX`/`exitY` on the edge, and `exitPerimeter` defaults to
  *    1, which projects the point onto the perimeter instead of using it.
@@ -1106,8 +1109,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       // moved by hand, where `edgeStyle=none` leaves a diagonal stub. The orthogonal router draws
       // the supplied waypoints and does not re-route them, and `jettySize=0` keeps it from adding a
       // stub of its own; see fact 1 in the header for the numbers. A polyline that is not
-      // axis-aligned is outside that router's vocabulary, so it keeps `edgeStyle=none` — which is
-      // an overlay link the straight branch answered with an angled segment, and no routed link.
+      // axis-aligned is outside that router's vocabulary, so it keeps `edgeStyle=none`. Either
+      // family reaches it: a routed declared straight bundle member (ADR-0017) and an overlay link
+      // the straight branch answered with an angled segment. See fact 1 for the four in the corpus.
       //
       // Both polylines are tested, because they differ: the waypoints exactly, and the polyline
       // draw.io really draws — the pinned terminals included — within the endpoint tolerance. A port

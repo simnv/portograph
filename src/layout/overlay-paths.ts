@@ -49,6 +49,11 @@ const enters = (from: Point, to: Point, box: Rect): boolean =>
  * The same question for a segment of any angle: the parameter range that survives clipping against
  * the box's four slabs, each pulled in by `EPS` so a line along a face is clear. `enters` reads a
  * bounding box, which is exact for an axis-aligned run and far too wide for a diagonal.
+ *
+ * Why not `score/geometry`'s `segmentRect`: that one is the **closed** predicate and *expands* the
+ * rectangle by `EPS`, so it counts a touch as a hit. This rule needs the open one — a path that
+ * rides a pill face is clear of it, which is exactly what the `tooClose` reduction states and what
+ * `enters` has always meant here. The two disagree only on that boundary, which is the point.
  */
 function crosses(from: Point, to: Point, box: Rect): boolean {
   let low = 0, high = 1;
@@ -224,9 +229,12 @@ function between(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers):
  * other, and they are exempt from the clearance gates. Not a group box, not a lane, not a routed
  * path, not a label.
  *
- * The two stubs are not tested. Each starts at its own anchor, which is its own pill's centre, so a
- * stub is inside that pill by construction; it is the port's own reserved outward reach and it
- * crosses nothing else. The same reading the eight ways use.
+ * The two stubs are not tested, which is the same reading the eight ways use. A stub is the port's
+ * own reserved outward reach: it starts at the anchor, which is its own pill's centre, and ends
+ * `OVERLAY_PILL_CLEARANCE` past that pill's outward face — so most of it is inside the pill and the
+ * **last 4 px is outside it**, by construction. Nothing else is known to stand in that 4 px, but
+ * nothing here checks either; it is an untested run, pre-existing and shared with the orthogonal
+ * branch, not a claim that the stub cannot cross anything.
  */
 function straightBetween(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers): Point[] | undefined {
   const from = head.clear, to = tail.clear;
