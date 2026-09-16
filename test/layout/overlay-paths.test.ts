@@ -126,6 +126,38 @@ describe('overlay paths', () => {
     })).toEqual([{ x: 30, y: 40 }, { x: 30, y: 120 }]);
   });
 
+  /** A facing pair on one clear axis, with an optional body standing on the line between them. */
+  const facingColumn = (blocker?: { id: string; bounds: { x: number; y: number; width: number; height: number } }): Scene => ({
+    nodes: [{ id: 'g', bounds: { x: 0, y: 0, width: 60, height: 40 } },
+      { id: 'h', bounds: { x: 0, y: 120, width: 60, height: 40 } }, ...(blocker ? [blocker] : [])],
+    ports: [{ node: 'g', name: 'down', side: 'bottom', anchor: { x: 30, y: 40 } },
+      { node: 'h', name: 'up', side: 'top', anchor: { x: 30, y: 120 } }],
+    links: [{ id: 'flow', from: 'g', to: 'h', layer: 'overlay',
+      points: [{ x: 30, y: 40 }, { x: 30, y: 120 }] }],
+  });
+
+  it('goes round a node standing on the line between two ports that face each other', () => {
+    // The headline case of the maintainer's rule, on the shape a reader meets most: two ports facing
+    // each other in column with a body on the line between them. The straight segment is refused and
+    // the orthogonal branch takes the way round the pair on its left, one stub outside the pair's own
+    // extent at x 21.
+    expect(path(facingColumn({ id: 'x', bounds: { x: 26, y: 70, width: 8, height: 20 } })))
+      .toEqual([{ x: 30, y: 40 }, { x: 30, y: 57 }, { x: 21, y: 57 },
+        { x: 21, y: 103 }, { x: 30, y: 103 }, { x: 30, y: 120 }]);
+  });
+
+  it('draws through a body wider than the pair itself, as it always did', () => {
+    // The honest limit of "orthogonal by exception", unchanged from the derivation and pre-existing
+    // (ticket 01, open item 1): the eight ways are read off the two end boxes alone, so a body wider
+    // than the pair's own extent plus a stub lands on every one of them. The straight branch is
+    // refused, the orthogonal branch clears nothing, and its own fall-back — the shortest way clear
+    // of the link's two end boxes — is the straight anchor-to-anchor line, which the mask carries.
+    // A real overlay router that reads ways round the bodies it must pass is the fix, and it is not
+    // this ticket. Measured identical on `main`.
+    expect(path(facingColumn({ id: 'x', bounds: { x: 10, y: 70, width: 40, height: 20 } })))
+      .toEqual([{ x: 30, y: 40 }, { x: 30, y: 120 }]);
+  });
+
   it('keeps clear of the two pills when a node body blocks every way round', () => {
     // Two ports on the same side of two nodes standing side by side, anchors on one line. The
     // straight branch refuses itself twice over: the segment between the two stub ends runs through
