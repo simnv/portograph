@@ -525,6 +525,21 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
     return [{ owners: new Set([item.link]), bounds: grow({ x: item.x, y: Math.min(from, to), width: 0,
       height: Math.abs(to - from) }, clearance) }];
   });
+  /**
+   * The approach beyond the far boundary that every participant owes its own port, seated or not,
+   * as a rectangle grown by what the router keeps between two centrelines.
+   *
+   * A row seated half a pitch inside a boundary reaches back across it by `margin − pitch / 2`, so
+   * the run that stands on that boundary loses the head-on approach to its own port to a run of the
+   * same gap. Answered here, the search reads it as any other rectangle and takes the next position
+   * the pitch allows; answered afterwards, it can only cost a seated run its seat.
+   */
+  const reaches: Blocker[] = items.flatMap(item => {
+    if (!item.reach) return [];
+    const edge = item.nearEdge === 'low' ? gap.high : gap.low;
+    return [{ owners: new Set([item.link.id]), bounds: grow({ x: item.far.x, y: Math.min(edge, item.reach.y),
+      width: 0, height: Math.abs(item.reach.y - edge) }, routedStroke(model) + STRAIGHT_PATH_CLEARANCE.path) }];
+  });
   const clear = (item: Participant, row: number | undefined, full: readonly Blocker[]): boolean => {
     const segments = runSegments(item, gap, row);
     if (!segments.length) return false;
@@ -540,7 +555,7 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
   /** The runs the gap gives up for good: their own approach is covered by a run it seats. */
   const declined = new Set<Participant>();
   const seat = (absent: ReadonlySet<string>): Map<Participant, number> => {
-    const full = [...list, ...owed(absent)];
+    const full = [...list, ...reaches, ...owed(absent)];
     const at = new Map<Participant, number>();
     let next = gap.low + pitch / 2;
     for (const item of order) {
@@ -608,7 +623,7 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
   let result = new Map<Participant, PathSegment[]>();
   for (let round = 0; round < 2 * items.length + 2; round++) {
     const at = seat(absent);
-    const settled = [...list, ...owed(absent)];
+    const settled = [...list, ...reaches, ...owed(absent)];
     result = new Map<Participant, PathSegment[]>();
     for (const item of seatable) {
       if (declined.has(item) || (needsRow(item) && !at.has(item))) continue;
