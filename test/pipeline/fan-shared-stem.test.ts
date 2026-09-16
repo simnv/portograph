@@ -356,3 +356,32 @@ it('ticket 46: a branch that hems another link\'s approach gives way, and so doe
   expect(heavy.diagnostics.some(item => item.code === 'FAN_BRANCH_HEMMED')).toBe(true);
   onStems(heavy);
 }, 60000);
+
+it('stress 10: a checkpoint inside a link\'s own reserved run is not hemmed, and nothing gives way', async () => {
+  // `left`'s branch descends on the row both trees peel at, through the point 15 px above `right.u`.
+  // That point is stage 8's approach only for a link that reserved nothing there; `right`'s two
+  // links each keep a branch and start their gaps at its terminal instead. Releasing them pinned
+  // both gap ends in the middle of the tier gap, the route found for the first walled in the point
+  // the second had to reach, and stage 8 threw `Routed gap on link-3 is not orthogonal`.
+  const model = await run(fixture('a-reserved-approach-cannot-be-hemmed'));
+  expect(model.diagnostics.some(item => item.code === 'FAN_BRANCH_HEMMED')).toBe(false);
+  const target = model.nodes['right']!.ports.find(port => port.ref.name === 'u')!;
+  const closed = { x: target.anchor!.x, y: target.anchor!.y - MIN_STEM };
+  // The descent really crosses that point, so the pass had something to measure and let it be.
+  const descent = model.links.find(link => link.id === 'link-4')!.sharedRuns!.to!
+    .find(run => run.from.y === run.to.y)!;
+  expect(descent.from.y).toBe(closed.y);
+  expect(Math.min(descent.from.x, descent.to.x)).toBeLessThan(closed.x);
+  expect(Math.max(descent.from.x, descent.to.x)).toBeGreaterThan(closed.x);
+  // Both links at that port keep a branch past their stems, which is where their gaps end.
+  for (const id of ['link-2', 'link-3']) {
+    const runs = model.links.find(link => link.id === id)!.sharedRuns!.to!;
+    expect(runs.some(run => run.from.y !== run.to.y)).toBe(true);
+    expect(model.links.find(link => link.id === id)!.path!.segments.at(-1)!.to).toEqual(target.anchor);
+  }
+  // The row the two trees share is ticket 46's own defect, and it is a gate failure, not a throw.
+  const report = score(model).snapshot;
+  expect(report.passed).toBe(false);
+  expect(report.gates.G4!.violations.map(item => item.code)).toEqual(['collinear-overlap']);
+  expect(report.gates.G6!.violations.map(item => item.code)).toEqual(['parallel-clearance']);
+}, 60000);
