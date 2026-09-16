@@ -18,7 +18,7 @@ import { bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placementWarning, 
 import { withLayoutMutation } from './mutation.js';
 import { effectiveLayer } from '../score/model.js';
 import { LINK_LABEL_GEOMETRY, overlayLabelsSuppressed } from './link-labels.js';
-import { overlayPath } from './overlay-paths.js';
+import { OVERLAY_PILL_CLEARANCE, overlayPath } from './overlay-paths.js';
 
 const EPS = 1e-6;
 export const GROUP_LABEL_GEOMETRY = {
@@ -591,15 +591,22 @@ export function alignLinkedGroupGrid(model: LayoutModel): boolean {
  * where the long run lies on the other axis — the way round the pair and the run down the middle of
  * the gap — because there is then nothing for 7f to widen and the stage 9 ladder decides, exactly as
  * it does for a link whose room lies beyond a reserved lane.
+ *
+ * "On the other axis" is read as *no reach at all* on the axis being grown. The straight branch's
+ * long run is a **diagonal** (stress ticket 20) and it has reach on both; widening the axis lengthens
+ * it, so it is a run 7f can reserve for and the midpoint is its own on that axis. Testing for a
+ * perfectly axis-aligned run was written when every overlay path was orthogonal and threw the
+ * diagonal away with the cross-axis runs. This came out under stress ticket 30: while a stub ran
+ * from the anchor it was the longest run of a pair standing close together, and 7f reserved about
+ * the *stub's* midpoint, inside the source pill — a run no label ever follows.
  */
 function overlayRunMid(model: LayoutModel, link: LayoutLink, axis: 'x' | 'y'): number | undefined {
-  const across = axis === 'x' ? 'y' : 'x';
   let run: PathSegment | undefined, longest = 0;
   for (const segment of overlayPath(model, link).segments) {
     const reach = Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y);
     if (reach > longest + EPS) { longest = reach; run = segment; }
   }
-  if (!run || Math.abs(run.to[across] - run.from[across]) > EPS) return undefined;
+  if (!run || Math.abs(run.to[axis] - run.from[axis]) <= EPS) return undefined;
   return (run.from[axis] + run.to[axis]) / 2;
 }
 
@@ -638,8 +645,16 @@ export function reserveLinkLabelRoom(model: LayoutModel): boolean {
     const unreserved = (why: string): void => placementWarning(model, 'LINK_LABEL_ROOM_UNRESERVED', `${link.id} ${why}; its label room cannot be reserved and the stage 9 ladder decides.`, [link.id]);
     if (fromNode === toNode) { unreserved('returns to its own node'); continue; }
     const measured = measureText(text, { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight });
-    const required = measured.width + 2 * LINK_LABEL_GEOMETRY.shortenMargin;
     const overlay = effectiveLayer(link) === 'overlay';
+    // The room is measured out to the two pill faces, and an overlay link's labelled run does not
+    // start there: it starts one `OVERLAY_PILL_CLEARANCE` beyond each face, at the stub end. So the
+    // run needs that much more room than the text does, on top of the two shortening margins
+    // (synthetics review ticket 01's reading of ADR-0014). Stress ticket 30 made this visible: while
+    // an overlay stub ran from the anchor it was the longest run of a pair standing close together,
+    // and the midpoint 7f reserved about sat inside the source pill, which over-reserved by about
+    // this much for its own reasons.
+    const required = measured.width + 2 * LINK_LABEL_GEOMETRY.shortenMargin
+      + (overlay ? 2 * OVERLAY_PILL_CLEARANCE : 0);
     if (fromGroup.tier !== toGroup.tier) {
       const [upper, lower, upperPort, lowerPort] = fromNode.bounds!.y <= toNode.bounds!.y ? [fromNode, toNode, from, to] : [toNode, fromNode, to, from];
       const upperTier = model.groups[model.document.nodes[upper.id]!.group]!.tier!;

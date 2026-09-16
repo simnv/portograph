@@ -163,11 +163,13 @@ describe('an overlay link is straight, or orthogonal round a node', () => {
   it('stays one straight segment for a pair that lines up, and turns nowhere', async () => {
     // Stress ticket 20, question 2. `goldens/synthetic/overlay-ports-that-line-up.yaml`: two `sync`
     // ports facing each other on one x, with nothing between them. Both stubs are collinear with the
-    // segment between them, `straighten` drops them, and the path is the single segment the
-    // orthogonal derivation drew — polyline, canvas and Q identical to the last digit.
+    // segment between them, `straighten` drops them, and the path is one segment. Stress ticket 30
+    // shortened that segment by a pill half-depth at each end — it now runs face to face, 119 to
+    // 220, where it ran anchor to anchor, 107 to 232 — and the 12 px it lost at each end were the
+    // 12 px the overlay mask cut out of the pill. Canvas and Q are identical to the last digit.
     const model = await run(fixture('overlay-ports-that-line-up'));
     const points = pointsOf(overlayOf(model));
-    expect(points).toEqual([{ x: 57.336669921875, y: 107 }, { x: 57.336669921875, y: 232 }]);
+    expect(points).toEqual([{ x: 57.336669921875, y: 119 }, { x: 57.336669921875, y: 220 }]);
     expect(score(model).snapshot.Q).toBe(0.8335929892966935);
     expect(score(model).snapshot.passed).toBe(true);
   }, 60000);
@@ -178,8 +180,11 @@ describe('an overlay link is straight, or orthogonal round a node', () => {
     // is drawn at its own angle — the shape the maintainer chose.
     const model = await run(fixture('overlay-ports-that-do-not-line-up'));
     const link = overlayOf(model), points = stubAndOne(model, link);
-    expect(span(points[0]!, points[1]!)).toBeCloseTo(16, 9);
-    expect(span(points[2]!, points[3]!)).toBeCloseTo(16, 9);
+    // Stress ticket 30: the stub is the clearance and nothing else. It measured 16 px — a 12 px pill
+    // half-depth the mask cut away, and 4 px of drawn nub — and it measures 4, which is that same
+    // nub. What the reader sees did not change; what the model carries did.
+    expect(span(points[0]!, points[1]!)).toBeCloseTo(OVERLAY_PILL_CLEARANCE, 9);
+    expect(span(points[2]!, points[3]!)).toBeCloseTo(OVERLAY_PILL_CLEARANCE, 9);
     expect(span(points[1]!, points[2]!)).toBeCloseTo(119.7948, 3);
     expect(axisAligned(points[1]!, points[2]!)).toBe(false);
     // And it really is clear: the segment enters no node body and no drawn pill.
@@ -188,21 +193,30 @@ describe('an overlay link is straight, or orthogonal round a node', () => {
     expect(score(model).snapshot.passed).toBe(true);
   }, 60000);
 
-  it('lets a described overlay link ride its diagonal, and diagnoses the room it cannot reserve', async () => {
+  it('lets a described overlay link ride its diagonal, and reserves the room that run needs', async () => {
     // Ticket 04 B's fixture under the new rule. `goldens/synthetic/labelled-overlay-run.yaml`: the
     // two ports face each other but are not level, nothing stands between them, so the path is a
-    // 33 px stub, one diagonal and a 33 px stub. `reserveLinkLabelRoom` measures an overlay link's
-    // room along the longest run, which is that diagonal, and 7f grows room on one axis only — so it
-    // reserves nothing, says so, and the stage 9 ladder places the label (stress ticket 20,
-    // question 4). The label still rides the run: upright text on the diagonal's own midpoint.
+    // 4 px stub, one diagonal and a 4 px stub.
+    //
+    // 7f reserves for that diagonal, which stress ticket 30 is what made possible. While the stub
+    // ran from the anchor it was the longest run of a pair standing close together, and 7f reserved
+    // about the stub's own midpoint — inside the source pill, a run no label follows — and then
+    // stopped, saying `LINK_LABEL_ROOM_UNRESERVED`, once the push had made the diagonal longer than
+    // the stub. The 4 px stub is never the longest run, so the diagonal is read from the first pass:
+    // it is the run the label rides, it has reach on the axis 7f grows, and the room it needs is the
+    // text plus two shortening margins plus the clearance at each end that the run starts beyond.
+    // The reservation is now exact — 173.06 px of run for 157.06 px of text — where it used to
+    // overshoot to 199.17 px, and the label is drawn in full either way.
     const model = await run(fixture('labelled-overlay-run'));
     const link = overlayOf(model), points = stubAndOne(model, link);
     const label = model.labels.find(item => item.role === 'link' && item.owner.kind === 'link' && item.owner.id === link.id)!;
     expect(label.omitted).toBeUndefined();
     expect(label.text).toBe('time synchronisation from the site clock');
     expect(label.textRotation ?? 0).toBe(0);
-    expect(model.diagnostics.map(item => item.code)).not.toContain('LINK_LABEL_OMITTED');
-    expect(model.diagnostics.map(item => item.code)).toContain('LINK_LABEL_ROOM_UNRESERVED');
+    expect(model.diagnostics.map(item => item.code)).toEqual([]);
+    // 7f grows one axis, so the room it reserved is the diagonal's reach on x, not its length.
+    expect(Math.abs(points[2]!.x - points[1]!.x))
+      .toBeCloseTo(label.bounds!.width + 2 * LINK_LABEL_GEOMETRY.shortenMargin, 6);
     // The longest run is the diagonal, and the label box is centred on it, one normal gap above.
     const runs = link.path!.segments.map(segment => ({ segment, length: span(segment.from, segment.to) }));
     const longest = runs.reduce((best, item) => item.length > best.length ? item : best).segment;
