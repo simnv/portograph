@@ -434,7 +434,9 @@ now asks for an overlap of area. Two generated corpus inputs are the reproducer;
 `goldens/synthetic/a-claim-lies-on-a-cover-edge.yaml` is the smaller.
 
 **What it does not settle.** The Enterprise NTP sheet still does not publish. Its next failure is
-not an allocation: a link whose two ports face each other **inside** one tier band is walled off
-from its own target by a reserved lane that spans the band, and the router truncates its route
-(stress ticket 11). That is the sixth amendment's open item — a reservation is a wall, and nothing
-separates crossing one from travelling along it — read for a lane instead of for a row.
+not an allocation: a link whose two ports face each other **inside** one tier band has no way left
+across it — a node body on the line, an earlier batch's route above, ten reserved stems below, a
+lane across, and a full tier gap at each of the band's two exits — and the router truncates its
+route (stress ticket 11). That is the sixth amendment's open item, a reservation is a wall and
+nothing separates crossing one from travelling along it, with four walls round one link and no rule
+that says which of them gives way.
