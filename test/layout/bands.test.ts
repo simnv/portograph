@@ -759,20 +759,50 @@ it('settles the linked-group grid again after the tier gap room replay', async (
 }, 120000);
 
 it('holds the group that set a band edge, which x + width does not return exactly', async () => {
-  // Stress ticket 13. A band keeps `x` and `width = max(right) - x`; reading its right edge back as
+  // Stress ticket 13. A band kept `x` and `width = max(right) - x`; reading its right edge back as
   // `x + width` loses up to one ULP, so the group that set that edge was reported outside the band
-  // it is part of. `edge-far` here is 4.547473508864641e-13 past its own band's derived right edge.
+  // it is part of. Ticket 13 answered in the predicate: `contains` here is now the tolerant
+  // comparator the published gates already used, and the last expectation is that invariant.
   //
-  // The first two expectations pin the artifact, not just the symptom: this fixture still carries
-  // the residue, and the repair tolerates it rather than removing it. A later repair that keeps the
-  // band's edges instead — stress ticket 14 is the candidate, it repairs the same class of
-  // recomputed edge — makes the residue zero or negative and breaks this line by design. Reading
-  // that failure as a regression would be wrong; the line below it is the invariant.
+  // Stress ticket 14 is the repair ticket 13 named as the candidate, and it landed: `union` no
+  // longer emits a width whose right edge falls short of the edge it was built from, so the
+  // residue is now zero or negative by design and `residue > 0` is gone. What the first two
+  // expectations pin is the artifact rather than the symptom, as before, but one repair further
+  // on: this fixture still produces coordinates on which the plain `max(right) - x` *would* fall
+  // short, and the band the producer emits nonetheless contains its own rightmost group exactly,
+  // with no tolerance spent. A fixture that stopped carrying the residue would fail the first
+  // line instead of passing vacuously.
   const model = run(await throughBundles(bandEdgeResidue));
   const band = model.tierBands.find(tier => tier.tier === 3)!;
-  const group = model.groups['edge-far']!.bounds!;
-  const residue = right(group) - right(band.bounds!);
-  expect(residue).toBeGreaterThan(0);
-  expect(residue).toBeLessThan(1e-9);
+  const group = model.groups['edge-far']!.bounds!, box = band.bounds!;
+  expect(box.x + (right(group) - box.x)).toBeLessThan(right(group));
+  const residue = right(group) - right(box);
+  expect(residue).toBeLessThanOrEqual(0);
+  expect(residue).toBeGreaterThan(-1e-9);
   expect(validateSkeletonBands(model)).toEqual([]);
 }, 120000);
+
+it('keeps the tolerance on the band comparators that the producer repair no longer exercises', () => {
+  // Stress ticket 13 put `EPS` on `contains` and `overlaps` here; stress ticket 14 then removed the
+  // residue at the producer, so the fixture above passes with exact comparators too and the
+  // tolerance became unguarded — a later edit could delete it and the suite would stay green. Five
+  // group-box producers still recover a width from an absolute edge (`fitRegionGroup`,
+  // `fitGroupBox`, `bars`, `rebuildBoxes`, and the region boxes), so the tolerance is still the
+  // contract and this is its own guard, stated directly rather than through a fixture.
+  const band = (bounds: Rect) => ({ tier: 0, groups: ['a', 'b'], bounds });
+  const model = (a: Rect, b: Rect, bounds: Rect) => ({
+    groups: { a: { id: 'a', tier: 0, nodes: [], bounds: a }, b: { id: 'b', tier: 0, nodes: [], bounds: b } },
+    tierBands: [band(bounds)],
+  } as unknown as LayoutModel);
+  const box = { x: 0, y: 0, width: 500, height: 100 }, beside = { x: 500, y: 0, width: 500, height: 100 };
+  const span = { x: 0, y: 0, width: 1000, height: 100 };
+  // A residue no placement rule could have produced is inside the band and clear of its neighbour.
+  expect(validateSkeletonBands(model({ ...box, x: -1e-9, width: 500 + 1e-9 }, beside, span))).toEqual([]);
+  expect(validateSkeletonBands(model(box, { ...beside, x: 500 - 1e-9 }, span))).toEqual([]);
+  // A placement distance is not, and neither guard may pass one: 1e-3 px is four orders under the
+  // smallest distance any rule names and still fails.
+  expect(validateSkeletonBands(model({ ...box, x: -1e-3, width: 500 + 1e-3 }, beside, span)))
+    .toEqual(['Group a is outside its tier band']);
+  expect(validateSkeletonBands(model(box, { ...beside, x: 500 - 1e-3, width: 500 + 1e-3 }, span)))
+    .toEqual(['Groups a and b overlap']);
+});

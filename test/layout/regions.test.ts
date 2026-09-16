@@ -358,6 +358,34 @@ links: [[a.p, c.p], [a.q, b.p]]`;
     expect(model.diagnostics.filter(d => d.code === 'PLACEMENT_NON_CONVERGENCE')).toHaveLength(1);
     expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
   });
+  it('stress ticket 14: union reaches the edge it was built from', () => {
+    // `hub-t3-p3-f1-s2` measured: the canvas keeps its right edge while 7c widens a group to the
+    // left, and `right - x` over that span rounds down, so `expandCanvas` emitted a canvas one ULP
+    // inside the canvas it was built from and `Canvas may only expand` refused it.
+    const wide = { x: -229.88997395833337, y: -3.5, width: 345.05664062500006, height: 7 };
+    const far = { x: 13.666666666666671, y: -1.25, width: 283, height: 2.5 };
+    expect(wide.x + (right(far) - wide.x)).toBeLessThan(right(far));
+    const box = union([wide, far]);
+    expect(box.x).toBe(wide.x);
+    expect(right(box)).toBeGreaterThanOrEqual(right(far));
+    expect(box.y).toBe(wide.y);
+    expect(box.y + box.height).toBeGreaterThanOrEqual(wide.y + wide.height);
+  });
+  it('stress ticket 14: keeps the exact width of a node whose centring moves neither edge', async () => {
+    const input = flanks(lanes(rows(await placed(fixture('centring-keeps-a-width-it-recomputes')))));
+    // Every leaf port lands inside its own node box, so centring aligns the three feeds without
+    // moving an edge. Recovering the width through the right edge threw `Centring cannot shrink
+    // width` on `leaf-b`, whose box starts below 1024 and ends above it.
+    const model = centre(input);
+    for (const id of Object.keys(model.nodes)) {
+      expect(model.nodes[id]!.size!.width).toBe(input.nodes[id]!.size!.width);
+      expect(model.nodes[id]!.bounds!.width).toBe(input.nodes[id]!.size!.width);
+    }
+    const box = model.nodes['leaf-b']!.bounds!;
+    expect(box.x).toBeLessThan(1024);
+    expect(right(box)).toBeGreaterThan(1024);
+    expect(right(box) - box.x).not.toBe(box.width);
+  });
   it('ticket 01: packs the tier when a widened child swallows the group beside it', async () => {
     const input = flanks(lanes(rows(await placed(fixture('widened-child-packs-tier')))));
     const model = bands(bundles(bars(centre(input))));

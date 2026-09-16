@@ -78,8 +78,19 @@ function alignSide(node: LayoutNode, side: Side, targets: Map<string, number>, l
   }
   if (!kept.length) return new Set();
   const first = kept[0]!, last = kept[kept.length - 1]!;
+  // The width the alignment needs is what each edge moved outward, added to the width the node
+  // already has. `Math.max(oldRight, grown) - box.x` states the same thing through two absolute
+  // edges, and a rectangle recovered through an edge it was not stored with does not come back:
+  // `(box.x + box.width) - box.x` returns `box.width` only when `box.x + box.width` is itself
+  // representable, and it loses up to half a ULP of the sum's binade when it is not — the coarse
+  // widths this rule works in make a binade crossing the case that does it. A node that moved
+  // neither edge then ended narrower than the width it kept. Both terms below are non-negative, so
+  // centring widens the node or leaves it alone, in the arithmetic and not only in the intent the
+  // guards in `mutation.ts` read. It can leave the right edge up to two ULP short of `grown`; no
+  // consumer reads that edge, and the last kept port sits 10 + pitch / 2 inside it.
+  const oldX = box.x, grown = last.x + (ports.length - 1 - last.index) * pitch + 10 + pitch / 2;
   box.x = Math.min(box.x, first.x - first.index * pitch - 10 - pitch / 2);
-  box.width = Math.max(oldRight, last.x + (ports.length - 1 - last.index) * pitch + 10 + pitch / 2) - box.x;
+  box.width += (oldX - box.x) + Math.max(0, grown - oldRight);
   node.size!.width = box.width;
   for (const port of node.ports) {
     if (port.side === 'left') port.anchor!.x = box.x;

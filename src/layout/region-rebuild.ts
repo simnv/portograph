@@ -8,7 +8,7 @@ import { rebuildNodeGeometry } from './node-geometry.js';
 import { rebuildBarDrops, shapeBars } from './bars.js';
 import { prepareBundleGeometry } from './bundle-geometry.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
-import { moveGroup, rebuildBands, union } from './skeleton-geometry.js';
+import { moveGroup, rebuildBands, span, union } from './skeleton-geometry.js';
 
 const barStages = ['bars', 'bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'];
 
@@ -39,10 +39,12 @@ function rebuildBarGeometry(draft: LayoutModel, before: readonly TierBand[] = dr
   if (!Object.keys(draft.groups).length) return;
   const occupied = union(Object.values(draft.groups).map(group => group.bounds!)), old = draft.canvas ?? occupied;
   const x = Math.min(old.x, occupied.x), y = Math.min(old.y, occupied.y);
+  // `span` for the same reason `rebuildBoxes` uses it: `Canvas may only expand` is exact, and a
+  // width recovered from an absolute edge can land one ULP inside the canvas it was built from.
   draft.canvas = {
     x, y,
-    width: Math.max(old.x + old.width, occupied.x + occupied.width) - x,
-    height: Math.max(old.y + old.height, occupied.y + occupied.height) - y,
+    width: span(x, Math.max(old.x + old.width, occupied.x + occupied.width)),
+    height: span(y, Math.max(old.y + old.height, occupied.y + occupied.height)),
   };
 }
 
