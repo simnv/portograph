@@ -610,7 +610,7 @@ own residue — a link whose two ports face each other inside one tier band.
 
 And a side the rule declines keeps the **side-wide** exemption, so an earlier batch is still free to
 run across a later link's stem there. The narrowed exemption is given only where the pitch could be
-reserved; everywhere else the original defect stands, unrepaired and now named. Stress ticket 19.
+reserved; everywhere else the original defect stands, unrepaired and now named. Stress ticket 22.
 
 One risk is bounded by measurement rather than by argument. The frozen-geometry test reads placed
 geometry — foreign nodes, foreign group boxes and **foreign** group titles — and stage 7f moves some
