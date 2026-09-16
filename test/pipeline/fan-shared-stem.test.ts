@@ -4,6 +4,7 @@ import { layout, parse, restoreFinalLayout, score } from '../../src/index.js';
 import { MIN_STEM, edgeMargin, fanPitch, priorSideRows, sideRowBudget } from '../../src/layout/bundle-geometry.js';
 import { DEFAULT_STROKE_WIDTHS, routedStrokeWidth } from '../../src/theme/geometry.js';
 import { nudgingDistance } from '../../src/layout/bands.js';
+import { stemPlan } from '../../src/layout/sides-two.js';
 import { routeParameters } from '../../src/route/plan.js';
 import type { LayoutModel, Owner } from '../../src/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -365,8 +366,14 @@ it('stress 10: a checkpoint inside a link\'s own reserved run is not hemmed, and
   // the second had to reach, and stage 8 threw `Routed gap on link-3 is not orthogonal`.
   const model = await run(fixture('a-reserved-approach-cannot-be-hemmed'));
   expect(model.diagnostics.some(item => item.code === 'FAN_BRANCH_HEMMED')).toBe(false);
+  // The point the pass measures at a bare port is the depth stage 8 asks for there, which is
+  // `stemCheckpoint`'s and not the plain 15 px stem.
+  const closedPoint = (item: LayoutModel, node: string): { x: number; y: number } => {
+    const port = item.nodes[node]!.ports.find(one => one.ref.name === 'u')!;
+    return { x: port.anchor!.x, y: port.anchor!.y - stemPlan(item, port).depth };
+  };
   const target = model.nodes['right']!.ports.find(port => port.ref.name === 'u')!;
-  const closed = { x: target.anchor!.x, y: target.anchor!.y - MIN_STEM };
+  const closed = closedPoint(model, 'right');
   // The descent really crosses that point, so the pass had something to measure and let it be.
   const descent = model.links.find(link => link.id === 'link-4')!.sharedRuns!.to!
     .find(run => run.from.y === run.to.y)!;
@@ -384,4 +391,18 @@ it('stress 10: a checkpoint inside a link\'s own reserved run is not hemmed, and
   expect(report.passed).toBe(false);
   expect(report.gates.G4!.violations.map(item => item.code)).toEqual(['collinear-overlap']);
   expect(report.gates.G6!.violations.map(item => item.code)).toEqual(['parallel-clearance']);
+
+  // The same diagram with one feed off `right`, so that port carries a single link and its end
+  // reserves nothing: the descent now closes the only approach stage 8 has, and the branch gives
+  // way. One link decides it, so the rule is pinned in both directions and no-op is not an answer.
+  const bare = await run(fixture('a-reserved-approach-cannot-be-hemmed').replace('  - [feed-c.d, right.u]\n', ''));
+  expect(bare.diagnostics.some(item => item.code === 'FAN_BRANCH_HEMMED')).toBe(true);
+  const alone = bare.links.filter(link => link.attachments!.to.node === 'right');
+  expect(alone).toHaveLength(1);
+  expect(alone[0]!.sharedRuns?.to ?? []).toEqual([]);
+  const across = bare.links.find(link => link.id === 'link-3')!.sharedRuns!.to!;
+  // The hemming branch kept its stems and nothing else, and the stems never reach that point.
+  expect(across.every(runItem => runItem.from.x === runItem.to.x)).toBe(true);
+  const stillClosed = closedPoint(bare, 'right');
+  expect(across.every(runItem => Math.abs(runItem.from.x - stillClosed.x) > nudgingDistance(bare))).toBe(true);
 }, 60000);
