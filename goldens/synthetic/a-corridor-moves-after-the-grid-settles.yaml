@@ -15,7 +15,7 @@
 # model is the fixed point of both, and `row-12` and `row-13` both span
 # 926.2877604166666 … 1400.9654947916665.
 #
-# Shrunk from the Enterprise NTP sheet, which this claim stopped from publishing at all, and
+# Stress ticket 37. Shrunk from the Enterprise NTP sheet, which this claim stopped from publishing at all, and
 # renamed as far as the reproduction allows: the failure is a 0.28 px margin, so every measured
 # string the rename would have changed was tested and reverted where it moved the geometry.
 # The diagram is produced. It is a hard sheet to route and G4, G5 and G6 fail on it at

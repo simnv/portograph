@@ -29,7 +29,7 @@ const rowsOwed = readFileSync(new URL('../../goldens/synthetic/a-tier-gap-grows-
 const bandEdgeResidue = readFileSync(new URL('../../goldens/synthetic/a-band-holds-the-group-that-set-its-edge.yaml', import.meta.url), 'utf8');
 /** Stress ticket 19's fixture: the one shape whose label plan answers from the `firstFree` walk. */
 const grownLabel = readFileSync(new URL('../../goldens/synthetic/a-grown-label-lands-inside-its-inset.yaml', import.meta.url), 'utf8');
-/** Stress ticket 33's fixture: a corridor follows its child out of the window the grid was declined. */
+/** Stress ticket 37's fixture: a corridor follows its child out of the window the grid was declined. */
 const corridorMoves = readFileSync(new URL('../../goldens/synthetic/a-corridor-moves-after-the-grid-settles.yaml', import.meta.url), 'utf8');
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const right = (box: Rect): number => box.x + box.width;
@@ -839,7 +839,7 @@ it('stress ticket 19: a grown group label lands inside the inset the growth aske
   expect(label.x).toBeGreaterThan(group.x + GROUP_LABEL_GEOMETRY.horizontalInset);
 }, 120000);
 
-it('stress ticket 33: a corridor that follows its child leaves the grid settled against the corridors it replaced', async () => {
+it('stress ticket 37: a corridor that follows its child leaves the grid settled against the corridors it replaced', async () => {
   // `reseatLanes` is 7f's last step, and `laneSidesHold` — which decides whether a linked pair may
   // share an x-extent — reads lane geometry. Here the corridor of `lab4crt001` → `transit-a001`
   // stands 0.2815 px inside the extent `row-12` and `row-13` would share, so the grid declines the
