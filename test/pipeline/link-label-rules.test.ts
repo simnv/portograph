@@ -100,7 +100,8 @@ links: [[flank.p, peer.p, {label: ${text}}]]`);
   const split = (Math.max(short.nodes.flank!.bounds!.x + short.nodes.flank!.bounds!.width, flankPill.x + flankPill.width)
     + Math.min(peer.bounds!.x, peerPill.x)) / 2;
   const corridor = (x: number) => ({ id: 'lane:"transit":9', owner: { kind: 'link' as const, id: 'transit' },
-    group: 'tier-group', tier: 9, side: 'right' as const, x, bounds: { x: x - 17, y: 0, width: 34, height: 10 } });
+    layer: 'routed' as const, group: 'tier-group', tier: 9, side: 'right' as const, x,
+    bounds: { x: x - 17, y: 0, width: 34, height: 10 } });
 
   // A corridor at the split: the room lies beyond geometry that cannot move, so nothing is reserved.
   const beyond = copy(short);

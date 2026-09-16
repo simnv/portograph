@@ -577,16 +577,13 @@ export function alignLinkedGroupGrid(model: LayoutModel): boolean {
       const low = Math.min(a.bounds![pos], b.bounds![pos]);
       const high = Math.max(a.bounds![pos] + a.bounds![len], b.bounds![pos] + b.bounds![len]);
       const extent = high - low;
-      const dbg = process.env.PG_DEBUG_GRID ? (why: string) => console.error('GRID', a.id, b.id, axis, why,
-        'extent', extent, 'growA', (extent - a.bounds![len]) / extent, 'growB', (extent - b.bounds![len]) / extent) : () => {};
-      if (Math.abs(a.bounds![len] - extent) <= PLACEMENT_EPS && Math.abs(b.bounds![len] - extent) <= PLACEMENT_EPS) { dbg('settled'); continue; }
+      if (Math.abs(a.bounds![len] - extent) <= PLACEMENT_EPS && Math.abs(b.bounds![len] - extent) <= PLACEMENT_EPS) continue;
       if ((extent - a.bounds![len]) / extent > GROUP_GRID_MAX_GROWTH + PLACEMENT_EPS
-        || (extent - b.bounds![len]) / extent > GROUP_GRID_MAX_GROWTH + PLACEMENT_EPS) { dbg('cap'); continue; }
+        || (extent - b.bounds![len]) / extent > GROUP_GRID_MAX_GROWTH + PLACEMENT_EPS) continue;
       const proposed = [a, b].map(group => ({ group, bounds: { ...group.bounds!, [pos]: low, [len]: extent } as Rect }));
       const others = Object.values(model.groups).filter(group => group !== a && group !== b);
-      if (proposed.some(item => others.some(other => rectOverlap(item.bounds, other.bounds!)))) { dbg('overlap'); continue; }
-      if (axis === 'x' && !laneSidesHold(model, proposed)) { dbg('lanes ' + JSON.stringify(model.lanes.map(l => [l.tier, l.x]))); continue; }
-      dbg('merged');
+      if (proposed.some(item => others.some(other => rectOverlap(item.bounds, other.bounds!)))) continue;
+      if (axis === 'x' && !laneSidesHold(model, proposed)) continue;
       for (const item of proposed) item.group.bounds = item.bounds;
       moved = changed = true;
     }

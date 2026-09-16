@@ -689,7 +689,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     // so the label bands 7f has just reserved keep their height and their clearance — but a lane is
     // an input to two of the plans inside those bands, and they are settled again below.
     const heldLanes = clone(draft.lanes);
-    if (!process.env.PG_NO_RESEAT && reseatLanes(draft)) {
+    if (reseatLanes(draft)) {
       rebuildLaneExtents(draft);
       // Three things the move can spoil, and it is refused rather than allowed to. It may open an
       // alignment 7c could not reach, and the centring invariant would then read the published
@@ -723,7 +723,8 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
         // model has to be their fixed point (ADR-0015: a derived plan a later stage re-derives may
         // read only what is frozen when both readings happen). Neither moves a node: the grid grows
         // box extents onto edges that already exist, and the replan places labels.
-        if (!process.env.PG_NO_RESETTLE) { alignLinkedGroupGrid(draft); replanGroupLabels(draft); }
+        alignLinkedGroupGrid(draft);
+        replanGroupLabels(draft);
       } else draft.diagnostics = draft.diagnostics.filter(item => item.code !== 'LANE_FOLLOWS_ITS_CHILD');
     }
   }

@@ -29,6 +29,8 @@ const rowsOwed = readFileSync(new URL('../../goldens/synthetic/a-tier-gap-grows-
 const bandEdgeResidue = readFileSync(new URL('../../goldens/synthetic/a-band-holds-the-group-that-set-its-edge.yaml', import.meta.url), 'utf8');
 /** Stress ticket 19's fixture: the one shape whose label plan answers from the `firstFree` walk. */
 const grownLabel = readFileSync(new URL('../../goldens/synthetic/a-grown-label-lands-inside-its-inset.yaml', import.meta.url), 'utf8');
+/** Stress ticket 33's fixture: a corridor follows its child out of the window the grid was declined. */
+const corridorMoves = readFileSync(new URL('../../goldens/synthetic/a-corridor-moves-after-the-grid-settles.yaml', import.meta.url), 'utf8');
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const right = (box: Rect): number => box.x + box.width;
 const bottom = (box: Rect): number => box.y + box.height;
@@ -836,3 +838,21 @@ it('stress ticket 19: a grown group label lands inside the inset the growth aske
   expect(right(group) - GROUP_LABEL_GEOMETRY.horizontalInset - right(label)).toBe(0);
   expect(label.x).toBeGreaterThan(group.x + GROUP_LABEL_GEOMETRY.horizontalInset);
 }, 120000);
+
+it('stress ticket 33: a corridor that follows its child leaves the grid settled against the corridors it replaced', async () => {
+  // `reseatLanes` is 7f's last step, and `laneSidesHold` — which decides whether a linked pair may
+  // share an x-extent — reads lane geometry. Here the corridor of `lab4crt001` → `transit-a001`
+  // stands 0.2815 px inside the extent `row-12` and `row-13` would share, so the grid declines the
+  // merge; the corridor then follows its child 603 px to the right, and the window is free. The
+  // publication replay merged what the production pass could not, and threw. Both the grid and the
+  // label plan are settled again after the move.
+  const model = run(await throughBundles(corridorMoves));
+  const twelve = model.groups['row-12']!.bounds!, thirteen = model.groups['row-13']!.bounds!;
+  expect(twelve.x).toBe(thirteen.x);
+  expect(twelve.width).toBe(thirteen.width);
+  // The replay is the claim itself: a settled model does not move under it.
+  const trial = copy(model);
+  expect(alignLinkedGroupGrid(trial)).toBe(false);
+  // And the corridor really did move, which is what made the merge available.
+  expect(model.diagnostics.some(item => item.code === 'LANE_FOLLOWS_ITS_CHILD')).toBe(true);
+}, 180000);

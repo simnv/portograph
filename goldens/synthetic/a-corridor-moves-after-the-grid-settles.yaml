@@ -1,0 +1,206 @@
+# Expected: `row-12` and `row-13` are joined by vertical links, so they share one x-extent
+# (ADR-0012) — and on this diagram the merge is the one `laneSidesHold` declines, because the
+# corridor the link `lab4crt001` → `transit-a001` owns across tier 6 stands at x
+# 909.5692545572916, its rectangle reaching 926.5692545572916, and the shared extent starts at
+# 926.2877604166666: 0.2815 px inside it.
+#
+# 7f's last step then moves that corridor to its child's port x, 1513.2303873697915, and the window
+# it blocked is free. Six corridors follow their children here; this is the one that matters.
+#
+# So the plans 7f settled before the move are settled against corridors the diagram does not
+# publish, and `validateGroupLabelBands` — which re-derives both the grid and the label plan —
+# refuses the result: `Linked groups do not share the grid their links require`, `row-12`
+# 952.5692545572916 wide 445.6430664062499, which the replay would make 926.2877604166666 wide
+# 474.6777343749999. The grid and the labels are settled again after the move, so the published
+# model is the fixed point of both, and `row-12` and `row-13` both span
+# 926.2877604166666 … 1400.9654947916665.
+#
+# Shrunk from the Enterprise NTP sheet, which this claim stopped from publishing at all, and
+# renamed as far as the reproduction allows: the failure is a 0.28 px margin, so every measured
+# string the rename would have changed was tested and reverted where it moved the geometry.
+# The diagram is produced. It is a hard sheet to route and G4, G5 and G6 fail on it at
+# Q 0.4879135816981557; that is the routing backlog, not this claim.
+portograph: 2
+groups:
+  row-00: { tier: 0, label: "Row 0" }
+  key: { tier: 1, label: "Key" }
+  zone-1: { tier: 2, label: "Zone 1" }
+  zone-2: { tier: 2, label: "Zone 2" }
+  zone-3: { tier: 2, label: "Zone 3" }
+  row-07: { tier: 3, label: "Row 7" }
+  row-10: { tier: 4, label: "Row 10" }
+  row-11: { tier: 5, label: "Row 11" }
+  zone-6: { tier: 6, label: "Zone 6" }
+  zone-7: { tier: 6, label: "Zone 6" }
+  row-12: { tier: 6, label: "Row 12" }
+  zone-4: { tier: 7, label: "Zone 4" }
+  zone-5: { tier: 7, label: "Zone 5" }
+  row-13: { tier: 7, label: "Row 13" }
+  zone-6b: { tier: 8, label: "Zone 16" }
+  zone-7b: { tier: 8, label: "Zone 16" }
+  row-14: { tier: 8, label: "Row 14" }
+  zone-4b: { tier: 9, label: "Zone 16" }
+  zone-5b: { tier: 9, label: "Zone 16" }
+  row-15: { tier: 9, label: "Row 15" }
+  sc-upper: { tier: 10, label: "Zone SC upper" }
+  sb-upper: { tier: 10, label: "Zone SA upper" }
+  sa-upper: { tier: 10, label: "Zone SA upper" }
+  sc-lower: { tier: 11, label: "Zone SC lower" }
+  sb-lower: { tier: 11, label: "Zone SA lower" }
+  sa-lower: { tier: 11, label: "Zone SA lower" }
+  sc-edges: { tier: 12, label: "Zone SC edges" }
+  sb-edges: { tier: 12, label: "Zone SB edges" }
+  sa-edges: { tier: 12, label: "Zone SA edges" }
+nodes:
+  key-entry: { group: key, class: rr, label: "Key entry" }
+  src-a001: { group: row-00, class: router, label: "src-a001" }
+  transit-a001: { group: row-07, class: tbr, label: "transit-a001" }
+  lab1wrp001: { group: zone-1, class: provider, label: "lab1wrp001" }
+  lab1wrp003: { group: zone-1, class: tbr, label: "lab1wrp003" }
+  lab1wrp004: { group: zone-1, class: rr, label: "lab1wrp004" }
+  lab1clk001: { group: zone-1, class: router, label: "lab1clk001" }
+  lab2clk001: { group: zone-2, class: provider, label: "lab2clk001" }
+  lab3wrp001: { group: zone-3, class: tbr, label: "lab3wrp001" }
+  lab3wrp002: { group: zone-3, class: rr, label: "lab3wrp002" }
+  lab3wrp003: { group: zone-3, class: provider, label: "lab3wrp003" }
+  lab3wrp004: { group: zone-3, class: router, label: "lab3wrp004" }
+  lab3clk001: { group: zone-3, class: rr, label: "lab3clk001" }
+  lab3wan001: { group: zone-3, class: provider, label: "lab3wan001" }
+  lab4crt001: { group: zone-4, class: router, label: "lab4crt001" }
+  lab4crt003: { group: row-11, class: rr, label: "lab4crt003" }
+  lab4crt004: { group: row-11, class: provider, label: "lab4crt004" }
+  lab4clk001: { group: zone-4, class: router, label: "lab4clk001" }
+  lab4clk002: { group: row-14, class: tbr, label: "lab4clk002" }
+  lab4slb002: { group: zone-4b, class: provider, label: "lab4slb002" }
+  lab4clk003: { group: row-14, class: router, label: "lab4clk003" }
+  lab4clk004: { group: row-14, class: tbr, label: "lab4clk004" }
+  lab4rlb002: { group: zone-4, class: provider, label: "lab4rlb002" }
+  lab5crt001: { group: zone-5, class: router, label: "lab5crt001" }
+  lab5clk001: { group: zone-5, class: router, label: "lab5clk001" }
+  lab5clk002: { group: row-14, class: tbr, label: "lab5clk002" }
+  lab5slb001: { group: row-15, class: rr, label: "lab5slb001" }
+  lab5slb002: { group: zone-5b, class: provider, label: "lab5slb002" }
+  lab5rrt001: { group: row-12, class: router, label: "lab5rrt001" }
+  lab5rrt002: { group: row-12, class: tbr, label: "lab5rrt002" }
+  lab5rsw002: { group: row-13, class: provider, label: "lab5rsw002" }
+  lab5clk003: { group: row-14, class: router, label: "lab5clk003" }
+  lab5clk004: { group: row-14, class: tbr, label: "lab5clk004" }
+  lab5rlb001: { group: row-15, class: rr, label: "lab5rlb001" }
+  lab6crt001: { group: zone-6, class: router, label: "lab6crt001" }
+  lab6crt002: { group: row-10, class: tbr, label: "lab6crt002" }
+  lab6srt002: { group: row-12, class: tbr, label: "lab6srt002" }
+  lab6ssw001: { group: row-13, class: rr, label: "lab6ssw001" }
+  lab6ssw002: { group: row-13, class: provider, label: "lab6ssw002" }
+  lab6clk001: { group: zone-6b, class: router, label: "lab6clk001" }
+  lab6clk002: { group: zone-6b, class: tbr, label: "lab6clk002" }
+  lab6slb001: { group: row-15, class: rr, label: "lab6slb001" }
+  lab6slb002: { group: zone-6, class: provider, label: "lab6slb002" }
+  lab7crt001: { group: zone-7, class: router, label: "lab7crt001" }
+  lab7srt001: { group: row-12, class: router, label: "lab7srt001" }
+  lab7srt002: { group: row-12, class: tbr, label: "lab7srt002" }
+  lab7ssw001: { group: row-13, class: rr, label: "lab7ssw001" }
+  lab7ssw002: { group: row-13, class: provider, label: "lab7ssw002" }
+  lab7clk001: { group: zone-7b, class: router, label: "lab7clk001" }
+  lab7clk002: { group: zone-7b, class: tbr, label: "lab7clk002" }
+  lab7slb001: { group: row-15, class: rr, label: "lab7slb001" }
+  lab7slb002: { group: zone-7, class: provider, label: "lab7slb002" }
+  sa-host1: { group: sa-upper, class: router, label: "SA server1" }
+  sa-host2: { group: sa-upper, class: tbr, label: "SA server2" }
+  sa-host003: { group: sa-upper, class: rr, label: "Network Devices" }
+  sa-host4: { group: sa-lower, class: provider, label: "SA server4" }
+  sa-host5: { group: sa-lower, class: router, label: "SA server5" }
+  sa-edge1: { group: sa-edges, class: tbr, label: "sa-edge1" }
+  sa-edge2: { group: sa-edges, class: rr, label: "sa-edge2" }
+  sa-edge3: { group: sa-edges, class: provider, label: "sa-edge3" }
+  sb-host1: { group: sb-upper, class: router, label: "AREA server1" }
+  sb-host4: { group: sb-lower, class: tbr, label: "AREA server4" }
+  sb-edge1: { group: sb-edges, class: rr, label: "sb-edge1" }
+  sc-host1: { group: sc-upper, class: provider, label: "sc-host1" }
+  sc-host4: { group: sc-lower, class: router, label: "sc-host4" }
+  sc-edge1: { group: sc-edges, class: tbr, label: "sc-edge1" }
+links:
+  - [lab1clk001, lab2clk001, { class: sync, label: sync }]
+  - [lab1clk001, lab3clk001, { class: sync, label: sync }]
+  - [lab1clk001, lab4clk001, { class: sync, label: sync }]
+  - [lab1clk001, lab4clk002, { class: sync, label: sync }]
+  - [lab1clk001, lab4clk003, { class: sync, label: sync }]
+  - [lab1clk001, lab4clk004, { class: sync, label: sync }]
+  - [lab1clk001, lab5clk001, { class: sync, label: sync }]
+  - [lab1clk001, lab5clk002, { class: sync, label: sync }]
+  - [lab1clk001, lab5clk003, { class: sync, label: sync }]
+  - [lab1clk001, lab6clk001, { class: sync, label: sync }]
+  - [lab1clk001, lab6clk002, { class: sync, label: sync }]
+  - [lab1clk001, lab7clk001, { class: sync, label: sync }]
+  - [lab1clk001, lab7clk002, { class: sync, label: sync }]
+  - [lab2clk001, lab3clk001, { class: sync, label: sync }]
+  - [lab2clk001, lab4clk001, { class: sync, label: sync }]
+  - [lab2clk001, lab6clk002, { class: sync, label: sync }]
+  - [lab2clk001, lab7clk001, { class: sync, label: sync }]
+  - [lab3clk001, lab4clk001, { class: sync, label: sync }]
+  - [lab3clk001, lab4clk002, { class: sync, label: sync }]
+  - [lab3clk001, lab4clk003, { class: sync, label: sync }]
+  - [lab3clk001, lab4clk004, { class: sync, label: sync }]
+  - [lab3clk001, lab5clk002, { class: sync, label: sync }]
+  - [lab3clk001, lab5clk003, { class: sync, label: sync }]
+  - [lab3clk001, lab5clk004, { class: sync, label: sync }]
+  - [lab3clk001, lab6clk001, { class: sync, label: sync }]
+  - [lab3clk001, lab6clk002, { class: sync, label: sync }]
+  - [lab4clk001, lab4clk003, { class: sync, label: sync }]
+  - [lab4clk001, lab7clk002, { class: sync, label: sync }]
+  - [lab4clk002, lab4clk003, { class: sync, label: sync }]
+  - [lab4clk002, lab4clk004, { class: sync, label: sync }]
+  - [lab4clk002, lab5clk002, { class: sync, label: sync }]
+  - [lab4clk002, lab5clk003, { class: sync, label: sync }]
+  - [lab4clk003, lab5clk002, { class: sync, label: sync }]
+  - [lab4clk003, lab5clk004, { class: sync, label: sync }]
+  - [lab4clk003, lab7clk001, { class: sync, label: sync }]
+  - [lab4clk003, lab7clk002, { class: sync, label: sync }]
+  - [lab4clk004, lab6clk002, { class: sync, label: sync }]
+  - [lab4clk004, lab7clk001, { class: sync, label: sync }]
+  - [lab4clk004, lab7clk002, { class: sync, label: sync }]
+  - [lab5clk001, lab5clk003, { class: sync, label: sync }]
+  - [lab5clk001, lab5clk004, { class: sync, label: sync }]
+  - [lab5clk001, lab6clk001, { class: sync, label: sync }]
+  - [lab5clk001, lab6clk002, { class: sync, label: sync }]
+  - [lab5clk002, lab5clk004, { class: sync, label: sync }]
+  - [lab5clk002, lab6clk001, { class: sync, label: sync }]
+  - [lab5clk002, lab6clk002, { class: sync, label: sync }]
+  - [lab5clk002, lab7clk001, { class: sync, label: sync }]
+  - [lab5clk003, lab6clk001, { class: sync, label: sync }]
+  - [lab5clk004, lab7clk001, { class: sync, label: sync }]
+  - [lab5clk004, lab7clk002, { class: sync, label: sync }]
+  - [lab7clk001, lab7clk002, { class: sync, label: sync }]
+  - [lab1wrp001, lab1wrp003]
+  - [lab1wrp001, lab1wrp004]
+  - [lab3wrp001, lab3wrp002]
+  - [lab3wrp001, lab3wrp003]
+  - [lab3wrp001, lab3wrp004]
+  - [lab3wrp002, lab3wrp003]
+  - [lab3wan001, src-a001]
+  - [lab4crt001, transit-a001]
+  - [lab6crt001, transit-a001]
+  - [lab7crt001, transit-a001]
+  - [lab1wrp001, transit-a001]
+  - [lab4rlb002, sa-edge3, { label: shared address }]
+  - [lab5rlb001, sa-edge1, { label: shared address }]
+  - [lab5rlb001, sa-edge2, { label: shared address }]
+  - [lab5rlb001, sa-edge3, { label: shared address }]
+  - [lab4clk002, sa-host1]
+  - [lab5clk001, sa-host1]
+  - [lab5clk001, sa-host2]
+  - [lab5clk001, sa-host003]
+  - [lab5clk002, sa-host003]
+  - [lab4slb002, sa-host5, { label: shared address }]
+  - [lab5slb001, sa-host4, { label: shared address }]
+  - [lab6slb002, sb-edge1, { label: shared address }]
+  - [lab6clk002, sb-host1]
+  - [lab4clk001, sb-host1]
+  - [lab6slb002, sb-host4, { label: shared address }]
+  - [lab7slb002, sc-edge1, { label: shared address }]
+  - [lab7clk001, sc-host1]
+  - [lab7clk002, sc-host1]
+  - [lab5clk002, sc-host1]
+  - [lab4crt003, lab4crt004]
+  - [lab7srt002, lab7ssw002]
+  - [lab7ssw001, lab7clk001]
+  - [lab7ssw002, lab7clk002]
