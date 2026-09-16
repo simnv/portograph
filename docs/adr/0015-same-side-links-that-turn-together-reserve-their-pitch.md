@@ -423,6 +423,16 @@ the pitch allows. Measured on the Enterprise NTP sheet, the gap that owes 52 row
 to 51; 5/6 seats 47 of 48, 8/9 seats 33 of 34, and all twelve gaps allocate where three used to
 refuse.
 
+**And a run that lies on a reservation's cover edge is clear of it.** The two rules above put a run
+there by construction: the search seats a row past a reserved approach, which lands it exactly one
+cover margin from the boundary the approach stands on. A cover is its run grown by
+`10 + (the two strokes) / 2`, so a centreline on that edge keeps the 10 px of visible clearance G6
+asks for and owes nothing more. The tenth amendment's claim scanned those covers with `segmentRect`,
+which counts a zero-area touch as a hit, so the approach was handed to libavoid instead of claimed,
+and libavoid answered with a route that stops at the checkpoint and never reaches the port. The scan
+now asks for an overlap of area. Two generated corpus inputs are the reproducer;
+`goldens/synthetic/a-claim-lies-on-a-cover-edge.yaml` is the smaller.
+
 **What it does not settle.** The Enterprise NTP sheet still does not publish. Its next failure is
 not an allocation: a link whose two ports face each other **inside** one tier band is walled off
 from its own target by a reserved lane that spans the band, and the router truncates its route
