@@ -26,7 +26,7 @@
 # `[link-1, link-3]` at x 290.50 / 288.50 and `[link-2, link-4]` at x 217.00 / 215.00. Those are not
 # this rule's: two allocated runs of one gap may stand 2 px apart, because the row order forbids
 # only an exact shared x and the clearance scan never measures a candidate against the other runs of
-# its own gap. It is present on `main` at 0288048 too. Stress ticket 14 owns it. The fixture exists
+# its own gap. It is present on `main` at 0288048 too. Stress ticket 16 owns it. The fixture exists
 # for the seating, and the seating is what the test asserts.
 portograph: 2
 groups:

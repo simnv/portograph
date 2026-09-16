@@ -413,7 +413,7 @@ leaving it to a batch buys nothing.
 A left-out run is a crosser of every row the gap seated, and a crosser's exemption is of the whole
 horizontal cover — nothing separates crossing a row from travelling along one. Rows pack at 17.5 px
 with ±11.5 px covers, so a packed gap leaves such a run no clear band to traverse in. Stress
-ticket 13.
+ticket 15.
 
 A link transiting several tiers reserves a lane at each, ordered from source to target even for
 upward links. Prefer in-span corridors. When they do not fit, retain source geometry, reserve an

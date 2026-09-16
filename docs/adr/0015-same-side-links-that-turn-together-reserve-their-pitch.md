@@ -477,7 +477,7 @@ amendment a left-out run was rare; it is now what every covered approach produce
 Enterprise NTP sheet, gaps 5/6, 6/7 and 9/10 each leave the left-out run a 15.00 px strip at the
 top, which is the headroom the high boundary owes the approaches standing on it. Both places the
 traverse can go are room reserved for something else, and libavoid chooses between them. Stress
-ticket 13; it is stress ticket 12 seen from the other side.
+ticket 15; it is stress ticket 12 seen from the other side.
 
 A second item this amendment does not touch: two allocated runs of **one** gap may stand 2 px apart.
 The row order forbids only an exact shared x, and the clearance scan measures a candidate against
@@ -485,4 +485,4 @@ frozen placement, the reserved approaches and the owed stems — never against t
 own gap. On `a-gap-leaves-out-the-covered-run` that is 52.50 px of shared length at 2.00 px of
 centreline distance, and the diagram fails G6 `parallel-clearance`. It is present on `main` at
 0288048 and is not a regression, but it is worse than a discovery: a spacing **reserved** during
-placement that the gate refuses, which a taller gap cannot repair. Stress ticket 14.
+placement that the gate refuses, which a taller gap cannot repair. Stress ticket 16.
