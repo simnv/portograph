@@ -420,6 +420,13 @@ export function sidePlan(model: LayoutModel, node: string, side: 'top' | 'bottom
     // `legClear` reads the same obstacles stage 8 does, so a nested slot is one the router can take.
     const anchor = legs.get(id)!.at, from = side === 'top' ? owner.bounds.y : owner.bounds.y + owner.bounds.height;
     if (steps > 0 && !legClear(model, node, anchor, from, from + outward * reach)) return undefined;
+    // The turn must also stand inside the leg's own group box, which `legClear` passes over: it
+    // excludes the owner's group so a leg may cross its own box. The depth is taken in the room the
+    // group's own padding has. A turn on the edge is a run along a group edge, which G6
+    // `segment-group-edge` refuses; a turn beyond it stands in the tier gap, where the per-gap
+    // allocation seats the rows and nothing reserved this one.
+    const edge = owning?.bounds ? side === 'top' ? owning.bounds.y : owning.bounds.y + owning.bounds.height : undefined;
+    if (steps > 0 && edge !== undefined && outward * (from + outward * reach - edge) > -EPS) return undefined;
   }
   return { depth };
 }
