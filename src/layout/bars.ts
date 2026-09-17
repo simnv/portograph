@@ -10,8 +10,8 @@ import { splitUnderJunctions, treeCohorts } from './bundle-geometry.js';
 import { groupInsets, placementWarning } from './regions.js';
 import { findPort } from './row-paths.js';
 import { withLayoutMutation } from './mutation.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 
-const EPS = 1e-6;
 const BAR_PADDING = 30;
 const MIN_STEM = 15;
 const FOREIGN_NODE_CLEARANCE = 10;
@@ -19,7 +19,7 @@ const right = (box: Rect): number => box.x + box.width;
 const bottom = (box: Rect): number => box.y + box.height;
 const horizontalCapacity = (node: LayoutNode): number => Math.max(...(['top', 'bottom'] as const).map(side =>
   node.ports.filter(port => port.side === side).length * node.sidePitch![side]! + 2 * NODE_CONTENT_GEOMETRY.padding));
-const samePoint = (a: Point, b: Point): boolean => Math.abs(a.x - b.x) <= EPS && Math.abs(a.y - b.y) <= EPS;
+const samePoint = (a: Point, b: Point): boolean => Math.abs(a.x - b.x) <= PLACEMENT_EPS && Math.abs(a.y - b.y) <= PLACEMENT_EPS;
 
 interface BarLink {
   link: LayoutLink;
@@ -110,7 +110,7 @@ function slotsForNode(model: LayoutModel, node: LayoutNode, links: BarLink[]): P
   for (const item of authorConstrainedOrder(items)) {
     const gap = prior !== undefined && prior.port.side === item.port.side ? Math.max(prior.pitch, item.pitch) : 12;
     item.slot = prior === undefined ? item.desired : Math.max(item.desired, prior.slot + gap);
-    if (item.links.length && item.slot > item.desired + EPS) {
+    if (item.links.length && item.slot > item.desired + PLACEMENT_EPS) {
       const owners = item.links.map(link => link.link.owner);
       if (!model.diagnostics.some(diagnostic => diagnostic.code === 'BAR_SOURCE_FAN'
         && equal(diagnostic.owners, owners))) model.diagnostics.push({
@@ -125,7 +125,7 @@ function slotsForNode(model: LayoutModel, node: LayoutNode, links: BarLink[]): P
 
 function overlapMoreThanHalf(a: { min: number; max: number }, b: { min: number; max: number }): boolean {
   const overlap = Math.min(a.max, b.max) - Math.max(a.min, b.min);
-  return overlap > Math.min(a.max - a.min, b.max - b.min) / 2 + EPS;
+  return overlap > Math.min(a.max - a.min, b.max - b.min) / 2 + PLACEMENT_EPS;
 }
 
 function mergedSpans(spans: Map<string, { min: number; max: number }>): void {
@@ -257,14 +257,14 @@ function appendConnector(segments: PathSegment[], from: Point, to: Point, owner:
   if (samePoint(from, to)) return;
   const push = (segment: PathSegment): void => {
     const prior = segments.at(-1);
-    const vertical = Math.abs(segment.from.x - segment.to.x) <= EPS;
+    const vertical = Math.abs(segment.from.x - segment.to.x) <= PLACEMENT_EPS;
     const collinear = prior && prior.lane === undefined && segment.lane === undefined && samePoint(prior.to, segment.from)
-      && (vertical ? Math.abs(prior.from.x - prior.to.x) <= EPS && Math.abs(prior.from.x - segment.from.x) <= EPS
-        : Math.abs(prior.from.y - prior.to.y) <= EPS && Math.abs(prior.from.y - segment.from.y) <= EPS);
+      && (vertical ? Math.abs(prior.from.x - prior.to.x) <= PLACEMENT_EPS && Math.abs(prior.from.x - segment.from.x) <= PLACEMENT_EPS
+        : Math.abs(prior.from.y - prior.to.y) <= PLACEMENT_EPS && Math.abs(prior.from.y - segment.from.y) <= PLACEMENT_EPS);
     if (collinear) prior.to = { ...segment.to };
     else segments.push(segment);
   };
-  if (Math.abs(from.x - to.x) <= EPS || Math.abs(from.y - to.y) <= EPS) {
+  if (Math.abs(from.x - to.x) <= PLACEMENT_EPS || Math.abs(from.y - to.y) <= PLACEMENT_EPS) {
     push({ from: { ...from }, to: { ...to }, owner: { ...owner } });
     return;
   }
@@ -274,10 +274,10 @@ function appendConnector(segments: PathSegment[], from: Point, to: Point, owner:
 }
 
 function crossesBar(segment: PathSegment, box: Rect): boolean {
-  return Math.abs(segment.from.x - segment.to.x) <= EPS
-    && segment.from.x >= box.x - EPS && segment.from.x <= right(box) + EPS
-    && Math.max(segment.from.y, segment.to.y) > box.y + EPS
-    && Math.min(segment.from.y, segment.to.y) < bottom(box) - EPS;
+  return Math.abs(segment.from.x - segment.to.x) <= PLACEMENT_EPS
+    && segment.from.x >= box.x - PLACEMENT_EPS && segment.from.x <= right(box) + PLACEMENT_EPS
+    && Math.max(segment.from.y, segment.to.y) > box.y + PLACEMENT_EPS
+    && Math.min(segment.from.y, segment.to.y) < bottom(box) - PLACEMENT_EPS;
 }
 
 function crosses(model: LayoutModel, segments: PathSegment[], endpoint: string): string[] {
@@ -312,8 +312,8 @@ function obstructedBodies(model: LayoutModel, segments: PathSegment[], item: Bar
     if (ends.has(id) || model.document.groups[model.document.nodes[id]!.group]!.shape === 'bar') return false;
     const box = model.nodes[id]!.bounds;
     return box !== undefined && segments.some(segment =>
-      Math.max(segment.from.x, segment.to.x) > box.x + EPS && Math.min(segment.from.x, segment.to.x) < right(box) - EPS
-      && Math.max(segment.from.y, segment.to.y) > box.y + EPS && Math.min(segment.from.y, segment.to.y) < bottom(box) - EPS);
+      Math.max(segment.from.x, segment.to.x) > box.x + PLACEMENT_EPS && Math.min(segment.from.x, segment.to.x) < right(box) - PLACEMENT_EPS
+      && Math.max(segment.from.y, segment.to.y) > box.y + PLACEMENT_EPS && Math.min(segment.from.y, segment.to.y) < bottom(box) - PLACEMENT_EPS);
   });
 }
 
@@ -325,7 +325,7 @@ function sourceStemLength(model: LayoutModel, item: BarLink, slotX: number): num
   const peers = model.links.map(link => barLink(model, link)).filter((other): other is BarLink => other !== undefined
     && other.external.ref.node === item.external.ref.node && other.external.side === item.external.side
     && Math.sign((adjacentLaneX(model, other) ?? other.port.anchor!.x) - other.external.anchor!.x) === direction
-    && direction * (other.external.anchor!.x - x) > EPS);
+    && direction * (other.external.anchor!.x - x) > PLACEMENT_EPS);
   // Staggered drops run parallel to each other, so the pitch carries the widest resolved stroke of
   // this drop and the peers it is staggered against, not the theme default.
   const stroke = Math.max(linkStrokeWidth(item.link), ...peers.map(peer => linkStrokeWidth(peer.link)));

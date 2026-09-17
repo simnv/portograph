@@ -611,6 +611,26 @@ Reading the *placed* title, rather than declining on the frozen edge, is the sam
 admitted the side when the plan was first read and declined it on the re-derivation, for 11 more
 inputs.
 
+**Lane x is not on that frozen list, and three plans inside 7f read it.** A corridor's x is
+immutable from allocation *until 7f's last step*, where `reseatLanes` moves it to its child's port x
+(ticket 02) — after `alignLinkedGroupGrid` has asked `laneSidesHold` which linked pair may share an
+x-extent, after `planLabels` has taken each lane rectangle as a forbidden range, and after
+`reserveLinkLabelRoom` has declined every row link whose room lies beyond a lane and read the
+corridors again through `straightCorridorClear` to decide whether the run detours. So the sentence
+above is violated by the move itself, not by a stale read: the plan and its re-derivation each read
+the truth of their own moment, and the two moments disagree. Measured on the Enterprise NTP sheet,
+one corridor moves 2 377.62 px and releases a merge the grid had declined by 0.28 px, which the
+publication replay then makes and refuses (`Linked groups do not share the grid their links
+require`, stress ticket 37). The repair is not a tolerance and cannot be: what only re-derives —
+the grid, which grows box extents onto edges that already exist, and the label plan — is settled
+again after the move; what would *move geometry* to settle — the label-room reservation, with the
+corridors by then fixed — makes the move refused instead, beside the centring and short-gap
+contradictions it was already refused for. The settling is done on a **trial** taken before the
+decision, because all three refusal criteria read what it changes: `straightCorridorClear` iterates
+the group boxes the grid widens and the labels the replan places, and the accepted model is that
+trial. That is also what keeps the label replan's `reserveAgain` fallback honest — it can move nodes,
+and a short run it left behind is measured before the corridor move is adopted.
+
 **The group edge, and which predicate it borrows.** `legClear` excludes the leg's own group box, so
 that a leg may cross its own box; nothing then stopped a nested turn from landing on that box's
 edge. The guard is **G6 `segment-group-edge`'s own predicate**, applied to the horizontal run the

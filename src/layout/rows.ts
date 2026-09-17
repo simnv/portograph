@@ -6,10 +6,10 @@ import { moveGroup, rebuildBands, union } from './skeleton-geometry.js';
 import { groupInsets } from './regions.js';
 import { rowGap } from './sides-two.js';
 import { withLayoutMutation } from './mutation.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 import { facingPair, type FacingPair } from './row-paths.js';
 import { NODE_CONTENT_GEOMETRY as theme } from '../theme/content.js';
 
-const EPS = 1e-6;
 const right = (rect: Rect): number => rect.x + rect.width;
 const overlaps = (a: Rect, b: Rect): boolean => a.x < right(b) && b.x < right(a) && a.y < b.y + b.height && b.y < a.y + a.height;
 
@@ -53,7 +53,7 @@ export function repackOverlaps(draft: LayoutModel): void {
       for (let i = 1; i < order.length; i++) {
         const prior = draft.nodes[order[i - 1]!]!.bounds!, node = draft.nodes[order[i]!]!;
         const minimum = right(prior) + rowGap(draft, order[i - 1]!, order[i]!);
-        if (node.bounds!.x < minimum - EPS) moveNode(draft, order[i]!, minimum - node.bounds!.x, 0);
+        if (node.bounds!.x < minimum - PLACEMENT_EPS) moveNode(draft, order[i]!, minimum - node.bounds!.x, 0);
       }
       fitGroupBox(draft, group);
     }
@@ -61,7 +61,7 @@ export function repackOverlaps(draft: LayoutModel): void {
     const core = [...groups].sort((a, b) => a.bounds!.x - b.bounds!.x || compareId(a.id, b.id));
     let end = -Infinity;
     for (const group of core) {
-      if (group.bounds!.x < end - EPS) moveGroup(draft, group, end - group.bounds!.x, 0);
+      if (group.bounds!.x < end - PLACEMENT_EPS) moveGroup(draft, group, end - group.bounds!.x, 0);
       end = right(group.bounds!) + gap;
     }
     for (const fixed of band.groups.map(id => draft.groups[id]!).filter(group => !groups.includes(group))) {
@@ -89,8 +89,8 @@ function levelSide(node: LayoutNode, side: Side, targets: SideTarget[]): void {
     const y = wanted.get(portId(port.ref));
     if (y === undefined) return;
     const last = kept[kept.length - 1];
-    if (y < low + index * pitch - EPS || y > high - (count - 1 - index) * pitch + EPS) return;
-    if (last && y - last.y < (index - last.index) * pitch - EPS) return;
+    if (y < low + index * pitch - PLACEMENT_EPS || y > high - (count - 1 - index) * pitch + PLACEMENT_EPS) return;
+    if (last && y - last.y < (index - last.index) * pitch - PLACEMENT_EPS) return;
     kept.push({ index, y });
   });
   if (!kept.length) return;
