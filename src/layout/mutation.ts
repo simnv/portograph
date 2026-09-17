@@ -15,7 +15,7 @@ import { groupShape } from './grid.js';
 import { rebuildBands, span, union, validateSkeletonBands } from './skeleton-geometry.js';
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, flankPair } from './flanks.js';
-import { rebuildLaneExtents, reseatLanes, validateLanes, transitTiers } from './lanes.js';
+import { type LaneFollow, lanesHoldTheirChild, rebuildLaneExtents, reseatLanes, validateLanes, transitTiers } from './lanes.js';
 import { rebuildRegions } from './regions.js';
 import { centreViolations, selectAnchorTier } from './centre.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
@@ -686,13 +686,14 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     // corridor follows the child (ticket 02). The move belongs to the transaction, not to the
     // callback, exactly as the growth above does. It runs last in 7f, after every centring replay,
     // because each replay reads lane x as that feed's authoritative x: a corridor moved before one
-    // is a corridor the replay chases, and the child's node stretches after it. No node moves here,
-    // so the label bands 7f has just reserved keep their height and their clearance — but a lane is
-    // an input to two of the plans inside those bands, and they are settled again below.
-    const heldLanes = clone(draft.lanes);
-    if (reseatLanes(draft)) {
+    // is a corridor the replay chases, and the child's node stretches after it. The move itself
+    // moves no node, so the label bands 7f has just reserved keep their height and their clearance
+    // as it leaves them — but a lane is an input to two of the plans inside those bands, those plans
+    // are settled again below, and one of the two can move a node when it settles.
+    const heldLanes = clone(draft.lanes), followedLanes: LaneFollow[] = [];
+    if (reseatLanes(draft, followedLanes)) {
       rebuildLaneExtents(draft);
-      // Three things the move can spoil, and it is refused rather than allowed to. It may open an
+      // Four things the move can spoil, and it is refused rather than allowed to. It may open an
       // alignment 7c could not reach, and the centring invariant would then read the published
       // placement as unfinished work. It also turns the run in the gap beside the corridor from a
       // column into a row, and the height rule has already measured that gap: a gap that cannot
@@ -700,13 +701,20 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
       // label reservation measures against — it decides whether a labelled row link detours, and
       // whether the room it needs lies beyond a reserved lane — so a corridor that moves across one
       // of those runs leaves a label a run 7e and 7f already reserved and did not get (stress ticket
-      // 18). That third one has to be refused rather than settled again: unlike the grid and the
-      // labels below, re-reserving moves nodes, and by here the corridors are fixed.
-      // All three are compared as sets, not as counts: a move that trades one unverified alignment,
-      // one short gap or one short run for another is not "no worse", it is a different diagram
-      // with the same tally.
+      // 18). That third one has to be refused rather than settled again: re-reserving moves nodes,
+      // and by here the corridors are fixed. The first three are compared as sets, not as counts: a
+      // move that trades one unverified alignment, one short gap or one short run for another is not
+      // "no worse", it is a different diagram with the same tally.
       //
-      // The three are measured on the **settled** model, not on the one the move leaves behind. A
+      // The fourth reads what the move is *for*. A corridor moves to stand at its child's port and
+      // buys that one alignment; the settling below can move a node under it — `replanGroupLabels`
+      // falls back to the full producer, which reserves room and pushes the groups after it — and a
+      // corridor whose child has moved out from under it is a move that bought nothing and left a
+      // jog nothing reserved. The first three cannot see that: after the fallback,
+      // `produceGroupLabelBands` has already driven `reserveLinkLabelRoom` to its fixed point, so
+      // the room criterion is empty by construction on exactly the path that moves the node.
+      //
+      // All four are measured on the **settled** model, not on the one the move leaves behind. A
       // corridor is geometry two of 7f's own plans are derived from — `laneSidesHold` decides which
       // linked pair may share an x-extent, so a corridor that leaves a group's window releases a
       // merge the grid declined; and a lane rectangle is a forbidden range for a group label, so a
@@ -714,7 +722,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
       // against the corridors this move publishes, because `validateGroupLabelBands` re-derives both
       // and the published model has to be their fixed point (ADR-0015: a derived plan a later stage
       // re-derives may read only what is frozen when both readings happen). That settling is done on
-      // a trial *before* the decision, because all three criteria read what it changes:
+      // a trial *before* the decision, because all four criteria read what it changes:
       // `straightCorridorClear` iterates the group boxes the grid widens and the labels the replan
       // places, and on `a-corridor-moves-after-the-grid-settles` the grid really does widen a box by
       // 29.03 px here. The accepted model is the trial itself, so nothing is re-derived twice.
@@ -728,7 +736,8 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
       reserveLinkLabelRoom(clone(draft), heldRoom);
       const held = { centring: centreViolations(draft), gaps: shortGaps(draft) };
       if (noNewItems(after.centring, held.centring) && noNewItems(after.gaps, held.gaps)
-        && noNewItems(afterRoom.map(item => item.link), heldRoom.map(item => item.link))) {
+        && noNewItems(afterRoom.map(item => item.link), heldRoom.map(item => item.link))
+        && lanesHoldTheirChild(settled, followedLanes)) {
         // Adopt the trial whole: `draft` is the object this transaction validates and returns, so it
         // takes the settled state rather than repeating the two producers on itself.
         Object.assign(draft, settled);

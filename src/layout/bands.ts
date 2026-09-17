@@ -813,6 +813,13 @@ export function produceGroupLabelBands(model: LayoutModel): void {
  * model carrying the new bands would measure each of them against itself, reserve nothing for a
  * clearance that grew between the two steps, and leave the fit to box growth into the gap the
  * measurement has just opened.
+ *
+ * **The fallback moves nodes.** `produceGroupLabelBands` reserves link-label room and pushes the
+ * groups that follow a grown label, so "this plans and nothing else" describes the ordinary path
+ * only. A caller that runs this after something is frozen — `mutation.ts`'s corridor move, where
+ * the corridors are fixed — has to measure the fallback's effect for itself, and cannot do it with
+ * `reserveLinkLabelRoom`: the producer drives that to its fixed point before returning, so it
+ * reports nothing outstanding on exactly the path that moved geometry.
  */
 export function replanGroupLabels(model: LayoutModel): void {
   const reserved = clone(model.labelBands);

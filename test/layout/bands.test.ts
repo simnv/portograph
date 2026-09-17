@@ -863,15 +863,24 @@ it('stress ticket 37: a corridor that follows its child leaves the grid settled 
   // 0.28 px would leave the three expectations above passing on a diagram that no longer reaches
   // the defect.
   const shared = [twelve, thirteen].map((bounds, index) => ({ group: model.groups[index ? 'row-13' : 'row-12']!, bounds }));
+  // Both probe places come from the model, and both are pinned. `link-59` keeps its allocated
+  // corridor in tier 5, which is where the tier-6 one stood before the move; the tier-6 one is the
+  // corridor that moved, and its published x is what the merge above is settled against. Frozen
+  // literals here would leave the lane side unpinned: a corridor that drifted 0.3 px left would stop
+  // the fixture reaching the defect while every expectation still passed.
+  const laneX = (id: string): number => model.lanes.find(lane => lane.id === id)!.x;
+  const beforeX = laneX('lane:"link-59":5'), afterX = laneX('lane:"link-59":6');
+  expect(beforeX).toBe(909.5692545572916);
+  expect(afterX).toBe(1513.2303873697915);
+  const probe = (x: number) => [{ ...model.lanes[0]!, id: 'lane:"probe":6', tier: 6, x,
+    bounds: { ...model.lanes[0]!.bounds, x: x - 17, width: 34 } }];
   const before = copy(model);
-  before.lanes = [{ ...model.lanes[0]!, id: 'lane:"probe":6', tier: 6, x: 909.5692545572916,
-    bounds: { ...model.lanes[0]!.bounds, x: 892.5692545572916, width: 34 } }];
+  before.lanes = probe(beforeX);
   expect(laneSidesHold(before, shared)).toBe(false);
-  expect(twelve.x).toBeLessThan(926.5692545572916);
+  expect(twelve.x).toBeLessThan(beforeX + 17);
   // And at the corridor's published place it holds, which is why the merge is the fixed point now.
   const after = copy(model);
-  after.lanes = [{ ...model.lanes[0]!, id: 'lane:"probe":6', tier: 6, x: 1513.2303873697915,
-    bounds: { ...model.lanes[0]!.bounds, x: 1496.2303873697915, width: 34 } }];
+  after.lanes = probe(afterX);
   expect(laneSidesHold(after, shared)).toBe(true);
 }, 180000);
 

@@ -7,10 +7,27 @@ import { DEFAULT_STROKE_WIDTHS as stroke, GROUP_LABEL_LINK_CLEARANCE, linkStroke
 import { segmentRectDistance } from '../score/geometry.js';
 import { findPort } from './row-paths.js';
 import { portId } from './skeleton-graph.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 import { moveGroup, union } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { withLayoutMutation } from './mutation.js';
 import { bottom, expandCanvas, placementWarning, rebuildRegions, right } from './regions.js';
+
+/** A corridor `reseatLanes` moved, and the child port it moved it onto. */
+export interface LaneFollow { lane: string; child: PortRef }
+
+/**
+ * Whether every corridor that followed a child still stands at that child's port. The move exists
+ * only to put the corridor at the port, so this is the measure of whether it still buys anything —
+ * read after whatever the move set off has been settled again.
+ */
+export function lanesHoldTheirChild(model: LayoutModel, followed: LaneFollow[]): boolean {
+  return followed.every(item => {
+    const lane = model.lanes.find(candidate => candidate.id === item.lane);
+    const anchor = findPort(model, item.child)?.anchor;
+    return lane !== undefined && anchor !== undefined && Math.abs(anchor.x - lane.x) <= PLACEMENT_EPS;
+  });
+}
 
 export function nodeTier(model: LayoutModel, id: string): number {
   return model.groups[model.document.nodes[id]!.group]!.tier!;
@@ -195,8 +212,13 @@ function corridorFree(model: LayoutModel, lane: Lane, link: LayoutLink, child: P
  * port x is free of foreign geometry, and the move keeps the child node's feed order. Only the
  * corridor in the tier next to the child may move: the corridors before it carry the link across
  * tiers it has left behind, and the jog between two corridors is what § 7a already accepts.
+ *
+ * `followed` collects what each move is *for*: the corridor and the child port it was seated on.
+ * The move buys that one alignment and nothing else, so a caller that lets other plans settle
+ * afterwards can ask whether the corridor still stands at that port, and refuse a move that no
+ * longer does.
  */
-export function reseatLanes(model: LayoutModel): boolean {
+export function reseatLanes(model: LayoutModel, followed?: LaneFollow[]): boolean {
   let moved = false;
   // The corridors are taken in reservation order and each candidate is measured against the ones
   // already moved, the same serialization 7a allocates in. A corridor is never measured against a
@@ -228,6 +250,7 @@ export function reseatLanes(model: LayoutModel): boolean {
     lane.group = group.id;
     lane.side = anchor.x < group.bounds!.x ? 'left' : 'right';
     moved = true;
+    followed?.push({ lane: lane.id, child });
     placementWarning(model, 'LANE_FOLLOWS_ITS_CHILD',
       `${link.id} could not be seated under its corridor at tier ${lane.tier}; the corridor follows the child port.`, [link.id]);
   }

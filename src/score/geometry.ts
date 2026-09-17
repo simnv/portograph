@@ -5,9 +5,9 @@ import type { PathSegment, Point, Rect } from '../model/index.js';
  * that one, at a few ULP of a coordinate (stress ticket 13).
  *
  * It is **not** the tolerance placement measures a reservation at. That one is ten times coarser and
- * lives in `src/layout/tolerance.ts` as `PLACEMENT_EPS`; `render/drawio.ts` and a handful of inline
- * `1e-6` literals in `layout/bundle-geometry.ts`, `route/obstacles.ts` and `route/validate.ts` are
- * the same figure, still written out. Meeting one of those and this one in the same reading is the
+ * lives in `src/layout/tolerance.ts` as `PLACEMENT_EPS`; 12 files under `src/` still write that
+ * figure out as an inline `1e-6`, 106 times between them, and `tolerance.ts` lists them. Not a
+ * handful. Meeting one of those and this one in the same reading is the
  * trap stress ticket 19 named: two numbers answering two questions, not two opinions about one.
  */
 export const EPS = 1e-7;
