@@ -6,7 +6,7 @@ import { sidesOne } from '../../src/layout/sides-one.js';
 
 function fixture(links: string[], ports = '[p]') {
   return resolve(parse(`portograph: 2
-groups: {upper: {tier: 10}, middle: {tier: 80}, lower: {tier: 100}, west: {align: left, of: middle}, east: {align: right, of: middle}}
+groups: {upper: {tier: 10}, middle: {tier: 80, shape: row}, lower: {tier: 100}, west: {align: left, of: middle}, east: {align: right, of: middle}}
 nodes:
   a: {group: middle, ports: ${ports}}
   up: {group: upper}
