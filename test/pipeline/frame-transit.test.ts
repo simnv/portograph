@@ -48,7 +48,7 @@ describe('transit through a frame', () => {
     const gates = score(model).snapshot.gates;
     for (const gate of ['G2', 'G6', 'G9'] as const) expect(gates[gate].violations).toEqual([]);
     expect(model.links.every(item => item.path !== undefined)).toBe(true);
-    expect(model.removedLinks ?? []).toEqual([]);
+    expect(model.links.length).toBe(model.document.links.length);
   }, 60000);
 
   it('a link to a parent member below a child frame runs beside the child, inside the parent', async () => {
@@ -80,7 +80,7 @@ describe('transit through a frame', () => {
     expect(holds(parent.box, child.box)).toBe(true);
     const gates = score(model).snapshot.gates;
     for (const gate of ['G2', 'G6', 'G9'] as const) expect(gates[gate].violations).toEqual([]);
-    expect(model.removedLinks ?? []).toEqual([]);
+    expect(model.links.length).toBe(model.document.links.length);
   }, 60000);
 
   it('a link foreign to a two-rank frame keeps one lane x beside the whole frame', async () => {
@@ -108,7 +108,7 @@ describe('transit through a frame', () => {
     }
     const gates = score(model).snapshot.gates;
     for (const gate of ['G2', 'G6', 'G9'] as const) expect(gates[gate].violations).toEqual([]);
-    expect(model.removedLinks ?? []).toEqual([]);
+    expect(model.links.length).toBe(model.document.links.length);
   }, 60000);
 
   it('a link foreign to two neighbouring frames runs in the gap between them', async () => {
@@ -128,7 +128,7 @@ describe('transit through a frame', () => {
     }
     const gates = score(model).snapshot.gates;
     for (const gate of ['G2', 'G6', 'G9'] as const) expect(gates[gate].violations).toEqual([]);
-    expect(model.removedLinks ?? []).toEqual([]);
+    expect(model.links.length).toBe(model.document.links.length);
   }, 60000);
 
   it('a lane exempts its owner from a frame only when the link ends in the frame', async () => {
@@ -168,7 +168,7 @@ describe('transit through a frame', () => {
     expect(model.diagnostics.filter(diagnostic => diagnostic.severity === 'error')).toEqual([]);
     const frames = ['east', 'west'].map(id => model.frames!.find(item => item.id === id)!);
     // Every cell of a frame moves by one dx: a frame has all its cells named in the expansion warnings or none.
-    const moved = new Set(model.diagnostics.filter(diagnostic => diagnostic.code === 'LANE_MARGIN_EXPANDED').flatMap(diagnostic => diagnostic.elements ?? []));
+    const moved = new Set(model.diagnostics.filter(diagnostic => diagnostic.code === 'LANE_MARGIN_EXPANDED').flatMap(diagnostic => (diagnostic.owners ?? []).flatMap(owner => (owner.kind === 'barCross' ? [] : [owner.id]))));
     for (const frame of frames) expect(frame.cells.filter(cell => moved.has(cell)).length % frame.cells.length).toBe(0);
     // Each cell keeps the axis of its column: the centres of a frame's cells are within one column slack.
     for (const frame of frames) {
@@ -182,7 +182,8 @@ describe('transit through a frame', () => {
     for (const lane of lanes) for (const frame of frames) {
       expect(lane.bounds.x >= right(frame.box) - 1e-6 || right(lane.bounds) <= frame.box.x + 1e-6).toBe(true);
     }
-    expect(new Set(lanes.filter(lane => lane.owner.id === lanes[0]!.owner.id).map(lane => lane.x)).size).toBe(1);
+    const first = lanes[0]!.owner;
+    expect(new Set(lanes.filter(lane => lane.owner.kind === 'link' && first.kind === 'link' && lane.owner.id === first.id).map(lane => lane.x)).size).toBe(1);
     const gates = score(model).snapshot.gates;
     for (const gate of ['G2', 'G9'] as const) expect(gates[gate].violations).toEqual([]);
   }, 60000);
