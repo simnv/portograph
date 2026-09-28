@@ -1,0 +1,49 @@
+# Expected: A group whose members have overlay links and no routed link stands under the mean x of
+# its overlay partners (ranked-groups ticket 05, spec section 3.1). Tier 1 holds three routed
+# groups, north, middle and south, hung from `core`; the middle group keeps north and south wide
+# apart. Tier 2 holds three client groups with overlay links only: `a` syncs with both nodes of
+# north, `b` with both nodes of south, `c` with one node of each. Each client is placed at the mean
+# x of its partners' centres, so `a` stands under north, `b` under south and `c` between them, and
+# every overlay link is one straight segment. The routed groups never move for the rule: the
+# test reads the model before and after the pass, and core, north, middle and south are identical.
+# (A run without the clients is not the comparison: ELK sees the overlay edges, so the skeleton
+# itself differs, and that is not the rule.)
+# Test-only input owned by ranked-groups ticket 05; test/pipeline/overlay-barycentre.test.ts reads
+# the layout.
+portograph: 2
+groups:
+  core: { tier: 0, label: Core }
+  north: { tier: 1, label: North }
+  middle: { tier: 1, label: Middle }
+  south: { tier: 1, label: South }
+  client-a: { tier: 2, label: Client A }
+  client-b: { tier: 2, label: Client B }
+  client-c: { tier: 2, label: Client C }
+nodes:
+  c1: { group: core, class: router, label: Core 1 }
+  c2: { group: core, class: router, label: Core 2 }
+  c3: { group: core, class: router, label: Core 3 }
+  n1: { group: north, class: server, label: North 1 }
+  n2: { group: north, class: server, label: North 2 }
+  m1: { group: middle, class: server, label: Middle 1 }
+  m2: { group: middle, class: server, label: Middle 2 }
+  m3: { group: middle, class: server, label: Middle 3 }
+  s1: { group: south, class: server, label: South 1 }
+  s2: { group: south, class: server, label: South 2 }
+  a: { group: client-a, class: server, label: Client a }
+  b: { group: client-b, class: server, label: Client b }
+  c: { group: client-c, class: server, label: Client c }
+links:
+  - [c1, n1]
+  - [c1, n2]
+  - [c2, m1]
+  - [c2, m2]
+  - [c2, m3]
+  - [c3, s1]
+  - [c3, s2]
+  - [a, n1, { route: overlay }]
+  - [a, n2, { route: overlay }]
+  - [b, s1, { route: overlay }]
+  - [b, s2, { route: overlay }]
+  - [c, n2, { route: overlay }]
+  - [c, s1, { route: overlay }]

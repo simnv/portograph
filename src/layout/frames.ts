@@ -9,7 +9,7 @@ import { union } from './skeleton-geometry.js';
  * A cell box that is wider than that (the linked-group grid, ADR-0012, widens cells) widens the frame
  * too, so the frame always holds its cells; otherwise the frame edge stands 20 px from the outermost body.
  */
-function sides(model: LayoutModel, id: string): Rect {
+export function cellReach(model: LayoutModel, id: string): Rect {
   const group = model.groups[id]!, box = group.bounds!, pad = groupPadding(model, group);
   const bodies = group.nodes.map(node => model.nodes[node]!.bounds!);
   if (!bodies.length) return { x: box.x - GROUP_PADDING, y: box.y, width: box.width + 2 * GROUP_PADDING, height: box.height };
@@ -36,10 +36,16 @@ const grow = (box: Rect, by: number): Rect => ({ x: box.x - by, y: box.y - by, w
  * does, so every producer that rebuilds bands rebuilds frames with them.
  */
 export function rebuildFrames(model: LayoutModel): void {
+  const frames = deriveFrames(model);
+  if (frames !== undefined) model.frames = frames;
+}
+
+/** The frames `rebuildFrames` would store, read off the cells as they stand; `undefined` while a cell has no box. */
+export function deriveFrames(model: LayoutModel): Frame[] | undefined {
   const entries = Object.entries(model.document.frames ?? {});
-  if (!entries.length) return;
+  if (!entries.length) return undefined;
   // Cells are placed a tier at a time in stage 4; frames wait for every cell to have its box.
-  if (entries.some(([, item]) => item.cells.some(cell => model.groups[cell]?.bounds === undefined))) return;
+  if (entries.some(([, item]) => item.cells.some(cell => model.groups[cell]?.bounds === undefined))) return undefined;
   const derived = new Map<string, Frame>();
   const build = (id: string): Frame => {
     const known = derived.get(id);
@@ -47,7 +53,7 @@ export function rebuildFrames(model: LayoutModel): void {
     const source = model.document.frames![id]!;
     const cells = source.cells;
     const children = entries.filter(([, item]) => item.parent === id).map(([child]) => build(child));
-    const boxes = [...cells.map(cell => sides(model, cell)), ...children.map(child => grow(child.box, GROUP_PADDING)), ...transitLanes(model, id)];
+    const boxes = [...cells.map(cell => cellReach(model, cell)), ...children.map(child => grow(child.box, GROUP_PADDING)), ...transitLanes(model, id)];
     const tiers = [...cells.map(cell => model.groups[cell]!.tier!), ...children.map(child => child.tier)];
     const frame: Frame = { id, label: source.label, ...(source.class !== undefined ? { class: source.class } : {}),
       ...(source.parent !== undefined ? { parent: source.parent } : {}), cells: [...source.cells],
@@ -55,7 +61,7 @@ export function rebuildFrames(model: LayoutModel): void {
     derived.set(id, frame);
     return frame;
   };
-  model.frames = entries.map(([id]) => build(id));
+  return entries.map(([id]) => build(id));
 }
 
 /**
@@ -110,10 +116,10 @@ function frameCells(model: LayoutModel, frame: string): string[] {
  * allocation over every cell of the frame (`foreignRoot`), so a wider cell at another sub-tier is already
  * outside it. Undefined for a group that is no cell, or a link with no foreign frame.
  */
-export function cellReach(model: LayoutModel, cell: string, link: LayoutLink): Rect | undefined {
+export function foreignReach(model: LayoutModel, cell: string, link: LayoutLink): Rect | undefined {
   const found = foreignFrame(model, cell, link);
   if (!found) return undefined;
-  const own = sides(model, cell);
+  const own = cellReach(model, cell);
   return { ...own, x: own.x - found.outer * GROUP_PADDING, width: own.width + 2 * found.outer * GROUP_PADDING };
 }
 

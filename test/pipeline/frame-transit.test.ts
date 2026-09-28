@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { Rect } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
+import { COLUMN_SLACK } from '../../src/layout/columns.js';
 import { groupConsumers } from '../../src/score/model.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -158,6 +159,30 @@ describe('transit through a frame', () => {
       // It stays outside the neighbour frame.
       expect(lane.bounds.x >= right(east.box) - 1e-6 || right(lane.bounds) <= east.box.x + 1e-6).toBe(true);
     }
+    const gates = score(model).snapshot.gates;
+    for (const gate of ['G2', 'G9'] as const) expect(gates[gate].violations).toEqual([]);
+  }, 60000);
+
+  it('a lane push moves every cell of a frame by one dx or is refused, and a frame stays in its column', async () => {
+    const model = await run('two-frames-take-two-transits-and-keep-their-columns');
+    expect(model.diagnostics.filter(diagnostic => diagnostic.severity === 'error')).toEqual([]);
+    const frames = ['east', 'west'].map(id => model.frames!.find(item => item.id === id)!);
+    // Every cell of a frame moves by one dx: a frame has all its cells named in the expansion warnings or none.
+    const moved = new Set(model.diagnostics.filter(diagnostic => diagnostic.code === 'LANE_MARGIN_EXPANDED').flatMap(diagnostic => diagnostic.elements ?? []));
+    for (const frame of frames) expect(frame.cells.filter(cell => moved.has(cell)).length % frame.cells.length).toBe(0);
+    // Each cell keeps the axis of its column: the centres of a frame's cells are within one column slack.
+    for (const frame of frames) {
+      const centres = frame.cells.map(cell => model.groups[cell]!.bounds!).map(box => box.x + box.width / 2);
+      expect(Math.max(...centres) - Math.min(...centres)).toBeLessThanOrEqual(COLUMN_SLACK + 1e-6);
+    }
+    expect(right(frames[0]!.box)).toBeLessThanOrEqual(frames[1]!.box.x + 1e-6);
+    // The lanes lie between the columns or outside them, never inside a frame box.
+    const lanes = model.lanes.filter(lane => lane.owner.kind === 'link');
+    expect(lanes.length).toBe(6);
+    for (const lane of lanes) for (const frame of frames) {
+      expect(lane.bounds.x >= right(frame.box) - 1e-6 || right(lane.bounds) <= frame.box.x + 1e-6).toBe(true);
+    }
+    expect(new Set(lanes.filter(lane => lane.owner.id === lanes[0]!.owner.id).map(lane => lane.x)).size).toBe(1);
     const gates = score(model).snapshot.gates;
     for (const gate of ['G2', 'G9'] as const) expect(gates[gate].violations).toEqual([]);
   }, 60000);

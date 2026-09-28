@@ -14,7 +14,7 @@ import { rebuildRegionGeometry } from './region-rebuild.js';
 import { findPort, straightCorridorClear } from './row-paths.js';
 import { bandGap, portId } from './skeleton-graph.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
-import { frameNodes } from './frames.js';
+import { deriveFrames, frameNodes } from './frames.js';
 import { bandHeldBy, bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placementWarning, rebuildRegions, right } from './regions.js';
 import { withLayoutMutation } from './mutation.js';
 import { effectiveLayer } from '../score/model.js';
@@ -646,10 +646,36 @@ function linkedGroupPairs(model: LayoutModel): LinkedPair[] {
 const rectOverlap = (p: Rect, q: Rect): boolean => p.x < right(q) - PLACEMENT_EPS && q.x < right(p) - PLACEMENT_EPS && p.y < bottom(q) - PLACEMENT_EPS && q.y < bottom(p) - PLACEMENT_EPS;
 
 /**
+ * Whether the boxes of `proposed` would make the box of a top-level frame overlap another top-level
+ * frame's box (ranked-groups ticket 09). The frame boxes are derived from the cells with the proposed
+ * bounds in place, and the bounds are put back before this returns. A pair that overlaps already, and a
+ * pair the proposal does not touch, are not this proposal's doing and do not refuse it.
+ */
+function widensIntoFrame(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[]): boolean {
+  const frames = model.document.frames;
+  if (frames === undefined) return false;
+  const touched = new Set(proposed.flatMap(item => {
+    let id = item.group.frame;
+    while (id !== undefined && frames[id]?.parent !== undefined) id = frames[id]!.parent;
+    return id === undefined ? [] : [id];
+  }));
+  if (!touched.size) return false;
+  const tops = (): { id: string; box: Rect }[] => (deriveFrames(model) ?? []).filter(frame => frame.parent === undefined).map(frame => ({ id: frame.id, box: frame.box }));
+  const clashes = (list: { id: string; box: Rect }[]): Set<string> => new Set(list.flatMap((frame, i) => list.slice(i + 1)
+    .filter(other => (touched.has(frame.id) || touched.has(other.id)) && rectOverlap(frame.box, other.box)).map(other => `${frame.id}\u0000${other.id}`)));
+  const before = clashes(tops());
+  const saved = proposed.map(item => item.group.bounds!);
+  proposed.forEach(item => { item.group.bounds = item.bounds; });
+  const after = clashes(tops());
+  proposed.forEach((item, i) => { item.group.bounds = saved[i]!; });
+  return [...after].some(key => !before.has(key));
+}
+
+/**
  * Linked groups share a grid (ADR-0012): two groups joined by vertical links take one x-extent, two
  * joined by horizontal links take one y-extent, whenever neither box is smaller than that union by
  * more than `GROUP_GRID_MAX_GROWTH` of it. Boxes only grow, nodes never move, and a union
- * that would overlap another group or cross a reserved lane window is skipped. Chains converge in
+ * that would overlap another group, make a frame box overlap another frame's, or cross a reserved lane window is skipped. Chains converge in
  * a bounded number of passes because every pass only merges extents.
  */
 export function alignLinkedGroupGrid(model: LayoutModel): boolean {
@@ -678,6 +704,8 @@ export function alignLinkedGroupGrid(model: LayoutModel): boolean {
       const others = Object.values(model.groups).filter(group => !members.includes(group));
       if (proposed.some(item => others.some(other => rectOverlap(item.bounds, other.bounds!)))) continue;
       if (axis === 'x' && !laneSidesHold(model, proposed)) continue;
+      // The widening is stage 7 work: it never widens a frame into the box of another frame.
+      if (widensIntoFrame(model, proposed)) continue;
       for (const item of proposed) item.group.bounds = item.bounds;
       moved = changed = true;
     }

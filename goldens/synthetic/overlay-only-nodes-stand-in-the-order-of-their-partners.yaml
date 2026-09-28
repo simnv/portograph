@@ -1,0 +1,33 @@
+# Expected: An overlay-only node is ordered inside its group by the mean x of its overlay partners
+# (ranked-groups ticket 05, spec section 3.1). `west` and `east` are routed groups kept apart by
+# `middle`. The client group `pair` holds `p1`, declared first, whose partner stands east, and `p2`,
+# declared second, whose partner stands west. Left in declared order the two overlay links cross;
+# the rule orders `p2` before `p1`, so they do not. No node of `pair` has a routed link, so the
+# group stands under the mean of its partners and its members keep the row packer's gap.
+# Test-only input owned by ranked-groups ticket 05; test/pipeline/overlay-barycentre.test.ts reads
+# the layout.
+portograph: 2
+groups:
+  core: { tier: 0, label: Core }
+  west: { tier: 1, label: West }
+  middle: { tier: 1, label: Middle }
+  east: { tier: 1, label: East }
+  pair: { tier: 2, label: Pair }
+nodes:
+  c1: { group: core, class: router, label: Core 1 }
+  c2: { group: core, class: router, label: Core 2 }
+  w1: { group: west, class: server, label: West 1 }
+  m1: { group: middle, class: server, label: Middle 1 }
+  m2: { group: middle, class: server, label: Middle 2 }
+  m3: { group: middle, class: server, label: Middle 3 }
+  e1: { group: east, class: server, label: East 1 }
+  p1: { group: pair, class: server, label: Pair 1 }
+  p2: { group: pair, class: server, label: Pair 2 }
+links:
+  - [c1, w1]
+  - [c1, m1]
+  - [c2, m2]
+  - [c2, m3]
+  - [c2, e1]
+  - [p1, e1, { route: overlay }]
+  - [p2, w1, { route: overlay }]
