@@ -1,8 +1,9 @@
 import type { Point, Rect, Side } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel, LayoutPort, PathSegment } from '../model/layout.js';
-import { GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { GROUP_LABEL_GEOMETRY, nudgingDistance, routedStroke } from '../layout/bands.js';
 import { legReservation, sideNested, stemCache, stemPlan, type StemCache } from '../layout/sides-two.js';
+import { linkStrokeWidth } from '../theme/geometry.js';
+import { edgeMargin } from '../layout/bundle-geometry.js';
 import { allocateGapRuns } from '../layout/gap-runs.js';
 import { findPort, straightCorridorClear } from '../layout/row-paths.js';
 import { portId } from '../layout/skeleton-graph.js';
@@ -336,6 +337,9 @@ export function planRoute(model: LayoutModel): RoutePlan {
     batches: [...batches.values()].map((ids, index) => ({ id: `batch-${index}`, links: ids })) };
 }
 
+/** The entry checkpoint stands this far beyond the edge margin, so the turn that reaches it still passes G6 after the router's nudging. */
+const ENTRY_SLACK = 1;
+
 /**
  * ADR-0013, reserved in the plan: where a link that comes from beside a group goes in. The group is
  * not an obstacle to the links attached inside it, so when a group title stands on the column of a
@@ -351,7 +355,9 @@ export function planRoute(model: LayoutModel): RoutePlan {
 function entryCheckpoint(model: LayoutModel, link: LayoutLink, end: 'from' | 'to', port: LayoutPort, stem: Point, other: Point,
   obstacles: RouteObstacle[], boxes: { id: string; bounds: Rect }[]): RouteCheckpoint[] {
   const side = port.side!, out = OUTWARD[side], anchor = port.anchor!, vertical = out.x === 0;
-  const margin = GROUP_EDGE_LINK_CLEARANCE + linkStrokeWidth(link) / 2 + 1;
+  // Only a top or bottom stem has a side edge to turn beside.
+  if (!vertical) return [];
+  const margin = edgeMargin(routedStroke(model)) + ENTRY_SLACK;
   let depth: number | undefined, outer: Rect | undefined;
   for (const { id, bounds } of boxes) {
     const across = vertical ? anchor.x : anchor.y, along = vertical ? anchor.y : anchor.x;
