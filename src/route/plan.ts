@@ -1,12 +1,14 @@
 import type { Point, Rect, Side } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel, LayoutPort, PathSegment } from '../model/layout.js';
-import { linkStrokeWidth } from '../theme/geometry.js';
 import { GROUP_LABEL_GEOMETRY, nudgingDistance, routedStroke } from '../layout/bands.js';
 import { legReservation, sideNested, stemCache, stemPlan, type StemCache } from '../layout/sides-two.js';
+import { linkStrokeWidth } from '../theme/geometry.js';
+import { edgeMargin } from '../layout/bundle-geometry.js';
 import { allocateGapRuns } from '../layout/gap-runs.js';
 import { findPort, straightCorridorClear } from '../layout/row-paths.js';
 import { portId } from '../layout/skeleton-graph.js';
 import { EPS, samePoint, segmentRect } from '../score/geometry.js';
+import { groupBoxes, groupConsumers } from '../score/model.js';
 import { disjointShapes } from './containment.js';
 export { disjointShapes } from './containment.js';
 import { completedRouteObstacles, reservedRunObstacles, routeObstacles, type RouteObstacle } from './obstacles.js';
@@ -201,7 +203,7 @@ export function planRoute(model: LayoutModel): RoutePlan {
       reserve([{ ...item, consumers: [...(terminal ? item.consumers : []), ...(across ? run.crossers : [])] }]);
     }
   }
-  const usage = portUsage(model), pins = new Map<string, RoutePin[]>();
+  const usage = portUsage(model), pins = new Map<string, RoutePin[]>(), boxes = groupBoxes(model);
   const remainders: string[] = [], overlay: string[] = [], links: LinkPlan[] = [], stems: StemReservation[] = [];
   const claims: { segment: PathSegment; covers: RouteObstacle[] }[] = [];
   for (const link of model.links) {
@@ -268,6 +270,16 @@ export function planRoute(model: LayoutModel): RoutePlan {
           reserve(covers);
           claims.push({ segment: run, covers });
         } else {
+          // The router has a choice here, so where a stem ends inside a group the entry across its
+          // edge is reserved as well, in traversal order: after the source stem, before the target's.
+          if (last && to.checkpoint && asked.at(-1)?.port === portId(to.port!.ref)) {
+            asked.splice(asked.length - 1, 0, ...entryCheckpoint(model, link, 'to', to.port!, to.checkpoint, start.point, obstacles, boxes)
+              .map(checkpoint => ({ checkpoint, terminal: to.point })));
+          }
+          if (first && from.checkpoint && asked[0]?.port === portId(from.port!.ref)) {
+            asked.splice(1, 0, ...entryCheckpoint(model, link, 'from', from.port!, from.checkpoint, end.point, obstacles, boxes)
+              .map(checkpoint => ({ checkpoint, terminal: from.point })));
+          }
           // Only an attachment stem is reserved against the batches still to run. Reserving the lane
           // approach as well was measured and left out; see `.scratch/stress/issues/02`.
           for (const item of asked) {
@@ -323,6 +335,58 @@ export function planRoute(model: LayoutModel): RoutePlan {
   }
   return { remainders, overlay, links, obstacles, stems, parameters: routeParameters(model),
     batches: [...batches.values()].map((ids, index) => ({ id: `batch-${index}`, links: ids })) };
+}
+
+/** The entry checkpoint stands this far beyond the edge margin, so the turn that reaches it still passes G6 after the router's nudging. */
+const ENTRY_SLACK = 1;
+
+/**
+ * ADR-0013, reserved in the plan: where a link that comes from beside a group goes in. The group is
+ * not an obstacle to the links attached inside it, so when a group title stands on the column of a
+ * top or bottom port's stem, the link cannot go in through the group's top or bottom edge, and the
+ * router may take a corridor beside a side edge, outside it and closer than the edge margin, and turn
+ * into the group sideways from there (G6 `segment-group-edge`). Such a stem, whose checkpoint lies
+ * inside a group the link is attached to, is preceded by one entry checkpoint on the row of the
+ * stem, one edge margin beyond the side edge that faces the piece's other end: the link turns
+ * outside the margin, then goes in sideways. Nothing is asked when no title stands on the column
+ * (the link goes in square through the edge), when the piece starts over the group's span (it stays
+ * clear of the side edges), or when the entry point is not free for this link.
+ */
+function entryCheckpoint(model: LayoutModel, link: LayoutLink, end: 'from' | 'to', port: LayoutPort, stem: Point, other: Point,
+  obstacles: RouteObstacle[], boxes: { id: string; bounds: Rect }[]): RouteCheckpoint[] {
+  const side = port.side!, out = OUTWARD[side], anchor = port.anchor!, vertical = out.x === 0;
+  // Only a top or bottom stem has a side edge to turn beside.
+  if (!vertical) return [];
+  const margin = edgeMargin(routedStroke(model)) + ENTRY_SLACK;
+  let depth: number | undefined, outer: Rect | undefined;
+  for (const { id, bounds } of boxes) {
+    const across = vertical ? anchor.x : anchor.y, along = vertical ? anchor.y : anchor.x;
+    const low = vertical ? bounds.x : bounds.y, high = low + (vertical ? bounds.width : bounds.height);
+    const start = vertical ? bounds.y : bounds.x, stop = start + (vertical ? bounds.height : bounds.width);
+    if (across <= low + EPS || across >= high - EPS || along < start - EPS || along > stop + EPS
+      || !groupConsumers(model, id).includes(link.id)) continue;
+    // How far out from the port the box edge on the port's side lies; a stem that stops short of it
+    // ends inside the group.
+    const edge = vertical ? (out.y < 0 ? bounds.y : bounds.y + bounds.height) : (out.x < 0 ? bounds.x : bounds.x + bounds.width);
+    const reach = vertical ? (edge - anchor.y) * out.y : (edge - anchor.x) * out.x;
+    const stemReach = vertical ? Math.abs(stem.y - anchor.y) : Math.abs(stem.x - anchor.x);
+    if (reach <= EPS || reach <= stemReach + EPS) continue;
+    if (depth === undefined || reach + margin > depth) { depth = reach + margin; outer = bounds; }
+  }
+  if (depth === undefined || outer === undefined) return [];
+  const free = (from: Point, to: Point, only = ''): boolean => !obstacles.some(item => item.id.startsWith(only) && !item.consumers.includes(link.id)
+    && item.bounds.width > 0 && item.bounds.height > 0 && segmentRect({ from, to, owner: { kind: 'link', id: link.id } }, item.bounds));
+  const checkpoint = (point: Point, inward: number): RouteCheckpoint =>
+    end === 'to' ? { ...point, arrival: ALL_DIRECTIONS, departure: inward } : { ...point, arrival: inward, departure: ALL_DIRECTIONS };
+  const point = { x: anchor.x + out.x * depth, y: anchor.y + out.y * depth };
+  // No title stands on the port's own column: the link has every reason to go in square through the
+  // edge, and the router is left to it.
+  if (free(point, stem, 'label:')) return [];
+  if (!vertical) return [];
+  if (other.x >= outer.x && other.x <= outer.x + outer.width) return [];
+  const left = other.x < outer.x, x = left ? outer.x - margin : outer.x + outer.width + margin;
+  const row = { x, y: stem.y };
+  return free(row, stem) ? [checkpoint(row, left ? DIRECTION_BITS.right : DIRECTION_BITS.left)] : [];
 }
 
 /** The endpoint chord must pass strictly through the run, rather than touch an end or its cover. */
