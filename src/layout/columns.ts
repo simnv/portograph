@@ -4,6 +4,7 @@ import { GROUP_PADDING } from './regions.js';
 import { bandGap, compareId } from './skeleton-graph.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { groupShape } from './grid.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 
 /**
  * How far a cell may stand off the axis of its column, to either side, so a wide cell can meet a port
@@ -138,7 +139,7 @@ export function separateFrameColumns(model: LayoutModel): boolean {
     let end = -Infinity;
     for (const { unit, x, end: right } of standing) {
       const dx = Math.max(0, end + (unit.frame ? COLUMN_SLACK : 0) - x);
-      if (dx > 0) { for (const group of unit.groups) moveGroup(model, group, dx, 0); moved = true; }
+      if (dx > PLACEMENT_EPS) { for (const group of unit.groups) moveGroup(model, group, dx, 0); moved = true; }
       end = right + dx + gap + (unit.frame ? COLUMN_SLACK : 0);
     }
   }
