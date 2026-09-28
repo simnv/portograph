@@ -193,3 +193,73 @@ describe('deriveRanks: child groups', () => {
     expect(result.ranks.get('x')).toBe(3);
   });
 });
+
+describe('deriveRanks: overlay-only members', () => {
+  it('an overlay-only member takes the rank of its overlay partner in the group', () => {
+    const result = deriveRanks(input({
+      members: ['a', 'b', 'c', 'o'], routedLinks: chain('a', 'b', 'c'), linksAbove: new Set(['a']),
+      overlayPartners: new Map([['o', ['outside', 'b']]]),
+    }));
+    expect(result.ranks.get('o')).toBe(1);
+    expect(result.rankCount).toBe(3);
+  });
+
+  it('an overlay-only member with no partner in the group takes the last rank', () => {
+    const result = deriveRanks(input({
+      members: ['a', 'b', 'o', 'n'], routedLinks: chain('a', 'b'), linksAbove: new Set(['a']),
+      overlayPartners: new Map([['o', ['outside']]]),
+    }));
+    expect(result.ranks.get('o')).toBe(1);
+    expect(result.ranks.get('n')).toBe(1);
+    expect(result.rankCount).toBe(2);
+  });
+
+  it('an overlay-only member never adds a rank', () => {
+    const result = deriveRanks(input({ members: ['a', 'o'], linksAbove: new Set(['a']), overlayPartners: new Map([['o', ['a']]]) }));
+    expect(asObject(result.ranks)).toEqual({ a: 0, o: 0 });
+    expect(result.rankCount).toBe(1);
+  });
+
+  it('an anchor with no link inside the group is an anchor, not an overlay-only member', () => {
+    const result = deriveRanks(input({
+      members: ['a', 'b', 'o'], routedLinks: chain('a', 'b'), linksAbove: new Set(['a', 'o']),
+      overlayPartners: new Map([['o', ['b']]]),
+    }));
+    expect(result.ranks.get('o')).toBe(0);
+  });
+
+  it('an overlay-only member whose partner stands in a child span is pushed past the span', () => {
+    const result = deriveRanks(input({
+      members: ['p', 'c1', 'c2', 'o'], routedLinks: chain('p', 'c1', 'c2'), linksAbove: new Set(['p']),
+      overlayPartners: new Map([['o', ['c1']]]), children: [{ group: 'zone', members: ['c1', 'c2'] }],
+    }));
+    expect(result.ranks.get('o')).toBe(3);
+    expect(result.rankCount).toBe(4);
+  });
+
+  it('an overlay-only child member stays in its own span', () => {
+    const result = deriveRanks(input({
+      members: ['p', 'c1', 'o'], routedLinks: chain('p', 'c1'), linksAbove: new Set(['p']),
+      overlayPartners: new Map([['o', ['c1']]]), children: [{ group: 'zone', members: ['c1', 'o'] }],
+    }));
+    expect(result.ranks.get('o')).toBe(1);
+    expect(result.spans.get('zone')).toEqual([1, 1]);
+  });
+
+  it('an overlay-only member takes a group that is anchored from below to the rank of its partner', () => {
+    const result = deriveRanks(input({
+      members: ['a', 'b', 'o'], routedLinks: chain('a', 'b'), linksBelow: new Set(['b']),
+      overlayPartners: new Map([['o', ['a']]]),
+    }));
+    expect(asObject(result.ranks)).toEqual({ a: 0, b: 1, o: 0 });
+  });
+
+  it('an overlay-only child member takes the last rank after the first push, and the span clears again below it', () => {
+    const result = deriveRanks(input({
+      members: ['p', 'c1', 'x', 'y', 'o'], routedLinks: [{ from: 'p', to: 'c1' }, { from: 'p', to: 'x' }, { from: 'x', to: 'y' }],
+      linksAbove: new Set(['p']), children: [{ group: 'zone', members: ['c1', 'o'] }],
+    }));
+    expect(asObject(result.ranks)).toEqual({ p: 0, c1: 1, x: 4, y: 5, o: 3 });
+    expect(result.spans.get('zone')).toEqual([1, 3]);
+  });
+});

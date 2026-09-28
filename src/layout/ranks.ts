@@ -98,7 +98,21 @@ function levels(members: string[], links: Link[], comp: Map<string, string>, anc
   return new Map(members.filter(id => level.has(comp.get(id)!)).map(id => [id, level.get(comp.get(id)!)!]));
 }
 
-/** Steps 5: a span is `[min, max]` of the ranks of one child's members; an empty child has none. */
+interface Edges { lateral: Link[]; forward: Link[] }
+
+/** Split the links by the layered ranks: forward edges point down one rank, the rest share a rank. */
+function edgesOf(links: Link[], ranks: Map<string, number>): Edges {
+  const edges: Edges = { lateral: [], forward: [] };
+  for (const link of links) {
+    const a = ranks.get(link.a), b = ranks.get(link.b);
+    if (a === undefined || b === undefined) continue;
+    if (link.peer || a === b) edges.lateral.push(link);
+    else if (Math.abs(a - b) === 1) edges.forward.push(a < b ? link : { ...link, a: link.b, b: link.a });
+  }
+  return edges;
+}
+
+/** Step 5: a span is `[min, max]` of the ranks of one child's members; an empty child has none. */
 function spanOf(ranks: Map<string, number>, child: { members: string[] }): [number, number] | undefined {
   const own = child.members.map(id => ranks.get(id)).filter((rank): rank is number => rank !== undefined);
   return own.length ? [Math.min(...own), Math.max(...own)] : undefined;
@@ -110,14 +124,9 @@ function spanOf(ranks: Map<string, number>, child: { members: string[] }): [numb
  * sharing a rank. Ranks only grow, and every layering edge points from a lower base rank to a
  * higher one, so the loop ends; the bound is a guard, not a limit anyone should reach.
  */
-function clearSpans(input: RankInput, members: string[], links: Link[], ranks: Map<string, number>): void {
+function clearSpans(input: RankInput, members: string[], edges: Edges, ranks: Map<string, number>): void {
   const owner = new Set(input.children.flatMap(child => child.members));
-  const lateral: Link[] = [], forward: Link[] = [];
-  for (const link of links) {
-    const a = ranks.get(link.a)!, b = ranks.get(link.b)!;
-    if (link.peer || a === b) lateral.push(link);
-    else if (Math.abs(a - b) === 1) forward.push(a < b ? link : { ...link, a: link.b, b: link.a });
-  }
+  const { lateral, forward } = edges;
   for (let round = 0; round < 4 * members.length + 4; round += 1) {
     let changed = false;
     const raise = (id: string, rank: number): void => { if (rank > ranks.get(id)!) { ranks.set(id, rank); changed = true; } };
@@ -144,10 +153,20 @@ export function deriveRanks(input: RankInput): RankResult {
   const depth = levels(members, links, comp, anchoredFrom === 'above' ? above : anchoredFrom === 'below' ? below : []);
   const deepest = depth.size ? Math.max(...depth.values()) : 0;
   const ranks = new Map([...depth].map(([id, level]) => [id, anchoredFrom === 'below' ? deepest - level : level]));
-  const layered = links.filter(link => ranks.has(link.a) && ranks.has(link.b));
-  clearSpans(input, [...ranks.keys()], layered, ranks);
-  const rankCount = ranks.size ? Math.max(...ranks.values()) + 1 : 1;
-  for (const id of members) if (!ranks.has(id)) ranks.set(id, rankCount - 1);
+  const edges = edgesOf(links, ranks);
+  clearSpans(input, [...ranks.keys()], edges, ranks);
+  // Step 6: a member the layering did not reach has no routed link inside the group. It takes the
+  // rank of its first overlay partner that has one, else the last rank. It is placed before the
+  // spans are cleared a second time, so a partner inside a child's span cannot pull a parent
+  // member into it.
+  const lastRank = ranks.size ? Math.max(...ranks.values()) : 0;
+  const routed = new Set(ranks.keys());
+  for (const id of members) if (!routed.has(id)) {
+    const partner = (input.overlayPartners.get(id) ?? []).find(other => routed.has(other));
+    ranks.set(id, partner === undefined ? lastRank : ranks.get(partner)!);
+  }
+  clearSpans(input, members, edges, ranks);
+  const rankCount = Math.max(...ranks.values(), 0) + 1;
   const spans = new Map<string, [number, number]>();
   for (const child of input.children) { const span = spanOf(ranks, child); if (span) spans.set(child.group, span); }
   return { ranks, rankCount, anchoredFrom, spans };
