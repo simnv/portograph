@@ -73,6 +73,14 @@ link, while its concrete members use orthogonal, bundle or — for an overlay fa
 paths. A recorded request therefore
 does not receive the missing-path exemption of an actually applied stub.
 
+**Rank cells (ADR-0019).** After the links are resolved, `expandRankedGroups`
+(`src/layout/rank-cells.ts`) derives ranks per group (`deriveRanks`, `src/layout/ranks.ts`) and
+replaces each group of more than one rank with cells `G#0..G#k-1`. A cell is a `row` group with
+`frame: G` on its own sub-tier. Sub-tiers are dense integers. The document gains `frames`. Stages
+2–8 learn no new concept: they run on cells. A group of one rank stays as it is. When no group has
+more than one rank, the document is unchanged. **Idempotence guard:** a document that already
+carries `frames` is never expanded again, because a second expansion would split the cells.
+
 Group endpoints expand to concrete member-node attachments before placement. Empty groups cannot
 supply an attachment and produce a model error. Explicit `group-link` requires two distinct groups
 with at least two nodes each. Other group endpoints may expand to ordinary members with a warning;
@@ -963,6 +971,17 @@ runtime/diagnostic fields remain writable. Later stages may create paths and lin
 may not move or resize groups, nodes or port anchors. An async router computes outside the
 synchronous transaction, then commits its output through the route validator.
 
+### Frames (lands with ticket 03)
+
+`rebuildFrames` (`src/layout/frames.ts`) runs where `rebuildBands` runs, after every stage that
+moves a box. It derives one frame per document group: the union of its cells' boxes, grown by the
+group padding (20 px) on every side, plus the label band on the title edge. A child frame is the
+union of the cells of its span plus padding. The parent frame grows to hold the child frame plus
+padding. The layout JSON gains `frames`. The renderer draws frames and never cells. Cells have no
+label band and no padding. The room of the label band is reserved in the first cell of the frame
+only. A link that ends in a cell of a group may cross the cells above it; the frame grows to hold
+that lane. A link that is foreign to the group never enters the frame.
+
 ## Stage 8 — route (remainder)
 
 **Group boxes are obstacles for foreign links (ADR-0013).** Every group box, grown by the 10 px
@@ -1310,6 +1329,10 @@ omitted.
 All gates in `quality.md` on final geometry including labels. Any failed gate fails `render`
 (non-zero exit) unless `--allow-gate-failures`; `score` always reports. The gate-enforcement
 table by size is in `quality.md` and is authoritative.
+
+**G9, frame containment (lands with ticket 03).** Every frame contains its cells and its child
+frames. Frames of one tier do not overlap. No foreign node body lies inside a frame. G1 and G8
+read cells.
 
 ## Stage 11 — emit
 

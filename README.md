@@ -32,7 +32,8 @@ Renders: [`prototype/out/out-tall2-av.png`](prototype/out/out-tall2-av.png) →
    rules defined precisely.
 4. [`docs/design/schema.md`](docs/design/schema.md) — the YAML format.
 5. [`docs/design/quality.md`](docs/design/quality.md) — gates, score, thresholds.
-6. [`docs/adr/`](docs/adr/) — the architecture decisions, one per file.
+6. [`docs/adr/`](docs/adr/) — the architecture decisions, one per file. Read ADR-0019 for the ranked-group
+   model (ranks, rank cells, frames).
 7. [`.scratch/m1-example-diagram/`](.scratch/m1-example-diagram/) — milestone 1 spec and tickets.
 
 ## Research behind it
