@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { Rect } from '../../src/index.js';
 import { layout, parse, restoreFinalLayout, score, serializeLayoutModel } from '../../src/index.js';
-import { createAttempt } from '../layout/phase-two-fixture.js';
+import { withLayoutMutation } from '../../src/layout/mutation.js';
+import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
@@ -121,6 +122,15 @@ describe('frames', () => {
     }
     // The widest node, the second rank's, sets it; the gateway did not move to fill it.
     expect(boxes[0]!.width).toBeGreaterThan(model.nodes['gw']!.bounds!.width + 20);
+  }, 60000);
+
+  it('a mutation that leaves the frames off their cells is refused', async () => {
+    const model = await placed(fixture('a-frame-holds-its-ranks-and-title'));
+    expect(model.frames).toHaveLength(1);
+    // An untouched frame list is the re-derivation, so a no-op commit passes.
+    expect(() => withLayoutMutation(model, 'rows', () => {})).not.toThrow();
+    expect(() => withLayoutMutation(model, 'rows', draft => { draft.frames![0]!.box.width += 5; })).toThrow(/[Ff]rames/);
+    expect(() => withLayoutMutation(model, 'rows', draft => { draft.frames = []; })).toThrow(/[Ff]rames/);
   }, 60000);
 
   it('restores from its own JSON with the frames intact', async () => {

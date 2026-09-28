@@ -16,6 +16,7 @@ import { rebuildBands, span, union, validateSkeletonBands } from './skeleton-geo
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, flankPair } from './flanks.js';
 import { type LaneFollow, lanesHoldTheirChild, rebuildLaneExtents, reseatLanes, validateLanes, transitTiers } from './lanes.js';
+import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
 import { centreViolations, selectAnchorTier } from './centre.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
@@ -568,6 +569,11 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
   if (changed && hasUnsupportedClaims(model)) throw new Error(`${rule} requires an unimplemented claim rebuild`);
   // Rebuild containing boxes and node content first, so every rule check below sees the final geometry.
   if (changed) { rebuildBoxes(draft); rebuildNodeGeometry(draft, orderedNodeIds(draft.document), 'current'); }
+  // Frames are derived from cell boxes, like tier bands: a callback may not leave them off the cells.
+  const derived = { ...draft } as LayoutModel;
+  delete derived.frames;
+  rebuildFrames(derived);
+  same(draft.frames, derived.frames, 'Frames contradict the cell geometry they derive from');
   const flankOrder = clone(model);
   if (rule === 'flanks') normalizePrimaryBundlePorts(flankOrder);
   const bundledPorts = new Set(model.links.filter(link => link.bundle).flatMap(link => [JSON.stringify(link.attachments!.from), JSON.stringify(link.attachments!.to)]));
