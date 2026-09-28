@@ -163,26 +163,31 @@ function spanOf(ranks: Map<string, number>, child: { members: string[] }): [numb
 }
 
 /**
- * Step 5. A parent member whose rank falls inside a child's span and who is not a child member is
- * pushed to the rank after the span; whatever hangs below it moves down with it, and peers keep
- * sharing a rank. Ranks only grow, and every layering edge points from a lower base rank to a
- * higher one, so the loop ends; the bound is a guard, not a limit anyone should reach.
+ * Step 5. Every member is ranked once before this runs, and the spans are read from those ranks and
+ * then held fixed: a child member never moves here. Each non-child member whose rank lies inside a
+ * span is pushed to the rank after it. A pushed member drags what hangs below it down by longest
+ * path over the non-child part of the graph, and peers among non-child members keep one rank; a
+ * link from a pushed member into a child moves nothing, since the child is fixed. Only non-child
+ * ranks grow, and by a bounded amount, so the loop ends; the round bound is a guard.
  */
 function clearSpans(input: RankInput, members: string[], edges: Edges, ranks: Map<string, number>): void {
   const owner = new Set(input.children.flatMap(child => child.members));
+  const spans = input.children.map(child => spanOf(ranks, child)).filter((span): span is [number, number] => span !== undefined);
   const { lateral, forward } = edges;
   for (let round = 0; round < 4 * members.length + 4; round += 1) {
     let changed = false;
-    const raise = (id: string, rank: number): void => { if (rank > ranks.get(id)!) { ranks.set(id, rank); changed = true; } };
+    const raise = (id: string, rank: number): void => { if (!owner.has(id) && rank > ranks.get(id)!) { ranks.set(id, rank); changed = true; } };
     for (const link of forward) raise(link.b, ranks.get(link.a)! + 1);
     for (const link of lateral) { const top = Math.max(ranks.get(link.a)!, ranks.get(link.b)!); raise(link.a, top); raise(link.b, top); }
-    for (const child of input.children) {
-      const span = spanOf(ranks, child);
-      if (!span) continue;
-      for (const id of members) if (!owner.has(id) && ranks.get(id)! >= span[0] && ranks.get(id)! <= span[1]) raise(id, span[1] + 1);
-    }
+    for (const [from, to] of spans) for (const id of members) if (ranks.get(id)! >= from && ranks.get(id)! <= to) raise(id, to + 1);
     if (!changed) return;
   }
+}
+
+/** A push can leave a rank empty; ranks are dense, so the members below it close up. */
+function compact(ranks: Map<string, number>): void {
+  const used = [...new Set(ranks.values())].sort((a, b) => a - b);
+  for (const [id, rank] of ranks) ranks.set(id, used.indexOf(rank));
 }
 
 export function deriveRanks(input: RankInput): RankResult {
@@ -198,18 +203,19 @@ export function deriveRanks(input: RankInput): RankResult {
   const deepest = depth.size ? Math.max(...depth.values()) : 0;
   const ranks = new Map([...depth].map(([id, level]) => [id, anchoredFrom === 'below' ? deepest - level : level]));
   const edges = edgesOf(links, dag, ranks, anchoredFrom === 'below');
-  clearSpans(input, [...ranks.keys()], edges, ranks);
   // Step 6: a member the layering did not reach has no routed link inside the group. It takes the
-  // rank of its first overlay partner that has one, else the last rank. It is placed before the
-  // spans are cleared a second time, so a partner inside a child's span cannot pull a parent
-  // member into it.
+  // rank of its first overlay partner that has one, else the last rank. All members are ranked
+  // before step 5 reads the spans.
   const lastRank = ranks.size ? Math.max(...ranks.values()) : 0;
   const routed = new Set(ranks.keys());
   for (const id of members) if (!routed.has(id)) {
     const partner = (input.overlayPartners.get(id) ?? []).find(other => routed.has(other));
     ranks.set(id, partner === undefined ? lastRank : ranks.get(partner)!);
   }
+  // Step 5. `max(own, first rank of the child)` from the spec is a no-op here: the first rank of a
+  // child is the least rank of its members, so no member is below it.
   clearSpans(input, members, edges, ranks);
+  compact(ranks);
   const rankCount = Math.max(...ranks.values(), 0) + 1;
   const spans = new Map<string, [number, number]>();
   for (const child of input.children) { const span = spanOf(ranks, child); if (span) spans.set(child.group, span); }

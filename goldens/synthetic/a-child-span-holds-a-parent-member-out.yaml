@@ -1,0 +1,24 @@
+# Expected: A parent member between two child members (ranked-groups ticket 01, review fix). Group
+# `zone` is a child of group `site`; the document has no parent field yet, so the derivation test
+# states the parenthood itself. Zone 1 links to the tier above and is rank 0. The site's Bridge hangs
+# from it, and Zone 2 hangs from Bridge, so before the span is read the ranks are 0, 1 and 2 and the
+# span of `zone` is [0, 2]. Bridge is not a child member and stands inside it, so it is pushed to
+# rank 3; the child never moves, and the link from Bridge back up into the child moves nothing. The
+# rank Bridge left is empty and closes up: Zone 1 is rank 0, Zone 2 rank 1, Bridge rank 2, the span
+# is [0, 1] and the site has three ranks. Before the fix this loop did not end (Bridge 65). Today the
+# pipeline draws the two groups as tier mates; ticket 02 reads the ranks.
+# Test-only input owned by ranked-groups ticket 01; the derivation test reads the parsed document.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, label: Site }
+  zone: { tier: 1, label: Zone }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  z1: { group: zone, class: router, label: Zone 1 }
+  bridge: { group: site, class: switch, label: Bridge }
+  z2: { group: zone, class: access, label: Zone 2 }
+links:
+  - [isp, z1]
+  - [z1, bridge]
+  - [bridge, z2]

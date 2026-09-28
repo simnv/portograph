@@ -178,6 +178,31 @@ describe('deriveRanks: child groups', () => {
     expect(asObject(result.ranks)).toEqual({ p: 0, c1: 1, c2: 2, x: 3, y: 4 });
   });
 
+  it('a parent member between two child members is pushed once, and the empty rank it leaves closes up', () => {
+    const result = deriveRanks(input({
+      members: ['c1', 'p', 'c2'], linksAbove: new Set(['c1']),
+      routedLinks: [{ from: 'c1', to: 'p' }, { from: 'p', to: 'c2' }],
+      children: [{ group: 'zone', members: ['c1', 'c2'] }],
+    }));
+    expect(asObject(result.ranks)).toEqual({ c1: 0, c2: 1, p: 2 });
+    expect(result.spans.get('zone')).toEqual([0, 1]);
+    expect(result.rankCount).toBe(3);
+  });
+
+  it('a link from a pushed member into the child never moves a child member', () => {
+    const result = deriveRanks(input({
+      members: ['c1', 'p', 'q', 'c2'], linksAbove: new Set(['c1']),
+      routedLinks: [{ from: 'c1', to: 'p' }, { from: 'p', to: 'q' }, { from: 'q', to: 'c2' }],
+      children: [{ group: 'zone', members: ['c1', 'c2'] }],
+    }));
+    // c1 0, p 1, q 2, c2 3 before the push; p and q sit inside [0, 3], so both go past it.
+    expect(result.spans.get('zone')).toEqual([0, 1]);
+    expect(result.ranks.get('c1')).toBe(0);
+    expect(result.ranks.get('c2')).toBe(1);
+    expect(result.ranks.get('p')! < result.ranks.get('q')!).toBe(true);
+    expect(Math.min(result.ranks.get('p')!, result.ranks.get('q')!)).toBeGreaterThan(1);
+  });
+
   it('a parent member outside the span stays where it is', () => {
     const result = deriveRanks(input({
       members: ['p', 'c1', 'c2', 'x'], linksAbove: new Set(['p']),
@@ -284,12 +309,12 @@ describe('deriveRanks: overlay-only members', () => {
     expect(asObject(result.ranks)).toEqual({ a: 0, b: 1, o: 0 });
   });
 
-  it('an overlay-only child member takes the last rank after the first push, and the span clears again below it', () => {
+  it('an overlay-only child member takes the last rank before the span is set, so the span takes it in', () => {
     const result = deriveRanks(input({
       members: ['p', 'c1', 'x', 'y', 'o'], routedLinks: [{ from: 'p', to: 'c1' }, { from: 'p', to: 'x' }, { from: 'x', to: 'y' }],
       linksAbove: new Set(['p']), children: [{ group: 'zone', members: ['c1', 'o'] }],
     }));
-    expect(asObject(result.ranks)).toEqual({ p: 0, c1: 1, x: 4, y: 5, o: 3 });
-    expect(result.spans.get('zone')).toEqual([1, 3]);
+    expect(asObject(result.ranks)).toEqual({ p: 0, c1: 1, x: 3, y: 4, o: 2 });
+    expect(result.spans.get('zone')).toEqual([1, 2]);
   });
 });

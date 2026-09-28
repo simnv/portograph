@@ -93,6 +93,13 @@ describe('goldens/synthetic group-ranks fixtures', () => {
     expect(result.rankCount).toBe(4);
   });
 
+  it('a parent member between two child members is held out of the span and the rank it left closes up', () => {
+    const result = ranksOf('a-child-span-holds-a-parent-member-out', 'site', ['zone']);
+    expect(Object.fromEntries(result.ranks)).toEqual({ z1: 0, z2: 1, bridge: 2 });
+    expect(result.spans.get('zone')).toEqual([0, 1]);
+    expect(result.rankCount).toBe(3);
+  });
+
   it('an overlay-only member takes the rank of its overlay partner, else the last rank', () => {
     const result = ranksOf('a-group-ranks-an-overlay-only-member', 'site');
     expect(Object.fromEntries(result.ranks)).toEqual({ gw: 0, sw: 1, ntp: 1, 'far-ntp': 1 });
@@ -101,7 +108,7 @@ describe('goldens/synthetic group-ranks fixtures', () => {
 
   it.each([
     'a-group-ranks-a-plain-chain', 'a-group-ranks-a-peer-pair-under-one-uplink', 'a-group-ranks-a-cycle-of-peers', 'a-group-ranks-skip-link',
-    'a-group-ranks-a-child-span-past-a-parent-member', 'a-group-ranks-an-overlay-only-member',
+    'a-group-ranks-a-child-span-past-a-parent-member', 'a-child-span-holds-a-parent-member-out', 'a-group-ranks-an-overlay-only-member',
   ])('%s parses, lays out and renders with today\'s pipeline', async name => {
     const model = await run(fixture(name));
     expect(model.diagnostics.filter(diagnostic => diagnostic.severity === 'error')).toEqual([]);
