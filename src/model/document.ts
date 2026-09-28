@@ -1,6 +1,6 @@
 import type { Side, Size } from './geometry.js';
 
-export type GroupShape = 'row' | 'bar' | 'grid' | 'ring' | 'free';
+export type GroupShape = 'ranked' | 'row' | 'bar' | 'grid' | 'ring' | 'free';
 export type Route = 'orthogonal' | 'straight' | 'bundle' | 'merge' | 'overlay' | 'stub' | 'group-link';
 
 export interface NamedPortIdentity {
@@ -33,12 +33,30 @@ export interface GroupContent {
   class?: string;
   collapsed?: boolean;
   layout?: Record<string, string | number | boolean>;
+  /** A child group names its parent; one level only. A child has no tier of its own and takes its parent's. */
+  parent?: string;
+  /** Set by stage 1 on a rank cell: the document group whose frame the cell is part of. */
+  frame?: string;
 }
 
 export type NormalisedGroup = GroupContent & (
   | { tier: number; align?: never; of?: never }
   | { align: 'left' | 'right'; of: string; tier?: never }
 );
+
+/**
+ * Stage 1 record of a document group that was replaced by rank cells (docs/design/ranked-groups.md,
+ * section 2). The frame is the drawn box; it is derived after placement from its cells. `cells` are
+ * the frame's own cells in rank order; the cells of a child frame are listed under the child, and a
+ * child names its parent frame in `parent`. A cell `X#r` is rank `r` of the frame tree (`r` counts
+ * from the top of the parent, so a child's cells carry the parent's rank numbers).
+ */
+export interface NormalisedFrame {
+  label: string;
+  class?: string;
+  parent?: string;
+  cells: string[];
+}
 
 export interface NormalisedNode {
   group: string;
@@ -64,6 +82,8 @@ export interface NormalisedDocument {
   portograph: 2;
   profile: string;
   groups: Record<string, NormalisedGroup>;
+  /** Emitted only when stage 1 replaced a group by rank cells. Keyed by the replaced group's id. */
+  frames?: Record<string, NormalisedFrame>;
   nodes: Record<string, NormalisedNode>;
   links: NormalisedLink[];
   /** Emitted only when group declaration order differs from Object.keys(groups). */

@@ -33,12 +33,12 @@ function groups(input: Map<string, unknown>, doc: NormalisedDocument, v: Validat
     const path = `$.groups.${id}`;
     if (v.identifier(id, path) === undefined) continue;
     const fields = v.map(value, path);
-    v.keys(fields, ['tier', 'align', 'of', 'label', 'shape', 'class', 'collapsed', 'layout'], path);
-    const content: GroupContent = { label: id, shape: 'row' };
+    v.keys(fields, ['tier', 'align', 'of', 'parent', 'label', 'shape', 'class', 'collapsed', 'layout'], path);
+    const content: GroupContent = { label: id, shape: 'ranked' };
     optionalStrings(fields, content, ['label', 'class'], path, v);
     if (fields.has('shape')) {
-      const shape = v.choice(fields.get('shape'), ['row', 'bar', 'grid', 'ring', 'free'], `${path}.shape`);
-      if (shape === 'row' || shape === 'bar' || shape === 'grid') content.shape = shape;
+      const shape = v.choice(fields.get('shape'), ['ranked', 'row', 'bar', 'grid', 'ring', 'free'], `${path}.shape`);
+      if (shape === 'ranked' || shape === 'row' || shape === 'bar' || shape === 'grid') content.shape = shape;
       else if (shape !== undefined) v.report('UNSUPPORTED_SHAPE', `${path}.shape`, `M1 does not support ${shape} groups`);
     }
     if (fields.has('collapsed')) {
@@ -53,6 +53,13 @@ function groups(input: Map<string, unknown>, doc: NormalisedDocument, v: Validat
       }
       content.layout = layout;
     }
+    if (fields.has('parent')) {
+      const parent = v.identifier(fields.get('parent'), `${path}.parent`);
+      if (fields.has('tier')) v.report('CHILD_TIER', `${path}.tier`, 'A child group takes the tier of its parent');
+      if (fields.has('align') || fields.has('of')) v.report('CHILD_FLANK', path, 'A child group cannot be a flank');
+      if (parent !== undefined) put(doc.groups, id, { ...content, tier: 0, parent });
+      continue;
+    }
     const rank = fields.has('tier') ? v.number(fields.get('tier'), `${path}.tier`, true, 0) : undefined;
     if (fields.has('align')) {
       if (fields.has('tier')) v.report('TIER_ALIGN_CONFLICT', path, 'tier and align are mutually exclusive');
@@ -65,6 +72,14 @@ function groups(input: Map<string, unknown>, doc: NormalisedDocument, v: Validat
       put(doc.groups, id, { ...content, tier: rank ?? 0 });
       ranks.set(id, rank);
     }
+  }
+  for (const [id, group] of Object.entries(doc.groups)) if (group.parent !== undefined) {
+    const parent = own(doc.groups, group.parent);
+    const path = `$.groups.${id}.parent`;
+    if (parent === undefined) v.report('UNKNOWN_REFERENCE', path, `Unknown group ${group.parent}`);
+    else if (group.parent === id || parent.parent !== undefined) v.report('NESTED_CHILD', path, 'A parent group cannot itself have a parent; groups nest one level');
+    else if (parent.align !== undefined) v.report('PARENT_FLANK', path, 'A flank cannot have child groups');
+    else if (parent.shape !== 'ranked') v.report('PARENT_SHAPE', path, `A group with a child is ranked, not ${parent.shape}`);
   }
   const occupied = new Set<string>();
   for (const [id, group] of Object.entries(doc.groups)) if (group.align !== undefined) {
@@ -142,14 +157,16 @@ function inferTiers(doc: NormalisedDocument, ranks: Map<string, number | undefin
   for (const id of orderedNodeIds(doc)) {
     const node = own(doc.nodes, id);
     if (!node) continue;
-    counts.set(node.group, (counts.get(node.group) ?? 0) + 1);
-    const set = classes.get(node.group) ?? new Set<string>();
+    // A child group has no tier: its members count for the parent, which is the tier group.
+    const owner = own(doc.groups, node.group)?.parent ?? node.group;
+    counts.set(owner, (counts.get(owner) ?? 0) + 1);
+    const set = classes.get(owner) ?? new Set<string>();
     if (node.class !== undefined) set.add(node.class);
-    classes.set(node.group, set);
+    classes.set(owner, set);
   }
   for (const id of orderedGroupIds(doc)) {
     const group = own(doc.groups, id);
-    if (!group || group.align !== undefined) continue;
+    if (!group || group.align !== undefined || group.parent !== undefined) continue;
     const rank = ranks.get(id);
     if (rank !== undefined) { explicit.set(rank, [...(explicit.get(rank) ?? []), id]); continue; }
     const set = classes.get(id) ?? new Set<string>();
@@ -170,6 +187,11 @@ function inferTiers(doc: NormalisedDocument, ranks: Map<string, number | undefin
     const flankIds = orderedGroupIds(doc).filter(id => { const group = own(doc.groups, id); return group?.of !== undefined && ids.includes(group.of); });
     if (![...ids, ...flankIds].some(id => (counts.get(id) ?? 0) > 0)) v.report('EMPTY_TIER', `$.groups.${ids[0] ?? ''}`, `Tier ${tier} has no nodes`, 'warning', 'model');
   });
+  for (const id of orderedGroupIds(doc)) {
+    const group = own(doc.groups, id);
+    const parent = group?.parent === undefined ? undefined : own(doc.groups, group.parent);
+    if (group && parent?.tier !== undefined) group.tier = parent.tier;
+  }
 }
 
 function endpoint(value: unknown, path: string, doc: NormalisedDocument, used: Map<NormalisedPort, Set<number>>, index: number, v: Validation): Endpoint | undefined {

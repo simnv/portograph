@@ -2,11 +2,11 @@
   "portograph": 2,
   "profile": "network",
   "groups": {
-    "providers": { "tier": 0, "label": "Провайдеры / Контрагенты", "shape": "row" },
-    "datacenter": { "tier": 1, "label": "Datacenter", "shape": "row" },
-    "tbr-left": { "align": "left", "of": "datacenter", "label": "TBR-001", "shape": "row" },
-    "tbr-right": { "align": "right", "of": "datacenter", "label": "TBR-002", "shape": "row" },
-    "route-reflector": { "tier": 2, "label": "Route-Reflector (ERR)", "shape": "row" },
+    "providers": { "tier": 0, "label": "Провайдеры / Контрагенты", "shape": "ranked" },
+    "datacenter": { "tier": 1, "label": "Datacenter", "shape": "ranked" },
+    "tbr-left": { "align": "left", "of": "datacenter", "label": "TBR-001", "shape": "ranked" },
+    "tbr-right": { "align": "right", "of": "datacenter", "label": "TBR-002", "shape": "ranked" },
+    "route-reflector": { "tier": 2, "label": "Route-Reflector (ERR)", "shape": "ranked" },
     "backbone": { "tier": 3, "label": "Backbone", "shape": "bar" }
   },
   "nodes": {
