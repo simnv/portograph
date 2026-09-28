@@ -1,0 +1,17 @@
+# Expected: A ranked group lays out on sub-tiers (ranked-groups ticket 02). The ISP is alone in tier 0. The
+# gateway links to it, so it is rank 0 of group `site`; the distribution switch is one link below the
+# gateway, rank 1. Group `site` has two ranks, so stage 1 replaces it by the rank cells `site#0` (gateway)
+# and `site#1` (distribution switch), both `frame: site`, at sub-tiers 1 and 2. The layout has three
+# tier bands, 0, 1 and 2, and no group named `site`.
+# Test-only input owned by ranked-groups ticket 02; test/pipeline/rank-cells.test.ts reads the layout JSON.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, label: Site }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  gw: { group: site, class: router, label: Gateway }
+  dist: { group: site, class: switch, label: Distribution }
+links:
+  - [isp, gw]
+  - [gw, dist]

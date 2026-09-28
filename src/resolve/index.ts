@@ -1,9 +1,10 @@
 import {
-  createLayoutModel, orderedGroupIds, orderedNodeIds, unsupportedMessage,
+  createLayoutModel, groupNodeIds, orderedGroupIds, orderedNodeIds, unsupportedMessage,
   type Diagnostic, type Endpoint, type Layer, type LayoutLink, type LayoutModel,
   type NormalisedDocument, type Owner, type PortRef,
 } from '../model/index.js';
 import { enclosedBundle } from '../layout/grid.js';
+import { expandRankedGroups } from '../layout/rank-cells.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 
 export interface ResolveOptions {
@@ -48,7 +49,7 @@ function orderedPair(a: string, b: string, order: Map<string, number>): [string,
 }
 
 function endpointNodes(model: LayoutModel, endpoint: Endpoint): string[] {
-  return endpoint.group === undefined ? [endpoint.node] : model.groups[endpoint.group]!.nodes;
+  return endpoint.group === undefined ? [endpoint.node] : groupNodeIds(model, endpoint.group);
 }
 
 /** Check Cartesian expansion counts before allocating any generated ports or links. */
@@ -328,8 +329,12 @@ function declineStackedShapes(model: LayoutModel): void {
   }
 }
 
-/** Resolve document semantics without placement, paths or geometry-dependent route choices. */
-export function resolve(input: NormalisedDocument, options: ResolveOptions = {}): LayoutModel {
+/**
+ * Everything stage 1 does except the expansion of ranked groups: the model of the document as
+ * written. The rank derivation reads this model, and only this one, because it needs the links
+ * resolved and the groups still whole.
+ */
+export function resolveBeforeExpansion(input: NormalisedDocument, options: ResolveOptions = {}): LayoutModel {
   const model = createLayoutModel(input);
   model.diagnostics = JSON.parse(JSON.stringify(options.diagnostics ?? []));
   if (input.profile !== 'network') report(model, 'UNSUPPORTED_PROFILE', `M1 does not support profile ${input.profile}`, []);
@@ -338,6 +343,11 @@ export function resolve(input: NormalisedDocument, options: ResolveOptions = {})
   for (const id of groupOrder.keys()) {
     const group = model.groups[id]!;
     if (group.flank !== undefined) group.tier = model.groups[group.flank.of]!.tier!;
+  }
+  // A frame stands where its first cell stands, so a link between two frames orders like their cells.
+  for (const [frame, { cells }] of Object.entries(model.document.frames ?? {})) {
+    const first = Math.min(...cells.map(cell => groupOrder.get(cell) ?? Infinity));
+    if (!groupOrder.has(frame) && Number.isFinite(first)) groupOrder.set(frame, first);
   }
   validateExpansion(model);
   const explicit = expandEndpoints(model, groupOrder);
@@ -348,4 +358,16 @@ export function resolve(input: NormalisedDocument, options: ResolveOptions = {})
   stopOnErrors(model);
   model.stage = 'resolve';
   return model;
+}
+
+/**
+ * Stage 1: document semantics without placement, paths or geometry-dependent route choices, then the
+ * expansion of ranked groups into rank cells (docs/design/ranked-groups.md, section 2). The expanded
+ * document is resolved again from the top, so the model is the product of its own document: resolving
+ * `model.document` reproduces it, which `mutation.ts` relies on.
+ */
+export function resolve(input: NormalisedDocument, options: ResolveOptions = {}): LayoutModel {
+  const model = resolveBeforeExpansion(input, options);
+  const expanded = expandRankedGroups(model);
+  return expanded === undefined ? model : resolveBeforeExpansion(expanded, options);
 }
