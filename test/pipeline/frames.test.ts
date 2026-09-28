@@ -124,6 +124,18 @@ describe('frames', () => {
     expect(boxes[0]!.width).toBeGreaterThan(model.nodes['gw']!.bounds!.width + 20);
   }, 60000);
 
+  it('G9 fails when a foreign node lies inside a frame', async () => {
+    const model = await run('a-frame-holds-its-ranks-and-title');
+    expect(score(model).snapshot.gates.G9.passed).toBe(true);
+    // The published model is frozen; the copy is not. Put the ISP, which no frame owns, on the gateway.
+    const broken = structuredClone(model);
+    const frame = broken.frames![0]!, gateway = broken.nodes['gw']!.bounds!, isp = broken.nodes['isp']!.bounds!;
+    isp.x = gateway.x; isp.y = gateway.y;
+    const violations = score(broken).snapshot.gates.G9.violations;
+    expect(score(broken).snapshot.gates.G9.passed).toBe(false);
+    expect(violations).toContainEqual(expect.objectContaining({ code: 'frame-foreign-node', elements: [frame.id, 'isp'] }));
+  }, 60000);
+
   it('a mutation that leaves the frames off their cells is refused', async () => {
     const model = await placed(fixture('a-frame-holds-its-ranks-and-title'));
     expect(model.frames).toHaveLength(1);
