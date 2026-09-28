@@ -1,6 +1,6 @@
 # drawthe.net conversion
 
-`drawthe_net.py` converts a source document into schema v2 with grid groups. It preserves node
+`drawthe_net.py` converts a source document into schema v2 with groups. It preserves node
 labels and endpoint label text. It reads YAML anchors through PyYAML, so named presets and each
 connection's inherited style can be compared directly.
 
@@ -35,7 +35,9 @@ Visible groups collect icons by their authored bounding boxes, including icons n
 members. The smallest containing box wins, with declaration order breaking equal-area ties.
 Padding is measured in grid steps, including nesting depth. Icon height extends down the screen.
 The group's authored top row determines its tier. Icons outside every visible box fall back to their
-source row. All emitted groups use `shape: grid`.
+source row. Groups carry no `shape:`. A box inside another box gets `parent:` (the smallest
+containing box); only top-level groups get `tier:`. Nesting is one level: a box under a child is
+folded into that child, with a warning on stderr.
 
 An anonymous, opaque, stroke-free box entirely inside its nearest retained painted container of
 the same opaque fill adds no visible boundary. A different-coloured zone between it and a matching
