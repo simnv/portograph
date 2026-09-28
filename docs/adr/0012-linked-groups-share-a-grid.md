@@ -2,7 +2,7 @@
 
 Status: accepted (maintainer, 2026-09-12; the 30 % cap confirmed by the maintainer the same day)
 
-Amended by ADR-0019 (2026-09-29): the grid is shared by frames, not by rank cells (from ticket 03).
+Amended by ADR-0019 (2026-09-29): the grid is shared by frames, not by rank cells.
 
 Two groups joined by a routed link share the extent across that link's direction: groups joined
 by vertical (top/bottom) ports take one x-extent and width, groups joined by horizontal

@@ -77,7 +77,7 @@ the snapshot block) layout time per stage.
 
 | Metric | ≤ 30 nodes | ≤ 100 nodes | Kind |
 |---|---|---|---|
-| Gates G1–G8 | pass | pass (G3 warning-only above 300) | **assertion** |
+| Gates G1–G9 | pass | pass (G3 warning-only above 300) | **assertion** |
 | Crossings outside bundles, M1 golden | **= 0** | — | **assertion** (supersedes the "≤ 2" in the decisions log) |
 | `c / m` | ≤ 0.05 | ≤ 0.15 | advisory |
 | Mean bends | ≤ 1.0, max 3 | ≤ 1.5 | advisory |
@@ -110,7 +110,7 @@ count. 100 is a **policy choice, not a measured ceiling**: it is where the thres
 stops scoring, and the nearest measurements do not contradict it — 120 nodes at 4.0 s is inside the
 deadline, and the only measurement that failed at 100 nodes is the degree-64 hub.
 
-| Nodes | G1 G2 G4 G5 G6 G7 G8 | G3 | Whole-command time |
+| Nodes | G1 G2 G4 G5 G6 G7 G8 G9 | G3 | Whole-command time |
 |---|---|---|---|
 | ≤ 100 | enforced | enforced | the claimed band; a dense shape can still reach the deadline |
 | 101–300 | enforced | enforced | not bounded — `--force` territory |
@@ -129,7 +129,7 @@ command, the time is simply not a promise.
   reopen the approved golden.
 - **Golden tests**: `render` reviewed once by the maintainer; thereafter the layout JSON is an
   **exact snapshot** (runtime block excluded). Determinism is not required but is free.
-- **Gate tests**: every golden passes G1–G8.
+- **Gate tests**: every golden passes G1–G9.
 - **Score tests**: before golden approval, record a candidate `Q`; after ticket 18 approves it,
   assert `Q` within ± 0.05 of that value. Crossings-outside-bundles may only go down without a
   waiver. A nonempty zero-link diagram gives value 1 only to metrics whose subject is routed
