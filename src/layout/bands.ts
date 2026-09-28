@@ -615,7 +615,11 @@ function reserveInitialSpace(model: LayoutModel): void {
  */
 export const GROUP_GRID_MAX_GROWTH = 0.30;
 
-interface LinkedPair { a: LayoutGroup; b: LayoutGroup; axis: 'x' | 'y' }
+/** One side of a pair: a group, or every cell of a frame (a frame is one column and takes one x-extent). */
+interface LinkedPair { a: LayoutGroup[]; b: LayoutGroup[]; axis: 'x' | 'y' }
+const unitOf = (model: LayoutModel, group: LayoutGroup): LayoutGroup[] =>
+  group.frame === undefined ? [group] : model.document.frames![group.frame]!.cells.map(id => model.groups[id]!);
+const unitId = (group: LayoutGroup): string => group.frame ?? group.id;
 /** Groups joined by a routed link: vertical ports across tiers share x, horizontal ports share y. */
 function linkedGroupPairs(model: LayoutModel): LinkedPair[] {
   const seen = new Set<string>(), result: LinkedPair[] = [];
@@ -624,17 +628,18 @@ function linkedGroupPairs(model: LayoutModel): LinkedPair[] {
     const from = findPort(model, link.attachments.from), to = findPort(model, link.attachments.to);
     const a = model.groups[model.document.nodes[link.attachments.from.node]!.group]!;
     const b = model.groups[model.document.nodes[link.attachments.to.node]!.group]!;
-    if (!from?.side || !to?.side || a === b) continue;
-    // Frames share the grid, cells do not (ranked-groups spec, section 2): a cell's box is fixed by
-    // its frame. Growing a frame onto a shared extent is left to a later ticket.
-    if (a.frame !== undefined || b.frame !== undefined) continue;
+    // Frames share the grid, cells do not (ranked-groups spec, section 2): a frame joins the pairing
+    // as one unit of all its cells, and a link between two cells of one frame pairs nothing.
+    if (!from?.side || !to?.side || unitId(a) === unitId(b)) continue;
     const vertical = ['top', 'bottom'].includes(from.side) && ['top', 'bottom'].includes(to.side);
     const horizontal = ['left', 'right'].includes(from.side) && ['left', 'right'].includes(to.side);
     if (!vertical && !horizontal) continue;
-    const key = [a.id, b.id].sort().join('\u0000') + (vertical ? ':x' : ':y');
+    // The cells of a frame stand on different sub-tiers, so a shared y-extent means nothing to them.
+    if (horizontal && (a.frame !== undefined || b.frame !== undefined)) continue;
+    const key = [unitId(a), unitId(b)].sort().join('\u0000') + (vertical ? ':x' : ':y');
     if (seen.has(key)) continue;
     seen.add(key);
-    result.push({ a, b, axis: vertical ? 'x' : 'y' });
+    result.push({ a: unitOf(model, a), b: unitOf(model, b), axis: vertical ? 'x' : 'y' });
   }
   return result;
 }
@@ -659,14 +664,18 @@ export function alignLinkedGroupGrid(model: LayoutModel): boolean {
     let moved = false;
     for (const { a, b, axis } of linkedGroupPairs(model)) {
       const [pos, len] = axis === 'x' ? ['x', 'width'] as const : ['y', 'height'] as const;
-      const low = Math.min(a.bounds![pos], b.bounds![pos]);
-      const high = Math.max(a.bounds![pos] + a.bounds![len], b.bounds![pos] + b.bounds![len]);
+      const members = [...a, ...b];
+      const low = Math.min(...members.map(group => group.bounds![pos]));
+      const high = Math.max(...members.map(group => group.bounds![pos] + group.bounds![len]));
       const extent = high - low;
-      if (Math.abs(a.bounds![len] - extent) <= PLACEMENT_EPS && Math.abs(b.bounds![len] - extent) <= PLACEMENT_EPS) continue;
-      if ((extent - a.bounds![len]) / extent > GROUP_GRID_MAX_GROWTH + PLACEMENT_EPS
-        || (extent - b.bounds![len]) / extent > GROUP_GRID_MAX_GROWTH + PLACEMENT_EPS) continue;
-      const proposed = [a, b].map(group => ({ group, bounds: { ...group.bounds!, [pos]: low, [len]: extent } as Rect }));
-      const others = Object.values(model.groups).filter(group => group !== a && group !== b);
+      if (members.every(group => Math.abs(group.bounds![len] - extent) <= PLACEMENT_EPS && Math.abs(group.bounds![pos] - low) <= PLACEMENT_EPS)) continue;
+      // A unit's own size is its union: one cell alone, or the column the cells of a frame make.
+      const size = (unit: LayoutGroup[]): number => Math.max(...unit.map(group => group.bounds![pos] + group.bounds![len]))
+        - Math.min(...unit.map(group => group.bounds![pos]));
+      if ((extent - size(a)) / extent > GROUP_GRID_MAX_GROWTH + PLACEMENT_EPS
+        || (extent - size(b)) / extent > GROUP_GRID_MAX_GROWTH + PLACEMENT_EPS) continue;
+      const proposed = members.map(group => ({ group, bounds: { ...group.bounds!, [pos]: low, [len]: extent } as Rect }));
+      const others = Object.values(model.groups).filter(group => !members.includes(group));
       if (proposed.some(item => others.some(other => rectOverlap(item.bounds, other.bounds!)))) continue;
       if (axis === 'x' && !laneSidesHold(model, proposed)) continue;
       for (const item of proposed) item.group.bounds = item.bounds;

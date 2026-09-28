@@ -99,6 +99,30 @@ describe('frames', () => {
     }
   }, 60000);
 
+  it('every cell of a frame takes the frame column, so a wide rank does not push its sibling off its feed', async () => {
+    // East's middle rank is wider than its first, so west's middle rank had a window of
+    // right(east#1) + 60 that its feed (the west gateway) could not meet: PLACEMENT_NON_CONVERGENCE
+    // and a jog on link-5.
+    const model = await run('sibling-frames-align-their-ranks');
+    expect(model.diagnostics.map(diagnostic => diagnostic.code)).not.toContain('PLACEMENT_NON_CONVERGENCE');
+    for (const link of model.links) expect(link.path!.segments).toHaveLength(1);
+    const link = model.links.find(item => item.id === 'link-5')!.path!.segments[0]!;
+    expect(link.from.x).toBeCloseTo(link.to.x, 6);
+  }, 60000);
+
+  it('a frame joins the linked-group grid as one unit, and its cells are not paired alone', async () => {
+    const model = await run('a-frame-shares-the-grid-with-its-linked-group');
+    expect(model.diagnostics.map(diagnostic => diagnostic.code)).not.toContain('GROUP_GRID_NON_CONVERGENCE');
+    const boxes = ['upstream', 'site#0', 'site#1'].map(id => model.groups[id]!.bounds!);
+    // One x-extent for the upstream group and both ranks of the frame.
+    for (const box of boxes) {
+      expect(box.x).toBeCloseTo(boxes[0]!.x, 6);
+      expect(box.width).toBeCloseTo(boxes[0]!.width, 6);
+    }
+    // The widest node, the second rank's, sets it; the gateway did not move to fill it.
+    expect(boxes[0]!.width).toBeGreaterThan(model.nodes['gw']!.bounds!.width + 20);
+  }, 60000);
+
   it('restores from its own JSON with the frames intact', async () => {
     const model = await run('a-child-frame-stands-inside-its-parent');
     const restored = restoreFinalLayout(serializeLayoutModel(model));

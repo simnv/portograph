@@ -2,7 +2,9 @@
 # `east` and `west` is a chain gateway, distribution, access under the ISP, so each has three ranks and the
 # tier takes three sub-tiers. Rank r of both groups stands on sub-tier r: the two gateways share one row, the
 # two distribution switches the next. The two frames stand side by side, each holds only its own nodes and
-# they do not overlap.
+# they do not overlap. The east distribution switch is much wider than the east gateway, so the west
+# distribution switch must find room beside a wide rank: every cell of a frame clears its tier neighbours as
+# wide as the frame's widest cell, and every link stays one straight segment.
 # Test-only input owned by ranked-groups ticket 03; test/pipeline/frames.test.ts reads the layout.
 portograph: 2
 groups:
@@ -12,7 +14,7 @@ groups:
 nodes:
   isp: { group: upstream, class: provider, label: ISP }
   e-gw: { group: east, class: router, label: East gateway }
-  e-dist: { group: east, class: switch, label: East distribution }
+  e-dist: { group: east, class: switch, label: East distribution switch of the main building }
   e-acc: { group: east, class: access, label: East access }
   w-gw: { group: west, class: router, label: West gateway }
   w-dist: { group: west, class: switch, label: West distribution }

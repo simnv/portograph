@@ -1,10 +1,22 @@
 import type { Rect } from '../model/geometry.js';
 import type { Frame, LayoutModel } from '../model/layout.js';
-import { GROUP_PADDING } from './regions.js';
+import { GROUP_PADDING, groupPadding } from './regions.js';
 import { union } from './skeleton-geometry.js';
 
-/** A cell grown by the frame margin on its two sides; top and bottom margins are held inside the cell box. */
-const sides = (box: Rect): Rect => ({ x: box.x - GROUP_PADDING, y: box.y, width: box.width + 2 * GROUP_PADDING, height: box.height });
+/**
+ * A cell as its frame sees it: its nodes grown by the ordinary margin (and any pill reach) on the two
+ * sides, and its own vertical extent, because the top and bottom margins are held inside the cell box.
+ * The width a cell was given for its frame column (`alignFrameColumns`) is room for centring, not
+ * part of the frame: the frame edge stands 20 px from the outermost body.
+ */
+function sides(model: LayoutModel, id: string): Rect {
+  const group = model.groups[id]!, box = group.bounds!, pad = groupPadding(model, group);
+  const bodies = group.nodes.map(node => model.nodes[node]!.bounds!);
+  if (!bodies.length) return { x: box.x - GROUP_PADDING, y: box.y, width: box.width + 2 * GROUP_PADDING, height: box.height };
+  const x = Math.min(...bodies.map(body => body.x)) - pad.left - GROUP_PADDING;
+  const end = Math.max(...bodies.map(body => body.x + body.width)) + pad.right + GROUP_PADDING;
+  return { x, y: box.y, width: end - x, height: box.height };
+}
 const grow = (box: Rect, by: number): Rect => ({ x: box.x - by, y: box.y - by, width: box.width + 2 * by, height: box.height + 2 * by });
 
 /**
@@ -33,7 +45,7 @@ export function rebuildFrames(model: LayoutModel): void {
     const source = model.document.frames![id]!;
     const cells = source.cells;
     const children = entries.filter(([, item]) => item.parent === id).map(([child]) => build(child));
-    const boxes = [...cells.map(cell => sides(model.groups[cell]!.bounds!)), ...children.map(child => grow(child.box, GROUP_PADDING))];
+    const boxes = [...cells.map(cell => sides(model, cell)), ...children.map(child => grow(child.box, GROUP_PADDING))];
     const tiers = [...cells.map(cell => model.groups[cell]!.tier!), ...children.map(child => child.tier)];
     const frame: Frame = { id, label: source.label, ...(source.class !== undefined ? { class: source.class } : {}),
       ...(source.parent !== undefined ? { parent: source.parent } : {}), cells: [...source.cells],
