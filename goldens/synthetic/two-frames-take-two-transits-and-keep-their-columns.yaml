@@ -1,0 +1,35 @@
+# Expected: Two links foreign to two neighbouring three-rank frames leave the frames in their columns
+# (ranked-groups ticket 04, ticket 09 review). `east` and `west` stand side by side in three sub-tiers with
+# wide first ranks. `u1` sits between the feeds and links to `l0` and `l1` in the tier below, so two lanes
+# cross all three sub-tiers of both frames. The gap between the frames holds one lane; a second lane
+# would need a push. A push must move every cell of a frame by one dx or be refused, and a frame stays in
+# its column, so the second lane is refused the gap and stands beyond the frames. No cell of a frame
+# moves alone, no lane stands inside a frame box, the frames do not overlap, and gates G2 and G9 stay clean.
+# Test-only input owned by ranked-groups ticket 04; test/pipeline/frame-transit.test.ts reads the layout.
+portograph: 2
+groups:
+  up: { tier: 0, label: Up }
+  east: { tier: 1, label: East }
+  west: { tier: 1, label: West }
+  low: { tier: 2, label: Low }
+nodes:
+  u0: { group: up, class: provider, label: U0 }
+  u1: { group: up, class: provider, label: U1 }
+  u2: { group: up, class: provider, label: U2 }
+  e-gw: { group: east, class: router, label: East gateway of the main building annex and yard }
+  e-dist: { group: east, class: switch, label: East dist of the main }
+  e-acc: { group: east, class: access, label: East access }
+  w-gw: { group: west, class: router, label: West gateway of the main building annex and yard }
+  w-dist: { group: west, class: switch, label: West dist of the main }
+  w-acc: { group: west, class: access, label: West access }
+  l0: { group: low, class: server, label: L0 }
+  l1: { group: low, class: server, label: L1 }
+links:
+  - [u0, e-gw]
+  - [u2, w-gw]
+  - [e-gw, e-dist]
+  - [e-dist, e-acc]
+  - [u1, l0]
+  - [u1, l1]
+  - [w-gw, w-dist]
+  - [w-dist, w-acc]

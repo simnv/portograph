@@ -33,11 +33,19 @@ export function groupConsumers(model: LayoutModel, groupId: string): string[] {
     if (members.has(ends.from.node) || members.has(ends.to.node)) result.add(link.id);
   }
   for (const drop of model.barDrops) if (drop.barCross.some(id => members.has(id))) result.add(drop.link);
+  // A lane stands beside a cell for the link that owns it. For a plain group that link is a consumer of
+  // the group. For a frame it is one only when the link ends in one of the frame's nodes (an own-frame
+  // transit, ADR-0019): a foreign link's lane inside a frame stays an obstacle, so G2 sees it.
+  const consumes = (id: string): boolean => {
+    if (!Object.hasOwn(frames, groupId)) return true;
+    const link = model.links.find(item => item.id === id), ends = link ? endpoints(link) : undefined;
+    return ends !== undefined && (members.has(ends.from.node) || members.has(ends.to.node));
+  };
   for (const lane of model.lanes) {
     if (!owned.has(lane.group)) continue;
     const owner = lane.owner;
-    if (owner.kind === 'link') result.add(owner.id);
-    else if (owner.kind === 'bundle') for (const id of model.bundles.find(bundle => bundle.id === owner.id)?.members ?? []) result.add(id);
+    if (owner.kind === 'link') { if (consumes(owner.id)) result.add(owner.id); }
+    else if (owner.kind === 'bundle') for (const id of model.bundles.find(bundle => bundle.id === owner.id)?.members ?? []) if (consumes(id)) result.add(id);
   }
   return [...result];
 }
