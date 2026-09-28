@@ -14,6 +14,7 @@ import { rebuildRegionGeometry } from './region-rebuild.js';
 import { findPort, straightCorridorClear } from './row-paths.js';
 import { bandGap, portId } from './skeleton-graph.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
+import { columnShifts, sweptUnits } from './columns.js';
 import { deriveFrames, frameNodes } from './frames.js';
 import { bandHeldBy, bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placementWarning, rebuildRegions, right } from './regions.js';
 import { withLayoutMutation } from './mutation.js';
@@ -479,21 +480,85 @@ function firstFree(start: number, ranges: ForbiddenInterval[]): number {
  * not a widening or would move a group out of the window its tier's reserved lanes leave it. Lane
  * geometry cannot move, so a label gap that only a crossing movement could reach is infeasible and
  * the group keeps its width; `planLabels` and `reserveInitialSpace` share this one decision.
+ *
+ * A group of a tier is kept a band gap from the one before it by its box, but a frame box is wider than
+ * its cells (the margin, and the cells of its other sub-tiers), so a gap kept between two cells is not
+ * kept between their frames. With frames the plan also sweeps the frames of the document tier (`columnShifts`,
+ * no slack: the slack is centring's, spent before this) and moves a frame as a whole, cells of every
+ * sub-tier, until the frame boxes stand a band gap apart (ranked-groups ticket 15). A sweep that needs
+ * a move a lane forbids is infeasible like any other.
  */
 function growthPlan(model: LayoutModel, grown: LayoutGroup, width: number): GroupPlacement[] | undefined {
-  const groups = Object.values(model.groups).filter(group => group.tier === grown.tier)
-    .sort((a, b) => a.bounds!.x - b.bounds!.x || a.id.localeCompare(b.id));
-  const at = groups.indexOf(grown);
-  if (at < 0 || width <= grown.bounds!.width + PLACEMENT_EPS) return undefined;
-  const gaps = groups.slice(0, -1).map((group, index) => groups[index + 1]!.bounds!.x - right(group.bounds!));
-  const plan: GroupPlacement[] = groups.map(group => ({ group, x: group.bounds!.x, width: group.bounds!.width }));
-  plan[at]!.width = width;
-  for (let index = at + 1; index < plan.length; index++) {
-    const prior = plan[index - 1]!, minimum = prior.x + prior.width + Math.max(gaps[index - 1]!, bandGap(model));
-    if (plan[index]!.x < minimum - PLACEMENT_EPS) plan[index]!.x = minimum;
+  if (width <= grown.bounds!.width + PLACEMENT_EPS) return undefined;
+  const tiers = new Map<number, { rows: GroupPlacement[]; gaps: number[] }>();
+  const tierOf = (tier: number) => {
+    let known = tiers.get(tier);
+    if (known === undefined) {
+      const groups = Object.values(model.groups).filter(group => group.tier === tier)
+        .sort((a, b) => a.bounds!.x - b.bounds!.x || a.id.localeCompare(b.id));
+      known = { rows: groups.map(group => ({ group, x: group.bounds!.x, width: group.bounds!.width })),
+        gaps: groups.slice(0, -1).map((group, index) => groups[index + 1]!.bounds!.x - right(group.bounds!)) };
+      tiers.set(tier, known);
+    }
+    return known;
+  };
+  // Groups after `from` give way to the one before them, by the gap they stand at or a band gap. Two groups that
+  // the frame sweep covers, in two different units, are kept apart by the sweep and not here: it measures
+  // frame boxes, and a cell push it cannot see would be counted twice.
+  const swept = model.document.frames !== undefined ? sweptUnits(model) : new Map<string, string>();
+  const settle = (tier: number, from: number): void => {
+    const { rows, gaps } = tierOf(tier);
+    for (let index = from; index < rows.length; index++) {
+      const prior = rows[index - 1]!, unit = swept.get(rows[index]!.group.id);
+      if (unit !== undefined && swept.get(prior.group.id) !== undefined && swept.get(prior.group.id) !== unit) continue;
+      const minimum = prior.x + prior.width + Math.max(gaps[index - 1]!, bandGap(model));
+      if (rows[index]!.x < minimum - PLACEMENT_EPS) rows[index]!.x = minimum;
+    }
+  };
+  const own = tierOf(grown.tier!), at = own.rows.findIndex(item => item.group === grown);
+  if (at < 0) return undefined;
+  own.rows[at]!.width = width;
+  settle(grown.tier!, at + 1);
+  if (model.document.frames !== undefined) {
+    let settled = false, previous = '';
+    for (let round = 0; round < 8 && !settled; round++) {
+      const shifts = shiftsWith(model, [...tiers.values()].flatMap(item => item.rows));
+      settled = shifts.size === 0;
+      // The same shifts again mean a lane holds a frame edge where the sweep wants it moved: no round will
+      // settle that, so the widening is refused now and not after eight replays.
+      const signature = JSON.stringify([...shifts].map(([group, dx]) => [group.id, dx]));
+      if (!settled && signature === previous) return undefined;
+      previous = signature;
+      for (const [group, dx] of shifts) {
+        const { rows } = tierOf(group.tier!), index = rows.findIndex(item => item.group === group);
+        rows[index]!.x += dx;
+        settle(group.tier!, index + 1);
+      }
+    }
+    if (!settled) return undefined;
   }
+  const plan = [...tiers.values()].flatMap(item => item.rows);
   return laneSidesHold(model, plan.map(item => ({ group: item.group,
     bounds: { ...item.group.bounds!, x: item.x, width: item.width } }))) ? plan : undefined;
+}
+
+/** `columnShifts` with no slack, for the geometry `plan` proposes; the model is put back before this returns. */
+function shiftsWith(model: LayoutModel, plan: readonly GroupPlacement[]): Map<LayoutGroup, number> {
+  const changed = plan.filter(item => Math.abs(item.x - item.group.bounds!.x) > 0 || item.width !== item.group.bounds!.width);
+  const saved = changed.map(({ group }) => ({ group, bounds: { ...group.bounds! }, nodes: group.nodes.map(id => {
+    const node = model.nodes[id]!;
+    return { node, bounds: { ...node.bounds! }, anchors: node.ports.map(port => port.anchor && { ...port.anchor }) };
+  }) }));
+  for (const item of changed) { moveGroup(model, item.group, item.x - item.group.bounds!.x, 0); item.group.bounds!.width = item.width; }
+  try { return columnShifts(model, 0); } finally {
+    for (const { group, bounds, nodes } of saved) {
+      Object.assign(group.bounds!, bounds);
+      for (const { node, bounds: box, anchors } of nodes) {
+        Object.assign(node.bounds!, box);
+        node.ports.forEach((port, i) => { if (anchors[i]) Object.assign(port.anchor!, anchors[i]); });
+      }
+    }
+  }
 }
 
 function planLabels(model: LayoutModel, permitGrowth: boolean): LabelPlan {
