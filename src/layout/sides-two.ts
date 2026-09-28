@@ -10,7 +10,7 @@ import { sizeNodes } from './size.js';
 import { bandGap, nodeGap, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { moveGroup, stackBands } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
-import { bandSide, nodeObstacleReach, nudgingDistance, routedStroke, stemReach } from './bands.js';
+import { carriesTitle, nodeObstacleReach, nudgingDistance, routedStroke, stemReach } from './bands.js';
 import { MEMBER_GAP, fanEnd } from './bundle-geometry.js';
 import { laneSource, laneWidth, transitTiers } from './lanes.js';
 import { fitRegionGroup } from './regions.js';
@@ -374,7 +374,7 @@ export function sidePlan(model: LayoutModel, node: string, side: 'top' | 'bottom
   // before 7f, one thing during it and another on the re-derivation `validateGroupLabelBands` makes
   // at every stage from `bands` on. That is the `link.path` trap below, one layer up.
   const owning = model.groups[model.document.nodes[node]!.group];
-  if (owning && bandSide(model, owning) === side) return undefined;
+  if (owning && carriesTitle(model, owning, side)) return undefined;
   const peers = unreservedPeers(model), tier = (id: string): number | undefined =>
     model.groups[model.document.nodes[id]!.group]?.tier;
   // One entry per port: its anchor along the side, and how far its legs travel along it.

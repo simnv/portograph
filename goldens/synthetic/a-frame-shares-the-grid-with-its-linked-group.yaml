@@ -1,0 +1,17 @@
+# Expected: A frame takes part in the linked-group grid (ADR-0012) as one unit (ranked-groups ticket 03).
+# `upstream` (one node) and the frame `site` (two ranks) are joined by a vertical link, and their widths
+# differ by less than the 30 % the grid closes, so the group box of `upstream` and BOTH cells of `site`
+# take one x-extent. The cells are not paired on their own: a cell that grew alone would leave the other
+# rank of its frame behind. Boxes only grow, nodes never move.
+# Test-only input owned by ranked-groups ticket 03; test/pipeline/frames.test.ts reads the layout.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, label: Site }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  gw: { group: site, class: router, label: Gateway }
+  dist: { group: site, class: switch, label: Distribution switch }
+links:
+  - [isp, gw]
+  - [gw, dist]

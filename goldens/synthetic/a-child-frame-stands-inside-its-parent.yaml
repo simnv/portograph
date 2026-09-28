@@ -1,0 +1,21 @@
+# Expected: A child frame inside its parent's frame (ranked-groups ticket 03). Group `zone` is a child of
+# group `site`. The gateway links to the ISP above (rank 0 of `site`), Zone 1 hangs from it (rank 1) and
+# Zone 2 from Zone 1 (rank 2), so `site` has three ranks and the span of `zone` is [1, 2]. Stage 1 makes the
+# cells `site#0`, `zone#1` and `zone#2`. The frame of `zone` is the union of its two cells; the frame of
+# `site` is the union of `site#0` and the frame of `zone` grown by the group padding, so it holds both.
+# Each frame has its own title.
+# Test-only input owned by ranked-groups ticket 03; test/pipeline/frames.test.ts reads the layout.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, label: Site }
+  zone: { parent: site, label: Zone }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  gw: { group: site, class: router, label: Gateway }
+  z1: { group: zone, class: switch, label: Zone 1 }
+  z2: { group: zone, class: access, label: Zone 2 }
+links:
+  - [isp, gw]
+  - [gw, z1]
+  - [z1, z2]

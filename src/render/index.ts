@@ -1,7 +1,8 @@
 import type { Point, Rect } from '../model/geometry.js';
 import type {
-  Bundle, Layer, LayoutLabel, LayoutLink, LayoutModel, LayoutNode, PathSegment,
+  Bundle, Frame, Layer, LayoutLabel, LayoutLink, LayoutModel, LayoutNode, PathSegment,
 } from '../model/layout.js';
+import { frameNodes } from '../layout/frames.js';
 import { orderedGroupIds, orderedNodeIds } from '../model/model.js';
 import { iconKey, iconPath } from '../profiles/network/icons.js';
 import { LEGEND_DEFAULT_CLASS } from '../profiles/network/theme.js';
@@ -229,6 +230,19 @@ function maskedBoxes(model: LayoutModel, visible: (link: LayoutLink) => boolean)
   return boxes;
 }
 
+/** Frames in paint order: a parent before its children. */
+function frameOrder(model: LayoutModel): Frame[] {
+  const depth = (frame: Frame): number => frame.parent === undefined ? 0 : 1 + depth(model.frames!.find(item => item.id === frame.parent)!);
+  return [...(model.frames ?? [])].sort((a, b) => depth(a) - depth(b));
+}
+
+/** The frame a group title belongs to: the frame whose label band sits in the title's owning cell. */
+function frameTitled(model: LayoutModel, label: LayoutLabel): Frame | undefined {
+  const id = label.owner.kind === 'group' ? label.owner.id : undefined;
+  const band = model.labelBands.find(item => item.host !== undefined && item.host === id);
+  return band ? model.frames?.find(item => item.id === band.group) : undefined;
+}
+
 /** A group whose nodes all share one class reads as that class, as the approved target does. */
 function uniformNodeClass(model: LayoutModel, nodes: readonly string[]): string | undefined {
   const values = new Set(nodes.map(id => model.document.nodes[id]?.class ?? ''));
@@ -250,13 +264,19 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
   const visible = (link: LayoutLink): boolean => linkVisible(layout, link, options);
   const icons = new Set<string>();
 
-  const groups = orderedGroupIds(layout.document).map(id => {
-    const group = layout.groups[id]!, authored = authorClass(layout.document.groups[id]!.class);
-    const uniform = uniformNodeClass(layout, group.nodes);
-    return element('g', { class: classes('group', authored), 'data-id': id,
+  // A frame is drawn in its cells' place: a cell never is (ranked-groups spec, section 2). A parent
+  // frame is painted before its children so the children stand on top of it.
+  const boxes = [
+    ...orderedGroupIds(layout.document).filter(id => layout.groups[id]!.frame === undefined).map(id => ({
+      id, bounds: layout.groups[id]!.bounds!, class: layout.document.groups[id]!.class, nodes: layout.groups[id]!.nodes })),
+    ...frameOrder(layout).map(frame => ({ id: frame.id, bounds: frame.box, class: frame.class, nodes: frameNodes(layout, frame.id) })),
+  ];
+  const groups = boxes.map(box => {
+    const authored = authorClass(box.class), uniform = uniformNodeClass(layout, box.nodes);
+    return element('g', { class: classes('group', authored), 'data-id': box.id,
       ...(uniform ? { 'data-node-class': uniform } : {}) },
     element('rect', { class: classes('group-box', authored, uniform, locks.stroke(DEFAULT_STROKE_WIDTHS.group)),
-      x: group.bounds!.x, y: group.bounds!.y, width: group.bounds!.width, height: group.bounds!.height,
+      x: box.bounds.x, y: box.bounds.y, width: box.bounds.width, height: box.bounds.height,
       rx: CORNER_RADII.group, ry: CORNER_RADII.group }));
   }).join('');
 
@@ -356,10 +376,12 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
 
   const groupLabels = layout.labels.filter(label => label.role === 'group' && !label.omitted)
     .map(label => {
+      // A frame's title is owned by the cell that hosts its label band; the frame gives the class.
       const group = label.owner.kind === 'group' ? layout.groups[label.owner.id] : undefined;
-      const uniform = group ? uniformNodeClass(layout, group.nodes) : undefined;
-      return textElement(label, locks, 'group-label', label.owner.kind === 'barCross' ? label.owner.node : label.owner.id,
-        classes(group ? authorClass(layout.document.groups[group.id]!.class) : undefined, uniform));
+      const frame = group ? frameTitled(layout, label) : undefined;
+      const uniform = frame ? uniformNodeClass(layout, frameNodes(layout, frame.id)) : group ? uniformNodeClass(layout, group.nodes) : undefined;
+      return textElement(label, locks, 'group-label', label.owner.kind === 'barCross' ? label.owner.node : (frame?.id ?? label.owner.id),
+        classes(frame ? authorClass(frame.class) : group ? authorClass(layout.document.groups[group.id]!.class) : undefined, uniform));
     }).join('');
   const linkLabels = layout.labels.filter(label => label.role === 'link' && labelDrawn(layout, label, visible))
     .map(label => {

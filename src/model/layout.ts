@@ -97,6 +97,22 @@ export interface LayoutGroup extends OwnedElement {
   flank?: { align: 'left' | 'right'; of: string; proxyPeer?: string; primaryPeer?: string };
 }
 
+/**
+ * The drawn box of a document group that stage 1 replaced by rank cells (ranked-groups spec, section
+ * 2), derived from cell geometry by `rebuildFrames`. `cells` are its own cells in rank order; a child
+ * frame names its `parent`, and the parent's box holds the child's box plus group padding.
+ * `tier` is the sub-tier of the frame's top cell. Present only when `document.frames` is.
+ */
+export interface Frame {
+  id: string;
+  label: string;
+  class?: string;
+  parent?: string;
+  cells: string[];
+  box: Rect;
+  tier: number;
+}
+
 export interface TierBand {
   tier: number;
   groups: string[];
@@ -203,7 +219,10 @@ export interface Junction extends OwnedElement {
 
 export interface LabelBand extends OwnedElement {
   id: string;
+  /** The group whose title this is; for a frame's title, the frame's id, and `host` is the cell that holds it. */
   group: string;
+  /** The rank cell that holds a frame's band: its top cell for a top title, its bottom cell for a bottom one. */
+  host?: string;
   /**
    * The horizontal group edge the title occupies: the one with fewer incident link ports, so a
    * group fed from above carries its title at the bottom and no link has to route around it.
@@ -315,6 +334,8 @@ export interface LayoutModel {
   anchorTier?: number;
   fallbackUsed?: boolean;
   deadlineHit?: boolean;
+  /** One per `document.frames` entry, in document order; absent when no group was replaced by cells. */
+  frames?: Frame[];
 }
 
 export interface FrozenPort {

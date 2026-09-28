@@ -14,7 +14,8 @@ import { rebuildRegionGeometry } from './region-rebuild.js';
 import { findPort, straightCorridorClear } from './row-paths.js';
 import { bandGap, portId } from './skeleton-graph.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
-import { bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placementWarning, rebuildRegions, right } from './regions.js';
+import { frameNodes } from './frames.js';
+import { bandHeldBy, bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placementWarning, rebuildRegions, right } from './regions.js';
 import { withLayoutMutation } from './mutation.js';
 import { effectiveLayer } from '../score/model.js';
 import { LINK_LABEL_GEOMETRY, overlayLabelsSuppressed } from './link-labels.js';
@@ -56,9 +57,84 @@ export interface RouterEntryPoint {
   outward: number;
 }
 
-function measurement(model: LayoutModel, groupId: string) {
-  return measureText(model.document.groups[groupId]!.label,
-    { fontSize: GROUP_LABEL_GEOMETRY.fontSize, weight: GROUP_LABEL_GEOMETRY.fontWeight });
+function measurement(label: string) {
+  return measureText(label, { fontSize: GROUP_LABEL_GEOMETRY.fontSize, weight: GROUP_LABEL_GEOMETRY.fontWeight });
+}
+
+/** One title: a group's own, or a frame's, held by the one rank cell `host` (ranked-groups spec, section 2). */
+interface Title { id: string; host: string; frame?: string; label: string; side: 'top' | 'bottom' }
+
+/**
+ * The title edge of a frame (ADR-0011, read across all its cells): the horizontal edge with fewer
+ * routed link ports on links that cross the frame's boundary. A link between two cells of one frame
+ * is inside the frame and asks nothing of the title; ties keep the top.
+ *
+ * The title lives in one of the frame's OWN cells, never in a cell of a child frame, so an edge is
+ * allowed only where an own cell is the frame's extreme cell. When the preferred edge has none, the
+ * other edge is taken; a frame with an own cell on neither edge has no title edge (`undefined`).
+ */
+export function frameSide(model: LayoutModel, frame: string): 'top' | 'bottom' | undefined {
+  const side = crossingSide(model, frame), other = side === 'top' ? 'bottom' : 'top';
+  return frameHost(model, frame, side) !== undefined ? side : frameHost(model, frame, other) !== undefined ? other : undefined;
+}
+
+function crossingSide(model: LayoutModel, frame: string): 'top' | 'bottom' {
+  const members = new Set(frameNodes(model, frame)), counts = { top: 0, bottom: 0 };
+  for (const link of model.links) {
+    if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
+    const ends = [link.attachments.from, link.attachments.to];
+    if (members.has(ends[0]!.node) === members.has(ends[1]!.node)) continue;
+    for (const ref of ends) {
+      if (!members.has(ref.node)) continue;
+      const side = findPort(model, ref)?.side;
+      if (side === 'top' || side === 'bottom') counts[side]++;
+    }
+  }
+  return counts.top > counts.bottom ? 'bottom' : 'top';
+}
+
+/**
+ * The rank cell that holds a frame's label band: the frame's own cell on the sub-tier that is the
+ * frame's extreme one on that edge, counting the cells of its child frames. The room is reserved in
+ * that cell and nowhere else. `undefined` when a child frame holds the edge.
+ */
+function frameHost(model: LayoutModel, frame: string, side: 'top' | 'bottom'): string | undefined {
+  const frames = model.document.frames!;
+  const tier = (cell: string): number => model.groups[cell]!.tier!;
+  const all = Object.entries(frames).filter(([id, item]) => id === frame || item.parent === frame).flatMap(([, item]) => item.cells);
+  const extreme = (side === 'top' ? Math.min : Math.max)(...all.map(tier));
+  return frames[frame]!.cells.find(cell => tier(cell) === extreme);
+}
+
+/** The text a band's title reads: its frame's label, or its group's own. */
+function titleText(model: LayoutModel, band: LabelBand): string {
+  return band.host !== undefined ? model.document.frames![band.group]!.label : model.document.groups[band.group]!.label;
+}
+
+/** Whether `side` of this group's box carries a title: its own, or the frame title its cell hosts. */
+export function carriesTitle(model: LayoutModel, group: LayoutGroup, side: 'top' | 'bottom'): boolean {
+  if (group.frame === undefined) return bandSide(model, group) === side;
+  return frameSide(model, group.frame) === side && frameHost(model, group.frame, side) === group.id;
+}
+
+/**
+ * Every title in the diagram, in group order: one per group that is not a rank cell, and one per
+ * frame that has a title edge, at the own cell that holds it. A cell owns no title of its own.
+ */
+function titles(model: LayoutModel): Title[] {
+  const frames = model.document.frames ?? {}, hosted = new Map<string, Title>();
+  for (const id of Object.keys(frames)) {
+    const side = frameSide(model, id);
+    if (side === undefined) continue;
+    const host = frameHost(model, id, side)!;
+    hosted.set(host, { id, host, frame: id, label: frames[id]!.label, side });
+  }
+  return orderedGroupIds(model.document).flatMap((id): Title[] => {
+    const group = model.groups[id]!;
+    if (group.frame === undefined) return [{ id, host: id, label: model.document.groups[id]!.label, side: bandSide(model, group) }];
+    const title = hosted.get(id);
+    return title === undefined ? [] : [title];
+  });
 }
 
 /**
@@ -238,10 +314,11 @@ function detourLabelRoom(model: LayoutModel, group: LayoutGroup): number {
   return room;
 }
 
-function bandFor(model: LayoutModel, groupId: string, entries: RouterEntryPoint[]): LabelBand {
-  const group = model.groups[groupId]!, measured = measurement(model, groupId), side = bandSide(model, group);
+function bandFor(model: LayoutModel, title: Title, entries: RouterEntryPoint[]): LabelBand {
+  const group = model.groups[title.host]!, measured = measurement(title.label), side = title.side;
   const height = measured.height + GROUP_LABEL_GEOMETRY.bandExtra;
-  return { id: `label-band:${groupId}`, group: groupId, owner: { ...group.owner }, layer: 'routed', side,
+  return { id: `label-band:${title.id}`, group: title.id, ...(title.frame !== undefined ? { host: title.host } : {}),
+    owner: { ...group.owner }, layer: 'routed', side,
     bounds: { x: group.bounds!.x, y: side === 'top' ? group.bounds!.y : bottom(group.bounds!) - height,
       width: group.bounds!.width, height },
     clearance: clearanceFor(model, group, entries, side) };
@@ -254,7 +331,7 @@ function bandFor(model: LayoutModel, groupId: string, entries: RouterEntryPoint[
  */
 function syncBands(model: LayoutModel, entries = routerEntryPoints(model)): boolean {
   const before = new Map(model.labelBands.map(band => [band.group, band.clearance]));
-  model.labelBands = orderedGroupIds(model.document).map(id => bandFor(model, id, entries));
+  model.labelBands = titles(model).map(title => bandFor(model, title, entries));
   return model.labelBands.some(band => before.has(band.group) && Math.abs(before.get(band.group)! - band.clearance) > PLACEMENT_EPS);
 }
 
@@ -421,9 +498,9 @@ function growthPlan(model: LayoutModel, grown: LayoutGroup, width: number): Grou
 
 function planLabels(model: LayoutModel, permitGrowth: boolean): LabelPlan {
   const labels: LayoutLabel[] = [], blocked: string[] = [];
-  for (const id of orderedGroupIds(model.document)) {
-    const group = model.groups[id]!, measured = measurement(model, id);
-    const band = model.labelBands.find(item => item.group === id);
+  for (const title of titles(model)) {
+    const id = title.host, group = model.groups[id]!, measured = measurement(title.label);
+    const band = bandHeldBy(model, id);
     const y = (band ? band.bounds.y : group.bounds!.y) + GROUP_LABEL_GEOMETRY.verticalInset;
     const start = group.bounds!.x + GROUP_LABEL_GEOMETRY.horizontalInset;
     const limit = right(group.bounds!) - GROUP_LABEL_GEOMETRY.horizontalInset - measured.width;
@@ -441,7 +518,7 @@ function planLabels(model: LayoutModel, permitGrowth: boolean): LabelPlan {
       else if (permitGrowth) return { labels, blocked, growth: { group, width } };
     }
     labels.push({ id: `label:group:${id}`, owner: { ...group.owner }, layer: 'routed', role: 'group',
-      text: model.document.groups[id]!.label, fontFamily: GROUP_LABEL_GEOMETRY.fontFamily,
+      text: title.label, fontFamily: GROUP_LABEL_GEOMETRY.fontFamily,
       fontSize: GROUP_LABEL_GEOMETRY.fontSize, fontWeight: GROUP_LABEL_GEOMETRY.fontWeight,
       lineHeight: measured.lineHeight, lines: measured.lines, textRotation: 0,
       bounds: { x: x <= limit + PLACEMENT_EPS ? x : group.bounds!.x + GROUP_LABEL_GEOMETRY.horizontalInset,
@@ -485,35 +562,40 @@ function reserveInitialSpace(model: LayoutModel): void {
   // 7f calls this producer twice — labels, tier gap room, labels again — so the shift has to be the
   // room still missing, never the whole band again. The map is empty on the first call, where the
   // group holds the ordinary padding and the shift is the whole band beyond it.
-  const held = new Map(model.labelBands.map(band => [band.group, band]));
+  const held = new Map(model.labelBands.map(band => [band.host ?? band.group, band]));
   const entries = routerEntryPoints(model);
   syncBands(model, entries);
   // The band replaces the ordinary padding on its side, and its clearance replaces that padding
   // beside it. A top band pushes its nodes down; a bottom band only grows the box downward. Nodes
   // of one tier keep one row: every group moves its nodes down by the largest top-band shift of its
   // tier — a smaller clearance or a bottom title never breaks the row levelling of stage 6, and a
-  // flank stays level with the peer whose band grew more.
-  const shifts = new Map(orderedGroupIds(model.document).map(id => {
-    const group = model.groups[id]!, band = model.labelBands.find(item => item.group === id)!;
+  // flank stays level with the peer whose band grew more. A frame's band is held by one rank cell
+  // (`band.host`), so only that cell asks for room; the other cells of the frame hold no band and
+  // take the levelling shift of their sub-tier like any group without a title.
+  const ids = orderedGroupIds(model.document);
+  const shifts = new Map(ids.map(id => {
+    const group = model.groups[id]!, band = bandHeldBy(model, id);
+    if (band === undefined) return [id, 0];
     const prior = held.get(id);
     const room = prior !== undefined && prior.side === band.side
       ? prior.bounds.height + prior.clearance : groupPadding(model, group)[band.side];
     return [id, band.bounds.height + band.clearance - room];
   }));
-  const topShift = (tier: number) => Math.max(0, ...orderedGroupIds(model.document)
-    .filter(id => model.groups[id]!.tier === tier && model.labelBands.find(item => item.group === id)!.side === 'top')
+  const topShift = (tier: number) => Math.max(0, ...ids
+    .filter(id => model.groups[id]!.tier === tier && bandHeldBy(model, id)?.side === 'top')
     .map(id => shifts.get(id)!));
-  for (const id of orderedGroupIds(model.document)) {
-    const group = model.groups[id]!, band = model.labelBands.find(item => item.group === id)!, shift = shifts.get(id)!;
-    const down = Math.max(band.side === 'top' ? shift : 0, topShift(group.tier!));
+  for (const id of ids) {
+    const group = model.groups[id]!, band = bandHeldBy(model, id), shift = shifts.get(id)!;
+    const side = band?.side ?? 'top';
+    const down = Math.max(side === 'top' ? shift : 0, topShift(group.tier!));
     for (const nodeId of group.nodes) {
       const node = model.nodes[nodeId]!;
       node.bounds!.y += down;
       for (const port of node.ports) port.anchor!.y += down;
     }
-    group.bounds!.height += band.side === 'top' ? down : down + shift;
+    group.bounds!.height += side === 'top' ? down : down + shift;
     pushFollowingGroups(model, group, Math.max(group.bounds!.width,
-      measurement(model, id).width + 2 * GROUP_LABEL_GEOMETRY.horizontalInset));
+      band === undefined ? 0 : measurement(titleText(model, band)).width + 2 * GROUP_LABEL_GEOMETRY.horizontalInset));
   }
   rebuildBands(model);
   let shift = 0;
@@ -533,7 +615,11 @@ function reserveInitialSpace(model: LayoutModel): void {
  */
 export const GROUP_GRID_MAX_GROWTH = 0.30;
 
-interface LinkedPair { a: LayoutGroup; b: LayoutGroup; axis: 'x' | 'y' }
+/** One side of a pair: a group, or every cell of a frame (a frame is one column and takes one x-extent). */
+interface LinkedPair { a: LayoutGroup[]; b: LayoutGroup[]; axis: 'x' | 'y' }
+const unitOf = (model: LayoutModel, group: LayoutGroup): LayoutGroup[] =>
+  group.frame === undefined ? [group] : model.document.frames![group.frame]!.cells.map(id => model.groups[id]!);
+const unitId = (group: LayoutGroup): string => group.frame ?? group.id;
 /** Groups joined by a routed link: vertical ports across tiers share x, horizontal ports share y. */
 function linkedGroupPairs(model: LayoutModel): LinkedPair[] {
   const seen = new Set<string>(), result: LinkedPair[] = [];
@@ -542,14 +628,18 @@ function linkedGroupPairs(model: LayoutModel): LinkedPair[] {
     const from = findPort(model, link.attachments.from), to = findPort(model, link.attachments.to);
     const a = model.groups[model.document.nodes[link.attachments.from.node]!.group]!;
     const b = model.groups[model.document.nodes[link.attachments.to.node]!.group]!;
-    if (!from?.side || !to?.side || a === b) continue;
+    // Frames share the grid, cells do not (ranked-groups spec, section 2): a frame joins the pairing
+    // as one unit of all its cells, and a link between two cells of one frame pairs nothing.
+    if (!from?.side || !to?.side || unitId(a) === unitId(b)) continue;
     const vertical = ['top', 'bottom'].includes(from.side) && ['top', 'bottom'].includes(to.side);
     const horizontal = ['left', 'right'].includes(from.side) && ['left', 'right'].includes(to.side);
     if (!vertical && !horizontal) continue;
-    const key = [a.id, b.id].sort().join('\u0000') + (vertical ? ':x' : ':y');
+    // The cells of a frame stand on different sub-tiers, so a shared y-extent means nothing to them.
+    if (horizontal && (a.frame !== undefined || b.frame !== undefined)) continue;
+    const key = [unitId(a), unitId(b)].sort().join('\u0000') + (vertical ? ':x' : ':y');
     if (seen.has(key)) continue;
     seen.add(key);
-    result.push({ a, b, axis: vertical ? 'x' : 'y' });
+    result.push({ a: unitOf(model, a), b: unitOf(model, b), axis: vertical ? 'x' : 'y' });
   }
   return result;
 }
@@ -574,14 +664,18 @@ export function alignLinkedGroupGrid(model: LayoutModel): boolean {
     let moved = false;
     for (const { a, b, axis } of linkedGroupPairs(model)) {
       const [pos, len] = axis === 'x' ? ['x', 'width'] as const : ['y', 'height'] as const;
-      const low = Math.min(a.bounds![pos], b.bounds![pos]);
-      const high = Math.max(a.bounds![pos] + a.bounds![len], b.bounds![pos] + b.bounds![len]);
+      const members = [...a, ...b];
+      const low = Math.min(...members.map(group => group.bounds![pos]));
+      const high = Math.max(...members.map(group => group.bounds![pos] + group.bounds![len]));
       const extent = high - low;
-      if (Math.abs(a.bounds![len] - extent) <= PLACEMENT_EPS && Math.abs(b.bounds![len] - extent) <= PLACEMENT_EPS) continue;
-      if ((extent - a.bounds![len]) / extent > GROUP_GRID_MAX_GROWTH + PLACEMENT_EPS
-        || (extent - b.bounds![len]) / extent > GROUP_GRID_MAX_GROWTH + PLACEMENT_EPS) continue;
-      const proposed = [a, b].map(group => ({ group, bounds: { ...group.bounds!, [pos]: low, [len]: extent } as Rect }));
-      const others = Object.values(model.groups).filter(group => group !== a && group !== b);
+      if (members.every(group => Math.abs(group.bounds![len] - extent) <= PLACEMENT_EPS && Math.abs(group.bounds![pos] - low) <= PLACEMENT_EPS)) continue;
+      // A unit's own size is its union: one cell alone, or the column the cells of a frame make.
+      const size = (unit: LayoutGroup[]): number => Math.max(...unit.map(group => group.bounds![pos] + group.bounds![len]))
+        - Math.min(...unit.map(group => group.bounds![pos]));
+      if ((extent - size(a)) / extent > GROUP_GRID_MAX_GROWTH + PLACEMENT_EPS
+        || (extent - size(b)) / extent > GROUP_GRID_MAX_GROWTH + PLACEMENT_EPS) continue;
+      const proposed = members.map(group => ({ group, bounds: { ...group.bounds!, [pos]: low, [len]: extent } as Rect }));
+      const others = Object.values(model.groups).filter(group => !members.includes(group));
       if (proposed.some(item => others.some(other => rectOverlap(item.bounds, other.bounds!)))) continue;
       if (axis === 'x' && !laneSidesHold(model, proposed)) continue;
       for (const item of proposed) item.group.bounds = item.bounds;
@@ -747,6 +841,13 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
 
 /** Transaction-owned stage-7f producer. It replaces every affected claim before publication. */
 export function produceGroupLabelBands(model: LayoutModel): void {
+  // A frame whose extreme sub-tiers both belong to child frames has no cell of its own to hold a
+  // title. It draws none, and says so.
+  for (const id of Object.keys(model.document.frames ?? {})) {
+    if (frameSide(model, id) === undefined) {
+      placementWarning(model, 'FRAME_TITLE_UNHOSTED', `Frame ${id} has no own cell on its top or bottom edge; its title is not drawn.`, [id], 'group');
+    }
+  }
   reserveInitialSpace(model);
   reserveLinkLabelRoom(model);
   const budget = createCentreBudget();
@@ -850,11 +951,11 @@ export function validateGroupLabelBands(model: LayoutModel): void {
     throw new Error(`Linked groups do not share the grid their links require: ${moved.join('; ')}`);
   }
   const entries = routerEntryPoints(model);
-  const expectedBands = orderedGroupIds(model.document).map(id => bandFor(model, id, entries));
+  const expectedBands = titles(model).map(title => bandFor(model, title, entries));
   if (!equal(model.labelBands, expectedBands)) throw new Error('Group label bands contradict final group geometry');
   for (const band of model.labelBands) {
     if (!Number.isFinite(band.clearance) || band.clearance < GROUP_PADDING - PLACEMENT_EPS) throw new Error(`Group ${band.group} reserves less than the ordinary padding below its label band`);
-    for (const nodeId of model.groups[band.group]!.nodes) {
+    for (const nodeId of model.groups[band.host ?? band.group]!.nodes) {
       const box = model.nodes[nodeId]!.bounds!;
       const clear = band.side === 'top' ? box.y >= bottom(band.bounds) + band.clearance - PLACEMENT_EPS : bottom(box) <= band.bounds.y - band.clearance + PLACEMENT_EPS;
       if (!clear) throw new Error(`Group ${band.group} does not retain its reserved clearance beside its label band`);
@@ -862,7 +963,7 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   }
   // Stage 8 keeps these entry points and the below-band clearance reserved during placement.
   for (const { band, entry } of bandEntryConflicts(model, entries)) {
-    if (band.group !== model.document.nodes[entry.node]!.group) continue;
+    if ((band.host ?? band.group) !== model.document.nodes[entry.node]!.group) continue;
     throw new Error(`Reserved ${entry.kind} entry point of ${entry.link} lies inside the ${band.group} label band reservation`);
   }
   const retained = model.labels.filter(label => label.role !== 'group');

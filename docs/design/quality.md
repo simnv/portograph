@@ -39,6 +39,7 @@ out of scope for G2, G4 and G6.
 | G6 | **Clearances** (stroke-aware, centre-to-centre minus half strokes) | node–node ≥ 20; routed segment–foreign node ≥ 10; parallel routed segments ≥ 10; a routed segment on or outside a group box runs no closer than 10 px beyond its half stroke parallel to its edge (ADR-0013) | incident node–segment contact at the anchor; bundle members (`memberGap` = 16 applies); `barCross` contacts; junction fans |
 | G7 | **Attachment** | every link endpoint = a port anchor; every anchor on its node's boundary | — |
 | G8 | **Tier contract** | every group's box within its tier's band; tier bands in order, non-overlapping | — |
+| G9 | **Frame contains** | every frame contains its cells and child frames; frames of one tier do not overlap; no foreign node body lies inside a frame | — |
 
 Why G4 exists: the prototype's crossing counter used an intersection test that returns *false for
 parallel segments*; overlaps were invisible until asked for. Overlap is computed by bucketing

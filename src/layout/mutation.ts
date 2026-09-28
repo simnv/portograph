@@ -16,7 +16,8 @@ import { rebuildBands, span, union, validateSkeletonBands } from './skeleton-geo
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, flankPair } from './flanks.js';
 import { type LaneFollow, lanesHoldTheirChild, rebuildLaneExtents, reseatLanes, validateLanes, transitTiers } from './lanes.js';
-import { rebuildRegions } from './regions.js';
+import { rebuildFrames } from './frames.js';
+import { groupPadding, rebuildRegions } from './regions.js';
 import { centreViolations, selectAnchorTier } from './centre.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
@@ -484,9 +485,11 @@ function rebuildBoxes(model: LayoutModel): void {
   for (const group of Object.values(model.groups)) {
     if (!group.nodes.length) continue;
     const box = union(group.nodes.map(id => model.nodes[id]!.bounds!)), old = group.bounds!;
-    const derivedLeft = box.x - 12, derivedTop = box.y - 12;
+    // A rank cell holds no side padding (the frame adds it), so its floor is its own insets.
+    const floor = group.frame === undefined ? { top: 12, right: 12, bottom: 12, left: 12 } : groupPadding(model, group);
+    const derivedLeft = box.x - floor.left, derivedTop = box.y - floor.top;
     const oldRight = old.x + old.width, oldBottom = old.y + old.height;
-    const derivedRight = box.x + box.width + 12, derivedBottom = box.y + box.height + 12;
+    const derivedRight = box.x + box.width + floor.right, derivedBottom = box.y + box.height + floor.bottom;
     const x = derivedLeft < old.x - PLACEMENT_EPS ? derivedLeft : old.x;
     const y = derivedTop < old.y - PLACEMENT_EPS ? derivedTop : old.y;
     const farX = derivedRight > oldRight + PLACEMENT_EPS ? derivedRight : oldRight;
@@ -513,8 +516,8 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
   if (returned !== undefined) throw new Error('Mutation callback must be synchronous and return void');
   jsonValue(draft);
   validateRect(draft.canvas, 'canvas');
-  same(omit(draft, ['nodes', 'groups', 'tierBands', 'labels', 'canvas', 'diagnostics', 'runtime', 'links', 'lanes', 'bundles', 'junctions', 'labelBands', 'barDrops', 'obstacles', 'regions', 'anchorTier']),
-    omit(model, ['nodes', 'groups', 'tierBands', 'labels', 'canvas', 'diagnostics', 'runtime', 'links', 'lanes', 'bundles', 'junctions', 'labelBands', 'barDrops', 'obstacles', 'regions', 'anchorTier']), 'Undeclared model field changed');
+  same(omit(draft, ['nodes', 'groups', 'tierBands', 'labels', 'canvas', 'diagnostics', 'runtime', 'links', 'lanes', 'bundles', 'junctions', 'labelBands', 'barDrops', 'obstacles', 'regions', 'anchorTier', 'frames']),
+    omit(model, ['nodes', 'groups', 'tierBands', 'labels', 'canvas', 'diagnostics', 'runtime', 'links', 'lanes', 'bundles', 'junctions', 'labelBands', 'barDrops', 'obstacles', 'regions', 'anchorTier', 'frames']), 'Undeclared model field changed');
   same(draft.stage, model.stage, 'Transaction owns the stage marker');
   same(draft.document, model.document, 'Document changed'); same(draft.freeze, model.freeze, 'Freeze metadata changed');
   same(structure(draft), structure(model), 'Topology or membership changed');
@@ -566,6 +569,11 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
   if (changed && hasUnsupportedClaims(model)) throw new Error(`${rule} requires an unimplemented claim rebuild`);
   // Rebuild containing boxes and node content first, so every rule check below sees the final geometry.
   if (changed) { rebuildBoxes(draft); rebuildNodeGeometry(draft, orderedNodeIds(draft.document), 'current'); }
+  // Frames are derived from cell boxes, like tier bands: a callback may not leave them off the cells.
+  const derived = { ...draft } as LayoutModel;
+  delete derived.frames;
+  rebuildFrames(derived);
+  same(draft.frames, derived.frames, 'Frames contradict the cell geometry they derive from');
   const flankOrder = clone(model);
   if (rule === 'flanks') normalizePrimaryBundlePorts(flankOrder);
   const bundledPorts = new Set(model.links.filter(link => link.bundle).flatMap(link => [JSON.stringify(link.attachments!.from), JSON.stringify(link.attachments!.to)]));

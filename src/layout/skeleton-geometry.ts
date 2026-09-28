@@ -4,6 +4,8 @@ import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { orderedGroupIds } from '../model/model.js';
 import { bandGap, compareId, greatestPeers, groupId, nodeGap, nodeId, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { isGridGroup, packGrid } from './grid.js';
+import { rebuildFrames } from './frames.js';
+import { GROUP_PADDING } from './regions.js';
 import { bottom, contains as rectContains, EPS, rectOverlap, right } from '../score/geometry.js';
 
 /**
@@ -96,6 +98,8 @@ export function rebuildBands(model: LayoutModel, includeFlanks = true): void {
     const members = groups.filter(group => group.tier === tier);
     return { tier, groups: members.map(group => group.id), bounds: union(members.map(group => group.bounds!)) };
   });
+  // Frames derive from the same boxes; every caller that rebuilds bands after moving one rebuilds them too.
+  rebuildFrames(model);
 }
 
 /** Stage-4 counterpart of G8, usable before paths and final port geometry exist. */
@@ -178,6 +182,19 @@ export function packGridGroups(model: LayoutModel, tier?: number): boolean {
   return true;
 }
 
+/**
+ * How far a rank cell's column reaches past its box on each side: half the difference between the
+ * widest cell of its frame and this cell, so every rank of a frame clears its tier neighbours as wide
+ * as the widest one does (ranked-groups ticket 03: the ranks of sibling frames then meet their feeds
+ * with one window each). Zero for a group that is not a cell, and for a frame of one cell, so every
+ * input without a multi-rank group repacks as it did. Only the clearance changes; boxes do not.
+ */
+function columnReach(model: LayoutModel, group: LayoutGroup): number {
+  if (group.frame === undefined) return 0;
+  const cells = model.document.frames![group.frame]!.cells.map(id => model.groups[id]!).filter(cell => cell.bounds !== undefined);
+  return cells.length < 2 ? 0 : Math.max(0, (Math.max(...cells.map(cell => cell.bounds!.width)) - group.bounds!.width) / 2);
+}
+
 /** Select all primary peers from the same ELK result before any repack changes distances. */
 export function placeFlanksAndPeers(model: LayoutModel): void {
   const gap = bandGap(model);
@@ -222,8 +239,10 @@ export function placeFlanksAndPeers(model: LayoutModel): void {
     const groups = Object.values(model.groups).filter(group => !group.flank && group.tier === tier).sort((a, b) => a.bounds!.x - b.bounds!.x || compareId(a.id, b.id));
     let end = -Infinity;
     for (const group of groups) {
-      if (group.bounds!.x < end) moveGroup(model, group, end - group.bounds!.x, 0);
-      end = right(group.bounds!) + gap;
+      // A rank cell clears its neighbours as wide as its frame's widest cell (see `columnReach`).
+      const reach = columnReach(model, group);
+      if (group.bounds!.x - reach < end) moveGroup(model, group, end - (group.bounds!.x - reach), 0);
+      end = right(group.bounds!) + reach + gap;
     }
     const core = union(groups.map(group => group.bounds!));
     let left = core.x - gap, rightX = right(core) + gap;
@@ -250,7 +269,11 @@ export function stackBands(model: LayoutModel, includeFlanks: boolean): void {
     y += band.bounds!.height + gap;
   }
   const all = Object.values(model.groups).filter(group => includeFlanks || !group.flank);
-  const bounds = union(all.map(group => group.bounds!));
+  // A rank cell holds no side margin: its frame draws 20 px beyond it on each side, and the canvas
+  // margin is measured from the frame.
+  const drawn = (group: LayoutGroup): Rect => group.frame === undefined ? group.bounds!
+    : { ...group.bounds!, x: group.bounds!.x - GROUP_PADDING, width: group.bounds!.width + 2 * GROUP_PADDING };
+  const bounds = union(all.map(drawn));
   const dx = spacing.padding - bounds.x;
   for (const group of all) moveGroup(model, group, dx, 0);
   rebuildBands(model, includeFlanks);
