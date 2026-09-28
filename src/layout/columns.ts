@@ -1,7 +1,9 @@
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { cellReach, deriveFrames } from './frames.js';
 import { GROUP_PADDING } from './regions.js';
-import { bandGap, compareId } from './skeleton-graph.js';
+import { selectAnchorTier } from './lanes.js';
+import { findPort } from './row-paths.js';
+import { bandGap, compareId, portId } from './skeleton-graph.js';
 import { moveGroup } from './skeleton-geometry.js';
 
 /**
@@ -72,23 +74,96 @@ export function packFrameColumns(model: LayoutModel): Map<string, Column> {
     const first = unit.groups.reduce((best, group) => group.tier! < best.tier! ? group : best);
     return first.bounds!.x + first.bounds!.width / 2;
   };
-  for (const tier of tiers.filter(members => members.some(unit => unit.frame))) {
-    const left = (unit: Unit): number => Math.min(...unit.groups.map(group => unit.frame ? cellReach(model, group.id).x : group.bounds!.x));
-    const right = (unit: Unit): number => Math.max(...unit.groups.map(group => unit.frame ? cellReach(model, group.id).x + cellReach(model, group.id).width : group.bounds!.x + group.bounds!.width));
-    // The packed run keeps the centre ELK gave the tier, so it stays over and under its neighbour tiers.
-    const span = tier.reduce((sum, unit) => sum + (unit.frame ? widthOf(unit.id) + 2 * COLUMN_SLACK : unit.groups[0]!.bounds!.width), gap * (tier.length - 1));
-    let x = (Math.min(...tier.map(left)) + Math.max(...tier.map(right))) / 2 - span / 2;
-    for (const unit of [...tier].sort((a, b) => order(a) - order(b) || compareId(a.id, b.id))) {
+  const left = (unit: Unit): number => Math.min(...unit.groups.map(group => unit.frame ? cellReach(model, group.id).x : group.bounds!.x));
+  const right = (unit: Unit): number => Math.max(...unit.groups.map(group => unit.frame ? cellReach(model, group.id).x + cellReach(model, group.id).width : group.bounds!.x + group.bounds!.width));
+  /** The width a unit takes in its tier: a frame with its slack on each side, a group by its box. */
+  const extent = (unit: Unit): number => unit.frame ? widthOf(unit.id) + 2 * COLUMN_SLACK : unit.groups[0]!.bounds!.width;
+
+  // A column's axis lands on its feed before the width of any sibling is fixed (ticket 11): the tier
+  // of the anchor packs first, then the tiers outward one at a time in the order centring steps, and a
+  // tier reads the ports of the tier packed just before it. A tier that no routed link joins to it
+  // takes the centre ELK gave it.
+  const tierOf = new Map<Unit, number>(), unitOf = new Map<string, Unit>();
+  for (const [index, tier] of tiers.entries()) for (const unit of tier) {
+    tierOf.set(unit, index);
+    for (const group of unit.groups) unitOf.set(group.id, unit);
+  }
+  const anchor = selectAnchorTier(model);
+  const first = Math.max(0, tiers.findIndex(tier => tier.some(unit => anchor !== undefined && unit.low <= anchor && anchor <= unit.high)));
+  const steps: { index: number; authority: number | undefined }[] = [{ index: first, authority: undefined },
+    ...tiers.slice(first + 1).map((_, i) => ({ index: first + 1 + i, authority: first + i })),
+    ...tiers.slice(0, first).map((_, i) => ({ index: first - 1 - i, authority: first - i }))];
+
+  /** The centre a unit wants: over the mean of its routed feeds in the packed tier, `undefined` without one. */
+  const wanted = (unit: Unit, index: number, authority: number | undefined): number | undefined => {
+    if (authority === undefined) return undefined;
+    const parents = new Map<string, number>(), children = new Map<string, number>();
+    for (const link of model.links) {
+      if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
+      for (const [own, other] of [[link.attachments.from, link.attachments.to], [link.attachments.to, link.attachments.from]]) {
+        const ownGroup = model.document.nodes[own!.node]?.group, otherGroup = model.document.nodes[other!.node]?.group;
+        if (ownGroup === undefined || otherGroup === undefined || unitOf.get(ownGroup) !== unit || tierOf.get(unitOf.get(otherGroup)!) !== authority) continue;
+        const child = findPort(model, own!), parent = findPort(model, other!);
+        if (!child?.anchor || !parent?.anchor) continue;
+        if (child.side !== (index > authority ? 'top' : 'bottom') || parent.side !== (index > authority ? 'bottom' : 'top')) continue;
+        const cell = model.groups[ownGroup]!, at = unit.frame ? cellReach(model, cell.id) : cell.bounds!;
+        children.set(portId(child.ref), child.anchor.x - (at.x + at.width / 2));
+        parents.set(portId(parent.ref), parent.anchor.x);
+      }
+    }
+    if (!parents.size || !children.size) return undefined;
+    const mean = (values: Iterable<number>): number => { const xs = [...values]; return xs.reduce((sum, x) => sum + x, 0) / xs.length; };
+    return mean(parents.values()) - mean(children.values());
+  };
+
+  for (const { index, authority } of steps) {
+    const tier = tiers[index]!;
+    if (!tier.some(unit => unit.frame)) {
+      // A tier of one-rank groups is left where ELK put it, except that the sweep of `placeFlanksAndPeers`
+      // will push apart the groups ELK left closer than a band gap. It is done here so the feed x that
+      // the tier below reads is the x the tier keeps.
+      let end = -Infinity;
+      for (const group of tier.flatMap(unit => unit.groups).sort((a, b) => a.bounds!.x - b.bounds!.x || compareId(a.id, b.id))) {
+        if (group.bounds!.x < end) moveGroup(model, group, end - group.bounds!.x, 0);
+        end = group.bounds!.x + group.bounds!.width + gap;
+      }
+      continue;
+    }
+    const run = [...tier].sort((a, b) => order(a) - order(b) || compareId(a.id, b.id));
+    const centres = run.map(unit => wanted(unit, index, authority));
+    // Left edge of each unit once packed a band gap apart, and where its column would stand if it had its way.
+    let lefts: number[];
+    if (centres.every(centre => centre === undefined)) {
+      // The packed run keeps the centre ELK gave the tier, so it stays over and under its neighbour tiers.
+      const span = run.reduce((sum, unit) => sum + extent(unit), gap * (tier.length - 1));
+      let x = (Math.min(...tier.map(left)) + Math.max(...tier.map(right))) / 2 - span / 2;
+      lefts = run.map(unit => { const at = x; x += extent(unit) + gap; return at; });
+    } else {
+      // A sibling that would overlap the one before it is pushed outward and the order is kept: the
+      // least squares fit of the lefts to a run at least a band gap apart (pool adjacent violators), so
+      // a run that moved as a whole is centred back.
+      const offsets: number[] = [];
+      let sum = 0;
+      for (const unit of run) { offsets.push(sum); sum += extent(unit) + gap; }
+      const blocks: { sum: number; count: number }[] = [];
+      for (const [i, unit] of run.entries()) {
+        const centre = centres[i] ?? (left(unit) + right(unit)) / 2;
+        blocks.push({ sum: centre - extent(unit) / 2 - offsets[i]!, count: 1 });
+        while (blocks.length > 1 && blocks[blocks.length - 2]!.sum / blocks[blocks.length - 2]!.count > blocks[blocks.length - 1]!.sum / blocks[blocks.length - 1]!.count) {
+          const last = blocks.pop()!, before = blocks[blocks.length - 1]!;
+          before.sum += last.sum; before.count += last.count;
+        }
+      }
+      lefts = blocks.flatMap(block => Array.from({ length: block.count }, () => block.sum / block.count)).map((base, i) => base + offsets[i]!);
+    }
+    for (const [i, unit] of run.entries()) {
       if (unit.frame) {
-        const width = widthOf(unit.id);
-        x += COLUMN_SLACK;
+        const width = widthOf(unit.id), x = lefts[i]! + COLUMN_SLACK;
         centre(unit.id, x + width / 2);
         for (const group of unit.groups) columns.set(group.id, { x, width });
-        x += width + COLUMN_SLACK + gap;
       } else {
         const group = unit.groups[0]!;
-        moveGroup(model, group, x - group.bounds!.x, 0);
-        x += group.bounds!.width + gap;
+        moveGroup(model, group, lefts[i]! - group.bounds!.x, 0);
       }
     }
   }

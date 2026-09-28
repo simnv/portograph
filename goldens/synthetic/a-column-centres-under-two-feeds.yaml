@@ -1,0 +1,32 @@
+# Expected: A column stands at the mean of its feeds (ranked-groups ticket 11). One two-rank location, `hub`,
+# stands in tier 1 under two one-rank groups of tier 0 that are far apart: `west` and `east`, each a row of
+# four nodes, the anchor tier. The hub is fed at the far end of each: `west-gw` at the left end of `west`,
+# `east-gw` at the right end of `east`. The two feeds are further apart than the hub is wide, so its two
+# links bend; the hub does not follow either feed, its column stands at the mean of the two, so each link
+# bends by the same amount.
+# Test-only input owned by ranked-groups ticket 11; test/pipeline/column-feed-axis.test.ts reads the layout.
+portograph: 2
+groups:
+  west: { tier: 0, label: West }
+  east: { tier: 0, label: East }
+  hub: { tier: 1, label: Hub }
+  hub-zone: { parent: hub, label: Hub zone }
+nodes:
+  west-gw: { group: west, class: router, label: West gateway }
+  west-2: { group: west, class: switch, label: West two }
+  west-3: { group: west, class: switch, label: West three }
+  west-4: { group: west, class: switch, label: West four }
+  east-1: { group: east, class: switch, label: East one }
+  east-2: { group: east, class: switch, label: East two }
+  east-3: { group: east, class: switch, label: East three }
+  east-gw: { group: east, class: router, label: East gateway }
+  hub-a: { group: hub, class: router, label: Hub A }
+  hub-b: { group: hub, class: router, label: Hub B }
+  hub-dist: { group: hub-zone, class: switch, label: Hub distribution }
+  hub-acc: { group: hub-zone, class: access, label: Hub access }
+links:
+  - [west-gw, hub-a]
+  - [east-gw, hub-b]
+  - [hub-a, hub-dist]
+  - [hub-b, hub-dist]
+  - [hub-dist, hub-acc]
