@@ -1,0 +1,22 @@
+# Expected: An overlay-only member (ranked-groups ticket 01). The gateway links to the tier above
+# (rank 0) and the switch hangs from it (rank 1). The NTP server has no routed link at all, only a
+# sync (overlay) link to the switch, so it takes the rank of its nearest overlay partner in the
+# group: rank 1. A second server has an overlay partner in another group only, so it takes the last
+# rank, also 1. The group has two ranks; an overlay-only member never adds one. Today the pipeline
+# still draws the group as one row; ticket 02 reads the ranks.
+# Test-only input owned by ranked-groups ticket 01; the derivation test reads the parsed document.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, label: Site }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  gw: { group: site, class: router, label: Gateway }
+  sw: { group: site, class: switch, label: Switch }
+  ntp: { group: site, class: server, label: NTP }
+  far-ntp: { group: site, class: server, label: Far NTP }
+links:
+  - [isp, gw]
+  - [gw, sw]
+  - [ntp, sw, { class: sync }]
+  - [far-ntp, isp, { class: sync }]

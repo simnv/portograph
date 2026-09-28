@@ -1,0 +1,19 @@
+# Expected: A peer pair under one uplink (ranked-groups ticket 01). The router links to the tier above
+# and is rank 0. Both switches link to it and to each other; they share a class rank, so the link
+# between them is a peer link that never lengthens a path, and the two switches stand on one rank, 1.
+# The group has two ranks. Today the pipeline still draws the group as one row; ticket 02 reads the ranks.
+# Test-only input owned by ranked-groups ticket 01; the derivation test reads the parsed document.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, label: Site }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  rt: { group: site, class: router, label: Router }
+  sw1: { group: site, class: switch, label: Switch 1 }
+  sw2: { group: site, class: switch, label: Switch 2 }
+links:
+  - [isp, rt]
+  - [rt, sw1]
+  - [rt, sw2]
+  - [sw1, sw2]

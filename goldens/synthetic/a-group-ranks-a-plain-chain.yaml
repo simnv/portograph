@@ -1,0 +1,18 @@
+# Expected: A plain chain of ranks (ranked-groups ticket 01). The gateway links to the tier above, so it is
+# rank 0 of its group; the distribution switch is one link below it and the access switch one more. The
+# ranks are 0, 1, 2 and the group has three ranks. Nothing links two members of one class, so no link is a
+# peer link. Today the pipeline still draws the group as one row; ticket 02 reads the ranks.
+# Test-only input owned by ranked-groups ticket 01; the derivation test reads the parsed document.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, label: Site }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  gw: { group: site, class: router, label: Gateway }
+  dist: { group: site, class: switch, label: Distribution }
+  access: { group: site, class: access, label: Access }
+links:
+  - [isp, gw]
+  - [gw, dist]
+  - [dist, access]
