@@ -45,7 +45,7 @@ links: [[a.unusually-long-port, b.unusually-long-port]]`);
 
 it('recomputes mixed shared-port majority and grows a newly crowded side in skeleton order', async () => {
   const yaml = `portograph: 2
-groups: {g: {tier: 0}, h: {tier: 1}}
+groups: {g: {tier: 0, shape: row}, h: {tier: 1}}
 nodes:
   a: {group: g, label: '', ports: [p, q, r, s, t]}
   b: {group: g, label: '', ports: [p]}
@@ -88,7 +88,7 @@ links: [[a.p, b.q], [a.q, b.p]]`))));
 
 it('keeps a known top majority when final same-tier votes split left and right', async () => {
   const model = sizeNodes(sidesOne(resolve(parse(`portograph: 2
-groups: {upper: {tier: 0}, row: {tier: 1}}
+groups: {upper: {tier: 0}, row: {tier: 1, shape: row}}
 nodes:
   up1: {group: upper, ports: [p]}
   up2: {group: upper, ports: [p]}

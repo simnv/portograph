@@ -1,64 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { layout, orderedNodeIds, parse, render, resolve } from '../../src/index.js';
-import type { LayoutModel } from '../../src/index.js';
-import { deriveRanks, type RankInput } from '../../src/layout/ranks.js';
+import { layout, parse, render, resolveBeforeExpansion } from '../../src/index.js';
+import { deriveRanks } from '../../src/layout/ranks.js';
+import { rankInputOf } from '../../src/layout/rank-input.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (yaml: string) => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 
-/**
- * The network profile carries a tier-inference table for groups only (`inferTiers` in
- * `src/parse`: provider, internet and wan on top, backbone and core at the bottom). It has no class
- * rank per node class, so the test states the small table the derivation is given: each row is one
- * class rank, and a class that no row names has none.
- */
-const CLASS_ROWS = [['provider', 'internet', 'wan'], ['router', 'tbr', 'rr'], ['switch'], ['server']];
-
-/** Build the derivation input of one group from the resolved model, the way ticket 02 will. */
-function inputOf(model: LayoutModel, group: string, childGroups: string[] = []): RankInput {
-  const own = new Set([group, ...childGroups]);
-  const groupOf = (node: string) => model.document.nodes[node]!.group;
-  const members = orderedNodeIds(model.document).filter(node => groupOf(node) === group);
-  const tier = model.groups[group]!.tier!;
-  const routedLinks: RankInput['routedLinks'] = [];
-  const linksAbove = new Set<string>(), linksBelow = new Set<string>();
-  const overlayPartners = new Map<string, string[]>();
-  const sideOf = (ref: NonNullable<LayoutModel['links'][number]['attachments']>['from']) =>
-    model.nodes[ref.node]!.ports.find(port => JSON.stringify(port.ref) === JSON.stringify(ref))?.side;
-  for (const link of model.links) {
-    const { from, to } = link.attachments!;
-    const ends = [from.node, to.node];
-    if (link.layer === 'overlay') {
-      for (const [one, other] of [ends, [...ends].reverse()] as [string, string][]) {
-        if (own.has(groupOf(one))) overlayPartners.set(one, [...(overlayPartners.get(one) ?? []), other]);
-      }
-      continue;
-    }
-    const inside = ends.map(node => own.has(groupOf(node)));
-    if (inside[0] && inside[1]) {
-      const fromSide = sideOf(from), toSide = sideOf(to);
-      routedLinks.push({ from: from.node, to: to.node, ...(fromSide ? { fromSide } : {}), ...(toSide ? { toSide } : {}) });
-    } else if (inside[0] || inside[1]) {
-      const [mine, other] = inside[0] ? ends : [...ends].reverse();
-      const otherTier = model.groups[groupOf(other!)]!.tier!;
-      if (otherTier < tier) linksAbove.add(mine!); else if (otherTier > tier) linksBelow.add(mine!);
-    }
-  }
-  const classRank = (node: string): number | undefined => {
-    const index = CLASS_ROWS.findIndex(row => row.includes(model.document.nodes[node]!.class ?? ''));
-    return index < 0 ? undefined : index;
-  };
-  return {
-    group, members, routedLinks, linksAbove, linksBelow, overlayPartners, classRank,
-    children: childGroups.map(child => ({ group: child, members: orderedNodeIds(model.document).filter(node => groupOf(node) === child) })),
-  };
-}
-
 const ranksOf = (name: string, group: string, childGroups: string[] = []) =>
-  deriveRanks(inputOf(resolve(parse(fixture(name))), group, childGroups));
+  deriveRanks(rankInputOf(resolveBeforeExpansion(parse(fixture(name))), group, childGroups));
 
 describe('goldens/synthetic group-ranks fixtures', () => {
   it('a plain chain has one rank per link, from the member that links to the tier above', () => {

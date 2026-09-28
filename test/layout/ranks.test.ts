@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { classRankOf } from '../../src/layout/rank-input.js';
 import { deriveRanks, type RankInput } from '../../src/layout/ranks.js';
 
 const chain = (...ids: string[]) => ids.slice(1).map((id, i) => ({ from: ids[i]!, to: id }));
@@ -135,18 +136,43 @@ describe('deriveRanks: anchors', () => {
     expect(result.anchoredFrom).toBe('above');
   });
 
-  it('with no anchor either way, the member with the most links in the group is rank 0', () => {
+  it('with no anchor either way, the group is one rank however its members are linked', () => {
     const result = deriveRanks(input({
       members: ['leaf1', 'hub', 'leaf2', 'leaf3'],
       routedLinks: [{ from: 'leaf1', to: 'hub' }, { from: 'hub', to: 'leaf2' }, { from: 'hub', to: 'leaf3' }],
     }));
-    expect(asObject(result.ranks)).toEqual({ leaf1: 1, hub: 0, leaf2: 1, leaf3: 1 });
+    expect(asObject(result.ranks)).toEqual({ leaf1: 0, hub: 0, leaf2: 0, leaf3: 0 });
+    expect(result.rankCount).toBe(1);
     expect(result.anchoredFrom).toBe('none');
   });
 
-  it('a tie for most links goes to the earlier member', () => {
-    const result = deriveRanks(input({ members: ['a', 'b'], routedLinks: chain('a', 'b') }));
-    expect(asObject(result.ranks)).toEqual({ a: 0, b: 1 });
+  it('a group with no anchor gives every child a span of rank 0 to 0', () => {
+    const result = deriveRanks(input({
+      members: ['a', 'b'], routedLinks: chain('a', 'b', 'c'), children: [{ group: 'kid', members: ['c'] }],
+    }));
+    expect(asObject(result.ranks)).toEqual({ a: 0, b: 0, c: 0 });
+    expect(result.rankCount).toBe(1);
+    expect(result.spans.get('kid')).toEqual([0, 0]);
+  });
+
+  it('an anchored group whose two switches are peers and both link up to the router stays two ranks', () => {
+    const classes: Record<string, string> = { rt: 'router', sw1: 'switch', sw2: 'switch' };
+    const result = deriveRanks(input({
+      members: ['rt', 'sw1', 'sw2'], linksAbove: new Set(['rt']), classRank: node => classRankOf(classes[node]),
+      routedLinks: [{ from: 'rt', to: 'sw1' }, { from: 'rt', to: 'sw2' }, { from: 'sw1', to: 'sw2' }],
+    }));
+    expect(asObject(result.ranks)).toEqual({ rt: 0, sw1: 1, sw2: 1 });
+    expect(result.rankCount).toBe(2);
+  });
+
+  it('the class rank reads the tier-inference table at its ends and splits the middle', () => {
+    expect(['provider', 'internet', 'wan'].map(classRankOf)).toEqual([0, 0, 0]);
+    expect(classRankOf('router')).toBeLessThan(classRankOf('switch')!);
+    expect(classRankOf('switch')).toBeLessThan(classRankOf('server')!);
+    expect(classRankOf('server')).toBeLessThan(classRankOf('core')!);
+    expect(classRankOf('core')).toBe(classRankOf('backbone'));
+    expect(classRankOf('printer')).toBeUndefined();
+    expect(classRankOf(undefined)).toBeUndefined();
   });
 
   it('a group with no routed link at all is one rank', () => {

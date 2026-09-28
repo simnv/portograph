@@ -197,8 +197,14 @@ export function deriveRanks(input: RankInput): RankResult {
   const comp = components(members, links);
   const above = members.filter(id => input.linksAbove.has(id)), below = members.filter(id => input.linksBelow.has(id));
   // Step 1: an anchor above wins; else the members that link below anchor the last rank and the
-  // layering runs upward; else the most-linked member is the anchor (chosen inside `layer`).
+  // layering runs upward; else the group has one rank (returned above).
   const anchoredFrom = above.length ? 'above' : below.length ? 'below' : 'none';
+  // Spec section 1, step 1: a group with no anchor has one rank. Its internal links are peer links.
+  if (anchoredFrom === 'none') {
+    const spans = new Map<string, [number, number]>();
+    for (const child of input.children) if (spanOf(new Map(members.map(id => [id, 0])), child)) spans.set(child.group, [0, 0]);
+    return { ranks: new Map(members.map(id => [id, 0])), rankCount: 1, anchoredFrom, spans };
+  }
   const { depth, dag } = layer(input, members, links, comp, anchoredFrom === 'above' ? above : anchoredFrom === 'below' ? below : []);
   const deepest = depth.size ? Math.max(...depth.values()) : 0;
   const ranks = new Map([...depth].map(([id, level]) => [id, anchoredFrom === 'below' ? deepest - level : level]));

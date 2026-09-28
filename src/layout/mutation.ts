@@ -90,7 +90,7 @@ function structure(model: LayoutModel) {
       ...pick(node, ['id', 'owner', 'layer', 'strokeWidth']),
       ports: node.ports.map(port => pick(port, ['ref', 'class', 'side', 'authorOrder', 'owner', 'layer', 'unused', 'sizingSide'])),
     }])),
-    groups: Object.fromEntries(Object.entries(model.groups).map(([id, group]) => [id, pick(group, ['id', 'owner', 'layer', 'nodes', 'tier', 'flank', 'rowOrder'])])),
+    groups: Object.fromEntries(Object.entries(model.groups).map(([id, group]) => [id, pick(group, ['id', 'owner', 'layer', 'nodes', 'tier', 'frame', 'flank', 'rowOrder'])])),
     ...pick(model, ['fallbackUsed', 'deadlineHit']),
   };
 }
@@ -156,7 +156,7 @@ function validateDocument(model: LayoutModel): LayoutModel {
   }
   for (const id of orderedGroupIds(model.document)) {
     const group = model.groups[id]!, original = predicted.groups[id]!;
-    same(pick(group, ['id', 'owner', 'layer', 'nodes', 'tier']), pick(original, ['id', 'owner', 'layer', 'nodes', 'tier']), 'Group identity differs from document');
+    same(pick(group, ['id', 'owner', 'layer', 'nodes', 'tier', 'frame']), pick(original, ['id', 'owner', 'layer', 'nodes', 'tier', 'frame']), 'Group identity differs from document');
     if (original.flank) {
       if (!group.flank) throw new Error('Missing flank');
       same(pick(group.flank, ['align', 'of']), pick(original.flank, ['align', 'of']), 'Flank differs from document');

@@ -90,6 +90,8 @@ export interface LayoutGroup extends OwnedElement {
   nodes: string[];
   /** Effective tier, including the referenced tier of a flank after resolve. */
   tier?: number;
+  /** A rank cell names the document group whose frame it belongs to; see `NormalisedFrame`. */
+  frame?: string;
   bounds?: Rect;
   rowOrder?: string[];
   flank?: { align: 'left' | 'right'; of: string; proxyPeer?: string; primaryPeer?: string };

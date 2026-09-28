@@ -35,7 +35,10 @@ export const isGridGroup = (model: LayoutModel, id: string): boolean => groupSha
  * carries over to a future stacked shape is the rule, not this code path.
  */
 export function groupShape(model: LayoutModel, id: string): GroupShape {
-  const shape = model.document.groups[id]?.shape ?? 'row';
+  const authored = model.document.groups[id]?.shape ?? 'row';
+  // `ranked` is the default. Stage 1 turns a ranked group into rank cells (`row`) or, at one rank,
+  // into a `row`; a `ranked` that reaches here has not been resolved and is a row to every rule.
+  const shape = authored === 'ranked' ? 'row' : authored;
   return shape === 'grid' && enclosedBundle(model, id) !== undefined ? 'row' : shape;
 }
 

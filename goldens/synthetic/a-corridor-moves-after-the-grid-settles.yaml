@@ -24,9 +24,10 @@ portograph: 2
 groups:
   row-00: { tier: 0, label: "Row 0" }
   key: { tier: 1, label: "Key" }
-  zone-1: { tier: 2, label: "Zone 1" }
+  # shape: row — this fixture tests the corridor rule, not ranks; its zones would be two ranks each
+  zone-1: { tier: 2, label: "Zone 1", shape: row }
   zone-2: { tier: 2, label: "Zone 2" }
-  zone-3: { tier: 2, label: "Zone 3" }
+  zone-3: { tier: 2, label: "Zone 3", shape: row }
   row-07: { tier: 3, label: "Row 7" }
   row-10: { tier: 4, label: "Row 10" }
   row-11: { tier: 5, label: "Row 11" }
