@@ -30,4 +30,10 @@ describe('four locations, each with a zone', () => {
     expect(report.snapshot.gates.G9.passed).toBe(true);
     expect(render(model)).toContain('<svg');
   }, 60000);
+
+  it('a grid group of the same tier stands fixed: layout does not throw', async () => {
+    const model = await layout(parse(fixture('a-grid-group-stands-fixed-beside-frames')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    expect(model.diagnostics.filter(diagnostic => diagnostic.severity === 'error')).toEqual([]);
+    expect(model.groups.spares!.nodes).toEqual(['sp1', 'sp2']);
+  }, 60000);
 });

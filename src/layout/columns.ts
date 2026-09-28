@@ -3,6 +3,7 @@ import { cellReach, deriveFrames } from './frames.js';
 import { GROUP_PADDING } from './regions.js';
 import { bandGap, compareId } from './skeleton-graph.js';
 import { moveGroup } from './skeleton-geometry.js';
+import { groupShape } from './grid.js';
 
 /**
  * How far a cell may stand off the axis of its column, to either side, so a wide cell can meet a port
@@ -126,7 +127,10 @@ export function separateFrameColumns(model: LayoutModel): boolean {
   const box = new Map(derived.map(frame => [frame.id, frame.box]));
   const gap = bandGap(model);
   let moved = false;
-  for (const tier of columnTiers(model).filter(members => members.some(unit => unit.frame))) {
+  for (const all of columnTiers(model).filter(members => members.some(unit => unit.frame))) {
+    // The rows rule may move frames (their cells are rows) and one-rank row groups. A grid, a bar or a
+    // flank stands where it stands, out of the sweep; the collision guard of `repackOverlaps` reports a clash.
+    const tier = all.filter(unit => unit.frame || groupShape(model, unit.id) === 'row');
     const extent = (unit: Unit): { x: number; end: number } => unit.frame
       ? { x: box.get(unit.id)!.x, end: box.get(unit.id)!.x + box.get(unit.id)!.width }
       : { x: unit.groups[0]!.bounds!.x, end: unit.groups[0]!.bounds!.x + unit.groups[0]!.bounds!.width };
