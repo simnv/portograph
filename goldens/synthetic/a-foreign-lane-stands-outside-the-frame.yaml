@@ -1,0 +1,28 @@
+# Expected: A link foreign to a two-rank frame gets ONE lane beside the whole frame, not one lane per
+# sub-tier (ranked-groups ticket 04, review). `mid` has rank 0 = `a0` (the frame's feed from `u0`) and
+# rank 1 = three wide switches, so its two cells are very different in width. The link `u1` to `l0` in the
+# tier below is foreign to `mid` and crosses both of its sub-tiers. Its lane is decided once over the whole
+# frame: it stands at least the group-edge margin beyond the frame's widest cell on one side, in both
+# sub-tiers, at one x, and every cell of `mid` stands on the same side of it. The link never runs inside the
+# frame box, and gates G2 and G9 stay clean.
+# Test-only input owned by ranked-groups ticket 04; test/pipeline/frame-transit.test.ts reads the layout.
+portograph: 2
+groups:
+  up: { tier: 0, label: Up }
+  mid: { tier: 1, label: Mid }
+  low: { tier: 2, label: Low }
+nodes:
+  u0: { group: up, class: provider, label: U0 }
+  u1: { group: up, class: provider, label: U1 }
+  u2: { group: up, class: provider, label: U2 }
+  a0: { group: mid, class: router, label: A0 }
+  a1: { group: mid, class: switch, label: Distribution switch A1 of the main building }
+  a2: { group: mid, class: switch, label: Distribution switch A2 of the main building }
+  a3: { group: mid, class: switch, label: Distribution switch A3 of the main building }
+  l0: { group: low, class: server, label: L0 }
+links:
+  - [u0, a0]
+  - [a0, a1]
+  - [a0, a2]
+  - [a0, a3]
+  - [u1, l0]

@@ -1,0 +1,25 @@
+# Expected: A link to a parent member below a child frame transits the child's cells without entering
+# the child frame (ranked-groups ticket 04). `zone` is a child of `site`. Zone 1 links to the first ISP
+# above (rank 0) and Zone 2 hangs from it (rank 1), so the span of `zone` is [0, 1]. The parent member `o`
+# links to the second ISP, which makes it an anchor at rank 0, inside the span, so rule 5 pushes it to
+# rank 2. The second ISP's link to `o` is not foreign to `site` but is foreign to `zone`: its lane is
+# reserved beside the child's cells, outside the child frame and inside the parent frame, and the parent
+# frame grows to hold it. Zone 1 is wide, so its lane stands closer to it than the frame margin: only the
+# frame edge, not the body, made the link enter the child frame.
+# Test-only input owned by ranked-groups ticket 04; test/pipeline/frame-transit.test.ts reads the layout.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, label: Site }
+  zone: { parent: site, label: Zone }
+nodes:
+  isp2: { group: upstream, class: provider, label: ISP 2 }
+  isp1: { group: upstream, class: provider, label: ISP 1 }
+  z1: { group: zone, class: switch, label: Zone 1 access switch }
+  z2: { group: zone, class: access, label: Zone 2 }
+  o: { group: site, class: server, label: Other }
+links:
+  - [isp2, o]
+  - [isp1, z1]
+  - [z1, z2]
+  - [z2, o]

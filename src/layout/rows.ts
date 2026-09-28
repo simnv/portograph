@@ -4,6 +4,7 @@ import { groupShape } from './grid.js';
 import { bandGap, compareId, portId } from './skeleton-graph.js';
 import { moveGroup, rebuildBands, union } from './skeleton-geometry.js';
 import { groupInsets } from './regions.js';
+import { separateFrameColumns } from './columns.js';
 import { rowGap } from './sides-two.js';
 import { withLayoutMutation } from './mutation.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -45,10 +46,10 @@ function flattenRows(draft: LayoutModel): void {
 /** Push overlapping row neighbours rightwards in row order, then push displaced row groups; flanks never move. */
 export function repackOverlaps(draft: LayoutModel): void {
   const gap = bandGap(draft);
+  // First every row group takes the width its nodes need; then the columns of the frames move apart as
+  // wholes (ranked-groups ticket 12); only then does a sweep push what is left, a group with no frame.
   for (const band of draft.tierBands) {
-    const groups = rowGroups(draft, band);
-    if (!groups.length) continue;
-    for (const group of groups) {
+    for (const group of rowGroups(draft, band)) {
       const order = group.rowOrder ?? group.nodes;
       for (let i = 1; i < order.length; i++) {
         const prior = draft.nodes[order[i - 1]!]!.bounds!, node = draft.nodes[order[i]!]!;
@@ -57,6 +58,11 @@ export function repackOverlaps(draft: LayoutModel): void {
       }
       fitGroupBox(draft, group);
     }
+  }
+  separateFrameColumns(draft);
+  for (const band of draft.tierBands) {
+    const groups = rowGroups(draft, band);
+    if (!groups.length) continue;
     // Only row groups move here. Flanks belong to the flanks rule and bars to the bars rule.
     const core = [...groups].sort((a, b) => a.bounds!.x - b.bounds!.x || compareId(a.id, b.id));
     let end = -Infinity;
