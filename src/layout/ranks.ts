@@ -98,6 +98,40 @@ function levels(members: string[], links: Link[], comp: Map<string, string>, anc
   return new Map(members.filter(id => level.has(comp.get(id)!)).map(id => [id, level.get(comp.get(id)!)!]));
 }
 
+/** Steps 5: a span is `[min, max]` of the ranks of one child's members; an empty child has none. */
+function spanOf(ranks: Map<string, number>, child: { members: string[] }): [number, number] | undefined {
+  const own = child.members.map(id => ranks.get(id)).filter((rank): rank is number => rank !== undefined);
+  return own.length ? [Math.min(...own), Math.max(...own)] : undefined;
+}
+
+/**
+ * Step 5. A parent member whose rank falls inside a child's span and who is not a child member is
+ * pushed to the rank after the span; whatever hangs below it moves down with it, and peers keep
+ * sharing a rank. Ranks only grow, and every layering edge points from a lower base rank to a
+ * higher one, so the loop ends; the bound is a guard, not a limit anyone should reach.
+ */
+function clearSpans(input: RankInput, members: string[], links: Link[], ranks: Map<string, number>): void {
+  const owner = new Set(input.children.flatMap(child => child.members));
+  const lateral: Link[] = [], forward: Link[] = [];
+  for (const link of links) {
+    const a = ranks.get(link.a)!, b = ranks.get(link.b)!;
+    if (link.peer || a === b) lateral.push(link);
+    else if (Math.abs(a - b) === 1) forward.push(a < b ? link : { ...link, a: link.b, b: link.a });
+  }
+  for (let round = 0; round < 4 * members.length + 4; round += 1) {
+    let changed = false;
+    const raise = (id: string, rank: number): void => { if (rank > ranks.get(id)!) { ranks.set(id, rank); changed = true; } };
+    for (const link of forward) raise(link.b, ranks.get(link.a)! + 1);
+    for (const link of lateral) { const top = Math.max(ranks.get(link.a)!, ranks.get(link.b)!); raise(link.a, top); raise(link.b, top); }
+    for (const child of input.children) {
+      const span = spanOf(ranks, child);
+      if (!span) continue;
+      for (const id of members) if (!owner.has(id) && ranks.get(id)! >= span[0] && ranks.get(id)! <= span[1]) raise(id, span[1] + 1);
+    }
+    if (!changed) return;
+  }
+}
+
 export function deriveRanks(input: RankInput): RankResult {
   const members = [...new Set([...input.members, ...input.children.flatMap(child => child.members)])];
   const inGroup = new Set(members);
@@ -110,7 +144,11 @@ export function deriveRanks(input: RankInput): RankResult {
   const depth = levels(members, links, comp, anchoredFrom === 'above' ? above : anchoredFrom === 'below' ? below : []);
   const deepest = depth.size ? Math.max(...depth.values()) : 0;
   const ranks = new Map([...depth].map(([id, level]) => [id, anchoredFrom === 'below' ? deepest - level : level]));
-  const rankCount = ranks.size ? deepest + 1 : 1;
+  const layered = links.filter(link => ranks.has(link.a) && ranks.has(link.b));
+  clearSpans(input, [...ranks.keys()], layered, ranks);
+  const rankCount = ranks.size ? Math.max(...ranks.values()) + 1 : 1;
   for (const id of members) if (!ranks.has(id)) ranks.set(id, rankCount - 1);
-  return { ranks, rankCount, anchoredFrom, spans: new Map() };
+  const spans = new Map<string, [number, number]>();
+  for (const child of input.children) { const span = spanOf(ranks, child); if (span) spans.set(child.group, span); }
+  return { ranks, rankCount, anchoredFrom, spans };
 }
