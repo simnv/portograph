@@ -12,9 +12,9 @@ import type { RoutePin } from './types.js';
 export const TERMINAL_TRIM = 18;
 
 /**
- * One routing obstacle. `consumers` are the links whose own reserved geometry this rectangle
- * covers: only they may pass through it, and only because a rule already gave them that space.
- * Every other link avoids it.
+ * One routing obstacle. `consumers` are links that may pass this rectangle: owners of reserved
+ * geometry, or links explicitly permitted to cross that run by a routing rule. Every other link
+ * avoids it.
  */
 export interface RouteObstacle {
   id: string;
@@ -228,14 +228,21 @@ export function reservedRunObstacles(model: LayoutModel): RouteObstacle[] {
 }
 
 /** Protective cover for routes a previous ownership batch has already fixed. */
-export function completedRouteObstacles(model: LayoutModel, link: LayoutLink, connector: string, points: Point[]): RouteObstacle[] {
+export function completedRouteCovers(model: LayoutModel, link: LayoutLink, connector: string, points: Point[]):
+{ obstacle: RouteObstacle; segment: Pick<PathSegment, 'from' | 'to'> }[] {
   const anchors = anchorsOf(model, link);
   const startsAtPort = anchors.some(anchor => samePlace(anchor, points[0]!));
   const endsAtPort = anchors.some(anchor => samePlace(anchor, points.at(-1)!));
   const trimmed = trimChain(points, startsAtPort ? TERMINAL_TRIM : 0, endsAtPort ? TERMINAL_TRIM : 0);
+  const segments = trimmed.slice(1).map((to, index) => ({ from: trimmed[index]!, to }))
+    .filter(segment => !samePlace(segment.from, segment.to));
   return chainRects(trimmed, runClearance(link, routedStroke(model))).map((bounds, index) => ({
-    id: `routed:${connector}:${index}`, bounds, consumers: [link.id],
+    obstacle: { id: `routed:${connector}:${index}`, bounds, consumers: [link.id] }, segment: segments[index]!,
   }));
+}
+
+export function completedRouteObstacles(model: LayoutModel, link: LayoutLink, connector: string, points: Point[]): RouteObstacle[] {
+  return completedRouteCovers(model, link, connector, points).map(item => item.obstacle);
 }
 
 export const rectContainsPoint = (bounds: Rect, point: Point, tolerance = 1e-6): boolean =>

@@ -203,6 +203,7 @@ export function planRoute(model: LayoutModel): RoutePlan {
   }
   const usage = portUsage(model), pins = new Map<string, RoutePin[]>();
   const remainders: string[] = [], overlay: string[] = [], links: LinkPlan[] = [], stems: StemReservation[] = [];
+  const claims: { segment: PathSegment; covers: RouteObstacle[] }[] = [];
   for (const link of model.links) {
     if (link.path || !drawn(link)) continue;
     if (effectiveLayer(link) === 'overlay') { overlay.push(link.id); continue; }
@@ -263,7 +264,9 @@ export function planRoute(model: LayoutModel): RoutePlan {
           // `routed:` is `completedRouteObstacles`' own prefix for a chain it was handed, which the
           // leg and the tier-gap allocation carry for the same reason. It names the producer, not
           // the geometry: every cover this pass adds is under it, whoever fixed the run.
-          reserve(completedRouteObstacles(model, link, `straight:${id}`, [run.from, run.to]));
+          const covers = completedRouteObstacles(model, link, `straight:${id}`, [run.from, run.to]);
+          reserve(covers);
+          claims.push({ segment: run, covers });
         } else {
           // Only an attachment stem is reserved against the batches still to run. Reserving the lane
           // approach as well was measured and left out; see `.scratch/stress/issues/02`.
@@ -294,6 +297,14 @@ export function planRoute(model: LayoutModel): RoutePlan {
     const shape = obstacles.find(item => item.id === `node:${node}`);
     if (shape) shape.pins = [...list].sort((a, b) => a.classId - b.classId);
   }
+  // Claiming an ordinary stage-8 run must not turn it into a wall for a transverse gap. As with
+  // allocated tier-gap rows, only the crossed run grants passage; nodes, lanes and geometry that
+  // placement fixed keep their original owners. Read the actual segment, not the aspect of its
+  // trimmed clearance cover: a short vertical run can have a wider-than-tall cover.
+  for (const { segment, covers } of claims) for (const link of links) {
+    if (!link.pieces.some(piece => piece.kind === 'gap' && crossesInterior(piece.from, piece.to, segment))) continue;
+    for (const cover of covers) if (!cover.consumers.includes(link.link)) cover.consumers.push(link.link);
+  }
   // The exclusions are read after the link loop, because a straight piece claimed inside it adds a
   // cover its own link must pass through: the gap beyond such a piece starts at the piece's own
   // terminal, which lies inside that cover wherever the terminal is not a port anchor.
@@ -312,6 +323,29 @@ export function planRoute(model: LayoutModel): RoutePlan {
   }
   return { remainders, overlay, links, obstacles, stems, parameters: routeParameters(model),
     batches: [...batches.values()].map((ids, index) => ({ id: `batch-${index}`, links: ids })) };
+}
+
+/** The endpoint chord must pass strictly through the run, rather than touch an end or its cover. */
+function crossesInterior(from: Point, to: Point, segment: Pick<PathSegment, 'from' | 'to'>): boolean {
+  const vertical = Math.abs(segment.from.x - segment.to.x) <= EPS;
+  const horizontal = Math.abs(segment.from.y - segment.to.y) <= EPS;
+  if (vertical === horizontal) return false;
+  const axis = vertical ? 'x' : 'y', along = vertical ? 'y' : 'x';
+  const at = segment.from[axis], a = from[axis] - at, b = to[axis] - at;
+  if (!((a < -EPS && b > EPS) || (a > EPS && b < -EPS))) return false;
+  const hit = from[along] + (to[along] - from[along]) * (at - from[axis]) / (to[axis] - from[axis]);
+  return hit > Math.min(segment.from[along], segment.to[along]) + EPS
+    && hit < Math.max(segment.from[along], segment.to[along]) - EPS;
+}
+
+/** A completed run remains protected except where every connector in this batch must cross it. */
+export function completedCrossingObstacles(plan: RoutePlan, batch: { links: string[] },
+  covers: { obstacle: RouteObstacle; segment: Pick<PathSegment, 'from' | 'to'> }[]): RouteObstacle[] {
+  return covers.map(({ obstacle, segment }) => {
+    const crossers = batch.links.filter(id => plan.links.find(link => link.link === id)?.pieces.some(piece =>
+      piece.kind === 'gap' && crossesInterior(piece.from, piece.to, segment)));
+    return { ...obstacle, consumers: [...obstacle.consumers, ...crossers] };
+  });
 }
 
 /**
@@ -403,19 +437,15 @@ function stemBounds(model: LayoutModel, link: LayoutLink, terminal: Point, check
  * that link then has no route to its own port.
  *
  * A stem at a **port** this batch also attaches to is left out: one port carries one stem, and the
- * links that share it share the strip. A stem on a node **side** this batch attaches to elsewhere
- * is left out as well, but only where placement left that side's stems flat: two ports of one side
- * are one port pitch apart, the strip is wider than that pitch, and a rectangle over one of them
- * blocks the other. Where rule 1 nested the side, each port turns at a depth of its own and the
- * strip is that port's corridor, so it is covered against every batch that has not routed its
- * owner. The attachment is read from the link, not from the stems, because an end that consumes a
- * shared run starts at the run's terminal and reserves no stem of its own.
+ * links that share it share the strip. Other ports on the same side still own their future stems;
+ * omitting them lets the current batch occupy their required checkpoints. The attachment is read
+ * from the link, not from the stems, because an end that consumes a shared run starts at the run's
+ * terminal and reserves no stem of its own.
  */
 export function pendingStemObstacles(plan: RoutePlan, batch: { links: string[] }, pending: Set<string>): RouteObstacle[] {
   const own = plan.links.filter(item => batch.links.includes(item.link));
-  const sides = new Set(own.flatMap(item => item.sides)), ports = new Set(own.flatMap(item => item.ports));
+  const ports = new Set(own.flatMap(item => item.ports));
   return plan.stems.flatMap((stem, index) => pending.has(stem.link) && !ports.has(stem.port)
-    && (stem.nested || !sides.has(`${stem.node}|${stem.side}`))
     ? [{ id: `stem:${index}:${stem.link}`, bounds: stem.bounds, consumers: [] }] : []);
 }
 
@@ -498,7 +528,10 @@ export function batchRequest(plan: RoutePlan, batch: { id: string; links: string
   // A pin matters to this batch only when one of its connectors ends there; a pinned node that
   // another batch attaches to is a plain obstacle here, so a foreign group box may cover it.
   const targeted = new Set(connectors.flatMap(c => [c.from, c.to]).flatMap(e => e.kind === 'pin' ? [`${e.shape}#${e.classId}`] : []));
-  const shapes: RouteShape[] = [...plan.obstacles, ...extra].filter(item => !excluded.has(item.id)).map(item => {
+  const shapes: RouteShape[] = [
+    ...plan.obstacles.filter(item => !excluded.has(item.id)),
+    ...extra.filter(item => !batch.links.every(id => item.consumers.includes(id))),
+  ].map(item => {
     const pins = item.pins?.filter(pin => targeted.has(`${item.id}#${pin.classId}`));
     return pins?.length ? { id: item.id, bounds: item.bounds, pins } : { id: item.id, bounds: item.bounds };
   });

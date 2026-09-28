@@ -231,11 +231,28 @@ links: [[a.p, b.p], [m.q, c.p]]`);
     expect(pendingStemObstacles(plan, plan.batches[0]!, pending).map(item => item.id))
       .toEqual(['stem:2:link-2', 'stem:3:link-2']);
     expect(pendingStemObstacles(plan, plan.batches[1]!, new Set<string>())).toEqual([]);
-    // A stem on a node this batch also attaches to is left out: one node side is shared space.
+    // The batch uses both ports, so both stems on those ports are left out.
     expect(pendingStemObstacles(plan, { links: ['link-1', 'link-2'] }, pending)).toEqual([]);
   });
 
-  it('reads the attachment from the link, so a shared-run end still exempts its node', async () => {
+  it('protects a future sibling port on a flat side while sharing an owned port', async () => {
+    const model = await throughBands(`portograph: 2\ngroups: {ga: {tier: 0}, gb: {tier: 1}}\nnodes:\n  a: {group: ga, ports: [{name: p, side: right}, {name: q, side: right}]}\n  b: {group: gb, ports: [{name: p, side: left}]}\n  c: {group: gb, ports: [{name: p, side: left}]}\nlinks: [[a.p, b.p], [a.q, c.p]]`);
+    const plan = planRoute(model);
+    const sibling = plan.stems.findIndex(stem => stem.link === 'link-2' && stem.node === 'a');
+    expect(sibling).toBeGreaterThanOrEqual(0);
+    plan.stems[sibling]!.nested = false;
+    const pending = new Set(['link-2']);
+    const obstacles = pendingStemObstacles(plan, { links: ['link-1'] }, pending);
+    expect(obstacles.map(item => item.id)).toContain(`stem:${sibling}:link-2`);
+    expect(pendingStemObstacles(plan, { links: ['link-2'] }, pending).map(item => item.id))
+      .not.toContain(`stem:${sibling}:link-2`);
+    // Control: when two links actually use one port, its pending stem remains shared.
+    plan.stems[sibling]!.port = plan.links.find(item => item.link === 'link-1')!.ports[0]!;
+    expect(pendingStemObstacles(plan, { links: ['link-1'] }, pending).map(item => item.id))
+      .not.toContain(`stem:${sibling}:link-2`);
+  });
+
+  it('protects a future sibling stem even when the batch consumes a shared run', async () => {
     const model = await throughBands(`portograph: 2
 groups: {ga: {tier: 0}, gb: {tier: 1}}
 nodes:
@@ -249,12 +266,11 @@ links: [[a.p, b.p], [a.p, c.p], [a.q, d.p]]`);
     expect(plan.stems.filter(stem => stem.node === 'a').map(stem => stem.link)).toEqual(['link-3']);
     const shared = plan.links.find(item => item.link === 'link-1')!;
     expect(shared.nodes).toEqual(['a', 'b']);
-    // Its batch still attaches to `a`, so the stem `link-3` reserved there is not an obstacle for
-    // it; the stem `link-3` reserved at its own target still is.
+    // The batch uses a.p through the shared run. The future a.q stem remains protected.
     const batch = plan.batches.find(item => item.links.includes('link-1'))!;
     const index = (node: string) => plan.stems.findIndex(stem => stem.link === 'link-3' && stem.node === node);
     expect(pendingStemObstacles(plan, batch, new Set(['link-3'])).map(item => item.id))
-      .toEqual([`stem:${index('d')}:link-3`]);
+      .toEqual([`stem:${index('a')}:link-3`, `stem:${index('d')}:link-3`]);
   });
 
   it('marks a shared port non-exclusive and counts link ends already fixed by a rule', async () => {

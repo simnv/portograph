@@ -1,8 +1,8 @@
 import type { Point } from '../model/geometry.js';
 import type { LayoutModel } from '../model/layout.js';
 import { withLayoutMutation } from '../layout/mutation.js';
-import { completedRouteObstacles, type RouteObstacle } from './obstacles.js';
-import { batchRequest, pendingStemObstacles, planRoute, type RoutePlan } from './plan.js';
+import { completedRouteCovers, type RouteObstacle } from './obstacles.js';
+import { batchRequest, completedCrossingObstacles, pendingStemObstacles, planRoute, type RoutePlan } from './plan.js';
 import { stitchPaths, stubCandidate } from './paths.js';
 import { ROUTE_BUDGET_MS, systemRouteClock, withRouteSession, type CreateRouteAttempt, type RouteClock } from './worker.js';
 
@@ -45,12 +45,15 @@ async function runRouter(model: LayoutModel, plan: RoutePlan, options: RouteOpti
   if (!createAttempt) throw new Error(`Routing ${asked} remaining gap(s) requires a libavoid worker factory`);
   await withRouteSession(createAttempt, options.routeBudgetMs ?? ROUTE_BUDGET_MS, options.clock ?? systemRouteClock,
     async route => {
-      const protectedRuns: RouteObstacle[] = [];
+      const protectedRuns: { obstacle: RouteObstacle; segment: { from: Point; to: Point } }[] = [];
       // Ownership batches run in a fixed order and every completed route protects the next batch.
       for (const [index, batch] of plan.batches.entries()) {
         // A later batch's reserved stems protect it the same way, before it has a route of its own.
         const pending = new Set(plan.batches.slice(index + 1).flatMap(item => item.links));
-        const routed = await route(batchRequest(plan, batch, [...protectedRuns, ...pendingStemObstacles(plan, batch, pending)]));
+        const routed = await route(batchRequest(plan, batch, [
+          ...completedCrossingObstacles(plan, batch, protectedRuns),
+          ...pendingStemObstacles(plan, batch, pending),
+        ]));
         for (const item of routed) {
           if (routes.has(item.connector)) throw new Error(`Router returned ${item.connector} twice`);
           routes.set(item.connector, item.points);
@@ -59,7 +62,7 @@ async function runRouter(model: LayoutModel, plan: RoutePlan, options: RouteOpti
           const link = model.links.find(item => item.id === id)!;
           for (const piece of plan.links.find(item => item.link === id)!.pieces) {
             if (piece.kind !== 'gap') continue;
-            protectedRuns.push(...completedRouteObstacles(model, link, piece.connector, routes.get(piece.connector) ?? []));
+            protectedRuns.push(...completedRouteCovers(model, link, piece.connector, routes.get(piece.connector) ?? []));
           }
         }
       }

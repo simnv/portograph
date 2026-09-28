@@ -1,0 +1,254 @@
+# /// script
+# dependencies = ["pyyaml"]
+# ///
+"""Convert drawthe.net topology and its named NTP styles to portograph grid groups."""
+import argparse
+from collections import Counter
+import json
+from pathlib import Path
+import re
+
+import yaml
+
+
+ICON_ROLES = {
+    'router': ('router', 'router'), 'spacerouter': ('satellite-router', 'router'),
+    'cloud': ('provider', 'cloud'), 'nexus5000': ('switch', 'switch'),
+    'nexus7000': ('switch', 'switch'), 'workgroupswitch': ('switch', 'switch'),
+    'antenna': ('antenna', 'default'), 'ace': ('load-balancer', 'default'),
+    'smallbusiness': ('client-site', 'default'), 'file_server': ('server', 'server'),
+}
+
+
+def identifiers(names):
+    used = set()
+    result = {}
+    for name in names:
+        base = re.sub(r'[^A-Za-z0-9]+', '-', str(name)).strip('-').lower() or 'x'
+        if base[0].isdigit():
+            base = 'n' + base
+        candidate, suffix = base, 2
+        while candidate in used:
+            candidate = f'{base}-{suffix}'
+            suffix += 1
+        used.add(candidate)
+        result[name] = candidate
+    return result
+
+
+def place(icons):
+    result = {}
+    previous = {'x': None, 'y': None}
+    for name, spec in icons.items():
+        at = dict(spec or {})
+        for axis in ('x', 'y'):
+            value = at.get(axis, previous[axis])
+            if value is None:
+                raise ValueError('The first icon must specify both coordinates')
+            if isinstance(value, str) and value.startswith(('+', '-')):
+                if previous[axis] is None:
+                    raise ValueError('A relative coordinate needs a previous icon')
+                value = previous[axis] + int(value)
+            at[axis] = int(value)
+            previous[axis] = at[axis]
+        for axis in ('w', 'h'):
+            at[axis] = int(at.get(axis, 1))
+            if at[axis] < 1:
+                raise ValueError('Icon dimensions must be positive')
+        result[name] = at
+    return result
+
+
+def descendants(name, groups, icons, ancestors=()):
+    if name in icons:
+        return [name]
+    if name not in groups:
+        raise ValueError('Unknown group member or connection endpoint')
+    if name in ancestors:
+        raise ValueError('Cyclic group membership')
+    return [leaf for member in (groups[name].get('members') or [])
+            for leaf in descendants(member, groups, icons, (*ancestors, name))]
+
+
+def style(spec):
+    dash = spec.get('strokeDashArray') or []
+    if isinstance(dash, str):
+        dash = re.split(r'[, ]+', dash.strip())
+    dash = tuple(float(value) for value in dash)
+    if not any(dash):
+        dash = ()
+    return (spec.get('stroke', 'orange'), dash, float(spec.get('strokeWidth', 1)), spec.get('color', 'orange'))
+
+
+def link_class(connection, doc):
+    signature = style(connection)
+    for preset, role in (('ntpSync', 'sync'), ('ntpFlow', 'flow')):
+        if preset in doc and signature == style(doc[preset]):
+            return role
+    physical = style(doc.get('connection') or {})
+    if signature[::2] == physical[::2] and signature[3] == physical[3]:
+        return 'dashed' if signature[1] else 'physical'
+    raise ValueError('Unmapped connection style; do not infer its semantic family from topology')
+
+
+def node_role(spec, doc):
+    fallback, icon = ICON_ROLES.get(spec.get('icon'), ('unknown-device', 'default'))
+    for preset, role in (('stratum1', 'ntp-stratum1'), ('stratum2', 'ntp-stratum2'), ('ntpClient', 'ntp-client')):
+        paint = {key: doc.get(preset, {}).get(key) for key in ('iconFill', 'iconStroke', 'iconFamily')
+                 if doc.get(preset, {}).get(key) is not None}
+        if paint.keys() & {'iconFill', 'iconStroke'} and all(spec.get(key) == value for key, value in paint.items()):
+            return role, icon
+    return fallback, icon
+
+
+def opaque_fill(value):
+    """Prove opacity from a CSS fill; unknown or context-dependent colours stay visible."""
+    colour = str(value).strip().lower()
+    if re.fullmatch(r'#[0-9a-f]{3}|#[0-9a-f]{6}', colour):
+        return True
+    if re.fullmatch(r'#[0-9a-f]{4}', colour):
+        return colour[-1] == 'f'
+    if re.fullmatch(r'#[0-9a-f]{8}', colour):
+        return colour[-2:] == 'ff'
+    if colour in {'black', 'silver', 'gray', 'grey', 'white', 'maroon', 'red', 'purple',
+                  'fuchsia', 'green', 'lime', 'olive', 'yellow', 'navy', 'blue', 'teal', 'aqua', 'orange'}:
+        return True
+    functional = re.fullmatch(r'(?:rgb|rgba|hsl|hsla)\(([^()]*)\)', colour)
+    if not functional:
+        return False
+    components = re.split(r'[,\s/]+', functional[1].strip())
+    if len(components) not in (3, 4):
+        return False
+    try:
+        for component in components[:3]:
+            float(re.sub(r'(?:deg|grad|rad|turn|%)$', '', component))
+        if len(components) == 3:
+            return True
+        alpha = components[3]
+        return float(alpha.rstrip('%')) >= (100 if alpha.endswith('%') else 1)
+    except ValueError:
+        return False
+
+
+def convert(doc):
+    icons = place(doc.get('icons') or {})
+    groups = {name: spec or {} for name, spec in (doc.get('groups') or {}).items()}
+    if icons.keys() & groups.keys():
+        raise ValueError('Icon and group identities must be distinct')
+    node_ids = identifiers(icons)
+    group_ids = identifiers(groups)
+    leaves = {name: descendants(name, groups, icons) for name in groups}
+    diagram = doc.get('diagram') or {}
+    gap = float(diagram.get('gridPaddingInner', 0.4))
+    padding = float(diagram.get('groupPadding', 0.33))
+
+    def depth(name):
+        return 1 + max((depth(member) for member in groups[name].get('members', []) if member in groups), default=0)
+
+    # Coordinates in grid steps, with y reversed. An h-cell icon extends down, not up.
+    boxes = {name: (at['x'], -at['y'], at['x'] + at['w'] - gap, -at['y'] + at['h'] - gap)
+             for name, at in icons.items()}
+    containers = []
+    for index, (name, spec) in enumerate(groups.items()):
+        if all(str(spec.get(key, 'orange')).lower() == 'none' for key in ('stroke', 'fill')) or not leaves[name]:
+            continue
+        bounds = [boxes[member] for member in leaves[name]]
+        pad = gap * padding * depth(name)
+        box = (min(b[0] for b in bounds) - pad, min(b[1] for b in bounds) - pad,
+               max(b[2] for b in bounds) + pad, max(b[3] for b in bounds) + pad)
+        containers.append((name, box, (box[2] - box[0]) * (box[3] - box[1]), index))
+
+    redundant = set()
+    # Decide outer boxes first, so a redundant parent cannot hide a nearer painted boundary.
+    for name, box, area, index in sorted(containers, key=lambda entry: (-entry[2], entry[3])):
+        spec = groups[name]
+        if (spec.get('name') or str(spec.get('stroke', 'orange')).lower() != 'none'
+                or not opaque_fill(spec.get('fill', 'orange'))):
+            continue
+        fill = spec.get('fill', 'orange')
+        if str(fill).lower() == 'none':
+            continue
+        enclosing = [(outer_area, -outer_index, parent)
+                     for parent, outer, outer_area, outer_index in containers
+                     if parent != name and parent not in redundant
+                     and (outer_area, -outer_index) > (area, -index)
+                     and str(groups[parent].get('fill', 'orange')).lower() not in {'none', 'transparent'}
+                     and outer[0] <= box[0] and outer[1] <= box[1] and box[2] <= outer[2] and box[3] <= outer[3]]
+        if enclosing:
+            parent = min(enclosing)[2]
+            if groups[parent].get('fill', 'orange') == fill and opaque_fill(groups[parent].get('fill', 'orange')):
+                redundant.add(name)
+    containers = [entry for entry in containers if entry[0] not in redundant]
+
+    assignments, active = {}, {}
+    for name, at in icons.items():
+        own = boxes[name]
+        inside = [(area, order, group) for group, box, area, order in containers
+                  if box[0] <= own[0] and box[1] <= own[1] and own[2] <= box[2] and own[3] <= box[3]]
+        if inside:
+            group = min(inside)[2]
+            gid = group_ids[group]
+            active[gid] = {'label': groups[group].get('name', ''),
+                           'top': -max(icons[member]['y'] for member in leaves[group])}
+        else:
+            gid = f'row-{int(diagram.get("rows", 21)) - 1 - at["y"]:02d}'
+            while gid in group_ids.values():
+                gid = 'uncontained-' + gid
+            active[gid] = {'label': f'Row {int(diagram.get("rows", 21)) - 1 - at["y"]}', 'top': -at['y']}
+        assignments[name] = gid
+    ranks = {top: i for i, top in enumerate(sorted({value['top'] for value in active.values()}))}
+    result = {'portograph': 2, 'profile': 'network', 'groups': {
+        gid: {'tier': ranks[value['top']], 'label': value['label'], 'shape': 'grid'}
+        for gid, value in sorted(active.items(), key=lambda item: (item[1]['top'], item[0]))}, 'nodes': {}, 'links': []}
+    if (doc.get('title') or {}).get('text'):
+        result['title'] = doc['title']['text']
+    for name, spec in icons.items():
+        role, icon = node_role(spec, doc)
+        result['nodes'][node_ids[name]] = {'group': assignments[name], 'class': role,
+                                         'icon': icon, 'label': str(spec.get('text', name))}
+
+    report = {'nodes': len(icons), 'declarations': len(doc.get('connections') or []),
+              'expanded': 0, 'self_pairs': 0, 'duplicates': 0, 'redundant_hidden_groups': len(redundant)}
+    seen = set()
+    classes = Counter()
+    for connection in doc.get('connections') or []:
+        endpoints = connection.get('endpoints') or []
+        if len(endpoints) != 2:
+            raise ValueError('Each connection must have exactly two endpoints')
+        parsed = [str(endpoint).partition(':') for endpoint in endpoints]
+        (a, _, label_a), (b, _, label_b) = parsed
+        role = link_class(connection, doc)
+        for left in descendants(a, groups, icons):
+            for right in descendants(b, groups, icons):
+                report['expanded'] += 1
+                if left == right:
+                    report['self_pairs'] += 1
+                    continue
+                identity = (tuple(sorted(((left, label_a), (right, label_b)))), role, style(connection))
+                if identity in seen:
+                    report['duplicates'] += 1
+                    continue
+                seen.add(identity)
+                options = {'class': role}
+                labels = list(dict.fromkeys(label for label in (label_a, label_b) if label))
+                if labels:
+                    options['label'] = ' / '.join(labels)
+                result['links'].append([node_ids[left], node_ids[right], options])
+                classes[role] += 1
+    report.update(links=len(result['links']), groups=len(result['groups']), tiers=len(ranks), classes=dict(classes))
+    return result, report
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('source', type=Path)
+    parser.add_argument('output', type=Path)
+    args = parser.parse_args()
+    result, report = convert(yaml.safe_load(args.source.read_text()))
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(yaml.safe_dump(result, sort_keys=False, allow_unicode=True))
+    print(json.dumps(report, sort_keys=True))
+
+
+if __name__ == '__main__':
+    main()
