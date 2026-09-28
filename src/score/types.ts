@@ -1,6 +1,6 @@
 import type { LayoutRuntime, Rect } from '../model/index.js';
 
-export type GateId = 'G1' | 'G2' | 'G3' | 'G4' | 'G5' | 'G6' | 'G7' | 'G8';
+export type GateId = 'G1' | 'G2' | 'G3' | 'G4' | 'G5' | 'G6' | 'G7' | 'G8' | 'G9';
 export interface GateViolation { code: string; elements: string[]; message: string }
 export interface GateResult { passed: boolean; severity: 'error' | 'warning'; violations: GateViolation[] }
 export interface ScoreMetrics {

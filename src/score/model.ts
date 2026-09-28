@@ -11,16 +11,30 @@ export const endpoints = (link: LayoutLink): { from: PortRef; to: PortRef } => {
   if (link.from.node !== undefined && link.to.node !== undefined) return { from: link.from, to: link.to };
   throw new Error(`Link ${link.id} requires concrete port attachments`);
 };
-/** Links a group's box does not obstruct: attached inside it, or owning a lane reserved in its margin. */
+/**
+ * The boxes that obstruct links (ADR-0013): every group that is not a rank cell, and every frame. A
+ * frame is drawn in its cells' place, so a cell never is an obstacle (ranked-groups spec, section 2).
+ * Ids are group ids and frame ids.
+ */
+export function groupBoxes(model: LayoutModel): { id: string; bounds: Rect }[] {
+  const groups = Object.entries(model.groups).filter(([, group]) => group.frame === undefined && group.bounds && group.nodes.length)
+    .map(([id, group]) => ({ id, bounds: group.bounds! }));
+  return [...groups, ...(model.frames ?? []).map(frame => ({ id: frame.id, bounds: frame.box }))];
+}
+/** Links a group's or frame's box does not obstruct: attached inside it, or owning a lane reserved in its margin. */
 export function groupConsumers(model: LayoutModel, groupId: string): string[] {
-  const members = new Set(model.groups[groupId]!.nodes), result = new Set<string>();
+  const frames = model.document.frames ?? {};
+  // A frame owns its own cells and, for a parent, its child frames' cells.
+  const ids = Object.hasOwn(frames, groupId)
+    ? Object.entries(frames).filter(([id, item]) => id === groupId || item.parent === groupId).flatMap(([, item]) => item.cells) : [groupId];
+  const members = new Set(ids.flatMap(id => model.groups[id]?.nodes ?? [])), owned = new Set(ids), result = new Set<string>();
   for (const link of model.links) {
     const ends = endpoints(link);
     if (members.has(ends.from.node) || members.has(ends.to.node)) result.add(link.id);
   }
   for (const drop of model.barDrops) if (drop.barCross.some(id => members.has(id))) result.add(drop.link);
   for (const lane of model.lanes) {
-    if (lane.group !== groupId) continue;
+    if (!owned.has(lane.group)) continue;
     const owner = lane.owner;
     if (owner.kind === 'link') result.add(owner.id);
     else if (owner.kind === 'bundle') for (const id of model.bundles.find(bundle => bundle.id === owner.id)?.members ?? []) result.add(id);

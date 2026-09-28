@@ -18,7 +18,7 @@ interface Span { x: number; y: number; right: number; bottom: number; measurable
 const REJECT_LIMIT = 2 ** 26;
 const measurable = (x: number, y: number, right: number, bottom: number): boolean =>
   x > -REJECT_LIMIT && y > -REJECT_LIMIT && right < REJECT_LIMIT && bottom < REJECT_LIMIT;
-import { anchorOnBoundary, barContact, bundlePair, effectiveLayer, endpoints, groupConsumers, incident, junctionFan, mergedRun, outward, port, refEqual, refKey, sharedStem } from './model.js';
+import { anchorOnBoundary, barContact, bundlePair, effectiveLayer, endpoints, groupBoxes, groupConsumers, incident, junctionFan, mergedRun, outward, port, refEqual, refKey, sharedStem } from './model.js';
 import { overlayEndpoint } from '../layout/overlay-paths.js';
 import type { Segment } from './model.js';
 import type { GateId, GateResult, ScoreCounters } from './types.js';
@@ -48,10 +48,43 @@ export function alongside(a: PathSegment, b: PathSegment): boolean {
   return Math.min(aHigh, bHigh) - Math.max(aLow, bLow) > EPS;
 }
 
+/**
+ * G9 `frame-contains` (ranked-groups spec, section 5). A frame holds its cells and its child frames;
+ * no two frames that are not parent and child overlap, and no frame overlaps a group that is not one
+ * of its cells; no node outside a frame's cells and child cells lies inside it. G1 and G8 keep
+ * reading cells.
+ */
+function frameGate(model: LayoutModel, fail: (id: GateId, code: string, elements: string[], message: string) => void): void {
+  const frames = model.frames ?? [];
+  const cellsOf = (id: string): Set<string> => new Set(frames.filter(frame => frame.id === id || frame.parent === id).flatMap(frame => frame.cells));
+  for (const [i, frame] of frames.entries()) {
+    for (const cell of frame.cells) {
+      const group = model.groups[cell];
+      if (!group?.bounds || !contains(frame.box, group.bounds)) fail('G9', 'frame-contains', [frame.id, cell], 'Frame must contain its cells');
+    }
+    const parent = frames.find(item => item.id === frame.parent);
+    if (parent && !contains(parent.box, frame.box)) fail('G9', 'frame-contains', [parent.id, frame.id], 'Frame must contain its child frames');
+    for (const other of frames.slice(i + 1)) {
+      if (other.parent === frame.id || frame.parent === other.id) continue;
+      if (rectOverlap(frame.box, other.box)) fail('G9', 'frame-overlap', [frame.id, other.id], 'Frames overlap');
+    }
+    const own = cellsOf(frame.id);
+    for (const group of Object.values(model.groups)) {
+      if (own.has(group.id) || group.frame !== undefined || !group.bounds || !group.nodes.length) continue;
+      if (rectOverlap(frame.box, group.bounds)) fail('G9', 'frame-overlap', [frame.id, group.id], 'Frame overlaps a group that is not its own');
+    }
+    const held = new Set([...own].flatMap(cell => model.groups[cell]?.nodes ?? []));
+    for (const node of Object.values(model.nodes)) {
+      if (held.has(node.id) || !node.bounds) continue;
+      if (rectOverlap(frame.box, node.bounds)) fail('G9', 'frame-foreign-node', [frame.id, node.id], 'A node outside the frame lies inside it');
+    }
+  }
+}
+
 export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCounters): Record<GateId, GateResult> {
   const nodes = Object.values(model.nodes), groups = Object.values(model.groups);
   const gate = (warning = false): GateResult => ({ passed: true, severity: warning ? 'warning' : 'error', violations: [] });
-  const result: Record<GateId, GateResult> = { G1: gate(), G2: gate(), G3: gate(nodes.length > 300), G4: gate(), G5: gate(), G6: gate(), G7: gate(), G8: gate() };
+  const result: Record<GateId, GateResult> = { G1: gate(), G2: gate(), G3: gate(nodes.length > 300), G4: gate(), G5: gate(), G6: gate(), G7: gate(), G8: gate(), G9: gate() };
   const fail = (id: GateId, code: string, elements: string[], message: string): void => { result[id].passed = false; result[id].violations.push({ code, elements, message }); };
   const nodeStroke = (n: LayoutNode): number => n.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node;
   // `routed` holds one entry per segment, so "does this link have a routed segment?" was a scan of
@@ -114,6 +147,7 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       if (rectOverlap(group.bounds!, b.bounds!)) fail('G1', 'group-overlap', [group.id, b.id], 'Group rectangles overlap');
     }
   }
+  frameGate(model, fail);
   const bands = [...model.tierBands].sort((a, b) => a.tier - b.tier);
   for (let i = 1; i < bands.length; i++) {
     const a = bands[i - 1]!, b = bands[i]!;
@@ -137,10 +171,10 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
   counters.barCross = crossedBars.size;
   // Group boxes are geometry links respect (ADR-0013): no segment inside a foreign group, and no
   // segment running along any group edge closer than the edge margin.
-  const groupBoxes = Object.entries(model.groups).filter(([, group]) => group.bounds && group.nodes.length)
-    .map(([id, group]) => ({ id, bounds: group.bounds!, consumers: new Set(groupConsumers(model, id)) }));
+  // A frame stands in for its cells here: a cell is never an obstacle (ranked-groups spec, section 2).
+  const obstacleBoxes = groupBoxes(model).map(({ id, bounds }) => ({ id, bounds, consumers: new Set(groupConsumers(model, id)) }));
   for (const s of routed) {
-    for (const group of groupBoxes) {
+    for (const group of obstacleBoxes) {
       const box = group.bounds;
       if (!group.consumers.has(s.link.id) && segmentRect(s.segment, box)) fail('G2', 'through-group', [s.link.id, group.id], 'Routed segment passes through a foreign group');
       // Inside its own box a link turns in the group's padding; on or outside an edge it keeps the margin.

@@ -44,7 +44,7 @@
 
 import type { Point, Rect, Side } from '../model/geometry.js';
 import type {
-  Layer, LayoutGroup, LayoutLabel, LayoutLink, LayoutModel, LayoutPort, PathSegment,
+  Frame, Layer, LayoutLabel, LayoutLink, LayoutModel, LayoutPort, PathSegment,
 } from '../model/layout.js';
 import { orderedGroupIds, orderedNodeIds } from '../model/model.js';
 import { iconKey, iconPath } from '../profiles/network/icons.js';
@@ -635,21 +635,34 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   }), { x: 0, y: 0, width: canvas.width, height: canvas.height });
 
   // ---- groups and their nodes ---------------------------------------------------------------
-  const groupTitle = (group: LayoutGroup): LayoutLabel | undefined =>
+  // A frame is drawn in its cells' place, and a cell never is (ranked-groups spec, section 2). A parent
+  // frame comes before its child, so the child stands on top of it.
+  const frameDepth = (frame: Frame): number =>
+    frame.parent === undefined ? 0 : 1 + frameDepth(layout.frames!.find(item => item.id === frame.parent)!);
+  const shapes = [
+    ...orderedGroupIds(document).filter(id => layout.groups[id]!.frame === undefined)
+      .map(id => ({ id, bounds: layout.groups[id]!.bounds!, frame: false })),
+    ...[...(layout.frames ?? [])].sort((a, b) => frameDepth(a) - frameDepth(b))
+      .map(frame => ({ id: frame.id, bounds: frame.box, frame: true })),
+  ];
+  const groupTitle = (owner: string): LayoutLabel | undefined =>
     layout.labels.find(label => label.role === 'group' && !label.omitted
-      && label.owner.kind === 'group' && label.owner.id === group.id);
+      && label.owner.kind === 'group' && label.owner.id === owner);
 
-  for (const id of orderedGroupIds(document)) {
-    const group = layout.groups[id]!;
-    const box = shiftRect(group.bounds!);
+  for (const { id, bounds, frame } of shapes) {
+    const box = shiftRect(bounds);
     const band = layout.labelBands.find(item => item.group === id);
-    const title = groupTitle(group);
+    const title = groupTitle(band?.host ?? id);
     // A swimlane's title is its own value, which is what makes the group editable as a group. The
     // band is only handed to draw.io when the reserved band really does hold a centred title:
     // otherwise the title keeps its measured box as a text cell and the container stays plain.
+    // A frame's band sits in one of its cells, so it must also span the frame edge to edge.
     const centred = band !== undefined && title !== undefined
       && Math.abs(centre(title.bounds!).x - centre(band.bounds).x) <= 0.5
-      && Math.abs(centre(title.bounds!).y - centre(band.bounds).y) <= 0.5;
+      && Math.abs(centre(title.bounds!).y - centre(band.bounds).y) <= 0.5
+      && (!frame || (Math.abs(band.bounds.x - bounds.x) <= 0.5 && Math.abs(band.bounds.width - bounds.width) <= 0.5
+        && Math.abs(band.side === 'top' ? band.bounds.y - bounds.y
+          : band.bounds.y + band.bounds.height - bounds.y - bounds.height) <= 0.5));
     const swimlane = centred ? band! : undefined;
     const style = swimlane
       ? styleString(['swimlane'], {
@@ -684,9 +697,12 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
 
   for (const id of orderedNodeIds(document)) {
     const node = layout.nodes[id]!;
-    const group = cellId('group', document.nodes[id]!.group);
+    // A node hangs under its frame when its cell has one, and under its own group otherwise.
+    const cell = layout.groups[document.nodes[id]!.group]!;
+    const frame = cell.frame === undefined ? undefined : layout.frames?.find(item => item.id === cell.frame);
+    const group = cellId('group', frame?.id ?? cell.id);
     const box = shiftRect(node.bounds!);
-    const origin = shift(layout.groups[document.nodes[id]!.group]!.bounds!);
+    const origin = shift(frame?.box ?? cell.bounds!);
     const authored = nodeClassOf(id);
     // Every port anchor is mirrored into `points=` so the editor offers the anchors the pipeline
     // actually used. It constrains nothing — the edges pin themselves — but without it a user
@@ -987,9 +1003,10 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   const labelStyle = (label: LayoutLabel, at: Point, carrier: 'edge' | 'child'): Readonly<Record<string, StyleValue>> => {
     const on = placement === 'on-run' && label.support?.kind === 'link-segment';
     const multiplicity = label.support?.kind === 'merge-run';
-    const inside = Object.values(layout.groups).some(group => group.bounds
-      && at.x >= group.bounds.x - canvas.x && at.x <= group.bounds.x - canvas.x + group.bounds.width
-      && at.y >= group.bounds.y - canvas.y && at.y <= group.bounds.y - canvas.y + group.bounds.height);
+    const inside = [...Object.values(layout.groups).filter(group => group.frame === undefined && group.bounds).map(group => group.bounds!),
+      ...(layout.frames ?? []).map(frame => frame.box)].some(bounds =>
+      at.x >= bounds.x - canvas.x && at.x <= bounds.x - canvas.x + bounds.width
+      && at.y >= bounds.y - canvas.y && at.y <= bounds.y - canvas.y + bounds.height);
     return {
       // A label on the line must hide the line behind its glyphs, and the honest colour to do that
       // with is whatever is really behind it: the group's tint composited over the canvas, or the
