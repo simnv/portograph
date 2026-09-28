@@ -1,0 +1,28 @@
+# Expected: ranked-groups ticket 06, the straight guard on ticket 05's placement. `F` is a free group
+# in tier 3 with four overlay links: to `x0` in tier 0, `r0` and `y0` in tier 1, `z0` in tier 2.
+# Where ELK puts it, all four links are one straight segment. The mean of its partners' centres
+# lies further right, over the routed groups of the tiers between, and a body of tier 1 would stand
+# on the line to `x0`: the link would bend (three of four without the guard). The tier's move is
+# refused, and four of four overlay links stay straight.
+portograph: 2
+groups:
+  X: { tier: 0, label: Top }
+  R: { tier: 1, label: Routed group }
+  Y: { tier: 1, label: Second routed group }
+  Z: { tier: 2, label: Tier below }
+  F: { tier: 3, label: Free group }
+nodes:
+  x0: { group: X, class: server, label: x0 }
+  x1: { group: X, class: server, label: x1 }
+  r0: { group: R, class: server, label: r0 }
+  y0: { group: Y, class: server, label: y0 }
+  z0: { group: Z, class: server, label: z0 }
+  f0: { group: F, class: server, label: f0 }
+links:
+  - [x1, r0]
+  - [x1, y0]
+  - [r0, z0]
+  - [f0, x0, { route: overlay }]
+  - [f0, r0, { route: overlay }]
+  - [f0, y0, { route: overlay }]
+  - [f0, z0, { route: overlay }]

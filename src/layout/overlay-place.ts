@@ -2,6 +2,9 @@ import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { frameColumns, type FrameColumn } from './columns.js';
 import { groupShape } from './grid.js';
 import { occupiedOverhang, selectAnchorTier } from './lanes.js';
+import { overlayBlockers, overlayPath } from './overlay-paths.js';
+import { saveGroups } from './overlay-order.js';
+import { rebuildNodeGeometry } from './node-geometry.js';
 import { groupInsets } from './regions.js';
 import { rowGap } from './sides-two.js';
 import { bandGap, compareId } from './skeleton-graph.js';
@@ -89,6 +92,21 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
   for (const tier of [...tiers.slice(at + 1), ...tiers.slice(0, at).reverse()]) {
     const groups = Object.values(model.groups).filter(group => group.tier === tier);
     const movers = groups.filter(group => free.has(group.id));
+    // The straight overlay links that touch or pass over this tier: a move is kept only where their
+    // count, read by the real overlay decision, holds or rises (spec section 5). The mean of partners
+    // in two tiers can put a body of the tier between the two ends of a link that was straight.
+    const spanning = model.links.filter(link => link.layer === 'overlay' && link.attachments).filter(link => {
+      const ends = [link.attachments!.from.node, link.attachments!.to.node].map(node => model.groups[groupOf(node)]!.tier!);
+      return Math.min(...ends) <= tier && tier <= Math.max(...ends);
+    });
+    const straightCount = (): number => {
+      const blockers = overlayBlockers(model);
+      return spanning.filter(link => overlayPath(model, link, blockers).segments.length === 1).length;
+    };
+    const nodesOfTier = groups.flatMap(group => group.nodes);
+    const signature = (): string => JSON.stringify(groups.map(group => [group.bounds, group.rowOrder, group.nodes.map(node => model.nodes[node]!.bounds)]));
+    const start = signature();
+    const undo = saveGroups(model, groups);
     for (const group of movers) orderNodes(model, group, node => keyOf([node], group.id), routedAny);
     const targets = new Map<string, number>();
     for (const group of movers) {
@@ -96,6 +114,18 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
       if (target !== undefined) targets.set(group.id, target);
     }
     if (targets.size) sweep(model, tier, groups, targets, columns);
+    if (spanning.length && signature() !== start) {
+      // `centre` moves groups with `moveGroup`, which leaves the pills behind. The count before the move
+      // and the count after it must read the same kind of geometry, so the tier goes back, its pills
+      // are refreshed and counted, then the move is redone and counted the same way.
+      const redo = saveGroups(model, groups);
+      undo();
+      rebuildNodeGeometry(model, nodesOfTier, 'current');
+      const before = straightCount();
+      redo();
+      rebuildNodeGeometry(model, nodesOfTier, 'current');
+      if (straightCount() < before) { undo(); rebuildNodeGeometry(model, nodesOfTier, 'current'); }
+    }
     for (const group of movers) settled.add(group.id);
   }
 }
