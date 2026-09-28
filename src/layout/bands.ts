@@ -14,7 +14,7 @@ import { rebuildRegionGeometry } from './region-rebuild.js';
 import { findPort, straightCorridorClear } from './row-paths.js';
 import { bandGap, portId } from './skeleton-graph.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
-import { columnShifts } from './columns.js';
+import { columnShifts, sweptUnits } from './columns.js';
 import { deriveFrames, frameNodes } from './frames.js';
 import { bandHeldBy, bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placementWarning, rebuildRegions, right } from './regions.js';
 import { withLayoutMutation } from './mutation.js';
@@ -502,11 +502,16 @@ function growthPlan(model: LayoutModel, grown: LayoutGroup, width: number): Grou
     }
     return known;
   };
-  // Groups after `from` give way to the one before them, by the gap they stand at or a band gap.
+  // Groups after `from` give way to the one before them, by the gap they stand at or a band gap. Two groups that
+  // the frame sweep covers, in two different units, are kept apart by the sweep and not here: it measures
+  // frame boxes, and a cell push it cannot see would be counted twice.
+  const swept = model.document.frames !== undefined ? sweptUnits(model) : new Map<string, string>();
   const settle = (tier: number, from: number): void => {
     const { rows, gaps } = tierOf(tier);
     for (let index = from; index < rows.length; index++) {
-      const prior = rows[index - 1]!, minimum = prior.x + prior.width + Math.max(gaps[index - 1]!, bandGap(model));
+      const prior = rows[index - 1]!, unit = swept.get(rows[index]!.group.id);
+      if (unit !== undefined && swept.get(prior.group.id) !== undefined && swept.get(prior.group.id) !== unit) continue;
+      const minimum = prior.x + prior.width + Math.max(gaps[index - 1]!, bandGap(model));
       if (rows[index]!.x < minimum - PLACEMENT_EPS) rows[index]!.x = minimum;
     }
   };
@@ -515,10 +520,15 @@ function growthPlan(model: LayoutModel, grown: LayoutGroup, width: number): Grou
   own.rows[at]!.width = width;
   settle(grown.tier!, at + 1);
   if (model.document.frames !== undefined) {
-    let settled = false;
+    let settled = false, previous = '';
     for (let round = 0; round < 8 && !settled; round++) {
       const shifts = shiftsWith(model, [...tiers.values()].flatMap(item => item.rows));
       settled = shifts.size === 0;
+      // The same shifts again mean a lane holds a frame edge where the sweep wants it moved: no round will
+      // settle that, so the widening is refused now and not after eight replays.
+      const signature = JSON.stringify([...shifts].map(([group, dx]) => [group.id, dx]));
+      if (!settled && signature === previous) return undefined;
+      previous = signature;
       for (const [group, dx] of shifts) {
         const { rows } = tierOf(group.tier!), index = rows.findIndex(item => item.group === group);
         rows[index]!.x += dx;

@@ -235,6 +235,23 @@ export function columnShifts(model: LayoutModel, slack: number): Map<LayoutGroup
   return shifts;
 }
 
+/**
+ * The unit each group stands in for `columnShifts`: the id of its top-level frame, or its own id for a
+ * one-rank row group beside frames. A group not listed (a grid, a bar, a group in a tier with no frame)
+ * is not swept. A rule that plans the widening of a cell and then asks `columnShifts` must not also push
+ * the cells of another unit itself: the sweep measures frame boxes, and a cell push it cannot see is
+ * counted twice (ranked-groups ticket 15).
+ */
+export function sweptUnits(model: LayoutModel): Map<string, string> {
+  const units = new Map<string, string>();
+  for (const all of columnTiers(model).filter(members => members.some(unit => unit.frame))) {
+    for (const unit of all.filter(item => item.frame || groupShape(model, item.id) === 'row')) {
+      for (const group of unit.groups) units.set(group.id, unit.id);
+    }
+  }
+  return units;
+}
+
 /** The column of one top-level frame as it stands: its x extent, the sub-tiers it spans, and its cells. */
 export interface FrameColumn extends Column { id: string; from: number; to: number; cells: ReadonlySet<string> }
 

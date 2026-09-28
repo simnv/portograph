@@ -94,7 +94,9 @@ describe('frame columns', () => {
     for (const link of model.links) expect(link.path, link.id).toBeDefined();
     const between = model.links.filter(link => ['a-edge', 'b-edge', 'c-edge'].includes(link.attachments!.from.node) && /-gw2?$/.test(link.attachments!.to.node));
     expect(between).toHaveLength(3);
-    for (const link of between) expect(link.path?.segments.length, `${link.id} is drawn`).toBeGreaterThan(1);
+    // Drawn: a path of at least one segment. A feed whose gateway stands straight under its edge is one vertical
+    // segment (ticket 15 moves a frame by its frame gap and no longer by a double push, which lines `b` up with `x-gw2`).
+    for (const link of between) expect(link.path?.segments.length, `${link.id} is drawn`).toBeGreaterThan(0);
   }, 60000);
 
   it('a title-wide cell pushes the frame after it: three locations keep a band gap between frame boxes', async () => {
@@ -102,6 +104,17 @@ describe('frame columns', () => {
     expectColumns(model, false);
     // Three locations in one tier: every pair is a sibling pair, and the assertion above ran on all three.
     expect(expectBandGapBetweenSiblings(model)).toBe(3);
+    // A frame is pushed once: the gap is spent down to the band gap and no further (a sweep measured on cells that
+    // the cell-level push had displaced already moved the frame a second time, 184 px apart).
+    const box = (id: string) => model.frames!.find(item => item.id === id)!.box;
+    expect(box('c').x - right(box('a')), 'a and c stand no more than a band gap apart').toBeLessThanOrEqual(bandGap(model) + 1e-6);
+  }, 60000);
+
+  it('a widening that a lane forbids is refused: the title keeps its box and the layout reports it', async () => {
+    const yaml = fixture('an-own-frame-lane-stands-beside-a-neighbour-frame').replace('label: East }', 'label: East frame with a long title }');
+    const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    expect(model.diagnostics.filter(diagnostic => diagnostic.severity === 'error')).toEqual([]);
+    expect(model.diagnostics.map(diagnostic => diagnostic.code)).toContain('GROUP_LABEL_GAP_INFEASIBLE');
   }, 60000);
 
   // The linked-group grid (ADR-0012) widens a cell to the extent it shares with the group it is linked to. It
