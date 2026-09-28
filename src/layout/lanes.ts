@@ -11,6 +11,7 @@ import { PLACEMENT_EPS } from './tolerance.js';
 import { moveGroup, union } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { withLayoutMutation } from './mutation.js';
+import { cellReach } from './frames.js';
 import { bottom, expandCanvas, placementWarning, rebuildRegions, right } from './regions.js';
 
 /** A corridor `reseatLanes` moved, and the child port it moved it onto. */
@@ -61,11 +62,14 @@ export function laneWidth(model: LayoutModel, link: LayoutLink): number {
   const maxNodeStroke = Math.max(stroke.node, ...Object.values(model.nodes).map(node => node.strokeWidth ?? stroke.node));
   return Math.max(24 + 10, ...pills.map(port => (port?.ref.name !== undefined ? measurePortPill(port.ref.name).width : 0) + 10), 20 + routedStrokeWidth(model) + maxNodeStroke);
 }
-function occupied(model: LayoutModel, group: LayoutGroup) {
+function occupied(model: LayoutModel, group: LayoutGroup, link?: LayoutLink) {
   // One routed-stroke lookup for the whole group: it reads every link, and a per-node call makes
   // this measurement cost the link count once for each node and pill.
   const routed = routedStrokeWidth(model), gap = (stroke.pill + routed) / 2;
-  return union([group.bounds!, ...group.nodes.flatMap(id => {
+  // A link foreign to the frame of a rank cell gets its lane beside the frame edge, not beside the cell
+  // (ticket 04), so it never enters the frame. A link that ends inside the frame is not asked for more.
+  const reach = link && cellReach(model, group.id, link), box = group.bounds!;
+  return union([box, ...(reach ? [{ x: reach.x, y: box.y, width: reach.width, height: box.height }] : []), ...group.nodes.flatMap(id => {
     const node = model.nodes[id]!, box = node.bounds!, clearance = 10 + ((node.strokeWidth ?? stroke.node) + routed) / 2;
     return [{ x: box.x - clearance, y: box.y, width: box.width + 2 * clearance, height: box.height },
       ...node.ports.filter(port => port.pill).map(port => {
@@ -80,15 +84,18 @@ function occupied(model: LayoutModel, group: LayoutGroup) {
  * `validateLanes` measures the same extent.
  */
 export function occupiedOverhang(model: LayoutModel, group: LayoutGroup): { left: number; right: number } {
-  const box = occupied(model, group);
+  // A cell also keeps the frame edge clear of the lanes of the links foreign to its frame (ticket 04).
+  const boxes = [occupied(model, group), ...model.lanes.filter(lane => lane.tier === group.tier)
+    .map(lane => laneLink(model, lane)).filter((link): link is LayoutLink => link !== undefined).map(link => occupied(model, group, link))];
+  const box = union(boxes);
   return { left: group.bounds!.x - box.x, right: right(box) - right(group.bounds!) };
 }
 /**
  * The occupied box a group would have at `bounds`. Its nodes and pills translate with the group, so
  * a pure widening leaves a pill that already reaches past the padding exactly where it is.
  */
-function occupiedAt(model: LayoutModel, group: LayoutGroup, bounds: Rect): Rect {
-  const current = occupied(model, group);
+function occupiedAt(model: LayoutModel, group: LayoutGroup, bounds: Rect, link?: LayoutLink): Rect {
+  const current = occupied(model, group, link);
   return union([bounds, { ...current, x: current.x + (bounds.x - group.bounds!.x) }]);
 }
 /**
@@ -99,10 +106,15 @@ function occupiedAt(model: LayoutModel, group: LayoutGroup, bounds: Rect): Rect 
  */
 export function laneSidesHold(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[]): boolean {
   return proposed.every(({ group, bounds }) => {
-    const box = occupiedAt(model, group, bounds);
-    return model.lanes.filter(lane => lane.tier === group.tier).every(lane => group.bounds!.x >= lane.x
-      ? box.x >= right(lane.bounds) - 1e-6 : right(box) <= lane.bounds.x + 1e-6);
+    return model.lanes.filter(lane => lane.tier === group.tier).every(lane => {
+      const box = occupiedAt(model, group, bounds, laneLink(model, lane));
+      return group.bounds!.x >= lane.x ? box.x >= right(lane.bounds) - 1e-6 : right(box) <= lane.bounds.x + 1e-6;
+    });
   });
+}
+/** The link a lane belongs to. */
+function laneLink(model: LayoutModel, lane: Lane): LayoutLink | undefined {
+  return lane.owner.kind === 'link' ? model.links.find(link => link.id === (lane.owner as { id: string }).id) : undefined;
 }
 function laneId(link: LayoutLink, tier: number): string { return `lane:${JSON.stringify(link.id)}:${tier}`; }
 function laneExtent(model: LayoutModel, tier: number): { y: number; height: number } {
@@ -166,7 +178,7 @@ function corridorFree(model: LayoutModel, lane: Lane, link: LayoutLink, child: P
   const half = lane.bounds.width / 2, window = { x: x - half, width: lane.bounds.width };
   const overlaps = (box: { x: number; width: number }) => box.x < window.x + window.width - 1e-6 && box.x + box.width > window.x + 1e-6;
   // Inside the transited band the corridor is the reservation `validateLanes` measures.
-  for (const group of Object.values(model.groups)) if (group.tier === lane.tier && overlaps(occupied(model, group))) return false;
+  for (const group of Object.values(model.groups)) if (group.tier === lane.tier && overlaps(occupied(model, group, link))) return false;
   for (const other of model.lanes) if (other !== lane && other.tier === lane.tier
     && Math.abs(other.x - x) < (other.bounds.width + lane.bounds.width) / 2 - 1e-6) return false;
   // Beyond the band the corridor is the child's own descent. It may enter the child's group and
@@ -288,9 +300,9 @@ function inSpanSlot(model: LayoutModel, link: LayoutLink, core: { x: number; wid
  * Propagate each push through its neighbors and retain their existing occupied separation.
  */
 function marginTranslations(model: LayoutModel, groups: LayoutGroup[], split: number, x: number, width: number,
-  prior: Lane[], fixedSources: Set<string>): number[] | undefined {
+  prior: Lane[], fixedSources: Set<string>, link: LayoutLink): number[] | undefined {
   if (prior.some(lane => Math.abs(x - lane.x) < (width + lane.bounds.width) / 2 - 1e-6)) return undefined;
-  const boxes = groups.map(group => occupied(model, group)), shifts = groups.map(() => 0);
+  const boxes = groups.map(group => occupied(model, group, link)), shifts = groups.map(() => 0);
   let boundary = x - width / 2;
   for (let i = split - 1; i >= 0; i--) {
     shifts[i] = Math.min(0, boundary - right(boxes[i]!));
@@ -388,7 +400,7 @@ export function allocateLanes(model: LayoutModel): void {
       const width = laneWidth(model, link), half = width / 2;
       const nearest = [...main].sort((a, b) => Math.min(Math.abs(sx - a.bounds!.x), Math.abs(sx - right(a.bounds!)))
         - Math.min(Math.abs(sx - b.bounds!.x), Math.abs(sx - right(b.bounds!))))[0] ?? groups[0]!;
-      const core = occupied(model, nearest);
+      const core = occupied(model, nearest, link);
       // A corridor passes its tier on the side of the transited group that faces the link's target
       // (ticket 03), so the run leaves the tier already on the side its far end stands on. Where the
       // target has no x to read, the corridor keeps the side the source asks for.
@@ -407,7 +419,7 @@ export function allocateLanes(model: LayoutModel): void {
       const at = groups.indexOf(nearest);
       const offSide = (split: number): number => side === undefined ? 0 : Number(side === 'left' ? split > at : split <= at);
       const direct = Array.from({ length: groups.length + 1 }, (_, split) => split)
-        .map(split => ({ split, shift: marginTranslations(model, groups, split, sx, width, prior, fixedSources) }))
+        .map(split => ({ split, shift: marginTranslations(model, groups, split, sx, width, prior, fixedSources, link) }))
         .filter((plan): plan is { split: number; shift: number[] } => plan.shift !== undefined)
         .sort((a, b) => offSide(a.split) - offSide(b.split)
           || a.shift.reduce((sum, dx) => sum + Math.abs(dx), 0) - b.shift.reduce((sum, dx) => sum + Math.abs(dx), 0))[0]?.shift;
@@ -419,12 +431,12 @@ export function allocateLanes(model: LayoutModel): void {
         // If exterior packing crossed the main group, take the margin the target side asks for.
         if (x + half > core.x && x - half < right(core)) x = side === 'left' ? core.x - half : right(core) + half;
         const split = at + (x > right(core) ? 1 : 0);
-        shifts = marginTranslations(model, groups, split, x, width, prior, fixedSources);
+        shifts = marginTranslations(model, groups, split, x, width, prior, fixedSources, link);
       }
       if (!shifts) {
         // A source or earlier corridor blocks propagation. An exterior corridor needs no movement.
-        const left = Math.min(...groups.map(group => occupied(model, group).x), ...prior.map(lane => lane.bounds.x)) - half;
-        const rightX = Math.max(...groups.map(group => right(occupied(model, group))), ...prior.map(lane => right(lane.bounds))) + half;
+        const left = Math.min(...groups.map(group => occupied(model, group, link).x), ...prior.map(lane => lane.bounds.x)) - half;
+        const rightX = Math.max(...groups.map(group => right(occupied(model, group, link))), ...prior.map(lane => right(lane.bounds))) + half;
         x = side === undefined ? (Math.abs(left - sx) <= Math.abs(rightX - sx) ? left : rightX) : side === 'left' ? left : rightX;
         shifts = groups.map(() => 0);
       }
@@ -473,7 +485,7 @@ export function validateLanes(model: LayoutModel): void {
     const group = model.groups[lane.group]!;
     if (lane.side === 'left' ? lane.x >= group.bounds!.x : lane.x <= right(group.bounds!)) throw new Error(`Lane side contradicts its group: ${lane.id} / ${group.id}`);
     for (const other of Object.values(model.groups).filter(group => group.tier === lane.tier)) {
-      const box = occupied(model, other);
+      const box = occupied(model, other, link);
       if (box.x < right(lane.bounds) - 1e-6 && right(box) > lane.bounds.x + 1e-6) throw new Error(`Lane ${lane.id} crosses occupied group ${other.id}`);
     }
     for (const other of model.lanes) if (other !== lane && other.tier === lane.tier
