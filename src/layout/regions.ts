@@ -21,14 +21,17 @@ export function groupPadding(model: LayoutModel, group: LayoutGroup): { top: num
   }
   return padding;
 }
+/** The label band a group's box holds: its own title's, or the frame title a rank cell hosts. */
+export const bandHeldBy = (model: LayoutModel, groupId: string): LayoutModel['labelBands'][number] | undefined =>
+  model.labelBands.find(item => (item.host ?? item.group) === groupId);
 export function groupInsets(model: LayoutModel, group: LayoutGroup): { top: number; right: number; bottom: number; left: number } {
-  const padding = groupPadding(model, group), band = model.labelBands.find(item => item.group === group.id);
+  const padding = groupPadding(model, group), band = bandHeldBy(model, group.id);
   return band ? { ...padding, [band.side]: band.bounds.height + band.clearance } : padding;
 }
 export function fitRegionGroup(model: LayoutModel, group: LayoutGroup): void {
   if (!group.nodes.length) return;
   const box = union(group.nodes.map(id => model.nodes[id]!.bounds!)), inset = groupInsets(model, group);
-  if (!model.labelBands.some(item => item.group === group.id)) {
+  if (bandHeldBy(model, group.id) === undefined) {
     group.bounds = { x: box.x - inset.left, y: box.y - inset.top,
       width: box.width + inset.left + inset.right, height: box.height + inset.top + inset.bottom };
     return;
@@ -40,7 +43,7 @@ export function fitRegionGroup(model: LayoutModel, group: LayoutGroup): void {
     height: Math.max(bottom(old), bottom(box) + inset.bottom) - y };
 }
 export function expandCanvas(model: LayoutModel): void {
-  const boxes = [...Object.values(model.groups).map(group => group.bounds!), ...model.lanes.map(lane => lane.bounds)];
+  const boxes = [...Object.values(model.groups).map(group => group.bounds!), ...(model.frames ?? []).map(frame => frame.box), ...model.lanes.map(lane => lane.bounds)];
   if (model.canvas) boxes.push(model.canvas);
   if (boxes.length) model.canvas = union(boxes);
 }

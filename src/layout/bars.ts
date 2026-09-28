@@ -7,7 +7,7 @@ import { NODE_CONTENT_GEOMETRY } from '../theme/content.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { nodeGap, portId } from './skeleton-graph.js';
 import { splitUnderJunctions, treeCohorts } from './bundle-geometry.js';
-import { groupInsets, placementWarning } from './regions.js';
+import { bandHeldBy, groupInsets, placementWarning } from './regions.js';
 import { findPort } from './row-paths.js';
 import { withLayoutMutation } from './mutation.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -217,9 +217,9 @@ export function shapeBars(model: LayoutModel): void {
     }
     if (nodes.length) {
       const minX = Math.min(...nodes.map(node => node.bounds!.x)), maxX = Math.max(...nodes.map(node => right(node.bounds!)));
-      const x = model.labelBands.some(item => item.group === group.id)
+      const x = bandHeldBy(model, group.id) !== undefined
         ? Math.min(originalGroup.x, minX - inset.left) : minX - inset.left;
-      const far = model.labelBands.some(item => item.group === group.id)
+      const far = bandHeldBy(model, group.id) !== undefined
         ? Math.max(right(originalGroup), maxX + inset.right) : maxX + inset.right;
       group.bounds = { x, y: nodes[0]!.bounds!.y - inset.top, width: far - x,
         height: bottom(nodes.at(-1)!.bounds!) - nodes[0]!.bounds!.y + inset.top + inset.bottom };

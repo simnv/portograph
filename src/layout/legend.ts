@@ -91,6 +91,7 @@ export function drawnBoxes(model: LayoutModel, includeLegend: boolean): Rect[] {
   for (const group of Object.values(model.groups)) {
     if (group.bounds) boxes.push(inflate(group.bounds, DEFAULT_STROKE_WIDTHS.group / 2));
   }
+  for (const frame of model.frames ?? []) boxes.push(inflate(frame.box, DEFAULT_STROKE_WIDTHS.group / 2));
   for (const node of Object.values(model.nodes)) {
     if (node.bounds) boxes.push(inflate(node.bounds, (node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node) / 2));
     for (const port of node.ports) if (port.pill) boxes.push(inflate(port.pill.bounds, DEFAULT_STROKE_WIDTHS.pill / 2));

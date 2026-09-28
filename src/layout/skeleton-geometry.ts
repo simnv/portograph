@@ -4,6 +4,7 @@ import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { orderedGroupIds } from '../model/model.js';
 import { bandGap, compareId, greatestPeers, groupId, nodeGap, nodeId, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { isGridGroup, packGrid } from './grid.js';
+import { rebuildFrames } from './frames.js';
 import { bottom, contains as rectContains, EPS, rectOverlap, right } from '../score/geometry.js';
 
 /**
@@ -96,6 +97,8 @@ export function rebuildBands(model: LayoutModel, includeFlanks = true): void {
     const members = groups.filter(group => group.tier === tier);
     return { tier, groups: members.map(group => group.id), bounds: union(members.map(group => group.bounds!)) };
   });
+  // Frames derive from the same boxes; every caller that rebuilds bands after moving one rebuilds them too.
+  rebuildFrames(model);
 }
 
 /** Stage-4 counterpart of G8, usable before paths and final port geometry exist. */

@@ -37,7 +37,7 @@ function rebuildBarGeometry(draft: LayoutModel, before: readonly TierBand[] = dr
   rebuildBands(draft);
   reserveBarBandGrowth(draft, before);
   if (!Object.keys(draft.groups).length) return;
-  const occupied = union(Object.values(draft.groups).map(group => group.bounds!)), old = draft.canvas ?? occupied;
+  const occupied = union([...Object.values(draft.groups).map(group => group.bounds!), ...(draft.frames ?? []).map(frame => frame.box)]), old = draft.canvas ?? occupied;
   const x = Math.min(old.x, occupied.x), y = Math.min(old.y, occupied.y);
   // `span` for the same reason `rebuildBoxes` uses it: `Canvas may only expand` is exact, and a
   // width recovered from an absolute edge can land one ULP inside the canvas it was built from.

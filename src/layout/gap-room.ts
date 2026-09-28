@@ -108,7 +108,7 @@ function moveBands(model: LayoutModel, extra: ReadonlyMap<number, number>): void
     if (shift <= EPS) continue;
     for (const id of band.groups) {
       moveGroup(model, model.groups[id]!, 0, shift);
-      for (const entry of model.labelBands) if (entry.group === id) entry.bounds.y += shift;
+      for (const entry of model.labelBands) if ((entry.host ?? entry.group) === id) entry.bounds.y += shift;
       for (const label of model.labels) if (label.role === 'group' && label.id === `label:group:${id}` && label.bounds) label.bounds.y += shift;
     }
   }

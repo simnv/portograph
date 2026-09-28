@@ -93,7 +93,7 @@ export function createLayoutModel(input: NormalisedDocument): LayoutModel {
     group.nodes.push(id);
     return [id, layoutNode];
   }));
-  return {
+  const model: LayoutModel = {
     document, stage: 'normalised', groups, nodes,
     links: document.links.map((link, sourceIndex) => ({
       id: `link-${sourceIndex + 1}`, sourceIndex,
@@ -104,6 +104,9 @@ export function createLayoutModel(input: NormalisedDocument): LayoutModel {
     labelBands: [], barDrops: [], groupLinks: [], obstacles: [], diagnostics: [],
     runtime: { stages: [] },
   };
+  // Derived by `rebuildFrames` once cells have boxes; the key exists from the start so its place in the JSON is fixed.
+  if (document.frames !== undefined) model.frames = [];
+  return model;
 }
 
 /** Preserve declaration order, optional-field omission and the full runtime block. */
