@@ -253,7 +253,7 @@ export function columnShifts(model: LayoutModel, slack: number): Map<LayoutGroup
   if (derived === undefined) return shifts;
   const box = new Map(derived.map(frame => [frame.id, frame.box]));
   const gap = bandGap(model);
-  for (const all of columnTiers(model).filter(members => members.some(unit => unit.frame))) {
+  for (const all of frameTiers(model)) {
     // The rows rule may move frames (their cells are rows) and one-rank row groups. A grid, a bar or a
     // flank stands where it stands, out of the sweep; the collision guard of `repackOverlaps` reports a clash.
     const tier = all.filter(unit => unit.frame || groupShape(model, unit.id) === 'row');
@@ -280,7 +280,7 @@ export function columnShifts(model: LayoutModel, slack: number): Map<LayoutGroup
  */
 export function sweptUnits(model: LayoutModel): Map<string, string> {
   const units = new Map<string, string>();
-  for (const all of columnTiers(model).filter(members => members.some(unit => unit.frame))) {
+  for (const all of frameTiers(model)) {
     for (const unit of all.filter(item => item.frame || groupShape(model, item.id) === 'row')) {
       for (const group of unit.groups) units.set(group.id, unit.id);
     }
