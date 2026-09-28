@@ -15,7 +15,7 @@ const run = (yaml: string) => layout(parse(yaml), { createElkAttempt: createAtte
  * rank per node class, so the test states the small table the derivation is given: each row is one
  * class rank, and a class that no row names has none.
  */
-const CLASS_ROWS = [['provider', 'internet', 'wan'], ['router', 'tbr', 'rr'], ['switch']];
+const CLASS_ROWS = [['provider', 'internet', 'wan'], ['router', 'tbr', 'rr'], ['switch'], ['server']];
 
 /** Build the derivation input of one group from the resolved model, the way ticket 02 will. */
 function inputOf(model: LayoutModel, group: string, childGroups: string[] = []): RankInput {
@@ -74,6 +74,12 @@ describe('goldens/synthetic group-ranks fixtures', () => {
     expect(result.rankCount).toBe(2);
   });
 
+  it('a skip link leaves the two servers on one rank below the switches', () => {
+    const result = ranksOf('a-group-ranks-skip-link', 'site');
+    expect(Object.fromEntries(result.ranks)).toEqual({ rt1: 0, rt2: 0, sw1: 1, sw2: 1, ntp1: 2, ntp2: 2 });
+    expect(result.rankCount).toBe(3);
+  });
+
   it('a cycle sw-sw-rt-rt layers as two peer pairs', () => {
     const result = ranksOf('a-group-ranks-a-cycle-of-peers', 'site');
     expect(Object.fromEntries(result.ranks)).toEqual({ rt1: 0, rt2: 0, sw1: 1, sw2: 1 });
@@ -94,7 +100,7 @@ describe('goldens/synthetic group-ranks fixtures', () => {
   });
 
   it.each([
-    'a-group-ranks-a-plain-chain', 'a-group-ranks-a-peer-pair-under-one-uplink', 'a-group-ranks-a-cycle-of-peers',
+    'a-group-ranks-a-plain-chain', 'a-group-ranks-a-peer-pair-under-one-uplink', 'a-group-ranks-a-cycle-of-peers', 'a-group-ranks-skip-link',
     'a-group-ranks-a-child-span-past-a-parent-member', 'a-group-ranks-an-overlay-only-member',
   ])('%s parses, lays out and renders with today\'s pipeline', async name => {
     const model = await run(fixture(name));

@@ -43,13 +43,43 @@ describe('deriveRanks: layering', () => {
     expect(asObject(result.ranks)).toEqual({ rt1: 0, rt2: 0, sw1: 1, sw2: 1 });
   });
 
-  it('a back link of a cycle is a peer link for the layering', () => {
+  it('a link that skips a rank does not shorten the chain: A-B, B-C, A-C puts C on rank 2', () => {
     const result = deriveRanks(input({
       members: ['a', 'b', 'c'], linksAbove: new Set(['a']),
-      routedLinks: [{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }, { from: 'c', to: 'a' }],
+      routedLinks: [{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }, { from: 'a', to: 'c' }],
     }));
-    expect(asObject(result.ranks)).toEqual({ a: 0, b: 1, c: 1 });
-    expect(result.rankCount).toBe(2);
+    expect(asObject(result.ranks)).toEqual({ a: 0, b: 1, c: 2 });
+    expect(result.rankCount).toBe(3);
+  });
+
+  it('a skip link on the reference location keeps the two servers on one rank', () => {
+    const routedLinks = [
+      { from: 'rt1', to: 'rt2' }, { from: 'rt1', to: 'sw1' }, { from: 'rt1', to: 'sw2' }, { from: 'rt2', to: 'sw1' }, { from: 'rt2', to: 'sw2' },
+      { from: 'sw1', to: 'sw2' }, { from: 'sw1', to: 'ntp1' }, { from: 'sw2', to: 'ntp2' }, { from: 'rt1', to: 'ntp1' },
+    ];
+    const result = deriveRanks(input({
+      members: ['rt1', 'rt2', 'sw1', 'sw2', 'ntp1', 'ntp2'], linksAbove: new Set(['rt1']), classRank: table({ rt: 1, sw: 2, ntp: 3 }), routedLinks,
+    }));
+    expect(asObject(result.ranks)).toEqual({ rt1: 0, rt2: 0, sw1: 1, sw2: 1, ntp1: 2, ntp2: 2 });
+    // The same shape without a class rank on the servers, the author writing each link downward.
+    const bare = deriveRanks(input({
+      members: ['rt1', 'rt2', 'sw1', 'sw2', 'ntp1', 'ntp2'], linksAbove: new Set(['rt1']), classRank: table({ rt: 1, sw: 2 }), routedLinks,
+    }));
+    expect(asObject(bare.ranks)).toEqual({ rt1: 0, rt2: 0, sw1: 1, sw2: 1, ntp1: 2, ntp2: 2 });
+    // A link written upward is still oriented by the class ranks.
+    const upward = deriveRanks(input({
+      members: ['rt1', 'rt2', 'sw1', 'sw2', 'ntp1', 'ntp2'], linksAbove: new Set(['rt1']), classRank: table({ rt: 1, sw: 2, ntp: 3 }),
+      routedLinks: routedLinks.map(link => link.to.startsWith('ntp') ? { from: link.to, to: link.from } : link),
+    }));
+    expect(asObject(upward.ranks)).toEqual({ rt1: 0, rt2: 0, sw1: 1, sw2: 1, ntp1: 2, ntp2: 2 });
+  });
+
+  it('links among members of one level that would close a cycle are dropped from the layering', () => {
+    const result = deriveRanks(input({
+      members: ['a', 'b', 'c', 'd'], linksAbove: new Set(['a']),
+      routedLinks: [{ from: 'a', to: 'b' }, { from: 'a', to: 'c' }, { from: 'a', to: 'd' }, { from: 'b', to: 'c' }, { from: 'c', to: 'd' }, { from: 'd', to: 'b' }],
+    }));
+    expect(asObject(result.ranks)).toEqual({ a: 0, b: 1, c: 2, d: 3 });
   });
 
   it('a diamond keeps both middle members on one rank', () => {

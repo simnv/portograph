@@ -63,12 +63,16 @@ function components(members: string[], links: Link[]): Map<string, string> {
 }
 
 /**
- * Step 3 and 4. Levels are breadth-first depths from the anchors over the non-peer links, with
- * every peer component contracted to one node. An edge between two levels is a layering edge; an
- * edge inside one level is a back link (or a cross link of a cycle) and counts as a peer link, so a
- * cycle cannot lengthen any path. Longest path over the layering edges is the level itself.
+ * Steps 3 and 4. Peer components are contracted to one node. Breadth-first levels from the anchors
+ * decide which way an edge points: between two levels it points down. An edge inside one level is
+ * oriented by class rank where both classes have one and differ (the lower class rank is upstream),
+ * else as the author wrote it; if that would close a cycle it is the back link of the cycle and
+ * counts as a peer link for the layering only, so it never lengthens a path. An edge into an anchor
+ * is dropped, since an anchor stays at depth 0. The depth of a member is then the longest path from
+ * an anchor over the oriented edges, which is what lets a link that skips a rank leave the chain intact.
  */
-function levels(members: string[], links: Link[], comp: Map<string, string>, anchors: string[]): Map<string, number> {
+function layer(input: RankInput, members: string[], links: Link[], comp: Map<string, string>, anchors: string[]):
+{ depth: Map<string, number>; dag: Link[] } {
   const adjacent = new Map<string, string[]>();
   for (const link of links) {
     const a = comp.get(link.a)!, b = comp.get(link.b)!;
@@ -76,10 +80,10 @@ function levels(members: string[], links: Link[], comp: Map<string, string>, anc
     adjacent.set(a, [...(adjacent.get(a) ?? []), b]);
     adjacent.set(b, [...(adjacent.get(b) ?? []), a]);
   }
-  const level = new Map<string, number>();
-  const spread = (sources: string[]): void => {
-    let frontier = [...new Set(sources.map(id => comp.get(id)!))].filter(id => !level.has(id));
-    frontier.forEach(id => level.set(id, 0));
+  const level = new Map<string, number>(), sources = new Set<string>();
+  const spread = (from: string[]): void => {
+    let frontier = [...new Set(from.map(id => comp.get(id)!))].filter(id => !level.has(id));
+    frontier.forEach(id => { level.set(id, 0); sources.add(id); });
     for (let depth = 1; frontier.length; depth += 1) {
       const next: string[] = [];
       for (const id of frontier) for (const other of adjacent.get(id) ?? []) if (!level.has(other)) { level.set(other, depth); next.push(other); }
@@ -95,21 +99,61 @@ function levels(members: string[], links: Link[], comp: Map<string, string>, anc
     if (best === undefined) break;
     spread([best]);
   }
-  return new Map(members.filter(id => level.has(comp.get(id)!)).map(id => [id, level.get(comp.get(id)!)!]));
+  const out = new Map<string, Set<string>>();
+  const reaches = (from: string, to: string): boolean => {
+    const seen = new Set<string>(), stack = [from];
+    for (let id = stack.pop(); id !== undefined; id = stack.pop()) {
+      if (id === to) return true;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      stack.push(...(out.get(id) ?? []));
+    }
+    return false;
+  };
+  const dag: Link[] = [];
+  const point = (upstream: string, downstream: string): void => {
+    dag.push({ a: upstream, b: downstream, peer: false });
+    const from = comp.get(upstream)!;
+    out.set(from, (out.get(from) ?? new Set()).add(comp.get(downstream)!));
+  };
+  const sameLevel: Link[] = [];
+  for (const link of links) {
+    const a = comp.get(link.a)!, b = comp.get(link.b)!;
+    if (link.peer || a === b) continue;
+    const la = level.get(a)!, lb = level.get(b)!;
+    if (la < lb) point(link.a, link.b); else if (lb < la) point(link.b, link.a); else sameLevel.push(link);
+  }
+  for (const link of sameLevel) {
+    const ra = input.classRank(link.a), rb = input.classRank(link.b);
+    const swap = ra !== undefined && rb !== undefined && rb < ra;
+    const [up, down] = swap ? [link.b, link.a] : [link.a, link.b];
+    if (sources.has(comp.get(down)!) || reaches(comp.get(down)!, comp.get(up)!)) continue;
+    point(up, down);
+  }
+  // Longest path over the oriented edges, in topological order.
+  const depth = new Map<string, number>(), indegree = new Map<string, number>();
+  for (const targets of out.values()) for (const to of targets) indegree.set(to, (indegree.get(to) ?? 0) + 1);
+  const ready = [...level.keys()].filter(id => !indegree.has(id));
+  ready.forEach(id => depth.set(id, 0));
+  for (let id = ready.shift(); id !== undefined; id = ready.shift()) {
+    for (const to of out.get(id) ?? []) {
+      depth.set(to, Math.max(depth.get(to) ?? 0, depth.get(id)! + 1));
+      indegree.set(to, indegree.get(to)! - 1);
+      if (indegree.get(to) === 0) ready.push(to);
+    }
+  }
+  return { depth: new Map(members.filter(id => level.has(comp.get(id)!)).map(id => [id, depth.get(comp.get(id)!)!])), dag };
 }
 
 interface Edges { lateral: Link[]; forward: Link[] }
 
-/** Split the links by the layered ranks: forward edges point down one rank, the rest share a rank. */
-function edgesOf(links: Link[], ranks: Map<string, number>): Edges {
-  const edges: Edges = { lateral: [], forward: [] };
-  for (const link of links) {
-    const a = ranks.get(link.a), b = ranks.get(link.b);
-    if (a === undefined || b === undefined) continue;
-    if (link.peer || a === b) edges.lateral.push(link);
-    else if (Math.abs(a - b) === 1) edges.forward.push(a < b ? link : { ...link, a: link.b, b: link.a });
-  }
-  return edges;
+/** Peer links keep their two ends level; the oriented edges push the far end down. */
+function edgesOf(links: Link[], dag: Link[], ranks: Map<string, number>, below: boolean): Edges {
+  const has = (link: Link): boolean => ranks.has(link.a) && ranks.has(link.b);
+  return {
+    lateral: links.filter(link => link.peer && has(link)),
+    forward: dag.filter(has).map(link => below ? { ...link, a: link.b, b: link.a } : link),
+  };
 }
 
 /** Step 5: a span is `[min, max]` of the ranks of one child's members; an empty child has none. */
@@ -148,12 +192,12 @@ export function deriveRanks(input: RankInput): RankResult {
   const comp = components(members, links);
   const above = members.filter(id => input.linksAbove.has(id)), below = members.filter(id => input.linksBelow.has(id));
   // Step 1: an anchor above wins; else the members that link below anchor the last rank and the
-  // layering runs upward; else the most-linked member is the anchor (chosen inside `levels`).
+  // layering runs upward; else the most-linked member is the anchor (chosen inside `layer`).
   const anchoredFrom = above.length ? 'above' : below.length ? 'below' : 'none';
-  const depth = levels(members, links, comp, anchoredFrom === 'above' ? above : anchoredFrom === 'below' ? below : []);
+  const { depth, dag } = layer(input, members, links, comp, anchoredFrom === 'above' ? above : anchoredFrom === 'below' ? below : []);
   const deepest = depth.size ? Math.max(...depth.values()) : 0;
   const ranks = new Map([...depth].map(([id, level]) => [id, anchoredFrom === 'below' ? deepest - level : level]));
-  const edges = edgesOf(links, ranks);
+  const edges = edgesOf(links, dag, ranks, anchoredFrom === 'below');
   clearSpans(input, [...ranks.keys()], edges, ranks);
   // Step 6: a member the layering did not reach has no routed link inside the group. It takes the
   // rank of its first overlay partner that has one, else the last rank. It is placed before the

@@ -1,0 +1,31 @@
+# Expected: A link that skips a rank (ranked-groups ticket 01, review fix). The reference sheet's
+# location: two routers and two switches, each pair joined by a peer link, every router linked to
+# every switch, one NTP server under each switch, and one direct link from Router 1 to NTP 1 that
+# skips the switch rank. Router 1 links to the tier above and is rank 0, with Router 2 beside it.
+# The switches are rank 1. Layering is the longest path, so the skip link does not pull NTP 1 up to
+# the switches' rank: both servers stand on rank 2, side by side, and the ranks are 0, 1 and 2. Today
+# the pipeline still draws the group as one row; ticket 02 reads the ranks.
+# Test-only input owned by ranked-groups ticket 01; the derivation test reads the parsed document.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, label: Site }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  rt1: { group: site, class: router, label: Router 1 }
+  rt2: { group: site, class: router, label: Router 2 }
+  sw1: { group: site, class: switch, label: Switch 1 }
+  sw2: { group: site, class: switch, label: Switch 2 }
+  ntp1: { group: site, class: server, label: NTP 1 }
+  ntp2: { group: site, class: server, label: NTP 2 }
+links:
+  - [isp, rt1]
+  - [rt1, rt2]
+  - [rt1, sw1]
+  - [rt1, sw2]
+  - [rt2, sw1]
+  - [rt2, sw2]
+  - [sw1, sw2]
+  - [sw1, ntp1]
+  - [sw2, ntp2]
+  - [rt1, ntp1]
