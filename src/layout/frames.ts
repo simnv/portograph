@@ -92,10 +92,22 @@ function frameCells(model: LayoutModel, frame: string): string[] {
  * cell's own sides, plus one margin more for each parent frame around it. A link that ends inside the
  * outermost frame is foreign to none, so nothing is reserved beyond the bodies: its lane may stand inside
  * the frame, and `rebuildFrames` grows the frame to hold it. Per cell, so it moves with the cell when a
- * lane pushes the cell aside; a wider cell of the same frame at another sub-tier is not read (left out,
- * ticket 04). Undefined for a group that is no cell, or a link with no foreign frame.
+ * lane pushes the cell aside. The x of a foreign lane is one x for the whole frame, decided by the lane
+ * allocation over every cell of the frame (`foreignRoot`), so a wider cell at another sub-tier is already
+ * outside it. Undefined for a group that is no cell, or a link with no foreign frame.
  */
 export function cellReach(model: LayoutModel, cell: string, link: LayoutLink): Rect | undefined {
+  const found = foreignFrame(model, cell, link);
+  if (!found) return undefined;
+  const own = sides(model, cell);
+  return { ...own, x: own.x - found.outer * GROUP_PADDING, width: own.width + 2 * found.outer * GROUP_PADDING };
+}
+
+/**
+ * The outermost frame a link is foreign to, seen from one cell, and how many parents that frame stands
+ * above the cell's own frame. Undefined for a group that is no cell, or a link with no foreign frame.
+ */
+function foreignFrame(model: LayoutModel, cell: string, link: LayoutLink): { frame: string; outer: number } | undefined {
   const frames = model.document.frames;
   const first = model.document.groups[cell]?.frame;
   if (!frames || first === undefined || !link.attachments) return undefined;
@@ -105,9 +117,15 @@ export function cellReach(model: LayoutModel, cell: string, link: LayoutLink): R
   // A parent holds every node of its child, so a link foreign to a parent is foreign to the child too.
   let outer = -1;
   chain.forEach((id, index) => { if (!ends.some(node => frameNodes(model, id).includes(node))) outer = index; });
-  if (outer < 0) return undefined;
-  const own = sides(model, cell);
-  return { ...own, x: own.x - outer * GROUP_PADDING, width: own.width + 2 * outer * GROUP_PADDING };
+  return outer < 0 ? undefined : { frame: chain[outer]!, outer };
+}
+
+/**
+ * The frame a link must stay outside at this cell: the outermost frame the link is foreign to. The
+ * lane allocation reserves one x per such frame for the whole crossing (ticket 04), not one per cell.
+ */
+export function foreignRoot(model: LayoutModel, cell: string, link: LayoutLink): string | undefined {
+  return foreignFrame(model, cell, link)?.frame;
 }
 
 /** The frames of a model, empty when no group was replaced by cells. */

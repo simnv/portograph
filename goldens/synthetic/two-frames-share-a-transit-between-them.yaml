@@ -1,9 +1,10 @@
 # Expected: A link foreign to two neighbouring three-rank frames runs between them (ranked-groups ticket 04,
 # review). `east` and `west` share three sub-tiers (gateway, distribution, access); `u1` sits between the
 # two feeds `u0` and `u2` and links to `l0` in the tier below, so the link crosses all three sub-tiers of
-# both frames. One lane x is decided for the whole crossing and stands in the gap between the frames, at
-# least the group-edge margin from each frame box, in every sub-tier. The frames do not overlap, no
-# routed gap crosses a reserved lane, and gates G2 and G9 stay clean.
+# both frames. The frames differ in width from rank to rank (a wide middle rank in `east`, wide first and
+# last ranks in `west`). One lane x is decided for the whole crossing and stands in the gap between the
+# frames, at least the group-edge margin from each frame box, in every sub-tier. The frames do not
+# overlap, no routed gap crosses a reserved lane, and gates G2, G6 and G9 stay clean.
 # Test-only input owned by ranked-groups ticket 04; test/pipeline/frame-transit.test.ts reads the layout.
 portograph: 2
 groups:
@@ -15,12 +16,12 @@ nodes:
   u0: { group: up, class: provider, label: U0 }
   u1: { group: up, class: provider, label: U1 }
   u2: { group: up, class: provider, label: U2 }
-  e-gw: { group: east, class: router, label: East gateway of the main building }
-  e-dist: { group: east, class: switch, label: East dist }
+  e-gw: { group: east, class: router, label: East gateway }
+  e-dist: { group: east, class: switch, label: East dist of the main building annex }
   e-acc: { group: east, class: access, label: East access }
-  w-gw: { group: west, class: router, label: West gateway }
-  w-dist: { group: west, class: switch, label: West distribution switch of the annex building }
-  w-acc: { group: west, class: access, label: West access }
+  w-gw: { group: west, class: router, label: West gateway of the main building annex }
+  w-dist: { group: west, class: switch, label: West dist }
+  w-acc: { group: west, class: access, label: West access of the main building annex }
   l0: { group: low, class: server, label: L0 }
 links:
   - [u0, e-gw]

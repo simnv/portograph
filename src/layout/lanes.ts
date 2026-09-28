@@ -11,8 +11,8 @@ import { PLACEMENT_EPS } from './tolerance.js';
 import { moveGroup, union } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { withLayoutMutation } from './mutation.js';
-import { cellReach } from './frames.js';
-import { bottom, expandCanvas, placementWarning, rebuildRegions, right } from './regions.js';
+import { cellReach, foreignRoot } from './frames.js';
+import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 
 /** A corridor `reseatLanes` moved, and the child port it moved it onto. */
 export interface LaneFollow { lane: string; child: PortRef }
@@ -239,6 +239,9 @@ export function reseatLanes(model: LayoutModel, followed?: LaneFollow[]): boolea
     if (lane.owner.kind !== 'link') continue;
     const link = model.links.find(item => item.id === (lane.owner as { id: string }).id);
     if (!link || link.bundle || !link.attachments) continue;
+    // A lane that passes a frame the link is foreign to is one x for the whole frame (ticket 04); the
+    // corridor cannot follow the child alone without breaking that.
+    if (foreignRoot(model, lane.group, link) !== undefined) continue;
     // 7e has already cut the geometry of a link that shares a run, and a shared port's tree is
     // reserved against the corridor this rule would move. Both keep their corridor. So does a link
     // with a bar end: 7d takes that port's x from this very corridor, and the bar rebuild every
@@ -391,12 +394,135 @@ export function allocateLanes(model: LayoutModel): void {
   const links = model.links.filter(link => transitTiers(model, link).length).sort((a, b) =>
     findPort(model, laneSource(model, a))!.anchor!.x - findPort(model, laneSource(model, b))!.anchor!.x || farX(a) - farX(b) || a.sourceIndex - b.sourceIndex);
   const fixedSources = new Set(links.map(link => model.document.nodes[laneSource(model, link).node]!.group));
+  /**
+   * Move the planned groups aside, then reserve the corridor beside `group`. Subsequent reservations
+   * inspect current pills, not the pre-translation measurements.
+   */
+  const commit = (link: LayoutLink, tier: number, groups: LayoutGroup[], group: LayoutGroup, x: number, shifts: number[]): void => {
+    const source = model.nodes[laneSource(model, link).node]!, width = laneWidth(model, link), half = width / 2;
+    const moved: string[] = [];
+    for (const [index, item] of groups.entries()) {
+      const dx = shifts[index]!;
+      if (!dx) continue;
+      moveGroup(model, item, dx, 0);
+      // Repeated pushes must serialize as one exact common translation, not independently
+      // accumulated floating-point sums for each anchor and its container.
+      const origin = origins.get(item.id)!, totalDx = item.bounds!.x - origin.x;
+      for (const old of origin.nodes) {
+        const node = model.nodes[old.id]!;
+        node.bounds!.x = old.x + totalDx;
+        node.ports.forEach((port, i) => { port.anchor = { ...old.anchors[i]!, x: old.anchors[i]!.x + totalDx }; });
+      }
+      moved.push(...item.nodes);
+      placementWarning(model, 'LANE_MARGIN_EXPANDED', `Expanded the occupied margin of ${item.id} for ${link.id}.`, [item.id], 'group');
+    }
+    if (moved.length) rebuildNodeGeometry(model, moved, 'current');
+    if (x < source.bounds!.x || x > right(source.bounds!)) placementWarning(model, 'LANE_OUTSIDE_SOURCE_SPAN',
+      `${link.id} cannot fit an in-span corridor beside existing reservations at tier ${tier}; routing must complete its attachment jog.`, [link.id]);
+    pending.push({ id: laneId(link, tier), owner: { kind: 'link', id: link.id }, layer: 'routed', group: group.id, tier,
+      side: x < group.bounds!.x ? 'left' : 'right', x, bounds: { x: x - half, width, ...laneExtent(model, tier) } });
+  };
+  /**
+   * A link foreign to a frame crosses every sub-tier of it with ONE lane x, decided here once over the
+   * whole frame, before any tier is allocated (ticket 04). The x stands outside the union of the frame's
+   * cells (with the frame edge and the pill reach each cell reports) on the side the link's endpoints ask
+   * for, so every cell of the frame is on the same side of it in every sub-tier and the link never runs
+   * inside the frame. Two frames that share sub-tiers are decided together, and the lane may take the gap
+   * between them. Lane x is immutable afterwards: each later move of a cell is measured against it.
+   */
+  const pinned = new Set<string>();
+  for (const link of links) {
+    const crossed = transitTiers(model, link), width = laneWidth(model, link), half = width / 2;
+    const cellsOf = new Map<string, LayoutGroup[]>();
+    for (const group of Object.values(model.groups)) {
+      const root = foreignRoot(model, group.id, link);
+      if (root !== undefined) cellsOf.set(root, [...cellsOf.get(root) ?? [], group]);
+    }
+    const roots = [...cellsOf.entries()].map(([root, cells]) => ({
+      root, cells, tiers: new Set(cells.map(cell => cell.tier!).filter(tier => crossed.includes(tier))),
+    })).filter(item => item.tiers.size).sort((a, b) => Math.min(...a.tiers) - Math.min(...b.tiers));
+    // Roots that share a sub-tier stand side by side in it, so one x decides them together.
+    const components: (typeof roots)[] = [];
+    for (const item of roots) {
+      const joined = components.filter(part => part.some(other => [...item.tiers].some(tier => other.tiers.has(tier))));
+      const merged = [item, ...joined.flat()];
+      for (const part of joined) components.splice(components.indexOf(part), 1);
+      components.push(merged);
+    }
+    const sx = findPort(model, laneSource(model, link))!.anchor!.x;
+    for (const component of components) {
+      const tiers = [...new Set(component.flatMap(item => [...item.tiers]))].sort((a, b) => crossed.indexOf(a) - crossed.indexOf(b));
+      // Left to right. `bound` is the extent that keeps a root clear of the lane where it stands now;
+      // `fixed` is the part of it in sub-tiers the link does not cross, which no plan can move.
+      const ordered = component.map(item => {
+        const boxes = item.cells.map(cell => occupied(model, cell, link));
+        const fixed = item.cells.filter(cell => !tiers.includes(cell.tier!)).map(cell => occupied(model, cell, link));
+        return {
+          item, centre: (Math.min(...boxes.map(box => box.x)) + Math.max(...boxes.map(box => right(box)))) / 2,
+          low: Math.min(...boxes.map(box => box.x)), high: Math.max(...boxes.map(box => right(box))),
+          fixedLow: Math.min(...fixed.map(box => box.x)), fixedHigh: Math.max(...fixed.map(box => right(box))),
+        };
+      }).sort((a, b) => a.centre - b.centre);
+      const rootOf = new Map(ordered.flatMap((entry, index) => entry.item.cells.map(cell => [cell.id, index] as const)));
+      const desire = tiers.map(tier => targetX(link, tier)).find(value => value !== undefined) ?? sx;
+      const wanted = ordered.filter(entry => entry.centre < desire).length;
+      // Every cell of a root before `gap` stands left of the lane and every cell of the others right of it;
+      // a group of no root takes the side of its centre. The left groups must be a prefix of the tier.
+      const plan = (tier: number, x: number, gap: number) => {
+        const groups = Object.values(model.groups).filter(group => group.tier === tier).sort((a, b) => a.bounds!.x - b.bounds!.x);
+        const isLeft = (group: LayoutGroup): boolean => rootOf.has(group.id) ? rootOf.get(group.id)! < gap : group.bounds!.x + group.bounds!.width / 2 < x;
+        const split = groups.filter(isLeft).length;
+        const prior = pending.filter(lane => lane.tier === tier);
+        return { groups, shifts: groups.slice(0, split).every(isLeft) ? marginTranslations(model, groups, split, x, width, prior, fixedSources, link) : undefined };
+      };
+      // A lane that stands clear of every root where it is now moves no cell of the frame. Where the gap
+      // is too narrow the plan may push the cells of a crossed sub-tier aside to open it, as it does for
+      // plain groups, but only by what opening a corridor between two abutting boxes takes: the lane and
+      // the frame margin on each side. A larger push would carry a frame away from the lane's source
+      // instead of opening a gap, so the lane stands beyond that frame. The cells of the other sub-tiers
+      // bound the plan. Among the gaps the endpoints ask for, the lane nearest its source wins (a corridor
+      // under its source avoids an approach jog), then the plan that moves the fewest cells.
+      const opening = width + 2 * GROUP_PADDING;
+      const candidates = [false, true].flatMap(open => Array.from({ length: ordered.length + 1 }, (_, gap) => {
+        const [before, after] = [ordered.slice(0, gap), ordered.slice(gap)];
+        const low = Math.max(-Infinity, ...before.map(entry => open ? entry.fixedHigh : entry.high)) + half;
+        const high = Math.min(Infinity, ...after.map(entry => open ? entry.fixedLow : entry.low)) - half;
+        return { gap, low, high, x: Math.min(Math.max(sx, low), high) };
+      })).filter(item => item.low <= item.high).map(item => {
+        const plans = tiers.map(tier => plan(tier, item.x, item.gap));
+        const shifts = plans.flatMap(entry => entry.shifts ?? []);
+        const feasible = plans.every(entry => entry.shifts !== undefined) && shifts.every(dx => Math.abs(dx) <= opening + PLACEMENT_EPS);
+        return { ...item, feasible, offset: Math.abs(item.x - sx), moved: shifts.reduce((sum, dx) => sum + Math.abs(dx), 0) };
+      }).filter(item => item.feasible).sort((a, b) => Math.abs(a.gap - wanted) - Math.abs(b.gap - wanted) || a.offset - b.offset || a.moved - b.moved);
+      const chosen = candidates[0];
+      let x: number, planned: ReturnType<typeof plan>[];
+      if (chosen) { x = chosen.x; planned = tiers.map(tier => plan(tier, x, chosen.gap)); }
+      else {
+        // No gap takes the lane without crossing a source or an earlier corridor: stand beyond every
+        // group and corridor of these sub-tiers, on the side the endpoints ask for.
+        const every = tiers.flatMap(tier => Object.values(model.groups).filter(group => group.tier === tier));
+        const lanesHere = pending.filter(lane => tiers.includes(lane.tier));
+        const left = Math.min(...every.map(group => occupied(model, group, link).x), ...lanesHere.map(lane => lane.bounds.x)) - half;
+        const rightX = Math.max(...every.map(group => right(occupied(model, group, link))), ...lanesHere.map(lane => right(lane.bounds))) + half;
+        x = wanted * 2 <= ordered.length ? left : rightX;
+        planned = tiers.map(tier => ({ groups: Object.values(model.groups).filter(group => group.tier === tier).sort((a, b) => a.bounds!.x - b.bounds!.x), shifts: undefined }));
+      }
+      for (const [index, tier] of tiers.entries()) {
+        const { groups, shifts } = planned[index]!;
+        const mine = component.flatMap(item => item.cells).filter(cell => cell.tier === tier);
+        const near = (group: LayoutGroup): number => Math.abs(x - (group.bounds!.x + group.bounds!.width / 2));
+        const host = [...mine.length ? mine : groups].sort((a, b) => near(a) - near(b))[0]!;
+        commit(link, tier, groups, host, x, shifts ?? groups.map(() => 0));
+        pinned.add(laneId(link, tier));
+      }
+    }
+  }
   for (const tier of model.tierBands.map(band => band.tier)) {
     const groups = Object.values(model.groups).filter(group => group.tier === tier).sort((a, b) => a.bounds!.x - b.bounds!.x);
     const main = groups.filter(group => !group.flank);
-    const tierLinks = links.filter(link => transitTiers(model, link).includes(tier));
+    const tierLinks = links.filter(link => transitTiers(model, link).includes(tier) && !pinned.has(laneId(link, tier)));
     for (const [index, link] of tierLinks.entries()) {
-      const source = model.nodes[laneSource(model, link).node]!, sx = findPort(model, laneSource(model, link))!.anchor!.x;
+      const sx = findPort(model, laneSource(model, link))!.anchor!.x;
       const width = laneWidth(model, link), half = width / 2;
       const nearest = [...main].sort((a, b) => Math.min(Math.abs(sx - a.bounds!.x), Math.abs(sx - right(a.bounds!)))
         - Math.min(Math.abs(sx - b.bounds!.x), Math.abs(sx - right(b.bounds!))))[0] ?? groups[0]!;
@@ -440,28 +566,7 @@ export function allocateLanes(model: LayoutModel): void {
         x = side === undefined ? (Math.abs(left - sx) <= Math.abs(rightX - sx) ? left : rightX) : side === 'left' ? left : rightX;
         shifts = groups.map(() => 0);
       }
-      const moved: string[] = [];
-      for (const [index, group] of groups.entries()) {
-        const dx = shifts[index]!;
-        if (!dx) continue;
-        moveGroup(model, group, dx, 0);
-        // Repeated pushes must serialize as one exact common translation, not independently
-        // accumulated floating-point sums for each anchor and its container.
-        const origin = origins.get(group.id)!, totalDx = group.bounds!.x - origin.x;
-        for (const old of origin.nodes) {
-          const node = model.nodes[old.id]!;
-          node.bounds!.x = old.x + totalDx;
-          node.ports.forEach((port, i) => { port.anchor = { ...old.anchors[i]!, x: old.anchors[i]!.x + totalDx }; });
-        }
-        moved.push(...group.nodes);
-        placementWarning(model, 'LANE_MARGIN_EXPANDED', `Expanded the occupied margin of ${group.id} for ${link.id}.`, [group.id], 'group');
-      }
-      // Subsequent reservations inspect current pills, not the pre-translation measurements.
-      if (moved.length) rebuildNodeGeometry(model, moved, 'current');
-      if (x < source.bounds!.x || x > right(source.bounds!)) placementWarning(model, 'LANE_OUTSIDE_SOURCE_SPAN',
-        `${link.id} cannot fit an in-span corridor beside existing reservations at tier ${tier}; routing must complete its attachment jog.`, [link.id]);
-      pending.push({ id: laneId(link, tier), owner: { kind: 'link', id: link.id }, layer: 'routed', group: nearest.id, tier,
-        side: x < nearest.bounds!.x ? 'left' : 'right', x, bounds: { x: x - half, width, ...laneExtent(model, tier) } });
+      commit(link, tier, groups, nearest, x, shifts);
     }
   }
   model.lanes = pending;
