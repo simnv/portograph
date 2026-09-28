@@ -1,0 +1,35 @@
+# Expected: ranked-groups ticket 06, the overlay-weighted order. ELK puts `P` left of `Q` in tier 0.
+# The overlay links of `p0` and `q0` reach `b0`, `a0` and `a1` in tier 2 over the tier 1 bodies, and
+# in that order the bodies of tier 1 stand on three of the four lines. The routed links into tier 1
+# are one link (`q0` to `k0`) and cannot cross whatever the order is, so the tier is indifferent to
+# the routed count and the overlay links decide: `Q` moves to the left of `P`, the crossing count
+# of the score stays at one (as without the rule), and three of the four overlay links are one
+# straight segment (one of four before).
+portograph: 2
+groups:
+  P: { tier: 0, label: Group P }
+  Q: { tier: 0, label: Group Q }
+  M: { tier: 1, label: Group M }
+  N: { tier: 1, label: Group N }
+  A: { tier: 2, label: Group A }
+  B: { tier: 2, label: Group B }
+nodes:
+  p0: { group: P, class: server, label: p0 }
+  q0: { group: Q, class: server, label: q0 }
+  q1: { group: Q, class: server, label: q1 }
+  m0: { group: M, class: server, label: m0 }
+  m1: { group: M, class: server, label: m1 }
+  m2: { group: M, class: server, label: m2 }
+  k0: { group: N, class: server, label: k0 }
+  a0: { group: A, class: server, label: a0 }
+  a1: { group: A, class: server, label: a1 }
+  b0: { group: B, class: server, label: b0 }
+links:
+  - [m0, a0]
+  - [q0, k0]
+  - [k0, a1]
+  - [k0, b0]
+  - [p0, b0, { route: overlay }]
+  - [q0, a1, { route: overlay }]
+  - [p0, a0, { route: overlay }]
+  - [q0, b0, { route: overlay }]

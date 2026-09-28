@@ -55,7 +55,7 @@ const enters = (from: Point, to: Point, box: Rect): boolean =>
  * rides a pill face is clear of it, which is exactly what the `tooClose` reduction states and what
  * `enters` has always meant here. The two disagree only on that boundary, which is the point.
  */
-function crosses(from: Point, to: Point, box: Rect): boolean {
+export function crosses(from: Point, to: Point, box: Rect): boolean {
   let low = 0, high = 1;
   const slabs: readonly (readonly [number, number])[] = [
     [from.x - to.x, from.x - (box.x + EPS)], [to.x - from.x, right(box) - EPS - from.x],

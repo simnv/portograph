@@ -1,5 +1,5 @@
 import type { Rect } from '../model/geometry.js';
-import type { Frame, LayoutModel } from '../model/layout.js';
+import type { Frame, LayoutLink, LayoutModel } from '../model/layout.js';
 import { GROUP_PADDING, groupPadding } from './regions.js';
 import { union } from './skeleton-geometry.js';
 
@@ -53,7 +53,7 @@ export function deriveFrames(model: LayoutModel): Frame[] | undefined {
     const source = model.document.frames![id]!;
     const cells = source.cells;
     const children = entries.filter(([, item]) => item.parent === id).map(([child]) => build(child));
-    const boxes = [...cells.map(cell => cellReach(model, cell)), ...children.map(child => grow(child.box, GROUP_PADDING))];
+    const boxes = [...cells.map(cell => cellReach(model, cell)), ...children.map(child => grow(child.box, GROUP_PADDING)), ...transitLanes(model, id)];
     const tiers = [...cells.map(cell => model.groups[cell]!.tier!), ...children.map(child => child.tier)];
     const frame: Frame = { id, label: source.label, ...(source.class !== undefined ? { class: source.class } : {}),
       ...(source.parent !== undefined ? { parent: source.parent } : {}), cells: [...source.cells],
@@ -62,6 +62,90 @@ export function deriveFrames(model: LayoutModel): Frame[] | undefined {
     return frame;
   };
   return entries.map(([id]) => build(id));
+}
+
+/**
+ * The lanes a frame holds (ticket 04, transit through a frame). A link that ends in a cell of the
+ * frame, or of a child frame, is not foreign to it (ADR-0013), so the lane it owns beside one of the
+ * frame's cells is part of the frame: the frame grows to hold it. A lane of a link foreign to the frame
+ * stands outside the frame (`frameReach`) and never enters here. Each lane is a rectangle as high as the
+ * cell it stands beside, so it widens the frame and never lengthens it.
+ */
+function transitLanes(model: LayoutModel, id: string): Rect[] {
+  if (!model.lanes.length) return [];
+  const cells = new Set(frameCells(model, id)), inside = new Set(frameNodes(model, id));
+  const boxes: Rect[] = [];
+  for (const lane of model.lanes) {
+    if (!cells.has(lane.group) || lane.owner.kind !== 'link') continue;
+    const owner = lane.owner.id;
+    const link = model.links.find(item => item.id === owner);
+    if (!link?.attachments || ![link.attachments.from.node, link.attachments.to.node].some(node => inside.has(node))) continue;
+    const box = model.groups[lane.group]!.bounds!;
+    boxes.push({ x: lane.bounds.x, y: box.y, width: lane.bounds.width, height: box.height });
+  }
+  return boxes;
+}
+
+/**
+ * The cells of every frame a link ends in (ticket 04): the cells that may host the link's own transit
+ * lane, because `transitLanes` grows a frame only for a lane hosted in one of its cells.
+ */
+export function ownFrameCells(model: LayoutModel, link: LayoutLink): Set<string> {
+  const ends = link.attachments ? [link.attachments.from.node, link.attachments.to.node] : [];
+  const cells = new Set<string>();
+  for (const id of Object.keys(model.document.frames ?? {})) {
+    const nodes = new Set(frameNodes(model, id));
+    if (ends.some(node => nodes.has(node))) for (const cell of frameCells(model, id)) cells.add(cell);
+  }
+  return cells;
+}
+
+/** The frame's own cells and its child frames' cells. */
+function frameCells(model: LayoutModel, frame: string): string[] {
+  const frames = model.document.frames ?? {};
+  return Object.entries(frames).filter(([id, item]) => id === frame || item.parent === frame).flatMap(([, item]) => item.cells);
+}
+
+/**
+ * The x-extent a link that is foreign to a cell's frame must stay outside: where the edge of the
+ * outermost frame the link is foreign to stands beside the cell (ADR-0013, ticket 04). That edge is the
+ * cell's own sides, plus one margin more for each parent frame around it. A link that ends inside the
+ * outermost frame is foreign to none, so nothing is reserved beyond the bodies: its lane may stand inside
+ * the frame, and `rebuildFrames` grows the frame to hold it. Per cell, so it moves with the cell when a
+ * lane pushes the cell aside. The x of a foreign lane is one x for the whole frame, decided by the lane
+ * allocation over every cell of the frame (`foreignRoot`), so a wider cell at another sub-tier is already
+ * outside it. Undefined for a group that is no cell, or a link with no foreign frame.
+ */
+export function foreignReach(model: LayoutModel, cell: string, link: LayoutLink): Rect | undefined {
+  const found = foreignFrame(model, cell, link);
+  if (!found) return undefined;
+  const own = cellReach(model, cell);
+  return { ...own, x: own.x - found.outer * GROUP_PADDING, width: own.width + 2 * found.outer * GROUP_PADDING };
+}
+
+/**
+ * The outermost frame a link is foreign to, seen from one cell, and how many parents that frame stands
+ * above the cell's own frame. Undefined for a group that is no cell, or a link with no foreign frame.
+ */
+function foreignFrame(model: LayoutModel, cell: string, link: LayoutLink): { frame: string; outer: number } | undefined {
+  const frames = model.document.frames;
+  const first = model.document.groups[cell]?.frame;
+  if (!frames || first === undefined || !link.attachments) return undefined;
+  const ends = [link.attachments.from.node, link.attachments.to.node];
+  const chain: string[] = [];
+  for (let id: string | undefined = first; id !== undefined; id = frames[id]?.parent) chain.push(id);
+  // A parent holds every node of its child, so a link foreign to a parent is foreign to the child too.
+  let outer = -1;
+  chain.forEach((id, index) => { if (!ends.some(node => frameNodes(model, id).includes(node))) outer = index; });
+  return outer < 0 ? undefined : { frame: chain[outer]!, outer };
+}
+
+/**
+ * The frame a link must stay outside at this cell: the outermost frame the link is foreign to. The
+ * lane allocation reserves one x per such frame for the whole crossing (ticket 04), not one per cell.
+ */
+export function foreignRoot(model: LayoutModel, cell: string, link: LayoutLink): string | undefined {
+  return foreignFrame(model, cell, link)?.frame;
 }
 
 /** The frames of a model, empty when no group was replaced by cells. */

@@ -1,0 +1,25 @@
+# Expected: A link that skips a rank of its own frame runs inside the frame (ranked-groups ticket 04, the NTP
+# `loc4wan001` case). Two routers link to the ISP above (rank 0). The switch hangs from the first router
+# (rank 1) and the WAN node hangs from the switch (rank 2); the WAN node also links straight to the second
+# router, so that link crosses the sub-tier of the switch's cell `site#1`. The link is not foreign to `site`,
+# so ADR-0013 permits the passage: the lane is reserved beside the crossed cell and the frame grows to hold
+# it. The link is stem, one vertical run, stem; no removed link, no margin expansion.
+# (A member that links to the tier above is an anchor and always takes rank 0, so no upward link can end in
+# rank 2 of a frame without a child frame; the second fixture covers that.)
+# Test-only input owned by ranked-groups ticket 04; test/pipeline/frame-transit.test.ts reads the layout.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, label: Site }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  rt1: { group: site, class: router, label: Router 1 }
+  rt2: { group: site, class: router, label: Router 2 }
+  sw: { group: site, class: switch, label: Switch }
+  wan: { group: site, class: server, label: WAN }
+links:
+  - [isp, rt1]
+  - [isp, rt2]
+  - [rt1, sw]
+  - [sw, wan]
+  - [rt2, wan]
