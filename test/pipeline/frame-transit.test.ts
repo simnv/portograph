@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { Rect } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
+import { groupConsumers } from '../../src/score/model.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -127,5 +128,19 @@ describe('transit through a frame', () => {
     const gates = score(model).snapshot.gates;
     for (const gate of ['G2', 'G6', 'G9'] as const) expect(gates[gate].violations).toEqual([]);
     expect(model.removedLinks ?? []).toEqual([]);
+  }, 60000);
+
+  it('a lane exempts its owner from a frame only when the link ends in the frame', async () => {
+    const own = await run('a-link-transits-its-own-frame');
+    const inside = own.links.find(item => item.attachments!.from.node === 'rt2' && item.attachments!.to.node === 'wan')!;
+    expect(groupConsumers(own, 'site')).toContain(inside.id);
+    const foreign = await run('a-foreign-lane-stands-outside-the-frame');
+    const passing = foreign.links.find(item => item.attachments!.from.node === 'u1' && item.attachments!.to.node === 'l0')!;
+    // The link owns a lane beside both cells of `mid`, and it ends in none of its nodes: it stays an obstacle.
+    expect(foreign.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === passing.id).length).toBe(2);
+    expect(groupConsumers(foreign, 'mid')).not.toContain(passing.id);
+    // The feed of the frame does end in it.
+    const feed = foreign.links.find(item => item.attachments!.from.node === 'u0' && item.attachments!.to.node === 'a0')!;
+    expect(groupConsumers(foreign, 'mid')).toContain(feed.id);
   }, 60000);
 });
