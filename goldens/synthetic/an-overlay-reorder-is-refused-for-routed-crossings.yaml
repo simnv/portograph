@@ -3,6 +3,7 @@
 # order puts `g11` first. That swap would cross the routed links `n0` to `n4` and `n3` to `n7`, so the
 # routed count of the two regions that touch tier 1 would rise from 0 to 1. The re-order is refused,
 # ELK's order stands, and one OVERLAY_ORDER_REFUSED warning names tier 1.
+# Known fault, not of this rule: gate G6 (`segment-group-edge`) fails here with the rule off too; the routed n0 to n4 runs along a group edge.
 portograph: 2
 groups:
   g00: { tier: 0, label: Row above }
