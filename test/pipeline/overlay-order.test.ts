@@ -8,6 +8,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
 const names = {
   indifferent: 'overlay-links-reorder-an-indifferent-tier',
   crossings: 'an-overlay-reorder-is-refused-for-routed-crossings',
+  bend: 'an-overlay-reorder-is-refused-when-a-link-would-bend',
 } as const;
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (yaml: string): Promise<LayoutModel> =>
@@ -52,6 +53,14 @@ describe('overlay-weighted order', () => {
     expect(refused[0]!.message).toContain('routed crossings would rise from 0 to 1');
     expect(score(model).snapshot.metrics.crossings.count).toBe(0);
     expect(straight(model)).toBe(1);
+  });
+
+  it('keeps the straight overlay links of a free group whose barycentre would put a body on a line', async () => {
+    const model = await run(fixture(names.bend));
+    expect(errors(model)).toEqual([]);
+    expect(overlays(model)).toHaveLength(4);
+    expect(straight(model)).toBe(4);
+    expect(score(model).snapshot.metrics.crossings.count).toBe(0);
   });
 
   it.each(Object.values(names))('is idempotent and deterministic on %s', async name => {

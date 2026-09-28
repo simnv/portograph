@@ -1,6 +1,9 @@
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { groupShape } from './grid.js';
 import { occupiedOverhang, selectAnchorTier } from './lanes.js';
+import { overlayBlockers, overlayPath } from './overlay-paths.js';
+import { saveGroups } from './overlay-order.js';
+import { rebuildNodeGeometry } from './node-geometry.js';
 import { groupInsets } from './regions.js';
 import { rowGap } from './sides-two.js';
 import { bandGap, compareId } from './skeleton-graph.js';
@@ -87,6 +90,21 @@ export function placeOverlayFree(model: LayoutModel): void {
   for (const tier of [...tiers.slice(at + 1), ...tiers.slice(0, at).reverse()]) {
     const groups = Object.values(model.groups).filter(group => group.tier === tier);
     const movers = groups.filter(group => free.has(group.id));
+    // The straight overlay links that touch or pass over this tier: a move is kept only where their
+    // count, read by the real overlay decision, holds or rises (spec section 5). The mean of partners
+    // in two tiers can put a body of the tier between the two ends of a link that was straight.
+    const spanning = model.links.filter(link => link.layer === 'overlay' && link.attachments).filter(link => {
+      const ends = [link.attachments!.from.node, link.attachments!.to.node].map(node => model.groups[groupOf(node)]!.tier!);
+      return Math.min(...ends) <= tier && tier <= Math.max(...ends);
+    });
+    const straightCount = (): number => {
+      const blockers = overlayBlockers(model);
+      return spanning.filter(link => overlayPath(model, link, blockers).segments.length === 1).length;
+    };
+    const nodesOfTier = groups.flatMap(group => group.nodes);
+    const signature = (): string => JSON.stringify(groups.map(group => [group.bounds, group.rowOrder, group.nodes.map(node => model.nodes[node]!.bounds)]));
+    const start = signature();
+    const before = spanning.length && movers.length ? straightCount() : 0, undo = saveGroups(model, groups);
     for (const group of movers) orderNodes(model, group, node => keyOf([node], group.id), routedAny);
     const targets = new Map<string, number>();
     for (const group of movers) {
@@ -94,6 +112,10 @@ export function placeOverlayFree(model: LayoutModel): void {
       if (target !== undefined) targets.set(group.id, target);
     }
     if (targets.size) sweep(model, tier, groups, targets);
+    if (spanning.length && signature() !== start) {
+      rebuildNodeGeometry(model, nodesOfTier, 'current');
+      if (straightCount() < before) { undo(); rebuildNodeGeometry(model, nodesOfTier, 'current'); }
+    }
     for (const group of movers) settled.add(group.id);
   }
 }
