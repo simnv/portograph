@@ -1,0 +1,50 @@
+# Expected: Three sibling frames of one tier, each of three ranks (gateway, distribution, access), stand
+# side by side under a feed tier, with a client tier below (ranked-groups ticket 14). Every frame has a link
+# from its gateway to its access node that skips a rank, so the link keeps a lane of its own beside the
+# distribution cell and the frame grows to hold it. Four links from the feed tier to the client tier are
+# foreign to every frame and each needs a lane past them. A frame's reach is its cells plus every lane it
+# holds: the foreign lanes stand outside that reach, the frames do not overlap, and no foreign lane stands
+# inside a frame box. (With two frames the same input places without a fault; the third frame is what
+# leaves a foreign lane no free gap.) The test reads the model after the placement stages; the full
+# pipeline for the real sheet stops later, in stage 8, which ticket 14 also covers.
+# Test-only input owned by ranked-groups ticket 14; test/pipeline/frame-held-lanes.test.ts reads the stages.
+portograph: 2
+groups:
+  up: { tier: 0, label: Up }
+  east: { tier: 1, label: East }
+  mid: { tier: 1, label: Mid }
+  west: { tier: 1, label: West }
+  low: { tier: 2, label: Low }
+nodes:
+  u0: { group: up, class: provider, label: U0 }
+  u1: { group: up, class: provider, label: U1 }
+  u2: { group: up, class: provider, label: U2 }
+  eastg: { group: east, class: router, label: East gateway }
+  eastd: { group: east, class: switch, label: East distribution switch of the main building }
+  easta: { group: east, class: server, label: East access server of the main building }
+  midg: { group: mid, class: router, label: Mid gateway }
+  midd: { group: mid, class: switch, label: Mid distribution switch of the main building }
+  mida: { group: mid, class: server, label: Mid access server of the main building }
+  westg: { group: west, class: router, label: West gateway }
+  westd: { group: west, class: switch, label: West distribution switch of the main building }
+  westa: { group: west, class: server, label: West access server of the main building }
+  l0: { group: low, class: server, label: L0 }
+  l1: { group: low, class: server, label: L1 }
+  l2: { group: low, class: server, label: L2 }
+links:
+  - [eastg, eastd]
+  - [eastd, easta]
+  - [eastg, easta]
+  - [midg, midd]
+  - [midd, mida]
+  - [midg, mida]
+  - [westg, westd]
+  - [westd, westa]
+  - [westg, westa]
+  - [u0, eastg]
+  - [u1, midg]
+  - [u2, westg]
+  - [u1, l0]
+  - [u1, l1]
+  - [u0, l2]
+  - [u2, l2]
