@@ -19,7 +19,7 @@ interface Unit { id: string; frame: boolean; groups: LayoutGroup[]; low: number;
 
 /**
  * A frame is a column (ranked-groups ticket 09). In stage 4, after ELK and the grid repacks, the
- * frames and one-rank groups of one document tier are packed left to right in their ELK order, each
+ * frames and one-rank groups of one document tier are packed left to right in the ELK order of their rank-0 cells, each
  * as wide as its widest cell (bodies, pill reach and the 20 px margin on each side, `cellReach`; a
  * parent is also as wide as its widest child frame plus the margin on each side), one band gap
  * apart. Every cell of a frame is centred on its column's axis, and a child frame stands on the
@@ -66,14 +66,19 @@ export function packFrameColumns(model: LayoutModel): Map<string, Column> {
   }
 
   const gap = bandGap(model);
-  const mean = (unit: Unit): number => unit.groups.reduce((sum, group) => sum + group.bounds!.x + group.bounds!.width / 2, 0) / unit.groups.length;
+  // The order is the ELK order of the rank-0 cell of a frame (its first sub-tier, which is the cell ELK
+  // placed against the tier above), or of the group itself when it is not in a frame.
+  const order = (unit: Unit): number => {
+    const first = unit.groups.reduce((best, group) => group.tier! < best.tier! ? group : best);
+    return first.bounds!.x + first.bounds!.width / 2;
+  };
   for (const tier of tiers.filter(members => members.some(unit => unit.frame))) {
     const left = (unit: Unit): number => Math.min(...unit.groups.map(group => unit.frame ? cellReach(model, group.id).x : group.bounds!.x));
     const right = (unit: Unit): number => Math.max(...unit.groups.map(group => unit.frame ? cellReach(model, group.id).x + cellReach(model, group.id).width : group.bounds!.x + group.bounds!.width));
     // The packed run keeps the centre ELK gave the tier, so it stays over and under its neighbour tiers.
     const span = tier.reduce((sum, unit) => sum + (unit.frame ? widthOf(unit.id) + 2 * COLUMN_SLACK : unit.groups[0]!.bounds!.width), gap * (tier.length - 1));
     let x = (Math.min(...tier.map(left)) + Math.max(...tier.map(right))) / 2 - span / 2;
-    for (const unit of [...tier].sort((a, b) => mean(a) - mean(b) || compareId(a.id, b.id))) {
+    for (const unit of [...tier].sort((a, b) => order(a) - order(b) || compareId(a.id, b.id))) {
       if (unit.frame) {
         const width = widthOf(unit.id);
         x += COLUMN_SLACK;

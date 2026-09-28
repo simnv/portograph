@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel, Rect } from '../../src/index.js';
 import { layout, parse, render, score } from '../../src/index.js';
+import { alignLinkedGroupGrid } from '../../src/layout/bands.js';
+import { deriveFrames } from '../../src/layout/frames.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -73,4 +75,43 @@ describe('frame columns', () => {
     expect(between).toHaveLength(3);
     for (const link of between) expect(link.path?.segments.length, `${link.id} is drawn`).toBeGreaterThan(1);
   }, 60000);
+
+  // The linked-group grid (ADR-0012) widens a cell to the extent it shares with the group it is linked to. It
+  // reads group boxes and lane windows only, and a frame box is 20 px wider than its cells, so it must
+  // refuse a widening that keeps the cells of two frames apart and makes their frame boxes touch. YAML
+  // cannot force that pairing (the grid keeps a box within 30 % of its union), so the test sets the boxes
+  // it needs on the built model: the gateway cell as wide as the zone cells of its frame, and the ISP
+  // group as wide as the frame's cells and `extra` px more, then calls the grid.
+  describe('linked-group grid beside frames', () => {
+    const west = ['west#0', 'west-zone#1', 'west-zone#2'];
+    /** `extra` px beyond the zone cells; a negative `extra` is the room the cells of `east` leave, less that many px. */
+    const widened = async (extra: number) => {
+      const model = structuredClone(await run('sibling-frames-pack-as-columns'));
+      const zone = ['west-zone#1', 'west-zone#2'].map(id => model.groups[id]!.bounds!);
+      const low = Math.min(...zone.map(box => box.x)), high = Math.max(...zone.map(right));
+      const east = Math.min(...['east#0', 'east-zone#1', 'east-zone#2'].map(id => model.groups[id]!.bounds!.x));
+      // The widened cell stands clear of the cells of `east`; only the frame boxes are asked to touch.
+      if (extra < 0) extra = east - high + extra;
+      expect(high + extra, 'cells stay apart').toBeLessThan(east);
+      // The three cells of `west` share one extent already, so the grid has nothing to close inside the frame.
+      for (const id of west) Object.assign(model.groups[id]!.bounds!, { x: low, width: high - low });
+      Object.assign(model.groups.upstream!.bounds!, { x: low, width: high + extra - low });
+      const before = west.map(id => ({ ...model.groups[id]!.bounds! }));
+      const changed = alignLinkedGroupGrid(model);
+      const [a, b] = ['west', 'east'].map(id => deriveFrames(model)!.find(frame => frame.id === id)!.box);
+      return { model, changed, before, clear: !overlaps(a!, b!) };
+    };
+    it('refuses a widening that would make a frame box overlap another frame box', async () => {
+      const { model, changed, before, clear } = await widened(-5);
+      expect(changed).toBe(false);
+      expect(west.map(id => model.groups[id]!.bounds)).toEqual(before);
+      expect(clear).toBe(true);
+    });
+    it('still widens the cell when the frame boxes stay clear', async () => {
+      const { model, changed, before, clear } = await widened(10);
+      expect(changed).toBe(true);
+      expect(model.groups['west#0']!.bounds!.width).toBeCloseTo(before[0]!.width + 10, 6);
+      expect(clear).toBe(true);
+    });
+  });
 });
