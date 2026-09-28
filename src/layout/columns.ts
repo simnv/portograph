@@ -1,7 +1,8 @@
+import type { Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { cellReach, deriveFrames } from './frames.js';
 import { GROUP_PADDING } from './regions.js';
-import { selectAnchorTier } from './lanes.js';
+import { laneSidesHold, selectAnchorTier } from './lanes.js';
 import { findPort } from './row-paths.js';
 import { bandGap, compareId, portId } from './skeleton-graph.js';
 import { moveGroup } from './skeleton-geometry.js';
@@ -14,6 +15,9 @@ import { PLACEMENT_EPS } from './tolerance.js';
  * on top of the band gap, so the frame boxes of two neighbours stay a band gap apart at the limit.
  */
 export const COLUMN_SLACK = GROUP_PADDING;
+
+/** The warning a column gets when its siblings keep it off its feed (ticket 16). */
+export const COLUMN_AXIS_HELD = 'COLUMN_AXIS_HELD';
 
 /** The x extent one frame or one-rank group owns in its document tier. */
 export interface Column { x: number; width: number }
@@ -121,6 +125,44 @@ export function packTier(model: LayoutModel, tier: Unit[], columns: Map<string, 
   if (step !== undefined) packStep(model, tiers, step.index, step.authority, columns, sequence);
 }
 
+/** The two ends of the routed feed links of one unit against the tier packed before it. */
+interface UnitFeeds {
+  /** The x of each distinct port of the tier before, by port id. */
+  parents: Map<string, number>;
+  /** The x of each distinct port of the unit, by port id, with the cell that holds it. */
+  children: Map<string, { x: number; cell: string }>;
+}
+
+/**
+ * Reads, for a unit of `tiers[index]`, the routed, attached, non-stub links that leave it towards the tier
+ * `authority` on the facing sides, with the current x of both ports (ranked-groups tickets 11 and 16).
+ * Overlay links are the overlay order's (tickets 05 and 06), stubs draw no path.
+ */
+function feedReader(model: LayoutModel, tiers: Unit[][], index: number, authority: number | undefined): (unit: Unit) => UnitFeeds {
+  const tierOf = new Map<Unit, number>(), unitOf = new Map<string, Unit>();
+  for (const [at, members] of tiers.entries()) for (const unit of members) {
+    tierOf.set(unit, at);
+    for (const group of unit.groups) unitOf.set(group.id, unit);
+  }
+  return unit => {
+    const parents = new Map<string, number>(), children = new Map<string, { x: number; cell: string }>();
+    if (authority === undefined) return { parents, children };
+    for (const link of model.links) {
+      if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
+      for (const [own, other] of [[link.attachments.from, link.attachments.to], [link.attachments.to, link.attachments.from]]) {
+        const ownGroup = model.document.nodes[own!.node]?.group, otherGroup = model.document.nodes[other!.node]?.group;
+        if (ownGroup === undefined || otherGroup === undefined || unitOf.get(ownGroup) !== unit || tierOf.get(unitOf.get(otherGroup)!) !== authority) continue;
+        const child = findPort(model, own!), parent = findPort(model, other!);
+        if (!child?.anchor || !parent?.anchor) continue;
+        if (child.side !== (index > authority ? 'top' : 'bottom') || parent.side !== (index > authority ? 'bottom' : 'top')) continue;
+        children.set(portId(child.ref), { x: child.anchor.x, cell: ownGroup });
+        parents.set(portId(parent.ref), parent.anchor.x);
+      }
+    }
+    return { parents, children };
+  };
+}
+
 /** Packs `tiers[index]`, reading the feeds of the tier `authority` (see `packFrameColumns`). */
 function packStep(model: LayoutModel, tiers: Unit[][], index: number, authority: number | undefined, columns: Map<string, Column>,
   sequence?: ReadonlyMap<string, number>): void {
@@ -141,32 +183,17 @@ function packStep(model: LayoutModel, tiers: Unit[][], index: number, authority:
   /** The width a unit takes in its tier: a frame with its slack on each side, a group by its box. */
   const extent = (unit: Unit): number => unit.frame ? frameWidth(model, unit.id) + 2 * COLUMN_SLACK : unit.groups[0]!.bounds!.width;
 
-  const tierOf = new Map<Unit, number>(), unitOf = new Map<string, Unit>();
-  for (const [at, members] of tiers.entries()) for (const unit of members) {
-    tierOf.set(unit, at);
-    for (const group of unit.groups) unitOf.set(group.id, unit);
-  }
+  const feeds = feedReader(model, tiers, index, authority);
 
   /** The centre a unit wants: over the mean of its routed feeds in the packed tier, `undefined` without one. */
   const wanted = (unit: Unit): number | undefined => {
-    if (authority === undefined) return undefined;
-    const parents = new Map<string, number>(), children = new Map<string, number>();
-    for (const link of model.links) {
-      if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
-      for (const [own, other] of [[link.attachments.from, link.attachments.to], [link.attachments.to, link.attachments.from]]) {
-        const ownGroup = model.document.nodes[own!.node]?.group, otherGroup = model.document.nodes[other!.node]?.group;
-        if (ownGroup === undefined || otherGroup === undefined || unitOf.get(ownGroup) !== unit || tierOf.get(unitOf.get(otherGroup)!) !== authority) continue;
-        const child = findPort(model, own!), parent = findPort(model, other!);
-        if (!child?.anchor || !parent?.anchor) continue;
-        if (child.side !== (index > authority ? 'top' : 'bottom') || parent.side !== (index > authority ? 'bottom' : 'top')) continue;
-        const cell = model.groups[ownGroup]!, at = unit.frame ? cellReach(model, cell.id) : cell.bounds!;
-        children.set(portId(child.ref), child.anchor.x - (at.x + at.width / 2));
-        parents.set(portId(parent.ref), parent.anchor.x);
-      }
-    }
+    const { parents, children } = feeds(unit);
     if (!parents.size || !children.size) return undefined;
     const mean = (values: Iterable<number>): number => { const xs = [...values]; return xs.reduce((sum, x) => sum + x, 0) / xs.length; };
-    return mean(parents.values()) - mean(children.values());
+    return mean(parents.values()) - mean([...children.values()].map(({ x, cell }) => {
+      const at = unit.frame ? cellReach(model, cell) : model.groups[cell]!.bounds!;
+      return x - (at.x + at.width / 2);
+    }));
   };
 
   const tier = tiers[index]!;
@@ -237,6 +264,143 @@ export function separateFrameColumns(model: LayoutModel): boolean {
   const shifts = columnShifts(model, COLUMN_SLACK);
   for (const [group, dx] of shifts) moveGroup(model, group, dx, 0);
   return shifts.size > 0;
+}
+
+/**
+ * Pull the columns back toward their feeds (ranked-groups ticket 16). `packFrameColumns` puts the axis of
+ * each column on the mean x of its feeds, but the rules after it widen cells and `separateFrameColumns`
+ * moves a frame to the right and never back, so a frame the widening pushed stays pushed, and a feed that
+ * was straight at pack jogs by the whole push. This is ticket 11's pass again on the geometry as it stands:
+ * the frames of a tier want to stand where centring can still put their feed ports under the feeds, and are
+ * kept a band gap apart, plus the column slack beside a frame, by pool adjacent violators with the order kept.
+ * A run that moved as a whole is centred back, so a frame pushed right by its sibling is met halfway, and a
+ * frame nothing pushes does not move.
+ *
+ * What a frame wants is a range, not a point: centring slides the cells of a frame inside their column, so a
+ * feed that a cell can reach by sliding costs nothing, and a feed beyond the wall costs its distance from
+ * the wall (`feedRange`). Standing at the point that puts a feed under the port as the cells now stand
+ * would pull a frame off a feed that centring reaches anyway, and off the balance between two frames that
+ * both have to give. The plan minimises the squared distance outside those ranges, so the current x is the
+ * wanted x and the feed mean is the target, in one step by projection and a few more until it settles.
+ *
+ * The tiers are read in the order centring steps, the anchor tier first, so a tier reads feeds that a later
+ * step does not move. A tier that holds a grid, a bar or another group the rows rule cannot move is left
+ * alone. The plan of a tier is refused as a whole when a reserved lane would end on the other side of a
+ * group it holds (lane x is immutable), so the rule can also run after lanes. A frame that holds an end of an overlay link
+ * stays where the overlay order put it, and bounds its siblings. A column that still jogs by
+ * more than its cells can slide to absorb warns once, `COLUMN_AXIS_HELD`, with that residual in px. The pass
+ * is idempotent: the feeds are the fixed end, so a second run wants exactly the plan the first one kept.
+ *
+ * Returns whether anything moved.
+ */
+export function holdColumnAxes(model: LayoutModel): boolean {
+  if (model.document.frames === undefined) return false;
+  const tiers = columnTiers(model);
+  let moved = false;
+  for (const { index, authority } of sweepSteps(model, tiers)) {
+    if (authority !== undefined && tiers[index]!.some(unit => unit.frame)) moved = pullTier(model, tiers, index, authority) || moved;
+  }
+  return moved;
+}
+
+const mean = (values: readonly number[]): number => values.reduce((sum, x) => sum + x, 0) / values.length;
+
+/**
+ * How far a frame may move, as `dx` in `[low, high]`, and still have its feed ports reachable: the jog `need`
+ * that moves the mean of its ports under the mean of its feeds, less what the cells that hold those ports can
+ * slide inside the column (its box with the slack on each side). `undefined` for a frame with no feed.
+ */
+function feedRange(model: LayoutModel, unit: Unit, feeds: (unit: Unit) => UnitFeeds, box: Rect): { low: number; high: number; need: number } | undefined {
+  const { parents, children } = feeds(unit);
+  if (!parents.size || !children.size) return undefined;
+  const need = mean([...parents.values()]) - mean([...children.values()].map(child => child.x));
+  const cells = [...new Set([...children.values()].map(child => child.cell))].map(cell => cellReach(model, cell));
+  const slideLow = Math.max(...cells.map(reach => box.x - COLUMN_SLACK - reach.x));
+  const slideHigh = Math.min(...cells.map(reach => box.x + box.width + COLUMN_SLACK - reach.x - reach.width));
+  return { low: need - slideHigh, high: need - slideLow, need };
+}
+
+/** The units of a tier that hold a node at either end of an attached overlay link. */
+function overlayUnits(model: LayoutModel, tier: Unit[]): Set<Unit> {
+  const unitOf = new Map<string, Unit>();
+  for (const unit of tier) for (const group of unit.groups) unitOf.set(group.id, unit);
+  const held = new Set<Unit>();
+  for (const link of model.links) {
+    if (link.layer !== 'overlay' || !link.attachments) continue;
+    for (const end of [link.attachments.from, link.attachments.to]) {
+      const unit = unitOf.get(model.document.nodes[end.node]?.group ?? '');
+      if (unit !== undefined) held.add(unit);
+    }
+  }
+  return held;
+}
+
+/** One tier of `holdColumnAxes`: plans the pulled positions, applies them unless a lane forbids them, and reports the residuals. */
+function pullTier(model: LayoutModel, tiers: Unit[][], index: number, authority: number): boolean {
+  const tier = tiers[index]!, derived = deriveFrames(model);
+  if (derived === undefined || tier.some(unit => !unit.frame && groupShape(model, unit.id) !== 'row')) return false;
+  const box = new Map(derived.map(frame => [frame.id, frame.box]));
+  const feeds = feedReader(model, tiers, index, authority), gap = bandGap(model);
+  const standing = tier.map(unit => {
+    const at = unit.frame ? box.get(unit.id)! : unit.groups[0]!.bounds!;
+    const range = unit.frame ? feedRange(model, unit, feeds, at) : undefined;
+    return { unit, x: at.x, width: at.width, slack: unit.frame ? COLUMN_SLACK : 0, from: at.x + (range?.low ?? 0), to: at.x + (range?.high ?? 0) };
+  }).sort((a, b) => a.x - b.x || compareId(a.unit.id, b.unit.id));
+  // Lefts of a run kept a band gap apart, less the offset of that run, must not fall: pool adjacent violators on
+  // the wanted lefts, the nearest point of each range to where the unit stands in the plan so far.
+  const offsets: number[] = [];
+  let sum = 0;
+  for (const [i, item] of standing.entries()) { offsets.push(sum); sum += item.width + gap + item.slack + (standing[i + 1]?.slack ?? 0); }
+  // A unit that holds an end of an overlay link stays where the overlay order put it (face to face, one straight
+  // segment); it bounds the units on either side, whose plan is clamped to it, which is exact for a fixed point.
+  const pinned = overlayUnits(model, tier);
+  const fixed = standing.map((item, i) => pinned.has(item.unit) ? item.x - offsets[i]! : undefined);
+  const below = fixed.map((_, i) => Math.max(-Infinity, ...fixed.slice(0, i + 1).filter((z): z is number => z !== undefined)));
+  const above = fixed.map((_, i) => Math.min(Infinity, ...fixed.slice(i).filter((z): z is number => z !== undefined)));
+  const fit = (wanted: number[]): number[] => {
+    const blocks: { sum: number; count: number }[] = [];
+    for (const [i, wish] of wanted.entries()) {
+      blocks.push({ sum: wish - offsets[i]!, count: 1 });
+      while (blocks.length > 1 && blocks[blocks.length - 2]!.sum / blocks[blocks.length - 2]!.count > blocks[blocks.length - 1]!.sum / blocks[blocks.length - 1]!.count) {
+        const last = blocks.pop()!, before = blocks[blocks.length - 1]!;
+        before.sum += last.sum; before.count += last.count;
+      }
+    }
+    return blocks.flatMap(block => Array.from({ length: block.count }, () => block.sum / block.count)).map((base, i) => Math.min(Math.max(base, below[i]!), above[i]!) + offsets[i]!);
+  };
+  let lefts = standing.map(item => item.x);
+  for (let round = 0; round < 200; round++) {
+    const next = fit(lefts.map((left, i) => Math.min(Math.max(left, standing[i]!.from), standing[i]!.to)));
+    const change = Math.max(...next.map((left, i) => Math.abs(left - lefts[i]!)));
+    lefts = next;
+    if (change < 1e-9) break;
+  }
+  const shifts = new Map<LayoutGroup, number>();
+  for (const [i, item] of standing.entries()) {
+    const dx = lefts[i]! - item.x;
+    if (Math.abs(dx) > PLACEMENT_EPS) for (const group of item.unit.groups) shifts.set(group, dx);
+  }
+  const allowed = shifts.size > 0 && laneSidesHold(model, [...shifts].map(([group, dx]) => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } })));
+  if (allowed) for (const [group, dx] of shifts) moveGroup(model, group, dx, 0);
+  reportHeld(model, tier, feeds);
+  return allowed;
+}
+
+/**
+ * Says once per column, and again only with a new number, how far its feed links still jog beyond what the
+ * cells inside the column can absorb by sliding to the wall: the least jog its siblings leave it.
+ */
+function reportHeld(model: LayoutModel, tier: Unit[], feeds: (unit: Unit) => UnitFeeds): void {
+  const derived = deriveFrames(model);
+  if (derived === undefined) return;
+  for (const unit of tier.filter(item => item.frame)) {
+    model.diagnostics = model.diagnostics.filter(item => !(item.code === COLUMN_AXIS_HELD && item.owners?.some(owner => 'id' in owner && owner.id === unit.id)));
+    const range = feedRange(model, unit, feeds, derived.find(item => item.id === unit.id)!.box);
+    // Standing where it stands, the column reaches its feed when 0 lies in the range of moves.
+    const residual = range === undefined ? 0 : Math.max(0, range.low, -range.high);
+    if (residual > 0.5) model.diagnostics.push({ stage: 'placement', severity: 'warning', code: COLUMN_AXIS_HELD, owners: [{ kind: 'group', id: unit.id }],
+      message: `Column ${unit.id} cannot reach its feed: its siblings hold it a band gap away, so its feed links keep a jog of ${residual.toFixed(1)} px.` });
+  }
 }
 
 /**
