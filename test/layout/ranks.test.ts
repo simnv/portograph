@@ -85,3 +85,44 @@ describe('deriveRanks: layering', () => {
     expect(asObject(result.ranks)).toEqual({ a: 0, b: 1 });
   });
 });
+
+describe('deriveRanks: anchors', () => {
+  it('with no anchor above, the members that link below are anchors at the last rank', () => {
+    const result = deriveRanks(input({ members: ['a', 'b', 'c'], routedLinks: chain('a', 'b', 'c'), linksBelow: new Set(['c']) }));
+    expect(asObject(result.ranks)).toEqual({ a: 0, b: 1, c: 2 });
+    expect(result.anchoredFrom).toBe('below');
+    const upward = deriveRanks(input({
+      members: ['a', 'b', 'c', 'd'], linksBelow: new Set(['a']),
+      routedLinks: [{ from: 'c', to: 'b' }, { from: 'a', to: 'b' }, { from: 'd', to: 'c' }],
+    }));
+    expect(asObject(upward.ranks)).toEqual({ a: 3, b: 2, c: 1, d: 0 });
+    expect(upward.rankCount).toBe(4);
+  });
+
+  it('an anchor above wins over an anchor below', () => {
+    const result = deriveRanks(input({ members: ['a', 'b'], routedLinks: chain('a', 'b'), linksAbove: new Set(['a']), linksBelow: new Set(['b']) }));
+    expect(asObject(result.ranks)).toEqual({ a: 0, b: 1 });
+    expect(result.anchoredFrom).toBe('above');
+  });
+
+  it('with no anchor either way, the member with the most links in the group is rank 0', () => {
+    const result = deriveRanks(input({
+      members: ['leaf1', 'hub', 'leaf2', 'leaf3'],
+      routedLinks: [{ from: 'leaf1', to: 'hub' }, { from: 'hub', to: 'leaf2' }, { from: 'hub', to: 'leaf3' }],
+    }));
+    expect(asObject(result.ranks)).toEqual({ leaf1: 1, hub: 0, leaf2: 1, leaf3: 1 });
+    expect(result.anchoredFrom).toBe('none');
+  });
+
+  it('a tie for most links goes to the earlier member', () => {
+    const result = deriveRanks(input({ members: ['a', 'b'], routedLinks: chain('a', 'b') }));
+    expect(asObject(result.ranks)).toEqual({ a: 0, b: 1 });
+  });
+
+  it('a group with no routed link at all is one rank', () => {
+    const result = deriveRanks(input({ members: ['a', 'b'] }));
+    expect(asObject(result.ranks)).toEqual({ a: 0, b: 0 });
+    expect(result.rankCount).toBe(1);
+    expect(result.anchoredFrom).toBe('none');
+  });
+});

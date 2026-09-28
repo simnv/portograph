@@ -103,10 +103,14 @@ export function deriveRanks(input: RankInput): RankResult {
   const inGroup = new Set(members);
   const links = peerLinks(input, inGroup);
   const comp = components(members, links);
-  const anchors = members.filter(id => input.linksAbove.has(id));
-  const depth = levels(members, links, comp, anchors);
-  const ranks = new Map(depth);
-  const rankCount = ranks.size ? Math.max(...ranks.values()) + 1 : 1;
+  const above = members.filter(id => input.linksAbove.has(id)), below = members.filter(id => input.linksBelow.has(id));
+  // Step 1: an anchor above wins; else the members that link below anchor the last rank and the
+  // layering runs upward; else the most-linked member is the anchor (chosen inside `levels`).
+  const anchoredFrom = above.length ? 'above' : below.length ? 'below' : 'none';
+  const depth = levels(members, links, comp, anchoredFrom === 'above' ? above : anchoredFrom === 'below' ? below : []);
+  const deepest = depth.size ? Math.max(...depth.values()) : 0;
+  const ranks = new Map([...depth].map(([id, level]) => [id, anchoredFrom === 'below' ? deepest - level : level]));
+  const rankCount = ranks.size ? deepest + 1 : 1;
   for (const id of members) if (!ranks.has(id)) ranks.set(id, rankCount - 1);
-  return { ranks, rankCount, anchoredFrom: anchors.length ? 'above' : 'none', spans: new Map() };
+  return { ranks, rankCount, anchoredFrom, spans: new Map() };
 }
