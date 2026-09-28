@@ -11,7 +11,7 @@ import { PLACEMENT_EPS } from './tolerance.js';
 import { moveGroup, union } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { withLayoutMutation } from './mutation.js';
-import { cellReach, foreignRoot } from './frames.js';
+import { cellReach, foreignRoot, ownFrameCells } from './frames.js';
 import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 
 /** A corridor `reseatLanes` moved, and the child port it moved it onto. */
@@ -511,7 +511,16 @@ export function allocateLanes(model: LayoutModel): void {
         const { groups, shifts } = planned[index]!;
         const mine = component.flatMap(item => item.cells).filter(cell => cell.tier === tier);
         const near = (group: LayoutGroup): number => Math.abs(x - (group.bounds!.x + group.bounds!.width / 2));
-        const host = [...mine.length ? mine : groups].sort((a, b) => near(a) - near(b))[0]!;
+        // A lane of a link that ends in a frame is hosted in a cell of that frame, so `transitLanes` grows the
+        // frame to hold it; a cell of a neighbour frame would leave the frame without it. The lane stands
+        // outside that cell (`validateLanes`), so only a cell the lane x is not inside can host it.
+        const own = ownFrameCells(model, link);
+        const outside = (group: LayoutGroup): boolean => {
+          const dx = shifts?.[groups.indexOf(group)] ?? 0;
+          return x < group.bounds!.x + dx || x > right(group.bounds!) + dx;
+        };
+        const ownHosts = Object.values(model.groups).filter(group => group.tier === tier && own.has(group.id) && outside(group));
+        const host = [...ownHosts.length ? ownHosts : mine.length ? mine : groups].sort((a, b) => near(a) - near(b))[0]!;
         commit(link, tier, groups, host, x, shifts ?? groups.map(() => 0));
         pinned.add(laneId(link, tier));
       }

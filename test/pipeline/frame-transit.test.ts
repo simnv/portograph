@@ -143,4 +143,22 @@ describe('transit through a frame', () => {
     const feed = foreign.links.find(item => item.attachments!.from.node === 'u0' && item.attachments!.to.node === 'a0')!;
     expect(groupConsumers(foreign, 'mid')).toContain(feed.id);
   }, 60000);
+
+  it('an own-frame lane pinned beside a neighbour frame is hosted in a cell of its own frame', async () => {
+    const model = await run('an-own-frame-lane-stands-beside-a-neighbour-frame');
+    expect(model.diagnostics.filter(diagnostic => diagnostic.severity === 'error')).toEqual([]);
+    const [east, west] = [model.frames!.find(item => item.id === 'east')!, model.frames!.find(item => item.id === 'west')!];
+    const link = model.links.find(item => item.attachments!.from.node === 'w-gw' && item.attachments!.to.node === 'w-acc')!;
+    const lanes = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === link.id);
+    expect(lanes.length).toBeGreaterThan(0);
+    for (const lane of lanes) {
+      // The lane's group is a cell of the owning frame, and that frame's box holds the lane.
+      expect(west.cells).toContain(lane.group);
+      expect(holds(west.box, { ...lane.bounds, y: west.box.y, height: west.box.height })).toBe(true);
+      // It stays outside the neighbour frame.
+      expect(lane.bounds.x >= right(east.box) - 1e-6 || right(lane.bounds) <= east.box.x + 1e-6).toBe(true);
+    }
+    const gates = score(model).snapshot.gates;
+    for (const gate of ['G2', 'G9'] as const) expect(gates[gate].violations).toEqual([]);
+  }, 60000);
 });

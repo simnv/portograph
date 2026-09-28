@@ -80,6 +80,20 @@ function transitLanes(model: LayoutModel, id: string): Rect[] {
   return boxes;
 }
 
+/**
+ * The cells of every frame a link ends in (ticket 04): the cells that may host the link's own transit
+ * lane, because `transitLanes` grows a frame only for a lane hosted in one of its cells.
+ */
+export function ownFrameCells(model: LayoutModel, link: LayoutLink): Set<string> {
+  const ends = link.attachments ? [link.attachments.from.node, link.attachments.to.node] : [];
+  const cells = new Set<string>();
+  for (const id of Object.keys(model.document.frames ?? {})) {
+    const nodes = new Set(frameNodes(model, id));
+    if (ends.some(node => nodes.has(node))) for (const cell of frameCells(model, id)) cells.add(cell);
+  }
+  return cells;
+}
+
 /** The frame's own cells and its child frames' cells. */
 function frameCells(model: LayoutModel, frame: string): string[] {
   const frames = model.document.frames ?? {};
