@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import type { LayoutLink, LayoutModel, Point } from '../../src/index.js';
-import { createAttempt } from '../layout/phase-two-fixture.js';
+import { orderByOverlay } from '../../src/layout/overlay-order.js';
+import { placeOverlayFree } from '../../src/layout/overlay-place.js';
+import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 const names = {
@@ -74,5 +76,72 @@ describe('overlay-weighted order', () => {
     expect(errors(model)).toEqual([]);
     expect(refusals(model)).toEqual([]);
     expect(left(model, 'g10')).toBeLessThan(left(model, 'g11'));
+  });
+  describe('the width of a re-ordered row', () => {
+    // Tier 1 (four bodies) is the anchor. Tier 2 holds row A (a1, a0) and, 10 px to its right, group S.
+    // The overlay links p0-a0 and q0-a1 cross each other and both run over m0, so the swap of a0 and a1
+    // is a gain on the draft. Bodies are put by hand: ELK would not give this placement.
+    const yaml = `portograph: 2
+groups: { T: { tier: 0 }, M: { tier: 1 }, A: { tier: 2 }, S: { tier: 2 } }
+nodes:
+  p0: { group: T, class: server }
+  q0: { group: T, class: server }
+  m0: { group: M, class: server }
+  m1: { group: M, class: server }
+  m2: { group: M, class: server }
+  m3: { group: M, class: server }
+  a0: { group: A, class: server }
+  a1: { group: A, class: server }
+  s0: { group: S, class: server }
+links:
+  - [p0, a0, { route: overlay }]
+  - [q0, a1, { route: overlay }]
+`;
+    const draft = async (stroke?: number): Promise<LayoutModel> => {
+      const model = structuredClone(await placed(yaml));
+      const put = (id: string, x: number, y: number): void => { model.nodes[id]!.bounds = { x, y, width: 50, height: 35 }; };
+      const box = (id: string, x: number, y: number, width: number): void => { model.groups[id]!.bounds = { x, y, width, height: 75 }; };
+      put('p0', 20, 12); put('q0', 120, 12); box('T', 8, 12, 174);
+      put('m0', 75, 147); put('m1', 300, 147); put('m2', 370, 147); put('m3', 440, 147); box('M', 63, 127, 440);
+      put('a1', 20, 282); put('a0', 120, 282); box('A', 8, 262, 174);
+      put('s0', 204, 282); box('S', 192, 262, 74);
+      model.groups.A!.rowOrder = ['a1', 'a0'];
+      if (stroke) model.nodes.a0!.strokeWidth = stroke;
+      return model;
+    };
+
+    it('swaps the nodes of the row when the row does not grow', async () => {
+      const model = await draft();
+      orderByOverlay(model);
+      expect(model.groups.A!.rowOrder).toEqual(['a0', 'a1']);
+      expect(model.groups.A!.bounds!.x + model.groups.A!.bounds!.width).toBeLessThanOrEqual(model.groups.S!.bounds!.x);
+    });
+
+    it('refuses the swap when the wider row would run into the group to its right', async () => {
+      // A stroke of 100 px on a0 widens the gap of the repacked row by 20.75 px, and S is 10 px away.
+      const model = await draft(100);
+      const before = structuredClone(model.groups.A!);
+      orderByOverlay(model);
+      expect(model.groups.A!.rowOrder).toEqual(['a1', 'a0']);
+      expect(model.groups.A!.bounds).toEqual(before.bounds);
+      expect(model.nodes.a0!.bounds!.x).toBe(120);
+      expect(model.nodes.a1!.bounds!.x).toBe(20);
+    });
+  });
+
+  it('measures the straight overlay links of a tier from fresh pills, not from the pills a move left behind', async () => {
+    // `centre` moves groups without moving their pills. The guard of `placeOverlayFree` rebuilds them
+    // before it counts, so stale pills, put here where they would block, change nothing.
+    // (Not red-first: no fixture showed a divergence before the rebuild was added.)
+    const base = await run(fixture(names.bend));
+    const settle = (model: LayoutModel): unknown => Object.values(model.groups).map(group => [group.id, group.bounds]);
+    const reference = structuredClone(base);
+    placeOverlayFree(reference);
+    for (const [id, dx, dy] of [['f0', 1000, 0], ['f0', -1000, 0], ['f0', 0, -300], ['r0', 500, 0], ['y0', 300, 0]] as const) {
+      const model = structuredClone(base);
+      for (const port of model.nodes[id]?.ports ?? []) if (port.pill) { port.pill.bounds.x += dx; port.pill.bounds.y += dy; }
+      placeOverlayFree(model);
+      expect(settle(model)).toEqual(settle(reference));
+    }
   });
 });

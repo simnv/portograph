@@ -7,6 +7,7 @@ import { placementWarning } from './regions.js';
 import { bandGap, compareId, nodeGap, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 
 /**
  * Overlay-weighted order (ranked-groups spec, section 3.2, ticket 06).
@@ -123,6 +124,8 @@ export function orderByOverlay(model: LayoutModel): void {
     && group.frame === undefined && !parents.has(group.id) && model.document.groups[group.id]?.parent === undefined
     && model.document.groups[group.id]?.shape !== 'bar';
   const save = (groups: LayoutGroup[]): (() => void) => saveGroups(model, groups);
+  /** The least room the skeleton keeps between two groups of a tier: what ELK is given as node spacing. */
+  const minGap = spacing.nodeClearance + Math.max(DEFAULT_STROKE_WIDTHS.node, ...Object.values(model.nodes).map(node => node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node));
   /** `items` sorted by key where a key exists; an item with no key keeps its slot, a tie keeps the old order. */
   const reorder = <T>(items: T[], key: (item: T) => number | undefined): T[] => {
     const keys = new Map(items.map(item => [item, key(item)]));
@@ -160,7 +163,16 @@ export function orderByOverlay(model: LayoutModel): void {
       if (order.length < 2 || groupShape(model, group.id) !== 'row') continue;
       const next = reorder(order, node => keyOfNodes([node]));
       if (next.every((node, i) => node === order[i])) continue;
-      let x = Math.min(...order.map(node => model.nodes[node]!.bounds!.x));
+      const left = Math.min(...order.map(node => model.nodes[node]!.bounds!.x));
+      let need = left;
+      for (const [i, node] of next.entries()) need += (i ? nodeGap(model, next[i - 1]!, node) : 0) + model.nodes[node]!.bounds!.width;
+      // The box grows to the right and no neighbour is re-packed: a row that would grow past the room
+      // the group to its right leaves is refused, so that no two groups of the tier overlap.
+      const right = group.bounds!.x + group.bounds!.width, grown = Math.max(right, need + spacing.padding);
+      const wall = Math.min(Infinity, ...Object.values(model.groups)
+        .filter(other => other !== group && other.tier === tier && other.bounds && other.bounds.x >= right - PLACEMENT_EPS).map(other => other.bounds!.x));
+      if (grown > right + PLACEMENT_EPS && grown > wall - minGap) continue;
+      let x = left;
       for (const [i, node] of next.entries()) {
         if (i) x += nodeGap(model, next[i - 1]!, node);
         const body = model.nodes[node]!, dx = x - body.bounds!.x;

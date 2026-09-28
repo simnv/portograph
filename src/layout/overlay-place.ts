@@ -104,7 +104,7 @@ export function placeOverlayFree(model: LayoutModel): void {
     const nodesOfTier = groups.flatMap(group => group.nodes);
     const signature = (): string => JSON.stringify(groups.map(group => [group.bounds, group.rowOrder, group.nodes.map(node => model.nodes[node]!.bounds)]));
     const start = signature();
-    const before = spanning.length && movers.length ? straightCount() : 0, undo = saveGroups(model, groups);
+    const undo = saveGroups(model, groups);
     for (const group of movers) orderNodes(model, group, node => keyOf([node], group.id), routedAny);
     const targets = new Map<string, number>();
     for (const group of movers) {
@@ -113,6 +113,14 @@ export function placeOverlayFree(model: LayoutModel): void {
     }
     if (targets.size) sweep(model, tier, groups, targets);
     if (spanning.length && signature() !== start) {
+      // `centre` moves groups with `moveGroup`, which leaves the pills behind. The count before the move
+      // and the count after it must read the same kind of geometry, so the tier goes back, its pills
+      // are refreshed and counted, then the move is redone and counted the same way.
+      const redo = saveGroups(model, groups);
+      undo();
+      rebuildNodeGeometry(model, nodesOfTier, 'current');
+      const before = straightCount();
+      redo();
       rebuildNodeGeometry(model, nodesOfTier, 'current');
       if (straightCount() < before) { undo(); rebuildNodeGeometry(model, nodesOfTier, 'current'); }
     }
