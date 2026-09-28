@@ -2,6 +2,8 @@
 
 Status: accepted
 
+Amended by ADR-0019 (2026-09-29): a group with more than one rank expands into cells on consecutive sub-tiers, so one effective band per group becomes one sub-tier band per cell.
+
 An explicit `tier:` is the author's ordering rank and always wins over class inference, but it is
 not required to remain the emitted band index. Normalisation orders inferred top groups, explicit
 ranks, inferred middle groups and inferred bottom groups, then compacts those bands from zero;

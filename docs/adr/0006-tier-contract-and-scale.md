@@ -2,6 +2,8 @@
 
 Date: 2026-09-10 · Status: accepted · Decisions: Q8, Q20, Q26 as amended by codex
 
+Amended by ADR-0019 (2026-09-29): a group may expand into rank cells, so "every group lies inside its tier band" is checked on cells, one sub-tier band per cell.
+
 ## Context
 ELK partitioning expressed tiers correctly on the golden but threw (NPE / stack overflow) at
 1,000 nodes in the scale test. Dropping partitioning above a threshold would silently drop tier
