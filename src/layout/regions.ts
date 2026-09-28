@@ -1,5 +1,5 @@
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
-import type { Rect } from '../model/geometry.js';
+import type { Rect, Side } from '../model/geometry.js';
 import { measurePortPill } from '../text/index.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { rebuildBands, union } from './skeleton-geometry.js';
@@ -19,7 +19,25 @@ export function groupPadding(model: LayoutModel, group: LayoutGroup): { top: num
     padding[port.side] = Math.max(padding[port.side], GROUP_PADDING
       + measurePortPill(port.ref.name).width / 2 + DEFAULT_STROKE_WIDTHS.pill / 2);
   }
-  return padding;
+  return group.frame === undefined ? padding : cellPadding(model, group, padding);
+}
+/**
+ * A rank cell carries no padding of its own (ranked-groups spec, section 2): the frame grows around
+ * its cells. Two margins are still held in the cell box, because tier bands, gap rows and lanes are
+ * measured on cell boxes and must see them: the frame's margin on its top and bottom edge. An
+ * interior edge, shared with the next rank of the frame, holds nothing, so two ranks of one frame
+ * stand one band gap apart body to body. The sides hold only the pill reach beyond the ordinary
+ * margin; the frame adds the ordinary margin itself (`rebuildFrames`).
+ */
+function cellPadding(model: LayoutModel, group: LayoutGroup, padding: Record<Side, number>): Record<Side, number> {
+  const frames = model.document.frames!, frame = group.frame!;
+  const tiers = Object.entries(frames).filter(([id, item]) => id === frame || item.parent === frame)
+    .flatMap(([, item]) => item.cells).map(cell => model.groups[cell]?.tier ?? group.tier!);
+  return {
+    top: group.tier! <= Math.min(...tiers) ? padding.top : 0,
+    bottom: group.tier! >= Math.max(...tiers) ? padding.bottom : 0,
+    left: padding.left - GROUP_PADDING, right: padding.right - GROUP_PADDING,
+  };
 }
 /** The label band a group's box holds: its own title's, or the frame title a rank cell hosts. */
 export const bandHeldBy = (model: LayoutModel, groupId: string): LayoutModel['labelBands'][number] | undefined =>

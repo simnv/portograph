@@ -16,7 +16,7 @@ import { rebuildBands, span, union, validateSkeletonBands } from './skeleton-geo
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, flankPair } from './flanks.js';
 import { type LaneFollow, lanesHoldTheirChild, rebuildLaneExtents, reseatLanes, validateLanes, transitTiers } from './lanes.js';
-import { rebuildRegions } from './regions.js';
+import { groupPadding, rebuildRegions } from './regions.js';
 import { centreViolations, selectAnchorTier } from './centre.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
@@ -484,9 +484,11 @@ function rebuildBoxes(model: LayoutModel): void {
   for (const group of Object.values(model.groups)) {
     if (!group.nodes.length) continue;
     const box = union(group.nodes.map(id => model.nodes[id]!.bounds!)), old = group.bounds!;
-    const derivedLeft = box.x - 12, derivedTop = box.y - 12;
+    // A rank cell holds no side padding (the frame adds it), so its floor is its own insets.
+    const floor = group.frame === undefined ? { top: 12, right: 12, bottom: 12, left: 12 } : groupPadding(model, group);
+    const derivedLeft = box.x - floor.left, derivedTop = box.y - floor.top;
     const oldRight = old.x + old.width, oldBottom = old.y + old.height;
-    const derivedRight = box.x + box.width + 12, derivedBottom = box.y + box.height + 12;
+    const derivedRight = box.x + box.width + floor.right, derivedBottom = box.y + box.height + floor.bottom;
     const x = derivedLeft < old.x - PLACEMENT_EPS ? derivedLeft : old.x;
     const y = derivedTop < old.y - PLACEMENT_EPS ? derivedTop : old.y;
     const farX = derivedRight > oldRight + PLACEMENT_EPS ? derivedRight : oldRight;

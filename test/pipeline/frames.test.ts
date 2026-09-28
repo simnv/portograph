@@ -78,6 +78,27 @@ describe('frames', () => {
     expect(report.snapshot.gates.G9.passed).toBe(true);
   }, 60000);
 
+  it('cells carry no padding between ranks; the frame margin stands only on the frame edge', async () => {
+    const model = await run('sibling-frames-align-their-ranks');
+    // Rank to rank inside one frame the bodies stand one band gap (60) apart: no padding of the
+    // cell above, none of the cell below.
+    const body = (id: string) => model.nodes[id]!.bounds!;
+    for (const [upper, lower] of [['e-gw', 'e-dist'], ['e-dist', 'e-acc'], ['w-gw', 'w-dist'], ['w-dist', 'w-acc']]) {
+      expect(body(lower!).y - bottom(body(upper!))).toBeCloseTo(60, 6);
+    }
+    // The frame edge stands 20 px from the outermost body; on the title edge it stands the band and
+    // its clearance from it.
+    for (const [id, nodes] of [['east', ['e-gw', 'e-dist', 'e-acc']], ['west', ['w-gw', 'w-dist', 'w-acc']]] as const) {
+      const frame = model.frames!.find(item => item.id === id)!, band = model.labelBands.find(item => item.group === id)!;
+      const top = Math.min(...nodes.map(node => body(node).y)), low = Math.max(...nodes.map(node => bottom(body(node))));
+      const room = band.bounds.height + band.clearance;
+      expect(frame.box.y).toBeCloseTo(top - (band.side === 'top' ? room : 20), 6);
+      expect(bottom(frame.box)).toBeCloseTo(low + (band.side === 'bottom' ? room : 20), 6);
+      expect(frame.box.x).toBeCloseTo(Math.min(...nodes.map(node => body(node).x)) - 20, 6);
+      expect(right(frame.box)).toBeCloseTo(Math.max(...nodes.map(node => right(body(node)))) + 20, 6);
+    }
+  }, 60000);
+
   it('restores from its own JSON with the frames intact', async () => {
     const model = await run('a-child-frame-stands-inside-its-parent');
     const restored = restoreFinalLayout(serializeLayoutModel(model));
