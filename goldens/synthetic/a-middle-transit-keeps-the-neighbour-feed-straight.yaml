@@ -1,0 +1,43 @@
+# Expected: A link that transits between two adjacent three-rank frames leaves both feeds straight
+# (ranked-groups ticket 11). `a` and `b` are two frames of tier 1 with the same three ranks (gateway,
+# distribution, access), side by side, and different widths from rank to rank: `a` is widest at its
+# access rank, `b` at its distribution rank. Each gateway is fed from its own node of the tier-0 group `up`
+# (`as0` into `aw`, `bs0` into `bw`), and `m0`, a third node of `up` that stands between the two feeds, links
+# to `l0` in tier 2, so its link crosses all three sub-tiers of both frames through the gap between them.
+# The column of each frame stands under its feed, so each feed is one vertical segment, and the transit
+# lane stands in the gap with the group-edge margin on both sides: no feed runs beside a lane or along a
+# frame edge (G6 stays clean).
+# Test-only input owned by ranked-groups ticket 11; test/pipeline/column-feed-axis.test.ts reads the layout.
+portograph: 2
+groups:
+  up: { tier: 0, label: Up }
+  a: { tier: 1, label: Site A }
+  b: { tier: 1, label: Site B }
+  low: { tier: 2, label: Low }
+nodes:
+  as0: { group: up, class: provider, label: A source }
+  m0: { group: up, class: provider, label: Middle source }
+  bs0: { group: up, class: provider, label: B source }
+  aw: { group: a, class: router, label: A gateway }
+  ad: { group: a, class: switch, label: A distribution }
+  aa1: { group: a, class: access, label: A access one }
+  aa2: { group: a, class: access, label: A access two }
+  aa3: { group: a, class: access, label: A access three }
+  bw: { group: b, class: router, label: B gateway }
+  bd1: { group: b, class: switch, label: B distribution one }
+  bd2: { group: b, class: switch, label: B distribution two }
+  bd3: { group: b, class: switch, label: B distribution three }
+  ba: { group: b, class: access, label: B access }
+  l0: { group: low, class: server, label: L0 }
+links:
+  - [as0, aw]
+  - [bs0, bw]
+  - [aw, ad]
+  - [ad, aa1]
+  - [ad, aa2]
+  - [ad, aa3]
+  - [bw, bd1]
+  - [bw, bd2]
+  - [bw, bd3]
+  - [bd2, ba]
+  - [m0, l0]
