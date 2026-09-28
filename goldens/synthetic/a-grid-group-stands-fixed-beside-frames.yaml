@@ -1,0 +1,124 @@
+# Expected: A grid group stands fixed beside frame columns (ranked-groups ticket 12 review). The
+# four locations of `four-locations-each-with-a-zone` share tier 1 with `spares`, a grid group of two
+# nodes, one hung from each feed. The rows rule may not change a non-row group, so the column pass moves frames and
+# one-rank row groups only, and leaves the grid where it stands, clear of the frames; layout does not throw. With the grid in the
+# sweep, the rows rule refuses the move (`Rows cannot change non-row groups`).
+# Test-only input owned by ranked-groups ticket 12; test/pipeline/four-locations.test.ts reads the layout.
+portograph: 2
+groups:
+  feeds: { tier: 0, label: Feeds }
+  a: { tier: 1, label: Location A }
+  a-zone: { parent: a, label: Zone A }
+  b: { tier: 1, label: Location B }
+  b-zone: { parent: b, label: Zone B }
+  c: { tier: 1, label: Location C }
+  c-zone: { parent: c, label: Zone C }
+  d: { tier: 1, label: Location D }
+  d-zone: { parent: d, label: Zone D }
+  clients: { tier: 2, label: Clients }
+  spares: { tier: 1, shape: grid, label: Spares }
+nodes:
+  f1: { group: feeds, class: router, label: Feed one }
+  f2: { group: feeds, class: router, label: Feed two }
+  a-r1: { group: a, class: router, label: A router one }
+  a-r2: { group: a, class: router, label: A router two }
+  a-s1: { group: a, class: switch, label: A switch one }
+  a-s2: { group: a, class: switch, label: A switch two }
+  a-s3: { group: a, class: switch, label: A switch three }
+  a-s4: { group: a, class: switch, label: A switch four }
+  a-s5: { group: a, class: switch, label: A switch five }
+  a-t1: { group: a-zone, class: server, label: A time one }
+  a-t2: { group: a-zone, class: server, label: A time two }
+  a-b1: { group: a-zone, class: switch, label: A balancer }
+  b-r1: { group: b, class: router, label: B router one }
+  b-r2: { group: b, class: router, label: B router two }
+  b-s1: { group: b, class: switch, label: B switch one }
+  b-s2: { group: b, class: switch, label: B switch two }
+  b-s3: { group: b, class: switch, label: B switch three }
+  b-s4: { group: b, class: switch, label: B switch four }
+  b-s5: { group: b, class: switch, label: B switch five }
+  b-t1: { group: b-zone, class: server, label: B time one }
+  b-t2: { group: b-zone, class: server, label: B time two }
+  b-b1: { group: b-zone, class: switch, label: B balancer }
+  c-r1: { group: c, class: router, label: C router one }
+  c-r2: { group: c, class: router, label: C router two }
+  c-s1: { group: c, class: switch, label: C switch one }
+  c-s2: { group: c, class: switch, label: C switch two }
+  c-s3: { group: c, class: switch, label: C switch three }
+  c-t1: { group: c-zone, class: server, label: C time one }
+  c-t2: { group: c-zone, class: server, label: C time two }
+  c-b1: { group: c-zone, class: switch, label: C balancer }
+  d-r1: { group: d, class: router, label: D router one }
+  d-r2: { group: d, class: router, label: D router two }
+  d-s1: { group: d, class: switch, label: D switch one }
+  d-s2: { group: d, class: switch, label: D switch two }
+  d-s3: { group: d, class: switch, label: D switch three }
+  d-t1: { group: d-zone, class: server, label: D time one }
+  d-t2: { group: d-zone, class: server, label: D time two }
+  d-b1: { group: d-zone, class: switch, label: D balancer }
+  sp1: { group: spares, class: server, label: Spare one }
+  sp2: { group: spares, class: server, label: Spare two }
+  k1: { group: clients, class: server, label: Client one }
+  k2: { group: clients, class: server, label: Client two }
+links:
+  - [f1, a-r1]
+  - [f1, b-r1]
+  - [f2, c-r1]
+  - [f2, d-r1]
+  - [a-r1, a-s1]
+  - [a-r1, a-s2]
+  - [a-r1, a-s3]
+  - [a-r2, a-s4]
+  - [a-r2, a-s5]
+  - [a-s1, a-t1]
+  - [a-s2, a-t2]
+  - [a-t1, a-b1]
+  - [a-t2, a-b1]
+  - [b-r1, b-s1]
+  - [b-r1, b-s2]
+  - [b-r1, b-s3]
+  - [b-r2, b-s4]
+  - [b-r2, b-s5]
+  - [b-s1, b-t1]
+  - [b-s2, b-t2]
+  - [b-t1, b-b1]
+  - [b-t2, b-b1]
+  - [c-r1, c-s1]
+  - [c-r2, c-s2]
+  - [c-r2, c-s3]
+  - [c-s1, c-t1]
+  - [c-s2, c-t2]
+  - [c-t1, c-b1]
+  - [c-t2, c-b1]
+  - [d-r1, d-s1]
+  - [d-r2, d-s2]
+  - [d-r2, d-s3]
+  - [d-s1, d-t1]
+  - [d-s2, d-t2]
+  - [d-t1, d-b1]
+  - [d-t2, d-b1]
+  - [a-s1, a-s2]
+  - [a-s2, a-s3]
+  - [a-s4, a-s5]
+  - [b-s1, b-s2]
+  - [b-s2, b-s3]
+  - [b-s4, b-s5]
+  - [c-s1, c-s2]
+  - [c-s2, c-s3]
+  - [d-s1, d-s2]
+  - [d-s2, d-s3]
+  - [a-t1, b-t1, { route: overlay }]
+  - [b-t2, c-t1, { route: overlay }]
+  - [c-t2, d-t1, { route: overlay }]
+  - [a-t2, d-t2, { route: overlay }]
+  - [f1, a-s1, { route: overlay }]
+  - [f1, b-s3, { route: overlay }]
+  - [f2, c-s3, { route: overlay }]
+  - [f2, d-s3, { route: overlay }]
+  - [k1, a-t1, { route: overlay }]
+  - [k1, b-t1, { route: overlay }]
+  - [k1, c-t1, { route: overlay }]
+  - [k2, c-t2, { route: overlay }]
+  - [k2, d-t2, { route: overlay }]
+  - [f1, sp1]
+  - [f2, sp2]
