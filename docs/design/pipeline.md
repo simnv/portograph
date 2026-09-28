@@ -973,16 +973,35 @@ runtime/diagnostic fields remain writable. Later stages may create paths and lin
 may not move or resize groups, nodes or port anchors. An async router computes outside the
 synchronous transaction, then commits its output through the route validator.
 
-### Frames (lands with tickets 03–04)
+### Frames
 
 `rebuildFrames` (`src/layout/frames.ts`) runs where `rebuildBands` runs, after every stage that
-moves a box. It derives one frame per document group: the union of its cells' boxes, grown by the
-group padding (20 px) on every side, plus the label band on the title edge. A child frame is the
-union of the cells of its span plus padding. The parent frame grows to hold the child frame plus
-padding. The layout JSON gains `frames`. The renderer draws frames and never cells. Cells have no
-label band and no padding. The room of the label band is reserved in the first cell of the frame
-only. Ticket 04: a link that ends in a cell of a group may cross the cells above it, and the frame
-grows to hold that lane. Ticket 04: a link that is foreign to the group never enters the frame.
+moves a box. It calls the pure `deriveFrames`, which derives one frame per document group. The
+frame x extent is the union of the cell bodies grown by 20 px and the cell boxes. The frame y
+extent is the outermost body plus 20 px per side. The label band adds to the title side. A child
+frame is the same union over the cells of its span. The parent frame holds the child frame plus
+20 px. The layout JSON has `frames`. The renderer draws frames and never cells.
+
+Cells have no label band and no padding of their own. The first and last cell of a frame hold
+the 20 px margin and the label band, so tier bands and gap rows measure them. The edges between
+two cells of one frame hold 0. The rank gap is 60 px between bodies. A title is hosted only in an
+own cell of its frame, on the top or bottom edge. A frame with no such cell has no title and gets
+`FRAME_TITLE_UNHOSTED`. This happens only when a child spans every rank of its parent.
+
+A link that ends in a cell of a frame is not foreign to it. Its lane stands beside the bodies,
+and `transitLanes` grows the frame to hold the lane. A link that is foreign to a frame gets one
+lane x outside the frame for all the sub-tiers it crosses (`foreignReach`). It never enters the
+frame.
+
+Sibling frames of one tier are columns. A column is the frame box plus `COLUMN_SLACK` (20 px) on
+each side. `packFrameColumns` (`src/layout/columns.ts`) runs in stage 4 after ELK and packs the
+frames and the one-rank groups of a document tier left to right, anchor tier first. Each axis
+lands on the mean x of its routed feeds, and the columns stand a band gap apart
+(`packStep`). The column is a wall for the centring and the overlay sweeps. Centring spends the
+slack and never leaves less than a band gap between two frame boxes. `separateFrameColumns` runs
+in the `rows` rule, after every row group has its width, and moves each frame as a whole with one
+dx until the gap is a band gap again. `orderFramesByOverlay` re-packs the columns in the order the
+overlay links ask for.
 
 ## Stage 8 — route (remainder)
 
@@ -1332,7 +1351,7 @@ All gates in `quality.md` on final geometry including labels. Any failed gate fa
 (non-zero exit) unless `--allow-gate-failures`; `score` always reports. The gate-enforcement
 table by size is in `quality.md` and is authoritative.
 
-**G9, frame containment (lands with ticket 03).** Every frame contains its cells and its child
+**G9, frame containment.** Every frame contains its cells and its child
 frames. Frames of one tier do not overlap. No foreign node body lies inside a frame. G1 and G8
 read cells.
 
