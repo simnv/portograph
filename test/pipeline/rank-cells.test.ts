@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { stringify } from 'yaml';
 import { layout, parse, resolve, restoreFinalLayout, serializeLayoutModel } from '../../src/index.js';
+import { groupShape } from '../../src/layout/grid.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -44,7 +45,8 @@ describe('rank cells (stage 1)', () => {
   it('leaves a one-rank group as it is: same id, same tier, a row, no frame', () => {
     const model = resolve(parse(source({ site: { tier: 1 } }, { a: { group: 'site' }, b: { group: 'site' } }, [['isp', 'a'], ['isp', 'b']])));
     expect(tiers(model)).toEqual({ upstream: 0, site: 1 });
-    expect(model.document.groups['site']!.shape).toBe('row');
+    expect(model.document.groups['site']!.shape).toBe('ranked');
+    expect(groupShape(model, 'site')).toBe('row');
     expect(model.document.frames).toBeUndefined();
     expect(model.groups['site']!.frame).toBeUndefined();
   });

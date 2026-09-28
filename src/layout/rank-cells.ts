@@ -20,11 +20,12 @@ const cellId = (group: string, rank: number): string => `${group}#${rank}`;
 /**
  * Stage 1, second half (docs/design/ranked-groups.md, section 2, *Expansion*): read the ranks of
  * every `ranked` group off a model resolved up to the links, and return the document the rest of the
- * pipeline runs on, or `undefined` when no group is `ranked` (the document is then already final).
+ * pipeline runs on, or `undefined` when no group has more than one rank (the document is then
+ * already final).
  *
- * - A `ranked` group with one rank and no child is a `row` group and keeps its id. It is not
- *   replaced, so an input without intra-group routed links comes out as it went in.
- * - A group with more ranks, or with a child group, is replaced by rank cells `G#0..G#k-1`, each a
+ * - A `ranked` group with one rank keeps its id and its `ranked` shape, which `groupShape` reads as
+ *   `row`; a child group of such a group stays an ordinary group at the parent's sub-tier.
+ * - A group with more ranks is replaced by rank cells `G#0..G#k-1`, each a
  *   `row` group with `frame: G`, and gets a `frames` entry. Child cells are `child#r` with the same
  *   rank number as in the parent, `frame: child`, and `frames[child].parent === G`.
  * - Document tier `t` takes `R(t)` sub-tiers, the largest rank count among its groups. Cell `r` of a
@@ -54,7 +55,7 @@ export function expandRankedGroups(model: LayoutModel): NormalisedDocument | und
       continue;
     }
     const { ranks, rankCount, anchoredFrom, spans } = deriveRanks(input);
-    const expands = rankCount > 1 || children.length > 0;
+    const expands = rankCount > 1;
     const cells: Plan['cells'] = [];
     if (expands) for (let rank = 0; rank < rankCount; rank += 1) {
       const child = children.find(name => { const span = spans.get(name); return span !== undefined && span[0] <= rank && rank <= span[1]; });
@@ -64,6 +65,9 @@ export function expandRankedGroups(model: LayoutModel): NormalisedDocument | und
     }
     plans.set(id, { id, cells, k: expands ? rankCount : 1, anchoredFrom, children, expands });
   }
+
+  // With no group replaced, the document is final: `ranked` stays in it and reads as `row`.
+  if (![...plans.values()].some(plan => plan.expands)) return undefined;
 
   // Sub-tier grid: R(t) per document tier, offsets in tier order.
   const tiers = [...new Set(tierGroups.map(id => source.groups[id]!.tier!))].sort((a, b) => a - b);
@@ -84,14 +88,18 @@ export function expandRankedGroups(model: LayoutModel): NormalisedDocument | und
   for (const id of ids) {
     const group = source.groups[id]!;
     const plan = plans.get(id);
-    if (group.parent !== undefined) continue;
+    if (group.parent !== undefined) {
+      // A child of a group that is not replaced stays an ordinary group on its parent's sub-tier.
+      if (!plans.get(group.parent)!.expands) put(id, { ...group, tier: base(group.parent) } as NormalisedGroup);
+      continue;
+    }
     if (plan === undefined) {
       // A flank: it has no tier of its own and follows its target.
-      put(id, { ...group, shape: group.shape === 'ranked' ? 'row' : group.shape, ...(group.of !== undefined ? { of: firstCell(group.of) } : {}) } as NormalisedGroup);
+      put(id, { ...group, ...(group.of !== undefined ? { of: firstCell(group.of) } : {}) } as NormalisedGroup);
       continue;
     }
     if (!plan.expands) {
-      put(id, { ...group, shape: group.shape === 'ranked' ? 'row' : group.shape, tier: base(id) } as NormalisedGroup);
+      put(id, { ...group, tier: base(id) } as NormalisedGroup);
       continue;
     }
     const withStyle = (owner: string) => {

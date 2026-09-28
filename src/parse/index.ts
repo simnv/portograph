@@ -1,5 +1,6 @@
 import type { Endpoint, GroupContent, NormalisedDocument, NormalisedLink, NormalisedNode, NormalisedPort, Side } from '../model/index.js';
 import { orderedGroupIds, orderedNodeIds, unsupportedMessage } from '../model/index.js';
+import { BOTTOM_CLASSES, TOP_CLASSES } from '../profiles/network/tiers.js';
 import { filterCss } from './css.js';
 import { own, ParseError, put, Validation } from './validation.js';
 import type { SourceDiagnostic } from './validation.js';
@@ -170,8 +171,8 @@ function inferTiers(doc: NormalisedDocument, ranks: Map<string, number | undefin
     const rank = ranks.get(id);
     if (rank !== undefined) { explicit.set(rank, [...(explicit.get(rank) ?? []), id]); continue; }
     const set = classes.get(id) ?? new Set<string>();
-    const hasTop = ['provider', 'internet', 'wan'].some(c => set.has(c));
-    const hasBottom = ['backbone', 'core'].some(c => set.has(c));
+    const hasTop = TOP_CLASSES.some(c => set.has(c));
+    const hasBottom = BOTTOM_CLASSES.some(c => set.has(c));
     if (hasTop && hasBottom) v.report('MIXED_TIER_CLASSES', `$.groups.${id}`, 'Mixed top and bottom classes infer a middle tier', 'warning', 'model');
     const category = hasTop && !hasBottom ? top : hasBottom && !hasTop ? bottom : middle;
     category.push(id);
