@@ -80,6 +80,8 @@ replaces each group of more than one rank with cells `G#0..G#k-1`. A cell is a `
 2–8 learn no new concept: they run on cells. A group of one rank stays as it is. When no group has
 more than one rank, the document is unchanged. **Idempotence guard:** a document that already
 carries `frames` is never expanded again, because a second expansion would split the cells.
+A rank inside a child span becomes cell `child#r` (`frame: child`), not `G#r`. The parent has no
+cell at that rank.
 
 Group endpoints expand to concrete member-node attachments before placement. Empty groups cannot
 supply an attachment and produce a model error. Explicit `group-link` requires two distinct groups
@@ -971,7 +973,7 @@ runtime/diagnostic fields remain writable. Later stages may create paths and lin
 may not move or resize groups, nodes or port anchors. An async router computes outside the
 synchronous transaction, then commits its output through the route validator.
 
-### Frames (lands with ticket 03)
+### Frames (lands with tickets 03–04)
 
 `rebuildFrames` (`src/layout/frames.ts`) runs where `rebuildBands` runs, after every stage that
 moves a box. It derives one frame per document group: the union of its cells' boxes, grown by the
@@ -979,8 +981,8 @@ group padding (20 px) on every side, plus the label band on the title edge. A ch
 union of the cells of its span plus padding. The parent frame grows to hold the child frame plus
 padding. The layout JSON gains `frames`. The renderer draws frames and never cells. Cells have no
 label band and no padding. The room of the label band is reserved in the first cell of the frame
-only. A link that ends in a cell of a group may cross the cells above it; the frame grows to hold
-that lane. A link that is foreign to the group never enters the frame.
+only. Ticket 04: a link that ends in a cell of a group may cross the cells above it, and the frame
+grows to hold that lane. Ticket 04: a link that is foreign to the group never enters the frame.
 
 ## Stage 8 — route (remainder)
 

@@ -2,7 +2,7 @@
 
 Status: accepted (maintainer, 2026-09-12)
 
-Amended by ADR-0019 (2026-09-29): the group box that is the obstacle is the frame of a group, and a link that ends in a cell of a group is not foreign to that frame.
+Amended by ADR-0019 (2026-09-29): the group box that is the obstacle is the frame of a group, and a link that ends in a cell of a group is not foreign to that frame (from ticket 03).
 
 A group box is not only a container. Two rules follow:
 
