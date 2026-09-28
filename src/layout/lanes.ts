@@ -11,7 +11,7 @@ import { PLACEMENT_EPS } from './tolerance.js';
 import { moveGroup, union } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { withLayoutMutation } from './mutation.js';
-import { foreignReach, foreignRoot, ownFrameCells } from './frames.js';
+import { foreignReach, foreignRoot, heldLaneReach, ownFrameCells } from './frames.js';
 import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 
 /** A corridor `reseatLanes` moved, and the child port it moved it onto. */
@@ -62,14 +62,17 @@ export function laneWidth(model: LayoutModel, link: LayoutLink): number {
   const maxNodeStroke = Math.max(stroke.node, ...Object.values(model.nodes).map(node => node.strokeWidth ?? stroke.node));
   return Math.max(24 + 10, ...pills.map(port => (port?.ref.name !== undefined ? measurePortPill(port.ref.name).width : 0) + 10), 20 + routedStrokeWidth(model) + maxNodeStroke);
 }
-function occupied(model: LayoutModel, group: LayoutGroup, link?: LayoutLink) {
+function occupied(model: LayoutModel, group: LayoutGroup, link?: LayoutLink, held: readonly Lane[] = []) {
   // One routed-stroke lookup for the whole group: it reads every link, and a per-node call makes
   // this measurement cost the link count once for each node and pill.
   const routed = routedStrokeWidth(model), gap = (stroke.pill + routed) / 2;
   // A link foreign to the frame of a rank cell gets its lane beside the frame edge, not beside the cell
   // (ticket 04), so it never enters the frame. A link that ends inside the frame is not asked for more.
   const reach = link && foreignReach(model, group.id, link), box = group.bounds!;
-  return union([box, ...(reach ? [{ x: reach.x, y: box.y, width: reach.width, height: box.height }] : []), ...group.nodes.flatMap(id => {
+  // The lanes of links that end in the frame, already reserved beside this cell, will grow the frame (ticket 14).
+  const taken = link ? held.map(lane => heldLaneReach(model, group.id, link, lane, laneLink(model, lane))).filter((item): item is Rect => item !== undefined) : [];
+  return union([box, ...(reach ? [{ x: reach.x, y: box.y, width: reach.width, height: box.height }] : []),
+    ...taken.map(item => ({ x: item.x, y: box.y, width: item.width, height: box.height })), ...group.nodes.flatMap(id => {
     const node = model.nodes[id]!, box = node.bounds!, clearance = 10 + ((node.strokeWidth ?? stroke.node) + routed) / 2;
     return [{ x: box.x - clearance, y: box.y, width: box.width + 2 * clearance, height: box.height },
       ...node.ports.filter(port => port.pill).map(port => {
@@ -305,7 +308,7 @@ function inSpanSlot(model: LayoutModel, link: LayoutLink, core: { x: number; wid
 function marginTranslations(model: LayoutModel, groups: LayoutGroup[], split: number, x: number, width: number,
   prior: Lane[], fixedSources: Set<string>, link: LayoutLink, framed = false): number[] | undefined {
   if (prior.some(lane => Math.abs(x - lane.x) < (width + lane.bounds.width) / 2 - 1e-6)) return undefined;
-  const boxes = groups.map(group => occupied(model, group, link)), shifts = groups.map(() => 0);
+  const boxes = groups.map(group => occupied(model, group, link, prior)), shifts = groups.map(() => 0);
   let boundary = x - width / 2;
   for (let i = split - 1; i >= 0; i--) {
     shifts[i] = Math.min(0, boundary - right(boxes[i]!));
@@ -326,6 +329,12 @@ function marginTranslations(model: LayoutModel, groups: LayoutGroup[], split: nu
     // every cell of a frame root moves by one dx, may push a cell.
     if (dx && group.frame !== undefined && !framed) return undefined;
     for (const lane of prior) {
+      // A lane of a link that ends in this cell's frame stands inside the box: the frame grows to hold it,
+      // so the cell cannot move away from it (ticket 14).
+      if (group.frame !== undefined && lane.group === group.id && box.x <= lane.bounds.x + 1e-6 && right(box) >= right(lane.bounds) - 1e-6) {
+        if (dx) return undefined;
+        continue;
+      }
       // Existing corridors cannot be crossed or consumed by a later margin expansion.
       if (right(box) <= lane.bounds.x + 1e-6) {
         if (right(box) + dx > lane.bounds.x + 1e-6) return undefined;
@@ -464,8 +473,8 @@ export function allocateLanes(model: LayoutModel): void {
       // Left to right. `bound` is the extent that keeps a root clear of the lane where it stands now;
       // `fixed` is the part of it in sub-tiers the link does not cross, which no plan can move.
       const ordered = component.map(item => {
-        const boxes = item.cells.map(cell => occupied(model, cell, link));
-        const fixed = item.cells.filter(cell => !tiers.includes(cell.tier!)).map(cell => occupied(model, cell, link));
+        const boxes = item.cells.map(cell => occupied(model, cell, link, pending));
+        const fixed = item.cells.filter(cell => !tiers.includes(cell.tier!)).map(cell => occupied(model, cell, link, pending));
         return {
           item, centre: (Math.min(...boxes.map(box => box.x)) + Math.max(...boxes.map(box => right(box)))) / 2,
           low: Math.min(...boxes.map(box => box.x)), high: Math.max(...boxes.map(box => right(box))),
@@ -503,7 +512,9 @@ export function allocateLanes(model: LayoutModel): void {
         // Beside the source, or beside a cell of the link's own frame that stands in the way: such a cell
         // is not moved (ticket 09), so the lane takes the free side of it inside the frame's column.
         const clamp = (value: number): number => Math.min(Math.max(value, item.low), item.high);
-        const xs = [...new Set([sx, ...ownBoxes.flatMap(box => [box.x - half, right(box) + half])].map(clamp))];
+        // Or beside a corridor already reserved in a crossed sub-tier: the gap holds several lanes side by side.
+        const stacked = pending.filter(lane => tiers.includes(lane.tier)).flatMap(lane => [lane.x - (width + lane.bounds.width) / 2, lane.x + (width + lane.bounds.width) / 2]);
+        const xs = [...new Set([sx, ...ownBoxes.flatMap(box => [box.x - half, right(box) + half]), ...stacked].map(clamp))];
         return xs.map(x => ({ ...item, x }));
       })).map(item => {
         const plans = tiers.map(tier => plan(tier, item.x, item.gap));
@@ -516,7 +527,7 @@ export function allocateLanes(model: LayoutModel): void {
         }
         const rigid = [...dxOf.entries()].every(([frame, list]) => list.every(dx => Math.abs(dx - list[0]!) <= PLACEMENT_EPS)
           && (Math.abs(list[0]!) <= PLACEMENT_EPS || list.length === Object.values(model.groups).filter(group => group.frame !== undefined && topFrame(group.frame) === frame).length));
-        const feasible = plans.every(entry => entry.shifts !== undefined) && rigid && shifts.every(dx => Math.abs(dx) <= opening + PLACEMENT_EPS);
+          const feasible = plans.every(entry => entry.shifts !== undefined) && rigid && shifts.every(dx => Math.abs(dx) <= opening + PLACEMENT_EPS);
         return { ...item, feasible, offset: Math.abs(item.x - sx), moved: shifts.reduce((sum, dx) => sum + Math.abs(dx), 0) };
       }).filter(item => item.feasible).sort((a, b) => Math.abs(a.gap - wanted) - Math.abs(b.gap - wanted) || a.offset - b.offset || a.moved - b.moved);
       const chosen = candidates[0];
@@ -527,8 +538,8 @@ export function allocateLanes(model: LayoutModel): void {
         // group and corridor of these sub-tiers, on the side the endpoints ask for.
         const every = tiers.flatMap(tier => Object.values(model.groups).filter(group => group.tier === tier));
         const lanesHere = pending.filter(lane => tiers.includes(lane.tier));
-        const left = Math.min(...every.map(group => occupied(model, group, link).x), ...lanesHere.map(lane => lane.bounds.x)) - half;
-        const rightX = Math.max(...every.map(group => right(occupied(model, group, link))), ...lanesHere.map(lane => right(lane.bounds))) + half;
+        const left = Math.min(...every.map(group => occupied(model, group, link, pending).x), ...lanesHere.map(lane => lane.bounds.x)) - half;
+        const rightX = Math.max(...every.map(group => right(occupied(model, group, link, pending))), ...lanesHere.map(lane => right(lane.bounds))) + half;
         x = wanted * 2 <= ordered.length ? left : rightX;
         planned = tiers.map(tier => ({ groups: Object.values(model.groups).filter(group => group.tier === tier).sort((a, b) => a.bounds!.x - b.bounds!.x), shifts: undefined }));
       }

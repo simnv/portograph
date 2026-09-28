@@ -1,0 +1,29 @@
+# Expected: Six routers in three sibling groups of tier 0 (east, middle, west) each link to one of two
+# providers in tier 1, e1, m1 and w1 to p1 and e2, m2 and w2 to p2. The links that end at one provider
+# share an ownership batch, and the run of an earlier link crosses the chord of some of them and not of
+# others. The router splits that batch by the completed runs each link may cross, so no link sits in a
+# request whose obstacle set closes the pocket that holds its checkpoint. Every link routes, no link is
+# removed, and G2 passes (ranked-groups ticket 14).
+# Test-only input owned by ranked-groups ticket 14; test/pipeline/batch-crossing-parts.test.ts reads the layout.
+portograph: 2
+groups:
+  east: { tier: 0, label: "East" }
+  mid: { tier: 0, label: "Middle" }
+  west: { tier: 0, label: "West" }
+  wan: { tier: 1, label: "Wan" }
+nodes:
+  e1: { group: east, class: router, label: "e1" }
+  e2: { group: east, class: router, label: "e2" }
+  m1: { group: mid, class: router, label: "m1" }
+  m2: { group: mid, class: router, label: "m2" }
+  w1: { group: west, class: router, label: "w1" }
+  w2: { group: west, class: router, label: "w2" }
+  p1: { group: wan, class: provider, label: "p1" }
+  p2: { group: wan, class: provider, label: "p2" }
+links:
+  - [e1, p1]
+  - [e2, p2]
+  - [m1, p1]
+  - [m2, p2]
+  - [w1, p1]
+  - [w2, p2]
