@@ -378,6 +378,8 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
         previous = result.group;
       }
     }
+    // A partner that a step above moved is read where it stands now (the pass is idempotent).
+    placeOverlayFree(model);
     rebuildRegions(model);
     const after = geometry(model);
     if (!unresolved.size && after.every((value, i) => Math.abs(value - before[i]!) <= 0.5)) return;

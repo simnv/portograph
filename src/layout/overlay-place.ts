@@ -37,8 +37,9 @@ import { PLACEMENT_EPS } from './tolerance.js';
  * and the sweep reads only targets, widths and walls, a second run finds the same targets and
  * leaves every group where the first run put it.
  *
- * The routed groups of the tiers below the anchor are centred under their feeds after this pass and
- * may move; the free groups read them where the skeleton and the rows put them.
+ * The routed groups of the tiers below the anchor are centred under their feeds after the first run
+ * and may move, so `centreDraft` runs the pass again after each pass of its steps: the free groups
+ * end at the mean of partners that stand where centring left them.
  */
 export function placeOverlayFree(model: LayoutModel): void {
   const anchor = selectAnchorTier(model);

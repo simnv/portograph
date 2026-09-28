@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import type { LayoutLink, LayoutModel, Point, Rect } from '../../src/index.js';
-import { centreDraft, createCentreBudget } from '../../src/layout/centre.js';
+import { centre, centreDraft, createCentreBudget } from '../../src/layout/centre.js';
 import { flanks } from '../../src/layout/flanks.js';
 import { lanes } from '../../src/layout/lanes.js';
 import { withLayoutMutation } from '../../src/layout/mutation.js';
@@ -37,9 +37,9 @@ describe('overlay barycentre for the free', () => {
     const gap = bandGap(model);
     const target = (partners: string[]): number => mean(partners.map(id => nodeX(model, id)));
     const a = centreX(groupBox(model, 'client-a')), b = centreX(groupBox(model, 'client-b')), c = centreX(groupBox(model, 'client-c'));
-    expect(Math.abs(a - target(['n1', 'n2']))).toBeLessThanOrEqual(gap);
-    expect(Math.abs(b - target(['s1', 's2']))).toBeLessThanOrEqual(gap);
-    expect(Math.abs(c - target(['n2', 's1']))).toBeLessThanOrEqual(gap);
+    expect(Math.abs(a - target(['n1', 'n2']))).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(b - target(['s1', 's2']))).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(c - target(['n2', 's1']))).toBeLessThanOrEqual(0.5);
     // a under north, b under south, c between the two.
     expect(a).toBeLessThan(c);
     expect(c).toBeLessThan(b);
@@ -80,7 +80,7 @@ describe('overlay barycentre for the free', () => {
     expect(cross(one!, two!)).toBe(false);
     // The group stands under the mean of its partners.
     const partners = mean([nodeX(model, 'w1'), nodeX(model, 'e1')]);
-    expect(Math.abs(centreX(groupBox(model, 'pair')) - partners)).toBeLessThanOrEqual(bandGap(model));
+    expect(Math.abs(centreX(groupBox(model, 'pair')) - partners)).toBeLessThanOrEqual(0.5);
   }, 60000);
 
   it('sweeps two groups with one target apart at the band gap and centres the pair back on it', async () => {
@@ -101,6 +101,13 @@ describe('overlay barycentre for the free', () => {
     expect(overlays(model).filter(one => points(one).length === 2)).toHaveLength(2);
   }, 60000);
 
+  it('reads a partner that centring moves where centring leaves it', async () => {
+    const yaml = fixture('an-overlay-move-keeps-a-same-tier-partner-on-its-side');
+    // One centre rule on the pre-centre model: the pass alone cannot see where centring puts `l1`.
+    const once = centre(flanks(lanes(rows(await placed(yaml)))));
+    expect(Math.abs(nodeX(once, 'g1') - nodeX(once, 'l1'))).toBeLessThanOrEqual(0.5);
+  }, 60000);
+
   it('is idempotent: a second pass leaves the layout as the first left it', async () => {
     for (const name of ['overlay-only-groups-stand-under-their-partners', 'overlay-only-nodes-stand-in-the-order-of-their-partners',
       'two-overlay-only-groups-keep-the-band-gap']) {
@@ -117,6 +124,16 @@ describe('overlay barycentre for the free', () => {
         centreDraft(draft, createCentreBudget());
       });
       expect(checked).toBe(true);
+    }
+  }, 120000);
+
+  it('leaves the emitted layout as it is when the pass runs again', async () => {
+    for (const name of ['overlay-only-groups-stand-under-their-partners', 'overlay-only-nodes-stand-in-the-order-of-their-partners',
+      'two-overlay-only-groups-keep-the-band-gap', 'an-overlay-move-keeps-a-same-tier-partner-on-its-side']) {
+      const model = await run(fixture(name));
+      const before = JSON.stringify(model);
+      expect(() => placeOverlayFree(model), name).not.toThrow();
+      expect(JSON.stringify(model), name).toBe(before);
     }
   }, 120000);
 
