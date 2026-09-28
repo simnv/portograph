@@ -80,4 +80,52 @@ describe('transit through a frame', () => {
     for (const gate of ['G2', 'G6', 'G9'] as const) expect(gates[gate].violations).toEqual([]);
     expect(model.removedLinks ?? []).toEqual([]);
   }, 60000);
+
+  it('a link foreign to a two-rank frame keeps one lane x beside the whole frame', async () => {
+    const model = await run('a-foreign-lane-stands-outside-the-frame');
+    expect(model.diagnostics.filter(diagnostic => diagnostic.severity === 'error')).toEqual([]);
+    const frame = model.frames!.find(item => item.id === 'mid')!;
+    expect(frame.cells).toEqual(['mid#0', 'mid#1']);
+    const link = model.links.find(item => item.attachments!.from.node === 'u1' && item.attachments!.to.node === 'l0')!;
+    const lanes = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === link.id);
+    expect(lanes.map(lane => lane.group).sort()).toEqual(['mid#0', 'mid#1']);
+    // One x for the whole crossing, outside the frame box by at least the group-edge margin, in every sub-tier.
+    expect(new Set(lanes.map(lane => lane.x)).size).toBe(1);
+    const x = lanes[0]!.x, outside = x >= right(frame.box) + 10 - 1e-6 || x <= frame.box.x - 10 + 1e-6;
+    expect(outside).toBe(true);
+    for (const lane of lanes) expect(lane.bounds.x >= right(frame.box) - 1e-6 || right(lane.bounds) <= frame.box.x + 1e-6).toBe(true);
+    // Both cells stand on the same side of the lane.
+    const cells = frame.cells.map(id => model.groups[id]!.bounds!);
+    expect(new Set(cells.map(box => (box.x + box.width / 2 < x ? 'left' : 'right'))).size).toBe(1);
+    // The drawn run never enters the frame box.
+    for (const segment of link.path!.segments) {
+      const [top, low] = [Math.min(segment.from.y, segment.to.y), Math.max(segment.from.y, segment.to.y)];
+      if (low > frame.box.y && top < bottom(frame.box)) for (const end of [segment.from, segment.to]) {
+        expect(end.x <= frame.box.x - 10 + 1e-6 || end.x >= right(frame.box) + 10 - 1e-6).toBe(true);
+      }
+    }
+    const gates = score(model).snapshot.gates;
+    for (const gate of ['G2', 'G6', 'G9'] as const) expect(gates[gate].violations).toEqual([]);
+    expect(model.removedLinks ?? []).toEqual([]);
+  }, 60000);
+
+  it('a link foreign to two neighbouring frames runs in the gap between them', async () => {
+    const model = await run('two-frames-share-a-transit-between-them');
+    expect(model.diagnostics.filter(diagnostic => diagnostic.severity === 'error')).toEqual([]);
+    const [east, west] = [model.frames!.find(item => item.id === 'east')!, model.frames!.find(item => item.id === 'west')!];
+    const link = model.links.find(item => item.attachments!.from.node === 'u1' && item.attachments!.to.node === 'l0')!;
+    const lanes = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === link.id);
+    expect(lanes.length).toBe(3);
+    expect(new Set(lanes.map(lane => lane.x)).size).toBe(1);
+    const [left, other] = east.box.x < west.box.x ? [east, west] : [west, east];
+    // Between the frames, at least the group-edge margin from each, and the frames do not overlap.
+    expect(right(left.box)).toBeLessThanOrEqual(other.box.x + 1e-6);
+    for (const lane of lanes) {
+      expect(lane.x).toBeGreaterThanOrEqual(right(left.box) + 10 - 1e-6);
+      expect(lane.x).toBeLessThanOrEqual(other.box.x - 10 + 1e-6);
+    }
+    const gates = score(model).snapshot.gates;
+    for (const gate of ['G2', 'G6', 'G9'] as const) expect(gates[gate].violations).toEqual([]);
+    expect(model.removedLinks ?? []).toEqual([]);
+  }, 60000);
 });
