@@ -9,6 +9,7 @@ import { packRowsOf } from './grid.js';
 import { rowGap } from './sides-two.js';
 import { alignmentAllowance } from './size.js';
 import { withLayoutMutation } from './mutation.js';
+import { placeOverlayFree } from './overlay-place.js';
 import { fitRegionGroup, placementWarning, rebuildRegions, right } from './regions.js';
 import { EPS } from '../score/geometry.js';
 
@@ -353,6 +354,8 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
   const anchor = selectAnchorTier(model);
   if (anchor === undefined) { delete model.anchorTier; return; }
   model.anchorTier = anchor;
+  // Free groups first: the steps below read where every group stands (ranked-groups spec 3.1).
+  placeOverlayFree(model);
   const context = centreContext(model, anchor);
   let unresolved = new Set<string>();
   while (budget.remaining > 0) {

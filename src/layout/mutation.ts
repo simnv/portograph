@@ -85,13 +85,18 @@ function topology(model: LayoutModel) {
     return { ref: port.ref, side: port.side, ...pick(port, ['authorOrder']) };
   }) }));
 }
-function structure(model: LayoutModel) {
+/**
+ * What may not change under a rule. `ordered` lifts the row order of a group: the centre rule may
+ * order the nodes of a group in which no node has a routed link (ranked-groups spec 3.1); the check
+ * for that sits beside the group loop below.
+ */
+function structure(model: LayoutModel, ordered = false) {
   return {
     nodes: Object.fromEntries(Object.entries(model.nodes).map(([id, node]) => [id, {
       ...pick(node, ['id', 'owner', 'layer', 'strokeWidth']),
       ports: node.ports.map(port => pick(port, ['ref', 'class', 'side', 'authorOrder', 'owner', 'layer', 'unused', 'sizingSide'])),
     }])),
-    groups: Object.fromEntries(Object.entries(model.groups).map(([id, group]) => [id, pick(group, ['id', 'owner', 'layer', 'nodes', 'tier', 'frame', 'flank', 'rowOrder'])])),
+    groups: Object.fromEntries(Object.entries(model.groups).map(([id, group]) => [id, pick(group, ordered ? ['id', 'owner', 'layer', 'nodes', 'tier', 'frame', 'flank'] : ['id', 'owner', 'layer', 'nodes', 'tier', 'frame', 'flank', 'rowOrder'])])),
     ...pick(model, ['fallbackUsed', 'deadlineHit']),
   };
 }
@@ -520,7 +525,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     omit(model, ['nodes', 'groups', 'tierBands', 'labels', 'canvas', 'diagnostics', 'runtime', 'links', 'lanes', 'bundles', 'junctions', 'labelBands', 'barDrops', 'obstacles', 'regions', 'anchorTier', 'frames']), 'Undeclared model field changed');
   same(draft.stage, model.stage, 'Transaction owns the stage marker');
   same(draft.document, model.document, 'Document changed'); same(draft.freeze, model.freeze, 'Freeze metadata changed');
-  same(structure(draft), structure(model), 'Topology or membership changed');
+  same(structure(draft, rule === 'centre'), structure(model, rule === 'centre'), 'Topology or membership changed');
   if (rule === 'centre') {
     if (draft.anchorTier !== undefined) same(draft.anchorTier, selectAnchorTier(draft), 'Invalid anchor tier');
     const anchor = selectAnchorTier(draft);
@@ -587,7 +592,12 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     }
   }
   for (const [id, group] of Object.entries(draft.groups)) {
-    same(omit(group, ['bounds']), omit(model.groups[id]!, ['bounds']), 'Undeclared group field changed');
+    same(omit(group, rule === 'centre' ? ['bounds', 'rowOrder'] : ['bounds']), omit(model.groups[id]!, rule === 'centre' ? ['bounds', 'rowOrder'] : ['bounds']), 'Undeclared group field changed');
+    // Centring may reorder the row of a group only where no node has a routed link: nothing routed
+    // then reads the order, and the overlay barycentre is the one rule that asks for it.
+    if (rule === 'centre' && !equal(group.rowOrder, model.groups[id]!.rowOrder)
+      && group.nodes.some(node => model.links.some(link => link.layer === 'routed' && link.attachments
+        && (link.attachments.from.node === node || link.attachments.to.node === node)))) throw new Error(`Centring cannot reorder ${id}: a node of it has a routed link`);
     if (rule === 'rows' && group.flank) same(group, model.groups[id], 'Rows cannot move flank groups');
     if (rule === 'rows' && !group.flank && groupShape(draft, id) !== 'row') same(group, model.groups[id], 'Rows cannot change non-row groups');
     if (rule === 'flanks' && group.flank) same(group.bounds!.x, model.groups[id]!.bounds!.x, 'Flanks cannot translate groups horizontally');

@@ -1,0 +1,26 @@
+# Expected: Two overlay-only groups with the same partner do not overlap (ranked-groups ticket 05,
+# spec section 3.1). `x` and `y` both sync with `n2`, so both take the same target x. They are
+# sorted by target, swept left to right with the band gap between them, and the pair is centred
+# back on the target as a whole: the mean of their centres is the partner's centre, and the gap
+# between the two boxes is the band gap.
+# Test-only input owned by ranked-groups ticket 05; test/pipeline/overlay-barycentre.test.ts reads
+# the layout.
+portograph: 2
+groups:
+  core: { tier: 0, label: Core }
+  north: { tier: 1, label: North }
+  client-x: { tier: 2, label: Client X }
+  client-y: { tier: 2, label: Client Y }
+nodes:
+  c1: { group: core, class: router, label: Core 1 }
+  n1: { group: north, class: server, label: North 1 }
+  n2: { group: north, class: server, label: North 2 }
+  n3: { group: north, class: server, label: North 3 }
+  x: { group: client-x, class: server, label: Client x }
+  y: { group: client-y, class: server, label: Client y }
+links:
+  - [c1, n1]
+  - [c1, n2]
+  - [c1, n3]
+  - [x, n2, { route: overlay }]
+  - [y, n2, { route: overlay }]
