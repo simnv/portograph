@@ -61,16 +61,39 @@ function readDraft(model: LayoutModel) {
     return count;
   };
   const bodies = (): Rect[] => Object.keys(model.nodes).filter(placed).map(node => model.nodes[node]!.bounds!);
-  /** Whether the overlay link is one straight segment on the draft: no other body on the face-to-face line. */
-  const straight = (pair: Pair, boxes: Rect[], aligned = false): boolean => {
-    const one = model.nodes[pair.from]!.bounds!, two = model.nodes[pair.to]!.bounds!;
-    // The rank cells of one sub-tier stand at their own heights on the draft and are aligned to one row
-    // later, so a link between two of them is read on that row: a body of the sub-tier between them blocks it.
-    if (aligned && tierOf(pair.from) === tierOf(pair.to) && groupOf(pair.from).frame !== undefined && groupOf(pair.to).frame !== undefined) {
-      const [left, right] = one.x <= two.x ? [one, two] : [two, one];
-      return !Object.keys(model.nodes).some(node => node !== pair.from && node !== pair.to && placed(node) && tierOf(node) === tierOf(pair.from)
-        && model.nodes[node]!.bounds!.x < right.x - PLACEMENT_EPS && model.nodes[node]!.bounds!.x + model.nodes[node]!.bounds!.width > left.x + left.width + PLACEMENT_EPS);
+  /**
+   * The rank cells of one sub-tier stand at ELK's own heights on the draft and are top-aligned to one row later,
+   * with the ports on the centre line of each node. `rowBoxes` gives every body as it stands on that row; a body
+   * that is not in a rank cell stays where it is.
+   */
+  const rowBoxes = (): Map<string, Rect> => {
+    const tops = new Map<number, number>();
+    for (const group of Object.values(model.groups)) {
+      if (group.frame === undefined || group.flank || group.bounds === undefined || !group.nodes.length) continue;
+      const tier = index.get(group.tier!)!;
+      tops.set(tier, Math.min(tops.get(tier) ?? Infinity, group.bounds.y));
     }
+    return new Map(Object.keys(model.nodes).filter(placed).map(node => {
+      const box = model.nodes[node]!.bounds!, group = groupOf(node);
+      const shift = group.frame === undefined ? 0 : tops.get(index.get(group.tier!)!)! - group.bounds!.y;
+      return [node, { ...box, y: box.y + shift }];
+    }));
+  };
+  /**
+   * Whether `pair`, two bodies of one sub-tier of which at least one stands in a rank cell, is one straight
+   * segment on the row they will share: no other body of the sub-tier covers the port height between them.
+   */
+  const straightOnRow = (pair: Pair, rows: Map<string, Rect>): boolean => {
+    const one = rows.get(pair.from)!, two = rows.get(pair.to)!;
+    const [left, right] = one.x <= two.x ? [one, two] : [two, one];
+    const from = { x: left.x + left.width, y: left.y + left.height / 2 }, to = { x: right.x, y: right.y + right.height / 2 };
+    return ![...rows].some(([node, box]) => node !== pair.from && node !== pair.to && tierOf(node) === tierOf(pair.from) && crosses(from, to, box));
+  };
+  const onRow = (pair: Pair): boolean => tierOf(pair.from) === tierOf(pair.to) && (groupOf(pair.from).frame !== undefined || groupOf(pair.to).frame !== undefined);
+  /** Whether the overlay link is one straight segment on the draft: no other body on the face-to-face line. */
+  const straight = (pair: Pair, boxes: Rect[], rows?: Map<string, Rect>): boolean => {
+    if (rows !== undefined && onRow(pair)) return straightOnRow(pair, rows);
+    const one = model.nodes[pair.from]!.bounds!, two = model.nodes[pair.to]!.bounds!;
     let from: Point, to: Point;
     if (tierOf(pair.from) !== tierOf(pair.to)) {
       const [upper, lower] = tierOf(pair.from) < tierOf(pair.to) ? [one, two] : [two, one];
@@ -84,16 +107,18 @@ function readDraft(model: LayoutModel) {
   /**
    * The two things a re-order is judged by over the tiers `low` to `high` (indices): the routed crossings of the
    * regions that touch them, and the overlay links that touch or pass over them and are one straight segment.
-   * `aligned` reads a link between two rank cells of one sub-tier on the row they will share.
+   * `aligned` reads a link inside one sub-tier, when an end stands in a rank cell, on the row the cells will share,
+   * and also counts `blocked`: the routed links inside one sub-tier with a body between their ends.
    */
-  const measureRange = (low: number, high: number, aligned = false): { crossings: number; straight: number } => {
+  const measureRange = (low: number, high: number, aligned = false): { crossings: number; straight: number; blocked: number } => {
     let crossings = 0;
     for (let a = low - 1; a <= high; a++) if (a >= 0 && a + 1 < tiers.length) crossings += regionCrossings(a, a + 1);
-    const boxes = bodies();
+    const boxes = bodies(), rows = aligned ? rowBoxes() : undefined;
     const spanning = drawn.filter(pair => Math.min(tierOf(pair.from), tierOf(pair.to)) <= high && Math.max(tierOf(pair.from), tierOf(pair.to)) >= low);
-    return { crossings, straight: spanning.filter(pair => straight(pair, boxes, aligned)).length };
+    const inside = rows === undefined ? [] : routed.filter(pair => onRow(pair) && tierOf(pair.from) >= low && tierOf(pair.from) <= high);
+    return { crossings, straight: spanning.filter(pair => straight(pair, boxes, rows)).length, blocked: inside.filter(pair => !straightOnRow(pair, rows!)).length };
   };
-  const measure = (tier: number): { crossings: number; straight: number } => measureRange(index.get(tier)!, index.get(tier)!);
+  const measure = (tier: number): { crossings: number; straight: number; blocked: number } => measureRange(index.get(tier)!, index.get(tier)!);
   /** `items` sorted by key where a key exists; an item with no key keeps its slot, a tie keeps the old order. */
   const reorder = <T>(items: T[], key: (item: T) => number | undefined): T[] => {
     const keys = new Map(items.map(item => [item, key(item)]));
@@ -276,7 +301,11 @@ export function saveGroups(model: LayoutModel, groups: LayoutGroup[]): () => voi
  *   downwards, then upwards. A tier that holds the anchor sub-tier keeps ELK's order.
  * - **Acceptance** is per document tier with the two proxies of `orderByOverlay`, measured over all
  *   the sub-tiers of the tier: the routed crossings of the regions that touch it do not rise and the
- *   straight overlay links over it do not fall, one of the two improves. A refusal is one warning.
+ *   straight overlay links over it do not fall, one of the two improves. A third term guards the
+ *   routed links inside one sub-tier (an end in a rank cell): the number that have a body between their
+ *   ends does not rise. A link inside a sub-tier is read on the row the rank cells will share (the cells
+ *   are top-aligned, the ports stand on the centre line of a node), so a body blocks it only when it
+ *   covers the height of the link. A refusal is one warning per tier.
  */
 export function orderFramesByOverlay(model: LayoutModel, columns: Map<string, Column>): boolean {
   const draft = readDraft(model);
@@ -318,12 +347,16 @@ export function orderFramesByOverlay(model: LayoutModel, columns: Map<string, Co
     const after = measureRange(from, to, true);
     let refusal: string | undefined;
     if (after.crossings > before.crossings) refusal = `routed crossings would rise from ${before.crossings} to ${after.crossings}`;
+    else if (after.blocked > before.blocked) refusal = `routed links with a body between their ends would rise from ${before.blocked} to ${after.blocked}`;
     else if (after.straight < before.straight) refusal = `straight overlay links would fall from ${before.straight} to ${after.straight}`;
-    else if (after.straight === before.straight && after.crossings === before.crossings) { /* no gain on the draft: ELK's order stands, silently */ }
+    else if (after.straight === before.straight && after.crossings === before.crossings && after.blocked === before.blocked) { /* no gain on the draft: ELK's order stands, silently */ }
     else { moved = true; continue; }
     undo();
     for (const [id, column] of cells) if (column === undefined) columns.delete(id); else columns.set(id, column);
-    if (refusal !== undefined) {
+    // One warning per tier: `orderByOverlay` may have refused the groups of a tier this order of frames covers.
+    const warned = (): boolean => model.diagnostics.some(item => item.code === 'OVERLAY_ORDER_REFUSED' && [...item.message.matchAll(/order of tier (\d+) /g)]
+      .some(found => Number(found[1]) >= low(tier) && Number(found[1]) <= high(tier)));
+    if (refusal !== undefined && !warned()) {
       placementWarning(model, 'OVERLAY_ORDER_REFUSED', `The overlay-weighted order of the frames of sub-tiers ${low(tier)} to ${high(tier)} was refused and ELK's order stands: ${refusal}.`,
         movable.map(unit => unit.id), 'group');
     }

@@ -1,13 +1,13 @@
 # Expected: ranked-groups ticket 06b, frames take part in the overlay-weighted order. Three two-rank
 # locations A, B and C stand in tier 1 under one feed group; the feed group has the most nodes, so
-# tier 0 is the anchor tier and the locations are ordered. The routed feeds do not care about the
-# order: one node (`hub`) feeds the first rank of each location, so no order makes them cross.
-# ELK stands B between A and C, because B has a routed link to the second rank of each. The sync
-# links join the second rank of A to the second rank of C (two of them), and there B's body is in the
-# way. B also has an overlay link to `ntp1`, the left end of the feed row, so the mean of its
-# partners is the smallest of the three; A and C have the same mean (the hub) and keep ELK's order.
-# A frame moves as one column: B goes to the left end, A and C stand side by side, and the two sync
-# links are one straight segment each.
+# tier 0 is the anchor tier and the locations are ordered. Every routed link is a feed from `hub` to a
+# first rank or a link inside a location, so no order makes two routed links cross and no routed link
+# joins two locations. B is joined to A and to C by overlay links (`b-edge`), and ELK stands it between
+# them; the two sync links join the second rank of A to the second rank of C, and B's body is in the way.
+# B also has an overlay link to `ntp1`, the left end of the feed row, so the mean of its partners is the
+# smallest of the three; A and C have the same mean (the hub) and keep ELK's order.
+# A frame moves as one column: B goes to the left end and A and C stand side by side. The two sync links
+# are one straight segment each; the overlay link that B has to C is the one link that A now blocks.
 # Test-only input owned by ranked-groups ticket 06b; test/pipeline/overlay-frame-order.test.ts reads the layout.
 portograph: 2
 groups:
@@ -21,9 +21,9 @@ groups:
 nodes:
   ntp1: { group: feed, class: server, label: NTP one }
   ntp2: { group: feed, class: server, label: NTP two }
+  hub: { group: feed, class: router, label: Hub }
   ntp3: { group: feed, class: server, label: NTP three }
   ntp4: { group: feed, class: server, label: NTP four }
-  hub: { group: feed, class: router, label: Hub }
   a-core: { group: a, class: router, label: A core }
   a-sync1: { group: a-zone, class: switch, label: A sync }
   b-core: { group: b, class: router, label: B core }
@@ -31,14 +31,14 @@ nodes:
   c-core: { group: c, class: router, label: C core }
   c-sync1: { group: c-zone, class: switch, label: C sync }
 links:
-  - [ntp1, b-edge, { route: overlay }]
+  - [ntp1, b-core, { route: overlay }]
   - [hub, a-core]
   - [hub, b-core]
   - [hub, c-core]
   - [a-core, a-sync1]
   - [b-core, b-edge]
   - [c-core, c-sync1]
-  - [b-edge, a-sync1]
-  - [b-edge, c-sync1]
+  - [b-edge, a-sync1, { route: overlay }]
+  - [b-edge, c-sync1, { route: overlay }]
   - [a-sync1, c-sync1, { route: overlay }]
   - [a-sync1, c-sync1, { route: overlay }]

@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import type { LayoutLink, LayoutModel, Point, Rect } from '../../src/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -8,9 +8,28 @@ import { createAvoidAttempt } from '../route/fixture.js';
 const names = {
   reorder: 'overlay-links-reorder-two-locations',
   refused: 'an-overlay-frame-reorder-is-refused-for-routed-crossings',
+  blocked: 'an-overlay-frame-reorder-is-refused-for-a-blocked-routed-link',
+  six: 'an-overlay-frame-reorder-is-refused-with-six-sync-links',
 } as const;
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (name: string): Promise<LayoutModel> => layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+/** The same layout with the order of frames switched off: what ELK and the packing leave. */
+async function runWithoutRule(name: string): Promise<{ model: LayoutModel; metrics: ReturnType<typeof score>['snapshot']['metrics'] }> {
+  vi.resetModules();
+  vi.doMock('../../src/layout/overlay-order.js', async importOriginal => ({
+    ...await importOriginal<typeof import('../../src/layout/overlay-order.js')>(), orderFramesByOverlay: () => false,
+  }));
+  try {
+    const api = await import('../../src/index.js');
+    const model = await api.layout(api.parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    return { model, metrics: api.score(model).snapshot.metrics };
+  } finally {
+    vi.doUnmock('../../src/layout/overlay-order.js');
+    vi.resetModules();
+  }
+}
+/** The overlay links that are more than one segment. */
+const bent = (model: LayoutModel): LayoutLink[] => model.links.filter(link => link.layer === 'overlay' && link.path!.segments.length > 1);
 const errors = (model: LayoutModel) => model.diagnostics.filter(diagnostic => diagnostic.severity === 'error');
 const refusals = (model: LayoutModel) => model.diagnostics.filter(diagnostic => diagnostic.code === 'OVERLAY_ORDER_REFUSED');
 const points = (link: LayoutLink): Point[] => [link.path!.segments[0]!.from, ...link.path!.segments.map(segment => segment.to)];
@@ -68,6 +87,18 @@ describe('overlay-weighted order of frames', () => {
     expectColumns(model);
   }, 60000);
 
+  it('is a gain on the score: no routed link is worse, and fewer overlay links are bent than with the rule off', async () => {
+    const model = await run(names.reorder), off = await runWithoutRule(names.reorder);
+    const on = score(model).snapshot.metrics;
+    // The rule moved B: with it off, B stands between A and C.
+    const [a, b, c] = ['a', 'b', 'c'].map(id => off.model.frames!.find(item => item.id === id)!.box);
+    expect(a!.x < b!.x && b!.x < c!.x).toBe(true);
+    expect(on.crossings.count).toBeLessThanOrEqual(off.metrics.crossings.count);
+    expect(on.bends.total).toBeLessThanOrEqual(off.metrics.bends.total);
+    expect(on.continuity.value).toBeGreaterThanOrEqual(off.metrics.continuity.value);
+    expect(bent(model).length).toBeLessThan(bent(off.model).length);
+  }, 120000);
+
   it('refuses a re-order of frames that would raise the routed crossings, with one warning', async () => {
     const model = await run(names.refused);
     expect(errors(model)).toEqual([]);
@@ -80,6 +111,39 @@ describe('overlay-weighted order of frames', () => {
     expect(refused[0]!.severity).toBe('warning');
     expect(refused[0]!.message).toContain('routed crossings would rise from 0 to 1');
     expect(score(model).snapshot.metrics.crossings.count).toBe(0);
+    expectColumns(model);
+  }, 60000);
+
+  it('refuses a re-order that would put a body between the ends of a routed link inside a sub-tier, with one warning', async () => {
+    const model = await run(names.blocked), off = await runWithoutRule(names.blocked);
+    expect(errors(model)).toEqual([]);
+    // The move would straighten the two sync links, and it would block the routed link b-edge to c-sync1.
+    const [a, b, c] = ['a', 'b', 'c'].map(id => frame(model, id));
+    expect(a!.x).toBeLessThan(b!.x);
+    expect(b!.x).toBeLessThan(c!.x);
+    const refused = refusals(model);
+    expect(refused).toHaveLength(1);
+    expect(refused[0]!.message).toContain('routed links with a body between their ends would rise from 0 to 1');
+    // ELK's order stands, so the score is the one of the layout without the rule.
+    const metrics = score(model).snapshot.metrics;
+    expect(metrics.bends.total).toBe(off.metrics.bends.total);
+    expect(metrics.continuity.value).toBe(off.metrics.continuity.value);
+    expectColumns(model);
+  }, 120000);
+
+  it('refuses the same re-order with six sync links: the height of the ports is read, and the routed link is still blocked', async () => {
+    const model = await run(names.six);
+    expect(errors(model)).toEqual([]);
+    const [a, b, c] = ['a', 'b', 'c'].map(id => frame(model, id));
+    expect(a!.x).toBeLessThan(b!.x);
+    expect(b!.x).toBeLessThan(c!.x);
+    const refused = refusals(model);
+    expect(refused).toHaveLength(1);
+    expect(refused[0]!.message).toContain('routed links with a body between their ends would rise from 0 to 1');
+    expect(syncs(model)).toHaveLength(6);
+    // The overlay link from ntp1 to b-edge stays one straight segment; the move would have bent it.
+    const ntp = model.links.find(link => link.layer === 'overlay' && [link.attachments!.from.node, link.attachments!.to.node].sort().join() === 'b-edge,ntp1')!;
+    expect(points(ntp)).toHaveLength(2);
     expectColumns(model);
   }, 60000);
 
