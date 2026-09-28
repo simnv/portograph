@@ -55,4 +55,23 @@ describe('a column axis lands on its feed', () => {
     expect(Math.abs(left - right)).toBeLessThanOrEqual(20);
     expect(score(model).snapshot.gates.G9.passed).toBe(true);
   }, 60000);
+
+  it('a transit between two adjacent frames keeps both feeds one vertical segment and G6 clean', async () => {
+    const model = await run('a-middle-transit-keeps-the-neighbour-feed-straight');
+    expect(model.diagnostics.filter(diagnostic => diagnostic.severity === 'error')).toEqual([]);
+    // The transit link runs in the gap between the two frames, so it is what the feeds must not come near.
+    const gates = score(model).snapshot.gates;
+    expect(gates.G6.violations).toEqual([]);
+    expect(gates.G9.violations).toEqual([]);
+    for (const [id, source, gateway] of [['link-1', 'as0', 'aw'], ['link-2', 'bs0', 'bw']] as const) {
+      const link = model.links.find(item => item.id === id)!;
+      expect([link.attachments!.from.node, link.attachments!.to.node]).toEqual([source, gateway]);
+      const xs = link.path!.segments.flatMap(segment => [segment.from.x, segment.to.x]);
+      expect(Math.max(...xs) - Math.min(...xs), `${id} is one vertical segment`).toBeLessThanOrEqual(0.5);
+    }
+    // The transit stands between the frames.
+    const transit = model.links.find(item => item.attachments!.from.node === 'm0')!.path!.segments;
+    const between = transit.every(segment => segment.from.x > frame(model, 'a').box.x + frame(model, 'a').box.width && segment.to.x < frame(model, 'b').box.x);
+    expect(between, 'the transit link runs between the frames').toBe(true);
+  }, 60000);
 });
