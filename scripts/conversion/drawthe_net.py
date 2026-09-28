@@ -7,6 +7,7 @@ from collections import Counter
 import json
 from pathlib import Path
 import re
+import sys
 
 import yaml
 
@@ -130,6 +131,20 @@ def opaque_fill(value):
         return False
 
 
+def nesting(containers):
+    """Map each container to the smallest other container whose box holds its own, or None.
+
+    Ordering matches the icon walk: equal boxes are broken by declaration order, earlier is inner."""
+    parents = {}
+    for name, box, area, index in containers:
+        outer = [(other_area, other_index, other) for other, other_box, other_area, other_index in containers
+                 if (other_area, other_index) > (area, index)
+                 and other_box[0] <= box[0] and other_box[1] <= box[1]
+                 and box[2] <= other_box[2] and box[3] <= other_box[3]]
+        parents[name] = min(outer)[2] if outer else None
+    return parents
+
+
 def convert(doc):
     icons = place(doc.get('icons') or {})
     groups = {name: spec or {} for name, spec in (doc.get('groups') or {}).items()}
@@ -180,26 +195,62 @@ def convert(doc):
                 redundant.add(name)
     containers = [entry for entry in containers if entry[0] not in redundant]
 
+    # A box inside a box is a child group. One level only: a box under a child is folded into
+    # that child, and its icons go there.
+    parents = nesting(containers)
+    while True:
+        deep = [name for name, parent in parents.items() if parent and parents[parent]]
+        if not deep:
+            break
+        shallowest = [name for name in deep if not parents[parents[parents[name]]]]
+        for name in shallowest:
+            print(f'warning: group {group_ids[name]!r} is nested more than one level deep; '
+                  f'flattened into {group_ids[parents[name]]!r}', file=sys.stderr)
+        containers = [entry for entry in containers if entry[0] not in shallowest]
+        parents = nesting(containers)
+
     assignments, active = {}, {}
+
+    def activate(group):
+        gid = group_ids[group]
+        parent = parents[group]
+        active[gid] = {'label': groups[group].get('name', ''),
+                       'top': -max(icons[member]['y'] for member in leaves[group]),
+                       'parent': group_ids[parent] if parent else None}
+        return gid
+
     for name, at in icons.items():
         own = boxes[name]
         inside = [(area, order, group) for group, box, area, order in containers
                   if box[0] <= own[0] and box[1] <= own[1] and own[2] <= box[2] and own[3] <= box[3]]
         if inside:
             group = min(inside)[2]
-            gid = group_ids[group]
-            active[gid] = {'label': groups[group].get('name', ''),
-                           'top': -max(icons[member]['y'] for member in leaves[group])}
+            gid = activate(group)
+            if parents[group]:
+                activate(parents[group])
         else:
             gid = f'row-{int(diagram.get("rows", 21)) - 1 - at["y"]:02d}'
             while gid in group_ids.values():
                 gid = 'uncontained-' + gid
-            active[gid] = {'label': f'Row {int(diagram.get("rows", 21)) - 1 - at["y"]}', 'top': -at['y']}
+            active[gid] = {'label': f'Row {int(diagram.get("rows", 21)) - 1 - at["y"]}', 'top': -at['y'],
+                           'parent': None}
         assignments[name] = gid
-    ranks = {top: i for i, top in enumerate(sorted({value['top'] for value in active.values()}))}
-    result = {'portograph': 2, 'profile': 'network', 'groups': {
-        gid: {'tier': ranks[value['top']], 'label': value['label'], 'shape': 'grid'}
-        for gid, value in sorted(active.items(), key=lambda item: (item[1]['top'], item[0]))}, 'nodes': {}, 'links': []}
+    # Only top-level groups take a tier; a child sits in its parent's.
+    ranks = {top: i for i, top in enumerate(sorted({v['top'] for v in active.values() if not v['parent']}))}
+
+    def emit(value):
+        if value['parent']:
+            return {'label': value['label'], 'parent': value['parent']}
+        return {'tier': ranks[value['top']], 'label': value['label']}
+
+    def order(item):
+        gid, value = item
+        root = active[value['parent']] if value['parent'] else value
+        return (root['top'], value['parent'] or gid, bool(value['parent']), value['top'], gid)
+
+    result = {'portograph': 2, 'profile': 'network',
+              'groups': {gid: emit(value) for gid, value in sorted(active.items(), key=order)},
+              'nodes': {}, 'links': []}
     if (doc.get('title') or {}).get('text'):
         result['title'] = doc['title']['text']
     for name, spec in icons.items():

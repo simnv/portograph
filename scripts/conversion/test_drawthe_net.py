@@ -1,5 +1,7 @@
 """Generic conversion contracts. Run with uv run --with pyyaml python -m unittest discover -s scripts/conversion."""
+import contextlib
 import importlib.util
+import io
 from pathlib import Path
 import unittest
 
@@ -59,7 +61,7 @@ class ConversionTests(unittest.TestCase):
         result, _ = converter().convert(doc)
         self.assertEqual(result['nodes']['inside']['group'], 'tall')
         self.assertLess(result['groups']['tall']['tier'], result['groups']['short']['tier'])
-        self.assertTrue(all(group['shape'] == 'grid' for group in result['groups'].values()))
+        self.assertTrue(all('shape' not in group for group in result['groups'].values()))
 
     def test_tall_icons_extend_down_and_innermost_box_wins(self):
         doc = source()
@@ -145,10 +147,12 @@ class ConversionTests(unittest.TestCase):
             'zone': {'members': ['zone-top', 'zone-bottom'], 'name': 'Zone', 'fill': 'blue'},
             'patch': {'members': ['patch-node'], 'fill': 'gray', 'stroke': 'none'},
         }
-        result, report = converter().convert(doc)
-        self.assertIn('patch', result['groups'])
-        self.assertEqual(result['nodes']['patch-node']['group'], 'patch')
+        with contextlib.redirect_stderr(io.StringIO()):
+            result, report = converter().convert(doc)
+        # The patch is kept by the redundancy rule (report 0), then folded into 'zone' as a third level.
         self.assertEqual(report['redundant_hidden_groups'], 0)
+        self.assertEqual(result['groups']['zone']['parent'], 'outer')
+        self.assertEqual(result['nodes']['patch-node']['group'], 'zone')
 
     def test_ntp_paint_applies_to_servers_client_routers_and_outlets_without_changing_glyphs(self):
         doc = source()
@@ -173,6 +177,70 @@ class ConversionTests(unittest.TestCase):
         ]
         result, _ = converter().convert(doc)
         self.assertEqual([link[2]['class'] for link in result['links']], ['dashed', 'physical'])
+
+    def nested(self, depth):
+        """Boxes nested `depth` levels: g0 outermost, each next one inside the previous."""
+        doc = source()
+        doc['icons'] = {}
+        doc['groups'] = {}
+        for level in range(depth):
+            span = 2 * (depth - level)
+            doc['icons'][f'a{level}'] = {'x': level * 2, 'y': span * 2 + level * 2, 'icon': 'router'}
+            doc['icons'][f'b{level}'] = {'x': level * 2 + span, 'y': level * 2, 'icon': 'router'}
+            doc['groups'][f'g{level}'] = {'name': f'G{level}', 'members': [f'a{level}', f'b{level}']}
+        return doc
+
+    def test_groups_carry_no_shape_key(self):
+        result, _ = converter().convert(self.nested(2))
+        self.assertTrue(result['groups'])
+        self.assertTrue(all('shape' not in group for group in result['groups'].values()))
+
+    def test_box_inside_a_box_gets_parent_and_no_tier(self):
+        result, _ = converter().convert(self.nested(2))
+        self.assertNotIn('parent', result['groups']['g0'])
+        self.assertIn('tier', result['groups']['g0'])
+        self.assertEqual(result['groups']['g1']['parent'], 'g0')
+        self.assertNotIn('tier', result['groups']['g1'])
+        self.assertEqual(result['nodes']['a1']['group'], 'g1')
+        self.assertEqual(result['nodes']['a0']['group'], 'g0')
+
+    def test_parent_is_emitted_even_when_the_outer_box_has_no_direct_node(self):
+        doc = self.nested(2)
+        # g0 holds only g1, so its deeper padding makes a larger box and it owns no node itself.
+        doc['icons'] = {name: spec for name, spec in doc['icons'].items() if name in ('a1', 'b1')}
+        doc['groups'] = {'g0': {'name': 'G0', 'members': ['g1']}, 'g1': {'name': 'G1', 'members': ['a1', 'b1']}}
+        result, _ = converter().convert(doc)
+        self.assertEqual({node['group'] for node in result['nodes'].values()}, {'g1'})
+        self.assertIn('tier', result['groups']['g0'])
+        self.assertNotIn('tier', result['groups']['g1'])
+        for group in result['groups'].values():
+            if 'parent' in group:
+                self.assertIn(group['parent'], result['groups'])
+                self.assertNotIn('parent', result['groups'][group['parent']])
+        self.assertEqual(result['groups']['g1']['parent'], 'g0')
+
+    def test_sibling_boxes_are_top_level_and_keep_tiers(self):
+        doc = source()
+        doc['icons'] = {'p': {'x': 0, 'y': 6, 'icon': 'router'}, 'q': {'x': 0, 'y': 0, 'icon': 'router'}}
+        doc['groups'] = {'up': {'name': 'Up', 'members': ['p']}, 'down': {'name': 'Down', 'members': ['q']}}
+        result, _ = converter().convert(doc)
+        for group in result['groups'].values():
+            self.assertNotIn('parent', group)
+            self.assertIn('tier', group)
+
+    def test_third_level_is_flattened_into_its_parent_with_a_warning(self):
+        doc = self.nested(3)
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            result, _ = converter().convert(doc)
+        self.assertIn('g2', stderr.getvalue())
+        self.assertNotIn('g2', result['groups'])
+        self.assertEqual(result['groups']['g1']['parent'], 'g0')
+        self.assertEqual(result['nodes']['a2']['group'], 'g1')
+        for group in result['groups'].values():
+            parent = group.get('parent')
+            self.assertTrue(parent is None or 'parent' not in result['groups'][parent])
+            self.assertEqual('tier' in group, parent is None)
 
 
 if __name__ == '__main__':
