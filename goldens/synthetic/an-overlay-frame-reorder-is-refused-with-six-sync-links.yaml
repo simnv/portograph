@@ -1,0 +1,43 @@
+# Expected: ranked-groups ticket 06b, frames take part in the overlay-weighted order. The blocked-link
+# fixture with six sync links between the second rank of A and the second rank of C instead of two. The
+# straightness proxy must read each link on the row the cells will share, at the height of its ports: with
+# six links the move of B would seem to straighten most of them, but it puts A between the ends of the
+# routed link `b-edge` to `c-sync1`, and it is refused (`OVERLAY_ORDER_REFUSED`); ELK's order stands.
+# Test-only input owned by ranked-groups ticket 06b; test/pipeline/overlay-frame-order.test.ts reads the layout.
+portograph: 2
+groups:
+  feed: { tier: 0, label: Feed }
+  a: { tier: 1, label: Site A }
+  a-zone: { parent: a, label: Zone A }
+  b: { tier: 1, label: Site B }
+  b-zone: { parent: b, label: Zone B }
+  c: { tier: 1, label: Site C }
+  c-zone: { parent: c, label: Zone C }
+nodes:
+  ntp1: { group: feed, class: server, label: NTP one }
+  ntp2: { group: feed, class: server, label: NTP two }
+  ntp3: { group: feed, class: server, label: NTP three }
+  ntp4: { group: feed, class: server, label: NTP four }
+  hub: { group: feed, class: router, label: Hub }
+  a-core: { group: a, class: router, label: A core }
+  a-sync1: { group: a-zone, class: switch, label: A sync }
+  b-core: { group: b, class: router, label: B core }
+  b-edge: { group: b-zone, class: switch, label: B edge }
+  c-core: { group: c, class: router, label: C core }
+  c-sync1: { group: c-zone, class: switch, label: C sync }
+links:
+  - [ntp1, b-edge, { route: overlay }]
+  - [hub, a-core]
+  - [hub, b-core]
+  - [hub, c-core]
+  - [a-core, a-sync1]
+  - [b-core, b-edge]
+  - [c-core, c-sync1]
+  - [b-edge, a-sync1]
+  - [b-edge, c-sync1]
+  - [a-sync1, c-sync1, { route: overlay }]
+  - [a-sync1, c-sync1, { route: overlay }]
+  - [a-sync1, c-sync1, { route: overlay }]
+  - [a-sync1, c-sync1, { route: overlay }]
+  - [a-sync1, c-sync1, { route: overlay }]
+  - [a-sync1, c-sync1, { route: overlay }]

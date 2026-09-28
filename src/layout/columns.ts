@@ -19,7 +19,7 @@ export const COLUMN_SLACK = GROUP_PADDING;
 export interface Column { x: number; width: number }
 
 /** Everything that stands in one column: the cells of a frame and of its child frames, or one group. */
-interface Unit { id: string; frame: boolean; groups: LayoutGroup[]; low: number; high: number }
+export interface Unit { id: string; frame: boolean; groups: LayoutGroup[]; low: number; high: number }
 
 /**
  * The frames and one-rank groups of a model, grouped by document tier. A document tier is not stored:
@@ -65,11 +65,67 @@ function columnTiers(model: LayoutModel): Unit[][] {
  */
 export function packFrameColumns(model: LayoutModel): Map<string, Column> {
   const columns = new Map<string, Column>();
-  const frames = model.document.frames;
-  if (frames === undefined) return columns;
+  if (model.document.frames === undefined) return columns;
+  const tiers = columnTiers(model);
+  for (const { index, authority } of sweepSteps(model, tiers)) packStep(model, tiers, index, authority, columns);
+  return columns;
+}
+
+/** The width of a frame's column: its widest cell, or its widest child frame with the margin on each side. */
+const frameWidth = (model: LayoutModel, id: string): number => {
+  const frames = model.document.frames!;
+  const children = Object.keys(frames).filter(child => frames[child]!.parent === id);
+  return Math.max(0, ...frames[id]!.cells.map(cell => cellReach(model, cell).width), ...children.map(child => frameWidth(model, child) + 2 * GROUP_PADDING));
+};
+
+/**
+ * The document tiers that hold at least one frame, top to bottom, as their units (frames and one-rank
+ * groups). A document tier is not stored: the sub-tiers of its groups are contiguous and the tiers do
+ * not share one, so units whose sub-tier ranges touch belong to one tier.
+ */
+export function frameTiers(model: LayoutModel): Unit[][] {
+  return columnTiers(model).filter(members => members.some(unit => unit.frame));
+}
+
+/**
+ * The place of a unit in the left to right order of its tier: the x centre of its rank-0 cell (its first
+ * sub-tier, which is the cell ELK placed against the tier above), or of the group itself.
+ */
+export function unitOrder(unit: Unit): number {
+  const first = unit.groups.reduce((best, group) => group.tier! < best.tier! ? group : best);
+  return first.bounds!.x + first.bounds!.width / 2;
+}
+
+/**
+ * The order the tiers are packed in (ticket 11): the tier of the anchor first, then the tiers outward one
+ * at a time in the order centring steps. `authority` is the tier packed just before, whose ports a tier reads.
+ */
+function sweepSteps(model: LayoutModel, tiers: Unit[][]): { index: number; authority: number | undefined }[] {
+  const anchor = selectAnchorTier(model);
+  const first = Math.max(0, tiers.findIndex(tier => tier.some(unit => anchor !== undefined && unit.low <= anchor && anchor <= unit.high)));
+  return [{ index: first, authority: undefined },
+    ...tiers.slice(first + 1).map((_, i) => ({ index: first + 1 + i, authority: first + i })),
+    ...tiers.slice(0, first).map((_, i) => ({ index: first - 1 - i, authority: first - i }))];
+}
+
+/**
+ * Packs again the one document tier that holds `tier` (see `packFrameColumns`), by the same feed-axis rule
+ * and against the tier packed just before it, and stores the column of every frame cell in `columns`.
+ * `sequence` gives the units of the tier a different place than their rank-0 cells stand in (a unit id to
+ * a number, the smaller to the left); the overlay-weighted order of frames (ticket 06b) uses it to move a
+ * frame as a column.
+ */
+export function packTier(model: LayoutModel, tier: Unit[], columns: Map<string, Column>, sequence?: ReadonlyMap<string, number>): void {
+  const tiers = columnTiers(model);
+  const step = sweepSteps(model, tiers).find(item => tiers[item.index]!.some(unit => unit.id === tier[0]!.id));
+  if (step !== undefined) packStep(model, tiers, step.index, step.authority, columns, sequence);
+}
+
+/** Packs `tiers[index]`, reading the feeds of the tier `authority` (see `packFrameColumns`). */
+function packStep(model: LayoutModel, tiers: Unit[][], index: number, authority: number | undefined, columns: Map<string, Column>,
+  sequence?: ReadonlyMap<string, number>): void {
+  const frames = model.document.frames!;
   const childrenOf = (id: string): string[] => Object.keys(frames).filter(child => frames[child]!.parent === id);
-  const widthOf = (id: string): number => Math.max(0, ...frames[id]!.cells.map(cell => cellReach(model, cell).width),
-    ...childrenOf(id).map(child => widthOf(child) + 2 * GROUP_PADDING));
   /** Centre every cell of a frame, and of its children, on one axis. */
   const centre = (id: string, axis: number): void => {
     for (const cell of frames[id]!.cells) {
@@ -78,38 +134,21 @@ export function packFrameColumns(model: LayoutModel): Map<string, Column> {
     }
     for (const child of childrenOf(id)) centre(child, axis);
   };
-
-  const tiers = columnTiers(model);
-
   const gap = bandGap(model);
-  // The order is the ELK order of the rank-0 cell of a frame (its first sub-tier, which is the cell ELK
-  // placed against the tier above), or of the group itself when it is not in a frame.
-  const order = (unit: Unit): number => {
-    const first = unit.groups.reduce((best, group) => group.tier! < best.tier! ? group : best);
-    return first.bounds!.x + first.bounds!.width / 2;
-  };
+  const place = (unit: Unit): number => sequence?.get(unit.id) ?? unitOrder(unit);
   const left = (unit: Unit): number => Math.min(...unit.groups.map(group => unit.frame ? cellReach(model, group.id).x : group.bounds!.x));
   const right = (unit: Unit): number => Math.max(...unit.groups.map(group => unit.frame ? cellReach(model, group.id).x + cellReach(model, group.id).width : group.bounds!.x + group.bounds!.width));
   /** The width a unit takes in its tier: a frame with its slack on each side, a group by its box. */
-  const extent = (unit: Unit): number => unit.frame ? widthOf(unit.id) + 2 * COLUMN_SLACK : unit.groups[0]!.bounds!.width;
+  const extent = (unit: Unit): number => unit.frame ? frameWidth(model, unit.id) + 2 * COLUMN_SLACK : unit.groups[0]!.bounds!.width;
 
-  // A column's axis lands on its feed before the width of any sibling is fixed (ticket 11): the tier
-  // of the anchor packs first, then the tiers outward one at a time in the order centring steps, and a
-  // tier reads the ports of the tier packed just before it. A tier that no routed link joins to it
-  // takes the centre ELK gave it.
   const tierOf = new Map<Unit, number>(), unitOf = new Map<string, Unit>();
-  for (const [index, tier] of tiers.entries()) for (const unit of tier) {
-    tierOf.set(unit, index);
+  for (const [at, members] of tiers.entries()) for (const unit of members) {
+    tierOf.set(unit, at);
     for (const group of unit.groups) unitOf.set(group.id, unit);
   }
-  const anchor = selectAnchorTier(model);
-  const first = Math.max(0, tiers.findIndex(tier => tier.some(unit => anchor !== undefined && unit.low <= anchor && anchor <= unit.high)));
-  const steps: { index: number; authority: number | undefined }[] = [{ index: first, authority: undefined },
-    ...tiers.slice(first + 1).map((_, i) => ({ index: first + 1 + i, authority: first + i })),
-    ...tiers.slice(0, first).map((_, i) => ({ index: first - 1 - i, authority: first - i }))];
 
   /** The centre a unit wants: over the mean of its routed feeds in the packed tier, `undefined` without one. */
-  const wanted = (unit: Unit, index: number, authority: number | undefined): number | undefined => {
+  const wanted = (unit: Unit): number | undefined => {
     if (authority === undefined) return undefined;
     const parents = new Map<string, number>(), children = new Map<string, number>();
     for (const link of model.links) {
@@ -130,58 +169,55 @@ export function packFrameColumns(model: LayoutModel): Map<string, Column> {
     return mean(parents.values()) - mean(children.values());
   };
 
-  for (const { index, authority } of steps) {
-    const tier = tiers[index]!;
-    if (!tier.some(unit => unit.frame)) {
-      // A tier of one-rank groups is left where ELK put it, except that the sweep of `placeFlanksAndPeers`
-      // will push apart the groups ELK left closer than a band gap. It is done here so the feed x that
-      // the tier below reads is the x the tier keeps.
-      let end = -Infinity;
-      for (const group of tier.flatMap(unit => unit.groups).sort((a, b) => a.bounds!.x - b.bounds!.x || compareId(a.id, b.id))) {
-        if (group.bounds!.x < end) moveGroup(model, group, end - group.bounds!.x, 0);
-        end = group.bounds!.x + group.bounds!.width + gap;
-      }
-      continue;
+  const tier = tiers[index]!;
+  if (!tier.some(unit => unit.frame)) {
+    // A tier of one-rank groups is left where ELK put it, except that the sweep of `placeFlanksAndPeers`
+    // will push apart the groups ELK left closer than a band gap. It is done here so the feed x that
+    // the tier below reads is the x the tier keeps.
+    let end = -Infinity;
+    for (const group of tier.flatMap(unit => unit.groups).sort((a, b) => a.bounds!.x - b.bounds!.x || compareId(a.id, b.id))) {
+      if (group.bounds!.x < end) moveGroup(model, group, end - group.bounds!.x, 0);
+      end = group.bounds!.x + group.bounds!.width + gap;
     }
-    const run = [...tier].sort((a, b) => order(a) - order(b) || compareId(a.id, b.id));
-    const centres = run.map(unit => wanted(unit, index, authority));
-    // Left edge of each unit once packed a band gap apart, and where its column would stand if it had its way.
-    let lefts: number[];
-    if (centres.every(centre => centre === undefined)) {
-      // The packed run keeps the centre ELK gave the tier, so it stays over and under its neighbour tiers.
-      const span = run.reduce((sum, unit) => sum + extent(unit), gap * (tier.length - 1));
-      let x = (Math.min(...tier.map(left)) + Math.max(...tier.map(right))) / 2 - span / 2;
-      lefts = run.map(unit => { const at = x; x += extent(unit) + gap; return at; });
-    } else {
-      // A sibling that would overlap the one before it is pushed outward and the order is kept: the
-      // least squares fit of the lefts to a run at least a band gap apart (pool adjacent violators), so
-      // a run that moved as a whole is centred back.
-      const offsets: number[] = [];
-      let sum = 0;
-      for (const unit of run) { offsets.push(sum); sum += extent(unit) + gap; }
-      const blocks: { sum: number; count: number }[] = [];
-      for (const [i, unit] of run.entries()) {
-        const centre = centres[i] ?? (left(unit) + right(unit)) / 2;
-        blocks.push({ sum: centre - extent(unit) / 2 - offsets[i]!, count: 1 });
-        while (blocks.length > 1 && blocks[blocks.length - 2]!.sum / blocks[blocks.length - 2]!.count > blocks[blocks.length - 1]!.sum / blocks[blocks.length - 1]!.count) {
-          const last = blocks.pop()!, before = blocks[blocks.length - 1]!;
-          before.sum += last.sum; before.count += last.count;
-        }
-      }
-      lefts = blocks.flatMap(block => Array.from({ length: block.count }, () => block.sum / block.count)).map((base, i) => base + offsets[i]!);
-    }
+    return;
+  }
+  const run = [...tier].sort((a, b) => place(a) - place(b) || compareId(a.id, b.id));
+  const centres = run.map(wanted);
+  // Left edge of each unit once packed a band gap apart, and where its column would stand if it had its way.
+  let lefts: number[];
+  if (centres.every(wish => wish === undefined)) {
+    // The packed run keeps the centre ELK gave the tier, so it stays over and under its neighbour tiers.
+    const span = run.reduce((sum, unit) => sum + extent(unit), gap * (tier.length - 1));
+    let x = (Math.min(...tier.map(left)) + Math.max(...tier.map(right))) / 2 - span / 2;
+    lefts = run.map(unit => { const at = x; x += extent(unit) + gap; return at; });
+  } else {
+    // A sibling that would overlap the one before it is pushed outward and the order is kept: the
+    // least squares fit of the lefts to a run at least a band gap apart (pool adjacent violators), so
+    // a run that moved as a whole is centred back.
+    const offsets: number[] = [];
+    let sum = 0;
+    for (const unit of run) { offsets.push(sum); sum += extent(unit) + gap; }
+    const blocks: { sum: number; count: number }[] = [];
     for (const [i, unit] of run.entries()) {
-      if (unit.frame) {
-        const width = widthOf(unit.id), x = lefts[i]! + COLUMN_SLACK;
-        centre(unit.id, x + width / 2);
-        for (const group of unit.groups) columns.set(group.id, { x, width });
-      } else {
-        const group = unit.groups[0]!;
-        moveGroup(model, group, lefts[i]! - group.bounds!.x, 0);
+      const wish = centres[i] ?? (left(unit) + right(unit)) / 2;
+      blocks.push({ sum: wish - extent(unit) / 2 - offsets[i]!, count: 1 });
+      while (blocks.length > 1 && blocks[blocks.length - 2]!.sum / blocks[blocks.length - 2]!.count > blocks[blocks.length - 1]!.sum / blocks[blocks.length - 1]!.count) {
+        const last = blocks.pop()!, before = blocks[blocks.length - 1]!;
+        before.sum += last.sum; before.count += last.count;
       }
+    }
+    lefts = blocks.flatMap(block => Array.from({ length: block.count }, () => block.sum / block.count)).map((base, i) => base + offsets[i]!);
+  }
+  for (const [i, unit] of run.entries()) {
+    if (unit.frame) {
+      const width = frameWidth(model, unit.id), x = lefts[i]! + COLUMN_SLACK;
+      centre(unit.id, x + width / 2);
+      for (const group of unit.groups) columns.set(group.id, { x, width });
+    } else {
+      const group = unit.groups[0]!;
+      moveGroup(model, group, lefts[i]! - group.bounds!.x, 0);
     }
   }
-  return columns;
 }
 
 /**

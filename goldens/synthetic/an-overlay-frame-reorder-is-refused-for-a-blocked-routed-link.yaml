@@ -1,0 +1,41 @@
+# Expected: ranked-groups ticket 06b, frames take part in the overlay-weighted order. The same three
+# locations as `overlay-links-reorder-two-locations`, but B has routed links from `b-edge` to the second
+# rank of A and to the second rank of C, so ELK stands B between them. The key of B is the smallest (the
+# overlay link to `ntp1`), and moving B to the left end would straighten the two sync links, but it would
+# put A between B and C: the routed link `b-edge` to `c-sync1` would then have a body between its ends,
+# and it would leave the routed link `b-edge` to `a-sync1` as it is. The move is refused with one warning
+# (`OVERLAY_ORDER_REFUSED`) and ELK's order stands.
+# Test-only input owned by ranked-groups ticket 06b; test/pipeline/overlay-frame-order.test.ts reads the layout.
+portograph: 2
+groups:
+  feed: { tier: 0, label: Feed }
+  a: { tier: 1, label: Site A }
+  a-zone: { parent: a, label: Zone A }
+  b: { tier: 1, label: Site B }
+  b-zone: { parent: b, label: Zone B }
+  c: { tier: 1, label: Site C }
+  c-zone: { parent: c, label: Zone C }
+nodes:
+  ntp1: { group: feed, class: server, label: NTP one }
+  ntp2: { group: feed, class: server, label: NTP two }
+  ntp3: { group: feed, class: server, label: NTP three }
+  ntp4: { group: feed, class: server, label: NTP four }
+  hub: { group: feed, class: router, label: Hub }
+  a-core: { group: a, class: router, label: A core }
+  a-sync1: { group: a-zone, class: switch, label: A sync }
+  b-core: { group: b, class: router, label: B core }
+  b-edge: { group: b-zone, class: switch, label: B edge }
+  c-core: { group: c, class: router, label: C core }
+  c-sync1: { group: c-zone, class: switch, label: C sync }
+links:
+  - [ntp1, b-edge, { route: overlay }]
+  - [hub, a-core]
+  - [hub, b-core]
+  - [hub, c-core]
+  - [a-core, a-sync1]
+  - [b-core, b-edge]
+  - [c-core, c-sync1]
+  - [b-edge, a-sync1]
+  - [b-edge, c-sync1]
+  - [a-sync1, c-sync1, { route: overlay }]
+  - [a-sync1, c-sync1, { route: overlay }]
