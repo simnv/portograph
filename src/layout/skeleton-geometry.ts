@@ -5,7 +5,7 @@ import { orderedGroupIds } from '../model/model.js';
 import { bandGap, compareId, greatestPeers, groupId, nodeGap, nodeId, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { isGridGroup, packGrid } from './grid.js';
 import { rebuildFrames } from './frames.js';
-import { packFrameColumns } from './columns.js';
+import { packFrameColumns, type Column } from './columns.js';
 import { GROUP_PADDING } from './regions.js';
 import { bottom, contains as rectContains, EPS, rectOverlap, right } from '../score/geometry.js';
 
@@ -184,7 +184,7 @@ export function packGridGroups(model: LayoutModel, tier?: number): boolean {
 }
 
 /** Select all primary peers from the same ELK result before any repack changes distances. */
-export function placeFlanksAndPeers(model: LayoutModel): void {
+export function placeFlanksAndPeers(model: LayoutModel, orderColumns?: (columns: Map<string, Column>) => void): void {
   const gap = bandGap(model);
   const flanks = orderedGroupIds(model.document).map(id => model.groups[id]!).filter(group => group.flank !== undefined);
   for (const group of flanks) {
@@ -225,6 +225,8 @@ export function placeFlanksAndPeers(model: LayoutModel): void {
   // Repacked rows can grow. A frame is a column: the frames and one-rank groups of a tier take their
   // columns first (`packFrameColumns`), and the sweep below then only moves what is not in a frame.
   const columns = packFrameColumns(model);
+  // The columns are packed, so their widths are known: the caller may re-order the frames (ticket 06b) and re-pack the tiers it changes.
+  orderColumns?.(columns);
   for (const tier of new Set(Object.values(model.groups).map(group => group.tier))) {
     const groups = Object.values(model.groups).filter(group => !group.flank && group.tier === tier).sort((a, b) => a.bounds!.x - b.bounds!.x || compareId(a.id, b.id));
     let end = -Infinity;
