@@ -198,11 +198,25 @@ export function packFrameColumns(model: LayoutModel): Map<string, Column> {
  * Returns whether anything moved.
  */
 export function separateFrameColumns(model: LayoutModel): boolean {
+  const shifts = columnShifts(model, COLUMN_SLACK);
+  for (const [group, dx] of shifts) moveGroup(model, group, dx, 0);
+  return shifts.size > 0;
+}
+
+/**
+ * The sweep of `separateFrameColumns` as a plan: how far each group would move right so that the frames
+ * and one-rank row groups of a document tier stand a band gap plus `slack` on each side that is a frame's
+ * apart, reading the geometry as it stands and moving nothing. A frame moves as a whole, so every cell of
+ * it is listed with the same dx. A rule that widens a cell (a label the box must hold) asks for this with
+ * a `slack` of 0 for the widening applied: a frame box is wider than its cells, so the gap between two cells
+ * that the rule keeps (`growthPlan`) is not the gap between their frames (ranked-groups ticket 15).
+ */
+export function columnShifts(model: LayoutModel, slack: number): Map<LayoutGroup, number> {
+  const shifts = new Map<LayoutGroup, number>();
   const derived = deriveFrames(model);
-  if (derived === undefined) return false;
+  if (derived === undefined) return shifts;
   const box = new Map(derived.map(frame => [frame.id, frame.box]));
   const gap = bandGap(model);
-  let moved = false;
   for (const all of columnTiers(model).filter(members => members.some(unit => unit.frame))) {
     // The rows rule may move frames (their cells are rows) and one-rank row groups. A grid, a bar or a
     // flank stands where it stands, out of the sweep; the collision guard of `repackOverlaps` reports a clash.
@@ -213,12 +227,12 @@ export function separateFrameColumns(model: LayoutModel): boolean {
     const standing = tier.map(unit => ({ unit, ...extent(unit) })).sort((a, b) => a.x - b.x || compareId(a.unit.id, b.unit.id));
     let end = -Infinity;
     for (const { unit, x, end: right } of standing) {
-      const dx = Math.max(0, end + (unit.frame ? COLUMN_SLACK : 0) - x);
-      if (dx > PLACEMENT_EPS) { for (const group of unit.groups) moveGroup(model, group, dx, 0); moved = true; }
-      end = right + dx + gap + (unit.frame ? COLUMN_SLACK : 0);
+      const dx = Math.max(0, end + (unit.frame ? slack : 0) - x);
+      if (dx > PLACEMENT_EPS) for (const group of unit.groups) shifts.set(group, dx);
+      end = right + dx + gap + (unit.frame ? slack : 0);
     }
   }
-  return moved;
+  return shifts;
 }
 
 /** The column of one top-level frame as it stands: its x extent, the sub-tiers it spans, and its cells. */

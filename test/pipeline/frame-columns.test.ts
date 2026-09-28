@@ -4,6 +4,7 @@ import type { LayoutModel, Rect } from '../../src/index.js';
 import { layout, parse, render, score } from '../../src/index.js';
 import { alignLinkedGroupGrid } from '../../src/layout/bands.js';
 import { deriveFrames } from '../../src/layout/frames.js';
+import { bandGap } from '../../src/layout/skeleton-graph.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -19,6 +20,25 @@ function reach(model: LayoutModel, cell: string): Rect {
   const box = model.groups[cell]!.bounds!, bodies = model.groups[cell]!.nodes.map(id => model.nodes[id]!.bounds!);
   const x = Math.min(box.x, ...bodies.map(body => body.x - 20)), end = Math.max(right(box), ...bodies.map(body => right(body) + 20));
   return { x, y: box.y, width: end - x, height: box.height };
+}
+
+/**
+ * Every pair of sibling frames that stand side by side (top-level frames, or children of one parent, whose y ranges
+ * overlap) is a band gap apart, measured on the finished layout. Ticket 09 promised it; ticket 15 found label widening
+ * spending it. Returns the pairs it checked, so a fixture can assert it had two frames in one tier.
+ */
+function expectBandGapBetweenSiblings(model: LayoutModel): number {
+  const frames = model.frames!, gap = bandGap(model);
+  let pairs = 0;
+  for (const [i, frame] of frames.entries()) {
+    for (const other of frames.slice(i + 1)) {
+      if (frame.parent !== other.parent || frame.box.y >= bottom(other.box) || other.box.y >= bottom(frame.box)) continue;
+      const [left, next] = frame.box.x <= other.box.x ? [frame, other] : [other, frame];
+      expect(next.box.x - right(left.box), `${left.id} and ${next.id} stand a band gap apart`).toBeGreaterThanOrEqual(gap - 1e-6);
+      pairs++;
+    }
+  }
+  return pairs;
 }
 
 /** Assertions every fixture of this ticket shares: disjoint frames, cells and children inside their frames, a sheet. */
@@ -39,6 +59,7 @@ function expectColumns(model: LayoutModel, converges = true): void {
     const parent = frames.find(item => item.id === frame.parent);
     if (parent) expect(holdsX(parent.box, frame.box), `${frame.id} inside ${parent.id}`).toBe(true);
   }
+  expectBandGapBetweenSiblings(model);
   const report = score(model);
   expect(report.snapshot.gates.G9.violations).toEqual([]);
   expect(report.snapshot.gates.G9.passed).toBe(true);
@@ -74,6 +95,13 @@ describe('frame columns', () => {
     const between = model.links.filter(link => ['a-edge', 'b-edge', 'c-edge'].includes(link.attachments!.from.node) && /-gw2?$/.test(link.attachments!.to.node));
     expect(between).toHaveLength(3);
     for (const link of between) expect(link.path?.segments.length, `${link.id} is drawn`).toBeGreaterThan(1);
+  }, 60000);
+
+  it('a title-wide cell pushes the frame after it: three locations keep a band gap between frame boxes', async () => {
+    const model = await run('sibling-frames-keep-the-band-gap');
+    expectColumns(model, false);
+    // Three locations in one tier: every pair is a sibling pair, and the assertion above ran on all three.
+    expect(expectBandGapBetweenSiblings(model)).toBe(3);
   }, 60000);
 
   // The linked-group grid (ADR-0012) widens a cell to the extent it shares with the group it is linked to. It
