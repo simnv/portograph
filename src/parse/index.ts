@@ -57,6 +57,7 @@ function groups(input: Map<string, unknown>, doc: NormalisedDocument, v: Validat
     if (fields.has('parent')) {
       const parent = v.identifier(fields.get('parent'), `${path}.parent`);
       if (fields.has('tier')) v.report('CHILD_TIER', `${path}.tier`, 'A child group takes the tier of its parent');
+      if (fields.has('shape')) v.report('CHILD_SHAPE', `${path}.shape`, 'A child group always expands into rank cells and takes no shape');
       if (fields.has('align') || fields.has('of')) v.report('CHILD_FLANK', path, 'A child group cannot be a flank');
       if (parent !== undefined) put(doc.groups, id, { ...content, tier: 0, parent });
       continue;

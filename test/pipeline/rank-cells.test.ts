@@ -104,4 +104,24 @@ describe('rank cells (stage 1)', () => {
     const model = resolve(parse(source(groups, nodes, [['isp', 'gw'], ['gw', 'z1'], ['z1', 'z2']])));
     expect(resolve(model.document)).toEqual(model);
   });
+
+  it('never expands an expanded document again: a neighbour that gains an anchor from the sub-tier numbers stays one rank', () => {
+    const groups = { Q: { tier: 1 }, P: { tier: 1 } };
+    const nodes = {
+      q1: { group: 'Q', class: 'router' }, q2: { group: 'Q', class: 'switch' }, q3: { group: 'Q', class: 'server' },
+      p1: { group: 'P', class: 'router' }, p2: { group: 'P', class: 'switch' },
+    };
+    const model = resolve(parse(source(groups, nodes, [['isp', 'q1'], ['q1', 'q2'], ['q2', 'q3'], ['p1', 'q3'], ['p1', 'p2']])));
+    expect(tiers(model)).toEqual({ upstream: 0, 'Q#0': 1, 'Q#1': 2, 'Q#2': 3, P: 1 });
+    expect(resolve(model.document)).toEqual(model);
+  });
+
+  it('points a flank of a two-rank group at the first cell, on the first sub-tier of the group', () => {
+    const groups = { B: { tier: 1 }, F: { align: 'left', of: 'B' } };
+    const nodes = { b1: { group: 'B', class: 'router' }, b2: { group: 'B', class: 'switch' }, f1: { group: 'F' } };
+    const model = resolve(parse(source(groups, nodes, [['isp', 'b1'], ['b1', 'b2']])));
+    expect(Object.keys(model.groups).filter(id => id.startsWith('B#'))).toEqual(['B#0', 'B#1']);
+    expect(model.document.groups['F']).toMatchObject({ align: 'left', of: 'B#0' });
+    expect(model.groups['F']!.tier).toBe(model.groups['B#0']!.tier);
+  });
 });

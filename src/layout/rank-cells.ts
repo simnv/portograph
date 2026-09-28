@@ -39,6 +39,9 @@ const cellId = (group: string, rank: number): string => `${group}#${rank}`;
  */
 export function expandRankedGroups(model: LayoutModel): NormalisedDocument | undefined {
   const source = model.document;
+  // An expanded document is final. Its sub-tier numbers would give a neighbour an anchor it did not
+  // have, so ranks are read once, from the authored document, and never from the result.
+  if (source.frames !== undefined) return undefined;
   const ids = orderedGroupIds(source);
   if (!ids.some(id => source.groups[id]!.shape === 'ranked')) return undefined;
   const nodes = orderedNodeIds(source);

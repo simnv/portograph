@@ -36,6 +36,7 @@ describe('ranked groups: parent and shape', () => {
 
   it.each([
     ['CHILD_TIER', { site: { tier: 0 }, zone: { parent: 'site', tier: 1 } }],
+    ['CHILD_SHAPE', { site: { tier: 0 }, zone: { parent: 'site', shape: 'row' } }],
     ['CHILD_FLANK', { site: { tier: 0 }, zone: { parent: 'site', align: 'left', of: 'site' } }],
     ['UNKNOWN_REFERENCE', { site: { tier: 0 }, zone: { parent: 'missing' } }],
     ['NESTED_CHILD', { site: { tier: 0 }, zone: { parent: 'site' }, deep: { parent: 'zone' } }],
