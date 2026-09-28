@@ -285,7 +285,15 @@ function runSegments(item: Participant, gap: TierGap, row: number | undefined): 
   // A run reaches the far lane terminal, or the gap's far boundary on the far port's x. Everything
   // inside the gap is then reserved: the piece an earlier batch could otherwise take, and the piece
   // the gates measure against the run's own link.
-  const far = item.farOnEdge ? item.far.y : item.nearEdge === 'low' ? gap.high : gap.low;
+  //
+  // The far port's stem is a required checkpoint. A run that ends closer to the port than the stem tip
+  // leaves the router a checkpoint beyond the end of its piece, and it drops or retraces it. The run
+  // therefore stops at the stem tip when the tip lies inside the gap.
+  const boundary = item.nearEdge === 'low' ? gap.high : gap.low;
+  const far = item.farOnEdge ? item.far.y
+    : !item.reach ? boundary
+      : item.nearEdge === 'low' ? Math.max(gap.low, Math.min(boundary, item.reach.y))
+        : Math.min(gap.high, Math.max(boundary, item.reach.y));
   const points: Point[] = row === undefined
     ? [item.near, at(item.near.x, far)]
     : [item.near, at(item.near.x, row), at(item.far.x, row), at(item.far.x, far)];
