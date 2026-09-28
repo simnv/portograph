@@ -1,5 +1,5 @@
 import type { Rect } from '../model/geometry.js';
-import type { Frame, LayoutLink, LayoutModel } from '../model/layout.js';
+import type { Frame, Lane, LayoutLink, LayoutModel } from '../model/layout.js';
 import { GROUP_PADDING, groupPadding } from './regions.js';
 import { union } from './skeleton-geometry.js';
 
@@ -146,6 +146,27 @@ function foreignFrame(model: LayoutModel, cell: string, link: LayoutLink): { fra
  */
 export function foreignRoot(model: LayoutModel, cell: string, link: LayoutLink): string | undefined {
   return foreignFrame(model, cell, link)?.frame;
+}
+
+/**
+ * The room a lane of another link already takes in the frame a link must stay outside (ticket 14). A link
+ * that ends in a frame keeps its lane beside one of that frame's cells, and `transitLanes` grows the frame
+ * to hold it, so a later link foreign to the frame must stand outside the frame as it will be, not as the
+ * bare cells make it. The lane's rectangle, plus one margin for every parent frame between the frame that
+ * holds it and the outermost frame the link is foreign to, is that room. Undefined when the link is foreign
+ * to no frame of the cell, or `lane` stands in no frame the link is foreign to.
+ */
+export function heldLaneReach(model: LayoutModel, cell: string, link: LayoutLink, lane: Lane, laneOwner: LayoutLink | undefined): Rect | undefined {
+  const frames = model.document.frames, first = model.document.groups[cell]?.frame;
+  if (!frames || first === undefined || lane.group !== cell || !laneOwner?.attachments || laneOwner.id === link.id) return undefined;
+  const found = foreignFrame(model, cell, link);
+  if (!found) return undefined;
+  const ends = [laneOwner.attachments.from.node, laneOwner.attachments.to.node], chain: string[] = [];
+  for (let id: string | undefined = first; id !== undefined; id = frames[id]?.parent) chain.push(id);
+  const holder = chain.findIndex(id => ends.some(node => frameNodes(model, id).includes(node)));
+  if (holder < 0 || holder > found.outer) return undefined;
+  const margin = (found.outer - holder) * GROUP_PADDING;
+  return { x: lane.bounds.x - margin, y: lane.bounds.y, width: lane.bounds.width + 2 * margin, height: lane.bounds.height };
 }
 
 /** The frames of a model, empty when no group was replaced by cells. */
