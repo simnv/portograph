@@ -3,7 +3,7 @@ import { createBrowserElkFactory, elkDeadlineMs, ElkDeadlineError, runElkAttempt
   type CreateElkAttempt, type ElkClock } from './elk-worker.js';
 import { UNBOUNDED_BUDGET, type Budget } from '../pipeline/budget.js';
 import { buildSkeletonGraph } from './skeleton-graph.js';
-import { orderByOverlay } from './overlay-order.js';
+import { orderByOverlay, orderFramesByOverlay } from './overlay-order.js';
 import { packGridGroups, placeFlanksAndPeers, readSkeleton, rebuildBands, stackBands, validateSkeletonBands } from './skeleton-geometry.js';
 export { buildSkeletonGraph } from './skeleton-graph.js';
 export { validateSkeletonBands } from './skeleton-geometry.js';
@@ -81,7 +81,7 @@ export async function skeleton(model: LayoutModel, options: SkeletonOptions = {}
     }
     // Overlay links weigh the order ELK chose (ranked-groups spec 3.2); sides-two reads the result.
     orderByOverlay(work);
-    placeFlanksAndPeers(work);
+    placeFlanksAndPeers(work, columns => { orderFramesByOverlay(work, columns); });
     const errors = validateSkeletonBands(work);
     if (errors.length) throw new SkeletonError(errors.join('; '));
     work.stage = 'skeleton';

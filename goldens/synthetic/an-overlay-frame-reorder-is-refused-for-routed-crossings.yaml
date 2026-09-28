@@ -1,0 +1,42 @@
+# Expected: ranked-groups ticket 06b, the acceptance of the order of frames. Same three locations as
+# `overlay-links-reorder-two-locations`, but the feed of A is `ntp3` (a routed link into the first rank
+# of A) and the feed of B and C is `hub`; ntp3 stands left of hub in the feed row. B has two overlay
+# links to `ntp1`, the left end of the row, so the mean of the partners of B is the smallest and the
+# rule wants B at the left end. In that order the routed link ntp3 to A would cross the routed link
+# hub to B: the routed crossings would rise from 0 to 1, so the order is refused, ELK's order stands
+# (A, B, C), and one `OVERLAY_ORDER_REFUSED` warning tells why.
+# Test-only input owned by ranked-groups ticket 06b; test/pipeline/overlay-frame-order.test.ts reads the layout.
+portograph: 2
+groups:
+  feed: { tier: 0, label: Feed }
+  a: { tier: 1, label: Site A }
+  a-zone: { parent: a, label: Zone A }
+  b: { tier: 1, label: Site B }
+  b-zone: { parent: b, label: Zone B }
+  c: { tier: 1, label: Site C }
+  c-zone: { parent: c, label: Zone C }
+nodes:
+  ntp1: { group: feed, class: server, label: NTP one }
+  ntp2: { group: feed, class: server, label: NTP two }
+  ntp3: { group: feed, class: server, label: NTP three }
+  ntp4: { group: feed, class: server, label: NTP four }
+  hub: { group: feed, class: router, label: Hub }
+  a-core: { group: a, class: router, label: A core }
+  a-sync1: { group: a-zone, class: switch, label: A sync }
+  b-core: { group: b, class: router, label: B core }
+  b-edge: { group: b-zone, class: switch, label: B edge }
+  c-core: { group: c, class: router, label: C core }
+  c-sync1: { group: c-zone, class: switch, label: C sync }
+links:
+  - [ntp1, b-edge, { route: overlay }]
+  - [ntp1, b-edge, { route: overlay }]
+  - [ntp3, a-core]
+  - [hub, b-core]
+  - [hub, c-core]
+  - [a-core, a-sync1]
+  - [b-core, b-edge]
+  - [c-core, c-sync1]
+  - [b-edge, a-sync1]
+  - [b-edge, c-sync1]
+  - [a-sync1, c-sync1, { route: overlay }]
+  - [a-sync1, c-sync1, { route: overlay }]
