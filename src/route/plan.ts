@@ -44,7 +44,8 @@ export type RoutePiece =
   | { kind: 'reserved'; segments: PathSegment[] }
   | { kind: 'allocated'; segments: PathSegment[] }
   | { kind: 'straight'; segments: PathSegment[] }
-  | { kind: 'gap'; connector: string; from: Point; to: Point };
+  /** `via` is the connector's checkpoints, in order: the points the router must pass between the two ends. */
+  | { kind: 'gap'; connector: string; from: Point; to: Point; via: Point[] };
 
 export interface LinkPlan {
   link: string;
@@ -289,7 +290,7 @@ export function planRoute(model: LayoutModel): RoutePlan {
               bounds: stemBounds(model, link, item.terminal, item.checkpoint) });
           }
           connectors.push({ id, from: start.endpoint, to: end.endpoint, checkpoints: asked.map(item => item.checkpoint) });
-          pieces.push({ kind: 'gap', connector: id, from: start.point, to: end.point });
+          pieces.push({ kind: 'gap', connector: id, from: start.point, to: end.point, via: asked.map(item => ({ x: item.checkpoint.x, y: item.checkpoint.y })) });
         }
       }
       if (!last) pieces.push({ kind: woven.allocated.has(index) ? 'allocated' : 'reserved', segments: [fixed[index]!] });
@@ -314,7 +315,7 @@ export function planRoute(model: LayoutModel): RoutePlan {
   // placement fixed keep their original owners. Read the actual segment, not the aspect of its
   // trimmed clearance cover: a short vertical run can have a wider-than-tall cover.
   for (const { segment, covers } of claims) for (const link of links) {
-    if (!link.pieces.some(piece => piece.kind === 'gap' && crossesInterior(piece.from, piece.to, segment))) continue;
+    if (!link.pieces.some(piece => piece.kind === 'gap' && gapCrosses(piece, segment))) continue;
     for (const cover of covers) if (!cover.consumers.includes(link.link)) cover.consumers.push(link.link);
   }
   // The exclusions are read after the link loop, because a straight piece claimed inside it adds a
@@ -389,6 +390,18 @@ function entryCheckpoint(model: LayoutModel, link: LayoutLink, end: 'from' | 'to
   return free(row, stem) ? [checkpoint(row, left ? DIRECTION_BITS.right : DIRECTION_BITS.left)] : [];
 }
 
+/**
+ * Whether a gap must pass through a run: the polyline `[from, ...via, to]` or the endpoint chord crosses
+ * it (ticket 14). The chord alone misses a run that stands between an end and a checkpoint the gap must
+ * reach, so the run stayed an obstacle, the pocket the checkpoint stands in closed, and libavoid dropped
+ * the checkpoint without a word. Every leg, like the chord, must pass strictly through the run.
+ */
+function gapCrosses(piece: { from: Point; to: Point; via: Point[] }, segment: Pick<PathSegment, 'from' | 'to'>): boolean {
+  const points = [piece.from, ...piece.via, piece.to];
+  return crossesInterior(piece.from, piece.to, segment)
+    || points.slice(1).some((point, index) => crossesInterior(points[index]!, point, segment));
+}
+
 /** The endpoint chord must pass strictly through the run, rather than touch an end or its cover. */
 function crossesInterior(from: Point, to: Point, segment: Pick<PathSegment, 'from' | 'to'>): boolean {
   const vertical = Math.abs(segment.from.x - segment.to.x) <= EPS;
@@ -407,7 +420,7 @@ export function completedCrossingObstacles(plan: RoutePlan, batch: { links: stri
   covers: { obstacle: RouteObstacle; segment: Pick<PathSegment, 'from' | 'to'> }[]): RouteObstacle[] {
   return covers.map(({ obstacle, segment }) => {
     const crossers = batch.links.filter(id => plan.links.find(link => link.link === id)?.pieces.some(piece =>
-      piece.kind === 'gap' && crossesInterior(piece.from, piece.to, segment)));
+      piece.kind === 'gap' && gapCrosses(piece, segment)));
     return { ...obstacle, consumers: [...obstacle.consumers, ...crossers] };
   });
 }
