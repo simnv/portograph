@@ -1,0 +1,33 @@
+# Expected: An overlay-only group does not read a same-tier partner (ranked-groups ticket 05,
+# review fix). `f1` and `l1` stand in tier 2; the side phases froze `f1` to the right of `l1`, so
+# `f1` keeps `left` and `l1` keeps `right` on their overlay link. A target at the centre of `l1`
+# would move `f1` to the left of `l1` and turn the link into a detour. The same-tier partner rides
+# the row order the side phases fixed, so link 4 stays one straight segment and `f1` stays right of
+# `l1`. `g1` (tier 3) is a free group too, and its partner `l1` is in another tier, so it still
+# takes `l1` as its target. `big` is the anchor tier (six nodes).
+# Test-only input owned by ranked-groups ticket 05; test/pipeline/overlay-barycentre.test.ts reads
+# the layout.
+portograph: 2
+groups:
+  core: { tier: 0, label: Core }
+  big: { tier: 1, label: Big }
+  lonely: { tier: 2, label: Lonely }
+  free: { tier: 2, label: Free }
+  free2: { tier: 3, label: Free 2 }
+nodes:
+  c1: { group: core, class: router, label: Core 1 }
+  b1: { group: big, class: server, label: Big 1 }
+  b2: { group: big, class: server, label: Big 2 }
+  b3: { group: big, class: server, label: Big 3 }
+  b4: { group: big, class: server, label: Big 4 }
+  b5: { group: big, class: server, label: Big 5 }
+  b6: { group: big, class: server, label: Big 6 }
+  l1: { group: lonely, class: server, label: Lonely 1 }
+  f1: { group: free, class: server, label: Free 1 }
+  g1: { group: free2, class: server, label: Free 2 }
+links:
+  - [c1, b1]
+  - [c1, b6]
+  - [b6, l1]
+  - [f1, l1, { route: overlay }]
+  - [g1, l1, { route: overlay }]

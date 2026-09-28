@@ -69,9 +69,16 @@ export function placeOverlayFree(model: LayoutModel): void {
   }
   const settled = new Set(Object.keys(model.groups).filter(id => !free.has(id)));
   const centreOf = (node: string): number => model.nodes[node]!.bounds!.x + model.nodes[node]!.bounds!.width / 2;
-  /** Mean x of the settled partners of `nodes` that stand outside `own`, or undefined when there is none. */
+  /**
+   * Mean x of the settled partners of `nodes` that stand in another tier, or undefined when there is
+   * none. A partner in the same tier is left out: the side phases froze the order of a tier's groups
+   * and the sides of their overlay ports, and a target at that partner's x could put the group on the
+   * wrong side of it and turn a straight link into a detour.
+   */
   const keyOf = (nodes: string[], own: string): number | undefined => {
-    const xs = nodes.flatMap(node => partners.get(node) ?? []).filter(other => groupOf(other) !== own && settled.has(groupOf(other))).map(centreOf);
+    const tier = model.groups[own]!.tier;
+    const xs = nodes.flatMap(node => partners.get(node) ?? [])
+      .filter(other => model.groups[groupOf(other)]!.tier !== tier && settled.has(groupOf(other))).map(centreOf);
     return xs.length ? xs.reduce((sum, x) => sum + x, 0) / xs.length : undefined;
   };
 

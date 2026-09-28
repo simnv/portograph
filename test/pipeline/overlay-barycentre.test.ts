@@ -92,6 +92,15 @@ describe('overlay barycentre for the free', () => {
     expect(Math.abs(mean([centreX(x), centreX(y)]) - nodeX(model, 'n2'))).toBeLessThanOrEqual(1);
   }, 60000);
 
+  it('leaves a same-tier partner out of the target, so a frozen side choice keeps its straight link', async () => {
+    const model = await run(fixture('an-overlay-move-keeps-a-same-tier-partner-on-its-side'));
+    expect(errors(model)).toEqual([]);
+    expect(nodeX(model, 'f1')).toBeGreaterThan(nodeX(model, 'l1'));
+    const link = model.links.find(one => one.id === 'link-4')!;
+    expect(points(link)).toHaveLength(2);
+    expect(overlays(model).filter(one => points(one).length === 2)).toHaveLength(2);
+  }, 60000);
+
   it('is idempotent: a second pass leaves the layout as the first left it', async () => {
     for (const name of ['overlay-only-groups-stand-under-their-partners', 'overlay-only-nodes-stand-in-the-order-of-their-partners',
       'two-overlay-only-groups-keep-the-band-gap']) {
