@@ -6,15 +6,17 @@ import { union } from './skeleton-geometry.js';
 /**
  * A cell as its frame sees it: its nodes grown by the ordinary margin (and any pill reach) on the two
  * sides, and its own vertical extent, because the top and bottom margins are held inside the cell box.
- * The width a cell was given for its frame column (`alignFrameColumns`) is room for centring, not
- * part of the frame: the frame edge stands 20 px from the outermost body.
+ * A cell box that is wider than that (the linked-group grid, ADR-0012, widens cells) widens the frame
+ * too, so the frame always holds its cells; otherwise the frame edge stands 20 px from the outermost body.
  */
 function sides(model: LayoutModel, id: string): Rect {
   const group = model.groups[id]!, box = group.bounds!, pad = groupPadding(model, group);
   const bodies = group.nodes.map(node => model.nodes[node]!.bounds!);
   if (!bodies.length) return { x: box.x - GROUP_PADDING, y: box.y, width: box.width + 2 * GROUP_PADDING, height: box.height };
-  const x = Math.min(...bodies.map(body => body.x)) - pad.left - GROUP_PADDING;
-  const end = Math.max(...bodies.map(body => body.x + body.width)) + pad.right + GROUP_PADDING;
+  // A cell box wider than its bodies (the linked-group grid, a label) is part of the frame; the column
+  // clearance of `columnReach` moves boxes and never widens them, so it stays out.
+  const x = Math.min(box.x, Math.min(...bodies.map(body => body.x)) - pad.left - GROUP_PADDING);
+  const end = Math.max(box.x + box.width, Math.max(...bodies.map(body => body.x + body.width)) + pad.right + GROUP_PADDING);
   return { x, y: box.y, width: end - x, height: box.height };
 }
 const grow = (box: Rect, by: number): Rect => ({ x: box.x - by, y: box.y - by, width: box.width + 2 * by, height: box.height + 2 * by });

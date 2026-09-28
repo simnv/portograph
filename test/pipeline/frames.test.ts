@@ -124,6 +124,14 @@ describe('frames', () => {
     expect(boxes[0]!.width).toBeGreaterThan(model.nodes['gw']!.bounds!.width + 20);
   }, 60000);
 
+  it('a frame holds a cell the linked-group grid widened', async () => {
+    const model = await run('a-frame-holds-a-widened-cell');
+    for (const frame of model.frames!) for (const cell of frame.cells) expect(holds(frame.box, model.groups[cell]!.bounds!)).toBe(true);
+    const report = score(model);
+    expect(report.snapshot.gates.G9.violations).toEqual([]);
+    expect(report.snapshot.gates.G9.passed).toBe(true);
+  }, 60000);
+
   it('G9 fails when a foreign node lies inside a frame', async () => {
     const model = await run('a-frame-holds-its-ranks-and-title');
     expect(score(model).snapshot.gates.G9.passed).toBe(true);

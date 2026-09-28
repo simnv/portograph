@@ -1,0 +1,30 @@
+# Expected: A frame holds every cell it owns, also a cell the linked-group grid (ADR-0012) widened
+# (ranked-groups ticket 03). `zone` is a child of `site` (span [1, 2]); `wing` is a sibling frame of three
+# ranks; `below` is a group under both, linked from Zone 2 (rank 2 of `site`). The grid grows the boxes
+# of the frame `zone` and of `below` onto one x-extent, so a cell box is wider than its bodies plus 20 px.
+# The frame edge stands at the wider of the two, so gate G9 `frame-contains` holds.
+# Test-only input owned by ranked-groups ticket 03; test/pipeline/frames.test.ts reads the layout.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, label: Site }
+  zone: { parent: site, label: Zone }
+  wing: { tier: 1, label: Wing }
+  below: { tier: 4, label: Below }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  gw: { group: site, class: router, label: Gateway }
+  z1: { group: zone, class: switch, label: Zone 1 }
+  z2: { group: zone, class: access, label: Zone 2 }
+  w1: { group: wing, class: router, label: Wing 1 }
+  w2: { group: wing, class: switch, label: Wing 2 }
+  w3: { group: wing, class: access, label: Wing 3 }
+  low: { group: below, class: access, label: Lower access point }
+links:
+  - [isp, gw]
+  - [isp, w1]
+  - [gw, z1]
+  - [z1, z2]
+  - [w1, w2]
+  - [w2, w3]
+  - [z2, low]
