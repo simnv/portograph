@@ -69,15 +69,13 @@ interface Title { id: string; host: string; frame?: string; label: string; side:
  * routed link ports on links that cross the frame's boundary. A link between two cells of one frame
  * is inside the frame and asks nothing of the title; ties keep the top.
  *
- * A child frame whose title would sit in the same cell and on the same edge as its parent's takes the
- * other edge, so the two titles never share a band.
+ * The title lives in one of the frame's OWN cells, never in a cell of a child frame, so an edge is
+ * allowed only where an own cell is the frame's extreme cell. When the preferred edge has none, the
+ * other edge is taken; a frame with an own cell on neither edge has no title edge (`undefined`).
  */
-export function frameSide(model: LayoutModel, frame: string): 'top' | 'bottom' {
-  const side = crossingSide(model, frame), parent = model.document.frames?.[frame]?.parent;
-  if (parent === undefined) return side;
-  const parentSide = frameSide(model, parent);
-  return parentSide === side && frameHost(model, parent, parentSide) === frameHost(model, frame, side)
-    ? (side === 'top' ? 'bottom' : 'top') : side;
+export function frameSide(model: LayoutModel, frame: string): 'top' | 'bottom' | undefined {
+  const side = crossingSide(model, frame), other = side === 'top' ? 'bottom' : 'top';
+  return frameHost(model, frame, side) !== undefined ? side : frameHost(model, frame, other) !== undefined ? other : undefined;
 }
 
 function crossingSide(model: LayoutModel, frame: string): 'top' | 'bottom' {
@@ -96,14 +94,16 @@ function crossingSide(model: LayoutModel, frame: string): 'top' | 'bottom' {
 }
 
 /**
- * The rank cell that holds a frame's label band: the frame's top cell for a top title, its bottom
- * cell for a bottom one. The room is reserved there and nowhere else.
+ * The rank cell that holds a frame's label band: the frame's own cell on the sub-tier that is the
+ * frame's extreme one on that edge, counting the cells of its child frames. The room is reserved in
+ * that cell and nowhere else. `undefined` when a child frame holds the edge.
  */
-function frameHost(model: LayoutModel, frame: string, side: 'top' | 'bottom'): string {
+function frameHost(model: LayoutModel, frame: string, side: 'top' | 'bottom'): string | undefined {
   const frames = model.document.frames!;
-  const cells = Object.entries(frames).filter(([id, item]) => id === frame || item.parent === frame).flatMap(([, item]) => item.cells)
-    .sort((a, b) => (model.groups[a]!.tier! - model.groups[b]!.tier!) * (side === 'top' ? 1 : -1));
-  return cells[0]!;
+  const tier = (cell: string): number => model.groups[cell]!.tier!;
+  const all = Object.entries(frames).filter(([id, item]) => id === frame || item.parent === frame).flatMap(([, item]) => item.cells);
+  const extreme = (side === 'top' ? Math.min : Math.max)(...all.map(tier));
+  return frames[frame]!.cells.find(cell => tier(cell) === extreme);
 }
 
 /** The text a band's title reads: its frame's label, or its group's own. */
@@ -114,27 +114,26 @@ function titleText(model: LayoutModel, band: LabelBand): string {
 /** Whether `side` of this group's box carries a title: its own, or the frame title its cell hosts. */
 export function carriesTitle(model: LayoutModel, group: LayoutGroup, side: 'top' | 'bottom'): boolean {
   if (group.frame === undefined) return bandSide(model, group) === side;
-  const frames = model.document.frames!;
-  return [frames[group.frame]?.parent, group.frame].some(frame => frame !== undefined
-    && frameSide(model, frame) === side && frameHost(model, frame, side) === group.id);
+  return frameSide(model, group.frame) === side && frameHost(model, group.frame, side) === group.id;
 }
 
 /**
  * Every title in the diagram, in group order: one per group that is not a rank cell, and one per
- * frame, at the cell that holds it. A cell owns no title of its own. Where a child frame and its
- * parent would hold their titles in one cell, the parent's is kept.
+ * frame that has a title edge, at the own cell that holds it. A cell owns no title of its own.
  */
 function titles(model: LayoutModel): Title[] {
-  const frames = model.document.frames ?? {}, hosted = new Map<string, string>();
-  for (const [id, item] of Object.entries(frames)) {
-    const host = frameHost(model, id, frameSide(model, id));
-    if (item.parent === undefined || !hosted.has(host)) hosted.set(host, id);
+  const frames = model.document.frames ?? {}, hosted = new Map<string, Title>();
+  for (const id of Object.keys(frames)) {
+    const side = frameSide(model, id);
+    if (side === undefined) continue;
+    const host = frameHost(model, id, side)!;
+    hosted.set(host, { id, host, frame: id, label: frames[id]!.label, side });
   }
   return orderedGroupIds(model.document).flatMap((id): Title[] => {
     const group = model.groups[id]!;
     if (group.frame === undefined) return [{ id, host: id, label: model.document.groups[id]!.label, side: bandSide(model, group) }];
-    const frame = hosted.get(id);
-    return frame === undefined ? [] : [{ id: frame, host: id, frame, label: frames[frame]!.label, side: frameSide(model, frame) }];
+    const title = hosted.get(id);
+    return title === undefined ? [] : [title];
   });
 }
 
@@ -833,6 +832,13 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
 
 /** Transaction-owned stage-7f producer. It replaces every affected claim before publication. */
 export function produceGroupLabelBands(model: LayoutModel): void {
+  // A frame whose extreme sub-tiers both belong to child frames has no cell of its own to hold a
+  // title. It draws none, and says so.
+  for (const id of Object.keys(model.document.frames ?? {})) {
+    if (frameSide(model, id) === undefined) {
+      placementWarning(model, 'FRAME_TITLE_UNHOSTED', `Frame ${id} has no own cell on its top or bottom edge; its title is not drawn.`, [id], 'group');
+    }
+  }
   reserveInitialSpace(model);
   reserveLinkLabelRoom(model);
   const budget = createCentreBudget();

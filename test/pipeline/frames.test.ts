@@ -52,6 +52,15 @@ describe('frames', () => {
     expect(holds(parent.box, model.groups['site#0']!.bounds!)).toBe(true);
     expect(holds(parent.box, child.box, 20)).toBe(true);
     expect(model.labels.filter(label => label.role === 'group').map(label => label.text).sort()).toEqual(['Site', 'Upstream', 'Zone']);
+    // Each title sits in a band held by one of the frame's OWN cells; the parent's title never
+    // lands in a cell of its child frame. Site has one own cell, site#0, at the top edge.
+    const band = (id: string) => model.labelBands.find(item => item.group === id)!;
+    expect(band('site')).toMatchObject({ host: 'site#0', side: 'top' });
+    expect(child.cells).toContain(band('zone').host);
+    expect(holds(model.groups['site#0']!.bounds!, band('site').bounds)).toBe(true);
+    expect(holds(model.groups[band('zone').host!]!.bounds!, band('zone').bounds)).toBe(true);
+    // Neither band lies inside the other frame's cells.
+    expect(child.cells.some(id => holds(model.groups[id]!.bounds!, band('site').bounds))).toBe(false);
   }, 60000);
 
   it('sibling frames share their sub-tiers, and every frame gate holds', async () => {
