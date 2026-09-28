@@ -3,7 +3,10 @@
 # share an ownership batch, and the run of an earlier link crosses the chord of some of them and not of
 # others. The router splits that batch by the completed runs each link may cross, so no link sits in a
 # request whose obstacle set closes the pocket that holds its checkpoint. Every link routes, no link is
-# removed, and G2 passes (ranked-groups ticket 14).
+# removed, and G2 passes (ranked-groups ticket 14). G6 does NOT pass here: links 1, 3, 4 and 6 fail
+# `segment-group-edge`, an exit hugging its own group's edge, the mirror of ticket 10's entry. The fault is
+# the one parked ticket 13 owns (an attached link is exempt only on its port's own side); the test does not
+# assert G6 for that reason.
 # Test-only input owned by ranked-groups ticket 14; test/pipeline/batch-crossing-parts.test.ts reads the layout.
 portograph: 2
 groups:
