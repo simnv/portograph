@@ -5,29 +5,29 @@
     "groups": {
       "providers": {
         "label": "Провайдеры / Контрагенты",
-        "shape": "row",
+        "shape": "ranked",
         "tier": 0
       },
       "datacenter": {
         "label": "Datacenter",
-        "shape": "row",
+        "shape": "ranked",
         "tier": 1
       },
       "tbr-left": {
         "label": "TBR-001",
-        "shape": "row",
+        "shape": "ranked",
         "align": "left",
         "of": "datacenter"
       },
       "tbr-right": {
         "label": "TBR-002",
-        "shape": "row",
+        "shape": "ranked",
         "align": "right",
         "of": "datacenter"
       },
       "route-reflector": {
         "label": "Route-Reflector (ERR)",
-        "shape": "row",
+        "shape": "ranked",
         "tier": 2
       },
       "backbone": {
