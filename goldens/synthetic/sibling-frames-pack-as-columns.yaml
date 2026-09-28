@@ -1,0 +1,39 @@
+# Expected: Sibling frames of one tier are disjoint columns (ranked-groups ticket 09). Two three-rank
+# locations stand in one tier under the ISP. `west` has a wide rank 2 (its child `west-zone` holds four
+# access nodes there) and `east` a wide rank 0 (four gateways). Each location holds a two-rank child on its
+# last two ranks. A frame is a column: the frames are packed left to right, each as wide as its widest
+# cell, and every cell of a frame, and the child frame inside it, stands inside its own column. No frame
+# overlaps another, so the stage-8 obstacle of one location never holds a node of the other.
+# Test-only input owned by ranked-groups ticket 09; test/pipeline/frame-columns.test.ts reads the layout.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  west: { tier: 1, label: West }
+  west-zone: { parent: west, label: West zone }
+  east: { tier: 1, label: East }
+  east-zone: { parent: east, label: East zone }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  w-gw: { group: west, class: router, label: West gateway }
+  w-dist: { group: west-zone, class: switch, label: West distribution }
+  w-acc1: { group: west-zone, class: access, label: West access one }
+  w-acc2: { group: west-zone, class: access, label: West access two }
+  w-acc3: { group: west-zone, class: access, label: West access three }
+  w-acc4: { group: west-zone, class: access, label: West access four }
+  e-gw1: { group: east, class: router, label: East gateway one }
+  e-gw2: { group: east, class: router, label: East gateway two }
+  e-gw3: { group: east, class: router, label: East gateway three }
+  e-dist: { group: east-zone, class: switch, label: East distribution }
+  e-acc: { group: east-zone, class: access, label: East access }
+links:
+  - [isp, w-gw]
+  - [isp, e-gw1]
+  - [isp, e-gw2]
+  - [isp, e-gw3]
+  - [w-gw, w-dist]
+  - [w-dist, w-acc1]
+  - [w-dist, w-acc2]
+  - [w-dist, w-acc3]
+  - [w-dist, w-acc4]
+  - [e-gw2, e-dist]
+  - [e-dist, e-acc]

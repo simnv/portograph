@@ -1,0 +1,50 @@
+# Expected: Locations of two tiers stack as columns over columns (ranked-groups ticket 09). Three
+# two-rank locations stand in tier 0 over two three-rank locations in tier 1. Each location is a frame:
+# a core group on its first rank and a child zone on the ranks after it. A routed link joins the first
+# rank of each lower location to a location above. Every frame is a column of its own tier, wide as its
+# widest cell, so no frame overlaps a frame of its tier and every cell stands inside its column. Every
+# routed link between the two tiers is drawn.
+# Test-only input owned by ranked-groups ticket 09; test/pipeline/frame-columns.test.ts reads the layout.
+portograph: 2
+groups:
+  a: { tier: 0, label: Site A }
+  a-zone: { parent: a, label: Zone A }
+  b: { tier: 0, label: Site B }
+  b-zone: { parent: b, label: Zone B }
+  c: { tier: 0, label: Site C }
+  c-zone: { parent: c, label: Zone C }
+  x: { tier: 1, label: Site X }
+  x-zone: { parent: x, label: Zone X }
+  y: { tier: 1, label: Site Y }
+  y-zone: { parent: y, label: Zone Y }
+nodes:
+  a-core: { group: a, class: router, label: A core }
+  a-edge: { group: a-zone, class: switch, label: A edge }
+  b-core: { group: b, class: router, label: B core }
+  b-edge: { group: b-zone, class: switch, label: B edge }
+  c-core: { group: c, class: router, label: C core }
+  c-edge: { group: c-zone, class: switch, label: C edge }
+  x-gw: { group: x, class: router, label: X gateway }
+  x-gw2: { group: x, class: router, label: X gateway two }
+  x-dist: { group: x-zone, class: switch, label: X distribution }
+  x-acc1: { group: x-zone, class: access, label: X access one }
+  x-acc2: { group: x-zone, class: access, label: X access two }
+  x-acc3: { group: x-zone, class: access, label: X access three }
+  y-gw: { group: y, class: router, label: Y gateway }
+  y-dist: { group: y-zone, class: switch, label: Y distribution }
+  y-acc1: { group: y-zone, class: access, label: Y access one }
+  y-acc2: { group: y-zone, class: access, label: Y access two }
+links:
+  - [a-core, a-edge]
+  - [b-core, b-edge]
+  - [c-core, c-edge]
+  - [a-edge, x-gw]
+  - [b-edge, x-gw2]
+  - [c-edge, y-gw]
+  - [x-gw, x-dist]
+  - [x-dist, x-acc1]
+  - [x-dist, x-acc2]
+  - [x-dist, x-acc3]
+  - [y-gw, y-dist]
+  - [y-dist, y-acc1]
+  - [y-dist, y-acc2]

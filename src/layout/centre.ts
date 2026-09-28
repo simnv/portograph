@@ -2,6 +2,8 @@ import type { LayoutGroup, LayoutModel, LayoutNode, LayoutPort } from '../model/
 import type { Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
 import { laneSidesHold, nodeTier, occupiedOverhang, selectAnchorTier } from './lanes.js';
+import { cellReach } from './frames.js';
+import { frameColumns, type FrameColumn } from './columns.js';
 import { findPort } from './row-paths.js';
 import { portId, bandGap } from './skeleton-graph.js';
 import { moveGroup } from './skeleton-geometry.js';
@@ -10,7 +12,7 @@ import { rowGap } from './sides-two.js';
 import { alignmentAllowance } from './size.js';
 import { withLayoutMutation } from './mutation.js';
 import { placeOverlayFree } from './overlay-place.js';
-import { fitRegionGroup, placementWarning, rebuildRegions, right } from './regions.js';
+import { fitRegionGroup, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 import { EPS } from '../score/geometry.js';
 
 export interface CentreBudget { remaining: number; passes: number }
@@ -138,9 +140,11 @@ interface CentreContext {
   limits: Map<string, { low: number; high: number }>;
   /** The flank window of each tier, measured once: 7c never moves or resizes a flank. */
   flankLimits: Map<number, WideningLimit>;
+  /** The columns of the top-level frames when centring began: the wall no cell of a frame leaves (ticket 09). */
+  columns: readonly FrameColumn[];
 }
 /** Everything one centring pass reads but never writes: step order, winners, group order, lane windows. */
-function centreContext(model: LayoutModel, anchor: number): CentreContext {
+function centreContext(model: LayoutModel, anchor: number, columns: readonly FrameColumn[] = frameColumns(model)): CentreContext {
   const tiers = model.tierBands.map(band => band.tier), index = tiers.indexOf(anchor);
   const steps = [...tiers.slice(index + 1).map((tier, i) => ({ tier, authority: tiers[index + i]! })),
     ...tiers.slice(0, index).reverse().map((tier, i) => ({ tier, authority: tiers[index - i]! }))];
@@ -167,7 +171,7 @@ function centreContext(model: LayoutModel, anchor: number): CentreContext {
     if (flank.flank!.align === 'left') limit.low = Math.max(limit.low, right(flank.bounds!) + bandGap(model));
     else limit.high = Math.min(limit.high, flank.bounds!.x - bandGap(model));
   }
-  return { steps, winners, groupOrder, limits, flankLimits };
+  return { steps, winners, groupOrder, limits, flankLimits, columns };
 }
 /**
  * The window a group of `tier` may never leave. A fixed lane of 7a stays on the side that holds it,
@@ -176,11 +180,44 @@ function centreContext(model: LayoutModel, anchor: number): CentreContext {
  */
 function reservedWindow(model: LayoutModel, context: CentreContext, tier: number, id: string): WideningLimit {
   const limit = context.limits.get(id)!, flank = context.flankLimits.get(tier) ?? { low: -Infinity, high: Infinity };
+  const column = columnWindow(model, context, tier, id);
   const low = Math.max(limit.low, flank.low), high = Math.min(limit.high, flank.high);
   // An unbounded window needs no measurement, and measuring one costs a pass over the group.
-  if (low === -Infinity && high === Infinity) return { low, high };
+  if (low === -Infinity && high === Infinity) return column;
   const reach = occupiedOverhang(model, model.groups[id]!);
-  return { low: low + reach.left, high: high - reach.right };
+  return { low: Math.max(low + reach.left, column.low), high: Math.min(high - reach.right, column.high) };
+}
+
+/** How many frames hold the frame of a rank cell: 0 for a cell of a top-level frame. */
+function frameDepth(model: LayoutModel, id: string): number {
+  const frames = model.document.frames ?? {};
+  let depth = 0;
+  for (let frame = frames[model.groups[id]!.frame ?? '']?.parent; frame !== undefined; frame = frames[frame]?.parent) depth++;
+  return depth;
+}
+
+/**
+ * The window the columns of the frames of a tier leave a group (ranked-groups ticket 09). A rank cell
+ * stays inside the column of its frame: the box of the cell, and the reach `cellReach` gives its
+ * bodies and pills, lie between the column edges. Any other group stays out of the column of every
+ * frame that spans its sub-tier, on the side it stands on. Unbounded for a tier with no frame.
+ */
+function columnWindow(model: LayoutModel, context: CentreContext, tier: number, id: string): WideningLimit {
+  const group = model.groups[id]!, box = group.bounds!;
+  const own = context.columns.find(column => column.cells.has(id));
+  if (own) {
+    // A child frame stands inside its parent's box with the group margin to spare, at every level.
+    const reach = cellReach(model, id), inset = GROUP_PADDING * frameDepth(model, id);
+    return { low: own.x + inset + (box.x - reach.x), high: own.x + own.width - inset - (reach.x + reach.width - (box.x + box.width)) };
+  }
+  const window = { low: -Infinity, high: Infinity };
+  if (!context.columns.some(column => column.from <= tier && tier <= column.to)) return window;
+  const reach = occupiedOverhang(model, group), centre = box.x + box.width / 2, gap = bandGap(model);
+  for (const column of context.columns.filter(item => item.from <= tier && tier <= item.to)) {
+    if (centre < column.x + column.width / 2) window.high = Math.min(window.high, column.x - gap - reach.right);
+    else window.low = Math.max(window.low, column.x + column.width + gap + reach.left);
+  }
+  return window;
 }
 
 /**
@@ -355,8 +392,9 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
   if (anchor === undefined) { delete model.anchorTier; return; }
   model.anchorTier = anchor;
   // Free groups first: the steps below read where every group stands (ranked-groups spec 3.1).
-  placeOverlayFree(model);
-  const context = centreContext(model, anchor);
+  const columns = frameColumns(model);
+  placeOverlayFree(model, columns);
+  const context = centreContext(model, anchor, columns);
   let unresolved = new Set<string>();
   while (budget.remaining > 0) {
     budget.remaining--; budget.passes++;
@@ -379,7 +417,7 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
       }
     }
     // A partner that a step above moved is read where it stands now (the pass is idempotent).
-    placeOverlayFree(model);
+    placeOverlayFree(model, columns);
     rebuildRegions(model);
     const after = geometry(model);
     if (!unresolved.size && after.every((value, i) => Math.abs(value - before[i]!) <= 0.5)) return;

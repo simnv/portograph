@@ -1,4 +1,5 @@
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
+import { frameColumns, type FrameColumn } from './columns.js';
 import { groupShape } from './grid.js';
 import { occupiedOverhang, selectAnchorTier } from './lanes.js';
 import { groupInsets } from './regions.js';
@@ -25,7 +26,8 @@ import { PLACEMENT_EPS } from './tolerance.js';
  *   group whose new row would not fit its old box keeps its order.
  *
  * Routed geometry never moves for it. A group that has any routed link to another group is a
- * fixed wall for the sweep, so are a flank, a bar, a rank cell, a group that has a child group or a
+ * fixed wall for the sweep, so are a flank, a bar, the column of a frame (a rank cell is walled by
+ * the whole column it stands in, ranked-groups ticket 09), a group that has a child group or a
  * parent group, a group in the anchor tier (`mutation.ts` does not let centring move it), and every
  * lane of the tier. A free group never crosses a wall: it stays between the two walls that the
  * order by target puts it between, and when that interval cannot hold the run it goes back to the
@@ -41,7 +43,7 @@ import { PLACEMENT_EPS } from './tolerance.js';
  * and may move, so `centreDraft` runs the pass again after each pass of its steps: the free groups
  * end at the mean of partners that stand where centring left them.
  */
-export function placeOverlayFree(model: LayoutModel): void {
+export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColumn[] = frameColumns(model)): void {
   const anchor = selectAnchorTier(model);
   if (anchor === undefined || !model.links.some(link => link.layer === 'overlay')) return;
   const groupOf = (node: string): string => model.document.nodes[node]!.group;
@@ -93,7 +95,7 @@ export function placeOverlayFree(model: LayoutModel): void {
       const target = keyOf(group.nodes, group.id);
       if (target !== undefined) targets.set(group.id, target);
     }
-    if (targets.size) sweep(model, tier, groups, targets);
+    if (targets.size) sweep(model, tier, groups, targets, columns);
     for (const group of movers) settled.add(group.id);
   }
 }
@@ -138,16 +140,19 @@ interface Item { id: string; want: number; width: number }
  * when an interval cannot hold what the targets put in it, every group goes back to the interval it
  * has now, and an interval that cannot hold its own groups is left alone.
  */
-function sweep(model: LayoutModel, tier: number, groups: LayoutGroup[], targets: ReadonlyMap<string, number>): void {
+function sweep(model: LayoutModel, tier: number, groups: LayoutGroup[], targets: ReadonlyMap<string, number>, columns: readonly FrameColumn[]): void {
   const gap = bandGap(model);
   const reach = new Map(groups.map(group => [group.id, occupiedOverhang(model, group)]));
   const occupied = (group: LayoutGroup): { low: number; high: number } => ({
     low: group.bounds!.x - reach.get(group.id)!.left, high: group.bounds!.x + group.bounds!.width + reach.get(group.id)!.right });
   const walls: Wall[] = [
-    ...groups.filter(group => !targets.has(group.id)).map(group => {
+    // A cell is walled by its frame's column, which is wider than the cell where a neighbour rank is wider.
+    ...groups.filter(group => !targets.has(group.id) && !columns.some(column => column.cells.has(group.id))).map(group => {
       const box = occupied(group);
       return { ...box, centre: (box.low + box.high) / 2, gap };
     }),
+    ...columns.filter(column => column.from <= tier && tier <= column.to).map((column): Wall => ({ low: column.x, high: column.x + column.width,
+      centre: column.x + column.width / 2, gap })),
     ...model.lanes.filter(lane => lane.tier === tier).map((lane): Wall => ({ low: lane.bounds.x, high: lane.bounds.x + lane.bounds.width,
       centre: lane.bounds.x + lane.bounds.width / 2, gap: 0 })),
   ].sort((a, b) => a.low - b.low);
