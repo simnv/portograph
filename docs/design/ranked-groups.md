@@ -39,12 +39,15 @@ group has no tier of its own and is a span of whole ranks inside its parent.*
 
 Input: one document group, its members, the routed links between them, and the routed links
 from members to other tiers. The profile's tier-inference table supplies a **class rank** per
-node class where it has one.
+node class where it has one: parse already infers a group's tier from its node classes, and
+that same table is the class rank, so `switch – switch` is a peer link inside an anchored group.
 
 1. **Anchors.** A member with a routed link to the tier above is an anchor at rank 0. If none
    exists, the members with a routed link to the tier below are anchors at the last rank and the
-   layering runs upward. If neither exists, the member with the most routed links inside the group
-   is the anchor at rank 0.
+   layering runs upward. If neither exists, the group has **one rank**: ranks exist to make the
+   links toward the anchors short and vertical, and a group with no anchor has nothing to be above,
+   so its internal routed links are peer links (decided 2026-09-29 on ticket 02: without this rule
+   any two members joined by a link became a column).
 2. **Peer links.** A routed link between two members of equal class rank is a peer link. It never
    lengthens a path; its two ends share a rank where the layering allows it. A link whose two ports
    the author fixed to `left`/`right` is a peer link regardless of class.
