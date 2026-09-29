@@ -219,6 +219,8 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     // Ticket 67: the finished layout is a fixed point of the column pull (a packed run with a pin; the lone column stays open, see the ticket).
     'a-canton-group-swap-is-refused-for-routed-crossings',
     'three-canton-groups-close-up-to-a-band-gap',
+    // Tickets 69 and 70: the pull reads a transit from beyond the authority tier, and a declined member stands at the in-wall x nearest its feed, where the pull puts it.
+    'a-transit-from-beyond-the-authority-tier-into-a-member',
   ])('%s: a second layout is the same model and the column rules move nothing on it', async name => {
     const first = await run(name), second = await run(name);
     // The stage timings are the only thing that differs between two runs.
@@ -236,20 +238,6 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     expect(JSON.stringify(Object.values(clone.groups).map(group => [group.id, group.bounds]))).toBe(before);
   }, 60000);
 
-  // Ticket 69: the pull admits a transit from beyond the authority sub-tier and reads its lane, as centring does. The first pass on the finished
-  // layout still moves `site` by 1.74 px (it was 4.74 px). The last inner pull saw the lane and the final wall; 7c centring in the 7f replay
-  // then declines the alignment of `site#0` and packs it clear at the left wall (x 52.0), and the pull reads 1.737 px of room up to the right
-  // wall (`slideRange`) and takes it. Two rules put different limits on one wall (ticket 70). The second pass moves nothing.
-  it('a-transit-from-beyond-the-authority-tier-into-a-member: the pull aims at the lane and is a fixed point after one pass', async () => {
-    const clone = structuredClone(await run('a-transit-from-beyond-the-authority-tier-into-a-member')) as LayoutModel;
-    const x = (): number => clone.groups['site#0']!.bounds!.x;
-    const start = x();
-    expect(holdMemberWalls(clone)).toBe(true);
-    expect(x() - start).toBeGreaterThan(0);
-    expect(x() - start).toBeLessThan(2);
-    expect(holdMemberWalls(clone)).toBe(false);
-  }, 60000);
-
   // Ticket 67: the mixed run of a foreign unit between two cantons converges by a third each round of 7f (1.551, 0.517, 0.172 px), and the rounds end
   // under the creep of half a pixel. What is left is that creep, not a pull that goes the wrong way: a second pull moves the run as one block by less
   // than it. The bound of 0.1 is measured (0.057); the guaranteed bound is CANTON_CREEP x the ratio of the rounds, about 0.167.
@@ -259,5 +247,16 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     holdColumnAxes(clone, 0);
     const moved = Object.values(clone.groups).map((group, i) => Math.abs(group.bounds!.x - before[i]!));
     expect(Math.max(...moved)).toBeLessThan(0.1);
+  }, 60000);
+  // Ticket 70, review: a declined member is stood at the nearest in-wall x to its feeds, clamped at the straight overlay chord as the main move is.
+  // The fixture declines the provider at its canton wall. The clamp is inert on it (measured: the target already lies on the near side of the chord), so this holds the
+  // outcome, not the clamp alone; no fixture of the corpus makes a declined body grown with a chord in the way (ticket 70 review).
+  it('a-declined-grown-member-stops-at-an-overlay-chord: the declined member stays off the chord and inside its canton', async () => {
+    const model = await run('a-declined-grown-member-stops-at-an-overlay-chord');
+    const clock = model.nodes['clock']!.bounds!, lab = model.nodes['lab']!.bounds!, provider = model.nodes['provider']!.bounds!;
+    const chord = centreX(clock);
+    expect(Math.abs(chord - centreX(lab))).toBeLessThan(1e-6);
+    expect(chord <= provider.x || chord >= right(provider), 'the chord does not run through the provider').toBe(true);
+    expect(inside(inner(boxOf(model, 'west')), frameOf(model, 'providers').box)).toBe(true);
   }, 60000);
 });

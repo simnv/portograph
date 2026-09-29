@@ -1,0 +1,29 @@
+# Expected: A canton member that centring declines stands at the in-wall x nearest its feeds and clamps at an overlay chord as the main move does
+# (ranked-groups ticket 70, review). `providers` is a member of the canton `west`; `site-1` stands outside it, so the feeds of the provider ask for
+# more room than the canton column holds and centring declines the alignment. The sync link from `clock` to `lab` is one straight chord that the
+# provider row must not cross. Test-only input owned by ranked-groups ticket 70; test/pipeline/canton-walls.test.ts reads the layout.
+portograph: 2
+groups:
+  clocks: { tier: 0, label: Clocks }
+  west: { label: West }
+  providers: { tier: 1, canton: west, label: Providers }
+  sites: { tier: 2, canton: west, label: Sites }
+  far: { tier: 2, label: Far }
+nodes:
+  clock: { group: clocks, class: server, label: Clock }
+  provider:
+    group: providers
+    class: provider
+    label: Provider
+    ports: [{ name: p1, side: bottom }, { name: p2, side: bottom }, { name: p3, side: bottom }, { name: p4, side: bottom }]
+  site-1: { group: far, class: router, label: Site 1, ports: [{ name: up, side: top }] }
+  lab: { group: sites, class: server, label: Lab }
+  site-2: { group: sites, class: router, label: Site 2, ports: [{ name: up, side: top }] }
+  site-3: { group: sites, class: router, label: Site 3, ports: [{ name: up, side: top }] }
+  site-4: { group: sites, class: router, label: Site 4, ports: [{ name: up, side: top }] }
+links:
+  - [provider.p1, site-1.up]
+  - [provider.p2, site-2.up]
+  - [provider.p3, site-3.up]
+  - [provider.p4, site-4.up]
+  - [clock, lab, { class: sync }]
