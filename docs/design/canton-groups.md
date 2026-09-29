@@ -63,12 +63,13 @@ member everywhere else (`group:` on a node, `of:` on a flank, `parent:` on a chi
 
 | Code | Rule |
 |---|---|
-| `CANTON_KEYS` | A canton has no `tier`, `align`, `of`, `parent`, `shape`, `layout` and no node. |
+| `CANTON_KEYS` | A canton has no `tier`, `align`, `of`, `parent`, `shape`, `layout` and no node. A link endpoint cannot name a canton in this version (`{ group: west }`); expansion after stage 1 is a later ticket. |
 | `CANTON_MEMBER_KIND` | A member is a tier group: it has no `align` and no `parent`. A child group takes its parent's canton and does not name one. |
 | `CANTON_MEMBER_SHAPE` | A member is `ranked` or `row`. `expandRankedGroups` copies a `bar` or `grid` group without cells (`src/layout/rank-cells.ts:34`, `55-58`), so "a member is a frame" has no meaning for them, and ticket 06b's `free` predicate walls a unit with a grid cell (`src/layout/overlay-order.ts:315-316`). Both are refused in this version. |
 | `CANTON_MEMBER_FLANK` | No flank names a member in `of`. A flank's nodes are in no member cell, so G9 `frame-foreign-node` would fail inside the canton frame. Refused in this version. |
 | `CANTON_TIER_GAP` | The effective tiers of a canton's members are consecutive. A canton with members on tiers 4 and 6 and none on tier 5 is an error, not a frame with a hole. A canton may span one tier. |
 | `CANTON_NESTED` | A canton is not a member of a canton. A member may have child groups. The chain canton → member → child is the maximum depth (open question 3). |
+| `CANTON_MEMBER_EMPTY` | A member holds at least one node, its own or a child group's. A nodeless member would stand outside the frame and the canton would hold fewer tiers than `CANTON_TIER_GAP` read. |
 | `CANTON_EMPTY` | A canton with no member. |
 | `UNKNOWN_REFERENCE` | `canton:` names a group that does not exist. |
 

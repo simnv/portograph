@@ -61,9 +61,15 @@ describe('canton groups: schema (canton-groups ticket 1)', () => {
     ['CANTON_NESTED', { ...base, east: { canton: 'west' }, site: { tier: 0, canton: 'east' } }],
     ['CANTON_NESTED', { ...base, west: { canton: 'west' } }],
     ['CANTON_EMPTY', { west: {}, site: { tier: 0, canton: 'west', shape: 'bar' }, clients: { tier: 1 } }],
+    ['CANTON_MEMBER_EMPTY', { west: {}, site: { tier: 0, canton: 'west' }, clients: { tier: 1, canton: 'west' } }, { a: { group: 'site' } }],
     ['UNKNOWN_REFERENCE', { site: { tier: 0, canton: 'missing' }, clients: { tier: 1 } }],
   ])('%s is a parse error', (code, groups, nodes) => {
     expect(errors(groups, nodes)).toContain(code);
+  });
+
+  it('CANTON_KEYS refuses a link endpoint that names a canton', () => {
+    const text = stringify({ portograph: 2, groups: base, nodes: defaultNodes, links: [{ from: { group: 'west' }, to: 'b' }] });
+    expect(parseWithDiagnostics(text).diagnostics.filter(d => d.code === 'CANTON_KEYS')).toHaveLength(1);
   });
 
   it('NESTED_CHILD still refuses a child of a child', () => {

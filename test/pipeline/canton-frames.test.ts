@@ -144,3 +144,16 @@ describe('canton frames and the unit (canton-groups ticket 2)', () => {
     }
   }, 60000);
 });
+
+describe('a canton entry never survives stage 1 (ticket 54 review, B1)', () => {
+  it('a canton whose members hold no node lays out; the entry is dropped and no frame stands', async () => {
+    // Parse refuses a nodeless member (CANTON_MEMBER_EMPTY); the layout must not crash on one that got through.
+    const doc = parse(fixture('a-canton-group-frames-two-tiers'));
+    for (const [id, node] of Object.entries(doc.nodes)) if (node.group === 'site' || node.group === 'clients') delete doc.nodes[id];
+    doc.links = [];
+    const model = await layout(doc, { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    expect(model.diagnostics.filter(d => d.severity === 'error')).toEqual([]);
+    expect(model.document.groups['west']).toBeUndefined();
+    expect(model.frames ?? []).toEqual([]);
+  }, 60000);
+});

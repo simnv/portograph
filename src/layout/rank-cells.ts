@@ -82,7 +82,14 @@ export function expandRankedGroups(model: LayoutModel): NormalisedDocument | und
   }
 
   // With no group replaced, the document is final: `ranked` stays in it and reads as `row`.
-  if (![...plans.values()].some(plan => plan.expands)) return undefined;
+  // A canton entry never survives stage 1, whatever parse let through: with no framed member the canton entries are dropped.
+  if (![...plans.values()].some(plan => plan.expands)) {
+    if (!ids.some(isCanton)) return undefined;
+    const dropped: NormalisedDocument = JSON.parse(JSON.stringify(source));
+    for (const id of ids) { if (isCanton(id)) delete dropped.groups[id]; else delete dropped.groups[id]!.canton; }
+    if (dropped.groupOrder !== undefined) dropped.groupOrder = dropped.groupOrder.filter(id => Object.hasOwn(dropped.groups, id));
+    return dropped;
+  }
 
   // Sub-tier grid: R(t) per document tier, offsets in tier order.
   const tiers = [...new Set(tierGroups.map(id => source.groups[id]!.tier!))].sort((a, b) => a - b);
