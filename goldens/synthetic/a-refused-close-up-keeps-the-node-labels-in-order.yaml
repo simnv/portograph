@@ -1,8 +1,8 @@
 # Expected: a close-up that is tried and put back leaves the layout whole (ranked-groups ticket 65, label geometry). The input of
 # three-canton-groups-close-up-to-a-band-gap.yaml (the anchor sub-tier inside the span of three cantons, members with child groups,
-# an all-to-all sync mesh from the top locations) with one more sync link from the first node of the first top location to a
-# node of a child group in canton `a`. Closing the cantons up would put a node body into that straight link, so the close-up is
-# refused in 7f and its move is undone: the node labels must stand in node order again, and the geometry exactly where it was, or
+# an all-to-all sync mesh from the top locations) with five more sync links from the top locations to nodes of the clients and of the
+# switches. Closing the cantons up would put node bodies into some straight links and leave fewer straight links than before, so the
+# close-up is refused in 7f and its move is undone: the node labels must stand in node order again, and the geometry exactly where it was, or
 # publication throws ("Node labels must match measured geometry"). Expected: the layout is produced, one warning names a canton
 # that cannot close up, and the gaps between the canton frames are those of the rows rule.
 # Test-only input owned by ranked-groups ticket 65; test/pipeline/canton-close-up.test.ts reads the layout.
@@ -141,4 +141,8 @@ links:
   - { from: loc-b-sw, to: cl-c3-1, class: flow }
   - { from: loc-c-sw, to: cl-a4-1, class: flow }
   - { from: loc-a2-sw, to: cl-c4-1, class: flow }
-  - { from: t1-1, to: zone-a1-1, class: sync }
+  - { from: t1-2, to: cl-a3-2, class: sync }
+  - { from: t1-1, to: loc-c-ac2, class: sync }
+  - { from: t1-1, to: loc-c-sw, class: sync }
+  - { from: t3-1, to: cl-b4-1, class: sync }
+  - { from: t1-1, to: cl-c3-2, class: sync }

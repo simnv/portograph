@@ -546,7 +546,9 @@ function closeUp(model: LayoutModel, tiers: Unit[][], index: number, slack: numb
     settle();
     // A link that stood as one segment and is not one after the move has been bent by it. In 7f (slack 0) the node bodies, read
     // exactly, decide; a frame box counts only while the rows rule can still slide cells inside it.
-    const segments = straightOverlays(model, new Set(straight.map(({ id }) => id)));
+    // The count reading (ADR-0019: the straight overlay links do not fall): a block move swaps chords, and one that bends while another
+    // straightens is no loss. `pullTier` reads each link, as its moves are small (decisions-log Q102).
+    const segments = straightOverlays(model);
     const after = new Map(deriveFrames(model)?.map(frame => [frame.id, frame.box]));
     const bent = segments.length < straight.length || (slack > 0 && segments.some(({ ends, from, to }) => tier.some(unit => {
       const was = unit.frame ? box.get(unit.id) : undefined, now = unit.frame ? after.get(unit.id) : undefined;
@@ -896,7 +898,7 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
     return { lefts: target };
   };
   /** Moves the units to `target` unless a lane or a straight overlay link forbids it; the move is undone when it is refused. */
-  const attempt = (target: number[], withBoxes: boolean): { shifts: Map<LayoutGroup, number>; allowed: boolean; blocked: boolean; bent: boolean } => {
+  const attempt = (target: number[], withBoxes: boolean, byCount = false): { shifts: Map<LayoutGroup, number>; allowed: boolean; blocked: boolean; bent: boolean } => {
     const shifts = new Map<LayoutGroup, number>();
     for (const [i, item] of standing.entries()) {
       const dx = target[i]! - item.x;
@@ -915,7 +917,7 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
     if (allowed) { for (const [group, dx] of shifts) moveGroup(model, group, dx, 0); settle(); }
     const after = new Map(deriveFrames(model)?.map(frame => [frame.id, frame.box]));
     // The ends are read after the move: a frame that ends a link takes its own ports with it.
-    const segments = straightOverlays(model, new Set(straight.map(({ id }) => id)));
+    const segments = straightOverlays(model, byCount ? undefined : new Set(straight.map(({ id }) => id)));
     // A link that stood as one segment and is not one after the move has been bent by it: a node body or a pill
     // now stands in its way. `segments` lists only the links that are still straight, so the test is a count.
     const bent = segments.length < straight.length;
@@ -928,7 +930,7 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
     return { shifts, allowed, blocked, bent };
   };
   const closing = closeRun(lefts);
-  let result = closing.lefts === undefined ? undefined : attempt(closing.lefts, requestedSlack > 0);
+  let result = closing.lefts === undefined ? undefined : attempt(closing.lefts, requestedSlack > 0, true);
   let cause = closing.cause;
   // In 7f (slack 0) the frame boxes do not slide, so the node bodies, read exactly, decide; the close-up is refused as the plan is.
   if (result !== undefined && result.shifts.size > 0 && (!result.allowed || result.blocked)) {
