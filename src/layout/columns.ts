@@ -299,16 +299,22 @@ function feedsFrom(model: LayoutModel, sources: ReadonlySet<string>, below: bool
       if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
       for (const [own, other] of [[link.attachments.from, link.attachments.to], [link.attachments.to, link.attachments.from]]) {
         const ownGroup = model.document.nodes[own!.node]?.group, otherGroup = model.document.nodes[other!.node]?.group;
-        if (ownGroup === undefined || otherGroup === undefined || !mine.has(ownGroup) || !sources.has(otherGroup)) continue;
+        if (ownGroup === undefined || otherGroup === undefined || !mine.has(ownGroup)) continue;
+        const ownTier = model.groups[ownGroup]!.tier!, otherTier = model.groups[otherGroup]!.tier;
+        const near = below ? ownTier - 1 : ownTier + 1;
+        // A parent beyond the sources, on their side, is admitted when its link transits the sub-tier `near` through an owned lane: `feeds`
+        // in `centre.ts` admits every parent on the authority side, and the pull must read the same feeds (ticket 69). A bundle member has no lane.
+        const beyond = !sources.has(otherGroup) && otherTier !== undefined && !model.groups[otherGroup]!.flank && (below ? otherTier < near : otherTier > near);
+        if (!sources.has(otherGroup) && !beyond) continue;
         const child = findPort(model, own!), parent = findPort(model, other!);
         if (!child?.anchor || !parent?.anchor) continue;
         if (child.side !== (below ? 'top' : 'bottom') || parent.side !== (below ? 'bottom' : 'top')) continue;
         // A link that transits the sub-tier next to the sub-tier of the child (7a) reaches it through its owned lane, and centring (`feeds` in
         // `centre.ts`) puts the child under that lane, not under the parent port. Both rules read one x, or the last to run
         // wins and a second pass flips the child back (ranked-groups ticket 64). A bundle member carries no lane here.
-        const near = below ? model.groups[ownGroup]!.tier! - 1 : model.groups[ownGroup]!.tier! + 1;
-        const lane = model.groups[otherGroup]!.tier === near || link.bundle ? undefined
+        const lane = otherTier === near || link.bundle ? undefined
           : model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === link.id && item.tier === near);
+        if (beyond && lane === undefined) continue;
         children.set(portId(child.ref), { x: child.anchor.x, cell: ownGroup });
         parents.set(portId(parent.ref), lane?.x ?? parent.anchor.x);
       }
