@@ -174,14 +174,11 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     expect(zone.box.x - west.box.x).toBeGreaterThanOrEqual(40 - 1e-6);
     expect(right(west.box) - right(zone.box)).toBeGreaterThanOrEqual(40 - 1e-6);
     expect(inside(loc.box, zone.box)).toBe(true);
-    // The row of the zone and its parent's cells stands packed after the whole layout: `packBesideRows` moves none of them. It moves `wing`,
-    // the member beside `loc`, by 1 px: 7f widened the cell of `loc` for its title, and no rule repacks a beside row after 7f (the gap is 41).
+    // The row stands packed after the whole layout: `packBesideRows` moves none of the cells. `wing` stands 40 px from `loc` (ticket 61: 7f
+    // widened the cell of `loc` for its title, and the beside row is packed again after 7f; it was 41).
     const clone = structuredClone(model) as LayoutModel;
-    expect(packBesideRows(clone)).toBe(true);
-    for (const cell of Object.keys(model.groups)) {
-      const dx = clone.groups[cell]!.bounds!.x - model.groups[cell]!.bounds!.x;
-      if (cell.startsWith('wing')) expect(Math.abs(dx)).toBeCloseTo(1, 0); else expect(dx, cell).toBe(0);
-    }
+    expect(packBesideRows(clone)).toBe(false);
+    expect(frameOf(model, 'wing').box.x - right(loc.box)).toBeCloseTo(40, 3);
     // The internal link is planned: no part of the model is left to the router.
     expect(model.diagnostics.filter(item => item.code === 'TIER_GAP_PART_RESIDUAL')).toEqual([]);
     const internal = model.links.find(link => link.attachments?.from.node === 'gw' && link.attachments?.to.node === 'sw')!;
@@ -190,7 +187,7 @@ describe('canton member walls (canton-groups ticket 56)', () => {
   }, 60000);
 
   // Ticket 54 measured 40 and 44 px for three beside members.
-  it('three members of one tier: 40 px at rows time, and 44 px between the last two after 7f, which no rule repacks', async () => {
+  it('three members of one tier: 40 px at rows time and after 7f (ticket 61)', async () => {
     const name = 'a-canton-holds-three-members-on-one-tier';
     const atRows = await rows(await placed(fixture(name)));
     const gaps = (model: LayoutModel): number[] => {
@@ -202,9 +199,9 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
     const [first, second] = gaps(model);
     // 7f widens the cell of `beta` by 4 px for its title and `pushFollowingGroups` moves `gamma` by the growth of the cell; the frame of `beta`
-    // does not grow (it is derived from the bodies), and `packBesideRows` runs at rows time and in centring, not after 7f. So the gap is 40 + 4.
+    // does not grow (it is derived from the bodies), so the beside row is packed again after 7f (ticket 61) and the gap stays 40.
     expect(first).toBeCloseTo(40, 3);
-    expect(second).toBeCloseTo(44, 1);
+    expect(second).toBeCloseTo(40, 3);
     // The inner pass never moves members that share a sub-tier: a second pass on the finished layout moves nothing.
     expect(holdMemberWalls(structuredClone(model))).toBe(false);
   }, 60000);

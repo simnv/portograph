@@ -59,7 +59,7 @@ router stem `m = 15 px` (`bands.ts:35`).
 4. **Drops.** A part with `|x_lower − x_upper| < k` is a drop (ticket 42 rule 2, `gap-runs.ts:303`,
    kept). Its vertical stands on the end x that keeps `k` from every foreign leg: the upper end's x by
    default, the lower end's x where that is the one that clears (ticket 50, review). Where the ends
-   differ, the jog stands one clearance above the lower tip row (upper stand), or one clearance below
+   differ, the jog stands one clearance above the lower tip row, or `e` off an O5 band anchored below over its x if that is higher (upper stand: `bandTop - max(depth + k, band)`), or one clearance below
    the upper tip row (lower stand); either way the tip is entered along its normal. Both are reserved.
    The vertical below the jog of an upper stand, and the stub beside the jog of a lower stand, is a
    lower leg (an upper leg) for the within-`k` rule of Section 2.2.
@@ -130,7 +130,7 @@ never sees.
   `gap-runs.ts:407-410`). The two halves of a Z part carry the whole's O2 edges: the upper edge on
   the first half, the lower edge on the second, and the first half is above the second. (S4) O2 also
   applies between a drop's vertical and a stepped part's leg: the stepped part's leg within `k` of the
-  drop's lower x runs at least `2k + depth` above the band below (`depth` of the drop's lower end), so its row stays `k` above the jog.
+  drop's lower x runs at least `k + jogDepth` above the band below (`jogDepth = max(depth + k, the O5 band anchored below)`, `depth` of the drop's lower end), so its row stays `k` above the jog.
 - **O3, no row shared.** Two parts share one row only where their x-spans, each grown by `k`, are
   disjoint. Every other pair takes rows at least `P` apart. A described part (one with a link
   label) keeps `label height + 2 × 4 + stroke` below its row before the next row, or its label is
@@ -286,9 +286,9 @@ lb_i   = max( own upper tip row  (or low + e where that tip is in the padding),
 need_i = max( depth(own lower end),
               e                  where the span crosses a group's top edge,
               k + depth(j)       for every lower leg the run really crosses (parts above it),
-              k + depth(d)       for every drop d inside the span (2k + depth(d) where d has a
-                                 jog: the jog stands k above the lower tip row, and the run keeps
-                                 k from the jog, O4),
+              k + depth(d)       for every drop d inside the span (k + jogDepth(d) where d has an
+                                 upper-stand jog: jogDepth = max(depth(d) + k, the O5 band below
+                                 over the jog); the run keeps k from the jog, O4),
               O5 bands anchored to the band below, over the span, plus their clearance )
 drop d:  lb_d = own upper tip row;  need_d = depth(own lower end) + (k where it has a jog)
 residual r between the two tiers:  need_r = depth(upper tip, from low) + 2k + depth(lower tip)

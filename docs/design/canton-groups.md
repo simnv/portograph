@@ -117,10 +117,11 @@ below are consequences of that, and each names its machinery.
    NTP sheet the MPLS row's sub-tier is one below the first canton sub-tier), so the merged step
    holds the cantons and the units outside every canton on those tiers, and nothing else.
 2. **Stand.** `standOf(canton)`: members on distinct sub-tiers are `apart` blocks centred on the
-   canton axis; two members that share sub-tiers (the two lower locations of continent A) are a
-   `beside` row. Each block carries `GROUP_PADDING` on both sides (`columns.ts:126-128`), so two
-   beside member frames stand 2 × `GROUP_PADDING` = 40 px apart (`packBesideRows`,
-   `columns.ts:716-717`). They stand in **declaration order**: `ownX` is undefined for a frame with
+   canton axis; members that share sub-tiers are a `beside` row, and the rows are the connected components of the sub-tier range
+   overlap (transitive, ticket 63): members of two tiers are two rows, each centred on the axis (the two lower locations of continent A
+   are one row). Each block carries `GROUP_PADDING` on both sides, so two beside member frames stand 2 × `GROUP_PADDING` = 40 px apart
+   (`packBesideRows`). *Known limit:* the overlap is transitive, so a chain `a` [1,1], `b` [1,3], `c` [3,3] is one row of three (423 px), where
+   `a` stacked over `c` beside `b` would be about 280 px. Recorded, not changed. They stand in **declaration order**: `ownX` is undefined for a frame with
    no own cell (`columns.ts:143`) and `place()` then returns `right` for every block
    (`columns.ts:146`). The stand's width is the widest block or row. The canton's extent is that
    width plus the slack on each side (`extent`, `columns.ts:295`).
@@ -207,9 +208,10 @@ held-lane parity, idempotence of the passes. What did not:
    same sub-tiers, so its members land in one merged step and no member has the previous member tier as its authority. The pass builds its
    own tiers from the members of one canton (`columnTiers(model, canton)`); the member tier nearest the anchor reads the tier outside the
    canton that the canton reads (`feedsFrom`).
-5. **Beside gaps.** Three beside members stand 40 and 40 px at rows time, 40 and 44 after 7f: `pushFollowingGroups` moves the following
-   cells by the growth of a cell that widened for its title (4 px for `beta`), the frame of `beta` does not grow (it is derived from the
-   bodies), and no rule repacks a beside row after 7f. Ticket 54 measured the same.
+5. **Beside gaps.** Three beside members stood 40 and 40 px at rows time and 40 and 44 after 7f: `pushFollowingGroups` moves the following
+   cells by the growth of a cell that widened for its title (4 px for `beta`), and the frame of `beta` does not grow (it is derived from the
+   bodies). Ticket 61 packs the beside rows again in `holdColumnsAfterPush`, after every push in 7f (`packBesideRows`; flanks are exempt, the
+   anchor tier is not). Measured after the whole layout: 44 to 40 px (three members), 41 to 40 px (`loc` and `wing`), 60 to 40 px (a long member title).
 6. **Member movers in `placeOverlayFree`.** `sweep` reads a column as a wall outside which a mover stands, so a member could never be
    placed inside its canton by it; `sweepMembers` places it between the other members of the tier and the canton box.
 
@@ -301,7 +303,7 @@ owns beside a member cell. A lane the canton holds is reserved before a lane for
   Plain frames outside the run are ordered among themselves as in ticket 06b.
 - Rule 9: the cantons swap as units under the three conditions of ADR-0019 (a canton was already one `columnTiers` unit). The inner order (`orderMembers`) orders the members of a beside
   row by the same key and acceptance; the row keeps its left edge and its gaps, so the canton frame does not move. A refusal is one `OVERLAY_ORDER_REFUSED` warning.
-- Limit: the inner order judges the rows of a canton one at a time, in the order of `Object.keys`. Two-tier paired members (four members in two beside rows) never reorder, because the row of one tier is judged with the other row unmoved (ticket 63 records the pre-existing fold of all four into one beside row in `standOf`).
+- The rows of a canton are the connected components of the sub-tier range overlap (ticket 63). The inner order takes them in sweep direction, the row nearer the anchor first, turns each row where it stands before it reads the next (a partner in a row already turned is read at its new place), and judges the canton once, with every row turned.
 - Lanes, the chord rule and the row plan (rules 1 to 4 above) needed no code. A held lane is not a condition of the order: lanes come after it and their x is immutable.
 
 ## Section 5 — Gates and score
@@ -410,6 +412,6 @@ the Frames section (the canton frame, the title host), G9.
 
 - `validateGroupLabelBands` skips the node clearance for a canton band, and G9 accepts a member frame that overlaps the band by construction:
   `syncBands` re-derives the band from the members, so the two cannot disagree.
-- An overlay link may cross the band and its title (pre-existing for member bands; `crossingSide` counts routed links only). Ticket 60.
+- An overlay link may cross the band and its title (pre-existing for member bands; `crossingSide` counts routed links only). **Decided in ticket 60:** it may. A title is not an overlay blocker and does not move for a chord: the render already masks the overlay layer out of every group title (`maskedBoxes`, `src/render/index.ts`), so the line is cut under the text. Fixture `an-overlay-chord-runs-under-a-title`, test `test/pipeline/overlay-under-title.test.ts`. In the draw.io export there is no cutout: mxGraph has no mask and the Overlay layer paints above the Diagram layer, so there the chord is drawn over the title (documented paint order, accepted).
 - The canton band and its margin are an O5 obstacle to the tier-gap row plan, anchored to the band on the canton's title edge (see `tier-gap-rows.md`, O5).
 - A member port whose x lies within the canton's title text plus or minus 8 px on the title edge becomes a `leg-blocked` residual, and the router detours around the label, never through the text. By ADR-0011 the title edge is the one with fewer ports.

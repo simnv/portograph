@@ -467,6 +467,15 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
     }
     return y;
   };
+  /** How far above `bandTop` the jog of a drop that stands on its upper x lies: one clearance above its lower tip, and no nearer than an O5 band anchored below over the jog's x (`e` off the group edge). */
+  const jogDepth = (drop: Part): number => {
+    const x0 = Math.min(drop.upper.x, drop.lower.x), x1 = Math.max(drop.upper.x, drop.lower.x);
+    let depth = drop.depth + keep;
+    for (const obstacle of frame.obstacles) {
+      if (obstacle.anchor === 'below' && obstacle.owner !== drop.link && obstacle.x1 > x0 + EPS && obstacle.x0 < x1 - EPS) depth = Math.max(depth, obstacle.bound);
+    }
+    return depth;
+  };
   const ownLb = (unit: Unit): number => {
     if (unit.half === 2) return -Infinity;
     const end = unit.part.upper;
@@ -490,10 +499,10 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
     let need = unit.half === 1 ? -Infinity : unit.part.depth;
     for (const obstacle of frame.obstacles) if (obstacle.anchor === 'below' && applies(obstacle, unit)) need = Math.max(need, obstacle.bound);
     for (const drop of drops) {
-      if (inside(drop.upper.x, unit) || inside(drop.lower.x, unit)) need = Math.max(need, (drop.jogged && drop.stand === 'upper' ? 2 * keep : keep) + drop.depth);
+      if (inside(drop.upper.x, unit) || inside(drop.lower.x, unit)) need = Math.max(need, drop.jogged && drop.stand === 'upper' ? keep + jogDepth(drop) : keep + drop.depth);
       // O2 between a drop's vertical and a stepped part's leg (S4): the upper leg of a part within `keep` of the stub below the jog turns above the jog.
       if (drop.jogged && drop.stand === 'upper' && drop.link !== unit.part.link && unit.half !== 2 && Math.abs(unit.xu - drop.lower.x) < keep - EPS) {
-        need = Math.max(need, 2 * keep + drop.depth);
+        need = Math.max(need, keep + jogDepth(drop));
       }
     }
     for (const tip of lowerTips) if (inside(tip.x, unit)) need = Math.max(need, keep + bandTop - tip.y);
@@ -545,7 +554,7 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
     const base = { id: part.id, link: part.link, order: part.order, upper: part.upper, lower: part.lower, depth: part.depth,
       ...(part.index !== undefined ? { index: part.index } : {}), ...(part.upperFirst !== undefined ? { upperFirst: part.upperFirst } : {}) };
     if (part.drop) {
-      const jog = part.jogged ? (part.stand === 'lower' ? jogOf(part) : part.lower.y - keep) : undefined;
+      const jog = part.jogged ? (part.stand === 'lower' ? jogOf(part) : bandTop - jogDepth(part)) : undefined;
       verticals.push({ part, kind: 'drop', x: part.stand === 'lower' ? part.lower.x : part.upper.x, y0: part.stand === 'lower' ? jog! : part.upper.y, y1: Infinity });
       planned.push({ ...base, shape: 'drop', rows: [], stand: part.stand, ...(jog !== undefined ? { jog } : {}) });
       continue;
@@ -591,7 +600,7 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
     }
     raise(rows.get(unit.id)! - low + actual, unit.id);
   }
-  for (const drop of drops) raise(drop.upper.y - low + drop.depth + (drop.jogged ? keep : 0), drop.id);
+  for (const drop of drops) raise(drop.upper.y - low + (drop.jogged && drop.stand === 'upper' ? jogDepth(drop) : drop.depth + (drop.jogged ? keep : 0)), drop.id);
   for (const item of residual) if (item.upper && item.lower) raise(item.upper.y - low + 2 * keep + (bandTop - item.lower.y), item.id);
 
   const height = Math.max(frame.floor, demand);
