@@ -496,6 +496,33 @@ export function holdColumnAxes(model: LayoutModel, slack = COLUMN_SLACK): boolea
 }
 
 /**
+ * The held-axis warnings, read again on the geometry that stands (ticket 75). A warning says how far a column's feed links jog when it is
+ * raised; the replays after it move columns. A warning whose column reaches its feed now is withdrawn, and the jog of one that does not
+ * is the jog of the final geometry. It raises no new warning and moves nothing.
+ */
+export function refreshHeldWarnings(model: LayoutModel): void {
+  if (model.document.frames === undefined || !model.diagnostics.some(item => item.code === COLUMN_AXIS_HELD)) return;
+  const derived = deriveFrames(model);
+  if (derived === undefined) return;
+  const tiers = columnTiers(model), residual = new Map<string, number>();
+  for (const { index, authority } of sweepSteps(model, tiers)) {
+    if (authority === undefined) continue;
+    const feeds = feedReader(model, tiers, index, authority);
+    for (const unit of tiers[index]!.filter(item => item.frame)) {
+      const range = feedRange(model, unit, feeds, derived.find(item => item.id === unit.id)!.box, 0);
+      residual.set(unit.id, range === undefined ? 0 : Math.max(0, range.low, -range.high));
+    }
+  }
+  model.diagnostics = model.diagnostics.flatMap(item => {
+    const owner = item.owners?.[0];
+    // A member of a canton is read by the inner pass, with the canton wall; its warning is left as it is.
+    if (item.code !== COLUMN_AXIS_HELD || item.owners?.length !== 1 || owner === undefined || !('id' in owner) || !residual.has(owner.id)) return [item];
+    const jog = residual.get(owner.id)!;
+    return jog > 0.5 ? [{ ...item, message: item.message.replace(/jog of [\d.]+ px/, `jog of ${jog.toFixed(1)} px`) }] : [];
+  });
+}
+
+/**
  * The close-up alone, in 7f (slack 0), for every merged step that holds a canton: the anchor step by `closeUp`, a step with an
  * authority by the plan of `pullTier` (which closes its run and pulls it to its feeds). The centring replays after a push may widen a
  * canton in place, so stage 7f calls this again before it plans the labels and after the tier gaps grow. It moves groups in x and
@@ -787,12 +814,13 @@ function overlayRange(model: LayoutModel, unit: Unit, tier: Unit[], free: Readon
 }
 
 /** What keeps a column from its feed: an overlay link to a group that stays, a lane it may not cross, or its siblings. */
-type HeldBy = 'overlay' | 'segment' | 'lane' | 'siblings' | 'canton';
+type HeldBy = 'overlay' | 'segment' | 'lane' | 'siblings' | 'canton' | 'keepout';
 const HELD_TEXT: Record<HeldBy, string> = {
   overlay: 'an overlay link to a group that stays holds it',
   segment: 'an overlay segment holds it',
   lane: 'a reserved lane it would cross holds it',
   siblings: 'its siblings hold it a band gap away',
+  keepout: 'a link that drops beside its edge holds it',
   canton: 'the canton column holds it',
 };
 
@@ -962,7 +990,12 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
   // A left the plan takes may put a foreign drop along the unit's edge (ticket 75). The unit then stays on its own side of the band, the way
   // it stood; a snap that would close a band gap on a neighbour is not made.
   const drops = standing.map(item => item.unit.frame ? foreignDrops(model, item.unit) : []);
-  const keepOut = (target: number[]): number[] => snapOut(target, standing.map(item => item.x), standing.map(item => item.width), drops, i => standing[i - 1]!.width + gap);
+  const snapped = new Set<Unit>();
+  const keepOut = (target: number[]): number[] => {
+    const out = snapOut(target, standing.map(item => item.x), standing.map(item => item.width), drops, i => standing[i - 1]!.width + gap);
+    for (const [i, item] of standing.entries()) if (Math.abs(out[i]! - target[i]!) > PLACEMENT_EPS) snapped.add(item.unit);
+    return out;
+  };
   lefts = keepOut(lefts);
   const closing = closeRun(lefts);
   if (closing.lefts !== undefined) closing.lefts = keepOut(closing.lefts);
@@ -980,6 +1013,8 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
   }
   const refused = shifts.size > 0 && (!allowed || blocked);
   if (refused) for (const item of standing) if (shifts.has(item.unit.groups[0]!) && !held.has(item.unit)) held.set(item.unit, blocked ? 'segment' : 'lane');
+  // A unit the keep-out held back from the plan is held by the drop, not by its siblings.
+  for (const unit of snapped) if (!held.has(unit)) held.set(unit, 'keepout');
   // A column its siblings stop short of its feed may be held by a straight overlay link as well: the move that would reach the feed alone
   // bends the link. The reason that names the link is the one that stays true if the sibling moves away (ticket 75: a centring that reaches
   // its fixed point leaves the siblings closer, so the plan no longer tries the move the link refuses).
@@ -1006,7 +1041,7 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
 }
 
 /** The attached overlay links that stand as one straight segment now, with the groups at their ends. */
-function straightOverlays(model: LayoutModel, only?: ReadonlySet<string>): { id: string; ends: Set<string>; from: Point; to: Point }[] {
+export function straightOverlays(model: LayoutModel, only?: ReadonlySet<string>): { id: string; ends: Set<string>; from: Point; to: Point }[] {
   const found: { id: string; ends: Set<string>; from: Point; to: Point }[] = [];
   for (const link of model.links) {
     if (link.layer !== 'overlay' || !link.attachments || (only && !only.has(link.id))) continue;

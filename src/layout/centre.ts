@@ -8,6 +8,7 @@ import { findPort } from './row-paths.js';
 import { portId, bandGap, SKELETON_SPACING } from './skeleton-graph.js';
 import { crosses, overlayBlockers, straightChord } from './overlay-paths.js';
 import { moveGroup } from './skeleton-geometry.js';
+import { rebuildNodeGeometry } from './node-geometry.js';
 import { packRowsOf } from './grid.js';
 import { rowGap } from './sides-two.js';
 import { linkLabelGap } from './bands.js';
@@ -390,9 +391,12 @@ function centreGroupStep(model: LayoutModel, context: CentreContext, tier: numbe
   // where it stood (ticket 75). A step that straightens one link for another is a trade the alignment is allowed to make.
   if (!CHORD_STAGES.includes(model.stage)) return centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail);
   const group = model.groups[id]!;
+  // `moveGroup` leaves pill bounds behind, and the chord reads them: both readings are taken on rebuilt nodes.
+  rebuildNodeGeometry(model, group.nodes, 'current');
   const held = straightOverlays(model), breached = new Set([...keepOutShifts(model).keys()].map(item => item.id));
   const snapshot = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
   const result = centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail);
+  rebuildNodeGeometry(model, model.groups[id]!.nodes, 'current');
   const now = straightOverlays(model);
   // A frame edge that a foreign drop would run along is a spacing routing can only discover; a step may not make one (ticket 75).
   if (now.size >= held.size && [...keepOutShifts(model).keys()].every(item => breached.has(item.id))) return result;

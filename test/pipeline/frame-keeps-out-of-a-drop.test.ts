@@ -2,7 +2,11 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
-import { keepOutShifts } from '../../src/layout/columns.js';
+import { settleKeepOut } from '../../src/layout/bands.js';
+import { keepOutShifts, refreshHeldWarnings } from '../../src/layout/columns.js';
+import { deriveFrames } from '../../src/layout/frames.js';
+import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
+import { bandGap } from '../../src/layout/skeleton-graph.js';
 import { findPort } from '../../src/layout/row-paths.js';
 import { moveGroup } from '../../src/layout/skeleton-geometry.js';
 import { GROUP_EDGE_LINK_CLEARANCE } from '../../src/theme/geometry.js';
@@ -49,5 +53,39 @@ describe('a frame keeps out of the clearance of a foreign drop (ticket 75)', () 
     expect(new Set(wanted.map(value => value.toFixed(6))).size).toBe(1);
     expect(wanted[0]!).toBeGreaterThan(GROUP_EDGE_LINK_CLEARANCE - 3);
     expect(wanted[0]!).toBeLessThan(GROUP_EDGE_LINK_CLEARANCE + 3);
+  }, 120000);
+
+  it('the frames after a moved frame give way: the band gap between the two sites holds after the settle', async () => {
+    const model = structuredClone(await run()) as LayoutModel;
+    const link = model.links.find(item => item.attachments?.from.node === 'a-edge' && item.attachments.to.node === 'core-1')!;
+    const drop = findPort(model, link.attachments!.to)!.anchor!.x;
+    const boxes = (): Map<string, { x: number; width: number }> => new Map(deriveFrames(model)!.map(frame => [frame.id, frame.box]));
+    const group = (prefix: string) => Object.values(model.groups).filter(item => item.id.startsWith(prefix));
+    // The first site stands with its right edge 3 px short of the drop that it holds (inside the band), the second exactly a band gap after it.
+    const first = boxes().get('top-a')!;
+    for (const item of group('top-a')) moveGroup(model, item, drop - 3 - (first.x + first.width), 0);
+    const doctored = boxes();
+    const second = doctored.get('top-b')!;
+    for (const item of group('top-b')) moveGroup(model, item, doctored.get('top-a')!.x + doctored.get('top-a')!.width + bandGap(model) - second.x, 0);
+    rebuildNodeGeometry(model, Object.keys(model.nodes), 'current');
+    expect(keepOutShifts(model).size).toBeGreaterThan(0);
+    const before = boxes();
+    expect(before.get('top-b')!.x - before.get('top-a')!.x - before.get('top-a')!.width).toBeCloseTo(bandGap(model), 6);
+    expect(settleKeepOut(model)).toBe(true);
+    const after = boxes();
+    expect(after.get('top-a')!.x).toBeGreaterThan(before.get('top-a')!.x);
+    expect(after.get('top-b')!.x).toBeGreaterThan(before.get('top-b')!.x);
+    // The second site moved with the first: the gap between them is still a band gap.
+    expect(after.get('top-b')!.x - after.get('top-a')!.x - after.get('top-a')!.width).toBeGreaterThanOrEqual(bandGap(model) - 1e-6);
+    expect(keepOutShifts(model).size).toBe(0);
+  }, 120000);
+
+  it('the published held-axis warnings are those of the final geometry', async () => {
+    const model = structuredClone(await run()) as LayoutModel;
+    const messages = (): string[] => model.diagnostics.filter(item => item.code === 'COLUMN_AXIS_HELD').map(item => item.message);
+    const published = messages();
+    expect(published.length).toBeGreaterThan(0);
+    refreshHeldWarnings(model);
+    expect(messages()).toEqual(published);
   }, 120000);
 });

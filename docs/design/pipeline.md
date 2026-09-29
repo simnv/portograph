@@ -839,9 +839,11 @@ that height cannot hold is refused (§ 7a states the whole condition).
 drops to the x of that port from a row in the padding of the frame. When that x stands outside the frame, closer to a left or right
 edge than `GROUP_EDGE_LINK_CLEARANCE` plus half the routed stroke, the drop runs along the edge and G6 refuses it. Routing can only
 discover that, so placement reserves it: the column plans (`pullTier`) leave a frame where it stands rather than take a left inside the
-band, and after the rounds of the close-up `settleKeepOut` moves a frame that a mover without a plan (the push of a widened neighbour, a
-lane reseated) left inside it, right by the smallest amount, the frames after it giving way and a lane that forbids the move refusing it.
-A canton keeps its band gap (ticket 65) and is not moved for it. From 7e on, a centring replay also declines a step that leaves fewer
+band, and in the rounds of the close-up `settleKeepOut` moves a frame that a mover without a plan (the push of a widened neighbour, a
+lane reseated) left inside it, right by the smallest amount. The frames after it give way to the moved geometry (the sweep is read after
+the keep-out is applied, and both are applied together until neither has anything left); a lane that forbids the move, or a move that
+leaves fewer overlay links straight, refuses it.
+The rule applies to a frame and to a one-rank row group. A canton keeps its band gap (ticket 65) and is not moved for it. From 7f on (the replays of the bundled model), a centring replay also declines a step that leaves fewer
 overlay links straight, or that puts a frame inside a band it was not in: the group stays where it stood.
 
 **A skewed leg under a title widens its group (ticket 66, Q103).** A title stands clear of the legs of the ports under it (ticket 62). Where no

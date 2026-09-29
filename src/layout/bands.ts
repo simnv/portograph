@@ -14,7 +14,7 @@ import { rebuildRegionGeometry } from './region-rebuild.js';
 import { findPort, straightCorridorClear } from './row-paths.js';
 import { bandGap, portId } from './skeleton-graph.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
-import { closeCantons, columnShifts, keepOutShifts, holdColumnAxes, packBesideRows, sweptUnits } from './columns.js';
+import { closeCantons, columnShifts, keepOutShifts, holdColumnAxes, packBesideRows, straightOverlays, sweptUnits } from './columns.js';
 import { deriveFrames, frameNodes } from './frames.js';
 import { bandHeldBy, bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placementWarning, rebuildRegions, right } from './regions.js';
 import { withLayoutMutation } from './mutation.js';
@@ -809,16 +809,23 @@ function holdColumnsAfterPush(model: LayoutModel): void {
 export function settleKeepOut(model: LayoutModel): boolean {
   const before = new Map(Object.values(model.groups).map(group => [group, group.bounds!.x]));
   for (let round = 0; round < 8; round++) {
+    // The frames after a moved one give way to the geometry the move made, so the sweep is read after the keep-out is applied and
+    // both maps are applied together, until neither has anything left.
     const shifts = keepOutShifts(model);
-    if (!shifts.size) break;
     for (const [group, dx] of columnShifts(model, 0)) shifts.set(group, Math.max(shifts.get(group) ?? 0, dx));
+    if (!shifts.size) break;
     if (!laneSidesHold(model, [...shifts].map(([group, dx]) => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } })))) break;
+    const straight = straightOverlays(model).length, nodes = [...shifts.keys()].flatMap(group => group.nodes);
     for (const [group, dx] of shifts) moveGroup(model, group, dx, 0);
-    // The sweep of a moved frame is `columnShifts`' own: the next round finds what still stands close.
-    rebuildNodeGeometry(model, [...shifts.keys()].flatMap(group => group.nodes), 'current');
+    rebuildNodeGeometry(model, nodes, 'current');
+    // A move that leaves fewer overlay links straight is not made.
+    if (straightOverlays(model).length < straight) {
+      for (const [group, dx] of shifts) moveGroup(model, group, -dx, 0);
+      rebuildNodeGeometry(model, nodes, 'current');
+      break;
+    }
   }
-  const shifted = [...before].filter(([group, x]) => group.bounds!.x !== x);
-  return shifted.length > 0;
+  return [...before].some(([group, x]) => group.bounds!.x !== x);
 }
 
 /**
