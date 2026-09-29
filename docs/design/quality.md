@@ -73,6 +73,11 @@ Also reported: `overlaps`, `bundledLength`, `barCross`, `labelHits`, `labelsOmit
 `groupLinks`, `lanesUsed`, `inversions`, `fallbackUsed`, `deadlineHit`, canvas size, and (outside
 the snapshot block) layout time per stage.
 
+`removedLinks` counts the links stage 8 removed because it could not use them
+(`ROUTE_CHECKPOINT_SKIPPED`, `ROUTE_GAP_REJECTED`). The layout JSON lists them in `removedLinks`. A
+removed link has no path, no label, and no place in the score or the gates. It is not a gate
+failure, so the count is the only signal. Read it on every render.
+
 ## Thresholds — assertions vs advisories
 
 | Metric | ≤ 30 nodes | ≤ 100 nodes | Kind |
@@ -167,6 +172,8 @@ command, the time is simply not a promise.
     placed in reserved canvas space below the drawn diagram, lists exactly the classes and port
     roles present, and is excluded from the scored bounding box: its size follows the class set,
     not the quality of the layout.
+11. No link is removed. `removedLinks` is 0, or each removed link is named in the diagnostics with its
+    reason. A drawing that lacks a link the input declares is not a correct drawing.
 
 A **straight bundle member** is the single diagonal between the two stems of a heavily inverted
 bundle (ADR-0017: more inversions than half the members, or a staircase more than half as long again

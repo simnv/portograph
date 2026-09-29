@@ -81,7 +81,14 @@ replaces each group of more than one rank with cells `G#0..G#k-1`. A cell is a `
 more than one rank, the document is unchanged. **Idempotence guard:** a document that already
 carries `frames` is never expanded again, because a second expansion would split the cells.
 A rank inside a child span becomes cell `child#r` (`frame: child`), not `G#r`. The parent has no
-cell at that rank.
+cell at that rank, unless the child is a leaf child.
+
+Rank is the breadth-first depth from the anchors over the routed links inside the group. Two
+members of equal depth are joined by a peer link. The node class decides nothing. A **leaf child**
+feeds no deeper member and holds no anchor. It keeps its depth ranks and pushes no parent member.
+The parent members of its ranks stand in the parent's own cells `G#r`, so one sub-tier holds both
+`G#r` and `child#r`. A child that feeds a deeper member, a child that holds an anchor and a
+group anchored from below keep the push. `docs/design/ranked-groups.md` § 1 has the full rule.
 
 Group endpoints expand to concrete member-node attachments before placement. Empty groups cannot
 supply an attachment and produce a model error. Explicit `group-link` requires two distinct groups
@@ -326,7 +333,11 @@ self-consistency, not historical authenticity. See ADR-0010.
 ## Stage 6 — rows
 
 Per tier: all `row`-shape nodes share one top y. Repack horizontally again if the flattening
-created overlap (nodes ELK stacked at one x). For each same-tier pair with facing east/west
+created overlap (nodes ELK stacked at one x). After `flattenRows`, `reseatBands` seats the bands
+again: each band starts one band gap under the band above, and its groups, nodes and icons move by
+one vertical shift (flanks, bars and grids with it). One number, `bandGap`, serves the boundary
+between sub-tiers and between document tiers. So a band that ELK layered deeper than its sub-tier
+needed does not keep the extra height as gap. Room that stage 7 allocates is added on top. For each same-tier pair with facing east/west
 ports: level the facing ports (move the ports on the node with fewer on that side) and, if
 nothing lies between, **pin** a non-bundle link as a straight horizontal. Bundle endpoints are
 levelled here but remain unpinned for stage 7e.
@@ -340,7 +351,8 @@ the neighbour's facing side, whether it goes to a third node or to the neighbour
 bottom (ticket 29) — and, when links turn inside the gap (a pass-by, or a facing link
 that enters at another height and jogs), one stem on each side that contributes a leg plus one pitch
 between every two legs, counted by link (ADR-0015 rule 1) — then pushes displaced row groups in
-the tier. Flanks and non-row groups never move or resize in this rule; a repack that would
+the tier. Flanks and non-row groups never move or resize in this rule, except for the vertical
+shift of `reseatBands`; a repack that would
 collide with one fails explicitly, and so does a stage-5 input whose flank box lacks the padding
 the containment rebuild assumes. Levelling considers routed links only; a tie in facing port counts moves the
 right-hand node's ports. A target is applied only if it keeps engine order, the measured pitch
@@ -629,7 +641,14 @@ only if the child node can be widened to contain it without overlapping a siblin
 link remains unpinned and is reported. A widening is bounded a third way as well: the body may not
 end wider than `ALIGNMENT_MAX_GROWTH` × the width the node itself needs — its content and author
 floor, or its own ports on that side at their reserved pitch — and a body already wider than that,
-from a bar span or an earlier rule, aligns inside the width it has (ticket 29). Unequal-x top/bottom normals generally need two orthogonal bends; routing determines the actual count. A parent port feeding **two** children cannot be vertical to
+from a bar span or an earlier rule, aligns inside the width it has (ticket 29). A fourth bound is an
+overlay chord. An overlay link with no end on the node, whose chord reaches the rows of the body and
+is not already under the body, stops the growth on its side at the chord less the node clearance
+(20 px) and half the node stroke. A port the stop declines stays at pitch from the last kept one, and
+the feed is reported `CENTRE_ALIGNMENT_INFEASIBLE`; the stop is reported `ALIGNMENT_STOPPED_AT_OVERLAY`.
+The bound of `ALIGNMENT_MAX_GROWTH` is unchanged. A body that has grown wider than its own width
+does not move past the same chord when centring moves its group. A body that has not grown moves as
+before. Unequal-x top/bottom normals generally need two orthogonal bends; routing determines the actual count. A parent port feeding **two** children cannot be vertical to
 both: the first (by child x) is vertical, the rest fan through a shared stem — the junction tree 7e
 reserves for every port with two or more routed links (ticket 20; a rule-fixed member joins it under
 ADR-0016).
@@ -802,6 +821,12 @@ centring replay before it — 7c's own, the growth's and the label bands' — re
 feed's authoritative x and chases a corridor that has moved. It therefore reserves no room: the
 gap keeps the room this stage gave it, and a move whose new row that room cannot seat is refused
 (§ 7a states the whole condition).
+
+**Stem tips stand apart.** For a drawn link between the two tiers of a gap, where either end stands
+on a nested side, the two stem tip rows stand 23 px apart (2 × 11.5 px). The near stem's obstacle
+reaches 11.5 px past its tip, and a run keeps 11.5 px off an obstacle. Each tip then clears the
+obstacle of the other. `tierGapRoom` reports the shortfall as `stems`, and the gap grows by it
+(`TIER_GAP_GROWN`). The rule reads the two tips of one link only.
 
 **A tier gap grows to the rows it must seat (ADR-0015 rule 1).** 7f places its group labels, then
 measures the gaps, then places its group labels again. The middle step is the reservation, and it
@@ -993,6 +1018,16 @@ and `transitLanes` grows the frame to hold the lane. A link that is foreign to a
 lane x outside the frame for all the sub-tiers it crosses (`foreignReach`). It never enters the
 frame.
 
+Lane x is immutable, and a frame only grows. So a lane that a frame holds is reserved before a
+foreign lane: `allocateLanes` takes the links that hold a lane in a frame first (`holdsLane`). A
+foreign lane then reads the held lane through `heldLaneReach`. A held lane also stays on its own
+frame's side of a foreign frame: it takes the one gap between the foreign frames where its own
+cells stand (`heldGap`). It may stand beside its own frame, between the frames, or beyond the pair
+on its own side. It never stands on the far side of a foreign frame. A fixed-point rule (reserve
+the held lane, grow the frame, place the foreign lane, repeat) was tried and dropped. It does not
+converge: a held lane that may pass a foreign frame makes the frame reserved second grow over the
+first lane.
+
 Sibling frames of one tier are columns. A column is the frame box plus `COLUMN_SLACK` (20 px) on
 each side. `packFrameColumns` (`src/layout/columns.ts`) runs in stage 4 after ELK and packs the
 frames and the one-rank groups of a document tier left to right, anchor tier first. Each axis
@@ -1088,6 +1123,24 @@ Links whose exclusion sets differ cannot share one router, because the binding h
 shape-ignore API. They run as an ordered sequence of **ownership batches**, and every completed
 route becomes a protective obstacle for the batches after it.
 
+A completed run may be crossed by a later link. `gapNeeds` grants the passage when the later link's
+chord, or its checkpoint polyline, or either L-shaped path of one of its legs crosses the run. A
+batch is split into parts by the covers its links cross and by the stems of batchmates its links
+cross (`crossingParts`, `crossedStems`), so a link that must cross a stem does not share a part
+with a link that must not. A stem of a later part is an obstacle for the part before it, unless
+that part must cross it. An L that the router does not take frees a cover for nothing. That costs
+quality, not validity.
+
+**A link the stage cannot use is removed (ticket 24).** After each batch part, `tryStitch` judges
+one link: the required checkpoints first, then the stitch. Two cases reject the link. The router
+skipped a required checkpoint: `ROUTE_CHECKPOINT_SKIPPED`, with the link, the checkpoint, the
+connector and the rule that asked for it (`stem:`, `lane:` or `entry:`). Or the stitch refused the
+route: `ROUTE_GAP_REJECTED`, with the reason. Only a `GapRejected` is a rejection. Any other error
+stays fatal. A removed link loses its routes, adds no protective run, and keeps no label. Stage 8
+alone sets it. The layout JSON gains `LayoutLink.removed` and `removedLinks` (both absent when
+none), and the score counts `removedLinks`. The renderer, the drawio export and `score` skip a
+removed link. With `strictCheckpoints` every case keeps the throw.
+
 Ports are `ShapeConnectionPin`s, one non-zero class id per port (its ordinal after the topology
 freeze), direction = the side, **`setExclusive(false)` for any port carrying more than one link
 end**, counting ends a region rule already fixed. A link that consumes a declared shared run does
@@ -1104,7 +1157,8 @@ checkpoint on the run's own line, outside the reservation, so the route joins it
 reserved corridor admits only its owner's collinear run. `setRoutingCheckpoints` exists in this
 version; `ConnRef.setFixedRoute` and a real `JunctionRef` class do not (ADR-0003). libavoid may
 skip a checkpoint it cannot reach, so every required one is verified against the returned polyline
-and the stage rejects the route rather than publish geometry that occupies a reservation.
+and the stage rejects the route rather than publish geometry that occupies a reservation. A
+rejected link is removed (below), not fatal, unless `strictCheckpoints` is set.
 
 **A gap with one possible route is claimed, not asked for.** A planned gap whose two ends stand on
 one axis-aligned line, whose two ends may both travel along it, and every checkpoint of which stands
