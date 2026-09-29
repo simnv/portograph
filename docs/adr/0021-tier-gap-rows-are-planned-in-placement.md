@@ -54,9 +54,12 @@ neighbour's leg (tickets 45, 46). That is the pipeline's one rule broken, in one
 - A tier gap grows to the rows of its parts, at the pitch `k` and not `16 px + stroke`; the numbers
   of the old fixtures changed (spec Section 5).
 - A link in a gap the plan does not fit is routed by libavoid alone and can be removed with its own
-  `ROUTE_GAP_REJECTED` or `ROUTE_CHECKPOINT_SKIPPED` warning; the old seating removed none on the two
-  fixtures that reach this state through a mocked growth (`unfit-gap.test.ts`). No input of the
-  corpus reaches it.
+  `ROUTE_GAP_REJECTED` or `ROUTE_CHECKPOINT_SKIPPED` warning. Under a mocked growth
+  (`unfit-gap.test.ts`) 1 link is removed on `a-claim-lies-on-a-cover-edge` and 7 on
+  `a-band-holds-the-group-that-set-its-edge`, where the old seating removed none. No input of the
+  corpus reaches this state; the price is accepted as decision Q101. A residual whose route detours
+  beyond its tip-to-tip span is not granted the cover of a planned leg it crosses out there (spec
+  Section 2.2); that leg is a wall to it.
 - A chord is invisible to the plan (spec Section 1 item 5, S6): one chord within `k` of a planned
   drop on the NTP sheet, links 232 and 235, is a published G6 finding.
 
