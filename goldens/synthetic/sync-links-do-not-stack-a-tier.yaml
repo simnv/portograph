@@ -1,0 +1,31 @@
+# Expected: Sync links do not stack a tier (ranked-groups ticket 18). Three two-rank locations stand in
+# tier 1; each is a gateway over a switch, so the tier takes two sub-tiers. A sync (overlay) fan joins
+# the three switches, which share sub-tier 2, and one routed peer link joins the gateways of the first
+# two locations, which share sub-tier 1. Neither kind of link joins two sub-tiers, so ELK must not layer
+# the cells of one sub-tier by them: the three gateways stand in one row, the three switches in the next,
+# and the gap between adjacent tier bands is the band gap, 60 px, wherever nothing was allocated in it.
+# Test-only input owned by ranked-groups ticket 18; test/pipeline/tier-gaps-compact.test.ts reads the layout.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  loc1: { tier: 1, label: Location 1 }
+  loc2: { tier: 1, label: Location 2 }
+  loc3: { tier: 1, label: Location 3 }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  gw1: { group: loc1, class: router, label: Gateway 1 }
+  sw1: { group: loc1, class: switch, label: Switch 1 }
+  gw2: { group: loc2, class: router, label: Gateway 2 }
+  sw2: { group: loc2, class: switch, label: Switch 2 }
+  gw3: { group: loc3, class: router, label: Gateway 3 }
+  sw3: { group: loc3, class: switch, label: Switch 3 }
+links:
+  - [isp, gw1]
+  - [isp, gw2]
+  - [isp, gw3]
+  - [gw1, sw1]
+  - [gw2, sw2]
+  - [gw3, sw3]
+  - [gw1, gw2]
+  - [sw1, sw2, { route: overlay }]
+  - [sw1, sw3, { route: overlay }]

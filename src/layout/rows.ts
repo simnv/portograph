@@ -4,7 +4,7 @@ import { groupShape } from './grid.js';
 import { bandGap, compareId, portId } from './skeleton-graph.js';
 import { moveGroup, rebuildBands, union } from './skeleton-geometry.js';
 import { groupInsets } from './regions.js';
-import { separateFrameColumns } from './columns.js';
+import { holdColumnAxes, separateFrameColumns } from './columns.js';
 import { rowGap } from './sides-two.js';
 import { withLayoutMutation } from './mutation.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -43,6 +43,30 @@ function flattenRows(draft: LayoutModel): void {
   }
 }
 
+/**
+ * Re-seat every band at the bottom of the band above plus the band gap (ranked-groups ticket 18).
+ * `flattenRows` moves a tier's nodes to the top of the tier and leaves the freed height below them,
+ * so a band that ELK layered deeper than its sub-tier needed keeps that height as gap. The gap
+ * between two bands is one number: `bandGap`, which serves the boundary between the sub-tiers of one
+ * document tier and the boundary between document tiers alike (both are the same 60 px floor today,
+ * and no rule names a second constant). Room a later stage allocates (tier-gap rows, label bands)
+ * is added on top of this seating by stage 7. Whole bands move by one vertical shift, flanks, bars
+ * and grids with them. The canvas is not touched: stage 9 refits it to what is drawn.
+ */
+function reseatBands(draft: LayoutModel): void {
+  rebuildBands(draft);
+  const gap = bandGap(draft);
+  let y = draft.tierBands[0]?.bounds!.y ?? 0;
+  for (const band of draft.tierBands) {
+    const dy = y - band.bounds!.y;
+    if (Math.abs(dy) > PLACEMENT_EPS) {
+      for (const id of band.groups) moveGroup(draft, draft.groups[id]!, 0, dy);
+    }
+    y += band.bounds!.height + gap;
+  }
+  rebuildBands(draft);
+}
+
 /** Push overlapping row neighbours rightwards in row order, then push displaced row groups; flanks never move. */
 export function repackOverlaps(draft: LayoutModel): void {
   const gap = bandGap(draft);
@@ -60,6 +84,8 @@ export function repackOverlaps(draft: LayoutModel): void {
     }
   }
   separateFrameColumns(draft);
+  // The sweep pushes a frame right and never back; the pass pulls each column toward its feed again (ticket 16).
+  holdColumnAxes(draft);
   for (const band of draft.tierBands) {
     const groups = rowGroups(draft, band);
     if (!groups.length) continue;
@@ -148,6 +174,7 @@ function levelFacingPorts(draft: LayoutModel): void {
 export function rows(model: LayoutModel): LayoutModel {
   return withLayoutMutation(model, 'rows', draft => {
     flattenRows(draft);
+    reseatBands(draft);
     repackOverlaps(draft);
     levelFacingPorts(draft);
     // Levelling moves anchors, which can turn a straight crossing into a jog and so add a turning
