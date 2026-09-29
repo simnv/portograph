@@ -11,8 +11,8 @@ const run = (yaml: string): Promise<LayoutModel> =>
   layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 
 describe('a group with no links', () => {
-  it('stands where its box crosses no overlay chord, and every overlay link is one straight segment', async () => {
-    const model = await run(fixture('a-group-with-no-links-stands-in-a-straight-chord'));
+  it.each(['a-group-with-no-links-stands-in-a-straight-chord', 'a-group-with-no-links-stands-in-a-straight-signal-chord'])('%s: stands where its box crosses no overlay chord, and every overlay link is one straight segment', async name => {
+    const model = await run(fixture(name));
     expect(model.diagnostics.filter(d => d.severity === 'error')).toEqual([]);
     expect(model.diagnostics.some(d => d.code === 'LINKLESS_GROUP_MOVE_REFUSED')).toBe(false);
     const overlays = model.links.filter(link => link.layer === 'overlay');
