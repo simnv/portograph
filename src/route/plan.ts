@@ -539,7 +539,9 @@ function stemBounds(model: LayoutModel, link: LayoutLink, terminal: Point, check
 /**
  * Whether a gap of `link` has to cross `stem` (ticket 22: batchmates whose stems must cross).
  * With `chord` true the endpoint chord counts, as the polyline does: that is the PART KEY, so a batch
- * still splits by a chord-crossed stem and fan links keep distinct rows. With `chord` false only the
+ * still splits by a chord-crossed stem and its parts route in separate requests, in order. Measured on the
+ * ticket 30 fixture: the parts still share rows 263, 278 and 293 by overlap, so the split orders the
+ * requests; it does not give each link a row of its own. With `chord` false only the
  * legs and their L shapes count: that is the CONSUMER rule (ticket 30), a stem is passable to a later
  * part only where the link really has to cross it, never by its endpoint chord alone. Letting the
  * chord alone open a stem let the zigzags of the earlier parts close the pocket of a far stem tip.

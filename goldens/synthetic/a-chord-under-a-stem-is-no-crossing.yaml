@@ -1,8 +1,10 @@
 # Expected: Two core routers each link to the same four edge routers below them. The core routers' stems and
 # the edge routers' stems nest, so a link's pin-to-pin chord may cut a batchmate's stem while every leg of
-# the link, through its stem tips, stays clear of it (ranked-groups ticket 30). The chord alone is no
-# crossing: counting it split the link into a later routing part, the zigzags of the earlier parts closed
-# the pocket of its far stem tip, and the router dropped that checkpoint and the link with it.
+# the link, through its stem tips, stays clear of it (ranked-groups ticket 30). The chord alone must not open
+# that stem to a later part. On main the chord grant lets link-9 walk through the granted stem of link-10 at
+# x 75.1; its cover (x 66 to 86.6) then closes link-10's near tip (75, 263), and link-10 is skipped and
+# removed. With the chord dropped for consumers the stem stays an obstacle, link-9 drops at x 63.3 and
+# link-10 routes.
 # Test-only input owned by ranked-groups ticket 30; the route test asserts that no link is removed.
 portograph: 2
 groups:
