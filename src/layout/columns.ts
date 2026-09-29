@@ -121,6 +121,30 @@ function partnerKey(model: LayoutModel, nodes: ReadonlySet<string>, inside: Read
   return xs.length ? mean(xs) : undefined;
 }
 
+/**
+ * The children of a frame that stand beside each other, grouped into rows (canton-groups ticket 63). A child is beside when its
+ * sub-tier range touches a cell of the frame or another child. The children in a component that touches a cell of the frame are
+ * `own`: they stand in one row with those cells. The other components are rows of their own, the connected components of the
+ * range overlap, so members of two tiers never fold into one row: a child stands beside only the children of the sub-tiers it
+ * shares, and apart from the others. A component of one child, with no cell of the frame beside it, stands apart.
+ */
+function besideRows<T>(cells: readonly string[], tierOf: (cell: string) => number, items: readonly T[], range: (item: T) => [number, number]): { own: T[]; rows: T[][] } {
+  const touches = (a: T, b: T): boolean => range(a)[0] <= range(b)[1] && range(b)[0] <= range(a)[1];
+  const onCells = (item: T): boolean => cells.some(cell => tierOf(cell) >= range(item)[0] && tierOf(cell) <= range(item)[1]);
+  const seen = new Set<T>(), own = new Set<T>(), rows: T[][] = [];
+  for (const start of items) {
+    if (seen.has(start)) continue;
+    const row = new Set<T>([start]);
+    for (let grown = true; grown;) { grown = false; for (const item of items) if (!row.has(item) && [...row].some(other => touches(item, other))) { row.add(item); grown = true; } }
+    for (const item of row) seen.add(item);
+    // Declaration order is kept inside a row.
+    const ordered = items.filter(item => row.has(item));
+    if (ordered.some(onCells)) for (const item of ordered) own.add(item);
+    else if (ordered.length > 1) rows.push(ordered);
+  }
+  return { own: items.filter(item => own.has(item)), rows };
+}
+
 function standOf(model: LayoutModel, id: string, memo: Map<string, Stand>): Stand {
   const known = memo.get(id);
   if (known) return known;
@@ -132,15 +156,21 @@ function standOf(model: LayoutModel, id: string, memo: Map<string, Stand>): Stan
     return { child, low, high, left: stand.left + GROUP_PADDING, right: stand.right + GROUP_PADDING };
   });
   const tierOf = (cell: string): number => model.groups[cell]!.tier!;
-  const shares = (block: typeof blocks[number]): boolean => frames[id]!.cells.some(cell => tierOf(cell) >= block.low && tierOf(cell) <= block.high)
-    || blocks.some(other => other !== block && other.low <= block.high && block.low <= other.high);
-  const beside = blocks.filter(shares), apart = blocks.filter(block => !beside.includes(block));
+  const { own: beside, rows: pure } = besideRows(frames[id]!.cells, tierOf, blocks, block => [block.low, block.high]);
+  const apart = blocks.filter(block => !beside.includes(block) && !pure.some(row => row.includes(block)));
   const standing = frames[id]!.cells.filter(cell => beside.some(block => tierOf(cell) >= block.low && tierOf(cell) <= block.high));
   const at = new Map<string, number>(), sides = new Map<string, 'left' | 'right'>();
   // What is not in the row is centred on the axis: the frame's other cells and the children that share no sub-tier.
   const rest = width(frames[id]!.cells.filter(cell => !standing.includes(cell)));
   let left = Math.max(rest / 2, ...apart.map(block => block.left)), right = Math.max(rest / 2, ...apart.map(block => block.right));
   for (const block of apart) at.set(block.child, 0);
+  // A row of children with no cell of the frame beside it stands in declaration order, centred on the axis; each row on its own.
+  for (const row of pure) {
+    const total = row.reduce((sum, block) => sum + block.left + block.right, 0);
+    let start = 0;
+    for (const block of row) { at.set(block.child, start + block.left - total / 2); sides.set(block.child, 'right'); start += block.left + block.right; }
+    left = Math.max(left, total / 2); right = Math.max(right, total / 2);
+  }
   if (beside.length) {
     // The child on the side its overlay partners favour: the mean x of the partners outside the frame against the
     // mean x of the frame's cells in the row. Declaration order (the frame first, its children in order) on a tie.
@@ -820,10 +850,8 @@ export function packBesideRows(model: LayoutModel, movable: (cell: string) => bo
   let moved = false;
   for (const parent of Object.keys(frames)) {
     const children = childrenOf(parent).map(child => ({ child, box: box.get(child)!, range: tierRange(model, child) }));
-    const shares = (item: typeof children[number]): boolean => frames[parent]!.cells.some(cell => tierOf(cell) >= item.range[0] && tierOf(cell) <= item.range[1])
-      || children.some(other => other !== item && other.range[0] <= item.range[1] && item.range[0] <= other.range[1]);
-    const beside = children.filter(shares);
-    if (!beside.length) continue;
+    const { own: beside, rows: pure } = besideRows(frames[parent]!.cells, tierOf, children, item => item.range);
+    if (!beside.length && !pure.length) continue;
     const standing = frames[parent]!.cells.filter(cell => beside.some(item => tierOf(cell) >= item.range[0] && tierOf(cell) <= item.range[1])).map(cell => cellReach(model, cell));
     const centre = (item: typeof children[number]): number => item.box.x + item.box.width / 2;
     const place = (item: typeof children[number], x: number): void => {
@@ -834,18 +862,22 @@ export function packBesideRows(model: LayoutModel, movable: (cell: string) => bo
       item.box = { ...item.box, x };
       moved = true;
     };
+    const closeUp = (row: typeof children): void => {
+      const sorted = [...row].sort((a, b) => centre(a) - centre(b));
+      let edge = sorted[0]!.box.x + sorted[0]!.box.width + GROUP_PADDING;
+      for (const item of sorted.slice(1)) { place(item, edge + GROUP_PADDING); edge = item.box.x + item.box.width + GROUP_PADDING; }
+    };
     if (standing.length) {
       const low = Math.min(...standing.map(reach => reach.x)), high = Math.max(...standing.map(reach => reach.x + reach.width)), middle = (low + high) / 2;
       let edge = high;
       for (const item of beside.filter(item => centre(item) >= middle).sort((a, b) => centre(a) - centre(b))) { place(item, edge + GROUP_PADDING); edge = item.box.x + item.box.width + GROUP_PADDING; }
       edge = low;
       for (const item of beside.filter(item => centre(item) < middle).sort((a, b) => centre(b) - centre(a))) { place(item, edge - GROUP_PADDING - item.box.width); edge = item.box.x - GROUP_PADDING; }
-    } else {
+    } else if (beside.length) {
       // Children with no cell of the parent between them: the first from the left stays, the rest close up to it.
-      const row = [...beside].sort((a, b) => centre(a) - centre(b));
-      let edge = row[0]!.box.x + row[0]!.box.width + GROUP_PADDING;
-      for (const item of row.slice(1)) { place(item, edge + GROUP_PADDING); edge = item.box.x + item.box.width + GROUP_PADDING; }
+      closeUp(beside);
     }
+    for (const row of pure) closeUp(row);
   }
   return moved;
 }

@@ -1,0 +1,32 @@
+# Expected: canton-groups ticket 63. The canton `west` holds four members, `north-a` and `north-b` on tier 1 and `south-a` and `south-b` on tier 2.
+# The two tier-1 members are one beside row and the two tier-2 members another: a member stands beside only the members of its own tier and apart
+# from the others, so the canton is as wide as one row of two members (not four), and each tier-2 member stands under its tier-1 partner (`south-a`
+# under `north-a`, `south-b` under `north-b`). The anchor row `core` feeds the tier-1 members from one router `hub`; `probe`, the left end of
+# the anchor row, has an overlay link to `north-b` and to `south-b`, so the inner order asks to turn both rows. It judges the canton once, with both
+# rows turned: the routed links `north-a` to `south-a` and `north-b` to `south-b` do not cross, so it raises no refusal (a turn of the tier-1 row alone would cross them).
+# Test-only input owned by canton-groups ticket 63; test/pipeline/canton-rows.test.ts reads the layout.
+portograph: 2
+groups:
+  west: { label: West }
+  core: { tier: 0, label: Core }
+  north-a: { tier: 1, canton: west, label: North A }
+  north-b: { tier: 1, canton: west, label: North B }
+  south-a: { tier: 2, canton: west, label: South A }
+  south-b: { tier: 2, canton: west, label: South B }
+nodes:
+  probe: { group: core, class: server, label: Probe }
+  core1: { group: core, class: router, label: Core one }
+  hub: { group: core, class: router, label: Hub }
+  core2: { group: core, class: router, label: Core two }
+  core3: { group: core, class: router, label: Core three }
+  na-gw: { group: north-a, class: router, label: North A gateway }
+  nb-gw: { group: north-b, class: router, label: North B gateway }
+  sa-srv: { group: south-a, class: server, label: South A server }
+  sb-srv: { group: south-b, class: server, label: South B server }
+links:
+  - [hub, na-gw]
+  - [hub, nb-gw]
+  - [na-gw, sa-srv]
+  - [nb-gw, sb-srv]
+  - { from: probe, to: nb-gw, class: flow }
+  - { from: probe, to: sb-srv, class: flow }
