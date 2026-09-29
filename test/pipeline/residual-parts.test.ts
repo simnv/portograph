@@ -141,12 +141,12 @@ describe('shapes the placement stages do not build, on an edited placed model (t
 describe('a gap that stops fitting after 7f is named (TIER_GAP_PART_UNFIT)', () => {
   it('reads the gap that asks for more room than it has, once, and none where the plan fits', async () => {
     const model = structuredClone(await place(read('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row'))) as LayoutModel;
-    expect(unfitGaps(model)).toEqual([]);
+    expect(unfitGaps(tierGapPlans(model))).toEqual([]);
     // A corridor move or a later stage that takes 20 px from the gap: the lower band stands 20 px higher than 7f left it.
     const band = model.tierBands.find(item => item.tier === 1)!.bounds!;
     band.y -= 20;
     band.height += 20;
-    const unfit = unfitGaps(model);
+    const unfit = unfitGaps(tierGapPlans(model));
     expect(unfit.map(item => [item.above, item.below])).toEqual([[0, 1]]);
     expect(unfit[0]!.growth).toBeGreaterThan(19);
   }, 120000);

@@ -1,7 +1,8 @@
 import type { LayoutModel } from '../model/layout.js';
 import { EPS } from '../score/geometry.js';
 import { alignLinkedGroupGrid, replanGroupLabels } from './bands.js';
-import { tierGapPlans, type ResidualReason } from './gap-plan.js';
+import { tierGapPlans, type GapPlan, type ResidualReason } from './gap-plan.js';
+import type { TierGap } from './gap-runs.js';
 import { rebuildLaneExtents } from './lanes.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { placementWarning, rebuildRegions } from './regions.js';
@@ -57,7 +58,10 @@ export function growTierGaps(model: LayoutModel): boolean {
     // the growth then stands above the height the published plan asks (a-band-holds-the-group-that-set-its-edge: 198.5 against 187).
     const moving: typeof unfit = [];
     for (const { gap, plan } of plans) {
-      const before = grown.get(gap.below)?.extra ?? 0, after = Math.max(0, plan.height - room.get(gap.below)!);
+      const before = grown.get(gap.below)?.extra ?? 0, ask = Math.max(0, plan.height - room.get(gap.below)!);
+      // H is not monotone in the growth (band-holds: 247.75 unopened, 236.25 opened by 198.5), so the first correction may lower the
+      // growth; from the third round on a gap never gives back what an earlier round asked, which makes the rounds converge or hit the cap.
+      const after = round >= 2 ? Math.max(before, ask) : ask;
       if (Math.abs(after - before) <= EPS) continue;
       moving.push({ above: gap.above, below: gap.below, ask: after - before });
       if (after <= EPS) grown.delete(gap.below); else grown.set(gap.below, { extra: after, setBy: plan.setBy });
@@ -91,10 +95,11 @@ const MAX_ROUNDS = 6;
 /**
  * The tier gaps whose plan asks for more room than they have, on the model as it stands. 7f sizes a gap on a trial; a change after
  * it (the corridor move of `reseatLanes`, a later stage) can leave a gap short, and stage 8 then leaves its parts to the router
- * (`fittingPlans`). This names each such gap with the ask, once, so that no part is left to the router without a diagnostic.
+ * (`fittingPlans`). This names each such gap with the ask, once, so that no part is left to the router without a diagnostic. It reads
+ * the plans stage 8 already computed for `planRoute` (`route()` computes them once), not a second set.
  */
-export function unfitGaps(model: LayoutModel): { above: number; below: number; growth: number }[] {
-  return tierGapPlans(model).filter(({ plan }) => plan.growth > EPS && plan.parts.length)
+export function unfitGaps(plans: readonly { gap: TierGap; plan: GapPlan }[]): { above: number; below: number; growth: number }[] {
+  return plans.filter(({ plan }) => plan.growth > EPS && plan.parts.length)
     .map(({ gap, plan }) => ({ above: gap.above, below: gap.below, growth: plan.growth }));
 }
 

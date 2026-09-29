@@ -158,7 +158,7 @@ function endpointFor(model: LayoutModel, link: LayoutLink, end: 'from' | 'to',
  * must stitch around, which obstacles each link already owns, and the ownership batches that
  * follow from those exclusions.
  */
-export function planRoute(model: LayoutModel): RoutePlan {
+export function planRoute(model: LayoutModel, plans?: Parameters<typeof allocateGapRuns>[1]): RoutePlan {
   const obstacles = routeObstacles(model);
   // One gap plan per row gap for the whole pass: placement is frozen here, and recomputing it per
   // link end is cubic in the size of a turning cohort.
@@ -188,7 +188,7 @@ export function planRoute(model: LayoutModel): RoutePlan {
   // Planned parts on one port share the leg from the tip to the higher row (tier-gap-rows.md, Section 4): the links of the
   // same port lie on each other's covers there. The plan names them; nothing is written to the model.
   const sharing = new Map<string, Set<string>>();
-  for (const run of allocateGapRuns(model)) {
+  for (const run of allocateGapRuns(model, plans)) {
     if (run.shares?.length) sharing.set(run.link, new Set([...sharing.get(run.link) ?? [], ...run.shares]));
     // A link that turns in a row gap holds one reserved run, and its leg is that one. `gapPlan`
     // declines a gap whose legs own a lane, so the two never meet; this keeps the obstacle set and

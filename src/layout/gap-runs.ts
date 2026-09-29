@@ -150,9 +150,9 @@ export function nestedTips(model: LayoutModel, cache: StemCache): NestedTip[] {
  * more room than the gap has is read from a placement the growth did not see (a corridor moved after it): nothing is planned
  * into a gap the plan does not fit, its links are the router's, and stage 8 names the gap `TIER_GAP_PART_UNFIT` (`unfitGaps`).
  */
-function fittingPlans(model: LayoutModel): Map<number, GapPlan> {
+function fittingPlans(all: readonly { plan: GapPlan }[]): Map<number, GapPlan> {
   const result = new Map<number, GapPlan>();
-  for (const [key, { plan }] of tierGapPlans(model).entries()) if (plan.growth <= EPS && plan.parts.length) result.set(key, plan);
+  for (const [key, { plan }] of all.entries()) if (plan.growth <= EPS && plan.parts.length) result.set(key, plan);
   return result;
 }
 
@@ -226,10 +226,10 @@ function plannedRuns(model: LayoutModel, plan: GapPlan, gap: TierGap): PlannedRu
  * plan does not fit) is reserved nothing: it is the router's, a crosser of the rows of its gap, and it holds the grant of every
  * planned vertical it has no route round.
  */
-export function allocateGapRuns(model: LayoutModel): GapRun[] {
+export function allocateGapRuns(model: LayoutModel, all: readonly { gap: TierGap; plan: GapPlan }[] = tierGapPlans(model)): GapRun[] {
   const gaps = tierGaps(model);
   if (!gaps.length) return [];
-  const plans = fittingPlans(model);
+  const plans = fittingPlans(all);
   if (!plans.size) return [];
   const crossers = crossersOf(model, gaps, plannedIds(plans));
   const result: GapRun[] = [];

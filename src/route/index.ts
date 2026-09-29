@@ -1,5 +1,6 @@
 import type { Point } from '../model/geometry.js';
 import type { LayoutModel } from '../model/layout.js';
+import { tierGapPlans } from '../layout/gap-plan.js';
 import { unfitGaps, unfitMessage } from '../layout/gap-room.js';
 import { withLayoutMutation } from '../layout/mutation.js';
 import { completedRouteCovers, type RouteObstacle } from './obstacles.js';
@@ -103,7 +104,9 @@ function rejectionMessage(link: string, item: RouteRejection): string {
  * real worker, outside the checked transaction, and only validated geometry is published.
  */
 export async function route(model: LayoutModel, options: RouteOptions = {}): Promise<LayoutModel> {
-  const plan = planRoute(model);
+  // The tier-gap plans are read once for the whole pass: `planRoute` consumes them and the unfit gaps are named from the same list.
+  const plans = tierGapPlans(model);
+  const plan = planRoute(model, plans);
   // Overlay links need no WASM, and neither does a remainder every piece of which stage 8 claimed,
   // so a diagram with no batch never initializes it.
   const answer: RouterAnswer = plan.batches.length ? await runRouter(model, plan, options)
@@ -120,7 +123,7 @@ export async function route(model: LayoutModel, options: RouteOptions = {}): Pro
     }
     // A gap that stopped fitting after 7f sized it (the corridor move, a later stage) is planned by nobody: its parts are the router's,
     // and the diagnostic says so, unless 7f already named the gap (`TIER_GAP_PART_UNFIT` from the round cap).
-    for (const item of unfitGaps(model)) {
+    for (const item of unfitGaps(plans)) {
       const named = draft.diagnostics.some(entry => entry.code === 'TIER_GAP_PART_UNFIT' && entry.message.startsWith(`the tier gap above tier ${item.below} `));
       if (!named) draft.diagnostics.push({ stage: 'final-geometry', severity: 'warning', code: 'TIER_GAP_PART_UNFIT',
         message: unfitMessage(item.below, item.growth), owners: [] });
