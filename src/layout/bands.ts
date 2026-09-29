@@ -695,6 +695,9 @@ function pushFollowingGroups(model: LayoutModel, grown: LayoutGroup, width: numb
  * its box, so a pass that kept the stage 6 spacing (a band gap and the slack on both sides) would push every
  * pair of frames apart by the slack, and one that let a cell slide into it would leave a jog centring cannot
  * remove. The pass is idempotent, and 7f replays (`replanGroupLabels`), so a replay finds nothing to move.
+ * Before the pull, the beside rows are packed against the frames again (ranked-groups ticket 61): the push moves a follower by the
+ * whole growth of a cell that widened for its title, the frame grows by less, and the gap of 40 px would stay open. Flanks keep
+ * their place; the anchor tier does not, unlike in centring.
  */
 function holdColumnsAfterPush(model: LayoutModel): void {
   if (model.document.frames === undefined) return;
