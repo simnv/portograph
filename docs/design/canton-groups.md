@@ -225,6 +225,8 @@ with no own cell: the union of its member frames grown by 20 px, plus the label 
   whose routers reach the MPLS row) takes the bottom edge. With a tier below it, the gap must hold
   20 + 20 + about 23 px, more than the 60 px band gap, so the shift happens; on the NTP sheet only
   the canvas grows.
+  *Built (ticket 55).* The room is a gap requirement in the tier shift loop of `reserveInitialSpace` (20 + band + 20, the tier below moves by the
+  shortfall), not the `topShift` group growth, which would put the band inside the member frames.
 
 **Tier gaps are global.** `rebuildBands` derives one band per sub-tier as the union of every
 group of that sub-tier (`src/layout/skeleton-geometry.ts:95-104`). The gap between two bands is

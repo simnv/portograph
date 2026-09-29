@@ -239,7 +239,8 @@ function frameOrder(model: LayoutModel): Frame[] {
 /** The frame a group title belongs to: the frame whose label band sits in the title's owning cell. */
 function frameTitled(model: LayoutModel, label: LayoutLabel): Frame | undefined {
   const id = label.owner.kind === 'group' ? label.owner.id : undefined;
-  const band = model.labelBands.find(item => item.host !== undefined && item.host === id);
+  // A cell hosts a frame's band; a canton's band is held by the sub-tier, so its label is owned by the canton itself.
+  const band = model.labelBands.find(item => item.host !== undefined ? item.host === id : item.group === id);
   return band ? model.frames?.find(item => item.id === band.group) : undefined;
 }
 
@@ -378,7 +379,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     .map(label => {
       // A frame's title is owned by the cell that hosts its label band; the frame gives the class.
       const group = label.owner.kind === 'group' ? layout.groups[label.owner.id] : undefined;
-      const frame = group ? frameTitled(layout, label) : undefined;
+      const frame = group || label.owner.kind === 'group' ? frameTitled(layout, label) : undefined;
       const uniform = frame ? uniformNodeClass(layout, frameNodes(layout, frame.id)) : group ? uniformNodeClass(layout, group.nodes) : undefined;
       return textElement(label, locks, 'group-label', label.owner.kind === 'barCross' ? label.owner.node : (frame?.id ?? label.owner.id),
         classes(frame ? authorClass(frame.class) : group ? authorClass(layout.document.groups[group.id]!.class) : undefined, uniform));
