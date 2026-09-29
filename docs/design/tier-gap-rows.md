@@ -105,8 +105,11 @@ never sees.
 - **O1, same way.** For every pair of stepped parts that run the same way, do not interleave, and
   overlap in x: of two rightward parts the one further right at the upper end is above (ties at the
   upper end are decided at the lower end); of two leftward parts the one further left. A Z half
-  obeys O1 against every part its whole Z does not interleave, and is exempt against a part it
-  does; that pair crosses once by 2.1 whatever the order.
+  obeys O1 against every part its whole Z does not interleave. A part the whole Z **interleaves**
+  is not left free: ordered between the halves it crosses the Z three times (the first run over its
+  upper leg, its run over the middle drop, the second run over its lower leg). It is ordered above
+  the first half where that keeps the graph acyclic, else below the second half, else the parts
+  are residual with `TIER_GAP_ROW_CYCLE`. Above or below both halves, the pair crosses once.
 - **O2, shared vertical.** Where the upper end of part A and the lower end of part B stand within
   `k` of one another in x (a port over a lane mouth, a lane under a lane, two ports of two nodes on
   one x, or 5.9 or 10 px apart), their legs are parallel closer than the gate allows. A is above B:
@@ -165,7 +168,7 @@ lower bound, then model order. The static need reads only the geometry, never th
 need*(part) = max( own lower term  (Section 3),
                    k + depth(j)   for every partner j that interleaves the part
                                   with j's lower x strictly inside its span,
-                   k + depth(d)   for every drop d inside its span )
+                   k + depth(d)   for every drop d inside its span, 2k where d has a jog )
 ```
 
 Taking the most demanding part first is earliest-deadline-first. It is a **heuristic**: it keeps
@@ -235,7 +238,16 @@ link-12 303.75 (its mouth), link-10 315.25, link-8 326.75, link-7 338.25, link-9
 crossings (7×9, 8×9, four on link-11's drop). `H = 82.5`, growth 10. Today: no growth; four links
 routed by libavoid through the padding.
 
-At `P = 17.5` (today's pitch) the same plans grow 63, 5, 0, 27.25 and 34 px.
+**O2 three-cycle with an interleaving fourth part** (synthetic, gap 248..308, flat tips at 263
+and 293): A 0 → 100, B 100 → 200, C 200 → 0, D 188 → 12. O2: B above A, C above B, A above C, a
+cycle; C is the latest and becomes a Z part, middle drop at 56 (the first of two widest clear
+intervals). D has no O1 or O2 edge and interleaves C, so O1 orders it above C's first half. Rows:
+D 274.5 (crosses B's upper leg), C1 286, B 297.5, A 309, C2 320.5. Five crossings, all forced:
+D×B on D's run, C×B on C's first run, A×D and A×C (over the middle drop) on A's run, C×D on C's
+second run. `H = 320.5 − 248 + 26.5 = 99`. Ordered between the halves instead, D would cross C
+three times.
+
+At `P = 17.5` (today's pitch) the first four plans grow 63, 5, 0, 27.25 and 34 px.
 
 ## Section 3 — The gap height as a formula
 
@@ -251,7 +263,9 @@ lb_i   = max( own upper tip row  (or low + e where that tip is in the padding),
 need_i = max( depth(own lower end),
               e                  where the span crosses a group's top edge,
               k + depth(j)       for every lower leg the run really crosses (parts above it),
-              k + depth(d)       for every drop d inside the span,
+              k + depth(d)       for every drop d inside the span (2k + depth(d) where d has a
+                                 jog: the jog stands k above the lower tip row, and the run keeps
+                                 k from the jog, O4),
               O5 bands anchored to the band below, over the span, plus their clearance )
 drop d:  lb_d = own upper tip row;  need_d = depth(own lower end) + (k where it has a jog)
 residual r between the two tiers:  need_r = depth(upper tip, from low) + 2k + depth(lower tip)
@@ -338,7 +352,7 @@ headroom`), `interleaved-gap-links.test.ts` (the mid-row assertions), `nested-ti
 2. **7f grows by the formula and stage 8 consumes the plan, together.** `growTierGaps` reads `H`;
    the probe, `tierGapRoom`'s seating measure, `stemShortfall` and the `reach` headroom go.
    `allocateGapRuns` returns the plan's parts; `planRoute` reserves them; the old holds are off the
-   path. The two ship together: the plan alone disagrees with the old growth (93.5 px asked against
+   path. The two ship together: the plan alone disagrees with the old growth (105 px asked against
    the probe's 99.5 for different rows on the ticket 36 fixture), and a part that does not fit
    would be residual inside a gap full of reserved legs. Gate: the sweep's removal count does not
    rise. Acceptance: the ticket 41 and 43 fixtures route whole with `plan.batches` empty; the
