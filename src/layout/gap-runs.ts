@@ -297,8 +297,8 @@ function holdsOf(users: GapUsers, gap: TierGap, pitch: number, keep: number): vo
     if (!one.plain && !one.lane) continue;
     if (!users.pieces.some(other => other.order > one.order && (one.upper.x - other.upper.x) * (one.lower.x - other.lower.x) < -EPS * EPS)) continue;
     // A piece whose two ends share one x is a column, and a column needs no row.
-    // Ticket 42: so is one whose ends stand under a run clearance apart, because its jog would be a few pixels wide.
     if (same(one.upper.x, one.lower.x)) continue;
+    // Ticket 42: so is one whose ends stand under a run clearance apart, because its jog would be a few pixels wide.
     if (Math.abs(one.upper.x - one.lower.x) < keep) continue;
     const jog = one.lower.y - one.upper.y;
     if (jog < pitch - EPS) { if (one.plain) users.short = Math.max(users.short, pitch - jog); continue; }
@@ -316,10 +316,9 @@ function holdsOf(users: GapUsers, gap: TierGap, pitch: number, keep: number): vo
  * row, advancing by what refuses a position exactly as `allocateGap` does, and never closer than a run clearance to
  * the lower tip row. Only the row is reserved; the short legs from the stem tips to it stay the router's. The bands of
  * the link's own nested tips do not apply to it (its leg along that row no longer exists), and the bands of every other
- * link's tips do. Ticket 42: with `owed`, the room measure skips the mid row and seats each piece on the lowest legal row
- * it is owed, so the room does not follow the opening of a probe (the mid of a stretched piece moves with the opening).
+ * link's tips do.
  */
-function heldRuns(model: LayoutModel, list: readonly Blocker[], gap: TierGap, held: readonly Participant[], owed = false):
+function heldRuns(model: LayoutModel, list: readonly Blocker[], gap: TierGap, held: readonly Participant[]):
   { runs: Map<Participant, PathSegment[]>; peers: Blocker[] } {
   const margin = routedStroke(model) / 2 + STRAIGHT_PATH_CLEARANCE.path;
   const pitch = MEMBER_GAP + routedStroke(model), keep = nudgingDistance(model);
@@ -333,8 +332,7 @@ function heldRuns(model: LayoutModel, list: readonly Blocker[], gap: TierGap, he
     const refused = (row: number): boolean => at(row).some(line => alongGroupEdge(model, line) || meetsOwnLane(model, item.link, line));
     const low = item.near.y + keep, high = item.far.y - keep, mid = (item.near.y + item.far.y) / 2;
     const fits = (row: number): boolean => row > gap.low + EPS && row < gap.high - EPS;
-    const midClear = fits(mid) && !blockedBy(mid).length && !refused(mid);
-    let row: number | undefined = !owed && midClear ? mid : undefined;
+    let row: number | undefined = fits(mid) && !blockedBy(mid).length && !refused(mid) ? mid : undefined;
     for (let next = low; row === undefined && next <= high + EPS && fits(next);) {
       const blocked = blockedBy(next);
       if (blocked.length) {
@@ -343,8 +341,6 @@ function heldRuns(model: LayoutModel, list: readonly Blocker[], gap: TierGap, he
       } else if (refused(next)) next += pitch;
       else row = next;
     }
-    // The owed row is the lowest; a piece that the search seats nowhere keeps its mid row where that is clear.
-    if (row === undefined && midClear) row = mid;
     if (row === undefined) continue;
     const segments = at(row);
     runs.set(item, segments);
@@ -364,9 +360,9 @@ function heldRuns(model: LayoutModel, list: readonly Blocker[], gap: TierGap, he
  * piece stays unseated is known only once the room is fixed, and the room a lane row needs is the lane rule's to ask for.
  * `laneEnds` says whether the unseated lane-end pieces are placed; the room measure leaves them out.
  */
-function allocateWithHolds(model: LayoutModel, list: readonly Blocker[], gap: TierGap, users: GapUsers, laneEnds: boolean, owed = false):
+function allocateWithHolds(model: LayoutModel, list: readonly Blocker[], gap: TierGap, users: GapUsers, laneEnds: boolean):
   { lanes: GapAllocation | undefined; runs: Map<Participant, PathSegment[]>; wanted: number } {
-  const plain = heldRuns(model, nearBlockers(list, gap, []), gap, users.held, owed);
+  const plain = heldRuns(model, nearBlockers(list, gap, []), gap, users.held);
   const lanes = users.items.length ? allocateGap(model, [...nearBlockers(list, gap, users.items), ...plain.peers], gap, users) : undefined;
   const seated = new Set([...lanes?.runs.keys() ?? []].map(item => `${item.link.id}#${item.index}`));
   const unseated = !laneEnds ? [] : users.laneHeld.filter(item => !seated.has(`${item.link.id}#${item.index}`));
@@ -374,7 +370,7 @@ function allocateWithHolds(model: LayoutModel, list: readonly Blocker[], gap: Ti
   const behind: Blocker[] = [...lanes?.runs ?? []].flatMap(([item, segments]) => segments.map(run => ({ owners: new Set([item.link.id]),
     bounds: grow({ x: Math.min(run.from.x, run.to.x), y: Math.min(run.from.y, run.to.y), width: Math.abs(run.to.x - run.from.x),
       height: Math.abs(run.to.y - run.from.y) }, linkStrokeWidth(item.link) / 2 + margin) })));
-  const lane = heldRuns(model, [...nearBlockers(list, gap, []), ...plain.peers, ...behind], gap, unseated, owed);
+  const lane = heldRuns(model, [...nearBlockers(list, gap, []), ...plain.peers, ...behind], gap, unseated);
 
   return { lanes, runs: new Map([...plain.runs, ...lane.runs]), wanted: users.held.length };
 }
@@ -991,12 +987,8 @@ function stemShortfall(model: LayoutModel, gap: TierGap, users: GapUsers): numbe
  * ends on one x, no row needed) from a **row**. Before it, every crossing run would have to be
  * counted as a row, and a diagram whose transit links all descend on one x — the M1 golden — would
  * grow a gap it does not need.
- *
- * Ticket 42: with `owed`, the height the held rows need is measured on the lowest legal row each piece is owed, not on its
- * mid row; what is seated is still counted as the seating does. The caller sets it on the probe, where the opening moves
- * every lower tip and so every mid row. The real gap is read as it will be seated, mid row first.
  */
-export function tierGapRoom(model: LayoutModel, owed = false): TierGapRoom[] {
+export function tierGapRoom(model: LayoutModel): TierGapRoom[] {
   const bands = model.tierBands.filter(band => band.bounds).sort((a, b) => a.bounds!.y - b.bounds!.y);
   const gaps = tierGaps(model);
   if (!gaps.length) return [];
@@ -1016,19 +1008,14 @@ export function tierGapRoom(model: LayoutModel, owed = false): TierGapRoom[] {
     const entry = users.get(key)!;
     const got = allocateWithHolds(model, list, gap, entry, false);
     const lanes = entry.items.filter(needsRow).length, rows = lanes + got.wanted;
-    // A lane row is seated against the held rows, so the owed measure is taken only where the gap has no lane row to move.
-    const lowest = owed && !lanes ? allocateWithHolds(model, list, gap, entry, false, true) : got;
     const margins = below.y - bottom(above) - (gap.high - gap.low);
     const nothing = { ...gap, margins, rows, seated: 0, pitch, headroom, required: 0, refuses: false, stems: stemShortfall(model, gap, entry) };
     if (!rows) return nothing;
     if (lanes && got.lanes?.refused) return { ...nothing, refuses: true };
-    const rowsOf = (runs: Iterable<PathSegment[]>): number[] => [...runs].flatMap(segments =>
+    const seats = [...got.lanes?.runs.values() ?? [], ...got.runs.values()].flatMap(segments =>
       segments.filter(segment => same(segment.from.y, segment.to.y)).map(segment => segment.from.y));
-    const seats = [...rowsOf(got.lanes?.runs.values() ?? []), ...rowsOf(got.runs.values())];
     if (!seats.length) return nothing;
-    // What the gap needs: the lane rows as seated, the held rows as owed (`lowest`; the same rows unless `owed` and the gap has no lane row).
-    const needs = [...rowsOf(got.lanes?.runs.values() ?? []), ...rowsOf(lowest.runs.values())];
-    return { ...nothing, seated: seats.length, required: Math.max(...needs, ...!needs.length ? seats : []) - gap.low + headroom };
+    return { ...nothing, seated: seats.length, required: Math.max(...seats) - gap.low + headroom };
   });
 }
 

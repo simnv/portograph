@@ -1,0 +1,29 @@
+# Expected: a piece whose ends are 1.1 px apart in x holds no row (ranked-groups ticket 42, rule 2). Link-5 (second router to
+# the second switch) has its two ports at x 127.4 and 128.5, a column in all but the exact-equality test, and link-7 crosses
+# it, so on main link-5 is an interleaved earlier piece and asks for a held row whose jog would be 1.1 px wide; on main the
+# pipeline fails with `PIPELINE_FAILED: Routed path on link-6 retraces itself`.
+# With the rule the piece holds nothing, the gap grows 77.25 px for the other pair's rows, nothing is removed and every gate
+# passes.
+# Test-only input owned by ranked-groups ticket 42; test/pipeline/near-vertical-piece.test.ts reads the layout.
+portograph: 2
+groups:
+  upstream: { tier: 0 }
+  site: { tier: 1 }
+nodes:
+  isp: { group: upstream, class: provider }
+  r0: { group: site, class: router }
+  r1: { group: site, class: router }
+  r2: { group: site, class: router }
+  s0: { group: site, class: switch }
+  s1: { group: site, class: switch }
+  s2: { group: site, class: switch }
+  s3: { group: site, class: switch }
+links:
+  - [isp, r0]
+  - [isp, r1]
+  - [isp, r2]
+  - [r0, s2, { class: physical, route: orthogonal }]
+  - [r1, s1, { class: physical, route: orthogonal }]
+  - [r1, s2, { class: physical, route: orthogonal }]
+  - [r2, s0, { class: physical, route: orthogonal }]
+  - [r2, s3, { class: physical, route: orthogonal }]
