@@ -570,7 +570,7 @@ function overlayRange(model: LayoutModel, unit: Unit, tier: Unit[], free: Readon
     if (link.layer !== 'overlay' || !link.attachments) continue;
     for (const [mine, other] of [[link.attachments.from, link.attachments.to], [link.attachments.to, link.attachments.from]]) {
       const ownGroup = model.document.nodes[mine!.node]?.group, otherGroup = model.document.nodes[other!.node]?.group;
-      if (ownGroup === undefined || otherGroup === undefined || !own.has(ownGroup) || sameTier.has(otherGroup) || free.has(otherGroup)) continue;
+      if (ownGroup === undefined || otherGroup === undefined || !own.has(ownGroup) || sameTier.has(otherGroup) || free.has(otherGroup) || free.has(ownGroup)) continue;
       const from = findPort(model, mine!), to = findPort(model, other!);
       if (!from?.anchor || !to?.anchor) continue;
       const next = slideRange(model, box, [ownGroup], to.anchor.x - from.anchor.x, slack);
@@ -581,13 +581,12 @@ function overlayRange(model: LayoutModel, unit: Unit, tier: Unit[], free: Readon
 }
 
 /** What keeps a column from its feed: an overlay link to a group that stays, a lane it may not cross, or its siblings. */
-type HeldBy = 'overlay' | 'segment' | 'lane' | 'siblings' | 'members' | 'canton';
+type HeldBy = 'overlay' | 'segment' | 'lane' | 'siblings' | 'canton';
 const HELD_TEXT: Record<HeldBy, string> = {
   overlay: 'an overlay link to a group that stays holds it',
   segment: 'an overlay segment holds it',
   lane: 'a reserved lane it would cross holds it',
   siblings: 'its siblings hold it a band gap away',
-  members: 'its sibling members hold it 40 px away',
   canton: 'the canton column holds it',
 };
 
@@ -605,7 +604,7 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
   const gap = bandGap(model), free = overlayFreeGroups(model, selectAnchorTier(model));
   // A frame with a feed wants the moves that reach the feed and every partner that stays (both ranges met). When
   // no move does, an overlay link to a group that stays holds the frame where it stands: it is pinned.
-  const held = new Map<Unit, HeldBy>(), pinned = new Set<Unit>(), wanting = new Set<Unit>();
+  const held = new Map<Unit, HeldBy>(), pinned = new Set<Unit>(), wanting = new Set<Unit>(), flush = new Set<Unit>();
   const standing = tier.filter(inScope).map(unit => {
     const at = unit.frame ? box.get(unit.id)! : unit.groups[0]!.bounds!;
     let range: MoveRange | undefined;
@@ -622,10 +621,11 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
       // The member frame stays inside the canton frame with the group margin to spare. A range wholly beyond the wall
       // ends at the wall, and the member is held by the canton.
       const low = scope.wall.x + GROUP_PADDING, high = scope.wall.x + scope.wall.width - GROUP_PADDING - at.width;
-      if (high >= low) {
+      // The widest member fills the wall (`high` = `low`): the wall is its own box, and the canton pass already reports its feed.
+      if (high - low >= PLACEMENT_EPS) {
         if (from > high + PLACEMENT_EPS || to < low - PLACEMENT_EPS) { held.set(unit, 'canton'); from = to = from > high ? high : low; }
         else { from = Math.max(from, low); to = Math.min(to, high); }
-      }
+      } else { from = to = at.x; flush.add(unit); }
     }
     if (range !== undefined) wanting.add(unit);
     return { unit, x: at.x, width: at.width, slack: unit.frame ? columnSlack : 0, from, to };
@@ -634,9 +634,7 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
   // the wanted lefts, the nearest point of each range to where the unit stands in the plan so far.
   const offsets: number[] = [];
   let sum = 0;
-  // Members of a canton stand `2 * GROUP_PADDING` apart (the beside rule); columns stand a band gap and their slack apart.
-  const spacing = scope === undefined ? gap : 2 * GROUP_PADDING;
-  for (const [i, item] of standing.entries()) { offsets.push(sum); sum += item.width + spacing + item.slack + (standing[i + 1]?.slack ?? 0); }
+  for (const [i, item] of standing.entries()) { offsets.push(sum); sum += item.width + gap + item.slack + (standing[i + 1]?.slack ?? 0); }
   // A pinned unit stays where the overlay order put it; it bounds the units on either side, whose plan is
   // clamped to it, which is exact for a fixed point.
   // The held points, as z = x - offset, must not fall along the tier, or the clamp below is not exact and a held frame
@@ -717,7 +715,7 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
   if (blocked) { for (const [group, dx] of shifts) moveGroup(model, group, -dx, 0); settle(); }
   const refused = shifts.size > 0 && (!allowed || blocked);
   if (refused) for (const item of standing) if (shifts.has(item.unit.groups[0]!) && !held.has(item.unit)) held.set(item.unit, blocked ? 'segment' : 'lane');
-  reportHeld(model, tier.filter(inScope), feeds, held, columnSlack, scope);
+  reportHeld(model, tier.filter(item => inScope(item) && !flush.has(item)), feeds, held, columnSlack, scope);
   return allowed && !blocked;
 }
 
@@ -748,7 +746,7 @@ function reportHeld(model: LayoutModel, tier: Unit[], feeds: (unit: Unit) => Uni
     const residual = range === undefined ? 0 : Math.max(0, range.low, -range.high);
     if (residual > 0.5) model.diagnostics.push({ stage: 'placement', severity: 'warning', code: COLUMN_AXIS_HELD,
       owners: [{ kind: 'group', id: unit.id }, ...(scope ? [{ kind: 'group' as const, id: scope.canton }] : [])],
-      message: `${scope ? `Member ${unit.id} of canton ${scope.canton}` : `Column ${unit.id}`} cannot reach its feed: ${HELD_TEXT[heldBy.get(unit) ?? (scope ? 'members' : 'siblings')]}, so its feed links keep a jog of ${residual.toFixed(1)} px.` });
+      message: `${scope ? `Member ${unit.id} of canton ${scope.canton}` : `Column ${unit.id}`} cannot reach its feed: ${HELD_TEXT[heldBy.get(unit) ?? 'siblings']}, so its feed links keep a jog of ${residual.toFixed(1)} px.` });
   }
 }
 

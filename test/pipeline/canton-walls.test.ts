@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel, Rect } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
-import { columnShifts, holdMemberWalls, overlayFreeGroups, packBesideRows } from '../../src/layout/columns.js';
+import { columnShifts, holdColumnAxes, holdMemberWalls, overlayFreeGroups, packBesideRows } from '../../src/layout/columns.js';
 import { deriveFrames } from '../../src/layout/frames.js';
 import { selectAnchorTier } from '../../src/layout/lanes.js';
 import { placeOverlayFree } from '../../src/layout/overlay-place.js';
@@ -144,6 +144,25 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     expect(score(model).snapshot.gates.G9.passed).toBe(true);
   }, 60000);
 
+  // Review B1: `sweepMembers` walls the lanes held in the tier as `sweep` does, so a free member never stands on a lane.
+  it('a free member stands beside a held lane inside its canton, and the layout does not throw', async () => {
+    const name = 'a-free-member-beside-a-held-lane-inside-its-canton';
+    const model = await run(name);
+    expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
+    const west = frameOf(model, 'west'), mid = frameOf(model, 'mid');
+    const lane = model.lanes.find(item => item.tier === 2 && item.owner.kind === 'link' && model.links.find(link => link.id === (item.owner as { id: string }).id)?.attachments?.from.node === 'g1')!;
+    expect(lane).toBeDefined();
+    // The lane and the member share the tier and do not overlap; both stand inside the canton frame.
+    expect(right(lane.bounds) <= mid.box.x + 1e-6 || lane.bounds.x >= right(mid.box) - 1e-6).toBe(true);
+    expect(inside(inner(west.box), mid.box)).toBe(true);
+    expect(lane.bounds.x).toBeGreaterThanOrEqual(west.box.x - 1e-6);
+    expect(right(lane.bounds)).toBeLessThanOrEqual(right(west.box) + 1e-6);
+    const gates = score(model).snapshot.gates as Record<string, { passed: boolean }>;
+    const failing = Object.entries(gates).filter(([, gate]) => !gate.passed).map(([name]) => name);
+    expect(failing).toEqual([]);
+    expect(gates['G9']?.passed).toBe(true);
+  }, 60000);
+
   // Table fixture 8: canton, member, leaf child beside its parent's cells.
   it('a leaf zone stands inside its member inside its canton, and no route of the member is left to the router', async () => {
     const model = await run('a-leaf-child-beside-its-parent-inside-a-canton');
@@ -197,6 +216,7 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     'a-member-widened-after-pack',
     'a-one-cell-member-keeps-its-barycentre-inside-the-column',
     'a-transit-inside-a-canton',
+    'a-free-member-beside-a-held-lane-inside-its-canton',
   ])('%s: a second layout is the same model and the column rules move nothing on it', async name => {
     const first = await run(name), second = await run(name);
     // The stage timings are the only thing that differs between two runs.
@@ -206,7 +226,7 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     const before = JSON.stringify(Object.values(clone.groups).map(group => [group.id, group.bounds]));
     // `separateFrameColumns` keeps the rows-time gap (a band gap and two slacks) and is not asked of a finished layout; `columnShifts` with the
     // slack of 7f is. The inner pass is the one of this ticket.
-    expect([columnShifts(clone, 0).size, packBesideRows(clone), holdMemberWalls(clone)]).toEqual([0, false, false]);
+    expect([columnShifts(clone, 0).size, packBesideRows(clone), holdMemberWalls(clone), holdColumnAxes(clone, 0)]).toEqual([0, false, false, false]);
     placeOverlayFree(clone);
     expect(JSON.stringify(Object.values(clone.groups).map(group => [group.id, group.bounds]))).toBe(before);
   }, 60000);

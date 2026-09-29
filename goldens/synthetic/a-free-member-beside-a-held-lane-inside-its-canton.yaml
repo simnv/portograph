@@ -1,0 +1,28 @@
+# Expected: A free member stands beside a held lane inside its canton (canton-groups ticket 56, review B1). The canton `west`
+# holds `gate` (tier 1: a router and two switches), `mid` (tier 2: one node with one overlay link to the router of `gate`) and
+# `deep` (tier 3). The link from `g1` to `d1` skips tier 2, so its lane stands in tier 2 inside the canton. `mid` is a free one-cell
+# member (ticket 05 barycentre); it stands beside the lane, never on it, and the layout does not throw. The same document without
+# `canton:` puts `mid` beside the lane too.
+# Test-only input owned by canton-groups ticket 56; test/pipeline/canton-walls.test.ts reads the layout.
+portograph: 2
+groups:
+  west: { label: West }
+  top: { tier: 0, label: Top }
+  gate: { tier: 1, canton: west, label: Gate }
+  mid: { tier: 2, canton: west, label: Middle }
+  deep: { tier: 3, canton: west, label: Deep }
+nodes:
+  top-a: { group: top, class: router, label: Top one }
+  top-b: { group: top, class: router, label: Top two }
+  g1: { group: gate, class: router, label: Gate one }
+  g2: { group: gate, class: switch, label: Gate two }
+  g3: { group: gate, class: switch, label: Gate three }
+  m1: { group: mid, class: server, label: Middle one }
+  d1: { group: deep, class: server, label: Deep one }
+  d2: { group: deep, class: server, label: Deep two }
+links:
+  - [top-a, g1]
+  - [top-b, g3]
+  - [g1, d1]
+  - [g3, d2]
+  - { from: m1, to: g1, class: flow, route: overlay }

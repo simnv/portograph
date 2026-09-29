@@ -44,7 +44,9 @@ describe('canton frames and the unit (canton-groups ticket 2)', () => {
     const partner = model.nodes['srv']!.bounds!, client = model.nodes['cl']!.bounds!;
     // The barycentre centres the cell box on the partner; label growth (7f) widens the box on one side, so the node ends up to 4 px off.
     expect(Math.abs(centreX(client) - centreX(partner))).toBeLessThan(4);
-    expect(Math.abs(centreX(clients.box) - centreX(site.box))).toBeLessThan(8);
+    // Section 2b rule 3: the barycentre wins after the pack, inside the canton (the margin of a member frame is 20 px).
+    expect(clients.box.x).toBeGreaterThanOrEqual(west.box.x + 20 - 1e-6);
+    expect(right(clients.box)).toBeLessThanOrEqual(right(west.box) - 20 + 1e-6);
     expect(Math.abs(centreX(site.box) - centreX(west.box))).toBeLessThan(2);
     expect(west.tier).toBe(site.tier);
     // No canton title yet, and so no unhosted-title warning.
