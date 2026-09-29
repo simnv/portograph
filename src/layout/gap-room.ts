@@ -46,6 +46,7 @@ export function growTierGaps(model: LayoutModel): boolean {
   // so the rounds are few (a round that asks for nothing ends it), and the model itself is touched once, by the sum.
   const grown = new Map<number, GapGrowth>();
   let plans: ReturnType<typeof tierGapPlans> = [];
+  let unfit: ReturnType<typeof tierGapPlans> = [];
   for (let round = 0; round < MAX_ROUNDS; round++) {
     plans = tierGapPlans(settled(model, new Map([...grown].map(([tier, item]) => [tier, item.extra]))));
     let more = false;
@@ -55,6 +56,13 @@ export function growTierGaps(model: LayoutModel): boolean {
       grown.set(gap.below, { extra: (grown.get(gap.below)?.extra ?? 0) + plan.growth, setBy: plan.setBy });
     }
     if (!more) break;
+    if (round === MAX_ROUNDS - 1) unfit = plans.filter(({ plan }) => plan.growth > EPS);
+  }
+  // A gap that still asks for room after the last round does not settle (spec 3): it is named, with the ask, and the router lays its
+  // parts as it did before the plan.
+  for (const { gap, plan } of unfit) {
+    placementWarning(model, 'TIER_GAP_PART_UNFIT',
+      `the tier gap above tier ${gap.below} still asks ${plan.growth.toFixed(2)} px after ${MAX_ROUNDS} rounds of growth; its parts are left to the router.`, []);
   }
   // A part the plan declines is named, with the reason: the router lays it as it did before the plan.
   for (const { gap, plan } of plans) {
@@ -76,7 +84,9 @@ const MAX_ROUNDS = 6;
  */
 function settled(model: LayoutModel, extra: ReadonlyMap<number, number>): LayoutModel {
   const trial = JSON.parse(JSON.stringify(model)) as LayoutModel;
-  if (extra.size) moveBands(trial, extra);
+  // 7f replays only a model whose gaps grew (`mutation.ts`), so a trial of no growth is the model as it stands: the plan reads what is published.
+  if (!extra.size) return trial;
+  moveBands(trial, extra);
   rebuildRegionGeometry(trial, undefined, undefined, true);
   alignLinkedGroupGrid(trial);
   replanGroupLabels(trial);
