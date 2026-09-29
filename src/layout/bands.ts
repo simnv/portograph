@@ -14,7 +14,7 @@ import { rebuildRegionGeometry } from './region-rebuild.js';
 import { findPort, straightCorridorClear } from './row-paths.js';
 import { bandGap, portId } from './skeleton-graph.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
-import { columnShifts, sweptUnits } from './columns.js';
+import { columnShifts, holdColumnAxes, sweptUnits } from './columns.js';
 import { deriveFrames, frameNodes } from './frames.js';
 import { bandHeldBy, bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placementWarning, rebuildRegions, right } from './regions.js';
 import { withLayoutMutation } from './mutation.js';
@@ -607,6 +607,24 @@ function pushFollowingGroups(model: LayoutModel, grown: LayoutGroup, width: numb
   if (moved.length) rebuildNodeGeometry(model, moved, 'current');
 }
 
+/**
+ * The columns hold their feed axis after a frame move (ranked-groups ticket 17). The push above moves a frame as a
+ * whole and the label widening grows a cell to the right, so a frame that stood under its feed at stage 6 can
+ * stand beside it after 7f, and the feed link jogs by the whole push. `holdColumnAxes` (ticket 16) pulls the
+ * columns back under the same refusals (a pinned lane, an overlay partner that stays, a band gap). The slack is
+ * 0: centring has spent it, the frames stand a band gap apart and `frameColumns` leaves a cell no room beyond
+ * its box, so a pass that kept the stage 6 spacing (a band gap and the slack on both sides) would push every
+ * pair of frames apart by the slack, and one that let a cell slide into it would leave a jog centring cannot
+ * remove. The pass is idempotent, and 7f replays (`replanGroupLabels`), so a replay finds nothing to move.
+ */
+function holdColumnsAfterPush(model: LayoutModel): void {
+  if (model.document.frames === undefined) return;
+  const before = new Map(Object.values(model.groups).map(group => [group, group.bounds!.x]));
+  if (!holdColumnAxes(model, 0)) return;
+  // `moveGroup` leaves pill bounds behind, and the next reservation measures them.
+  rebuildNodeGeometry(model, [...before].filter(([group, x]) => group.bounds!.x !== x).flatMap(([group]) => group.nodes), 'current');
+}
+
 /** A group boxed in by reserved lanes keeps a coherent contained label; final gates decide it. */
 function diagnoseBlocked(model: LayoutModel, blocked: string[]): void {
   for (const id of blocked) {
@@ -662,6 +680,7 @@ function reserveInitialSpace(model: LayoutModel): void {
     pushFollowingGroups(model, group, Math.max(group.bounds!.width,
       band === undefined ? 0 : measurement(titleText(model, band)).width + 2 * GROUP_LABEL_GEOMETRY.horizontalInset));
   }
+  holdColumnsAfterPush(model);
   rebuildBands(model);
   let shift = 0;
   for (const tierBand of [...model.tierBands].sort((a, b) => a.tier - b.tier)) {
@@ -988,6 +1007,7 @@ export function produceGroupLabelBands(model: LayoutModel): void {
     }
     const stable = routerEntryPoints(model);
     pushFollowingGroups(model, plan.growth.group, plan.growth.width);
+    holdColumnsAfterPush(model);
     syncBands(model, stable);
     const before = budget.passes;
     rebuildRegionGeometry(model, budget, undefined, true);

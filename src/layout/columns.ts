@@ -6,6 +6,7 @@ import { laneSidesHold, selectAnchorTier } from './lanes.js';
 import { findPort } from './row-paths.js';
 import { bandGap, compareId, portId } from './skeleton-graph.js';
 import { moveGroup } from './skeleton-geometry.js';
+import { rebuildNodeGeometry } from './node-geometry.js';
 import { groupShape } from './grid.js';
 import { crosses, overlayPath } from './overlay-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -293,14 +294,20 @@ export function separateFrameColumns(model: LayoutModel): boolean {
  * more than its cells can slide to absorb warns once, `COLUMN_AXIS_HELD`, with that residual in px. The pass
  * is idempotent: the feeds are the fixed end, so a second run wants exactly the plan the first one kept.
  *
+ * `slack` is the room a frame leaves its cells beyond its box and keeps beside a sibling: `COLUMN_SLACK` while the
+ * rows rule runs, and 0 after centring has spent it (stage 7f, ticket 17: the frames stand a band gap apart and
+ * `frameColumns` gives a cell no room beyond its box). A guard that reads a straight overlay link as bent by the
+ * move refuses the plan too, and not only one whose box enters the segment: a link that a moved node body or pill
+ * now blocks is not in the list of straight links the second reading makes.
+ *
  * Returns whether anything moved.
  */
-export function holdColumnAxes(model: LayoutModel): boolean {
+export function holdColumnAxes(model: LayoutModel, slack = COLUMN_SLACK): boolean {
   if (model.document.frames === undefined) return false;
   const tiers = columnTiers(model);
   let moved = false;
   for (const { index, authority } of sweepSteps(model, tiers)) {
-    if (authority !== undefined && tiers[index]!.some(unit => unit.frame)) moved = pullTier(model, tiers, index, authority) || moved;
+    if (authority !== undefined && tiers[index]!.some(unit => unit.frame)) moved = pullTier(model, tiers, index, authority, slack) || moved;
   }
   return moved;
 }
@@ -311,10 +318,10 @@ const mean = (values: readonly number[]): number => values.reduce((sum, x) => su
 interface MoveRange { low: number; high: number; need: number }
 
 /** The moves of a frame that leave the port of a cell at `need` from its target reachable by sliding the cell inside the column. */
-function slideRange(model: LayoutModel, box: Rect, cellIds: Iterable<string>, need: number): MoveRange {
+function slideRange(model: LayoutModel, box: Rect, cellIds: Iterable<string>, need: number, slack: number): MoveRange {
   const cells = [...new Set(cellIds)].map(cell => cellReach(model, cell));
-  const slideLow = Math.max(...cells.map(reach => box.x - COLUMN_SLACK - reach.x));
-  const slideHigh = Math.min(...cells.map(reach => box.x + box.width + COLUMN_SLACK - reach.x - reach.width));
+  const slideLow = Math.max(...cells.map(reach => box.x - slack - reach.x));
+  const slideHigh = Math.min(...cells.map(reach => box.x + box.width + slack - reach.x - reach.width));
   return { low: need - slideHigh, high: need - slideLow, need };
 }
 
@@ -323,11 +330,11 @@ function slideRange(model: LayoutModel, box: Rect, cellIds: Iterable<string>, ne
  * that moves the mean of its ports under the mean of its feeds, less what the cells that hold those ports can
  * slide inside the column (its box with the slack on each side). `undefined` for a frame with no feed.
  */
-function feedRange(model: LayoutModel, unit: Unit, feeds: (unit: Unit) => UnitFeeds, box: Rect): MoveRange | undefined {
+function feedRange(model: LayoutModel, unit: Unit, feeds: (unit: Unit) => UnitFeeds, box: Rect, slack: number): MoveRange | undefined {
   const { parents, children } = feeds(unit);
   if (!parents.size || !children.size) return undefined;
   const need = mean([...parents.values()]) - mean([...children.values()].map(child => child.x));
-  return slideRange(model, box, [...children.values()].map(child => child.cell), need);
+  return slideRange(model, box, [...children.values()].map(child => child.cell), need, slack);
 }
 
 /**
@@ -355,7 +362,7 @@ export function overlayFreeGroups(model: LayoutModel, anchor: number | undefined
  * A partner in the same document tier never counts: the links between two units of a tier are face to face and
  * one straight segment, and a move in x cannot bend them. `undefined` when no partner stays.
  */
-function overlayRange(model: LayoutModel, unit: Unit, tier: Unit[], free: ReadonlySet<string>, box: Rect): MoveRange | undefined {
+function overlayRange(model: LayoutModel, unit: Unit, tier: Unit[], free: ReadonlySet<string>, box: Rect, slack: number): MoveRange | undefined {
   const own = new Set(unit.groups.map(group => group.id)), sameTier = new Set(tier.flatMap(item => item.groups.map(group => group.id)));
   let range: MoveRange | undefined;
   for (const link of model.links) {
@@ -365,7 +372,7 @@ function overlayRange(model: LayoutModel, unit: Unit, tier: Unit[], free: Readon
       if (ownGroup === undefined || otherGroup === undefined || !own.has(ownGroup) || sameTier.has(otherGroup) || free.has(otherGroup)) continue;
       const from = findPort(model, mine!), to = findPort(model, other!);
       if (!from?.anchor || !to?.anchor) continue;
-      const next = slideRange(model, box, [ownGroup], to.anchor.x - from.anchor.x);
+      const next = slideRange(model, box, [ownGroup], to.anchor.x - from.anchor.x, slack);
       range = range === undefined ? next : { low: Math.max(range.low, next.low), high: Math.min(range.high, next.high), need: range.need };
     }
   }
@@ -382,7 +389,7 @@ const HELD_TEXT: Record<HeldBy, string> = {
 };
 
 /** One tier of `holdColumnAxes`: plans the pulled positions, applies them unless a lane forbids them, and reports the residuals. */
-function pullTier(model: LayoutModel, tiers: Unit[][], index: number, authority: number): boolean {
+function pullTier(model: LayoutModel, tiers: Unit[][], index: number, authority: number, columnSlack: number): boolean {
   const tier = tiers[index]!, derived = deriveFrames(model);
   if (derived === undefined || tier.some(unit => !unit.frame && groupShape(model, unit.id) !== 'row')) return false;
   const box = new Map(derived.map(frame => [frame.id, frame.box]));
@@ -394,15 +401,15 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, authority:
     const at = unit.frame ? box.get(unit.id)! : unit.groups[0]!.bounds!;
     let range: MoveRange | undefined;
     if (unit.frame) {
-      range = feedRange(model, unit, feeds, at);
-      const overlay = overlayRange(model, unit, tier, free, at);
+      range = feedRange(model, unit, feeds, at, columnSlack);
+      const overlay = overlayRange(model, unit, tier, free, at, columnSlack);
       if (overlay !== undefined) {
         const met = range === undefined ? overlay : { ...range, low: Math.max(range.low, overlay.low), high: Math.min(range.high, overlay.high) };
         if (met.low > met.high + PLACEMENT_EPS) { pinned.add(unit); held.set(unit, 'overlay'); range = undefined; } else range = met;
       }
     }
     if (range !== undefined) wanting.add(unit);
-    return { unit, x: at.x, width: at.width, slack: unit.frame ? COLUMN_SLACK : 0, from: at.x + (range?.low ?? 0), to: at.x + (range?.high ?? 0) };
+    return { unit, x: at.x, width: at.width, slack: unit.frame ? columnSlack : 0, from: at.x + (range?.low ?? 0), to: at.x + (range?.high ?? 0) };
   }).sort((a, b) => a.x - b.x || compareId(a.unit.id, b.unit.id));
   // Lefts of a run kept a band gap apart, less the offset of that run, must not fall: pool adjacent violators on
   // the wanted lefts, the nearest point of each range to where the unit stands in the plan so far.
@@ -471,19 +478,25 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, authority:
   // cells. The plan is refused as a whole, as for a lane, and the columns stay where they stand.
   const straight = allowed ? straightOverlays(model) : [];
   const before = new Map(deriveFrames(model)?.map(frame => [frame.id, frame.box]));
-  if (allowed) for (const [group, dx] of shifts) moveGroup(model, group, dx, 0);
+  // `moveGroup` carries anchors but not pill bounds, and the straightness below reads pills: the shifted
+  // groups' node geometry is rebuilt before the reading, and again on rollback (ticket 17 review).
+  const settle = (): void => rebuildNodeGeometry(model, [...shifts.keys()].flatMap(group => group.nodes), 'current');
+  if (allowed) { for (const [group, dx] of shifts) moveGroup(model, group, dx, 0); settle(); }
   const after = new Map(deriveFrames(model)?.map(frame => [frame.id, frame.box]));
   // The ends are read after the move: a frame that ends a link takes its own ports with it.
   const segments = straightOverlays(model, new Set(straight.map(({ id }) => id)));
-  const blocked = segments.some(({ ends, from, to }) => standing.some(item => {
+  // A link that stood as one segment and is not one after the move has been bent by it: a node body or a pill
+  // now stands in its way. `segments` lists only the links that are still straight, so the test is a count.
+  const bent = segments.length < straight.length;
+  const blocked = bent || segments.some(({ ends, from, to }) => standing.some(item => {
     const was = item.unit.frame ? before.get(item.unit.id) : undefined, now = item.unit.frame ? after.get(item.unit.id) : undefined;
     return was !== undefined && now !== undefined && shifts.has(item.unit.groups[0]!) && !item.unit.groups.some(group => ends.has(group.id))
       && crosses(from, to, now) && !crosses(from, to, was);
   }));
-  if (blocked) for (const [group, dx] of shifts) moveGroup(model, group, -dx, 0);
+  if (blocked) { for (const [group, dx] of shifts) moveGroup(model, group, -dx, 0); settle(); }
   const refused = shifts.size > 0 && (!allowed || blocked);
   if (refused) for (const item of standing) if (shifts.has(item.unit.groups[0]!) && !held.has(item.unit)) held.set(item.unit, blocked ? 'segment' : 'lane');
-  reportHeld(model, tier, feeds, held);
+  reportHeld(model, tier, feeds, held, columnSlack);
   return allowed && !blocked;
 }
 
@@ -503,12 +516,12 @@ function straightOverlays(model: LayoutModel, only?: ReadonlySet<string>): { id:
  * Says once per column, and again only with a new number, how far its feed links still jog beyond what the
  * cells inside the column can absorb by sliding to the wall: the least jog its siblings leave it.
  */
-function reportHeld(model: LayoutModel, tier: Unit[], feeds: (unit: Unit) => UnitFeeds, heldBy: ReadonlyMap<Unit, HeldBy>): void {
+function reportHeld(model: LayoutModel, tier: Unit[], feeds: (unit: Unit) => UnitFeeds, heldBy: ReadonlyMap<Unit, HeldBy>, slack: number): void {
   const derived = deriveFrames(model);
   if (derived === undefined) return;
   for (const unit of tier.filter(item => item.frame)) {
     model.diagnostics = model.diagnostics.filter(item => !(item.code === COLUMN_AXIS_HELD && item.owners?.some(owner => 'id' in owner && owner.id === unit.id)));
-    const range = feedRange(model, unit, feeds, derived.find(item => item.id === unit.id)!.box);
+    const range = feedRange(model, unit, feeds, derived.find(item => item.id === unit.id)!.box, slack);
     // Standing where it stands, the column reaches its feed when 0 lies in the range of moves.
     const residual = range === undefined ? 0 : Math.max(0, range.low, -range.high);
     if (residual > 0.5) model.diagnostics.push({ stage: 'placement', severity: 'warning', code: COLUMN_AXIS_HELD, owners: [{ kind: 'group', id: unit.id }],
