@@ -183,6 +183,15 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
   stepOutOfChords(model, tiers, free, columns);
 }
 
+/** The step of `placeOverlayFree` alone, for the 7f rounds that replay without a budget (ticket 76 review). */
+export function stepLinklessOutOfChords(model: LayoutModel, columns: readonly FrameColumn[] = frameColumns(model)): boolean {
+  const anchor = selectAnchorTier(model);
+  if (anchor === undefined) return false;
+  const before = JSON.stringify(Object.values(model.groups).map(group => group.bounds));
+  stepOutOfChords(model, model.tierBands.map(band => band.tier), overlayFreeGroups(model, anchor), columns);
+  return JSON.stringify(Object.values(model.groups).map(group => group.bounds)) !== before;
+}
+
 /**
  * A group with no link of any member has nothing that asks for an x, and ELK's skeleton x is
  * arbitrary (ticket 76). It is a wall for the sweeps above, so an overlay chord that passes through
@@ -193,7 +202,7 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
  * other groups and the lanes of the tier and stay inside their span; if no x does, the group goes
  * past the tier's end. A move that bends an overlay link that was straight is refused, with a warning.
  */
-function stepOutOfChords(model: LayoutModel, tiers: readonly number[], free: ReadonlySet<string>, columns: readonly FrameColumn[]): void {
+export function stepOutOfChords(model: LayoutModel, tiers: readonly number[], free: ReadonlySet<string>, columns: readonly FrameColumn[]): void {
   const linked = new Set<string>();
   for (const link of model.links) {
     if (!link.attachments) continue;
@@ -207,17 +216,18 @@ function stepOutOfChords(model: LayoutModel, tiers: readonly number[], free: Rea
     for (const group of groups.filter(item => free.has(item.id) && !linked.has(item.id) && item.frame === undefined && item.bounds)) {
       const box = group.bounds!, own = new Set(group.nodes);
       const bare = overlayBlockers(model, own);
-      const chords = overlays.flatMap(link => {
+      // Every chord that is straight without the group and runs through the box's rows bans an interval of the box's x, not only the
+      // chords that cross the box now: the nearest edge of one chord may lie inside the next (ticket 76 review).
+      const rows = overlays.flatMap(link => {
         const chord = straightChord(model, link, bare);
-        return chord && crosses(chord.from, chord.to, box) ? [chord] : [];
+        return chord && Math.max(chord.from.y, chord.to.y) > box.y + PLACEMENT_EPS && Math.min(chord.from.y, chord.to.y) < box.y + box.height - PLACEMENT_EPS ? [chord] : [];
       });
-      if (!chords.length) continue;
+      if (!rows.some(({ from, to }) => crosses(from, to, box))) continue;
       // The x-interval of the box's left edge in which the box touches a chord: the chord's x-extent within the box's rows, less the width.
-      const banned = chords.map(({ from, to }) => {
-        const dy = to.y - from.y;
+      const banned = rows.map(({ from, to }) => {
+        const dy = to.y - from.y, low = Math.min(from.y, to.y), high = Math.max(from.y, to.y);
         const at = (y: number): number => dy === 0 ? from.x : from.x + (to.x - from.x) * (y - from.y) / dy;
-        const xs = dy === 0 ? [from.x, to.x] : [at(Math.min(Math.max(box.y, Math.min(from.y, to.y)), Math.max(from.y, to.y))),
-          at(Math.min(Math.max(box.y + box.height, Math.min(from.y, to.y)), Math.max(from.y, to.y)))];
+        const xs = dy === 0 ? [from.x, to.x] : [at(Math.min(Math.max(box.y, low), high)), at(Math.min(Math.max(box.y + box.height, low), high))];
         return { low: Math.min(...xs) - box.width, high: Math.max(...xs) };
       });
       const reach = occupiedOverhang(model, group);

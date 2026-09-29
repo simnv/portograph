@@ -677,6 +677,17 @@ Bar groups do not participate in row centering: stage 7d owns their stacked span
 port positions, including on later replay. Repacking their bars as a row would widen the group
 again after every replay.
 
+**A group with no links steps out of an overlay chord** (ranked-groups ticket 76). `placeOverlayFree` ends with
+`stepOutOfChords`. A free group with no link of any member has no partner, so no target: it would stay a wall at ELK's
+arbitrary x, in the way of a chord that crosses its tier. After every partner is settled, such a group (not in a frame,
+never in the anchor tier) stands at the x nearest its own where its box crosses no straight overlay chord. The chords are
+the ones the overlay rule would draw face to face, counted when they are straight once the group's own nodes are taken
+away. Every such chord that runs through the box's rows bans an interval of the box's x, not only the chords that cross
+it now. The x also keeps the band gap to the other groups, columns and lanes of the tier and prefers their span. When
+none fits, the group goes past the tier's end. A move that bends an overlay link that was straight is undone and reported
+as `LINKLESS_GROUP_MOVE_REFUSED`. The 7f rounds that replay the growth of the tier gaps and the close-up of the cantons
+run the same step again (`stepLinklessOutOfChords`), because a growth changes the slope of a chord that spans two gaps.
+
 ### 7d — bars
 
 For each `bar` group, after 7c so all source ports are final: each node is a horizontal bar;

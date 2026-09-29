@@ -20,6 +20,7 @@ import { type LaneFollow, lanesHoldTheirChild, rebuildLaneExtents, reseatLanes, 
 import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
 import { centreViolations, selectAnchorTier } from './centre.js';
+import { stepLinklessOutOfChords } from './overlay-place.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
@@ -742,6 +743,13 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
       const shift = closeCantonsAndSettle(draft);
       closed = shift < CANTON_CREEP;
       if (shift > 0) {
+        rebuildRegionGeometry(draft, undefined, undefined, true);
+        alignLinkedGroupGrid(draft);
+        replanGroupLabels(draft);
+      }
+      // The growth and the close-up change the slope of a chord that spans a gap and the x of a column: a group with no links
+      // steps out of a chord again, after the replays (ticket 76 review). Cheap and idempotent.
+      if (stepLinklessOutOfChords(draft)) {
         rebuildRegionGeometry(draft, undefined, undefined, true);
         alignLinkedGroupGrid(draft);
         replanGroupLabels(draft);
