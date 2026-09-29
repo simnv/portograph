@@ -353,6 +353,16 @@ describe('deriveRanks: a leaf child stands at the bottom of its parent', () => {
     expect(result.spans.get('zb')).toEqual([2, 2]);
   });
 
+  it('a group anchored from below has no leaf rule: the last rank stays with the member that links below', () => {
+    const result = deriveRanks(input({
+      members: ['p', 'q', 'c1'], linksBelow: new Set(['p']), routedLinks: [{ from: 'q', to: 'p' }],
+      children: [{ group: 'zone', members: ['c1'] }],
+    }));
+    // The old push rule holds: p stands in c1's span and goes past it, so p keeps the last rank.
+    expect(asObject(result.ranks)).toEqual({ q: 0, c1: 1, p: 2 });
+    expect(result.rankCount).toBe(3);
+  });
+
   it('a leaf child alone in its group is not moved', () => {
     const result = deriveRanks(input({
       members: ['p'], linksAbove: new Set(['p']), routedLinks: [{ from: 'p', to: 'c1' }], children: [{ group: 'zone', members: ['c1'] }],

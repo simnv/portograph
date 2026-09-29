@@ -264,7 +264,9 @@ export function deriveRanks(input: RankInput): RankResult {
   // Step 5. `max(own, first rank of the child)` from the spec is a no-op here: the first rank of a
   // child is the least rank of its members, so no member is below it. A leaf child pushes nothing;
   // it takes the ranks after the last rank of the rest of the group, keeping its own internal order.
-  const leaves = leafChildren(input, ranks, new Set(above), comp);
+  // Only a group hung from above has the rule: below-anchored, the last rank belongs to the members
+  // that link below, and a child moved past it would take that place.
+  const leaves = anchoredFrom === 'above' ? leafChildren(input, ranks, new Set(above), comp) : new Set<RankInput['children'][number]>();
   const held = input.children.filter(child => !leaves.has(child)).map(child => spanOf(ranks, child)).filter((span): span is [number, number] => span !== undefined);
   const origins = leafOrigins(leaves, ranks, comp);
   clearSpans(input, members, edges, ranks, held);
