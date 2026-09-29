@@ -489,8 +489,9 @@ function centreGroupStep(model: LayoutModel, context: CentreContext, tier: numbe
     // `unresolved` already holds every wanted port: nothing was kept, so the loop above added them
     // all. It is returned as it stands, and the publication check excuses the whole group — which is
     // what the geometry now says, since the ports are back where this step found them. The cost is
-    // that the step can never report itself settled, so the pass loop below spends all eight and
-    // reports `PLACEMENT_NON_CONVERGENCE`: a stable non-convergence instead of a growing one.
+    // that the step reports itself unresolved on every pass. The pass loop below ends on geometry
+    // alone (ticket 75): the step is a fixed point, its `CENTRE_ALIGNMENT_INFEASIBLE` warning
+    // already stands, and it neither spends the budget nor reports `PLACEMENT_NON_CONVERGENCE`.
     return { unresolved, group: saved.group };
   }
   return { unresolved, group };
@@ -506,13 +507,17 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
   // since the pack left (ranked-groups ticket 28): the walls read below are the walls of a packed row.
   if (settleRows(model)) rebuildRegions(model);
   // Free groups first: the steps below read where every group stands (ranked-groups spec 3.1).
-  const columns = frameColumns(model);
+  let columns = frameColumns(model);
   placeOverlayFree(model, columns);
-  const context = centreContext(model, anchor, columns);
-  let unresolved = new Set<string>();
+  let context = centreContext(model, anchor, columns), built = geometry(model);
+  let unresolved = new Set<string>(), ran = false;
   while (budget.remaining > 0) {
+    ran = true;
     budget.remaining--; budget.passes++;
     const before = geometry(model); unresolved = new Set();
+    // A pass whose steps move geometry that a later stage of the same pass moves back is not at a
+    // fixed point: the net change is nil, the work is not. Every step is measured on its own.
+    let stepped = false;
     for (const { tier, authority } of context.steps) {
       const list = feeds(model, tier, authority), order = context.groupOrder.get(tier)!;
       const tail = tailReservation(model, context, tier, order);
@@ -525,7 +530,9 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
           packClear(model, context, tier, group, previous);
           previous = group; continue;
         }
+        const start = geometry(model);
         const result = centreGroupStep(model, context, tier, list, id, previous, true, tail);
+        if (!stepped && geometry(model).some((value, i) => Math.abs(value - start[i]!) > 0.5)) stepped = true;
         if (result.unresolved.size) unresolved.add(id);
         previous = result.group;
       }
@@ -534,11 +541,40 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
     placeOverlayFree(model, columns);
     rebuildRegions(model);
     const after = geometry(model);
-    if (!unresolved.size && after.every((value, i) => Math.abs(value - before[i]!) <= 0.5)) { if (settleRows(model)) rebuildRegions(model); return; }
+    if (!stepped && after.every((value, i) => Math.abs(value - before[i]!) <= 0.5)) {
+      // Rows packed again are a change of geometry: the next pass reads the settled walls.
+      if (settleRows(model)) rebuildRegions(model);
+      // The context (winners, group order, lane limits) reads the geometry it was built on. A fixed
+      // point of the passes is a fixed point of the step only when the publication check, which
+      // replays each step on a context built where the model now stands, agrees. When it does not,
+      // the next pass reads a context built from the geometry that stands now.
+      if (!centreViolations(model, true).length) return;
+      const now = geometry(model);
+      if (now.every((value, i) => Math.abs(value - built[i]!) <= 0.5)) break;
+      columns = frameColumns(model);
+      context = centreContext(model, anchor, columns); built = now;
+    }
   }
   if (settleRows(model)) rebuildRegions(model);
-  if (!model.diagnostics.some(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE')) placementWarning(model,
-    'PLACEMENT_NON_CONVERGENCE', 'Centering exhausted the shared eight-pass budget; unresolved alignments remain for routing and final gates.', [...unresolved], 'group');
+  // Reached when the last pass still changed geometry, or when the geometry stood and the publication
+  // check still found an alignment the step would move (a stall the passes cannot see). A fixed point
+  // that the check confirms returns above. A run that entered with no budget left has measured
+  // nothing, so it reports only what the check finds off its feed.
+  if (ran || centreViolations(model, true).length > 0) reportStall(model, [...unresolved]);
+}
+function reportStall(model: LayoutModel, unresolved: string[], message = 'Centering exhausted the shared eight-pass budget; unresolved alignments remain for routing and final gates.'): void {
+  if (model.diagnostics.some(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE')) return;
+  placementWarning(model, 'PLACEMENT_NON_CONVERGENCE', message, unresolved, 'group');
+}
+/**
+ * A replay that centred and then rebuilt what depends on the centring (bundle anchors, bars, regions) can leave an alignment
+ * the step would move: the passes ended at a fixed point, and the model published from them is not one. The check the
+ * publication runs, run here, says so, so that a model never publishes an unexplained centring violation (ticket 75).
+ */
+export function flagUnverifiedCentring(model: LayoutModel): void {
+  if (!model.diagnostics.some(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE') && centreViolations(model, true).length > 0) {
+    reportStall(model, [], 'Centering left an alignment off its feed after the bundle, bar and region rebuilds that follow it; routing and the final gates decide the retained geometry.');
+  }
 }
 /**
  * The stage 7c invariant, readable at any later stage (ADR-0010): for every centred group, replaying
@@ -548,7 +584,7 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
  * diagnostic proves nothing, and one port's genuine blockage excuses no other port. Ports that later rules own — bar
  * drops and endpoints (7d), ports any bundle member uses (7e) — are not compared.
  */
-export function centreViolations(model: LayoutModel): string[] {
+export function centreViolations(model: LayoutModel, ahead = false): string[] {
   const anchor = model.anchorTier;
   if (anchor === undefined || !model.tierBands.some(band => band.tier === anchor)) return [];
   const context = centreContext(model, anchor);
@@ -556,8 +592,9 @@ export function centreViolations(model: LayoutModel): string[] {
   // from then on; a parent port it moved is a new feed x that 7f re-centres under, so a feed on such
   // a parent is excused only while the model sits exactly at the bundles stage.
   const bundled = new Set(model.links.filter(link => link.bundle && link.attachments).flatMap(link => [portId(link.attachments!.from), portId(link.attachments!.to)]));
-  const afterBundles = ['bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'].includes(model.stage);
-  const atBundles = model.stage === 'bundles';
+  // `ahead`: a producer is running, and the model it makes is published one stage after the one it stands at.
+  const afterBundles = (ahead ? ['bars', 'bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'] : ['bundles', 'bands', 'route', 'link-labels', 'validate', 'emit']).includes(model.stage);
+  const atBundles = model.stage === (ahead ? 'bars' : 'bundles');
   const drops = new Set(model.barDrops.map(drop => drop.link));
   const isBar = (node: string): boolean => model.document.groups[model.document.nodes[node]!.group]!.shape === 'bar';
   const result: string[] = [];

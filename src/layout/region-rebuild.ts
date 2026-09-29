@@ -1,5 +1,5 @@
 import type { LayoutModel, TierBand } from '../model/layout.js';
-import { centreDraft, createCentreBudget, type CentreBudget } from './centre.js';
+import { centreDraft, createCentreBudget, flagUnverifiedCentring, type CentreBudget } from './centre.js';
 import { rebuildLaneExtents } from './lanes.js';
 import { rebuildFlankPaths, flankPathCandidate } from './flanks.js';
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
@@ -78,4 +78,5 @@ export function rebuildRegionGeometry(draft: LayoutModel, budget?: CentreBudget,
   rebuildFlankPaths(draft);
   if (barsReady) rebuildBarDrops(draft);
   if (bundlesReady) rebuildBundlePaths(draft);
+  if (budget) flagUnverifiedCentring(draft);
 }

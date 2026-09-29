@@ -115,8 +115,13 @@ links: [[a.p, c.p], [b.p, d.p]]`)))));
   forged.nodes.c!.bounds!.x += 5;
   for (const port of forged.nodes.c!.ports) { port.anchor!.x += 5; if (port.pill) port.pill.bounds.x += 5; }
   for (const label of forged.labels) if (label.owner.kind === 'node' && label.owner.id === 'c' && label.bounds) label.bounds.x += 5;
-  // d stays blocked every pass, so this model too spent its budget: the forged c is recorded, not
-  // rejected, and the blocked d is excused on its own account and never named.
+  // d stays blocked on every pass, and that is a fixed point (ticket 75): the model settled without
+  // spending its budget, so the forged c is rejected, and the blocked d is excused on its own account
+  // and never named.
+  expect(twoChildren.diagnostics.map(d => d.code)).not.toContain('PLACEMENT_NON_CONVERGENCE');
+  expect(() => restoreLayoutModel(JSON.stringify(forged))).toThrow(/link-1(?!.*link-2)/);
+  // Only a model that reports a spent budget records the forged c instead.
+  forged.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'PLACEMENT_NON_CONVERGENCE', message: 'forged', owners: [] });
   const kept = restoreLayoutModel(JSON.stringify(forged));
   const notes = kept.diagnostics.filter(d => d.code === 'CENTRE_INVARIANT_UNVERIFIED').map(d => d.message);
   expect(notes).toEqual([expect.stringMatching(/link-1/)]);

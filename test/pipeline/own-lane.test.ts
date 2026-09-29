@@ -27,8 +27,9 @@ const barEnd = readFileSync(new URL('../../goldens/synthetic/a-bar-end-keeps-its
  */
 it('keeps a routed gap out of the corridor its own link reserved', async () => {
   const before = bands(bundles(bars(centre(flanks(lanes(rows(await placed(fixture))))))));
-  // The precondition: placement really did leave one child off its lane.
-  expect(before.diagnostics.map(item => item.code)).toContain('PLACEMENT_NON_CONVERGENCE');
+  // The precondition: placement really did leave one child off its lane. 7f follows the child with the corridor and says so
+  // (ticket 75: the centring settles at a fixed point, so it no longer reports a stall for it).
+  expect(before.diagnostics.map(item => item.code)).toContain('LANE_FOLLOWS_ITS_CHILD');
   const plan = planRoute(before);
   // Ticket 50: every part of every gap is a planned part now (the columns of link-1, link-2 and link-3 as drops, link-4 and the
   // link-3 row as stepped parts), so the router is asked for nothing: `link-4`, the one link it still routed, holds a row of its own
@@ -115,7 +116,6 @@ it('leaves a corridor whose link has a bar end where 7a put it', async () => {
   // The precondition: a child really is off its corridor here as well.
   const lane = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === 'link-1')!;
   expect(model.nodes.c1!.ports[0]!.anchor!.x).not.toBe(lane.x);
-  expect(model.diagnostics.map(item => item.code)).toContain('PLACEMENT_NON_CONVERGENCE');
   expect(model.diagnostics.map(item => item.code)).not.toContain('LANE_FOLLOWS_ITS_CHILD');
   expect(model.lanes.map(item => item.x)).toEqual([229, 263]);
 }, 60000);

@@ -648,8 +648,14 @@ before. Unequal-x top/bottom normals generally need two orthogonal bends; routin
 both: the first (by child x) is vertical, the rest fan through a shared stem — the junction tree 7e
 reserves for every port with two or more routed links (ticket 20; a rule-fixed member joins it under
 ADR-0016).
-Iterate child-widening → sibling push → re-centre at most 8 times, ε = 0.5 px; on non-convergence
-keep the last state and report. A step that keeps no target, and leaves every one of its feeds no
+Iterate child-widening → sibling push → re-centre at most 8 times, ε = 0.5 px. **A run ends when a
+pass changes no geometry, within ε** (ticket 75), and the passes it did not use stay in the shared 7f
+budget. A group whose alignment is infeasible has its `CENTRE_ALIGNMENT_INFEASIBLE` warning and is a
+stable state: it neither keeps the run going nor raises `PLACEMENT_NON_CONVERGENCE`. That warning is
+reported only when the last pass still changes geometry, or when the geometry stands and the check
+that publication runs (`centreViolations`, run on a context built where the model now stands) still finds a
+port the step would move. On non-convergence keep the last state and report. A run that stands at a
+fixed point of a context built earlier is run again on a fresh context. A step that keeps no target, and leaves every one of its feeds no
 nearer its x than it found it, puts its group back where it started and packs the tier instead: the
 passes are a solver, and a step that solves nothing only gives the next pass a new position to chase
 the barycentre from. A transit feed is exempt, because its x is a reserved lane the child must reach

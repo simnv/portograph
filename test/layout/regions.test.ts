@@ -356,7 +356,8 @@ links: [[a.p, c.p], [a.q, b.p]]`;
     expect(model.nodes.a).toEqual(ready.nodes.a);
     expect(model.lanes.map(lane => [lane.owner, lane.x])).toEqual(ready.lanes.map(lane => [lane.owner, lane.x]));
     expect(model.nodes.b!.bounds!.x + model.nodes.b!.bounds!.width).toBeLessThan(model.lanes[0]!.bounds.x);
-    expect(model.diagnostics.filter(d => d.code === 'PLACEMENT_NON_CONVERGENCE')).toHaveLength(1);
+    // Ticket 75: the child stays where the corridor holds it on every pass, which is a fixed point and not a stall.
+    expect(model.diagnostics.filter(d => d.code === 'PLACEMENT_NON_CONVERGENCE')).toHaveLength(0);
     expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
   });
   it('stress ticket 14: union reaches the edge it was built from', () => {
@@ -395,7 +396,8 @@ links: [[a.p, c.p], [a.q, b.p]]`;
     // `wide` really grows over the x ELK gave `middle`. `middle` cannot centre in what is left.
     expect(model.nodes.w1!.bounds!.width).toBeGreaterThan(input.nodes.w1!.bounds!.width + 100);
     expect(right(model.groups.wide!.bounds!)).toBeGreaterThan(input.groups.middle!.bounds!.x);
-    expect(model.diagnostics.map(d => d.code)).toEqual(['PLACEMENT_NON_CONVERGENCE']);
+    // Ticket 75: the blocked group holds its place on every pass; that is settled, not a stall.
+    expect(model.diagnostics.map(d => d.code)).toEqual([]);
     // No foreign group obstacle contains an attachment shape. Every group keeps the band gap.
     const plan = planRoute(model);
     for (const batch of plan.batches) expect(() => batchRequest(plan, batch, [])).not.toThrow();

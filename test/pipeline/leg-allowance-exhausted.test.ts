@@ -18,11 +18,15 @@ vi.mock('../../src/layout/region-rebuild.js', async importOriginal => {
   return { ...original, rebuildRegionGeometry: (...args: Parameters<typeof original.rebuildRegionGeometry>): void => {
     const [model, budget] = args;
     // The shared budget is the first one the loop replays with; the extra pass replays with a fresh one of its own.
+    // Ticket 75: centring ends at a fixed point and no longer burns the shared budget, so the growth the allowance guards is
+    // paid for by the shared budget first. The premise of this file (a spent budget) is forged: the first replay spends it.
+    const first = forge.shared === undefined && budget !== undefined;
     forge.shared ??= budget;
     const extra = budget !== undefined && budget !== forge.shared && budget.passes === 0;
     if (extra) forge.replays++;
     if (extra && !forge.entry) forge.entry = { remaining: budget.remaining, passes: budget.passes };
     original.rebuildRegionGeometry(...args);
+    if (first) { budget!.remaining = 0; budget!.passes = 8; }
     if (forge.done || !extra) return;
     forge.done = true;
     const node = model.nodes.m0!;
