@@ -1003,9 +1003,10 @@ function plannedPeers(model: LayoutModel, plan: GapPlan | undefined, gap: TierGa
     // A residual part has no route across a planned vertical (a leg or a drop) that stands within `keep` of one of its own legs or between
     // them: spec 2.2 grants it that vertical's cover, so it publishes with a finding and not as a removal.
     const verticals = [part.upper.x, part.lower.x, ...part.middle !== undefined ? [part.middle] : []];
-    const grants = plan.residual.filter(item => item.granted === part.link || item.upper && item.lower && verticals.some(x => {
-      const lo = Math.min(item.upper!.x, item.lower!.x), hi = Math.max(item.upper!.x, item.lower!.x);
-      return x > lo - keep + 1e-9 && x < hi + keep - 1e-9;
+    const grants = plan.residual.filter(item => item.granted === part.link || verticals.some(x => {
+      const span = item.span ?? (item.upper && item.lower
+        ? { x0: Math.min(item.upper.x, item.lower.x), x1: Math.max(item.upper.x, item.lower.x) } : undefined);
+      return span !== undefined && x > span.x0 - keep + 1e-9 && x < span.x1 + keep - 1e-9;
     })).map(item => item.link);
     const segments = plannedSegments(part, gap), owners = new Set([part.link, ...shares, ...grants]);
     const width = linkStrokeWidth(links.get(part.link)!) / 2 + margin;

@@ -224,11 +224,8 @@ it('leaves out the run a group label covers and seats the rest', async () => {
   expect(Number.isFinite(score(published).snapshot.Q)).toBe(true);
 }, 120000);
 
-// Ticket 50: the situation of this test (a row seated half a pitch inside a boundary, so its cover ends exactly on the boundary)
-// cannot arise from a planned part: a planned row starts at its tip row or at `low + e`, never half a pitch inside. The zero-area
-// touch rule (`TOUCH` in `route/plan.ts`) is still in use by the claim of every stem. Reproducing it needs a residual run seated by
-// the old allocation on the edge, and no fixture of the corpus keeps one. Ticket 51 gives it a residual fixture.
-it.todo('claims an approach a row stands exactly on the edge of (ticket 51: needs a residual run seated half a pitch inside the boundary)');
+// Ticket 50: a planned row never stands half a pitch inside a boundary, so the claim on a cover edge (stress ticket 09) is tested on a gap the plan
+// does not fit, where the old allocation seats the rows: `test/pipeline/unfit-gap.test.ts` (ticket 51).
 
 it('carries a group label with the band the gap room moves', async () => {
   // Stress ticket 06. 7f places its group labels, measures the gaps, and places them again: a group
@@ -284,11 +281,12 @@ it('grows the gap of the band that sets the group edge to the rows of its 25 par
   // its own at the pitch k = 11.5 (spans of 21 stepped parts overlap, so 18 distinct rows from 10.75 to 206.25 px below the low
   // boundary, three of them shared by parts whose spans do not touch), and the last row keeps k + 30 px (a lower leg of depth 30)
   // above the band below: H = 206.25 + 41.5 - 11.5 = 236.25 px against a room of 49.25. The router discovered those rows before
-  // (G4 18, G6 47 on main); they are reserved now, and the gap grows 198.5 px (187 px while the plan was read on a replay the published model did not have: ticket 50 review).
+  // (G4 18, G6 47 on main); they are reserved now, and the gap grows 187 px, the height the published plan asks: 7f replaces the growth of
+  // each round by `H - room` and does not accumulate it (ticket 51; the rounds added 198.5 px while they accumulated).
   const before = await beforeBands(read('a-band-holds-the-group-that-set-its-edge.yaml'));
   const after = bands(before);
   const grown = after.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN');
-  expect(grown.map(item => item.message)).toEqual([expect.stringMatching(/grew 198\.50 px to hold the rows of its parts \(set by link-16#0\)/)]);
+  expect(grown.map(item => item.message)).toEqual([expect.stringMatching(/grew 187\.00 px to hold the rows of its parts \(set by link-36#0\)/)]);
   const busy = tierGapPlans(after).filter(item => item.plan.parts.length > 20);
   expect(busy).toHaveLength(1);
   expect(busy[0]!.plan.height).toBeCloseTo(236.25, 9);
