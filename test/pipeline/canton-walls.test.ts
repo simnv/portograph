@@ -216,6 +216,9 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     'a-free-member-beside-a-held-lane-inside-its-canton',
     // Ticket 64: the pull reads the owned lane of a transit feed, as centring does, so the last rule to run cannot flip the member.
     'a-one-rank-member-beside-a-two-rank-member',
+    // Ticket 67: the finished layout is a fixed point of the column pull (a packed run with a pin; the lone column stays open, see the ticket).
+    'a-canton-group-swap-is-refused-for-routed-crossings',
+    'three-canton-groups-close-up-to-a-band-gap',
   ])('%s: a second layout is the same model and the column rules move nothing on it', async name => {
     const first = await run(name), second = await run(name);
     // The stage timings are the only thing that differs between two runs.
@@ -226,7 +229,21 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     // `separateFrameColumns` keeps the rows-time gap (a band gap and two slacks) and is not asked of a finished layout; `columnShifts` with the
     // slack of 7f is. The inner pass is the one of this ticket.
     expect([columnShifts(clone, 0).size, packBesideRows(clone), holdMemberWalls(clone), holdColumnAxes(clone, 0)]).toEqual([0, false, false, false]);
+    // A second pull moves no unit, so none goes farther from its feed range either (ticket 67).
+    const moved = Object.values(clone.groups).map(group => Math.abs(group.bounds!.x - (JSON.parse(before) as [string, Rect][]).find(([id]) => id === group.id)![1].x));
+    expect(Math.max(0, ...moved)).toBe(0);
     placeOverlayFree(clone);
     expect(JSON.stringify(Object.values(clone.groups).map(group => [group.id, group.bounds]))).toBe(before);
+  }, 60000);
+
+  // Ticket 67: the mixed run of a foreign unit between two cantons converges by a third each round of 7f (1.551, 0.517, 0.172 px), and the rounds end
+  // under the creep of half a pixel. What is left is that creep, not a pull that goes the wrong way: a second pull moves the run as one block by less
+  // than it. The bound of 0.1 is measured (0.057); the guaranteed bound is CANTON_CREEP x the ratio of the rounds, about 0.167.
+  it('a-foreign-unit-with-routed-links-to-two-canton-groups: a second pull moves the run by less than the creep of the rounds', async () => {
+    const clone = structuredClone(await run('a-foreign-unit-with-routed-links-to-two-canton-groups')) as LayoutModel;
+    const before = Object.values(clone.groups).map(group => group.bounds!.x);
+    holdColumnAxes(clone, 0);
+    const moved = Object.values(clone.groups).map((group, i) => Math.abs(group.bounds!.x - before[i]!));
+    expect(Math.max(...moved)).toBeLessThan(0.1);
   }, 60000);
 });

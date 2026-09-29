@@ -82,8 +82,8 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
   it('a second pass returns false and the close-up says nothing on packed runs', async () => {
     for (const name of ['a-canton-band-holds-the-rows-off', 'a-canton-group-swap-is-refused-for-routed-crossings']) {
       const model = await run(name);
-      // `holdColumnAxes` also pulls a column toward its feed at its own points (7.8 px on the first fixture on the finished layout, as on main);
-      // the close-up sites are `closeCantons`, and they leave a packed run alone.
+      // `closeCantons` leaves a packed run alone (`runApart`). `holdColumnAxes` still pulls the lone column of the first fixture by 7.8 px
+      // on the finished layout, as on main (ticket 67, open): a pull after the replays widens the frame by the move and grows the canvas.
       const copy = structuredClone(model) as LayoutModel, before = stand(copy);
       expect(closeCantons(copy), name).toBe(false);
       expect(stand(copy), name).toBe(before);
