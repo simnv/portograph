@@ -15,10 +15,12 @@ const fixture = readFileSync(new URL('../../goldens/synthetic/detoured-stem-chec
  */
 it('keeps every reserved stem checkpoint on a route forced round an earlier batch', async () => {
   const before = bands(bundles(bars(centre(flanks(lanes(rows(await placed(fixture))))))));
-  // The precondition: the crossing pair really is split across two ownership batches. `link-2` is
-  // one straight run between two anchors on one x, which stage 8 claims, so it joins no batch.
+  // Ticket 50: the crossing pair (`b1 → b2` and `b3 → b4`, the two diagonals of one rectangle) are planned parts now: two rows, one crossing
+  // reserved on the row of one and the leg of the other, stems claimed. Neither joins a batch (main: two batches, `link-1` then `link-3`,
+  // and the second detoured round the first, which is what the checkpoint rule was measured on). The end-to-end assertions below still hold
+  // on the reserved geometry; the router detour itself needs a residual pair (ticket 51).
   const plan = planRoute(before);
-  expect(plan.batches.map(batch => batch.links)).toEqual([['link-1'], ['link-3']]);
+  expect(plan.batches).toEqual([]);
 
   const model = linkLabels(await route(before, { createAttempt: createAvoidAttempt }));
   for (const item of plan.links) {
@@ -40,3 +42,5 @@ it('keeps every reserved stem checkpoint on a route forced round an earlier batc
   expect(Object.entries(report.gates).flatMap(([id, gate]) => gate.violations.map(item => [id, item.code, item.elements])))
     .toEqual([]);
 }, 60000);
+
+it.todo('keeps every reserved stem checkpoint on a route forced round an earlier batch of two RESIDUAL links (ticket 51: needs a residual pair)');

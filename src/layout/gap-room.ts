@@ -101,6 +101,7 @@ const REASONS: Record<ResidualReason, string> = {
   'crosses-lane': 'its span crosses the reserved run of a through lane',
   'legs-within-k': 'its leg stands within a run clearance of the leg of another node',
   'row-cycle': 'its rows form a cycle',
+  'crosses-shared-run': 'a leg stands over the shared run of another link',
   'leg-blocked': 'a leg would pass through a label, a lane box or an obstacle',
 };
 

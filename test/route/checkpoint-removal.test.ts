@@ -10,20 +10,22 @@ import { avoidAssets, spawnAvoidWorker } from './fixture.js';
 /**
  * Ticket 24. A route stage 8 cannot use is unusable, and one such route may not stop the sheet. Ticket
  * 21's fixture reproduced one through the real router (link-35's far stem tip lay on the edge of a
- * completed cover, so its routed gap did not meet its reserved endpoints); ticket 25 grows the gap under the far stem
- * (placement), so the fixture no longer rejects anything. The real router still answers every request
- * here, and the answer for link-35 alone is forged to end 30 px beside its port, which stitching
- * rejects with the same reason as before. The skipped-checkpoint case is forged in `route.test.ts`.
+ * completed cover); ticket 25 made it route, and ticket 50 (the tier-gap plan) reserves every part of that
+ * fixture, so no link of it reaches the router. The mechanism does not depend on the fixture: the real router
+ * still answers every request here, and the answer for one routed link is forged to end 30 px beside its port,
+ * which stitching rejects with the same reason as before. The link is `link-2` of the fixture whose plan
+ * declines three links as residual (`leg-blocked`, a leg under a group label), so several ownership batches
+ * remain. The skipped-checkpoint case is forged in `route.test.ts`.
  */
-const fixture = readFileSync(new URL('../../goldens/synthetic/a-band-holds-the-group-that-set-its-edge.yaml', import.meta.url), 'utf8');
-const REJECTED = 'link-35';
-const REASON = /Routed gap on link-35 does not meet its reserved endpoints/;
+const fixture = readFileSync(new URL('../../goldens/synthetic/a-claim-lies-on-a-cover-edge.yaml', import.meta.url), 'utf8');
+const REJECTED = 'link-2';
+const REASON = /Routed gap on link-2 does not meet its reserved endpoints/;
 
 /** The forged answer: every checkpoint is honoured, but the route ends 30 px beside the port it must reach. */
 const forged = (id: string, points: Point[]): Point[] => id === `${REJECTED}#0`
   ? [...points, { x: points.at(-1)!.x + 30, y: points.at(-1)!.y }] : points;
 
-/** The real router with link-35's answer forged, and a record of every answer it gave: one map of connector to points per request, in order. */
+/** The real router with link-2's answer forged, and a record of every answer it gave: one map of connector to points per request, in order. */
 function recording(answers: Map<string, Point[]>[], requests: string[][] = []): CreateRouteAttempt {
   return () => {
     const worker = spawnAvoidWorker(avoidAssets.workerUrl);
@@ -77,7 +79,7 @@ describe('a route that skips a required checkpoint removes its link and not the 
     }
     const rejected = found.find(item => linkOf(item) === REJECTED)!;
     expect(rejected.code).toBe('ROUTE_GAP_REJECTED');
-    expect(rejected.message).toMatch(/rejected \(Routed gap on link-35 does not meet its reserved endpoints\)/);
+    expect(rejected.message).toMatch(/rejected \(Routed gap on link-2 does not meet its reserved endpoints\)/);
 
     // The score report counts them beside the other counters, and the sheet still renders and restores.
     expect(score(model).snapshot.counters.removedLinks).toBe(removed.length);

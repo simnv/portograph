@@ -55,10 +55,10 @@ describe('the tier-gap plan on the four shapes of the spec (Section 2.4)', () =>
     expect(plan.crossings.filter(item => item.kind === 'middle-drop' || item.kind === 'drop')).toEqual([]);
     expect(plan.height).toBeCloseTo(105, 6);
     expect(plan.setBy).toBe('link-4#0');
-    // The model has grown 39.5 px by the old rule already (the gap stands 99.5 px tall): the plan asks for 45 in all.
-    expect(gap.high - gap.low - BAND_GAP).toBeCloseTo(39.5, 6);
+    // 7f grew the gap by the plan (ticket 50): it stands 105 px tall, 45 above the band gap (main grew 39.5), and asks for nothing more.
+    expect(gap.high - gap.low - BAND_GAP).toBeCloseTo(45, 6);
     expect(plan.height - BAND_GAP).toBeCloseTo(45, 6);
-    expect(plan.growth).toBeCloseTo(5.5, 6);
+    expect(plan.growth).toBe(0);
   });
 
   it('gives the ticket 41 shape a Z part: 4a 263, 3 274.5, 4b 286, one crossing on the middle drop, no growth', async () => {
@@ -93,20 +93,23 @@ describe('the tier-gap plan on the four shapes of the spec (Section 2.4)', () =>
     expect(plan.growth).toBe(0);
   });
 
-  it('plans both gaps of the v5-4-0 shape: rows, seven and six forced crossings, growth 9.25 and 10', async () => {
+  it('plans both gaps of the v5-4-0 shape: rows, forced crossings, link-3 residual under the label, growth 0 after 7f', async () => {
     const model = await place('a-tier-gap-plan-orders-every-part');
     const [upper, lower] = tierGapPlans(model).filter(({ plan }) => plan.order.length);
-    expect(upper!.plan.residual).toEqual([]);
+    // Ticket 50: the spec's link-3 (row 179.5, the term that asked for 9.25 px) stands 102.5 under the `access` group label, whose
+    // box the leg from the row to the nested lower tip would cross. It is residual, `leg-blocked`, and the router lays it.
+    expect(upper!.plan.residual.map(item => `${short(item.id)}:${item.reason}`)).toEqual(['3:leg-blocked']);
     expect(lower!.plan.residual).toEqual([]);
 
-    expect(upper!.plan.order.map(short)).toEqual(['11', '1', '5', '2', '3']);
-    expectRows(upper!.plan, { 11: [145], 1: [156.5], 5: [156.5], 2: [168], 3: [179.5] });
-    expect(upper!.plan.edges.map(edge => `${short(edge.above)}>${short(edge.below)}:${edge.kind}`).sort()).toEqual(['11>1:O2', '5>2:O2', '5>3:O1']);
-    // Five interleaved pairs and two on link-4's drop.
-    expect(pairs(upper!.plan)).toEqual(['11x2', '11x3', '11x4', '11x5', '2x3', '2x5', '4x5']);
-    expect(upper!.plan.height).toBeCloseTo(69.25, 6);
-    expect(upper!.plan.growth).toBeCloseTo(9.25, 6);
-    expect(upper!.plan.setBy).toBe('link-3#0');
+    expect(upper!.plan.order.map(short)).toEqual(['11', '1', '5', '2']);
+    expectRows(upper!.plan, { 11: [145], 1: [156.5], 5: [156.5], 2: [168] });
+    expect(upper!.plan.edges.map(edge => `${short(edge.above)}>${short(edge.below)}:${edge.kind}`).sort()).toEqual(['11>1:O2', '5>2:O2']);
+    // Four interleaved pairs of the spec (link-3's are gone) and two on link-4's drop.
+    expect(pairs(upper!.plan)).toEqual(['11x2', '11x4', '11x5', '2x5', '4x5']);
+    // Without link-3 nothing asks for more than the band gap: the floor sets H, and the old 69.25 is gone with it.
+    expect(upper!.plan.height).toBe(BAND_GAP);
+    expect(upper!.plan.growth).toBe(0);
+    expect(upper!.plan.setBy).toBe('floor');
 
     expect(lower!.plan.order.map(short)).toEqual(['12.1', '10', '8', '7', '9']);
     expectRows(lower!.plan, { '12.1': [303.75], 10: [315.25], 8: [326.75], 7: [338.25], 9: [349.75] });
@@ -115,12 +118,12 @@ describe('the tier-gap plan on the four shapes of the spec (Section 2.4)', () =>
     // 7x9 and 8x9, and four on link-11's drop.
     expect(pairs(lower!.plan)).toEqual(['10x11.1', '11.1x7', '11.1x8', '11.1x9', '7x9', '8x9']);
     // The lanes overhang from the band above: the plan measures from the clipped low boundary (288.75); the spec quotes
-    // 82.5 from the band bottom (278), the same 10.75 px further. Both ask for 10 px of growth.
+    // 82.5 from the band bottom (278), the same 10.75 px further. 7f grew the gap to H (71.75 from the clipped low), so it asks for nothing more.
     expect(lower!.gap.low).toBeCloseTo(288.75, 6);
     expect(lower!.plan.height).toBeCloseTo(71.75, 6);
-    expect(lower!.plan.growth).toBeCloseTo(10, 6);
+    expect(lower!.plan.bandTop - lower!.gap.low).toBeCloseTo(71.75, 6);
+    expect(lower!.plan.growth).toBe(0);
     expect(lower!.plan.setBy).toBe('link-9#0');
-    expect(upper!.plan.growth + lower!.plan.growth).toBeCloseTo(19.25, 6);
   });
 
   it('reads the same plan through tierGapPlan and tierGapPlans, and writes nothing to the model', async () => {
@@ -191,5 +194,17 @@ describe('the tier-gap plan on hand-built parts', () => {
     expect(plan.crossings.map(item => `${item.run}|${item.vertical}|${item.kind}`)).toEqual(['B|A|drop']);
     // The run keeps 2k and the drop's depth from the lower tip row: k + depth + k for the jog.
     expect(plan.demand).toBeGreaterThanOrEqual(2 * 11.5 + 15 - 1e-9);
+  });
+
+  it('makes a part residual (leg-blocked) whose leg would pass through a fixed obstacle, and leaves the others their rows', () => {
+    // A label anchored to the band below stands over x 90..110 with its top 20 px above the band top: the lower leg of A (x 100, tip 15 deep)
+    // reaches down into it; B (x 200) does not.
+    const blocks = [{ x0: 90, x1: 110, anchor: 'below' as const, bound: 20 }];
+    const plan = planGap([part('A', 0, 0, 100), part('B', 1, 0, 200)], { ...frame(), blocks });
+    expect(plan.residual.map(item => `${item.id}:${item.reason}`)).toEqual(['A:leg-blocked']);
+    expect(plan.parts.map(item => item.id)).toEqual(['B']);
+    // An obstacle the leg stops short of (its top below the tip) blocks nothing.
+    const clear = planGap([part('A', 0, 0, 100)], { ...frame(), blocks: [{ x0: 90, x1: 110, anchor: 'below' as const, bound: 10 }] });
+    expect(clear.residual).toEqual([]);
   });
 });

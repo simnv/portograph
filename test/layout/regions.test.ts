@@ -15,6 +15,7 @@ import { score } from '../../src/score/index.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { right } from '../../src/layout/regions.js';
 import { restoreLayoutModel, withLayoutMutation } from '../../src/layout/mutation.js';
+import { stemPlan } from '../../src/layout/sides-two.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { ALIGNMENT_MAX_GROWTH, ownSideWidth, sizeNodes } from '../../src/layout/size.js';
 import { rebuildBands, moveGroup, union } from '../../src/layout/skeleton-geometry.js';
@@ -406,9 +407,15 @@ links: [[a.p, c.p], [a.q, b.p]]`;
     // Stress ticket 08: `m1|top` carries the two links, 12 px apart, and `link-3` travels over
     // `link-4`'s port. Rule 1 nests the two stems, so the earlier batch's route no longer covers
     // the later link's reserved turn, and the diagram publishes.
-    const stems = new Map(plan.stems.filter(stem => stem.node === 'm1').map(stem => [stem.link, stem.bounds]));
-    expect([...stems.keys()].sort()).toEqual(['link-3', 'link-4']);
-    expect(stems.get('link-3')!.height).toBeGreaterThan(stems.get('link-4')!.height + 17);
+    // Ticket 50: both links are planned parts, so their stems are claimed and no batch reserves them (`plan.stems` is empty); the nesting
+    // is read from the stem plan that placed the tips.
+    const depth = (link: string): number => {
+      const ref = model.links.find(item => item.id === link)!.attachments!;
+      const port = [ref.from, ref.to].map(end => model.nodes[end.node]!.ports.find(item => JSON.stringify(item.ref) === JSON.stringify(end))!).find(item => item.ref.node === 'm1')!;
+      return stemPlan(model, port).depth;
+    };
+    expect(plan.stems.filter(stem => stem.node === 'm1')).toEqual([]);
+    expect(depth('link-3')).toBeGreaterThan(depth('link-4') + 17);
     const routed = await route(model, { createAttempt: createAvoidAttempt });
     for (const link of routed.links) expect(link.path, link.id).toBeDefined();
     const report = score(routed).snapshot;

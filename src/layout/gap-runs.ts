@@ -1030,7 +1030,7 @@ export function allocateGapRuns(model: LayoutModel): GapRun[] {
       const got = allocateWithHolds(model, [...list, ...planned.flatMap(run => run.peers)], gap, entry, true);
       for (const [item, segments] of [...got.lanes?.runs ?? [], ...got.runs]) allocated.set(item, segments);
       // A run this gap could not seat keeps the route it has today, so it crosses the seated ones.
-      if (allocated.size) for (const item of items) {
+      for (const item of items) {
         if (allocated.has(item)) continue;
         crossers.push({ link: item.link.id, low: Math.min(item.near.x, item.far.x), high: Math.max(item.near.x, item.far.x) });
       }

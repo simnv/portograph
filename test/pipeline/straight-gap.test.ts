@@ -19,10 +19,11 @@ it('stitches a straight gap between two reserved endpoints without asking the ro
   const before = bands(bundles(bars(centre(flanks(lanes(rows(await placed(fixture))))))));
   const plan = planRoute(before);
   const claimed = plan.links.find(item => item.link === 'link-3')!;
-  expect(claimed.pieces.map(piece => piece.kind)).toEqual(['straight']);
+  // Ticket 50: the run is a planned drop, reserved tip to tip between the two claimed stems, where it was one claimed straight piece.
+  expect(claimed.pieces.map(piece => piece.kind)).toEqual(['straight', 'allocated', 'straight']);
   expect(claimed.connectors).toEqual([]);
-  // The two crossing links still reach the router; only the forced run is kept out of the batches.
-  expect(plan.batches.flatMap(batch => batch.links)).toEqual(['link-1', 'link-2']);
+  // The two crossing links are planned rows now (312.25 and 300.75), so the router is asked for nothing: it was asked for both.
+  expect(plan.batches.flatMap(batch => batch.links)).toEqual([]);
 
   const model = linkLabels(await route(before, { createAttempt: createAvoidAttempt }));
   const link = model.links.find(item => item.id === 'link-3')!;
@@ -40,15 +41,12 @@ it('stitches a straight gap between two reserved endpoints without asking the ro
       && Math.min(segment.from.x, segment.to.x) < from.x && Math.max(segment.from.x, segment.to.x) > from.x);
   expect(crossing).toHaveLength(1);
 
-  // The diagram is produced. The pair of links that share the one corridor this tier gap offers no
-  // longer runs along itself: the two leave one side of `h1`, one of them travels over the other's
-  // port, and rule 1 now nests those two stems (stress ticket 08), so the five G4 and G6 findings
-  // between `link-1` and `link-2` are gone. What is left is `link-1` following the `hub` group
-  // edge, which no reservation on that side answers.
+  // The diagram is produced and every gate passes. (Main left `link-1` following the `hub` group edge, G6 `segment-group-edge`, which
+  // no reservation on that side answered; the plan reserves link-1's row 312.25 clear of it, spec O5.) The crossing pair of links that
+  // shared one corridor no longer runs along itself either: rule 1 nests those two stems (stress ticket 08).
   const report = score(model).snapshot;
   expect(Number.isFinite(report.Q)).toBe(true);
-  expect(Object.entries(report.gates).flatMap(([id, gate]) => gate.violations.map(item => [id, item.code, item.elements])))
-    .toEqual([['G6', 'segment-group-edge', ['link-1', 'hub']]]);
+  expect(Object.entries(report.gates).flatMap(([id, gate]) => gate.violations.map(item => [id, item.code, item.elements]))).toEqual([]);
 }, 60000);
 
 /**

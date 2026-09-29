@@ -14,11 +14,13 @@ const read = (name: string): string =>
 /** One run clearance, the reach of a run's cover: how far a row may still touch the x-span of a tip's leg. */
 const CLEARANCE = 11.5;
 /**
- * The band the rule keeps free of allocated rows either side of a nested tip row: the tip obstacle
- * reaches 11.5 px past the tip and a run keeps 11.5 px off an obstacle. At 11.5 px the tip has no
- * pocket and the router drops the link that owns it.
+ * The band the plan keeps free of a row either side of a foreign nested tip row whose column the row spans (spec O4, ticket 50):
+ * k = 11.5 px. Ticket 31 kept 2k = 23 px, because a ROUTED link needs a pocket at its tip (the tip obstacle reaches 11.5 px past it
+ * and a run keeps 11.5 px off an obstacle). A planned part's stem is claimed and its leg reserved, so no pocket is needed; and a row that
+ * does not span the tip column keeps nothing, because the tip's leg is a reserved vertical and no longer a leg along the tip row.
  */
-const BAND = 2 * CLEARANCE;
+const BAND = CLEARANCE;
+const spans = (row: { x0: number; x1: number }, tip: { x: number }): boolean => row.x0 < tip.x - 1e-6 && row.x1 > tip.x + 1e-6;
 const FIXTURE = 'a-nested-tip-row-holds-no-allocated-row';
 
 interface Row { link: string; y: number; x0: number; x1: number }
@@ -70,7 +72,7 @@ it('keeps every allocated row one run clearance off every nested stem tip, and r
   expect(found.length).toBeGreaterThan(0);
   for (const tip of tips) {
     for (const row of found) {
-      if (tip.links.has(row.link) || row.x1 < tip.x0 - CLEARANCE || row.x0 > tip.x1 + CLEARANCE) continue;
+      if (tip.links.has(row.link) || !spans(row, tip)) continue;
       expect(Math.abs(row.y - tip.y), `${row.link} row at ${row.y} against the tip of ${tip.node} at ${tip.y}`).toBeGreaterThanOrEqual(BAND - 1e-6);
     }
   }
@@ -85,7 +87,7 @@ it('grows the gap for the row a nested tip band denies, allocates that row and k
   expect(seated.length, 'the gap seats its row').toBeGreaterThan(0);
   const routed = await layout(parse(read(FIXTURE)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   expect(routed.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN').map(item => item.message))
-    .toEqual([expect.stringMatching(/The tier gap above tier 2 grew [\d.]+ px to the rows it must seat/)]);
+    .toEqual([expect.stringMatching(/The tier gap above tier 2 grew [\d.]+ px to hold the rows of its parts/)]);
   expect(routed.removedLinks ?? []).toEqual([]);
   // Each published path runs along its allocated row, not along a row the router found.
   for (const row of seated) {
@@ -99,7 +101,7 @@ it('grows the gap for the row a nested tip band denies, allocates that row and k
   expect(cover.length).toBeGreaterThanOrEqual(2);
   for (const row of seated) {
     for (const tip of cover) {
-      if (tip.links.has(row.link) || row.x1 < tip.x0 - CLEARANCE || row.x0 > tip.x1 + CLEARANCE) continue;
+      if (tip.links.has(row.link) || !spans(row, tip)) continue;
       expect(Math.abs(row.y - tip.y), `${row.link} row at ${row.y} against the tip of ${tip.node} at ${tip.y}`).toBeGreaterThanOrEqual(BAND - 1e-6);
     }
   }

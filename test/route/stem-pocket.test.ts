@@ -3,9 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import { resolve } from '../../src/resolve/index.js';
 import type { Point, Side } from '../../src/model/geometry.js';
-import { checkpointsHonoured } from '../../src/route/paths.js';
 import { completedCrossingObstacles, crossedStems, pendingStemObstacles, planRoute } from '../../src/route/plan.js';
-import type { RouteBatch, RoutedConnector } from '../../src/route/types.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from './fixture.js';
 
@@ -111,40 +109,14 @@ links: [[a, b], [c, d], [e, f]]`));
 });
 
 describe('the fixture whose far checkpoints stood in a pocket', () => {
-  /** Routes the real plan and keeps every batch request with its answer; the layout is allowed to stop later. */
-  async function routedBatches(): Promise<{ batch: RouteBatch; routes: RoutedConnector[] }[]> {
-    const requests: RouteBatch[] = [], replies: { routes?: RoutedConnector[] }[] = [];
-    const attempt = () => {
-      const made = createAvoidAttempt();
-      const post = made.worker.postMessage.bind(made.worker), listen = made.worker.addEventListener.bind(made.worker);
-      made.worker.postMessage = (message: unknown) => { requests.push((message as { batch: RouteBatch }).batch); post(message); };
-      made.worker.addEventListener = (type: string, listener: (event: { data?: unknown; message?: string }) => void) =>
-        listen(type, type === 'message' ? event => { replies.push(event.data as { routes?: RoutedConnector[] }); listener(event); } : listener);
-      return made;
-    };
-    await layout(parse(fixture('a-band-holds-the-group-that-set-its-edge')),
-      { createElkAttempt: createAttempt, createRouteAttempt: attempt }).catch(() => undefined);
-    return requests.map((batch, index) => ({ batch, routes: replies[index]?.routes ?? [] }));
-  }
-
-  it('routes link-22, whose near stem tip stood walled in by link-18, through its checkpoints', async () => {
-    // Link-24 (link-23 ran through its stem) is not a case of this fixture any more: ticket 25 grows the
-    // last tier gap, and link-24 then descends straight. The synthetic tests above keep its rule.
-    const batches = await routedBatches();
-    for (const id of ['link-22#0']) {
-      const held = batches.find(item => item.batch.connectors.some(connector => connector.id === id))!;
-      const connector = held.batch.connectors.find(item => item.id === id)!;
-      const points = held.routes.find(item => item.connector === id)!.points;
-      expect(checkpointsHonoured(points, connector.checkpoints), id).toBe(true);
-      expect(points.length, id).toBeGreaterThan(2);
-    }
-  }, 60000);
+  // Ticket 50: link-22 is a planned part now (tip to tip, its stems claimed), so it is no longer routed and no stem tip of this fixture is
+  // walled in by a router-laid cover. The situation (a routed link whose near stem tip a foreign cover walls in) needs a residual link
+  // beside a completed cover of another; no fixture of the corpus has one, and ticket 51 adds it.
+  it.todo('routes link-22, whose near stem tip stood walled in by link-18, through its checkpoints (ticket 51: needs a residual fixture)');
 
   // Ticket 25: link-35 and link-37 had their far stem tip on the row of the near stems' tips, inside the
-  // near stems' obstacle rows; the tier gap now keeps two run clearances between the two tips of a link
-  // that nests its stems (23 px here; 22.9 px still removes link-37), and no link of the fixture is
-  // removed. A foreign cover still ends on link-35's tip row (ticket 21's grant frees it): the rule does
-  // not claim a pocket at the tip.
+  // near stems' obstacle rows. Ticket 50: the tier gap grows to the rows of its 25 parts (187 px), every part is reserved
+  // tip to tip and no link of the fixture is routed or removed.
   it('routes the whole fixture through the real route plan without removing a link', async () => {
     const model = await layout(parse(fixture('a-band-holds-the-group-that-set-its-edge')),
       { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });

@@ -13,14 +13,14 @@ const yaml = readFileSync(new URL('../../goldens/m1-sip-edge.yaml', import.meta.
 it('routes the measured JPEG golden remainder and scores the complete diagram', async () => {
   const before = bands(bundles(bars(centre(flanks(lanes(rows(await placed(yaml))))))));
   // Measured after stage 7f: the two provider feeds are all libavoid is left. Each is one straight
-  // run between two anchors on one x with a clear corridor, so stage 8 claims both and asks for no
-  // route at all — the prototype's idle router, and byte-for-byte the geometry libavoid returned.
+  // run between two anchors on one x with a clear corridor. Ticket 50: each is a planned drop, reserved tip to tip between its two claimed
+  // stems (one piece before), so stage 8 asks for no route at all — the prototype's idle router, and byte-for-byte the geometry libavoid returned.
   expect(routeRemainders(before)).toEqual(['link-1', 'link-2']);
   expect(before.links.filter(link => !link.path)).toHaveLength(2);
   const plan = planRoute(before);
   expect(plan.batches).toEqual([]);
   expect(plan.links.filter(item => ['link-1', 'link-2'].includes(item.link))
-    .map(item => item.pieces.map(piece => piece.kind))).toEqual([['straight'], ['straight']]);
+    .map(item => item.pieces.map(piece => piece.kind))).toEqual([['straight', 'allocated', 'straight'], ['straight', 'allocated', 'straight']]);
   expect(plan.overlay).toEqual([]);
 
   const model = await route(before, { createAttempt: createAvoidAttempt });

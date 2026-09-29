@@ -1,11 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { layout, parse } from '../../src/index.js';
+import { bands, bars, bundles, centre, flanks, lanes, layout, parse, rows } from '../../src/index.js';
+import { tierGapPlans } from '../../src/layout/gap-plan.js';
 import type { LayoutLink, LayoutModel } from '../../src/index.js';
 import { findPort } from '../../src/layout/row-paths.js';
 import { stemCheckpoint } from '../../src/route/plan.js';
 import { score } from '../../src/score/index.js';
-import { createAttempt } from '../layout/phase-two-fixture.js';
+import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
@@ -40,6 +41,14 @@ function tipRows(model: LayoutModel, link: LayoutLink): [number, number] {
 const horizontals = (link: LayoutLink): number[] => (link.path!.segments as Segment[])
   .filter(segment => Math.abs(segment.from.y - segment.to.y) < EPS && Math.abs(segment.from.x - segment.to.x) > 1).map(segment => segment.from.y);
 
+/** The rows the tier-gap plan gives each link, read from the placement stage 8 receives (tier-gap-rows.md, Section 2.3). */
+async function planRows(name: string): Promise<Map<string, number[]>> {
+  const model = bands(bundles(bars(centre(flanks(lanes(rows(await placed(fixture(name)))))))));
+  const result = new Map<string, number[]>();
+  for (const part of tierGapPlans(model).flatMap(({ plan }) => plan.parts)) result.set(part.link, [...result.get(part.link) ?? [], ...part.rows]);
+  return result;
+}
+
 async function routed(name: string): Promise<LayoutModel> {
   const model = await layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   expect(model.diagnostics.filter(diagnostic => diagnostic.severity === 'error')).toEqual([]);
@@ -57,14 +66,14 @@ describe('interleaved links of one tier gap cross on the row of the earlier link
     expect(model.removedLinks ?? []).toEqual([]);
     expect(model.diagnostics.filter(diagnostic => diagnostic.code === 'ROUTE_CHECKPOINT_SKIPPED')).toEqual([]);
     const earlier = model.links.find(link => link.id === 'link-4')!, later = model.links.find(link => link.id === 'link-7')!;
-    const [upper, lower] = tipRows(model, earlier);
-    const mid = (upper + lower) / 2;
-    // The earlier link runs on the row midway between its tip rows, and on no other.
-    expect(horizontals(earlier)).toEqual([expect.closeTo(mid, 6)]);
-    // The pair crosses once, and the crossing lies on that row.
+    // Every part holds the row the plan gave it (spec 2.4: link-4 326.5, the last of five), and on no other.
+    const plan = await planRows('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row');
+    expect(plan.get('link-4')).toEqual([expect.closeTo(326.5, 6)]);
+    expect(horizontals(earlier)).toEqual([expect.closeTo(plan.get('link-4')![0]!, 6)]);
+    // The pair crosses once, on link-4's run over link-7's lower leg (reserved by the plan, not discovered by the router).
     const crossings = strictCrossings(earlier, later);
     expect(crossings).toHaveLength(1);
-    expect(crossings[0]!.y).toBeCloseTo(mid, 6);
+    expect(crossings[0]!.y).toBeCloseTo(326.5, 6);
     gatesPass(model);
   }, 60000);
 
@@ -74,10 +83,14 @@ describe('interleaved links of one tier gap cross on the row of the earlier link
     const earlier = model.links.find(link => link.id === 'link-3')!, later = model.links.find(link => link.id === 'link-4')!;
     const [upper, lower] = tipRows(model, earlier);
     expect(lower - upper).toBeGreaterThan(23);
-    expect(horizontals(earlier)).toEqual([expect.closeTo((upper + lower) / 2, 6)]);
+    // The plan: link-3 274.5 between the halves of link-4, a Z part (4a 263, 4b 286); the pair crosses once, on link-4's middle drop.
+    const plan = await planRows('an-earlier-link-with-no-run-crosses-on-the-row-between-its-tips');
+    expect(plan.get('link-3')).toEqual([expect.closeTo(274.5, 6)]);
+    expect(plan.get('link-4')).toEqual([expect.closeTo(263, 6), expect.closeTo(286, 6)]);
+    expect(horizontals(earlier)).toEqual([expect.closeTo(274.5, 6)]);
     const crossings = strictCrossings(earlier, later);
     expect(crossings).toHaveLength(1);
-    expect(crossings[0]!.y).toBeCloseTo((upper + lower) / 2, 6);
+    expect(crossings[0]!.y).toBeCloseTo(274.5, 6);
     // The later link does not ride the earlier link's row: no horizontal of theirs shares a y with an overlap in x.
     for (const one of earlier.path!.segments as Segment[]) {
       for (const other of later.path!.segments as Segment[]) {
@@ -96,33 +109,33 @@ describe('interleaved links of one tier gap cross on the row of the earlier link
     const earlier = model.links.find(link => link.id === 'link-7')!, later = model.links.find(link => link.id === 'link-8')!;
     expect(earlier.fixedSegments).toHaveLength(1);
     // The piece runs from the stem tip of its port to the approach point one router stem short of the lane.
-    const port = findPort(model, earlier.attachments!.from)!;
-    const tip = stemCheckpoint(model, port).y, approach = earlier.fixedSegments![0]!.from.y - 15;
-    const mid = (tip + approach) / 2;
-    const rows = horizontals(earlier);
-    expect(rows).toEqual([expect.closeTo(mid, 6)]);
+    // The plan reserves that piece tip to mouth on one row of its own; the routed path runs on it and on no other.
+    const plan = await planRows('an-unseated-lane-end-piece-holds-the-row-between-its-tips');
+    const wanted = plan.get('link-7')!;
+    expect(wanted).toHaveLength(1);
+    expect(horizontals(earlier)).toEqual([expect.closeTo(wanted[0]!, 6)]);
     const crossings = strictCrossings(earlier, later);
     expect(crossings).toHaveLength(1);
-    expect(crossings[0]!.y).toBeCloseTo(mid, 6);
+    // The crossing lies on a reserved row: a run of link-7 or of link-8 (a Z part here) over the other's leg.
+    expect([...wanted, ...plan.get('link-8')!].some(y => Math.abs(y - crossings[0]!.y) < 1e-6)).toBe(true);
     gatesPass(model);
   }, 60000);
 });
 
 describe('a plain stem tip in the group padding holds its row (ranked-groups ticket 43)', () => {
-  // Known failing: main never seats the piece (link-1 rides the shared tip row 116). The attempted fix is in
-  // .scratch/ranked-groups/ticket-43-attempt.patch; it made the Enterprise NTP sheet throw, so it is not applied.
-  // When the ticket lands, turn `it.fails` into `it`.
-  it.fails('seats the earlier link of an interleaved pair whose tips stand in the padding, so the later link does not ride its tip row', async () => {
+  // Ticket 50 (the tier-gap plan) lands it: link-2 is a Z part (2a 131.75, 2b 154.75), link-1 holds 143.25.
+  it('seats the earlier link of an interleaved pair whose tips stand in the padding, so the later link does not ride its tip row', async () => {
     const model = await routed('a-plain-tip-in-the-group-padding-holds-its-row');
     expect(model.removedLinks ?? []).toEqual([]);
     const earlier = model.links.find(link => link.id === 'link-1')!, later = model.links.find(link => link.id === 'link-2')!;
     const [upper, lower] = tipRows(model, earlier);
-    const mid = (upper + lower) / 2;
-    // The tips stand in the padding, outside the gap, and the earlier link still holds the row midway between them.
+    const plan = await planRows('a-plain-tip-in-the-group-padding-holds-its-row');
+    expect(plan.get('link-1')).toEqual([expect.closeTo(143.25, 6)]);
+    // The tips stand in the padding, outside the gap, and the earlier link holds the row of its own between the halves of the Z part.
     const bands = [...model.tierBands].sort((a, b) => a.bounds!.y - b.bounds!.y);
     expect(upper).toBeLessThan(bands[0]!.bounds!.y + bands[0]!.bounds!.height);
     expect(lower).toBeGreaterThan(bands[1]!.bounds!.y);
-    expect(horizontals(earlier)).toEqual([expect.closeTo(mid, 6)]);
+    expect(horizontals(earlier)).toEqual([expect.closeTo(143.25, 6)]);
     // The tip row of the later link carries no run of another link.
     const [laterTip] = tipRows(model, later);
     for (const link of model.links) {
@@ -133,7 +146,7 @@ describe('a plain stem tip in the group padding holds its row (ranked-groups tic
     }
     const crossings = strictCrossings(earlier, later);
     expect(crossings).toHaveLength(1);
-    expect(crossings[0]!.y).toBeCloseTo(mid, 6);
+    expect(crossings[0]!.y).toBeCloseTo(143.25, 6);
     gatesPass(model);
   }, 60000);
 });

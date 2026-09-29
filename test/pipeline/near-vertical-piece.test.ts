@@ -27,6 +27,9 @@ describe('a piece whose ends stand under a run clearance apart holds no row (ran
     }
     const grown = model.diagnostics.filter(diagnostic => diagnostic.code === 'TIER_GAP_GROWN');
     expect(grown).toHaveLength(1);
-    expect(Number(/grew ([\d.]+) px/.exec(grown[0]!.message)![1])).toBeCloseTo(77.25, 6);
+    // Ticket 50: H = 99.5, 39.5 above the 60 px band gap (main: 77.25 at the 17.5 px pitch). Link-7 is the last of the gap's rows,
+    // 303.5, 55.5 px below the low boundary 248; its run crosses the nested lower leg of link-6 (32.5 px deep), so it needs k + 32.5 = 44 px
+    // of gap below the row: 55.5 + 44 = 99.5. Link-5, the near-vertical part, is a drop with a 1.1 px jog and takes no row.
+    expect(Number(/grew ([\d.]+) px/.exec(grown[0]!.message)![1])).toBeCloseTo(39.5, 6);
   }, 60000);
 });

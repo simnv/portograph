@@ -1,16 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { allocateGapRuns, bands, bars, bundles, centre, flanks, growTierGaps, lanes, linkLabels, planRoute, route, rows, score, tierGapRoom } from '../../src/index.js';
-import type { TierGapRoom } from '../../src/index.js';
-import type { Rect } from '../../src/model/geometry.js';
 import type { LayoutModel, PathSegment } from '../../src/model/layout.js';
 import { ownedLanes } from '../../src/route/paths.js';
-import { MEMBER_GAP } from '../../src/layout/bundle-geometry.js';
-import { GROUP_LABEL_GEOMETRY, produceGroupLabelBands, routedStroke, stemReach } from '../../src/layout/bands.js';
+import { produceGroupLabelBands, nudgingDistance, routedStroke, stemReach } from '../../src/layout/bands.js';
+import { tierGapPlans } from '../../src/layout/gap-plan.js';
+import { tierGaps } from '../../src/layout/gap-runs.js';
 import { GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../../src/theme/geometry.js';
 import { horizontal, segmentRect, vertical } from '../../src/score/geometry.js';
-import { findPort } from '../../src/layout/row-paths.js';
-import { stemCache, stemPlan } from '../../src/layout/sides-two.js';
 import { placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -34,8 +31,9 @@ it('allocates every run of a tier gap two transit links share', async () => {
   const runs = allocateGapRuns(before);
   expect(runs.length).toBeGreaterThanOrEqual(2);
 
-  // Two rows of one gap keep the pitch, and two vertical segments on one x never share length.
-  const pitch = MEMBER_GAP + routedStroke(before);
+  // Two rows of one gap keep the pitch, and two vertical segments on one x never share length. Ticket 50: the pitch is the run
+  // clearance k = 11.5 (spec open question 1), not the bundle pitch 17.5 the old allocation inherited.
+  const pitch = nudgingDistance(before);
   const rowsOf = runs.flatMap(run => run.segments.filter(horizontal).map(segment => segment.from.y));
   for (const [index, y] of rowsOf.entries()) {
     for (const other of rowsOf.slice(index + 1)) expect(Math.abs(other - y)).toBeGreaterThanOrEqual(pitch - 1e-9);
@@ -99,53 +97,53 @@ it('reserves the row a transit approach needs and the lane jogs it crosses', asy
   expect(Number.isFinite(score(model).snapshot.Q)).toBe(true);
 }, 120000);
 
-it('allocates nothing where every run of a gap keeps one x', async () => {
-  // The M1 golden's four transit links descend on the x of their own lanes, so no run needs a row
-  // and the allocation is empty: a gap that has nothing to share changes no diagram.
+it('reserves the columns of a gap whose runs keep one x and leaves the golden where it stood', async () => {
+  // The M1 golden's four transit links descend on the x of their own lanes, so no run needs a row. Ticket 50: the plan
+  // reserves each such run as a drop (one vertical, tip to tip), where the old allocation reserved nothing; the two runs of its one
+  // populated gap are verticals and no row, and the gap asks for nothing (H is the 60 px band gap).
   const golden = readFileSync(new URL('../../goldens/m1-sip-edge.yaml', import.meta.url), 'utf8');
   const before = await place(golden);
   expect(before.lanes.length).toBe(4);
-  expect(allocateGapRuns(before)).toEqual([]);
+  const runs = allocateGapRuns(before);
+  expect(runs.map(run => run.link)).toEqual(['link-1', 'link-2']);
+  for (const run of runs) {
+    expect(run.planned).toBe(true);
+    expect(run.segments).toHaveLength(1);
+    expect(run.segments.every(vertical)).toBe(true);
+  }
   expect(planRoute(before).obstacles.some(item => item.id.startsWith('gap:'))).toBe(false);
-  // Every gap of the golden already seats the rows it owes, so 7f grows nothing and the approved
-  // geometry stands (`.scratch/stress/issues/05`).
+  // The plan seats no row and residual rows are none, so 7f grows nothing and the approved geometry stands.
   for (const room of tierGapRoom(before)) expect(room.rows).toBe(0);
+  for (const { plan } of tierGapPlans(before)) expect(plan.growth).toBe(0);
   expect(growTierGaps(structuredClone(before) as LayoutModel)).toBe(false);
 }, 60000);
 
-/** The band gap `stackBands` left between the two bands one tier gap lies between. */
-const bandGapOf = (model: LayoutModel, room: TierGapRoom): number => {
-  const box = (tier: number): Rect => model.tierBands.find(band => band.tier === tier)!.bounds!;
-  return box(room.below).y - (box(room.above).y + box(room.above).height);
-};
-
 it('grows a tier gap to the rows it must seat', async () => {
-  // Stress ticket 05. Four runs cross one tier gap and not one of them keeps a single x, so the gap
-  // owes four rows. The 60 px band gap leaves 49.25 px between the lane extents, which seats two.
+  // Stress ticket 05. Four runs cross one tier gap and not one of them keeps a single x. Ticket 50: the plan seats them on five rows
+  // (link-4 is a Z part: two rows and a middle drop) at the pitch k = 11.5, from 332.25 to 378.25, and the gap grew to H = 83.25:
+  // 34 px above the 49.25 the lane extents leave. Old numbers: four rows at the pitch 17.5.
   const model = await place(read('a-tier-gap-grows-to-its-rows.yaml'));
-  const rooms = tierGapRoom(model);
-  const grown = rooms.filter(room => room.rows > 0);
-  expect(grown.map(room => room.rows)).toEqual([4]);
+  const pitch = nudgingDistance(model);
+  const busy = tierGapPlans(model).filter(({ plan }) => plan.parts.some(part => part.shape !== 'drop'));
+  expect(busy).toHaveLength(1);
+  const { gap, plan } = busy[0]!;
+  expect(plan.parts.map(part => part.rows.length)).toEqual([1, 1, 1, 2]);
 
-  // The rows the gap grew for are the rows it seats. `rows x pitch` would not do it: that is the
-  // packing with nothing in the way, and the lane runs standing on both boundaries take 11.5 px of
-  // the gap each, so at 70 px this gap seated two of its four.
-  const seats = allocateGapRuns(model).flatMap(run => run.segments.filter(horizontal).map(segment => segment.from.y));
-  for (const room of grown) {
-    const inside = seats.filter(y => y > room.low && y < room.high);
-    expect(inside.length).toBe(room.rows);
-    // The gap holds what the seating landed in and no more: the last row, plus the headroom the
-    // high boundary keeps for an approach standing on it.
-    expect(Math.max(...inside) - room.low + room.headroom).toBeCloseTo(room.high - room.low, 9);
-    expect(room.high - room.low).toBeGreaterThan(room.rows * room.pitch);
-    expect(bandGapOf(model, room)).toBeCloseTo(room.high - room.low + room.margins, 9);
+  // The rows the gap grew for are the rows it holds, and the gap stands exactly at the height the plan asks for.
+  const seats = allocateGapRuns(model).flatMap(run => run.segments.filter(horizontal).map(segment => segment.from.y))
+    .filter(y => y > gap.low && y < gap.high).sort((a, b) => a - b);
+  expect(seats).toHaveLength(5);
+  for (const [index, y] of seats.entries()) if (index) expect(y - seats[index - 1]!).toBeGreaterThanOrEqual(pitch - 1e-9);
+  expect(plan.height).toBeCloseTo(83.25, 9);
+  expect(plan.bandTop - gap.low).toBeCloseTo(plan.height, 9);
+  expect(plan.growth).toBe(0);
+  expect(model.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN').map(item => item.message))
+    .toEqual([expect.stringMatching(/grew 34\.00 px to hold the rows of its parts \(set by link-4#1b\)/)]);
+  // A gap whose parts are all drops keeps its band gap: growth is a reservation this rule makes, never one it takes back.
+  for (const other of tierGapPlans(model)) {
+    if (other.plan.parts.every(part => part.shape === 'drop')) expect(other.plan.growth).toBe(0);
   }
-  // A gap that owes no row keeps its band gap: growth is a reservation this rule makes, never one
-  // it takes back. And the reservation is stable, so a second pass over it grows nothing.
-  for (const room of rooms) {
-    expect(room.high - room.low).toBeGreaterThanOrEqual(room.required - 1e-9);
-    if (!room.rows) expect(bandGapOf(model, room)).toBeCloseTo(60, 9);
-  }
+  // The reservation is stable, so a second pass over it grows nothing.
   expect(growTierGaps(structuredClone(model) as LayoutModel)).toBe(false);
 
   const routed = linkLabels(await route(model, { createAttempt: createAvoidAttempt }));
@@ -153,28 +151,30 @@ it('grows a tier gap to the rows it must seat', async () => {
 }, 120000);
 
 it('steps a row past a group edge instead of ending the search', async () => {
-  // Stress ticket 06. One tier gap owes a single row, and the first position the pitch allows for
-  // it runs along the top group's edge. `seat` advanced past a blocker rectangle but not past that
-  // refusal, so the gap allocated nothing and the diagram did not publish.
+  // Stress ticket 06. The first position for a row runs along the top group's edge. Ticket 50: the plan starts a part whose tip
+  // stands in the group padding at `low + e`, e = 10 + stroke / 2 = 10.75 px (spec 2.2 O5), so the first row of the gap stands at
+  // 131.75 and the rows after it at the pitch k (143.25, 154.75, then link-1 at 166.25). Old numbers: half a pitch inside the boundary
+  // plus one pitch, 26.25 px, and one row where the plan reserves three.
   const model = await place(read('a-row-steps-past-a-group-edge.yaml'));
-  const room = tierGapRoom(model).find(entry => entry.rows > 0)!;
-  expect([room.rows, room.seated]).toEqual([1, 1]);
-
+  const { gap, plan } = tierGapPlans(model).find(entry => entry.gap.above === 0 && entry.gap.below === 1)!;
   const seats = allocateGapRuns(model)
     .flatMap(run => run.segments.filter(horizontal).map(segment => segment.from.y))
-    .filter(y => y > room.low && y < room.high);
-  expect(seats.length).toBe(1);
-  // The rows pack half a pitch inside the low boundary. That position is refused here, so the row
-  // stands at the next one the pitch allows.
-  const row = seats[0]!;
-  expect(row).toBeCloseTo(room.low + room.pitch / 2 + room.pitch, 9);
-
-  // And it stands clear of the link-free margin every group edge keeps (ADR-0013).
+    .filter(y => y > gap.low && y < gap.high)
+    .sort((a, b) => a - b);
   const margin = GROUP_EDGE_LINK_CLEARANCE + routedStroke(model) / 2;
-  for (const group of Object.values(model.groups)) {
-    if (!group.bounds || !group.nodes.length) continue;
-    for (const edge of [group.bounds.y, group.bounds.y + group.bounds.height]) {
-      expect(Math.abs(row - edge)).toBeGreaterThanOrEqual(margin - 1e-9);
+  expect(seats).toHaveLength(4);
+  expect(seats[0]!).toBeCloseTo(gap.low + margin, 9);
+  expect(seats.map(y => y - gap.low)).toEqual([margin, margin + 11.5, margin + 23, margin + 34.5].map(value => expect.closeTo(value, 9)));
+  expect(plan.growth).toBe(0);
+  expect(plan.height).toBeCloseTo(82.5, 9);
+
+  // And every row stands clear of the link-free margin every group edge keeps (ADR-0013).
+  for (const row of seats) {
+    for (const group of Object.values(model.groups)) {
+      if (!group.bounds || !group.nodes.length) continue;
+      for (const edge of [group.bounds.y, group.bounds.y + group.bounds.height]) {
+        expect(Math.abs(row - edge)).toBeGreaterThanOrEqual(margin - 1e-9);
+      }
     }
   }
 
@@ -183,22 +183,23 @@ it('steps a row past a group edge instead of ending the search', async () => {
 }, 120000);
 
 it('leaves out the run a group label covers and seats the rest', async () => {
-  // Stress ticket 09. A group label covers the approach one of four runs owes its own port. The
-  // sixth amendment answered that wholesale and the gap allocated nothing; the decline is now per
-  // run, so the three clear runs are seated and the covered one alone is left to stage 8.
+  // Stress ticket 09. A group label covers the approach one of four runs owes its own port. Ticket 50: the leg of that run from its
+  // row to its tip would cross the label, so the plan declines it as residual (`leg-blocked`, spec 2.2) and reserves the other
+  // three tip to tip; the covered one alone is left to stage 8 and crosses every row.
   const model = await place(read('a-gap-leaves-out-the-covered-run.yaml'));
   // Named by its tiers, not found by the answer: the gap between the middle band and the lower one.
-  // A `find` on `seated` passes the moment the entry is missing, and any unrelated change to this
-  // gap then reads as a crash rather than as the rule failing.
+  const gap = tierGaps(model).find(entry => entry.above === 1 && entry.below === 2)!;
+  const plan = tierGapPlans(model).find(entry => entry.gap.above === 1 && entry.gap.below === 2)!.plan;
+  expect(plan.parts.map(part => part.link).sort()).toEqual(['link-2', 'link-3', 'link-4']);
+  expect(plan.residual.map(item => `${item.link}:${item.reason}`)).toEqual(['link-1:leg-blocked']);
   const room = tierGapRoom(model).find(entry => entry.above === 1 && entry.below === 2);
-  expect([room?.rows, room?.seated, room?.refuses]).toEqual([4, 3, false]);
+  expect([room?.rows, room?.seated, room?.refuses]).toEqual([1, 0, true]);
 
   const runs = allocateGapRuns(model);
-  const inside = runs.filter(run => run.segments.some(segment =>
-    horizontal(segment) && segment.from.y > room!.low && segment.from.y < room!.high));
-  expect(inside.map(run => run.link).sort()).toEqual(['link-2', 'link-3', 'link-4']);
+  const inside = runs.filter(run => run.segments.some(segment => Math.max(segment.from.y, segment.to.y) > gap.low && Math.min(segment.from.y, segment.to.y) < gap.high));
+  expect(inside.filter(run => run.planned).map(run => run.link).sort()).toEqual(['link-2', 'link-3', 'link-4']);
 
-  // The covered run keeps the route it has today, and it crosses every row the gap did seat.
+  // The covered run keeps the route it has today, and it crosses every run the gap did reserve.
   for (const run of inside) expect(run.crossers).toContain('link-1');
 
   // The rectangle that covers it is the lower group's own title, and it covers that run's approach
@@ -213,7 +214,7 @@ it('leaves out the run a group label covers and seats the rest', async () => {
     const link = model.links.find(item => item.id === id)!;
     const node = model.nodes[link.attachments!.to.node]!;
     const anchor = node.ports.find(port => port.side === 'top')!.anchor!;
-    const approach = { from: { x: anchor.x, y: room!.high }, to: { x: anchor.x, y: anchor.y - stemReach(model, node) },
+    const approach = { from: { x: anchor.x, y: gap.high }, to: { x: anchor.x, y: anchor.y - stemReach(model, node) },
       owner: { kind: 'link' as const, id } };
     return [id, segmentRect(approach, title)] as const;
   });
@@ -223,42 +224,11 @@ it('leaves out the run a group label covers and seats the rest', async () => {
   expect(Number.isFinite(score(published).snapshot.Q)).toBe(true);
 }, 120000);
 
-it('claims an approach a row stands exactly on the edge of', async () => {
-  // Stress ticket 09. The gap seats a row one cover margin inside its low boundary, so that row's
-  // own cover ends exactly on the boundary — and the run standing there is clear of it by the 10 px
-  // G6 asks for and no more. The claim's cover scan counted that zero-area touch as a hit, declined
-  // the straight piece, and libavoid answered with a route that never reached the reserved end.
-  const model = await place(read('a-claim-lies-on-a-cover-edge.yaml'));
-  const room = tierGapRoom(model).find(entry => entry.above === 3 && entry.below === 4);
-  expect([room?.rows, room?.seated, room?.refuses]).toEqual([3, 3, false]);
-
-  const row = allocateGapRuns(model).find(run => run.link === 'link-17'
-    && run.segments.some(segment => horizontal(segment) && segment.from.y > room!.low && segment.from.y < room!.high));
-  const seat = row?.segments.find(horizontal);
-  expect(seat === undefined).toBe(false);
-  // The cover of a run is the run grown by the gate's clearance plus the two half strokes, so a row
-  // seated that far inside the boundary puts its cover's edge on the boundary exactly.
-  const margin = GROUP_LABEL_GEOMETRY.nodeClearance + routedStroke(model);
-  expect(seat!.from.y - margin).toBeCloseTo(room!.low, 9);
-
-  // `link-18` stands on that boundary inside the cover's own x range, and the piece from there to
-  // its port is one straight run stage 8 claims rather than asks the router for. Without the rule
-  // it is a `gap`, and the route libavoid answers with never reaches the reserved end.
-  const pieces = planRoute(model).links.find(item => item.link === 'link-18')!.pieces;
-  const last = pieces.at(-1)!;
-  expect(last.kind).toBe('straight');
-  const claim = (last as { segments: PathSegment[] }).segments[0]!;
-  expect(Math.max(claim.from.y, claim.to.y)).toBeCloseTo(room!.low, 9);
-  expect(claim.from.x).toBeGreaterThan(Math.min(seat!.from.x, seat!.to.x) - margin);
-  expect(claim.from.x).toBeLessThan(Math.max(seat!.from.x, seat!.to.x) + margin);
-
-  const published = linkLabels(await route(model, { createAttempt: createAvoidAttempt }));
-  expect(Number.isFinite(score(published).snapshot.Q)).toBe(true);
-  // And the published path really arrives at the port the claim was declined short of.
-  const path = published.links.find(item => item.id === 'link-18')!.path!.segments;
-  const port = findPort(published, published.links.find(item => item.id === 'link-18')!.attachments!.to)!;
-  expect([path.at(-1)!.to.x, path.at(-1)!.to.y]).toEqual([port.anchor!.x, port.anchor!.y]);
-}, 120000);
+// Ticket 50: the situation of this test (a row seated half a pitch inside a boundary, so its cover ends exactly on the boundary)
+// cannot arise from a planned part: a planned row starts at its tip row or at `low + e`, never half a pitch inside. The zero-area
+// touch rule (`TOUCH` in `route/plan.ts`) is still in use by the claim of every stem. Reproducing it needs a residual run seated by
+// the old allocation on the edge, and no fixture of the corpus keeps one. Ticket 51 gives it a residual fixture.
+it.todo('claims an approach a row stands exactly on the edge of (ticket 51: needs a residual run seated half a pitch inside the boundary)');
 
 it('carries a group label with the band the gap room moves', async () => {
   // Stress ticket 06. 7f places its group labels, measures the gaps, and places them again: a group
@@ -287,54 +257,44 @@ it('carries a group label with the band the gap room moves', async () => {
   }
 }, 120000);
 
-it('grows a tier gap so that the two tip rows of a link that nests a stem stand two run clearances apart (ranked-groups ticket 25)', async () => {
-  // A pending stem's obstacle reaches one obstacle expansion (11.5 px) past its tip, and a run keeps one
-  // run clearance (11.5 px) off an obstacle. The other tip row of the link must stand beyond both, so it
-  // clears the near stem's obstacle rows; this is all the rule claims (see `stemShortfall`).
-  const OBSTACLE = 11.5, CLEARANCE = 11.5;
+it('plans a tier gap whose nested stems stand close without the 2k pocket a routed link needs (ranked-groups tickets 25 and 50)', async () => {
+  // Ticket 25 grew this gap 5.5 px so the two tip rows of a link that nests a stem stood 23 px apart, the room a ROUTED link
+  // needs at its far checkpoint. Every link of the fixture is a planned part now (tier-gap-rows.md Section 5: the drop and residual
+  // terms replace `stemShortfall`): its stems are claimed and its rows and legs reserved, so no pocket is needed and the plan asks
+  // for 58.25 px, under the 60 px band gap. Nothing grows.
   const before = await beforeBands(read('a-stem-tip-clears-the-tip-that-faces-it.yaml'));
-  const owed = tierGapRoom(before).map(room => room.stems);
-  expect(owed).toHaveLength(1);
-  expect(owed[0]).toBeCloseTo(5.5, 9);
-
   const after = bands(before);
-  expect(tierGapRoom(after).map(room => room.stems)).toEqual([0]);
-  const grown = after.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN');
-  expect(grown.map(item => item.message)).toEqual([expect.stringMatching(/grew 5\.50 px to keep the two stem tips of a link clear of each other's stem obstacle/)]);
-  const gapBefore = bandGapOf(before, tierGapRoom(before)[0]!), gapAfter = bandGapOf(after, tierGapRoom(after)[0]!);
-  expect(gapAfter - gapBefore).toBeCloseTo(5.5, 9);
-
-  // Every link: the lower tip row lies beyond the upper stem's obstacle rows (upper tip + 11.5) by a run clearance.
-  const cache = stemCache();
-  let deepest = 0;
-  for (const link of after.links) {
-    const [a, b] = [findPort(after, link.attachments!.from)!, findPort(after, link.attachments!.to)!];
-    const [upper, lower] = a.anchor!.y < b.anchor!.y ? [a, b] : [b, a];
-    const upperTip = upper.anchor!.y + stemPlan(after, upper, cache).depth;
-    const lowerTip = lower.anchor!.y - stemPlan(after, lower, cache).depth;
-    deepest = Math.max(deepest, stemPlan(after, lower, cache).depth);
-    expect(lowerTip - (upperTip + OBSTACLE), link.id).toBeGreaterThanOrEqual(CLEARANCE - 1e-9);
-  }
-  expect(deepest).toBeGreaterThan(15);
-
-  // A second call asks for nothing more. This fixture routes without the rule as well (no removed link at
-  // any growth from 0 to 34.5 px), so it pins the arithmetic, not the need; the need is the fixture below.
-  expect(growTierGaps(after)).toBe(false);
+  expect(after.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN')).toEqual([]);
+  const busy = tierGapPlans(after).filter(item => item.plan.parts.length);
+  expect(busy).toHaveLength(1);
+  const plan = busy[0]!.plan;
+  expect(plan.residual).toEqual([]);
+  expect(plan.demand).toBeCloseTo(58.25, 9);
+  expect(plan.height).toBe(60);
+  // A second call asks for nothing more, and the router is asked for nothing at all: every gap of every link is reserved.
+  expect(growTierGaps(structuredClone(after) as LayoutModel)).toBe(false);
+  expect(planRoute(after).batches).toEqual([]);
   const routed = await route(after, { createAttempt: createAvoidAttempt });
   expect(routed.removedLinks ?? []).toEqual([]);
+  expect(Object.entries(score(routed).snapshot.gates).filter(([, gate]) => !gate.passed).map(([id]) => id)).toEqual([]);
 }, 120000);
 
-it('grows the gap under the far stem of link-35 by 23 px, the near stem obstacle plus a run clearance (ranked-groups ticket 25)', async () => {
-  // Measured on this fixture: 23 px keeps `removedLinks` empty through the real router, 22.9 px removes
-  // link-37 (`test/route/stem-pocket.test.ts` routes the grown sheet). The near side is flat, every tip at
-  // 15 px, and the far stems of link-35 and link-37 reach 85 px of a 100 px gap: the far tip row lay on the
-  // near tip row, inside the near stems' obstacle rows.
+it('grows the gap of the band that sets the group edge to the rows of its 25 parts (ranked-groups tickets 25 and 50)', async () => {
+  // Ticket 25 grew this gap 23 px for the two far stems of link-35 and link-37. The plan seats every part of the gap on a row of
+  // its own at the pitch k = 11.5 (spans of 21 stepped parts overlap, so 18 distinct rows from 10.75 to 206.25 px below the low
+  // boundary, three of them shared by parts whose spans do not touch), and the last row keeps k + 30 px (a lower leg of depth 30)
+  // above the band below: H = 206.25 + 41.5 - 11.5 = 236.25 px against a room of 49.25. The router discovered those rows before
+  // (G4 18, G6 47 on main); they are reserved now, and the gap grows 187 px.
   const before = await beforeBands(read('a-band-holds-the-group-that-set-its-edge.yaml'));
-  const room = tierGapRoom(before).filter(item => item.stems > 0);
-  expect(room).toHaveLength(1);
-  expect(room[0]!.stems).toBeCloseTo(23, 9);
   const after = bands(before);
   const grown = after.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN');
-  expect(grown.map(item => item.message)).toEqual([expect.stringMatching(/grew 23\.00 px to keep the two stem tips of a link clear of each other's stem obstacle/)]);
-  expect(tierGapRoom(after).map(item => item.stems).every(item => item === 0)).toBe(true);
+  expect(grown.map(item => item.message)).toEqual([expect.stringMatching(/grew 187\.00 px to hold the rows of its parts \(set by link-36#0\)/)]);
+  const busy = tierGapPlans(after).filter(item => item.plan.parts.length > 20);
+  expect(busy).toHaveLength(1);
+  expect(busy[0]!.plan.height).toBeCloseTo(236.25, 9);
+  expect(busy[0]!.plan.growth).toBe(0);
+  expect(busy[0]!.plan.residual).toEqual([]);
+  // The second measure is identical: no gap asks for more. (`growTierGaps` on a copy is not the test here: it replays the
+  // published model first, and that replay is not idempotent on this fixture: it moves the x of the wide lower nodes by 42 px.)
+  for (const { plan } of tierGapPlans(after)) expect(plan.growth).toBe(0);
 }, 120000);

@@ -63,7 +63,7 @@ export interface PlanObstacle {
 }
 
 export type ResidualReason = 'spans-two-gaps' | 'lateral-port' | 'u-turn' | 'faces-away' | 'off-boundary' | 'crosses-lane'
-  | 'legs-within-k' | 'row-cycle' | 'leg-blocked';
+  | 'legs-within-k' | 'row-cycle' | 'leg-blocked' | 'crosses-shared-run';
 
 /** A part the plan declines, with the reason (`TIER_GAP_PART_RESIDUAL`; `row-cycle` is `TIER_GAP_ROW_CYCLE`). */
 export interface ResidualPart {
@@ -642,11 +642,22 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
     if (box.y >= gap.high - EPS && margin + bandTop - box.y > 0) obstacles.push({ x0, x1, anchor: 'below', bound: margin + bandTop - box.y });
   }
   // A span that crosses a through-lane's reserved run is residual (Section 1 item 6).
+  // A leg that stands over a shared run of another link (a junction bar across the gap, 7e) crosses geometry the plan does not own
+  // (Section 1 item 5: a shared run keeps its own rules and is an obstacle to the plan): residual too.
+  const bars = model.links.flatMap(link => [...(link.sharedRuns?.from ?? []), ...(link.sharedRuns?.to ?? [])]
+    .filter(run => same(run.from.y, run.to.y) && run.from.y > gap.low - EPS && run.from.y < gap.high + EPS)
+    .map(run => ({ x0: Math.min(run.from.x, run.to.x) - keep, x1: Math.max(run.from.x, run.to.x) + keep, owner: link.id })));
   const kept = inputs.filter(input => {
     const lo = Math.min(input.upper.x, input.lower.x), hi = Math.max(input.upper.x, input.lower.x);
-    if (!walls.some(wall => wall.owner !== input.link && hi > wall.x0 - EPS && lo < wall.x1 + EPS)) return true;
-    residual.push({ id: input.id, link: input.link, order: input.order, reason: 'crosses-lane' });
-    return false;
+    if (walls.some(wall => wall.owner !== input.link && hi > wall.x0 - EPS && lo < wall.x1 + EPS)) {
+      residual.push({ id: input.id, link: input.link, order: input.order, reason: 'crosses-lane' });
+      return false;
+    }
+    if (bars.some(bar => bar.owner !== input.link && [input.upper.x, input.lower.x].some(x => x > bar.x0 + EPS && x < bar.x1 - EPS))) {
+      residual.push({ id: input.id, link: input.link, order: input.order, reason: 'crosses-shared-run' });
+      return false;
+    }
+    return true;
   });
 
   // Ports outside the plan still stand in the gap: a run keeps off their stems (O4).
