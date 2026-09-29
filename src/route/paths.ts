@@ -110,6 +110,12 @@ export function ownedLanes(model: LayoutModel, link: LayoutLink): Lane[] {
 }
 
 /**
+ * A judgement on the router's answer for one gap: the points it returned cannot be drawn as this link's route.
+ * Only these are rejections (ticket 24); any other throw in stitching is a defect and stays fatal.
+ */
+export class GapRejected extends Error {}
+
+/**
  * Split and annotate a routed gap where it meets its own reserved lanes. A lane admits only its
  * owner's collinear run carrying the lane's own id, so each piece names exactly the one lane it
  * touches — the same shape the region rules produce for a lane they own.
@@ -118,9 +124,9 @@ export function laneRuns(model: LayoutModel, link: LayoutLink, segment: PathSegm
   const lanes = ownedLanes(model, link).filter(lane => segmentRect(segment, lane.bounds))
     .sort((a, b) => a.bounds.y - b.bounds.y);
   if (!lanes.length) return [segment];
-  if (!vertical(segment)) throw new Error(`Routed gap on ${link.id} crosses reserved lane ${lanes[0]!.id} sideways`);
+  if (!vertical(segment)) throw new GapRejected(`Routed gap on ${link.id} crosses reserved lane ${lanes[0]!.id} sideways`);
   if (lanes.some(lane => Math.abs(segment.from.x - lane.x) > EPS)) {
-    throw new Error(`Routed gap on ${link.id} enters reserved lane ${lanes[0]!.id} off its centre`);
+    throw new GapRejected(`Routed gap on ${link.id} enters reserved lane ${lanes[0]!.id} off its centre`);
   }
   const low = Math.min(segment.from.y, segment.to.y), high = Math.max(segment.from.y, segment.to.y);
   const cuts = new Set<number>();
@@ -145,16 +151,16 @@ export function laneRuns(model: LayoutModel, link: LayoutLink, segment: PathSegm
 
 function gapSegments(model: LayoutModel, link: LayoutLink, points: Point[], from: Point, to: Point): PathSegment[] {
   const simplified = simplify(points);
-  if (simplified.length < 2) throw new Error(`Router returned no usable route for ${link.id}`);
+  if (simplified.length < 2) throw new GapRejected(`Router returned no usable route for ${link.id}`);
   if (!samePoint(simplified[0]!, from) || !samePoint(simplified.at(-1)!, to)) {
-    throw new Error(`Routed gap on ${link.id} does not meet its reserved endpoints`);
+    throw new GapRejected(`Routed gap on ${link.id} does not meet its reserved endpoints`);
   }
   const owner = { kind: 'link' as const, id: link.id };
   return simplified.slice(1).flatMap((point, index) => {
     const segment = { from: { ...simplified[index]! }, to: { ...point }, owner: { ...owner } };
-    if (!Number.isFinite(segment.to.x) || !Number.isFinite(segment.to.y)) throw new Error(`Routed gap on ${link.id} is not finite`);
-    if (!horizontal(segment) && !vertical(segment)) throw new Error(`Routed gap on ${link.id} is not orthogonal`);
-    if (length(segment) <= EPS) throw new Error(`Routed gap on ${link.id} has a zero-length segment`);
+    if (!Number.isFinite(segment.to.x) || !Number.isFinite(segment.to.y)) throw new GapRejected(`Routed gap on ${link.id} is not finite`);
+    if (!horizontal(segment) && !vertical(segment)) throw new GapRejected(`Routed gap on ${link.id} is not orthogonal`);
+    if (length(segment) <= EPS) throw new GapRejected(`Routed gap on ${link.id} has a zero-length segment`);
     return laneRuns(model, link, segment);
   });
 }
@@ -230,7 +236,7 @@ export function tryStitch(model: LayoutModel, plan: LinkPlan, routes: Map<string
   if (skipped) return { rejection: skipped };
   try { return { path: stitchPath(model, plan, routes) }; }
   catch (error) {
-    if (!(error instanceof Error)) throw error;
+    if (!(error instanceof GapRejected)) throw error;
     return { rejection: { link: plan.link, code: 'ROUTE_GAP_REJECTED', reason: error.message } };
   }
 }

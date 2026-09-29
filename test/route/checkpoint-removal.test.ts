@@ -19,11 +19,15 @@ const REJECTED = 'link-35';
 const REASON = /Routed gap on link-35 does not meet its reserved endpoints/;
 
 /** The real router, and a record of every answer it gave: one map of connector to points per request, in order. */
-function recording(answers: Map<string, Point[]>[]): CreateRouteAttempt {
+function recording(answers: Map<string, Point[]>[], requests: string[][] = []): CreateRouteAttempt {
   return () => {
     const worker = spawnAvoidWorker(avoidAssets.workerUrl);
     const wrapped: RouteWorker = {
-      postMessage: message => worker.postMessage(message),
+      postMessage: message => {
+        const batch = (message as { batch?: { shapes?: { id: string }[] } }).batch;
+        if (batch?.shapes) requests.push(batch.shapes.map(shape => shape.id));
+        worker.postMessage(message);
+      },
       terminate: () => worker.terminate(),
       addEventListener: (type, listener) => {
         if (type !== 'message') return worker.addEventListener(type, listener);
@@ -76,9 +80,9 @@ describe('a route that skips a required checkpoint removes its link and not the 
   }, 120000);
 
   it('leaves every link routed up to the rejected one on the route the router gave it in strict mode', async () => {
-    const strict: Map<string, Point[]>[] = [], lenient: Map<string, Point[]>[] = [];
+    const strict: Map<string, Point[]>[] = [], lenient: Map<string, Point[]>[] = [], requests: string[][] = [];
     await expect(run(recording(strict), true)).rejects.toThrow(REASON);
-    await run(recording(lenient));
+    await run(recording(lenient, requests));
     // A discarded route leaves no cover behind, so a batch after the rejected link's may route differently, and only those.
     const own = (id: string): boolean => id === REJECTED || id.startsWith(`${REJECTED}#`);
     const last = strict.findIndex(batch => [...batch.keys()].some(own));
@@ -86,5 +90,9 @@ describe('a route that skips a required checkpoint removes its link and not the 
     for (const [index, batch] of strict.slice(0, last + 1).entries()) {
       for (const [id, points] of batch) if (!own(id)) expect(lenient[index]!.get(id), id).toEqual(points);
     }
+    // And the discarded route is no obstacle to any later request: no cover of the rejected link was pushed.
+    const later = requests.slice(last + 1).flat().filter(id => id.startsWith(`routed:${REJECTED}#`));
+    expect(requests.length).toBeGreaterThan(last + 1);
+    expect(later).toEqual([]);
   }, 120000);
 });
