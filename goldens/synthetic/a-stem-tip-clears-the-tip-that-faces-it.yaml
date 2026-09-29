@@ -1,0 +1,37 @@
+# Expected: the tier gap under `access` grows by 5.5 px, so that the two tips of every link that
+# nests its stems stand two run clearances (23 px) apart. Test-only input owned by ranked-groups
+# ticket 25; the test calls the tier-gap rule through the bands stage (7f) and then routes the sheet.
+#
+# Eight access switches feed two servers, each by four links, so the ports of one server side are
+# reached from both directions and the side nests its stems: the deepest port turns 15 + 3 x 17.5 =
+# 67.5 px out of a 100 px gap between the two port rows, 17.5 px short of the tip that faces it. A
+# run that crosses beyond the deeper tip then has a cover on the tip, the tip has a pocket of zero
+# width, and the link that owns it has a checkpoint no route can reach (the original case is
+# `a-band-holds-the-group-that-set-its-edge`, where the shortfall is 23 px and link-35 and link-37
+# were removed). A side that gave up its nesting instead keeps flat stems, where the first route laid
+# covers the second port's stem, so the gap grows.
+portograph: 2
+groups:
+  access: { tier: 0 }
+  edge-far: { tier: 1 }
+  edge-near: { tier: 1 }
+nodes:
+  acc0: { group: access, class: switch, ports: [] }
+  acc1: { group: access, class: switch, ports: [] }
+  acc2: { group: access, class: switch, ports: [] }
+  acc3: { group: access, class: switch, ports: [] }
+  acc4: { group: access, class: switch, ports: [] }
+  acc5: { group: access, class: switch, ports: [] }
+  acc6: { group: access, class: switch, ports: [] }
+  acc7: { group: access, class: switch, ports: [] }
+  snk0: { group: edge-near, class: server, ports: [] }
+  snk1: { group: edge-far, class: server, ports: [] }
+links:
+  - [acc0, snk0]
+  - [acc1, snk1]
+  - [acc2, snk0]
+  - [acc3, snk1]
+  - [acc4, snk0]
+  - [acc5, snk1]
+  - [acc6, snk0]
+  - [acc7, snk1]

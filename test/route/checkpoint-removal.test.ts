@@ -5,20 +5,25 @@ import type { LayoutModel } from '../../src/index.js';
 import type { Point } from '../../src/model/geometry.js';
 import type { CreateRouteAttempt, RouteWorker } from '../../src/route/worker.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
-import { avoidAssets, createAvoidAttempt, spawnAvoidWorker } from './fixture.js';
+import { avoidAssets, spawnAvoidWorker } from './fixture.js';
 
 /**
  * Ticket 24. A route stage 8 cannot use is unusable, and one such route may not stop the sheet. Ticket
- * 21's fixture reproduces one through the real router: link-35's far stem tip lies on the edge of a
- * completed cover, so its routed gap does not meet its reserved endpoints (ticket 25 owns the cause; when
- * it lands, this fixture stops reproducing and the test needs the next reproducer). The skipped-checkpoint
- * case, which ticket 21 removed from this fixture, is forged in `route.test.ts`.
+ * 21's fixture reproduced one through the real router (link-35's far stem tip lay on the edge of a
+ * completed cover, so its routed gap did not meet its reserved endpoints); ticket 25 removed the cause
+ * in placement, so the fixture no longer rejects anything. The real router still answers every request
+ * here, and the answer for link-35 alone is forged to end 30 px beside its port, which stitching
+ * rejects with the same reason as before. The skipped-checkpoint case is forged in `route.test.ts`.
  */
 const fixture = readFileSync(new URL('../../goldens/synthetic/a-band-holds-the-group-that-set-its-edge.yaml', import.meta.url), 'utf8');
 const REJECTED = 'link-35';
 const REASON = /Routed gap on link-35 does not meet its reserved endpoints/;
 
-/** The real router, and a record of every answer it gave: one map of connector to points per request, in order. */
+/** The forged answer: every checkpoint is honoured, but the route ends 30 px beside the port it must reach. */
+const forged = (id: string, points: Point[]): Point[] => id === `${REJECTED}#0`
+  ? [...points, { x: points.at(-1)!.x + 30, y: points.at(-1)!.y }] : points;
+
+/** The real router with link-35's answer forged, and a record of every answer it gave: one map of connector to points per request, in order. */
 function recording(answers: Map<string, Point[]>[], requests: string[][] = []): CreateRouteAttempt {
   return () => {
     const worker = spawnAvoidWorker(avoidAssets.workerUrl);
@@ -33,8 +38,9 @@ function recording(answers: Map<string, Point[]>[], requests: string[][] = []): 
         if (type !== 'message') return worker.addEventListener(type, listener);
         worker.addEventListener(type, event => {
           const data = event.data as { routes?: { connector: string; points: Point[] }[] } | undefined;
-          if (data?.routes) answers.push(new Map(data.routes.map(item => [item.connector, item.points])));
-          listener(event);
+          const routes = data?.routes?.map(item => ({ ...item, points: forged(item.connector, item.points) }));
+          if (routes) answers.push(new Map(routes.map(item => [item.connector, item.points])));
+          listener(routes ? { ...event, data: { ...data, routes } } : event);
         });
       },
       removeEventListener: (type, listener) => worker.removeEventListener(type, listener),
@@ -46,17 +52,17 @@ function recording(answers: Map<string, Point[]>[], requests: string[][] = []): 
 /** The link a diagnostic is owned by. */
 const linkOf = (item: { owners?: { kind: string; id?: string }[] }): string | undefined => item.owners![0]!.id;
 
-const run = (createRouteAttempt: CreateRouteAttempt, strictCheckpoints?: boolean): Promise<LayoutModel> =>
+const run = (createRouteAttempt: CreateRouteAttempt = recording([]), strictCheckpoints?: boolean): Promise<LayoutModel> =>
   layout(parse(fixture), { createElkAttempt: createAttempt, createRouteAttempt,
     ...(strictCheckpoints === undefined ? {} : { strictCheckpoints }) });
 
 describe('a route that skips a required checkpoint removes its link and not the sheet', () => {
   it('throws under the strict option, as the router has always done', async () => {
-    await expect(run(createAvoidAttempt, true)).rejects.toThrow(REASON);
+    await expect(run(undefined, true)).rejects.toThrow(REASON);
   }, 120000);
 
   it('removes the links whose routes are unusable, names each one and why, and renders the rest', async () => {
-    const model = await run(createAvoidAttempt);
+    const model = await run();
     const removed = model.links.filter(link => link.removed === true).map(link => link.id);
     expect(removed).toContain(REJECTED);
     expect(model.removedLinks).toEqual(removed);

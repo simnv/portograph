@@ -127,9 +127,11 @@ describe('the fixture whose far checkpoints stood in a pocket', () => {
     return requests.map((batch, index) => ({ batch, routes: replies[index]?.routes ?? [] }));
   }
 
-  it('routes link-22 (its near stem tip stood walled in by link-18) and link-24 (link-23 ran through its stem)', async () => {
+  it('routes link-22, whose near stem tip stood walled in by link-18, through its checkpoints', async () => {
+    // Link-24 (link-23 ran through its stem) is not a case of this fixture any more: ticket 25 grows the
+    // last tier gap, and link-24 then descends straight. The synthetic tests above keep its rule.
     const batches = await routedBatches();
-    for (const id of ['link-22#0', 'link-24#0']) {
+    for (const id of ['link-22#0']) {
       const held = batches.find(item => item.batch.connectors.some(connector => connector.id === id))!;
       const connector = held.batch.connectors.find(item => item.id === id)!;
       const points = held.routes.find(item => item.connector === id)!.points;
@@ -138,7 +140,14 @@ describe('the fixture whose far checkpoints stood in a pocket', () => {
     }
   }, 60000);
 
-  // link-35 and link-37 stop the layout next: a far stem tip lies on the bottom edge of link-17's completed
-  // cover (y = 442), so libavoid answers the tip and never leaves it. See the ticket's Comments.
-  it.todo('routes the whole fixture through the real route plan without a throw');
+  // Ticket 25: link-35 and link-37 stood in a pocket of zero width because a far stem tip lay on the edge
+  // of link-17's completed cover; the tier gap now keeps two run clearances between the two tips of a link
+  // that nests its stems, and no link of the fixture is removed.
+  it('routes the whole fixture through the real route plan without removing a link', async () => {
+    const model = await layout(parse(fixture('a-band-holds-the-group-that-set-its-edge')),
+      { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    expect(model.removedLinks ?? []).toEqual([]);
+    expect(model.diagnostics.filter(item => item.code === 'ROUTE_GAP_REJECTED' || item.code === 'ROUTE_CHECKPOINT_SKIPPED')).toEqual([]);
+    for (const link of model.links) expect(link.path, link.id).toBeDefined();
+  }, 60000);
 });

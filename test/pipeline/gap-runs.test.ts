@@ -10,6 +10,7 @@ import { GROUP_LABEL_GEOMETRY, produceGroupLabelBands, routedStroke, stemReach }
 import { GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../../src/theme/geometry.js';
 import { horizontal, segmentRect, vertical } from '../../src/score/geometry.js';
 import { findPort } from '../../src/layout/row-paths.js';
+import { stemCache, stemPlan } from '../../src/layout/sides-two.js';
 import { placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -284,4 +285,38 @@ it('carries a group label with the band the gap room moves', async () => {
   for (const band of model.labelBands) {
     expect(band.bounds.y - bandY.get(band.group)!).toBeCloseTo(shift(band.group), 9);
   }
+}, 120000);
+
+it('grows a tier gap to keep two run clearances between the two tips of a link that nests its stems (ranked-groups ticket 25)', async () => {
+  // A stem's tip is a checkpoint stage 8 must reach; a foreign run beyond the deeper tip keeps its
+  // cover one clearance off the stem's obstacle, which itself reaches one clearance past the tip.
+  // Closer than two clearances (2 x 11.5 px) the cover lies on the tip and the tip has no pocket.
+  const before = await beforeBands(read('a-stem-tip-clears-the-tip-that-faces-it.yaml'));
+  const owed = tierGapRoom(before).map(room => room.stems);
+  expect(owed).toHaveLength(1);
+  expect(owed[0]).toBeCloseTo(5.5, 9);
+
+  const after = bands(before);
+  expect(tierGapRoom(after).map(room => room.stems)).toEqual([0]);
+  const grown = after.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN');
+  expect(grown.map(item => item.message)).toEqual([expect.stringMatching(/grew 5\.50 px to keep the runs that cross beyond its stem tips clear of them/)]);
+  const gapBefore = bandGapOf(before, tierGapRoom(before)[0]!), gapAfter = bandGapOf(after, tierGapRoom(after)[0]!);
+  expect(gapAfter - gapBefore).toBeCloseTo(5.5, 9);
+
+  // Every link keeps the band between its own two tips, and the deepest stem is nested.
+  const cache = stemCache();
+  let deepest = 0;
+  for (const link of after.links) {
+    const [a, b] = [findPort(after, link.attachments!.from)!, findPort(after, link.attachments!.to)!];
+    const [upper, lower] = a.anchor!.y < b.anchor!.y ? [a, b] : [b, a];
+    const depths = stemPlan(after, upper, cache).depth + stemPlan(after, lower, cache).depth;
+    deepest = Math.max(deepest, stemPlan(after, lower, cache).depth);
+    expect(lower.anchor!.y - upper.anchor!.y - depths, link.id).toBeGreaterThanOrEqual(2 * 11.5 - 1e-9);
+  }
+  expect(deepest).toBeGreaterThan(15);
+
+  // A second call asks for nothing more, and the real router removes no link.
+  expect(growTierGaps(after)).toBe(false);
+  const routed = await route(after, { createAttempt: createAvoidAttempt });
+  expect(routed.removedLinks ?? []).toEqual([]);
 }, 120000);

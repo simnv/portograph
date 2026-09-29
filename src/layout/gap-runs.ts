@@ -3,10 +3,10 @@ import type { LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import { bottom, EPS, right } from '../score/geometry.js';
 import { groupConsumers } from '../score/model.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
-import { GROUP_LABEL_GEOMETRY, nodeObstacleReach, routedStroke, stemReach } from './bands.js';
+import { GROUP_LABEL_GEOMETRY, nodeObstacleReach, nudgingDistance, routedStroke, stemReach } from './bands.js';
 import { MEMBER_GAP } from './bundle-geometry.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
-import { stemCache, stemPlan, type StemCache } from './sides-two.js';
+import { sideNested, stemCache, stemPlan, type StemCache } from './sides-two.js';
 
 /**
  * ADR-0015 rule 1, per gap: the room every run that crosses a **tier gap** needs, allocated before
@@ -702,10 +702,48 @@ export interface TierGapRoom {
    */
   required: number;
   /**
+   * The room the gap lacks for the stem tips that face it (ticket 25): how far its bands must move
+   * apart so that every link with a nested stem leaves two run clearances between its own two tips
+   * for a foreign run to cross beyond the deeper one. Zero where the tips already stand apart.
+   */
+  stems: number;
+  /**
    * `true` when the allocation refused this gap for a reason room cannot answer. A gap that refuses
    * seats nothing however tall it is, so the height rule leaves it alone.
    */
   refuses: boolean;
+}
+
+/**
+ * Ticket 25. A stem that reaches into a tier gap ends in a **tip**, the checkpoint stage 8 must
+ * reach, and the router keeps a foreign run's centreline one run clearance off a pending stem
+ * obstacle, which itself reaches one clearance past the tip. A foreign run beyond the tip is
+ * therefore at least `2 * nudgingDistance` away from it; closer, its cover lies on the tip and the
+ * tip has no pocket, so the link that owns the tip has a checkpoint no route can reach.
+ *
+ * The corridor such a run crosses in is what lies between the two tips of one link, the tip of a
+ * nested stem and the tip that faces it. Where that is shorter than the band, the gap is short by
+ * the difference. The nested side does not yield: a side that declines its nesting keeps flat
+ * stems, where the first route laid covers the second port's stem (measured on
+ * `a-band-holds-the-group-that-set-its-edge`: three links removed instead of one). The gap grows.
+ * Only a side that nests asks: two flat stems keep the room they always had.
+ */
+function stemShortfall(model: LayoutModel, gap: TierGap): number {
+  const cache = stemCache(), band = 2 * nudgingDistance(model);
+  const tier = (id: string): number | undefined => model.groups[model.document.nodes[id]!.group]?.tier;
+  let short = 0;
+  for (const link of model.links) {
+    if (!drawn(link) || link.fixedSegments?.length || link.sharedRuns?.from?.length || link.sharedRuns?.to?.length) continue;
+    const ports = (['from', 'to'] as const).map(end => findPort(model, link.attachments![end]));
+    const [upper, lower] = ports[0]?.anchor && ports[1]?.anchor && ports[0].anchor.y > ports[1].anchor.y
+      ? [ports[1], ports[0]] : [ports[0], ports[1]];
+    if (!upper?.anchor || !lower?.anchor || upper.side !== 'bottom' || lower.side !== 'top') continue;
+    if (tier(upper.ref.node) !== gap.above || tier(lower.ref.node) !== gap.below) continue;
+    if (!sideNested(model, upper.ref.node, 'bottom', cache) && !sideNested(model, lower.ref.node, 'top', cache)) continue;
+    const between = lower.anchor.y - upper.anchor.y - stemPlan(model, upper, cache).depth - stemPlan(model, lower, cache).depth;
+    short = Math.max(short, band - between);
+  }
+  return short > EPS ? short : 0;
 }
 
 /**
@@ -740,7 +778,7 @@ export function tierGapRoom(model: LayoutModel): TierGapRoom[] {
     const entry = users.get(key)!;
     const rows = entry.items.filter(needsRow).length;
     const margins = below.y - bottom(above) - (gap.high - gap.low);
-    const nothing = { ...gap, margins, rows, seated: 0, pitch, headroom, required: 0, refuses: false };
+    const nothing = { ...gap, margins, rows, seated: 0, pitch, headroom, required: 0, refuses: false, stems: stemShortfall(model, gap) };
     if (!rows) return nothing;
     const allocation = allocateGap(model, nearBlockers(list, gap, entry.items), gap, entry);
     if (allocation.refused) return { ...nothing, refuses: true };

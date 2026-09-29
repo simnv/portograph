@@ -49,7 +49,11 @@ import { moveGroup } from './skeleton-geometry.js';
 export function growTierGaps(model: LayoutModel): boolean {
   const demand = tierGapRoom(model);
   const short = demand.filter(needsRoom);
-  if (!short.length) return false;
+  // A stem tip owes the runs beyond it two clearances (ticket 25); that room is asked for whether
+  // or not the gap owes a row, and it needs no probe, because no seat is measured.
+  const grown = new Map<number, number>(demand.filter(entry => entry.stems > EPS).map(entry => [entry.below, entry.stems]));
+  const byStems = new Set(grown.keys());
+  if (!short.length) return grow(model, grown, byStems);
   const seats = new Map(demand.map(room => [room.below, room.seated]));
   const room = new Map(demand.map(entry => [entry.below, entry.high - entry.low]));
 
@@ -57,15 +61,21 @@ export function growTierGaps(model: LayoutModel): boolean {
   // their pitch, the deepest either boundary reaches into the gap, and one pitch over.
   const opened = new Map(short.map(entry => [entry.below,
     Math.max(0, entry.rows * entry.pitch + 2 * entry.headroom + entry.pitch - (entry.high - entry.low))]));
-  const grown = new Map<number, number>();
   for (const entry of tierGapRoom(measured(model, opened))) {
     // Room is reserved only where the probe shows it buys a seat. A gap that seats no more with the
     // boundary out of its way is one the allocation refuses for a reason of its own, and moving
     // every band below it would buy no route at all.
     if (!opened.has(entry.below) || entry.refuses || entry.seated <= seats.get(entry.below)!) continue;
     const extra = entry.required - room.get(entry.below)!;
-    if (extra > EPS) grown.set(entry.below, extra);
+    if (extra <= EPS) continue;
+    if (extra > (grown.get(entry.below) ?? 0)) byStems.delete(entry.below);
+    grown.set(entry.below, Math.max(extra, grown.get(entry.below) ?? 0));
   }
+  return grow(model, grown, byStems);
+}
+
+/** Moves the bands by the room each gap gained and reports it; false where nothing grew. */
+function grow(model: LayoutModel, grown: ReadonlyMap<number, number>, byStems: ReadonlySet<number>): boolean {
   if (!grown.size) return false;
 
   moveBands(model, grown);
@@ -73,7 +83,8 @@ export function growTierGaps(model: LayoutModel): boolean {
     const extra = grown.get(band.tier);
     if (extra === undefined) continue;
     placementWarning(model, 'TIER_GAP_GROWN',
-      `The tier gap above tier ${band.tier} grew ${extra.toFixed(2)} px to the rows it must seat.`,
+      `The tier gap above tier ${band.tier} grew ${extra.toFixed(2)} px to ${byStems.has(band.tier)
+        ? 'keep the runs that cross beyond its stem tips clear of them' : 'the rows it must seat'}.`,
       band.groups, 'group');
   }
   return true;

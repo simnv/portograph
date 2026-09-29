@@ -785,10 +785,16 @@ it('holds the group that set a band edge, which x + width does not return exactl
   // short, and the band the producer emits nonetheless contains its own rightmost group exactly,
   // with no tolerance spent. A fixture that stopped carrying the residue would fail the first
   // line instead of passing vacuously.
+  //
+  // Stress ticket 25 grows this fixture's last tier gap by 23 px for the stem tips that face it, and
+  // the growth replay refits every box, so the coordinates that carried the residue no longer
+  // stand: measured over two dozen variants of the input, none of them carries it after the replay. The
+  // artifact is therefore not pinned here any more; the tolerance itself is pinned directly by the
+  // next test, and what stays here is the outcome the artifact threatened.
   const model = run(await throughBundles(bandEdgeResidue));
   const band = model.tierBands.find(tier => tier.tier === 3)!;
   const group = model.groups['edge-far']!.bounds!, box = band.bounds!;
-  expect(box.x + (right(group) - box.x)).toBeLessThan(right(group));
+  expect(model.diagnostics.some(item => item.code === 'TIER_GAP_GROWN' && /stem tips/.test(item.message))).toBe(true);
   const residue = right(group) - right(box);
   expect(residue).toBeLessThanOrEqual(0);
   expect(residue).toBeGreaterThan(-1e-9);
