@@ -35,7 +35,7 @@ export interface GroupContent {
   layout?: Record<string, string | number | boolean>;
   /** A child group names its parent; one level only. A child has no tier of its own and takes its parent's. */
   parent?: string;
-  /** A member (a tier group) names its canton (docs/design/canton-groups.md, Section 1). Layout ignores it until ticket 54. */
+  /** A member (a tier group) names its canton (docs/design/canton-groups.md, Section 1). Stage 1 turns it into `frames[member].parent`. */
   canton?: string;
   /** Set by stage 1 on a rank cell: the document group whose frame the cell is part of. */
   frame?: string;
@@ -58,6 +58,8 @@ export type NormalisedGroup = GroupContent & (
 export interface NormalisedFrame {
   label: string;
   class?: string;
+  /** `canton`: the frame of a canton (docs/design/canton-groups.md, Section 3); it has no cell of its own, only member frames. */
+  kind?: 'canton';
   parent?: string;
   cells: string[];
 }

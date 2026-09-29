@@ -1,0 +1,23 @@
+# Expected: Two members of one tier stand beside each other (canton-groups ticket 2, Section 2 rule 2). The canton `west`
+# holds `alpha` and `beta` on tier 1 (declaration order: alpha, then beta) and `lab` on tier 2. The two members share a
+# sub-tier, so they stand as a `beside` row with 40 px between their frames (2 x group padding), and `lab` stands centred
+# under the pair. `beta` is a `row` group, so it becomes a one-cell frame like a one-rank `ranked` member.
+# Test-only input owned by canton-groups ticket 2; test/pipeline/canton-frames.test.ts reads the layout.
+portograph: 2
+groups:
+  west: { label: West }
+  upstream: { tier: 0, label: Upstream }
+  alpha: { tier: 1, canton: west, label: Alpha }
+  beta: { tier: 1, canton: west, shape: row, label: Beta }
+  lab: { tier: 2, canton: west, label: Lab }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  a-gw: { group: alpha, class: router, label: Alpha gateway }
+  a-sw: { group: alpha, class: switch, label: Alpha switch }
+  b-gw: { group: beta, class: router, label: Beta gateway }
+  srv: { group: lab, class: server, label: Server }
+links:
+  - [isp, a-gw]
+  - [isp, b-gw]
+  - [a-gw, srv]
+  - [b-gw, srv]

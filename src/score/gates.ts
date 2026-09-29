@@ -1,4 +1,4 @@
-import type { LayoutModel, LayoutNode, PathSegment, Point, Rect } from '../model/index.js';
+import type { Frame, LayoutModel, LayoutNode, PathSegment, Point, Rect } from '../model/index.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
 import { EPS, bottom, contains, horizontal, intersection, length, near, overlapSegment, rectDistance, rectOverlap, right, samePoint, segmentDistance, segmentRect, segmentRectDistance, vertical } from './geometry.js';
 
@@ -57,7 +57,13 @@ export function alongside(a: PathSegment, b: PathSegment): boolean {
  */
 function frameGate(model: LayoutModel, fail: (id: GateId, code: string, elements: string[], message: string) => void): void {
   const frames = model.frames ?? [];
-  const cellsOf = (id: string): Set<string> => new Set(frames.filter(frame => frame.id === id || frame.parent === id).flatMap(frame => frame.cells));
+  const byId = new Map(frames.map(frame => [frame.id, frame]));
+  /** Whether `frame` stands below `above` in the parent chain (a canton holds members, a member its children). */
+  const below = (frame: Frame, above: string): boolean => {
+    for (let id = frame.parent; id !== undefined; id = byId.get(id)?.parent) if (id === above) return true;
+    return false;
+  };
+  const cellsOf = (id: string): Set<string> => new Set(frames.filter(frame => frame.id === id || below(frame, id)).flatMap(frame => frame.cells));
   for (const [i, frame] of frames.entries()) {
     for (const cell of frame.cells) {
       const group = model.groups[cell];
@@ -66,7 +72,7 @@ function frameGate(model: LayoutModel, fail: (id: GateId, code: string, elements
     const parent = frames.find(item => item.id === frame.parent);
     if (parent && !contains(parent.box, frame.box)) fail('G9', 'frame-contains', [parent.id, frame.id], 'Frame must contain its child frames');
     for (const other of frames.slice(i + 1)) {
-      if (other.parent === frame.id || frame.parent === other.id) continue;
+      if (below(other, frame.id) || below(frame, other.id)) continue;
       if (rectOverlap(frame.box, other.box)) fail('G9', 'frame-overlap', [frame.id, other.id], 'Frames overlap');
     }
     const own = cellsOf(frame.id);

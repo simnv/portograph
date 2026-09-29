@@ -107,6 +107,8 @@ export interface Frame {
   id: string;
   label: string;
   class?: string;
+  /** `canton` for the frame of a canton: no cell of its own, its box holds its member frames. */
+  kind?: 'canton';
   parent?: string;
   cells: string[];
   box: Rect;

@@ -1,5 +1,6 @@
 import type { Point, Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
+import { frameSubtreeCells } from '../model/model.js';
 import { cellReach, deriveFrames, frameNodes } from './frames.js';
 import { GROUP_PADDING } from './regions.js';
 import { laneSidesHold, selectAnchorTier } from './lanes.js';
@@ -99,7 +100,7 @@ interface Stand { left: number; right: number; at: Map<string, number>; sides: M
 /** The sub-tiers a frame occupies, its own cells and its child frames' cells, from the first to the last. */
 function tierRange(model: LayoutModel, id: string): [number, number] {
   const frames = model.document.frames!;
-  const cells = [...frames[id]!.cells, ...Object.keys(frames).filter(child => frames[child]!.parent === id).flatMap(child => frames[child]!.cells)];
+  const cells = frameSubtreeCells(frames, id);
   const tiers = cells.map(cell => model.groups[cell]!.tier!);
   return [Math.min(...tiers), Math.max(...tiers)];
 }

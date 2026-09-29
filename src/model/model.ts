@@ -1,4 +1,4 @@
-import type { NormalisedDocument, NormalisedPort, PortRef } from './document.js';
+import type { NormalisedDocument, NormalisedFrame, NormalisedPort, PortRef } from './document.js';
 import type { LayoutGroup, LayoutModel, LayoutNode, LayoutPort } from './layout.js';
 
 /**
@@ -46,6 +46,13 @@ export function orderedNodeIds(document: NormalisedDocument): string[] {
   return orderedIds(document.nodes, document.nodeOrder, 'nodeOrder');
 }
 
+/** The cells of a frame and of every frame below it (a canton holds member frames, a member its child frames). */
+export function frameSubtreeCells(frames: Readonly<Record<string, NormalisedFrame>>, id: string): string[] {
+  const below = (frame: string): string[] => [...(frames[frame]?.cells ?? []),
+    ...Object.keys(frames).filter(child => frames[child]!.parent === frame).flatMap(below)];
+  return below(id);
+}
+
 /**
  * The nodes of a group as a link endpoint names it. A group that stage 1 replaced by rank cells is no
  * longer in `groups`; its frame (`document.frames`) lists its cells and the cells of its children.
@@ -53,7 +60,7 @@ export function orderedNodeIds(document: NormalisedDocument): string[] {
 export function groupNodeIds(model: LayoutModel, id: string): string[] {
   const group = model.groups[id];
   if (group !== undefined) return group.nodes;
-  const cells = Object.entries(model.document.frames ?? {}).filter(([frame, item]) => frame === id || item.parent === id).flatMap(([, item]) => item.cells);
+  const cells = frameSubtreeCells(model.document.frames ?? {}, id);
   const nodes = new Set(cells.flatMap(cell => model.groups[cell]?.nodes ?? []));
   return orderedNodeIds(model.document).filter(node => nodes.has(node));
 }
@@ -61,22 +68,19 @@ export function groupNodeIds(model: LayoutModel, id: string): string[] {
 /** Wrap validated stage-0 output without performing resolution or placement. */
 export function createLayoutModel(input: NormalisedDocument): LayoutModel {
   const document: NormalisedDocument = JSON.parse(serialize(input));
-  // Canton groups (docs/design/canton-groups.md) are schema only until ticket 54: the layout does not see them.
-  for (const [id, group] of Object.entries(document.groups)) {
-    if (group.members !== undefined) delete document.groups[id];
-    else delete group.canton;
-  }
-  if (document.groupOrder !== undefined) document.groupOrder = document.groupOrder.filter(id => Object.hasOwn(document.groups, id));
-  const groups = Object.fromEntries(orderedGroupIds(document).map(id => {
+  // A canton entry (docs/design/canton-groups.md) stays in `document.groups` until stage 1 expands it into a frame, but it
+  // is no layout group: it has no tier, no node and no box.
+  const groups = Object.fromEntries(orderedGroupIds(document).flatMap(id => {
     const group = document.groups[id];
     if (group === undefined) throw new Error(`Missing group ${id}`);
+    if (group.members !== undefined) return [];
     const layoutGroup: LayoutGroup = {
       id, owner: { kind: 'group', id }, layer: 'routed', nodes: [],
     };
     if (group.tier !== undefined) layoutGroup.tier = group.tier;
     if (group.frame !== undefined) layoutGroup.frame = group.frame;
     if (group.align !== undefined) layoutGroup.flank = { align: group.align, of: group.of };
-    return [id, layoutGroup];
+    return [[id, layoutGroup]];
   }));
   const nodes = Object.fromEntries(orderedNodeIds(document).map(id => {
     const node = document.nodes[id];

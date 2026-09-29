@@ -76,6 +76,9 @@ interface Title { id: string; host: string; frame?: string; label: string; side:
  * other edge is taken; a frame with an own cell on neither edge has no title edge (`undefined`).
  */
 export function frameSide(model: LayoutModel, frame: string): 'top' | 'bottom' | undefined {
+  // A canton frame has no own cell to host a title, so it has no title edge yet: its band is held by the
+  // sub-tier (canton-groups ticket 3), not by a cell, and `frameHost` is never asked.
+  if (model.document.frames?.[frame]?.kind === 'canton') return undefined;
   const side = crossingSide(model, frame), other = side === 'top' ? 'bottom' : 'top';
   return frameHost(model, frame, side) !== undefined ? side : frameHost(model, frame, other) !== undefined ? other : undefined;
 }
@@ -988,6 +991,8 @@ export function produceGroupLabelBands(model: LayoutModel): void {
   // A frame whose extreme sub-tiers both belong to child frames has no cell of its own to hold a
   // title. It draws none, and says so.
   for (const id of Object.keys(model.document.frames ?? {})) {
+    // A canton frame draws no title until canton-groups ticket 3; that is not an unhosted title.
+    if (model.document.frames![id]!.kind === 'canton') continue;
     if (frameSide(model, id) === undefined) {
       placementWarning(model, 'FRAME_TITLE_UNHOSTED', `Frame ${id} has no own cell on its top or bottom edge; its title is not drawn.`, [id], 'group');
     }

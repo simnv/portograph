@@ -1,4 +1,5 @@
 import type { Junction, Layer, LayoutLink, LayoutModel, LayoutPort, PathSegment, PortRef, Rect } from '../model/index.js';
+import { frameSubtreeCells } from '../model/index.js';
 import { isFrameStraight } from '../layout/frame-paths.js';
 import { overlayEndpoint } from '../layout/overlay-paths.js';
 import { linkStrokeWidth } from '../theme/geometry.js';
@@ -28,7 +29,7 @@ export function groupConsumers(model: LayoutModel, groupId: string): string[] {
   const frames = model.document.frames ?? {};
   // A frame owns its own cells and, for a parent, its child frames' cells.
   const ids = Object.hasOwn(frames, groupId)
-    ? Object.entries(frames).filter(([id, item]) => id === groupId || item.parent === groupId).flatMap(([, item]) => item.cells) : [groupId];
+    ? frameSubtreeCells(frames, groupId) : [groupId];
   const members = new Set(ids.flatMap(id => model.groups[id]?.nodes ?? [])), owned = new Set(ids), result = new Set<string>();
   for (const link of model.links) {
     const ends = endpoints(link);

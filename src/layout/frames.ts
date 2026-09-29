@@ -1,3 +1,4 @@
+import { frameSubtreeCells } from '../model/model.js';
 import type { Rect } from '../model/geometry.js';
 import type { Frame, Lane, LayoutLink, LayoutModel } from '../model/layout.js';
 import { GROUP_PADDING, groupPadding } from './regions.js';
@@ -56,7 +57,7 @@ export function deriveFrames(model: LayoutModel): Frame[] | undefined {
     const boxes = [...cells.map(cell => cellReach(model, cell)), ...children.map(child => grow(child.box, GROUP_PADDING)), ...transitLanes(model, id)];
     const tiers = [...cells.map(cell => model.groups[cell]!.tier!), ...children.map(child => child.tier)];
     const frame: Frame = { id, label: source.label, ...(source.class !== undefined ? { class: source.class } : {}),
-      ...(source.parent !== undefined ? { parent: source.parent } : {}), cells: [...source.cells],
+      ...(source.kind !== undefined ? { kind: source.kind } : {}), ...(source.parent !== undefined ? { parent: source.parent } : {}), cells: [...source.cells],
       box: union(boxes), tier: Math.min(...tiers) };
     derived.set(id, frame);
     return frame;
@@ -100,10 +101,9 @@ export function ownFrameCells(model: LayoutModel, link: LayoutLink): Set<string>
   return cells;
 }
 
-/** The frame's own cells and its child frames' cells. */
+/** The frame's own cells and the cells of every frame below it (a canton reads its members' and their children's). */
 function frameCells(model: LayoutModel, frame: string): string[] {
-  const frames = model.document.frames ?? {};
-  return Object.entries(frames).filter(([id, item]) => id === frame || item.parent === frame).flatMap(([, item]) => item.cells);
+  return frameSubtreeCells(model.document.frames ?? {}, frame);
 }
 
 /**
@@ -172,9 +172,7 @@ export function heldLaneReach(model: LayoutModel, cell: string, link: LayoutLink
 /** The frames of a model, empty when no group was replaced by cells. */
 export const framesOf = (model: LayoutModel): readonly Frame[] => model.frames ?? [];
 
-/** Every node a frame holds: its own cells' and, for a parent, its child frames' cells'. */
+/** Every node a frame holds: its own cells' and those of every frame below it. */
 export function frameNodes(model: LayoutModel, frame: string): string[] {
-  const frames = model.document.frames ?? {};
-  const cells = Object.entries(frames).filter(([id, item]) => id === frame || item.parent === frame).flatMap(([, item]) => item.cells);
-  return cells.flatMap(cell => model.groups[cell]?.nodes ?? []);
+  return frameCells(model, frame).flatMap(cell => model.groups[cell]?.nodes ?? []);
 }
