@@ -786,6 +786,12 @@ export function closeCantonsAndSettle(model: LayoutModel): boolean {
   const before = new Map(Object.values(model.groups).map(group => [group, group.bounds!.x]));
   const moved = closeCantons(model);
   if (moved) rebuildNodeGeometry(model, [...before].filter(([group, x]) => group.bounds!.x !== x).flatMap(([group]) => group.nodes), 'current');
+  // A plan that was tried and put back rebuilt the labels of its nodes, which leaves them at the end of the list, and publication compares
+  // the node labels in node order. The node labels go back to their own slots in node order; no geometry is read or changed.
+  const rank = new Map(Object.keys(model.nodes).map((id, index) => [id, index]));
+  const slots = model.labels.flatMap((label, at) => label.owner.kind === 'node' && ['node', 'description', 'pill'].includes(label.role ?? '') ? [at] : []);
+  const ordered = slots.map(at => model.labels[at]!).sort((a, b) => rank.get((a.owner as { id: string }).id)! - rank.get((b.owner as { id: string }).id)!);
+  for (const [i, at] of slots.entries()) model.labels[at] = ordered[i]!;
   return moved;
 }
 

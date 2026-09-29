@@ -67,6 +67,17 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
     expect(model.diagnostics.filter(item => item.code === 'PLACEMENT_NON_CONVERGENCE' && item.message.startsWith('The cantons'))).toEqual([]);
   }, 120000);
 
+  // The refused close-up moves the nodes and puts them back: labels in node order and the geometry exact, or publication throws.
+  it('a refused close-up leaves the node labels and the geometry whole', async () => {
+    const model = await run('a-refused-close-up-keeps-the-node-labels-in-order');
+    expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
+    expect(closeUps(model).length).toBeGreaterThan(0);
+    expect(closeUps(model)[0]!.message).toContain('a straight overlay link would be bent');
+    const order = model.labels.filter(label => label.owner.kind === 'node' && label.role === 'node').map(label => (label.owner as { id: string }).id);
+    expect(order).toEqual(Object.keys(model.nodes).filter(id => order.includes(id)));
+    expectIdempotent(model);
+  }, 120000);
+
   it('a held lane between two cantons keeps the run where it stands and the warning names the canton', async () => {
     const model = await run('a-held-lane-between-two-cantons-refuses-the-close-up');
     const [west, east] = cantonBoxes(model) as [Rect, Rect];

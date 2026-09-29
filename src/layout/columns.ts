@@ -540,7 +540,7 @@ function closeUp(model: LayoutModel, tiers: Unit[][], index: number, slack: numb
   const proposed = [...shifts].map(([group, dx]) => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } }));
   if (cause === undefined && !laneSidesHold(model, proposed)) cause = 'a reserved lane it would cross holds it';
   if (cause === undefined) {
-    const straight = straightOverlays(model);
+    const straight = straightOverlays(model), undo = exactUndo(model, shifts.keys());
     for (const [group, dx] of shifts) moveGroup(model, group, dx, 0);
     const settle = (): void => rebuildNodeGeometry(model, [...shifts.keys()].flatMap(group => group.nodes), 'current');
     settle();
@@ -553,7 +553,7 @@ function closeUp(model: LayoutModel, tiers: Unit[][], index: number, slack: numb
       return was !== undefined && now !== undefined && shifts.has(unit.groups[0]!) && !unit.groups.some(group => ends.has(group.id))
         && crosses(from, to, now) && !crosses(from, to, was);
     })));
-    if (bent) { for (const [group, dx] of shifts) moveGroup(model, group, -dx, 0); settle(); cause = 'a straight overlay link would be bent'; }
+    if (bent) { undo(); settle(); cause = 'a straight overlay link would be bent'; }
   }
   warnCloseUp(model, run.filter(isCanton).map(unit => unit.id), named.id, cause);
   return cause === undefined;
@@ -584,6 +584,24 @@ function stepBlock(model: LayoutModel, tier: readonly Unit[], run: readonly Unit
   const lane = model.lanes.some(item => item.tier >= low && item.tier <= high
     && run.slice(first, last).some((unit, i) => item.x > at(unit).x + at(unit).width - PLACEMENT_EPS && item.x < at(run[first + i + 1]!).x + PLACEMENT_EPS));
   return lane ? 'a reserved lane stands between two cantons of the run' : undefined;
+}
+
+/**
+ * The way back for a move that may be refused: the boxes of the groups, their nodes and the anchors of their ports as they stand, put
+ * back exactly. A move by `dx` and back by `-dx` leaves float noise, and publication re-derives regions and label bands from the geometry.
+ */
+function exactUndo(model: LayoutModel, groups: Iterable<LayoutGroup>): () => void {
+  const saved = [...groups].map(group => ({ group, bounds: { ...group.bounds! }, nodes: group.nodes.map(id => ({ node: model.nodes[id]!, bounds: { ...model.nodes[id]!.bounds! },
+    anchors: model.nodes[id]!.ports.map(port => port.anchor && { ...port.anchor }) })) }));
+  return () => {
+    for (const item of saved) {
+      Object.assign(item.group.bounds!, item.bounds);
+      for (const entry of item.nodes) {
+        Object.assign(entry.node.bounds!, entry.bounds);
+        entry.node.ports.forEach((port, i) => { if (port.anchor && entry.anchors[i]) Object.assign(port.anchor, entry.anchors[i]); });
+      }
+    }
+  };
 }
 
 /** Says once for a step, naming a canton, why its run stays; an earlier warning of the step is dropped first. */
@@ -893,6 +911,7 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
     // `moveGroup` carries anchors but not pill bounds, and the straightness below reads pills: the shifted
     // groups' node geometry is rebuilt before the reading, and again on rollback (ticket 17 review).
     const settle = (): void => rebuildNodeGeometry(model, [...shifts.keys()].flatMap(group => group.nodes), 'current');
+    const undo = exactUndo(model, shifts.keys());
     if (allowed) { for (const [group, dx] of shifts) moveGroup(model, group, dx, 0); settle(); }
     const after = new Map(deriveFrames(model)?.map(frame => [frame.id, frame.box]));
     // The ends are read after the move: a frame that ends a link takes its own ports with it.
@@ -905,7 +924,7 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
       return was !== undefined && now !== undefined && shifts.has(item.unit.groups[0]!) && !item.unit.groups.some(group => ends.has(group.id))
         && crosses(from, to, now) && !crosses(from, to, was);
     })));
-    if (blocked) { for (const [group, dx] of shifts) moveGroup(model, group, -dx, 0); settle(); }
+    if (blocked) { undo(); settle(); }
     return { shifts, allowed, blocked, bent };
   };
   const closing = closeRun(lefts);
