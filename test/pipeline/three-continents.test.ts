@@ -14,7 +14,7 @@ const holds = (outer: Rect, inner: Rect): boolean => outer.x <= inner.x + 1e-6 &
 const frameOf = (model: LayoutModel, id: string) => model.frames!.find(frame => frame.id === id)!;
 
 describe('three continents (canton-groups ticket 58, fixture 10)', () => {
-  it('three canton frames a band gap apart, clients under their own canton, top locations unmoved', async () => {
+  it('three canton frames a band gap apart, clients under their own canton, top row keeps its order and spacing', async () => {
     const model = await run(source);
     expect(model.diagnostics.filter(d => d.severity === 'error')).toEqual([]);
     const cantons = ['a', 'b', 'c'].map(id => frameOf(model, id));

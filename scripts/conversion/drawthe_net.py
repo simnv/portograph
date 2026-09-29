@@ -303,10 +303,11 @@ def assign_cantons(result, cantons):
     ids = {}
     for token, label in cantons:
         cid = next(iter(identifiers([token]).values()))
-        if cid in groups:
-            raise ValueError(f'Canton identifier {cid!r} collides with a group identifier')
+        if cid in groups or cid in nodes:
+            raise ValueError(f'Canton identifier {cid!r} collides with a group or node identifier')
         ids[token] = (cid, label)
     member = {}
+    outside = set()
     for gid, spec in groups.items():
         if spec.get('parent'):
             continue
@@ -316,11 +317,12 @@ def assign_cantons(result, cantons):
         if spec.get('shape') in ('bar', 'grid'):
             print(f'warning: group {gid!r} matches canton token {match[1]!r} but is a {spec["shape"]} group; left outside',
                   file=sys.stderr)
+            outside.add(gid)
             continue
         member[gid] = match[1]
     step_one = dict(member)
     for gid, spec in groups.items():
-        if spec.get('parent') or gid in step_one:
+        if spec.get('parent') or gid in step_one or gid in outside:
             continue
         counts = Counter()
         for source, target, options in result['links']:
