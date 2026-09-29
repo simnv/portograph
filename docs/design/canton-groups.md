@@ -267,6 +267,15 @@ owns beside a member cell. A lane the canton holds is reserved before a lane for
    link between two of its members crosses a tier gap and is a part of that gap's row plan. A chord
    across a tier gap would reserve nothing there. Recommendation: no.
 
+### As built (ticket 57)
+
+- Rule 7: `clearRun` in `orderFramesByOverlay` moves a unit outside every canton that stands between two cantons of a tier before or after the run, on the side that holds more of
+  its partners (the partners the key reads) against the middle of the run; a tie goes to the nearer end. It is a rule of the shape with no acceptance test, and it runs before the
+  cantons are judged. Units already outside the run keep their side.
+- Rule 9: the cantons swap as units under the three conditions of ADR-0019 (a canton was already one `columnTiers` unit). The inner order (`orderMembers`) orders the members of a beside
+  row by the same key and acceptance; the row keeps its left edge and its gaps, so the canton frame does not move. A refusal is one `OVERLAY_ORDER_REFUSED` warning.
+- Lanes, the chord rule and the row plan (rules 1 to 4 above) needed no code. A held lane is not a condition of the order: lanes come after it and their x is immutable.
+
 ## Section 5 — Gates and score
 
 - **G9** (`src/score/gates.ts:58-80`) extends by containment. A canton frame contains each member

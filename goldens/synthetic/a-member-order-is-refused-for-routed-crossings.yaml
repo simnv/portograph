@@ -1,0 +1,25 @@
+# Expected: canton-groups ticket 57, the inner overlay order is refused. The canton `west` holds `alpha` (declared first) and `beta` on tier 1.
+# The feed of `alpha` is `ntp3` and the feed of `beta` is `hub`; `ntp3` stands left of `hub` in the anchor row. `beta` has two overlay links to
+# `ntp1`, the left end of the row, so its key is the smaller and the order wants `beta` at the left. In that order the routed link `ntp3` to
+# `alpha` would cross the routed link `hub` to `beta`: the routed crossings would rise from 0 to 1, so the order is refused, the declaration order
+# stands, and one `OVERLAY_ORDER_REFUSED` warning names the members.
+# Test-only input owned by canton-groups ticket 57; test/pipeline/canton-order.test.ts reads the layout.
+portograph: 2
+groups:
+  west: { label: West }
+  core: { tier: 0, label: Core }
+  alpha: { tier: 1, canton: west, label: Alpha }
+  beta: { tier: 1, canton: west, label: Beta }
+nodes:
+  ntp1: { group: core, class: server, label: NTP one }
+  ntp2: { group: core, class: server, label: NTP two }
+  ntp3: { group: core, class: server, label: NTP three }
+  hub: { group: core, class: router, label: Hub }
+  ntp4: { group: core, class: server, label: NTP four }
+  al-gw: { group: alpha, class: router, label: Alpha gateway }
+  be-gw: { group: beta, class: router, label: Beta gateway }
+links:
+  - [ntp3, al-gw]
+  - [hub, be-gw]
+  - { from: ntp1, to: be-gw, class: flow }
+  - { from: ntp1, to: be-gw, class: flow }

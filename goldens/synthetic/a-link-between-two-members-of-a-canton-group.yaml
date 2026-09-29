@@ -1,0 +1,30 @@
+# Expected: canton-groups ticket 57, the chord rule is not extended to a canton and the tier-gap row plan does not read the canton. The canton
+# `west` holds `site` (tier 1, three nodes) and `lab` (tier 2, three nodes). Three routed links cross the one gap between them, each from a node of
+# `site` to a node of `lab` that stands off its column. The frame rule of ticket 34 takes a link whose two ends lie in one frame (the same group,
+# or a parent and its direct child); `site` and `lab` are two frames side by side in a canton, so no link is a chord and the three links keep their planned rows.
+# The test lays the input out twice, with and without `canton:`, and compares the plan of that gap.
+# Test-only input owned by canton-groups ticket 57; test/pipeline/canton-order.test.ts reads the layout.
+portograph: 2
+groups:
+  west: { label: West }
+  core: { tier: 0, label: Core }
+  site: { tier: 1, canton: west, label: Site }
+  lab: { tier: 2, canton: west, label: Lab }
+nodes:
+  core1: { group: core, class: router, label: Core one }
+  core2: { group: core, class: router, label: Core two }
+  core3: { group: core, class: router, label: Core three }
+  core4: { group: core, class: router, label: Core four }
+  s1: { group: site, class: router, label: Site one }
+  s2: { group: site, class: switch, label: Site two }
+  s3: { group: site, class: switch, label: Site three }
+  l1: { group: lab, class: server, label: Lab one }
+  l2: { group: lab, class: server, label: Lab two }
+  l3: { group: lab, class: server, label: Lab three }
+links:
+  - [core1, s1]
+  - [core2, s2]
+  - [core3, s3]
+  - [s1, l3]
+  - [s2, l1]
+  - [s3, l2]

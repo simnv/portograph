@@ -6,6 +6,8 @@ import { crosses } from './overlay-paths.js';
 import { placementWarning } from './regions.js';
 import { bandGap, compareId, nodeGap, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
+import { cellReach } from './frames.js';
+import { frameSubtreeCells } from '../model/model.js';
 import { frameTiers, packTier, unitOrder, type Column } from './columns.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
@@ -310,7 +312,7 @@ export function saveGroups(model: LayoutModel, groups: LayoutGroup[]): () => voi
 export function orderFramesByOverlay(model: LayoutModel, columns: Map<string, Column>): boolean {
   const draft = readDraft(model);
   if (draft === undefined) return false;
-  const { anchor, tiers, index, touched, keyOfNodes, measureRange, reorder } = draft;
+  const { anchor, tiers, index, touched, partners, keyOfNodes, measureRange, reorder } = draft;
   const flanked = new Set(Object.values(model.groups).flatMap(group => group.flank ? [group.flank.of] : []));
   const free = (unit: { frame: boolean; groups: LayoutGroup[] }): boolean => unit.frame && unit.groups.every(group => group.bounds !== undefined
     && groupShape(model, group.id) === 'row' && !flanked.has(group.id) && model.document.groups[group.id]?.shape !== 'bar');
@@ -320,46 +322,149 @@ export function orderFramesByOverlay(model: LayoutModel, columns: Map<string, Co
     return [Math.min(...inside), Math.max(...inside)];
   };
 
+  const frames = model.document.frames ?? {};
+  const isCanton = (unit: { id: string; frame: boolean }): boolean => unit.frame && frames[unit.id]?.kind === 'canton';
+  const centreOf = (node: string): number => model.nodes[node]!.bounds!.x + model.nodes[node]!.bounds!.width / 2;
   const all = frameTiers(model).filter(tier => tier.every(unit => unit.groups.every(group => group.bounds !== undefined)));
   type Tier = typeof all[number];
+  type Unit = Tier[number];
   const low = (tier: Tier): number => Math.min(...tier.map(unit => unit.low)), high = (tier: Tier): number => Math.max(...tier.map(unit => unit.high));
   const sweep = [...all.filter(tier => low(tier) > anchor), ...all.filter(tier => high(tier) < anchor).reverse()];
   let moved = false;
-  for (const tier of sweep) {
-    const [from, to] = span(low(tier), high(tier));
-    if (![...touched].some(at => at >= from && at <= to)) continue;
-    const members = [...tier].sort((a, b) => unitOrder(a) - unitOrder(b) || compareId(a.id, b.id));
-    const movable = members.filter(free);
-    if (movable.length < 2) continue;
-    const keyOf = (unit: Tier[number]): number | undefined => {
-      const inside = new Set(unit.groups.flatMap(group => group.nodes));
-      return keyOfNodes([...inside], inside);
-    };
-    const next = reorder(movable, keyOf);
-    if (next.every((unit, i) => unit === movable[i])) continue;
-    // The frames take the places of the frames, in the new order; every other unit keeps its place.
-    const places = movable.map(unitOrder), sequence = new Map(next.map((unit, i) => [unit.id, places[i]!]));
+
+  /** The units of a tier from left to right as they stand. */
+  const standing = (tier: Tier): Unit[] => [...tier].sort((a, b) => unitOrder(a) - unitOrder(b) || compareId(a.id, b.id));
+  /** One warning per tier: `orderByOverlay` may have refused the groups of a tier this order of frames covers. */
+  const warned = (tier: Tier): boolean => model.diagnostics.some(item => item.code === 'OVERLAY_ORDER_REFUSED' && [...item.message.matchAll(/order of tier (\d+) /g)]
+    .some(found => Number(found[1]) >= low(tier) && Number(found[1]) <= high(tier)));
+  /** The three conditions of the acceptance: the refusal, `''` when the result changes nothing, `undefined` when it gains. */
+  const judge = (before: ReturnType<typeof measureRange>, after: ReturnType<typeof measureRange>): string | undefined => {
+    if (after.crossings > before.crossings) return `routed crossings would rise from ${before.crossings} to ${after.crossings}`;
+    if (after.blocked > before.blocked) return `routed links with a body between their ends would rise from ${before.blocked} to ${after.blocked}`;
+    if (after.straight < before.straight) return `straight overlay links would fall from ${before.straight} to ${after.straight}`;
+    if (after.straight === before.straight && after.crossings === before.crossings && after.blocked === before.blocked) return ''; // no gain on the draft: ELK's order stands, silently
+    return undefined;
+  };
+  /**
+   * Packs `tier` again with the places of `sequence` and keeps the result when the acceptance holds. Returns the refusal when it
+   * was refused for a reason worth a warning, and `undefined` when it stands or changed nothing.
+   */
+  const settle = (tier: Tier, sequence: ReadonlyMap<string, number>, from: number, to: number): string | undefined => {
     const groups = tier.flatMap(unit => unit.groups);
     const cells = new Map(groups.map(group => [group.id, columns.get(group.id)]));
     const undo = saveGroups(model, groups);
     const before = measureRange(from, to, true);
     packTier(model, tier, columns, sequence);
-    const after = measureRange(from, to, true);
-    let refusal: string | undefined;
-    if (after.crossings > before.crossings) refusal = `routed crossings would rise from ${before.crossings} to ${after.crossings}`;
-    else if (after.blocked > before.blocked) refusal = `routed links with a body between their ends would rise from ${before.blocked} to ${after.blocked}`;
-    else if (after.straight < before.straight) refusal = `straight overlay links would fall from ${before.straight} to ${after.straight}`;
-    else if (after.straight === before.straight && after.crossings === before.crossings && after.blocked === before.blocked) { /* no gain on the draft: ELK's order stands, silently */ }
-    else { moved = true; continue; }
+    const verdict = judge(before, measureRange(from, to, true));
+    if (verdict === undefined) { moved = true; return undefined; }
     undo();
     for (const [id, column] of cells) if (column === undefined) columns.delete(id); else columns.set(id, column);
-    // One warning per tier: `orderByOverlay` may have refused the groups of a tier this order of frames covers.
-    const warned = (): boolean => model.diagnostics.some(item => item.code === 'OVERLAY_ORDER_REFUSED' && [...item.message.matchAll(/order of tier (\d+) /g)]
-      .some(found => Number(found[1]) >= low(tier) && Number(found[1]) <= high(tier)));
-    if (refusal !== undefined && !warned()) {
-      placementWarning(model, 'OVERLAY_ORDER_REFUSED', `The overlay-weighted order of the frames of sub-tiers ${low(tier)} to ${high(tier)} was refused and ELK's order stands: ${refusal}.`,
-        movable.map(unit => unit.id), 'group');
+    return verdict === '' ? undefined : verdict;
+  };
+  const refuse = (tier: Tier, refusal: string | undefined, ids: string[], what: string): void => {
+    if (refusal !== undefined && !warned(tier)) placementWarning(model, 'OVERLAY_ORDER_REFUSED', `The overlay-weighted order of ${what} was refused and ELK's order stands: ${refusal}.`, ids, 'group');
+  };
+
+  /**
+   * Canton-groups ticket 57, rule 7: a unit outside every canton that ELK left between two cantons of a tier goes before or after the
+   * run of cantons, on the side that holds more of its partners (the routed partners in the adjacent sub-tiers and the overlay partners
+   * in any other, the same partners as the key); a tie goes to the end it stands nearer. This is a rule of the shape, not a gain on
+   * the draft, so no acceptance is asked: between two canton columns the unit would leave empty room on every other tier of the span.
+   * Returns the units of the tier in their new places, or `undefined` when none stood between.
+   */
+  const clearRun = (tier: Tier): Unit[] | undefined => {
+    const order = standing(tier), at = order.map(isCanton), first = at.indexOf(true), last = at.lastIndexOf(true);
+    if (first < 0 || first === last || !order.slice(first + 1, last).some(unit => !isCanton(unit))) return undefined;
+    const reaches = order.slice(first, last + 1).filter(isCanton).flatMap(unit => unit.groups.map(group => cellReach(model, group.id)));
+    const middle = (Math.min(...reaches.map(reach => reach.x)) + Math.max(...reaches.map(reach => reach.x + reach.width))) / 2;
+    const before: Unit[] = [], after: Unit[] = [];
+    for (const unit of order.slice(first + 1, last).filter(unit => !isCanton(unit))) {
+      const nodes = unit.groups.flatMap(group => group.nodes), xs = nodes.flatMap(node => partners.get(node) ?? []).map(centreOf);
+      const left = xs.filter(x => x < middle - PLACEMENT_EPS).length, right = xs.filter(x => x > middle + PLACEMENT_EPS).length;
+      (left > right || (left === right && unitOrder(unit) < middle) ? before : after).push(unit);
     }
+    const between = new Set([...before, ...after]);
+    return [...order.slice(0, first), ...before, ...order.slice(first, last + 1).filter(unit => !between.has(unit)), ...after, ...order.slice(last + 1)];
+  };
+
+  /**
+   * Canton-groups ticket 57, rule 9: the members of one canton that stand beside each other (their sub-tier ranges touch) are ordered by the
+   * key of the frames, with the canton column as the walls. The row keeps its left edge and its gaps, so the canton frame and its column do not
+   * move; the members take the places in the order of their keys, and a tie keeps the declaration order the pack gave. A partner in the row
+   * is left out of the key (it moves with the order), a partner in a member that stands apart is read where it stands.
+   */
+  const orderMembers = (tier: Tier, canton: Unit, from: number, to: number): void => {
+    type Member = { id: string; cells: string[]; nodes: string[]; range: [number, number]; x: number; width: number };
+    const members: Member[] = Object.keys(frames).filter(id => frames[id]!.parent === canton.id).map(id => {
+      const cells = frameSubtreeCells(frames, id), reaches = cells.map(cell => cellReach(model, cell)), tiers = cells.map(cell => model.groups[cell]!.tier!);
+      const x = Math.min(...reaches.map(reach => reach.x));
+      return { id, cells, nodes: cells.flatMap(cell => model.groups[cell]!.nodes), range: [Math.min(...tiers), Math.max(...tiers)] as [number, number],
+        x, width: Math.max(...reaches.map(reach => reach.x + reach.width)) - x };
+    });
+    const touches = (a: Member, b: Member): boolean => a.range[0] <= b.range[1] && b.range[0] <= a.range[1];
+    const seen = new Set<Member>();
+    for (const start of members) {
+      if (seen.has(start)) continue;
+      const row = new Set<Member>([start]);
+      for (let grown = true; grown;) { grown = false; for (const member of members) if (!row.has(member) && [...row].some(other => touches(member, other))) { row.add(member); grown = true; } }
+      for (const member of row) seen.add(member);
+      if (row.size < 2) continue;
+      const slots = [...row].sort((a, b) => a.x - b.x || compareId(a.id, b.id));
+      const inside = new Set([...row].flatMap(member => member.nodes));
+      const next = reorder(slots, member => keyOfNodes(member.nodes, inside));
+      if (next.every((member, i) => member === slots[i])) continue;
+      const cells = slots.flatMap(member => member.cells.map(cell => model.groups[cell]!));
+      const undo = saveGroups(model, cells), before = measureRange(from, to, true);
+      let x = slots[0]!.x;
+      for (const [i, member] of next.entries()) {
+        for (const cell of member.cells) moveGroup(model, model.groups[cell]!, x - member.x, 0);
+        x += member.width + (i + 1 < slots.length ? slots[i + 1]!.x - (slots[i]!.x + slots[i]!.width) : 0);
+      }
+      const verdict = judge(before, measureRange(from, to, true));
+      if (verdict === undefined) { moved = true; continue; }
+      undo();
+      refuse(tier, verdict === '' ? undefined : verdict, next.map(member => member.id), `the members of the canton ${canton.id} on sub-tiers ${Math.min(...slots.map(member => member.range[0]))} to ${Math.max(...slots.map(member => member.range[1]))}`);
+    }
+  };
+
+  for (const tier of sweep) {
+    const [from, to] = span(low(tier), high(tier));
+    const cantons = tier.filter(isCanton);
+    if (cantons.length) {
+      // The run of cantons is clear of foreign units before it is judged: the rule of the shape comes first.
+      const cleared = clearRun(tier);
+      if (cleared !== undefined) {
+        packTier(model, tier, columns, new Map(cleared.map((unit, i) => [unit.id, i])));
+        moved = true;
+      }
+    }
+    if (![...touched].some(at => at >= from && at <= to)) continue;
+    const members = standing(tier);
+    const movable = members.filter(free);
+    const keyOf = (unit: Unit): number | undefined => {
+      const inside = new Set(unit.groups.flatMap(group => group.nodes));
+      return keyOfNodes([...inside], inside);
+    };
+    if (cantons.length) {
+      const run = movable.filter(isCanton);
+      if (run.length > 1) {
+        const next = reorder(run, keyOf);
+        if (next.some((unit, i) => unit !== run[i])) {
+          // The cantons take the places of the cantons, in the new order; every other unit keeps its place.
+          const order = members.map(unit => run.includes(unit) ? next[run.indexOf(unit)]! : unit);
+          const refusal = settle(tier, new Map(order.map((unit, i) => [unit.id, i])), from, to);
+          refuse(tier, refusal, run.map(unit => unit.id), `the frames of sub-tiers ${low(tier)} to ${high(tier)}`);
+        }
+      }
+      for (const canton of cantons.filter(free)) orderMembers(tier, canton, from, to);
+      continue;
+    }
+    if (movable.length < 2) continue;
+    const next = reorder(movable, keyOf);
+    if (next.every((unit, i) => unit === movable[i])) continue;
+    // The frames take the places of the frames, in the new order; every other unit keeps its place.
+    const places = movable.map(unitOrder);
+    refuse(tier, settle(tier, new Map(next.map((unit, i) => [unit.id, places[i]!])), from, to), movable.map(unit => unit.id), `the frames of sub-tiers ${low(tier)} to ${high(tier)}`);
   }
   return moved;
 }

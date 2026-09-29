@@ -1,0 +1,33 @@
+# Expected: canton-groups ticket 57, the inner overlay order. The canton `west` holds three members on tier 1, `alpha`, `beta` and `gamma`
+# (declaration order), and `lab` on tier 2. A wide anchor tier `core` (tier 0) feeds the three from the one router `hub`, so no order makes
+# two routed links cross. Two overlay links join `alpha` to `gamma`, and the body of `beta` stands between them. `beta` also has an overlay link
+# to `probe`, the left end of the anchor row, so its key is the smallest; `alpha` and `gamma` have the hub alone and keep their order. The members
+# take their places in the order of their keys inside the canton column: `beta` goes to the left end, `alpha` and `gamma` stand side by side
+# (40 px apart), and the two links between them are one straight segment each.
+# Test-only input owned by canton-groups ticket 57; test/pipeline/canton-order.test.ts reads the layout.
+portograph: 2
+groups:
+  west: { label: West }
+  core: { tier: 0, label: Core }
+  alpha: { tier: 1, canton: west, label: Alpha }
+  beta: { tier: 1, canton: west, label: Beta }
+  gamma: { tier: 1, canton: west, label: Gamma }
+  lab: { tier: 2, canton: west, label: Lab }
+nodes:
+  probe: { group: core, class: server, label: Probe }
+  core1: { group: core, class: router, label: Core one }
+  hub: { group: core, class: router, label: Hub }
+  core2: { group: core, class: router, label: Core two }
+  core3: { group: core, class: router, label: Core three }
+  al-gw: { group: alpha, class: router, label: Alpha gateway }
+  be-gw: { group: beta, class: router, label: Beta gateway }
+  ga-gw: { group: gamma, class: router, label: Gamma gateway }
+  lab-srv: { group: lab, class: server, label: Lab server }
+links:
+  - [hub, al-gw]
+  - [hub, be-gw]
+  - [hub, ga-gw]
+  - [al-gw, lab-srv]
+  - { from: probe, to: be-gw, class: flow }
+  - { from: al-gw, to: ga-gw, class: flow }
+  - { from: al-gw, to: ga-gw, class: flow }
