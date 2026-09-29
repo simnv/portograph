@@ -4,6 +4,8 @@ import { allocateGapRuns, bands, bars, bundles, centre, flanks, growTierGaps, la
 import type { LayoutModel } from '../../src/index.js';
 import { unfitGaps } from '../../src/layout/gap-room.js';
 import { tierGapPlans } from '../../src/layout/gap-plan.js';
+import { nudgingDistance, routedStroke } from '../../src/layout/bands.js';
+import { GROUP_EDGE_LINK_CLEARANCE } from '../../src/theme/geometry.js';
 import { score } from '../../src/score/index.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -35,9 +37,10 @@ describe('a residual part publishes with its findings named (ticket 51)', () => 
     // Ticket 59: the jog of link-4's drop, which stands on its upper x, keeps the group-edge margin (10) from the top of `access`.
     const jog = tierGapPlans(model).flatMap(({ plan }) => plan.parts).find(part => part.link === 'link-4')!;
     expect(jog.shape === 'drop' && jog.stand === 'upper' && jog.jog !== undefined).toBe(true);
-    // jog = bandTop - max(depth + k, e), e = 10.75 (the group-edge margin from the top of `access`).
+    // jog = bandTop - max(depth + k, e): k the row pitch, e the group-edge margin from the top of `access`.
+    const k = nudgingDistance(model), e = GROUP_EDGE_LINK_CLEARANCE + routedStroke(model) / 2;
     const access = model.groups['access']!.bounds!.y;
-    expect(jog.jog!).toBeCloseTo(Math.min(jog.lower.y - 10, access - 10.75), 6);
+    expect(jog.jog!).toBeCloseTo(Math.min(jog.lower.y - k, access - e), 6);
     expect(failing(routed)).toEqual([]);
   }, 120000);
 
