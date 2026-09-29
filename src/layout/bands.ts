@@ -493,13 +493,17 @@ function feedCorridorRects(model: LayoutModel, link: LayoutModel['links'][number
 function legRects(model: LayoutModel): ForbiddenRect[] {
   const result: ForbiddenRect[] = [];
   const frames = model.document.frames ?? {};
-  const membersOf = (band: LabelBand): Set<string> => new Set(isCanton(model, band.group)
-    ? frameSubtreeCells(frames, band.group).flatMap(cell => model.groups[cell]?.nodes ?? []) : model.groups[band.host ?? band.group]?.nodes ?? []);
+  // A canton band stands under its last sub-tier (over its first): only the members of that edge tier draw a leg through it.
+  const membersOf = (band: LabelBand): Set<string> => {
+    if (!isCanton(model, band.group)) return new Set(model.groups[band.host ?? band.group]?.nodes ?? []);
+    const tiers = cantonTiers(model, band.group), edge = band.side === 'top' ? tiers.first : tiers.last;
+    return new Set(frameSubtreeCells(frames, band.group).filter(cell => model.groups[cell]?.tier === edge).flatMap(cell => model.groups[cell]!.nodes));
+  };
   const owned = model.labelBands.map(band => ({ band, members: membersOf(band) }));
   for (const link of model.links) {
     if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments || link.bundle) continue;
     if (isFrameStraight(model, link)) continue;
-    const stroke = linkStrokeWidth(link);
+    const stroke = routedStroke(model);
     for (const end of ['from', 'to'] as const) {
       const ref = link.attachments[end], port = findPort(model, ref);
       if (!port?.anchor || (port.side !== 'top' && port.side !== 'bottom')) continue;
@@ -668,8 +672,8 @@ function titleX(model: LayoutModel, placed: LayoutLabel[], y: number, measured: 
 }
 
 /**
- * Plans the group labels. A row of titles (one tier, one edge) is nudged off the legs of its ports as a whole or not at all: where
- * one title has no position that clears its legs, the row keeps its old places, and every leg under a title stays with the router
+ * Plans the group labels. The titles that face one tier gap (the bottom edges of tier t and the top edges of tier t + 1) are nudged off the legs of its ports as a whole or not at all: where
+ * one title has no position that clears its legs, the gap's titles keep their old places, and every leg under a title stays with the router
  * together. Nudging only some of them would plan some drops of a gap and leave the rest to the router, which lays them across the
  * planned rows.
  */
@@ -677,6 +681,9 @@ function planLabels(model: LayoutModel, permitGrowth: boolean): LabelPlan {
   const first = planLabelsOnce(model, permitGrowth, new Set());
   return first.failed.size && !first.growth ? planLabelsOnce(model, permitGrowth, first.failed) : first;
 }
+
+/** The tier gap a title's edge faces: the bottom edge of tier t and the top edge of tier t + 1 face the same one. */
+const gapKey = (tier: number, side: 'top' | 'bottom'): string => String(side === 'bottom' ? tier : tier - 1);
 
 function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: ReadonlySet<string>): LabelPlan & { failed: Set<string> } {
   const labels: LayoutLabel[] = [], blocked: string[] = [], failed = new Set<string>();
@@ -687,7 +694,7 @@ function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: Readon
     const start = group.bounds!.x + GROUP_LABEL_GEOMETRY.horizontalInset;
     const limit = right(group.bounds!) - GROUP_LABEL_GEOMETRY.horizontalInset - measured.width;
     const centre = group.bounds!.x + (group.bounds!.width - measured.width) / 2;
-    const row = `${group.tier}|${title.side}`, placed = titleX(model, labels, y, measured, start, limit, centre, !still.has(row));
+    const row = gapKey(group.tier!, title.side), placed = titleX(model, labels, y, measured, start, limit, centre, !still.has(row));
     if (placed.failed) failed.add(row);
     const x = placed.x;
     if (x > limit + PLACEMENT_EPS) {
@@ -709,7 +716,7 @@ function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: Readon
     const y = band.bounds.y + GROUP_LABEL_GEOMETRY.verticalInset, box = band.bounds;
     const start = box.x + GROUP_LABEL_GEOMETRY.horizontalInset, limit = right(box) - GROUP_LABEL_GEOMETRY.horizontalInset - measured.width;
     const centre = box.x + (box.width - measured.width) / 2;
-    const tiers = cantonTiers(model, band.group), row = `${band.side === 'top' ? tiers.first : tiers.last}|${band.side}`;
+    const tiers = cantonTiers(model, band.group), row = gapKey(band.side === 'top' ? tiers.first : tiers.last, band.side);
     const placed = titleX(model, labels, y, measured, start, limit, centre, !still.has(row));
     if (placed.failed) failed.add(row);
     const x = placed.x;

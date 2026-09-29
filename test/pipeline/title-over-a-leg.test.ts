@@ -27,4 +27,16 @@ describe('a title over a port\'s leg is nudged aside (ticket 62)', () => {
     expect(residuals(model).filter(item => item.endsWith(':leg-blocked'))).toEqual([]);
     expect(partResiduals(model)).toEqual([]);
   }, 120000);
+
+  it('a canton title is not moved by the ports of a member above its last sub-tier (review B1)', async () => {
+    // Values measured with the nudge off (main 0c4f699): a bottom port of a first-tier member whose link ends in a second-tier member is no leg
+    // through the canton's bottom band.
+    const one = await run('a-link-between-two-members-of-a-canton-group');
+    const two = await run('overlay-links-reorder-two-members-of-a-canton-group');
+    const at = (model: LayoutModel, id: string): number => model.labels.find(label => label.id === `label:group:${id}`)!.bounds!.x;
+    expect(at(one, 'west')).toBeCloseTo(144.42626953125, 6);
+    expect(at(one, 'lab#0')).toBeCloseTo(148.09423828125, 6);
+    expect(at(two, 'west')).toBeCloseTo(243.45263671875, 6);
+    expect(at(two, 'lab#0')).toBeCloseTo(240.3662109375, 6);
+  }, 120000);
 });
