@@ -1,9 +1,8 @@
-# Expected: A canton frames two tiers (canton-groups ticket 1: the schema only; layout ignores `canton` until ticket 54).
-# Group `west` is a canton. Its members are `site` (tier 1, two ranks) and `clients` (tier 2, one node), both
-# naming `canton: west`. The gateway of `site` links up to the ISP (rank 0) and down to the server (rank 1), so `site`
-# has two ranks. One flow link joins the server to the client group. The same input without the `canton:` keys and the
-# `west` entry must lay out identical to today.
-# Test-only input owned by ranked-groups ticket 53; test/parse/canton.test.ts and test/pipeline/canton-ignored.test.ts read it.
+# Expected: A canton frames its members (canton-groups ticket 2, fixture 1). The canton frame contains both member
+# frames plus 20 px, and the client group's axis is the site's. Three tiers: `upstream` (tier 0, outside the canton),
+# then the canton `west` whose members are `site` (tier 1, two ranks) and `clients` (tier 2, one node, so a one-cell
+# frame). The gateway of `site` links up to the ISP and down to the server; one flow link joins the server to the client.
+# Test-only input owned by canton-groups tickets 1 and 2; test/parse/canton.test.ts and test/pipeline/canton-frames.test.ts read it.
 portograph: 2
 groups:
   west: { label: West }

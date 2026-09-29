@@ -341,8 +341,9 @@ export function resolveBeforeExpansion(input: NormalisedDocument, options: Resol
   stopOnErrors(model);
   const groupOrder = new Map(orderedGroupIds(model.document).map((id, index) => [id, index]));
   for (const id of groupOrder.keys()) {
-    const group = model.groups[id]!;
-    if (group.flank !== undefined) group.tier = model.groups[group.flank.of]!.tier!;
+    const group = model.groups[id];
+    // A canton entry is no layout group; stage 1 turns it into a frame.
+    if (group?.flank !== undefined) group.tier = model.groups[group.flank.of]!.tier!;
   }
   // A frame stands where its first cell stands, so a link between two frames orders like their cells.
   for (const [frame, { cells }] of Object.entries(model.document.frames ?? {})) {

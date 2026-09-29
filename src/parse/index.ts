@@ -232,6 +232,8 @@ function cantons(doc: NormalisedDocument, v: Validation): void {
     const path = `$.groups.${id}.canton`;
     if (group.shape === 'bar' || group.shape === 'grid') { v.report('CANTON_MEMBER_SHAPE', path, `A member is ranked or row, not ${group.shape}`); continue; }
     if (flanked.has(id)) { v.report('CANTON_MEMBER_FLANK', `$.groups.${flanked.get(id)}.of`, `A flank cannot stand beside ${id}, a member of a canton`); continue; }
+    const holders = new Set([id, ...orderedGroupIds(doc).filter(child => own(doc.groups, child)?.parent === id)]);
+    if (!orderedNodeIds(doc).some(node => holders.has(own(doc.nodes, node)?.group ?? ''))) { v.report('CANTON_MEMBER_EMPTY', `$.groups.${id}`, `A member holds a node, and ${id} holds none`); continue; }
     canton.members.push(id);
   }
   for (const id of orderedGroupIds(doc)) {
@@ -243,6 +245,12 @@ function cantons(doc: NormalisedDocument, v: Validation): void {
   }
 }
 
+/** A link end that names a canton is refused in this version: stage 1 has no frame to read it through (a later ticket). */
+function groupEnd(id: string, path: string, doc: NormalisedDocument, v: Validation): Endpoint | undefined {
+  if (own(doc.groups, id)?.members !== undefined) { v.report('CANTON_KEYS', path, 'A link endpoint cannot name a canton in this version; name a member or a node'); return undefined; }
+  return { group: id };
+}
+
 function endpoint(value: unknown, path: string, doc: NormalisedDocument, used: Map<NormalisedPort, Set<number>>, index: number, v: Validation): Endpoint | undefined {
   let nodeId: string | undefined, name: string | undefined, ordinal: number | undefined;
   if (typeof value === 'string') {
@@ -250,7 +258,7 @@ function endpoint(value: unknown, path: string, doc: NormalisedDocument, used: M
     if (!match) { v.report('BAD_ENDPOINT', path, 'Invalid compact endpoint'); return undefined; }
     nodeId = match[1]; name = match[2];
     if (match[3] !== undefined) ordinal = Number(match[3]);
-    if (nodeId !== undefined && name === undefined && own(doc.groups, nodeId) !== undefined) return { group: nodeId };
+    if (nodeId !== undefined && name === undefined && own(doc.groups, nodeId) !== undefined) return groupEnd(nodeId, path, doc, v);
   } else {
     const fields = v.map(value, path);
     v.keys(fields, ['node', 'port', 'ordinal', 'group'], path);
@@ -259,7 +267,7 @@ function endpoint(value: unknown, path: string, doc: NormalisedDocument, used: M
       const id = v.identifier(fields.get('group'), `${path}.group`);
       if (id === undefined) return undefined;
       if (own(doc.groups, id) === undefined) { v.report('UNKNOWN_REFERENCE', path, `Unknown group ${id}`); return undefined; }
-      return { group: id };
+      return groupEnd(id, path, doc, v);
     }
     nodeId = v.identifier(fields.get('node'), `${path}.node`);
     if (fields.has('port')) name = fields.get('port') === '*' ? '*' : v.identifier(fields.get('port'), `${path}.port`);

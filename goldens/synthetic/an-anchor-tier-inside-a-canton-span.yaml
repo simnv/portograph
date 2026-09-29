@@ -1,0 +1,27 @@
+# Expected: The anchor tier stands inside a canton span (canton-groups ticket 2, fixture 11). The canton `west` holds
+# three members on three tiers: `edge` (tier 0, one router), `core` (tier 1, four routers, the widest tier, so the
+# anchor tier) and `lab` (tier 2, one server). The run keeps ELK's centre, the members are centred on the canton axis,
+# and G9 is clean.
+# Test-only input owned by canton-groups ticket 2; test/pipeline/canton-frames.test.ts reads the layout.
+portograph: 2
+groups:
+  west: { label: West }
+  edge: { tier: 0, canton: west, label: Edge }
+  core: { tier: 1, canton: west, label: Core }
+  lab: { tier: 2, canton: west, label: Lab }
+nodes:
+  e1: { group: edge, class: router, label: Edge one }
+  c1: { group: core, class: router, label: Core one }
+  c2: { group: core, class: router, label: Core two }
+  c3: { group: core, class: router, label: Core three }
+  c4: { group: core, class: router, label: Core four }
+  l1: { group: lab, class: server, label: Lab one }
+links:
+  - [e1, c1]
+  - [e1, c2]
+  - [e1, c3]
+  - [e1, c4]
+  - [c1, l1]
+  - [c2, l1]
+  - [c3, l1]
+  - [c4, l1]
