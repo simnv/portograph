@@ -103,6 +103,7 @@ export const NETWORK_LINK_CLASSES: readonly (readonly [string, LinkClassStyle])[
   [LEGEND_DEFAULT_CLASS, linkStyle(modal(STEEL[800], STEEL[300], BLACK), 'Default link')],
   ['dotted', linkStyle(modal(TEAL[700], TEAL[400], NEUTRAL[700]), 'Dotted link', { dash: '1 3', cap: 'round' })],
   ['dashed', linkStyle(modal(INDIGO[700], INDIGO[400], NEUTRAL[700]), 'Dashed link', { dash: '4 4' })],
+  ['signal', linkStyle(modal(INDIGO[700], INDIGO[400], NEUTRAL[700]), 'Signal link', { dash: '4 4' })],
 ];
 
 /**
