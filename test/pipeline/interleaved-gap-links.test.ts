@@ -14,18 +14,20 @@ const EPS = 1e-6;
 type Segment = { from: { x: number; y: number }; to: { x: number; y: number } };
 
 /** The interior crossings of two routed paths: a point strictly inside a segment of each. */
-function strictCrossings(a: LayoutLink, b: LayoutLink): number {
+function strictCrossings(a: LayoutLink, b: LayoutLink): { x: number; y: number }[] {
   const inside = (value: number, one: number, other: number): boolean => value > Math.min(one, other) + EPS && value < Math.max(one, other) - EPS;
-  let count = 0;
+  const points: { x: number; y: number }[] = [];
   for (const one of a.path!.segments as Segment[]) {
     for (const other of b.path!.segments as Segment[]) {
       const oneVertical = Math.abs(one.from.x - one.to.x) < EPS, otherVertical = Math.abs(other.from.x - other.to.x) < EPS;
       if (oneVertical === otherVertical) continue;
       const [vertical, horizontal] = oneVertical ? [one, other] : [other, one];
-      if (inside(vertical.from.x, horizontal.from.x, horizontal.to.x) && inside(horizontal.from.y, vertical.from.y, vertical.to.y)) count++;
+      if (inside(vertical.from.x, horizontal.from.x, horizontal.to.x) && inside(horizontal.from.y, vertical.from.y, vertical.to.y)) {
+        points.push({ x: vertical.from.x, y: horizontal.from.y });
+      }
     }
   }
-  return count;
+  return points;
 }
 
 /** The two stem tip rows of a link, upper first. */
@@ -49,19 +51,20 @@ function gatesPass(model: LayoutModel): void {
   for (const [id, gate] of Object.entries(report.gates)) expect(gate.passed, id).toBe(true);
 }
 
-describe('two interleaved links of one tier gap cross on a reserved row (ranked-groups ticket 39)', () => {
-  it('reserves the row between the tip rows of the earlier link, so the later link crosses a run it can cross', async () => {
+describe('interleaved links of one tier gap cross on the row of the earlier link (ranked-groups ticket 39)', () => {
+  it('gives the earlier link the row between its tip rows, so the later link crosses it and is not removed', async () => {
     const model = await routed('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row');
     expect(model.removedLinks ?? []).toEqual([]);
     expect(model.diagnostics.filter(diagnostic => diagnostic.code === 'ROUTE_CHECKPOINT_SKIPPED')).toEqual([]);
-    // The gap answers for the run: the nested tip band of a neighbour refuses the row one pitch inside the tips.
-    expect(model.diagnostics.some(diagnostic => diagnostic.code === 'TIER_GAP_GROWN' && /hold the run/.test(diagnostic.message))).toBe(true);
-    const earlier = model.links.find(link => link.id === 'link-4')!, later = model.links.find(link => link.id === 'link-6')!;
+    const earlier = model.links.find(link => link.id === 'link-4')!, later = model.links.find(link => link.id === 'link-7')!;
     const [upper, lower] = tipRows(model, earlier);
+    const mid = (upper + lower) / 2;
     // The earlier link runs on the row midway between its tip rows, and on no other.
-    expect(horizontals(earlier)).toEqual([expect.closeTo((upper + lower) / 2, 6)]);
-    expect(lower - upper).toBeGreaterThanOrEqual(23 - EPS);
-    expect(strictCrossings(earlier, later)).toBe(1);
+    expect(horizontals(earlier)).toEqual([expect.closeTo(mid, 6)]);
+    // The pair crosses once, and the crossing lies on that row.
+    const crossings = strictCrossings(earlier, later);
+    expect(crossings).toHaveLength(1);
+    expect(crossings[0]!.y).toBeCloseTo(mid, 6);
     gatesPass(model);
   }, 60000);
 
@@ -72,7 +75,9 @@ describe('two interleaved links of one tier gap cross on a reserved row (ranked-
     const [upper, lower] = tipRows(model, earlier);
     expect(lower - upper).toBeGreaterThan(23);
     expect(horizontals(earlier)).toEqual([expect.closeTo((upper + lower) / 2, 6)]);
-    expect(strictCrossings(earlier, later)).toBe(1);
+    const crossings = strictCrossings(earlier, later);
+    expect(crossings).toHaveLength(1);
+    expect(crossings[0]!.y).toBeCloseTo((upper + lower) / 2, 6);
     // The later link does not ride the earlier link's row: no horizontal of theirs shares a y with an overlap in x.
     for (const one of earlier.path!.segments as Segment[]) {
       for (const other of later.path!.segments as Segment[]) {
