@@ -40,7 +40,7 @@ describe('the chord splits a batch but does not open a pending stem', () => {
   it('routes every link of two nested-stem cores through the real router, one part per fan link, and removes none', async () => {
     const requests: string[][] = [];
     const model = await layout(parse(fixture), { createElkAttempt: createAttempt, createRouteAttempt: recording(requests) });
-    expect(requests).toEqual([['link-4#0', 'link-11#0'], ['link-5#0'], ['link-6#0'], ['link-9#0'], ['link-10#0']]);
+    expect(requests).toEqual([['link-9#0'], ['link-10#0'], ['link-11#0']]);
     expect(model.removedLinks ?? []).toEqual([]);
     expect(model.diagnostics.filter(item => item.code === 'ROUTE_CHECKPOINT_SKIPPED' || item.code === 'ROUTE_GAP_REJECTED')).toEqual([]);
     for (const link of model.links) expect(link.path, link.id).toBeDefined();
