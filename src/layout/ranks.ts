@@ -138,12 +138,12 @@ function clearSpans(input: RankInput, members: string[], edges: Edges, ranks: Ma
 
 /**
  * Step 5, the leaf rule. A child is a leaf child when none of its members has a routed link to a
- * member outside it (a parent member or a member of a sibling child) of a deeper rank, none of its
- * members is an anchor, and none shares a peer component with a member that is not itself in a leaf
- * child: it feeds nothing below itself, hangs from nothing above the group and leaves no peer
- * behind. Ranks are those before any push.
+ * member outside it (a parent member or a member of a sibling child) of a deeper rank and none of
+ * its members is an anchor: it feeds nothing below itself and hangs from nothing above the group.
+ * A leaf child pushes nothing (ticket 28); the parent members of its ranks stand beside it. Ranks
+ * are those before any push.
  */
-function leafChildren(input: RankInput, ranks: Map<string, number>, anchors: Set<string>, comp: Map<string, string>): Set<RankInput['children'][number]> {
+function leafChildren(input: RankInput, ranks: Map<string, number>, anchors: Set<string>): Set<RankInput['children'][number]> {
   const leaves = new Set<RankInput['children'][number]>();
   for (const child of input.children) {
     const inside = new Set(child.members);
@@ -152,20 +152,29 @@ function leafChildren(input: RankInput, ranks: Map<string, number>, anchors: Set
       inside.has(mine!) && ranks.has(other!) && !inside.has(other!) && ranks.get(other!)! > ranks.get(mine!)!));
     if (!feeds) leaves.add(child);
   }
-  // A peer partner outside every leaf child pins the child; dropping one child can pin another.
-  for (let changed = true; changed;) {
-    changed = false;
-    const inLeaf = new Set([...leaves].flatMap(child => child.members));
-    for (const child of leaves) {
-      const roots = new Set(child.members.map(id => comp.get(id)));
-      const pinned = [...ranks.keys()].some(id => roots.has(comp.get(id)) && !child.members.includes(id) && !inLeaf.has(id));
-      if (pinned) { leaves.delete(child); changed = true; break; }
-    }
-  }
   return leaves;
 }
 
-/** Leaf children joined by a peer link share one origin, so their peers keep one rank after the shift. */
+/**
+ * The leaf children that go last: those no routed link reaches (every member is overlay-only, step
+ * 6), which override step 6 and take the ranks after the rest. A peer partner outside every such
+ * child pins it in place; dropping one child can pin another.
+ */
+function lastChildren(leaves: Set<RankInput['children'][number]>, reached: Set<string>, ranks: Map<string, number>, comp: Map<string, string>): Set<RankInput['children'][number]> {
+  const last = new Set([...leaves].filter(child => !child.members.some(id => reached.has(id))));
+  for (let changed = true; changed;) {
+    changed = false;
+    const inLast = new Set([...last].flatMap(child => child.members));
+    for (const child of last) {
+      const roots = new Set(child.members.map(id => comp.get(id)));
+      const pinned = [...ranks.keys()].some(id => roots.has(comp.get(id)) && !child.members.includes(id) && !inLast.has(id));
+      if (pinned) { last.delete(child); changed = true; break; }
+    }
+  }
+  return last;
+}
+
+/** Last children joined by a peer link share one origin, so their peers keep one rank after the shift. */
 function leafOrigins(leaves: Set<RankInput['children'][number]>, ranks: Map<string, number>, comp: Map<string, string>): Map<RankInput['children'][number], number> {
   const origin = new Map([...leaves].map(child => [child, spanOf(ranks, child)![0]]));
   const roots = (child: RankInput['children'][number]) => new Set(child.members.map(id => comp.get(id)));
@@ -223,11 +232,14 @@ export function deriveRanks(input: RankInput): RankResult {
   // it takes the ranks after the last rank of the rest of the group, keeping its own internal order.
   // Only a group hung from above has the rule: below-anchored, the last rank belongs to the members
   // that link below, and a child moved past it would take that place.
-  const leaves = anchoredFrom === 'above' ? leafChildren(input, ranks, new Set(above), comp) : new Set<RankInput['children'][number]>();
+  const leaves = anchoredFrom === 'above' ? leafChildren(input, ranks, new Set(above)) : new Set<RankInput['children'][number]>();
+  const last = lastChildren(leaves, routed, ranks, comp);
+  // An overlay-only child pinned by a peer partner outside the last children is no leaf: it is held and pushes.
+  for (const child of leaves) if (!child.members.some(id => routed.has(id)) && !last.has(child)) leaves.delete(child);
   const held = input.children.filter(child => !leaves.has(child)).map(child => spanOf(ranks, child)).filter((span): span is [number, number] => span !== undefined);
-  const origins = leafOrigins(leaves, ranks, comp);
+  const origins = leafOrigins(last, ranks, comp);
   clearSpans(input, members, edges, ranks, held);
-  const leafMembers = new Set([...leaves].flatMap(child => child.members));
+  const leafMembers = new Set([...last].flatMap(child => child.members));
   const rest = [...ranks].filter(([id]) => !leafMembers.has(id)).map(([, rank]) => rank);
   if (rest.length) for (const [child, origin] of origins) for (const id of child.members) if (ranks.has(id)) ranks.set(id, ranks.get(id)! - origin + Math.max(...rest) + 1);
   compact(ranks);

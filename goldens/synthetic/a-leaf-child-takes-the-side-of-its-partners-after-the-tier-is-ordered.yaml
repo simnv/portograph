@@ -1,0 +1,44 @@
+# Expected: two leaf children of one location take the sides their overlay partners stand on once the tier is
+# ordered (ranked-groups ticket 28). Sibling locations `loc`, `west` and `east` stand in one tier. Location `loc` has
+# a core node c0 and a switch c1 (ranks 0 and 1) and, in rank 2, the parent members p1 and p2 and two leaf
+# children, `za` (a1) and `zb` (b1). The overlay link a1 to w1 reaches the west location and b1 to e1 the east
+# one; p1 and p2 also link to w1, which weights the order of the tier. The tier stands in the order loc, west,
+# east when the children are first read, and the overlay order then moves it to east, loc, west. Read from the
+# first order both children take the left side of p1 and p2, because both partners stood to their right. Read
+# from the tier as ordered, `za` stands right of p1 and p2, on the side of w1, and `zb` left, on the side of e1.
+# Test-only input owned by ranked-groups ticket 28; test/pipeline/leaf-child-beside.test.ts reads the layout.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  loc: { tier: 1, label: Location }
+  west: { tier: 1, label: West site }
+  east: { tier: 1, label: East site }
+  za: { parent: loc, label: Zone A }
+  zb: { parent: loc, label: Zone B }
+nodes:
+  feed: { group: upstream, class: router, label: Feed }
+  wr: { group: west, class: router, label: West router }
+  w1: { group: west, class: server, label: West time server }
+  c0: { group: loc, class: router, label: Core }
+  c1: { group: loc, class: switch, label: Distribution }
+  p1: { group: loc, class: switch, label: Switch one }
+  p2: { group: loc, class: switch, label: Switch two }
+  a1: { group: za, class: server, label: Zone A time server }
+  b1: { group: zb, class: server, label: Zone B time server }
+  er: { group: east, class: router, label: East router }
+  e1: { group: east, class: server, label: East time server }
+links:
+  - [feed, c0]
+  - [feed, wr]
+  - [feed, er]
+  - [wr, w1]
+  - [er, e1]
+  - [c0, c1]
+  - [c1, p1]
+  - [c1, p2]
+  - [c1, a1]
+  - [c1, b1]
+  - [a1, w1, { route: overlay }]
+  - [b1, e1, { route: overlay }]
+  - [p1, w1, { route: overlay }]
+  - [p2, w1, { route: overlay }]

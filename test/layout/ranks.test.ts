@@ -286,8 +286,9 @@ describe('deriveRanks: child groups', () => {
 
   it('two children may share ranks, and a parent member is pushed past both spans', () => {
     const result = deriveRanks(input({
-      members: ['p', 'a1', 'a2', 'b1', 'x', 't'], linksAbove: new Set(['p']),
-      routedLinks: [{ from: 'p', to: 'a1' }, { from: 'a1', to: 'a2' }, { from: 'p', to: 'b1' }, { from: 'p', to: 'x' }, { from: 'a2', to: 't' }, { from: 'b1', to: 't' }],
+      members: ['p', 'a1', 'a2', 'b1', 'x', 't', 'u'], linksAbove: new Set(['p']),
+      // Both children feed a deeper member (`u`, `t`), so neither is a leaf child (ticket 28) and both push.
+      routedLinks: [{ from: 'p', to: 'a1' }, { from: 'a1', to: 'a2' }, { from: 'p', to: 'b1' }, { from: 'p', to: 'x' }, { from: 'a2', to: 'u' }, { from: 'b1', to: 't' }],
       children: [{ group: 'za', members: ['a1', 'a2'] }, { group: 'zb', members: ['b1'] }],
     }));
     expect(result.spans.get('za')).toEqual([1, 2]);
@@ -296,18 +297,19 @@ describe('deriveRanks: child groups', () => {
   });
 });
 
-describe('deriveRanks: a leaf child stands at the bottom of its parent', () => {
+describe('deriveRanks: a leaf child stands beside the parent members of its ranks', () => {
   const shape = (extra: { from: string; to: string }[] = []) => input({
     members: ['rt', 'sw', 'crt', 'sw2', 'srv'], linksAbove: new Set(['rt']),
     routedLinks: [...chain('rt', 'sw'), { from: 'sw', to: 'ntp' }, { from: 'ntp', to: 'fw' }, ...chain('sw', 'crt', 'sw2', 'srv'), ...extra],
     children: [{ group: 'zone', members: ['ntp', 'fw'] }],
   });
 
-  it('the NTP shape: a child that feeds no deeper parent member takes the ranks after the last parent rank', () => {
+  it('the NTP shape: a child that feeds no deeper parent member keeps its depth ranks and pushes nothing', () => {
     const result = deriveRanks(shape());
-    expect(asObject(result.ranks)).toEqual({ rt: 0, sw: 1, crt: 2, sw2: 3, srv: 4, ntp: 5, fw: 6 });
-    expect(result.spans.get('zone')).toEqual([5, 6]);
-    expect(result.rankCount).toBe(7);
+    // The parent members `crt` and `sw2` stand in the span [2, 3] beside the child (ticket 28).
+    expect(asObject(result.ranks)).toEqual({ rt: 0, sw: 1, crt: 2, sw2: 3, srv: 4, ntp: 2, fw: 3 });
+    expect(result.spans.get('zone')).toEqual([2, 3]);
+    expect(result.rankCount).toBe(5);
   });
 
   it('a child that feeds a deeper parent member keeps its longest-path position and pushes the others', () => {
@@ -328,15 +330,34 @@ describe('deriveRanks: a leaf child stands at the bottom of its parent', () => {
     expect(result.spans.get('zone')![0]).toBe(0);
   });
 
-  it('two leaf children both start after the last rank of the rest of the group', () => {
+  it('two leaf children keep their depth ranks side by side, and the parent member stays', () => {
     const result = deriveRanks(input({
       members: ['p', 'x'], linksAbove: new Set(['p']),
       routedLinks: [{ from: 'p', to: 'a1' }, { from: 'a1', to: 'a2' }, { from: 'p', to: 'b1' }, { from: 'p', to: 'x' }],
       children: [{ group: 'za', members: ['a1', 'a2'] }, { group: 'zb', members: ['b1'] }],
     }));
     expect(result.ranks.get('x')).toBe(1);
-    expect(result.spans.get('za')).toEqual([2, 3]);
-    expect(result.spans.get('zb')).toEqual([2, 2]);
+    expect(result.spans.get('za')).toEqual([1, 2]);
+    expect(result.spans.get('zb')).toEqual([1, 1]);
+  });
+
+  it('a parent member inside a leaf child\'s span keeps its rank and pushes nothing below it', () => {
+    const result = deriveRanks(input({
+      members: ['p', 'x', 'y'], linksAbove: new Set(['p']),
+      routedLinks: [{ from: 'p', to: 'c1' }, { from: 'c1', to: 'c2' }, { from: 'p', to: 'x' }, { from: 'x', to: 'y' }],
+      children: [{ group: 'zone', members: ['c1', 'c2'] }],
+    }));
+    expect(asObject(result.ranks)).toEqual({ p: 0, c1: 1, c2: 2, x: 1, y: 2 });
+    expect(result.rankCount).toBe(3);
+  });
+
+  it('an overlay-only leaf child still goes after the last rank of the rest', () => {
+    const result = deriveRanks(input({
+      members: ['p', 'q'], linksAbove: new Set(['p']), routedLinks: [{ from: 'p', to: 'q' }],
+      overlayPartners: new Map([['z1', ['p']]]), children: [{ group: 'zone', members: ['z1'] }],
+    }));
+    expect(asObject(result.ranks)).toEqual({ p: 0, q: 1, z1: 2 });
+    expect(result.spans.get('zone')).toEqual([2, 2]);
   });
 
   it('a child that feeds a sibling child keeps its position, and the sibling stands after it', () => {

@@ -1,12 +1,10 @@
-# Expected: A link that skips a rank of its own frame runs inside the frame (ranked-groups ticket 04, the NTP
+# Expected: A link into a leaf child of its own frame needs no lane (ranked-groups tickets 04 and 28, the NTP
 # `loc4wan001` case). Two routers link to the ISP above (rank 0). The switch hangs from the first router
-# (rank 1). The WAN node stands alone in a child group `edge` and links to the second router. Since ticket 27
-# a rank is a breadth-first depth, so a plain member is never more than one rank below its neighbour; the
-# leaf-child rule (ticket 19) is what puts a member below the ranks of its parent. `edge` feeds nothing
-# deeper, so it takes the rank after the last rank of the rest of the group (rank 2), and the link from the
-# second router crosses the sub-tier of the switch's cell `site#1`. The link is not foreign to `site`, so
-# ADR-0013 permits the passage: the lane is reserved beside the crossed cell and the frame grows to hold it.
-# The link is stem, one vertical run, stem; no removed link, no margin expansion.
+# (rank 1). The WAN node stands alone in a child group `edge` and links to the second router. `edge` feeds
+# nothing deeper, so it keeps its depth rank (1) and stands beside the switch, the parent member of that rank
+# (ticket 28); it used to take the rank after the last rank of the rest (ticket 19), and the link from the
+# second router then crossed the sub-tier of the switch's cell `site#1` in a lane inside the frame. Now the
+# link is a stem, one vertical run, stem; no lane, no removed link, no margin expansion.
 # Test-only input owned by ranked-groups ticket 04; test/pipeline/frame-transit.test.ts reads the layout.
 portograph: 2
 groups:

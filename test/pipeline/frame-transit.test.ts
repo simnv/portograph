@@ -26,23 +26,20 @@ const runs = (link: { path?: { segments: { from: { x: number; y: number }; to: {
 const codes = (model: Awaited<ReturnType<typeof run>>): string[] => model.diagnostics.map(diagnostic => diagnostic.code);
 
 describe('transit through a frame', () => {
-  it('a link that ends in the last rank of its frame runs inside the frame', async () => {
+  it('a link that ends in a leaf child stands beside the parent member and needs no lane', async () => {
     const model = await run('a-link-transits-its-own-frame');
     expect(model.diagnostics.filter(diagnostic => diagnostic.severity === 'error')).toEqual([]);
     expect(codes(model)).not.toContain('LANE_MARGIN_EXPANDED');
-    // The frame holds a child frame (the leaf-child rule puts `edge` below the ranks of `site`), and a child frame
-    // may report the placement non-convergence; this test asserts the transit, not that report.
+    // Ticket 28 replaced the rule this test was written for: the leaf child `edge` keeps its depth rank (1) and stands
+    // beside the switch of `site#1`, so the link from the second router crosses no cell and owns no lane.
     expect(model.frames!.map(frame => frame.id).sort()).toEqual(['edge', 'site']);
     const frame = model.frames!.find(item => item.id === 'site')!;
     expect(frame.cells).toEqual(['site#0', 'site#1']);
-    expect(model.frames!.find(item => item.id === 'edge')!.cells).toEqual(['edge#2']);
+    expect(model.frames!.find(item => item.id === 'edge')!.cells).toEqual(['edge#1']);
     const link = model.links.find(item => item.attachments!.from.node === 'rt2' && item.attachments!.to.node === 'wan')!;
     expect(link.path).toBeDefined();
     expect(runs(link)).toBeLessThanOrEqual(3);
-    // The run crosses the sub-tier of the switch's cell, so it has a lane beside that cell, inside the frame.
-    const lanes = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === link.id);
-    expect(lanes.map(lane => lane.group)).toEqual(['site#1']);
-    expect(holds(frame.box, { ...lanes[0]!.bounds, y: frame.box.y, height: frame.box.height })).toBe(true);
+    expect(model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === link.id)).toEqual([]);
     for (const segment of link.path!.segments) for (const end of [segment.from, segment.to]) {
       expect(end.x).toBeGreaterThanOrEqual(frame.box.x - 1e-6);
       expect(end.x).toBeLessThanOrEqual(right(frame.box) + 1e-6);
@@ -147,16 +144,19 @@ describe('transit through a frame', () => {
     expect(groupConsumers(foreign, 'mid')).toContain(feed.id);
   }, 60000);
 
-  it('an own-frame lane pinned beside a neighbour frame is hosted in a cell of its own frame', async () => {
+  it('an own-frame lane pinned beside a neighbour frame is hosted in a cell of its own frame or its child', async () => {
     const model = await run('an-own-frame-lane-stands-beside-a-neighbour-frame');
     expect(model.diagnostics.filter(diagnostic => diagnostic.severity === 'error')).toEqual([]);
-    const [east, west] = [model.frames!.find(item => item.id === 'east')!, model.frames!.find(item => item.id === 'west')!];
-    const link = model.links.find(item => item.attachments!.from.node === 'w-gw' && item.attachments!.to.node === 'w-acc')!;
+    const [east, west, edge] = [model.frames!.find(item => item.id === 'east')!, model.frames!.find(item => item.id === 'west')!, model.frames!.find(item => item.id === 'edge')!];
+    // Ticket 28: `edge` is not a leaf here (`w-acc` links to `w-host` below it), so it pushes `w-dist` down. The link that
+    // skips the rank ends in `west` and crosses the cell of `edge`; the lane stands outside the `edge` frame and only the
+    // transit lanes of `west` make the `west` frame hold it.
+    const link = model.links.find(item => item.attachments!.from.node === 'w-gw' && item.attachments!.to.node === 'w-dist')!;
     const lanes = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === link.id);
     expect(lanes.length).toBeGreaterThan(0);
     for (const lane of lanes) {
-      // The lane's group is a cell of the owning frame, and that frame's box holds the lane.
-      expect(west.cells).toContain(lane.group);
+      // The lane's group is a cell of the owning frame or of its child frame, and the owning frame's box holds the lane.
+      expect([...west.cells, ...edge.cells]).toContain(lane.group);
       expect(holds(west.box, { ...lane.bounds, y: west.box.y, height: west.box.height })).toBe(true);
       // It stays outside the neighbour frame.
       expect(lane.bounds.x >= right(east.box) - 1e-6 || right(lane.bounds) <= east.box.x + 1e-6).toBe(true);
