@@ -14,6 +14,7 @@ import { nodeGap } from './skeleton-graph.js';
 import { groupShape } from './grid.js';
 import { rebuildBands, span, union, validateSkeletonBands } from './skeleton-geometry.js';
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
+import { blockedChords, freezeChords } from './frame-paths.js';
 import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, flankPair } from './flanks.js';
 import { type LaneFollow, lanesHoldTheirChild, rebuildLaneExtents, reseatLanes, validateLanes, transitTiers } from './lanes.js';
 import { rebuildFrames } from './frames.js';
@@ -714,6 +715,8 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     // (ADR-0015 rule 1) before any label is placed, because the growth moves whole bands down and
     // a label placed first would stay behind. The replay then rebuilds every claim the movement
     // touched, exactly as a reservation change does anywhere else in 7f.
+    // The last confirmation of a chord was the end of 7e: from here it is a wall (ticket 34).
+    freezeChords(draft);
     produceGroupLabelBands(draft);
     if (growTierGaps(draft)) {
       rebuildRegionGeometry(draft, undefined, undefined, true);
@@ -781,7 +784,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
       const held = { centring: centreViolations(draft), gaps: shortGaps(draft) };
       if (noNewItems(after.centring, held.centring) && noNewItems(after.gaps, held.gaps)
         && noNewItems(afterRoom.map(item => item.link), heldRoom.map(item => item.link))
-        && lanesHoldTheirChild(settled, followedLanes)) {
+        && lanesHoldTheirChild(settled, followedLanes) && blockedChords(settled).length === 0) {
         // Adopt the trial whole: `draft` is the object this transaction validates and returns, so it
         // takes the settled state rather than repeating the two producers on itself.
         Object.assign(draft, settled);
@@ -798,6 +801,12 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     else rebuildRowPaths(draft);
   }
   if (rule === 'bars') rebuildBarDrops(draft);
+  // A move 7f cannot refuse (a title band's room, a tier gap's rows) may still leave a body on a held chord.
+  // The chord is kept, its link is named, and the final gates judge it; it never falls back (ticket 34).
+  if (rule === 'bands') for (const id of blockedChords(draft)) {
+    draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'STRAIGHT_LINK_BLOCKED',
+      message: `A body stands on the straight link ${id} that 7f could not move.`, owners: [{ kind: 'link', id }] });
+  }
   draft.stage = rule;
   draft.runtime.stages.push({ stage: rule, durationMs: Date.now() - started });
   if (rule === 'bands') draft.freeze!.placement = clone(placement(draft));

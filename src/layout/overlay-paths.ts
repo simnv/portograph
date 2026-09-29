@@ -373,3 +373,20 @@ export function overlayPath(model: LayoutModel, link: LayoutLink, blockers?: Ove
     ({ from: { ...points[index]! }, to: { ...point }, owner: { ...link.owner } }));
   return { owner: { ...link.owner }, layer: 'overlay', fixed: false, ...pathStrokeWidth(link), segments };
 }
+
+/**
+ * The one straight segment an overlay link would draw between the two port faces, or `undefined`
+ * when the segment leaves a port inward, or a node body or a foreign pill stands on it. It is the
+ * overlay rule's own straight branch, read by the **straight** technique of a routed link inside
+ * one frame (ticket 34), so the two families cannot state different faces or different blockers.
+ */
+export function straightChord(model: LayoutModel, link: LayoutLink, blockers?: OverlayBlockers, geometryOnly = false): { from: Point; to: Point } | undefined {
+  const ends = link.attachments;
+  if (!ends) return undefined;
+  const from = findPort(model, ends.from), to = findPort(model, ends.to);
+  const one = from && model.nodes[ends.from.node] && overlayEnd(model.nodes[ends.from.node]!, from);
+  const two = to && model.nodes[ends.to.node] && overlayEnd(model.nodes[ends.to.node]!, to);
+  if (!one || !two) return undefined;
+  if (!geometryOnly && !straightBetween(one, two, blockers ?? overlayBlockers(model))) return undefined;
+  return { from: { ...one.face }, to: { ...two.face } };
+}

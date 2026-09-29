@@ -239,10 +239,13 @@ describe('corridor predicate', () => {
       rebuildNodeGeometry(m, ['b'], 'current');
     });
     const limit = 2 * Math.max(model.nodes.a!.bounds!.width, model.nodes.a!.bounds!.height, model.nodes.b!.bounds!.width, model.nodes.b!.bounds!.height);
-    expect(expectedRowPath(withGap(14.9), withGap(14.9).links[0]!)).toBeUndefined();
-    expect(expectedRowPath(withGap(15), withGap(15).links[0]!)?.segments).toHaveLength(1);
-    expect(expectedRowPath(withGap(limit - 0.5), withGap(limit - 0.5).links[0]!)?.segments).toHaveLength(1);
-    expect(expectedRowPath(withGap(limit), withGap(limit).links[0]!)).toBeUndefined();
+    // A pair inside one frame that the level rule declines takes the frame rule's chord instead (ticket 34),
+    // which is a declared straight segment between the two faces; the level rule's own path is not it.
+    const level = (gap: number) => { const m = withGap(gap), path = expectedRowPath(m, m.links[0]!); return path?.segments[0]?.straight === true ? undefined : path; };
+    expect(level(14.9)).toBeUndefined();
+    expect(level(15)?.segments).toHaveLength(1);
+    expect(level(limit - 0.5)?.segments).toHaveLength(1);
+    expect(level(limit)).toBeUndefined();
   });
   it('keeps an authored straight route and excludes group-link members', async () => {
     const pinned = rows(await placed(pairYaml.replace('[a.p, b.q]', '[a.p, b.q, {route: straight}]')));
@@ -250,7 +253,9 @@ describe('corridor predicate', () => {
     expect(pinned.links[0]!.path!.segments).toHaveLength(1);
     const unpinned = rows(await placed(tallYaml.replace('[a.p, b.q]', '[a.p, b.q, {route: straight}]')));
     expect(unpinned.links[0]!.technique).toBe('straight');
-    expect(unpinned.links[0]!.path).toBeUndefined();
+    // The level rule declines it (unequal heights); the frame rule draws the chord between the two faces (ticket 34).
+    expect(unpinned.links[0]!.path!.segments).toHaveLength(1);
+    expect(unpinned.links[0]!.path!.segments[0]!.straight).toBe(true);
     const grouped = rows(await placed(`portograph: 2
 groups: {g: {tier: 0}, h: {tier: 0}}
 nodes: {a: {group: g}, b: {group: g}, c: {group: h}, d: {group: h}}
@@ -365,8 +370,10 @@ links: [[a.r, b.q]]`));
     expect(offset(model)).toBe(offset(input));
     expect(model.nodes.a!.ports[0]!.anchor!.y - model.nodes.a!.bounds!.y).toBe(60);
     expect(model.nodes.b!.ports[0]!.anchor!.y).not.toBe(model.nodes.a!.ports[0]!.anchor!.y);
-    expect(model.links[0]!.path).toBeUndefined();
-    expect(model.links[0]!.technique).toBe('orthogonal');
+    // Not level, so the level rule declines; inside one frame the chord between the two faces answers (ticket 34).
+    expect(model.links[0]!.path!.segments).toHaveLength(1);
+    expect(model.links[0]!.path!.segments[0]!.straight).toBe(true);
+    expect(model.links[0]!.technique).toBe('straight');
   });
   it('levels both bundle endpoints without creating a member path and keeps an authored route', async () => {
     const model = rows(await placed(`portograph: 2
@@ -418,10 +425,12 @@ describe('row paths inside later transactions', () => {
     expect(shifted.segments[0]!.to).toEqual(anchorOf(moved, 'b', 0));
     expect(moved.links.filter(link => link.path).length).toBe(1);
     const far = withLayoutMutation(model, 'centre', draft => { moveNode(draft, 'b', 300, 0); });
-    expect(far.links[0]!.path).toBeUndefined();
-    expect(far.links[0]!.technique).toBe('orthogonal');
+    // Too long for the level rule, the pair takes the frame rule's chord between the two faces (ticket 34).
+    expect(far.links[0]!.path!.segments).toHaveLength(1);
+    expect(far.links[0]!.path!.segments[0]!.straight).toBe(true);
+    expect(far.links[0]!.technique).toBe('straight');
     const back = withLayoutMutation(far, 'bars', () => {});
-    expect(back.links[0]!.path).toBeUndefined();
+    expect(back.links[0]!.path!.segments[0]!.straight).toBe(true);
   });
   it('rejects a callback that contradicts or invents a claim and leaves the input unchanged', async () => {
     const model = await placed(anchoredPairYaml), before = serializeLayoutModel(model);

@@ -1,0 +1,30 @@
+# Expected: A ranked group of three ranks whose links stay inside its frame (ranked-groups ticket 34). `site#0`
+# holds three gateways, `site#1` three switches, `site#2` one access switch. Every link between adjacent ranks
+# is ONE straight segment between the two port faces, vertical where two faces line up and diagonal where they
+# do not, with no lane, no gap run and no stem; it adds nothing to the tier gaps. The peer link from West to
+# East leaves their facing sides and Middle stands on its chord, so that one link keeps the orthogonal route.
+# The uplinks from the ISP leave the frame and are unchanged.
+# Test-only input owned by ranked-groups ticket 34; test/pipeline/frame-straight.test.ts reads the layout.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, label: Site }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  gw1: { group: site, class: router, label: Gateway 1 }
+  gw2: { group: site, class: router, label: Gateway 2 }
+  gw3: { group: site, class: router, label: Gateway 3 }
+  west: { group: site, class: switch, label: West, ports: [{ name: p, side: right }] }
+  mid: { group: site, class: switch, label: Middle }
+  east: { group: site, class: switch, label: East, ports: [{ name: q, side: left }] }
+  access: { group: site, class: switch, label: Access }
+links:
+  - [isp, gw1]
+  - [isp, gw2]
+  - [isp, gw3]
+  - [gw1, west]
+  - [gw1, mid]
+  - [gw2, mid]
+  - [gw3, east]
+  - [mid, access]
+  - [west.p, east.q]
