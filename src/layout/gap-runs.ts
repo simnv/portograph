@@ -70,8 +70,11 @@ export interface GapRun {
   crossers: string[];
 }
 
-/** One rectangle stage 8 must respect, with the links a rule has already let through it. */
-interface Blocker { bounds: Rect; owners: ReadonlySet<string>; node?: string }
+/**
+ * One rectangle stage 8 must respect, with the links a rule has already let through it. `rows` marks a
+ * band that only a horizontal run is kept out of: a column crosses it (ticket 31).
+ */
+interface Blocker { bounds: Rect; owners: ReadonlySet<string>; node?: string; rows?: true }
 
 /** What one tier gap allocated, and whether more room could have changed the answer. */
 interface GapAllocation {
@@ -381,9 +384,10 @@ function reservedRuns(link: LayoutLink): PathSegment[] {
 /**
  * A stem that placement nested (ticket 31): its port turns deeper than the plain reach, so its tip
  * stands on a row of its own, and every port of that side that shares its port shares the tip.
- * `consumers` are the links of the port: the tip belongs to each of them.
+ * `consumers` are the links of the port: the tip belongs to each of them. `from` and `to` bound the x
+ * the tip row's leg travels: the tip column, the far port of each consumer and the lanes it owns.
  */
-interface NestedTip { anchor: Point; tip: Point; side: 'top' | 'bottom'; consumers: ReadonlySet<string> }
+interface NestedTip { anchor: Point; tip: Point; side: 'top' | 'bottom'; consumers: ReadonlySet<string>; from: number; to: number }
 
 function nestedTips(model: LayoutModel, cache: StemCache): NestedTip[] {
   const result = new Map<string, NestedTip>();
@@ -396,10 +400,16 @@ function nestedTips(model: LayoutModel, cache: StemCache): NestedTip[] {
       const depth = stemPlan(model, port, cache).depth;
       if (depth <= stemReach(model, model.nodes[link.attachments![end].node]!) + EPS) continue;
       const at = `${port.ref.node}|${port.side}|${port.anchor.x}`;
+      const other = findPort(model, link.attachments![end === 'from' ? 'to' : 'from'])?.anchor;
+      const xs = [port.anchor.x, ...(other ? [other.x] : []),
+        ...model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === link.id).map(lane => lane.x)];
       const known = result.get(at);
-      if (known) (known.consumers as Set<string>).add(link.id);
-      else result.set(at, { side: port.side, anchor: port.anchor, consumers: new Set([link.id]),
-        tip: { x: port.anchor.x, y: port.anchor.y + OUTWARD[port.side] * depth } });
+      if (known) {
+        (known.consumers as Set<string>).add(link.id);
+        known.from = Math.min(known.from, ...xs);
+        known.to = Math.max(known.to, ...xs);
+      } else result.set(at, { side: port.side, anchor: port.anchor, consumers: new Set([link.id]),
+        tip: { x: port.anchor.x, y: port.anchor.y + OUTWARD[port.side] * depth }, from: Math.min(...xs), to: Math.max(...xs) });
     }
   }
   return [...result.values()];
@@ -485,11 +495,14 @@ function blockers(model: LayoutModel): Blocker[] {
     }
   }
   // A nested tip is a checkpoint stage 8 must reach, and a run keeps one run clearance off it (ticket 31):
-  // closer, the run's cover lies on the tip and the tip has no pocket. The band is the square of that
-  // clearance about the tip; the links of the port are exempt, their own way in is `reaches`.
+  // closer, the run's cover lies on the tip and the tip has no pocket. The band is that clearance either
+  // side of the tip row, across the whole travel of the leg that runs along it (the tip column, the far
+  // port and the lanes of its links); a column may cross it. The links of the port are exempt, their own
+  // way in is `reaches`.
   const clearance = nudgingDistance(model);
-  for (const { tip, consumers } of nestedTips(model, cache)) {
-    result.push({ owners: consumers, bounds: { x: tip.x - clearance, y: tip.y - clearance, width: 2 * clearance, height: 2 * clearance } });
+  for (const { tip, consumers, from, to } of nestedTips(model, cache)) {
+    result.push({ owners: consumers, rows: true,
+      bounds: { x: from - clearance, y: tip.y - clearance, width: to - from + 2 * clearance, height: 2 * clearance } });
   }
   return result;
 }
@@ -512,6 +525,7 @@ function firstBlock(list: readonly Blocker[], link: LayoutLink, line: { from: Po
   let found: Blocker | undefined;
   for (const item of list) {
     if (item.owners.has(link.id) || (item.node !== undefined && attached.has(item.node))) continue;
+    if (item.rows && Math.abs(line.from.y - line.to.y) > EPS) continue;
     if (!(high.x > item.bounds.x + EPS && low.x < right(item.bounds) - EPS
       && high.y > item.bounds.y + EPS && low.y < bottom(item.bounds) - EPS)) continue;
     if (!found || bottom(item.bounds) < bottom(found.bounds)) found = item;

@@ -16,7 +16,7 @@ const CLEARANCE = 11.5;
 const FIXTURE = 'a-nested-tip-row-holds-no-allocated-row';
 
 interface Row { link: string; y: number; x0: number; x1: number }
-interface Tip { node: string; x: number; y: number; links: Set<string> }
+interface Tip { node: string; x: number; x0: number; x1: number; y: number; links: Set<string> }
 
 /** Every allocated row (a horizontal run segment) of every gap, with the link that owns it. */
 function allocatedRows(model: LayoutModel): Row[] {
@@ -43,7 +43,14 @@ function nestedTips(model: LayoutModel): Tip[] {
       const links = new Set(model.links
         .filter(link => link.attachments && [link.attachments.from, link.attachments.to].some(ref => ref.node === id && portId(ref) === key))
         .map(link => link.id));
-      found.push({ node: id, x: port.anchor.x, y: port.anchor.y + (port.side === 'top' ? -depth : depth), links });
+      // The leg along the tip row travels from the tip column to the far port of each link, past its lanes.
+      const xs = [port.anchor.x, ...model.links.filter(link => links.has(link.id)).flatMap(link => {
+        const far = [link.attachments!.from, link.attachments!.to].filter(ref => !(ref.node === id && portId(ref) === key));
+        return [...far.map(ref => model.nodes[ref.node]!.ports.find(item => portId(item.ref) === portId(ref))?.anchor?.x ?? port.anchor!.x),
+          ...model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === link.id).map(lane => lane.x)];
+      })];
+      found.push({ node: id, x: port.anchor.x, x0: Math.min(...xs), x1: Math.max(...xs),
+        y: port.anchor.y + (port.side === 'top' ? -depth : depth), links });
     }
   }
   return found;
@@ -57,10 +64,50 @@ it('keeps every allocated row one run clearance off every nested stem tip, and r
   expect(found.length).toBeGreaterThan(0);
   for (const tip of tips) {
     for (const row of found) {
-      if (tip.links.has(row.link) || tip.x < row.x0 - CLEARANCE || tip.x > row.x1 + CLEARANCE) continue;
-      expect(Math.abs(row.y - tip.y), `${row.link} row at ${row.y} against the tip of ${tip.node} at ${tip.y}`).toBeGreaterThanOrEqual(CLEARANCE - 1e-9);
+      if (tip.links.has(row.link) || row.x1 < tip.x0 - CLEARANCE || row.x0 > tip.x1 + CLEARANCE) continue;
+      expect(Math.abs(row.y - tip.y), `${row.link} row at ${row.y} against the tip of ${tip.node} at ${tip.y}`).toBeGreaterThanOrEqual(CLEARANCE - 1e-6);
     }
   }
+});
+
+it('grows the gap for the row a nested tip band denies, allocates that row and keeps every path on the canvas (ranked-groups ticket 31)', async () => {
+  // Through the published model. The near server nests three stems, and the tip band of the deepest one
+  // spans the leg that runs along it. The one transit row of the last gap must seat above that band, so
+  // the gap grows by the seat: a row left unseated routes free, next to the tip, or the router drops a link.
+  const pipeline = bands(bundles(bars(centre(flanks(lanes(rows(await placed(read(FIXTURE)))))))));
+  const seated = allocatedRows(pipeline);
+  expect(seated.length, 'the gap seats its row').toBeGreaterThan(0);
   const routed = await layout(parse(read(FIXTURE)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  expect(routed.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN').map(item => item.message))
+    .toEqual([expect.stringMatching(/The tier gap above tier 2 grew [\d.]+ px to the rows it must seat/)]);
   expect(routed.removedLinks ?? []).toEqual([]);
+  // Each published path runs along its allocated row, not along a row the router found.
+  for (const row of seated) {
+    const path = routed.links.find(link => link.id === row.link)!.path!.segments;
+    expect(path.some(segment => Math.abs(segment.from.y - row.y) < 1e-6 && Math.abs(segment.to.y - row.y) < 1e-6
+      && Math.min(segment.from.x, segment.to.x) <= row.x0 + 1e-6 && Math.max(segment.from.x, segment.to.x) >= row.x1 - 1e-6), `${row.link} runs along its row`).toBe(true);
+  }
+  // No foreign horizontal stands within one run clearance of a nested tip row where it passes the tip column.
+  const cover = nestedTips(routed);
+  for (const link of routed.links) {
+    for (const segment of link.path?.segments ?? []) {
+      if (Math.abs(segment.from.y - segment.to.y) > 1e-9) continue;
+      for (const tip of cover) {
+        if (tip.links.has(link.id) || Math.min(segment.from.x, segment.to.x) > tip.x + CLEARANCE || Math.max(segment.from.x, segment.to.x) < tip.x - CLEARANCE) continue;
+        expect(Math.abs(segment.from.y - tip.y), `${link.id} at ${segment.from.y} against the tip of ${tip.node} at ${tip.y}`).toBeGreaterThanOrEqual(CLEARANCE - 1e-6);
+      }
+    }
+  }
+  // No path leaves the canvas.
+  const canvas = routed.canvas!;
+  for (const link of routed.links) {
+    for (const segment of link.path?.segments ?? []) {
+      for (const point of [segment.from, segment.to]) {
+        expect(point.x, `${link.id} x`).toBeGreaterThanOrEqual(canvas.x);
+        expect(point.x, `${link.id} x`).toBeLessThanOrEqual(canvas.x + canvas.width);
+        expect(point.y, `${link.id} y`).toBeGreaterThanOrEqual(canvas.y);
+        expect(point.y, `${link.id} y`).toBeLessThanOrEqual(canvas.y + canvas.height);
+      }
+    }
+  }
 }, 120000);

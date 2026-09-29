@@ -1,9 +1,9 @@
-# Expected: Six access switches link to two core routers above them and to two servers below them, and two
-# links run from a core router straight to a server of the far column. The far server nests its stems, so
-# one of its stem tips lies inside the gap the transit rows use. On main an allocated row stood 10.5 px
-# from that tip, inside the stem obstacle, and the router dropped the checkpoint and the link (ranked-groups
-# ticket 31). The gap now grows so that no allocated row stands within one run clearance of a nested tip
-# row, and every link routes.
+# Expected: Six access switches link to two core routers above them and to two servers below them, and one
+# core router links straight to the near server. The near server nests three stems, so their tips lie
+# inside the gap the transit rows use. On main an allocated row stood inside the band of one run clearance
+# about a nested tip row, and the router dropped a checkpoint and its link (ranked-groups ticket 31). The
+# gap now grows so that every allocated row keeps one run clearance off every nested tip row, over the whole
+# travel of the leg that runs along it, and every link routes.
 # Test-only input owned by ranked-groups ticket 31.
 portograph: 2
 groups:
@@ -29,11 +29,10 @@ links:
   - [src1, acc3]
   - [src0, acc4]
   - [src1, acc5]
-  - [acc0, snk0]
-  - [acc1, snk1]
+  - [acc0, snk1]
+  - [acc1, snk0]
   - [acc2, snk0]
   - [acc3, snk1]
   - [acc4, snk0]
-  - [acc5, snk1]
-  - [src0, snk1]
+  - [acc5, snk0]
   - [src1, snk0]
