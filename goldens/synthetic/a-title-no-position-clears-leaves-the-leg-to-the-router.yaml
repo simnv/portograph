@@ -1,4 +1,5 @@
-# Expected: three links stay with the router because no title position on its edge clears their legs (ticket 62). The shape is
+# Expected: two links stay with the router because no title position on its edge clears their legs and no lane-feasible widening of the group
+# frees one (ticket 62; since ticket 66 the leg of link-2, whose group widens lane-feasibly, is planned and the other two stay soft). The shape is
 # `a-claim-lies-on-a-cover-edge` (three transit links, six tiers) with the titles of tiers 1, 3 and 4 made wider. A title is nudged along its
 # edge to clear the legs of the ports under it (ADR-0011's nudging distance); these three are wide enough that no position on the edge
 # clears the leg of `link-2`, `link-8` and `link-11`, so the row plan declines each as `leg-blocked` (`TIER_GAP_PART_RESIDUAL`) and the

@@ -13,19 +13,19 @@ import { avoidAssets, spawnAvoidWorker } from './fixture.js';
  * completed cover); ticket 25 made it route, and ticket 50 (the tier-gap plan) reserves every part of that
  * fixture, so no link of it reaches the router. The mechanism does not depend on the fixture: the real router
  * still answers every request here, and the answer for one routed link is forged to end 30 px beside its port,
- * which stitching rejects with the same reason as before. The link is `link-2` of the fixture whose plan
+ * which stitching rejects with the same reason as before. The link is `link-8` of the fixture (ticket 66: `link-2` is planned now, two links stay residual) whose plan
  * declines three links as residual (`leg-blocked`, a leg under a group label), so several ownership batches
  * remain. The skipped-checkpoint case is forged in `route.test.ts`.
  */
 const fixture = readFileSync(new URL('../../goldens/synthetic/a-title-no-position-clears-leaves-the-leg-to-the-router.yaml', import.meta.url), 'utf8');
-const REJECTED = 'link-2';
-const REASON = /Routed gap on link-2 does not meet its reserved endpoints/;
+const REJECTED = 'link-8';
+const REASON = /Routed gap on link-8 does not meet its reserved endpoints/;
 
 /** The forged answer: every checkpoint is honoured, but the route ends 30 px beside the port it must reach. */
 const forged = (id: string, points: Point[]): Point[] => id === `${REJECTED}#0`
   ? [...points, { x: points.at(-1)!.x + 30, y: points.at(-1)!.y }] : points;
 
-/** The real router with link-2's answer forged, and a record of every answer it gave: one map of connector to points per request, in order. */
+/** The real router with link-8's answer forged, and a record of every answer it gave: one map of connector to points per request, in order. */
 function recording(answers: Map<string, Point[]>[], requests: string[][] = []): CreateRouteAttempt {
   return () => {
     const worker = spawnAvoidWorker(avoidAssets.workerUrl);
@@ -79,7 +79,7 @@ describe('a route that skips a required checkpoint removes its link and not the 
     }
     const rejected = found.find(item => linkOf(item) === REJECTED)!;
     expect(rejected.code).toBe('ROUTE_GAP_REJECTED');
-    expect(rejected.message).toMatch(/rejected \(Routed gap on link-2 does not meet its reserved endpoints\)/);
+    expect(rejected.message).toMatch(/rejected \(Routed gap on link-8 does not meet its reserved endpoints\)/);
 
     // The score report counts them beside the other counters, and the sheet still renders and restores.
     expect(score(model).snapshot.counters.removedLinks).toBe(removed.length);

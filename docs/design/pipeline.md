@@ -818,6 +818,16 @@ bands' — reads lane x as that feed's authoritative x and chases a corridor tha
 therefore reserves no room: the gap keeps the height this stage gave it, and a move whose new row
 that height cannot hold is refused (§ 7a states the whole condition).
 
+**A skewed leg under a title widens its group (ticket 66, Q103).** A title stands clear of the legs of the ports under it (ticket 62). Where no
+position on its edge clears them, the legs are hard obstacles like a straight feed's: the title is placed past them and the group widens by
+the title plus the clearances beside the port, on the growth path a straight feed takes, wherever `growthPlan` finds the widening lane-feasible;
+where it does not, the title keeps its old place and the links go to the router as `leg-blocked`. A skewed leg is a product of centring, so it is
+unknown before centring runs and cannot be reserved at `reserveInitialSpace` (measured: reserving room beside every one-node node with a port on the
+title edge widened 39 of 178 sheets, 1513 px in all, against 8 sheets and 242 px for the widening on demand, and added a G6 finding). The
+widening on demand needs one growth pass, and centring has spent the shared eight-pass budget on every measured sheet that has such a leg. Each title
+therefore has `LEG_PASSES_PER_TITLE` (1) extra pass outside the shared budget; a widening past it is refused and reported as
+`GROUP_LABEL_LEG_ALLOWANCE_EXHAUSTED`, not as budget exhaustion.
+
 **A tier gap grows to the height of its plan (ADR-0021).** 7f places its group labels, then reads
 the plan of each gap, then places its group labels again. The middle step is the reservation, and it
 needs the labels in front of it: a group label is an obstacle in the tier gap beside it, so a gap

@@ -35,9 +35,9 @@ describe('overlay-weighted order', () => {
     expect(errors(model)).toEqual([]);
     // ELK stands P left of Q; the overlay links of q0 and p0 reach the tiers below over the bodies of tier 1.
     expect(left(model, 'Q')).toBeLessThan(left(model, 'P'));
-    // One straight link of four without the rule; three of four with it.
+    // One straight link of four without the rule; three of four with it, and four of four since ticket 66 (a hard leg under a title widens its group).
     expect(overlays(model)).toHaveLength(4);
-    expect(straight(model)).toBe(3);
+    expect(straight(model)).toBe(4);
     // The score counts one crossing with the rule and one without it: the swap does not raise it.
     expect(score(model).snapshot.metrics.crossings.count).toBe(1);
     expect(refusals(model)).toEqual([]);
