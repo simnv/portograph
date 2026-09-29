@@ -50,7 +50,7 @@ import { orderedGroupIds, orderedNodeIds } from '../model/model.js';
 import { iconKey, iconPath } from '../profiles/network/icons.js';
 import type { ThemeMode } from '../profiles/network/theme.js';
 import {
-  LEGEND_DEFAULT_CLASS, NETWORK_PORT_STATUS, NETWORK_THEME,
+  LEGEND_DEFAULT_CLASS, NETWORK_LINK_CLASSES, NETWORK_PORT_STATUS, NETWORK_THEME,
   linkClassStyle, nodeClassPaint, nodeClassStyle, portRolePaint, portRoleStyle,
 } from '../profiles/network/theme.js';
 import { effectiveLayer, validate } from '../score/model.js';
@@ -1091,6 +1091,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     const authored = linkClass(link);
     const klass = linkClassStyle(authored);
     const overlay = effectiveLayer(link) === 'overlay';
+    // An overlay link of a class the theme names (`signal`) states that class's stroke and dash, as the SVG's
+    // `.link-line.<class>` rule beats `.overlay-line`; sync, flow and unknown classes keep the overlay stroke.
+    const themed = authored !== undefined && NETWORK_LINK_CLASSES.some(([key]) => key === authored);
     const runs = polylines(link.path!.segments);
     const from = link.attachments?.from, to = link.attachments?.to;
     const head = from ? terminal('exit', from) : undefined;
@@ -1141,10 +1144,10 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         edgeStyle: square ? 'orthogonalEdgeStyle' : 'none',
         jettySize: square ? 0 : undefined,
         rounded: 0, html: 1, endArrow: 'none', startArrow: 'none',
-        strokeColor: dual(of => overlay ? NETWORK_THEME[of].overlay.stroke : klass.strokes[of]),
+        strokeColor: dual(of => overlay && !themed ? NETWORK_THEME[of].overlay.stroke : klass.strokes[of]),
         strokeWidth: linkStrokeWidth(link),
         opacity: overlay ? Math.round(paint.overlay.opacity * 100) : undefined,
-        ...dashEntries(overlay ? undefined : klass.dash),
+        ...dashEntries(klass.dash),
         ...(source?.style ?? {}),
         ...(target?.style ?? {}),
         ...(carried ? labelStyle(carried.label, labelPoint(carried.label, link), 'edge') : {}),

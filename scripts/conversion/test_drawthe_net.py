@@ -178,6 +178,20 @@ class ConversionTests(unittest.TestCase):
         result, _ = converter().convert(doc)
         self.assertEqual([link[2]['class'] for link in result['links']], ['dashed', 'physical'])
 
+    def test_dashed_link_at_a_signal_source_is_a_signal_and_other_dashed_links_stay_dashed(self):
+        doc = source()
+        doc['icons'] = {'sat': {'x': 0, 'y': 0, 'icon': 'spacerouter'}, 'mast': {'x': 1, 'y': 0, 'icon': 'antenna'},
+                        'edge': {'x': 0, 'y': 3, 'icon': 'router'}, 'mpls': {'x': 2, 'y': 3, 'icon': 'cloud'}}
+        doc['connections'] = [
+            {'stroke': 'black', 'strokeDashArray': [3, 3], 'endpoints': ['sat', 'edge']},
+            {'stroke': 'black', 'strokeDashArray': [3, 3], 'endpoints': ['mast', 'edge']},
+            {'stroke': 'black', 'strokeDashArray': [3, 3], 'endpoints': ['edge', 'mpls']},
+            {'stroke': 'black', 'endpoints': ['sat', 'mpls']},
+        ]
+        result, report = converter().convert(doc)
+        self.assertEqual([link[2]['class'] for link in result['links']], ['signal', 'signal', 'dashed', 'physical'])
+        self.assertEqual(report['classes'], {'signal': 2, 'dashed': 1, 'physical': 1})
+
     def nested(self, depth):
         """Boxes nested `depth` levels: g0 outermost, each next one inside the previous."""
         doc = source()

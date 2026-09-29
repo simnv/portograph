@@ -10,7 +10,7 @@ import { flanks } from '../../src/layout/flanks.js';
 import { lanes } from '../../src/layout/lanes.js';
 import { linkLabels } from '../../src/layout/link-labels.js';
 import { rows } from '../../src/layout/rows.js';
-import { NETWORK_THEME, portRolePaint, portRoleStyle } from '../../src/profiles/network/theme.js';
+import { NETWORK_THEME, linkClassStyle, portRolePaint, portRoleStyle } from '../../src/profiles/network/theme.js';
 import { route } from '../../src/route/index.js';
 import { effectiveLayer } from '../../src/score/model.js';
 import { OVERLAY_ENDPOINT_RADIUS } from '../../src/theme/geometry.js';
@@ -1602,6 +1602,24 @@ describe('direct lines', () => {
         expect(Math.max(before.x, point.x) > pill.x && Math.min(before.x, point.x) < pill.x + pill.width
           && Math.max(before.y, point.y) > pill.y && Math.min(before.y, point.y) < pill.y + pill.height).toBe(false);
       }
+    }
+  }, 60000);
+});
+
+describe('signal links', () => {
+  it('export dashed with the signal stroke and the overlay opacity, where sync and flow keep the overlay stroke (ticket 73)', async () => {
+    const model = await pipeline(fixture('a-dashed-signal-feed-is-one-straight-segment'));
+    const all = cells(drawio(model));
+    const signal = linkClassStyle('signal');
+    const edges = model.links.filter(link => model.document.links[link.sourceIndex]!.class === 'signal');
+    expect(edges).toHaveLength(4);
+    for (const link of edges) {
+      const style = all.get(id('link', link.id))!.style;
+      expect([style['dashed'], style['dashPattern']]).toEqual(['1', signal.dash]);
+      expect(style['dashPattern']).toBe('4 4');
+      expect(style['strokeColor']).toContain(signal.strokes.light);
+      expect(style['strokeColor']).not.toContain(NETWORK_THEME.light.overlay.stroke);
+      expect(style['opacity']).toBeDefined();
     }
   }, 60000);
 });

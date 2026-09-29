@@ -48,6 +48,8 @@ describe('the default theme is the designed sheet', () => {
     for (const [at, selector, declarations] of rules(handoff)) {
       const swap = replaced[at]?.[selector];
       out.push(swap === undefined ? [at, selector, declarations] : rule(at, selector, swap));
+      // Amendment 6 (ticket 73, Q104): the `signal` link class states the `dashed` paint, in every mode.
+      if (selector === '.link-line.dashed') out.push(rule(at, '.link-line.signal', declarations.join(';')));
       if (at !== PRINT) continue;
       // Amendment 1: after each class glyph rule, the class pill and its text; after each filled
       // role's pill, its text.
@@ -62,11 +64,11 @@ describe('the default theme is the designed sheet', () => {
   it('emits the delivered sheet with the recorded amendments, as one ordered sequence', () => {
     const actual = rules(themeCss()), expected = amendedHandoff();
     expect(actual).toEqual(expected);
-    // The amendments are the whole difference: 15 rules replaced and 13 added against the delivered file.
+    // The amendments are the whole difference: 15 rules replaced and 16 added against the delivered file.
     const delivered = rules(handoff);
     const same = actual.filter(item => delivered.some(other => other[0] === item[0] && other[1] === item[1] && other[2].join(';') === item[2].join(';')));
-    expect(actual.length - same.length).toBe(28);
-    expect(actual.length - delivered.length).toBe(13);
+    expect(actual.length - same.length).toBe(31);
+    expect(actual.length - delivered.length).toBe(16);
   });
 
   it('states paint only: no geometry property in any mode', () => {

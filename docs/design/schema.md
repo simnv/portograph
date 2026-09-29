@@ -137,7 +137,7 @@ Options:
 
 | Key | Type | Notes |
 |---|---|---|
-| `class` | string | CSS class; decides **family** via the profile (`physical` → routed; `flow`, `sync` → overlay) |
+| `class` | string | CSS class; decides **family** via the profile (`physical` → routed; `flow`, `sync`, `signal` → overlay) |
 | `label` | string | |
 | `route` | `orthogonal` \| `straight` \| `bundle` \| `merge` \| `overlay` \| `stub` \| `group-link` | override. `merge` is selected first and validated at model time after bundle grouping; it requires membership in a bundle of ≥ 2. `group-link` requires group endpoints. M1: `stub` and `group-link` warn and fall back to routed |
 | `weight` | number | line-weight multiplier |
