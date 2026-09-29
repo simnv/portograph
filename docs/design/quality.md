@@ -174,6 +174,8 @@ command, the time is simply not a promise.
     not the quality of the layout.
 11. No link is removed. `removedLinks` is 0, or each removed link is named in the diagnostics with its
     reason. A drawing that lacks a link the input declares is not a correct drawing.
+    A part of a tier gap the plan declines is not a removal: it is named `TIER_GAP_PART_RESIDUAL` (or
+    `TIER_GAP_ROW_CYCLE`) and published with its gate findings, a G6 pair at worst (ADR-0021).
 12. A routed link inside one frame (including a group-link member) is one straight segment where
     its chord clears every body. It is orthogonal only where a body stands on the chord.
 

@@ -1,6 +1,6 @@
 # Tier-gap row plan (design)
 
-Status: proposal, 2026-09-29, revised after review. No code changed. Replaces the tier-gap
+Status: implemented, 2026-09-29 (Section 5 tickets 1 to 4 are done: tickets 48, 50, 51 and 52; ADR-0021). Replaces the tier-gap
 allocation of tickets 25, 31, 39, 42 and 43 with one rule that orders every part of a tier gap in
 placement (7f).
 
@@ -333,13 +333,16 @@ placement, as `allocateGapRuns` is today, and a part that then does not fit is r
   is an **output of the plan**: the plan record marks it, stage 8 exempts the overlap through that
   record, and nothing is written to `link.sharedRuns` (`gap-runs.ts` writes no model geometry by
   contract, `gap-runs.ts:22-24`; item 5 of Section 1 stays true).
-- **Unnecessary once every part of a gap is planned:** `gapNeeds` and the cover grants
-  (`plan.ts:422-454`, tickets 21 and 37), `crossingParts` and `crossedStems` (`index.ts:56-63`,
-  `plan.ts:549-563`, tickets 22 and 30), `holdsOf`, `heldRuns`, `allocateWithHolds`, `rowOrder`,
-  `allocateGap` with its `owed`, `reaches`, `covered` and `declined` sets, `stemShortfall`, the tip
-  bands of `blockers()` (`gap-runs.ts:647-667`), the probe of `growTierGaps`. They remain in use
-  only for residual parts. Ticket 37 closes by deletion, not by a metric review, when the corpus
-  shows no residual part in any tier gap (Section 5, ticket 4).
+- **Unnecessary once every part of a gap is planned (deleted by ticket 52, on the use counts of
+  its ticket file):** the chord grant of `gapNeeds` (ticket 37), `crossingParts`, `crossedStems`
+  and the stems passable to a batchmate (tickets 22 and 30), `holdsOf`, `heldRuns`,
+  `allocateWithHolds`, `rowOrder`, `allocateGap` with its `owed`, `reaches`, `covered` and
+  `declined` sets, the tip bands of `blockers()`, `tierGapRoom`, the probe of `growTierGaps`
+  (`stemShortfall` went with ticket 50). None had a use at stage 8 on the corpus, and deleting them
+  changed no path. **Kept, for residual parts:** the completed-cover grant by a leg or an L (ticket
+  21; 7 corpus inputs), the claimed-straight-piece grant (ticket 14; 2 inputs), the crossers of
+  the planned rows and the grant of a planned vertical's cover (scoped to the vertical, ticket 52).
+  Ticket 37 is closed by deletion: no cover was granted by the chord alone.
 - **Diagnostics that remain:** `TIER_GAP_GROWN` (now with the part that set `H`),
   `ROUTE_CHECKPOINT_SKIPPED` and `ROUTE_GAP_REJECTED` for residual links, ticket 46's removal of a
   retracing route. **New:** `TIER_GAP_PART_RESIDUAL` with its reason, `TIER_GAP_PART_UNFIT`,
@@ -374,12 +377,12 @@ headroom`), `interleaved-gap-links.test.ts` (the mid-row assertions), `nested-ti
 
 **Tickets** (dependency order; each with a fixture-sized acceptance test):
 
-1. **The plan as a pure module.** `src/layout/gap-plan.ts`: parts (Section 1), constraints, Z
+1. **The plan as a pure module** (done, ticket 48). `src/layout/gap-plan.ts`: parts (Section 1), constraints, Z
    split and order (Section 2), formula (Section 3); no caller. Acceptance: a unit test that builds
    the four shapes of 2.4 from their placed models and asserts the rows, the middle drops, one
    crossing per forced pair and none else, and `H`. New synthetic fixture
    `a-tier-gap-plan-orders-every-part.yaml` (the v5-4-0 shape, tier and class only).
-2. **7f grows by the formula and stage 8 consumes the plan, together.** `growTierGaps` reads `H`;
+2. **7f grows by the formula and stage 8 consumes the plan, together** (done, ticket 50). `growTierGaps` reads `H`;
    the probe, `tierGapRoom`'s seating measure, `stemShortfall` and the `reach` headroom go.
    `allocateGapRuns` returns the plan's parts; `planRoute` reserves them; the old holds are off the
    path. The two ship together: the plan alone disagrees with the old growth (105 px asked against
@@ -387,12 +390,12 @@ headroom`), `interleaved-gap-links.test.ts` (the mid-row assertions), `nested-ti
    would be residual inside a gap full of reserved legs. Gate: the sweep's removal count does not
    rise. Acceptance: the ticket 41 and 43 fixtures route whole with `plan.batches` empty; the
    ticket 36 fixture grows 45 px and routes whole; a second `bands` pass grows nothing.
-3. **Residual parts and diagnostics.** `TIER_GAP_PART_RESIDUAL`, `TIER_GAP_PART_UNFIT`,
+3. **Residual parts and diagnostics** (done, ticket 51). `TIER_GAP_PART_RESIDUAL`, `TIER_GAP_PART_UNFIT`,
    `TIER_GAP_ROW_CYCLE`, the granted leg cover, the shared leg in the plan record, ticket 46's
    removal. Acceptance: a synthetic with two nodes whose facing ports stand 9 px apart across a
    gap completes, names the residual part, publishes it with one G6 and removes nothing; a
    two-links-one-port fixture passes G4.
-4. **Deletion, sweep, docs.** Delete the code Section 4 lists; `pipeline.md` § 7a and § 7f and
+4. **Deletion, sweep, docs** (done, ticket 52). Delete the code Section 4 lists; `pipeline.md` § 7a and § 7f and
    ADR-0015 rewritten to this spec; `CONTEXT.md` vocabulary. Acceptance: the 72-sheet sweep gains
    no removal on any sheet (the coordinator runs it); the NTP sheet as below.
 

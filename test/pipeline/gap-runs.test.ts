@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
-import { allocateGapRuns, bands, bars, bundles, centre, flanks, growTierGaps, lanes, linkLabels, planRoute, route, rows, score, tierGapRoom } from '../../src/index.js';
+import { allocateGapRuns, bands, bars, bundles, centre, flanks, growTierGaps, lanes, linkLabels, planRoute, route, rows, score } from '../../src/index.js';
 import type { LayoutModel, PathSegment } from '../../src/model/layout.js';
 import { ownedLanes } from '../../src/route/paths.js';
 import { produceGroupLabelBands, nudgingDistance, routedStroke, stemReach } from '../../src/layout/bands.js';
@@ -107,13 +107,11 @@ it('reserves the columns of a gap whose runs keep one x and leaves the golden wh
   const runs = allocateGapRuns(before);
   expect(runs.map(run => run.link)).toEqual(['link-1', 'link-2']);
   for (const run of runs) {
-    expect(run.planned).toBe(true);
     expect(run.segments).toHaveLength(1);
     expect(run.segments.every(vertical)).toBe(true);
   }
   expect(planRoute(before).obstacles.some(item => item.id.startsWith('gap:'))).toBe(false);
-  // The plan seats no row and residual rows are none, so 7f grows nothing and the approved geometry stands.
-  for (const room of tierGapRoom(before)) expect(room.rows).toBe(0);
+  // The plan seats no row, so 7f grows nothing and the approved geometry stands.
   for (const { plan } of tierGapPlans(before)) expect(plan.growth).toBe(0);
   expect(growTierGaps(structuredClone(before) as LayoutModel)).toBe(false);
 }, 60000);
@@ -192,12 +190,10 @@ it('leaves out the run a group label covers and seats the rest', async () => {
   const plan = tierGapPlans(model).find(entry => entry.gap.above === 1 && entry.gap.below === 2)!.plan;
   expect(plan.parts.map(part => part.link).sort()).toEqual(['link-2', 'link-3', 'link-4']);
   expect(plan.residual.map(item => `${item.link}:${item.reason}`)).toEqual(['link-1:leg-blocked']);
-  const room = tierGapRoom(model).find(entry => entry.above === 1 && entry.below === 2);
-  expect([room?.rows, room?.seated, room?.refuses]).toEqual([1, 0, true]);
 
   const runs = allocateGapRuns(model);
   const inside = runs.filter(run => run.segments.some(segment => Math.max(segment.from.y, segment.to.y) > gap.low && Math.min(segment.from.y, segment.to.y) < gap.high));
-  expect(inside.filter(run => run.planned).map(run => run.link).sort()).toEqual(['link-2', 'link-3', 'link-4']);
+  expect(inside.map(run => run.link).sort()).toEqual(['link-2', 'link-3', 'link-4']);
 
   // The covered run keeps the route it has today, and it crosses every run the gap did reserve.
   for (const run of inside) expect(run.crossers).toContain('link-1');

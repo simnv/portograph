@@ -1,7 +1,8 @@
 import type { LayoutModel } from '../model/layout.js';
 import { EPS } from '../score/geometry.js';
 import { alignLinkedGroupGrid, cantonTiers, replanGroupLabels } from './bands.js';
-import { tierGapPlans, type ResidualReason } from './gap-plan.js';
+import { tierGapPlans, type GapPlan, type ResidualReason } from './gap-plan.js';
+import type { TierGap } from './gap-runs.js';
 import { rebuildLaneExtents } from './lanes.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { placementWarning, rebuildRegions } from './regions.js';
@@ -19,8 +20,8 @@ import { moveGroup } from './skeleton-geometry.js';
  *
  * A gap short of what its seating needs grows by exactly the shortfall, and every band below it
  * moves down by the running total. Nothing moves horizontally, nothing moves up, and a gap whose
- * rows already fit grows by nothing. The allocation in `gap-runs.ts` is the consumer of the grown
- * gap and never its owner: it reads the room the gap has and seats what fits in it.
+ * rows already fit grows by nothing. Stage 8 (`allocateGapRuns` in `gap-runs.ts`) is the consumer of the
+ * grown gap and never its owner: it reserves the plan's parts in the room the gap has.
  *
  * **What the reservation is.** The height `H` of the tier-gap row plan (`gap-plan.ts`,
  * `docs/design/tier-gap-rows.md` Section 3): the rows of every part packed from the low boundary,
@@ -57,7 +58,10 @@ export function growTierGaps(model: LayoutModel): boolean {
     // the growth then stands above the height the published plan asks (a-band-holds-the-group-that-set-its-edge: 198.5 against 187).
     const moving: typeof unfit = [];
     for (const { gap, plan } of plans) {
-      const before = grown.get(gap.below)?.extra ?? 0, after = Math.max(0, plan.height - room.get(gap.below)!);
+      const before = grown.get(gap.below)?.extra ?? 0, ask = Math.max(0, plan.height - room.get(gap.below)!);
+      // H is not monotone in the growth (band-holds: 247.75 unopened, 236.25 opened by 198.5), so the first correction may lower the
+      // growth; from the third round on a gap never gives back what an earlier round asked, which makes the rounds converge or hit the cap.
+      const after = round >= 2 ? Math.max(before, ask) : ask;
       if (Math.abs(after - before) <= EPS) continue;
       moving.push({ above: gap.above, below: gap.below, ask: after - before });
       if (after <= EPS) grown.delete(gap.below); else grown.set(gap.below, { extra: after, setBy: plan.setBy });
@@ -80,7 +84,7 @@ export function growTierGaps(model: LayoutModel): boolean {
   for (const { gap, plan } of plans) {
     for (const item of plan.residual) {
       placementWarning(model, item.reason === 'row-cycle' ? 'TIER_GAP_ROW_CYCLE' : 'TIER_GAP_PART_RESIDUAL',
-        `${item.link} is left to the router in the tier gap above tier ${gap.below}: ${REASONS[item.reason]}${item.granted ? ` (${item.granted}'s leg cover is granted to it)` : ''}.`, [item.link]);
+        `${item.link} is left to the router in the tier gap above tier ${gap.below}: ${REASONS[item.reason]}.`, [item.link]);
     }
   }
   return grow(model, grown);
@@ -91,10 +95,11 @@ const MAX_ROUNDS = 6;
 /**
  * The tier gaps whose plan asks for more room than they have, on the model as it stands. 7f sizes a gap on a trial; a change after
  * it (the corridor move of `reseatLanes`, a later stage) can leave a gap short, and stage 8 then leaves its parts to the router
- * (`fittingPlans`). This names each such gap with the ask, once, so that no part is left to the router without a diagnostic.
+ * (`fittingPlans`). This names each such gap with the ask, once, so that no part is left to the router without a diagnostic. It reads
+ * the plans stage 8 already computed for `planRoute` (`route()` computes them once), not a second set.
  */
-export function unfitGaps(model: LayoutModel): { above: number; below: number; growth: number }[] {
-  return tierGapPlans(model).filter(({ plan }) => plan.growth > EPS && plan.parts.length)
+export function unfitGaps(plans: readonly { gap: TierGap; plan: GapPlan }[]): { above: number; below: number; growth: number }[] {
+  return plans.filter(({ plan }) => plan.growth > EPS && plan.parts.length)
     .map(({ gap, plan }) => ({ above: gap.above, below: gap.below, growth: plan.growth }));
 }
 
@@ -126,7 +131,6 @@ const REASONS: Record<ResidualReason, string> = {
   'faces-away': 'a port faces away from the gap',
   'off-boundary': 'a lane end stands on no boundary of the gap',
   'crosses-lane': 'its span crosses the reserved run of a through lane',
-  'legs-within-k': 'its leg stands within a run clearance of the leg of another node',
   'row-cycle': 'its rows form a cycle',
   'crosses-shared-run': 'a leg stands over the shared run of another link',
   'leg-blocked': 'a leg would pass through a label, a lane box or an obstacle',
