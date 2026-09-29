@@ -335,11 +335,14 @@ function inCanton(model: LayoutModel, group: LayoutGroup): boolean {
 /**
  * A declined group stands where the feeds want it inside its wall, not where the pack left it (ranked-groups ticket 70). The column pull
  * (`slideRange`) reads the room up to the far wall and takes it toward the feed; a decline that only packed the group clear at the near wall
- * left that room to the pull, which then moved a finished layout. Both rules now put the group at the in-window x nearest the mean of its
- * feeds, so the pull finds nothing to do. `target` is the x the mean of the feeds asks for, read from where the step began.
+ * left that room to the pull, which then moved a finished layout. Centring and the pull now put the group at the same in-window x when the pull's
+ * feed set equals centring's (ticket 74 files the cases where they differ), so the pull finds nothing to do. The target is clamped at the overlay
+ * chords as the main move is (`overlayStops`, ticket 29). `target` is the x the mean of the feeds asks for, read from where the step began.
  */
-function standNearFeed(model: LayoutModel, group: LayoutGroup, target: number, low: number, high: number): void {
+function standNearFeed(model: LayoutModel, context: CentreContext, tier: number, id: string, group: LayoutGroup, target: number, wideLow: number, wideHigh: number): void {
   const box = group.bounds!;
+  // The bounds were computed on the widened group; the restored group stands in a fresh window.
+  const window = reservedWindow(model, context, tier, id), low = Math.max(wideLow, window.low), high = Math.min(wideHigh, window.high);
   if (!inCanton(model, group) || !Number.isFinite(target) || box.width > high - low + EPS) return;
   const dx = Math.max(low, Math.min(target, high - box.width)) - box.x;
   if (Math.abs(dx) <= EPS || !laneSidesHold(model, [{ group, bounds: { ...box, x: box.x + dx } }])) return;
@@ -453,7 +456,7 @@ function centreGroupStep(model: LayoutModel, context: CentreContext, tier: numbe
     // The window cannot hold this group, but the group before it has already taken its space, so
     // the saved geometry alone would overlap. Decline the alignment and keep the tier packed.
     packClear(model, context, tier, saved.group, previous);
-    standNearFeed(model, saved.group, began + toMean, low, high);
+    standNearFeed(model, context, tier, id, saved.group, began + Math.max(farthestLeft, Math.min(toMean, farthestRight)), low, high);
     return { unresolved: new Set(wanted.keys()), group: saved.group };
   }
   const x = Math.max(low, Math.min(group.bounds!.x, high - group.bounds!.width));
@@ -482,7 +485,7 @@ function centreGroupStep(model: LayoutModel, context: CentreContext, tier: numbe
     model.groups[id] = saved.group;
     for (const node of saved.nodes) model.nodes[node.id] = node;
     packClear(model, context, tier, saved.group, previous);
-    standNearFeed(model, saved.group, began + toMean, low, high);
+    standNearFeed(model, context, tier, id, saved.group, began + Math.max(farthestLeft, Math.min(toMean, farthestRight)), low, high);
     // `unresolved` already holds every wanted port: nothing was kept, so the loop above added them
     // all. It is returned as it stands, and the publication check excuses the whole group — which is
     // what the geometry now says, since the ports are back where this step found them. The cost is

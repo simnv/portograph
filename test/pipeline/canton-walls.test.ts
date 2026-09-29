@@ -248,4 +248,15 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     const moved = Object.values(clone.groups).map((group, i) => Math.abs(group.bounds!.x - before[i]!));
     expect(Math.max(...moved)).toBeLessThan(0.1);
   }, 60000);
+  // Ticket 70, review: a declined member is stood at the nearest in-wall x to its feeds, clamped at the straight overlay chord as the main move is.
+  // The fixture declines the provider at its canton wall. The clamp is inert on it (measured: the target already lies on the near side of the chord), so this holds the
+  // outcome, not the clamp alone; no fixture of the corpus makes a declined body grown with a chord in the way (ticket 70 review).
+  it('a-declined-grown-member-stops-at-an-overlay-chord: the declined member stays off the chord and inside its canton', async () => {
+    const model = await run('a-declined-grown-member-stops-at-an-overlay-chord');
+    const clock = model.nodes['clock']!.bounds!, lab = model.nodes['lab']!.bounds!, provider = model.nodes['provider']!.bounds!;
+    const chord = centreX(clock);
+    expect(Math.abs(chord - centreX(lab))).toBeLessThan(1e-6);
+    expect(chord <= provider.x || chord >= right(provider), 'the chord does not run through the provider').toBe(true);
+    expect(inside(inner(boxOf(model, 'west')), frameOf(model, 'providers').box)).toBe(true);
+  }, 60000);
 });
