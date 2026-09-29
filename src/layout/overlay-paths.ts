@@ -29,9 +29,10 @@ const NORMAL: Readonly<Record<Side, Point>> = {
 /** Every node body and every drawn port pill: the shapes an overlay link goes round. */
 export type OverlayBlockers = RectangleIndex<Rect>;
 
-export function overlayBlockers(model: LayoutModel): OverlayBlockers {
+export function overlayBlockers(model: LayoutModel, skip?: ReadonlySet<string>): OverlayBlockers {
   const boxes: { bounds: Rect; value: Rect }[] = [];
-  for (const node of Object.values(model.nodes)) {
+  for (const [id, node] of Object.entries(model.nodes)) {
+    if (skip?.has(id)) continue;
     if (node.bounds) boxes.push({ bounds: node.bounds, value: node.bounds });
     for (const port of node.ports) {
       if (port.pill && port.ref.anonymous !== true) boxes.push({ bounds: port.pill.bounds, value: port.pill.bounds });

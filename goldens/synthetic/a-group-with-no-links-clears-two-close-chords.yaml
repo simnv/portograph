@@ -1,0 +1,28 @@
+# Expected: two chords stand close together (ticket 76 review). The nearest edge of the first chord's forbidden interval lies inside the second chord's,
+# so the group has to clear both at once. Test-only input owned by ranked-groups ticket 76.
+portograph: 2
+groups:
+  sources: { tier: 0, label: Sources }
+  key: { tier: 1, label: Key }
+  targets: { tier: 2, label: Targets }
+  hosts: { tier: 3, label: Hosts }
+nodes:
+  src-a: { group: sources, class: server, label: Source A }
+  src-b: { group: sources, class: server, label: Source B }
+  src-c: { group: sources, class: server, label: Source C }
+  k1: { group: key, class: server, label: Key 1 }
+  dst-a: { group: targets, class: server, label: Target A }
+  dst-b: { group: targets, class: server, label: Target B }
+  dst-c: { group: targets, class: server, label: Target C }
+  h1: { group: hosts, class: server, label: Host 1 }
+  h2: { group: hosts, class: server, label: Host 2 }
+  h3: { group: hosts, class: server, label: Host 3 }
+  h4: { group: hosts, class: server, label: Host 4 }
+links:
+  - [dst-a, h1]
+  - [dst-b, h2]
+  - [dst-c, h3]
+  - [dst-c, h4]
+  - [src-a, dst-a, { class: sync }]
+  - [src-b, dst-b, { class: sync }]
+  - [src-c, dst-c, { class: sync }]

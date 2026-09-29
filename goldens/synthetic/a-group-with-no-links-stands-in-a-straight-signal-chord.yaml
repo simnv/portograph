@@ -1,0 +1,35 @@
+# Expected: A group with no links stands where its box crosses no straight overlay chord (ticket 76).
+# `src-a` and `src-b` stand in tier 0 and sync with three targets in tier 2. `key` (tier 1) holds
+# three nodes and has no link: nothing ties it to an x, and ELK leaves it between the sources, in the
+# path of the chord from `src-a` to `dst-c`. Placement steps `key` to the nearest x where its box
+# crosses no chord, so every overlay link stays one straight segment.
+# `hosts` (tier 3, four nodes) is the anchor tier, so `key` is free to move.
+# The same case with dashed `signal` links (ticket 73 puts them in the overlay family). Test-only input owned by ranked-groups ticket 76; test/pipeline/linkless-group-chord.test.ts reads the layout.
+portograph: 2
+groups:
+  sources: { tier: 0, label: Sources }
+  key: { tier: 1, label: Key }
+  targets: { tier: 2, label: Targets }
+  hosts: { tier: 3, label: Hosts }
+nodes:
+  src-a: { group: sources, class: server, label: Source A }
+  src-b: { group: sources, class: server, label: Source B }
+  k1: { group: key, class: server, label: Key 1 }
+  k2: { group: key, class: server, label: Key 2 }
+  k3: { group: key, class: server, label: Key 3 }
+  dst-a: { group: targets, class: server, label: Target A }
+  dst-b: { group: targets, class: server, label: Target B }
+  dst-c: { group: targets, class: server, label: Target C }
+  h1: { group: hosts, class: server, label: Host 1 }
+  h2: { group: hosts, class: server, label: Host 2 }
+  h3: { group: hosts, class: server, label: Host 3 }
+  h4: { group: hosts, class: server, label: Host 4 }
+links:
+  - [dst-a, h1]
+  - [dst-b, h2]
+  - [dst-c, h3]
+  - [dst-c, h4]
+  - [src-a, dst-a, { class: signal }]
+  - [src-a, dst-c, { class: signal }]
+  - [src-b, dst-b, { class: signal }]
+  - [src-b, dst-c, { class: signal }]
