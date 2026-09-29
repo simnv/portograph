@@ -1,0 +1,23 @@
+# Expected: an overlay chord may lie under a group title, and the title is neither a blocker nor a mover (canton-groups ticket 60).
+# The two flow links leave the canton `west` through its bottom title band, and their straight segments pass under the
+# titles of `site`, `clients`, `west` and `edge`. The chord stays one straight segment from face to face, and the renderer's
+# overlay mask (pipeline stage 11) cuts the line out of every group title, so the text stays readable.
+# Test-only input owned by canton-groups ticket 60; test/pipeline/overlay-under-title.test.ts reads it.
+portograph: 2
+groups:
+  west: { label: West }
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, canton: west, label: Site }
+  clients: { tier: 2, canton: west, label: Clients }
+  edge: { tier: 3, label: Edge }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  gw: { group: site, class: router, label: Gateway }
+  srv: { group: site, class: server, label: Server }
+  cl: { group: clients, class: server, label: Client }
+  fw: { group: edge, class: router, label: Firewall }
+links:
+  - [isp, gw]
+  - [gw, srv]
+  - { from: srv, to: cl, class: flow }
+  - { from: cl, to: fw, class: flow }
