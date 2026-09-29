@@ -60,6 +60,10 @@ describe('7f grows the gaps by the plan and stage 8 reserves what it planned (ra
     // the reserved verticals of link-5 and link-2 (their covers are granted, spec 2.2) and passes closer than 10 px to them: a finding
     // that publishes, where main removed link-10 (G4 2, G6 2 there).
     expect(failing(routed)).toEqual(['G5:port-order', 'G5:port-order', 'G6:parallel-clearance', 'G6:parallel-clearance']);
+    // The G6 findings name the residual link: the gate reports the clash the plan could not reserve.
+    const g6 = score(routed).snapshot.gates['G6']!.violations.map(item => item.elements);
+    expect(g6.length).toBe(2);
+    for (const elements of g6) expect(elements.join(' ')).toContain('link-3');
   }, 120000);
 
   it('asks for nothing on a second measure of any of the four shapes, and a second bands pass grows nothing', async () => {

@@ -43,4 +43,19 @@ it('keeps every reserved stem checkpoint on a route forced round an earlier batc
     .toEqual([]);
 }, 60000);
 
-it.todo('keeps every reserved stem checkpoint on a route forced round an earlier batch of two RESIDUAL links (ticket 51: needs a residual pair)');
+it('keeps every reserved stem checkpoint on the routes of residual links that share ownership batches (ticket 50 review)', async () => {
+  // Three links of this fixture are residual (`leg-blocked`, a leg under a group label), so they stay with the router in several
+  // batches, beside planned parts whose covers and stems are reserved. The real router publishes every one of them through its
+  // checkpoints and removes none: the situation of the detour above, with residual links in place of the crossing pair.
+  const text = readFileSync(new URL('../../goldens/synthetic/a-claim-lies-on-a-cover-edge.yaml', import.meta.url), 'utf8');
+  const before = bands(bundles(bars(centre(flanks(lanes(rows(await placed(text))))))));
+  const plan = planRoute(before);
+  expect(plan.batches.length).toBeGreaterThanOrEqual(2);
+  const model = linkLabels(await route(before, { createAttempt: createAvoidAttempt }));
+  expect(model.removedLinks ?? []).toEqual([]);
+  for (const item of plan.links) {
+    const link = model.links.find(entry => entry.id === item.link)!;
+    const points = [link.path!.segments[0]!.from, ...link.path!.segments.map(segment => segment.to)];
+    for (const connector of item.connectors) expect([connector.id, checkpointsHonoured(points, connector.checkpoints)]).toEqual([connector.id, true]);
+  }
+}, 60000);
