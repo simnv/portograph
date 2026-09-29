@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel, Rect } from '../../src/index.js';
 import { layout, parse } from '../../src/index.js';
+import { deriveFrames } from '../../src/layout/frames.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -27,5 +28,27 @@ describe('rows of canton members', () => {
     expect(Math.abs(sb.x - right(sa) - 40)).toBeLessThan(1);
     // The canton is judged once, both rows together: no turn of one row alone is refused for the crossings it would raise.
     expect(model.diagnostics.filter(item => item.code === 'OVERLAY_ORDER_REFUSED')).toEqual([]);
+  }, 60000);
+
+  // Ticket 61: a title that widens a member after 7f neither leaves the frame narrower than its cell nor opens the beside gap.
+  it.each([
+    ['a-member-title-widens-a-beside-row', ['alpha', 'beta', 'gamma']],
+    ['a-canton-holds-three-members-on-one-tier', ['alpha', 'beta', 'gamma']],
+    ['a-leaf-child-beside-its-parent-inside-a-canton', ['loc', 'wing']],
+  ])('%s: every frame is its derived box and the beside gaps are 40 px after the whole layout (ticket 61)', async (name, members) => {
+    const model = await run(name);
+    expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
+    const derived = deriveFrames(model)!;
+    for (const item of model.frames!) {
+      const box = derived.find(other => other.id === item.id)!.box;
+      for (const key of ['x', 'y', 'width', 'height'] as const) expect(item.box[key], `${item.id}.${key}`).toBeCloseTo(box[key], 6);
+      // The frame holds every cell box it owns, the widened one included.
+      for (const cell of item.cells) {
+        const cellBox = model.groups[cell]!.bounds!;
+        expect(cellBox.x).toBeGreaterThanOrEqual(item.box.x - 1e-6);
+        expect(right(cellBox)).toBeLessThanOrEqual(right(item.box) + 1e-6);
+      }
+    }
+    for (const [i, id] of members.entries()) if (i) expect(frame(model, id).x - right(frame(model, members[i - 1]!)), `${members[i - 1]} to ${id}`).toBeCloseTo(40, 3);
   }, 60000);
 });

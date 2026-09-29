@@ -1,0 +1,25 @@
+# Expected: canton-groups ticket 61. The canton `west` holds `alpha`, `beta` and `gamma` on tier 1; the title of `beta` is wider than its bodies, so 7f widens
+# the cell of `beta` and pushes `gamma` by the growth. The frames are derived off the boxes and the beside row is packed again after 7f: 40 px between
+# every two member frames. Test-only input owned by canton-groups ticket 61; test/pipeline/canton-rows.test.ts reads the layout.
+portograph: 2
+groups:
+  west: { label: West }
+  upstream: { tier: 0, label: Upstream }
+  alpha: { tier: 1, canton: west, label: Alpha }
+  beta: { tier: 1, canton: west, shape: row, label: Beta member with a title wider than its bodies }
+  gamma: { tier: 1, canton: west, shape: row, label: Gamma }
+  lab: { tier: 2, canton: west, label: Lab }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  a-gw: { group: alpha, class: router, label: Alpha gateway }
+  a-sw: { group: alpha, class: switch, label: Alpha switch }
+  b-gw: { group: beta, class: router, label: Beta gateway }
+  g-gw: { group: gamma, class: router, label: Gamma gateway }
+  srv: { group: lab, class: server, label: Server }
+links:
+  - [isp, a-gw]
+  - [isp, b-gw]
+  - [isp, g-gw]
+  - [a-gw, srv]
+  - [b-gw, srv]
+  - [g-gw, srv]
