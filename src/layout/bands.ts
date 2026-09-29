@@ -14,7 +14,7 @@ import { rebuildRegionGeometry } from './region-rebuild.js';
 import { findPort, straightCorridorClear } from './row-paths.js';
 import { bandGap, portId } from './skeleton-graph.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
-import { columnShifts, holdColumnAxes, packBesideRows, sweptUnits } from './columns.js';
+import { closeCantons, columnShifts, holdColumnAxes, packBesideRows, sweptUnits } from './columns.js';
 import { deriveFrames, frameNodes } from './frames.js';
 import { bandHeldBy, bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placementWarning, rebuildRegions, right } from './regions.js';
 import { withLayoutMutation } from './mutation.js';
@@ -711,6 +711,14 @@ function holdColumnsAfterPush(model: LayoutModel): void {
   rebuildNodeGeometry(model, [...before].filter(([group, x]) => group.bounds!.x !== x).flatMap(([group]) => group.nodes), 'current');
 }
 
+/** `closeCantons`, with the pill bounds of the moved groups rebuilt (`moveGroup` leaves them behind). */
+export function closeCantonsAndSettle(model: LayoutModel): boolean {
+  const before = new Map(Object.values(model.groups).map(group => [group, group.bounds!.x]));
+  const moved = closeCantons(model);
+  if (moved) rebuildNodeGeometry(model, [...before].filter(([group, x]) => group.bounds!.x !== x).flatMap(([group]) => group.nodes), 'current');
+  return moved;
+}
+
 /** A group boxed in by reserved lanes keeps a coherent contained label; final gates decide it. */
 function diagnoseBlocked(model: LayoutModel, blocked: string[]): void {
   for (const id of blocked) {
@@ -1130,6 +1138,14 @@ export function produceGroupLabelBands(model: LayoutModel): void {
         stage: 'placement', severity: 'warning', code: 'PLACEMENT_NON_CONVERGENCE',
         message: 'Link-label room reservation exhausted the shared eight-pass budget; final gates decide the retained geometry.',
       });
+    }
+    // The replays above may widen a canton in place; the cantons close up to a band gap again before anything is planned in them
+    // (ranked-groups ticket 65). A move replays the region producers, as any movement does.
+    if (budget.remaining > 0 && closeCantonsAndSettle(model)) {
+      const passes = budget.passes;
+      rebuildRegionGeometry(model, budget, undefined, true);
+      consumeGrowthPass(budget, passes);
+      continue;
     }
     model.labels = model.labels.filter(label => label.role !== 'group');
     const plan = planLabels(model, true);

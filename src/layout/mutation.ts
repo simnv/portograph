@@ -23,7 +23,7 @@ import { centreViolations, selectAnchorTier } from './centre.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
-import { alignLinkedGroupGrid, type LinkLabelShortfall, produceGroupLabelBands, replanGroupLabels, reserveLinkLabelRoom, validateGroupLabelBands } from './bands.js';
+import { alignLinkedGroupGrid, closeCantonsAndSettle, type LinkLabelShortfall, produceGroupLabelBands, replanGroupLabels, reserveLinkLabelRoom, validateGroupLabelBands } from './bands.js';
 import { growTierGaps } from './gap-room.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { tierGapPlans } from './gap-plan.js';
@@ -726,6 +726,13 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
       // the labels are planned in these boxes, because it belongs to the replay and not to the
       // third step: it only grows box extents onto edges that already exist and moves no node, and
       // a label planned in the narrower box would be centred on the box the grid then widens.
+      alignLinkedGroupGrid(draft);
+      replanGroupLabels(draft);
+    }
+    // The replays above centre the cells of a canton again, and centring may widen the canton in place (ranked-groups ticket 65): the
+    // cantons close up to a band gap once more, and the replay that follows is repeated while it moves them, as far as three times.
+    for (let round = 0; round < 3 && closeCantonsAndSettle(draft); round++) {
+      rebuildRegionGeometry(draft, undefined, undefined, true);
       alignLinkedGroupGrid(draft);
       replanGroupLabels(draft);
     }

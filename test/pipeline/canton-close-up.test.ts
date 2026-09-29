@@ -1,0 +1,65 @@
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+import type { LayoutModel, Rect } from '../../src/index.js';
+import { layout, parse } from '../../src/index.js';
+import { COLUMN_AXIS_HELD, closeCantons, holdColumnAxes } from '../../src/layout/columns.js';
+import { bandGap } from '../../src/layout/skeleton-graph.js';
+import { createAttempt } from '../layout/phase-two-fixture.js';
+import { createAvoidAttempt } from '../route/fixture.js';
+
+const run = (name: string): Promise<LayoutModel> => layout(parse(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8')),
+  { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const right = (box: Rect): number => box.x + box.width;
+const cantonBoxes = (model: LayoutModel): Rect[] => model.frames!.filter(frame => frame.kind === 'canton').map(frame => frame.box).sort((a, b) => a.x - b.x);
+const gaps = (model: LayoutModel): number[] => cantonBoxes(model).slice(1).map((box, i) => box.x - right(cantonBoxes(model)[i]!));
+const stand = (model: LayoutModel): string => JSON.stringify(Object.values(model.groups).map(group => [group.id, group.bounds?.x]));
+const heldOwners = (model: LayoutModel): string[] => model.diagnostics.filter(item => item.code === COLUMN_AXIS_HELD)
+  .flatMap(item => (item.owners ?? []).flatMap(owner => 'id' in owner ? [owner.id] : []));
+const closeUps = (model: LayoutModel) => model.diagnostics.filter(item => item.code === COLUMN_AXIS_HELD && /cannot close up/.test(item.message));
+
+/** A second pass over the finished layout moves nothing and says nothing new. */
+function expectIdempotent(model: LayoutModel): void {
+  const copy = structuredClone(model) as LayoutModel, before = stand(copy), warnings = copy.diagnostics.length;
+  holdColumnAxes(copy, 0);
+  closeCantons(copy);
+  expect(stand(copy)).toBe(before);
+  expect(copy.diagnostics.length).toBe(warnings);
+}
+
+// Ranked-groups ticket 65: the cantons of a merged step close up to a band gap. Each assertion reads the model after the whole layout.
+describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
+  it('three cantons stand a band gap apart when the anchor sub-tier stands inside their span', async () => {
+    const model = await run('three-canton-groups-close-up-to-a-band-gap');
+    expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
+    expect(cantonBoxes(model)).toHaveLength(3);
+    // Measured before the rule: 100 and 148 px on a canvas 2049.3 px wide.
+    for (const [i, gap] of gaps(model).entries()) expect(Math.abs(gap - bandGap(model)), `gap ${i}`).toBeLessThan(1e-6);
+    // No tier-0 column warns for an overlay link to a canton, and no close-up is refused.
+    expect(heldOwners(model).filter(id => id.startsWith('top-'))).toEqual([]);
+    expect(closeUps(model)).toEqual([]);
+    expect(model.canvas!.width).toBeLessThan(2049.3 - 100);
+    expectIdempotent(model);
+  }, 120000);
+
+  it('three continents stand a band gap apart, the equality of the earlier lower bound', async () => {
+    const model = await run('three-continents');
+    // Measured before the rule: 86.4 and 100 px on a canvas 1372.7 px wide.
+    for (const [i, gap] of gaps(model).entries()) expect(Math.abs(gap - bandGap(model)), `gap ${i}`).toBeLessThan(1e-6);
+    expect(model.canvas!.width).toBeLessThan(1372.7 - 20);
+    expectIdempotent(model);
+  }, 120000);
+
+  it('a held lane between two cantons keeps the run where it stands and the warning names the canton', async () => {
+    const model = await run('a-held-lane-between-two-cantons-refuses-the-close-up');
+    const [west, east] = cantonBoxes(model) as [Rect, Rect];
+    expect(model.lanes.some(lane => lane.x > right(west) && lane.x < east.x)).toBe(true);
+    // The run stays: the spacing the rows rule left (a band gap and two column slacks) is still there.
+    expect(east.x - right(west)).toBeGreaterThan(bandGap(model) + 1);
+    const held = closeUps(model);
+    expect(held).toHaveLength(1);
+    expect(held[0]!.owners).toEqual([{ kind: 'group', id: 'west' }]);
+    expect(held[0]!.message).toContain('Canton west');
+    expect(held[0]!.message).toContain('stands between two cantons');
+    expectIdempotent(model);
+  }, 120000);
+});
