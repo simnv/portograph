@@ -118,8 +118,9 @@ export interface PlannedPart {
   rows: number[];
   /** The x of a Z part's middle drop. */
   middle?: number;
-  /** The y of a drop's jog, where its ends differ. */
+  /** The y of a drop's jog, where its ends differ, and the end whose x its long vertical stands on. */
   jog?: number;
+  stand?: 'upper' | 'lower';
 }
 
 export interface PlanEdge {
@@ -142,6 +143,8 @@ export interface GapPlan {
   bandTop: number;
   parts: PlannedPart[];
   residual: ResidualPart[];
+  /** Parts planned with a leg within `keep` of another node's leg: the gate reports them (spec 2.2 prefers that to a removed link). */
+  crowded: { id: string; link: string; with: string }[];
   edges: PlanEdge[];
   /** The units that take a row, in the topological order they were packed. */
   order: string[];
@@ -162,6 +165,8 @@ const same = (a: number, b: number): boolean => Math.abs(a - b) <= EPS;
 interface Part extends PlanInput {
   drop: boolean;
   jogged: boolean;
+  /** Which end's x the vertical of a jogged drop stands on: the upper by default, the lower where that is the one that keeps `keep` from every foreign leg. */
+  stand: 'upper' | 'lower';
   depth: number;
   after: number;
 }
@@ -386,7 +391,7 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
   const residual: ResidualPart[] = [...frame.residual];
   const asPart = (input: PlanInput): Part => {
     const drop = Math.abs(input.lower.x - input.upper.x) < keep - EPS;
-    return { ...input, drop, jogged: drop && !same(input.lower.x, input.upper.x), depth: frame.bandTop - input.lower.y,
+    return { ...input, drop, jogged: drop && !same(input.lower.x, input.upper.x), stand: 'upper', depth: frame.bandTop - input.lower.y,
       after: Math.max(pitch, input.labelRoom ?? 0) };
   };
   // A leg through a fixed obstacle (2.2, residual by constraint): an upper leg reaches down from its tip past the bottom of an
@@ -401,17 +406,35 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
     residual.push({ id: input.id, link: input.link, order: input.order, reason: 'leg-blocked', upper: input.upper, lower: input.lower });
     return false;
   });
-  // Two upper legs, or two lower legs, of two sources within `keep`: the later part is residual and is granted the earlier leg's cover.
+  // Two upper legs, or two lower legs, of two sources within `keep` (2.2; the spec prefers a published finding to a removed link): the part is
+  // planned all the same and the clash is named in `crowded`, for the gate to report. A drop first tries the other end's x for its vertical.
   let live: Part[] = [];
+  const crowded: { id: string; link: string; with: string }[] = [];
+  // A jogged drop has a long vertical on its `stand` end and a short stub on the other, so each end's x is a leg of both kinds.
+  const legsOf = (item: Part, end: 'upper' | 'lower'): PlanEnd[] => item.drop && item.jogged
+    ? [item[end], item.stand === 'upper' ? item.upper : item.lower] : item.drop ? [item.upper, item.lower] : [item[end]];
+  const near = (a: PlanEnd, b: PlanEnd): boolean => a.source !== b.source && Math.abs(a.x - b.x) < keep - EPS;
+  const anyNear = (a: readonly PlanEnd[], b: readonly PlanEnd[]): boolean => a.some(one => b.some(other => near(one, other)));
   for (const input of [...unblocked].sort((a, b) => a.order - b.order)) {
-    const part = asPart(input);
-    // A drop's vertical stands on its upper x from the tip to the jog, so it counts as an upper and a lower leg.
-    const legs = (item: Part, end: 'upper' | 'lower'): PlanEnd => item.drop ? item.upper : item[end];
-    const near = (a: PlanEnd, b: PlanEnd): boolean => a.source !== b.source && Math.abs(a.x - b.x) < keep - EPS;
-    const clash = live.find(other => near(legs(other, 'upper'), legs(part, 'upper')) || near(legs(other, 'lower'), legs(part, 'lower')));
-    if (clash) residual.push({ id: part.id, link: part.link, order: part.order, reason: 'legs-within-k', granted: clash.link,
-      upper: part.upper, lower: part.lower });
-    else live.push(part);
+    let part = asPart(input);
+    const clashing = (item: Part): Part | undefined => live.find(other => anyNear(legsOf(other, 'upper'), legsOf(item, 'upper'))
+      || anyNear(legsOf(other, 'lower'), legsOf(item, 'lower')));
+    let clash = clashing(part);
+    if (clash && part.jogged) {
+      const other: Part = { ...part, stand: 'lower' };
+      if (!clashing(other)) { part = other; clash = undefined; }
+    }
+    if (clash) crowded.push({ id: part.id, link: part.link, with: clash.link });
+    live.push(part);
+  }
+  // A jogged drop that another part's leg crowds may still stand on its other end's x, whichever of the two came first.
+  for (const [index, drop] of live.entries()) {
+    if (!drop.jogged || !crowded.some(item => item.id === drop.id || item.with === drop.link)) continue;
+    const flipped: Part = { ...drop, stand: drop.stand === 'upper' ? 'lower' : 'upper' };
+    const others = live.filter(other => other !== drop);
+    if (others.some(other => anyNear(legsOf(other, 'upper'), legsOf(flipped, 'upper')) || anyNear(legsOf(other, 'lower'), legsOf(flipped, 'lower')))) continue;
+    live[index] = flipped;
+    for (let at = crowded.length - 1; at >= 0; at--) if (crowded[at]!.id === drop.id || crowded[at]!.with === drop.link) crowded.splice(at, 1);
   }
   let solved = solve(live, frame);
   while ('reject' in solved) {
@@ -438,6 +461,13 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
     let lb = ownLb(unit);
     for (const tip of upperTips) if (inside(tip.x, unit)) lb = Math.max(lb, tip.y + keep);
     for (const obstacle of frame.obstacles) if (obstacle.anchor === 'above' && applies(obstacle, unit)) lb = Math.max(lb, obstacle.bound);
+    // A drop that stands on its lower x has its jog one clearance below its upper tip: a run that crosses the drop keeps a clearance from
+    // the jog, and the lower leg of a part beside the stub (its lower x within `keep` of the upper x) starts below it.
+    for (const drop of drops) {
+      if (drop.stand !== 'lower' || !drop.jogged || drop.link === unit.part.link) continue;
+      const jog = drop.upper.y + keep;
+      if (inside(drop.upper.x, unit) || inside(drop.lower.x, unit) || unit.half !== 1 && Math.abs(unit.xl - drop.upper.x) < keep - EPS) lb = Math.max(lb, jog + keep);
+    }
     return lb;
   };
   /** The terms of the need that do not read the order. */
@@ -445,7 +475,11 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
     let need = unit.half === 1 ? -Infinity : unit.part.depth;
     for (const obstacle of frame.obstacles) if (obstacle.anchor === 'below' && applies(obstacle, unit)) need = Math.max(need, obstacle.bound);
     for (const drop of drops) {
-      if (inside(drop.upper.x, unit) || inside(drop.lower.x, unit)) need = Math.max(need, (drop.jogged ? 2 * keep : keep) + drop.depth);
+      if (inside(drop.upper.x, unit) || inside(drop.lower.x, unit)) need = Math.max(need, (drop.jogged && drop.stand === 'upper' ? 2 * keep : keep) + drop.depth);
+      // O2 between a drop's vertical and a stepped part's leg (S4): the upper leg of a part within `keep` of the stub below the jog turns above the jog.
+      if (drop.jogged && drop.stand === 'upper' && drop.link !== unit.part.link && unit.half !== 2 && Math.abs(unit.xu - drop.lower.x) < keep - EPS) {
+        need = Math.max(need, 2 * keep + drop.depth);
+      }
     }
     for (const tip of lowerTips) if (inside(tip.x, unit)) need = Math.max(need, keep + bandTop - tip.y);
     return need;
@@ -496,9 +530,9 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
     const base = { id: part.id, link: part.link, order: part.order, upper: part.upper, lower: part.lower, depth: part.depth,
       ...(part.index !== undefined ? { index: part.index } : {}), ...(part.upperFirst !== undefined ? { upperFirst: part.upperFirst } : {}) };
     if (part.drop) {
-      const jog = part.jogged ? part.lower.y - keep : undefined;
-      verticals.push({ part, kind: 'drop', x: part.upper.x, y0: part.upper.y, y1: Infinity });
-      planned.push({ ...base, shape: 'drop', rows: [], ...(jog !== undefined ? { jog } : {}) });
+      const jog = part.jogged ? (part.stand === 'lower' ? part.upper.y + keep : part.lower.y - keep) : undefined;
+      verticals.push({ part, kind: 'drop', x: part.stand === 'lower' ? part.lower.x : part.upper.x, y0: part.stand === 'lower' ? jog! : part.upper.y, y1: Infinity });
+      planned.push({ ...base, shape: 'drop', rows: [], stand: part.stand, ...(jog !== undefined ? { jog } : {}) });
       continue;
     }
     const middle = split.get(part.id);
@@ -546,7 +580,7 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
   for (const item of residual) if (item.upper && item.lower) raise(item.upper.y - low + 2 * keep + (bandTop - item.lower.y), item.id);
 
   const height = Math.max(frame.floor, demand);
-  return { low, bandTop, parts: planned.sort((a, b) => a.order - b.order), residual, order: order.map(unit => unit.id), crossings, height,
+  return { low, bandTop, parts: planned.sort((a, b) => a.order - b.order), residual, crowded, order: order.map(unit => unit.id), crossings, height,
     demand: Number.isFinite(demand) ? demand : 0, growth: Math.max(0, height - (bandTop - low)), setBy,
     edges: edges.map(item => ({ ...item })) };
 }

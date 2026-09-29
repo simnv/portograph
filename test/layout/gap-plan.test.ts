@@ -172,19 +172,26 @@ describe('the tier-gap plan on hand-built parts', () => {
       .toEqual(['A|C|middle-drop', 'Ca|B|upper-leg'].sort());
   });
 
-  it('makes the later of two parts with legs of two sources within a run clearance residual, and grants it the earlier cover', () => {
+  it('plans the later of two parts with legs of two sources within a run clearance anyway, and names the clash (spec 2.2, ticket 50)', () => {
     const close = { ...part('E', 1, 5, 150), upper: { x: 5, y: 263, kind: 'tip' as const, source: 'other' } };
     const plan = planGap([part('A', 0, 0, 100), close], frame());
-    expect(plan.residual.map(item => [item.id, item.reason, item.granted])).toEqual([['E', 'legs-within-k', 'A']]);
-    expect(plan.parts.map(item => item.id)).toEqual(['A']);
-    // The residual part keeps 2k between its tip rows: (263 - 248) + 23 + (308 - 293).
-    expect(plan.demand).toBeGreaterThanOrEqual(15 + 23 + 15 - 1e-9);
+    expect(plan.residual).toEqual([]);
+    expect(plan.crowded).toEqual([{ id: 'E', link: 'E', with: 'A' }]);
+    expect(plan.parts.map(item => item.id)).toEqual(['A', 'E']);
   });
 
-  it('makes a stepped part residual whose lower leg runs beside the vertical of a jogged drop', () => {
+  it('stands the vertical of a jogged drop on the end x that keeps a run clearance from the leg beside it (ticket 50, S3)', () => {
+    // D 100 to 110 stands on 100 by default; B's lower leg at 91 is 9 px from it. On its lower x 110 it clears B, so B is not crowded and the
+    // jog stands one clearance below the upper tip row (263 + 11.5), where the vertical below it is the lower leg.
     const plan = planGap([part('D', 0, 100, 110), part('B', 1, 0, 91)], frame());
-    expect(plan.residual.map(item => [item.id, item.reason, item.granted])).toEqual([['B', 'legs-within-k', 'D']]);
-    expect(plan.parts.map(item => item.id)).toEqual(['D']);
+    expect(plan.residual).toEqual([]);
+    expect(plan.crowded).toEqual([]);
+    const drop = plan.parts.find(item => item.id === 'D')!;
+    expect([drop.shape, drop.stand]).toEqual(['drop', 'lower']);
+    expect(drop.jog).toBeCloseTo(263 + 11.5, 6);
+    // Where neither end clears (B's lower leg at 105 stands 5 px from 110 and 5 from 100), the clash is named.
+    const both = planGap([part('D', 0, 100, 110), part('B', 1, 0, 105)], frame());
+    expect(both.crowded).toEqual([{ id: 'B', link: 'B', with: 'D' }]);
   });
 
   it('takes a part whose ends stand under a run clearance apart as a drop, and lets a run cross it once', () => {

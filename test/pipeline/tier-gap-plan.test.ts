@@ -56,8 +56,10 @@ describe('7f grows the gaps by the plan and stage 8 reserves what it planned (ra
     expect(model.diagnostics.filter(item => item.code === 'TIER_GAP_PART_RESIDUAL').map(item => item.message))
       .toEqual([expect.stringMatching(/^link-3 is left to the router in the tier gap above tier 1: a leg would pass through a label/)]);
     expect(routed.removedLinks ?? []).toEqual([]);
-    // Placement's own finding, also on main: the port order of `isp0`. Nothing else fails (main: G4 2, G6 2 and link-10 removed).
-    expect(failing(routed)).toEqual(['G5:port-order', 'G5:port-order']);
+    // Placement's own finding, also on main: the port order of `isp0`. And the two G6 findings of the residual link-3: it is routed across
+    // the reserved verticals of link-5 and link-2 (their covers are granted, spec 2.2) and passes closer than 10 px to them: a finding
+    // that publishes, where main removed link-10 (G4 2, G6 2 there).
+    expect(failing(routed)).toEqual(['G5:port-order', 'G5:port-order', 'G6:parallel-clearance', 'G6:parallel-clearance']);
   }, 120000);
 
   it('asks for nothing on a second measure of any of the four shapes, and a second bands pass grows nothing', async () => {
