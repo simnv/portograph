@@ -26,16 +26,16 @@ describe('goldens/synthetic group-ranks fixtures', () => {
     expect(result.rankCount).toBe(2);
   });
 
-  it('a skip link leaves the two servers on one rank below the switches', () => {
+  it('a skip link puts the server it reaches one hop from the anchor, beside the switches', () => {
     const result = ranksOf('a-group-ranks-skip-link', 'site');
-    expect(Object.fromEntries(result.ranks)).toEqual({ rt1: 0, rt2: 0, sw1: 1, sw2: 1, ntp1: 2, ntp2: 2 });
+    expect(Object.fromEntries(result.ranks)).toEqual({ rt1: 0, rt2: 0, sw1: 1, sw2: 1, ntp1: 1, ntp2: 2 });
     expect(result.rankCount).toBe(3);
   });
 
-  it('a cycle sw-sw-rt-rt layers as two peer pairs', () => {
-    const result = ranksOf('a-group-ranks-a-cycle-of-peers', 'site');
-    expect(Object.fromEntries(result.ranks)).toEqual({ rt1: 0, rt2: 0, sw1: 1, sw2: 1 });
-    expect(result.rankCount).toBe(2);
+  it('a ring sw-sw-rt-rt layers by hops: the member farthest from the anchor stands last', () => {
+    const result = ranksOf('a-group-ranks-a-ring-by-hops', 'site');
+    expect(Object.fromEntries(result.ranks)).toEqual({ rt1: 0, rt2: 1, sw1: 2, sw2: 1 });
+    expect(result.rankCount).toBe(3);
   });
 
   it('a child span pushes the parent member that stands inside it to the rank after it', () => {
@@ -59,7 +59,7 @@ describe('goldens/synthetic group-ranks fixtures', () => {
   });
 
   it.each([
-    'a-group-ranks-a-plain-chain', 'a-group-ranks-a-peer-pair-under-one-uplink', 'a-group-ranks-a-cycle-of-peers', 'a-group-ranks-skip-link',
+    'a-group-ranks-a-plain-chain', 'a-group-ranks-a-peer-pair-under-one-uplink', 'a-group-ranks-a-ring-by-hops', 'a-group-ranks-skip-link',
     'a-group-ranks-a-child-span-past-a-parent-member', 'a-child-span-holds-a-parent-member-out', 'a-group-ranks-an-overlay-only-member',
   ])('%s parses, lays out and renders with today\'s pipeline', async name => {
     const model = await run(fixture(name));

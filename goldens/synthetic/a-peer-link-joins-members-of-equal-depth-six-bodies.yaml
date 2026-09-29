@@ -1,0 +1,53 @@
+# Expected: the six-body collapse (ranked-groups ticket 27). Every member of `loc` is class `switch`,
+# as the converter emits it (the class follows the icon), so a class test would call every routed
+# link a peer link and put the whole location on one rank. The rank is the breadth-first depth from
+# the anchors instead: crt1 and crt2 link to the tier above (rank 0), crt3 and crt4 are one hop below
+# (rank 1), srt1, srt2, rrt1 and rrt2 two hops (rank 2), ssw1, ssw2, rsw1 and rsw2 three hops (rank 3),
+# ntp1 and ntp2 four (rank 4), slb1 and rlb1 five (rank 5): six ranks. Links between members of one
+# depth (crt1-crt2, crt3-crt4, srt1-srt2, rrt1-rrt2, ssw1-ssw2, rsw1-rsw2) are peer links and stay inside a rank.
+# Test-only input owned by ranked-groups ticket 27; test/pipeline/peer-depth.test.ts reads the ranks.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  loc: { tier: 1, label: Location }
+nodes:
+  feed: { group: upstream, class: provider, label: Feed }
+  crt1: { group: loc, class: switch, label: crt1 }
+  crt2: { group: loc, class: switch, label: crt2 }
+  crt3: { group: loc, class: switch, label: crt3 }
+  crt4: { group: loc, class: switch, label: crt4 }
+  srt1: { group: loc, class: switch, label: srt1 }
+  srt2: { group: loc, class: switch, label: srt2 }
+  rrt1: { group: loc, class: switch, label: rrt1 }
+  rrt2: { group: loc, class: switch, label: rrt2 }
+  ssw1: { group: loc, class: switch, label: ssw1 }
+  ssw2: { group: loc, class: switch, label: ssw2 }
+  rsw1: { group: loc, class: switch, label: rsw1 }
+  rsw2: { group: loc, class: switch, label: rsw2 }
+  ntp1: { group: loc, class: switch, label: ntp1 }
+  ntp2: { group: loc, class: switch, label: ntp2 }
+  slb1: { group: loc, class: switch, label: slb1 }
+  rlb1: { group: loc, class: switch, label: rlb1 }
+links:
+  - [feed, crt1]
+  - [feed, crt2]
+  - [crt1, crt2]
+  - [crt1, crt3]
+  - [crt2, crt4]
+  - [crt3, crt4]
+  - [crt3, srt1]
+  - [crt3, rrt1]
+  - [crt4, srt2]
+  - [crt4, rrt2]
+  - [srt1, srt2]
+  - [rrt1, rrt2]
+  - [srt1, ssw1]
+  - [srt2, ssw2]
+  - [rrt1, rsw1]
+  - [rrt2, rsw2]
+  - [ssw1, ssw2]
+  - [rsw1, rsw2]
+  - [ssw1, ntp1]
+  - [ssw2, ntp2]
+  - [ntp1, slb1]
+  - [ntp2, rlb1]
