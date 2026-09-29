@@ -1,0 +1,105 @@
+# Expected: a frame keeps out of the clearance of a foreign drop (ranked-groups ticket 75). The chain of tiers of
+# `a-chain-of-tiers-packs-over-its-feeds-final-x` without its middle location. Two sites stand side by side above `core`; the
+# title of `Zone A` is too wide for its zone, the zone widens, and the second site is pushed right to stand a band gap from the
+# first. The link from `b-edge` to `core-2` drops to the x of that port, which the pushed frame edge would then stand 3 px inside:
+# a drop running along a frame edge closer than the edge clearance, which only routing would discover. Placement reserves the
+# clearance: the frame stands where the drop is clear of its edges.
+# Test-only input owned by ranked-groups ticket 75; test/pipeline/frame-keeps-out-of-a-drop.test.ts reads the layout.
+portograph: 2
+groups:
+  top-a: { tier: 0, label: Site A }
+  top-a-zone: { parent: top-a, label: Zone A }
+  top-b: { tier: 0, label: Site B }
+  top-b-zone: { parent: top-b, label: Zone B }
+  core: { tier: 1, label: Core }
+  dist: { tier: 2, label: Dist }
+  west: { tier: 3, label: West }
+  west-zone: { parent: west, label: West zone }
+  east: { tier: 3, label: East }
+  east-zone: { parent: east, label: East zone }
+nodes:
+  a-core: { group: top-a, class: router, label: A core }
+  a-edge: { group: top-a-zone, class: switch, label: A edge }
+  b-core: { group: top-b, class: router, label: B core }
+  b-edge: { group: top-b-zone, class: switch, label: B edge }
+  core-1: { group: core, class: router, label: Core one }
+  dist-1: { group: dist, class: router, label: Dist one }
+  core-2: { group: core, class: router, label: Core two }
+  dist-2: { group: dist, class: router, label: Dist two }
+  west-gw: { group: west, class: router, label: West gateway }
+  west-1: { group: west-zone, class: switch, label: West one }
+  west-2: { group: west-zone, class: access, label: West 2 }
+  west-3: { group: west-zone, class: access, label: West 3 }
+  west-4: { group: west-zone, class: access, label: West 4 }
+  west-5: { group: west-zone, class: access, label: West 5 }
+  west-6: { group: west-zone, class: access, label: West 6 }
+  west-7: { group: west-zone, class: access, label: West 7 }
+  west-8: { group: west-zone, class: access, label: West 8 }
+  west-9: { group: west-zone, class: access, label: West 9 }
+  west-10: { group: west-zone, class: access, label: West 10 }
+  west-11: { group: west-zone, class: access, label: West 11 }
+  west-12: { group: west-zone, class: access, label: West 12 }
+  west-13: { group: west-zone, class: access, label: West 13 }
+  west-14: { group: west-zone, class: access, label: West 14 }
+  west-15: { group: west-zone, class: access, label: West 15 }
+  west-16: { group: west-zone, class: access, label: West 16 }
+  west-17: { group: west-zone, class: access, label: West 17 }
+  west-18: { group: west-zone, class: access, label: West 18 }
+  west-19: { group: west-zone, class: access, label: West 19 }
+  west-20: { group: west-zone, class: access, label: West 20 }
+  west-21: { group: west-zone, class: access, label: West 21 }
+  west-22: { group: west-zone, class: access, label: West 22 }
+  west-23: { group: west-zone, class: access, label: West 23 }
+  west-24: { group: west-zone, class: access, label: West 24 }
+  west-25: { group: west-zone, class: access, label: West 25 }
+  west-26: { group: west-zone, class: access, label: West 26 }
+  west-27: { group: west-zone, class: access, label: West 27 }
+  west-28: { group: west-zone, class: access, label: West 28 }
+  west-29: { group: west-zone, class: access, label: West 29 }
+  west-30: { group: west-zone, class: access, label: West 30 }
+  east-gw: { group: east, class: router, label: East gateway }
+  east-1: { group: east-zone, class: switch, label: East one }
+  east-2: { group: east-zone, class: access, label: East two }
+links:
+  - [a-core, a-edge]
+  - [b-core, b-edge]
+  - [a-edge, core-1]
+  - [b-edge, core-2]
+  - [core-1, dist-1]
+  - [dist-1, west-gw]
+  - [core-2, dist-2]
+  - [dist-2, east-gw]
+  - [west-gw, west-1]
+  - [west-1, west-2]
+  - [west-1, west-3]
+  - [west-1, west-4]
+  - [west-1, west-5]
+  - [west-1, west-6]
+  - [west-1, west-7]
+  - [west-1, west-8]
+  - [west-1, west-9]
+  - [west-1, west-10]
+  - [west-1, west-11]
+  - [west-1, west-12]
+  - [west-1, west-13]
+  - [west-1, west-14]
+  - [west-1, west-15]
+  - [west-1, west-16]
+  - [west-1, west-17]
+  - [west-1, west-18]
+  - [west-1, west-19]
+  - [west-1, west-20]
+  - [west-1, west-21]
+  - [west-1, west-22]
+  - [west-1, west-23]
+  - [west-1, west-24]
+  - [west-1, west-25]
+  - [west-1, west-26]
+  - [west-1, west-27]
+  - [west-1, west-28]
+  - [west-1, west-29]
+  - [west-1, west-30]
+  - [east-gw, east-1]
+  - [east-1, east-2]
+  - [b-edge, east-1, { route: overlay }]
+  - [a-edge, b-edge, { route: overlay }]

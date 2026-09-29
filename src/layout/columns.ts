@@ -11,6 +11,7 @@ import { rebuildNodeGeometry } from './node-geometry.js';
 import { groupShape } from './grid.js';
 import { crosses, overlayPath } from './overlay-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 
 /**
  * How far a cell may stand off the axis of its column, to either side, so a wide cell can meet a port
@@ -546,8 +547,9 @@ function closeUp(model: LayoutModel, tiers: Unit[][], index: number, slack: numb
   const last = at(run[run.length - 1]!), extent = offsets[run.length - 1]! + last.width;
   const base = (at(run[0]!).x + last.x + last.width) / 2 - extent / 2;
   const shifts = new Map<LayoutGroup, number>();
+  const packed = run.map((_, i) => base + offsets[i]!);
   for (const [i, unit] of run.entries()) {
-    const dx = base + offsets[i]! - at(unit).x;
+    const dx = packed[i]! - at(unit).x;
     if (Math.abs(dx) > PLACEMENT_EPS) for (const group of unit.groups) shifts.set(group, dx);
   }
   if (!shifts.size) return false;
@@ -957,7 +959,13 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
     if (blocked) { undo(); settle(); }
     return { shifts, allowed, blocked, bent };
   };
+  // A left the plan takes may put a foreign drop along the unit's edge (ticket 75). The unit then stays on its own side of the band, the way
+  // it stood; a snap that would close a band gap on a neighbour is not made.
+  const drops = standing.map(item => item.unit.frame ? foreignDrops(model, item.unit) : []);
+  const keepOut = (target: number[]): number[] => snapOut(target, standing.map(item => item.x), standing.map(item => item.width), drops, i => standing[i - 1]!.width + gap);
+  lefts = keepOut(lefts);
   const closing = closeRun(lefts);
+  if (closing.lefts !== undefined) closing.lefts = keepOut(closing.lefts);
   let result = closing.lefts === undefined ? undefined : attempt(closing.lefts, requestedSlack > 0, true);
   let cause = closing.cause;
   // In 7f (slack 0) the frame boxes do not slide, so the node bodies, read exactly, decide; the close-up is refused as the plan is.
@@ -1055,6 +1063,74 @@ export function columnShifts(model: LayoutModel, slack: number): Map<LayoutGroup
       const dx = Math.max(0, end + (unit.frame ? slack : 0) - x);
       if (dx > PLACEMENT_EPS) for (const group of unit.groups) shifts.set(group, dx);
       end = right + dx + gap + (unit.frame ? slack : 0);
+    }
+  }
+  return shifts;
+}
+
+/** The x of every foreign port a routed link of `unit` drops to, with the clearance a frame edge keeps from it (ticket 75). */
+function foreignDrops(model: LayoutModel, unit: Unit): { x: number; margin: number }[] {
+  // A canton stands a band gap from the next one (ticket 65), which the keep-out does not override.
+  if (unit.frame && model.document.frames?.[unit.id]?.kind === 'canton') return [];
+  const own = new Set(unit.groups.map(group => group.id)), drops: { x: number; margin: number }[] = [];
+  for (const link of model.links) {
+    if (link.layer !== 'routed' || link.removed === true || link.technique === 'stub' || !link.attachments) continue;
+    const ends = [link.attachments.from, link.attachments.to], groups = ends.map(end => model.document.nodes[end.node]?.group);
+    for (const [mine, other] of [[0, 1], [1, 0]] as const) {
+      const inside = groups[mine], outside = groups[other];
+      if (inside === undefined || outside === undefined || !own.has(inside) || own.has(outside)) continue;
+      const port = findPort(model, ends[other]!), group = model.groups[outside];
+      if (!port?.anchor || !group || group.tier === model.groups[inside]?.tier || (port.side !== 'top' && port.side !== 'bottom')) continue;
+      drops.push({ x: port.anchor.x, margin: GROUP_EDGE_LINK_CLEARANCE + linkStrokeWidth(link) / 2 + PLACEMENT_EPS });
+    }
+  }
+  return drops;
+}
+
+/**
+ * The lefts a box of `width` may not take because a foreign drop would then run along one of its edges: G6 refuses a segment that runs
+ * outside a group box closer than the edge clearance and half its stroke, and routing can only discover that. Sorted, open intervals.
+ */
+function keepOutLefts(drops: readonly { x: number; margin: number }[], width: number): [number, number][] {
+  return drops.flatMap(({ x, margin }): [number, number][] => [[x - PLACEMENT_EPS, x + margin], [x - width - margin, x - width + PLACEMENT_EPS]]).sort((a, b) => a[0] - b[0]);
+}
+
+/**
+ * The targets with every left that would put a foreign drop along an edge held where the unit stands (ticket 75), unless that closes the
+ * step to a neighbour below `step`. `drops` is empty for a unit that has no box to keep the drops from.
+ */
+function snapOut(target: readonly number[], now: readonly number[], width: readonly number[], drops: readonly (readonly { x: number; margin: number }[])[], step: (index: number) => number): number[] {
+  const out = [...target];
+  for (let i = 0; i < out.length; i++) {
+    for (const [low, high] of keepOutLefts(drops[i]!, width[i]!)) {
+      if (out[i]! <= low || out[i]! >= high || (now[i]! > low && now[i]! < high)) continue;
+      const snapped = now[i]! <= low ? low : high;
+      const before = i > 0 ? out[i - 1]! + step(i) : -Infinity, after = i + 1 < out.length ? out[i + 1]! - step(i + 1) : Infinity;
+      if (snapped >= before - PLACEMENT_EPS && snapped <= after + PLACEMENT_EPS) out[i] = snapped;
+    }
+  }
+  return out;
+}
+
+/**
+ * How far each unit of a frame tier moves right so that no foreign drop runs along one of its edges (ticket 75). A routed link between a
+ * cell of the unit and a port of another tier's group drops to the x of that port, from a row in the padding of the unit. When that x falls
+ * outside the unit's box, within the edge clearance and half the stroke of an edge, the drop runs along the edge: a spacing routing would
+ * discover, and placement can reserve. The unit moves by the smallest amount that leaves the band. Reads the geometry as it stands and
+ * moves nothing.
+ */
+export function keepOutShifts(model: LayoutModel): Map<LayoutGroup, number> {
+  const shifts = new Map<LayoutGroup, number>();
+  const derived = deriveFrames(model);
+  if (derived === undefined) return shifts;
+  const box = new Map(derived.map(frame => [frame.id, frame.box]));
+  for (const all of frameTiers(model)) {
+    for (const unit of all.filter(item => item.frame || groupShape(model, item.id) === 'row')) {
+      const at = unit.frame ? box.get(unit.id) : unit.groups[0]!.bounds;
+      if (at === undefined) continue;
+      let dx = 0;
+      for (const [low, high] of keepOutLefts(foreignDrops(model, unit), at.width)) if (at.x > low && at.x < high) dx = Math.max(dx, high - at.x);
+      if (dx > PLACEMENT_EPS) for (const group of unit.groups) shifts.set(group, Math.max(shifts.get(group) ?? 0, dx));
     }
   }
   return shifts;

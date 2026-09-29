@@ -3,7 +3,7 @@ import type { Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
 import { laneSidesHold, nodeTier, occupiedOverhang, selectAnchorTier } from './lanes.js';
 import { cellReach } from './frames.js';
-import { besideWalls, frameColumns, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
+import { besideWalls, frameColumns, keepOutShifts, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
 import { findPort } from './row-paths.js';
 import { portId, bandGap, SKELETON_SPACING } from './skeleton-graph.js';
 import { crosses, overlayBlockers, straightChord } from './overlay-paths.js';
@@ -385,15 +385,17 @@ function straightOverlays(model: LayoutModel): Set<string> {
   return new Set(model.links.filter(link => link.layer === 'overlay' && straightChord(model, link, blockers) !== undefined).map(link => link.id));
 }
 function centreGroupStep(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>): { unresolved: Set<string>; group: LayoutGroup } {
-  // From 7e on, an overlay link that draws one straight segment keeps the space placement reserved for it. A step that would put
-  // a body or a pill on one is declined as a whole, like a step that solves nothing: the group stays where it stood (ticket 75).
-  if (!CHORD_STAGES.includes(model.stage) || !model.links.some(link => link.layer === 'overlay')) return centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail);
+  // From 7e on, an overlay link that draws one straight segment keeps the space placement reserved for it. A step that leaves fewer
+  // of them straight (a body or a pill now stands on a chord) is declined as a whole, like a step that solves nothing: the group stays
+  // where it stood (ticket 75). A step that straightens one link for another is a trade the alignment is allowed to make.
+  if (!CHORD_STAGES.includes(model.stage)) return centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail);
   const group = model.groups[id]!;
-  const held = straightOverlays(model);
+  const held = straightOverlays(model), breached = new Set([...keepOutShifts(model).keys()].map(item => item.id));
   const snapshot = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
   const result = centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail);
   const now = straightOverlays(model);
-  if ([...held].every(link => now.has(link))) return result;
+  // A frame edge that a foreign drop would run along is a spacing routing can only discover; a step may not make one (ticket 75).
+  if (now.size >= held.size && [...keepOutShifts(model).keys()].every(item => breached.has(item.id))) return result;
   model.groups[id] = snapshot.group;
   for (const node of snapshot.nodes) model.nodes[node.id] = node;
   packClear(model, context, tier, snapshot.group, previous);

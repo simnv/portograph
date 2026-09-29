@@ -835,6 +835,15 @@ bands' — reads lane x as that feed's authoritative x and chases a corridor tha
 therefore reserves no room: the gap keeps the height this stage gave it, and a move whose new row
 that height cannot hold is refused (§ 7a states the whole condition).
 
+**A frame keeps out of a foreign drop's clearance** (ticket 75). A routed link between a cell of a frame and a port of another tier
+drops to the x of that port from a row in the padding of the frame. When that x stands outside the frame, closer to a left or right
+edge than `GROUP_EDGE_LINK_CLEARANCE` plus half the routed stroke, the drop runs along the edge and G6 refuses it. Routing can only
+discover that, so placement reserves it: the column plans (`pullTier`) leave a frame where it stands rather than take a left inside the
+band, and after the rounds of the close-up `settleKeepOut` moves a frame that a mover without a plan (the push of a widened neighbour, a
+lane reseated) left inside it, right by the smallest amount, the frames after it giving way and a lane that forbids the move refusing it.
+A canton keeps its band gap (ticket 65) and is not moved for it. From 7e on, a centring replay also declines a step that leaves fewer
+overlay links straight, or that puts a frame inside a band it was not in: the group stays where it stood.
+
 **A skewed leg under a title widens its group (ticket 66, Q103).** A title stands clear of the legs of the ports under it (ticket 62). Where no
 position on its edge clears them, the legs are hard obstacles like a straight feed's: the title is placed past them and the group widens by
 the title plus the clearances beside the port, on the growth path a straight feed takes, wherever `growthPlan` finds the widening lane-feasible;

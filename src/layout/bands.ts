@@ -14,7 +14,7 @@ import { rebuildRegionGeometry } from './region-rebuild.js';
 import { findPort, straightCorridorClear } from './row-paths.js';
 import { bandGap, portId } from './skeleton-graph.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
-import { closeCantons, columnShifts, holdColumnAxes, packBesideRows, sweptUnits } from './columns.js';
+import { closeCantons, columnShifts, keepOutShifts, holdColumnAxes, packBesideRows, sweptUnits } from './columns.js';
 import { deriveFrames, frameNodes } from './frames.js';
 import { bandHeldBy, bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placementWarning, rebuildRegions, right } from './regions.js';
 import { withLayoutMutation } from './mutation.js';
@@ -798,6 +798,27 @@ function holdColumnsAfterPush(model: LayoutModel): void {
   holdColumnAxes(model, 0);
   // `moveGroup` leaves pill bounds behind, and the next reservation measures them.
   rebuildNodeGeometry(model, [...before].filter(([group, x]) => group.bounds!.x !== x).flatMap(([group]) => group.nodes), 'current');
+}
+
+/**
+ * The frames whose edge a foreign drop would run along move right by the smallest amount that leaves the band, and the frames after them
+ * give way (ticket 75). The column plans keep the band already (`snapOut`); a mover that has no plan of its own (the push of a widened
+ * neighbour, a lane reseated, a cell packed against its parent) can leave a frame in it, and this is the last word before the replays. A move a lane forbids is not made. Returns whether a
+ * group moved; the caller replays the region producers, `syncBands` and `replanGroupLabels` after it.
+ */
+export function settleKeepOut(model: LayoutModel): boolean {
+  const before = new Map(Object.values(model.groups).map(group => [group, group.bounds!.x]));
+  for (let round = 0; round < 8; round++) {
+    const shifts = keepOutShifts(model);
+    if (!shifts.size) break;
+    for (const [group, dx] of columnShifts(model, 0)) shifts.set(group, Math.max(shifts.get(group) ?? 0, dx));
+    if (!laneSidesHold(model, [...shifts].map(([group, dx]) => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } })))) break;
+    for (const [group, dx] of shifts) moveGroup(model, group, dx, 0);
+    // The sweep of a moved frame is `columnShifts`' own: the next round finds what still stands close.
+    rebuildNodeGeometry(model, [...shifts.keys()].flatMap(group => group.nodes), 'current');
+  }
+  const shifted = [...before].filter(([group, x]) => group.bounds!.x !== x);
+  return shifted.length > 0;
 }
 
 /**

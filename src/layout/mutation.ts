@@ -24,7 +24,7 @@ import { stepLinklessOutOfChords } from './overlay-place.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
-import { alignLinkedGroupGrid, closeCantonsAndSettle, type LinkLabelShortfall, produceGroupLabelBands, replanGroupLabels, reserveLinkLabelRoom, validateGroupLabelBands } from './bands.js';
+import { alignLinkedGroupGrid, closeCantonsAndSettle, settleKeepOut, type LinkLabelShortfall, produceGroupLabelBands, replanGroupLabels, reserveLinkLabelRoom, validateGroupLabelBands } from './bands.js';
 import { holdColumnAxes } from './columns.js';
 import { growTierGaps } from './gap-room.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -744,6 +744,12 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
       const shift = closeCantonsAndSettle(draft);
       closed = shift < CANTON_CREEP;
       if (shift > 0) {
+        rebuildRegionGeometry(draft, undefined, undefined, true);
+        alignLinkedGroupGrid(draft);
+        replanGroupLabels(draft);
+      }
+      // A frame edge a foreign drop would run along is moved off it before anything is planned in the geometry (ticket 75).
+      if (settleKeepOut(draft)) {
         rebuildRegionGeometry(draft, undefined, undefined, true);
         alignLinkedGroupGrid(draft);
         replanGroupLabels(draft);
