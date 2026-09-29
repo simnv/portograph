@@ -14,7 +14,7 @@ import { rebuildRegionGeometry } from './region-rebuild.js';
 import { findPort, straightCorridorClear } from './row-paths.js';
 import { bandGap, portId } from './skeleton-graph.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
-import { columnShifts, holdColumnAxes, sweptUnits } from './columns.js';
+import { columnShifts, holdColumnAxes, packBesideRows, sweptUnits } from './columns.js';
 import { deriveFrames, frameNodes } from './frames.js';
 import { bandHeldBy, bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placementWarning, rebuildRegions, right } from './regions.js';
 import { withLayoutMutation } from './mutation.js';
@@ -695,11 +695,18 @@ function pushFollowingGroups(model: LayoutModel, grown: LayoutGroup, width: numb
  * its box, so a pass that kept the stage 6 spacing (a band gap and the slack on both sides) would push every
  * pair of frames apart by the slack, and one that let a cell slide into it would leave a jog centring cannot
  * remove. The pass is idempotent, and 7f replays (`replanGroupLabels`), so a replay finds nothing to move.
+ * Before the pull, the beside rows are packed against the frames again (ranked-groups ticket 61): the push moves a follower by the
+ * whole growth of a cell that widened for its title, the frame grows by less, and the gap of 40 px would stay open. Flanks keep
+ * their place; the anchor tier does not, unlike in centring.
  */
 function holdColumnsAfterPush(model: LayoutModel): void {
   if (model.document.frames === undefined) return;
   const before = new Map(Object.values(model.groups).map(group => [group, group.bounds!.x]));
-  if (!holdColumnAxes(model, 0)) return;
+  // The push above moves the cells after a widened cell by its whole growth, and a frame is derived off the bodies, so a title that
+  // widens a member inside its frame grows the frame by less (ticket 61). The beside rows are packed against the frames again, the way
+  // centring packs them: a gap of 40 px stays 40 px. Only the flanks keep their place: an anchor-tier member pushed by a neighbour's title is packed back too.
+  packBesideRows(model, cell => !model.groups[cell]!.flank);
+  holdColumnAxes(model, 0);
   // `moveGroup` leaves pill bounds behind, and the next reservation measures them.
   rebuildNodeGeometry(model, [...before].filter(([group, x]) => group.bounds!.x !== x).flatMap(([group]) => group.nodes), 'current');
 }

@@ -422,29 +422,39 @@ export function orderFramesByOverlay(model: LayoutModel, columns: Map<string, Co
         x, width: Math.max(...reaches.map(reach => reach.x + reach.width)) - x };
     });
     const touches = (a: Member, b: Member): boolean => a.range[0] <= b.range[1] && b.range[0] <= a.range[1];
-    const seen = new Set<Member>();
+    // The rows are the connected components of the range overlap (ticket 63): members of two tiers are two rows. Each row is ordered by
+    // its own keys, and the canton is judged once, with every row turned.
+    const seen = new Set<Member>(), rows: Member[][] = [];
     for (const start of members) {
       if (seen.has(start)) continue;
       const row = new Set<Member>([start]);
       for (let grown = true; grown;) { grown = false; for (const member of members) if (!row.has(member) && [...row].some(other => touches(member, other))) { row.add(member); grown = true; } }
       for (const member of row) seen.add(member);
-      if (row.size < 2) continue;
-      const slots = [...row].sort((a, b) => a.x - b.x || compareId(a.id, b.id));
-      const inside = new Set([...row].flatMap(member => member.nodes));
+      if (row.size >= 2) rows.push([...row].sort((a, b) => a.x - b.x || compareId(a.id, b.id)));
+    }
+    // The rows are taken in the sweep direction, the row nearer the anchor first, and each is turned where it stands before the next is read:
+    // a partner in a row already turned is read at its new place, so the second row of a pair follows the first. The canton is judged once.
+    const below = low(tier) > anchor;
+    rows.sort((a, b) => below ? a[0]!.range[0] - b[0]!.range[0] : b[0]!.range[0] - a[0]!.range[0]);
+    const all = rows.flat(), cells = all.flatMap(member => member.cells.map(cell => model.groups[cell]!));
+    const undo = saveGroups(model, cells), before = measureRange(from, to, true), turned: string[] = [];
+    for (const [at, slots] of rows.entries()) {
+      // A row further from the anchor follows this one, so it is left out of the key as a row of the same order is.
+      const inside = new Set(rows.slice(at).flat().flatMap(member => member.nodes));
       const next = reorder(slots, member => keyOfNodes(member.nodes, inside));
       if (next.every((member, i) => member === slots[i])) continue;
-      const cells = slots.flatMap(member => member.cells.map(cell => model.groups[cell]!));
-      const undo = saveGroups(model, cells), before = measureRange(from, to, true);
       let x = slots[0]!.x;
       for (const [i, member] of next.entries()) {
         for (const cell of member.cells) moveGroup(model, model.groups[cell]!, x - member.x, 0);
         x += member.width + (i + 1 < slots.length ? slots[i + 1]!.x - (slots[i]!.x + slots[i]!.width) : 0);
       }
-      const verdict = judge(before, measureRange(from, to, true));
-      if (verdict === undefined) { moved = true; continue; }
-      undo();
-      refuse(tier, verdict === '' ? undefined : verdict, next.map(member => member.id), `the members of the canton ${canton.id} on sub-tiers ${Math.min(...slots.map(member => member.range[0]))} to ${Math.max(...slots.map(member => member.range[1]))}`);
+      turned.push(...next.map(member => member.id));
     }
+    if (!turned.length) return;
+    const verdict = judge(before, measureRange(from, to, true));
+    if (verdict === undefined) { moved = true; return; }
+    undo();
+    refuse(tier, verdict === '' ? undefined : verdict, turned, `the members of the canton ${canton.id} on sub-tiers ${Math.min(...all.map(member => member.range[0]))} to ${Math.max(...all.map(member => member.range[1]))}`);
   };
 
   for (const tier of sweep) {
