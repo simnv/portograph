@@ -387,6 +387,22 @@ the pinned path itself is the obstacle for every later reservation and for stage
 Later movement replaces row paths through the same rebuild; a candidate whose corridor a later
 reservation blocks loses its pin and routes in stage 8.
 
+**A link inside one frame is a chord (tickets 34 and 38).** A routed link is a *frame-link
+candidate* when both ends lie in one frame: the same document group, or a parent and its direct
+child. The candidate test is stage-1 topology. A bundle member, a stub, a flank or bar link and an
+authored route that is not straight are not candidates. A group-link member is a candidate, like
+any other routed link (ticket 38). The row rebuild confirms the candidate: one straight segment
+between the two port faces (`overlayEndpoint`), when it clears every node body, every pill that is
+not its own and the title strip. A chord reserves nothing: no lane, no gap run, no stem, no cover
+for stage 8. A link that crosses a tier it does not end in never takes the chord, because it owns a
+lane. A member never takes the level (row) path of a facing pair (`expectedRowPath` skips it). A link
+whose chord a body blocks keeps its orthogonal route. The chord is re-derived after each move up
+to the end of `bundles`. Then `bands` starts with `freezeChords`, and from there a 7f move that
+would put a body on a held chord is refused when a lane can refuse it (`chordsHold` in
+`laneSidesHold`, `STRAIGHT_LINK_HELD`). A 7f move that cannot be refused keeps the chord and
+reports `STRAIGHT_LINK_BLOCKED`. The chord of a group-link
+between two rank cells of one group is ticket 40.
+
 ## Stage 7 — regions
 
 A **region** is the space between adjacent tiers, or between a flank and its tier. Sub-stages
@@ -828,6 +844,16 @@ reaches 11.5 px past its tip, and a run keeps 11.5 px off an obstacle. Each tip 
 obstacle of the other. `tierGapRoom` reports the shortfall as `stems`, and the gap grows by it
 (`TIER_GAP_GROWN`). The rule reads the two tips of one link only.
 
+**A tip band keeps rows off every stem tip (ticket 31).** `blockers()` in `gap-runs.ts` reads a
+nested stem at its `stemPlan` depth, not at `stemReach`. It adds two bands of 23 px (two run
+clearances) each side. The row band lies on the row of every nested tip, over the x-span of the leg
+along that row. It blocks horizontal runs only, so a column may cross it. The column band lies round
+the column of every stem tip, flat or nested. It keeps allocated columns off the tip. `tierGapRoom`
+(`gap-runs.ts`) sets the gap headroom to the larger of the flat headroom and the distance from the
+deepest nested top-side tip to the high boundary plus 23 px (`reach`). `growTierGaps`
+(`gap-room.ts`) grows the gap to that headroom. A gap with no allocated row seats no columns. So
+placement reserves the room, and the router does not find it.
+
 **A tier gap grows to the rows it must seat (ADR-0015 rule 1).** 7f places its group labels, then
 measures the gaps, then places its group labels again. The middle step is the reservation, and it
 needs the labels in front of it: a group label is an obstacle in the tier gap beside it, so a gap
@@ -1130,6 +1156,11 @@ cross (`crossingParts`, `crossedStems`), so a link that must cross a stem does n
 with a link that must not. A stem of a later part is an obstacle for the part before it, unless
 that part must cross it. An L that the router does not take frees a cover for nothing. That costs
 quality, not validity.
+
+**The chord alone opens no stem (ticket 30).** The endpoint chord (pin to pin) stays in the part
+key, so a batch still splits by a stem that only the chord crosses. No consumer routes through that
+stem. A stem is passable to a later part only where a leg or an L shape crosses it. The cover grant
+that still serialises by chord is ticket 37.
 
 **A link the stage cannot use is removed (ticket 24).** After each batch part, `tryStitch` judges
 one link: the required checkpoints first, then the stitch. Two cases reject the link. The router

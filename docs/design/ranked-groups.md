@@ -160,7 +160,10 @@ without intra-group routed links renders as before.
    ELK gave a band no longer shows as gap between bands.
 4. **Alignment stops at a chord.** Alignment growth of a body stops short of an overlay chord
    (`ALIGNMENT_STOPPED_AT_OVERLAY`, ticket 29). The bound of 12 stays.
-5. **Sides.** No change. A same-sub-tier overlay pair takes `left`/`right` and rides the row; a
+5. **A link inside one frame is a chord.** A routed link with both ends in one frame, and a
+   group-link member likewise, takes one straight segment where it clears every body (tickets 34
+   and 38). `docs/design/pipeline.md` Stage 6 has the rule.
+6. **Sides.** No change. A same-sub-tier overlay pair takes `left`/`right` and rides the row; a
    cross-sub-tier pair takes `top`/`bottom`.
 
 ## Section 4 — Converter and inputs
