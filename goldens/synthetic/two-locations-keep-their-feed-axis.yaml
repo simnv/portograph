@@ -1,0 +1,52 @@
+# Expected: Two locations keep their feed axis through every stage (ranked-groups ticket 16). One tier-0
+# row group of 13 nodes, `west`, stands over two tier-1 frames, `one` and `two`. Each frame has a gateway on
+# rank 0 and a row of five switches on rank 1: the gateway feeds switches 1 and 3, and the row is chained
+# 1-3, 3-5. The gateways are fed from `west-5` and `west-9`, four nodes apart, which is further than the two
+# frames need: both feed links can be one straight segment. Pack puts the axes under the feeds, but the rows
+# rule spaces the switches wider than pack measured and pushes `two` right, and the sweep never moved it
+# back, so `link-2` jogged by 192 px at the end. The pass of ticket 16 pulls the columns back toward their
+# feeds as far as they allow each other.
+# Test-only input owned by ranked-groups ticket 16; test/pipeline/column-axis-hold.test.ts reads the layout.
+portograph: 2
+groups:
+  west: { tier: 0, label: West }
+  one: { tier: 1, label: Location one }
+  two: { tier: 1, label: Location two }
+nodes:
+  west-1: { group: west, class: switch, label: West 1 }
+  west-2: { group: west, class: switch, label: West 2 }
+  west-3: { group: west, class: switch, label: West 3 }
+  west-4: { group: west, class: switch, label: West 4 }
+  west-5: { group: west, class: switch, label: West 5 }
+  west-6: { group: west, class: switch, label: West 6 }
+  west-7: { group: west, class: switch, label: West 7 }
+  west-8: { group: west, class: switch, label: West 8 }
+  west-9: { group: west, class: switch, label: West 9 }
+  west-10: { group: west, class: switch, label: West 10 }
+  west-11: { group: west, class: switch, label: West 11 }
+  west-12: { group: west, class: switch, label: West 12 }
+  west-13: { group: west, class: switch, label: West 13 }
+  one-gw: { group: one, class: router, label: One gateway }
+  one-s1: { group: one, class: switch, label: One distribution switch 1 }
+  one-s2: { group: one, class: switch, label: One distribution switch 2 }
+  one-s3: { group: one, class: switch, label: One distribution switch 3 }
+  one-s4: { group: one, class: switch, label: One distribution switch 4 }
+  one-s5: { group: one, class: switch, label: One distribution switch 5 }
+  two-gw: { group: two, class: router, label: Two gateway }
+  two-s1: { group: two, class: switch, label: Two distribution switch 1 }
+  two-s2: { group: two, class: switch, label: Two distribution switch 2 }
+  two-s3: { group: two, class: switch, label: Two distribution switch 3 }
+  two-s4: { group: two, class: switch, label: Two distribution switch 4 }
+  two-s5: { group: two, class: switch, label: Two distribution switch 5 }
+links:
+  - [west-5, one-gw]
+  - [west-9, two-gw]
+  - [one-gw, one-s1]
+  - [one-gw, one-s3]
+  - [two-gw, two-s1]
+  - [two-gw, two-s3]
+  - [one-s1, one-s3]
+  - [one-s3, one-s5]
+  - [two-s1, two-s3]
+  - [two-s3, two-s5]
+

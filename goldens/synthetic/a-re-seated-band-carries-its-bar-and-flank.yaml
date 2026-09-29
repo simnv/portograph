@@ -1,0 +1,39 @@
+# Expected: A re-seated band carries its bar and its flank (ranked-groups ticket 18). The three locations
+# of tier 1 take two sub-tiers and a sync fan joins their rank-1 cells, so ELK layers them too deep and
+# the rows stage re-seats every band under the one above. The bar `rails` (tier 2) and the tier 3 group
+# `edge` with its left flank `side` stand below, so both bands move as wholes, with their default router
+# icons. The layout must not throw, and the gap between adjacent bands is the band gap.
+# Test-only input owned by ranked-groups ticket 18; test/pipeline/tier-gaps-compact.test.ts reads the layout.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  loc1: { tier: 1, label: Location 1 }
+  loc2: { tier: 1, label: Location 2 }
+  loc3: { tier: 1, label: Location 3 }
+  rails: { tier: 2, shape: bar }
+  edge: { tier: 3, label: Edge }
+  side: { align: left, of: edge }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  gw1: { group: loc1, class: router, label: Gateway 1 }
+  sw1: { group: loc1, class: switch, label: Switch 1 }
+  gw2: { group: loc2, class: router, label: Gateway 2 }
+  sw2: { group: loc2, class: switch, label: Switch 2 }
+  gw3: { group: loc3, class: router, label: Gateway 3 }
+  sw3: { group: loc3, class: switch, label: Switch 3 }
+  rail: { group: rails, class: router, ports: [{ name: p, side: top }] }
+  e1: { group: edge, class: router, label: Edge 1, ports: [{ name: p, side: top }, { name: q, side: left }] }
+  s1: { group: side, class: router, label: Spare 1, ports: [{ name: p, side: right }] }
+links:
+  - [isp, gw1]
+  - [isp, gw2]
+  - [isp, gw3]
+  - [gw1, sw1]
+  - [gw2, sw2]
+  - [gw3, sw3]
+  - [gw1, gw2]
+  - [sw1, sw2, { route: overlay }]
+  - [sw1, sw3, { route: overlay }]
+  - [sw3, rail.p]
+  - [rail, e1.p]
+  - [s1.p, e1.q]

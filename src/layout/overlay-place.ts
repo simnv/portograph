@@ -1,5 +1,5 @@
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
-import { frameColumns, type FrameColumn } from './columns.js';
+import { frameColumns, overlayFreeGroups, type FrameColumn } from './columns.js';
 import { groupShape } from './grid.js';
 import { occupiedOverhang, selectAnchorTier } from './lanes.js';
 import { overlayBlockers, overlayPath } from './overlay-paths.js';
@@ -50,19 +50,13 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
   const anchor = selectAnchorTier(model);
   if (anchor === undefined || !model.links.some(link => link.layer === 'overlay')) return;
   const groupOf = (node: string): string => model.document.nodes[node]!.group;
-  const routedOut = new Set<string>(), routedAny = new Set<string>();
+  const routedAny = new Set<string>();
   for (const link of model.links) {
     if (link.layer !== 'routed' || !link.attachments) continue;
-    const ends = [link.attachments.from.node, link.attachments.to.node];
-    for (const node of ends) routedAny.add(node);
-    if (groupOf(ends[0]!) !== groupOf(ends[1]!)) for (const node of ends) routedOut.add(groupOf(node));
+    for (const node of [link.attachments.from.node, link.attachments.to.node]) routedAny.add(node);
   }
-  const parents = new Set(Object.values(model.document.groups).flatMap(group => group.parent === undefined ? [] : [group.parent]));
   /** The groups this pass may move: no routed link out, and no other rule that owns the group's place. */
-  const free = new Set(Object.values(model.groups).filter(group => group.bounds !== undefined && group.nodes.length > 0
-    && !group.flank && group.frame === undefined && group.tier !== anchor && !routedOut.has(group.id)
-    && !parents.has(group.id) && model.document.groups[group.id]?.parent === undefined
-    && model.document.groups[group.id]?.shape !== 'bar').map(group => group.id));
+  const free = overlayFreeGroups(model, anchor);
   if (!free.size) return;
 
   const partners = new Map<string, string[]>();
