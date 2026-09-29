@@ -1,6 +1,6 @@
 # Expected: the tier-gap row plan keeps its rows off a canton's title band (canton-groups ticket 3, review B1). The canton
 # `west` (one member `site` on tier 1, three routers fed by two providers, so ADR-0011 puts the band at the bottom) stands
-# above the plain group `edge` on tier 2. Two links between them cross orthogonally on the right; their rows lie below
+# above the plain group `edge` on tier 2. Two links between them, from the outer routers, cross orthogonally; their rows lie below
 # the band and its margin, never in the frame margin or on the band.
 # Test-only input owned by canton-groups ticket 3; test/pipeline/canton-title.test.ts reads it.
 portograph: 2
@@ -25,5 +25,5 @@ links:
   - [p2, r1]
   - [p2, r2]
   - [r0, s0]
-  - [r1, s3]
-  - [r2, s2]
+  - [r0, s3]
+  - [r2, s1]

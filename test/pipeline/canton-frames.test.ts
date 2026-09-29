@@ -40,8 +40,14 @@ describe('canton frames and the unit (canton-groups ticket 2)', () => {
     expect(right(west.box)).toBeCloseTo(Math.max(right(site.box), right(clients.box)) + 20, 6);
     // The canton is fed from above, so its title band (canton-groups ticket 3) stands under the members' margin.
     expect(bottom(west.box)).toBeCloseTo(Math.max(bottom(site.box), bottom(clients.box)) + 20 + model.labelBands.find(band => band.group === 'west')!.bounds.height, 6);
-    // Members on distinct tiers stand on the canton axis (Section 2 rule 4).
-    expect(Math.abs(centreX(clients.box) - centreX(site.box))).toBeLessThan(2);
+    // Members on distinct tiers are centred on the canton axis at pack time (Section 2 rule 4). The one-node client group is a free
+    // one-cell member (ticket 56): ticket 05's barycentre then puts it under its overlay partner, inside the canton, a few px off the axis.
+    const partner = model.nodes['srv']!.bounds!, client = model.nodes['cl']!.bounds!;
+    // The barycentre centres the cell box on the partner; label growth (7f) widens the box on one side, so the node ends up to 4 px off.
+    expect(Math.abs(centreX(client) - centreX(partner))).toBeLessThan(4);
+    // Section 2b rule 3: the barycentre wins after the pack, inside the canton (the margin of a member frame is 20 px).
+    expect(clients.box.x).toBeGreaterThanOrEqual(west.box.x + 20 - 1e-6);
+    expect(right(clients.box)).toBeLessThanOrEqual(right(west.box) - 20 + 1e-6);
     expect(Math.abs(centreX(site.box) - centreX(west.box))).toBeLessThan(2);
     expect(west.tier).toBe(site.tier);
     // A canton's title is held by the sub-tier, so it is never an unhosted title.

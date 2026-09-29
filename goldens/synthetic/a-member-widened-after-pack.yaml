@@ -1,0 +1,33 @@
+# Expected: A member widened after the pack moves its sibling canton as a whole (canton-groups ticket 56, Section 2b rule 1).
+# The anchor tier `core` (tier 0) stands above two cantons. `west` holds `a` (tier 1, two ranks) with a zone whose title is wider
+# than the zone's one node, and `a-lab` (tier 2, one server); `east` holds `c` and its zone in the same way and `c-lab`. Stage 7f
+# widens a zone cell to hold its title, after the pack. The canton column follows the widened member, the sibling canton moves
+# right as a whole (one dx for every cell of every member on both tiers), and no member stands outside its canton. G9 is clean.
+# Test-only input owned by canton-groups ticket 56; test/pipeline/canton-walls.test.ts reads the layout.
+portograph: 2
+groups:
+  west: { label: West }
+  east: { label: East }
+  core: { tier: 0, label: Core }
+  a: { tier: 1, canton: west, label: Site A }
+  a-zone: { parent: a, label: Zone A of the west site }
+  a-lab: { tier: 2, canton: west, label: Lab A }
+  c: { tier: 1, canton: east, label: Site C }
+  c-zone: { parent: c, label: Zone C of the east site }
+  c-lab: { tier: 2, canton: east, label: Lab C }
+nodes:
+  core1: { group: core, class: router, label: Core one }
+  core2: { group: core, class: router, label: Core two }
+  a-core: { group: a, class: router, label: A core }
+  a-sync: { group: a-zone, class: switch, label: A sync }
+  a-srv: { group: a-lab, class: server, label: A server }
+  c-core: { group: c, class: router, label: C core }
+  c-sync: { group: c-zone, class: switch, label: C sync }
+  c-srv: { group: c-lab, class: server, label: C server }
+links:
+  - [core1, a-core]
+  - [core2, c-core]
+  - [a-core, a-sync]
+  - [c-core, c-sync]
+  - [a-sync, a-srv]
+  - [c-sync, c-srv]

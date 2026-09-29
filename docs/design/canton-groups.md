@@ -170,8 +170,8 @@ they stand (`frameColumns`, `columns.ts:826-849`), never fixed. So:
 2. **An inner pass holds the member wall.** `pullTier` has no member level: its units are the
    `columnTiers` units, one range per top-level unit (`columns.ts:520-529`), and a member is never
    in `standing`. The member wall is therefore a **new inner pass**: per canton and per tier, the
-   members as units, the derived canton column as the walls of the plan, the same `feedRange` and
-   `overlayRange`. It runs after `pullTier` and before centring, wherever `holdColumnAxes` runs. A
+   members as units, the canton frame box less `GROUP_PADDING` as the walls of the plan, the same `feedRange` and
+   `overlayRange`. It runs at the end of `holdColumnAxes` (rows time and 7f), after `pullTier`. A
    member that cannot reach its feed because of the wall warns `COLUMN_AXIS_HELD` and names the
    canton. Fixture 3's "after the whole layout" assertion depends on this pass.
    *No oscillation.* `columnShifts` moves right only, and only while boxes stand closer than gap
@@ -181,13 +181,37 @@ they stand (`frameColumns`, `columns.ts:826-849`), never fixed. So:
 3. **A one-cell member keeps the barycentre.** `overlayFreeGroups` excludes every frame cell
    (`columns.ts:479-482`), so a one-node client group, now a one-cell frame, would lose ticket 05's
    placement. `overlayFreeGroups` admits a one-cell member frame with no routed link. `placeOverlayFree`
-   moves it as a frame and clamps the target to the canton column. The same wall bounds
+   moves it as a frame and clamps the target to the canton frame box less `GROUP_PADDING`; the lanes of the tier wall the member as in `sweep`. The same wall bounds
    `overlayRange` in `pullTier`.
 4. **Held lanes.** A held lane grows the canton frame as it grows a frame (ticket 04). A later
    foreign lane reads the grown frame (ticket 14). A canton moved after lanes may not cross a lane
    (ticket 23). `separateFrameColumns` restores the band gap after the growth.
 5. **Idempotence.** A second layout of the layout JSON moves nothing: the derived column is a
    function of the boxes, and every pull is a projection onto the same ranges.
+
+**As built (ticket 56).** What held as written: the derived column, `columnShifts` moving the sibling as a whole, the inner pass
+(`holdMemberWalls`, after `pullTier` in `holdColumnAxes`, so at rows time and in 7f), `overlayFreeGroups` admitting a one-cell member
+(`placeOverlayFree` moves it as a frame, `sweepMembers`), `COLUMN_AXIS_HELD` naming the canton (owners: the member, then the canton),
+held-lane parity, idempotence of the passes. What did not:
+
+1. **The member wall is the canton frame box less the margin, not box plus slack.** With the slack a member reaches the column edge, the
+   derived box grows by the slack, and every replay of centring (7c, 7e, 7f) reads the grown box and spends it again: fixture 3 with a
+   340 px member under a 480 px member grew the canton by 60 px in three stages. `FrameColumn.wall` carries the box; `columnWindow`,
+   the inner pass and `sweepMembers` read it. The canton column itself (box plus slack) still separates sibling cantons.
+2. **`columnWindow` was already intersected with the canton column.** Every cell of a member is a cell of the top-level frame, so centring
+   walled it from ticket 54. The change is the slack, above.
+3. **Members that share a sub-tier are not moved by the inner pass.** `packBesideRows` and `besideWalls` already own that row (the first
+   member from the left stays, the rest close up to 40 px, in rows and at both ends of centring); a pass that pulled one of them to its feed
+   would be undone by the next `packBesideRows`. The two agree: they never touch the same member.
+4. **The inner pass cannot use the merged tiers of `columnTiers`.** A canton spans several document tiers and a sibling canton spans the
+   same sub-tiers, so its members land in one merged step and no member has the previous member tier as its authority. The pass builds its
+   own tiers from the members of one canton (`columnTiers(model, canton)`); the member tier nearest the anchor reads the tier outside the
+   canton that the canton reads (`feedsFrom`).
+5. **Beside gaps.** Three beside members stand 40 and 40 px at rows time, 40 and 44 after 7f: `pushFollowingGroups` moves the following
+   cells by the growth of a cell that widened for its title (4 px for `beta`), the frame of `beta` does not grow (it is derived from the
+   bodies), and no rule repacks a beside row after 7f. Ticket 54 measured the same.
+6. **Member movers in `placeOverlayFree`.** `sweep` reads a column as a wall outside which a mover stands, so a member could never be
+   placed inside its canton by it; `sweepMembers` places it between the other members of the tier and the canton box.
 
 ## Section 3 — Frames
 
@@ -312,15 +336,15 @@ so rule 3's feed union is exercised. Fixture 11 puts it inside.
 |---|---|---|---|
 | 1 | `a-canton-frames-two-tiers` | one canton; a two-rank location on tier 0 over a one-node client group on tier 1, one flow link | the canton frame contains both member frames plus 20 px; the client group's axis is the location's; G9 clean; the same input without `canton:` is byte-identical to today |
 | 2 | `two-cantons-are-disjoint-columns` | a wide anchor tier above two cantons of two tiers each; one cross-canton flow link | canton frame boxes a band gap apart; members inside their canton columns on both tiers; each canton's axis on the mean of its members' feeds; the order follows the overlay key, else `OVERLAY_ORDER_REFUSED` |
-| 3 | `a-narrow-tier-is-centred-in-its-canton-column` | anchor tier above; a canton whose tier-1 run is 600 px and tier-2 run 120 px, the tier-2 member fed off the axis | the tier-2 member centred at pack; after the whole layout still inside the canton column; pulled to its feed by no more than the room the column leaves; `COLUMN_AXIS_HELD` names the canton |
+| 3 | `a-narrow-tier-is-centred-in-its-canton-column` | anchor tier above; a canton whose tier-1 run is 480.6 px and tier-2 run 340.6 px, the tier-2 member fed off the axis | the tier-2 member centred at pack; after the whole layout still inside the canton column; pulled to its feed by no more than the room the column leaves; `COLUMN_AXIS_HELD` names the canton |
 | 4 | `a-foreign-unit-beside-the-run-of-cantons` | two cantons of two tiers; a plain group on tier 1 that ELK places between them | the plain group stands before or after the run on the side its key favours; no empty room between the cantons |
 | 5 | `a-transit-inside-a-canton` | a canton of three tiers; a link from tier 0 to tier 2 of the canton; a foreign link from above the canton to below it | the first lane inside the canton frame, which grows to hold it; the foreign lane outside at one x for all three tiers; the neighbour gap a band gap after `separateFrameColumns` |
-| 6 | `a-member-widened-after-pack` | a canton whose tier-1 member has a 13-node row that `fitGroupBox` widens, beside a sibling canton | the canton column follows the widened member; the sibling canton moved as a whole; no member outside its column; G9 clean |
+| 6 | `a-member-widened-after-pack` | a canton whose tier-1 member has a zone whose title is widened in 7f (50 → 146.7 px), beside a sibling canton | the canton column follows the widened member; the sibling canton moved as a whole; no member outside its column; G9 clean |
 | 7 | `a-canton-with-a-tier-below` | anchor tier above; a canton fed from above with a plain tier below it | the title on the bottom edge; the tier below pushed by the band; the gap holds 20 + band + 20 |
 | 7b | `a-canton-title-on-the-top-edge` | fixture 1 with no feed from above; a member with its own band on the same edge | the title on the top edge; the tier above gives way; the canton and member bands do not collide |
 | 7c | `a-canton-band-holds-the-rows-off` | a canton titled at the bottom over a plain tier, two links crossing | the planned rows lie below the band and the group-edge margin; no G6 |
-| 8 | `a-leaf-child-beside-its-parent-inside-a-canton` | canton → location → leaf zone beside the parent cells | the zone inside its location inside its canton; inset 40 px; the beside gap `COLUMN_SLACK` after the whole layout |
-| 9 | `a-canton-layout-is-idempotent` | fixtures 2, 3 and 6 laid out twice | the second layout JSON equals the first |
+| 8 | `a-leaf-child-beside-its-parent-inside-a-canton` | canton → location → leaf zone beside the parent cells | the zone inside its location inside its canton; inset 40 px; the beside gap 41 px measured after the whole layout (ticket 61) |
+| 9 | `a-canton-layout-is-idempotent` | an `it.each` over six fixtures (2, 3, 6, 5, the barycentre one, the free member beside a lane) laid out twice | the second layout JSON equals the first, runtime timings apart |
 | 10 | `three-continents` | three top locations on tier 0 outside every canton, an MPLS row on tier 1, cantons A (two locations with zones), B and C on tier 2, client groups on tiers 3 and 4, cross-canton flow links | three canton frames a band gap apart; every client group under its own canton; the top locations unmoved against the same input without cantons |
 | 11 | `an-anchor-tier-inside-a-canton-span` | a canton of three tiers whose middle tier is the anchor tier | the run keeps ELK's centre; members centred; G9 clean |
 

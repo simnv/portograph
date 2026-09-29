@@ -1,0 +1,37 @@
+# Expected: A one-cell member keeps ticket 05's barycentre inside its canton column (canton-groups ticket 56, fixture 6).
+# The anchor tier `core` (tier 0, eight routers) stands above the canton `west`. `west` holds `hall` (tier 1, six routers,
+# about 480 px) and the client group `clients` (tier 2, one node, a one-cell member). `clients` has no routed link, only two
+# overlay flow links to the two left routers of `hall`, so `placeOverlayFree` puts it at the mean x of those two partners: left of
+# the canton axis, inside the canton column. The pack centred it on the axis; the barycentre moves it, and the canton frame does not grow.
+# Test-only input owned by canton-groups ticket 56; test/pipeline/canton-walls.test.ts reads the layout.
+portograph: 2
+groups:
+  west: { label: West }
+  core: { tier: 0, label: Core }
+  hall: { tier: 1, canton: west, label: Hall }
+  clients: { tier: 2, canton: west, label: Clients }
+nodes:
+  c1: { group: core, class: router, label: Core one }
+  c2: { group: core, class: router, label: Core two }
+  c3: { group: core, class: router, label: Core three }
+  c4: { group: core, class: router, label: Core four }
+  c5: { group: core, class: router, label: Core five }
+  c6: { group: core, class: router, label: Core six }
+  c7: { group: core, class: router, label: Core seven }
+  c8: { group: core, class: router, label: Core eight }
+  h1: { group: hall, class: router, label: Hall one }
+  h2: { group: hall, class: router, label: Hall two }
+  h3: { group: hall, class: router, label: Hall three }
+  h4: { group: hall, class: router, label: Hall four }
+  h5: { group: hall, class: router, label: Hall five }
+  h6: { group: hall, class: router, label: Hall six }
+  k1: { group: clients, class: server, label: Client }
+links:
+  - [c1, h1]
+  - [c2, h2]
+  - [c3, h3]
+  - [c4, h4]
+  - [c5, h5]
+  - [c6, h6]
+  - { from: h1, to: k1, class: flow, route: overlay }
+  - { from: h2, to: k1, class: flow, route: overlay }

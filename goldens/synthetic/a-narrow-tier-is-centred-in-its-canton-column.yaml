@@ -1,0 +1,39 @@
+# Expected: A narrow tier is centred in its canton column (canton-groups ticket 56, fixture 3). The anchor tier `core`
+# (tier 0, eight routers) stands above the canton `west`, outside its span. `west` holds `hall` (tier 1, six routers,
+# about 600 px) and `lab` (tier 2, one server, about 120 px). The server hangs from the last router of `hall`, which stands
+# far right of the canton axis. At pack time `lab` is centred on the canton axis. After the whole layout it is pulled
+# toward its feed, and only inside the canton column: it never leaves the column, and the room the column leaves it is
+# the most it moves. The column holds it short of the feed, and `COLUMN_AXIS_HELD` names the canton.
+# Test-only input owned by canton-groups ticket 56; test/pipeline/canton-walls.test.ts reads the layout.
+portograph: 2
+groups:
+  west: { label: West }
+  core: { tier: 0, label: Core }
+  hall: { tier: 1, canton: west, label: Hall }
+  lab: { tier: 2, canton: west, label: Lab }
+nodes:
+  c1: { group: core, class: router, label: Core one }
+  c2: { group: core, class: router, label: Core two }
+  c3: { group: core, class: router, label: Core three }
+  c4: { group: core, class: router, label: Core four }
+  c5: { group: core, class: router, label: Core five }
+  c6: { group: core, class: router, label: Core six }
+  c7: { group: core, class: router, label: Core seven }
+  c8: { group: core, class: router, label: Core eight }
+  h1: { group: hall, class: router, label: Hall one }
+  h2: { group: hall, class: router, label: Hall two }
+  h3: { group: hall, class: router, label: Hall three }
+  h4: { group: hall, class: router, label: Hall four }
+  h5: { group: hall, class: router, label: Hall five }
+  h6: { group: hall, class: router, label: Hall six }
+  s1: { group: lab, class: server, label: Lab server one }
+  s2: { group: lab, class: server, label: Lab server two }
+  s3: { group: lab, class: server, label: Lab server three }
+links:
+  - [c1, h1]
+  - [c2, h2]
+  - [c3, h3]
+  - [c4, h4]
+  - [c5, h5]
+  - [c6, h6]
+  - [h6, s1]

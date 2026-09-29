@@ -1,0 +1,27 @@
+# Expected: Three members of one tier stand beside each other (canton-groups ticket 56, ticket 54 measurement N3). The canton
+# `west` holds `alpha`, `beta` and `gamma` on tier 1 (declaration order) and `lab` on tier 2. The three members share a sub-tier, so
+# they stand as one `beside` row, 40 px between their frames; `lab` stands centred under the row. The inner pass does not move
+# members that share a sub-tier, so it never fights `packBesideRows` over the gap.
+# Test-only input owned by canton-groups ticket 56; test/pipeline/canton-walls.test.ts reads the layout.
+portograph: 2
+groups:
+  west: { label: West }
+  upstream: { tier: 0, label: Upstream }
+  alpha: { tier: 1, canton: west, label: Alpha }
+  beta: { tier: 1, canton: west, shape: row, label: Beta }
+  gamma: { tier: 1, canton: west, shape: row, label: Gamma }
+  lab: { tier: 2, canton: west, label: Lab }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  a-gw: { group: alpha, class: router, label: Alpha gateway }
+  a-sw: { group: alpha, class: switch, label: Alpha switch }
+  b-gw: { group: beta, class: router, label: Beta gateway }
+  g-gw: { group: gamma, class: router, label: Gamma gateway }
+  srv: { group: lab, class: server, label: Server }
+links:
+  - [isp, a-gw]
+  - [isp, b-gw]
+  - [isp, g-gw]
+  - [a-gw, srv]
+  - [b-gw, srv]
+  - [g-gw, srv]
