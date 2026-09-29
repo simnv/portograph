@@ -72,7 +72,10 @@ describe('a gap the plan does not fit is left to the router with a diagnostic (t
         listen(type, type === 'message' ? event => { replies.push(event.data as { routes?: RoutedConnector[] }); listener(event); } : listener);
       return made;
     };
-    await layout(parse(fixture('a-band-holds-the-group-that-set-its-edge')), { createElkAttempt: createAttempt, createRouteAttempt: attempt }).catch(() => undefined);
+    const published = await layout(parse(fixture('a-band-holds-the-group-that-set-its-edge')), { createElkAttempt: createAttempt, createRouteAttempt: attempt });
+    expect(published.removedLinks ?? []).toEqual([]);
+    expect(published.diagnostics.filter(item => item.code === 'TIER_GAP_PART_UNFIT').map(item => item.message))
+      .toEqual(['the tier gap above tier 3 asks 164.00 px more than it has; its parts are left to the router.']);
     const batches = requests.map((batch, index) => ({ batch, routes: replies[index]?.routes ?? [] }));
     const held = batches.find(item => item.batch.connectors.some(connector => connector.id === 'link-22#0'));
     expect(held, 'link-22 is routed in a gap left to the router').toBeDefined();
