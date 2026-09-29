@@ -331,6 +331,28 @@ describe('deriveRanks: a leaf child stands at the bottom of its parent', () => {
     expect(result.spans.get('zb')).toEqual([3, 4]);
   });
 
+  it('a child member that is a peer of a parent member is not a leaf child, so it stays in the peer\'s rank', () => {
+    const result = deriveRanks(input({
+      members: ['rt', 'sw1', 'x', 'y'], linksAbove: new Set(['rt']), classRank: table({ rt: 1, sw: 2 }),
+      routedLinks: [{ from: 'rt', to: 'sw1' }, { from: 'sw1', to: 'sw2' }, { from: 'sw1', to: 'x' }, { from: 'x', to: 'y' }],
+      children: [{ group: 'zone', members: ['sw2'] }],
+    }));
+    expect(result.ranks.get('sw2')).toBe(1);
+    expect(result.spans.get('zone')).toEqual([1, 1]);
+  });
+
+  it('two leaf children joined by a peer link start on the same rank', () => {
+    const classes: Record<string, number> = { a1: 3, b1: 3 };
+    const result = deriveRanks(input({
+      members: ['p'], linksAbove: new Set(['p']), classRank: node => classes[node],
+      routedLinks: [{ from: 'p', to: 'a0' }, { from: 'a0', to: 'a1' }, { from: 'a1', to: 'b1' }],
+      children: [{ group: 'za', members: ['a0', 'a1'] }, { group: 'zb', members: ['b1'] }],
+    }));
+    expect(result.ranks.get('a1')).toBe(result.ranks.get('b1'));
+    expect(result.spans.get('za')).toEqual([1, 2]);
+    expect(result.spans.get('zb')).toEqual([2, 2]);
+  });
+
   it('a leaf child alone in its group is not moved', () => {
     const result = deriveRanks(input({
       members: ['p'], linksAbove: new Set(['p']), routedLinks: [{ from: 'p', to: 'c1' }], children: [{ group: 'zone', members: ['c1'] }],
