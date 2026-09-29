@@ -32,7 +32,11 @@ describe('a residual part publishes with its findings named (ticket 51)', () => 
     expect(residual(model)).toEqual(['link-7:lateral-port']);
     expect(codes(model)).toEqual(['TIER_GAP_PART_RESIDUAL|link-7 is left to the router in the tier gap above tier 1: a lateral port crosses the gap.']);
     expect(routed.removedLinks ?? []).toEqual([]);
-    expect(failing(routed)).toEqual(['G6:segment-group-edge:link-4/access']);
+    // Ticket 59: the jog of link-4's drop, which stands on its upper x, keeps the group-edge margin (10) from the top of `access`.
+    const jog = tierGapPlans(model).flatMap(({ plan }) => plan.parts).find(part => part.link === 'link-4')!;
+    expect(jog.shape === 'drop' && jog.stand === 'upper' && jog.jog !== undefined).toBe(true);
+    expect(jog.jog!).toBeLessThanOrEqual(model.groups['access']!.bounds!.y - 10 + 1e-6);
+    expect(failing(routed)).toEqual([]);
   }, 120000);
 
   it('names a same-boundary U-turn (u-turn): both ports face the gap from one band, no gap between them', async () => {
