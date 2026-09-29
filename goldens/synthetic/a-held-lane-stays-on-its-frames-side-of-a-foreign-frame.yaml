@@ -1,0 +1,37 @@
+# Expected: Two sibling frames, west and east, one tier. u1 feeds both gateways. Each frame holds one lane: the
+# west gateway links to l1 (held in west, foreign to east) and the east gateway links to l0 (held in east,
+# foreign to west). The low nodes stand crossed: l1 is pulled under east by ea and l0 is pulled under west by
+# wa, and both have wide labels, so the far ends stand far apart. The far end of a held link asks for a lane
+# beyond the foreign frame, on the side away from the held link's own frame. Such a lane would make its own
+# frame grow across the foreign frame, and the lane of the other link, which is foreign to that frame, would
+# stand inside it: the lanes stage threw `Lane ... crosses occupied group east#1` (ranked-groups ticket 26).
+# A held lane stays on its own frame's side of every frame it is foreign to, so neither frame grows over the
+# other and both lanes stand outside the frame they are foreign to.
+# Test-only input owned by ranked-groups ticket 26; test/pipeline/frame-held-lanes.test.ts reads the stages.
+portograph: 2
+groups:
+  up: { tier: 0, label: Up }
+  east: { tier: 1, label: East }
+  west: { tier: 1, label: West }
+  low: { tier: 2, label: Low }
+nodes:
+  u1: { group: up, class: provider, label: U1 }
+  eg: { group: east, class: router, label: Eg }
+  ed: { group: east, class: switch, label: Ed }
+  ea: { group: east, class: server, label: Ea }
+  wg: { group: west, class: router, label: Wg }
+  wd: { group: west, class: switch, label: Wd }
+  wa: { group: west, class: server, label: Wa }
+  l0: { group: low, class: server, label: L0 wide low node of the main building room, ports: [{ name: p, side: left }, { name: q, side: left }] }
+  l1: { group: low, class: server, label: L1 wide low node of the main building room, ports: [{ name: p, side: left }, { name: q, side: left }] }
+links:
+  - [eg, ed]
+  - [ed, ea]
+  - [wg, wd]
+  - [wd, wa]
+  - [u1, eg]
+  - [u1, wg]
+  - [wg, l1.p]
+  - [eg, l0.p]
+  - [wa, l0.q]
+  - [ea, l1.q]

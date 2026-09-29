@@ -1,0 +1,19 @@
+# Expected: the triangle (ranked-groups ticket 27). Router `a` links to the tier above and is rank 0;
+# `b` and `c` are each one hop from it, so they share rank 1 and the link b-c is a peer link. An
+# undirected triangle has no inherent order: neither `b` nor `c` is put below the other, and the
+# link a-c does not pull `c` to a rank of its own.
+# Test-only input owned by ranked-groups ticket 27; test/pipeline/peer-depth.test.ts reads the ranks.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  loc: { tier: 1, label: Location }
+nodes:
+  feed: { group: upstream, class: provider, label: Feed }
+  a: { group: loc, class: switch, label: A }
+  b: { group: loc, class: switch, label: B }
+  c: { group: loc, class: switch, label: C }
+links:
+  - [feed, a]
+  - [a, b]
+  - [b, c]
+  - [a, c]

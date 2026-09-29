@@ -29,10 +29,11 @@ const overlap = (a: { x: number; width: number }, b: { x: number; width: number 
 describe('a frame holds the lanes of the links that end in it', () => {
   it('sibling frames stand apart and no foreign lane stands inside a frame box', async () => {
     const model = await placement('a-frame-holds-its-lanes-beside-its-siblings');
-    const frames = model.frames!;
-    expect(frames.map(frame => frame.id).sort()).toEqual(['east', 'mid', 'west']);
+    // Each access node stands in a child frame (`eastc`, ...) of its location; the child is inside its parent.
+    expect(model.frames!.map(frame => frame.id).sort()).toEqual(['east', 'eastc', 'mid', 'midc', 'west', 'westc']);
+    const frames = model.frames!.filter(frame => ['east', 'mid', 'west'].includes(frame.id));
     for (const a of frames) for (const b of frames) if (a.id < b.id) expect(overlap(a.box, b.box), `${a.id} overlaps ${b.id}`).toBe(false);
-    const nodesOf = (id: string): string[] => frames.find(frame => frame.id === id)!.cells.flatMap(cell => model.groups[cell]!.nodes);
+    const nodesOf = (id: string): string[] => model.frames!.filter(frame => frame.id === id || frame.id === `${id}c`).flatMap(frame => frame.cells).flatMap(cell => model.groups[cell]!.nodes);
     let foreign = 0;
     for (const lane of model.lanes) {
       const link = model.links.find(item => item.id === (lane.owner as { id: string }).id)!;
@@ -75,5 +76,25 @@ describe('a frame holds the lanes of the links that end in it', () => {
       }
     }
     expect(checked).toBeGreaterThan(0);
+  }, 60000);
+
+  it("a held lane stays on its own frame's side of a foreign frame, so two crossed held lanes do not swallow each other (ticket 26)", async () => {
+    // `validateLanes` runs inside the lanes stage: a lane inside the reach of a frame it is foreign to throws there.
+    const model = await placement('a-held-lane-stays-on-its-frames-side-of-a-foreign-frame', [rows, lanes]);
+    const frames = model.frames!;
+    expect(frames.map(frame => frame.id).sort()).toEqual(['east', 'west']);
+    expect(overlap(frames[0]!.box, frames[1]!.box), 'the frames overlap').toBe(false);
+    const nodesOf = (id: string): string[] => frames.find(frame => frame.id === id)!.cells.flatMap(cell => model.groups[cell]!.nodes);
+    const holders = new Set<string>();
+    for (const lane of model.lanes) {
+      const link = model.links.find(item => item.id === (lane.owner as { id: string }).id)!;
+      const ends = [link.attachments!.from.node, link.attachments!.to.node];
+      for (const frame of frames) {
+        if (ends.some(node => nodesOf(frame.id).includes(node))) { holders.add(frame.id); continue; }
+        expect(overlap(lane.bounds, frame.box), `${lane.id} stands inside frame ${frame.id}`).toBe(false);
+      }
+    }
+    // The two crossed links each hold a lane in one frame and are foreign to the other.
+    expect([...holders].sort()).toEqual(['east', 'west']);
   }, 60000);
 });

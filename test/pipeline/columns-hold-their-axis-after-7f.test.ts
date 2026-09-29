@@ -1,0 +1,50 @@
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+import type { LayoutModel } from '../../src/index.js';
+import { layout, parse } from '../../src/index.js';
+import { holdColumnAxes } from '../../src/layout/columns.js';
+import { rows } from '../../src/layout/rows.js';
+import { sidesTwo } from '../../src/layout/sides-two.js';
+import { sidesOne } from '../../src/layout/sides-one.js';
+import { sizeNodes } from '../../src/layout/size.js';
+import { skeleton } from '../../src/layout/skeleton.js';
+import { findPort } from '../../src/layout/row-paths.js';
+import { resolve } from '../../src/resolve/index.js';
+import { PLACEMENT_EPS } from '../../src/layout/tolerance.js';
+import { bandGap } from '../../src/layout/skeleton-graph.js';
+import { deriveFrames } from '../../src/layout/frames.js';
+import { createAttempt } from '../layout/phase-two-fixture.js';
+import { createAvoidAttempt } from '../route/fixture.js';
+
+const source = readFileSync(new URL('../../goldens/synthetic/columns-hold-their-axis-after-7f.yaml', import.meta.url), 'utf8');
+const run = (): Promise<LayoutModel> => layout(parse(source), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+/** The jog of a routed link between its two ports as the cells stand now: the port x of its end less that of its start. */
+const jog = (model: LayoutModel, id: string): number => {
+  const { attachments } = model.links.find(link => link.id === id)!;
+  return Math.abs(findPort(model, attachments!.to)!.anchor!.x - findPort(model, attachments!.from)!.anchor!.x);
+};
+
+describe('columns hold their feed axis after 7f', () => {
+  // Stage 7f widens a cell to hold its title and moves the frames after it as wholes; a frame that stood under
+  // its feed after rows then stands beside it. Ticket 16's pass runs again after each 7f move (ticket 17).
+  it('the feed link of the middle frame jogs no more after the whole layout than after rows', async () => {
+    const resolved = resolve(parse(source));
+    sidesOne(resolved); sizeNodes(resolved);
+    await skeleton(resolved, { createAttempt });
+    const atRows = jog(rows(sidesTwo(resolved)), 'link-2');
+    expect(atRows, 'the fixture forces a jog at rows, or the test proves nothing').toBeGreaterThan(0);
+    expect(jog(await run(), 'link-2')).toBeLessThanOrEqual(atRows + PLACEMENT_EPS);
+  }, 60000);
+
+  it('keeps the frames a band gap apart, and a second run of the pass moves nothing', async () => {
+    const model = structuredClone(await run());
+    const tops = (deriveFrames(model) ?? []).filter(frame => frame.parent === undefined).sort((a, b) => a.box.x - b.box.x);
+    for (const [i, frame] of tops.slice(1).entries()) {
+      expect(frame.box.x - (tops[i]!.box.x + tops[i]!.box.width)).toBeGreaterThanOrEqual(bandGap(model) - 1e-6);
+    }
+    const before = JSON.stringify(Object.values(model.groups).map(group => group.bounds));
+    // The slack is spent after centring, so the pass that 7f runs is the one with none.
+    expect(holdColumnAxes(model, 0)).toBe(false);
+    expect(JSON.stringify(Object.values(model.groups).map(group => group.bounds))).toBe(before);
+  }, 60000);
+});

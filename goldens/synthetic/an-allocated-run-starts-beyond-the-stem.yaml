@@ -1,6 +1,8 @@
-# Expected: A site group holds a router and a child group (ranked cells, ticket 19) of three
-# servers. Two links skip one rank, so each crosses a rank band between its ends and owns a lane
-# there. A lane reaches 12 px past its own band. The allocated run of the other link leaves its
+# Expected: A site group holds a router, a switch and a child group (ranked cells, ticket 19) of
+# three servers. The child feeds nothing deeper, so the leaf-child rule (ticket 19) puts it after
+# the switch, and the ranks are the router 0, the switch 1, b and c 2, a 3. Links skip one
+# rank (the switch's), so each crosses a rank band between its ends and owns a lane there.
+# A lane reaches 12 px past its own band. The allocated run of the other link leaves its
 # lane and arrives at a port that stands on the edge of a rank cell. An interior cell edge holds no
 # padding, so that port row sits 12 px from the far lane's reach, and the 15 px stem of the port
 # ends inside the tier gap. A run that stops at the gap's boundary ends between the port and the
@@ -21,13 +23,15 @@ groups:
 nodes:
   provider: { group: wan, class: provider }
   router: { group: site, class: router }
+  mid: { group: site, class: switch }
   a: { group: zone, class: load-balancer }
   b: { group: zone, class: ntp-stratum2 }
   c: { group: zone, class: ntp-stratum2 }
 links:
   - [router, provider, { class: dashed }]
+  - [router, mid, { class: physical }]
   - [a, b, { class: physical }]
-  - [b, c, { class: physical }]
   - [router, c, { class: physical }]
   - [router, b, { class: physical }]
   - [c, a, { class: physical }]
+  - [mid, a, { class: physical }]

@@ -1,24 +1,6 @@
 import type { LayoutModel } from '../model/index.js';
 import { orderedNodeIds } from '../model/index.js';
-import { BOTTOM_CLASSES, TOP_CLASSES } from '../profiles/network/tiers.js';
 import type { RankInput } from './ranks.js';
-
-/**
- * The class rank of a node (docs/design/ranked-groups.md, section 1, step 2). The ends come from
- * the tier-inference table parse uses (`TOP_CLASSES`, `BOTTOM_CLASSES`): a top class is rank 0, a
- * bottom class the last. That table puts every other class in one middle tier; read alone it would
- * make a router and a switch equal, so each uplink between them a peer link and each group one
- * rank. The middle is therefore split by the rows below; a class no row names has no rank.
- */
-export const MIDDLE_CLASS_ROWS: readonly (readonly string[])[] = [['router', 'tbr', 'rr'], ['switch'], ['server']];
-
-export function classRankOf(nodeClass: string | undefined): number | undefined {
-  if (nodeClass === undefined) return undefined;
-  if (TOP_CLASSES.includes(nodeClass)) return 0;
-  if (BOTTOM_CLASSES.includes(nodeClass)) return MIDDLE_CLASS_ROWS.length + 1;
-  const index = MIDDLE_CLASS_ROWS.findIndex(row => row.includes(nodeClass));
-  return index < 0 ? undefined : index + 1;
-}
 
 /**
  * Build the derivation input of one document group from a model resolved up to stage 1: its own
@@ -55,9 +37,8 @@ export function rankInputOf(model: LayoutModel, group: string, childGroups: stri
       if (otherTier < tier) linksAbove.add(mine!); else if (otherTier > tier) linksBelow.add(mine!);
     }
   }
-  const classRank = (node: string): number | undefined => classRankOf(model.document.nodes[node]!.class);
   return {
-    group, members, routedLinks, linksAbove, linksBelow, overlayPartners, classRank,
+    group, members, routedLinks, linksAbove, linksBelow, overlayPartners,
     children: childGroups.map(child => ({ group: child, members: nodes.filter(node => groupOf(node) === child) })),
   };
 }

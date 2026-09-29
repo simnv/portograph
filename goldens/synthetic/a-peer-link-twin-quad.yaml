@@ -1,0 +1,29 @@
+# Expected: the twin quad, the case the dropped twin lift would have moved (ranked-groups ticket 27).
+# `w1`..`w4` are fully linked (K4) and `w3` alone links to `sw` (the chain feed, wan, sw, w3). The
+# reference draws `w3` and `w4` on one rank and `w1`, `w2` on the next, but the four are structurally
+# symmetric twins: no rule that moves `w4` up to `w3` can leave `w1` and `w2` behind. The depth rule
+# gives the honest answer: `w3` is two hops from the anchor `wan` (rank 2), and `w1`, `w2` and `w4`
+# are three (rank 3), peers of one another. Nothing lifts.
+# Test-only input owned by ranked-groups ticket 27; test/pipeline/peer-depth.test.ts reads the ranks.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  loc: { tier: 1, label: Location }
+nodes:
+  feed: { group: upstream, class: provider, label: Feed }
+  wan: { group: loc, class: switch, label: Wan }
+  sw: { group: loc, class: switch, label: Sw }
+  w3: { group: loc, class: switch, label: W3 }
+  w4: { group: loc, class: switch, label: W4 }
+  w1: { group: loc, class: switch, label: W1 }
+  w2: { group: loc, class: switch, label: W2 }
+links:
+  - [feed, wan]
+  - [wan, sw]
+  - [sw, w3]
+  - [w1, w2]
+  - [w1, w3]
+  - [w1, w4]
+  - [w2, w3]
+  - [w2, w4]
+  - [w3, w4]

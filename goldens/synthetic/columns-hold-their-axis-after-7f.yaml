@@ -1,0 +1,34 @@
+# Expected: ranked-groups ticket 17, columns hold their feed axis after stage 7f. The overlay-free variant of
+# sibling-frames-keep-the-band-gap.yaml: three two-rank locations A, B and C in tier 1 under one feed group, each
+# with a zone whose title is wider than the zone's one node. Stage 7f widens a zone cell to hold its title and
+# moves the frames after it as wholes, so a frame the rows stage had put under its feed (`hub` to `a-core`,
+# `b-core`, `c-core` are links 1, 2, 3) was left standing where the push put it and the feed link jogged.
+# Test-only input owned by ranked-groups ticket 17; test/pipeline/columns-hold-their-axis-after-7f.test.ts reads it.
+portograph: 2
+groups:
+  feed: { tier: 0, label: Feed }
+  a: { tier: 1, label: Site A }
+  a-zone: { parent: a, label: Zone A of the west site }
+  b: { tier: 1, label: Site B }
+  b-zone: { parent: b, label: Zone B of the middle site }
+  c: { tier: 1, label: Site C }
+  c-zone: { parent: c, label: Zone C of the east site }
+nodes:
+  ntp1: { group: feed, class: server, label: NTP one }
+  ntp2: { group: feed, class: server, label: NTP two }
+  ntp3: { group: feed, class: server, label: NTP three }
+  ntp4: { group: feed, class: server, label: NTP four }
+  hub: { group: feed, class: router, label: Hub }
+  a-core: { group: a, class: router, label: A core }
+  a-sync1: { group: a-zone, class: switch, label: A sync }
+  b-core: { group: b, class: router, label: B core }
+  b-edge: { group: b-zone, class: switch, label: B edge }
+  c-core: { group: c, class: router, label: C core }
+  c-sync1: { group: c-zone, class: switch, label: C sync }
+links:
+  - [hub, a-core]
+  - [hub, b-core]
+  - [hub, c-core]
+  - [a-core, a-sync1]
+  - [b-core, b-edge]
+  - [c-core, c-sync1]
