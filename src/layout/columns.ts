@@ -6,6 +6,7 @@ import { laneSidesHold, selectAnchorTier } from './lanes.js';
 import { findPort } from './row-paths.js';
 import { bandGap, compareId, portId } from './skeleton-graph.js';
 import { moveGroup } from './skeleton-geometry.js';
+import { rebuildNodeGeometry } from './node-geometry.js';
 import { groupShape } from './grid.js';
 import { crosses, overlayPath } from './overlay-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -477,7 +478,10 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, authority:
   // cells. The plan is refused as a whole, as for a lane, and the columns stay where they stand.
   const straight = allowed ? straightOverlays(model) : [];
   const before = new Map(deriveFrames(model)?.map(frame => [frame.id, frame.box]));
-  if (allowed) for (const [group, dx] of shifts) moveGroup(model, group, dx, 0);
+  // `moveGroup` carries anchors but not pill bounds, and the straightness below reads pills: the shifted
+  // groups' node geometry is rebuilt before the reading, and again on rollback (ticket 17 review).
+  const settle = (): void => rebuildNodeGeometry(model, [...shifts.keys()].flatMap(group => group.nodes), 'current');
+  if (allowed) { for (const [group, dx] of shifts) moveGroup(model, group, dx, 0); settle(); }
   const after = new Map(deriveFrames(model)?.map(frame => [frame.id, frame.box]));
   // The ends are read after the move: a frame that ends a link takes its own ports with it.
   const segments = straightOverlays(model, new Set(straight.map(({ id }) => id)));
@@ -489,7 +493,7 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, authority:
     return was !== undefined && now !== undefined && shifts.has(item.unit.groups[0]!) && !item.unit.groups.some(group => ends.has(group.id))
       && crosses(from, to, now) && !crosses(from, to, was);
   }));
-  if (blocked) for (const [group, dx] of shifts) moveGroup(model, group, -dx, 0);
+  if (blocked) { for (const [group, dx] of shifts) moveGroup(model, group, -dx, 0); settle(); }
   const refused = shifts.size > 0 && (!allowed || blocked);
   if (refused) for (const item of standing) if (shifts.has(item.unit.groups[0]!) && !held.has(item.unit)) held.set(item.unit, blocked ? 'segment' : 'lane');
   reportHeld(model, tier, feeds, held, columnSlack);
