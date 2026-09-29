@@ -18,10 +18,10 @@ import { createAttempt } from '../layout/phase-two-fixture.js';
 
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 /** Stages 4 to 7 of the pipeline: everything placement decides before the router runs. */
-async function placement(name: string): Promise<LayoutModel> {
+async function placement(name: string, stages: ((model: LayoutModel) => LayoutModel)[] = [rows, lanes, flanks, centre, bars, bundles, bands]): Promise<LayoutModel> {
   const model = sizeNodes(sidesOne(resolve(parse(fixture(name)))));
   await skeleton(model, { createAttempt });
-  return [rows, lanes, flanks, centre, bars, bundles, bands].reduce((current, stage) => stage(current), sidesTwo(model));
+  return stages.reduce((current, stage) => stage(current), sidesTwo(model));
 }
 const overlap = (a: { x: number; width: number }, b: { x: number; width: number }): boolean =>
   a.x < b.x + b.width - 1e-6 && a.x + a.width > b.x + 1e-6;
@@ -53,5 +53,20 @@ describe('a frame holds the lanes of the links that end in it', () => {
     }
     // Four foreign links, three crossed sub-tiers each, against the three frames.
     expect(foreign).toBeGreaterThanOrEqual(4 * 3 * 2);
+  }, 60000);
+
+  it('a lane the frame holds is reserved before the foreign lane that would stand where the frame grows (ticket 23)', async () => {
+    // link-16 crosses all three frames and link-9 ends in west. Reserved in source order, link-16 took the slot
+    // beside west's edge first and link-9's lane could only stand beyond it, inside the grown frame. The lanes
+    // stage validates every lane against `occupied`, so a foreign lane inside the frame's reach throws there.
+    const model = await placement('a-frame-holds-its-lanes-beside-its-siblings', [rows, lanes]);
+    const laneOf = (id: string) => model.lanes.find(lane => lane.id === `lane:"${id}":2`)!;
+    const held = laneOf('link-9'), foreign = laneOf('link-16'), cell = model.groups['west#1']!.bounds!;
+    expect(held.group).toBe('west#1');
+    // The held lane stands beside the cell on the side no foreign lane stands on, so the foreign lane
+    // is outside the cell and outside the lane the frame holds.
+    expect(overlap(held.bounds, foreign.bounds)).toBe(false);
+    expect(foreign.bounds.x >= cell.x + cell.width, 'link-16 stands beside the cell edge of west').toBe(true);
+    expect(held.bounds.x + held.bounds.width <= cell.x, 'link-9 stands on the free side of the cell').toBe(true);
   }, 60000);
 });
