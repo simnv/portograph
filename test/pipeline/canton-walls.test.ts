@@ -236,6 +236,19 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     expect(JSON.stringify(Object.values(clone.groups).map(group => [group.id, group.bounds]))).toBe(before);
   }, 60000);
 
+  // Ticket 69: the pull admits a transit from beyond the authority sub-tier and reads its lane, as centring does. The first pass on the finished
+  // layout still moves `site` by 1.74 px (it was 4.74 px): the canton wall grew by the lane gutter after the last pull of stage 7, which a lane
+  // refused at that time (see the ticket). The second pass moves nothing, and the move goes to the feeds' mean (right), not to `l1` alone.
+  it('a-transit-from-beyond-the-authority-tier-into-a-member: the pull aims at the lane and is a fixed point after one pass', async () => {
+    const clone = structuredClone(await run('a-transit-from-beyond-the-authority-tier-into-a-member')) as LayoutModel;
+    const x = (): number => clone.groups['site#0']!.bounds!.x;
+    const start = x();
+    expect(holdMemberWalls(clone)).toBe(true);
+    expect(x() - start).toBeGreaterThan(0);
+    expect(x() - start).toBeLessThan(2);
+    expect(holdMemberWalls(clone)).toBe(false);
+  }, 60000);
+
   // Ticket 67: the mixed run of a foreign unit between two cantons converges by a third each round of 7f (1.551, 0.517, 0.172 px), and the rounds end
   // under the creep of half a pixel. What is left is that creep, not a pull that goes the wrong way: a second pull moves the run as one block by less
   // than it. The bound of 0.1 is measured (0.057); the guaranteed bound is CANTON_CREEP x the ratio of the rounds, about 0.167.
