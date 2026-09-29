@@ -137,8 +137,8 @@ describe('group label bands', () => {
 
     const produced = { ...model, links: model.links.filter(link => link.path !== undefined) };
     const snapshot = score(produced).snapshot;
-    expect(produced.links).toHaveLength(16); // the eight dashed links are overlay and take their path at stage 11 (Q104)
-    expect(model.links.filter(link => link.path === undefined && link.layer !== 'overlay').map(link => link.id)).toEqual(['link-1', 'link-2']);
+    expect(produced.links).toHaveLength(24);
+    expect(model.links.filter(link => link.path === undefined).map(link => link.id)).toEqual(['link-1', 'link-2']);
     expect(model.lanes.map(lane => [lane.id, lane.owner, lane.x, lane.bounds.width]))
       .toEqual(before.lanes.map(lane => [lane.id, lane.owner, lane.x, lane.bounds.width]));
     expect(model.lanes.some((lane, index) => lane.bounds.y !== before.lanes[index]!.bounds.y)).toBe(true);
@@ -158,7 +158,7 @@ describe('group label bands', () => {
 
   it('keeps every required router entry point outside the stroke-aware label band obstacles', async () => {
     const model = run(await throughBundles(golden));
-    const remainders = model.links.filter(link => !link.path && link.layer !== 'overlay').map(link => link.id);
+    const remainders = model.links.filter(link => !link.path).map(link => link.id);
     expect(remainders).toEqual(['link-1', 'link-2']);
 
     // The proven conflict: EAC-01/EAC-02 top anchors need a 15 px outward checkpoint.

@@ -27,8 +27,8 @@ function stopOnErrors(model: LayoutModel): void {
   if (model.diagnostics.some(diagnostic => diagnostic.severity === 'error')) throw new ResolveError(model.diagnostics);
 }
 
-/** The classes drawn on the overlay layer: signals, not cables. `dashed` joined on 2026-09-29 (Q104). The converter's `OVERLAY_CLASSES` names the same set. */
-export const OVERLAY_CLASSES: ReadonlySet<string> = new Set(['flow', 'sync', 'dashed']);
+/** The classes drawn on the overlay layer: signals, not cables. `signal` joined on 2026-09-29 (Q104); `dashed` stays routed. The converter's `OVERLAY_CLASSES` names the same set. */
+export const OVERLAY_CLASSES: ReadonlySet<string> = new Set(['flow', 'sync', 'signal']);
 
 function family(linkClass: string | undefined): Layer {
   return linkClass !== undefined && OVERLAY_CLASSES.has(linkClass) ? 'overlay' : 'routed';

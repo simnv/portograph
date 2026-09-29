@@ -14,7 +14,7 @@ counts only. It does not print source node identifiers. Keep private sources and
 examples outside the repository; the tests contain generic topology only.
 
 Connection styles matching the authored `ntpSync` preset become `class: sync`; those matching
-`ntpFlow` become `class: flow`. Both are overlay families in the network profile, as is `dashed` (Q104). Styles matching
+`ntpFlow` become `class: flow`. Both are overlay families in the network profile, as is `signal`: a dashed connection with a satellite router or an antenna at one end becomes `signal` (Q104); every other dashed connection stays `dashed`. Styles matching
 the physical `connection` preset become `physical`, or `dashed` when they carry a dash pattern.
 An unmatched style is an error. Node connectivity never determines a link's class. These classes
 preserve semantic families and the distinction between solid and dashed physical links; they do
@@ -61,7 +61,7 @@ or quality gates; run the resulting full input through the normal CLI and inspec
 
 `--canton TOKEN[=LABEL]` (repeatable) groups top-level groups into cantons. A group whose identifier (case-insensitive, not
 label) starts with a token is a member; the longest token wins. Every other top-level group counts its
-sync, flow and dashed links (its own and its children's) to those groups only; more than half to one canton makes it a member, else it stays
+sync, flow and signal links (its own and its children's) to those groups only; more than half to one canton makes it a member, else it stays
 outside with a warning that names the counts. A canton whose members do not stand on consecutive tiers is
 dropped with a warning. A tokenised `bar` or `grid` group stays outside with a warning. Without the flag the
 output is byte-identical.

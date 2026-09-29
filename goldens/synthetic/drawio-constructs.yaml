@@ -1,6 +1,6 @@
 # Expected: One small diagram carrying every construct the draw.io exporter has to translate that
 # the golden does not exercise together: a group whose title band the pipeline puts at the bottom,
-# a port role and a port status on one pill, a dotted link class (on two links: a dashed link is an overlay link since Q104, and would join the one below), a labelled link, and
+# a port role and a port status on one pill, a dotted and a dashed link class, a labelled link, and
 # an overlay link that the SVG masks and a draw.io file cannot. Both overlay ends sit on a top side
 # and their two faces are level, so the default branch of the 2026-09-16 rule (stress ticket 20)
 # states **one horizontal 95.26 px segment**, (50.75, 263.5) to (146.01, 263.5), which is the whole
@@ -41,5 +41,5 @@ nodes:
 links:
   - [a.down, b.up, { label: 100G }]
   - [a.spare, b.alt, { class: dotted }]
-  - [a.down, c.up, { class: dotted }]
+  - [a.down, c.up, { class: dashed }]
   - [b.alt, c.up, { route: overlay }]

@@ -21,7 +21,7 @@ nodes:
   d: { group: site, class: server }
   e: { group: site, class: server }
 links:
-  - [router, provider]
+  - [router, provider, { class: dashed }]
   - [router, mid, { class: physical, route: orthogonal }]
   - [router, c, { class: physical, route: orthogonal }]
   - [router, b, { class: physical, route: orthogonal }]

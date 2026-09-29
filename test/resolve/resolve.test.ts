@@ -19,17 +19,16 @@ ${links.map(link => `  - ${link}`).join('\n')}
 }
 
 describe('semantic resolution', () => {
-  it('resolves the actual golden parse output to three bundles and no aggregation', () => {
+  it('resolves the actual golden parse output to five bundles and no aggregation', () => {
     const parsed = parse(readFileSync(new URL('../../goldens/m1-sip-edge.yaml', import.meta.url), 'utf8'));
     const model = resolve(parsed);
     expect(model.stage).toBe('resolve');
     expect(model.document).toEqual(parsed);
-    expect(model.bundles.map(bundle => bundle.members.length).sort((a, b) => b - a)).toEqual([4, 4, 2]);
-    expect(model.bundles.flatMap(bundle => bundle.members)).toHaveLength(10);
+    expect(model.bundles.map(bundle => bundle.members.length).sort((a, b) => b - a)).toEqual([4, 4, 4, 4, 2]);
+    expect(model.bundles.flatMap(bundle => bundle.members)).toHaveLength(18);
     expect(model.groupLinks).toEqual([]);
     expect(model.links.map(link => link.sourceIndex)).toEqual(parsed.links.map((_, i) => i));
-    // The eight dashed TBR-002 links are overlay since Q104 (ticket 73).
-    expect(model.links.every(link => (parsed.links[link.sourceIndex]!.class === 'dashed') === (link.layer === 'overlay') && link.family === link.layer)).toBe(true);
+    expect(model.links.every(link => link.family === 'routed' && link.layer === 'routed')).toBe(true);
     expect(model.links.every(link => link.path === undefined && link.stubCandidate === undefined)).toBe(true);
     expect(model.nodes['EBR-01']?.ports.map(port => port.ref)).toEqual(parsed.nodes['EBR-01']?.ports.map(port => ({ node: 'EBR-01', ...port })));
     expect(model.nodes['EBR-01']).not.toHaveProperty('bounds');
@@ -77,15 +76,15 @@ describe('semantic resolution', () => {
   });
 
   it('uses class families and leaves geometry-dependent defaults undecided', () => {
-    const model = resolve(input(['[a, c]', '[a, d, {class: custom}]', '[b, c, {class: physical}]', '[b, d, {class: flow}]', '[b, d, {class: sync}]', '[a, d, {class: dashed}]']));
-    expect(model.links.map(link => link.family)).toEqual(['routed', 'routed', 'routed', 'overlay', 'overlay', 'overlay']);
-    expect(model.links.map(link => link.layer)).toEqual(['routed', 'routed', 'routed', 'overlay', 'overlay', 'overlay']);
-    expect(model.links.map(link => link.technique)).toEqual([undefined, undefined, undefined, 'overlay', 'overlay', 'overlay']);
+    const model = resolve(input(['[a, c]', '[a, d, {class: custom}]', '[b, c, {class: physical}]', '[b, d, {class: flow}]', '[b, d, {class: sync}]']));
+    expect(model.links.map(link => link.family)).toEqual(['routed', 'routed', 'routed', 'overlay', 'overlay']);
+    expect(model.links.map(link => link.layer)).toEqual(['routed', 'routed', 'routed', 'overlay', 'overlay']);
+    expect(model.links.map(link => link.technique)).toEqual([undefined, undefined, undefined, 'overlay', 'overlay']);
     expect(model.bundles).toEqual([]);
   });
 
   it('bundles unordered node pairs across routed classes in author link order', () => {
-    const model = resolve(input(['[c, a, {class: dotted}]', '[a, c, {class: custom}]', '[a, c, {class: flow}]']));
+    const model = resolve(input(['[c, a, {class: dotted}]', '[a, c, {class: dashed}]', '[a, c, {class: flow}]']));
     expect(model.bundles).toHaveLength(1);
     expect(model.bundles[0]).toMatchObject({ nodes: ['a', 'c'], members: ['link-1', 'link-2'] });
     expect(model.links.map(link => link.technique)).toEqual(['bundle', 'bundle', 'overlay']);

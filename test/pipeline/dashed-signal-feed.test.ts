@@ -5,16 +5,16 @@ import type { LayoutModel } from '../../src/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
-/** Ranked-groups ticket 73 (Q104): a dashed link is a signal and joins the overlay family. */
+/** Ranked-groups ticket 73 (Q104): a signal link (drawn dashed) joins the overlay family. */
 const yaml = readFileSync(new URL('../../goldens/synthetic/a-dashed-signal-feed-is-one-straight-segment.yaml', import.meta.url), 'utf8');
 const run = (): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 
-describe('a dashed signal feed', () => {
-  it('draws every dashed link as one straight overlay segment', async () => {
+describe('a signal feed', () => {
+  it('draws every signal link as one straight overlay segment', async () => {
     const model = await run();
-    const dashed = model.links.filter(link => model.document.links[link.sourceIndex]!.class === 'dashed');
-    expect(dashed).toHaveLength(4);
-    for (const link of dashed) {
+    const signals = model.links.filter(link => model.document.links[link.sourceIndex]!.class === 'signal');
+    expect(signals).toHaveLength(4);
+    for (const link of signals) {
       expect(link.layer).toBe('overlay');
       expect(link.technique).toBe('overlay'); // the overlay family's technique; one segment is the straight branch
       expect(link.path!.segments).toHaveLength(1);

@@ -13,7 +13,9 @@ import yaml
 
 
 # The classes the layout engine draws on the overlay layer (src/resolve/index.ts OVERLAY_CLASSES; Q104).
-OVERLAY_CLASSES = ('sync', 'flow', 'dashed')
+OVERLAY_CLASSES = ('sync', 'flow', 'signal')
+# drawthe.net icons of a signal source: a satellite router or an antenna. A dashed link at one is a `signal`.
+SIGNAL_ICONS = ('spacerouter', 'antenna')
 
 ICON_ROLES = {
     'router': ('router', 'router'), 'spacerouter': ('satellite-router', 'router'),
@@ -93,6 +95,13 @@ def link_class(connection, doc):
     if signature[::2] == physical[::2] and signature[3] == physical[3]:
         return 'dashed' if signature[1] else 'physical'
     raise ValueError('Unmapped connection style; do not infer its semantic family from topology')
+
+
+def pair_class(role, left, right, icons):
+    """A dashed link with a signal source at either end is a signal, not a cable (Q104)."""
+    if role == 'dashed' and any(icons[name].get('icon') in SIGNAL_ICONS for name in (left, right)):
+        return 'signal'
+    return role
 
 
 def node_role(spec, doc):
@@ -278,17 +287,18 @@ def convert(doc, cantons=()):
                 if left == right:
                     report['self_pairs'] += 1
                     continue
-                identity = (tuple(sorted(((left, label_a), (right, label_b)))), role, style(connection))
+                kind = pair_class(role, left, right, icons)
+                identity = (tuple(sorted(((left, label_a), (right, label_b)))), kind, style(connection))
                 if identity in seen:
                     report['duplicates'] += 1
                     continue
                 seen.add(identity)
-                options = {'class': role}
+                options = {'class': kind}
                 labels = list(dict.fromkeys(label for label in (label_a, label_b) if label))
                 if labels:
                     options['label'] = ' / '.join(labels)
                 result['links'].append([node_ids[left], node_ids[right], options])
-                classes[role] += 1
+                classes[kind] += 1
     report.update(links=len(result['links']), groups=len(result['groups']), tiers=len(ranks), classes=dict(classes))
     if cantons:
         report['cantons'] = assign_cantons(result, cantons)
