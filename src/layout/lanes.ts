@@ -457,7 +457,19 @@ export function allocateLanes(model: LayoutModel): void {
     for (let parent = model.document.frames![id]?.parent; parent !== undefined; parent = model.document.frames![id]?.parent) id = parent;
     return id;
   };
-  for (const link of links) {
+  /**
+   * A frame's held lanes are decided before the lanes foreign to it. A lane a frame holds grows the frame's
+   * reach (`heldLaneReach`), and lane x is immutable, so a foreign lane reserved first may stand where the
+   * frame will grow: the held lane can only stand beyond it, and the foreign lane ends inside the frame.
+   * Reserved after the held lanes, the foreign lane reads them (ticket 23). The order within each part is
+   * the source order of `links`; a link that holds a lane in one frame and is foreign to another is held.
+   */
+  const holdsLane = (link: LayoutLink): boolean => {
+    const own = ownFrameCells(model, link), crossed = transitTiers(model, link);
+    return Object.values(model.groups).some(group => own.has(group.id) && crossed.includes(group.tier!));
+  };
+  const heldLinks = new Set(links.filter(holdsLane));
+  for (const link of [...links.filter(item => heldLinks.has(item)), ...links.filter(item => !heldLinks.has(item))]) {
     const crossed = transitTiers(model, link), width = laneWidth(model, link), half = width / 2;
     const cellsOf = new Map<string, LayoutGroup[]>();
     for (const group of Object.values(model.groups)) {

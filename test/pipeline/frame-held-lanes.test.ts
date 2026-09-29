@@ -18,10 +18,10 @@ import { createAttempt } from '../layout/phase-two-fixture.js';
 
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 /** Stages 4 to 7 of the pipeline: everything placement decides before the router runs. */
-async function placement(name: string): Promise<LayoutModel> {
+async function placement(name: string, stages: ((model: LayoutModel) => LayoutModel)[] = [rows, lanes, flanks, centre, bars, bundles, bands]): Promise<LayoutModel> {
   const model = sizeNodes(sidesOne(resolve(parse(fixture(name)))));
   await skeleton(model, { createAttempt });
-  return [rows, lanes, flanks, centre, bars, bundles, bands].reduce((current, stage) => stage(current), sidesTwo(model));
+  return stages.reduce((current, stage) => stage(current), sidesTwo(model));
 }
 const overlap = (a: { x: number; width: number }, b: { x: number; width: number }): boolean =>
   a.x < b.x + b.width - 1e-6 && a.x + a.width > b.x + 1e-6;
@@ -53,5 +53,27 @@ describe('a frame holds the lanes of the links that end in it', () => {
     }
     // Four foreign links, three crossed sub-tiers each, against the three frames.
     expect(foreign).toBeGreaterThanOrEqual(4 * 3 * 2);
+  }, 60000);
+
+  it('a lane the frame holds is reserved before the foreign lane that would stand where the frame grows (ticket 23)', async () => {
+    // The lanes stage validates every lane against `occupied`, so a foreign lane inside a frame's reach throws there.
+    const model = await placement('a-held-lane-is-reserved-before-a-foreign-lane', [rows, lanes]);
+    const frameOf = (id: string): string | undefined => model.frames!.find(frame => frame.cells.includes(id))?.id;
+    const ends = (id: string): string[] => {
+      const link = model.links.find(item => item.id === id)!;
+      return [link.attachments!.from.node, link.attachments!.to.node];
+    };
+    let checked = 0;
+    for (const held of model.lanes) {
+      const frame = frameOf(held.group);
+      if (frame === undefined || !ends((held.owner as { id: string }).id).some(node => model.groups[model.document.nodes[node]!.group]!.frame === frame)) continue;
+      const cell = model.groups[held.group]!.bounds!, low = Math.min(cell.x, held.bounds.x), high = Math.max(cell.x + cell.width, held.bounds.x + held.bounds.width);
+      for (const other of model.lanes) {
+        if (other.tier !== held.tier || ends((other.owner as { id: string }).id).some(node => model.groups[model.document.nodes[node]!.group]!.frame === frame)) continue;
+        checked++;
+        expect(overlap(other.bounds, { x: low, width: high - low }), `${other.id} stands inside the reach of ${held.group}, which holds ${held.id}`).toBe(false);
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
   }, 60000);
 });
