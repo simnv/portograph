@@ -72,7 +72,7 @@ export function rowPathCandidate(model: LayoutModel, link: LayoutLink): boolean 
   if (link.bundle !== undefined) return false;
   const route = model.document.links[link.sourceIndex]?.route;
   if (route !== undefined && route !== 'straight' && route !== 'orthogonal') return false;
-  // A group-link member is a candidate only by the frame rule (ticket 38); the row rule leaves it alone.
+  // A group-link member is a candidate by the frame rule only (ticket 38): it never takes a level path.
   return frameLinkCandidate(model, link) || (link.groupLink === undefined && lateral(model, link) !== undefined);
 }
 function automatic(model: LayoutModel, link: LayoutLink): boolean {
@@ -190,7 +190,7 @@ export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segm
 /** The single straight horizontal path the rows rule pins for this link, or undefined when ineligible. */
 export function expectedRowPath(model: LayoutModel, link: LayoutLink): LayoutPath | undefined {
   if (!rowPathCandidate(model, link)) return undefined;
-  const level = expectedLevelPath(model, link);
+  const level = link.groupLink === undefined ? expectedLevelPath(model, link) : undefined;
   // A level facing pair the rows rule pins keeps its anchor-to-anchor segment. Every other link inside
   // one frame answers to the frame rule, which reads the chord between the two faces (ticket 34).
   return level ?? (frameLinkCandidate(model, link) ? expectedFramePath(model, link) : undefined);

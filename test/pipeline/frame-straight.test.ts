@@ -112,8 +112,8 @@ describe('a group-link member inside one frame takes the chord', () => {
   const name = 'a-group-link-member-inside-one-frame-is-straight';
   const yaml = readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 
-  it('draws every member as one straight segment and removes nothing', async () => {
-    const model = await run(yaml);
+  const check = async (source: string): Promise<void> => {
+    const model = await run(source);
     expect(model.groupLinks).toHaveLength(1);
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
     expect(model.removedLinks ?? []).toEqual([]);
@@ -128,5 +128,10 @@ describe('a group-link member inside one frame takes the chord', () => {
     expect(model.lanes.filter(lane => lane.owner.kind === 'link' && members.some(link => link.id === (lane.owner as { id: string }).id))).toEqual([]);
     expect(allocateGapRuns(model).filter(item => members.some(link => link.id === item.link))).toEqual([]);
     expect(score(model).snapshot.passed).toBe(true);
-  });
+  };
+
+  it('draws every member between a parent and its child frame as one straight segment', () => check(yaml));
+
+  it('draws every member between two rank cells of one frame as one straight segment', () => check(readFileSync(
+    new URL('../../goldens/synthetic/a-group-link-member-between-two-rank-cells-is-straight.yaml', import.meta.url), 'utf8')));
 });
