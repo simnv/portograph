@@ -215,6 +215,14 @@ held-lane parity, idempotence of the passes. What did not:
 6. **Member movers in `placeOverlayFree`.** `sweep` reads a column as a wall outside which a mover stands, so a member could never be
    placed inside its canton by it; `sweepMembers` places it between the other members of the tier and the canton box.
 
+**As built (ticket 67): the idempotence of rule 5, and its known limit.** The ranges are not the same across a replay: `slideRange` reads
+the box of the frame (the ADR-0012 union cell), and the replays of 7f rebuild the box from the move of the pull, so a pull after the last
+replay reads other ranges than the one before it. Held: a packed run with a pin is a fixed point, because the fit of `pullTier` pools units only
+between pins (a pin splits the run); before, `ca` of `a-canton-group-swap-is-refused-for-routed-crossings` moved 11.139 px away from its feed
+range. Known limit: the lone column of `a-canton-band-holds-the-rows-off` moves 7.778 px on a second pull, and the foreign-unit fixture
+0.057 px (the tail of the 7f rounds, under `CANTON_CREEP`). A pull after the replays reaches a fixed point only by growing the canvas (Q 0.7862 to
+0.7679, width 370 to 377.8), so none runs; an exact fixed point needs the pull and the widening solved together (ticket 68).
+
 **As built (ticket 65): the close-up.** Cantons close up to a band gap: `closeUp` (anchor step, in `holdColumnAxes` and again in 7f) and `closeRun`
 inside the plan of `pullTier` (steps with an authority), spacing by `runSpacing`, repeated after the tier-gap growth in `mutation.ts`. Two readings of
 "a straight overlay link would be bent", each where it applies (decisions-log Q102): the **close-up reads the count** (the number of straight overlay
