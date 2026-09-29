@@ -243,5 +243,98 @@ class ConversionTests(unittest.TestCase):
             self.assertEqual('tier' in group, parent is None)
 
 
+def continents():
+    """Two continents, generic names: north and south are tokens; the rest is decided by links."""
+    layout = [  # group, top row, icons
+        ('far-a', 12, ['fa']), ('far-b', 2, ['fb']), ('top', 10, ['t']),
+        ('hub-n', 8, ['hn1', 'hn2', 'hn3']), ('hub-s', 8, ['hs1', 'hs2']),
+        ('hub-mix', 8, ['hm1', 'hm2', 'hm3', 'hm4']),
+        ('north-clients', 6, ['nc']), ('south-clients', 6, ['sc']),
+        ('north-edge', 4, ['ne']), ('leaf', 4, ['lf']),
+    ]
+    icons, groups, x = {}, {}, 0
+    for name, row, members in layout:
+        for member in members:
+            icons[member] = {'x': x, 'y': row, 'icon': 'router'}
+            x += 2
+        groups[name] = {'name': name.title(), 'members': members}
+        x += 6
+    groups['south-clients']['name'] = 'North clients'  # a label with the other token: the identifier decides
+    flow = {'stroke': 'blue'}
+    pairs = [('hn1', 'nc'), ('hn2', 'nc'), ('hn3', 'nc'), ('hn1', 'sc'), ('hs1', 'sc'), ('hs2', 'sc'),
+             ('hm1', 'nc'), ('hm2', 'nc'), ('hm3', 'sc'), ('hm4', 'sc'), ('lf', 'hn2')]
+    connections = [{**flow, 'endpoints': list(pair)} for pair in pairs]
+    connections += [{'stroke': 'blue', 'strokeDashArray': [1, 1], 'endpoints': ['t', 'hn1']}]
+    connections += [{'stroke': 'black', 'endpoints': ['t', 'nc']}, {'stroke': 'black', 'endpoints': ['t', 'sc']}]
+    return {'connection': {'stroke': 'black'}, 'ntpSync': {'stroke': 'blue', 'strokeDashArray': [1, 1]},
+            'ntpFlow': {'stroke': 'blue'}, 'icons': icons, 'groups': groups, 'connections': connections}
+
+
+class CantonTests(unittest.TestCase):
+    def convert(self, cantons):
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            result, report = converter().convert(continents(), cantons)
+        return result, report, stderr.getvalue()
+
+    def test_without_the_flag_the_output_is_byte_identical(self):
+        module = converter()
+        with contextlib.redirect_stderr(io.StringIO()):
+            plain, plain_report = module.convert(continents())
+            empty, empty_report = module.convert(continents(), [])
+        self.assertEqual(module.yaml.safe_dump(plain, sort_keys=False), module.yaml.safe_dump(empty, sort_keys=False))
+        self.assertEqual(plain_report, empty_report)
+        self.assertNotIn('canton', module.yaml.safe_dump(plain))
+
+    def test_tokens_then_majority_then_consecutive_tiers(self):
+        result, report, stderr = self.convert([('north', 'North'), ('south', 'South'), ('far', 'Far')])
+        groups = result['groups']
+        self.assertEqual(groups['north'], {'label': 'North'})
+        self.assertEqual(groups['south'], {'label': 'South'})
+        self.assertNotIn('tier', groups['north'])
+        # Step 1: the identifier decides, not the label.
+        self.assertEqual(groups['north-clients']['canton'], 'north')
+        self.assertEqual(groups['south-clients']['canton'], 'south')
+        self.assertEqual(groups['north-edge']['canton'], 'north')
+        # Step 2: three of four to one canton, and all of two.
+        self.assertEqual(groups['hub-n']['canton'], 'north')
+        self.assertEqual(groups['hub-s']['canton'], 'south')
+        # No majority: outside, with the counts in the warning. Physical links are not counted.
+        self.assertNotIn('canton', groups['hub-mix'])
+        self.assertIn("'hub-mix'", stderr)
+        self.assertIn("'north'=2", stderr)
+        self.assertIn("'south'=2", stderr)
+        # Zero links to tokenised groups: outside. A step-2 member is never read by step 2.
+        self.assertNotIn('canton', groups['top'])
+        self.assertNotIn('canton', groups['leaf'])
+        self.assertIn('none', stderr)
+        # Step 3: tiers 0 and 5 are not consecutive, so the canton is dropped whole.
+        self.assertNotIn('far', groups)
+        self.assertNotIn('canton', groups['far-a'])
+        self.assertIn("canton 'far' dropped", stderr)
+        self.assertEqual(report['cantons'], {'north': 3, 'south': 2})
+
+    def test_the_longest_token_wins(self):
+        result, report, _ = self.convert([('no', 'No'), ('north', 'North'), ('south', 'South')])
+        self.assertEqual(result['groups']['north-clients']['canton'], 'north')
+        self.assertNotIn('no', result['groups'])
+        self.assertEqual(report['cantons'], {'north': 3, 'south': 2})
+
+    def test_a_member_is_a_tier_group_and_the_label_defaults_to_the_token(self):
+        result, _, _ = self.convert([('north', 'north')])
+        self.assertEqual(result['groups']['north'], {'label': 'north'})
+        self.assertIn('tier', result['groups']['north-clients'])
+        self.assertEqual(list(result['groups'])[0], 'north')
+
+    def test_a_tokenised_grid_group_stays_outside_with_a_warning(self):
+        result = {'groups': {'north-grid': {'tier': 0, 'shape': 'grid'}}, 'nodes': {}, 'links': []}
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            counts = converter().assign_cantons(result, [('north', 'North')])
+        self.assertEqual(counts, {})
+        self.assertNotIn('canton', result['groups']['north-grid'])
+        self.assertIn('grid', stderr.getvalue())
+
+
 if __name__ == '__main__':
     unittest.main()

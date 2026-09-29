@@ -58,3 +58,10 @@ without a supported equivalent retain a descriptive role with the default glyph.
 topology conversion: exact source icon art, original coordinates and nested group drawing are
 outside schema v2's current placement model. The converter does not certify successful routing
 or quality gates; run the resulting full input through the normal CLI and inspect the output.
+
+`--canton TOKEN[=LABEL]` (repeatable) groups top-level groups into cantons. A group whose identifier (not
+label) starts with a token is a member; the longest token wins. Every other top-level group counts its
+sync and flow links to those groups only; more than half to one canton makes it a member, else it stays
+outside with a warning that names the counts. A canton whose members do not stand on consecutive tiers is
+dropped with a warning. A tokenised `bar` or `grid` group stays outside with a warning. Without the flag the
+output is byte-identical.

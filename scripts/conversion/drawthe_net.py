@@ -145,7 +145,7 @@ def nesting(containers):
     return parents
 
 
-def convert(doc):
+def convert(doc, cantons=()):
     icons = place(doc.get('icons') or {})
     groups = {name: spec or {} for name, spec in (doc.get('groups') or {}).items()}
     if icons.keys() & groups.keys():
@@ -287,15 +287,81 @@ def convert(doc):
                 result['links'].append([node_ids[left], node_ids[right], options])
                 classes[role] += 1
     report.update(links=len(result['links']), groups=len(result['groups']), tiers=len(ranks), classes=dict(classes))
+    if cantons:
+        report['cantons'] = assign_cantons(result, cantons)
     return result, report
+
+
+def assign_cantons(result, cantons):
+    """Add canton entries and `canton:` keys to a converted document; return the member count per canton.
+
+    One pass (docs/design/canton-groups.md, Section 1): identifier tokens first, longest token wins;
+    then a majority of overlay-family links to step-1 groups; then consecutive tiers or the canton is dropped."""
+    groups, nodes = result['groups'], result['nodes']
+    top = {gid: (spec.get('parent') or gid) for gid, spec in groups.items()}
+    tokens = sorted(((token.lower(), token, label) for token, label in cantons), key=lambda t: -len(t[0]))
+    ids = {}
+    for token, label in cantons:
+        cid = next(iter(identifiers([token]).values()))
+        if cid in groups:
+            raise ValueError(f'Canton identifier {cid!r} collides with a group identifier')
+        ids[token] = (cid, label)
+    member = {}
+    for gid, spec in groups.items():
+        if spec.get('parent'):
+            continue
+        match = next((t for t in tokens if gid.lower().startswith(t[0])), None)
+        if not match:
+            continue
+        if spec.get('shape') in ('bar', 'grid'):
+            print(f'warning: group {gid!r} matches canton token {match[1]!r} but is a {spec["shape"]} group; left outside',
+                  file=sys.stderr)
+            continue
+        member[gid] = match[1]
+    step_one = dict(member)
+    for gid, spec in groups.items():
+        if spec.get('parent') or gid in step_one:
+            continue
+        counts = Counter()
+        for source, target, options in result['links']:
+            if options.get('class') not in ('sync', 'flow'):
+                continue
+            here, there = top[nodes[source]['group']], top[nodes[target]['group']]
+            if here != gid:
+                here, there = there, here
+            if here == gid and there in step_one:
+                counts[step_one[there]] += 1
+        total = sum(counts.values())
+        best = counts.most_common(1)
+        if best and best[0][1] * 2 > total:
+            member[gid] = best[0][0]
+        else:
+            named = ', '.join(f'{token!r}={n}' for token, n in sorted(counts.items())) or 'none'
+            print(f'warning: group {gid!r} has no canton majority (overlay links to tokenised groups: {named}); '
+                  f'left outside', file=sys.stderr)
+    for _, token, _ in tokens:
+        tiers = sorted({groups[gid]['tier'] for gid, t in member.items() if t == token})
+        if tiers and tiers != list(range(tiers[0], tiers[-1] + 1)):
+            print(f'warning: canton {ids[token][0]!r} dropped: its members stand on tiers {tiers}, '
+                  f'which are not consecutive', file=sys.stderr)
+            member = {gid: t for gid, t in member.items() if t != token}
+    counts = Counter(member.values())
+    entries = {ids[token][0]: {'label': ids[token][1]} for _, token, _ in tokens if counts[token]}
+    for gid in member:
+        groups[gid]['canton'] = ids[member[gid]][0]
+    result['groups'] = {**dict(sorted(entries.items())), **groups}
+    return {ids[token][0]: n for token, n in sorted(counts.items())}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('source', type=Path)
     parser.add_argument('output', type=Path)
+    parser.add_argument('--canton', action='append', default=[], metavar='TOKEN[=LABEL]',
+                        help='group top-level groups whose identifier starts with TOKEN into a canton; repeatable')
     args = parser.parse_args()
-    result, report = convert(yaml.safe_load(args.source.read_text()))
+    cantons = [(token, label or token) for token, _, label in (value.partition('=') for value in args.canton)]
+    result, report = convert(yaml.safe_load(args.source.read_text()), cantons)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(yaml.safe_dump(result, sort_keys=False, allow_unicode=True))
     print(json.dumps(report, sort_keys=True))
