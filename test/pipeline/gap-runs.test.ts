@@ -180,26 +180,23 @@ it('steps a row past a group edge instead of ending the search', async () => {
   expect(Number.isFinite(score(published).snapshot.Q)).toBe(true);
 }, 120000);
 
-it('leaves out the run a group label covers and seats the rest', async () => {
-  // Stress ticket 09. A group label covers the approach one of four runs owes its own port. Ticket 50: the leg of that run from its
-  // row to its tip would cross the label, so the plan declines it as residual (`leg-blocked`, spec 2.2) and reserves the other
-  // three tip to tip; the covered one alone is left to stage 8 and crosses every row.
+it('seats all four runs once the group label is nudged off the run it covered', async () => {
+  // Stress ticket 09. A group label covers the approach one of four runs owes its own port. Ticket 50 declined that run as residual
+  // (`leg-blocked`, spec 2.2) and reserved the other three; since ticket 62 placement nudges the label along its edge off the four legs
+  // (there is room beside them), so the gap seats all four and none is covered. The per-run decline itself is held by the plan's own
+  // unit test (`gap-plan.test.ts`, 'makes a part residual (leg-blocked)').
   const model = await place(read('a-gap-leaves-out-the-covered-run.yaml'));
   // Named by its tiers, not found by the answer: the gap between the middle band and the lower one.
   const gap = tierGaps(model).find(entry => entry.above === 1 && entry.below === 2)!;
   const plan = tierGapPlans(model).find(entry => entry.gap.above === 1 && entry.gap.below === 2)!.plan;
-  expect(plan.parts.map(part => part.link).sort()).toEqual(['link-2', 'link-3', 'link-4']);
-  expect(plan.residual.map(item => `${item.link}:${item.reason}`)).toEqual(['link-1:leg-blocked']);
+  expect(plan.parts.map(part => part.link).sort()).toEqual(['link-1', 'link-2', 'link-3', 'link-4']);
+  expect(plan.residual).toEqual([]);
 
   const runs = allocateGapRuns(model);
   const inside = runs.filter(run => run.segments.some(segment => Math.max(segment.from.y, segment.to.y) > gap.low && Math.min(segment.from.y, segment.to.y) < gap.high));
-  expect(inside.map(run => run.link).sort()).toEqual(['link-2', 'link-3', 'link-4']);
+  expect(inside.map(run => run.link).sort()).toEqual(['link-1', 'link-2', 'link-3', 'link-4']);
 
-  // The covered run keeps the route it has today, and it crosses every run the gap did reserve.
-  for (const run of inside) expect(run.crossers).toContain('link-1');
-
-  // The rectangle that covers it is the lower group's own title, and it covers that run's approach
-  // and no other's. Each approach runs from the gap's far boundary to the port's own outward
+  // The lower group's own title covers no run's approach. Each approach runs from the gap's far boundary to the port's own outward
   // checkpoint, which is the line the allocation measures.
   const label = model.labels.find(item => item.id === 'label:group:g2')!;
   const title = { x: label.bounds!.x - GROUP_LABEL_LINK_CLEARANCE - routedStroke(model) / 2,
@@ -214,7 +211,7 @@ it('leaves out the run a group label covers and seats the rest', async () => {
       owner: { kind: 'link' as const, id } };
     return [id, segmentRect(approach, title)] as const;
   });
-  expect(covered).toEqual([['link-1', true], ['link-2', false], ['link-3', false], ['link-4', false]]);
+  expect(covered).toEqual([['link-1', false], ['link-2', false], ['link-3', false], ['link-4', false]]);
 
   const published = linkLabels(await route(model, { createAttempt: createAvoidAttempt }));
   expect(Number.isFinite(score(published).snapshot.Q)).toBe(true);

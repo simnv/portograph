@@ -1,5 +1,6 @@
 # Expected: ranked-groups ticket 10. `n0 -> n4` leaves the row above and ends in `g11`. The title of
-# `g11` stands over the port's column, so the link cannot go in through the top; it goes in sideways,
+# `g11` stands over the port's column and is too wide to be nudged clear of it (ticket 62 nudges a narrower
+# title along its edge, so the link would go in straight), so the link cannot go in through the top; it goes in sideways,
 # and its last turn must fall outside the 10 px group-edge link-margin of ADR-0013. The overlay link
 # from `n2` to `n3` only puts `g10` left of `g11`, which puts the 60 px corridor beside the edge of
 # `g11` on the way of the drop. Before the fix the drop ran 5.6 px beside that edge: G6
@@ -8,7 +9,7 @@ portograph: 2
 groups:
   g00: { tier: 0, label: Row above }
   g10: { tier: 1, label: Left group }
-  g11: { tier: 1, label: Right group }
+  g11: { tier: 1, label: Right group of the east wing }
   g20: { tier: 2, label: Row below }
 nodes:
   n0: { group: g00, class: server, label: n0 }

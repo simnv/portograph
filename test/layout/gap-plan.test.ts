@@ -93,33 +93,33 @@ describe('the tier-gap plan on the four shapes of the spec (Section 2.4)', () =>
     expect(plan.growth).toBe(0);
   });
 
-  it('plans both gaps of the v5-4-0 shape: rows, forced crossings, link-3 residual under the label, growth 0 after 7f', async () => {
+  it('plans both gaps of the v5-4-0 shape: rows, forced crossings, link-3 planned clear of the label, growth 0 after 7f', async () => {
     const model = await place('a-tier-gap-plan-orders-every-part');
     const [upper, lower] = tierGapPlans(model).filter(({ plan }) => plan.order.length);
-    // Ticket 50: the spec's link-3 (row 179.5, the term that asked for 9.25 px) stands 102.5 under the `access` group label, whose
-    // box the leg from the row to the nested lower tip would cross. It is residual, `leg-blocked`, and the router lays it.
-    expect(upper!.plan.residual.map(item => `${short(item.id)}:${item.reason}`)).toEqual(['3:leg-blocked']);
+    // The spec's link-3 (row 179.5, the term that asked for 9.25 px) stands 102.5 under the `access` group label. Ticket 50 declined it
+    // (`leg-blocked`); since ticket 62 the label is nudged along its edge off the leg at placement, so the plan lays it as the spec does.
+    expect(upper!.plan.residual.map(item => `${short(item.id)}:${item.reason}`)).toEqual([]);
     expect(lower!.plan.residual).toEqual([]);
 
-    expect(upper!.plan.order.map(short)).toEqual(['11', '1', '5', '2']);
-    expectRows(upper!.plan, { 11: [145], 1: [156.5], 5: [156.5], 2: [168] });
-    expect(upper!.plan.edges.map(edge => `${short(edge.above)}>${short(edge.below)}:${edge.kind}`).sort()).toEqual(['11>1:O2', '5>2:O2']);
-    // Four interleaved pairs of the spec (link-3's are gone) and two on link-4's drop.
-    expect(pairs(upper!.plan)).toEqual(['11x2', '11x4', '11x5', '2x5', '4x5']);
-    // Without link-3 nothing asks for more than the band gap: the floor sets H, and the old 69.25 is gone with it.
-    expect(upper!.plan.height).toBe(BAND_GAP);
+    expect(upper!.plan.order.map(short)).toEqual(['11', '1', '5', '2', '3']);
+    expectRows(upper!.plan, { 11: [145], 1: [156.5], 5: [156.5], 2: [168], 3: [179.5] });
+    expect(upper!.plan.edges.map(edge => `${short(edge.above)}>${short(edge.below)}:${edge.kind}`).sort()).toEqual(['11>1:O2', '5>2:O2', '5>3:O1']);
+    // The seven interleaved pairs of the spec, link-3's included, and two on link-4's drop.
+    expect(pairs(upper!.plan)).toEqual(['11x2', '11x3', '11x4', '11x5', '2x3', '2x5', '4x5']);
+    // Link-3's row is the term that asks for 9.25 px above the band gap, the spec's H = 69.25; 7f grew the gap to it, so nothing more is asked.
+    expect(upper!.plan.height).toBeCloseTo(69.25, 6);
     expect(upper!.plan.growth).toBe(0);
-    expect(upper!.plan.setBy).toBe('floor');
+    expect(upper!.plan.setBy).toBe('link-3#0');
 
     expect(lower!.plan.order.map(short)).toEqual(['12.1', '10', '8', '7', '9']);
-    expectRows(lower!.plan, { '12.1': [303.75], 10: [315.25], 8: [326.75], 7: [338.25], 9: [349.75] });
+    expectRows(lower!.plan, { '12.1': [313], 10: [324.5], 8: [336], 7: [347.5], 9: [359] });
     expect(lower!.plan.edges.map(edge => `${short(edge.above)}>${short(edge.below)}:${edge.kind}`).sort())
       .toEqual(['10>7:O1', '10>8:O1', '10>9:O1', '12.1>10:O1', '12.1>7:O2', '12.1>8:O1', '8>7:O1']);
     // 7x9 and 8x9, and four on link-11's drop.
     expect(pairs(lower!.plan)).toEqual(['10x11.1', '11.1x7', '11.1x8', '11.1x9', '7x9', '8x9']);
-    // The lanes overhang from the band above: the plan measures from the clipped low boundary (288.75); the spec quotes
+    // The lanes overhang from the band above: the plan measures from the clipped low boundary (298, the 9.25 px of the upper gap later); the spec quotes
     // 82.5 from the band bottom (278), the same 10.75 px further. 7f grew the gap to H (71.75 from the clipped low), so it asks for nothing more.
-    expect(lower!.gap.low).toBeCloseTo(288.75, 6);
+    expect(lower!.gap.low).toBeCloseTo(298, 6);
     expect(lower!.plan.height).toBeCloseTo(71.75, 6);
     expect(lower!.plan.bandTop - lower!.gap.low).toBeCloseTo(71.75, 6);
     expect(lower!.plan.growth).toBe(0);
@@ -228,6 +228,22 @@ describe('the tier-gap plan on hand-built parts', () => {
     expect(clear.residual).toEqual([]);
   });
 
+  it('stands a jogged drop on its lower x where a title of the band below stands over its upper x (ticket 62)', () => {
+    // A: upper x 108 to lower x 100, a drop with an 8 px jog. The long vertical of a drop on its upper x runs down to one clearance above the lower tip
+    // (y 281.5, 26.5 above the band top), which a label anchored to the band below with its top 30 above the band top over x 103..130 stands in.
+    // The drop stands on x 100, which the label does not cover, so the part is planned, not residual.
+    const blocks = [{ x0: 103, x1: 130, anchor: 'below' as const, bound: 30 }];
+    const plan = planGap([part('A', 0, 108, 100)], { ...frame(), blocks });
+    expect(plan.residual).toEqual([]);
+    expect(plan.parts[0]!.shape).toBe('drop');
+    expect(plan.parts[0]!.stand).toBe('lower');
+    // Nothing over the upper x: the drop keeps the default.
+    expect(planGap([part('A', 0, 108, 100)], frame()).parts[0]!.stand).toBe('upper');
+    // A label over both ends leaves no x for the vertical: residual.
+    const both = planGap([part('A', 0, 108, 100)], { ...frame(), blocks: [{ x0: 90, x1: 130, anchor: 'below' as const, bound: 30 }] });
+    expect(both.residual.map(item => `${item.id}:${item.reason}`)).toEqual(['A:leg-blocked']);
+  });
+
   it('reads the edges of a half from its own span and breaks the cycle at the widest interval that leaves none (ticket 50, the chord fixture)', () => {
     // link-11 87 to 265.5 crosses 4 (241.5 to 63), 5, 6 and 10 (75 to 194); the whole edges close 11 > 9 > 4 > 6 > 11. Split at the widest clear
     // interval (164.25) the half 11b (164.25 to 265.5) would still be ordered above link-9 (63 to 122.5), whose span it cannot cross: the
@@ -243,10 +259,10 @@ describe('the tier-gap plan on hand-built parts', () => {
 
 // Each entry is `run|vertical|kind` (2.1): a run crosses the upper leg of a part whose upper x lies inside its span and whose row is below it, the
 // lower leg of one whose lower x lies inside and whose row is above it, and every drop inside its span. Hand-derived from the rows and x of the plan:
-// upper gap, link-5 (38.9 to 245.5, row 156.5) over link-2's upper x 140 and the drop at 174; link-11 (-29.1 to 307.5, row 145) over the same and
-// over link-5's upper x 38.9. Lower gap, links 7 and 8 (rows 338.25 and 326.75) over link-9's upper x 174 and the drop at 307.5, link-9 (row
-// 349.75) and link-10 (row 315.25) over the drop.
-const KINDS_UPPER: string[] = ['11|2|upper-leg', '11|4|drop', '11|5|upper-leg', '5|2|upper-leg', '5|4|drop'];
+// upper gap, link-5 (38.9 to 245.5, row 156.5) over link-2's upper x 140 and the drop at 174, and link-3's lower leg; link-11 (-29.1 to 307.5, row 145) over the same and
+// over link-5's upper x 38.9. Lower gap, links 7 and 8 (rows 347.5 and 336) over link-9's upper x 174 and the drop at 307.5, link-9 (row
+// 359) and link-10 (row 324.5) over the drop.
+const KINDS_UPPER: string[] = ['11|2|upper-leg', '11|3|upper-leg', '11|4|drop', '11|5|upper-leg', '3|2|lower-leg', '5|2|upper-leg', '5|4|drop'];
 const KINDS_LOWER: string[] = ['10|11.1|drop', '7|11.1|drop', '7|9|upper-leg', '8|11.1|drop', '8|9|upper-leg', '9|11.1|drop'];
 
 /** Three tiers, a transit lane for link-2 through tier 1, and planned parts in both gaps (the pipeline test `residual-parts.test.ts` reads the same text). */

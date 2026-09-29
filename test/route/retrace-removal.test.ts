@@ -46,7 +46,7 @@ describe('a retracing route removes its link and not the sheet (ticket 46)', () 
       };
       return { worker: wrapped, assets: avoidAssets };
     };
-    const model = await layout(parse(text('a-claim-lies-on-a-cover-edge.yaml')), { createElkAttempt: createAttempt, createRouteAttempt: forging });
+    const model = await layout(parse(text('a-title-no-position-clears-leaves-the-leg-to-the-router.yaml')), { createElkAttempt: createAttempt, createRouteAttempt: forging });
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
     expect(model.removedLinks).toEqual(['link-2']);
     const warning = model.diagnostics.find(item => item.code === 'ROUTE_GAP_REJECTED')!;
@@ -61,7 +61,7 @@ describe('a retracing route removes its link and not the sheet (ticket 46)', () 
 
   it('rejects a forged A-B-A-C answer in tryStitch', async () => {
     // The model as stage 8 receives it: every link a rule left to the router still has no path.
-    const model = bands(bundles(bars(centre(flanks(lanes(rows(await placed(text('a-claim-lies-on-a-cover-edge.yaml')))))))));
+    const model = bands(bundles(bars(centre(flanks(lanes(rows(await placed(text('a-title-no-position-clears-leaves-the-leg-to-the-router.yaml')))))))));
     const plan = planRoute(model);
     const item = plan.links.find(candidate => candidate.pieces.some(piece => piece.kind === 'gap'))!;
     const gap = item.pieces.find(piece => piece.kind === 'gap')!;

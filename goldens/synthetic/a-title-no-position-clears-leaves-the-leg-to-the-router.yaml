@@ -1,0 +1,54 @@
+# Expected: three links stay with the router because no title position on its edge clears their legs (ticket 62). The shape is
+# `a-claim-lies-on-a-cover-edge` (three transit links, six tiers) with the titles of tiers 1, 3 and 4 made wider. A title is nudged along its
+# edge to clear the legs of the ports under it (ADR-0011's nudging distance); these three are wide enough that no position on the edge
+# clears the leg of `link-2`, `link-8` and `link-11`, so the row plan declines each as `leg-blocked` (`TIER_GAP_PART_RESIDUAL`) and the
+# router lays it. Ticket 50 built the same three residuals out of the plain fixture's short titles; the tests that need a router-laid
+# link (a forged answer, a retracing route, the reserved stem checkpoints) read this one.
+# Test-only input owned by ticket 62; test/route/checkpoint-removal.test.ts, test/route/retrace-removal.test.ts and
+# test/pipeline/detoured-stem.test.ts read it.
+portograph: 2
+groups:
+  t0: { tier: 0, label: Tier 0 }
+  t1: { tier: 1, label: Tier 1 east wing }
+  t2: { tier: 2, label: Tier 2 }
+  t3: { tier: 3, label: Tier 3 east wing }
+  t4: { tier: 4, label: Tier 4 east wing }
+  t5: { tier: 5, label: Tier 5 }
+nodes:
+  n0_0: { group: t0, class: router, label: N0_0, ports: [{ name: d0, side: bottom }] }
+  n0_1: { group: t0, class: tbr, label: N0_1, ports: [{ name: d0, side: bottom }] }
+  n0_2: { group: t0, class: rr, label: N0_2, ports: [{ name: d0, side: bottom }] }
+  n1_0: { group: t1, class: tbr, label: N1_0, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n1_1: { group: t1, class: rr, label: N1_1, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n1_2: { group: t1, class: provider, label: N1_2, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n2_0: { group: t2, class: rr, label: N2_0, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n2_1: { group: t2, class: provider, label: N2_1, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n2_2: { group: t2, class: router, label: N2_2, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n3_0: { group: t3, class: provider, label: N3_0, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n3_1: { group: t3, class: router, label: N3_1, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n3_2: { group: t3, class: tbr, label: N3_2, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n4_0: { group: t4, class: router, label: N4_0, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n4_1: { group: t4, class: tbr, label: N4_1, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n4_2: { group: t4, class: rr, label: N4_2, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  n5_0: { group: t5, class: tbr, label: N5_0, ports: [{ name: u0, side: top }] }
+  n5_1: { group: t5, class: rr, label: N5_1, ports: [{ name: u0, side: top }] }
+  n5_2: { group: t5, class: provider, label: N5_2, ports: [{ name: u0, side: top }] }
+links:
+  - [n0_0.d0, n1_0.u0]
+  - [n0_1.d0, n1_1.u0]
+  - [n0_2.d0, n1_2.u0]
+  - [n1_0.d0, n2_0.u0]
+  - [n1_1.d0, n2_1.u0]
+  - [n1_2.d0, n2_2.u0]
+  - [n2_0.d0, n3_0.u0]
+  - [n2_1.d0, n3_1.u0]
+  - [n2_2.d0, n3_2.u0]
+  - [n3_0.d0, n4_0.u0]
+  - [n3_1.d0, n4_1.u0]
+  - [n3_2.d0, n4_2.u0]
+  - [n4_0.d0, n5_0.u0]
+  - [n4_1.d0, n5_1.u0]
+  - [n4_2.d0, n5_2.u0]
+  - [n5_2, n0_0]
+  - [n5_2, n2_0]
+  - [n5_2, n3_0]
