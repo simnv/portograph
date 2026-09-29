@@ -185,7 +185,11 @@ export function planRoute(model: LayoutModel): RoutePlan {
   // (ADR-0015 rule 1): the room is reserved before the first batch runs, so no batch can consume
   // the corridor another link's own lane opens into.
   const gapRuns = new Map<string, Map<number, PathSegment[]>>();
+  // Planned parts on one port share the leg from the tip to the higher row (tier-gap-rows.md, Section 4): the links of the
+  // same port lie on each other's covers there. The plan names them; nothing is written to the model.
+  const sharing = new Map<string, Set<string>>();
   for (const run of allocateGapRuns(model)) {
+    if (run.shares?.length) sharing.set(run.link, new Set([...sharing.get(run.link) ?? [], ...run.shares]));
     // A link that turns in a row gap holds one reserved run, and its leg is that one. `gapPlan`
     // declines a gap whose legs own a lane, so the two never meet; this keeps the obstacle set and
     // the stitched pieces agreed if they ever do.
@@ -199,7 +203,7 @@ export function planRoute(model: LayoutModel): RoutePlan {
     // that is the link's own port anchor — an allocated run has neither. A link that must cross the
     // gap is given the row and nothing else; a rectangle whose segment cannot be identified keeps
     // the full protection.
-    const covers = completedRouteObstacles(model, link, `gap:${run.link}:${run.index}`, points);
+    const covers = completedRouteObstacles(model, link, `${run.planned ? 'plan' : 'gap'}:${run.link}:${run.index}`, points);
     const paired = covers.length === run.segments.length;
     for (const [index, item] of covers.entries()) {
       const segment = run.segments[index]!;
@@ -209,7 +213,7 @@ export function planRoute(model: LayoutModel): RoutePlan {
       // of them; the rectangles between do not, or the owner's other gaps could run along the run
       // the stitcher inserts verbatim.
       const terminal = index === 0 || index === covers.length - 1;
-      reserve([{ ...item, consumers: [...(terminal ? item.consumers : []), ...(across ? run.crossers : [])] }]);
+      reserve([{ ...item, consumers: [...(terminal ? item.consumers : []), ...(across ? run.crossers : []), ...(run.shares ?? [])] }]);
     }
   }
   const usage = portUsage(model), pins = new Map<string, RoutePin[]>(), boxes = groupBoxes(model);
@@ -276,6 +280,7 @@ export function planRoute(model: LayoutModel): RoutePlan {
           // leg and the tier-gap allocation carry for the same reason. It names the producer, not
           // the geometry: every cover this pass adds is under it, whoever fixed the run.
           const covers = completedRouteObstacles(model, link, `straight:${id}`, [run.from, run.to]);
+          for (const cover of covers) cover.consumers.push(...sharing.get(link.id) ?? []);
           reserve(covers);
           claims.push({ segment: run, covers });
         } else {
@@ -516,7 +521,10 @@ function corridorFree(model: LayoutModel, link: LayoutLink, run: PathSegment,
   // rather than an assumption (`validate.ts` guards the same shrink).
   const inside = (box: Rect): Rect => box.width <= 2 * TOUCH || box.height <= 2 * TOUCH ? box
     : { x: box.x + TOUCH, y: box.y + TOUCH, width: box.width - 2 * TOUCH, height: box.height - 2 * TOUCH };
-  if (reserved.some(item => !item.consumers.includes(link.id) && segmentRect(segment, inside(item.bounds)))) return false;
+  // The stem of a planned part is claimed: its own rows and legs are reserved geometry it stands beside, and a row may stand on
+  // the tip row of its own part (tier-gap-rows.md, O4), so the covers of the link's own plan are not walls to its own stem.
+  const own = `routed:plan:${link.id}:`;
+  if (reserved.some(item => !item.consumers.includes(link.id) && !item.id.startsWith(own) && segmentRect(segment, inside(item.bounds)))) return false;
   // Measured at the widest routed stroke, not this link's own. `routeObstacles` and
   // `reservationConflicts` expand every reservation by that width, so a thin link measured at its
   // own could be claimed inside the band the router would have kept clear and then be refused by

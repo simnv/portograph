@@ -5,8 +5,9 @@ import { groupConsumers } from '../score/model.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { GROUP_LABEL_GEOMETRY, nodeObstacleReach, nudgingDistance, routedStroke, stemReach } from './bands.js';
 import { MEMBER_GAP } from './bundle-geometry.js';
+import { plannedSegments, tierGapPlans, type GapPlan, type PlannedPart } from './gap-plan.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
-import { sideNested, stemCache, stemPlan, type StemCache } from './sides-two.js';
+import { stemCache, stemPlan, type StemCache } from './sides-two.js';
 
 /**
  * ADR-0015 rule 1, per gap: the room every run that crosses a **tier gap** needs, allocated before
@@ -68,6 +69,10 @@ export interface GapRun {
    * still obstruct them, and a route can pass those by.
    */
   crossers: string[];
+  /** The links whose planned parts share this run's port leg: they may lie on its cover (the shared leg is an output of the plan). */
+  shares?: string[];
+  /** `true` for a part of the tier-gap plan, reserved tip to tip; a residual run leaves it unset. */
+  planned?: true;
 }
 
 /**
@@ -184,7 +189,6 @@ interface GapUsers {
   held: Participant[];
   /** The lane-end pieces that would hold one, if the lane allocation leaves them unseated. */
   laneHeld: Participant[];
-  short: number;
 }
 
 /**
@@ -195,9 +199,9 @@ interface GapUsers {
  * the gap. Its link becomes a **crosser**: it keeps the route it has today, and the allocated runs
  * do not obstruct it.
  */
-function gapUsers(model: LayoutModel, gaps: TierGap[]): Map<number, GapUsers> {
+function gapUsers(model: LayoutModel, gaps: TierGap[], planned: ReadonlyMap<number, ReadonlySet<string>>): Map<number, GapUsers> {
   const cache = stemCache();
-  const result = new Map<number, GapUsers>(gaps.map((gap, key) => [key, { items: [], approaches: [], crossers: [], pieces: [], held: [], laneHeld: [], short: 0 }]));
+  const result = new Map<number, GapUsers>(gaps.map((gap, key) => [key, { items: [], approaches: [], crossers: [], pieces: [], held: [], laneHeld: [] }]));
   for (const [order, link] of model.links.entries()) {
     if (!drawn(link)) continue;
     const stops = stopsOf(model, link);
@@ -215,6 +219,8 @@ function gapUsers(model: LayoutModel, gaps: TierGap[]): Map<number, GapUsers> {
       if (!found.length) continue;
       if (found.length > 1) { for (const key of found) result.get(key)!.crossers.push(across); continue; }
       const key = found[0]!, gap = gaps[key]!, users = result.get(key)!;
+      // A planned part is reserved tip to tip by the plan (`allocateGapRuns`): it is no piece, no participant and no crosser.
+      if (planned.get(key)?.has(`${link.id}#${index}`)) continue;
       const edgeA = a.kind === 'lane' ? edgeOf(gap, a.point) : undefined;
       const edgeB = b.kind === 'lane' ? edgeOf(gap, b.point) : undefined;
       const piece = pieceOf(model, link, order, stops, index, gap, cache);
@@ -302,7 +308,7 @@ function holdsOf(users: GapUsers, gap: TierGap, pitch: number, keep: number): vo
     // router jogs at the tip rows anyway.
     if (Math.abs(one.upper.x - one.lower.x) < keep) continue;
     const jog = one.lower.y - one.upper.y;
-    if (jog < pitch - EPS) { if (one.plain) users.short = Math.max(users.short, pitch - jog); continue; }
+    if (jog < pitch - EPS) continue;
     // A plain piece stands between two stem tips inside the gap. A lane's overhang can put the gap's edge past a tip, and
     // the row is then sought only where the gap is.
     if (one.plain && (one.upper.y < gap.low - EPS || one.lower.y > gap.high + EPS)) continue;
@@ -883,7 +889,7 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
   return { runs: result, refused: false };
 }
 
-/** The room one tier gap has, and the room the runs that cross it need. */
+/** The room one tier gap has, and the room the residual runs that cross it need. Planned parts (`gap-plan.ts`) are not counted. */
 export interface TierGapRoom {
   /** The tier of the band above the gap, and of the band below it. */
   above: number;
@@ -893,7 +899,7 @@ export interface TierGapRoom {
   high: number;
   /** What the lane overhangs take from the band gap: `band gap − (high − low)`. */
   margins: number;
-  /** The runs of this gap whose two ends do not share one x, so each needs a row of its own. */
+  /** The residual runs of this gap whose two ends do not share one x, so each needs a row of its own. */
   rows: number;
   /** The rows the allocation seats in the room this gap has now. */
   seated: number;
@@ -901,10 +907,7 @@ export interface TierGapRoom {
   pitch: number;
   /**
    * The clear room the high boundary keeps beyond the last row: one router stem and the gate's
-   * clearance. That is what an approach standing on the boundary asks for. Where a stem of the tier
-   * below nests and its tip row lies inside the gap, it is the distance from that tip row to the
-   * boundary plus the tip band (two run clearances), so the last row lands a tip band above the tip row
-   * (ranked-groups ticket 31).
+   * clearance. That is what an approach standing on the boundary asks for.
    */
   headroom: number;
   /**
@@ -918,12 +921,6 @@ export interface TierGapRoom {
    */
   required: number;
   /**
-   * The room the gap lacks between the two stem tips of a link that nests a stem (ticket 25): how far
-   * its bands must move apart so that the tip rows of each such link stand two run clearances apart.
-   * Zero where they already do.
-   */
-  stems: number;
-  /**
    * `true` when the allocation refused this gap for a reason room cannot answer. A gap that refuses
    * seats nothing however tall it is, so the height rule leaves it alone.
    */
@@ -931,86 +928,45 @@ export interface TierGapRoom {
 }
 
 /**
- * Ticket 25. A stem that reaches into a tier gap ends in a **tip**, the checkpoint stage 8 must reach.
- * The router keeps a pending stem's obstacle (`stemBounds`, `route/plan.ts`) one obstacle expansion,
- * `nudgingDistance`, past the tip, and a run's centreline one run clearance, again `nudgingDistance`,
- * off that obstacle. So the row of the other tip of the same link, when it lies in that stem's
- * neighbourhood, must stand `2 * nudgingDistance` (23 px) beyond this tip row. Closer, the far tip row
- * lies inside the near stem's obstacle rows, which wall it in from the side.
- *
- * Measured on `a-band-holds-the-group-that-set-its-edge` (the near side is flat, every tip at y 442;
- * link-35 and link-37 have their far tip on that row): growing the gap by 23 px keeps `removedLinks`
- * empty, and 22.9 px does not (link-37 is removed); 1, 5.75, 11.5 and 17.25 px remove one or two
- * links; 14 px happens to keep it empty and is no rule. What the growth does NOT do is keep every
- * foreign run 23 px from a tip: link-17's run still stands at y 453.5 with its cover ending on
- * link-35's tip row, and link-35 routes because ticket 21's grant frees that cover. Only the near
- * side's stem obstacle rows are cleared.
- *
- * The nested side does not yield: a side that declines its nesting keeps flat stems, where the first
- * route laid covers the second port's stem (three links removed instead of one on the same fixture).
- * The gap grows. Only a side that nests asks: two flat stems keep the room they always had. The rule
- * reads the two tips of one link; the other near stems of the same side are not read.
+ * The plan of each tier gap that the model's placement fits (`plan.growth` is zero), by the gap's index. A plan that asks for
+ * more room than the gap has is read from a placement the growth did not see (a corridor moved after it), and its parts are
+ * left to the router as they were before the plan: nothing is planned into a gap the plan does not fit.
  */
-function stemShortfall(model: LayoutModel, gap: TierGap, users: GapUsers): number {
-  const cache = stemCache(), band = 2 * nudgingDistance(model);
-  const tier = (id: string): number | undefined => model.groups[model.document.nodes[id]!.group]?.tier;
-  let short = 0;
-  for (const link of model.links) {
-    if (!drawn(link) || link.fixedSegments?.length || link.sharedRuns?.from?.length || link.sharedRuns?.to?.length) continue;
-    const ports = (['from', 'to'] as const).map(end => findPort(model, link.attachments![end]));
-    const [upper, lower] = ports[0]?.anchor && ports[1]?.anchor && ports[0].anchor.y > ports[1].anchor.y
-      ? [ports[1], ports[0]] : [ports[0], ports[1]];
-    if (!upper?.anchor || !lower?.anchor || upper.side !== 'bottom' || lower.side !== 'top') continue;
-    if (tier(upper.ref.node) !== gap.above || tier(lower.ref.node) !== gap.below) continue;
-    if (!sideNested(model, upper.ref.node, 'bottom', cache) && !sideNested(model, lower.ref.node, 'top', cache)) continue;
-    const between = lower.anchor.y - upper.anchor.y - stemPlan(model, upper, cache).depth - stemPlan(model, lower, cache).depth;
-    short = Math.max(short, band - between);
-  }
-  // Ticket 39: the earlier link of an interleaved pair holds a row a run clearance from each of its tip rows.
-  short = Math.max(short, users.short);
-  return short > EPS ? short : 0;
+function fittingPlans(model: LayoutModel): Map<number, GapPlan> {
+  const result = new Map<number, GapPlan>();
+  for (const [key, { plan }] of tierGapPlans(model).entries()) if (plan.growth <= EPS && plan.parts.length) result.set(key, plan);
+  return result;
 }
 
+const plannedIds = (plans: ReadonlyMap<number, GapPlan>): Map<number, Set<string>> =>
+  new Map([...plans].map(([key, plan]) => [key, new Set(plan.parts.map(part => part.id))]));
+
 /**
- * ADR-0015 rule 1, measured before the gap's height is fixed: what each tier gap's seating needs.
- *
- * This is the demand the **bands rule (7f)** reads to grow a gap to the rows it must seat
- * (`gap-room.ts`). The allocation below is the consumer of the grown gap, never its owner: it reads
- * the room the gap has and seats what fits in it.
- *
- * The demand is the seating itself, run against the room the gap has now. Two things follow. A gap
- * the allocation **refuses** for a reason of its own asks for nothing, because a taller gap gives
- * the same refusal. And a gap whose high boundary is what stops the seating under-reports, because
- * the rows it could not reach are not in the answer — so the caller opens the gap on a probe first
- * and measures there, where the boundary cannot bind.
+ * ADR-0015 rule 1, measured after 7f: the room the **residual** runs of each tier gap need. The planned parts are not in it:
+ * the plan (`gap-plan.ts`) owns their rows and the height they ask for, and 7f grows the gap by it (`gap-room.ts`). What this
+ * measures is the seating of the runs the plan declined, in the room the gap has, and it is read only to refuse a later change
+ * that would leave such a run without a seat (`mutation.ts`).
  *
  * The row count is taken after lane x is fixed, because that is what separates a **column** (both
- * ends on one x, no row needed) from a **row**. Before it, every crossing run would have to be
- * counted as a row, and a diagram whose transit links all descend on one x — the M1 golden — would
- * grow a gap it does not need.
+ * ends on one x, no row needed) from a **row**.
  */
 export function tierGapRoom(model: LayoutModel): TierGapRoom[] {
   const bands = model.tierBands.filter(band => band.bounds).sort((a, b) => a.bounds!.y - b.bounds!.y);
   const gaps = tierGaps(model);
   if (!gaps.length) return [];
-  const users = gapUsers(model, gaps);
+  const plans = fittingPlans(model);
+  const users = gapUsers(model, gaps, plannedIds(plans));
   const pitch = MEMBER_GAP + routedStroke(model);
-  const flat = GROUP_LABEL_GEOMETRY.routerStem + GROUP_LABEL_GEOMETRY.nodeClearance + routedStroke(model);
-  const list = blockers(model), tips = nestedTips(model, stemCache()), clearance = tipBand(model);
+  const headroom = GROUP_LABEL_GEOMETRY.routerStem + GROUP_LABEL_GEOMETRY.nodeClearance + routedStroke(model);
+  const list = blockers(model);
   return gaps.map((gap, key) => {
-    // A nested stem that turns inside this gap from the tier below holds the rows a tip band off
-    // its tip row (ticket 31), so the last row lands that far above the deepest such tip. The tips move
-    // with the band below, so the room is a distance from the high boundary and asks the probe nothing.
-    const reach = Math.max(0, ...tips.filter(item => item.nested && item.side === 'top' && item.anchor.y > gap.high - EPS && item.tip.y < gap.high - EPS)
-      .map(item => gap.high - item.tip.y + clearance));
-    const headroom = Math.max(flat, reach);
     const above = bands.find(band => band.tier === gap.above)!.bounds!;
     const below = bands.find(band => band.tier === gap.below)!.bounds!;
     const entry = users.get(key)!;
-    const got = allocateWithHolds(model, list, gap, entry, false);
+    const got = allocateWithHolds(model, [...list, ...plannedPeers(model, plans.get(key), gap).flatMap(item => item.peers)], gap, entry, false);
     const lanes = entry.items.filter(needsRow).length, rows = lanes + got.wanted;
     const margins = below.y - bottom(above) - (gap.high - gap.low);
-    const nothing = { ...gap, margins, rows, seated: 0, pitch, headroom, required: 0, refuses: false, stems: stemShortfall(model, gap, entry) };
+    const nothing = { ...gap, margins, rows, seated: 0, pitch, headroom, required: 0, refuses: false };
     if (!rows) return nothing;
     if (lanes && got.lanes?.refused) return { ...nothing, refuses: true };
     const seats = [...got.lanes?.runs.values() ?? [], ...got.runs.values()].flatMap(segments =>
@@ -1020,32 +976,65 @@ export function tierGapRoom(model: LayoutModel): TierGapRoom[] {
   });
 }
 
+/** One planned part, reserved: its segments in the order its link visits them, and the blockers they are to a residual seating. */
+interface PlannedRun { part: PlannedPart; segments: PathSegment[]; peers: Blocker[]; shares: string[] }
+
 /**
- * ADR-0015 rule 1 per tier gap: every run that crosses a tier gap beside a lane, allocated once
- * from frozen placement and keyed by the link and the planned gap it belongs to. Stage 8 stitches
- * each run back unchanged and routes only what is left beyond it.
+ * The planned parts of one gap as reserved geometry (Section 4). Each is an obstacle to the residual seating of the same gap,
+ * with the links that share its port leg exempt. Two planned parts on one port share the leg from the tip to the higher row;
+ * the plan record names them, and nothing is written to the model.
+ */
+function plannedPeers(model: LayoutModel, plan: GapPlan | undefined, gap: TierGap): PlannedRun[] {
+  if (!plan) return [];
+  const margin = routedStroke(model) / 2 + STRAIGHT_PATH_CLEARANCE.path;
+  const links = new Map(model.links.map(link => [link.id, link]));
+  return plan.parts.filter(part => part.index !== undefined).map(part => {
+    const shares = plan.parts.filter(other => other.link !== part.link && (other.upper.source === part.upper.source && part.upper.kind === 'tip'
+      || other.lower.source === part.lower.source && part.lower.kind === 'tip')).map(other => other.link);
+    const segments = plannedSegments(part, gap), owners = new Set([part.link, ...shares]);
+    const width = linkStrokeWidth(links.get(part.link)!) / 2 + margin;
+    return { part, segments, shares: [...new Set(shares)].sort(), peers: segments.map(run => ({ owners,
+      bounds: grow({ x: Math.min(run.from.x, run.to.x), y: Math.min(run.from.y, run.to.y), width: Math.abs(run.to.x - run.from.x),
+        height: Math.abs(run.to.y - run.from.y) }, width) })) };
+  });
+}
+
+/**
+ * ADR-0015 rule 1 per tier gap: every run that crosses a tier gap, allocated once from frozen placement and keyed by the link
+ * and the planned gap it belongs to. Stage 8 stitches each run back unchanged and routes only what is left beyond it.
+ *
+ * A **planned part** (`gap-plan.ts`) is reserved tip to tip: its upper leg, its run on its row and its lower leg, a Z part's two
+ * rows and middle drop, or the one vertical of a drop. A residual run (any part the plan declines, and every part of a gap the
+ * plan does not fit) is seated as it was before the plan: the holds, the bands and the grants.
  */
 export function allocateGapRuns(model: LayoutModel): GapRun[] {
   const gaps = tierGaps(model);
   if (!gaps.length) return [];
-  const users = gapUsers(model, gaps);
-  if (![...users.values()].some(item => item.items.length || item.held.length || item.laneHeld.length)) return [];
+  const plans = fittingPlans(model);
+  const users = gapUsers(model, gaps, plannedIds(plans));
+  if (!plans.size && ![...users.values()].some(item => item.items.length || item.held.length || item.laneHeld.length)) return [];
   const list = blockers(model), result: GapRun[] = [];
   for (const [key, entry] of [...users].sort((a, b) => a[0] - b[0])) {
     const { items, crossers } = entry;
-    if (!items.length && !entry.held.length && !entry.laneHeld.length) continue;
-    const gap = gaps[key]!;
-    const got = allocateWithHolds(model, list, gap, entry, true);
-    const allocated = new Map([...got.lanes?.runs ?? [], ...got.runs]);
-    if (!allocated.size) continue;
-    // A run this gap could not seat keeps the route it has today, so it crosses the seated ones.
-    for (const item of items) {
-      if (allocated.has(item)) continue;
-      crossers.push({ link: item.link.id, low: Math.min(item.near.x, item.far.x), high: Math.max(item.near.x, item.far.x) });
+    const gap = gaps[key]!, planned = plannedPeers(model, plans.get(key), gap);
+    const allocated = new Map<Participant, PathSegment[]>();
+    if (items.length || entry.held.length || entry.laneHeld.length) {
+      const got = allocateWithHolds(model, [...list, ...planned.flatMap(run => run.peers)], gap, entry, true);
+      for (const [item, segments] of [...got.lanes?.runs ?? [], ...got.runs]) allocated.set(item, segments);
+      // A run this gap could not seat keeps the route it has today, so it crosses the seated ones.
+      if (allocated.size) for (const item of items) {
+        if (allocated.has(item)) continue;
+        crossers.push({ link: item.link.id, low: Math.min(item.near.x, item.far.x), high: Math.max(item.near.x, item.far.x) });
+      }
     }
+    const across = [...new Set(crossers.map(cross => cross.link))].sort();
     for (const [item, segments] of allocated) {
-      result.push({ link: item.link.id, index: item.index, segments,
-        crossers: [...new Set(crossers.filter(cross => cross.link !== item.link.id).map(cross => cross.link))].sort() });
+      result.push({ link: item.link.id, index: item.index, segments, crossers: across.filter(id => id !== item.link.id) });
+    }
+    // The links that cross a planned row are the residual ones only: a planned part is reserved and never routed across.
+    for (const run of planned) {
+      result.push({ link: run.part.link, index: run.part.index!, segments: run.segments, crossers: across.filter(id => id !== run.part.link),
+        planned: true, ...(run.shares.length ? { shares: run.shares } : {}) });
     }
   }
   return result;

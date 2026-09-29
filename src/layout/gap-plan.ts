@@ -1,5 +1,5 @@
 import type { Point, Rect } from '../model/geometry.js';
-import type { LayoutLink, LayoutModel } from '../model/layout.js';
+import type { LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import { bottom, EPS, right } from '../score/geometry.js';
 import { measureText } from '../text/index.js';
 import { GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
@@ -39,6 +39,9 @@ export interface PlanInput {
   link: string;
   /** Model order of the link, then of the planned gap; breaks every tie. */
   order: number;
+  /** The planned gap of the link (the index `stopsOf` pairs), and whether the link visits the upper end first: stage 8 reads them back. */
+  index?: number;
+  upperFirst?: boolean;
   upper: PlanEnd;
   lower: PlanEnd;
   /** Room a described part keeps below its row before the next row: `label height + 2 × 4 + stroke`. */
@@ -60,7 +63,7 @@ export interface PlanObstacle {
 }
 
 export type ResidualReason = 'spans-two-gaps' | 'lateral-port' | 'u-turn' | 'faces-away' | 'off-boundary' | 'crosses-lane'
-  | 'legs-within-k' | 'row-cycle';
+  | 'legs-within-k' | 'row-cycle' | 'leg-blocked';
 
 /** A part the plan declines, with the reason (`TIER_GAP_PART_RESIDUAL`; `row-cycle` is `TIER_GAP_ROW_CYCLE`). */
 export interface ResidualPart {
@@ -90,6 +93,11 @@ export interface PlanFrame {
   tips: readonly { x: number; y: number }[];
   lowerTips: readonly { x: number; y: number }[];
   obstacles: readonly PlanObstacle[];
+  /**
+   * Fixed obstacles a leg may not pass through (a group label, a foreign lane box, a bundle envelope, a placed obstacle), with the
+   * same anchoring as `obstacles` but whatever the sign of the bound. A group edge is not among them: a leg crosses it at its port.
+   */
+  blocks?: readonly PlanObstacle[];
   residual: readonly ResidualPart[];
 }
 
@@ -100,6 +108,8 @@ export interface PlannedPart {
   link: string;
   order: number;
   shape: PartShape;
+  index?: number;
+  upperFirst?: boolean;
   upper: PlanEnd;
   lower: PlanEnd;
   /** `bandTop − lower.y`. */
@@ -362,9 +372,21 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
     return { ...input, drop, jogged: drop && !same(input.lower.x, input.upper.x), depth: frame.bandTop - input.lower.y,
       after: Math.max(pitch, input.labelRoom ?? 0) };
   };
+  // A leg through a fixed obstacle (2.2, residual by constraint): an upper leg reaches down from its tip past the bottom of an
+  // obstacle anchored to the band above, a lower leg up from its tip past the top of one anchored to the band below.
+  const blocked = (input: PlanInput): boolean => (frame.blocks ?? []).some(block => {
+    if (block.owner === input.link) return false;
+    if (block.anchor === 'above') return input.upper.x > block.x0 + EPS && input.upper.x < block.x1 - EPS && input.upper.y < block.bound - EPS;
+    return input.lower.x > block.x0 + EPS && input.lower.x < block.x1 - EPS && bandTop - input.lower.y < block.bound - EPS;
+  });
+  const unblocked = inputs.filter(input => {
+    if (!blocked(input)) return true;
+    residual.push({ id: input.id, link: input.link, order: input.order, reason: 'leg-blocked', upper: input.upper, lower: input.lower });
+    return false;
+  });
   // Two upper legs, or two lower legs, of two sources within `keep`: the later part is residual and is granted the earlier leg's cover.
   let live: Part[] = [];
-  for (const input of [...inputs].sort((a, b) => a.order - b.order)) {
+  for (const input of [...unblocked].sort((a, b) => a.order - b.order)) {
     const part = asPart(input);
     // A drop's vertical stands on its upper x from the tip to the jog, so it counts as an upper and a lower leg.
     const legs = (item: Part, end: 'upper' | 'lower'): PlanEnd => item.drop ? item.upper : item[end];
@@ -454,7 +476,8 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
   const horizontals: Horizontal[] = [], verticals: Vertical[] = [];
   const planned: PlannedPart[] = [];
   for (const part of live) {
-    const base = { id: part.id, link: part.link, order: part.order, upper: part.upper, lower: part.lower, depth: part.depth };
+    const base = { id: part.id, link: part.link, order: part.order, upper: part.upper, lower: part.lower, depth: part.depth,
+      ...(part.index !== undefined ? { index: part.index } : {}), ...(part.upperFirst !== undefined ? { upperFirst: part.upperFirst } : {}) };
     if (part.drop) {
       const jog = part.jogged ? part.lower.y - keep : undefined;
       verticals.push({ part, kind: 'drop', x: part.upper.x, y0: part.upper.y, y1: Infinity });
@@ -567,14 +590,19 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
       if (upper.faces !== 'low' || lower.faces !== 'high') { fail(upper.faces === lower.faces ? 'u-turn' : 'faces-away'); continue; }
       const strip = (item: Side): PlanEnd => ({ x: item.x, y: item.y, kind: item.kind, source: item.source });
       const room = labelRoom(model, link);
-      inputs.push({ id, link: link.id, order, upper: strip(upper), lower: strip(lower), ...(room ? { labelRoom: room } : {}) });
+      inputs.push({ id, link: link.id, order, index, upperFirst: upper === first, upper: strip(upper), lower: strip(lower),
+        ...(room ? { labelRoom: room } : {}) });
     }
   }
 
   // The obstacles of O5, each anchored to the band it belongs to. A lane that crosses the whole gap is a wall.
-  const obstacles: PlanObstacle[] = [], walls: { x0: number; x1: number; owner?: string }[] = [];
+  const obstacles: PlanObstacle[] = [], blocks: PlanObstacle[] = [], walls: { x0: number; x1: number; owner?: string }[] = [];
   const rect = (box: Rect, clearance: number, owner?: string): void => {
     const x0 = box.x - clearance, x1 = right(box) + clearance, o = owner === undefined ? {} : { owner };
+    // The box stands in a leg's way whichever band it hangs from: its bound from the band it is anchored to, whatever the sign.
+    if (bottom(box) <= gap.low + EPS) blocks.push({ x0, x1, anchor: 'above', bound: bottom(box) + clearance, ...o });
+    else if (box.y >= gap.high - EPS) blocks.push({ x0, x1, anchor: 'below', bound: clearance + bandTop - box.y, ...o });
+    else if (!(box.y <= gap.low + EPS && bottom(box) >= gap.high - EPS)) blocks.push({ x0, x1, anchor: 'above', bound: bottom(box) + clearance, ...o });
     if (bottom(box) <= gap.low + EPS) {
       if (bottom(box) + clearance > gap.low) obstacles.push({ x0, x1, anchor: 'above', bound: bottom(box) + clearance, ...o });
     } else if (box.y >= gap.high - EPS) {
@@ -598,6 +626,9 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
     if (label.omitted || !label.bounds || label.layer === 'overlay' || label.role !== 'group') continue;
     const middle = label.bounds.y + label.bounds.height / 2;
     const clearance = GROUP_LABEL_LINK_CLEARANCE + half;
+    const span = { x0: label.bounds.x - clearance, x1: right(label.bounds) + clearance };
+    blocks.push(middle < (gap.low + gap.high) / 2 ? { ...span, anchor: 'above', bound: bottom(label.bounds) + clearance }
+      : { ...span, anchor: 'below', bound: clearance + bandTop - label.bounds.y });
     if (middle < (gap.low + gap.high) / 2) {
       if (bottom(label.bounds) + clearance > gap.low) obstacles.push({ x0: label.bounds.x - clearance, x1: right(label.bounds) + clearance, anchor: 'above', bound: bottom(label.bounds) + clearance });
     } else if (clearance + bandTop - label.bounds.y > 0) {
@@ -623,7 +654,7 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
   // Only the stems of the two bands facing the gap count: an upper tip hangs from the band above, a lower one from the band below.
   const tips = nestedTips(model, cache).filter(item => !ends.has(`${item.tip.x}|${item.tip.y}`)
     && (item.side === 'bottom' ? item.anchor.y <= gap.low + EPS : item.anchor.y >= bandTop - EPS));
-  return planGap(kept, { low: gap.low, bandTop, floor, keep, pitch: keep, edge: margin, obstacles,
+  return planGap(kept, { low: gap.low, bandTop, floor, keep, pitch: keep, edge: margin, obstacles, blocks,
     tips: tips.filter(item => item.side === 'bottom').map(item => item.tip),
     lowerTips: tips.filter(item => item.side === 'top').map(item => item.tip), residual });
 }
@@ -631,4 +662,23 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
 /** The plan of every tier gap of the model, low to high. */
 export function tierGapPlans(model: LayoutModel): { gap: TierGap; plan: GapPlan }[] {
   return tierGaps(model).map(gap => ({ gap, plan: tierGapPlan(model, gap) }));
+}
+
+/**
+ * The reserved geometry of one planned part, tip to tip, in the order its link visits it (Section 4): the upper leg, the run on
+ * its row and the lower leg of a stepped part; a Z part's two rows and middle drop; the vertical of a drop, with its jog. An end
+ * that is a mouth starts at the lane's terminal on the gap boundary, where the lane's own reserved run ends.
+ */
+export function plannedSegments(part: PlannedPart, gap: { low: number; high: number }): PathSegment[] {
+  const at = (x: number, y: number): Point => ({ x, y });
+  const { x: xu } = part.upper, { x: xl } = part.lower;
+  const points: Point[] = [at(xu, part.upper.kind === 'mouth' ? gap.low : part.upper.y)];
+  if (part.shape === 'drop') {
+    if (part.jog !== undefined) points.push(at(xu, part.jog), at(xl, part.jog));
+  } else if (part.shape === 'stepped') points.push(at(xu, part.rows[0]!), at(xl, part.rows[0]!));
+  else points.push(at(xu, part.rows[0]!), at(part.middle!, part.rows[0]!), at(part.middle!, part.rows[1]!), at(xl, part.rows[1]!));
+  points.push(at(xl, part.lower.kind === 'mouth' ? gap.high : part.lower.y));
+  const chain = points.filter((point, index) => index === 0 || !same(point.x, points[index - 1]!.x) || !same(point.y, points[index - 1]!.y));
+  const ordered = part.upperFirst === false ? [...chain].reverse() : chain;
+  return ordered.slice(1).map((to, index) => ({ from: { ...ordered[index]! }, to: { ...to }, owner: { kind: 'link' as const, id: part.link } }));
 }

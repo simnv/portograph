@@ -26,6 +26,7 @@ import { rebuildBundlePaths } from './bundle-paths.js';
 import { alignLinkedGroupGrid, type LinkLabelShortfall, produceGroupLabelBands, replanGroupLabels, reserveLinkLabelRoom, validateGroupLabelBands } from './bands.js';
 import { growTierGaps } from './gap-room.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { tierGapPlans } from './gap-plan.js';
 import { tierGapRoom } from './gap-runs.js';
 import { produceLinkLabels, validateLinkLabels } from './link-labels.js';
 import { validateRoutedPaths } from '../route/validate.js';
@@ -53,8 +54,11 @@ function same(a: unknown, b: unknown, message: string): void { if (!equal(a, b))
  * will reserve.
  */
 function shortGaps(model: LayoutModel): string[] {
-  return tierGapRoom(model).filter(room => room.rows > 0 && !room.refuses && room.seated < room.rows)
+  // A planned gap is short where the plan asks for more height than the gap has; a residual run is short where it has no seat.
+  const planned = tierGapPlans(model).filter(({ plan }) => plan.growth > PLACEMENT_EPS).map(({ gap }) => `gap:${gap.above}:${gap.below}`);
+  const residual = tierGapRoom(model).filter(room => room.rows > 0 && !room.refuses && room.seated < room.rows)
     .map(room => `gap:${room.above}:${room.below}`);
+  return [...new Set([...planned, ...residual])];
 }
 /** Whether `after` names nothing `before` does not. A trade of one item for another is not "no worse". */
 function noNewItems(after: readonly string[], before: readonly string[]): boolean {
