@@ -107,3 +107,33 @@ describe('interleaved links of one tier gap cross on the row of the earlier link
     gatesPass(model);
   }, 60000);
 });
+
+describe('a plain stem tip in the group padding holds its row (ranked-groups ticket 43)', () => {
+  // Known failing: main never seats the piece (link-1 rides the shared tip row 116). The attempted fix is in
+  // .scratch/ranked-groups/ticket-43-attempt.patch; it made the Enterprise NTP sheet throw, so it is not applied.
+  // When the ticket lands, turn `it.fails` into `it`.
+  it.fails('seats the earlier link of an interleaved pair whose tips stand in the padding, so the later link does not ride its tip row', async () => {
+    const model = await routed('a-plain-tip-in-the-group-padding-holds-its-row');
+    expect(model.removedLinks ?? []).toEqual([]);
+    const earlier = model.links.find(link => link.id === 'link-1')!, later = model.links.find(link => link.id === 'link-2')!;
+    const [upper, lower] = tipRows(model, earlier);
+    const mid = (upper + lower) / 2;
+    // The tips stand in the padding, outside the gap, and the earlier link still holds the row midway between them.
+    const bands = [...model.tierBands].sort((a, b) => a.bounds!.y - b.bounds!.y);
+    expect(upper).toBeLessThan(bands[0]!.bounds!.y + bands[0]!.bounds!.height);
+    expect(lower).toBeGreaterThan(bands[1]!.bounds!.y);
+    expect(horizontals(earlier)).toEqual([expect.closeTo(mid, 6)]);
+    // The tip row of the later link carries no run of another link.
+    const [laterTip] = tipRows(model, later);
+    for (const link of model.links) {
+      if (link.id === later.id || !link.path) continue;
+      const along = (link.path.segments as Segment[]).filter(segment => Math.abs(segment.from.y - segment.to.y) < EPS
+        && Math.abs(segment.from.y - laterTip) < EPS && Math.abs(segment.from.x - segment.to.x) > 1);
+      expect(along.map(segment => [segment.from.x, segment.to.x]), link.id).toEqual([]);
+    }
+    const crossings = strictCrossings(earlier, later);
+    expect(crossings).toHaveLength(1);
+    expect(crossings[0]!.y).toBeCloseTo(mid, 6);
+    gatesPass(model);
+  }, 60000);
+});
