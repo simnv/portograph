@@ -1,0 +1,19 @@
+# Expected: two plain links of one tier gap whose stem tips stand in the group padding, on rows shared by both (ranked-groups
+# ticket 43). `upstream` holds two routers and `site` two switches; link-1 leaves the left router for the right switch and
+# link-2 the right router for the left switch, so the pair crosses once. Every stem is plain (depth 15). The tip rows, y 116
+# and y 186, lie in the padding of the two groups, outside the gap (y 121 to 181), so the gap does not list them as inside it.
+# On main neither link holds a row: the router lays link-1 on the shared tip row 116 and link-2 rides it collinear (G4, G6).
+# The allocation now gives link-1, the earlier link, the row midway between its tip rows; link-2 crosses it once.
+# Test-only input owned by ranked-groups ticket 43; test/pipeline/interleaved-gap-links.test.ts reads the layout.
+portograph: 2
+groups:
+  upstream: { tier: 0 }
+  site: { tier: 1 }
+nodes:
+  isp0: { group: upstream, class: router }
+  isp1: { group: upstream, class: router }
+  s0: { group: site, class: switch }
+  s1: { group: site, class: switch }
+links:
+  - [isp0, s1]
+  - [isp1, s0]
