@@ -343,15 +343,20 @@ the Frames section (the canton frame, the title host), G9.
 1. **The word.** *Canton*, `canton:`, `CANTON_*`, `kind: 'canton'`, `--canton`. Recommendation:
    adopt; Section 0 says what a rename touches. The declaration form (`canton:` on the member, a
    bare entry for the canton) is Section 1; the alternatives are rejected there.
+   **Decision (2026-09-29):** Adopted. The word is canton; the key, the codes, the frame kind and the converter flag keep the names of this spec.
 2. **Do the three top locations get a canton?** They have no client group and their sync links
    reach every continent. A one-tier canton is legal (Section 1) but adds a frame that says
    nothing. Recommendation: no; the converter leaves them outside, and an author may add one.
+   **Decision (2026-09-29):** Adopted. The three top locations get no canton by default; the converter leaves them outside, and an author may add one.
 3. **Depth.** Canton → member → child is three levels of frame. Recommendation: fix the depth
    there. Every transitive reader of ticket 2 is written for a chain of any length, so a canton of
    cantons is the same rule applied again, but no sheet in the corpus needs it.
+   **Decision (2026-09-29):** Adopted. The depth is fixed at canton, member, child.
 4. **Per-column tier gaps.** A canton could hold its tiers closer than the global gap.
    Recommendation: no. Bands are global (`skeleton-geometry.ts:95-104`), the row plan is per gap,
    and G1 and G8 read bands; a per-column gap makes each of them per column.
+   **Decision (2026-09-29):** Adopted. No per-column tier gaps; bands stay global.
 5. **`grid` members and member flanks.** Refused in this version (`CANTON_MEMBER_SHAPE`,
    `CANTON_MEMBER_FLANK`). Recommendation: keep them refused until a sheet needs them; a grid
    member needs a cell form, and a member flank needs a place in the canton frame.
+   **Decision (2026-09-29):** Adopted. Grid members and member flanks stay refused (`CANTON_MEMBER_SHAPE`, `CANTON_MEMBER_FLANK`) until a sheet needs them.
