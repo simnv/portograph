@@ -66,7 +66,7 @@ export function growTierGaps(model: LayoutModel): boolean {
   // their pitch, the deepest either boundary reaches into the gap, and one pitch over.
   const opened = new Map(short.map(entry => [entry.below,
     Math.max(0, entry.rows * entry.pitch + 2 * entry.headroom + entry.pitch - (entry.high - entry.low))]));
-  for (const entry of tierGapRoom(measured(base, opened))) {
+  for (const entry of tierGapRoom(measured(base, opened), true)) {
     // Room is reserved only where the probe shows it buys a seat. A gap that seats no more with the
     // boundary out of its way is one the allocation refuses for a reason of its own, and moving
     // every band below it would buy no route at all.
