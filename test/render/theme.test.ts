@@ -48,7 +48,7 @@ describe('the default theme is the designed sheet', () => {
     for (const [at, selector, declarations] of rules(handoff)) {
       const swap = replaced[at]?.[selector];
       out.push(swap === undefined ? [at, selector, declarations] : rule(at, selector, swap));
-      // Amendment 2 (ticket 73, Q104): the `signal` link class states the `dashed` paint, in every mode.
+      // Amendment 6 (ticket 73, Q104): the `signal` link class states the `dashed` paint, in every mode.
       if (selector === '.link-line.dashed') out.push(rule(at, '.link-line.signal', declarations.join(';')));
       if (at !== PRINT) continue;
       // Amendment 1: after each class glyph rule, the class pill and its text; after each filled
