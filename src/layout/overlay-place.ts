@@ -94,11 +94,16 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
     const xs = partnerXs(nodes, own);
     return xs.length ? xs.reduce((sum, x) => sum + x, 0) / xs.length : undefined;
   };
-  /** Sum of the chord lengths (centre to centre) of the overlay links of `nodes`. */
-  const overlayLength = (nodes: string[]): number => {
+  /**
+   * Sum of the chord lengths (centre to centre) of the overlay links of `nodes` to the partners the
+   * span is read from — settled, in another tier. A free partner still stands at ELK's raw x, the
+   * very condition the into-span step corrects, and its chord would veto the move (ticket 22 review).
+   */
+  const overlayLength = (nodes: string[], tier: number): number => {
     let total = 0;
     for (const node of nodes) {
       for (const other of partners.get(node) ?? []) {
+        if (model.groups[groupOf(other)]!.tier === tier || !settled.has(groupOf(other))) continue;
         total += Math.hypot(centreOf(node) - centreOf(other), model.nodes[node]!.bounds!.y - model.nodes[other]!.bounds!.y);
       }
     }
@@ -137,12 +142,12 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
     if (entering.size) {
       const before = signature();
       const enterers = movers.filter(group => entering.has(group.id)), entered = enterers.flatMap(group => group.nodes);
-      const length = overlayLength(entered);
+      const length = overlayLength(entered, tier);
       const back = saveGroups(model, groups);
       sweep(model, tier, groups, entering, columns);
       if (signature() !== before) {
         rebuildNodeGeometry(model, nodesOfTier, 'current');
-        if (overlayLength(entered) >= length - PLACEMENT_EPS) { back(); rebuildNodeGeometry(model, nodesOfTier, 'current'); }
+        if (overlayLength(entered, tier) >= length - PLACEMENT_EPS) { back(); rebuildNodeGeometry(model, nodesOfTier, 'current'); }
       }
     }
     const start = signature();
