@@ -36,6 +36,15 @@ import { PLACEMENT_EPS } from './tolerance.js';
  * order by target puts it between, and when that interval cannot hold the run it goes back to the
  * interval it had.
  *
+ * **Into the span** (ranked-groups ticket 22). A free group whose box stands outside the x-span of its
+ * partners (the lowest and highest partner centre) is first moved to the nearest point of the span, by
+ * the same sweep, and the move is kept when the total length of its overlay links falls. It is not
+ * judged by the straight count: a move into the span often crosses a rank of bodies between the group
+ * and its partners, and a chord that only looked straight from far away is not worth a canvas as wide
+ * as the gap. The straight-count guard then judges only the fine placement (the mean of the partners)
+ * from the place the group entered at, so a group ends inside its span even where the fine move is
+ * refused.
+ *
  * A partner counts only when it is *settled*: a group that is not free, or a free group of a tier
  * nearer the anchor tier that this pass has already placed. Tiers are taken from the anchor tier
  * outward, in the order the centre steps take them. Because a target reads only settled positions
@@ -70,16 +79,30 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
   const settled = new Set(Object.keys(model.groups).filter(id => !free.has(id)));
   const centreOf = (node: string): number => model.nodes[node]!.bounds!.x + model.nodes[node]!.bounds!.width / 2;
   /**
-   * Mean x of the settled partners of `nodes` that stand in another tier, or undefined when there is
-   * none. A partner in the same tier is left out: the side phases froze the order of a tier's groups
-   * and the sides of their overlay ports, and a target at that partner's x could put the group on the
-   * wrong side of it and turn a straight link into a detour.
+   * The x of every settled partner of `nodes` that stands in another tier. A partner in the same tier
+   * is left out: the side phases froze the order of a tier's groups and the sides of their overlay
+   * ports, and a target at that partner's x could put the group on the wrong side of it and turn a
+   * straight link into a detour.
    */
-  const keyOf = (nodes: string[], own: string): number | undefined => {
+  const partnerXs = (nodes: string[], own: string): number[] => {
     const tier = model.groups[own]!.tier;
-    const xs = nodes.flatMap(node => partners.get(node) ?? [])
+    return nodes.flatMap(node => partners.get(node) ?? [])
       .filter(other => model.groups[groupOf(other)]!.tier !== tier && settled.has(groupOf(other))).map(centreOf);
+  };
+  /** Mean of `partnerXs`, or undefined when there is none. */
+  const keyOf = (nodes: string[], own: string): number | undefined => {
+    const xs = partnerXs(nodes, own);
     return xs.length ? xs.reduce((sum, x) => sum + x, 0) / xs.length : undefined;
+  };
+  /** Sum of the chord lengths (centre to centre) of the overlay links of `nodes`. */
+  const overlayLength = (nodes: string[]): number => {
+    let total = 0;
+    for (const node of nodes) {
+      for (const other of partners.get(node) ?? []) {
+        total += Math.hypot(centreOf(node) - centreOf(other), model.nodes[node]!.bounds!.y - model.nodes[other]!.bounds!.y);
+      }
+    }
+    return total;
   };
 
   const tiers = model.tierBands.map(band => band.tier), at = tiers.indexOf(anchor);
@@ -99,6 +122,29 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
     };
     const nodesOfTier = groups.flatMap(group => group.nodes);
     const signature = (): string => JSON.stringify(groups.map(group => [group.bounds, group.rowOrder, group.nodes.map(node => model.nodes[node]!.bounds)]));
+    // Into the span (ticket 22): a group outside the x-span of its partners is first moved into it and
+    // the move is accepted on the total length of its overlay links, not on the straight count; the
+    // straight count below judges only the fine placement that follows.
+    const entering = new Map<string, number>();
+    for (const group of movers) {
+      const xs = partnerXs(group.nodes, group.id);
+      if (!xs.length) continue;
+      const low = Math.min(...xs), high = Math.max(...xs), box = group.bounds!;
+      if (box.x + box.width < low - PLACEMENT_EPS || box.x > high + PLACEMENT_EPS) {
+        entering.set(group.id, Math.min(Math.max(box.x + box.width / 2, low), high));
+      }
+    }
+    if (entering.size) {
+      const before = signature();
+      const enterers = movers.filter(group => entering.has(group.id)), entered = enterers.flatMap(group => group.nodes);
+      const length = overlayLength(entered);
+      const back = saveGroups(model, groups);
+      sweep(model, tier, groups, entering, columns);
+      if (signature() !== before) {
+        rebuildNodeGeometry(model, nodesOfTier, 'current');
+        if (overlayLength(entered) >= length - PLACEMENT_EPS) { back(); rebuildNodeGeometry(model, nodesOfTier, 'current'); }
+      }
+    }
     const start = signature();
     const undo = saveGroups(model, groups);
     for (const group of movers) orderNodes(model, group, node => keyOf([node], group.id), routedAny);

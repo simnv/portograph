@@ -1,0 +1,44 @@
+# Expected: A group with no routed link that stands outside the x-span of its overlay partners is moved
+# into that span (ranked-groups ticket 22, spec section 3.1). Tier 1 holds `west`, a wide routed
+# group that pushes `east` to the right, and `east`, the partners of the client. Tier 2 holds `mid`,
+# a routed group of wide bodies hung under `east`. Tier 3 holds `client`, which has overlay links
+# only; ELK puts it at the left edge, far outside the span of `east`. The client is moved into the
+# span of its partners even though the straight overlay count then falls: its links now cross the row
+# of bodies of `mid`, which stands between the client and `east`. Before the rule the veto of the
+# straight count kept the client at the left edge.
+# Test-only input owned by ranked-groups ticket 22; test/pipeline/free-group-into-span.test.ts reads
+# the layout.
+portograph: 2
+groups:
+  core: { tier: 0, label: Core }
+  west: { tier: 1, label: West }
+  east: { tier: 1, label: East }
+  mid: { tier: 2, label: Mid }
+  client: { tier: 3, label: Client }
+nodes:
+  c1: { group: core, class: router, label: Core 1 }
+  c2: { group: core, class: router, label: Core 2 }
+  w1: { group: west, class: server, label: West 1 }
+  w2: { group: west, class: server, label: West 2 }
+  w3: { group: west, class: server, label: West 3 }
+  w4: { group: west, class: server, label: West 4 }
+  w5: { group: west, class: server, label: West 5 }
+  w6: { group: west, class: server, label: West 6 }
+  e1: { group: east, class: server, label: East 1 }
+  e2: { group: east, class: server, label: East 2 }
+  m1: { group: mid, class: server, label: Mid gateway with a long label }
+  k1: { group: client, class: server, label: Client 1 }
+  k2: { group: client, class: server, label: Client 2 }
+links:
+  - [c1, w1]
+  - [c1, w2]
+  - [c1, w3]
+  - [c1, w4]
+  - [c2, w5]
+  - [c2, w6]
+  - [c2, e1]
+  - [c2, e2]
+  - [e1, m1]
+  - [e2, m1]
+  - [k1, e1, { route: overlay }]
+  - [k2, e2, { route: overlay }]
