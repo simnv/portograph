@@ -2,6 +2,11 @@
 
 Date: 2026-09-14 · Status: accepted (maintainer, 2026-09-14; drafted from tickets 21 and 31) · Decisions: tickets 21, 31 (cases A, B, C)
 
+**Superseded in part by [ADR-0021](0021-tier-gap-rows-are-planned-in-placement.md) (2026-09-29):** the tier-gap allocation and the tier-gap height rule of the
+sixth, seventh, ninth and eleventh amendments, and the router-side grants that served them. Placement plans every part of a tier gap; the
+router keeps only the residual parts. Those four amendments stay as the record of what was measured. The other amendments stand, as far as they do
+not describe the tier-gap allocation.
+
 ## Problem
 
 Three reproducers on `main` share one shape: two routed links leave one node side (or one row) and
@@ -108,6 +113,8 @@ input that needs it.
 
 ## Sixth amendment (2026-09-15, from the stress test; stress ticket 04)
 
+*Superseded by ADR-0021: the plan (`gap-plan.ts`) replaces this allocation.*
+
 **Rule 1 also allocates a tier gap.** The row gap between two row neighbours was the first unit the
 rule reserved. The **tier gap** — the open band between two adjacent tier bands — is the second. It
 is the one the Enterprise NTP stress test names. Three fixes on 2026-09-15 (stress tickets 01 and
@@ -180,6 +187,8 @@ The other two items are the limit of reserving room without routing: a run the a
 can displace a second, and the second can seal a third link's approach.
 
 ## Seventh amendment (2026-09-15, from the stress test; stress ticket 05)
+
+*Superseded by ADR-0021: the plan (`gap-plan.ts`) replaces this allocation.*
 
 **A tier gap grows to the rows it must seat.** The sixth amendment allocates every run that crosses
 a tier gap, and says of the gap's height only that "it does not grow a tier gap". That is the item
@@ -254,6 +263,8 @@ here as a column on the target port's x would need the allocation to accept a sh
 inside a band, and would then have to re-cut geometry 7e had already fixed.
 
 ## Ninth amendment (2026-09-16, from the stress test; stress ticket 06): a refused position moves the search on, and the height is measured with the labels in front of it
+
+*Superseded by ADR-0021 for the tier gap: the search for a row is the plan's. The order of 7f (group labels, growth, group labels again) stands.*
 
 Two items the seventh amendment left, both measured on the Enterprise NTP sheet.
 
@@ -384,6 +395,8 @@ singleton batch.
 
 
 ## Eleventh amendment (2026-09-16, from the stress test; stress ticket 09): the gap leaves out the covered run, not its whole allocation
+
+*Superseded by ADR-0021 for the seating of a tier gap: a part the plan declines is residual, named and routed. The cover-edge rule of the claim (`TOUCH`) stands.*
 
 The sixth amendment says a gap that cannot leave every one of its approaches clear allocates
 nothing, and the ninth recorded what that costs. Measured on the Enterprise NTP sheet at stage 8,

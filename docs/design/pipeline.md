@@ -484,10 +484,10 @@ The move is made only when every one of these holds:
   an alignment 7c could not reach, and the invariant would then read the published placement as
   unfinished work. The rule measures `centreViolations` both ways and keeps the corridors where
   they were rather than publish that contradiction;
-- the move leaves **no tier gap owing a row it cannot seat**. The move turns the run in the gap
-  beside the corridor from a column into a row, and 7f has already reserved the room every gap
-  asks for. The rule counts the gaps where `rows > 0`, the allocation refuses nothing and the
-  seating falls short, both ways, and keeps the corridors where they were when the move adds one.
+- the move leaves **no tier gap whose plan asks for more height than it has**. The move turns the
+  part in the gap beside the corridor from a drop into a stepped part, and 7f has already reserved
+  the height every plan asks for. The rule reads the plan of each gap (`tierGapPlans`, § 7f) before
+  and after the move, and keeps the corridors where they were when the move adds a gap that is short.
 
 **The move runs last in 7f**, after the tier-gap growth and after the group label bands, and that
 is a measured choice. Every centring replay reads lane x as that feed's authoritative x, so a
@@ -500,78 +500,58 @@ either, so the label bands 7f has just placed stay where they are, and the corri
 clear of them.
 
 The row the move creates is therefore **refused, not reserved**: the gap keeps the room 7f gave it
-and the corridor moves only where that room seats the new row. Running the move before the growth
+and the corridor moves only where that room holds the new row. Running the move before the growth
 so the height rule counts the row was measured and rejected for the number above — the golden is
 byte-identical either way, but the fixture the rule exists for loses its whole point.
 
 The reservation follows the corridor: extents and `fixedSegments` are rebuilt from the new x, so
-the per-gap allocation that reads lane x after 7a and 7c reads the moved one. A moved corridor
+the tier-gap plan that reads lane x after 7a and 7c reads the moved one. A moved corridor
 reports `LANE_FOLLOWS_ITS_CHILD`.
 
-**The runs between the lanes are allocated too (ADR-0015 rule 1).** A **tier gap** is the open band
-between two adjacent tier bands. The lane extents that face it bound it. Every run that crosses one
-is allocated before the first ownership batch runs. The rule that owns the lanes owns this too,
-and reads the same frozen placement. It does not own the gap's **height**: that is the rows the
-allocation must seat times the pitch, and only 7f knows the count (7c, 7d and 7e each turn a row
-into a column). 7f reserves it, and this allocation consumes it.
+**The runs between the lanes are planned too (ADR-0015 rule 1, superseded for the tier gap by
+ADR-0021; `docs/design/tier-gap-rows.md`).** A **tier gap** is the open band between two adjacent
+tier bands. The lane extents that face it bound it. The **part** of a routed link is its path inside
+one tier gap, from one end to the other. An end is a **tip** (a port's stem tip, where `stemPlan`
+puts it, nested or flat) or a **mouth** (a lane's approach point, one router stem inside the gap
+boundary). The plan (`src/layout/gap-plan.ts`) reads the placed model and gives every part its
+legs, its row and its vertical, before the first ownership batch runs. 7a fixes the lane x the plan
+reads and owns none of the gap's height: the plan asks for it, and 7f reserves it (§ 7f).
 
-A run whose two ends share one x takes that **column**, straight across the gap. A run whose ends
-differ takes a **row**: a horizontal line inside the gap. A vertical segment joins the row to each
-end. Where the far end is a port beyond the gap, that segment reaches the gap's far boundary at the
-port's x. The piece from the boundary out to the port is the port's own approach. It stays routed,
-and the gap allocates only where it is clear.
+- A **drop** is a part whose two ends stand less than one run clearance `k` apart in x
+  (`k = nudgingDistance`, `10 + stroke` = 11.5 px). It takes one vertical, with a jog where the ends
+  differ; the vertical stands on the end x that keeps `k` from every foreign leg, and the jog on the
+  tip row, one clearance off it.
+- A **stepped part** is any other. It takes an upper leg, a **run** on its **row**, and a lower leg,
+  each on its own end's x.
+- A **Z part** is a stepped part with two rows and a **middle drop** between them, used only where
+  one row is impossible (a cycle among the rows).
 
-Rows pack from the low boundary. The pitch between two of them is `16 px + widest routed stroke`.
-Each row takes the first position clear of frozen geometry at or beyond that pitch past the one
-before it. The search advances by what refused the position. An obstacle rectangle names a
-distance, so the next position tried is the one past its bottom. A group edge the row would run
-along, a corridor the link owns and a reserved run of the link's own name only "not here", so the
-next position tried is one pitch on. Where both refuse one position, the search takes the later of
-the two answers: it is **monotone in its obstacles**, and one more obstacle can only ever move a row
-down. Without that a rectangle handed the search a position the pitch walk had stepped over, a gap
-given one more obstacle seated its row earlier, and the room the height rule reserves — the room the
-seating lands in — no longer held the seating. A run is left out only when the gap's limit is
-reached: a single refused position never costs the gap its whole allocation.
-The first and the last keep half a pitch from their own boundary. Two runs that stand on
-one x would share length there. A lane can sit under a lane of the same x in the band above, and a
-port can sit over a lane's mouth. The one that leaves the low boundary turns first. Two such runs
-from one boundary have no clean order, and the gap allocates neither.
+The order is four rules over the parts. O1: parts that run the same way, do not interleave and
+overlap in x are ordered by their upper ends. O2: where the upper end of one part and the lower end
+of another stand within `k` in x, the one leaving the low boundary turns first. O3: two parts share
+a row only where their x-spans, each grown by `k`, are disjoint; every other pair takes rows a
+pitch `P = k` apart. O4 and O5: a run keeps `k` from every foreign tip, drop, lane box, bundle
+envelope, bar band, shared run and fixed obstacle, and `e = 10.75` px from a group edge it would run
+along (an obstacle anchored to the band above is a lower bound of the row, one anchored to the band
+below is a need). O1 and O2 can form a cycle; the latest unsplit part on it becomes a Z part. The
+parts are packed in topological order from the low boundary, each on the highest row it may take.
+Two crossings are reserved, not discovered: a run crosses the leg of an interleaving part, or a
+drop, on geometry both reserve.
 
-Every run with a lane terminal on a boundary owes a head-on approach of one router stem on the
-lane's own x. It owes it whether the gap seats that run or not, and every seated row keeps the
-gate's clearance from it. A run whose far end is a port beyond the gap owes a second approach, from
-the far boundary out to that port's own stem, and the rows keep clear of that one too, seated or
-not: a row half a pitch inside a boundary reaches back across it by `margin − pitch / 2`, so
-without it the first row seated takes the approach of the run standing on that boundary. A gap
-allocates nothing when no run in it needs a row. A diagram whose transit links all descend on one x
-is therefore untouched.
+Two parts on one port share the leg from the tip to the higher row; the plan record names them and
+stage 8 exempts the overlap through it. Two legs of two nodes within `k` are both planned and named
+`crowded`; G6 reports them, which `quality.md` item 11 prefers to a removed link.
 
-An allocated run also keeps that clearance from every reserved run of its own link that runs the
-same way and never meets it. A pair that meets at a corner is one turn of one path. A pair that runs
-the same way and does not meet is the pair G6 measures, whichever link owns it.
+A part the plan declines is **residual**, with a reason: `spans-two-gaps`, `lateral-port`, `u-turn`,
+`faces-away`, `off-boundary`, `crosses-lane`, `crosses-shared-run`, `leg-blocked` (a leg would pass
+through a label, a lane box or an obstacle) and `row-cycle` (a cycle that no Z split breaks). 7f
+names each `TIER_GAP_PART_RESIDUAL` (`TIER_GAP_ROW_CYCLE` for a cycle). A residual part is routed by
+stage 8 among the reserved parts (§ 8); nothing in placement seats it.
 
-Every routed attachment holds an outward stem, whether a rule has claimed its path or not. An
-allocated run may not stand in one. The link that owns that stem would otherwise have no route to
-its own port. A run also stays out of the link-free margin every group edge keeps (ADR-0013). That margin is not
-an obstacle for a link the group holds, because such a link has to reach a port inside the box. G6
-still refuses a segment that *runs along* the edge from on or outside it, whoever owns the group.
-The allocation therefore keeps the margin on the edge a run would follow. The edge a run crosses is
-free.
-
-Two allocated runs of one gap may **cross**. Neither is routed, so the crossing is reserved rather
-than discovered and neither needs an exemption from the other. A link that must cross the gap
-without a lane terminal on either boundary keeps the route it has today. The rows do not obstruct
-it: a run along a gap is a wall along it and never across it (ADR-0015 rule 3). A run whose own
-approach the gap cannot leave clear is left out the same way, **alone**: it keeps the route it has
-today, it crosses the rows the gap did seat, and the gap seats every other run whose approach is
-clear. The gap allocates nothing only where that leaves nothing at all. A gap that seats no row at
-all still reserves its **columns**: placement fixed a column end to end, so no search decides it and
-leaving it to a batch buys nothing.
-
-A left-out run is a crosser of every row the gap seated, and a crosser's exemption is of the whole
-horizontal cover — nothing separates crossing a row from travelling along one. Rows pack at 17.5 px
-with ±11.5 px covers, so a packed gap leaves such a run no clear band to traverse in. Stress
-ticket 15.
+The plan writes no model geometry. Stage 8 reads it again on frozen placement (`allocateGapRuns`)
+and reserves every planned part tip to tip. A gap whose parts are all planned asks the router for
+nothing. A part with no lane terminal on either boundary is planned all the same: the old
+allocation seated only runs with a lane.
 
 **A node side that feeds another tier nests its own stems (ADR-0015 rule 1).** A side carries one
 stem per port, and a leg travels along that side after it turns. Where the travel reaches a second
@@ -831,74 +811,73 @@ or immutable lane; local slots remain valid and the bundle bends instead.
 ### 7f — group label bands, tier gap room, group label bands again
 
 7f does four things, in this order: it places the group label bands, it grows each tier gap to the
-rows it must seat, it places the group label bands again where a band moved, and it lets a corridor
-whose child 7c could not seat follow that child (§ 7a). The corridor move is last because every
-centring replay before it — 7c's own, the growth's and the label bands' — reads lane x as that
-feed's authoritative x and chases a corridor that has moved. It therefore reserves no room: the
-gap keeps the room this stage gave it, and a move whose new row that room cannot seat is refused
-(§ 7a states the whole condition).
+height its plan asks (`growTierGaps`, `gap-room.ts`), it places the group label bands again where a
+band moved, and it lets a corridor whose child 7c could not seat follow that child (§ 7a). The
+corridor move is last because every centring replay before it — 7c's own, the growth's and the label
+bands' — reads lane x as that feed's authoritative x and chases a corridor that has moved. It
+therefore reserves no room: the gap keeps the height this stage gave it, and a move whose new row
+that height cannot hold is refused (§ 7a states the whole condition).
 
-**Stem tips stand apart.** For a drawn link between the two tiers of a gap, where either end stands
-on a nested side, the two stem tip rows stand 23 px apart (2 × 11.5 px at the default stroke). The near stem's obstacle
-reaches 11.5 px past its tip, and a run keeps 11.5 px off an obstacle. Each tip then clears the
-obstacle of the other. `tierGapRoom` reports the shortfall as `stems`, and the gap grows by it
-(`TIER_GAP_GROWN`). The rule reads the two tips of one link only.
-
-**A tip band keeps rows off every stem tip (ticket 31).** `blockers()` in `gap-runs.ts` reads a
-nested stem at its `stemPlan` depth, not at `stemReach`. It adds two bands of 23 px (two run
-clearances) each side. The row band lies on the row of every nested tip, over the x-span of the leg
-along that row. It blocks horizontal runs only, so a column may cross it. The column band lies round
-the column of every stem tip, flat or nested. It keeps allocated columns off the tip. `tierGapRoom`
-(`gap-runs.ts`) sets the gap headroom to the larger of the flat headroom and the distance from the
-deepest nested top-side tip to the high boundary plus 23 px (`reach`). `growTierGaps`
-(`gap-room.ts`) grows the gap to that headroom. A gap with no allocated row seats no columns. So
-placement reserves the room, and the router does not find it.
-
-**A tier gap grows to the rows it must seat (ADR-0015 rule 1).** 7f places its group labels, then
-measures the gaps, then places its group labels again. The middle step is the reservation, and it
+**A tier gap grows to the height of its plan (ADR-0021).** 7f places its group labels, then reads
+the plan of each gap, then places its group labels again. The middle step is the reservation, and it
 needs the labels in front of it: a group label is an obstacle in the tier gap beside it, so a gap
 measured before the labels can grow for rows the labels then refuse. The last step is needed
 because the growth moves whole bands down and a label placed first would stay behind;
 `produceGroupLabelBands` strips every group label and re-plans it on each call, so the third step
 costs a replay and nothing else. It runs only where the second step moved a band.
-`bandGap` is one number for the whole diagram, chosen in stage 4 from the node
-clearance and the widest stroke. The room a tier gap needs is a property of that gap: the rows 7a's
-allocation must seat in it (`allocateGapRuns`). A gap short of that room grows by exactly the
-shortfall, and every band below it moves down by the running total. Nothing moves horizontally,
-nothing moves up, so lane x, the groups' order and every reservation 7a–7e made are untouched; the
-lane extents follow their bands and the replay rebuilds every claim the movement touched. A gap
-whose rows already fit grows by nothing.
+`bandGap` is one number for the whole diagram, chosen in stage 4 from the node clearance and the
+widest stroke. The height a tier gap needs is a property of that gap, and the plan (§ 7a) computes it
+from the rows of its parts, packed from the low boundary:
 
-The room a gap asks for is **what its seating lands in**, not `rows × pitch`. That formula is the
-packing of rows half a pitch inside each boundary with nothing in the way, and a gap with a lane
-never gets it: every lane's reserved run stands on a boundary and reaches `10 + (its stroke +
-widest routed stroke) / 2` into the gap, so the first row starts deeper than half a pitch and the
-last lands past where the formula puts it. The reservation is the last row the seating seats, plus
-the **headroom** the high boundary keeps — one router stem and the gate's clearance, which is what
-an approach standing on that boundary asks for.
+```
+lb_i   = max( own upper tip row (or low + e where that tip is in the padding), own mouth row,
+              tip row + k for every foreign upper tip strictly inside the span,
+              O5 bands anchored to the band above, over the span )
+need_i = max( depth(own lower end), e where the span crosses a group's top edge,
+              k + depth(j) for every lower leg the run really crosses,
+              k + depth(d) for every drop d inside the span (2k + depth(d) with a jog),
+              O5 bands anchored to the band below, plus their clearance )
+drop d:  lb_d = own upper tip row;  need_d = depth(own lower end) + (k with a jog)
+residual r between the two tiers:  need_r = depth(upper tip, from low) + 2k + depth(lower tip)
+H      = max( floor, max_i ( y_i - low + need_i ), max_d ( lb_d - low + need_d ), need_r )
+growth = max( 0, H - (bandTop - low) )
+```
 
-The seating a gap gets in its own room is the seating its own room allows, so the rule measures on
-a **probe**: a copy of the model with the band below each short gap moved down past anything its
-seating can ask for. The answer is then independent of the room the gap has, which is what keeps
-the reservation monotone — a second pass over the reserved geometry measures the same need and
-grows nothing. Room is reserved only where the probe shows it buys the gap a seat, and a gap the
-allocation **refuses** for a reason room cannot answer — the rows have no clean order, or every run
-the gap holds has its own approach beyond a boundary blocked — is left alone, because a taller gap
-gives the same refusal. One covered run is not a refusal: the gap leaves that run out and asks for
-the room the rest of its seating lands in.
+`depth` of a lower end is `bandTop` less its row: 15 for a flat tip on the boundary, 32.5 or 50 for
+a nested one, negative for a tip in the padding, `overhang + m` for a mouth. `floor = bandGap - (low
+- bottom(band above))`: a lane overhang takes its part of the band gap. The largest term without the
+floor is the **demand**, and `TIER_GAP_GROWN` names the part that set it. The gap grows by exactly
+`H` less the room it has, and every band below it moves down by the running total. Nothing moves
+horizontally, nothing moves up, so lane x, the groups' order and every reservation 7a–7e made are
+untouched; the lane extents follow their bands and the replay rebuilds every claim the movement
+touched. A gap whose parts already fit grows by nothing.
+
+`H` is computed on the geometry 7f publishes. A stem nests only where the gap has the room
+(`sidePlan` declines a nested turn that would stand in frozen geometry), so the tips the plan reads
+depend on how far the gap has opened. `growTierGaps` therefore iterates to a fixed point of
+`extra = H(grown by extra) - room`: each round reads the plan on a trial copy grown by the round
+before (`settled`; the trial is replayed only where the published model is replayed) and replaces the
+growth by `H` less the room the gap had before any growth. `H` is not monotone in the growth (on
+`a-band-holds-the-group-that-set-its-edge` it is 247.75 px unopened and 236.25 px opened by 198.5), so
+the first two rounds replace and from the third round a gap never gives back what an earlier round
+asked. The rounds are capped at six. A gap that does not settle is named `TIER_GAP_PART_UNFIT` with
+the ask and left to the router. No probe: the plan does not depend on how far the gap has opened
+except through the stems, and a second measure over the reserved geometry asks for nothing.
 
 The height is a reservation, not a discovery: stage 8 receives a gap that already holds its rows.
-The allocation is the **consumer** of the grown gap and never its owner — it reads the room the gap
-has and seats what fits in it.
+Stage 8 is the **consumer** of the grown gap and never its owner. A corridor move after the growth
+(§ 7a) can leave a gap short; stage 8 reads the plan again on frozen placement, and a gap that then
+does not fit is named `TIER_GAP_PART_UNFIT` at stage 8 and its links are the router's.
 
-The count is taken here and not at 7a, where the gap's own bounds are fixed, because it separates a
-**column** (both ends on one x, no row needed) from a **row**, and three later rules turn a row into
-a column: 7c aligns a child under its lane, 7d spans a bar across its ports, and 7e orders a
-bundle's ports. Measured: the M1 golden's one populated tier gap owes four rows after 7a and none
-after 7d, so a count taken at 7a would grow a gap the finished diagram does not need. 7f is the last
-placement rule, so its count is the one stage 8 receives. One thing 7f still does afterwards the
-rule cannot see: the third step may move a group horizontally for a label band, which turns a
-column into a row and changes the count. Nothing re-reserves after that.
+The plan is read here and not at 7a because the count of stepped parts and drops depends on every
+rule before 7f: 7c aligns a child under its lane, 7d spans a bar across its ports, and 7e orders a
+bundle's ports, and each turns a row into a drop. Measured: the M1 golden's one populated tier gap
+owes four rows after 7a and none after 7d, so a plan read at 7a would grow a gap the finished
+diagram does not need. 7f is the last placement rule, so its plan is the one stage 8 receives. One
+thing 7f still does afterwards that the plan cannot see: the third step may move a group
+horizontally for a label band, which turns a drop into a stepped part. The plan is recomputed at
+consumption for that reason, and a part that then does not fit is residual with
+`TIER_GAP_PART_UNFIT`, never a silent discovery.
 
 For every group: band height = label height + 8, inside the padding of the **title edge**: the
 horizontal edge with fewer incident routed link ports, so a group fed from above carries its title
@@ -1108,16 +1087,26 @@ Registered as obstacles, each expanded once in the adapter and never in the mode
   grows — so the router can always reach the port under one. A port on another side of the same node
   stands in its own strip and keeps its reservation.
   These rectangles are added per batch. They never enter the ownership exclusions, so they cannot
-  change a batch; they remain for the attachments no gap allocation reaches.
-- **every allocated tier-gap run** (§ 7a, in the room § 7f reserved for it), covered by the
-  clearance a reserved run carries, for
-  every batch from the first. This is the head-on approach to a lane, reserved rather than covered
-  by a rectangle. Measured over 322 diagrams, a 23 × 38 px cover repaired 8 failures and broke 4.
-  The wall it put in a tier gap pushed other links into routes their own checkpoints could not meet.
-  A run's **row** does not obstruct the links that must cross that gap, which the allocation names.
-  Its vertical segments obstruct them, and a route can pass those by. The owner is not given the row
-  either. Its route meets the run at the two terminals, so the end rectangles keep the owner and the
-  ones between do not.
+  change a batch; they remain for the attachments no planned part reaches.
+- **every planned tier-gap part** (§ 7a, in the height § 7f reserved for it), tip to tip: the upper
+  leg, the run on its row and the lower leg, a Z part's two rows and middle drop, or the one vertical
+  of a drop. Each is covered by the clearance a reserved run carries, for every batch from the first.
+  This is the head-on approach to a lane, reserved rather than covered by a rectangle. Measured over
+  322 diagrams, a 23 × 38 px cover repaired 8 failures and broke 4. The wall it put in a tier gap
+  pushed other links into routes their own checkpoints could not meet. A part's **row** does not
+  obstruct the **residual** links of that gap, which the plan names as its crossers. Its verticals
+  obstruct them, and a route can pass those by, except a residual part that stands within `k` of a
+  vertical: it is granted the cover of that vertical alone. The owner is not given the row either.
+  Its route meets the part at the two terminals, so the end rectangles keep the owner and the ones
+  between do not. Two planned parts on one port share the leg from the tip to the higher row, and the
+  plan record exempts the overlap.
+
+**What the router still does in a tier gap.** Nothing inside a gap whose parts are all planned: the
+stem from a port anchor to its tip is a gap with one possible route, and stage 8 claims it (below).
+It routes the **residual** parts (§ 7a, nine reasons), lateral ports, shared-run ends, bundle members,
+flank regions and bar drops, and every link of a gap the plan does not fit. It no longer seats a
+row, holds a row for an interleaved pair, orders the rows of a gap, or keeps a band off a tip: the
+plan reserves what they reserved, and the corpus never reached them at this stage (ticket 52).
 
 **A lane obstructs its owner too.** The corridor admits the owner's collinear run and nothing else.
 Stage 8 stitches that run back. It never routes it. The owner therefore needs no exemption here.
@@ -1142,25 +1131,20 @@ containers in O(S log² S) time and O(S log S) space. Exact duplicates keep thei
 and surviving shapes retain input order. An exactly contained attachment shape is an error.
 
 Ownership is exact. A link may pass only through the reservations it already owns: its own bundle
-envelope, its own reserved runs, its lane runs included, and the row of a tier-gap run its own route
-must cross. A transit lane is not one of them: the corridor holds the owner's run, and stage 8
+envelope, its own reserved runs, its lane runs included, and the row of a planned tier-gap part its own
+(residual) route must cross. A transit lane is not one of them: the corridor holds the owner's run, and stage 8
 stitches that run back rather than route it. Owning the endpoint group does not open a label band.
 Links whose exclusion sets differ cannot share one router, because the binding has no per-connector
 shape-ignore API. They run as an ordered sequence of **ownership batches**, and every completed
 route becomes a protective obstacle for the batches after it.
 
-A completed run may be crossed by a later link. `gapNeeds` grants the passage when the later link's
-chord, or its checkpoint polyline, or either L-shaped path of one of its legs crosses the run. A
-batch is split into parts by the covers its links cross and by the stems of batchmates its links
-cross (`crossingParts`, `crossedStems`), so a link that must cross a stem does not share a part
-with a link that must not. A stem of a later part is an obstacle for the part before it, unless
-that part must cross it. An L that the router does not take frees a cover for nothing. That costs
-quality, not validity.
-
-**The chord alone opens no stem (ticket 30).** The endpoint chord (pin to pin) stays in the part
-key, so a batch still splits by a stem that only the chord crosses. No consumer routes through that
-stem. A stem is passable to a later part only where a leg or an L shape crosses it. The cover grant
-that still serialises by chord is ticket 37.
+A completed run may be crossed by a later link. `gapNeeds` grants the passage when one of the later
+link's legs, or either L-shaped path of one of its legs, crosses the run's interior; the endpoint chord
+never grants it (ticket 37, closed by deletion in ticket 52: no cover on the corpus was granted by the
+chord alone). A stem of a later batch is an obstacle for the batches before it. An L that the router
+does not take frees a cover for nothing. That costs quality, not validity. A batch is not split by the
+covers its links cross or by the stems of batchmates (`crossingParts` and `crossedStems`, tickets 22
+and 30, are gone: no batch of the corpus was ever split at this stage).
 
 **A link the stage cannot use is removed (ticket 24).** After each batch part, `tryStitch` judges
 one link: the required checkpoints first, then the stitch. Two cases reject the link. The router
@@ -1216,10 +1200,10 @@ A link every piece of which is claimed asks the router for nothing and joins no 
 a diagram made only of such links never loads the WASM.
 
 Each link is stitched back in source-to-target order: its reserved runs byte-for-byte, with their
-owner, lane and `barCross` annotations, the tier-gap runs the allocation made for it, and the routed
-gaps between them. An allocated run is not a claim the lanes rule wrote on the model, so the
-stitcher names the corridor it leaves exactly as it names a routed gap that meets one. Where an
-allocated run and the gap beyond it are one straight run, the stitcher joins them. A run a rule
+owner, lane and `barCross` annotations, the tier-gap parts the plan made for it, and the routed
+gaps between them. A planned part is not a claim the lanes rule wrote on the model, so the
+stitcher names the corridor it leaves exactly as it names a routed gap that meets one. Where a
+planned part and the gap beyond it are one straight run, the stitcher joins them. A run a rule
 wrote on the model is reproduced exactly and is never joined. Where a gap meets one of
 its own lanes it is split at the corridor boundaries and each piece names the one lane it touches,
 the same shape the region rules produce. Publication and restore then check the result
@@ -1319,7 +1303,7 @@ once, with the same points and no masks, when the answer misses a checkpoint it 
 costs one more transaction on a batch that would otherwise fail the command. Swapping the vertical
 bits instead would make every mask bite, which turns each stem checkpoint from a minimum into a
 pinned turn — measured, that puts two runs 3.5 px apart where nothing reserves the pitch between
-them. ADR-0015 rule 1 now reserves that room in a row gap, in a tier gap and on a node side that
+them. ADR-0015 rule 1 now reserves that room in a row gap, in a tier gap (ADR-0021: the plan) and on a node side that
 feeds one, but only where an order is forced; a side it leaves flat still has no room reserved for a
 pinned turn, so the masks stay advisory.
 
