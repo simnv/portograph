@@ -304,7 +304,7 @@ function feedsFrom(model: LayoutModel, sources: ReadonlySet<string>, below: bool
         const near = below ? ownTier - 1 : ownTier + 1;
         // A parent beyond the sources, on their side, is admitted when its link transits the sub-tier `near` through an owned lane: `feeds`
         // in `centre.ts` admits every parent on the authority side, and the pull must read the same feeds (ticket 69). A bundle member has no lane.
-        const beyond = !sources.has(otherGroup) && otherTier !== undefined && (below ? otherTier < near : otherTier > near);
+        const beyond = !sources.has(otherGroup) && otherTier !== undefined && !model.groups[otherGroup]!.flank && (below ? otherTier < near : otherTier > near);
         if (!sources.has(otherGroup) && !beyond) continue;
         const child = findPort(model, own!), parent = findPort(model, other!);
         if (!child?.anchor || !parent?.anchor) continue;

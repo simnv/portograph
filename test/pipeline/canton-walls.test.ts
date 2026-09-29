@@ -237,8 +237,9 @@ describe('canton member walls (canton-groups ticket 56)', () => {
   }, 60000);
 
   // Ticket 69: the pull admits a transit from beyond the authority sub-tier and reads its lane, as centring does. The first pass on the finished
-  // layout still moves `site` by 1.74 px (it was 4.74 px): the canton wall grew by the lane gutter after the last pull of stage 7, which a lane
-  // refused at that time (see the ticket). The second pass moves nothing, and the move goes to the feeds' mean (right), not to `l1` alone.
+  // layout still moves `site` by 1.74 px (it was 4.74 px). The last inner pull saw the lane and the final wall; 7c centring in the 7f replay
+  // then declines the alignment of `site#0` and packs it clear at the left wall (x 52.0), and the pull reads 1.737 px of room up to the right
+  // wall (`slideRange`) and takes it. Two rules put different limits on one wall (ticket 70). The second pass moves nothing.
   it('a-transit-from-beyond-the-authority-tier-into-a-member: the pull aims at the lane and is a fixed point after one pass', async () => {
     const clone = structuredClone(await run('a-transit-from-beyond-the-authority-tier-into-a-member')) as LayoutModel;
     const x = (): number => clone.groups['site#0']!.bounds!.x;
