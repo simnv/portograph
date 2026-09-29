@@ -213,10 +213,15 @@ with no own cell: the union of its member frames grown by 20 px, plus the label 
   cell (`bands.ts:127-133`), so a canton band on a member's first cell collides with that member's
   own band on the same edge, and a cell-hosted band grows the cell box (`bands.ts:682`), so
   `cellReach` and `deriveFrames(member)` would put it inside the member frame.
-  **Decision: the canton band is held by the sub-tier.** It takes the `topShift` room only
-  (`bands.ts:670-672`, one shift for the whole sub-tier): its y lies above the moved tier band on
-  the top edge, or below the last tier band on the bottom edge; `deriveFrames(canton)` adds the
-  band to the canton box; `cellReach` is untouched; no cell hosts it and `frameHost` is not asked.
+  **Decision: the canton band is held by the sub-tier.** The band is a `LabelBand` with no `host`.
+  `syncBands` derives it from the members' box (`deriveFrames(model, false)`): as wide as that box, on the
+  edge outside it (above it on the top edge, below it on the bottom edge). `deriveFrames(canton)` adds the
+  band to the canton box; `cellReach` is untouched; no cell hosts it and `frameHost` is not asked. The shift
+  loop of `reserveInitialSpace` requires the gap on the title edge to hold 20 + band + 20 and moves the lower
+  tiers by the shortfall. `topShift` is not used: it grows cell boxes, so it would put the band inside the
+  member frames. A title wider than the canton grows the widest cell on the title edge (`growthPlan`) and the
+  frame follows. The canton band is an O5 obstacle to the tier-gap row plan, anchored to the band on its
+  edge, with the group-edge margin (`tier-gap-rows.md`, O5).
   *Timing.* `produceGroupLabelBands` (`bands.ts:995`) calls `reserveInitialSpace` (`bands.ts:645`)
   at the start of `bands`, before `growTierGaps` and the replay (`src/layout/mutation.ts:720-725`).
   The bottom-edge push is the shift loop inside `reserveInitialSpace` (`bands.ts:689-695`), which
@@ -311,7 +316,9 @@ so rule 3's feed union is exercised. Fixture 11 puts it inside.
 | 4 | `a-foreign-unit-beside-the-run-of-cantons` | two cantons of two tiers; a plain group on tier 1 that ELK places between them | the plain group stands before or after the run on the side its key favours; no empty room between the cantons |
 | 5 | `a-transit-inside-a-canton` | a canton of three tiers; a link from tier 0 to tier 2 of the canton; a foreign link from above the canton to below it | the first lane inside the canton frame, which grows to hold it; the foreign lane outside at one x for all three tiers; the neighbour gap a band gap after `separateFrameColumns` |
 | 6 | `a-member-widened-after-pack` | a canton whose tier-1 member has a 13-node row that `fitGroupBox` widens, beside a sibling canton | the canton column follows the widened member; the sibling canton moved as a whole; no member outside its column; G9 clean |
-| 7 | `a-tier-below-a-canton` | anchor tier above; a canton fed from above with a plain tier below it | the title on the bottom edge; the tier below pushed by the band; the gap holds 20 + 20 + band |
+| 7 | `a-canton-with-a-tier-below` | anchor tier above; a canton fed from above with a plain tier below it | the title on the bottom edge; the tier below pushed by the band; the gap holds 20 + band + 20 |
+| 7b | `a-canton-title-on-the-top-edge` | fixture 1 with no feed from above; a member with its own band on the same edge | the title on the top edge; the tier above gives way; the canton and member bands do not collide |
+| 7c | `a-canton-band-holds-the-rows-off` | a canton titled at the bottom over a plain tier, two links crossing | the planned rows lie below the band and the group-edge margin; no G6 |
 | 8 | `a-leaf-child-beside-its-parent-inside-a-canton` | canton → location → leaf zone beside the parent cells | the zone inside its location inside its canton; inset 40 px; the beside gap `COLUMN_SLACK` after the whole layout |
 | 9 | `a-canton-layout-is-idempotent` | fixtures 2, 3 and 6 laid out twice | the second layout JSON equals the first |
 | 10 | `three-continents` | three top locations on tier 0 outside every canton, an MPLS row on tier 1, cantons A (two locations with zones), B and C on tier 2, client groups on tiers 3 and 4, cross-canton flow links | three canton frames a band gap apart; every client group under its own canton; the top locations unmoved against the same input without cantons |
@@ -323,7 +330,7 @@ so rule 3's feed union is exercised. Fixture 11 puts it inside.
 |---|---|---|
 | 1 | **Schema.** `canton:`; `NormalisedGroup.canton`; the eight codes of Section 1; `CONTEXT.md` terms and invariant 2. | `test/parse`: fixture 1 parses with the member's `canton`; one test per code; `NESTED_CHILD` still refuses a child of a child. |
 | 2 | **Frames and the unit.** Every member a frame; `kind: 'canton'`; `parent` on member frames; `deriveFrames` for a canton frame; transitive `frameCells` / `frameNodes`; G9 with the transitive skip; `columnTiers` untouched, the canton as the unit; the renderer and the drawio export draw the canton frame. | Fixtures 1, 2 and 11; G9 negative test (a member frame moved out on a clone fails `frame-contains`); goldens byte-identical. |
-| 3 | **Title band.** The canton band held by the sub-tier: the `topShift` room in `reserveInitialSpace`, the bottom edge by its shift loop, `deriveFrames(canton)` adding the band, `cellReach` untouched, no host cell; no `FRAME_TITLE_UNHOSTED` for a canton. | Fixture 7; fixture 1 with the title forced to the top edge; a member's own top band and the canton's top band on one sub-tier do not collide. |
+| 3 | **Title band.** The canton band held by the sub-tier: the gap requirement (20 + band + 20) in the shift loop of `reserveInitialSpace`, `deriveFrames(canton)` adding the band, `cellReach` untouched, no host cell; no `FRAME_TITLE_UNHOSTED` for a canton. | Fixture 7; fixture 1 with the title forced to the top edge; a member's own top band and the canton's top band on one sub-tier do not collide. |
 | 4 | **Member-level walls** (Section 2b). Derived canton column; the new inner pass after `pullTier` and before centring; `overlayFreeGroups` for one-cell members; held-lane parity; idempotence. | Fixtures 3, 5, 6, 8 and 9, asserted after the whole layout. |
 | 5 | **Order and foreign units.** `orderFramesByOverlay` with cantons as units; the inner overlay order per canton per tier; foreign units moved before or after the run; the chord rule not extended; the tier-gap plan unchanged. | Fixtures 2 (the swap and the refusal) and 4 (from the ELK-between start); a member-to-member link across one gap keeps its planned row and takes no chord; the same gap with and without the canton has one row plan. |
 | 6 | **Converter and the NTP metric.** `--canton`, the one-pass rule, the warnings; measure the sheet. | A converter test on a synthetic drawthe.net document with two continents; fixture 10 renders with three canton frames; the NTP numbers (straight of 153, removed, canvas, Q) in the ticket's comments; the corpus differential byte-identical for every input without `canton:`. |
@@ -361,3 +368,11 @@ the Frames section (the canton frame, the title host), G9.
    `CANTON_MEMBER_FLANK`). Recommendation: keep them refused until a sheet needs them; a grid
    member needs a cell form, and a member flank needs a place in the canton frame.
    **Decision (2026-09-29):** Adopted. Grid members and member flanks stay refused (`CANTON_MEMBER_SHAPE`, `CANTON_MEMBER_FLANK`) until a sheet needs them.
+
+### Known limits of ticket 55
+
+- `validateGroupLabelBands` skips the node clearance for a canton band, and G9 accepts a member frame that overlaps the band by construction:
+  `syncBands` re-derives the band from the members, so the two cannot disagree.
+- An overlay link may cross the band and its title (pre-existing for member bands; `crossingSide` counts routed links only). Ticket 60.
+- The canton band and its margin are an O5 obstacle to the tier-gap row plan, anchored to the band on the canton's title edge (see `tier-gap-rows.md`, O5).
+- A member port whose x lies within the canton's title text plus or minus 8 px on the title edge becomes a `leg-blocked` residual, and the router detours around the label, never through the text. By ADR-0011 the title edge is the one with fewer ports.

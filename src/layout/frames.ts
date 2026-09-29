@@ -42,7 +42,7 @@ export function rebuildFrames(model: LayoutModel): void {
 }
 
 /** The frames `rebuildFrames` would store, read off the cells as they stand; `undefined` while a cell has no box. */
-export function deriveFrames(model: LayoutModel): Frame[] | undefined {
+export function deriveFrames(model: LayoutModel, withBands = true): Frame[] | undefined {
   const entries = Object.entries(model.document.frames ?? {});
   if (!entries.length) return undefined;
   // Cells are placed a tier at a time in stage 4; frames wait for every cell to have its box.
@@ -56,9 +56,17 @@ export function deriveFrames(model: LayoutModel): Frame[] | undefined {
     const children = entries.filter(([, item]) => item.parent === id).map(([child]) => build(child));
     const boxes = [...cells.map(cell => cellReach(model, cell)), ...children.map(child => grow(child.box, GROUP_PADDING)), ...transitLanes(model, id)];
     const tiers = [...cells.map(cell => model.groups[cell]!.tier!), ...children.map(child => child.tier)];
+    // A canton's title band is held by its sub-tier, not by a cell (canton-groups ticket 3): the frame is the
+    // union of its members grown by the margin, plus the band on the title edge.
+    const band = withBands && source.kind === 'canton' ? model.labelBands.find(item => item.group === id && item.host === undefined) : undefined;
+    let box = union(boxes);
+    if (band !== undefined) {
+      const room = band.bounds.height;
+      box = band.side === 'top' ? { ...box, y: box.y - room, height: box.height + room } : { ...box, height: box.height + room };
+    }
     const frame: Frame = { id, label: source.label, ...(source.class !== undefined ? { class: source.class } : {}),
       ...(source.kind !== undefined ? { kind: source.kind } : {}), ...(source.parent !== undefined ? { parent: source.parent } : {}), cells: [...source.cells],
-      box: union(boxes), tier: Math.min(...tiers) };
+      box, tier: Math.min(...tiers) };
     derived.set(id, frame);
     return frame;
   };
