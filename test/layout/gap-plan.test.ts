@@ -194,6 +194,19 @@ describe('the tier-gap plan on hand-built parts', () => {
     expect(both.crowded).toEqual([{ id: 'B', link: 'B', with: 'D' }]);
   });
 
+  it('keeps the jog of a drop that stands on its lower x one group-edge margin below the low boundary (O5, ticket 50 re-check)', () => {
+    // The upper tip stands in the group padding (y 245, above low 248): one clearance below it is 256.5, 8.5 px under the boundary, but a run
+    // keeps e = 10.75 from the group edge at low, so the jog stands at 258.75. The row above the drop's neighbour keeps k below that.
+    const tip = { ...part('D', 0, 100, 110), upper: { x: 100, y: 245, kind: 'tip' as const, source: 'up100' } };
+    const plan = planGap([tip, part('B', 1, 0, 91)], frame());
+    const drop = plan.parts.find(item => item.id === 'D')!;
+    expect([drop.shape, drop.stand]).toEqual(['drop', 'lower']);
+    expect(drop.jog).toBeCloseTo(248 + 10.75, 6);
+    // Away from the boundary the jog is still one clearance below the tip.
+    const far = planGap([part('D', 0, 100, 110), part('B', 1, 0, 91)], frame()).parts.find(item => item.id === 'D')!;
+    expect(far.jog).toBeCloseTo(263 + 11.5, 6);
+  });
+
   it('takes a part whose ends stand under a run clearance apart as a drop, and lets a run cross it once', () => {
     const plan = planGap([part('A', 0, 50, 55), part('B', 1, 0, 100)], frame());
     expect(plan.parts.find(item => item.id === 'A')!.shape).toBe('drop');

@@ -996,8 +996,10 @@ function plannedPeers(model: LayoutModel, plan: GapPlan | undefined, gap: TierGa
   const margin = routedStroke(model) / 2 + STRAIGHT_PATH_CLEARANCE.path, keep = nudgingDistance(model);
   const links = new Map(model.links.map(link => [link.id, link]));
   return plan.parts.filter(part => part.index !== undefined).map(part => {
-    const shares = plan.parts.filter(other => other.link !== part.link && (other.upper.source === part.upper.source && part.upper.kind === 'tip'
-      || other.lower.source === part.lower.source && part.lower.kind === 'tip')).map(other => other.link);
+    // A pair with legs within `keep` (`plan.crowded`, both planned) consumes each other's leg covers and is never routed: the gate names the clash.
+    const crowded = plan.crowded.flatMap(item => item.link === part.link ? [item.with] : item.with === part.link ? [item.link] : []);
+    const shares = [...plan.parts.filter(other => other.link !== part.link && (other.upper.source === part.upper.source && part.upper.kind === 'tip'
+      || other.lower.source === part.lower.source && part.lower.kind === 'tip')).map(other => other.link), ...crowded];
     // A residual part has no route across a planned vertical (a leg or a drop) that stands within `keep` of one of its own legs or between
     // them: spec 2.2 grants it that vertical's cover, so it publishes with a finding and not as a removal.
     const verticals = [part.upper.x, part.lower.x, ...part.middle !== undefined ? [part.middle] : []];

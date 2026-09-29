@@ -452,6 +452,15 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
   const applies = (obstacle: PlanObstacle, unit: Unit): boolean =>
     obstacle.owner !== unit.part.link && obstacle.x1 > unit.lo + EPS && obstacle.x0 < unit.hi - EPS;
 
+  /** The y of the jog of a drop that stands on its lower x: one clearance below its upper tip, and O5 like a row (`e` off the group edge at `low`, the bands anchored above). */
+  const jogOf = (drop: Part): number => {
+    const x0 = Math.min(drop.upper.x, drop.lower.x), x1 = Math.max(drop.upper.x, drop.lower.x);
+    let y = Math.max(drop.upper.y + keep, low + margin);
+    for (const obstacle of frame.obstacles) {
+      if (obstacle.anchor === 'above' && obstacle.owner !== drop.link && obstacle.x1 > x0 + EPS && obstacle.x0 < x1 - EPS) y = Math.max(y, obstacle.bound);
+    }
+    return y;
+  };
   const ownLb = (unit: Unit): number => {
     if (unit.half === 2) return -Infinity;
     const end = unit.part.upper;
@@ -465,7 +474,7 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
     // the jog, and the lower leg of a part beside the stub (its lower x within `keep` of the upper x) starts below it.
     for (const drop of drops) {
       if (drop.stand !== 'lower' || !drop.jogged || drop.link === unit.part.link) continue;
-      const jog = drop.upper.y + keep;
+      const jog = jogOf(drop);
       if (inside(drop.upper.x, unit) || inside(drop.lower.x, unit) || unit.half !== 1 && Math.abs(unit.xl - drop.upper.x) < keep - EPS) lb = Math.max(lb, jog + keep);
     }
     return lb;
@@ -530,7 +539,7 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
     const base = { id: part.id, link: part.link, order: part.order, upper: part.upper, lower: part.lower, depth: part.depth,
       ...(part.index !== undefined ? { index: part.index } : {}), ...(part.upperFirst !== undefined ? { upperFirst: part.upperFirst } : {}) };
     if (part.drop) {
-      const jog = part.jogged ? (part.stand === 'lower' ? part.upper.y + keep : part.lower.y - keep) : undefined;
+      const jog = part.jogged ? (part.stand === 'lower' ? jogOf(part) : part.lower.y - keep) : undefined;
       verticals.push({ part, kind: 'drop', x: part.stand === 'lower' ? part.lower.x : part.upper.x, y0: part.stand === 'lower' ? jog! : part.upper.y, y1: Infinity });
       planned.push({ ...base, shape: 'drop', rows: [], stand: part.stand, ...(jog !== undefined ? { jog } : {}) });
       continue;
