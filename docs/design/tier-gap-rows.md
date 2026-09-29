@@ -57,10 +57,16 @@ router stem `m = 15 px` (`bands.ts:35`).
    tip of the gap. `pieceOf` already builds it (`gap-runs.ts:256-283`); the guard that skipped it
    (`gap-runs.ts:308`) goes.
 4. **Drops.** A part with `|x_lower − x_upper| < k` is a drop (ticket 42 rule 2, `gap-runs.ts:303`,
-   kept). Its vertical stands on the upper end's x. Where the ends differ, the jog stands one
-   clearance above the lower tip row, so the tip is entered along its normal. Both are reserved.
+   kept). Its vertical stands on the end x that keeps `k` from every foreign leg: the upper end's x by
+   default, the lower end's x where that is the one that clears (ticket 50, review). Where the ends
+   differ, the jog stands one clearance above the lower tip row (upper stand), or one clearance below
+   the upper tip row (lower stand); either way the tip is entered along its normal. Both are reserved.
+   The vertical below the jog of an upper stand, and the stub beside the jog of a lower stand, is a
+   lower leg (an upper leg) for the within-`k` rule of Section 2.2.
 5. **Absent, one line each.** An overlay link is not routed. A stub is not drawn. A straight chord
-   (ticket 34) reserves nothing and blocks nothing; this closes ticket 44. A bundle member, a bar
+   (ticket 34) reserves nothing and blocks nothing; this closes ticket 44. Chords are therefore
+   invisible to the plan, and a jog may land under one. Open question (S6): accept the G6 finding, or
+   treat a chord as an O5 band for drops. A bundle member, a bar
    drop and an end that consumes a shared run keep their own rules; their geometry is an obstacle
    to the plan, and they have no part.
 6. **Residual by shape.** These stay routed, as today, and are named `TIER_GAP_PART_RESIDUAL`: a
@@ -120,7 +126,9 @@ never sees.
   one x, or 5.9 or 10 px apart), their legs are parallel closer than the gate allows. A is above B:
   the leg from the low boundary turns first (today's only forced order, `rowOrder`,
   `gap-runs.ts:407-410`). The two halves of a Z part carry the whole's O2 edges: the upper edge on
-  the first half, the lower edge on the second, and the first half is above the second.
+  the first half, the lower edge on the second, and the first half is above the second. (S4) O2 also
+  applies between a drop's vertical and a stepped part's leg: the stepped part's leg within `k` of the
+  drop's lower x runs at least `2k + depth` above the band below (`depth` of the drop's lower end), so its row stays `k` above the jog.
 - **O3, no row shared.** Two parts share one row only where their x-spans, each grown by `k`, are
   disjoint. Every other pair takes rows at least `P` apart. A described part (one with a link
   label) keeps `label height + 2 × 4 + stroke` below its row before the next row, or its label is
@@ -145,16 +153,21 @@ never sees.
   A 0 → 100, B 100 → 200, C 200 → 0, a pure O2 three-cycle. Rule: while the graph of O1 ∪ O2 has a
   cycle, the latest unsplit part on it in model order becomes a **Z part**: upper leg, first row, a
   middle drop, second row, lower leg. The middle drop stands at the centre of the widest interval
-  between the part's ends that is `k` clear of every other leg and drop. Its halves take the
-  whole's edges as O1 and O2 state. Each round splits one more part, so there are at most `n`
+  between the part's ends that is `k` clear of every other leg and drop **and leaves O1 ∪ O2 ∪ the
+  Z's own edges acyclic**; the part is residual only where no clear interval does. A half's edges
+  follow from its own span by 2.1 (its own upper and lower x), not from the whole's: copying the
+  whole's O1 edges onto both halves orders a half against a part it does not cross. Each round splits one more part, so there are at most `n`
   rounds. Where a cycle remains among halves only (no shape has shown one), its parts are residual,
   named `TIER_GAP_ROW_CYCLE`.
 - **Residual by constraint.** A part that cannot obey O2 to O5 is residual: two upper ends of two
   nodes within `k`; a leg through a fixed obstacle; a port over a lane mouth on the same boundary.
-  Where two lower legs, or two upper legs, of two nodes stand within `k` (a drop's vertical counts as an upper and a lower leg), the later part is residual
-  and the earlier part's leg cover is **granted** to it (today `plan.ts:212` grants rows only, so an
-  ungranted leg would guarantee a removal). It publishes with a G6 finding, which `quality.md`
-  item 11 prefers to a removed link.
+  Where two lower legs, or two upper legs, of two nodes stand within `k` (a drop's vertical counts as an upper and a lower leg), the later part is
+  **planned all the same**, with the clash named in the plan (`crowded`) and reported by G6: a published
+  finding, which `quality.md` item 11 prefers to a removed link and to a route round the sheet. A
+  jogged drop first tries the other end's x for its vertical (Section 1 item 4). A residual part whose span
+  crosses a planned leg has no route across it (`plan.ts:212` grants rows only, so an ungranted
+  leg would guarantee a removal): it is planned with a G6 finding (legs within `k`), or it is granted
+  the cover of every planned vertical it crosses (S5).
 
 ### 2.3 The ordering rule
 
@@ -287,7 +300,12 @@ a routed link needs. The residual term keeps that `2k` where the link is routed.
 `reach` headroom (`gap-runs.ts:1004-1006`) is `k + depth(j)` of the parts that really cross that
 leg, x-scoped (ticket 42 proposal 3). Neither is a separate pass.
 
-No probe. `growTierGaps` keeps only its last step: move the bands by `growth`, replay, warn
+No probe. **H is computed on the geometry 7f publishes** (S1): a stem nests only where the gap has the
+room, so `H` depends on the growth. `growTierGaps` iterates to a fixed point of `geometry(growth)`:
+each round reads the plan on a trial copy grown by the rounds before it (the trial is replayed
+only where the published model is replayed) and adds what that plan still asks for. The growth is
+monotone, and the rounds are capped (6). A gap that does not settle within the cap is left to the router and named
+`TIER_GAP_PART_UNFIT` with the ask. Then the last step: move the bands by the sum, replay, warn
 (`gap-room.ts:84-97`). The 7f order stays: labels, plan and growth, labels again, corridor move. A
 corridor move after the plan changes an x; the plan is recomputed at consumption on frozen
 placement, as `allocateGapRuns` is today, and a part that then does not fit is residual with
