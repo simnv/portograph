@@ -38,7 +38,7 @@ export function metrics(model: LayoutModel, routed: Segment[]): ScoreMetrics {
       else turns.push(Math.sign(cross));
     }
     bendCounts.push(turns.length);
-    if (path.length >= 2) { eligible++; if (!uTurn && turns.every((turn, i) => i === 0 || turn !== turns[i - 1])) alternating++; }
+    { eligible++; if (!uTurn && turns.every((turn, i) => i === 0 || turn !== turns[i - 1])) alternating++; }
   }
   const meanBends = mean(bendCounts, 0);
   const global = compactness(nodes.map(n => n.bounds!));

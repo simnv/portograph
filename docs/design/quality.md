@@ -58,7 +58,7 @@ reported separately and does not contribute to either sum.
 |---|---|---|---|
 | Crossings | `1 − min(1, c / m)`; `c` = crossings outside bundles, `m` = routed links | 1 | 0.30 |
 | Bends | `1 − min(1, mean bends per routed link / 3)` | 1 | 0.15 |
-| Path continuity | fraction of routed links with ≥ 2 segments whose consecutive turns alternate direction (no U-turns) | 1 | 0.10 |
+| Path continuity | fraction of drawn routed links whose consecutive turns alternate direction (no U-turns); a one-segment link counts as continuous | 1 | 0.10 |
 | Compactness | `Σ node area / bbox area`, computed globally and per group, reported both, scored as the mean | 1 | 0.10 |
 | Grid alignment | fraction of nodes whose top **or** left edge shares a coordinate (±1 px) with ≥ 2 other nodes | 1 | 0.10 |
 | Flow consistency | fraction of routed *vertical* segments whose direction (source→target) is downward when the target tier is lower | 1 | 0.10 |
