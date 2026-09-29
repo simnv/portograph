@@ -43,7 +43,7 @@ const OUTWARD: Record<Side, Point> = {
 };
 
 interface ForbiddenInterval { low: number; high: number; id: string }
-interface LabelPlan { labels: LayoutLabel[]; growth?: { group: LayoutGroup; width: number }; blocked: string[] }
+interface LabelPlan { labels: LayoutLabel[]; growth?: { group: LayoutGroup; width: number; title: string }; blocked: string[] }
 /** Where one tier's groups land when the grown group takes its new width. */
 interface GroupPlacement { group: LayoutGroup; x: number; width: number }
 /** A point stage 8 must reach outside every obstacle to honour this placement. */
@@ -709,7 +709,7 @@ function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: Readon
       // that no budget could have repaired.
       const width = x + measured.width + GROUP_LABEL_GEOMETRY.horizontalInset - group.bounds!.x;
       if (!growthPlan(model, group, width)) blocked.push(id);
-      else if (permitGrowth) return { labels, blocked, failed, growth: { group, width } };
+      else if (permitGrowth) return { labels, blocked, failed, growth: { group, width, title: title.id } };
     }
     labels.push({ id: `label:group:${id}`, owner: { ...group.owner }, layer: 'routed', role: 'group',
       text: title.label, fontFamily: GROUP_LABEL_GEOMETRY.fontFamily,
@@ -735,7 +735,7 @@ function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: Readon
       const width = x + measured.width + GROUP_LABEL_GEOMETRY.horizontalInset - box.x;
       const cell = cantonHost(model, band.group, band.side);
       if (cell === undefined || !growthPlan(model, cell, cell.bounds!.width + (width - box.width))) blocked.push(band.group);
-      else if (permitGrowth) return { labels, blocked, failed, growth: { group: cell, width: cell.bounds!.width + (width - box.width) } };
+      else if (permitGrowth) return { labels, blocked, failed, growth: { group: cell, width: cell.bounds!.width + (width - box.width), title: band.group } };
     }
     labels.push({ id: `label:group:${band.group}`, owner: { ...band.owner }, layer: 'routed', role: 'group',
       text: title, fontFamily: GROUP_LABEL_GEOMETRY.fontFamily,
@@ -1244,10 +1244,10 @@ export function produceGroupLabelBands(model: LayoutModel): void {
     const plan = planLabels(model, true);
     if (!plan.growth) { model.labels.push(...plan.labels); diagnoseBlocked(model, plan.blocked); return; }
     // A widening for a leg only (no hard obstacle asks for it) needs a pass the shared budget no longer has: centring spends it before any leg
-    // is known (ticket 66). Each title has an allowance of `LEG_PASSES_PER_TITLE` passes outside the shared budget; a title past it keeps the soft rule.
+    // is known (ticket 66). Each title (keyed by the title that asked, not the cell that grows: one cell can host a member title and a canton title) has an allowance of `LEG_PASSES_PER_TITLE` passes outside the shared budget; a title past it keeps the soft rule.
     const legOnly = budget.remaining <= 0 && !planLabels(model, true, false).growth;
-    if (legOnly && (legPasses.get(plan.growth.group.id) ?? 0) < LEG_PASSES_PER_TITLE) {
-      legPasses.set(plan.growth.group.id, (legPasses.get(plan.growth.group.id) ?? 0) + 1);
+    if (legOnly && (legPasses.get(plan.growth.title) ?? 0) < LEG_PASSES_PER_TITLE) {
+      legPasses.set(plan.growth.title, (legPasses.get(plan.growth.title) ?? 0) + 1);
       const stable = routerEntryPoints(model);
       pushFollowingGroups(model, plan.growth.group, plan.growth.width);
       holdColumnsAfterPush(model);

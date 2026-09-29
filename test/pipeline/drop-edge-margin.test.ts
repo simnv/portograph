@@ -38,7 +38,8 @@ it('turns a drop that goes in sideways outside the group-edge link-margin', asyn
   }, 60000);
 
 /**
- * The entry rule of ticket 10, read where a title still stands on the column of the port (a widening no lane allows leaves it there, and no
+ * The entry rule of ticket 10, read on a forged state: a title on the column of the port, with the source beside the group. Placement no
+ * longer publishes it (since ticket 66 the title is placed clear and the group widens; a widening no lane allows leaves the title there, but no
  * fixture of the corpus keeps one with a source beside the group): the title of `g11` is put over the column of `n4`'s port and the plan must
  * reserve an entry checkpoint one margin beyond the side edge that faces the source, on the row of the stem.
  */

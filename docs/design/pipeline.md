@@ -824,7 +824,7 @@ the title plus the clearances beside the port, on the growth path a straight fee
 where it does not, the title keeps its old place and the links go to the router as `leg-blocked`. A skewed leg is a product of centring, so it is
 unknown before centring runs and cannot be reserved at `reserveInitialSpace` (measured: reserving room beside every one-node node with a port on the
 title edge widened 39 of 178 sheets, 1513 px in all, against 8 sheets and 242 px for the widening on demand, and added a G6 finding). The
-widening on demand needs one growth pass, and centring has spent the shared eight-pass budget on every sheet that has such a leg. Each title
+widening on demand needs one growth pass, and centring has spent the shared eight-pass budget on every measured sheet that has such a leg. Each title
 therefore has `LEG_PASSES_PER_TITLE` (1) extra pass outside the shared budget; a widening past it is refused and reported as
 `GROUP_LABEL_LEG_ALLOWANCE_EXHAUSTED`, not as budget exhaustion.
 
