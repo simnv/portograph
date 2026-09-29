@@ -3,15 +3,15 @@ import type { LayoutModel } from '../model/layout.js';
 import { withLayoutMutation } from '../layout/mutation.js';
 import { completedRouteCovers, type RouteObstacle } from './obstacles.js';
 import { batchRequest, completedCrossingObstacles, pendingStemObstacles, planRoute, type RoutePlan } from './plan.js';
-import { stitchPaths, stubCandidate } from './paths.js';
+import { stitchPaths, stubCandidate, tryStitch, type RouteRejection, type Stitched } from './paths.js';
 import { ROUTE_BUDGET_MS, systemRouteClock, withRouteSession, type CreateRouteAttempt, type RouteClock } from './worker.js';
 
 export type { RouteObstacle } from './obstacles.js';
 export type { LinkPlan, RoutePiece, RoutePlan, StemReservation } from './plan.js';
 export { batchRequest, pendingStemObstacles, planRoute, effectiveLayer, stemCheckpoint, ROUTE_PARAMETERS, SHAPE_BUFFER_DISTANCE } from './plan.js';
 export { nodeClearance, routeObstacles, trimChain, TERMINAL_TRIM } from './obstacles.js';
-export { checkpointsHonoured, crossedTiers, simplify, stitchPath, stitchPaths, stubCandidate } from './paths.js';
-export type { RoutedLinkPath } from './paths.js';
+export { checkpointsHonoured, crossedTiers, firstSkippedCheckpoint, simplify, skippedCheckpoint, stitchPath, stitchPaths, stubCandidate, tryStitch } from './paths.js';
+export type { RoutedLinkPath, RouteRejection, Stitched } from './paths.js';
 export { reservationConflicts, reservedRuns, validateRoutedPaths } from './validate.js';
 export type { ReservationConflict } from './validate.js';
 export { createBrowserRouteFactory, createRouteFactory, RouteDeadlineError, RouteSession, ROUTE_BUDGET_MS, ROUTE_REQUEST, ROUTE_RESPONSE, systemRouteClock, withRouteSession } from './worker.js';
@@ -29,6 +29,11 @@ export interface RouteOptions {
   /** Whole-stage budget; stage 17 injects the remaining pipeline budget. */
   routeBudgetMs?: number;
   clock?: RouteClock;
+  /**
+   * Throw when the router skips a required checkpoint, as stage 8 first did, instead of removing the
+   * link (ticket 24). Tests that assert the router's reservations set it; a pipeline run does not.
+   */
+  strictCheckpoints?: boolean;
 }
 
 /**
@@ -58,8 +63,12 @@ function crossingParts(plan: RoutePlan, batch: { links: string[] },
   return [...parts.values()];
 }
 
-async function runRouter(model: LayoutModel, plan: RoutePlan, options: RouteOptions): Promise<Map<string, Point[]>> {
+interface RouterAnswer { routes: Map<string, Point[]>; stitched?: Map<string, Stitched> }
+
+async function runRouter(model: LayoutModel, plan: RoutePlan, options: RouteOptions): Promise<RouterAnswer> {
   const routes = new Map<string, Point[]>();
+  // Tolerant mode judges each link's route as its batch returns, before its cover can bind a later batch.
+  const stitched = options.strictCheckpoints ? undefined : new Map<string, Stitched>();
   const createAttempt = options.createAttempt;
   const asked = plan.links.reduce((sum, item) => sum + item.connectors.length, 0);
   if (!createAttempt) throw new Error(`Routing ${asked} remaining gap(s) requires a libavoid worker factory`);
@@ -86,7 +95,18 @@ async function runRouter(model: LayoutModel, plan: RoutePlan, options: RouteOpti
           }
           for (const id of links) {
             const link = model.links.find(item => item.id === id)!;
-            for (const piece of plan.links.find(item => item.link === id)!.pieces) {
+            const linkPlan = plan.links.find(item => item.link === id)!;
+            // A route stage 8 cannot use (a skipped checkpoint, an end not met) is discarded, so its cover is
+            // no obstacle to the batches after it. Strict mode keeps the route and stitching throws.
+            if (stitched) {
+              const done = tryStitch(model, linkPlan, routes);
+              stitched.set(id, done);
+              if ('rejection' in done) {
+                for (const piece of linkPlan.pieces) if (piece.kind === 'gap') routes.delete(piece.connector);
+                continue;
+              }
+            }
+            for (const piece of linkPlan.pieces) {
               if (piece.kind !== 'gap') continue;
               protectedRuns.push(...completedRouteCovers(model, link, piece.connector, routes.get(piece.connector) ?? []));
             }
@@ -94,7 +114,13 @@ async function runRouter(model: LayoutModel, plan: RoutePlan, options: RouteOpti
         }
       }
     });
-  return routes;
+  return { routes, ...(stitched ? { stitched } : {}) };
+}
+
+function rejectionMessage(link: string, item: RouteRejection): string {
+  return item.code === 'ROUTE_CHECKPOINT_SKIPPED'
+    ? `${link} was removed: the router skipped the required checkpoint (${item.checkpoint!.x}, ${item.checkpoint!.y}) of ${item.connector}, reserved by ${item.producer}.`
+    : `${link} was removed: its route was rejected (${item.reason}).`;
 }
 
 /**
@@ -106,10 +132,19 @@ export async function route(model: LayoutModel, options: RouteOptions = {}): Pro
   const plan = planRoute(model);
   // Overlay links need no WASM, and neither does a remainder every piece of which stage 8 claimed,
   // so a diagram with no batch never initializes it.
-  const routes = plan.batches.length ? await runRouter(model, plan, options) : new Map<string, Point[]>();
-  const paths = stitchPaths(model, plan, routes);
+  const answer: RouterAnswer = plan.batches.length ? await runRouter(model, plan, options)
+    : { routes: new Map<string, Point[]>(), ...(options.strictCheckpoints ? {} : { stitched: new Map<string, Stitched>() }) };
+  const { paths, rejections } = stitchPaths(model, plan, answer.routes, answer.stitched);
   return withLayoutMutation(model, 'route', draft => {
     for (const { link, path } of paths) draft.links.find(item => item.id === link)!.path = path;
+    // A removed link keeps no path and is listed; one warning names the link and why its route was unusable.
+    for (const item of rejections) {
+      const link = draft.links.find(candidate => candidate.id === item.link)!;
+      link.removed = true;
+      draft.diagnostics.push({ stage: 'final-geometry', severity: 'warning', code: item.code,
+        message: rejectionMessage(link.id, item), owners: [{ ...link.owner }] });
+    }
+    if (rejections.length) draft.removedLinks = draft.links.filter(link => link.removed === true).map(link => link.id);
     for (const link of draft.links) {
       if (!stubCandidate(draft, link)) continue;
       link.stubCandidate = true;

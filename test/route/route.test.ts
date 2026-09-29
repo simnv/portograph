@@ -296,18 +296,33 @@ links: [[a.p, b.p], [m.p, c.p], [m.q, c.q], [m.r, b2.p]]`);
     expect(() => (first.links[0]!.path!.segments as PathSegment[]).push({ from: { x: 0, y: 0 }, to: { x: 1, y: 0 }, owner: first.links[0]!.owner })).toThrow();
   });
 
-  it('rejects router output that misses a checkpoint or stops short, and keeps the input model', async () => {
+  it('rejects router output that misses a checkpoint or stops short under the strict option, and keeps the input model', async () => {
     const before = await throughBands(bending);
     const snapshot = JSON.stringify(before);
     const truncate = (points: Point[]): Point[] => points.slice(0, -1);
-    await expect(route(before, { createAttempt: forgingAttempt(truncate) })).rejects.toThrow(/does not meet its reserved endpoints|checkpoint/);
+    await expect(route(before, { createAttempt: forgingAttempt(truncate), strictCheckpoints: true })).rejects.toThrow(/does not meet its reserved endpoints|checkpoint/);
     expect(JSON.stringify(before)).toBe(snapshot);
     // A detour that misses the required outward checkpoint is rejected before anything is published.
-    const skipCheckpoint = (points: Point[]): Point[] => {
-      const first = points[0]!, last = points.at(-1)!;
-      return [first, { x: first.x + 40, y: first.y }, { x: first.x + 40, y: last.y }, last];
-    };
-    await expect(route(before, { createAttempt: forgingAttempt(skipCheckpoint) })).rejects.toThrow(/skipped a required checkpoint/);
+    await expect(route(before, { createAttempt: forgingAttempt(skipCheckpoint), strictCheckpoints: true })).rejects.toThrow(/skipped a required checkpoint/);
+    expect(JSON.stringify(before)).toBe(snapshot);
+  });
+
+  it('removes a link whose route misses a checkpoint or stops short, warns, and keeps the input model (ticket 24)', async () => {
+    const before = await throughBands(bending);
+    const snapshot = JSON.stringify(before);
+    const skipped = await route(before, { createAttempt: forgingAttempt(skipCheckpoint) });
+    // The forged router answers every gap the same wrong way, so every routed link goes and the sheet stays.
+    const gone = skipped.links.filter(link => link.removed === true);
+    expect(gone.length).toBeGreaterThan(0);
+    expect(skipped.removedLinks).toEqual(gone.map(link => link.id));
+    for (const link of gone) expect(link.path).toBeUndefined();
+    const warnings = skipped.diagnostics.filter(item => item.code === 'ROUTE_CHECKPOINT_SKIPPED');
+    expect(warnings.map(item => (item.owners![0] as { id: string }).id)).toEqual(gone.map(link => link.id));
+    expect(warnings[0]!.message).toMatch(/checkpoint \(-?[\d.]+, -?[\d.]+\) of link-\d+#\d+, reserved by (stem|lane|entry):/);
+    // A route that stops short is refused the same way: removed, with the reason stitching gave.
+    const short = await route(before, { createAttempt: forgingAttempt(points => points.slice(0, -1)) });
+    expect(short.removedLinks!.length).toBeGreaterThan(0);
+    expect(short.diagnostics.some(item => item.code === 'ROUTE_CHECKPOINT_SKIPPED' || item.code === 'ROUTE_GAP_REJECTED')).toBe(true);
     expect(JSON.stringify(before)).toBe(snapshot);
   });
 
@@ -438,6 +453,12 @@ function recordingAttempt(exchange: { sent: RouteBatch[]; received: RoutedConnec
     return created;
   };
 }
+
+/** A forged answer that keeps both ends and leaves the gap by a detour that passes no checkpoint. */
+const skipCheckpoint = (points: Point[]): Point[] => {
+  const first = points[0]!, last = points.at(-1)!;
+  return [first, { x: first.x + 40, y: first.y }, { x: first.x + 40, y: last.y }, last];
+};
 
 /** A real worker whose answers are rewritten, to exercise the adapter's rejection paths. */
 function forgingAttempt(edit: (points: Point[]) => Point[]): CreateRouteAttempt {

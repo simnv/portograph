@@ -521,8 +521,10 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
   if (returned !== undefined) throw new Error('Mutation callback must be synchronous and return void');
   jsonValue(draft);
   validateRect(draft.canvas, 'canvas');
-  same(omit(draft, ['nodes', 'groups', 'tierBands', 'labels', 'canvas', 'diagnostics', 'runtime', 'links', 'lanes', 'bundles', 'junctions', 'labelBands', 'barDrops', 'obstacles', 'regions', 'anchorTier', 'frames']),
-    omit(model, ['nodes', 'groups', 'tierBands', 'labels', 'canvas', 'diagnostics', 'runtime', 'links', 'lanes', 'bundles', 'junctions', 'labelBands', 'barDrops', 'obstacles', 'regions', 'anchorTier', 'frames']), 'Undeclared model field changed');
+  same(omit(draft, ['nodes', 'groups', 'tierBands', 'labels', 'canvas', 'diagnostics', 'runtime', 'links', 'lanes', 'bundles', 'junctions', 'labelBands', 'barDrops', 'obstacles', 'regions', 'anchorTier', 'frames', 'removedLinks']),
+    omit(model, ['nodes', 'groups', 'tierBands', 'labels', 'canvas', 'diagnostics', 'runtime', 'links', 'lanes', 'bundles', 'junctions', 'labelBands', 'barDrops', 'obstacles', 'regions', 'anchorTier', 'frames', 'removedLinks']), 'Undeclared model field changed');
+  // Stage 8 alone removes links (`ROUTE_CHECKPOINT_SKIPPED`, `ROUTE_GAP_REJECTED`); every later stage keeps the list.
+  if (rule !== 'route') same(draft.removedLinks, model.removedLinks, 'Only the route rule may remove a link');
   same(draft.stage, model.stage, 'Transaction owns the stage marker');
   same(draft.document, model.document, 'Document changed'); same(draft.freeze, model.freeze, 'Freeze metadata changed');
   same(structure(draft, rule === 'centre'), structure(model, rule === 'centre'), 'Topology or membership changed');
@@ -543,7 +545,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     }
   }
   // The route rule owns exactly the remaining paths and their stub marks; nothing else may move.
-  const linkFields = rule === 'route' ? ['fixedSegments', 'path', 'stubCandidate'] : ['fixedSegments'];
+  const linkFields = rule === 'route' ? ['fixedSegments', 'path', 'stubCandidate', 'removed'] : ['fixedSegments'];
   const otherClaims = (value: LayoutModel) => ({ ...claims(value), lanes: [], links: value.links.map(link => omit(link, linkFields)) });
   // Stage 9's producer owns every link and multiplicity label, exactly as 7f owns group labels.
   if (rule === 'link-labels') same(draft.labels, model.labels, 'Link-label callback cannot author labels');
