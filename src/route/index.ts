@@ -71,14 +71,15 @@ async function runRouter(model: LayoutModel, plan: RoutePlan, options: RouteOpti
         // A later batch's reserved stems protect it the same way, before it has a route of its own.
         const later = plan.batches.slice(index + 1).flatMap(item => item.links);
         const parts = crossingParts(plan, batch, protectedRuns);
-        // Only the later batches' stems protect a part: batchmates whose stems must cross stay in one batch
-        // (ticket 22), and a part that read its batchmates' stems as obstacles would close that crossing.
-        const pending = new Set(later);
         for (const [part, links] of parts.entries()) {
+          // A part is an order, and an order needs the reservation the batch order already gets: the stems of
+          // the later parts protect it too, except where one of its links has to cross a stem (ticket 22).
+          const mates = new Set(parts.slice(part + 1).flat());
+          const pending = new Set([...later, ...mates]);
           const sub = parts.length === 1 ? batch : { id: `${batch.id}.${part}`, links };
           const routed = await route(batchRequest(plan, sub, [
             ...completedCrossingObstacles(plan, sub, protectedRuns),
-            ...pendingStemObstacles(plan, sub, pending),
+            ...pendingStemObstacles(plan, sub, pending, mates),
           ]));
           for (const item of routed) {
             if (routes.has(item.connector)) throw new Error(`Router returned ${item.connector} twice`);
