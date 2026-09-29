@@ -207,7 +207,7 @@ function validateTechniques(model: LayoutModel, baseline: LayoutModel): void {
     const expected = baseline.links[index]!.technique;
     const authored = model.document.links[link.sourceIndex]!.route;
     // Only a rule with a landed validator may select a technique; today that is the rows rule for its candidates.
-    const geometrySelected = authored === undefined && link.layer === 'routed' && !link.bundle && !link.groupLink
+    const geometrySelected = authored === undefined && link.layer === 'routed' && !link.bundle
       && ((stages.indexOf(model.stage) >= stages.indexOf('rows') && rowPathCandidate(model, link))
         || (stages.indexOf(model.stage) >= stages.indexOf('flanks') && flankPathCandidate(model, link))
         || (stages.indexOf(model.stage) >= stages.indexOf('bars') && barLink(model, link) !== undefined))

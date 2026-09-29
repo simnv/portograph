@@ -69,10 +69,11 @@ export function facingPair(model: LayoutModel, link: LayoutLink): FacingPair | u
 
 /** Topology-only test: the rows rule owns this link's path whenever geometry makes it eligible. */
 export function rowPathCandidate(model: LayoutModel, link: LayoutLink): boolean {
-  if (link.bundle !== undefined || link.groupLink !== undefined) return false;
+  if (link.bundle !== undefined) return false;
   const route = model.document.links[link.sourceIndex]?.route;
   if (route !== undefined && route !== 'straight' && route !== 'orthogonal') return false;
-  return frameLinkCandidate(model, link) || lateral(model, link) !== undefined;
+  // A group-link member is a candidate only by the frame rule (ticket 38); the row rule leaves it alone.
+  return frameLinkCandidate(model, link) || (link.groupLink === undefined && lateral(model, link) !== undefined);
 }
 function automatic(model: LayoutModel, link: LayoutLink): boolean {
   return model.document.links[link.sourceIndex]?.route === undefined;

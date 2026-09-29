@@ -38,7 +38,7 @@ function sameFrame(model: LayoutModel, a: string, b: string): boolean {
 
 /** Topology-only test: the frame rule owns this link's path whenever geometry makes it eligible. */
 export function frameLinkCandidate(model: LayoutModel, link: LayoutLink): boolean {
-  if (link.layer !== 'routed' || !link.attachments || link.bundle !== undefined || link.groupLink !== undefined) return false;
+  if (link.layer !== 'routed' || !link.attachments || link.bundle !== undefined) return false;
   if (link.technique === 'stub' || effectiveLayer(link) !== 'routed') return false;
   const route = model.document.links[link.sourceIndex]?.route;
   if (route !== undefined && route !== 'straight') return false;
