@@ -4,11 +4,11 @@ import { bottom, EPS, right } from '../score/geometry.js';
 import { measureText } from '../text/index.js';
 import { GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { GROUP_LABEL_GEOMETRY, nudgingDistance, routedStroke } from './bands.js';
-import { drawn, edgeOf, nestedTips, stopsOf, tierGaps, type TierGap } from './gap-runs.js';
+import { drawn, edgeOf, nestedTips, stopsOf, tierGaps, type NestedTip, type TierGap } from './gap-runs.js';
 import { LINK_LABEL_GEOMETRY } from './link-labels.js';
 import { findPort } from './row-paths.js';
 import { bandGap } from './skeleton-graph.js';
-import { stemCache, stemPlan } from './sides-two.js';
+import { stemCache, stemPlan, type StemCache } from './sides-two.js';
 
 /**
  * The tier-gap row plan (`docs/design/tier-gap-rows.md`, ranked-groups ticket 48): the rows, legs and
@@ -673,17 +673,19 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
   const obstacles: PlanObstacle[] = [], blocks: PlanObstacle[] = [], walls: { x0: number; x1: number; owner?: string }[] = [];
   const rect = (box: Rect, clearance: number, owner?: string): void => {
     const x0 = box.x - clearance, x1 = right(box) + clearance, o = owner === undefined ? {} : { owner };
+    const wall = box.y <= gap.low + EPS && bottom(box) >= gap.high - EPS;
+    // A box hangs from the band above (it ends at or inside the gap) or from the band below (it starts inside the gap and ends at or
+    // below its far boundary). One that ends below the gap is a need measured from the band below, never a lower bound (O5).
+    const below = !wall && box.y > gap.low + EPS && bottom(box) > gap.low + EPS && bottom(box) >= gap.high - EPS;
+    const need = clearance + bandTop - box.y;
     // The box stands in a leg's way whichever band it hangs from: its bound from the band it is anchored to, whatever the sign.
-    if (bottom(box) <= gap.low + EPS) blocks.push({ x0, x1, anchor: 'above', bound: bottom(box) + clearance, ...o });
-    else if (box.y >= gap.high - EPS) blocks.push({ x0, x1, anchor: 'below', bound: clearance + bandTop - box.y, ...o });
-    else if (!(box.y <= gap.low + EPS && bottom(box) >= gap.high - EPS)) blocks.push({ x0, x1, anchor: 'above', bound: bottom(box) + clearance, ...o });
-    if (bottom(box) <= gap.low + EPS) {
-      if (bottom(box) + clearance > gap.low) obstacles.push({ x0, x1, anchor: 'above', bound: bottom(box) + clearance, ...o });
-    } else if (box.y >= gap.high - EPS) {
-      const need = clearance + bandTop - box.y;
+    if (wall) walls.push({ x0, x1, ...o });
+    else if (below || box.y >= gap.high - EPS) blocks.push({ x0, x1, anchor: 'below', bound: need, ...o });
+    else blocks.push({ x0, x1, anchor: 'above', bound: bottom(box) + clearance, ...o });
+    if (wall) return;
+    if (below || box.y >= gap.high - EPS) {
       if (need > 0) obstacles.push({ x0, x1, anchor: 'below', bound: need, ...o });
-    } else if (box.y <= gap.low + EPS && bottom(box) >= gap.high - EPS) walls.push({ x0: box.x, x1: right(box), ...o });
-    else obstacles.push({ x0, x1, anchor: 'above', bound: bottom(box) + clearance, ...o });
+    } else if (bottom(box) + clearance > gap.low) obstacles.push({ x0, x1, anchor: 'above', bound: bottom(box) + clearance, ...o });
   };
   for (const lane of model.lanes) {
     if (lane.layer === 'overlay') continue;
@@ -736,12 +738,22 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
 
   // Ports outside the plan still stand in the gap: a run keeps off their stems (O4).
   const ends = new Set(kept.flatMap(input => [`${input.upper.x}|${input.upper.y}`, `${input.lower.x}|${input.lower.y}`]));
-  // Only the stems of the two bands facing the gap count: an upper tip hangs from the band above, a lower one from the band below.
-  const tips = nestedTips(model, cache).filter(item => !ends.has(`${item.tip.x}|${item.tip.y}`)
-    && (item.side === 'bottom' ? item.anchor.y <= gap.low + EPS : item.anchor.y >= bandTop - EPS));
+  const tips = facingTips(model, gap, cache).filter(item => !ends.has(`${item.tip.x}|${item.tip.y}`));
   return planGap(kept, { low: gap.low, bandTop, floor, keep, pitch: keep, edge: margin, obstacles, blocks,
     tips: tips.filter(item => item.side === 'bottom').map(item => item.tip),
     lowerTips: tips.filter(item => item.side === 'top').map(item => item.tip), residual });
+}
+
+/**
+ * The stems of the two bands that face the gap: an upper tip hangs from a bottom port of the band directly above it, a lower tip from a
+ * top port of the band directly below. A stem of a band further away never reaches the gap.
+ */
+export function facingTips(model: LayoutModel, gap: TierGap, cache: StemCache = stemCache()): NestedTip[] {
+  const band = (tier: number): Rect => model.tierBands.find(entry => entry.tier === tier)!.bounds!;
+  const above = band(gap.above), below = band(gap.below);
+  return nestedTips(model, cache).filter(item => item.side === 'bottom'
+    ? item.anchor.y <= gap.low + EPS && item.anchor.y >= above.y - EPS
+    : item.anchor.y >= below.y - EPS && item.anchor.y <= bottom(below) + EPS);
 }
 
 /** The plan of every tier gap of the model, low to high. */
