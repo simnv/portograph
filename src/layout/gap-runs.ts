@@ -379,11 +379,38 @@ function reservedRuns(link: LayoutLink): PathSegment[] {
 }
 
 /**
+ * A stem that placement nested (ticket 31): its port turns deeper than the plain reach, so its tip
+ * stands on a row of its own, and every port of that side that shares its port shares the tip.
+ * `consumers` are the links of the port: the tip belongs to each of them.
+ */
+interface NestedTip { anchor: Point; tip: Point; side: 'top' | 'bottom'; consumers: ReadonlySet<string> }
+
+function nestedTips(model: LayoutModel, cache: StemCache): NestedTip[] {
+  const result = new Map<string, NestedTip>();
+  for (const link of model.links) {
+    if (link.layer === 'overlay' || !drawn(link)) continue;
+    for (const end of ['from', 'to'] as const) {
+      if (link.sharedRuns?.[end]?.length) continue;
+      const port = findPort(model, link.attachments![end]);
+      if (!port?.anchor || (port.side !== 'top' && port.side !== 'bottom')) continue;
+      const depth = stemPlan(model, port, cache).depth;
+      if (depth <= stemReach(model, model.nodes[link.attachments![end].node]!) + EPS) continue;
+      const at = `${port.ref.node}|${port.side}|${port.anchor.x}`;
+      const known = result.get(at);
+      if (known) (known.consumers as Set<string>).add(link.id);
+      else result.set(at, { side: port.side, anchor: port.anchor, consumers: new Set([link.id]),
+        tip: { x: port.anchor.x, y: port.anchor.y + OUTWARD[port.side] * depth } });
+    }
+  }
+  return [...result.values()];
+}
+
+/**
  * Every rectangle an allocated run must stay out of, each expanded by exactly what
  * `routeObstacles` expands it by. Built once for the whole allocation and then filtered per gap.
  */
 function blockers(model: LayoutModel): Blocker[] {
-  const routed = routedStroke(model), half = routed / 2, result: Blocker[] = [];
+  const routed = routedStroke(model), half = routed / 2, result: Blocker[] = [], cache = stemCache();
   const none: ReadonlySet<string> = new Set(), pillGap = (routed + DEFAULT_STROKE_WIDTHS.pill) / 2;
   for (const node of Object.values(model.nodes)) {
     if (!node.bounds || node.layer === 'overlay') continue;
@@ -449,11 +476,20 @@ function blockers(model: LayoutModel): Blocker[] {
       }
       const port = findPort(model, link.attachments![end]);
       if (!port?.anchor || port.side === undefined) continue;
-      const stem = stemReach(model, model.nodes[link.attachments![end].node]!);
+      // The depth stage 8 receives, not the plain reach (ticket 31): a nested stem is a wall down to its
+      // own tip, and a run seated across its body leaves the link that owns it no way to its port.
+      const stem = stemPlan(model, port, cache).depth;
       const tip = { x: port.anchor.x + OUTWARD_X[port.side] * stem, y: port.anchor.y + OUTWARD[port.side] * stem };
       result.push({ owners, bounds: grow({ x: Math.min(port.anchor.x, tip.x), y: Math.min(port.anchor.y, tip.y),
         width: Math.abs(tip.x - port.anchor.x), height: Math.abs(tip.y - port.anchor.y) }, margin) });
     }
+  }
+  // A nested tip is a checkpoint stage 8 must reach, and a run keeps one run clearance off it (ticket 31):
+  // closer, the run's cover lies on the tip and the tip has no pocket. The band is the square of that
+  // clearance about the tip; the links of the port are exempt, their own way in is `reaches`.
+  const clearance = nudgingDistance(model);
+  for (const { tip, consumers } of nestedTips(model, cache)) {
+    result.push({ owners: consumers, bounds: { x: tip.x - clearance, y: tip.y - clearance, width: 2 * clearance, height: 2 * clearance } });
   }
   return result;
 }
@@ -687,8 +723,10 @@ export interface TierGapRoom {
   pitch: number;
   /**
    * The clear room the high boundary keeps beyond the last row: one router stem and the gate's
-   * clearance. That is what an approach standing on the boundary asks for, and it is the deepest
-   * any boundary geometry reaches into the gap.
+   * clearance. That is what an approach standing on the boundary asks for. Where a stem of the tier
+   * below nests and its tip row lies inside the gap, it is the distance from that tip row to the
+   * boundary plus one run clearance, so the last row lands one run clearance above the tip row
+   * (ranked-groups ticket 31).
    */
   headroom: number;
   /**
@@ -777,9 +815,15 @@ export function tierGapRoom(model: LayoutModel): TierGapRoom[] {
   if (!gaps.length) return [];
   const users = gapUsers(model, gaps);
   const pitch = MEMBER_GAP + routedStroke(model);
-  const headroom = GROUP_LABEL_GEOMETRY.routerStem + GROUP_LABEL_GEOMETRY.nodeClearance + routedStroke(model);
-  const list = blockers(model);
+  const flat = GROUP_LABEL_GEOMETRY.routerStem + GROUP_LABEL_GEOMETRY.nodeClearance + routedStroke(model);
+  const list = blockers(model), tips = nestedTips(model, stemCache()), clearance = nudgingDistance(model);
   return gaps.map((gap, key) => {
+    // A nested stem that turns inside this gap from the tier below holds the rows one run clearance off
+    // its tip row (ticket 31), so the last row lands that far above the deepest such tip. The tips move
+    // with the band below, so the room is a distance from the high boundary and asks the probe nothing.
+    const reach = Math.max(0, ...tips.filter(item => item.side === 'top' && item.anchor.y > gap.high - EPS && item.tip.y < gap.high - EPS)
+      .map(item => gap.high - item.tip.y + clearance));
+    const headroom = Math.max(flat, reach);
     const above = bands.find(band => band.tier === gap.above)!.bounds!;
     const below = bands.find(band => band.tier === gap.below)!.bounds!;
     const entry = users.get(key)!;
