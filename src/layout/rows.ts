@@ -4,7 +4,7 @@ import { groupShape } from './grid.js';
 import { bandGap, compareId, portId } from './skeleton-graph.js';
 import { moveGroup, rebuildBands, union } from './skeleton-geometry.js';
 import { groupInsets } from './regions.js';
-import { holdColumnAxes, separateFrameColumns } from './columns.js';
+import { holdColumnAxes, packBesideRows, separateFrameColumns } from './columns.js';
 import { rowGap } from './sides-two.js';
 import { withLayoutMutation } from './mutation.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -83,6 +83,8 @@ export function repackOverlaps(draft: LayoutModel): void {
       fitGroupBox(draft, group);
     }
   }
+  // The fit above changed the widths the pack sweep read: the child columns stand against the parent cells again.
+  packBesideRows(draft);
   separateFrameColumns(draft);
   // The sweep pushes a frame right and never back; the pass pulls each column toward its feed again (ticket 16).
   holdColumnAxes(draft);

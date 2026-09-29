@@ -38,5 +38,4 @@ links:
   - [c, a, { class: physical }]
   - [mid, a, { class: physical }]
   - [a, d, { class: physical }]
-  - [b, d, { class: physical }]
   - [b, e, { class: physical }]

@@ -73,7 +73,14 @@ export function packFrameColumns(model: LayoutModel): Map<string, Column> {
   const columns = new Map<string, Column>();
   if (model.document.frames === undefined) return columns;
   const tiers = columnTiers(model);
-  for (const { index, authority } of sweepSteps(model, tiers)) packStep(model, tiers, index, authority, columns);
+  // The side a child stands on reads where its overlay partners stand, and a partner in a tier that is packed later
+  // (or a tier mate that a step moves) has not reached its place when the child's own tier is read. The sweep is
+  // repeated, at most twice, while a side read off the packed sheet differs from the side the sweep used.
+  for (let pass = 0; pass < BESIDE_PASSES; pass++) {
+    const used = besideSides(model);
+    for (const { index, authority } of sweepSteps(model, tiers)) packStep(model, tiers, index, authority, columns);
+    if (besideSides(model) === used) break;
+  }
   return columns;
 }
 
@@ -87,7 +94,7 @@ export function packFrameColumns(model: LayoutModel): Map<string, Column> {
  * `COLUMN_SLACK` between a child frame and a parent cell: the child block is the child's column plus the margin on
  * each side, and the parent cell's reach begins where that block ends.
  */
-interface Stand { left: number; right: number; at: Map<string, number> }
+interface Stand { left: number; right: number; at: Map<string, number>; sides: Map<string, 'left' | 'right'> }
 
 /** The sub-tiers a frame occupies, its own cells and its child frames' cells, from the first to the last. */
 function tierRange(model: LayoutModel, id: string): [number, number] {
@@ -125,7 +132,7 @@ function standOf(model: LayoutModel, id: string, memo: Map<string, Stand>): Stan
     || blocks.some(other => other !== block && other.low <= block.high && block.low <= other.high);
   const beside = blocks.filter(shares), apart = blocks.filter(block => !beside.includes(block));
   const standing = frames[id]!.cells.filter(cell => beside.some(block => tierOf(cell) >= block.low && tierOf(cell) <= block.high));
-  const at = new Map<string, number>();
+  const at = new Map<string, number>(), sides = new Map<string, 'left' | 'right'>();
   // What is not in the row is centred on the axis: the frame's other cells and the children that share no sub-tier.
   const rest = width(frames[id]!.cells.filter(cell => !standing.includes(cell)));
   let left = Math.max(rest / 2, ...apart.map(block => block.left)), right = Math.max(rest / 2, ...apart.map(block => block.right));
@@ -139,11 +146,12 @@ function standOf(model: LayoutModel, id: string, memo: Map<string, Stand>): Stan
       return key !== undefined && key < ownX! - PLACEMENT_EPS ? 'left' : 'right';
     };
     const sorted = [...beside].sort((a, b) => order.indexOf(a.child) - order.indexOf(b.child));
-    const sides = new Map(sorted.map(block => [block, place(block)]));
+    const placed = new Map(sorted.map(block => [block, place(block)]));
+    for (const block of sorted) sides.set(block.child, placed.get(block)!);
     const row: { child?: string; width: number; axis: number }[] = [
-      ...sorted.filter(block => sides.get(block) === 'left').map(block => ({ child: block.child, width: block.left + block.right, axis: block.left })),
+      ...sorted.filter(block => placed.get(block) === 'left').map(block => ({ child: block.child, width: block.left + block.right, axis: block.left })),
       ...(standing.length ? [{ width: width(standing), axis: width(standing) / 2 }] : []),
-      ...sorted.filter(block => sides.get(block) === 'right').map(block => ({ child: block.child, width: block.left + block.right, axis: block.left })),
+      ...sorted.filter(block => placed.get(block) === 'right').map(block => ({ child: block.child, width: block.left + block.right, axis: block.left })),
     ];
     const total = row.reduce((sum, item) => sum + item.width, 0);
     // The own axis stands at the centre of the parent cells' block, or at the middle of the row without one.
@@ -153,9 +161,19 @@ function standOf(model: LayoutModel, id: string, memo: Map<string, Stand>): Stan
     for (const item of row) { if (item.child !== undefined) at.set(item.child, start + item.axis - ownAxis); start += item.width; }
     left = Math.max(left, ownAxis); right = Math.max(right, total - ownAxis);
   }
-  const stand = { left, right, at };
+  const stand = { left, right, at, sides };
   memo.set(id, stand);
   return stand;
+}
+
+/** How many times the pack sweep runs when the sides of the children that stand beside their parent's cells change under it. */
+const BESIDE_PASSES = 3;
+
+/** The side of every beside child as the sheet stands, one string: two reads are equal when no child would change side. */
+function besideSides(model: LayoutModel): string {
+  const stands = standsOf(model), sides: string[] = [];
+  for (const [id, stand] of stands) for (const [child, side] of stand.sides) sides.push(`${id}/${child}:${side}`);
+  return sides.join(',');
 }
 
 /** The stands of every frame, read once off the cells as they stand: a rule that moves cells reads them before it moves any. */
@@ -672,6 +690,57 @@ export function sweptUnits(model: LayoutModel): Map<string, string> {
   return units;
 }
 
+/**
+ * The child frames that stand beside the cells of their parent, as one row (ranked-groups ticket 28): each child
+ * that shares a sub-tier with a cell of its parent, or with a sibling child, is packed against those cells again
+ * from the geometry as it stands. The pack sweep laid the row out from the boxes ELK sized, and the stages
+ * after it (`fitGroupBox`, lane and region widths, centring) change the widths and the places of the cells, so
+ * the row is laid again at the start and at the end of centring, and after the rows rule. A child stays on the side
+ * it stands on and moves toward the cells of its parent: its frame box ends `GROUP_PADDING` from the widest parent cell
+ * on that side, and two children side by side end `2 * GROUP_PADDING` apart, the margin each block keeps. The
+ * parent's cells stay where they are, and a child with a cell that `movable` refuses stays where it is. Idempotent:
+ * a row that stands packed is not moved. Returns whether a cell moved.
+ */
+export function packBesideRows(model: LayoutModel, movable: (cell: string) => boolean = () => true): boolean {
+  const frames = model.document.frames, derived = deriveFrames(model);
+  if (frames === undefined || derived === undefined) return false;
+  const box = new Map(derived.map(frame => [frame.id, frame.box]));
+  const childrenOf = (id: string): string[] => Object.keys(frames).filter(child => frames[child]!.parent === id);
+  const cellsOf = (id: string): string[] => [...frames[id]!.cells, ...childrenOf(id).flatMap(cellsOf)];
+  const tierOf = (cell: string): number => model.groups[cell]!.tier!;
+  let moved = false;
+  for (const parent of Object.keys(frames)) {
+    const children = childrenOf(parent).map(child => ({ child, box: box.get(child)!, range: tierRange(model, child) }));
+    const shares = (item: typeof children[number]): boolean => frames[parent]!.cells.some(cell => tierOf(cell) >= item.range[0] && tierOf(cell) <= item.range[1])
+      || children.some(other => other !== item && other.range[0] <= item.range[1] && item.range[0] <= other.range[1]);
+    const beside = children.filter(shares);
+    if (!beside.length) continue;
+    const standing = frames[parent]!.cells.filter(cell => beside.some(item => tierOf(cell) >= item.range[0] && tierOf(cell) <= item.range[1])).map(cell => cellReach(model, cell));
+    const centre = (item: typeof children[number]): number => item.box.x + item.box.width / 2;
+    const place = (item: typeof children[number], x: number): void => {
+      const delta = x - item.box.x;
+      // A child with a cell that the caller may not move (the anchor tier or a flank in centring) stays; its edge still bounds the next.
+      if (Math.abs(delta) <= PLACEMENT_EPS || !cellsOf(item.child).every(movable)) return;
+      for (const cell of cellsOf(item.child)) moveGroup(model, model.groups[cell]!, delta, 0);
+      item.box = { ...item.box, x };
+      moved = true;
+    };
+    if (standing.length) {
+      const low = Math.min(...standing.map(reach => reach.x)), high = Math.max(...standing.map(reach => reach.x + reach.width)), middle = (low + high) / 2;
+      let edge = high;
+      for (const item of beside.filter(item => centre(item) >= middle).sort((a, b) => centre(a) - centre(b))) { place(item, edge + GROUP_PADDING); edge = item.box.x + item.box.width + GROUP_PADDING; }
+      edge = low;
+      for (const item of beside.filter(item => centre(item) < middle).sort((a, b) => centre(b) - centre(a))) { place(item, edge - GROUP_PADDING - item.box.width); edge = item.box.x - GROUP_PADDING; }
+    } else {
+      // Children with no cell of the parent between them: the first from the left stays, the rest close up to it.
+      const row = [...beside].sort((a, b) => centre(a) - centre(b));
+      let edge = row[0]!.box.x + row[0]!.box.width + GROUP_PADDING;
+      for (const item of row.slice(1)) { place(item, edge + GROUP_PADDING); edge = item.box.x + item.box.width + GROUP_PADDING; }
+    }
+  }
+  return moved;
+}
+
 /** A window `[low, high]` on the x of a cell box; a cell of a frame that stands beside another column keeps inside it. */
 export interface CellWindow { low: number; high: number }
 
@@ -703,15 +772,25 @@ export function besideWalls(model: LayoutModel): Map<string, CellWindow> {
       const others = [...frames[parent]!.cells, ...children.filter(sibling => sibling !== child).flatMap(cellsOf)].filter(cell => tiers.has(tierOf(cell)));
       if (!others.length) continue;
       const wall = box.get(child)!;
+      const left = (cell: string): boolean => { const reach = cellReach(model, cell); return reach.x + reach.width / 2 < wall.x + wall.width / 2; };
       for (const cell of inside) {
         const reach = cellReach(model, cell), at = model.groups[cell]!.bounds!;
         narrow(cell, { low: wall.x + (at.x - reach.x), high: wall.x + wall.width - (reach.x + reach.width - (at.x + at.width)) });
+        // The child's edge that faces cells beside it is held by the cell that stands on it: a cell that gave the edge
+        // up would shrink the frame and open the row (a frame is derived from its cells).
+        if (others.some(left) && reach.x <= wall.x + PLACEMENT_EPS) narrow(cell, { high: wall.x + (at.x - reach.x) });
+        if (others.some(cell => !left(cell)) && reach.x + reach.width >= wall.x + wall.width - PLACEMENT_EPS) narrow(cell, { low: wall.x + wall.width - reach.width + (at.x - reach.x) });
       }
-      const edge = GROUP_PADDING;
+      const edge = GROUP_PADDING, own = new Set(frames[parent]!.cells);
+      // The widest cell of the parent on each side: it stands `edge` from the child, so a narrower cell may stand
+      // as much further as it is narrower, which is how far the row centres it on one axis.
+      const widest = (side: boolean): number => Math.max(0, ...others.filter(cell => own.has(cell) && left(cell) === side).map(cell => cellReach(model, cell).width));
       for (const cell of others) {
         const reach = cellReach(model, cell), at = model.groups[cell]!.bounds!;
-        if (reach.x + reach.width / 2 < wall.x + wall.width / 2) narrow(cell, { high: wall.x - edge - (reach.x + reach.width - (at.x + at.width)) });
-        else narrow(cell, { low: wall.x + wall.width + edge + (at.x - reach.x) });
+        // Near wall: the cell keeps its margin from the child. Far wall (parent cells only, a sibling child is held by
+        // its own box): centring cannot slide it under its feed and open the row beyond the column slack.
+        if (left(cell)) narrow(cell, { high: wall.x - edge - (reach.x + reach.width - (at.x + at.width)), ...(own.has(cell) ? { low: wall.x - edge - widest(true) + (at.x - reach.x) } : {}) });
+        else narrow(cell, { low: wall.x + wall.width + edge + (at.x - reach.x), ...(own.has(cell) ? { high: wall.x + wall.width + edge + widest(false) - (reach.x + reach.width - (at.x + at.width)) } : {}) });
       }
     }
   }
@@ -754,3 +833,5 @@ export function frameColumns(model: LayoutModel): FrameColumn[] {
     return { id: frame.id, x: frame.box.x - low, width: frame.box.width + low + high, from, to, cells: new Set(cells) };
   });
 }
+
+

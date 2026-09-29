@@ -3,7 +3,7 @@ import type { Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
 import { laneSidesHold, nodeTier, occupiedOverhang, selectAnchorTier } from './lanes.js';
 import { cellReach } from './frames.js';
-import { besideWalls, frameColumns, type CellWindow, type FrameColumn } from './columns.js';
+import { besideWalls, frameColumns, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
 import { findPort } from './row-paths.js';
 import { portId, bandGap, SKELETON_SPACING } from './skeleton-graph.js';
 import { crosses } from './overlay-paths.js';
@@ -182,6 +182,10 @@ function alignSide(node: LayoutNode, side: Side, targets: Map<string, number>, l
 }
 function geometry(model: LayoutModel): number[] {
   return Object.values(model.nodes).flatMap(node => [node.bounds!.x, node.bounds!.width, ...node.ports.map(port => port.anchor!.x)]);
+}
+/** The child columns stand against the parent cells beside them again; the anchor tier and the flanks keep their place in centring (idempotent, ticket 28). */
+function settleRows(model: LayoutModel): boolean {
+  return packBesideRows(model, cell => model.groups[cell]!.tier !== model.anchorTier && !model.groups[cell]!.flank);
 }
 /** Reusable bounded producer. The caller shares one budget across all ordered placement replay. */
 interface CentreContext {
@@ -466,6 +470,9 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
   const anchor = selectAnchorTier(model);
   if (anchor === undefined) { delete model.anchorTier; return; }
   model.anchorTier = anchor;
+  // A child column that stands beside cells of its parent is packed against them again on the widths the stages
+  // since the pack left (ranked-groups ticket 28): the walls read below are the walls of a packed row.
+  if (settleRows(model)) rebuildRegions(model);
   // Free groups first: the steps below read where every group stands (ranked-groups spec 3.1).
   const columns = frameColumns(model);
   placeOverlayFree(model, columns);
@@ -495,8 +502,9 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
     placeOverlayFree(model, columns);
     rebuildRegions(model);
     const after = geometry(model);
-    if (!unresolved.size && after.every((value, i) => Math.abs(value - before[i]!) <= 0.5)) return;
+    if (!unresolved.size && after.every((value, i) => Math.abs(value - before[i]!) <= 0.5)) { if (settleRows(model)) rebuildRegions(model); return; }
   }
+  if (settleRows(model)) rebuildRegions(model);
   if (!model.diagnostics.some(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE')) placementWarning(model,
     'PLACEMENT_NON_CONVERGENCE', 'Centering exhausted the shared eight-pass budget; unresolved alignments remain for routing and final gates.', [...unresolved], 'group');
 }

@@ -1,0 +1,47 @@
+# Expected: a leaf child and the parent cells beside it stay one packed row (ranked-groups ticket 28).
+# Location `loc` has a rank of six switches (s0 to s5, rank 2). The two-rank leaf child `zone` hangs from
+# the rightmost switch (z4, z5 stand in ranks 3 and 4) and the parent member p4 hangs from the leftmost
+# switch, so centring would slide p4 under its feed, six switch widths from the child. The zone's
+# overlay partners stand in the sibling location `far`, on the right, so the child goes on the right of p4.
+# The zone frame and the parent cell that stands beside it stay one row: their gap is the column slack,
+# not the distance between two feeds, and no empty stretch of the location frame lies between them.
+# Test-only input owned by ranked-groups ticket 28; test/pipeline/leaf-child-beside.test.ts reads the layout.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  loc: { tier: 1, label: Location }
+  far: { tier: 1, label: Far site }
+  zone: { parent: loc, label: Zone }
+nodes:
+  feed: { group: upstream, class: router, label: Feed }
+  fr: { group: far, class: router, label: Far router }
+  f1: { group: far, class: server, label: Far time server }
+  f2: { group: far, class: switch, label: Far traffic filter }
+  c0: { group: loc, class: router, label: Core }
+  c1: { group: loc, class: switch, label: Distribution }
+  s0: { group: loc, class: switch, label: Switch one }
+  s1: { group: loc, class: switch, label: Switch two }
+  s2: { group: loc, class: switch, label: Switch three }
+  s3: { group: loc, class: switch, label: Switch four }
+  s4: { group: loc, class: switch, label: Switch five }
+  s5: { group: loc, class: switch, label: Switch six }
+  p4: { group: loc, class: server, label: Primary time server }
+  z4: { group: zone, class: server, label: Zone time server }
+  z5: { group: zone, class: switch, label: Zone traffic filter }
+links:
+  - [feed, c0]
+  - [feed, fr]
+  - [fr, f1]
+  - [f1, f2]
+  - [c0, c1]
+  - [c1, s0]
+  - [c1, s1]
+  - [c1, s2]
+  - [c1, s3]
+  - [c1, s4]
+  - [c1, s5]
+  - [s0, p4]
+  - [s5, z4]
+  - [z4, z5]
+  - [z4, f1, { route: overlay }]
+  - [z5, f2, { route: overlay }]
