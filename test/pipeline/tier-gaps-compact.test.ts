@@ -19,7 +19,8 @@ describe('tier gaps compact (ranked-groups ticket 18)', () => {
     const grown = new Map<number, number>();
     for (const diagnostic of model.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN')) {
       const px = Number(/grew ([\d.]+) px/.exec(diagnostic.message)![1]);
-      const band = bands.find(item => item.groups.includes(diagnostic.owners![0]!.id.replace(/^group:/, '')))!;
+      const owner = diagnostic.owners![0]!;
+      const band = bands.find(item => item.groups.includes(('id' in owner ? owner.id : '').replace(/^group:/, '')))!;
       grown.set(band.tier, (grown.get(band.tier) ?? 0) + px);
     }
     const gap = bandGap(model);
