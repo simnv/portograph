@@ -178,6 +178,12 @@ describe('the tier-gap plan on hand-built parts', () => {
     expect(plan.demand).toBeGreaterThanOrEqual(15 + 23 + 15 - 1e-9);
   });
 
+  it('makes a stepped part residual whose lower leg runs beside the vertical of a jogged drop', () => {
+    const plan = planGap([part('D', 0, 100, 110), part('B', 1, 0, 91)], frame());
+    expect(plan.residual.map(item => [item.id, item.reason, item.granted])).toEqual([['B', 'legs-within-k', 'D']]);
+    expect(plan.parts.map(item => item.id)).toEqual(['D']);
+  });
+
   it('takes a part whose ends stand under a run clearance apart as a drop, and lets a run cross it once', () => {
     const plan = planGap([part('A', 0, 50, 55), part('B', 1, 0, 100)], frame());
     expect(plan.parts.find(item => item.id === 'A')!.shape).toBe('drop');

@@ -366,8 +366,10 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
   let live: Part[] = [];
   for (const input of [...inputs].sort((a, b) => a.order - b.order)) {
     const part = asPart(input);
-    const clash = live.find(other => (other.upper.source !== part.upper.source && Math.abs(other.upper.x - part.upper.x) < keep - EPS)
-      || (other.lower.source !== part.lower.source && Math.abs(other.lower.x - part.lower.x) < keep - EPS));
+    // A drop's vertical stands on its upper x from the tip to the jog, so it counts as an upper and a lower leg.
+    const legs = (item: Part, end: 'upper' | 'lower'): PlanEnd => item.drop ? item.upper : item[end];
+    const near = (a: PlanEnd, b: PlanEnd): boolean => a.source !== b.source && Math.abs(a.x - b.x) < keep - EPS;
+    const clash = live.find(other => near(legs(other, 'upper'), legs(part, 'upper')) || near(legs(other, 'lower'), legs(part, 'lower')));
     if (clash) residual.push({ id: part.id, link: part.link, order: part.order, reason: 'legs-within-k', granted: clash.link,
       upper: part.upper, lower: part.lower });
     else live.push(part);
