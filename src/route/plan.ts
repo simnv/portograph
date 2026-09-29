@@ -538,15 +538,16 @@ function stemBounds(model: LayoutModel, link: LayoutLink, terminal: Point, check
 
 /**
  * Whether a gap of `link` has to cross `stem` (ticket 22: batchmates whose stems must cross).
- * A gap that carries checkpoints walks its legs, not the chord between its two ends: the chord of a
- * nested-stem link may cut a batchmate's stem while every leg stays clear of it (ticket 30). Counting
- * that chord split the link into a later part, and the zigzags of the earlier parts then closed the
- * pocket of its far stem tip. A gap without checkpoints has only the chord, so it keeps it.
+ * With `chord` true the endpoint chord counts, as the polyline does: that is the PART KEY, so a batch
+ * still splits by a chord-crossed stem and fan links keep distinct rows. With `chord` false only the
+ * legs and their L shapes count: that is the CONSUMER rule (ticket 30), a stem is passable to a later
+ * part only where the link really has to cross it, never by its endpoint chord alone. Letting the
+ * chord alone open a stem let the zigzags of the earlier parts close the pocket of a far stem tip.
  */
-function gapNeedsStem(plan: RoutePlan, link: string, stem: StemReservation): boolean {
+function gapNeedsStem(plan: RoutePlan, link: string, stem: StemReservation, chord = true): boolean {
   const own = plan.links.find(item => item.link === link);
   return stem.link !== link && !own?.ports.includes(stem.port)
-    && own!.pieces.some(piece => piece.kind === 'gap' && gapNeeds(piece, stem.segment, piece.via.length === 0));
+    && own!.pieces.some(piece => piece.kind === 'gap' && gapNeeds(piece, stem.segment, chord));
 }
 
 /**
@@ -579,7 +580,7 @@ export function pendingStemObstacles(plan: RoutePlan, batch: { links: string[] }
     // A stem of a link that shares this batch with the part being routed (a later part of one ownership
     // batch) stays passable to the links whose gap has to cross it (ticket 22); the stems of later batches
     // have no such link.
-    const crossers = mates.has(stem.link) ? batch.links.filter(id => gapNeedsStem(plan, id, stem)) : [];
+    const crossers = mates.has(stem.link) ? batch.links.filter(id => gapNeedsStem(plan, id, stem, false)) : [];
     return [{ id: `stem:${index}:${stem.link}`, bounds: stem.bounds, consumers: crossers }];
   });
 }
