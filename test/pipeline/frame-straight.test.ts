@@ -107,3 +107,31 @@ describe('a link inside one frame is a straight segment', () => {
     expect(result.snapshot.passed).toBe(true);
   });
 });
+
+describe('a group-link member inside one frame takes the chord', () => {
+  const name = 'a-group-link-member-inside-one-frame-is-straight';
+  const yaml = readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+
+  const check = async (source: string): Promise<void> => {
+    const model = await run(source);
+    expect(model.groupLinks).toHaveLength(1);
+    expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
+    expect(model.removedLinks ?? []).toEqual([]);
+    const members = model.links.filter(link => link.groupLink !== undefined);
+    expect(members).toHaveLength(4);
+    for (const link of members) {
+      expect(link.technique).toBe('straight');
+      expect(link.path!.segments).toHaveLength(1);
+      expect(link.path!.fixed).toBe(true);
+      expect(link.removed).not.toBe(true);
+    }
+    expect(model.lanes.filter(lane => lane.owner.kind === 'link' && members.some(link => link.id === (lane.owner as { id: string }).id))).toEqual([]);
+    expect(allocateGapRuns(model).filter(item => members.some(link => link.id === item.link))).toEqual([]);
+    expect(score(model).snapshot.passed).toBe(true);
+  };
+
+  it('draws every member between a parent and its child frame as one straight segment', () => check(yaml));
+
+  it('draws every member between two rank cells of one frame as one straight segment', () => check(readFileSync(
+    new URL('../../goldens/synthetic/a-group-link-member-between-two-rank-cells-is-straight.yaml', import.meta.url), 'utf8')));
+});

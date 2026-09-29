@@ -1,0 +1,26 @@
+# Expected: A group-link inside one frame (ranked-groups ticket 38). Group `zone` is a child of `site`; the
+# gateways sit on rank 0 of `site`, the two switches of `zone` on the next rank. The four `physical` links
+# between the gateways and the switches are the complete bipartite set of two groups, so stage 1 records one
+# group-link and M1 draws its members one by one as routed links. Both ends of each member lie in one frame
+# (a parent and its child), so a member takes the straight technique like any routed link of ticket 34:
+# one segment between the two port faces, no lane, no gap run, no stem. The uplinks from the ISP leave the
+# frame and are unchanged. Nothing is removed.
+# Test-only input owned by ranked-groups ticket 38; test/pipeline/frame-straight.test.ts reads the layout.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, label: Site }
+  zone: { parent: site, label: Zone }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  gw1: { group: site, class: router, label: Gateway 1 }
+  gw2: { group: site, class: router, label: Gateway 2 }
+  z1: { group: zone, class: switch, label: Zone 1 }
+  z2: { group: zone, class: switch, label: Zone 2 }
+links:
+  - [isp, gw1]
+  - [isp, gw2]
+  - [gw1, z1]
+  - [gw1, z2]
+  - [gw2, z1]
+  - [gw2, z2]
