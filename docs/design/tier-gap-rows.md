@@ -79,7 +79,9 @@ x. Given the rows, every crossing is fixed by arithmetic. The order is the whole
 For two stepped parts A (row `yA`) and B (row `yB`) with `yA < yB` (A above), the crossings are
 exactly these: A's run crosses B's upper leg where B's upper x lies strictly inside A's x-span; B's
 run crosses A's lower leg where A's lower x lies strictly inside B's x-span. Nothing else can meet.
-Two runs are parallel, two legs are parallel, and above a tip stands only its stem.
+Two runs are parallel, two legs are parallel, and above a tip stands only its stem. A lower leg or a drop
+reaches every row below its start after growth, because `need_i` ≥ the depth of every lower end the
+run crosses.
 
 From that arithmetic:
 
@@ -106,10 +108,13 @@ never sees.
   overlap in x: of two rightward parts the one further right at the upper end is above (ties at the
   upper end are decided at the lower end); of two leftward parts the one further left. A Z half
   obeys O1 against every part its whole Z does not interleave. A part the whole Z **interleaves**
-  is not left free: ordered between the halves it crosses the Z three times (the first run over its
-  upper leg, its run over the middle drop, the second run over its lower leg). It is ordered above
-  the first half where that keeps the graph acyclic, else below the second half, else the parts
-  are residual with `TIER_GAP_ROW_CYCLE`. Above or below both halves, the pair crosses once.
+  is not left free where no O1 or O2 path already orders it between the halves (a part forced
+  between them keeps its reserved crossings). Ordered between the halves it crosses the Z three
+  times where its upper x is inside the first half's span and its lower x inside the second's (the
+  first run over its upper leg, its run over the middle drop, the second run over its lower leg).
+  It is ordered above the first half where that keeps the graph acyclic, else below the second
+  half, else the parts are residual with `TIER_GAP_ROW_CYCLE`. Above or below both halves, the pair
+  crosses once.
 - **O2, shared vertical.** Where the upper end of part A and the lower end of part B stand within
   `k` of one another in x (a port over a lane mouth, a lane under a lane, two ports of two nodes on
   one x, or 5.9 or 10 px apart), their legs are parallel closer than the gate allows. A is above B:
@@ -146,7 +151,7 @@ never sees.
   named `TIER_GAP_ROW_CYCLE`.
 - **Residual by constraint.** A part that cannot obey O2 to O5 is residual: two upper ends of two
   nodes within `k`; a leg through a fixed obstacle; a port over a lane mouth on the same boundary.
-  Where two lower legs, or two upper legs, of two nodes stand within `k`, the later part is residual
+  Where two lower legs, or two upper legs, of two nodes stand within `k` (a drop's vertical counts as an upper and a lower leg), the later part is residual
   and the earlier part's leg cover is **granted** to it (today `plan.ts:212` grants rows only, so an
   ungranted leg would guarantee a removal). It publishes with a G6 finding, which `quality.md`
   item 11 prefers to a removed link.
@@ -188,7 +193,7 @@ the arithmetic of 2.1: every forced pair crosses once, no other pair crosses, an
 lies on reserved geometry.
 
 **Ticket 36 shape** (`two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row.yaml`, gap
-248..308). Parts: link-4 104.6 → 194 (upper tip nested at 280.5); link-5 116.6 → 265.5; link-6
+248..308, the band gap before today's 39.5 px growth). Parts: link-4 104.6 → 194 (upper tip nested at 280.5); link-5 116.6 → 265.5; link-6
 176.1 → 57; link-7 188.1 → 128.5 (nested 280.5); link-8 265.5 → 206; link-9 a drop at 277.5.
 Edges: O1 link-5 above link-4, link-6 above link-7; O2 link-8 above link-5 (both on x 265.5) and
 **link-7 above link-4** (link-7's upper leg at 188.1, link-4's lower leg at 194: 5.9 px apart).
@@ -212,13 +217,13 @@ lower leg over 23 px of y, which G6 refuses.
 **Ticket 41 shape** (`an-earlier-link-with-no-run-crosses-on-the-row-between-its-tips.yaml`, gap
 248..308). link-3 57 → 128.5, link-4 128.5 → 57: O2 both ways, so link-4 is a Z part with its middle
 drop at 92.75. Rows: link-4a 263 (its tip row), link-3 274.5, link-4b 286. One crossing, on link-3's
-row and link-4's middle drop. `H = 286 + 15 − 248 = 53`: no growth. Today the gap does not grow
+row and link-4's middle drop. largest term `286 + 15 − 248 = 53` under the 60 px floor: `H = 60`, no growth. Today the gap does not grow
 either, and the router discovers both the row and the vertical.
 
 **Ticket 43 shape** (`a-plain-tip-in-the-group-padding-holds-its-row.yaml`, gap 121..181, tips in
 the padding at 116 and 186). link-1 57 → 138.5, link-2 128.5 → 67; the legs stand 10 px apart at
 each end, so O2 holds both ways and link-2 is a Z part (middle drop 97.75). Rows: link-2a 131.75
-(`121 + e`), link-1 143.25, link-2b 154.75. One crossing. `H = 154.75 + e − 121 = 44.5`: no growth.
+(`121 + e`), link-1 143.25, link-2b 154.75. One crossing. largest term `154.75 + e − 121 = 44.5` under the 60 px floor: `H = 60`, no growth.
 Today link-1 rides the tip row 116 and link-2 rides it collinear (G4, G6).
 
 **v5-4-0** (synthetic sweep sheet; two gaps). Upper gap 121..181: link-1 −63.1 → −40.5; link-2
@@ -235,7 +240,7 @@ link-7 31 → 515; link-8 102.5 → 586.5 (lower tip nested 338); link-9 174 →
 link-8 and link-10 above link-7, link-10 above link-8 and link-9, link-12 above link-8 and link-10;
 O2 link-12 above link-7 (519 and 515). Static need: link-10 30, link-8 12.5, the rest `e`. Rows:
 link-12 303.75 (its mouth), link-10 315.25, link-8 326.75, link-7 338.25, link-9 349.75. Six forced
-crossings (7×9, 8×9, four on link-11's drop). `H = 82.5`, growth 10. Today: no growth; four links
+crossings (7×9, 8×9, four on link-11's drop). `H = 71.75` from the clipped low 288.75 (82.5 measures from 278), growth 10. Today: no growth; four links
 routed by libavoid through the padding.
 
 **O2 three-cycle with an interleaving fourth part** (synthetic, gap 248..308, flat tips at 263
@@ -269,9 +274,12 @@ need_i = max( depth(own lower end),
               O5 bands anchored to the band below, over the span, plus their clearance )
 drop d:  lb_d = own upper tip row;  need_d = depth(own lower end) + (k where it has a jog)
 residual r between the two tiers:  need_r = depth(upper tip, from low) + 2k + depth(lower tip)
-H      = max( bandGap, max_i ( y_i − low + need_i ), max_d ( lb_d − low + need_d ), need_r )
+H      = max( floor, max_i ( y_i − low + need_i ), max_d ( lb_d − low + need_d ), need_r )
 growth = max( 0, H − (bandTop − low) )
 ```
+
+`floor = bandGap − (low − bottom(band above))`, not `bandGap`: a lane overhang takes its part of the band gap. The largest
+term without the floor is `demand`; the `TIER_GAP_GROWN` diagnostic will report it.
 
 The drop term is ticket 25's `stemShortfall` (`gap-runs.ts:954-972`) for a planned drop: a drop
 whose nested tips would overlap in a 60 px gap grows the gap to hold them, without the `2k` pocket
