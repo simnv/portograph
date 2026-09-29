@@ -779,20 +779,21 @@ function holdColumnsAfterPush(model: LayoutModel): void {
 }
 
 /**
- * `closeCantons`, with the pill bounds of the moved groups rebuilt (`moveGroup` leaves them behind). A move leaves the region producers,
+ * `closeCantons`, with the pill bounds of the moved groups rebuilt (`moveGroup` leaves them behind). Returns the farthest a group moved in x. A move leaves the region producers,
  * `syncBands` and `replanGroupLabels` to the caller: the labels and the bands are planned in the geometry the caller replays after it.
  */
-export function closeCantonsAndSettle(model: LayoutModel): boolean {
+export function closeCantonsAndSettle(model: LayoutModel): number {
   const before = new Map(Object.values(model.groups).map(group => [group, group.bounds!.x]));
   const moved = closeCantons(model);
-  if (moved) rebuildNodeGeometry(model, [...before].filter(([group, x]) => group.bounds!.x !== x).flatMap(([group]) => group.nodes), 'current');
+  const shifted = [...before].filter(([group, x]) => group.bounds!.x !== x);
+  if (moved) rebuildNodeGeometry(model, shifted.flatMap(([group]) => group.nodes), 'current');
   // A plan that was tried and put back rebuilt the labels of its nodes, which leaves them at the end of the list, and publication compares
   // the node labels in node order. The node labels go back to their own slots in node order; no geometry is read or changed.
   const rank = new Map(Object.keys(model.nodes).map((id, index) => [id, index]));
   const slots = model.labels.flatMap((label, at) => label.owner.kind === 'node' && ['node', 'description', 'pill'].includes(label.role ?? '') ? [at] : []);
   const ordered = slots.map(at => model.labels[at]!).sort((a, b) => rank.get((a.owner as { id: string }).id)! - rank.get((b.owner as { id: string }).id)!);
   for (const [i, at] of slots.entries()) model.labels[at] = ordered[i]!;
-  return moved;
+  return moved ? Math.max(0, ...shifted.map(([group, x]) => Math.abs(group.bounds!.x - x))) : 0;
 }
 
 /** A group boxed in by reserved lanes keeps a coherent contained label; final gates decide it. */
@@ -1217,19 +1218,14 @@ export function produceGroupLabelBands(model: LayoutModel): void {
     }
     // The replays above may widen a canton in place; the cantons close up to a band gap again before anything is planned in them
     // (ranked-groups ticket 65). A move replays the region producers, as any movement does.
-    if (budget.remaining > 0 && closeCantonsAndSettle(model)) {
+    if (budget.remaining > 0 && closeCantonsAndSettle(model) > 0) {
       const passes = budget.passes;
       rebuildRegionGeometry(model, budget, undefined, true);
       consumeGrowthPass(budget, passes);
       continue;
     }
-    // A spent budget cannot replay a move, so the close-up is skipped; it is said, when a canton would have moved.
-    if (budget.remaining <= 0 && closeCantons(clone(model)) && !model.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE' && item.message.startsWith('The cantons'))) {
-      model.diagnostics.push({
-        stage: 'placement', severity: 'warning', code: 'PLACEMENT_NON_CONVERGENCE',
-        message: 'The cantons stand more than a band gap apart: the shared eight-pass budget was spent before the close-up could replay; final gates decide the retained geometry.',
-      });
-    }
+    // A spent budget cannot replay a move, so the close-up is skipped here. Stage 7f closes the cantons again after the tier gaps grow
+    // (`mutation.ts`, with its own rounds), and says so there when they do not settle; a warning here would fire on a run it closes later.
     model.labels = model.labels.filter(label => label.role !== 'group');
     const plan = planLabels(model, true);
     if (!plan.growth) { model.labels.push(...plan.labels); diagnoseBlocked(model, plan.blocked); return; }

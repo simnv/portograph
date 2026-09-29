@@ -78,6 +78,22 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
     expectIdempotent(model);
   }, 120000);
 
+  // Review 2: the close-up sites never pull a run that stands packed (one canton, or cantons already a band gap apart).
+  it('a second pass returns false and the close-up says nothing on packed runs', async () => {
+    for (const name of ['a-canton-band-holds-the-rows-off', 'a-canton-group-swap-is-refused-for-routed-crossings']) {
+      const model = await run(name);
+      // `holdColumnAxes` also pulls a column toward its feed at its own points (7.8 px on the first fixture on the finished layout, as on main);
+      // the close-up sites are `closeCantons`, and they leave a packed run alone.
+      const copy = structuredClone(model) as LayoutModel, before = stand(copy);
+      expect(closeCantons(copy), name).toBe(false);
+      expect(stand(copy), name).toBe(before);
+    }
+    for (const name of ['three-canton-groups-close-up-to-a-band-gap', 'a-canton-group-swap-is-refused-for-routed-crossings', 'a-foreign-unit-with-routed-links-to-two-canton-groups']) {
+      const model = await run(name);
+      expect(model.diagnostics.filter(item => item.code === 'PLACEMENT_NON_CONVERGENCE' && item.message.startsWith('The cantons')), name).toEqual([]);
+    }
+  }, 120000);
+
   it('a held lane between two cantons keeps the run where it stands and the warning names the canton', async () => {
     const model = await run('a-held-lane-between-two-cantons-refuses-the-close-up');
     const [west, east] = cantonBoxes(model) as [Rect, Rect];

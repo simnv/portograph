@@ -218,6 +218,8 @@ function validateTechniques(model: LayoutModel, baseline: LayoutModel): void {
 }
 /** Rounds of the tier-gap growth and the canton close-up in 7f (ranked-groups ticket 65). */
 const CANTON_ROUNDS = 4;
+/** The move of a close-up round, in px, under which the cantons stand a band gap apart for every purpose (ranked-groups ticket 65). */
+const CANTON_CREEP = 0.5;
 /** Every protected result passes this same boundary, including direct freeze and restore. */
 function validatePublication(model: LayoutModel, baseline: LayoutModel): void {
   jsonValue(model);
@@ -736,8 +738,10 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
         alignLinkedGroupGrid(draft);
         replanGroupLabels(draft);
       }
-      closed = !closeCantonsAndSettle(draft);
-      if (!closed) {
+      // A creep under half a pixel, left by the centring replay, counts as settled; the replay still follows any move.
+      const shift = closeCantonsAndSettle(draft);
+      closed = shift < CANTON_CREEP;
+      if (shift > 0) {
         rebuildRegionGeometry(draft, undefined, undefined, true);
         alignLinkedGroupGrid(draft);
         replanGroupLabels(draft);

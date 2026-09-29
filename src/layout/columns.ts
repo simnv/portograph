@@ -494,7 +494,9 @@ export function closeCantons(model: LayoutModel): boolean {
   let moved = false;
   for (const { index, authority } of sweepSteps(model, tiers)) {
     if (!tiers[index]!.some(unit => unit.frame && frames[unit.id]?.kind === 'canton')) continue;
-    moved = (authority === undefined ? closeUp(model, tiers, index, 0) : pullTier(model, tiers, index, feedReader(model, tiers, index, authority), 0)) || moved;
+    if (authority === undefined) moved = closeUp(model, tiers, index, 0) || moved;
+    // A run that stands packed (or is one unit) is not pulled by the close-up: the pull toward the feeds is `holdColumnAxes`' own, at its own points.
+    else if (runApart(model, tiers[index]!, 0)) moved = pullTier(model, tiers, index, feedReader(model, tiers, index, authority), 0) || moved;
   }
   return moved;
 }
@@ -576,6 +578,16 @@ function runSpacing(model: LayoutModel, run: readonly Unit[], at: (unit: Unit) =
     if (next !== undefined) sum += at(unit).width + gap + (unit.frame && next.frame ? 2 * slack : unit.frame || next.frame ? COLUMN_SLACK : 0);
   }
   return offsets;
+}
+
+/** Whether the units of a step stand off the spacing of `runSpacing` now: some gap of the run, in the order it stands, is not the packed one. */
+function runApart(model: LayoutModel, tier: readonly Unit[], slack: number): boolean {
+  const derived = deriveFrames(model);
+  if (derived === undefined) return false;
+  const box = new Map(derived.map(frame => [frame.id, frame.box]));
+  const at = (unit: Unit): Rect => unit.frame ? box.get(unit.id)! : unit.groups[0]!.bounds!;
+  const run = [...tier].sort((a, b) => at(a).x - at(b).x || compareId(a.id, b.id)), offsets = runSpacing(model, run, at, slack);
+  return run.some((unit, i) => i > 0 && Math.abs(at(unit).x - at(run[i - 1]!).x - (offsets[i]! - offsets[i - 1]!)) > PLACEMENT_EPS);
 }
 
 /** Why a run of cantons may not be closed at all: a foreign unit, or a held lane, stands between two cantons of it. */
