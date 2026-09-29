@@ -1,0 +1,42 @@
+# Expected: canton-groups ticket 57, review fix B1, the adversarial case. The shape of `a-foreign-unit-between-two-canton-groups`, with routed links from `mid`
+# to both cantons (`m-sw` to `a-srv`, `m-srv` to `b-srv`), a feed `core3` to `m-sw`, and a transit `m-srv` to `sink` on tier 3. A canton frame spans the
+# tier gap, so a routed link from `mid` to the far canton would have to pass through the near one wherever `mid` stood outside the run. The unit has routed
+# partners in more than one canton of the run and can never route clean beside it: it stays where ELK put it, between the cantons, with one
+# `OVERLAY_ORDER_REFUSED` warning, and every gate passes.
+# Test-only input owned by canton-groups ticket 57; test/pipeline/canton-order.test.ts reads the layout.
+portograph: 2
+groups:
+  ca: { label: Canton A }
+  cb: { label: Canton B }
+  core: { tier: 0, label: Core }
+  a-site: { tier: 1, canton: ca, label: Site A }
+  a-lab: { tier: 2, canton: ca, label: Lab A }
+  mid: { tier: 1, label: Middle }
+  b-site: { tier: 1, canton: cb, label: Site B }
+  b-lab: { tier: 2, canton: cb, label: Lab B }
+  low: { tier: 3, label: Low }
+nodes:
+  core1: { group: core, class: router, label: Core one }
+  core2: { group: core, class: router, label: Core two }
+  core3: { group: core, class: router, label: Core three }
+  core4: { group: core, class: router, label: Core four }
+  core5: { group: core, class: router, label: Core five }
+  a-gw: { group: a-site, class: router, label: A gateway }
+  a-srv: { group: a-lab, class: server, label: A server }
+  m-sw: { group: mid, class: switch, label: Middle switch }
+  m-srv: { group: mid, class: server, label: Middle server }
+  b-gw: { group: b-site, class: router, label: B gateway }
+  b-srv: { group: b-lab, class: server, label: B server }
+  sink: { group: low, class: server, label: Sink }
+links:
+  - [core2, a-gw]
+  - [core3, m-sw]
+  - [core4, b-gw]
+  - [a-gw, a-srv]
+  - [b-gw, b-srv]
+  - [m-sw, a-srv]
+  - [m-srv, b-srv]
+  - [m-srv, sink]
+  - { from: m-srv, to: a-srv, class: flow }
+  - { from: m-sw, to: b-srv, class: flow }
+  - { from: m-srv, to: b-srv, class: flow }

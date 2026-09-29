@@ -11,6 +11,8 @@ import { createAvoidAttempt } from '../route/fixture.js';
 const swap = 'overlay-links-reorder-two-canton-groups';
 const refused = 'a-canton-group-swap-is-refused-for-routed-crossings';
 const between = 'a-foreign-unit-between-two-canton-groups';
+const adversarial = 'a-foreign-unit-with-routed-links-to-two-canton-groups';
+const routedOnly = 'a-foreign-unit-between-two-canton-groups-routed-only';
 const members = 'overlay-links-reorder-two-members-of-a-canton-group';
 const membersRefused = 'a-member-order-is-refused-for-routed-crossings';
 const transit = 'a-transit-inside-a-canton';
@@ -153,18 +155,58 @@ describe('the overlay order of canton groups (canton-groups ticket 57)', () => {
     expectColumns(model);
   }, 120000);
 
-  it('moves the same foreign unit before the run when the run holds more of its partners on the left', async () => {
-    // A routed feed from the middle of the anchor row keeps ELK's order; two of the three overlay links now end in ca.
-    const text = fixture(between).replace('  - [core2, a-gw]\n', '  - [core2, a-gw]\n  - [core3, m-sw]\n')
-      .replace('{ from: m-sw, to: b-srv, class: flow }', '{ from: m-sw, to: a-srv, class: flow }');
-    const off = await runWithoutRule(text);
-    expect(frame(off, 'ca').x).toBeLessThan(off.groups['mid']!.bounds!.x);
-    expect(off.groups['mid']!.bounds!.x).toBeLessThan(frame(off, 'cb').x);
+  // Review fix B1: the move is judged, and a unit with routed links into two cantons never leaves the run.
+  it('refuses to move the foreign unit when the move would raise the routed crossings, and keeps ELK\'s order with one warning', async () => {
+    // A routed feed from the middle of the anchor row: to either side of the run the feed would cross the feed of a canton.
+    const text = fixture(between).replace('  - [core2, a-gw]\n', '  - [core2, a-gw]\n  - [core3, m-sw]\n');
     const model = await lay(text);
     expect(errors(model)).toEqual([]);
     const mid = model.groups['mid']!.bounds!, a = frame(model, 'ca'), b = frame(model, 'cb');
-    expect(right(mid)).toBeLessThanOrEqual(a.x);
+    expect(a.x).toBeLessThan(mid.x);
+    expect(right(mid)).toBeLessThanOrEqual(b.x);
+    const warned = refusals(model);
+    expect(warned).toHaveLength(1);
+    expect(warned[0]!.message).toContain('the foreign mid beside the cantons ca, cb');
+    expect(warned[0]!.message).toContain('routed crossings would rise from 0 to 1');
+    expect(score(model).snapshot.metrics.crossings.count).toBe(0);
+  }, 120000);
+
+  it('keeps a foreign unit with routed links into both cantons between them: no route passes through a canton, and every gate passes', async () => {
+    const off = await runWithoutRule(fixture(adversarial));
+    const model = await run(adversarial);
+    expect(errors(model)).toEqual([]);
+    const mid = model.groups['mid']!.bounds!, a = frame(model, 'ca'), b = frame(model, 'cb');
+    expect(a.x).toBeLessThan(mid.x);
+    expect(right(mid)).toBeLessThanOrEqual(b.x);
+    const warned = refusals(model);
+    expect(warned).toHaveLength(1);
+    expect(warned[0]!.message).toContain('the foreign mid beside the cantons ca, cb');
+    expect(warned[0]!.message).toContain('more than one canton');
+    const report = score(model).snapshot;
+    expect(Object.entries(report.gates).filter(([, gate]) => !gate.passed).map(([name]) => name)).toEqual([]);
+    expect(report.metrics.crossings.count).toBe(0);
+    // ELK's order stands: the layout is the one of the rule switched off.
+    expect(frame(off, 'ca').x).toBeCloseTo(a.x, 6);
+    expect(off.groups['mid']!.bounds!.x).toBeCloseTo(mid.x, 6);
+  }, 120000);
+
+  // Review fix B2: rule 7 needs no overlay link; the routed partners are the side key.
+  it('moves a foreign unit out of the run with no overlay link in the sheet, on the side of its feed', async () => {
+    const off = await runWithoutRule(fixture(routedOnly));
+    expect(frame(off, 'ca').x).toBeLessThan(off.groups['mid']!.bounds!.x);
+    expect(off.groups['mid']!.bounds!.x).toBeLessThan(frame(off, 'cb').x);
+    const model = await run(routedOnly);
+    expect(errors(model)).toEqual([]);
+    expect(overlay(model)).toEqual([]);
+    const mid = model.groups['mid']!.bounds!, a = frame(model, 'ca'), b = frame(model, 'cb');
+    expect(mid.x).toBeGreaterThanOrEqual(right(b));
     expect(b.x - right(a)).toBeCloseTo(bandGap(model), 6);
+    // No 180 px case: the cantons keep no jog beyond the few px a band gap costs (the rule off leaves 137 px).
+    for (const item of model.diagnostics.filter(diagnostic => diagnostic.code === 'COLUMN_AXIS_HELD')) expect(Number(/jog of ([\d.]+) px/.exec(item.message)![1])).toBeLessThan(10);
+    expect(model.diagnostics.map(item => item.code)).not.toContain('CENTRE_TIER_PACK_INFEASIBLE');
+    expect(refusals(model)).toEqual([]);
+    const report = score(model).snapshot;
+    expect(Object.entries(report.gates).filter(([, gate]) => !gate.passed).map(([name]) => name)).toEqual([]);
     expectColumns(model);
   }, 120000);
 
@@ -223,7 +265,7 @@ describe('the overlay order of canton groups (canton-groups ticket 57)', () => {
     expect(plan(copy)).toEqual(withCanton);
   }, 60000);
 
-  it.each([swap, refused, between, members, membersRefused, transit, across])('is deterministic on %s', async name => {
+  it.each([swap, refused, between, adversarial, routedOnly, members, membersRefused, transit, across])('is deterministic on %s', async name => {
     const one = await run(name), two = await run(name);
     expect(geometry(two)).toEqual(geometry(one));
   }, 120000);

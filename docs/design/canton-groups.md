@@ -294,10 +294,14 @@ owns beside a member cell. A lane the canton holds is reserved before a lane for
 ### As built (ticket 57)
 
 - Rule 7: `clearRun` in `orderFramesByOverlay` moves a unit outside every canton that stands between two cantons of a tier before or after the run, on the side that holds more of
-  its partners (the partners the key reads) against the middle of the run; a tie goes to the nearer end. It is a rule of the shape with no acceptance test, and it runs before the
-  cantons are judged. Units already outside the run keep their side.
+  its partners (routed and overlay partners, the anchor feed among them: the partners the key reads) against the middle of the run; a tie goes to the nearer end. It runs before the
+  cantons are judged and needs no overlay link in the sheet. The move stands when it gains nothing but is judged by the three conditions: a move that raises the routed crossings, blocks a
+  routed link or bends an overlay link is refused with one `OVERLAY_ORDER_REFUSED` warning naming the unit and the cantons, and ELK's order stands. A unit with routed links into more
+  than one canton of the run is never moved: a canton frame spans the tier gap, so a route to the far canton would pass through the near one. Units already outside the run keep their side.
+  Plain frames outside the run are ordered among themselves as in ticket 06b.
 - Rule 9: the cantons swap as units under the three conditions of ADR-0019 (a canton was already one `columnTiers` unit). The inner order (`orderMembers`) orders the members of a beside
   row by the same key and acceptance; the row keeps its left edge and its gaps, so the canton frame does not move. A refusal is one `OVERLAY_ORDER_REFUSED` warning.
+- Limit: the inner order judges the rows of a canton one at a time, in the order of `Object.keys`. Two-tier paired members (four members in two beside rows) never reorder, because the row of one tier is judged with the other row unmoved (ticket 63 records the pre-existing fold of all four into one beside row in `standOf`).
 - Lanes, the chord rule and the row plan (rules 1 to 4 above) needed no code. A held lane is not a condition of the order: lanes come after it and their x is immutable.
 
 ## Section 5 — Gates and score
@@ -344,9 +348,9 @@ so rule 3's feed union is exercised. Fixture 11 puts it inside.
 | # | Fixture | Shape | Asserts |
 |---|---|---|---|
 | 1 | `a-canton-frames-two-tiers` | one canton; a two-rank location on tier 0 over a one-node client group on tier 1, one flow link | the canton frame contains both member frames plus 20 px; the client group's axis is the location's; G9 clean; the same input without `canton:` is byte-identical to today |
-| 2 | `two-cantons-are-disjoint-columns` | a wide anchor tier above two cantons of two tiers each; one cross-canton flow link | canton frame boxes a band gap apart; members inside their canton columns on both tiers; each canton's axis on the mean of its members' feeds; the order follows the overlay key, else `OVERLAY_ORDER_REFUSED` |
+| 2 | `two-canton-groups-are-disjoint-columns` (columns); `overlay-links-reorder-two-canton-groups` (the swap); `a-canton-group-swap-is-refused-for-routed-crossings` (the refusal) | a wide anchor tier above two cantons of two tiers each; one cross-canton flow link | canton frame boxes a band gap apart; members inside their canton columns on both tiers; each canton's axis on the mean of its members' feeds; the order follows the overlay key, else `OVERLAY_ORDER_REFUSED` |
 | 3 | `a-narrow-tier-is-centred-in-its-canton-column` | anchor tier above; a canton whose tier-1 run is 480.6 px and tier-2 run 340.6 px, the tier-2 member fed off the axis | the tier-2 member centred at pack; after the whole layout still inside the canton column; pulled to its feed by no more than the room the column leaves; `COLUMN_AXIS_HELD` names the canton |
-| 4 | `a-foreign-unit-beside-the-run-of-cantons` | two cantons of two tiers; a plain group on tier 1 that ELK places between them | the plain group stands before or after the run on the side its key favours; no empty room between the cantons |
+| 4 | `a-foreign-unit-between-two-canton-groups`; `a-foreign-unit-between-two-canton-groups-routed-only` (no overlay link); `a-foreign-unit-with-routed-links-to-two-canton-groups` (stays between, refused) | two cantons of two tiers; a plain group on tier 1 that ELK places between them | the plain group stands before or after the run on the side its key favours; no empty room between the cantons |
 | 5 | `a-transit-inside-a-canton` | a canton of three tiers; a link from tier 0 to tier 2 of the canton; a foreign link from above the canton to below it | the first lane inside the canton frame, which grows to hold it; the foreign lane outside at one x for all three tiers; the neighbour gap a band gap after `separateFrameColumns` |
 | 6 | `a-member-widened-after-pack` | a canton whose tier-1 member has a zone whose title is widened in 7f (50 → 146.7 px), beside a sibling canton | the canton column follows the widened member; the sibling canton moved as a whole; no member outside its column; G9 clean |
 | 7 | `a-canton-with-a-tier-below` | anchor tier above; a canton fed from above with a plain tier below it | the title on the bottom edge; the tier below pushed by the band; the gap holds 20 + band + 20 |

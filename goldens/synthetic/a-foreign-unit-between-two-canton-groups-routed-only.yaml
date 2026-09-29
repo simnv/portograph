@@ -1,0 +1,33 @@
+# Expected: canton-groups ticket 57, review fix B2. The shape of `a-foreign-unit-between-two-canton-groups` with no overlay link at all, as a converted
+# sheet without sync links has it. The anchor tier `core` feeds `ca` from `core1`, and `cb` and the plain group `mid` from the one router `core3`, so
+# no order makes two routed links cross. ELK stands `mid` between the two cantons. The side key is the routed partners: the feed `core3` stands right of the
+# middle of the run, so `mid` goes after the run, and the cantons stand a band gap apart with nothing between them.
+# Test-only input owned by canton-groups ticket 57; test/pipeline/canton-order.test.ts reads the layout.
+portograph: 2
+groups:
+  ca: { label: Canton A }
+  cb: { label: Canton B }
+  core: { tier: 0, label: Core }
+  a-site: { tier: 1, canton: ca, label: Site A }
+  a-lab: { tier: 2, canton: ca, label: Lab A }
+  mid: { tier: 1, label: Middle }
+  b-site: { tier: 1, canton: cb, label: Site B }
+  b-lab: { tier: 2, canton: cb, label: Lab B }
+nodes:
+  core1: { group: core, class: router, label: Core one }
+  core2: { group: core, class: router, label: Core two }
+  core3: { group: core, class: router, label: Core three }
+  core4: { group: core, class: router, label: Core four }
+  core5: { group: core, class: router, label: Core five }
+  a-gw: { group: a-site, class: router, label: A gateway }
+  a-srv: { group: a-lab, class: server, label: A server }
+  m-sw: { group: mid, class: switch, label: Middle switch }
+  m-srv: { group: mid, class: server, label: Middle server }
+  b-gw: { group: b-site, class: router, label: B gateway }
+  b-srv: { group: b-lab, class: server, label: B server }
+links:
+  - [core1, a-gw]
+  - [core3, b-gw]
+  - [core3, m-sw]
+  - [a-gw, a-srv]
+  - [b-gw, b-srv]
