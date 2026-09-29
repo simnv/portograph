@@ -143,7 +143,7 @@ function grow(model: LayoutModel, grown: ReadonlyMap<number, GapGrowth>): boolea
  * band and its placed label sit in the group's own padding, so they travel with it: a label left
  * behind would stand in the gap the move just opened, as an obstacle nothing owns.
  */
-function moveBands(model: LayoutModel, extra: ReadonlyMap<number, number>): void {
+export function moveBands(model: LayoutModel, extra: ReadonlyMap<number, number>): void {
   let shift = 0;
   for (const band of [...model.tierBands].sort((a, b) => a.bounds!.y - b.bounds!.y)) {
     shift += extra.get(band.tier) ?? 0;

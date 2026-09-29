@@ -109,10 +109,8 @@ links: [[a, b], [c, d], [e, f]]`));
 });
 
 describe('the fixture whose far checkpoints stood in a pocket', () => {
-  // Ticket 50: link-22 is a planned part now (tip to tip, its stems claimed), so it is no longer routed and no stem tip of this fixture is
-  // walled in by a router-laid cover. The situation (a routed link whose near stem tip a foreign cover walls in) needs a residual link
-  // beside a completed cover of another; no fixture of the corpus has one, and ticket 51 adds it.
-  it.todo('routes link-22, whose near stem tip stood walled in by link-18, through its checkpoints (ticket 51: needs a residual fixture)');
+  // Ticket 50: link-22 is a planned part now (tip to tip, its stems claimed), so it is no longer routed. Its routed case, in a gap the plan does not
+  // fit, is `test/pipeline/unfit-gap.test.ts` (ticket 51).
 
   // Ticket 25: link-35 and link-37 had their far stem tip on the row of the near stems' tips, inside the
   // near stems' obstacle rows. Ticket 50: the tier gap grows to the rows of its 25 parts (187 px), every part is reserved

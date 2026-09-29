@@ -224,11 +224,8 @@ it('leaves out the run a group label covers and seats the rest', async () => {
   expect(Number.isFinite(score(published).snapshot.Q)).toBe(true);
 }, 120000);
 
-// Ticket 50: the situation of this test (a row seated half a pitch inside a boundary, so its cover ends exactly on the boundary)
-// cannot arise from a planned part: a planned row starts at its tip row or at `low + e`, never half a pitch inside. The zero-area
-// touch rule (`TOUCH` in `route/plan.ts`) is still in use by the claim of every stem. Reproducing it needs a residual run seated by
-// the old allocation on the edge, and no fixture of the corpus keeps one. Ticket 51 gives it a residual fixture.
-it.todo('claims an approach a row stands exactly on the edge of (ticket 51: needs a residual run seated half a pitch inside the boundary)');
+// Ticket 50: a planned row never stands half a pitch inside a boundary, so the claim on a cover edge (stress ticket 09) is tested on a gap the plan
+// does not fit, where the old allocation seats the rows: `test/pipeline/unfit-gap.test.ts` (ticket 51).
 
 it('carries a group label with the band the gap room moves', async () => {
   // Stress ticket 06. 7f places its group labels, measures the gaps, and places them again: a group
