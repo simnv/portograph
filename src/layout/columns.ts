@@ -298,6 +298,9 @@ function packStep(model: LayoutModel, tiers: Unit[][], index: number, authority:
 
   const feeds = feedReader(model, tiers, index, authority);
 
+  /** Centring shapes a bar itself (its slots and spans): a bar keeps the place it has. */
+  const isBar = (unit: Unit): boolean => !unit.frame && model.document.groups[unit.id]?.shape === 'bar';
+
   /** The centre a unit wants: over the mean of its routed feeds in the packed tier, `undefined` without one. */
   const wanted = (unit: Unit): number | undefined => {
     const { parents, children } = feeds(unit);
@@ -311,10 +314,23 @@ function packStep(model: LayoutModel, tiers: Unit[][], index: number, authority:
   };
 
   const tier = tiers[index]!;
-  if (!tier.some(unit => unit.frame)) {
-    // A tier of one-rank groups is left where ELK put it, except that the sweep of `placeFlanksAndPeers`
-    // will push apart the groups ELK left closer than a band gap. It is done here so the feed x that
-    // the tier below reads is the x the tier keeps.
+  // A tier of one-rank groups reads its feeds only when frames stand beyond it (in the next tier outward or a farther one; the
+  // chain reads this tier's ports) and would otherwise stand over the x ELK left it at, and centring puts it elsewhere (ticket 33).
+  // A bar is shaped by its own stage and never follows a feed.
+  const framed = tier.some(unit => unit.frame);
+  // Any tier farther outward counts, not only the next one: a chain of one-rank tiers is packed from the anchor tier
+  // outward, and each reads the tier packed before it, so the frames at the end of the chain read a settled x.
+  const outward = (): boolean => {
+    const step = index > authority! ? 1 : -1;
+    for (let at = index + step; at >= 0 && at < tiers.length; at += step) if (tiers[at]!.some(unit => unit.frame)) return true;
+    return false;
+  };
+  const read = framed || (authority !== undefined && outward());
+  const centres = new Map<Unit, number | undefined>(tier.map(unit => [unit, read && (framed || !isBar(unit)) ? wanted(unit) : undefined]));
+  if (!framed && [...centres.values()].every(wish => wish === undefined)) {
+    // A tier of one-rank groups with no feed toward the tier packed before it is left where ELK put it, except that
+    // the sweep of `placeFlanksAndPeers` will push apart the groups ELK left closer than a band gap. It is done here
+    // so the feed x that the tier next to it reads is the x the tier keeps.
     let end = -Infinity;
     for (const group of tier.flatMap(unit => unit.groups).sort((a, b) => a.bounds!.x - b.bounds!.x || compareId(a.id, b.id))) {
       if (group.bounds!.x < end) moveGroup(model, group, end - group.bounds!.x, 0);
@@ -323,10 +339,10 @@ function packStep(model: LayoutModel, tiers: Unit[][], index: number, authority:
     return;
   }
   const run = [...tier].sort((a, b) => place(a) - place(b) || compareId(a.id, b.id));
-  const centres = run.map(wanted);
+  const wishes = run.map(unit => centres.get(unit));
   // Left edge of each unit once packed a band gap apart, and where its column would stand if it had its way.
   let lefts: number[];
-  if (centres.every(wish => wish === undefined)) {
+  if (wishes.every(wish => wish === undefined)) {
     // The packed run keeps the centre ELK gave the tier, so it stays over and under its neighbour tiers.
     const span = run.reduce((sum, unit) => sum + extent(unit), gap * (tier.length - 1));
     let x = (Math.min(...tier.map(left)) + Math.max(...tier.map(right))) / 2 - span / 2;
@@ -340,7 +356,7 @@ function packStep(model: LayoutModel, tiers: Unit[][], index: number, authority:
     for (const unit of run) { offsets.push(sum); sum += extent(unit) + gap; }
     const blocks: { sum: number; count: number }[] = [];
     for (const [i, unit] of run.entries()) {
-      const wish = centres[i] === undefined ? (left(unit) + right(unit)) / 2 - extent(unit) / 2 : centres[i]! - pivot(unit);
+      const wish = wishes[i] === undefined ? (left(unit) + right(unit)) / 2 - extent(unit) / 2 : wishes[i]! - pivot(unit);
       blocks.push({ sum: wish - offsets[i]!, count: 1 });
       while (blocks.length > 1 && blocks[blocks.length - 2]!.sum / blocks[blocks.length - 2]!.count > blocks[blocks.length - 1]!.sum / blocks[blocks.length - 1]!.count) {
         const last = blocks.pop()!, before = blocks[blocks.length - 1]!;

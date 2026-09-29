@@ -833,6 +833,35 @@ function overlayRunMid(model: LayoutModel, link: LayoutLink, axis: 'x' | 'y'): n
   return (run.from[axis] + run.to[axis]) / 2;
 }
 
+/**
+ * The gap two nodes of one row must keep between their bodies for the label of a routed link between them: the room
+ * `reserveLinkLabelRoom` reserves, read as a floor by the stages that widen a body into the row (ticket 33). Zero
+ * without such a link. A routed link that detours needs more, and the reservation adds that on its own; this is the
+ * least, so a widening never takes back a room the reservation has already given.
+ */
+export function linkLabelGap(model: LayoutModel, a: string, b: string): number {
+  let gap = 0;
+  for (const link of model.links) {
+    const text = model.document.links[link.sourceIndex]?.label;
+    if (!text || link.technique === 'stub' || link.bundle || !link.attachments) continue;
+    const ends = [link.attachments.from.node, link.attachments.to.node];
+    if (!(ends.includes(a) && ends.includes(b))) continue;
+    const from = findPort(model, link.attachments.from), to = findPort(model, link.attachments.to);
+    if (!from?.anchor || !to?.anchor) continue;
+    const fromNode = model.nodes[link.attachments.from.node]!, toNode = model.nodes[link.attachments.to.node]!;
+    const found = sameTierEnds(from, fromNode, to, toNode);
+    if ('unreservable' in found) continue;
+    // The path of an overlay link is derived, which costs a search: it is asked for only once the two ends are known to face.
+    if (effectiveLayer(link) === 'overlay' && (overlayLabelsSuppressed(model) || overlayRunMid(model, link, 'x') === undefined)) continue;
+    const { leftPort, leftNode, rightPort, rightNode } = found;
+    const outer = (port: LayoutPort, node: LayoutNode): Rect => port.pill ? port.pill.bounds : node.bounds!;
+    const protrusion = Math.max(right(outer(leftPort, leftNode)) - leftPort.anchor!.x, rightPort.anchor!.x - outer(rightPort, rightNode).x, 0);
+    const required = measureText(text, { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight }).width + 2 * LINK_LABEL_GEOMETRY.shortenMargin;
+    gap = Math.max(gap, required + 2 * protrusion);
+  }
+  return gap;
+}
+
 /** One labelled link whose run is shorter than the label it carries needs, and by how much. */
 export interface LinkLabelShortfall { link: string; axis: 'row' | 'tier gap'; required: number; room: number }
 

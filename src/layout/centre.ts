@@ -10,6 +10,7 @@ import { crosses } from './overlay-paths.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { packRowsOf } from './grid.js';
 import { rowGap } from './sides-two.js';
+import { linkLabelGap } from './bands.js';
 import { alignmentAllowance, ownSideWidth } from './size.js';
 import { withLayoutMutation } from './mutation.js';
 import { placeOverlayFree } from './overlay-place.js';
@@ -65,8 +66,8 @@ function siblingLimit(model: LayoutModel, group: LayoutGroup, node: LayoutNode):
     if (id === node.id) continue;
     const other = model.nodes[id]!.bounds!;
     if (Math.min(box.y + box.height, other.y + other.height) <= Math.max(box.y, other.y) + EPS) continue;
-    if (otherIndex < index) limit.low = Math.max(limit.low, right(other) + rowGap(model, id, node.id));
-    else limit.high = Math.min(limit.high, other.x - rowGap(model, node.id, id));
+    if (otherIndex < index) limit.low = Math.max(limit.low, right(other) + Math.max(rowGap(model, id, node.id), linkLabelGap(model, id, node.id)));
+    else limit.high = Math.min(limit.high, other.x - Math.max(rowGap(model, node.id, id), linkLabelGap(model, node.id, id)));
   }
   return limit;
 }
