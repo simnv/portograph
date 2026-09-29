@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel, PathSegment } from '../../src/index.js';
 import { allocateGapRuns, layout, parse, score } from '../../src/index.js';
+import { chordsHold } from '../../src/layout/frame-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -12,6 +13,39 @@ const linkOf = (model: LayoutModel, from: string, to: string) =>
   model.links.find(link => link.attachments && link.attachments.from.node === from && link.attachments.to.node === to)!;
 const straightLine = (segment: PathSegment): boolean => segment.from.x !== segment.to.x && segment.from.y !== segment.to.y;
 const bottomOf = (model: LayoutModel, node: string): number => model.nodes[node]!.bounds!.y + model.nodes[node]!.bounds!.height;
+
+describe('a held chord is a wall from stage 7f on', () => {
+  const load = (name: string) => layout(parse(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8')),
+    { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+
+  it('keeps every chord it held, and the router removes nothing', async () => {
+    for (const name of ['a-re-seated-band-carries-its-bar-and-flank', NAME]) {
+      const model = await load(name);
+      expect(model.frozenChords?.length ?? 0).toBeGreaterThan(0);
+      expect(model.removedLinks ?? []).toEqual([]);
+      for (const id of model.frozenChords!) {
+        const link = model.links.find(item => item.id === id)!;
+        expect(link.technique, `${name} ${id}`).toBe('straight');
+        expect(link.path!.segments).toHaveLength(1);
+      }
+      expect(model.diagnostics.filter(item => item.code === 'STRAIGHT_LINK_BLOCKED')).toEqual([]);
+    }
+  });
+
+  it('refuses a move that puts a body on a held chord, and names the link', async () => {
+    const model = await run(source);
+    const id = model.frozenChords![0]!, link = model.links.find(item => item.id === id)!;
+    const chord = link.path!.segments[0]!, ends = new Set([link.attachments!.from.node, link.attachments!.to.node]);
+    const other = Object.values(model.nodes).find(node => !ends.has(node.id))!;
+    const box = other.bounds!, mid = { x: (chord.from.x + chord.to.x) / 2, y: (chord.from.y + chord.to.y) / 2 };
+    const moved = { x: mid.x - box.width / 2, y: mid.y - box.height / 2, width: box.width, height: box.height };
+    const draft = structuredClone(model);
+    expect(chordsHold(draft, [{ group: { nodes: [other.id], bounds: box }, bounds: moved }])).toBe(false);
+    expect(draft.diagnostics.some(item => item.code === 'STRAIGHT_LINK_HELD' && item.owners?.some(owner => owner.kind === 'link' && owner.id === id))).toBe(true);
+    // A move that leaves the chord clear is not refused.
+    expect(chordsHold(structuredClone(model), [{ group: { nodes: [other.id], bounds: box }, bounds: { ...box, x: box.x + 1 } }])).toBe(true);
+  });
+});
 
 describe('a link inside one frame is a straight segment', () => {
   it('takes the straight technique for a clear chord, vertical or diagonal, and keeps the blocked one orthogonal', async () => {

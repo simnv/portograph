@@ -1,7 +1,7 @@
 import type { LayoutLink, LayoutModel, LayoutPath, PathSegment } from '../model/layout.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { effectiveLayer } from '../score/model.js';
-import { straightChord } from './overlay-paths.js';
+import { overlayBlockers, straightChord } from './overlay-paths.js';
 import { groupShape } from './grid.js';
 import { bandSide, frameSide } from './bands.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE, straightCorridorClear } from './row-paths.js';
@@ -108,6 +108,7 @@ function titleStrips(model: LayoutModel): Rect[] {
 /** The chord this rule pins for the link, or undefined when a body stands on it or a gate would fail it. */
 export function expectedFramePath(model: LayoutModel, link: LayoutLink): LayoutPath | undefined {
   if (!frameLinkCandidate(model, link)) return undefined;
+  if (model.frozenChords !== undefined) return frozenChordPath(model, link);
   const chord = straightChord(model, link);
   if (!chord || Math.hypot(chord.to.x - chord.from.x, chord.to.y - chord.from.y) < 1e-6) return undefined;
   const segment: PathSegment = { from: chord.from, to: chord.to, owner: { ...link.owner } };
@@ -146,4 +147,66 @@ export function expectedFramePath(model: LayoutModel, link: LayoutLink): LayoutP
   // Declared, at any angle: the segment has no axis to read, so the gates measure it by distance.
   segment.straight = true;
   return { owner: { ...link.owner }, layer: 'routed', fixed: true, ...pathStrokeWidth(link), segments: [segment] };
+}
+
+/**
+ * From stage 7f on the decision is frozen: a link that held a chord keeps it and only the segment follows
+ * its ports; a link that did not stays orthogonal, because the room a fallback needs (stems, a gap row)
+ * was sized before 7f and nothing after it sizes more (ticket 34).
+ */
+function frozenChordPath(model: LayoutModel, link: LayoutLink): LayoutPath | undefined {
+  if (!model.frozenChords!.includes(link.id)) return undefined;
+  const chord = straightChord(model, link, undefined, true);
+  if (!chord) return undefined;
+  const segment: PathSegment = { from: chord.from, to: chord.to, owner: { ...link.owner }, straight: true };
+  return { owner: { ...link.owner }, layer: 'routed', fixed: true, ...pathStrokeWidth(link), segments: [segment] };
+}
+
+/** The chords held at the start of 7f: the links that are straight now. */
+export function freezeChords(model: LayoutModel): void {
+  const held = model.links.filter(link => isFrameStraight(model, link)).map(link => link.id);
+  // No field where nothing is held, so a model without a chord keeps the shape it always had.
+  if (held.length) model.frozenChords = held;
+}
+
+/** The frozen chords a body or a foreign pill stands on. Empty when none is held. */
+export function blockedChords(model: LayoutModel): string[] {
+  if (!model.frozenChords?.length) return [];
+  const blockers = overlayBlockers(model);
+  return model.frozenChords.filter(id => {
+    const link = model.links.find(item => item.id === id);
+    return link !== undefined && straightChord(model, link, blockers) === undefined;
+  });
+}
+
+/**
+ * Whether every frozen chord still clears every body and pill once the proposed groups take their boxes.
+ * The 7f counterpart of `laneSidesHold`: a move that fails is refused for that unit, and the link is named
+ * in a diagnostic. Nothing is held before 7f, so centring and the column rules pass through here unchanged.
+ */
+export function chordsHold(model: LayoutModel, proposed: { group: { nodes: string[]; bounds?: Rect }; bounds: Rect }[]): boolean {
+  if (!model.frozenChords?.length) return true;
+  const nodes = { ...model.nodes };
+  for (const { group, bounds } of proposed) {
+    const from = group.bounds;
+    if (!from) continue;
+    const dx = bounds.x - from.x, dy = bounds.y - from.y;
+    if (!dx && !dy) continue;
+    for (const id of group.nodes) {
+      const node = model.nodes[id];
+      if (!node?.bounds) continue;
+      nodes[id] = { ...node, bounds: { ...node.bounds, x: node.bounds.x + dx, y: node.bounds.y + dy },
+        ports: node.ports.map(port => ({ ...port,
+          ...(port.anchor ? { anchor: { x: port.anchor.x + dx, y: port.anchor.y + dy } } : {}),
+          ...(port.pill ? { pill: { ...port.pill, bounds: { ...port.pill.bounds, x: port.pill.bounds.x + dx, y: port.pill.bounds.y + dy } } } : {}) })) };
+    }
+  }
+  const held = blockedChords({ ...model, nodes });
+  for (const id of held) {
+    if (!model.diagnostics.some(item => item.code === 'STRAIGHT_LINK_HELD' && item.owners?.some(owner => owner.kind === 'link' && owner.id === id))) {
+      model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'STRAIGHT_LINK_HELD',
+        message: `A move that would put a body on the straight link ${id} is refused.`, owners: [{ kind: 'link', id }] });
+    }
+  }
+  return held.length === 0;
 }
