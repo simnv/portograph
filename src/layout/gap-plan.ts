@@ -3,7 +3,7 @@ import type { LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import { bottom, EPS, right } from '../score/geometry.js';
 import { measureText } from '../text/index.js';
 import { GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
-import { GROUP_LABEL_GEOMETRY, nudgingDistance, routedStroke } from './bands.js';
+import { cantonTiers, GROUP_LABEL_GEOMETRY, nudgingDistance, routedStroke } from './bands.js';
 import { drawn, edgeOf, nestedTips, stopsOf, tierGaps, type TierGap } from './gap-runs.js';
 import { LINK_LABEL_GEOMETRY } from './link-labels.js';
 import { findPort } from './row-paths.js';
@@ -700,6 +700,20 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
     const box = group.bounds, x0 = box.x - margin, x1 = right(box) + margin;
     if (bottom(box) <= gap.low + EPS && bottom(box) + margin > gap.low) obstacles.push({ x0, x1, anchor: 'above', bound: bottom(box) + margin });
     if (box.y >= gap.high - EPS && margin + bandTop - box.y > 0) obstacles.push({ x0, x1, anchor: 'below', bound: margin + bandTop - box.y });
+  }
+  // A canton frame is no group box, and it reaches into the gap: its margin and its title band stand below its last sub-tier
+  // (or above its first), outside every member box. A canton that ends at this gap's upper band is an O5 band anchored to it,
+  // one that starts at this gap's lower band is anchored to that, both with the group-edge margin. One that spans the gap is
+  // no wall: its members' own boxes and lanes already are.
+  for (const frame of model.frames ?? []) {
+    if (frame.kind !== 'canton') continue;
+    const box = frame.box, x0 = box.x - margin, x1 = right(box) + margin, tiers = cantonTiers(model, frame.id);
+    if (tiers.last === gap.above) {
+      if (bottom(box) + margin > gap.low) obstacles.push({ x0, x1, anchor: 'above', bound: bottom(box) + margin });
+    } else if (tiers.first === gap.below) {
+      const bound = margin + bandTop - box.y;
+      if (bound > 0) obstacles.push({ x0, x1, anchor: 'below', bound });
+    }
   }
   // A span that crosses a through-lane's reserved run is residual (Section 1 item 6).
   // A leg that stands over a shared run of another link (a junction bar across the gap, 7e) crosses geometry the plan does not own

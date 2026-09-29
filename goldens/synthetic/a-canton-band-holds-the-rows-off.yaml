@@ -1,0 +1,29 @@
+# Expected: the tier-gap row plan keeps its rows off a canton's title band (canton-groups ticket 3, review B1). The canton
+# `west` (one member `site` on tier 1, three routers fed by two providers, so ADR-0011 puts the band at the bottom) stands
+# above the plain group `edge` on tier 2. Two links between them cross orthogonally on the right; their rows lie below
+# the band and its margin, never in the frame margin or on the band.
+# Test-only input owned by canton-groups ticket 3; test/pipeline/canton-title.test.ts reads it.
+portograph: 2
+groups:
+  west: { label: West }
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, canton: west, label: Site }
+  edge: { tier: 2, label: Edge }
+nodes:
+  p1: { group: upstream, class: provider, label: P1 }
+  p2: { group: upstream, class: provider, label: P2 }
+  r0: { group: site, class: router, label: R0 }
+  r1: { group: site, class: router, label: R1 }
+  r2: { group: site, class: router, label: R2 }
+  s0: { group: edge, class: router, label: S0 }
+  s1: { group: edge, class: router, label: S1 }
+  s2: { group: edge, class: router, label: S2 }
+  s3: { group: edge, class: router, label: S3 }
+links:
+  - [p1, r0]
+  - [p1, r1]
+  - [p2, r1]
+  - [p2, r2]
+  - [r0, s0]
+  - [r1, s3]
+  - [r2, s2]

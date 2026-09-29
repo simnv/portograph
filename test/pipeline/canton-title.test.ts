@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { LayoutModel, Rect } from '../../src/index.js';
 import { layout, parse, render, score } from '../../src/index.js';
 import { drawio } from '../../src/render/drawio.js';
+import { GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../../src/theme/geometry.js';
 import { bandGap } from '../../src/layout/skeleton-graph.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -111,12 +112,56 @@ links:
     expect(canvas.x).toBeLessThanOrEqual(west.box.x + 1e-6);
   }, 60000);
 
-  it('a title wider than its members widens the canton, and the label stays inside the band', async () => {
+  it('a title wider than its members grows the widest cell on the title edge and the frame follows', async () => {
+    const base = await run(fixture('a-canton-with-a-tier-below'));
     const text = fixture('a-canton-with-a-tier-below').replace('label: West', 'label: The Western Regional Operations Canton');
     const model = await run(text);
     clean(model);
-    const band = bandOf(model, 'west'), title = titleOf(model, 'west');
+    const band = bandOf(model, 'west'), title = titleOf(model, 'west'), west = frameOf(model, 'west');
     expect(title.bounds!.x).toBeGreaterThanOrEqual(band.bounds.x - 1e-6);
     expect(title.bounds!.x + title.bounds!.width).toBeLessThanOrEqual(band.bounds.x + band.bounds.width + 1e-6);
+    // The cell on the title edge (the last sub-tier, `clients#0`) grew, and the frame follows the cell.
+    expect(model.groups['clients#0']!.bounds!.width).toBeGreaterThan(base.groups['clients#0']!.bounds!.width + 1);
+    expect(west.box.width).toBeGreaterThan(frameOf(base, 'west').box.width + 1);
+    // Gates that `clean` skips as warnings are asserted whole: G9 has no violation.
+    const report = score(model);
+    expect(report.snapshot.gates.G9.violations).toEqual([]);
+    expect(report.snapshot.gates.G9.passed).toBe(true);
+    // Members stay inside the canton, and no group of tier 3 stands nearer than the 40 px beside gap (a band gap plus slack).
+    for (const member of ['site', 'clients']) {
+      const box = frameOf(model, member).box;
+      expect(box.x).toBeGreaterThanOrEqual(west.box.x + 20 - 1e-6);
+      expect(box.x + box.width).toBeLessThanOrEqual(west.box.x + west.box.width - 20 + 1e-6);
+    }
+  }, 60000);
+
+  it('the row plan keeps its rows off the canton band and its margin (review B1)', async () => {
+    const model = await run(fixture('a-canton-band-holds-the-rows-off'));
+    clean(model);
+    expect(model.removedLinks ?? []).toEqual([]);
+    const west = frameOf(model, 'west'), band = bandOf(model, 'west');
+    expect(band.side).toBe('bottom');
+    const edge = tierBand(model, 2);
+    let rows = 0;
+    // The two links between `site` and `edge` are the last two of the document.
+    for (const link of model.links.filter(item => item.sourceIndex >= 5)) {
+      for (const seg of link.path?.segments ?? []) {
+        if (seg.from.y !== seg.to.y || seg.from.x === seg.to.x) continue;
+        // A horizontal run inside the gap between the canton and `edge`.
+        if (seg.from.y <= bottom(west.box) || seg.from.y >= edge.bounds!.y) continue;
+        rows++;
+        expect(seg.from.y).toBeGreaterThanOrEqual(bottom(west.box) + GROUP_EDGE_LINK_CLEARANCE + linkStrokeWidth(link) / 2 - 1e-6);
+      }
+    }
+    // Two links cross orthogonally, so at least two rows are planned in the gap.
+    expect(rows).toBeGreaterThanOrEqual(2);
+    for (const gate of Object.values(score(model).snapshot.gates)) expect(gate.violations.filter(item => item.code === 'segment-group-edge')).toEqual([]);
+  }, 60000);
+
+  it('a canton title layout is idempotent', async () => {
+    for (const name of ['a-canton-band-holds-the-rows-off', 'a-canton-with-a-tier-below', 'a-canton-title-on-the-top-edge']) {
+      const strip = (model: LayoutModel): unknown => JSON.parse(JSON.stringify(model, (key, value) => key === 'durationMs' ? undefined : value));
+      expect(strip(await run(fixture(name)))).toEqual(strip(await run(fixture(name))));
+    }
   }, 60000);
 });

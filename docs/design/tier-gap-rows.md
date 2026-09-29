@@ -148,6 +148,8 @@ never sees.
   the row stays above it by the clearance, and the distance is measured from `bandTop`
   (Section 3). Lane boxes overhang from both bands (`tierGaps`, `gap-runs.ts:109-116`), so each is
   anchored to its own band.
+  A canton frame reaches into the gap (its margin and its title band stand outside every member box), so a canton that
+  ends at the upper band is anchored to that band, one that starts at the lower band to that one, with the group-edge margin.
 - **O6, cycles.** O1 and O2 together can form a cycle. One shape: two aligned node pairs joined by
   an X (tickets 41 and 43), where each part's upper leg stands on the other's lower x. Another:
   A 0 → 100, B 100 → 200, C 200 → 0, a pure O2 three-cycle. Rule: while the graph of O1 ∪ O2 has a
