@@ -14,8 +14,8 @@ const base = { west: { label: 'West' }, site: { tier: 0, canton: 'west' }, clien
 describe('canton groups: schema (canton-groups ticket 1)', () => {
   it('fixture 1 parses with the canton on its members', () => {
     const doc = parse(fixture('a-canton-group-frames-two-tiers'));
-    expect(doc.groups.site).toMatchObject({ canton: 'west', tier: 0 });
-    expect(doc.groups.clients).toMatchObject({ canton: 'west', tier: 1 });
+    expect(doc.groups.site).toMatchObject({ canton: 'west', tier: 1 });
+    expect(doc.groups.clients).toMatchObject({ canton: 'west', tier: 2 });
     expect(doc.groups.west).toMatchObject({ label: 'West', members: ['site', 'clients'] });
     expect(doc.groups.west!.tier).toBeUndefined();
   });
@@ -28,9 +28,10 @@ describe('canton groups: schema (canton-groups ticket 1)', () => {
     expect(codes).not.toContain('EMPTY_TIER');
   });
 
-  it('a document without canton normalises as before', () => {
-    const doc = parse(fixture('a-child-frame-stands-inside-its-parent'));
+  it.each(['a-child-frame-stands-inside-its-parent', 'a-leaf-zone-stands-at-the-bottom-of-its-location'])('a document without canton normalises as before: %s', name => {
+    const doc = parse(fixture(name));
     expect(JSON.stringify(doc)).not.toMatch(/canton|members/);
+    expect(doc).toMatchSnapshot();
   });
 
   it('a member may hold a child group, and two members may share a tier', () => {
@@ -47,6 +48,7 @@ describe('canton groups: schema (canton-groups ticket 1)', () => {
     ['CANTON_KEYS', { ...base, west: { tier: 0 } }],
     ['CANTON_KEYS', { ...base, west: { shape: 'row' } }],
     ['CANTON_KEYS', { ...base, west: { layout: {} } }],
+    ['CANTON_KEYS', { ...base, west: { collapsed: true } }],
     ['CANTON_KEYS', { ...base, west: { parent: 'site' } }],
     ['CANTON_KEYS', { ...base, west: { align: 'left', of: 'site' } }],
     ['CANTON_KEYS', base, { a: { group: 'west' }, b: { group: 'clients' } }],

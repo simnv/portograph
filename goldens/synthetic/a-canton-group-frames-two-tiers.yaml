@@ -1,17 +1,21 @@
 # Expected: A canton frames two tiers (canton-groups ticket 1: the schema only; layout ignores `canton` until ticket 54).
-# Group `west` is a canton. Its members are `site` (tier 0, two ranks) and `clients` (tier 1, one node), both
-# naming `canton: west`. One flow link joins a server of the site to the client group. The same input without
-# the `canton:` keys and the `west` entry must lay out byte-identical to today.
-# Test-only input owned by ranked-groups ticket 53; test/parse/canton.test.ts reads the parse.
+# Group `west` is a canton. Its members are `site` (tier 1, two ranks) and `clients` (tier 2, one node), both
+# naming `canton: west`. The gateway of `site` links up to the ISP (rank 0) and down to the server (rank 1), so `site`
+# has two ranks. One flow link joins the server to the client group. The same input without the `canton:` keys and the
+# `west` entry must lay out identical to today.
+# Test-only input owned by ranked-groups ticket 53; test/parse/canton.test.ts and test/pipeline/canton-ignored.test.ts read it.
 portograph: 2
 groups:
   west: { label: West }
-  site: { tier: 0, canton: west, label: Site }
-  clients: { tier: 1, canton: west, label: Clients }
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, canton: west, label: Site }
+  clients: { tier: 2, canton: west, label: Clients }
 nodes:
+  isp: { group: upstream, class: provider, label: ISP }
   gw: { group: site, class: router, label: Gateway }
   srv: { group: site, class: server, label: Server }
   cl: { group: clients, class: server, label: Client }
 links:
+  - [isp, gw]
   - [gw, srv]
   - { from: srv, to: cl, class: flow }

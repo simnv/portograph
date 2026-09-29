@@ -44,7 +44,7 @@ function groups(input: Map<string, unknown>, doc: NormalisedDocument, v: Validat
     const content: GroupContent = { label: id, shape: 'ranked' };
     optionalStrings(fields, content, ['label', 'class'], path, v);
     if (cantonNames.has(id)) {
-      for (const key of ['tier', 'align', 'of', 'parent', 'shape', 'layout']) if (fields.has(key)) v.report('CANTON_KEYS', `${path}.${key}`, `A canton takes a label and a class only, not ${key}`);
+      for (const key of ['tier', 'align', 'of', 'parent', 'shape', 'layout', 'collapsed']) if (fields.has(key)) v.report('CANTON_KEYS', `${path}.${key}`, `A canton takes a label and a class only, not ${key}`);
       if (fields.has('canton')) v.report('CANTON_NESTED', `${path}.canton`, 'A canton is not a member of a canton; the depth is canton, member, child');
       put(doc.groups, id, { ...content, members: [] });
       continue;
