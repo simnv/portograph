@@ -74,7 +74,7 @@ export interface GapRun {
  * One rectangle stage 8 must respect, with the links a rule has already let through it. `rows` marks a
  * band that only a horizontal run is kept out of: a column crosses it (ticket 31).
  */
-interface Blocker { bounds: Rect; owners: ReadonlySet<string>; node?: string; rows?: true }
+interface Blocker { bounds: Rect; owners: ReadonlySet<string>; node?: string; rows?: true; columns?: true }
 
 /** What one tier gap allocated, and whether more room could have changed the answer. */
 interface GapAllocation {
@@ -389,8 +389,9 @@ const tipBand = (model: LayoutModel): number => 2 * nudgingDistance(model);
  * stands on a row of its own, and every port of that side that shares its port shares the tip.
  * `consumers` are the links of the port: the tip belongs to each of them. `from` and `to` bound the x
  * the tip row's leg travels: the tip column, the far port of each consumer and the lanes it owns.
+ * `nested` is false for a flat stem: it has no row band, only the column band (round 4).
  */
-interface NestedTip { anchor: Point; tip: Point; side: 'top' | 'bottom'; consumers: ReadonlySet<string>; from: number; to: number }
+interface NestedTip { anchor: Point; tip: Point; side: 'top' | 'bottom'; consumers: ReadonlySet<string>; from: number; to: number; nested: boolean }
 
 function nestedTips(model: LayoutModel, cache: StemCache): NestedTip[] {
   const result = new Map<string, NestedTip>();
@@ -401,7 +402,7 @@ function nestedTips(model: LayoutModel, cache: StemCache): NestedTip[] {
       const port = findPort(model, link.attachments![end]);
       if (!port?.anchor || (port.side !== 'top' && port.side !== 'bottom')) continue;
       const depth = stemPlan(model, port, cache).depth;
-      if (depth <= stemReach(model, model.nodes[link.attachments![end].node]!) + EPS) continue;
+      const nested = depth > stemReach(model, model.nodes[link.attachments![end].node]!) + EPS;
       const at = `${port.ref.node}|${port.side}|${port.anchor.x}`;
       const other = findPort(model, link.attachments![end === 'from' ? 'to' : 'from'])?.anchor;
       const xs = [port.anchor.x, ...(other ? [other.x] : []),
@@ -412,7 +413,7 @@ function nestedTips(model: LayoutModel, cache: StemCache): NestedTip[] {
         known.from = Math.min(known.from, ...xs);
         known.to = Math.max(known.to, ...xs);
       } else result.set(at, { side: port.side, anchor: port.anchor, consumers: new Set([link.id]),
-        tip: { x: port.anchor.x, y: port.anchor.y + OUTWARD[port.side] * depth }, from: Math.min(...xs), to: Math.max(...xs) });
+        nested, tip: { x: port.anchor.x, y: port.anchor.y + OUTWARD[port.side] * depth }, from: Math.min(...xs), to: Math.max(...xs) });
     }
   }
   return [...result.values()];
@@ -506,9 +507,17 @@ function blockers(model: LayoutModel): Blocker[] {
   // column, the far port and the lanes of its links); a column may cross it. The links of the port are
   // exempt, their own way in is `reaches`.
   const clearance = tipBand(model);
-  for (const { tip, consumers, from, to } of nestedTips(model, cache)) {
-    result.push({ owners: consumers, rows: true,
+  for (const { tip, consumers, from, to, nested } of nestedTips(model, cache)) {
+    if (nested) result.push({ owners: consumers, rows: true,
       bounds: { x: from - clearance, y: tip.y - clearance, width: to - from + 2 * clearance, height: 2 * clearance } });
+    // Round 4. Every stem tip, flat or nested, keeps a column band: a column of a foreign run that stands
+    // within one tip band of the tip column and comes within one tip band of its row walls the pocket the tip
+    // needs. Ports of one side stand 12 px apart, so the neighbour's port column or a seated column is a
+    // wall on each side: the router reaches the tip through its stem and doubles back ("retraces itself"),
+    // or it drops the link. The band holds columns only, the links of the port are exempt, and a run it
+    // refuses goes to the next row, or is left unseated and keeps the route it has today.
+    result.push({ owners: consumers, columns: true,
+      bounds: { x: tip.x - clearance, y: tip.y - clearance, width: 2 * clearance, height: 2 * clearance } });
   }
   return result;
 }
@@ -532,6 +541,7 @@ function firstBlock(list: readonly Blocker[], link: LayoutLink, line: { from: Po
   for (const item of list) {
     if (item.owners.has(link.id) || (item.node !== undefined && attached.has(item.node))) continue;
     if (item.rows && Math.abs(line.from.y - line.to.y) > EPS) continue;
+    if (item.columns && Math.abs(line.from.x - line.to.x) > EPS) continue;
     if (!(high.x > item.bounds.x + EPS && low.x < right(item.bounds) - EPS
       && high.y > item.bounds.y + EPS && low.y < bottom(item.bounds) - EPS)) continue;
     if (!found || bottom(item.bounds) < bottom(found.bounds)) found = item;
@@ -841,7 +851,7 @@ export function tierGapRoom(model: LayoutModel): TierGapRoom[] {
     // A nested stem that turns inside this gap from the tier below holds the rows a tip band off
     // its tip row (ticket 31), so the last row lands that far above the deepest such tip. The tips move
     // with the band below, so the room is a distance from the high boundary and asks the probe nothing.
-    const reach = Math.max(0, ...tips.filter(item => item.side === 'top' && item.anchor.y > gap.high - EPS && item.tip.y < gap.high - EPS)
+    const reach = Math.max(0, ...tips.filter(item => item.nested && item.side === 'top' && item.anchor.y > gap.high - EPS && item.tip.y < gap.high - EPS)
       .map(item => gap.high - item.tip.y + clearance));
     const headroom = Math.max(flat, reach);
     const above = bands.find(band => band.tier === gap.above)!.bounds!;
