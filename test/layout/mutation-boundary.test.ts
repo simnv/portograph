@@ -74,16 +74,17 @@ links: [[a.p, b.q]]`));
     expect(publish.restore(pinned, () => {}).links[0]!.technique).toBe('straight');
     expect(withLayoutMutation(pinned, 'lanes', () => {}).links[0]!.technique).toBe('straight');
     expect(() => publish.restore(pinned, draft => { draft.links[0]!.technique = 'orthogonal'; })).toThrow(/technique/i);
-    // Too short to level against a tall peer: the rule leaves this automatic link orthogonal, and restore cannot claim straight.
+    // Too short to level against a tall peer: the level rule declines, the frame rule draws the chord between the two
+    // faces (ticket 34), and restore cannot claim orthogonal for it.
     const unpinned = rows(await placed(`portograph: 2
 groups: {g: {tier: 0}}
 nodes:
   a: {group: g, size: {width: 50, height: 120}, ports: [{name: p, side: right}]}
   b: {group: g, ports: [{name: q, side: left}]}
 links: [[a.p, b.q]]`));
-    expect(unpinned.links[0]!.technique).toBe('orthogonal');
-    expect(unpinned.links[0]!.path).toBeUndefined();
-    expect(() => publish.restore(unpinned, draft => { draft.links[0]!.technique = 'straight'; })).toThrow(/technique/i);
+    expect(unpinned.links[0]!.technique).toBe('straight');
+    expect(unpinned.links[0]!.path!.segments[0]!.straight).toBe(true);
+    expect(() => publish.restore(unpinned, draft => { draft.links[0]!.technique = 'orthogonal'; })).toThrow(/technique/i);
     const early = await placed(simple);
     expect(() => publish.freeze(early, draft => { draft.links[0]!.technique = 'straight'; })).toThrow(/technique/i);
   });

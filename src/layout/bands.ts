@@ -21,6 +21,7 @@ import { withLayoutMutation } from './mutation.js';
 import { effectiveLayer } from '../score/model.js';
 import { LINK_LABEL_GEOMETRY, overlayLabelsSuppressed } from './link-labels.js';
 import { overlayPath } from './overlay-paths.js';
+import { isFrameStraight } from './frame-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 
 export const GROUP_LABEL_GEOMETRY = {
@@ -210,6 +211,8 @@ export function routerEntryPoints(model: LayoutModel): RouterEntryPoint[] {
   const gaps = stemCache();
   for (const link of model.links) {
     if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
+    // A straight link inside one frame asks the router for no stem, so it reserves no room (ticket 34).
+    if (isFrameStraight(model, link)) continue;
     for (const end of ['from', 'to'] as const) {
       const ref = link.attachments[end], port = findPort(model, ref);
       if (!port?.anchor || !port.side) continue;

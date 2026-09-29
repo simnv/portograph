@@ -7,6 +7,7 @@ import { groupConsumers } from '../score/model.js';
 import { portId } from './skeleton-graph.js';
 import { groupShape } from './grid.js';
 import { joinFanTrees } from './bundle-geometry.js';
+import { expectedFramePath, frameLinkCandidate, isFrameStraight } from './frame-paths.js';
 
 /**
  * Coordinate magnitude beyond which an obstacle is measured instead of rejected.
@@ -71,7 +72,7 @@ export function rowPathCandidate(model: LayoutModel, link: LayoutLink): boolean 
   if (link.bundle !== undefined || link.groupLink !== undefined) return false;
   const route = model.document.links[link.sourceIndex]?.route;
   if (route !== undefined && route !== 'straight' && route !== 'orthogonal') return false;
-  return lateral(model, link) !== undefined;
+  return frameLinkCandidate(model, link) || lateral(model, link) !== undefined;
 }
 function automatic(model: LayoutModel, link: LayoutLink): boolean {
   return model.document.links[link.sourceIndex]?.route === undefined;
@@ -160,7 +161,8 @@ export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segm
     if (segmentRectDistance(segment, group.bounds) < GROUP_EDGE_LINK_CLEARANCE + stroke / 2 - EPS) return false;
   }
   for (const other of model.links) {
-    if (other.id === link.id || other.layer === 'overlay') continue;
+    // A straight link inside one frame is no obstacle: like an overlay link it reads bodies only.
+    if (other.id === link.id || other.layer === 'overlay' || isFrameStraight(model, other)) continue;
     const otherStroke = linkStrokeWidth(other);
     const runReach = STRAIGHT_PATH_CLEARANCE.path + (stroke + otherStroke) / 2 + 1;
     // A stage-8 remainder (`fixed: false`) is routed around this corridor, so it is not an
@@ -187,6 +189,12 @@ export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segm
 /** The single straight horizontal path the rows rule pins for this link, or undefined when ineligible. */
 export function expectedRowPath(model: LayoutModel, link: LayoutLink): LayoutPath | undefined {
   if (!rowPathCandidate(model, link)) return undefined;
+  const level = expectedLevelPath(model, link);
+  // A level facing pair the rows rule pins keeps its anchor-to-anchor segment. Every other link inside
+  // one frame answers to the frame rule, which reads the chord between the two faces (ticket 34).
+  return level ?? (frameLinkCandidate(model, link) ? expectedFramePath(model, link) : undefined);
+}
+function expectedLevelPath(model: LayoutModel, link: LayoutLink): LayoutPath | undefined {
   const pair = facingPair(model, link);
   if (!pair) return undefined;
   const from = findPort(model, link.attachments!.from)!, to = findPort(model, link.attachments!.to)!;
@@ -212,5 +220,6 @@ export function rebuildRowPaths(draft: LayoutModel): void {
     if (path) link.path = path;
     if (automatic(draft, link)) link.technique = path ? 'straight' : 'orthogonal';
   }
-  joinFanTrees(draft, candidates);
+  // A straight link inside one frame is one chord between two faces, never a leaf of a fan tree.
+  joinFanTrees(draft, candidates.filter(link => !isFrameStraight(draft, link)));
 }
