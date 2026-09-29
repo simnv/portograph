@@ -33,6 +33,7 @@
   "scripts": {
     "build": "vite build",
     "test": "vitest run",
+    "test:full": "vitest run --reporter=default",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit && tsc -p tsconfig.json --noEmit --module NodeNext --moduleResolution NodeNext",
     "lint": "eslint ."
   },
