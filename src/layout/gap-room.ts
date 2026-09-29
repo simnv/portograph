@@ -22,24 +22,15 @@ import { moveGroup } from './skeleton-geometry.js';
  * rows already fit grows by nothing. The allocation in `gap-runs.ts` is the consumer of the grown
  * gap and never its owner: it reads the room the gap has and seats what fits in it.
  *
- * **What the reservation is.** Not `rows × pitch`. That is the packing of rows half a pitch inside
- * each boundary with nothing in the way, and a gap with a lane never gets it: every lane's reserved
- * run stands on a boundary and reaches the gate's clearance into the gap, so the first row starts
- * deeper than half a pitch and the last lands past where `rows × pitch` puts it. The reservation is
- * what the seating **lands in** — the last row it seats, plus the headroom the high boundary keeps.
+ * **What the reservation is.** The height `H` of the tier-gap row plan (`gap-plan.ts`,
+ * `docs/design/tier-gap-rows.md` Section 3): the rows of every part packed from the low boundary,
+ * and every term anchored to the band below measured from its top. The gap grows by `H` less the
+ * room it has. No probe: the plan does not depend on how far the gap has opened, except through
+ * the stems (`sidePlan` nests a stem only where there is room), which is why the growth is taken to
+ * a fixed point on trial copies (`settled`) and applied to the model once.
  *
- * **Why a probe.** The seating measured in today's room is the seating today's room allows, and the
- * gap's own high boundary is what stops it: measured on `a-tier-gap-grows-to-its-rows`, 70 px of
- * room seats two of the four rows it owes. So the rule opens every short gap on a **probe** — a
- * copy of the model with the band below each gap moved far enough down that the boundary cannot
- * bind — and measures the seating there. The answer therefore does not depend on the room the gap
- * has now, which is what keeps the reservation monotone: a second pass over the reserved geometry
- * measures the same need and grows nothing. One probe, then the reservation: this rule reserves, it
- * does not search.
- *
- * **What it cannot see.** The group labels 7f places after it become obstacles in the tier gaps,
- * and a gap the probe seated can refuse once they are there. Measured on the Enterprise NTP sheet,
- * that costs one gap of twelve the allocation it grew for.
+ * **What it cannot see.** The corridor move after it (`reseatLanes`) changes a lane x; the plan is
+ * recomputed at consumption, and a gap that no longer fits is left to the router.
  *
  * **Why 7f and not 7a.** The count separates a column from a row, so it cannot be taken before lane
  * x is fixed. It cannot be taken at 7a either: 7c aligns a child under its lane, 7d spans a bar
