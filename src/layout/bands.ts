@@ -653,8 +653,10 @@ function cantonHost(model: LayoutModel, id: string, side: 'top' | 'bottom'): Lay
 
 /**
  * Where a title's left edge goes: the free x nearest the centre, clear of every leg its band's ports must draw (ticket 62,
- * nudged along the edge as ADR-0011 nudges a label). Where no x on the edge clears every leg the legs are dropped, so a title
- * is never widened for them, and `failed` says so: the caller then leaves the whole row of titles where it was.
+ * nudged along the edge as ADR-0011 nudges a label). Where no x on the edge clears every leg, the legs are hard
+ * obstacles like a straight feed's (ticket 66): the title stands past them and the caller widens its group, if `widenTo` says the
+ * widening is lane-feasible. Where it is not, the legs are dropped and `failed` says so: the caller then leaves the whole row of titles
+ * where it was, and the links go to the router.
  */
 function titleX(model: LayoutModel, placed: LayoutLabel[], y: number, measured: { width: number; height: number },
   start: number, limit: number, centre: number, nudge: boolean, widenTo: (x: number) => boolean): { x: number; failed: boolean } {
@@ -668,7 +670,8 @@ function titleX(model: LayoutModel, placed: LayoutLabel[], y: number, measured: 
     if (found !== undefined) return { x: found, failed: false };
     // Ticket 66: no position on the edge clears a leg, so the leg is a hard obstacle like a straight feed's: the title stands clear of
     // it and the group widens by the title plus the clearances beside the port, where the widening is lane-feasible.
-    const beyond = firstFree(start, soft);    if (beyond > limit + PLACEMENT_EPS && widenTo(beyond)) return { x: beyond, failed: false };
+    const beyond = firstFree(start, soft);
+    if (beyond > limit + PLACEMENT_EPS && widenTo(beyond)) return { x: beyond, failed: false };
     return { x: pick(hard) ?? firstFree(start, hard), failed: soft.length !== hard.length || soft.some((range, at) => range.low !== hard[at]!.low || range.high !== hard[at]!.high) };
   }
   return { x: pick(hard) ?? firstFree(start, hard), failed: false };
@@ -743,6 +746,10 @@ function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: Readon
   }
   return { labels, blocked, failed };
 }
+
+/** Passes outside the shared budget a title may take to widen its group for a leg (ticket 66; the widening is one push and two replays). */
+const LEG_PASSES_PER_TITLE = 1;
+const LEG_ALLOWANCE_EXHAUSTED = 'GROUP_LABEL_LEG_ALLOWANCE_EXHAUSTED';
 
 /** Apply a lane-feasible widening and its neighbour propagation. An infeasible one does nothing. */
 function pushFollowingGroups(model: LayoutModel, grown: LayoutGroup, width: number): void {
@@ -1196,7 +1203,7 @@ export function produceGroupLabelBands(model: LayoutModel): void {
   reserveInitialSpace(model);
   reserveLinkLabelRoom(model);
   const budget = createCentreBudget();
-  let extraLegPasses = 4;
+  const legPasses = new Map<string, number>();
   rebuildRegionGeometry(model, budget, undefined, true);
   while (true) {
     // Linked groups share a grid before labels are planned inside their (possibly wider) boxes, and
@@ -1236,8 +1243,11 @@ export function produceGroupLabelBands(model: LayoutModel): void {
     model.labels = model.labels.filter(label => label.role !== 'group');
     const plan = planLabels(model, true);
     if (!plan.growth) { model.labels.push(...plan.labels); diagnoseBlocked(model, plan.blocked); return; }
-    if (budget.remaining <= 0 && extraLegPasses > 0 && !planLabels(model, true, false).growth) {
-      extraLegPasses--;
+    // A widening for a leg only (no hard obstacle asks for it) needs a pass the shared budget no longer has: centring spends it before any leg
+    // is known (ticket 66). Each title has an allowance of `LEG_PASSES_PER_TITLE` passes outside the shared budget; a title past it keeps the soft rule.
+    const legOnly = budget.remaining <= 0 && !planLabels(model, true, false).growth;
+    if (legOnly && (legPasses.get(plan.growth.group.id) ?? 0) < LEG_PASSES_PER_TITLE) {
+      legPasses.set(plan.growth.group.id, (legPasses.get(plan.growth.group.id) ?? 0) + 1);
       const stable = routerEntryPoints(model);
       pushFollowingGroups(model, plan.growth.group, plan.growth.width);
       holdColumnsAfterPush(model);
@@ -1248,6 +1258,17 @@ export function produceGroupLabelBands(model: LayoutModel): void {
       syncBands(model, stable);
       rebuildRegionGeometry(model, { remaining: 1, passes: 0 }, undefined, true);
       continue;
+    }
+    if (legOnly) {
+      const stalled = planLabels(model, false);
+      model.labels.push(...stalled.labels);
+      diagnoseBlocked(model, stalled.blocked);
+      model.diagnostics.push({
+        stage: 'placement', severity: 'warning', code: LEG_ALLOWANCE_EXHAUSTED,
+        message: `Group ${plan.growth.group.id} would widen for a leg under its title, but its allowance of ${LEG_PASSES_PER_TITLE} pass outside the shared budget is spent; the leg stays with the router.`,
+        owners: [{ kind: 'group', id: plan.growth.group.id }],
+      });
+      return;
     }
     if (budget.remaining <= 0) {
       // The growth-permitted plan stops at the first repairable group, so re-plan for the full
@@ -1303,7 +1324,11 @@ export function replanGroupLabels(model: LayoutModel): void {
   diagnoseBlocked(model, plan.blocked);
 }
 
-/** Recheck exact stable claims against final paths without moving geometry or allocating a new budget. */
+/**
+ * Recheck exact stable claims against final paths without moving geometry or allocating a new budget. The group titles are planned with
+ * the legs on first (a title that stands clear of a widened group's legs, ticket 66); a model that stalled (`PLACEMENT_NON_CONVERGENCE`
+ * or `GROUP_LABEL_LEG_ALLOWANCE_EXHAUSTED`) placed its titles without them, so the plan falls back to the stalled one when the first differs.
+ */
 export function validateGroupLabelBands(model: LayoutModel): void {
   // Replay the grid on a copy: a settled model does not change; a genuinely unsettled chain exhausts
   // the pass bound again. A serialized diagnostic alone proves nothing.
@@ -1341,7 +1366,7 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   const actualLabels = model.labels.filter(label => label.role === 'group');
   // A title that stands clear of a widened group's legs (ticket 66) is planned with the legs on; a model that stalled plans without them.
   let plan = planLabels(expected, true, true);
-  if (plan.growth || !equal(actualLabels, plan.labels)) plan = planLabels(expected, !model.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE'));
+  if (plan.growth || !equal(actualLabels, plan.labels)) plan = planLabels(expected, !model.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE' || item.code === LEG_ALLOWANCE_EXHAUSTED));
   if (plan.growth) throw new Error(`Group label ${plan.growth.group.id} has no reserved free gap`);
   const actual = model.labels.filter(label => label.role === 'group');
   if (!equal(actual, plan.labels)) {

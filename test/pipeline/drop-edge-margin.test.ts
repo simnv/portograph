@@ -24,11 +24,9 @@ it('turns a drop that goes in sideways outside the group-edge link-margin', asyn
   const link = model.links.find(item => item.id === 'link-1')!;
   const box = model.groups['g11']!.bounds!, segments = link.path!.segments;
   const margin = GROUP_EDGE_LINK_CLEARANCE + 1 / 2;
-  // Before ticket 66 the title of `g11` could not clear the port's leg, so the drop went to the router and the plan asked for an entry point
-  // beside the edge that faces the source, on the stem's row. The title is now placed clear and `g11` widens, so the row plan holds the drop
-  // and asks for no checkpoint; a plan that does ask keeps it a margin beyond the edge.
-  const entry = plan.links.find(item => item.link === 'link-1')?.connectors[0]?.checkpoints.find(checkpoint => checkpoint.x < box.x);
-  if (entry) expect(box.x - entry.x).toBeGreaterThanOrEqual(margin);
+  // Since ticket 66 the title of `g11` is placed clear of the port's leg and the group widens, so the row plan holds the drop and asks for no
+  // entry checkpoint: the drop goes in through the top. The entry rule itself is read below on a model whose title stands on the column.
+  expect(plan.links.find(item => item.link === 'link-1')?.connectors[0]?.checkpoints.some(checkpoint => checkpoint.x < box.x) ?? false).toBe(false);
   // No vertical run beside the group's side edges closer than the margin; the drop turned outside it.
   for (const segment of segments) {
     if (segment.from.x !== segment.to.x) continue;
@@ -38,3 +36,20 @@ it('turns a drop that goes in sideways outside the group-edge link-margin', asyn
   const report = score(model).snapshot;
   expect(Object.entries(report.gates).flatMap(([id, gate]) => gate.violations.map(item => [id, item.code, item.elements]))).toEqual([]);
   }, 60000);
+
+/**
+ * The entry rule of ticket 10, read where a title still stands on the column of the port (a widening no lane allows leaves it there, and no
+ * fixture of the corpus keeps one with a source beside the group): the title of `g11` is put over the column of `n4`'s port and the plan must
+ * reserve an entry checkpoint one margin beyond the side edge that faces the source, on the row of the stem.
+ */
+it('reserves an entry checkpoint beyond the group-edge link-margin where a title stands on the port column', async () => {
+  const before = structuredClone(bands(bundles(bars(centre(flanks(lanes(rows(await placed(load('a-drop-turns-outside-the-group-edge-margin'))))))))));
+  const port = before.nodes['n4']!.ports.find(item => item.side === 'top')!.anchor!;
+  const title = before.labels.find(label => label.id === 'label:group:g11')!;
+  title.bounds = { ...title.bounds!, x: port.x - title.bounds!.width / 2 };
+  const box = before.groups['g11']!.bounds!, margin = GROUP_EDGE_LINK_CLEARANCE + 1 / 2;
+  const checkpoints = planRoute(before).links.find(item => item.link === 'link-1')!.connectors[0]!.checkpoints;
+  const entry = checkpoints.find(checkpoint => checkpoint.x < box.x);
+  expect(entry, 'an entry checkpoint beside the left edge').toBeDefined();
+  expect(box.x - entry!.x).toBeGreaterThanOrEqual(margin);
+}, 60000);
