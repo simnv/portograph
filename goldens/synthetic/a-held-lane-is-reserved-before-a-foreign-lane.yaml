@@ -1,0 +1,50 @@
+# Expected: The three sibling frames of a-frame-holds-its-lanes-beside-its-siblings with the feed changed:
+# u1 feeds the gateways of east and west, and the west gateway also links to l0 and the east gateway to l1.
+# Each of those two links ends in one frame, so it holds a lane beside that frame's distribution cell and
+# the frame grows to hold it; it is foreign to the other frames, so it must stand outside them. The four
+# feed-to-client links are foreign to every frame. A lane a frame holds grows the frame's reach, and lane x
+# is immutable, so it is reserved before the lanes foreign to it: reserved in source order, a foreign lane
+# stood where a frame grew and the lanes stage threw `Lane ... crosses occupied group` (ranked-groups
+# ticket 23). No foreign lane stands inside a frame's cells and the lanes it holds.
+# Test-only input owned by ranked-groups ticket 23; test/pipeline/frame-held-lanes.test.ts reads the stages.
+portograph: 2
+groups:
+  up: { tier: 0, label: Up }
+  east: { tier: 1, label: East }
+  mid: { tier: 1, label: Mid }
+  west: { tier: 1, label: West }
+  low: { tier: 2, label: Low }
+nodes:
+  u0: { group: up, class: provider, label: U0 }
+  u1: { group: up, class: provider, label: U1 }
+  u2: { group: up, class: provider, label: U2 }
+  eastg: { group: east, class: router, label: East gateway }
+  eastd: { group: east, class: switch, label: East distribution switch of the main building }
+  easta: { group: east, class: server, label: East access server of the main building }
+  midg: { group: mid, class: router, label: Mid gateway }
+  midd: { group: mid, class: switch, label: Mid distribution switch of the main building }
+  mida: { group: mid, class: server, label: Mid access server of the main building }
+  westg: { group: west, class: router, label: West gateway }
+  westd: { group: west, class: switch, label: West distribution switch of the main building }
+  westa: { group: west, class: server, label: West access server of the main building }
+  l0: { group: low, class: server, label: L0 }
+  l1: { group: low, class: server, label: L1 }
+  l2: { group: low, class: server, label: L2 }
+links:
+  - [eastg, eastd]
+  - [eastd, easta]
+  - [eastg, easta]
+  - [midg, midd]
+  - [midd, mida]
+  - [midg, mida]
+  - [westg, westd]
+  - [westd, westa]
+  - [westg, westa]
+  - [u1, eastg]
+  - [u1, westg]
+  - [u1, l0]
+  - [u1, l1]
+  - [u0, l2]
+  - [u2, l2]
+  - [westg, l0]
+  - [eastg, l1]

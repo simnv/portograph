@@ -56,17 +56,24 @@ describe('a frame holds the lanes of the links that end in it', () => {
   }, 60000);
 
   it('a lane the frame holds is reserved before the foreign lane that would stand where the frame grows (ticket 23)', async () => {
-    // link-16 crosses all three frames and link-9 ends in west. Reserved in source order, link-16 took the slot
-    // beside west's edge first and link-9's lane could only stand beyond it, inside the grown frame. The lanes
-    // stage validates every lane against `occupied`, so a foreign lane inside the frame's reach throws there.
-    const model = await placement('a-frame-holds-its-lanes-beside-its-siblings', [rows, lanes]);
-    const laneOf = (id: string) => model.lanes.find(lane => lane.id === `lane:"${id}":2`)!;
-    const held = laneOf('link-9'), foreign = laneOf('link-16'), cell = model.groups['west#1']!.bounds!;
-    expect(held.group).toBe('west#1');
-    // The held lane stands beside the cell on the side no foreign lane stands on, so the foreign lane
-    // is outside the cell and outside the lane the frame holds.
-    expect(overlap(held.bounds, foreign.bounds)).toBe(false);
-    expect(foreign.bounds.x >= cell.x + cell.width, 'link-16 stands beside the cell edge of west').toBe(true);
-    expect(held.bounds.x + held.bounds.width <= cell.x, 'link-9 stands on the free side of the cell').toBe(true);
+    // The lanes stage validates every lane against `occupied`, so a foreign lane inside a frame's reach throws there.
+    const model = await placement('a-held-lane-is-reserved-before-a-foreign-lane', [rows, lanes]);
+    const frameOf = (id: string): string | undefined => model.frames!.find(frame => frame.cells.includes(id))?.id;
+    const ends = (id: string): string[] => {
+      const link = model.links.find(item => item.id === id)!;
+      return [link.attachments!.from.node, link.attachments!.to.node];
+    };
+    let checked = 0;
+    for (const held of model.lanes) {
+      const frame = frameOf(held.group);
+      if (frame === undefined || !ends((held.owner as { id: string }).id).some(node => model.groups[model.document.nodes[node]!.group]!.frame === frame)) continue;
+      const cell = model.groups[held.group]!.bounds!, low = Math.min(cell.x, held.bounds.x), high = Math.max(cell.x + cell.width, held.bounds.x + held.bounds.width);
+      for (const other of model.lanes) {
+        if (other.tier !== held.tier || ends((other.owner as { id: string }).id).some(node => model.groups[model.document.nodes[node]!.group]!.frame === frame)) continue;
+        checked++;
+        expect(overlap(other.bounds, { x: low, width: high - low }), `${other.id} stands inside the reach of ${held.group}, which holds ${held.id}`).toBe(false);
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
   }, 60000);
 });
