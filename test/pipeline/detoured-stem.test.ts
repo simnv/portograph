@@ -47,7 +47,7 @@ it('keeps every reserved stem checkpoint on the routes of residual links that sh
   // Three links of this fixture are residual (`leg-blocked`, a leg under a group label), so they stay with the router in several
   // batches, beside planned parts whose covers and stems are reserved. The real router publishes every one of them through its
   // checkpoints and removes none: the situation of the detour above, with residual links in place of the crossing pair.
-  const text = readFileSync(new URL('../../goldens/synthetic/a-claim-lies-on-a-cover-edge.yaml', import.meta.url), 'utf8');
+  const text = readFileSync(new URL('../../goldens/synthetic/a-title-no-position-clears-leaves-the-leg-to-the-router.yaml', import.meta.url), 'utf8');
   const before = bands(bundles(bars(centre(flanks(lanes(rows(await placed(text))))))));
   const plan = planRoute(before);
   expect(plan.batches.length).toBeGreaterThanOrEqual(2);

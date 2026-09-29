@@ -34,8 +34,9 @@ const removalsAreNamed = (model: LayoutModel): boolean => (model.removedLinks ??
 
 describe('a gap the plan does not fit is left to the router with a diagnostic (ticket 51, ticket 52)', () => {
   it('names the gap and the ask, plans nothing in it, and reports every link the router removes', async () => {
-    // Stress ticket 09 (`a-claim-lies-on-a-cover-edge`): the gap above tier 4 is 73 px, the plan asks for 87.5.
-    growth.tiers = new Map([[4, 34.5]]);
+    // Stress ticket 09 (`a-claim-lies-on-a-cover-edge`): the gap above tier 4 is 73 px, the plan asks for 87.5. Since ticket 62 the gap above tier 3
+    // is planned too (its title is nudged off link-8's leg), so it is given the growth its plan asks for and stays fit.
+    growth.tiers = new Map([[3, 32.5], [4, 34.5]]);
     const model = await place(fixture('a-claim-lies-on-a-cover-edge'));
     const unfit = tierGapPlans(model).filter(({ plan }) => plan.growth > 1e-6).map(({ gap }) => [gap.above, gap.below]);
     expect(unfit).toEqual([[3, 4], [4, 5]]);

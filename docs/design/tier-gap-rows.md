@@ -164,7 +164,8 @@ never sees.
   rounds. Where a cycle remains among halves only (no shape has shown one), its parts are residual,
   named `TIER_GAP_ROW_CYCLE`.
 - **Residual by constraint.** A part that cannot obey O2 to O5 is residual: two upper ends of two
-  nodes within `k`; a leg through a fixed obstacle; a port over a lane mouth on the same boundary.
+  nodes within `k`; a leg through a fixed obstacle (a group or canton title is nudged along its edge off the legs of the ports under it at
+  placement, ticket 62, so a title is such an obstacle only where no position on the edge clears every leg of its row of titles); a port over a lane mouth on the same boundary.
   Where two lower legs, or two upper legs, of two nodes stand within `k` (a drop's vertical counts as an upper and a lower leg), the later part is
   **planned all the same**, with the clash named in the plan (`crowded`) and reported by G6: a published
   finding, which `quality.md` item 11 prefers to a removed link and to a route round the sheet. A

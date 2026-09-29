@@ -484,9 +484,41 @@ function feedCorridorRects(model: LayoutModel, link: LayoutModel['links'][number
   return [{ id: `${link.id}:feed-corridor`, bounds: segmentRect(segment, linkStrokeWidth(link) / 2), clearance: GROUP_LABEL_LINK_CLEARANCE }];
 }
 
-function intervals(model: LayoutModel, placed: LayoutLabel[], y: number, height: number, width: number): ForbiddenInterval[] {
+/**
+ * The leg every routed port on a title band's own edge must draw through that band (ticket 62): a vertical rectangle from the
+ * port to the far side of the band, with the title's link-free margin. The row plan refuses a leg under a label (`leg-blocked`),
+ * so a label that clears these at placement leaves no part for the router. Soft: `planLabels` falls back to the hard obstacles
+ * where no position on the edge clears every leg.
+ */
+function legRects(model: LayoutModel): ForbiddenRect[] {
+  const result: ForbiddenRect[] = [];
+  const frames = model.document.frames ?? {};
+  const membersOf = (band: LabelBand): Set<string> => new Set(isCanton(model, band.group)
+    ? frameSubtreeCells(frames, band.group).flatMap(cell => model.groups[cell]?.nodes ?? []) : model.groups[band.host ?? band.group]?.nodes ?? []);
+  const owned = model.labelBands.map(band => ({ band, members: membersOf(band) }));
+  for (const link of model.links) {
+    if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments || link.bundle) continue;
+    if (isFrameStraight(model, link)) continue;
+    const stroke = linkStrokeWidth(link);
+    for (const end of ['from', 'to'] as const) {
+      const ref = link.attachments[end], port = findPort(model, ref);
+      if (!port?.anchor || (port.side !== 'top' && port.side !== 'bottom')) continue;
+      const anchor = port.anchor;
+      for (const { band, members } of owned) {
+        if (band.side !== port.side || !members.has(ref.node)) continue;
+        const box = band.bounds;
+        if (anchor.x < box.x - PLACEMENT_EPS || anchor.x > right(box) + PLACEMENT_EPS) continue;
+        const y = Math.min(anchor.y, box.y), far = Math.max(anchor.y, bottom(box));
+        result.push({ id: `${link.id}:leg:${end}`, bounds: { x: anchor.x - stroke / 2, y, width: stroke, height: far - y }, clearance: GROUP_LABEL_LINK_CLEARANCE });
+      }
+    }
+  }
+  return result;
+}
+
+function intervals(model: LayoutModel, placed: LayoutLabel[], y: number, height: number, width: number, legs = false): ForbiddenInterval[] {
   // Link geometry keeps the title's link-free margin on every side; nodes, pills and labels do not.
-  const raw = forbiddenRects(model, placed).filter(item => intersectsY(item.bounds, y - (item.clearance ?? 0), height + 2 * (item.clearance ?? 0))).map(item => ({
+  const raw = [...forbiddenRects(model, placed), ...(legs ? legRects(model) : [])].filter(item => intersectsY(item.bounds, y - (item.clearance ?? 0), height + 2 * (item.clearance ?? 0))).map(item => ({
     low: item.bounds.x - width - (item.clearance ?? 0), high: right(item.bounds) + (item.clearance ?? 0), id: item.id,
   })).sort((a, b) => a.low - b.low || a.high - b.high || a.id.localeCompare(b.id));
   const merged: ForbiddenInterval[] = [];
@@ -615,26 +647,55 @@ function cantonHost(model: LayoutModel, id: string, side: 'top' | 'bottom'): Lay
     .sort((a, b) => b.bounds!.width - a.bounds!.width || a.id.localeCompare(b.id))[0];
 }
 
+/**
+ * Where a title's left edge goes: the free x nearest the centre, clear of every leg its band's ports must draw (ticket 62,
+ * nudged along the edge as ADR-0011 nudges a label). Where no x on the edge clears every leg the legs are dropped, so a title
+ * is never widened for them, and `failed` says so: the caller then leaves the whole row of titles where it was.
+ */
+function titleX(model: LayoutModel, placed: LayoutLabel[], y: number, measured: { width: number; height: number },
+  start: number, limit: number, centre: number, nudge: boolean): { x: number; failed: boolean } {
+  const pick = (ranges: ForbiddenInterval[]): number | undefined => [centre, start, limit,
+    ...ranges.flatMap(range => [range.low - LABEL_CLEARANCE_STEP, range.high + LABEL_CLEARANCE_STEP])]
+    .filter(x => x >= start - PLACEMENT_EPS && x <= limit + PLACEMENT_EPS && ranges.every(range => x < range.low - PLACEMENT_EPS || x > range.high + PLACEMENT_EPS))
+    .sort((a, b) => Math.abs(a - centre) - Math.abs(b - centre) || a - b)[0];
+  const hard = intervals(model, placed, y, measured.height, measured.width);
+  if (nudge) {
+    const soft = intervals(model, placed, y, measured.height, measured.width, true), found = pick(soft);
+    if (found !== undefined) return { x: found, failed: false };
+    return { x: pick(hard) ?? firstFree(start, hard), failed: soft.length !== hard.length || soft.some((range, at) => range.low !== hard[at]!.low || range.high !== hard[at]!.high) };
+  }
+  return { x: pick(hard) ?? firstFree(start, hard), failed: false };
+}
+
+/**
+ * Plans the group labels. A row of titles (one tier, one edge) is nudged off the legs of its ports as a whole or not at all: where
+ * one title has no position that clears its legs, the row keeps its old places, and every leg under a title stays with the router
+ * together. Nudging only some of them would plan some drops of a gap and leave the rest to the router, which lays them across the
+ * planned rows.
+ */
 function planLabels(model: LayoutModel, permitGrowth: boolean): LabelPlan {
-  const labels: LayoutLabel[] = [], blocked: string[] = [];
+  const first = planLabelsOnce(model, permitGrowth, new Set());
+  return first.failed.size && !first.growth ? planLabelsOnce(model, permitGrowth, first.failed) : first;
+}
+
+function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: ReadonlySet<string>): LabelPlan & { failed: Set<string> } {
+  const labels: LayoutLabel[] = [], blocked: string[] = [], failed = new Set<string>();
   for (const title of titles(model)) {
     const id = title.host, group = model.groups[id]!, measured = measurement(title.label);
     const band = bandHeldBy(model, id);
     const y = (band ? band.bounds.y : group.bounds!.y) + GROUP_LABEL_GEOMETRY.verticalInset;
     const start = group.bounds!.x + GROUP_LABEL_GEOMETRY.horizontalInset;
     const limit = right(group.bounds!) - GROUP_LABEL_GEOMETRY.horizontalInset - measured.width;
-    const ranges = intervals(model, labels, y, measured.height, measured.width);
     const centre = group.bounds!.x + (group.bounds!.width - measured.width) / 2;
-    const candidates = [centre, start, limit, ...ranges.flatMap(range => [range.low - LABEL_CLEARANCE_STEP, range.high + LABEL_CLEARANCE_STEP])]
-      .filter(x => x >= start - PLACEMENT_EPS && x <= limit + PLACEMENT_EPS && ranges.every(range => x < range.low - PLACEMENT_EPS || x > range.high + PLACEMENT_EPS))
-      .sort((a, b) => Math.abs(a - centre) - Math.abs(b - centre) || a - b);
-    const x = candidates[0] ?? firstFree(start, ranges);
+    const row = `${group.tier}|${title.side}`, placed = titleX(model, labels, y, measured, start, limit, centre, !still.has(row));
+    if (placed.failed) failed.add(row);
+    const x = placed.x;
     if (x > limit + PLACEMENT_EPS) {
       // Classify every group that needs to grow, so an exhausted budget still reports the ones
       // that no budget could have repaired.
       const width = x + measured.width + GROUP_LABEL_GEOMETRY.horizontalInset - group.bounds!.x;
       if (!growthPlan(model, group, width)) blocked.push(id);
-      else if (permitGrowth) return { labels, blocked, growth: { group, width } };
+      else if (permitGrowth) return { labels, blocked, failed, growth: { group, width } };
     }
     labels.push({ id: `label:group:${id}`, owner: { ...group.owner }, layer: 'routed', role: 'group',
       text: title.label, fontFamily: GROUP_LABEL_GEOMETRY.fontFamily,
@@ -647,19 +708,18 @@ function planLabels(model: LayoutModel, permitGrowth: boolean): LabelPlan {
     const title = model.document.frames![band.group]!.label, measured = measurement(title);
     const y = band.bounds.y + GROUP_LABEL_GEOMETRY.verticalInset, box = band.bounds;
     const start = box.x + GROUP_LABEL_GEOMETRY.horizontalInset, limit = right(box) - GROUP_LABEL_GEOMETRY.horizontalInset - measured.width;
-    const ranges = intervals(model, labels, y, measured.height, measured.width);
     const centre = box.x + (box.width - measured.width) / 2;
-    const candidates = [centre, start, limit, ...ranges.flatMap(range => [range.low - LABEL_CLEARANCE_STEP, range.high + LABEL_CLEARANCE_STEP])]
-      .filter(x => x >= start - PLACEMENT_EPS && x <= limit + PLACEMENT_EPS && ranges.every(range => x < range.low - PLACEMENT_EPS || x > range.high + PLACEMENT_EPS))
-      .sort((a, b) => Math.abs(a - centre) - Math.abs(b - centre) || a - b);
-    const x = candidates[0] ?? firstFree(start, ranges);
+    const tiers = cantonTiers(model, band.group), row = `${band.side === 'top' ? tiers.first : tiers.last}|${band.side}`;
+    const placed = titleX(model, labels, y, measured, start, limit, centre, !still.has(row));
+    if (placed.failed) failed.add(row);
+    const x = placed.x;
     if (x > limit + PLACEMENT_EPS) {
       // The band is as wide as its members; a title that does not fit widens the widest cell on the title edge,
       // as a group title does, and the frame follows the cell.
       const width = x + measured.width + GROUP_LABEL_GEOMETRY.horizontalInset - box.x;
       const cell = cantonHost(model, band.group, band.side);
       if (cell === undefined || !growthPlan(model, cell, cell.bounds!.width + (width - box.width))) blocked.push(band.group);
-      else if (permitGrowth) return { labels, blocked, growth: { group: cell, width: cell.bounds!.width + (width - box.width) } };
+      else if (permitGrowth) return { labels, blocked, failed, growth: { group: cell, width: cell.bounds!.width + (width - box.width) } };
     }
     labels.push({ id: `label:group:${band.group}`, owner: { ...band.owner }, layer: 'routed', role: 'group',
       text: title, fontFamily: GROUP_LABEL_GEOMETRY.fontFamily,
@@ -668,7 +728,7 @@ function planLabels(model: LayoutModel, permitGrowth: boolean): LabelPlan {
       bounds: { x: x <= limit + PLACEMENT_EPS ? x : box.x + GROUP_LABEL_GEOMETRY.horizontalInset,
         y, width: measured.width, height: measured.height } });
   }
-  return { labels, blocked };
+  return { labels, blocked, failed };
 }
 
 /** Apply a lane-feasible widening and its neighbour propagation. An infeasible one does nothing. */

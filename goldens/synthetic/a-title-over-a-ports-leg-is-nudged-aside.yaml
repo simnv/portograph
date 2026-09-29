@@ -1,0 +1,29 @@
+# Expected: a title band that stands over a port whose leg must pass through it is nudged along its edge to clear the leg (ticket 62,
+# ADR-0011's nudging distance), so the tier-gap row plan finds no `leg-blocked` part and the router is asked for nothing. The canton
+# `west` (one member `site`, three routers fed by two providers, so the band is at the bottom) stands above the plain group `edge`.
+# Three links leave the routers (`r0`, `r1`, `r2`), the last two crossing; the centred canton title covered the bottom port of `r1`.
+# Test-only input owned by ticket 62; test/pipeline/title-over-a-leg.test.ts reads it.
+portograph: 2
+groups:
+  west: { label: West }
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, canton: west, label: Site }
+  edge: { tier: 2, label: Edge }
+nodes:
+  p1: { group: upstream, class: provider, label: P1 }
+  p2: { group: upstream, class: provider, label: P2 }
+  r0: { group: site, class: router, label: R0 }
+  r1: { group: site, class: router, label: R1 }
+  r2: { group: site, class: router, label: R2 }
+  s0: { group: edge, class: router, label: S0 }
+  s1: { group: edge, class: router, label: S1 }
+  s2: { group: edge, class: router, label: S2 }
+  s3: { group: edge, class: router, label: S3 }
+links:
+  - [p1, r0]
+  - [p1, r1]
+  - [p2, r1]
+  - [p2, r2]
+  - [r0, s0]
+  - [r1, s3]
+  - [r2, s2]
