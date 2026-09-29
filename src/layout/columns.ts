@@ -495,8 +495,9 @@ export function closeCantons(model: LayoutModel): boolean {
   for (const { index, authority } of sweepSteps(model, tiers)) {
     if (!tiers[index]!.some(unit => unit.frame && frames[unit.id]?.kind === 'canton')) continue;
     if (authority === undefined) moved = closeUp(model, tiers, index, 0) || moved;
-    // A run that stands packed (or is one unit) is not pulled by the close-up: the pull toward the feeds is `holdColumnAxes`' own, at its own points.
-    else if (runApart(model, tiers[index]!, 0)) moved = pullTier(model, tiers, index, feedReader(model, tiers, index, authority), 0) || moved;
+    // The replays of 7f may widen a frame after the last pull of `holdColumnAxes`, also in a run that stands packed or is one unit: the
+    // finished layout must be a fixed point of that pull (ticket 67), so the pull reads the geometry of every round.
+    else moved = pullTier(model, tiers, index, feedReader(model, tiers, index, authority), 0) || moved;
   }
   return moved;
 }
@@ -578,16 +579,6 @@ function runSpacing(model: LayoutModel, run: readonly Unit[], at: (unit: Unit) =
     if (next !== undefined) sum += at(unit).width + gap + (unit.frame && next.frame ? 2 * slack : unit.frame || next.frame ? COLUMN_SLACK : 0);
   }
   return offsets;
-}
-
-/** Whether the units of a step stand off the spacing of `runSpacing` now: some gap of the run, in the order it stands, is not the packed one. */
-function runApart(model: LayoutModel, tier: readonly Unit[], slack: number): boolean {
-  const derived = deriveFrames(model);
-  if (derived === undefined) return false;
-  const box = new Map(derived.map(frame => [frame.id, frame.box]));
-  const at = (unit: Unit): Rect => unit.frame ? box.get(unit.id)! : unit.groups[0]!.bounds!;
-  const run = [...tier].sort((a, b) => at(a).x - at(b).x || compareId(a.id, b.id)), offsets = runSpacing(model, run, at, slack);
-  return run.some((unit, i) => i > 0 && Math.abs(at(unit).x - at(run[i - 1]!).x - (offsets[i]! - offsets[i - 1]!)) > PLACEMENT_EPS);
 }
 
 /** Why a run of cantons may not be closed at all: a foreign unit, or a held lane, stands between two cantons of it. */
@@ -825,8 +816,9 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
   const offsets: number[] = [];
   let sum = 0;
   for (const [i, item] of standing.entries()) { offsets.push(sum); sum += item.width + gap + item.slack + (standing[i + 1]?.slack ?? 0); }
-  // A pinned unit stays where the overlay order put it; it bounds the units on either side, whose plan is
-  // clamped to it, which is exact for a fixed point.
+  // A pinned unit stays where the overlay order put it; it splits the run. The units on either side are pooled apart, each side
+  // between its own pins (ticket 67): pooled across a pin, two wishes of opposite sign would average and move a unit away from its own
+  // feed range, and a packed run with a pin would not be a fixed point.
   // The held points, as z = x - offset, must not fall along the tier, or the clamp below is not exact and a held frame
   // would move: the geometry after the later rules can stand closer than the plan keeps frames (they slide into
   // the column slack). So the pins are taken first, in order, and a held point that would fall is dropped from the
@@ -844,11 +836,12 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
     }
     const below = fixed.map((_, i) => Math.max(-Infinity, ...fixed.slice(0, i + 1).filter((z): z is number => z !== undefined)));
     const above = fixed.map((_, i) => Math.min(Infinity, ...fixed.slice(i).filter((z): z is number => z !== undefined)));
+    const segment = fixed.map((_, i) => 2 * fixed.slice(0, i).filter(z => z !== undefined).length + (fixed[i] !== undefined ? 1 : 0));
     const fit = (wanted: number[]): number[] => {
-      const blocks: { sum: number; count: number }[] = [];
+      const blocks: { sum: number; count: number; segment: number }[] = [];
       for (const [at, wish] of wanted.entries()) {
-        blocks.push({ sum: wish - offsets[at]!, count: 1 });
-        while (blocks.length > 1 && blocks[blocks.length - 2]!.sum / blocks[blocks.length - 2]!.count > blocks[blocks.length - 1]!.sum / blocks[blocks.length - 1]!.count) {
+        blocks.push({ sum: wish - offsets[at]!, count: 1, segment: segment[at]! });
+        while (blocks.length > 1 && blocks[blocks.length - 2]!.segment === blocks[blocks.length - 1]!.segment && blocks[blocks.length - 2]!.sum / blocks[blocks.length - 2]!.count > blocks[blocks.length - 1]!.sum / blocks[blocks.length - 1]!.count) {
           const last = blocks.pop()!, before = blocks[blocks.length - 1]!;
           before.sum += last.sum; before.count += last.count;
         }
