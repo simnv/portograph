@@ -22,6 +22,14 @@ describe('a tier above packs over the final x of its feeds', () => {
     // of a tier only after that feed is packed toward its own feeds, so the two frames follow it.
     expect(Math.abs(tops - core)).toBeLessThanOrEqual(COLUMN_SLACK);
   }, 60000);
+
+  it('the same holds when a second one-rank tier stands between the anchor tier and the group', async () => {
+    const model = await run('a-chain-of-tiers-packs-over-its-feeds-final-x');
+    const core = centre(model.groups.core!.bounds!);
+    const tops = (centre(frame(model, 'top-a').box) + centre(frame(model, 'top-b').box)) / 2;
+    // `dist` has no frames beside it, so it must still be packed toward its own feeds before `core` reads its ports.
+    expect(Math.abs(tops - core)).toBeLessThanOrEqual(COLUMN_SLACK);
+  }, 60000);
 });
 
 describe('a widening body keeps the label room of its link', () => {

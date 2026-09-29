@@ -314,11 +314,18 @@ function packStep(model: LayoutModel, tiers: Unit[][], index: number, authority:
   };
 
   const tier = tiers[index]!;
-  // A tier of one-rank groups reads its feeds only when the frames of the tier beyond it (the next one outward, which
-  // reads this tier's ports) would otherwise stand over the x ELK left it at, and centring puts it elsewhere (ticket 33).
+  // A tier of one-rank groups reads its feeds only when frames stand beyond it (in the next tier outward or a farther one; the
+  // chain reads this tier's ports) and would otherwise stand over the x ELK left it at, and centring puts it elsewhere (ticket 33).
   // A bar is shaped by its own stage and never follows a feed.
   const framed = tier.some(unit => unit.frame);
-  const read = framed || (authority !== undefined && tiers[index + (index > authority ? 1 : -1)]?.some(unit => unit.frame) === true);
+  // Any tier farther outward counts, not only the next one: a chain of one-rank tiers is packed from the anchor tier
+  // outward, and each reads the tier packed before it, so the frames at the end of the chain read a settled x.
+  const outward = (): boolean => {
+    const step = index > authority! ? 1 : -1;
+    for (let at = index + step; at >= 0 && at < tiers.length; at += step) if (tiers[at]!.some(unit => unit.frame)) return true;
+    return false;
+  };
+  const read = framed || (authority !== undefined && outward());
   const centres = new Map<Unit, number | undefined>(tier.map(unit => [unit, read && (framed || !isBar(unit)) ? wanted(unit) : undefined]));
   if (!framed && [...centres.values()].every(wish => wish === undefined)) {
     // A tier of one-rank groups with no feed toward the tier packed before it is left where ELK put it, except that
