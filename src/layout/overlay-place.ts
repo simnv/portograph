@@ -2,11 +2,11 @@ import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { frameColumns, overlayFreeGroups, type FrameColumn } from './columns.js';
 import { groupShape } from './grid.js';
 import { occupiedOverhang, selectAnchorTier } from './lanes.js';
-import { overlayBlockers, overlayPath } from './overlay-paths.js';
+import { crosses, overlayBlockers, overlayPath, straightChord } from './overlay-paths.js';
 import { saveGroups } from './overlay-order.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { deriveFrames } from './frames.js';
-import { GROUP_PADDING, groupInsets } from './regions.js';
+import { GROUP_PADDING, groupInsets, placementWarning } from './regions.js';
 import { rowGap } from './sides-two.js';
 import { bandGap, compareId } from './skeleton-graph.js';
 import { moveGroup } from './skeleton-geometry.js';
@@ -179,6 +179,81 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
       if (straightCount() < before) { undo(); rebuildNodeGeometry(model, nodesOfTier, 'current'); }
     }
     for (const group of movers) settled.add(group.id);
+  }
+  stepOutOfChords(model, tiers, free, columns);
+}
+
+/**
+ * A group with no link of any member has nothing that asks for an x, and ELK's skeleton x is
+ * arbitrary (ticket 76). It is a wall for the sweeps above, so an overlay chord that passes through
+ * its tier can find the group in its way and the link takes the orthogonal branch. This step runs
+ * after every partner is settled: each such group stands at the x nearest its own where its box
+ * crosses no straight overlay chord, using the chords as drawn (face to face) and counting a chord
+ * that is straight once the group's own nodes are taken away. The x must keep the band gap to the
+ * other groups and the lanes of the tier and stay inside their span; if no x does, the group goes
+ * past the tier's end. A move that bends an overlay link that was straight is refused, with a warning.
+ */
+function stepOutOfChords(model: LayoutModel, tiers: readonly number[], free: ReadonlySet<string>, columns: readonly FrameColumn[]): void {
+  const linked = new Set<string>();
+  for (const link of model.links) {
+    if (!link.attachments) continue;
+    for (const end of [link.attachments.from.node, link.attachments.to.node]) linked.add(model.document.nodes[end]!.group);
+  }
+  const overlays = model.links.filter(link => link.layer === 'overlay' && link.attachments);
+  if (!overlays.length) return;
+  const gap = bandGap(model);
+  for (const tier of tiers) {
+    const groups = Object.values(model.groups).filter(group => group.tier === tier);
+    for (const group of groups.filter(item => free.has(item.id) && !linked.has(item.id) && item.frame === undefined && item.bounds)) {
+      const box = group.bounds!, own = new Set(group.nodes);
+      const bare = overlayBlockers(model, own);
+      const chords = overlays.flatMap(link => {
+        const chord = straightChord(model, link, bare);
+        return chord && crosses(chord.from, chord.to, box) ? [chord] : [];
+      });
+      if (!chords.length) continue;
+      // The x-interval of the box's left edge in which the box touches a chord: the chord's x-extent within the box's rows, less the width.
+      const banned = chords.map(({ from, to }) => {
+        const dy = to.y - from.y;
+        const at = (y: number): number => dy === 0 ? from.x : from.x + (to.x - from.x) * (y - from.y) / dy;
+        const xs = dy === 0 ? [from.x, to.x] : [at(Math.min(Math.max(box.y, Math.min(from.y, to.y)), Math.max(from.y, to.y))),
+          at(Math.min(Math.max(box.y + box.height, Math.min(from.y, to.y)), Math.max(from.y, to.y)))];
+        return { low: Math.min(...xs) - box.width, high: Math.max(...xs) };
+      });
+      const reach = occupiedOverhang(model, group);
+      const others = [
+        ...groups.filter(item => item !== group && item.bounds).map(item => {
+          const one = occupiedOverhang(model, item);
+          return { low: item.bounds!.x - one.left, high: item.bounds!.x + item.bounds!.width + one.right, gap };
+        }),
+        ...columns.filter(column => column.from <= tier && tier <= column.to).map(column => ({ low: column.x, high: column.x + column.width, gap })),
+        ...model.lanes.filter(lane => lane.tier === tier).map(lane => ({ low: lane.bounds.x, high: lane.bounds.x + lane.bounds.width, gap: 0 })),
+      ];
+      const width = box.width + reach.left + reach.right;
+      const fits = (x: number): boolean => !banned.some(({ low, high }) => x > low + PLACEMENT_EPS && x < high - PLACEMENT_EPS)
+        && !others.some(wall => x - reach.left < wall.high + wall.gap - PLACEMENT_EPS && x - reach.left + width > wall.low - wall.gap + PLACEMENT_EPS);
+      const candidates = [...banned.flatMap(({ low, high }) => [low, high]),
+        ...others.flatMap(wall => [wall.high + wall.gap + reach.left, wall.low - wall.gap - width + reach.left])].filter(fits);
+      if (!candidates.length) continue;
+      const spanLow = Math.min(...others.map(wall => wall.low)), spanHigh = Math.max(...others.map(wall => wall.high));
+      const inside = candidates.filter(x => !others.length || (x - reach.left >= spanLow - PLACEMENT_EPS && x - reach.left + width <= spanHigh + PLACEMENT_EPS));
+      const pool = inside.length ? inside : candidates;
+      const target = pool.reduce((best, x) => Math.abs(x - box.x) < Math.abs(best - box.x) - PLACEMENT_EPS ? x : best);
+      const straight = (): Set<string> => {
+        const blockers = overlayBlockers(model);
+        return new Set(overlays.filter(link => overlayPath(model, link, blockers).segments.length === 1).map(link => link.id));
+      };
+      const before = straight(), undo = saveGroups(model, [group]);
+      moveGroup(model, group, target - box.x, 0);
+      rebuildNodeGeometry(model, group.nodes, 'current');
+      const after = straight();
+      if ([...before].some(id => !after.has(id))) {
+        undo();
+        rebuildNodeGeometry(model, group.nodes, 'current');
+        placementWarning(model, 'LINKLESS_GROUP_MOVE_REFUSED',
+          `Group ${group.id} has no link and stands in the path of a straight overlay chord, but a step out of it would bend another straight overlay link.`, [group.id], 'group');
+      }
+    }
   }
 }
 
