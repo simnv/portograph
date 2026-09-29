@@ -993,12 +993,18 @@ interface PlannedRun { part: PlannedPart; segments: PathSegment[]; peers: Blocke
  */
 function plannedPeers(model: LayoutModel, plan: GapPlan | undefined, gap: TierGap): PlannedRun[] {
   if (!plan) return [];
-  const margin = routedStroke(model) / 2 + STRAIGHT_PATH_CLEARANCE.path;
+  const margin = routedStroke(model) / 2 + STRAIGHT_PATH_CLEARANCE.path, keep = nudgingDistance(model);
   const links = new Map(model.links.map(link => [link.id, link]));
   return plan.parts.filter(part => part.index !== undefined).map(part => {
     const shares = plan.parts.filter(other => other.link !== part.link && (other.upper.source === part.upper.source && part.upper.kind === 'tip'
       || other.lower.source === part.lower.source && part.lower.kind === 'tip')).map(other => other.link);
-    const grants = plan.residual.filter(item => item.granted === part.link).map(item => item.link);
+    // A residual part has no route across a planned vertical (a leg or a drop) that stands within `keep` of one of its own legs or between
+    // them: spec 2.2 grants it that vertical's cover, so it publishes with a finding and not as a removal.
+    const verticals = [part.upper.x, part.lower.x, ...part.middle !== undefined ? [part.middle] : []];
+    const grants = plan.residual.filter(item => item.granted === part.link || item.upper && item.lower && verticals.some(x => {
+      const lo = Math.min(item.upper!.x, item.lower!.x), hi = Math.max(item.upper!.x, item.lower!.x);
+      return x > lo - keep + 1e-9 && x < hi + keep - 1e-9;
+    })).map(item => item.link);
     const segments = plannedSegments(part, gap), owners = new Set([part.link, ...shares, ...grants]);
     const width = linkStrokeWidth(links.get(part.link)!) / 2 + margin;
     return { part, segments, shares: [...new Set(shares)].sort(), grants: [...new Set(grants)].sort(), peers: segments.map(run => ({ owners,
