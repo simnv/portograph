@@ -77,16 +77,17 @@ describe('rank cells (stage 1)', () => {
     const groups = { site: { tier: 1 }, zone: { parent: 'site' } };
     const nodes = {
       gw: { group: 'site', class: 'router' }, spare: { group: 'site', class: 'switch' },
-      z1: { group: 'zone', class: 'switch' }, z2: { group: 'zone', class: 'access' },
+      z1: { group: 'zone', class: 'switch' }, z2: { group: 'zone', class: 'access' }, tail: { group: 'site', class: 'server' },
     };
-    const model = resolve(parse(source(groups, nodes, [['isp', 'gw'], ['gw', 'z1'], ['z1', 'z2'], ['gw', 'spare']])));
+    // The zone feeds tail, a deeper parent member, so it is not a leaf child and keeps its rank (ticket 19).
+    const model = resolve(parse(source(groups, nodes, [['isp', 'gw'], ['gw', 'z1'], ['z1', 'z2'], ['gw', 'spare'], ['z2', 'tail']])));
     expect(tiers(model)).toEqual({ upstream: 0, 'site#0': 1, 'zone#1': 2, 'zone#2': 3, 'site#3': 4 });
     expect(model.document.frames).toEqual({
       site: { label: 'site', cells: ['site#0', 'site#3'] },
       zone: { label: 'zone', parent: 'site', cells: ['zone#1', 'zone#2'] },
     });
     expect(model.groups['zone#1']).toMatchObject({ nodes: ['z1'], frame: 'zone' });
-    expect(model.groups['site#3']).toMatchObject({ nodes: ['spare'], frame: 'site' });
+    expect(model.groups['site#3']).toMatchObject({ nodes: ['spare', 'tail'], frame: 'site' });
     expect(model.document.nodes['z2']!.group).toBe('zone#2');
   });
 

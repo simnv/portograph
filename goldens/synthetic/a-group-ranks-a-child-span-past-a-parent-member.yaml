@@ -3,7 +3,9 @@
 # parenthood itself. Gateway links to the tier above (rank 0). Zone member 1 hangs from it (rank 1)
 # and zone member 2 from that (rank 2), so the span of `zone` is [1, 2]. The site's Spare is also one
 # link below the gateway, which is rank 1 and inside the span; it is not a member of the child, so it
-# is pushed to rank 3, the rank after the span. The site has four ranks. Today the pipeline draws the
+# is pushed to rank 3, the rank after the span. The child feeds Tail, a parent member of rank 3, so it
+# is not a leaf child (ticket 19) and keeps its position; a child that fed nothing deeper would stand
+# after the parent's last rank instead. The site has four ranks. Today the pipeline draws the
 # two groups as tier mates; ticket 02 reads the ranks.
 # Test-only input owned by ranked-groups ticket 01; the derivation test reads the parsed document.
 portograph: 2
@@ -17,8 +19,10 @@ nodes:
   spare: { group: site, class: switch, label: Spare }
   z1: { group: zone, class: switch, label: Zone 1 }
   z2: { group: zone, class: access, label: Zone 2 }
+  tail: { group: site, class: server, label: Tail }
 links:
   - [isp, gw]
   - [gw, z1]
   - [z1, z2]
   - [gw, spare]
+  - [z2, tail]

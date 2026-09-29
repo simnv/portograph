@@ -33,7 +33,9 @@ is correct. Placement is the cause, for two reasons.
    group on its own sub-tier and carries `frame: G`. The document records `frames`. Sub-tiers are
    dense integers, so ELK partitioning and every reader of `group.tier` stay unchanged. A rank inside
    a child span becomes cell `child#r` (`frame: child`), not `G#r`. The parent has no cell at that
-   rank. An expanded document is never expanded again.
+   rank. A child that feeds no deeper member takes the ranks after the last rank of the rest of
+   the group (ticket 19); only a child that feeds a deeper member keeps its longest-path position.
+   An expanded document is never expanded again.
 3. **A frame is derived after placement.** `rebuildFrames` builds the drawn box of a group from
    its cells, as `rebuildBands` builds tier bands. The frame owns the label band, the title, the
    ADR-0013 obstacle and the drawio group. The renderer draws frames and never cells.
