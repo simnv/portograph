@@ -211,9 +211,10 @@ export function stitchPath(model: LayoutModel, plan: LinkPlan, routes: Map<strin
 
 /**
  * The rest of what `validateRoutedPaths` throws on for a stitched path, judged here first so a router answer that breaks it
- * removes its link and not the sheet (ticket 47): a segment that is not a rule's own run may not enter a reservation it does
+ * removes its link and not the sheet (ticket 47): a segment that is not one of the rules' own reserved runs may not enter a reservation it does
  * not own, and the first and last run must leave the port perpendicular and be as long as the reserved stem. From a router
- * this makes the validator's throws assertions.
+ * this makes the validator's throws assertions. A rule's leg is a reserved piece and so exempt here, but the validator does not
+ * exempt it and still asserts on it; a leg that crosses a foreign box is a rule defect and stays fatal.
  */
 function foreignJudgement(model: LayoutModel, link: LayoutLink, segments: PathSegment[], ruled: PathSegment[]): void {
   const isReserved = (segment: PathSegment): boolean => ruled.some(run => equal(run, segment));

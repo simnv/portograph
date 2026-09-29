@@ -66,8 +66,15 @@ describe('a route through a foreign reservation removes its link and not the she
     expect(routed(through(from, first, second, to))).toEqual({
       rejection: { link: item.link, code: 'ROUTE_GAP_REJECTED', reason: `Routed path on ${item.link} enters reserved label:group:t3` },
     });
+    // Orthogonal detours clear of every reservation, so only the stem checks can refuse them.
+    const rest = [first, { x: first.x, y: 645 }, { x: second.x, y: 645 }, second, to];
     // Out of the port along its side instead of away from it: the stem is not perpendicular.
-    const sideways = routed([from, { x: first.x + 20, y: from.y }, { x: first.x + 20, y: first.y }, first, second, to]);
-    expect(sideways).toMatchObject({ rejection: { code: 'ROUTE_GAP_REJECTED' } });
+    expect(routed([from, { x: first.x + 20, y: from.y }, { x: first.x + 20, y: first.y }, ...rest])).toEqual({
+      rejection: { link: item.link, code: 'ROUTE_GAP_REJECTED', reason: `Port stem on ${item.link} does not leave its side perpendicular` },
+    });
+    // Away from the port, but 5 px before the jog: shorter than the reserved entry.
+    expect(routed([from, { x: from.x, y: from.y + 5 }, { x: first.x + 20, y: from.y + 5 }, { x: first.x + 20, y: first.y }, ...rest])).toEqual({
+      rejection: { link: item.link, code: 'ROUTE_GAP_REJECTED', reason: `Port stem on ${item.link} is shorter than its reserved entry` },
+    });
   }, 120000);
 });
