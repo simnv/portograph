@@ -25,7 +25,7 @@ import { sideNested, stemCache, stemPlan, type StemCache } from './sides-two.js'
  */
 
 /** A gap a run may be allocated in: the open band between two tier bands, clipped to the lanes. */
-interface TierGap {
+export interface TierGap {
   low: number;
   high: number;
   /** The tier of the band above the gap, and of the band below it. */
@@ -89,7 +89,7 @@ interface GapAllocation {
 }
 
 const same = (a: number, b: number): boolean => Math.abs(a - b) <= EPS;
-const drawn = (link: LayoutLink): boolean => link.technique !== 'stub' && link.attachments !== undefined
+export const drawn = (link: LayoutLink): boolean => link.technique !== 'stub' && link.attachments !== undefined
   && link.layer === 'routed' && link.path === undefined;
 const grow = (box: Rect, by: number): Rect => ({ x: box.x - by, y: box.y - by, width: box.width + 2 * by, height: box.height + 2 * by });
 const OUTWARD: Record<Side, number> = { top: -1, bottom: 1, left: 0, right: 0 };
@@ -99,7 +99,7 @@ const OUTWARD_X: Record<Side, number> = { top: 0, bottom: 0, left: -1, right: 1 
  * The tier gaps of this diagram, low to high. A lane overhangs its band, so the room a run really
  * has is the band gap clipped to the lane bounds that face it.
  */
-function tierGaps(model: LayoutModel): TierGap[] {
+export function tierGaps(model: LayoutModel): TierGap[] {
   const bands = model.tierBands.filter(band => band.bounds).sort((a, b) => a.bounds!.y - b.bounds!.y);
   const result: TierGap[] = [];
   for (const [index, entry] of bands.entries()) {
@@ -124,7 +124,7 @@ function tierGaps(model: LayoutModel): TierGap[] {
  * ends of the runs the lanes rule fixed. An end that consumes a declared shared run starts at that
  * run's terminal, not at its port anchor.
  */
-function stopsOf(model: LayoutModel, link: LayoutLink): { point: Point; kind: 'port' | 'shared' | 'lane' }[] {
+export function stopsOf(model: LayoutModel, link: LayoutLink): { point: Point; kind: 'port' | 'shared' | 'lane' }[] {
   const ends = (['from', 'to'] as const).map(end => {
     const runs = link.sharedRuns?.[end];
     if (runs?.length) return { point: runs.at(-1)!.to, kind: 'shared' as const };
@@ -141,7 +141,7 @@ function stopsOf(model: LayoutModel, link: LayoutLink): { point: Point; kind: 'p
 }
 
 /** The gap boundary a point stands on, or undefined when it stands on neither. */
-function edgeOf(gap: TierGap, point: Point): 'low' | 'high' | undefined {
+export function edgeOf(gap: TierGap, point: Point): 'low' | 'high' | undefined {
   if (same(point.y, gap.low)) return 'low';
   if (same(point.y, gap.high)) return 'high';
   return undefined;
@@ -537,9 +537,9 @@ const tipBand = (model: LayoutModel): number => 2 * nudgingDistance(model);
  * the tip row's leg travels: the tip column, the far port of each consumer and the lanes it owns.
  * `nested` is false for a flat stem: it has no row band, only the column band (round 4).
  */
-interface NestedTip { anchor: Point; tip: Point; side: 'top' | 'bottom'; consumers: ReadonlySet<string>; from: number; to: number; nested: boolean }
+export interface NestedTip { anchor: Point; tip: Point; side: 'top' | 'bottom'; consumers: ReadonlySet<string>; from: number; to: number; nested: boolean }
 
-function nestedTips(model: LayoutModel, cache: StemCache): NestedTip[] {
+export function nestedTips(model: LayoutModel, cache: StemCache): NestedTip[] {
   const result = new Map<string, NestedTip>();
   for (const link of model.links) {
     if (link.layer === 'overlay' || !drawn(link)) continue;

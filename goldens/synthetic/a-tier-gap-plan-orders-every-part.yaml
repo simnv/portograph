@@ -1,0 +1,34 @@
+# Expected: the v5-4-0 shape of the tier-gap row plan (ranked-groups ticket 48, docs/design/tier-gap-rows.md Section 2.4).
+# Two routers on tier 0, five switches on tier 1 and two servers in two groups of tier 2. The gap above the switches holds a
+# nested tip, a drop, a mouth part and two O2 pairs; the gap below holds lanes that overhang from the band above. The plan
+# orders every part of both gaps and asks for 9.25 px and 10 px of growth (against the 60 px band gap).
+# Test-only input owned by ranked-groups ticket 48; test/layout/gap-plan.test.ts reads the placed model.
+portograph: 2
+groups:
+  src: { tier: 0 }
+  access: { tier: 1 }
+  edge-far: { tier: 2 }
+  edge-near: { tier: 2 }
+nodes:
+  isp0: { group: src, class: router, ports: [] }
+  isp1: { group: src, class: router, ports: [] }
+  sw0: { group: access, class: switch, ports: [] }
+  sw1: { group: access, class: switch, ports: [] }
+  sw2: { group: access, class: switch, ports: [] }
+  sw3: { group: access, class: switch, ports: [] }
+  sw4: { group: access, class: switch, ports: [] }
+  srv0: { group: edge-near, class: server, ports: [] }
+  srv1: { group: edge-far, class: server, ports: [] }
+links:
+  - [isp0, sw0]
+  - [isp1, sw1]
+  - [isp0, sw2]
+  - [isp1, sw3]
+  - [isp0, sw4]
+  - [sw0, srv1]
+  - [sw1, srv0]
+  - [sw2, srv0]
+  - [sw3, srv1]
+  - [sw4, srv0]
+  - [isp0, srv1]
+  - [isp1, srv0]
