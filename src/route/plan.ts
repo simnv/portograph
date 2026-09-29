@@ -44,8 +44,12 @@ export type RoutePiece =
   | { kind: 'reserved'; segments: PathSegment[] }
   | { kind: 'allocated'; segments: PathSegment[] }
   | { kind: 'straight'; segments: PathSegment[] }
-  /** `via` is the connector's checkpoints, in order: the points the router must pass between the two ends. */
-  | { kind: 'gap'; connector: string; from: Point; to: Point; via: Point[] };
+  /**
+   * `via` is the connector's checkpoints, in order: the points the router must pass between the two ends.
+   * `producers` names, for each one, the rule that asked for it (`stem:<port>`, `lane:<lane>`,
+   * `entry:<port>`), so a checkpoint the router skips can be reported by what reserved it.
+   */
+  | { kind: 'gap'; connector: string; from: Point; to: Point; via: Point[]; producers: string[] };
 
 export interface LinkPlan {
   link: string;
@@ -103,7 +107,7 @@ export function routeParameters(model: LayoutModel): Record<string, number> {
 }
 
 export const effectiveLayer = (link: LayoutLink): 'routed' | 'overlay' => link.layer ?? link.family ?? 'routed';
-const drawn = (link: LayoutLink): boolean => link.technique !== 'stub' && link.attachments !== undefined;
+const drawn = (link: LayoutLink): boolean => link.technique !== 'stub' && link.removed !== true && link.attachments !== undefined;
 
 /** Ports carrying more than one link end cannot hold an exclusive pin, fixed ends included. */
 function portUsage(model: LayoutModel): Map<string, number> {
@@ -240,17 +244,17 @@ export function planRoute(model: LayoutModel): RoutePlan {
         // A reserved corridor admits only its owner's collinear run, so the gap beside it joins
         // head-on: one approach checkpoint the standard stem away, outside the reservation. Each
         // checkpoint carries the reach placement reserved for it, from the terminal it belongs to.
-        const asked: { checkpoint: RouteCheckpoint; terminal: Point; node?: string; side?: Side; port?: string }[] = [
+        const asked: { checkpoint: RouteCheckpoint; terminal: Point; producer: string; node?: string; side?: Side; port?: string }[] = [
           ...(first && from.checkpoint ? [{ checkpoint: { ...from.checkpoint, arrival: DIRECTION_BITS[OPPOSITE[from.port!.side!]], departure: ALL_DIRECTIONS },
-            terminal: from.point, node: from.port!.ref.node, side: from.port!.side!, port: portId(from.port!.ref) }] : []),
+            terminal: from.point, producer: `stem:${portId(from.port!.ref)}`, node: from.port!.ref.node, side: from.port!.side!, port: portId(from.port!.ref) }] : []),
           // Only a lane is a corridor that admits its owner's run alone, so only a lane asks the gap
           // beside it to join head-on. A leg's run is entered from the side by construction — the
           // stem reaches its slot and turns into it — and an approach point on the leg's own line
           // is one the router cannot reach (ADR-0015 rule 1).
-          ...(first || fixed[index - 1]!.lane === undefined ? [] : [{ checkpoint: approachCheckpoint(fixed[index - 1]!, 'to'), terminal: fixed[index - 1]!.to }]),
-          ...(last || fixed[index]!.lane === undefined ? [] : [{ checkpoint: approachCheckpoint(fixed[index]!, 'from'), terminal: fixed[index]!.from }]),
+          ...(first || fixed[index - 1]!.lane === undefined ? [] : [{ checkpoint: approachCheckpoint(fixed[index - 1]!, 'to'), terminal: fixed[index - 1]!.to, producer: `lane:${fixed[index - 1]!.lane}` }]),
+          ...(last || fixed[index]!.lane === undefined ? [] : [{ checkpoint: approachCheckpoint(fixed[index]!, 'from'), terminal: fixed[index]!.from, producer: `lane:${fixed[index]!.lane}` }]),
           ...(last && to.checkpoint ? [{ checkpoint: { ...to.checkpoint, arrival: ALL_DIRECTIONS, departure: DIRECTION_BITS[OPPOSITE[to.port!.side!]] },
-            terminal: to.point, node: to.port!.ref.node, side: to.port!.side!, port: portId(to.port!.ref) }] : []),
+            terminal: to.point, producer: `stem:${portId(to.port!.ref)}`, node: to.port!.ref.node, side: to.port!.side!, port: portId(to.port!.ref) }] : []),
           // A checkpoint the adjacent reserved run already passes through, head-on and strictly
           // inside a segment, is consumed by that run: a junction leaf that reaches deeper than a
           // lane's approach point has honoured it, and the gap starting at the leaf could only
@@ -279,11 +283,11 @@ export function planRoute(model: LayoutModel): RoutePlan {
           // edge is reserved as well, in traversal order: after the source stem, before the target's.
           if (last && to.checkpoint && asked.at(-1)?.port === portId(to.port!.ref)) {
             asked.splice(asked.length - 1, 0, ...entryCheckpoint(model, link, 'to', to.port!, to.checkpoint, start.point, obstacles, boxes)
-              .map(checkpoint => ({ checkpoint, terminal: to.point })));
+              .map(checkpoint => ({ checkpoint, terminal: to.point, producer: `entry:${portId(to.port!.ref)}` })));
           }
           if (first && from.checkpoint && asked[0]?.port === portId(from.port!.ref)) {
             asked.splice(1, 0, ...entryCheckpoint(model, link, 'from', from.port!, from.checkpoint, end.point, obstacles, boxes)
-              .map(checkpoint => ({ checkpoint, terminal: from.point })));
+              .map(checkpoint => ({ checkpoint, terminal: from.point, producer: `entry:${portId(from.port!.ref)}` })));
           }
           // Only an attachment stem is reserved against the batches still to run. Reserving the lane
           // approach as well was measured and left out; see `.scratch/stress/issues/02`.
@@ -295,7 +299,8 @@ export function planRoute(model: LayoutModel): RoutePlan {
               segment: { from: { ...item.terminal }, to: { x: item.checkpoint.x, y: item.checkpoint.y } } });
           }
           connectors.push({ id, from: start.endpoint, to: end.endpoint, checkpoints: asked.map(item => item.checkpoint) });
-          pieces.push({ kind: 'gap', connector: id, from: start.point, to: end.point, via: asked.map(item => ({ x: item.checkpoint.x, y: item.checkpoint.y })) });
+          pieces.push({ kind: 'gap', connector: id, from: start.point, to: end.point, via: asked.map(item => ({ x: item.checkpoint.x, y: item.checkpoint.y })),
+            producers: asked.map(item => item.producer) });
         }
       }
       if (!last) pieces.push({ kind: woven.allocated.has(index) ? 'allocated' : 'reserved', segments: [fixed[index]!] });

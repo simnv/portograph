@@ -153,7 +153,9 @@ recorded beside them. Guard against a gamed count: collinear-overlap count (tick
 Corpus: the geometry differential over `goldens/` and `goldens/synthetic/` against main, per input.
 An input without intra-group routed links and without overlay links must be byte-identical in
 layout JSON: a one-rank group's frame is today's group box. An input with overlay links is compared
-per input, and a move is accepted only where the straight overlay count rises or holds.
+per input, and a move is accepted only where the straight overlay count rises or holds, or where
+the group entered the x-span of its overlay partners (a group with no routed link that stands outside
+that span is first moved into it, accepted on the total length of its overlay links; ticket 22).
 
 ## Section 6 — Docs
 

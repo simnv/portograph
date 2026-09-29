@@ -54,7 +54,7 @@ export function port(model: LayoutModel, ref: PortRef): LayoutPort | undefined {
 export function effectiveLayer(link: LayoutLink): Layer {
   return link.layer ?? (link.technique !== undefined ? link.technique === 'overlay' ? 'overlay' : 'routed' : link.family ?? link.path?.layer ?? 'routed');
 }
-export const routed = (link: LayoutLink): boolean => effectiveLayer(link) === 'routed' && link.technique !== 'stub';
+export const routed = (link: LayoutLink): boolean => effectiveLayer(link) === 'routed' && link.technique !== 'stub' && link.removed !== true;
 export function segments(model: LayoutModel): Segment[] {
   return model.links.filter(routed).flatMap(link => link.path!.segments.map((segment, index) => ({ segment, link, index, stroke: linkStrokeWidth(link) })));
 }
@@ -87,7 +87,7 @@ export function validate(model: LayoutModel): void {
   for (const link of model.links) {
     endpoints(link);
     if (link.path && link.path.layer !== effectiveLayer(link)) throw new Error(`link ${link.id} path layer conflicts with its effective layer`);
-    if (link.technique !== 'stub' && (!link.path || !link.path.segments.length)) throw new Error(`link ${link.id} requires final path`);
+    if (link.technique !== 'stub' && link.removed !== true && (!link.path || !link.path.segments.length)) throw new Error(`link ${link.id} requires final path`);
     if (link.path?.strokeWidth !== undefined && link.path.strokeWidth < 0) throw new Error(`link ${link.id} strokeWidth must be nonnegative`);
     for (const s of link.path?.segments ?? []) {
       if (!s.from || !s.to || ![s.from.x, s.from.y, s.to.x, s.to.y].every(n => typeof n === 'number')) throw new Error(`link ${link.id} requires finite segment endpoints`);

@@ -51,6 +51,8 @@ export interface LayoutOptions {
   elkBudgetMs?: number;
   /** Stage-8 policy ceiling. */
   routeBudgetMs?: number;
+  /** Stage 8 throws on a skipped required checkpoint instead of removing the link; for tests of the router's reservations. */
+  strictCheckpoints?: boolean;
   clock?: ElkClock;
   onProgress?: (progress: LayoutProgress) => void;
 }
@@ -101,6 +103,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   model = await route(model, {
     ...(options.createRouteAttempt ? { createAttempt: options.createRouteAttempt } : {}),
     ...(clock ? { clock } : {}),
+    ...(options.strictCheckpoints ? { strictCheckpoints: true } : {}),
     // The router's own timer must be positive; the remainder was checked one line above, and a
     // 1 ms floor keeps the session honest rather than letting it fall back to a fresh 30 s.
     routeBudgetMs: Math.max(1, budget.share(options.routeBudgetMs ?? ROUTE_BUDGET_MS)),

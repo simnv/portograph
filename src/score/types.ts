@@ -16,7 +16,7 @@ export interface ScoreMetrics {
 }
 export interface ScoreCounters {
   overlaps: number; bundledLength: number; barCross: number; labelHits: number;
-  labelsOmitted: number; stubs: number; groupLinks: number; lanesUsed: number;
+  labelsOmitted: number; stubs: number; removedLinks: number; groupLinks: number; lanesUsed: number;
   inversions: number; fallbackUsed: boolean; deadlineHit: boolean;
 }
 export interface ScoreAdvisory { metric: string; actual: number; target: number; relation: '<=' | '>=' }

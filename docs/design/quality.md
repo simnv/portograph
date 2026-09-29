@@ -69,7 +69,7 @@ reported separately and does not contribute to either sum.
 Use raw `c/m` in assertions, never the Purchase-normalised form (it saturates near 1 for every
 non-random layout).
 
-Also reported: `overlaps`, `bundledLength`, `barCross`, `labelHits`, `labelsOmitted`, `stubs`,
+Also reported: `overlaps`, `bundledLength`, `barCross`, `labelHits`, `labelsOmitted`, `stubs`, `removedLinks`,
 `groupLinks`, `lanesUsed`, `inversions`, `fallbackUsed`, `deadlineHit`, canvas size, and (outside
 the snapshot block) layout time per stage.
 

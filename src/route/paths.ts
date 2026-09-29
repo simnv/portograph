@@ -37,13 +37,52 @@ export function polylineDistance(points: Point[], point: Point, after = -1): num
  * judged by the stem and reservation checks on the stitched path.
  */
 export function checkpointsHonoured(points: Point[], checkpoints: RouteCheckpoint[]): boolean {
+  return firstSkippedCheckpoint(points, checkpoints) < 0;
+}
+
+/** The index of the first checkpoint the route does not pass in order, or -1 when it passes them all. */
+export function firstSkippedCheckpoint(points: Point[], checkpoints: RouteCheckpoint[]): number {
   let cursor = -1;
-  for (const checkpoint of checkpoints) {
+  for (const [index, checkpoint] of checkpoints.entries()) {
     const at = polylineDistance(points, checkpoint, cursor);
-    if (at < 0) return false;
+    if (at < 0) return index;
     cursor = at;
   }
-  return true;
+  return -1;
+}
+
+/**
+ * Why stage 8 discarded a link's route (ticket 24). `ROUTE_CHECKPOINT_SKIPPED` names the checkpoint the router
+ * missed and the rule that asked for it; `ROUTE_GAP_REJECTED` carries the reason stitching refused the route
+ * (an end not met, a diagonal, a zero-length run, no answer). Either way the link is removed.
+ */
+export interface RouteRejection {
+  link: string;
+  code: 'ROUTE_CHECKPOINT_SKIPPED' | 'ROUTE_GAP_REJECTED';
+  reason: string;
+  connector?: string;
+  checkpoint?: Point;
+  producer?: string;
+}
+
+/**
+ * The first required checkpoint any routed gap of this link skips, or undefined when the link's routes
+ * honour them all. A connector with no route yet is not judged.
+ */
+export function skippedCheckpoint(plan: LinkPlan, routes: Map<string, Point[]>): RouteRejection | undefined {
+  for (const piece of plan.pieces) {
+    if (piece.kind !== 'gap') continue;
+    const points = routes.get(piece.connector);
+    if (!points) continue;
+    const connector = plan.connectors.find(item => item.id === piece.connector)!;
+    const index = firstSkippedCheckpoint(points, connector.checkpoints);
+    if (index >= 0) {
+      const { x, y } = connector.checkpoints[index]!;
+      return { link: plan.link, code: 'ROUTE_CHECKPOINT_SKIPPED', reason: `Router skipped a required checkpoint on ${piece.connector}`,
+        connector: piece.connector, checkpoint: { x, y }, producer: piece.producers[index] ?? 'unknown' };
+    }
+  }
+  return undefined;
 }
 
 /** Drop repeated and collinear vertices inside one gap; ownership boundaries are never merged. */
@@ -71,6 +110,12 @@ export function ownedLanes(model: LayoutModel, link: LayoutLink): Lane[] {
 }
 
 /**
+ * A judgement on the router's answer for one gap: the points it returned cannot be drawn as this link's route.
+ * Only these are rejections (ticket 24); any other throw in stitching is a defect and stays fatal.
+ */
+export class GapRejected extends Error {}
+
+/**
  * Split and annotate a routed gap where it meets its own reserved lanes. A lane admits only its
  * owner's collinear run carrying the lane's own id, so each piece names exactly the one lane it
  * touches — the same shape the region rules produce for a lane they own.
@@ -79,9 +124,9 @@ export function laneRuns(model: LayoutModel, link: LayoutLink, segment: PathSegm
   const lanes = ownedLanes(model, link).filter(lane => segmentRect(segment, lane.bounds))
     .sort((a, b) => a.bounds.y - b.bounds.y);
   if (!lanes.length) return [segment];
-  if (!vertical(segment)) throw new Error(`Routed gap on ${link.id} crosses reserved lane ${lanes[0]!.id} sideways`);
+  if (!vertical(segment)) throw new GapRejected(`Routed gap on ${link.id} crosses reserved lane ${lanes[0]!.id} sideways`);
   if (lanes.some(lane => Math.abs(segment.from.x - lane.x) > EPS)) {
-    throw new Error(`Routed gap on ${link.id} enters reserved lane ${lanes[0]!.id} off its centre`);
+    throw new GapRejected(`Routed gap on ${link.id} enters reserved lane ${lanes[0]!.id} off its centre`);
   }
   const low = Math.min(segment.from.y, segment.to.y), high = Math.max(segment.from.y, segment.to.y);
   const cuts = new Set<number>();
@@ -106,16 +151,16 @@ export function laneRuns(model: LayoutModel, link: LayoutLink, segment: PathSegm
 
 function gapSegments(model: LayoutModel, link: LayoutLink, points: Point[], from: Point, to: Point): PathSegment[] {
   const simplified = simplify(points);
-  if (simplified.length < 2) throw new Error(`Router returned no usable route for ${link.id}`);
+  if (simplified.length < 2) throw new GapRejected(`Router returned no usable route for ${link.id}`);
   if (!samePoint(simplified[0]!, from) || !samePoint(simplified.at(-1)!, to)) {
-    throw new Error(`Routed gap on ${link.id} does not meet its reserved endpoints`);
+    throw new GapRejected(`Routed gap on ${link.id} does not meet its reserved endpoints`);
   }
   const owner = { kind: 'link' as const, id: link.id };
   return simplified.slice(1).flatMap((point, index) => {
     const segment = { from: { ...simplified[index]! }, to: { ...point }, owner: { ...owner } };
-    if (!Number.isFinite(segment.to.x) || !Number.isFinite(segment.to.y)) throw new Error(`Routed gap on ${link.id} is not finite`);
-    if (!horizontal(segment) && !vertical(segment)) throw new Error(`Routed gap on ${link.id} is not orthogonal`);
-    if (length(segment) <= EPS) throw new Error(`Routed gap on ${link.id} has a zero-length segment`);
+    if (!Number.isFinite(segment.to.x) || !Number.isFinite(segment.to.y)) throw new GapRejected(`Routed gap on ${link.id} is not finite`);
+    if (!horizontal(segment) && !vertical(segment)) throw new GapRejected(`Routed gap on ${link.id} is not orthogonal`);
+    if (length(segment) <= EPS) throw new GapRejected(`Routed gap on ${link.id} has a zero-length segment`);
     return laneRuns(model, link, segment);
   });
 }
@@ -179,15 +224,44 @@ function joinSeams(segments: PathSegment[], claimed: readonly boolean[]): PathSe
   return result;
 }
 
-export function stitchPaths(model: LayoutModel, plan: RoutePlan, routes: Map<string, Point[]>): RoutedLinkPath[] {
-  const result: RoutedLinkPath[] = plan.links.map(item => ({ link: item.link, path: stitchPath(model, item, routes) }));
+export type Stitched = { path: LayoutPath } | { rejection: RouteRejection };
+
+/**
+ * One link's final path, or the reason its route is unusable. A route that skips a required checkpoint, and a
+ * route that stitching refuses for any other reason, are the same class: the link cannot be drawn, and the
+ * sheet can (ticket 24). Nothing else about the link is judged here.
+ */
+export function tryStitch(model: LayoutModel, plan: LinkPlan, routes: Map<string, Point[]>): Stitched {
+  const skipped = skippedCheckpoint(plan, routes);
+  if (skipped) return { rejection: skipped };
+  try { return { path: stitchPath(model, plan, routes) }; }
+  catch (error) {
+    if (!(error instanceof GapRejected)) throw error;
+    return { rejection: { link: plan.link, code: 'ROUTE_GAP_REJECTED', reason: error.message } };
+  }
+}
+
+/**
+ * Every routed link's path, in plan order, then the overlay links. Without `stitched` the first unusable route
+ * throws (strict). With it, an unusable route is a rejection instead: `stitched` holds the links stage 8
+ * already judged after their batch, and any other link is judged here.
+ */
+export function stitchPaths(model: LayoutModel, plan: RoutePlan, routes: Map<string, Point[]>,
+  stitched?: ReadonlyMap<string, Stitched>): { paths: RoutedLinkPath[]; rejections: RouteRejection[] } {
+  const rejections: RouteRejection[] = [];
+  const result: RoutedLinkPath[] = [];
+  for (const item of plan.links) {
+    if (!stitched) { result.push({ link: item.link, path: stitchPath(model, item, routes) }); continue; }
+    const done = stitched.get(item.link) ?? tryStitch(model, item, routes);
+    if ('rejection' in done) rejections.push(done.rejection); else result.push({ link: item.link, path: done.path });
+  }
   // An overlay link never enters the router: its path is derived from the boxes placement reserved,
   // so stage 8 only publishes what `src/layout/overlay-paths.ts` states. One index serves them all.
   const blockers = plan.overlay.length ? overlayBlockers(model) : undefined;
   for (const id of plan.overlay) {
     result.push({ link: id, path: overlayPath(model, model.links.find(link => link.id === id)!, blockers) });
   }
-  return result;
+  return { paths: result, rejections };
 }
 
 /**
