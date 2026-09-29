@@ -373,9 +373,10 @@ function overlayRange(model: LayoutModel, unit: Unit, tier: Unit[], free: Readon
 }
 
 /** What keeps a column from its feed: an overlay link to a group that stays, a lane it may not cross, or its siblings. */
-type HeldBy = 'overlay' | 'lane' | 'siblings';
+type HeldBy = 'overlay' | 'segment' | 'lane' | 'siblings';
 const HELD_TEXT: Record<HeldBy, string> = {
   overlay: 'an overlay link to a group that stays holds it',
+  segment: 'an overlay segment holds it',
   lane: 'a reserved lane it would cross holds it',
   siblings: 'its siblings hold it a band gap away',
 };
@@ -410,8 +411,21 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, authority:
   for (const [i, item] of standing.entries()) { offsets.push(sum); sum += item.width + gap + item.slack + (standing[i + 1]?.slack ?? 0); }
   // A pinned unit stays where the overlay order put it; it bounds the units on either side, whose plan is
   // clamped to it, which is exact for a fixed point.
-  const plan = (pins: ReadonlySet<Unit>): number[] => {
-    const fixed = standing.map((item, i) => pins.has(item.unit) ? item.x - offsets[i]! : undefined);
+  // The held points, as z = x - offset, must not fall along the tier, or the clamp below is not exact and a held frame
+  // would move: the geometry after the later rules can stand closer than the plan keeps frames (they slide into
+  // the column slack). So the pins are taken first, in order, and a held point that would fall is dropped from the
+  // pins; then the frames that only reach where they stand (`extra`) are added where they fit between the held ones.
+  const plan = (pins: ReadonlySet<Unit>, extra: ReadonlySet<Unit> = new Set()): number[] => {
+    const at = standing.map((item, i) => item.x - offsets[i]!);
+    const fixed: (number | undefined)[] = standing.map(() => undefined);
+    let last = -Infinity;
+    for (const [i, item] of standing.entries()) if (pins.has(item.unit) && at[i]! >= last - PLACEMENT_EPS) { fixed[i] = at[i]; last = at[i]!; }
+    for (const [i, item] of standing.entries()) {
+      if (fixed[i] !== undefined || !extra.has(item.unit)) continue;
+      const lower = Math.max(-Infinity, ...fixed.slice(0, i).filter((z): z is number => z !== undefined));
+      const upper = Math.min(Infinity, ...fixed.slice(i + 1).filter((z): z is number => z !== undefined));
+      if (at[i]! >= lower - PLACEMENT_EPS && at[i]! <= upper + PLACEMENT_EPS) fixed[i] = at[i];
+    }
     const below = fixed.map((_, i) => Math.max(-Infinity, ...fixed.slice(0, i + 1).filter((z): z is number => z !== undefined)));
     const above = fixed.map((_, i) => Math.min(Infinity, ...fixed.slice(i).filter((z): z is number => z !== undefined)));
     const fit = (wanted: number[]): number[] => {
@@ -443,8 +457,8 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, authority:
   const short = (at: number[]): boolean => standing.some((item, i) => wanting.has(item.unit) && (at[i]! < item.from - PLACEMENT_EPS || at[i]! > item.to + PLACEMENT_EPS));
   let lefts = plan(pinned);
   if (pinned.size > 0 && short(lefts)) {
-    const reaching = new Set([...pinned, ...standing.filter(item => wanting.has(item.unit) && item.from <= item.x + PLACEMENT_EPS && item.to >= item.x - PLACEMENT_EPS).map(item => item.unit)]);
-    lefts = plan(reaching);
+    const reaching = new Set(standing.filter(item => wanting.has(item.unit) && item.from <= item.x + PLACEMENT_EPS && item.to >= item.x - PLACEMENT_EPS).map(item => item.unit));
+    lefts = plan(pinned, reaching);
   }
   const shifts = new Map<LayoutGroup, number>();
   for (const [i, item] of standing.entries()) {
@@ -455,10 +469,12 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, authority:
   // A move must not put a frame into the way of an overlay link that is one straight segment: the cells slide
   // inside the box later, so the box is what the segment must clear, and the link would be routed round the
   // cells. The plan is refused as a whole, as for a lane, and the columns stay where they stand.
-  const segments = allowed ? straightOverlays(model) : [];
+  const straight = allowed ? straightOverlays(model) : [];
   const before = new Map(deriveFrames(model)?.map(frame => [frame.id, frame.box]));
   if (allowed) for (const [group, dx] of shifts) moveGroup(model, group, dx, 0);
   const after = new Map(deriveFrames(model)?.map(frame => [frame.id, frame.box]));
+  // The ends are read after the move: a frame that ends a link takes its own ports with it.
+  const segments = straightOverlays(model, new Set(straight.map(({ id }) => id)));
   const blocked = segments.some(({ ends, from, to }) => standing.some(item => {
     const was = item.unit.frame ? before.get(item.unit.id) : undefined, now = item.unit.frame ? after.get(item.unit.id) : undefined;
     return was !== undefined && now !== undefined && shifts.has(item.unit.groups[0]!) && !item.unit.groups.some(group => ends.has(group.id))
@@ -466,19 +482,19 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, authority:
   }));
   if (blocked) for (const [group, dx] of shifts) moveGroup(model, group, -dx, 0);
   const refused = shifts.size > 0 && (!allowed || blocked);
-  if (refused) for (const item of standing) if (shifts.has(item.unit.groups[0]!) && !held.has(item.unit)) held.set(item.unit, blocked ? 'overlay' : 'lane');
+  if (refused) for (const item of standing) if (shifts.has(item.unit.groups[0]!) && !held.has(item.unit)) held.set(item.unit, blocked ? 'segment' : 'lane');
   reportHeld(model, tier, feeds, held);
   return allowed && !blocked;
 }
 
 /** The attached overlay links that stand as one straight segment now, with the groups at their ends. */
-function straightOverlays(model: LayoutModel): { ends: Set<string>; from: Point; to: Point }[] {
-  const found: { ends: Set<string>; from: Point; to: Point }[] = [];
+function straightOverlays(model: LayoutModel, only?: ReadonlySet<string>): { id: string; ends: Set<string>; from: Point; to: Point }[] {
+  const found: { id: string; ends: Set<string>; from: Point; to: Point }[] = [];
   for (const link of model.links) {
-    if (link.layer !== 'overlay' || !link.attachments) continue;
+    if (link.layer !== 'overlay' || !link.attachments || (only && !only.has(link.id))) continue;
     const { segments } = overlayPath(model, link);
     if (segments.length !== 1) continue;
-    found.push({ ends: new Set([link.attachments.from.node, link.attachments.to.node].map(node => model.document.nodes[node]!.group)), from: segments[0]!.from, to: segments[0]!.to });
+    found.push({ id: link.id, ends: new Set([link.attachments.from.node, link.attachments.to.node].map(node => model.document.nodes[node]!.group)), from: segments[0]!.from, to: segments[0]!.to });
   }
   return found;
 }

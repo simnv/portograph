@@ -78,12 +78,25 @@ describe('columns hold their feed axis after rows and centre', () => {
     const model = await run(`${stem}\n  - [west-1, two-s5, { route: overlay }]\n`);
     const held = model.diagnostics.filter(diagnostic => diagnostic.code === COLUMN_AXIS_HELD && diagnostic.owners?.some(owner => 'id' in owner && owner.id === 'two'));
     expect(held).toHaveLength(1);
-    expect(held[0]!.message).toContain('overlay link');
+    expect(held[0]!.message).toContain('an overlay link to a group that stays holds it');
     expect(held[0]!.message).not.toContain('siblings');
   }, 180000);
 
+  it('a plan that would put a frame across a straight overlay link is refused, and says an overlay segment holds it', async () => {
+    // In the six-sync fixture the overlay link `ntp1` to `b-edge` is one diagonal. Pulling `a` under its feed slides the
+    // cells of `a` into it, so the plan is refused as a whole and the link stays one segment.
+    const model = await run(readFileSync(new URL('../../goldens/synthetic/an-overlay-frame-reorder-is-refused-with-six-sync-links.yaml', import.meta.url), 'utf8'));
+    const ntp = model.links.find(link => link.layer === 'overlay' && [link.attachments!.from.node, link.attachments!.to.node].sort().join() === 'b-edge,ntp1')!;
+    expect(ntp.path!.segments).toHaveLength(1);
+    const held = model.diagnostics.filter(diagnostic => diagnostic.code === COLUMN_AXIS_HELD && diagnostic.owners?.some(owner => 'id' in owner && owner.id === 'a'));
+    expect(held).toHaveLength(1);
+    expect(held[0]!.message).toContain('an overlay segment holds it');
+  }, 60000);
+
   it('is idempotent: once the pass has run on a layout, a second run moves nothing', async () => {
-    for (const source of [reachable, forcedInput]) {
+    const golden = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+    const overlays = ['overlay-links-reorder-two-locations', 'an-overlay-frame-reorder-is-refused-with-six-sync-links', 'overlay-ends-keep-the-feed-axis'].map(golden);
+    for (const source of [reachable, forcedInput, ...overlays]) {
       const model = structuredClone(await run(source));
       holdColumnAxes(model);
       const before = JSON.stringify(Object.values(model.groups).map(group => group.bounds));
