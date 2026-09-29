@@ -607,6 +607,18 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     if (rule === 'bars' && draft.document.groups[id]!.shape !== 'bar') same(group, model.groups[id], 'Bars cannot move another group');
     if (rule === 'flanks' && !group.flank && !Object.values(model.groups).some(g => g.flank?.of === id)) same(group, model.groups[id], 'Flanks cannot move another group');
   }
+  // Rows may re-seat a band, and the relaxation above is bounded by it: every flank and non-row group of a
+  // band takes one shift, the shift of the band itself (a row group's own box also refits to its nodes).
+  if (rule === 'rows') {
+    for (const band of model.tierBands) {
+      const now = draft.tierBands.find(item => item.tier === band.tier)!;
+      const shifts = band.groups.filter(id => model.groups[id]!.flank || groupShape(draft, id) !== 'row')
+        .map(id => draft.groups[id]!.bounds!.y - model.groups[id]!.bounds!.y);
+      if (shifts.some(shift => Math.abs(shift - (now.bounds!.y - band.bounds!.y)) > 1e-6)) {
+        throw new Error(`Rows must re-seat every flank and non-row group of tier band ${band.tier} by the band's own shift`);
+      }
+    }
+  }
   if (model.canvas && draft.canvas && (draft.canvas.x > model.canvas.x || draft.canvas.y > model.canvas.y
     || draft.canvas.x + draft.canvas.width < model.canvas.x + model.canvas.width
     || draft.canvas.y + draft.canvas.height < model.canvas.y + model.canvas.height)) throw new Error('Canvas may only expand');
@@ -641,7 +653,8 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
         const dy = node.bounds!.y - old.bounds!.y;
         same(node, { ...old, bounds: { ...old.bounds!, y: old.bounds!.y + dy }, ports: old.ports.map(port => ({ ...port,
           ...(port.anchor ? { anchor: { x: port.anchor.x, y: port.anchor.y + dy } } : {}),
-          ...(port.pill ? { pill: { ...port.pill, bounds: { ...port.pill.bounds, y: port.pill.bounds.y + dy } } } : {}) })) }, 'Rows can only translate a flank or non-row node with its band');
+          ...(port.pill ? { pill: { ...port.pill, bounds: { ...port.pill.bounds, y: port.pill.bounds.y + dy } } } : {}) })),
+          ...(old.icon ? { icon: { ...old.icon, bounds: { ...old.icon.bounds, y: old.icon.bounds.y + dy } } } : {}) }, 'Rows can only translate a flank or non-row node with its band');
         same(dy, draft.groups[model.document.nodes[id]!.group]!.bounds!.y - model.groups[model.document.nodes[id]!.group]!.bounds!.y, 'A flank or non-row node moves with its group');
       };
       if (model.groups[model.document.nodes[id]!.group]!.flank) seated();
