@@ -38,7 +38,26 @@ describe('tier gaps compact (ranked-groups ticket 18)', () => {
     const heights = bands.reduce((sum, band) => sum + band.bounds!.height, 0);
     expect(Math.abs(last.y + last.height - first.y - (heights + gaps))).toBeLessThan(EPS);
     const canvas = model.canvas!, floor = model.legend ? model.legend.bounds.y + model.legend.bounds.height : last.y + last.height;
-    expect(canvas.y + canvas.height).toBeCloseTo(floor + CANVAS_MARGIN, -0.5);
-    expect(first.y - canvas.y).toBeCloseTo(CANVAS_MARGIN, -0.5);
+    expect(Math.abs(canvas.y + canvas.height - (floor + CANVAS_MARGIN))).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(first.y - canvas.y - CANVAS_MARGIN)).toBeLessThanOrEqual(0.5);
+  }, 60000);
+
+  it('a re-seated band carries its bar and its flank, icons included', async () => {
+    const model = await layout(parse(fixture('a-re-seated-band-carries-its-bar-and-flank')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    expect(model.diagnostics.filter(diagnostic => diagnostic.severity === 'error')).toEqual([]);
+    const bands = [...model.tierBands].sort((a, b) => a.bounds!.y - b.bounds!.y);
+    expect(bands.length).toBeGreaterThanOrEqual(5);
+    // The bar and the flank stand where their bands stand: the flank's box lies in the band of its tier.
+    for (const id of ['rails', 'side']) {
+      const band = bands.find(item => item.groups.includes(id))!;
+      expect(model.groups[id]!.bounds!.y).toBeGreaterThanOrEqual(band.bounds!.y - EPS);
+    }
+    expect(model.nodes.rail!.icon).toBeDefined();
+    expect(model.nodes.s1!.icon).toBeDefined();
+    const gap = bandGap(model);
+    for (const [i, band] of bands.slice(1).entries()) {
+      const above = bands[i]!.bounds!;
+      expect(band.bounds!.y - (above.y + above.height) - gap, `gap above tier ${band.tier}`).toBeGreaterThanOrEqual(-EPS);
+    }
   }, 60000);
 });
