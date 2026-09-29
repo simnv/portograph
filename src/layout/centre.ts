@@ -3,7 +3,7 @@ import type { Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
 import { laneSidesHold, nodeTier, occupiedOverhang, selectAnchorTier } from './lanes.js';
 import { cellReach } from './frames.js';
-import { frameColumns, type FrameColumn } from './columns.js';
+import { besideWalls, frameColumns, type CellWindow, type FrameColumn } from './columns.js';
 import { findPort } from './row-paths.js';
 import { portId, bandGap } from './skeleton-graph.js';
 import { moveGroup } from './skeleton-geometry.js';
@@ -142,6 +142,8 @@ interface CentreContext {
   flankLimits: Map<number, WideningLimit>;
   /** The columns of the top-level frames when centring began: the wall no cell of a frame leaves (ticket 09). */
   columns: readonly FrameColumn[];
+  /** The walls between the columns of one parent, when centring began (ticket 28). */
+  walls: ReadonlyMap<string, CellWindow>;
 }
 /** Everything one centring pass reads but never writes: step order, winners, group order, lane windows. */
 function centreContext(model: LayoutModel, anchor: number, columns: readonly FrameColumn[] = frameColumns(model)): CentreContext {
@@ -171,7 +173,7 @@ function centreContext(model: LayoutModel, anchor: number, columns: readonly Fra
     if (flank.flank!.align === 'left') limit.low = Math.max(limit.low, right(flank.bounds!) + bandGap(model));
     else limit.high = Math.min(limit.high, flank.bounds!.x - bandGap(model));
   }
-  return { steps, winners, groupOrder, limits, flankLimits, columns };
+  return { steps, winners, groupOrder, limits, flankLimits, columns, walls: besideWalls(model) };
 }
 /**
  * The window a group of `tier` may never leave. A fixed lane of 7a stays on the side that holds it,
@@ -208,7 +210,8 @@ function columnWindow(model: LayoutModel, context: CentreContext, tier: number, 
   if (own) {
     // A child frame stands inside its parent's box with the group margin to spare, at every level.
     const reach = cellReach(model, id), inset = GROUP_PADDING * frameDepth(model, id);
-    return { low: own.x + inset + (box.x - reach.x), high: own.x + own.width - inset - (reach.x + reach.width - (box.x + box.width)) };
+    const wall = context.walls.get(id) ?? { low: -Infinity, high: Infinity };
+    return { low: Math.max(wall.low, own.x + inset + (box.x - reach.x)), high: Math.min(wall.high, own.x + own.width - inset - (reach.x + reach.width - (box.x + box.width))) };
   }
   const window = { low: -Infinity, high: Infinity };
   if (!context.columns.some(column => column.from <= tier && tier <= column.to)) return window;

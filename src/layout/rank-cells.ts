@@ -57,12 +57,12 @@ export function expandRankedGroups(model: LayoutModel): NormalisedDocument | und
       plans.set(id, { id, cells: [], k: 1, anchoredFrom, children, expands: false });
       continue;
     }
-    const { ranks, rankCount, anchoredFrom, spans } = deriveRanks(input);
+    const { ranks, rankCount, anchoredFrom } = deriveRanks(input);
     const expands = rankCount > 1;
     const cells: Plan['cells'] = [];
-    if (expands) for (let rank = 0; rank < rankCount; rank += 1) {
-      const child = children.find(name => { const span = spans.get(name); return span !== undefined && span[0] <= rank && rank <= span[1]; });
-      const owner = child ?? id;
+    // One cell per owner and rank: a leaf child stands beside the parent members of its ranks (ticket 28),
+    // so sub-tier `r` may hold `G#r` and `child#r`, and two leaf children may share one too.
+    if (expands) for (let rank = 0; rank < rankCount; rank += 1) for (const owner of [id, ...children]) {
       const members = nodes.filter(node => source.nodes[node]!.group === owner && ranks.get(node) === rank);
       if (members.length) cells.push({ id: cellId(owner, rank), frame: owner, members, rank });
     }

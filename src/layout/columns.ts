@@ -1,6 +1,6 @@
 import type { Point, Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
-import { cellReach, deriveFrames } from './frames.js';
+import { cellReach, deriveFrames, frameNodes } from './frames.js';
 import { GROUP_PADDING } from './regions.js';
 import { laneSidesHold, selectAnchorTier } from './lanes.js';
 import { findPort } from './row-paths.js';
@@ -77,12 +77,101 @@ export function packFrameColumns(model: LayoutModel): Map<string, Column> {
   return columns;
 }
 
-/** The width of a frame's column: its widest cell, or its widest child frame with the margin on each side. */
-const frameWidth = (model: LayoutModel, id: string): number => {
+/**
+ * How the cells of one frame and its child frames stand across its column (ranked-groups ticket 28). Every cell
+ * of the frame is centred on one axis, and a child frame stands on that axis too, unless it shares a sub-tier
+ * with a cell of the frame or with a sibling child: a leaf child stands beside the parent members of its ranks,
+ * so the child frame and the parent's cells of those ranks are two disjoint columns, side by side, and the frame
+ * is as wide as that row of blocks. `left` and `right` are the extents of the column from the own axis, `at` the
+ * offset of the axis of each child from it. Frame boxes are read only from cell reaches, so the row keeps
+ * `COLUMN_SLACK` between a child frame and a parent cell: the child block is the child's column plus the margin on
+ * each side, and the parent cell's reach begins where that block ends.
+ */
+interface Stand { left: number; right: number; at: Map<string, number> }
+
+/** The sub-tiers a frame occupies, its own cells and its child frames' cells, from the first to the last. */
+function tierRange(model: LayoutModel, id: string): [number, number] {
   const frames = model.document.frames!;
-  const children = Object.keys(frames).filter(child => frames[child]!.parent === id);
-  return Math.max(0, ...frames[id]!.cells.map(cell => cellReach(model, cell).width), ...children.map(child => frameWidth(model, child) + 2 * GROUP_PADDING));
-};
+  const cells = [...frames[id]!.cells, ...Object.keys(frames).filter(child => frames[child]!.parent === id).flatMap(child => frames[child]!.cells)];
+  const tiers = cells.map(cell => model.groups[cell]!.tier!);
+  return [Math.min(...tiers), Math.max(...tiers)];
+}
+
+/** The x of the node centres at the far ends of the overlay links of `nodes` that leave `frame`, or `undefined` without one. */
+function partnerKey(model: LayoutModel, nodes: ReadonlySet<string>, inside: ReadonlySet<string>): number | undefined {
+  const xs: number[] = [];
+  for (const link of model.links) {
+    if (link.layer !== 'overlay' || !link.attachments) continue;
+    for (const [mine, other] of [[link.attachments.from.node, link.attachments.to.node], [link.attachments.to.node, link.attachments.from.node]] as [string, string][]) {
+      const box = model.nodes[other]?.bounds;
+      if (nodes.has(mine) && !inside.has(other) && box !== undefined) xs.push(box.x + box.width / 2);
+    }
+  }
+  return xs.length ? mean(xs) : undefined;
+}
+
+function standOf(model: LayoutModel, id: string, memo: Map<string, Stand>): Stand {
+  const known = memo.get(id);
+  if (known) return known;
+  const frames = model.document.frames!;
+  const childIds = Object.keys(frames).filter(child => frames[child]!.parent === id);
+  const width = (cells: readonly string[]): number => Math.max(0, ...cells.map(cell => cellReach(model, cell).width));
+  const blocks = childIds.map(child => {
+    const stand = standOf(model, child, memo), [low, high] = tierRange(model, child);
+    return { child, low, high, left: stand.left + GROUP_PADDING, right: stand.right + GROUP_PADDING };
+  });
+  const tierOf = (cell: string): number => model.groups[cell]!.tier!;
+  const shares = (block: typeof blocks[number]): boolean => frames[id]!.cells.some(cell => tierOf(cell) >= block.low && tierOf(cell) <= block.high)
+    || blocks.some(other => other !== block && other.low <= block.high && block.low <= other.high);
+  const beside = blocks.filter(shares), apart = blocks.filter(block => !beside.includes(block));
+  const standing = frames[id]!.cells.filter(cell => beside.some(block => tierOf(cell) >= block.low && tierOf(cell) <= block.high));
+  const at = new Map<string, number>();
+  // What is not in the row is centred on the axis: the frame's other cells and the children that share no sub-tier.
+  const rest = width(frames[id]!.cells.filter(cell => !standing.includes(cell)));
+  let left = Math.max(rest / 2, ...apart.map(block => block.left)), right = Math.max(rest / 2, ...apart.map(block => block.right));
+  for (const block of apart) at.set(block.child, 0);
+  if (beside.length) {
+    // The child on the side its overlay partners favour: the mean x of the partners outside the frame against the
+    // mean x of the frame's cells in the row. Declaration order (the frame first, its children in order) on a tie.
+    const inside = new Set(frameNodes(model, id)), own = standing.map(cell => cellReach(model, cell)), ownX = own.length ? mean(own.map(reach => reach.x + reach.width / 2)) : undefined;
+    const order = Object.keys(frames), place = (block: typeof beside[number]): 'left' | 'right' => {
+      const key = ownX === undefined ? undefined : partnerKey(model, new Set(frameNodes(model, block.child)), inside);
+      return key !== undefined && key < ownX! - PLACEMENT_EPS ? 'left' : 'right';
+    };
+    const sorted = [...beside].sort((a, b) => order.indexOf(a.child) - order.indexOf(b.child));
+    const sides = new Map(sorted.map(block => [block, place(block)]));
+    const row: { child?: string; width: number; axis: number }[] = [
+      ...sorted.filter(block => sides.get(block) === 'left').map(block => ({ child: block.child, width: block.left + block.right, axis: block.left })),
+      ...(standing.length ? [{ width: width(standing), axis: width(standing) / 2 }] : []),
+      ...sorted.filter(block => sides.get(block) === 'right').map(block => ({ child: block.child, width: block.left + block.right, axis: block.left })),
+    ];
+    const total = row.reduce((sum, item) => sum + item.width, 0);
+    // The own axis stands at the centre of the parent cells' block, or at the middle of the row without one.
+    let start = 0, ownAxis = total / 2;
+    for (const item of row) { if (item.child === undefined) ownAxis = start + item.axis; start += item.width; }
+    start = 0;
+    for (const item of row) { if (item.child !== undefined) at.set(item.child, start + item.axis - ownAxis); start += item.width; }
+    left = Math.max(left, ownAxis); right = Math.max(right, total - ownAxis);
+  }
+  const stand = { left, right, at };
+  memo.set(id, stand);
+  return stand;
+}
+
+/** The stands of every frame, read once off the cells as they stand: a rule that moves cells reads them before it moves any. */
+function standsOf(model: LayoutModel): Map<string, Stand> {
+  const memo = new Map<string, Stand>();
+  for (const id of Object.keys(model.document.frames ?? {})) standOf(model, id, memo);
+  return memo;
+}
+
+/** The offset of the axis of every cell of a frame, and of its child frames, from the frame's own axis. */
+function cellOffsets(model: LayoutModel, stands: ReadonlyMap<string, Stand>, id: string, base = 0, into = new Map<string, number>()): Map<string, number> {
+  const stand = stands.get(id)!, frames = model.document.frames!;
+  for (const cell of frames[id]!.cells) into.set(cell, base);
+  for (const child of Object.keys(frames).filter(item => frames[item]!.parent === id)) cellOffsets(model, stands, child, base + (stand.at.get(child) ?? 0), into);
+  return into;
+}
 
 /**
  * The document tiers that hold at least one frame, top to bottom, as their units (frames and one-rank
@@ -170,20 +259,24 @@ function packStep(model: LayoutModel, tiers: Unit[][], index: number, authority:
   sequence?: ReadonlyMap<string, number>): void {
   const frames = model.document.frames!;
   const childrenOf = (id: string): string[] => Object.keys(frames).filter(child => frames[child]!.parent === id);
-  /** Centre every cell of a frame, and of its children, on one axis. */
+  // Read before any cell moves: which side a child stands on reads the cells and their partners as they are now.
+  const stands = standsOf(model);
+  /** Centre every cell of a frame on one axis and its children on their own (ticket 28: a child that stands beside is off the axis). */
   const centre = (id: string, axis: number): void => {
     for (const cell of frames[id]!.cells) {
       const reach = cellReach(model, cell);
       moveGroup(model, model.groups[cell]!, axis - (reach.x + reach.width / 2), 0);
     }
-    for (const child of childrenOf(id)) centre(child, axis);
+    for (const child of childrenOf(id)) centre(child, axis + (stands.get(id)!.at.get(child) ?? 0));
   };
   const gap = bandGap(model);
   const place = (unit: Unit): number => sequence?.get(unit.id) ?? unitOrder(unit);
   const left = (unit: Unit): number => Math.min(...unit.groups.map(group => unit.frame ? cellReach(model, group.id).x : group.bounds!.x));
   const right = (unit: Unit): number => Math.max(...unit.groups.map(group => unit.frame ? cellReach(model, group.id).x + cellReach(model, group.id).width : group.bounds!.x + group.bounds!.width));
   /** The width a unit takes in its tier: a frame with its slack on each side, a group by its box. */
-  const extent = (unit: Unit): number => unit.frame ? frameWidth(model, unit.id) + 2 * COLUMN_SLACK : unit.groups[0]!.bounds!.width;
+  const extent = (unit: Unit): number => unit.frame ? stands.get(unit.id)!.left + stands.get(unit.id)!.right + 2 * COLUMN_SLACK : unit.groups[0]!.bounds!.width;
+  /** From the left edge of a unit's column to its axis: the cells of a frame are centred on the axis, a group is one box. */
+  const pivot = (unit: Unit): number => unit.frame ? COLUMN_SLACK + stands.get(unit.id)!.left : extent(unit) / 2;
 
   const feeds = feedReader(model, tiers, index, authority);
 
@@ -192,9 +285,10 @@ function packStep(model: LayoutModel, tiers: Unit[][], index: number, authority:
     const { parents, children } = feeds(unit);
     if (!parents.size || !children.size) return undefined;
     const mean = (values: Iterable<number>): number => { const xs = [...values]; return xs.reduce((sum, x) => sum + x, 0) / xs.length; };
+    const offsets = unit.frame ? cellOffsets(model, stands, unit.id) : new Map<string, number>();
     return mean(parents.values()) - mean([...children.values()].map(({ x, cell }) => {
       const at = unit.frame ? cellReach(model, cell) : model.groups[cell]!.bounds!;
-      return x - (at.x + at.width / 2);
+      return x - (at.x + at.width / 2) + (offsets.get(cell) ?? 0);
     }));
   };
 
@@ -228,8 +322,8 @@ function packStep(model: LayoutModel, tiers: Unit[][], index: number, authority:
     for (const unit of run) { offsets.push(sum); sum += extent(unit) + gap; }
     const blocks: { sum: number; count: number }[] = [];
     for (const [i, unit] of run.entries()) {
-      const wish = centres[i] ?? (left(unit) + right(unit)) / 2;
-      blocks.push({ sum: wish - extent(unit) / 2 - offsets[i]!, count: 1 });
+      const wish = centres[i] === undefined ? (left(unit) + right(unit)) / 2 - extent(unit) / 2 : centres[i]! - pivot(unit);
+      blocks.push({ sum: wish - offsets[i]!, count: 1 });
       while (blocks.length > 1 && blocks[blocks.length - 2]!.sum / blocks[blocks.length - 2]!.count > blocks[blocks.length - 1]!.sum / blocks[blocks.length - 1]!.count) {
         const last = blocks.pop()!, before = blocks[blocks.length - 1]!;
         before.sum += last.sum; before.count += last.count;
@@ -239,8 +333,8 @@ function packStep(model: LayoutModel, tiers: Unit[][], index: number, authority:
   }
   for (const [i, unit] of run.entries()) {
     if (unit.frame) {
-      const width = frameWidth(model, unit.id), x = lefts[i]! + COLUMN_SLACK;
-      centre(unit.id, x + width / 2);
+      const stand = stands.get(unit.id)!, width = stand.left + stand.right, x = lefts[i]! + COLUMN_SLACK;
+      centre(unit.id, x + stand.left);
       for (const group of unit.groups) columns.set(group.id, { x, width });
     } else {
       const group = unit.groups[0]!;
@@ -576,6 +670,52 @@ export function sweptUnits(model: LayoutModel): Map<string, string> {
     }
   }
   return units;
+}
+
+/** A window `[low, high]` on the x of a cell box; a cell of a frame that stands beside another column keeps inside it. */
+export interface CellWindow { low: number; high: number }
+
+/**
+ * The walls between the columns of one parent (ranked-groups ticket 28). A child frame that shares a sub-tier
+ * with a cell of its parent, or with a sibling child, stands beside those cells: its frame box and the parent's
+ * cells of those ranks are two disjoint columns. The top-level column that centring keeps a cell inside is
+ * the whole parent, so the two columns need a wall of their own. A cell of the child stays inside the child's
+ * box, a cell of the parent or of a sibling stays on its side of the child's box grown by `GROUP_PADDING`
+ * (the room a parent box leaves its child). Read off the geometry as it stands, like `frameColumns`, and keyed
+ * by cell id. A cell that stands beside nothing is not listed.
+ */
+export function besideWalls(model: LayoutModel): Map<string, CellWindow> {
+  const walls = new Map<string, CellWindow>();
+  const frames = model.document.frames, derived = deriveFrames(model);
+  if (frames === undefined || derived === undefined) return walls;
+  const box = new Map(derived.map(frame => [frame.id, frame.box]));
+  const childrenOf = (id: string): string[] => Object.keys(frames).filter(child => frames[child]!.parent === id);
+  const cellsOf = (id: string): string[] => [...frames[id]!.cells, ...childrenOf(id).flatMap(cellsOf)];
+  const tierOf = (cell: string): number => model.groups[cell]!.tier!;
+  const narrow = (cell: string, wall: Partial<CellWindow>): void => {
+    const known = walls.get(cell) ?? { low: -Infinity, high: Infinity };
+    walls.set(cell, { low: Math.max(known.low, wall.low ?? -Infinity), high: Math.min(known.high, wall.high ?? Infinity) });
+  };
+  for (const parent of Object.keys(frames)) {
+    const children = childrenOf(parent);
+    for (const child of children) {
+      const inside = cellsOf(child), tiers = new Set(inside.map(tierOf));
+      const others = [...frames[parent]!.cells, ...children.filter(sibling => sibling !== child).flatMap(cellsOf)].filter(cell => tiers.has(tierOf(cell)));
+      if (!others.length) continue;
+      const wall = box.get(child)!;
+      for (const cell of inside) {
+        const reach = cellReach(model, cell), at = model.groups[cell]!.bounds!;
+        narrow(cell, { low: wall.x + (at.x - reach.x), high: wall.x + wall.width - (reach.x + reach.width - (at.x + at.width)) });
+      }
+      const edge = GROUP_PADDING;
+      for (const cell of others) {
+        const reach = cellReach(model, cell), at = model.groups[cell]!.bounds!;
+        if (reach.x + reach.width / 2 < wall.x + wall.width / 2) narrow(cell, { high: wall.x - edge - (reach.x + reach.width - (at.x + at.width)) });
+        else narrow(cell, { low: wall.x + wall.width + edge + (at.x - reach.x) });
+      }
+    }
+  }
+  return walls;
 }
 
 /** The column of one top-level frame as it stands: its x extent, the sub-tiers it spans, and its cells. */
