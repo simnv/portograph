@@ -1,0 +1,32 @@
+# Expected: Two core routers each link to the same four edge routers below them. The core routers' stems and
+# the edge routers' stems nest, so a link's pin-to-pin chord may cut a batchmate's stem while every leg of
+# the link, through its stem tips, stays clear of it (ranked-groups ticket 30). The chord alone is no
+# crossing: counting it split the link into a later routing part, the zigzags of the earlier parts closed
+# the pocket of its far stem tip, and the router dropped that checkpoint and the link with it.
+# Test-only input owned by ranked-groups ticket 30; the route test asserts that no link is removed.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, label: Site }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  c1: { group: site, class: router, label: Core 1 }
+  c2: { group: site, class: router, label: Core 2 }
+  e1: { group: site, class: router, label: Edge 1 }
+  e2: { group: site, class: router, label: Edge 2 }
+  e3: { group: site, class: switch, label: Edge 3 }
+  e4: { group: site, class: switch, label: Edge 4 }
+links:
+  - [isp, c1]
+  - [isp, c2]
+  - [c1, c2]
+  - [c1, e1]
+  - [c1, e2]
+  - [c1, e3]
+  - [c1, e4]
+  - [c2, e1]
+  - [c2, e2]
+  - [c2, e3]
+  - [c2, e4]
+  - [e1, e2]
+  - [e3, e4]
