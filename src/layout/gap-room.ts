@@ -1,6 +1,7 @@
 import type { LayoutModel } from '../model/layout.js';
 import { EPS } from '../score/geometry.js';
-import { tierGapRoom, type TierGapRoom } from './gap-runs.js';
+import { alignLinkedGroupGrid, replanGroupLabels } from './bands.js';
+import { tierGapPlans } from './gap-plan.js';
 import { rebuildLaneExtents } from './lanes.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { placementWarning, rebuildRegions } from './regions.js';
@@ -47,70 +48,45 @@ import { moveGroup } from './skeleton-geometry.js';
  * taken any earlier grows a gap the finished diagram does not need and the golden moves.
  */
 export function growTierGaps(model: LayoutModel): boolean {
-  const first = tierGapRoom(model);
-  // A stem tip owes the runs beyond it two clearances (ticket 25), and an interleaved earlier link a run clearance from
-  // each of its tip rows (ticket 39); that room is asked for whether or not the gap owes a row, and it needs no probe,
-  // because no seat is measured.
-  const grown = new Map<number, number>(first.filter(entry => entry.stems > EPS).map(entry => [entry.below, entry.stems]));
-  const byStems = new Set(grown.keys());
-  // The rows are measured after that growth: the tips of a nested pair stand two clearances apart only once it is in, and
-  // a row is seated between tips that already stand there.
-  const base = grown.size ? measured(model, grown) : model;
-  const demand = grown.size ? tierGapRoom(base) : first;
-  const short = demand.filter(needsRoom);
-  if (!short.length) return grow(model, grown, byStems);
-  const seats = new Map(demand.map(room => [room.below, room.seated]));
-  const room = new Map(demand.map(entry => [entry.below, entry.high - entry.low]));
-
-  // The first probe opens each short gap past anything its own seating can ask for: the rows at
-  // their pitch, the deepest either boundary reaches into the gap, and one pitch over.
-  const opened = new Map(short.map(entry => [entry.below,
-    Math.max(0, entry.rows * entry.pitch + 2 * entry.headroom + entry.pitch - (entry.high - entry.low))]));
-  for (const entry of tierGapRoom(measured(base, opened))) {
-    // Room is reserved only where the probe shows it buys a seat. A gap that seats no more with the
-    // boundary out of its way is one the allocation refuses for a reason of its own, and moving
-    // every band below it would buy no route at all.
-    if (!opened.has(entry.below) || entry.refuses || entry.seated <= seats.get(entry.below)!) continue;
-    const extra = entry.required - room.get(entry.below)!;
-    if (extra <= EPS) continue;
-    // The rows are measured in the room the stems already gave, so the two are added.
-    byStems.delete(entry.below);
-    grown.set(entry.below, (grown.get(entry.below) ?? 0) + extra);
+  // One pass, no probe. The plan measures every term anchored to the band below from `bandTop`, so its `H` does not
+  // move with the growth, and a second pass over the grown gaps asks for nothing (tier-gap-rows.md, Section 3).
+  const grown = new Map<number, GapGrowth>();
+  for (const { gap, plan } of tierGapPlans(settled(model))) {
+    if (plan.growth > EPS) grown.set(gap.below, { extra: plan.growth, setBy: plan.setBy });
   }
-  return grow(model, grown, byStems);
-}
-
-/** Moves the bands by the room each gap gained and reports it; false where nothing grew. */
-function grow(model: LayoutModel, grown: ReadonlyMap<number, number>, byStems: ReadonlySet<number>): boolean {
-  if (!grown.size) return false;
-
-  moveBands(model, grown);
-  for (const band of model.tierBands) {
-    const extra = grown.get(band.tier);
-    if (extra === undefined) continue;
-    placementWarning(model, 'TIER_GAP_GROWN',
-      `The tier gap above tier ${band.tier} grew ${extra.toFixed(2)} px to ${byStems.has(band.tier)
-        ? 'keep the two stem tips of a link clear of each other\'s stem obstacle' : 'the rows it must seat'}.`,
-      band.groups, 'group');
-  }
-  return true;
+  return grow(model, grown);
 }
 
 /**
- * Whether a gap asks for more room than it has. A gap that owes no row asks for nothing, and so
- * does one the allocation refuses for a reason of its own — it seats nothing however tall it is,
- * and growing it would move every band below for no route at all.
+ * The model as 7f publishes it once a gap has grown: the replay that follows a growth refits the group boxes and re-centres
+ * their nodes, so the x of a tip or a lane differs from the one this rule sees before it. The plan is read on that replay,
+ * not on the model as it stands, or it plans the rows of an x nothing publishes. It is a trial: the model itself is not touched,
+ * and the growth is applied to it whole, so the same replay follows.
  */
-function needsRoom(room: TierGapRoom): boolean {
-  return room.rows > 0 && !room.refuses && room.seated < room.rows;
+function settled(model: LayoutModel): LayoutModel {
+  const trial = JSON.parse(JSON.stringify(model)) as LayoutModel;
+  rebuildRegionGeometry(trial, undefined, undefined, true);
+  alignLinkedGroupGrid(trial);
+  replanGroupLabels(trial);
+  return trial;
 }
 
-/** A copy of the model with the given room added to each gap, ready to be measured. */
-function measured(model: LayoutModel, extra: ReadonlyMap<number, number>): LayoutModel {
-  const probe = JSON.parse(JSON.stringify(model)) as LayoutModel;
-  moveBands(probe, extra);
-  rebuildRegionGeometry(probe, undefined, undefined, true);
-  return probe;
+/** The room one gap gained, and the part or term of the plan that set it. */
+interface GapGrowth { extra: number; setBy: string }
+
+/** Moves the bands by the room each gap gained and reports it; false where nothing grew. */
+function grow(model: LayoutModel, grown: ReadonlyMap<number, GapGrowth>): boolean {
+  if (!grown.size) return false;
+
+  moveBands(model, new Map([...grown].map(([tier, item]) => [tier, item.extra])));
+  for (const band of model.tierBands) {
+    const item = grown.get(band.tier);
+    if (item === undefined) continue;
+    placementWarning(model, 'TIER_GAP_GROWN',
+      `The tier gap above tier ${band.tier} grew ${item.extra.toFixed(2)} px to hold the rows of its parts (set by ${item.setBy}).`,
+      band.groups, 'group');
+  }
+  return true;
 }
 
 /**
