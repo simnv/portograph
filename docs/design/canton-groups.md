@@ -358,7 +358,7 @@ so rule 3's feed union is exercised. Fixture 11 puts it inside.
 | 7c | `a-canton-band-holds-the-rows-off` | a canton titled at the bottom over a plain tier, two links crossing | the planned rows lie below the band and the group-edge margin; no G6 |
 | 8 | `a-leaf-child-beside-its-parent-inside-a-canton` | canton → location → leaf zone beside the parent cells | the zone inside its location inside its canton; inset 40 px; the beside gap 41 px measured after the whole layout (ticket 61) |
 | 9 | `a-canton-layout-is-idempotent` | an `it.each` over six fixtures (2, 3, 6, 5, the barycentre one, the free member beside a lane) laid out twice | the second layout JSON equals the first, runtime timings apart |
-| 10 | `three-continents` | three top locations on tier 0 outside every canton, an MPLS row on tier 1, cantons A (two locations with zones), B and C on tier 2, client groups on tiers 3 and 4, cross-canton flow links | three canton frames a band gap apart; every client group under its own canton; the top locations unmoved against the same input without cantons |
+| 10 | `three-continents` | three top locations on tier 0 outside every canton, an MPLS row on tier 1, cantons A (two locations with zones), B and C on tier 2, client groups on tiers 3 and 4, cross-canton flow links | three canton frames a band gap apart; every client group under its own canton; the top row keeps its order and spacing against the same input without cantons (it re-centres as a whole over the tier-2 locations, by 133.3 px on the fixture) |
 | 11 | `an-anchor-tier-inside-a-canton-span` | a canton of three tiers whose middle tier is the anchor tier | the run keeps ELK's centre; members centred; G9 clean |
 
 ## Migration
