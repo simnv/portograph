@@ -1,9 +1,12 @@
 # Expected: A link that skips a rank of its own frame, in a tier where a neighbour frame has a cell, keeps
 # its lane in its own frame (ranked-groups ticket 04, re-check). `west` is gateway and distribution under
-# the ISP; the access node stands alone in a child group `edge` and links to the gateway. Since ticket 27 a
+# the ISP; two access nodes stand in a child group `edge` and link to the gateway. Since ticket 27 a
 # plain member is one rank below its neighbour at most, so the leaf-child rule (ticket 19) puts `edge` after
 # the last rank of `west` (rank 2), and the link crosses the sub-tier of the distribution switch. `east` is a
 # two-rank neighbour, so its second cell stands in the same sub-tier.
+# `west#1` holds two distribution switches, so the lane of the tested
+# link stands outside the child frame's box: only the transit lanes of `west` (not the child frame) make the
+# `west` frame hold it. (With one access node the lane stood in the child's column and the child frame held it.)
 # The link is foreign to `east`, so its lane is pinned outside the `east` frame; the lane is still the
 # own-frame lane of `west`: it is hosted in a cell of `west`, and the `west` frame grows to hold it.
 # Test-only input owned by ranked-groups ticket 04; test/pipeline/frame-transit.test.ts reads the layout.
@@ -19,11 +22,15 @@ nodes:
   e-gw: { group: east, class: router, label: East gateway }
   e-dist: { group: east, class: switch, label: East distribution }
   w-gw: { group: west, class: router, label: West gateway }
+  w-dist2: { group: west, class: switch, label: West second distribution switch of the main building }
   w-dist: { group: west, class: switch, label: West distribution }
-  w-acc: { group: edge, class: access, label: West access }
+  w-acc: { group: edge, class: access, label: A }
+  w-pad: { group: edge, class: access, label: West padding access node of the main building }
 links:
   - [u0, e-gw]
   - [u1, w-gw]
   - [e-gw, e-dist]
   - [w-gw, w-dist]
+  - [w-gw, w-dist2]
   - [w-gw, w-acc]
+  - [w-gw, w-pad]
