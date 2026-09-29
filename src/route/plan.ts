@@ -213,7 +213,7 @@ export function planRoute(model: LayoutModel): RoutePlan {
       // of them; the rectangles between do not, or the owner's other gaps could run along the run
       // the stitcher inserts verbatim.
       const terminal = index === 0 || index === covers.length - 1;
-      reserve([{ ...item, consumers: [...(terminal ? item.consumers : []), ...(across ? run.crossers : []), ...(run.shares ?? [])] }]);
+      reserve([{ ...item, consumers: [...(terminal ? item.consumers : []), ...(across ? run.crossers : []), ...(run.shares ?? []), ...(across ? [] : run.grants ?? [])] }]);
     }
   }
   const usage = portUsage(model), pins = new Map<string, RoutePin[]>(), boxes = groupBoxes(model);

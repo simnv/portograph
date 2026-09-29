@@ -71,6 +71,8 @@ export interface GapRun {
   crossers: string[];
   /** The links whose planned parts share this run's port leg: they may lie on its cover (the shared leg is an output of the plan). */
   shares?: string[];
+  /** Residual links granted this run's leg covers: they are absent from those covers, as the crossers are from the rows (2.2, legs within `keep`). */
+  grants?: string[];
   /** `true` for a part of the tier-gap plan, reserved tip to tip; a residual run leaves it unset. */
   planned?: true;
 }
@@ -199,7 +201,7 @@ interface GapUsers {
  * the gap. Its link becomes a **crosser**: it keeps the route it has today, and the allocated runs
  * do not obstruct it.
  */
-function gapUsers(model: LayoutModel, gaps: TierGap[], planned: ReadonlyMap<number, ReadonlySet<string>>): Map<number, GapUsers> {
+function gapUsers(model: LayoutModel, gaps: TierGap[], planned: ReadonlyMap<number, ReadonlySet<string>>, routed: ReadonlyMap<number, ReadonlySet<string>> = new Map()): Map<number, GapUsers> {
   const cache = stemCache();
   const result = new Map<number, GapUsers>(gaps.map((gap, key) => [key, { items: [], approaches: [], crossers: [], pieces: [], held: [], laneHeld: [] }]));
   for (const [order, link] of model.links.entries()) {
@@ -221,6 +223,8 @@ function gapUsers(model: LayoutModel, gaps: TierGap[], planned: ReadonlyMap<numb
       const key = found[0]!, gap = gaps[key]!, users = result.get(key)!;
       // A planned part is reserved tip to tip by the plan (`allocateGapRuns`): it is no piece, no participant and no crosser.
       if (planned.get(key)?.has(`${link.id}#${index}`)) continue;
+      // A part granted a planned leg (legs within `keep`) is the router's alone: it seats and holds nothing, and it crosses the rows.
+      if (routed.get(key)?.has(`${link.id}#${index}`)) { users.crossers.push(across); continue; }
       const edgeA = a.kind === 'lane' ? edgeOf(gap, a.point) : undefined;
       const edgeB = b.kind === 'lane' ? edgeOf(gap, b.point) : undefined;
       const piece = pieceOf(model, link, order, stops, index, gap, cache);
@@ -938,6 +942,9 @@ function fittingPlans(model: LayoutModel): Map<number, GapPlan> {
   return result;
 }
 
+const routedIds = (plans: ReadonlyMap<number, GapPlan>): Map<number, Set<string>> =>
+  new Map([...plans].map(([key, plan]) => [key, new Set(plan.residual.filter(item => item.reason === 'legs-within-k').map(item => item.id))]));
+
 const plannedIds = (plans: ReadonlyMap<number, GapPlan>): Map<number, Set<string>> =>
   new Map([...plans].map(([key, plan]) => [key, new Set(plan.parts.map(part => part.id))]));
 
@@ -955,7 +962,7 @@ export function tierGapRoom(model: LayoutModel): TierGapRoom[] {
   const gaps = tierGaps(model);
   if (!gaps.length) return [];
   const plans = fittingPlans(model);
-  const users = gapUsers(model, gaps, plannedIds(plans));
+  const users = gapUsers(model, gaps, plannedIds(plans), routedIds(plans));
   const pitch = MEMBER_GAP + routedStroke(model);
   const headroom = GROUP_LABEL_GEOMETRY.routerStem + GROUP_LABEL_GEOMETRY.nodeClearance + routedStroke(model);
   const list = blockers(model);
@@ -977,7 +984,7 @@ export function tierGapRoom(model: LayoutModel): TierGapRoom[] {
 }
 
 /** One planned part, reserved: its segments in the order its link visits them, and the blockers they are to a residual seating. */
-interface PlannedRun { part: PlannedPart; segments: PathSegment[]; peers: Blocker[]; shares: string[] }
+interface PlannedRun { part: PlannedPart; segments: PathSegment[]; peers: Blocker[]; shares: string[]; grants: string[] }
 
 /**
  * The planned parts of one gap as reserved geometry (Section 4). Each is an obstacle to the residual seating of the same gap,
@@ -991,9 +998,10 @@ function plannedPeers(model: LayoutModel, plan: GapPlan | undefined, gap: TierGa
   return plan.parts.filter(part => part.index !== undefined).map(part => {
     const shares = plan.parts.filter(other => other.link !== part.link && (other.upper.source === part.upper.source && part.upper.kind === 'tip'
       || other.lower.source === part.lower.source && part.lower.kind === 'tip')).map(other => other.link);
-    const segments = plannedSegments(part, gap), owners = new Set([part.link, ...shares]);
+    const grants = plan.residual.filter(item => item.granted === part.link).map(item => item.link);
+    const segments = plannedSegments(part, gap), owners = new Set([part.link, ...shares, ...grants]);
     const width = linkStrokeWidth(links.get(part.link)!) / 2 + margin;
-    return { part, segments, shares: [...new Set(shares)].sort(), peers: segments.map(run => ({ owners,
+    return { part, segments, shares: [...new Set(shares)].sort(), grants: [...new Set(grants)].sort(), peers: segments.map(run => ({ owners,
       bounds: grow({ x: Math.min(run.from.x, run.to.x), y: Math.min(run.from.y, run.to.y), width: Math.abs(run.to.x - run.from.x),
         height: Math.abs(run.to.y - run.from.y) }, width) })) };
   });
@@ -1011,7 +1019,7 @@ export function allocateGapRuns(model: LayoutModel): GapRun[] {
   const gaps = tierGaps(model);
   if (!gaps.length) return [];
   const plans = fittingPlans(model);
-  const users = gapUsers(model, gaps, plannedIds(plans));
+  const users = gapUsers(model, gaps, plannedIds(plans), routedIds(plans));
   if (!plans.size && ![...users.values()].some(item => item.items.length || item.held.length || item.laneHeld.length)) return [];
   const list = blockers(model), result: GapRun[] = [];
   for (const [key, entry] of [...users].sort((a, b) => a[0] - b[0])) {
@@ -1034,7 +1042,7 @@ export function allocateGapRuns(model: LayoutModel): GapRun[] {
     // The links that cross a planned row are the residual ones only: a planned part is reserved and never routed across.
     for (const run of planned) {
       result.push({ link: run.part.link, index: run.part.index!, segments: run.segments, crossers: across.filter(id => id !== run.part.link),
-        planned: true, ...(run.shares.length ? { shares: run.shares } : {}) });
+        planned: true, ...(run.shares.length ? { shares: run.shares } : {}), ...(run.grants.length ? { grants: run.grants } : {}) });
     }
   }
   return result;

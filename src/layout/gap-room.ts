@@ -1,7 +1,7 @@
 import type { LayoutModel } from '../model/layout.js';
 import { EPS } from '../score/geometry.js';
 import { alignLinkedGroupGrid, replanGroupLabels } from './bands.js';
-import { tierGapPlans } from './gap-plan.js';
+import { tierGapPlans, type ResidualReason } from './gap-plan.js';
 import { rebuildLaneExtents } from './lanes.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { placementWarning, rebuildRegions } from './regions.js';
@@ -52,6 +52,11 @@ export function growTierGaps(model: LayoutModel): boolean {
   // move with the growth, and a second pass over the grown gaps asks for nothing (tier-gap-rows.md, Section 3).
   const grown = new Map<number, GapGrowth>();
   for (const { gap, plan } of tierGapPlans(settled(model))) {
+    // A part the plan declines is named, with the reason: the router lays it as it did before the plan.
+    for (const item of plan.residual) {
+      placementWarning(model, 'TIER_GAP_PART_RESIDUAL',
+        `${item.link} is left to the router in the tier gap above tier ${gap.below}: ${REASONS[item.reason]}${item.granted ? ` (${item.granted}'s leg cover is granted to it)` : ''}.`, [item.link]);
+    }
     if (plan.growth > EPS) grown.set(gap.below, { extra: plan.growth, setBy: plan.setBy });
   }
   return grow(model, grown);
@@ -70,6 +75,18 @@ function settled(model: LayoutModel): LayoutModel {
   replanGroupLabels(trial);
   return trial;
 }
+
+const REASONS: Record<ResidualReason, string> = {
+  'spans-two-gaps': 'its part spans two tier gaps without a lane',
+  'lateral-port': 'a lateral port crosses the gap',
+  'u-turn': 'both ends stand on one boundary',
+  'faces-away': 'a port faces away from the gap',
+  'off-boundary': 'a lane end stands on no boundary of the gap',
+  'crosses-lane': 'its span crosses the reserved run of a through lane',
+  'legs-within-k': 'its leg stands within a run clearance of the leg of another node',
+  'row-cycle': 'its rows form a cycle',
+  'leg-blocked': 'a leg would pass through a label, a lane box or an obstacle',
+};
 
 /** The room one gap gained, and the part or term of the plan that set it. */
 interface GapGrowth { extra: number; setBy: string }
