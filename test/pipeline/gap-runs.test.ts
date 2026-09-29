@@ -281,11 +281,12 @@ it('grows the gap of the band that sets the group edge to the rows of its 25 par
   // its own at the pitch k = 11.5 (spans of 21 stepped parts overlap, so 18 distinct rows from 10.75 to 206.25 px below the low
   // boundary, three of them shared by parts whose spans do not touch), and the last row keeps k + 30 px (a lower leg of depth 30)
   // above the band below: H = 206.25 + 41.5 - 11.5 = 236.25 px against a room of 49.25. The router discovered those rows before
-  // (G4 18, G6 47 on main); they are reserved now, and the gap grows 198.5 px (187 px while the plan was read on a replay the published model did not have: ticket 50 review).
+  // (G4 18, G6 47 on main); they are reserved now, and the gap grows 187 px, the height the published plan asks: 7f replaces the growth of
+  // each round by `H - room` and does not accumulate it (ticket 51; the rounds added 198.5 px while they accumulated).
   const before = await beforeBands(read('a-band-holds-the-group-that-set-its-edge.yaml'));
   const after = bands(before);
   const grown = after.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN');
-  expect(grown.map(item => item.message)).toEqual([expect.stringMatching(/grew 198\.50 px to hold the rows of its parts \(set by link-16#0\)/)]);
+  expect(grown.map(item => item.message)).toEqual([expect.stringMatching(/grew 187\.00 px to hold the rows of its parts \(set by link-36#0\)/)]);
   const busy = tierGapPlans(after).filter(item => item.plan.parts.length > 20);
   expect(busy).toHaveLength(1);
   expect(busy[0]!.plan.height).toBeCloseTo(236.25, 9);
