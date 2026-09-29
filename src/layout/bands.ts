@@ -43,7 +43,7 @@ const OUTWARD: Record<Side, Point> = {
 };
 
 interface ForbiddenInterval { low: number; high: number; id: string }
-interface LabelPlan { labels: LayoutLabel[]; growth?: { group: LayoutGroup; width: number; title: string }; blocked: string[] }
+interface LabelPlan { labels: LayoutLabel[]; growth?: { group: LayoutGroup; width: number; title: string; row: string }; blocked: string[] }
 /** Where one tier's groups land when the grown group takes its new width. */
 interface GroupPlacement { group: LayoutGroup; x: number; width: number }
 /** A point stage 8 must reach outside every obstacle to honour this placement. */
@@ -683,15 +683,16 @@ function titleX(model: LayoutModel, placed: LayoutLabel[], y: number, measured: 
  * together. Nudging only some of them would plan some drops of a gap and leave the rest to the router, which lays them across the
  * planned rows.
  */
-function planLabels(model: LayoutModel, permitGrowth: boolean, legs = permitGrowth): LabelPlan {
-  const first = planLabelsOnce(model, permitGrowth, new Set(), legs);
-  return first.failed.size && !first.growth ? planLabelsOnce(model, permitGrowth, first.failed, legs) : first;
+function planLabels(model: LayoutModel, permitGrowth: boolean, legs = permitGrowth, spent: LegSpent = never): LabelPlan {
+  const first = planLabelsOnce(model, permitGrowth, new Set(), legs, spent);
+  // A growth asked by a title whose gap row failed is moot: the row is planned again without nudging, and the widening would serve legs that plan no longer avoids.
+  return first.failed.size && (!first.growth || first.failed.has(first.growth.row)) ? planLabelsOnce(model, permitGrowth, first.failed, legs, spent) : first;
 }
 
 /** The tier gap a title's edge faces: the bottom edge of tier t and the top edge of tier t + 1 face the same one. */
 const gapKey = (tier: number, side: 'top' | 'bottom'): string => String(side === 'bottom' ? tier : tier - 1);
 
-function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: ReadonlySet<string>, legs: boolean): LabelPlan & { failed: Set<string> } {
+function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: ReadonlySet<string>, legs: boolean, spent: LegSpent): LabelPlan & { failed: Set<string> } {
   const labels: LayoutLabel[] = [], blocked: string[] = [], failed = new Set<string>();
   for (const title of titles(model)) {
     const id = title.host, group = model.groups[id]!, measured = measurement(title.label);
@@ -701,7 +702,7 @@ function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: Readon
     const limit = right(group.bounds!) - GROUP_LABEL_GEOMETRY.horizontalInset - measured.width;
     const centre = group.bounds!.x + (group.bounds!.width - measured.width) / 2;
     const row = gapKey(group.tier!, title.side), placed = titleX(model, labels, y, measured, start, limit, centre, !still.has(row),
-      x => legs && growthPlan(model, group, x + measured.width + GROUP_LABEL_GEOMETRY.horizontalInset - group.bounds!.x) !== undefined);
+      x => legs && !spent(title.id, id) && growthPlan(model, group, x + measured.width + GROUP_LABEL_GEOMETRY.horizontalInset - group.bounds!.x) !== undefined);
     if (placed.failed) failed.add(row);
     const x = placed.x;
     if (x > limit + PLACEMENT_EPS) {
@@ -709,7 +710,7 @@ function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: Readon
       // that no budget could have repaired.
       const width = x + measured.width + GROUP_LABEL_GEOMETRY.horizontalInset - group.bounds!.x;
       if (!growthPlan(model, group, width)) blocked.push(id);
-      else if (permitGrowth) return { labels, blocked, failed, growth: { group, width, title: title.id } };
+      else if (permitGrowth) return { labels, blocked, failed, growth: { group, width, title: title.id, row } };
     }
     labels.push({ id: `label:group:${id}`, owner: { ...group.owner }, layer: 'routed', role: 'group',
       text: title.label, fontFamily: GROUP_LABEL_GEOMETRY.fontFamily,
@@ -725,7 +726,7 @@ function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: Readon
     const centre = box.x + (box.width - measured.width) / 2;
     const tiers = cantonTiers(model, band.group), row = gapKey(band.side === 'top' ? tiers.first : tiers.last, band.side);
     const host = cantonHost(model, band.group, band.side);
-    const placed = titleX(model, labels, y, measured, start, limit, centre, !still.has(row), x => legs && host !== undefined
+    const placed = titleX(model, labels, y, measured, start, limit, centre, !still.has(row), x => legs && !spent(band.group, host?.id ?? '') && host !== undefined
       && growthPlan(model, host, host.bounds!.width + (x + measured.width + GROUP_LABEL_GEOMETRY.horizontalInset - box.x - box.width)) !== undefined);
     if (placed.failed) failed.add(row);
     const x = placed.x;
@@ -735,7 +736,7 @@ function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: Readon
       const width = x + measured.width + GROUP_LABEL_GEOMETRY.horizontalInset - box.x;
       const cell = cantonHost(model, band.group, band.side);
       if (cell === undefined || !growthPlan(model, cell, cell.bounds!.width + (width - box.width))) blocked.push(band.group);
-      else if (permitGrowth) return { labels, blocked, failed, growth: { group: cell, width: cell.bounds!.width + (width - box.width), title: band.group } };
+      else if (permitGrowth) return { labels, blocked, failed, growth: { group: cell, width: cell.bounds!.width + (width - box.width), title: band.group, row } };
     }
     labels.push({ id: `label:group:${band.group}`, owner: { ...band.owner }, layer: 'routed', role: 'group',
       text: title, fontFamily: GROUP_LABEL_GEOMETRY.fontFamily,
@@ -750,6 +751,14 @@ function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: Readon
 /** Passes outside the shared budget a title may take to widen its group for a leg (ticket 66; the widening is one push and two replays). */
 const LEG_PASSES_PER_TITLE = 1;
 const LEG_ALLOWANCE_EXHAUSTED = 'GROUP_LABEL_LEG_ALLOWANCE_EXHAUSTED';
+/** Whether a title (its id, and the id of the cell that would grow for it) has spent its leg allowance: it keeps the soft rule. */
+type LegSpent = (title: string, cell: string) => boolean;
+const never: LegSpent = () => false;
+/** The spent titles of a finished model, read from its diagnostics (which name the cell that would have grown). */
+function legSpentOf(model: LayoutModel): LegSpent {
+  const cells = new Set(model.diagnostics.filter(item => item.code === LEG_ALLOWANCE_EXHAUSTED).flatMap(item => (item.owners ?? []).map(owner => 'id' in owner ? owner.id : '')));
+  return (_title, cell) => cells.has(cell);
+}
 
 /** Apply a lane-feasible widening and its neighbour propagation. An infeasible one does nothing. */
 function pushFollowingGroups(model: LayoutModel, grown: LayoutGroup, width: number): void {
@@ -1202,8 +1211,11 @@ export function produceGroupLabelBands(model: LayoutModel): void {
   }
   reserveInitialSpace(model);
   reserveLinkLabelRoom(model);
+  // A producer call owns its leg allowances: the entries an earlier call left would be stale (or duplicated) now.
+  model.diagnostics = model.diagnostics.filter(item => item.code !== LEG_ALLOWANCE_EXHAUSTED);
   const budget = createCentreBudget();
-  const legPasses = new Map<string, number>();
+  const legPasses = new Map<string, number>(), spentTitles = new Set<string>();
+  const spent: LegSpent = title => spentTitles.has(title);
   rebuildRegionGeometry(model, budget, undefined, true);
   while (true) {
     // Linked groups share a grid before labels are planned inside their (possibly wider) boxes, and
@@ -1241,34 +1253,33 @@ export function produceGroupLabelBands(model: LayoutModel): void {
     // A spent budget cannot replay a move, so the close-up is skipped here. Stage 7f closes the cantons again after the tier gaps grow
     // (`mutation.ts`, with its own rounds), and says so there when they do not settle; a warning here would fire on a run it closes later.
     model.labels = model.labels.filter(label => label.role !== 'group');
-    const plan = planLabels(model, true);
+    const plan = planLabels(model, true, true, spent);
     if (!plan.growth) { model.labels.push(...plan.labels); diagnoseBlocked(model, plan.blocked); return; }
     // A widening for a leg only (no hard obstacle asks for it) needs a pass the shared budget no longer has: centring spends it before any leg
     // is known (ticket 66). Each title (keyed by the title that asked, not the cell that grows: one cell can host a member title and a canton title) has an allowance of `LEG_PASSES_PER_TITLE` passes outside the shared budget; a title past it keeps the soft rule.
-    const legOnly = budget.remaining <= 0 && !planLabels(model, true, false).growth;
+    const legOnly = budget.remaining <= 0 && !planLabels(model, true, false, spent).growth;
     if (legOnly && (legPasses.get(plan.growth.title) ?? 0) < LEG_PASSES_PER_TITLE) {
       legPasses.set(plan.growth.title, (legPasses.get(plan.growth.title) ?? 0) + 1);
       const stable = routerEntryPoints(model);
       pushFollowingGroups(model, plan.growth.group, plan.growth.width);
       holdColumnsAfterPush(model);
       syncBands(model, stable);
-      rebuildRegionGeometry(model, { remaining: 1, passes: 0 }, undefined, true);
+      rebuildRegionGeometry(model, createCentreBudget(), undefined, true);
       // The pass centres again and can leave a column off its feed axis; hold it and replay once more, as the pass above did.
       holdColumnsAfterPush(model);
       syncBands(model, stable);
-      rebuildRegionGeometry(model, { remaining: 1, passes: 0 }, undefined, true);
+      rebuildRegionGeometry(model, createCentreBudget(), undefined, true);
       continue;
     }
     if (legOnly) {
-      const stalled = planLabels(model, false);
-      model.labels.push(...stalled.labels);
-      diagnoseBlocked(model, stalled.blocked);
+      // This title keeps the soft rule; the loop goes on, so a later title still gets its own pass.
+      spentTitles.add(plan.growth.title);
       model.diagnostics.push({
         stage: 'placement', severity: 'warning', code: LEG_ALLOWANCE_EXHAUSTED,
         message: `Group ${plan.growth.group.id} would widen for a leg under its title, but its allowance of ${LEG_PASSES_PER_TITLE} pass outside the shared budget is spent; the leg stays with the router.`,
         owners: [{ kind: 'group', id: plan.growth.group.id }],
       });
-      return;
+      continue;
     }
     if (budget.remaining <= 0) {
       // The growth-permitted plan stops at the first repairable group, so re-plan for the full
@@ -1318,7 +1329,7 @@ export function replanGroupLabels(model: LayoutModel): void {
   const reserveAgain = (): void => { model.labelBands = reserved; produceGroupLabelBands(model); };
   if (syncBands(model)) { reserveAgain(); return; }
   const retained = model.labels.filter(label => label.role !== 'group');
-  const plan = planLabels({ ...model, labels: retained }, true);
+  const plan = planLabels({ ...model, labels: retained }, true, true, legSpentOf(model));
   if (plan.growth) { reserveAgain(); return; }
   model.labels = [...retained, ...plan.labels];
   diagnoseBlocked(model, plan.blocked);
@@ -1365,8 +1376,9 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   const expected = { ...model, labels: retained };
   const actualLabels = model.labels.filter(label => label.role === 'group');
   // A title that stands clear of a widened group's legs (ticket 66) is planned with the legs on; a model that stalled plans without them.
-  let plan = planLabels(expected, true, true);
-  if (plan.growth || !equal(actualLabels, plan.labels)) plan = planLabels(expected, !model.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE' || item.code === LEG_ALLOWANCE_EXHAUSTED));
+  const spent = legSpentOf(model);
+  let plan = planLabels(expected, true, true, spent);
+  if (plan.growth || !equal(actualLabels, plan.labels)) plan = planLabels(expected, !model.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE'), undefined, spent);
   if (plan.growth) throw new Error(`Group label ${plan.growth.group.id} has no reserved free gap`);
   const actual = model.labels.filter(label => label.role === 'group');
   if (!equal(actual, plan.labels)) {
