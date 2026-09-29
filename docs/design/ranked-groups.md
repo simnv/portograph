@@ -58,6 +58,13 @@ that same table is the class rank, so `switch – switch` is a peer link inside 
 5. **Child group.** A child's members take rank `max(own, first rank of the child)` and the child's
    span is `[min, max]` of them. A parent member whose rank falls inside the span, and who is not a
    child member, is pushed to the rank after the span. A child span is therefore whole ranks.
+   A child whose members have no routed link to a deeper member outside the child (a leaf child),
+   hold no anchor and share no peer component with a member outside the leaf children takes the
+   ranks after the last rank of the rest of the group, non-leaf children included, in its own
+   internal order, and pushes nothing. Two leaf children stand side by side from that rank, in
+   declaration order; leaf children joined by a peer link start on the same rank. An overlay-only
+   leaf child goes last and overrides step 6. Only a child that feeds deeper members keeps its
+   longest-path position and pushes them. A group anchored from below has no leaf rule (ticket 19).
 6. **Overlay-only members.** A member with no routed link inside the group takes the rank of its
    nearest overlay partner in the group, else the last rank.
 7. **Output.** `rank` per member, `rankCount` per group, `span` per child group. No geometry.

@@ -1,0 +1,36 @@
+# Expected: a leaf child span stands at the bottom of its parent (ranked-groups ticket 19). Location
+# `loc` has a chain of routers and switches (rt, sw, crt, sw2, srv) and a child group `zone` of two
+# nodes, ntp and fw, hung from sw. Zone feeds no deeper member of the location, so it is a leaf child:
+# it takes the ranks after the location's last rank (the location has seven ranks, the zone stands in
+# ranks 5 and 6) instead of pushing crt, sw2 and srv down. Two overlay flow links join the zone's fw
+# (its last rank; a flow from ntp would be blocked by fw, a rank of the zone itself) to the two-node
+# client group in the tier below; the zone frame is the last cell of the location, so both links run
+# straight down (two points) and no rank of the location stands between them.
+# Test-only input owned by ranked-groups ticket 19; test/pipeline/leaf-zone.test.ts reads the layout.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  loc: { tier: 1, label: Location }
+  zone: { parent: loc, label: Zone }
+  clients: { tier: 2, label: Clients }
+nodes:
+  feed: { group: upstream, class: router, label: Feed }
+  rt: { group: loc, class: router, label: Router }
+  sw: { group: loc, class: switch, label: Switch }
+  crt: { group: loc, class: router, label: Core router }
+  sw2: { group: loc, class: switch, label: Switch two }
+  srv: { group: loc, class: server, label: Server }
+  ntp: { group: zone, class: server, label: Time }
+  fw: { group: zone, class: switch, label: Filter }
+  k1: { group: clients, class: server, label: Client one }
+  k2: { group: clients, class: server, label: Client two }
+links:
+  - [feed, rt]
+  - [rt, sw]
+  - [sw, ntp]
+  - [ntp, fw]
+  - [sw, crt]
+  - [crt, sw2]
+  - [sw2, srv]
+  - [fw, k1, { route: overlay }]
+  - [fw, k2, { route: overlay }]
