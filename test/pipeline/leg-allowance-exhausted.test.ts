@@ -2,9 +2,8 @@ import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
 import { layout, parse, restoreFinalLayout } from '../../src/index.js';
-import { validateGroupLabelBands } from '../../src/layout/bands.js';
+import { produceGroupLabelBands, validateGroupLabelBands } from '../../src/layout/bands.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
-import { GROUP_LABEL_LINK_CLEARANCE } from '../../src/theme/geometry.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -59,18 +58,32 @@ describe('a title past its allowance keeps the soft rule and says so (ticket 66)
     expect(() => restoreFinalLayout(JSON.stringify(model))).not.toThrow();
   }, 120000);
 
-  it('an exhausted title does not stop the next one (ticket 71)', async () => {
+  it('an exhausted title does not widen a gap-mate for legs its plan no longer avoids (ticket 71)', async () => {
     const model = await run('two-titles-over-skewed-legs-each-widen-their-group');
     expect(forge.done).toBe(true);
     expect(model.diagnostics.filter(item => item.code === 'GROUP_LABEL_LEG_ALLOWANCE_EXHAUSTED').map(item => item.owners)).toEqual([[{ kind: 'group', id: 'mid' }]]);
     expect(model.diagnostics.filter(item => item.code === 'PLACEMENT_NON_CONVERGENCE' && (item.owners ?? []).some(owner => 'id' in owner && owner.id.startsWith('mid')))).toEqual([]);
-    // Each extra pass is two replays: `mid` spent one pass (the forge sent it back under the title) and `mid2` took one of its own.
-    expect(forge.replays).toBe(4);
-    // `mid` keeps the soft rule; `mid2` still gets its own pass and widens.
-    const wide = model.groups.mid2!.bounds!, node = model.nodes.n0!.bounds!;
-    expect(wide.width).toBeGreaterThan(node.width + 2 * GROUP_LABEL_LINK_CLEARANCE);
-    // Both titles face one tier gap, and the gap's titles are nudged together or not at all, so the title of `mid2` keeps its place over the legs.
+    // `mid` spent its one pass (two replays). Its failed row puts the whole gap on the soft rule, so the growth `mid2` asks for is moot: no pass, no width.
+    expect(forge.replays).toBe(2);
+    expect(model.groups.mid2!.bounds!.width).toBeCloseTo(315.171875, 3);
+    expect(model.canvas!.width).toBeCloseTo(1159.513673875, 3);
     expect(() => validateGroupLabelBands(structuredClone(model))).not.toThrow();
     expect(() => restoreFinalLayout(JSON.stringify(model))).not.toThrow();
+  }, 120000);
+
+  it('a second producer call owns its diagnostics: no duplicate, no stale entry (ticket 71)', async () => {
+    const model = await run();
+    const count = (m: LayoutModel): number => m.diagnostics.filter(item => item.code === 'GROUP_LABEL_LEG_ALLOWANCE_EXHAUSTED').length;
+    expect(count(model)).toBe(1);
+    // Exhausts again (the forge is spent, so the title stands over its legs as the run left it or widens): never more than one entry, and the model validates.
+    const again = structuredClone(model);
+    produceGroupLabelBands(again);
+    expect(count(again)).toBeLessThanOrEqual(1);
+    expect(() => validateGroupLabelBands(structuredClone(again))).not.toThrow();
+    // A stale entry the call does not reproduce is dropped.
+    const stale = structuredClone(model);
+    stale.diagnostics.push({ ...model.diagnostics.find(item => item.code === 'GROUP_LABEL_LEG_ALLOWANCE_EXHAUSTED')!, owners: [{ kind: 'group', id: 'top' }] });
+    produceGroupLabelBands(stale);
+    expect(stale.diagnostics.some(item => item.code === 'GROUP_LABEL_LEG_ALLOWANCE_EXHAUSTED' && item.owners?.some(owner => 'id' in owner && owner.id === 'top'))).toBe(false);
   }, 120000);
 });

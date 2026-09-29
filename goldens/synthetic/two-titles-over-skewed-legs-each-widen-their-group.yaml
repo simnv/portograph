@@ -1,5 +1,6 @@
-# Expected: two one-node groups, each with a title over skewed legs (tickets 66 and 71); the second copies the first beside it. Each title
-# widens its own group for its legs, on its own pass outside the shared budget; a title that spends its allowance must not stop the next one.
+# Expected: two one-node groups in one tier, each with a title over skewed legs (tickets 66 and 71); the second copies the first beside it. Unforced,
+# each title widens its own group for its legs. When the first spends its leg allowance (forged in the test), its failed row keeps the
+# whole gap on the soft rule, so the second does not widen for legs its plan no longer avoids.
 # Test-only input owned by ticket 71; test/pipeline/leg-allowance-exhausted.test.ts reads it.
 portograph: 2
 groups:

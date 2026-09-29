@@ -43,7 +43,7 @@ const OUTWARD: Record<Side, Point> = {
 };
 
 interface ForbiddenInterval { low: number; high: number; id: string }
-interface LabelPlan { labels: LayoutLabel[]; growth?: { group: LayoutGroup; width: number; title: string }; blocked: string[] }
+interface LabelPlan { labels: LayoutLabel[]; growth?: { group: LayoutGroup; width: number; title: string; row: string }; blocked: string[] }
 /** Where one tier's groups land when the grown group takes its new width. */
 interface GroupPlacement { group: LayoutGroup; x: number; width: number }
 /** A point stage 8 must reach outside every obstacle to honour this placement. */
@@ -685,7 +685,8 @@ function titleX(model: LayoutModel, placed: LayoutLabel[], y: number, measured: 
  */
 function planLabels(model: LayoutModel, permitGrowth: boolean, legs = permitGrowth, spent: LegSpent = never): LabelPlan {
   const first = planLabelsOnce(model, permitGrowth, new Set(), legs, spent);
-  return first.failed.size && !first.growth ? planLabelsOnce(model, permitGrowth, first.failed, legs, spent) : first;
+  // A growth asked by a title whose gap row failed is moot: the row is planned again without nudging, and the widening would serve legs that plan no longer avoids.
+  return first.failed.size && (!first.growth || first.failed.has(first.growth.row)) ? planLabelsOnce(model, permitGrowth, first.failed, legs, spent) : first;
 }
 
 /** The tier gap a title's edge faces: the bottom edge of tier t and the top edge of tier t + 1 face the same one. */
@@ -709,7 +710,7 @@ function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: Readon
       // that no budget could have repaired.
       const width = x + measured.width + GROUP_LABEL_GEOMETRY.horizontalInset - group.bounds!.x;
       if (!growthPlan(model, group, width)) blocked.push(id);
-      else if (permitGrowth) return { labels, blocked, failed, growth: { group, width, title: title.id } };
+      else if (permitGrowth) return { labels, blocked, failed, growth: { group, width, title: title.id, row } };
     }
     labels.push({ id: `label:group:${id}`, owner: { ...group.owner }, layer: 'routed', role: 'group',
       text: title.label, fontFamily: GROUP_LABEL_GEOMETRY.fontFamily,
@@ -735,7 +736,7 @@ function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: Readon
       const width = x + measured.width + GROUP_LABEL_GEOMETRY.horizontalInset - box.x;
       const cell = cantonHost(model, band.group, band.side);
       if (cell === undefined || !growthPlan(model, cell, cell.bounds!.width + (width - box.width))) blocked.push(band.group);
-      else if (permitGrowth) return { labels, blocked, failed, growth: { group: cell, width: cell.bounds!.width + (width - box.width), title: band.group } };
+      else if (permitGrowth) return { labels, blocked, failed, growth: { group: cell, width: cell.bounds!.width + (width - box.width), title: band.group, row } };
     }
     labels.push({ id: `label:group:${band.group}`, owner: { ...band.owner }, layer: 'routed', role: 'group',
       text: title, fontFamily: GROUP_LABEL_GEOMETRY.fontFamily,
@@ -1210,6 +1211,8 @@ export function produceGroupLabelBands(model: LayoutModel): void {
   }
   reserveInitialSpace(model);
   reserveLinkLabelRoom(model);
+  // A producer call owns its leg allowances: the entries an earlier call left would be stale (or duplicated) now.
+  model.diagnostics = model.diagnostics.filter(item => item.code !== LEG_ALLOWANCE_EXHAUSTED);
   const budget = createCentreBudget();
   const legPasses = new Map<string, number>(), spentTitles = new Set<string>();
   const spent: LegSpent = title => spentTitles.has(title);
