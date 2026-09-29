@@ -3,7 +3,7 @@ import type { LayoutModel } from '../model/layout.js';
 import { unfitGaps, unfitMessage } from '../layout/gap-room.js';
 import { withLayoutMutation } from '../layout/mutation.js';
 import { completedRouteCovers, type RouteObstacle } from './obstacles.js';
-import { batchRequest, completedCrossingObstacles, crossedStems, pendingStemObstacles, planRoute, type RoutePlan } from './plan.js';
+import { batchRequest, completedCrossingObstacles, pendingStemObstacles, planRoute, type RoutePlan } from './plan.js';
 import { stitchPaths, stubCandidate, tryStitch, type RouteRejection, type Stitched } from './paths.js';
 import { ROUTE_BUDGET_MS, systemRouteClock, withRouteSession, type CreateRouteAttempt, type RouteClock } from './worker.js';
 
@@ -44,28 +44,6 @@ export interface RouteOptions {
  */
 export function routeRemainders(model: LayoutModel): string[] { return planRoute(model).remainders; }
 
-/**
- * One ownership batch, split by which completed runs each of its links may cross.
- *
- * A request carries one obstacle set, and a completed run leaves it only when every link of the request
- * may cross it (`batchRequest`). Two links of one batch that must cross different completed runs cannot
- * share a request: the run one of them has to cross stays an obstacle for both, the pocket its far
- * checkpoint stands in closes, and libavoid drops the checkpoint and answers with a diagonal. Links that
- * may cross the same runs, which is every batch on the golden sheets, stay together in plan order. The same
- * holds for a batchmate's stem: a link whose gap has to cross one (ticket 22) is a part of its own.
- */
-function crossingParts(plan: RoutePlan, batch: { links: string[] },
-  covers: Parameters<typeof completedCrossingObstacles>[2]): string[][] {
-  const granted = completedCrossingObstacles(plan, batch, covers);
-  const parts = new Map<string, string[]>();
-  for (const id of batch.links) {
-    const key = [...granted.filter(item => item.consumers.includes(id)).map(item => item.id), ...crossedStems(plan, batch, id)]
-      .sort().join('|');
-    parts.set(key, [...parts.get(key) ?? [], id]);
-  }
-  return [...parts.values()];
-}
-
 interface RouterAnswer { routes: Map<string, Point[]>; stitched?: Map<string, Stitched> }
 
 async function runRouter(model: LayoutModel, plan: RoutePlan, options: RouteOptions): Promise<RouterAnswer> {
@@ -81,39 +59,31 @@ async function runRouter(model: LayoutModel, plan: RoutePlan, options: RouteOpti
       // Ownership batches run in a fixed order and every completed route protects the next batch.
       for (const [index, batch] of plan.batches.entries()) {
         // A later batch's reserved stems protect it the same way, before it has a route of its own.
-        const later = plan.batches.slice(index + 1).flatMap(item => item.links);
-        const parts = crossingParts(plan, batch, protectedRuns);
-        for (const [part, links] of parts.entries()) {
-          // A part is an order, and an order needs the reservation the batch order already gets: the stems of
-          // the later parts protect it too, except where one of its links has to cross a stem (ticket 22).
-          const mates = new Set(parts.slice(part + 1).flat());
-          const pending = new Set([...later, ...mates]);
-          const sub = parts.length === 1 ? batch : { id: `${batch.id}.${part}`, links };
-          const routed = await route(batchRequest(plan, sub, [
-            ...completedCrossingObstacles(plan, sub, protectedRuns),
-            ...pendingStemObstacles(plan, sub, pending, mates),
-          ]));
-          for (const item of routed) {
-            if (routes.has(item.connector)) throw new Error(`Router returned ${item.connector} twice`);
-            routes.set(item.connector, item.points);
+        const later = new Set(plan.batches.slice(index + 1).flatMap(item => item.links));
+        const routed = await route(batchRequest(plan, batch, [
+          ...completedCrossingObstacles(plan, batch, protectedRuns),
+          ...pendingStemObstacles(plan, batch, later),
+        ]));
+        for (const item of routed) {
+          if (routes.has(item.connector)) throw new Error(`Router returned ${item.connector} twice`);
+          routes.set(item.connector, item.points);
+        }
+        for (const id of batch.links) {
+          const link = model.links.find(item => item.id === id)!;
+          const linkPlan = plan.links.find(item => item.link === id)!;
+          // A route stage 8 cannot use (a skipped checkpoint, an end not met) is discarded, so its cover is
+          // no obstacle to the batches after it. Strict mode keeps the route and stitching throws.
+          if (stitched) {
+            const done = tryStitch(model, linkPlan, routes);
+            stitched.set(id, done);
+            if ('rejection' in done) {
+              for (const piece of linkPlan.pieces) if (piece.kind === 'gap') routes.delete(piece.connector);
+              continue;
+            }
           }
-          for (const id of links) {
-            const link = model.links.find(item => item.id === id)!;
-            const linkPlan = plan.links.find(item => item.link === id)!;
-            // A route stage 8 cannot use (a skipped checkpoint, an end not met) is discarded, so its cover is
-            // no obstacle to the batches after it. Strict mode keeps the route and stitching throws.
-            if (stitched) {
-              const done = tryStitch(model, linkPlan, routes);
-              stitched.set(id, done);
-              if ('rejection' in done) {
-                for (const piece of linkPlan.pieces) if (piece.kind === 'gap') routes.delete(piece.connector);
-                continue;
-              }
-            }
-            for (const piece of linkPlan.pieces) {
-              if (piece.kind !== 'gap') continue;
-              protectedRuns.push(...completedRouteCovers(model, link, piece.connector, routes.get(piece.connector) ?? []));
-            }
+          for (const piece of linkPlan.pieces) {
+            if (piece.kind !== 'gap') continue;
+            protectedRuns.push(...completedRouteCovers(model, link, piece.connector, routes.get(piece.connector) ?? []));
           }
         }
       }

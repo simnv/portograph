@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import { resolve } from '../../src/resolve/index.js';
 import type { Point, Side } from '../../src/model/geometry.js';
-import { completedCrossingObstacles, crossedStems, pendingStemObstacles, planRoute } from '../../src/route/plan.js';
+import { completedCrossingObstacles, pendingStemObstacles, planRoute } from '../../src/route/plan.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from './fixture.js';
 
@@ -70,41 +70,6 @@ describe('a later part of a batch keeps its stems (ticket 21, the part order)', 
     const items = pendingStemObstacles(plan, { links: ['link-2'] }, new Set(['link-1']));
     expect(items.map(item => item.bounds)).toContainEqual(stem.bounds);
     expect(items.every(item => item.consumers.length === 0)).toBe(true);
-  });
-
-  it('a link whose gap has to cross that stem is its consumer, so the crossing stays open', () => {
-    const items = pendingStemObstacles(plan, { links: ['link-2'] }, new Set(['link-1']), new Set(['link-1']));
-    expect(items.find(item => item.bounds === stem.bounds)!.consumers).toEqual(['link-2']);
-  });
-});
-
-describe('a batch splits by the batchmate stems its links cross (ticket 22)', () => {
-  it('only the link whose gap crosses a batchmate stem carries that stem in its key', () => {
-    const model = resolve(parse(`portograph: 2
-groups: {g: {tier: 0}}
-nodes: {a: {group: g}, b: {group: g}, c: {group: g}, d: {group: g}, e: {group: g}, f: {group: g}}
-links: [[a, b], [c, d], [e, f]]`));
-    model.groups.g!.bounds = { x: -200, y: -200, width: 600, height: 600 };
-    model.groups.g!.tier = 0;
-    const node = (id: string, point: Point, side: Side): void => {
-      model.nodes[id]!.bounds = { x: point.x - (side === 'left' ? 0 : side === 'right' ? 20 : 10),
-        y: point.y - (side === 'top' ? 0 : side === 'bottom' ? 20 : 10), width: 20, height: 20 };
-      const port = model.nodes[id]!.ports[0]!;
-      port.side = side;
-      port.anchor = point;
-    };
-    node('a', { x: -2, y: 0 }, 'bottom');
-    node('b', { x: -40, y: 80 }, 'top');
-    node('c', { x: 10, y: 10 }, 'left');
-    node('d', { x: 90, y: 10 }, 'left');
-    node('e', { x: 10, y: 60 }, 'left');
-    node('f', { x: 90, y: 60 }, 'left');
-    const plan = planRoute(model);
-    const stem = plan.stems.findIndex(item => item.link === 'link-1' && item.node === 'a');
-    const batch = { links: ['link-1', 'link-2', 'link-3'] };
-    expect(crossedStems(plan, batch, 'link-2')).toEqual([`stem:${stem}:link-1`]);
-    // Link 3 runs at y = 60, below the stem of a (y 0 to 15).
-    expect(crossedStems(plan, batch, 'link-3')).toEqual([]);
   });
 });
 
