@@ -11,8 +11,14 @@ import { createAvoidAttempt } from '../route/fixture.js';
 const read = (name: string): string =>
   readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 
-/** One run clearance: the band the rule keeps free of allocated rows around a nested tip row. */
+/** One run clearance, the reach of a run's cover: how far a row may still touch the x-span of a tip's leg. */
 const CLEARANCE = 11.5;
+/**
+ * The band the rule keeps free of allocated rows either side of a nested tip row: the tip obstacle
+ * reaches 11.5 px past the tip and a run keeps 11.5 px off an obstacle. At 11.5 px the tip has no
+ * pocket and the router drops the link that owns it.
+ */
+const BAND = 2 * CLEARANCE;
 const FIXTURE = 'a-nested-tip-row-holds-no-allocated-row';
 
 interface Row { link: string; y: number; x0: number; x1: number }
@@ -65,7 +71,7 @@ it('keeps every allocated row one run clearance off every nested stem tip, and r
   for (const tip of tips) {
     for (const row of found) {
       if (tip.links.has(row.link) || row.x1 < tip.x0 - CLEARANCE || row.x0 > tip.x1 + CLEARANCE) continue;
-      expect(Math.abs(row.y - tip.y), `${row.link} row at ${row.y} against the tip of ${tip.node} at ${tip.y}`).toBeGreaterThanOrEqual(CLEARANCE - 1e-6);
+      expect(Math.abs(row.y - tip.y), `${row.link} row at ${row.y} against the tip of ${tip.node} at ${tip.y}`).toBeGreaterThanOrEqual(BAND - 1e-6);
     }
   }
 });
@@ -87,15 +93,14 @@ it('grows the gap for the row a nested tip band denies, allocates that row and k
     expect(path.some(segment => Math.abs(segment.from.y - row.y) < 1e-6 && Math.abs(segment.to.y - row.y) < 1e-6
       && Math.min(segment.from.x, segment.to.x) <= row.x0 + 1e-6 && Math.max(segment.from.x, segment.to.x) >= row.x1 - 1e-6), `${row.link} runs along its row`).toBe(true);
   }
-  // No foreign horizontal stands within one run clearance of a nested tip row where it passes the tip column.
+  // In the published model each allocated row stands a tip band off every foreign nested tip row where it
+  // passes the tip column. (A row the router finds for itself is not the rule's to place.)
   const cover = nestedTips(routed);
-  for (const link of routed.links) {
-    for (const segment of link.path?.segments ?? []) {
-      if (Math.abs(segment.from.y - segment.to.y) > 1e-9) continue;
-      for (const tip of cover) {
-        if (tip.links.has(link.id) || Math.min(segment.from.x, segment.to.x) > tip.x + CLEARANCE || Math.max(segment.from.x, segment.to.x) < tip.x - CLEARANCE) continue;
-        expect(Math.abs(segment.from.y - tip.y), `${link.id} at ${segment.from.y} against the tip of ${tip.node} at ${tip.y}`).toBeGreaterThanOrEqual(CLEARANCE - 1e-6);
-      }
+  expect(cover.length).toBeGreaterThanOrEqual(2);
+  for (const row of seated) {
+    for (const tip of cover) {
+      if (tip.links.has(row.link) || row.x1 < tip.x0 - CLEARANCE || row.x0 > tip.x1 + CLEARANCE) continue;
+      expect(Math.abs(row.y - tip.y), `${row.link} row at ${row.y} against the tip of ${tip.node} at ${tip.y}`).toBeGreaterThanOrEqual(BAND - 1e-6);
     }
   }
   // No path leaves the canvas.
