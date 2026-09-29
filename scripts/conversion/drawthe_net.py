@@ -12,6 +12,9 @@ import sys
 import yaml
 
 
+# The classes the layout engine draws on the overlay layer (src/resolve/index.ts OVERLAY_CLASSES; Q104).
+OVERLAY_CLASSES = ('sync', 'flow', 'dashed')
+
 ICON_ROLES = {
     'router': ('router', 'router'), 'spacerouter': ('satellite-router', 'router'),
     'cloud': ('provider', 'cloud'), 'nexus5000': ('switch', 'switch'),
@@ -326,7 +329,7 @@ def assign_cantons(result, cantons):
             continue
         counts = Counter()
         for source, target, options in result['links']:
-            if options.get('class') not in ('sync', 'flow'):
+            if options.get('class') not in OVERLAY_CLASSES:
                 continue
             here, there = top[nodes[source]['group']], top[nodes[target]['group']]
             if here != gid:

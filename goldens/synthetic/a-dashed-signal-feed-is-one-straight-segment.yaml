@@ -1,0 +1,27 @@
+# Expected: a dashed link is a signal, not a cable, so it is drawn on the overlay layer as one straight segment from
+# face to face (Q104, ticket 73). Two satellites on tier 0 feed WAN nodes in three location groups on tier 2 through
+# dashed links; each WAN node is joined to a switch in its own location by a physical cable. No link is removed.
+# Test-only input owned by ranked-groups ticket 73; test/pipeline/dashed-signal-feed.test.ts reads it.
+portograph: 2
+groups:
+  space: { tier: 0, label: Space }
+  north: { tier: 2, label: North }
+  south: { tier: 2, label: South }
+  east: { tier: 2, label: East }
+nodes:
+  sat-1: { group: space, class: server, label: Satellite 1 }
+  sat-2: { group: space, class: server, label: Satellite 2 }
+  wan-n: { group: north, class: router, label: WAN North }
+  wan-s: { group: south, class: router, label: WAN South }
+  wan-e: { group: east, class: router, label: WAN East }
+  sw-n: { group: north, class: switch, label: Switch North }
+  sw-s: { group: south, class: switch, label: Switch South }
+  sw-e: { group: east, class: switch, label: Switch East }
+links:
+  - [wan-n, sw-n]
+  - [wan-s, sw-s]
+  - [wan-e, sw-e]
+  - { from: sat-1, to: wan-n, class: dashed }
+  - { from: sat-1, to: wan-s, class: dashed }
+  - { from: sat-2, to: wan-s, class: dashed }
+  - { from: sat-2, to: wan-e, class: dashed }

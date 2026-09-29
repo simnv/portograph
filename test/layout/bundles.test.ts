@@ -44,7 +44,7 @@ links: [[a.p, b.p], [b.q, a.q], [a.r, b.r]]`;
 describe('bundle stage', () => {
   it('creates the real golden bundle paths only at stage 11, with stroke-aware straight blocks', async () => {
     const before = await throughBars(readFileSync('goldens/m1-sip-edge.yaml', 'utf8'));
-    expect(before.bundles.map(b => b.members.length).sort()).toEqual([2, 4, 4, 4, 4]);
+    expect(before.bundles.map(b => b.members.length).sort()).toEqual([2, 4, 4]);
     expect(before.links.filter(l => l.bundle).every(l => !l.path)).toBe(true);
     const model = run(before), subset = { ...model, links: model.links.filter(l => l.path) };
     expect(model.stage).toBe('bundles');

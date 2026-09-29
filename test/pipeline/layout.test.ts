@@ -144,7 +144,7 @@ describe('layout(document, options)', () => {
     expect(Object.keys(model.nodes)).toHaveLength(12);
     expect(model.links).toHaveLength(26);
     expect(Object.values(model.nodes).reduce((sum, node) => sum + node.ports.length, 0)).toBe(52);
-    expect(model.bundles.map(bundle => bundle.members.length).sort()).toEqual([2, 4, 4, 4, 4]);
+    expect(model.bundles.map(bundle => bundle.members.length).sort()).toEqual([2, 4, 4]);
     expect(model.links.every(link => link.path)).toBe(true);
     expect(model.legend).toBeDefined();
 

@@ -51,22 +51,22 @@ nodes:
 links: [[b.p, a.p]]`;
 
 describe('real golden region stages', () => {
-  it('retains topology, aligns eight primary members, and reserves four EBR-to-bar transits', async () => {
+  it('retains topology, aligns four primary members, and reserves four EBR-to-bar transits', async () => {
     const input = rows(await placed(golden)), allocated = lanes(input), aligned = flanks(allocated), model = centre(aligned);
     expect(Object.keys(model.nodes)).toHaveLength(12); expect(model.links).toHaveLength(26);
     expect(Object.values(model.nodes).flatMap(node => node.ports)).toHaveLength(52);
     const beforePairs = input.links.map(link => flankPair(input, link)).filter(pair => pair !== undefined);
     expect(beforePairs.filter(pair => pair.group.id === 'tbr-left').map(pair => pair.own.engineOrder)).toEqual([0, 2, 4, 6]);
-    expect(beforePairs.filter(pair => pair.group.id === 'tbr-right').map(pair => pair.own.engineOrder)).toEqual([6, 4, 3, 1]);
+    expect(beforePairs.filter(pair => pair.group.id === 'tbr-right').map(pair => pair.own.engineOrder)).toEqual([]); // the right flank's links are dashed, hence overlay (Q104)
     for (const id of ['TBR-001', 'TBR-002']) {
       const primaryPorts = new Set(beforePairs.filter(pair => pair.own.ref.node === id).map(pair => pair.own.ref.ordinal));
       const otherOrder = (m: LayoutModel) => [...m.nodes[id]!.ports].filter(port => !primaryPorts.has(port.ref.ordinal)).sort((a, b) => a.engineOrder! - b.engineOrder!).map(port => port.ref);
       expect(otherOrder(model)).toEqual(otherOrder(input));
     }
     const flankLinks = model.links.filter(link => [link.attachments!.from.node, link.attachments!.to.node].some(id => model.groups[model.document.nodes[id]!.group]!.flank));
-    expect(flankLinks).toHaveLength(16);
+    expect(flankLinks).toHaveLength(16); // the eight overlay ones among them draw no flank pair
     const primary = model.links.map(link => flankPair(model, link)).filter(pair => pair !== undefined);
-    expect(primary).toHaveLength(8);
+    expect(primary).toHaveLength(4);
     for (const pair of primary) expect(pair.own.anchor!.y).toBe(pair.peer.anchor!.y);
     expect(model.lanes).toHaveLength(4);
     for (const lane of model.lanes) {

@@ -16,15 +16,15 @@ it('routes the measured JPEG golden remainder and scores the complete diagram', 
   // run between two anchors on one x with a clear corridor. Ticket 50: each is a planned drop, reserved tip to tip between its two claimed
   // stems (one piece before), so stage 8 asks for no route at all — the prototype's idle router, and byte-for-byte the geometry libavoid returned.
   expect(routeRemainders(before)).toEqual(['link-1', 'link-2']);
-  expect(before.links.filter(link => !link.path)).toHaveLength(2);
+  expect(before.links.filter(link => !link.path && link.layer !== 'overlay')).toHaveLength(2);
   const plan = planRoute(before);
   expect(plan.batches).toEqual([]);
   expect(plan.links.filter(item => ['link-1', 'link-2'].includes(item.link))
     .map(item => item.pieces.map(piece => piece.kind))).toEqual([['straight', 'allocated', 'straight'], ['straight', 'allocated', 'straight']]);
-  expect(plan.overlay).toEqual([]);
+  expect(plan.overlay).toEqual(['link-13', 'link-14', 'link-15', 'link-16', 'link-17', 'link-18', 'link-19', 'link-20']); // the dashed links (Q104)
 
   const model = await route(before, { createAttempt: createAvoidAttempt });
-  expect(model.links.every(link => link.path)).toBe(true);
+  expect(model.links.every(link => link.path || link.layer === 'overlay')).toBe(true); // overlay links take theirs at stage 11 (Q104)
   expect(model.links.some(link => link.stubCandidate)).toBe(false);
 
   // Unused label-band space is traversable; the actual group label remains an obstacle.
@@ -49,6 +49,6 @@ it('routes the measured JPEG golden remainder and scores the complete diagram', 
 
   // Placement is frozen: stage 8 adds paths only, and the result restores byte-equal.
   expect(model.freeze!.placement).toEqual(before.freeze!.placement);
-  expect(model.links.slice(2).map(link => link.path)).toEqual(before.links.slice(2).map(link => link.path));
+  expect(model.links.slice(2).filter(link => link.layer !== 'overlay').map(link => link.path)).toEqual(before.links.slice(2).filter(link => link.layer !== 'overlay').map(link => link.path));
   expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
 }, 60000);
