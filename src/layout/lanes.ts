@@ -503,7 +503,19 @@ export function allocateLanes(model: LayoutModel): void {
       }).sort((a, b) => a.centre - b.centre);
       const rootOf = new Map(ordered.flatMap((entry, index) => entry.item.cells.map(cell => [cell.id, index] as const)));
       const desire = tiers.map(tier => targetX(link, tier)).find(value => value !== undefined) ?? sx;
-      const wanted = ordered.filter(entry => entry.centre < desire).length;
+      /**
+       * A lane a frame holds stays on that frame's side of every frame the link is foreign to (ticket 26). The
+       * held lane makes its own frame grow to it, so a lane beyond a foreign frame would grow the frame across
+       * that frame, and the lane of a link foreign to the grown frame would then stand inside it; two frames
+       * that hold crossed links do this to each other, and no order of the lanes decides it. The own frame
+       * stands between the foreign roots in one place, so the lane takes the one gap that keeps it there.
+       * A link that holds no lane in a cell of these sub-tiers keeps the side its far end asks for.
+       */
+      const rootCells = new Set(ordered.flatMap(entry => entry.item.cells.map(cell => cell.id))), ownCells = ownFrameCells(model, link);
+      const heldBoxes = Object.values(model.groups).filter(group => ownCells.has(group.id) && !rootCells.has(group.id) && tiers.includes(group.tier!)).map(group => occ(group, link));
+      const heldCentre = heldBoxes.length ? (Math.min(...heldBoxes.map(box => box.x)) + Math.max(...heldBoxes.map(box => right(box)))) / 2 : undefined;
+      const heldGap = heldCentre === undefined ? undefined : ordered.filter(entry => entry.centre < heldCentre).length;
+      const wanted = heldGap ?? ordered.filter(entry => entry.centre < desire).length;
       // Every cell of a root before `gap` stands left of the lane and every cell of the others right of it;
       // a group of no root takes the side of its centre. The left groups must be a prefix of the tier.
       const plan = (tier: number, x: number, gap: number) => {
@@ -528,7 +540,7 @@ export function allocateLanes(model: LayoutModel): void {
         const low = Math.max(-Infinity, ...before.map(entry => open ? entry.fixedHigh : entry.high)) + half;
         const high = Math.min(Infinity, ...after.map(entry => open ? entry.fixedLow : entry.low)) - half;
         return { gap, low, high };
-      }).filter(item => item.low <= item.high).flatMap(item => {
+      }).filter(item => item.low <= item.high && (heldGap === undefined || item.gap === heldGap)).flatMap(item => {
         // Beside the source, or beside a cell of the link's own frame that stands in the way: such a cell
         // is not moved (ticket 09), so the lane takes the free side of it inside the frame's column.
         const clamp = (value: number): number => Math.min(Math.max(value, item.low), item.high);
