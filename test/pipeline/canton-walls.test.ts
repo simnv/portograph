@@ -214,6 +214,8 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     'a-one-cell-member-keeps-its-barycentre-inside-the-column',
     'a-transit-inside-a-canton',
     'a-free-member-beside-a-held-lane-inside-its-canton',
+    // Ticket 64: the pull reads the owned lane of a transit feed, as centring does, so the last rule to run cannot flip the member.
+    'a-one-rank-member-beside-a-two-rank-member',
     // Ticket 67: the finished layout is a fixed point of the column pull (a packed run with a pin; the lone column stays open, see the ticket).
     'a-canton-group-swap-is-refused-for-routed-crossings',
     'three-canton-groups-close-up-to-a-band-gap',
