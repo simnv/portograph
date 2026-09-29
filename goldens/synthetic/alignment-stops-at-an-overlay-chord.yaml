@@ -1,0 +1,32 @@
+# Expected: Alignment growth stops at an overlay chord (ranked-groups ticket 29). The provider has four
+# bottom ports, one to each of four sites spread wide below it, and the centre rule would widen its
+# body to sit each port over its feed. A sync (overlay) link runs from the clock above the provider
+# to a lab node that stands between the two left sites: its one straight chord crosses the provider
+# row beside the provider's own width and inside the spread of its feeds. The growth on that side
+# stops short of the chord, less the node clearance (`ALIGNMENT_STOPPED_AT_OVERLAY`, once for the
+# provider, naming the link), the ports left outside their feeds stay at pitch from the edge and
+# their links jog, the sync link stays one segment, and every routed link publishes.
+# Test-only input owned by ranked-groups ticket 29; the test runs the whole pipeline on it.
+portograph: 2
+groups:
+  clocks: { tier: 0, label: Clocks }
+  providers: { tier: 1, label: Providers }
+  sites: { tier: 2, label: Sites }
+nodes:
+  clock: { group: clocks, class: server, label: Clock }
+  provider:
+    group: providers
+    class: provider
+    label: Provider
+    ports: [{ name: p1, side: bottom }, { name: p2, side: bottom }, { name: p3, side: bottom }, { name: p4, side: bottom }]
+  site-1: { group: sites, class: router, label: Site 1, ports: [{ name: up, side: top }] }
+  lab: { group: sites, class: server, label: Lab }
+  site-2: { group: sites, class: router, label: Site 2, ports: [{ name: up, side: top }] }
+  site-3: { group: sites, class: router, label: Site 3, ports: [{ name: up, side: top }] }
+  site-4: { group: sites, class: router, label: Site 4, ports: [{ name: up, side: top }] }
+links:
+  - [provider.p1, site-1.up]
+  - [provider.p2, site-2.up]
+  - [provider.p3, site-3.up]
+  - [provider.p4, site-4.up]
+  - [clock, lab, { class: sync }]
