@@ -89,4 +89,21 @@ describe('interleaved links of one tier gap cross on the row of the earlier link
     }
     gatesPass(model);
   }, 60000);
+
+  it('lets a lane-end piece the lane allocation left unseated hold the row between its port tip and its lane approach', async () => {
+    const model = await routed('an-unseated-lane-end-piece-holds-the-row-between-its-tips');
+    expect(model.removedLinks ?? []).toEqual([]);
+    const earlier = model.links.find(link => link.id === 'link-7')!, later = model.links.find(link => link.id === 'link-8')!;
+    expect(earlier.fixedSegments).toHaveLength(1);
+    // The piece runs from the stem tip of its port to the approach point one router stem short of the lane.
+    const port = findPort(model, earlier.attachments!.from)!;
+    const tip = stemCheckpoint(model, port).y, approach = earlier.fixedSegments![0]!.from.y - 15;
+    const mid = (tip + approach) / 2;
+    const rows = horizontals(earlier);
+    expect(rows).toEqual([expect.closeTo(mid, 6)]);
+    const crossings = strictCrossings(earlier, later);
+    expect(crossings).toHaveLength(1);
+    expect(crossings[0]!.y).toBeCloseTo(mid, 6);
+    gatesPass(model);
+  }, 60000);
 });

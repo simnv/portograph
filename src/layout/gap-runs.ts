@@ -182,6 +182,8 @@ interface GapUsers {
   pieces: Piece[];
   /** The pieces that hold a row between their tip rows for a later piece to cross, and the room the closest lacks. */
   held: Participant[];
+  /** The lane-end pieces that would hold one, if the lane allocation leaves them unseated. */
+  laneHeld: Participant[];
   short: number;
 }
 
@@ -195,7 +197,7 @@ interface GapUsers {
  */
 function gapUsers(model: LayoutModel, gaps: TierGap[]): Map<number, GapUsers> {
   const cache = stemCache();
-  const result = new Map<number, GapUsers>(gaps.map((gap, key) => [key, { items: [], approaches: [], crossers: [], pieces: [], held: [], short: 0 }]));
+  const result = new Map<number, GapUsers>(gaps.map((gap, key) => [key, { items: [], approaches: [], crossers: [], pieces: [], held: [], laneHeld: [], short: 0 }]));
   for (const [order, link] of model.links.entries()) {
     if (!drawn(link)) continue;
     const stops = stopsOf(model, link);
@@ -249,32 +251,35 @@ function gapUsers(model: LayoutModel, gaps: TierGap[]): Map<number, GapUsers> {
  * port stems and the link owns no lane, no shared run and no bundle. `order` is the link's model order, the order the
  * router lays them in.
  */
-interface Piece { link: LayoutLink; index: number; order: number; upper: Point; lower: Point; upperFirst: boolean; plain: boolean }
+interface Piece { link: LayoutLink; index: number; order: number; upper: Point; lower: Point; upperFirst: boolean; plain: boolean; lane: boolean }
 
 function pieceOf(model: LayoutModel, link: LayoutLink, order: number, stops: ReturnType<typeof stopsOf>, index: number,
   gap: TierGap, cache: StemCache): Piece | undefined {
-  const end = (at: number): { x: number; y: number; from: number; ok: boolean; port: boolean } | undefined => {
+  type End = { x: number; y: number; from: number; port: boolean; faces: 'low' | 'high' };
+  const end = (at: number): End | undefined => {
     const stop = stops[at]!;
     if (stop.kind === 'shared') return undefined;
     if (stop.kind === 'lane') {
       const edge = edgeOf(gap, stop.point);
       if (edge === undefined) return undefined;
       const stem = GROUP_LABEL_GEOMETRY.routerStem;
-      return { x: stop.point.x, y: edge === 'low' ? gap.low + stem : gap.high - stem, from: stop.point.y, ok: true, port: false };
+      return { x: stop.point.x, y: edge === 'low' ? gap.low + stem : gap.high - stem, from: stop.point.y, port: false, faces: edge };
     }
     const port = findPort(model, link.attachments![at === 0 ? 'from' : 'to']);
     if (!port?.anchor || (port.side !== 'top' && port.side !== 'bottom')) return undefined;
     return { x: port.anchor.x, y: port.anchor.y + OUTWARD[port.side] * stemPlan(model, port, cache).depth, from: port.anchor.y,
-      ok: true, port: true };
+      port: true, faces: port.side === 'bottom' ? 'low' : 'high' };
   };
   const first = end(index * 2), second = end(index * 2 + 1);
   if (!first || !second) return undefined;
   const upperFirst = first.from < second.from, upper = upperFirst ? first : second, lower = upperFirst ? second : first;
-  // The tip of a port that faces away from the gap lies outside it: that piece is not a crossing of this gap.
-  if (upper.y > lower.y + gap.high - gap.low) return undefined;
-  const plain = first.port && second.port && stops.length === 2 && link.layer === 'routed' && link.bundle === undefined && link.removed !== true
-    && !link.fixedSegments?.length && !link.sharedRuns?.from?.length && !link.sharedRuns?.to?.length;
-  return { link, index, order, upper: { x: upper.x, y: upper.y }, lower: { x: lower.x, y: lower.y }, upperFirst, plain };
+  // The upper end leaves the low boundary downward and the lower end enters the high boundary upward; a port that faces
+  // away from the gap has a tip outside it, and that piece is not a crossing of this gap.
+  if (upper.faces !== 'low' || lower.faces !== 'high') return undefined;
+  const owned = link.layer === 'routed' && link.bundle === undefined && link.removed !== true && !link.sharedRuns?.from?.length && !link.sharedRuns?.to?.length;
+  const plain = first.port && second.port && stops.length === 2 && owned && !link.fixedSegments?.length;
+  const lane = first.port !== second.port && owned;
+  return { link, index, order, upper: { x: upper.x, y: upper.y }, lower: { x: lower.x, y: lower.y }, upperFirst, plain, lane };
 }
 
 /**
@@ -289,12 +294,17 @@ function pieceOf(model: LayoutModel, link: LayoutLink, order: number, stops: Ret
  */
 function holdsOf(users: GapUsers, gap: TierGap, pitch: number): void {
   for (const one of users.pieces) {
-    if (!one.plain) continue;
+    if (!one.plain && !one.lane) continue;
     if (!users.pieces.some(other => other.order > one.order && (one.upper.x - other.upper.x) * (one.lower.x - other.lower.x) < -EPS * EPS)) continue;
+    // A piece whose two ends share one x is a column, and a column needs no row.
+    if (same(one.upper.x, one.lower.x)) continue;
     const jog = one.lower.y - one.upper.y;
-    if (jog < pitch - EPS) { users.short = Math.max(users.short, pitch - jog); continue; }
-    if (one.upper.y < gap.low - EPS || one.lower.y > gap.high + EPS) continue;
-    users.held.push({ link: one.link, index: one.index, near: one.upper, far: one.lower, nearFirst: one.upperFirst, nearEdge: 'low', farOnEdge: true });
+    if (jog < pitch - EPS) { if (one.plain) users.short = Math.max(users.short, pitch - jog); continue; }
+    // A plain piece stands between two stem tips inside the gap. A lane's overhang can put the gap's edge past a tip, and
+    // the row is then sought only where the gap is.
+    if (one.plain && (one.upper.y < gap.low - EPS || one.lower.y > gap.high + EPS)) continue;
+    const held: Participant = { link: one.link, index: one.index, near: one.upper, far: one.lower, nearFirst: one.upperFirst, nearEdge: 'low', farOnEdge: true };
+    (one.plain ? users.held : users.laneHeld).push(held);
   }
 }
 
@@ -306,12 +316,12 @@ function holdsOf(users: GapUsers, gap: TierGap, pitch: number): void {
  * the link's own nested tips do not apply to it (its leg along that row no longer exists), and the bands of every other
  * link's tips do.
  */
-function heldRuns(model: LayoutModel, list: readonly Blocker[], gap: TierGap, users: GapUsers):
+function heldRuns(model: LayoutModel, list: readonly Blocker[], gap: TierGap, held: readonly Participant[]):
   { runs: Map<Participant, PathSegment[]>; peers: Blocker[] } {
   const margin = routedStroke(model) / 2 + STRAIGHT_PATH_CLEARANCE.path;
   const pitch = MEMBER_GAP + routedStroke(model), keep = nudgingDistance(model);
   const runs = new Map<Participant, PathSegment[]>(), peers: Blocker[] = [];
-  for (const item of users.held) {
+  for (const item of held) {
     const attached = new Set([item.link.attachments!.from.node, item.link.attachments!.to.node]);
     const ends = item.nearFirst ? [item.near, item.far] : [item.far, item.near];
     const at = (row: number): PathSegment[] => [{ from: { x: ends[0]!.x, y: row }, to: { x: ends[1]!.x, y: row }, owner: { kind: 'link', id: item.link.id } }];
@@ -338,6 +348,29 @@ function heldRuns(model: LayoutModel, list: readonly Blocker[], gap: TierGap, us
     }
   }
   return { runs, peers };
+}
+
+/**
+ * One tier gap's whole allocation (ticket 39): the plain pieces that hold a row, the lane rows around them, and the
+ * lane-end pieces of interleaved pairs that the lane allocation left unseated (one gap piece, no run), which hold the
+ * row between their approach point and their stem tip exactly as a plain piece does. A lane-end piece the lane allocation
+ * seated stays as it is. `wanted` counts the held rows the gap was asked for: the plain pieces only, because whether a lane
+ * piece stays unseated is known only once the room is fixed, and the room a lane row needs is the lane rule's to ask for.
+ * `laneEnds` says whether the unseated lane-end pieces are placed; the room measure leaves them out.
+ */
+function allocateWithHolds(model: LayoutModel, list: readonly Blocker[], gap: TierGap, users: GapUsers, laneEnds: boolean):
+  { lanes: GapAllocation | undefined; runs: Map<Participant, PathSegment[]>; wanted: number } {
+  const plain = heldRuns(model, nearBlockers(list, gap, []), gap, users.held);
+  const lanes = users.items.length ? allocateGap(model, [...nearBlockers(list, gap, users.items), ...plain.peers], gap, users) : undefined;
+  const seated = new Set([...lanes?.runs.keys() ?? []].map(item => `${item.link.id}#${item.index}`));
+  const unseated = !laneEnds ? [] : users.laneHeld.filter(item => !seated.has(`${item.link.id}#${item.index}`));
+  const margin = routedStroke(model) / 2 + STRAIGHT_PATH_CLEARANCE.path;
+  const behind: Blocker[] = [...lanes?.runs ?? []].flatMap(([item, segments]) => segments.map(run => ({ owners: new Set([item.link.id]),
+    bounds: grow({ x: Math.min(run.from.x, run.to.x), y: Math.min(run.from.y, run.to.y), width: Math.abs(run.to.x - run.from.x),
+      height: Math.abs(run.to.y - run.from.y) }, linkStrokeWidth(item.link) / 2 + margin) })));
+  const lane = heldRuns(model, [...nearBlockers(list, gap, []), ...plain.peers, ...behind], gap, unseated);
+
+  return { lanes, runs: new Map([...plain.runs, ...lane.runs]), wanted: users.held.length };
 }
 
 /** Whether this participant needs a row of its own: its two ends do not share one x. */
@@ -971,14 +1004,13 @@ export function tierGapRoom(model: LayoutModel): TierGapRoom[] {
     const above = bands.find(band => band.tier === gap.above)!.bounds!;
     const below = bands.find(band => band.tier === gap.below)!.bounds!;
     const entry = users.get(key)!;
-    const held = heldRuns(model, nearBlockers(list, gap, []), gap, entry);
-    const lanes = entry.items.filter(needsRow).length, rows = lanes + entry.held.length;
+    const got = allocateWithHolds(model, list, gap, entry, false);
+    const lanes = entry.items.filter(needsRow).length, rows = lanes + got.wanted;
     const margins = below.y - bottom(above) - (gap.high - gap.low);
     const nothing = { ...gap, margins, rows, seated: 0, pitch, headroom, required: 0, refuses: false, stems: stemShortfall(model, gap, entry) };
     if (!rows) return nothing;
-    const allocation = lanes ? allocateGap(model, [...nearBlockers(list, gap, entry.items), ...held.peers], gap, entry) : { runs: new Map<Participant, PathSegment[]>(), refused: false };
-    if (allocation.refused) return { ...nothing, refuses: true };
-    const seats = [...allocation.runs.values(), ...held.runs.values()].flatMap(segments =>
+    if (lanes && got.lanes?.refused) return { ...nothing, refuses: true };
+    const seats = [...got.lanes?.runs.values() ?? [], ...got.runs.values()].flatMap(segments =>
       segments.filter(segment => same(segment.from.y, segment.to.y)).map(segment => segment.from.y));
     if (!seats.length) return nothing;
     return { ...nothing, seated: seats.length, required: Math.max(...seats) - gap.low + headroom };
@@ -994,15 +1026,14 @@ export function allocateGapRuns(model: LayoutModel): GapRun[] {
   const gaps = tierGaps(model);
   if (!gaps.length) return [];
   const users = gapUsers(model, gaps);
-  if (![...users.values()].some(item => item.items.length || item.held.length)) return [];
+  if (![...users.values()].some(item => item.items.length || item.held.length || item.laneHeld.length)) return [];
   const list = blockers(model), result: GapRun[] = [];
   for (const [key, entry] of [...users].sort((a, b) => a[0] - b[0])) {
     const { items, crossers } = entry;
-    if (!items.length && !entry.held.length) continue;
+    if (!items.length && !entry.held.length && !entry.laneHeld.length) continue;
     const gap = gaps[key]!;
-    const held = heldRuns(model, nearBlockers(list, gap, []), gap, entry);
-    const allocated = new Map([...items.length ? allocateGap(model, [...nearBlockers(list, gap, items), ...held.peers], gap, entry).runs : [],
-      ...held.runs]);
+    const got = allocateWithHolds(model, list, gap, entry, true);
+    const allocated = new Map([...got.lanes?.runs ?? [], ...got.runs]);
     if (!allocated.size) continue;
     // A run this gap could not seat keeps the route it has today, so it crosses the seated ones.
     for (const item of items) {
