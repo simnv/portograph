@@ -61,6 +61,12 @@ export function groupNodeIds(model: LayoutModel, id: string): string[] {
 /** Wrap validated stage-0 output without performing resolution or placement. */
 export function createLayoutModel(input: NormalisedDocument): LayoutModel {
   const document: NormalisedDocument = JSON.parse(serialize(input));
+  // Canton groups (docs/design/canton-groups.md) are schema only until ticket 54: the layout does not see them.
+  for (const [id, group] of Object.entries(document.groups)) {
+    if (group.members !== undefined) delete document.groups[id];
+    else delete group.canton;
+  }
+  if (document.groupOrder !== undefined) document.groupOrder = document.groupOrder.filter(id => Object.hasOwn(document.groups, id));
   const groups = Object.fromEntries(orderedGroupIds(document).map(id => {
     const group = document.groups[id];
     if (group === undefined) throw new Error(`Missing group ${id}`);

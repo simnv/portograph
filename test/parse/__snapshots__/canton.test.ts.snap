@@ -1,0 +1,404 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`canton groups: schema (canton-groups ticket 1) > a document without canton normalises as before: a-child-frame-stands-inside-its-parent 1`] = `
+{
+  "groups": {
+    "site": {
+      "label": "Site",
+      "shape": "ranked",
+      "tier": 1,
+    },
+    "upstream": {
+      "label": "Upstream",
+      "shape": "ranked",
+      "tier": 0,
+    },
+    "zone": {
+      "label": "Zone",
+      "parent": "site",
+      "shape": "ranked",
+      "tier": 1,
+    },
+  },
+  "links": [
+    {
+      "from": {
+        "anonymous": true,
+        "node": "isp",
+        "ordinal": 1,
+      },
+      "to": {
+        "anonymous": true,
+        "node": "gw",
+        "ordinal": 1,
+      },
+    },
+    {
+      "from": {
+        "anonymous": true,
+        "node": "gw",
+        "ordinal": 2,
+      },
+      "to": {
+        "anonymous": true,
+        "node": "z1",
+        "ordinal": 1,
+      },
+    },
+    {
+      "from": {
+        "anonymous": true,
+        "node": "z1",
+        "ordinal": 2,
+      },
+      "to": {
+        "anonymous": true,
+        "node": "z2",
+        "ordinal": 1,
+      },
+    },
+  ],
+  "nodes": {
+    "gw": {
+      "class": "router",
+      "group": "site",
+      "label": "Gateway",
+      "ports": [
+        {
+          "anonymous": true,
+          "ordinal": 1,
+        },
+        {
+          "anonymous": true,
+          "ordinal": 2,
+        },
+      ],
+    },
+    "isp": {
+      "class": "provider",
+      "group": "upstream",
+      "label": "ISP",
+      "ports": [
+        {
+          "anonymous": true,
+          "ordinal": 1,
+        },
+      ],
+    },
+    "z1": {
+      "class": "switch",
+      "group": "zone",
+      "label": "Zone 1",
+      "ports": [
+        {
+          "anonymous": true,
+          "ordinal": 1,
+        },
+        {
+          "anonymous": true,
+          "ordinal": 2,
+        },
+      ],
+    },
+    "z2": {
+      "class": "access",
+      "group": "zone",
+      "label": "Zone 2",
+      "ports": [
+        {
+          "anonymous": true,
+          "ordinal": 1,
+        },
+      ],
+    },
+  },
+  "portograph": 2,
+  "profile": "network",
+}
+`;
+
+exports[`canton groups: schema (canton-groups ticket 1) > a document without canton normalises as before: a-leaf-zone-stands-at-the-bottom-of-its-location 1`] = `
+{
+  "groups": {
+    "clients": {
+      "label": "Clients",
+      "shape": "ranked",
+      "tier": 2,
+    },
+    "loc": {
+      "label": "Location",
+      "shape": "ranked",
+      "tier": 1,
+    },
+    "upstream": {
+      "label": "Upstream",
+      "shape": "ranked",
+      "tier": 0,
+    },
+    "zone": {
+      "label": "Zone",
+      "parent": "loc",
+      "shape": "ranked",
+      "tier": 1,
+    },
+  },
+  "links": [
+    {
+      "from": {
+        "anonymous": true,
+        "node": "feed",
+        "ordinal": 1,
+      },
+      "to": {
+        "anonymous": true,
+        "node": "rt",
+        "ordinal": 1,
+      },
+    },
+    {
+      "from": {
+        "anonymous": true,
+        "node": "rt",
+        "ordinal": 2,
+      },
+      "to": {
+        "anonymous": true,
+        "node": "sw",
+        "ordinal": 1,
+      },
+    },
+    {
+      "from": {
+        "anonymous": true,
+        "node": "sw",
+        "ordinal": 2,
+      },
+      "to": {
+        "anonymous": true,
+        "node": "ntp",
+        "ordinal": 1,
+      },
+    },
+    {
+      "from": {
+        "anonymous": true,
+        "node": "ntp",
+        "ordinal": 2,
+      },
+      "to": {
+        "anonymous": true,
+        "node": "fw",
+        "ordinal": 1,
+      },
+    },
+    {
+      "from": {
+        "anonymous": true,
+        "node": "sw",
+        "ordinal": 3,
+      },
+      "to": {
+        "anonymous": true,
+        "node": "crt",
+        "ordinal": 1,
+      },
+    },
+    {
+      "from": {
+        "anonymous": true,
+        "node": "crt",
+        "ordinal": 2,
+      },
+      "to": {
+        "anonymous": true,
+        "node": "sw2",
+        "ordinal": 1,
+      },
+    },
+    {
+      "from": {
+        "anonymous": true,
+        "node": "sw2",
+        "ordinal": 2,
+      },
+      "to": {
+        "anonymous": true,
+        "node": "srv",
+        "ordinal": 1,
+      },
+    },
+    {
+      "from": {
+        "anonymous": true,
+        "node": "fw",
+        "ordinal": 2,
+      },
+      "route": "overlay",
+      "to": {
+        "anonymous": true,
+        "node": "k1",
+        "ordinal": 1,
+      },
+    },
+    {
+      "from": {
+        "anonymous": true,
+        "node": "fw",
+        "ordinal": 3,
+      },
+      "route": "overlay",
+      "to": {
+        "anonymous": true,
+        "node": "k2",
+        "ordinal": 1,
+      },
+    },
+  ],
+  "nodes": {
+    "crt": {
+      "class": "router",
+      "group": "loc",
+      "label": "Core router",
+      "ports": [
+        {
+          "anonymous": true,
+          "ordinal": 1,
+        },
+        {
+          "anonymous": true,
+          "ordinal": 2,
+        },
+      ],
+    },
+    "feed": {
+      "class": "router",
+      "group": "upstream",
+      "label": "Feed",
+      "ports": [
+        {
+          "anonymous": true,
+          "ordinal": 1,
+        },
+      ],
+    },
+    "fw": {
+      "class": "switch",
+      "group": "zone",
+      "label": "Filter",
+      "ports": [
+        {
+          "anonymous": true,
+          "ordinal": 1,
+        },
+        {
+          "anonymous": true,
+          "ordinal": 2,
+        },
+        {
+          "anonymous": true,
+          "ordinal": 3,
+        },
+      ],
+    },
+    "k1": {
+      "class": "server",
+      "group": "clients",
+      "label": "Client one",
+      "ports": [
+        {
+          "anonymous": true,
+          "ordinal": 1,
+        },
+      ],
+    },
+    "k2": {
+      "class": "server",
+      "group": "clients",
+      "label": "Client two",
+      "ports": [
+        {
+          "anonymous": true,
+          "ordinal": 1,
+        },
+      ],
+    },
+    "ntp": {
+      "class": "server",
+      "group": "zone",
+      "label": "Time",
+      "ports": [
+        {
+          "anonymous": true,
+          "ordinal": 1,
+        },
+        {
+          "anonymous": true,
+          "ordinal": 2,
+        },
+      ],
+    },
+    "rt": {
+      "class": "router",
+      "group": "loc",
+      "label": "Router",
+      "ports": [
+        {
+          "anonymous": true,
+          "ordinal": 1,
+        },
+        {
+          "anonymous": true,
+          "ordinal": 2,
+        },
+      ],
+    },
+    "srv": {
+      "class": "server",
+      "group": "loc",
+      "label": "Server",
+      "ports": [
+        {
+          "anonymous": true,
+          "ordinal": 1,
+        },
+      ],
+    },
+    "sw": {
+      "class": "switch",
+      "group": "loc",
+      "label": "Switch",
+      "ports": [
+        {
+          "anonymous": true,
+          "ordinal": 1,
+        },
+        {
+          "anonymous": true,
+          "ordinal": 2,
+        },
+        {
+          "anonymous": true,
+          "ordinal": 3,
+        },
+      ],
+    },
+    "sw2": {
+      "class": "switch",
+      "group": "loc",
+      "label": "Switch two",
+      "ports": [
+        {
+          "anonymous": true,
+          "ordinal": 1,
+        },
+        {
+          "anonymous": true,
+          "ordinal": 2,
+        },
+      ],
+    },
+  },
+  "portograph": 2,
+  "profile": "network",
+}
+`;
