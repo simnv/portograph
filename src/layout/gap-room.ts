@@ -48,28 +48,44 @@ import { moveGroup } from './skeleton-geometry.js';
  * taken any earlier grows a gap the finished diagram does not need and the golden moves.
  */
 export function growTierGaps(model: LayoutModel): boolean {
-  // One pass, no probe. The plan measures every term anchored to the band below from `bandTop`, so its `H` does not
-  // move with the growth, and a second pass over the grown gaps asks for nothing (tier-gap-rows.md, Section 3).
+  // The plan is read on the model as 7f will publish it (`settled`), and a stem nests only where the gap has the room
+  // (`sidePlan` declines a nested turn that would stand in frozen geometry), so the tips the plan reads depend on how far the
+  // gap has opened. The growth is therefore taken to its fixed point: each round reads the plan on the model grown by the
+  // rounds before it and adds what that plan still asks for. `H` does not move with the growth except through the stems,
+  // so the rounds are few (a round that asks for nothing ends it), and the model itself is touched once, by the sum.
   const grown = new Map<number, GapGrowth>();
-  for (const { gap, plan } of tierGapPlans(settled(model))) {
-    // A part the plan declines is named, with the reason: the router lays it as it did before the plan.
+  let plans: ReturnType<typeof tierGapPlans> = [];
+  for (let round = 0; round < MAX_ROUNDS; round++) {
+    plans = tierGapPlans(settled(model, new Map([...grown].map(([tier, item]) => [tier, item.extra]))));
+    let more = false;
+    for (const { gap, plan } of plans) {
+      if (plan.growth <= EPS) continue;
+      more = true;
+      grown.set(gap.below, { extra: (grown.get(gap.below)?.extra ?? 0) + plan.growth, setBy: plan.setBy });
+    }
+    if (!more) break;
+  }
+  // A part the plan declines is named, with the reason: the router lays it as it did before the plan.
+  for (const { gap, plan } of plans) {
     for (const item of plan.residual) {
       placementWarning(model, 'TIER_GAP_PART_RESIDUAL',
         `${item.link} is left to the router in the tier gap above tier ${gap.below}: ${REASONS[item.reason]}${item.granted ? ` (${item.granted}'s leg cover is granted to it)` : ''}.`, [item.link]);
     }
-    if (plan.growth > EPS) grown.set(gap.below, { extra: plan.growth, setBy: plan.setBy });
   }
   return grow(model, grown);
 }
 
+const MAX_ROUNDS = 6;
+
 /**
- * The model as 7f publishes it once a gap has grown: the replay that follows a growth refits the group boxes and re-centres
- * their nodes, so the x of a tip or a lane differs from the one this rule sees before it. The plan is read on that replay,
- * not on the model as it stands, or it plans the rows of an x nothing publishes. It is a trial: the model itself is not touched,
- * and the growth is applied to it whole, so the same replay follows.
+ * The model as 7f publishes it once the gaps have grown by `extra`: the replay that follows a growth refits the group boxes and
+ * re-centres their nodes, so the x of a tip or a lane differs from the one this rule sees before it. The plan is read on that
+ * replay, not on the model as it stands, or it plans the rows of an x nothing publishes. It is a trial: the model itself is
+ * not touched.
  */
-function settled(model: LayoutModel): LayoutModel {
+function settled(model: LayoutModel, extra: ReadonlyMap<number, number>): LayoutModel {
   const trial = JSON.parse(JSON.stringify(model)) as LayoutModel;
+  if (extra.size) moveBands(trial, extra);
   rebuildRegionGeometry(trial, undefined, undefined, true);
   alignLinkedGroupGrid(trial);
   replanGroupLabels(trial);
