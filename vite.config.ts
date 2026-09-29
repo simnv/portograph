@@ -39,5 +39,8 @@ export default defineConfig({
   test: {
     include: ['test/**/*.test.ts'],
     environment: 'node',
+    // Default 5 s is too close to the slowest untimed tests (1-2.6 s quiet) when agents share the machine.
+    // Per-test timeouts larger than this stay in force.
+    testTimeout: 30000,
   },
 });
