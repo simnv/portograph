@@ -1,0 +1,22 @@
+# Expected: A widening body keeps the label room of its link (ranked-groups ticket 33). Two switches stand side by
+# side in the lower tier, linked by a link with a long description, so the run between them stays as long as the
+# description needs. Each switch has two feeds from the tier above and the two share the middle one, so
+# aligning the ports of each switch to its feeds widens the two bodies toward each other. The alignment stops at the
+# room the description reserved, and no labelled link is left shorter than its label.
+# Test-only input owned by ranked-groups ticket 33; test/pipeline/tier-above-final-x.test.ts reads the layout.
+portograph: 2
+groups:
+  feeds: { tier: 0, label: Feeds }
+  pair: { tier: 1, label: Pair }
+nodes:
+  feed-1: { group: feeds, class: router, label: Feed one }
+  feed-2: { group: feeds, class: router, label: Feed two }
+  feed-3: { group: feeds, class: router, label: Feed three }
+  left: { group: pair, class: switch, label: Left }
+  right: { group: pair, class: switch, label: Right }
+links:
+  - [feed-1, left]
+  - [feed-2, left]
+  - [feed-2, right]
+  - [feed-3, right]
+  - [left, right, { label: the description of a link between two neighbours }]

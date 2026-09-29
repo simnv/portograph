@@ -60,8 +60,8 @@ nodes:
       - {name: p, side: right, order: 0}
       - {name: q, side: left}
 links:
-  - [a.p, b.p, {weight: 3}]
-  - [a.q, b.q, {weight: 3}]`);
+  - [a.p, b.p, {weight: 3, route: orthogonal}]
+  - [a.q, b.q, {weight: 3, route: orthogonal}]`);
   expect(score(model).snapshot.passed).toBe(true);
   const plan = gapPlan(model, 'a', 'b')!;
   const leg = (id: string): number => model.links.find(link => link.id === id)!.path!.segments

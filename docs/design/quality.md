@@ -58,7 +58,7 @@ reported separately and does not contribute to either sum.
 |---|---|---|---|
 | Crossings | `1 − min(1, c / m)`; `c` = crossings outside bundles, `m` = routed links | 1 | 0.30 |
 | Bends | `1 − min(1, mean bends per routed link / 3)` | 1 | 0.15 |
-| Path continuity | fraction of routed links with ≥ 2 segments whose consecutive turns alternate direction (no U-turns) | 1 | 0.10 |
+| Path continuity | fraction of drawn routed links whose consecutive turns alternate direction (no U-turns); a one-segment link counts as continuous | 1 | 0.10 |
 | Compactness | `Σ node area / bbox area`, computed globally and per group, reported both, scored as the mean | 1 | 0.10 |
 | Grid alignment | fraction of nodes whose top **or** left edge shares a coordinate (±1 px) with ≥ 2 other nodes | 1 | 0.10 |
 | Flow consistency | fraction of routed *vertical* segments whose direction (source→target) is downward when the target tier is lower | 1 | 0.10 |
@@ -72,6 +72,11 @@ non-random layout).
 Also reported: `overlaps`, `bundledLength`, `barCross`, `labelHits`, `labelsOmitted`, `stubs`, `removedLinks`,
 `groupLinks`, `lanesUsed`, `inversions`, `fallbackUsed`, `deadlineHit`, canvas size, and (outside
 the snapshot block) layout time per stage.
+
+`removedLinks` counts the links stage 8 removed because it could not use them
+(`ROUTE_CHECKPOINT_SKIPPED`, `ROUTE_GAP_REJECTED`). The layout JSON lists them in `removedLinks`. A
+removed link has no path, no label, and no place in the score or the gates. It is not a gate
+failure, so the count is the only signal. Read it on every render.
 
 ## Thresholds — assertions vs advisories
 
@@ -167,6 +172,8 @@ command, the time is simply not a promise.
     placed in reserved canvas space below the drawn diagram, lists exactly the classes and port
     roles present, and is excluded from the scored bounding box: its size follows the class set,
     not the quality of the layout.
+11. No link is removed. `removedLinks` is 0, or each removed link is named in the diagnostics with its
+    reason. A drawing that lacks a link the input declares is not a correct drawing.
 
 A **straight bundle member** is the single diagonal between the two stems of a heavily inverted
 bundle (ADR-0017: more inversions than half the members, or a staircase more than half as long again

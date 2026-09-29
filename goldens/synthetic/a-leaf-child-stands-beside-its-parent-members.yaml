@@ -1,0 +1,36 @@
+# Expected: a leaf child stands beside the parent members of its ranks (ranked-groups ticket 28).
+# Location `loc` has six depth ranks: a chain of routers and switches (c0 to c3, ranks 0 to 3) and two
+# branches that hang from c3, the two-node child `zone` (z4, z5, ranks 4 and 5) and the parent members
+# p4 and p5 (ranks 4 and 5). Zone feeds nothing deeper, so it is a leaf child and pushes nothing:
+# p4 stands in the parent's own cell of rank 4 and p5 in that of rank 5, beside the zone frame, so
+# sub-tier 4 holds `loc#4` and `zone#4`, and sub-tier 5 holds `loc#5` and `zone#5`. The zone frame and
+# the parent cells are two disjoint columns of one location, 20 px apart. Two overlay links join the
+# zone's ranks to the parent members of the same ranks (z4 with p4, z5 with p5); each is one straight
+# segment, face to face.
+# Test-only input owned by ranked-groups ticket 28; test/pipeline/leaf-child-beside.test.ts reads the layout.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  loc: { tier: 1, label: Location }
+  zone: { parent: loc, label: Zone }
+nodes:
+  feed: { group: upstream, class: router, label: Feed }
+  c0: { group: loc, class: router, label: Core one }
+  c1: { group: loc, class: switch, label: Core two }
+  c2: { group: loc, class: router, label: Distribution }
+  c3: { group: loc, class: switch, label: Access }
+  p4: { group: loc, class: server, label: Primary network time server of the location }
+  p5: { group: loc, class: switch, label: Load balancer of the location }
+  z4: { group: zone, class: server, label: Zone network time server }
+  z5: { group: zone, class: switch, label: Zone traffic filter }
+links:
+  - [feed, c0]
+  - [c0, c1]
+  - [c1, c2]
+  - [c2, c3]
+  - [c3, p4]
+  - [p4, p5]
+  - [c3, z4]
+  - [z4, z5]
+  - [z4, p4, { route: overlay }]
+  - [z5, p5, { route: overlay }]

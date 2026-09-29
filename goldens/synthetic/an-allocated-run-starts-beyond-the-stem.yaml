@@ -1,17 +1,20 @@
-# Expected: A site group holds a router, a switch and a child group (ranked cells, ticket 19) of
-# three servers. The child feeds nothing deeper, so the leaf-child rule (ticket 19) puts it after
-# the switch, and the ranks are the router 0, the switch 1, b and c 2, a 3. Links skip one
-# rank (the switch's), so each crosses a rank band between its ends and owns a lane there.
-# A lane reaches 12 px past its own band. The allocated run of the other link leaves its
-# lane and arrives at a port that stands on the edge of a rank cell. An interior cell edge holds no
-# padding, so that port row sits 12 px from the far lane's reach, and the 15 px stem of the port
-# ends inside the tier gap. A run that stops at the gap's boundary ends between the port and the
-# stem tip. The router then meets a required checkpoint beyond the end of its piece and skips it
-# ("Router skipped a required checkpoint"). An allocated run ends at the stem tip when the tip
-# lies inside the gap, so the checkpoint lies on the path of every link (ranked-groups ticket 14,
-# rule A).
+# Expected: A site group holds a router, a switch, two more servers and a child group (ranked cells) of
+# three servers. Ranks are breadth-first depths. The child feeds the servers `d` and `e` below it, so it is
+# not a leaf child (ticket 28) and the switch, in the span of the child, is pushed after it: the router is
+# rank 0, b and c 1, a 2, the switch, d and e 3. The link from the router to the switch skips two ranks, so
+# it crosses two rank bands and owns a lane in each. (Before ticket 28 the child was a leaf and stood after
+# the switch: the router 0, the switch 1, b and c 2, a 3.) A lane reaches 12 px past its own band. The
+# allocated run of the other link leaves its lane and arrives at a port that stands on the edge of a rank
+# cell. An interior cell edge holds no padding, so that port row sits 12 px from the far lane's reach, and
+# the 15 px stem of the port ends inside the tier gap. A run that stops at the gap's boundary ends between
+# the port and the stem tip. The router then meets a required checkpoint beyond the end of its piece and
+# skips it ("Router skipped a required checkpoint"). An allocated run ends at the stem tip when the tip
+# lies inside the gap, so the checkpoint lies on the path of every link (ranked-groups ticket 14, rule A).
 # The condition rests on rank cells with no padding on their interior edges and on lanes that
 # share a gap with a port; it does not rest on a rank order the derivation may change.
+# Every physical link is authored `route: orthogonal`: since ranked-groups ticket 34 a link inside one frame
+# would otherwise be one straight segment and reserve no lane, no gap run and no stem, and this input
+# exists to exercise exactly those reservations.
 # Reduced from a private sheet; names are generic.
 # Test-only input owned by ranked-groups ticket 14; test/pipeline/allocated-run-beyond-stem.test.ts reads the layout.
 portograph: 2
@@ -27,11 +30,15 @@ nodes:
   a: { group: zone, class: load-balancer }
   b: { group: zone, class: ntp-stratum2 }
   c: { group: zone, class: ntp-stratum2 }
+  d: { group: site, class: server }
+  e: { group: site, class: server }
 links:
   - [router, provider, { class: dashed }]
-  - [router, mid, { class: physical }]
-  - [a, b, { class: physical }]
-  - [router, c, { class: physical }]
-  - [router, b, { class: physical }]
-  - [c, a, { class: physical }]
-  - [mid, a, { class: physical }]
+  - [router, mid, { class: physical, route: orthogonal }]
+  - [a, b, { class: physical, route: orthogonal }]
+  - [router, c, { class: physical, route: orthogonal }]
+  - [router, b, { class: physical, route: orthogonal }]
+  - [c, a, { class: physical, route: orthogonal }]
+  - [mid, a, { class: physical, route: orthogonal }]
+  - [a, d, { class: physical, route: orthogonal }]
+  - [b, e, { class: physical, route: orthogonal }]

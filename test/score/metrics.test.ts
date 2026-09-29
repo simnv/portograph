@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel, Point } from '../../src/model/index.js';
 import { score } from '../../src/score/index.js';
-import { bundle, empty, node, parallel, simple } from './fixtures.js';
+import { bundle, empty, link, node, parallel, simple } from './fixtures.js';
 
 function path(model: LayoutModel, points: Point[], index = 0): void {
   const link = model.links[index]!;
@@ -53,6 +53,17 @@ describe('soft metrics', () => {
     path(model, [{ x: 30, y: 40 }, { x: 30, y: 80 }, { x: 30, y: 140 }]);
     expect(score(model).snapshot.metrics.bends.total).toBe(0);
     expect(score(model).snapshot.metrics.continuity.value).toBe(1);
+  });
+  it('counts a one-segment chord as continuous beside a bent path (ticket 35)', () => {
+    const model = simple();
+    node(model, 'c', { x: 200, y: 0, width: 60, height: 40 }, 0);
+    node(model, 'd', { x: 200, y: 140, width: 60, height: 40 }, 1);
+    link(model, 'cd', 'c', 'd', [{ x: 230, y: 40 }, { x: 230, y: 140 }]);
+    path(model, [{ x: 30, y: 40 }, { x: 30, y: 80 }, { x: 60, y: 80 }, { x: 60, y: 40 }]);
+    // Bent U-turn path is the only eligible one before ticket 35: 0 / 1. Now the chord joins: 1 / 2.
+    expect(score(model).snapshot.metrics.continuity).toEqual({ value: 0.5, eligible: 2, alternating: 1 });
+    path(model, [{ x: 30, y: 40 }, { x: 30, y: 140 }]);
+    expect(score(model).snapshot.metrics.continuity).toEqual({ value: 1, eligible: 2, alternating: 2 });
   });
   it('reports global and per-group compactness and their mean', () => {
     const model = empty();

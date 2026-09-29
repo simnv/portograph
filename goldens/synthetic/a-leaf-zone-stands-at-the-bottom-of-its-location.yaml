@@ -1,11 +1,10 @@
-# Expected: a leaf child span stands at the bottom of its parent (ranked-groups ticket 19). Location
-# `loc` has a chain of routers and switches (rt, sw, crt, sw2, srv) and a child group `zone` of two
-# nodes, ntp and fw, hung from sw. Zone feeds no deeper member of the location, so it is a leaf child:
-# it takes the ranks after the location's last rank (the location has seven ranks, the zone stands in
-# ranks 5 and 6) instead of pushing crt, sw2 and srv down. Two overlay flow links join the zone's fw
-# (its last rank; a flow from ntp would be blocked by fw, a rank of the zone itself) to the two-node
-# client group in the tier below; the zone frame is the last cell of the location, so both links run
-# straight down (two points) and no rank of the location stands between them.
+# Expected: a leaf child keeps its depth ranks beside its parent's members (ranked-groups tickets 19 and 28).
+# Location `loc` has a chain of routers and switches (rt, sw, crt, sw2, srv) and a child group `zone` of two
+# nodes, ntp and fw, hung from sw. Zone feeds no deeper member of the location, so it is a leaf child. Ticket 19
+# put it after the location's last rank (ranks 5 and 6); ticket 28 keeps it at its depth ranks, 2 and 3, and
+# the location's own members of those ranks (crt, sw2) stand beside it, in the location's own cells of the same
+# sub-tiers. Two overlay flow links join the zone's fw to the two-node client group in the tier below; both
+# run straight (two points). The name of the file is the ticket 19 name.
 # Test-only input owned by ranked-groups ticket 19; test/pipeline/leaf-zone.test.ts reads the layout.
 portograph: 2
 groups:
