@@ -76,6 +76,8 @@ export interface ResidualPart {
   /** The ends, where the part has two tips facing the gap; they feed the residual term of `H` and the tips others avoid. */
   upper?: PlanEnd;
   lower?: PlanEnd;
+  /** The x-range the residual link spans in the gap: a planned vertical within `keep` of it is granted to the link (2.2, S5). */
+  span?: { x0: number; x1: number };
 }
 
 /** What the plan stands in. */
@@ -626,9 +628,21 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
       const a = stops[index * 2]!, b = stops[index * 2 + 1]!;
       const spanLow = Math.min(a.point.y, b.point.y), spanHigh = Math.max(a.point.y, b.point.y);
       const found = gaps.filter(other => other.low > spanLow - EPS && other.high < spanHigh + EPS);
+      const id = `${link.id}#${index}`;
+      const span = { x0: Math.min(a.point.x, b.point.x), x1: Math.max(a.point.x, b.point.x) };
+      const fail = (reason: ResidualReason): void => { residual.push({ id, link: link.id, order, reason, span }); };
+      // A same-boundary U-turn (Section 1 item 6): both ports of a link with no lane face this gap from the same band, so the link
+      // leaves one, turns inside the gap and enters the other. No gap stands between its stops, so the span test below never sees it.
+      if (!found.length && stops.length === 2 && a.kind === 'port' && b.kind === 'port') {
+        const from = findPort(model, link.attachments!.from), to = findPort(model, link.attachments!.to);
+        const faces = (port: typeof from): boolean => port?.anchor !== undefined
+          && (port.side === 'bottom' ? port.anchor.y <= gap.low + EPS && port.anchor.y >= above.y - EPS
+            : port.side === 'top' && port.anchor.y >= bandTop - EPS && port.anchor.y <= bottom(bandOf(gap.below)) + EPS);
+        if (from?.side === to?.side && faces(from) && faces(to)) fail('u-turn');
+        continue;
+      }
       if (!found.some(other => same(other.low, gap.low) && same(other.high, gap.high))) continue;
       if (a.kind === 'shared' || b.kind === 'shared') continue;
-      const id = `${link.id}#${index}`, fail = (reason: ResidualReason): void => { residual.push({ id, link: link.id, order, reason }); };
       if (found.length > 1) { fail('spans-two-gaps'); continue; }
       const side = (stop: typeof a, at: number): Side | 'lateral' | 'off' => {
         if (stop.kind === 'lane') {
@@ -647,7 +661,7 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
       if (first === 'lateral' || second === 'lateral') { fail('lateral-port'); continue; }
       if (first === 'off' || second === 'off') { fail('off-boundary'); continue; }
       const [upper, lower] = first.from <= second.from ? [first, second] : [second, first];
-      if (upper.faces !== 'low' || lower.faces !== 'high') { fail(upper.faces === lower.faces ? 'u-turn' : 'faces-away'); continue; }
+      if (upper.faces !== 'low' || lower.faces !== 'high') { fail('faces-away'); continue; }
       const strip = (item: Side): PlanEnd => ({ x: item.x, y: item.y, kind: item.kind, source: item.source });
       const room = labelRoom(model, link);
       inputs.push({ id, link: link.id, order, index, upperFirst: upper === first, upper: strip(upper), lower: strip(lower),
@@ -710,11 +724,11 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
   const kept = inputs.filter(input => {
     const lo = Math.min(input.upper.x, input.lower.x), hi = Math.max(input.upper.x, input.lower.x);
     if (walls.some(wall => wall.owner !== input.link && hi > wall.x0 - EPS && lo < wall.x1 + EPS)) {
-      residual.push({ id: input.id, link: input.link, order: input.order, reason: 'crosses-lane' });
+      residual.push({ id: input.id, link: input.link, order: input.order, reason: 'crosses-lane', span: { x0: lo, x1: hi } });
       return false;
     }
     if (bars.some(bar => bar.owner !== input.link && [input.upper.x, input.lower.x].some(x => x > bar.x0 + EPS && x < bar.x1 - EPS))) {
-      residual.push({ id: input.id, link: input.link, order: input.order, reason: 'crosses-shared-run' });
+      residual.push({ id: input.id, link: input.link, order: input.order, reason: 'crosses-shared-run', span: { x0: lo, x1: hi } });
       return false;
     }
     return true;

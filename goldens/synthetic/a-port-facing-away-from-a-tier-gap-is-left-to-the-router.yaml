@@ -1,0 +1,24 @@
+# Expected: six planned parts across the tier gap and one link from the top port of r0 to s3. The port faces away from the gap
+# (residual, reason faces-away, TIER_GAP_PART_RESIDUAL; the label was u-turn before ticket 51). The diagram publishes and removes nothing.
+# Test-only input owned by ranked-groups ticket 51; test/pipeline/residual-parts.test.ts reads the placed and the routed model.
+portograph: 2
+groups:
+  src: { tier: 0 }
+  access: { tier: 1 }
+nodes:
+  r0: { group: src, class: router, ports: [{ name: t, side: top }] }
+  r1: { group: src, class: router, ports: [] }
+  r2: { group: src, class: router, ports: [] }
+  r3: { group: src, class: router, ports: [] }
+  s0: { group: access, class: switch, ports: [] }
+  s1: { group: access, class: switch, ports: [] }
+  s2: { group: access, class: switch, ports: [] }
+  s3: { group: access, class: switch, ports: [] }
+links:
+  - [r0, s1]
+  - [r1, s0]
+  - [r1, s3]
+  - [r2, s2]
+  - [r2, s0]
+  - [r3, s1]
+  - [r0.t, s3]

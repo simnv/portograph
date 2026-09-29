@@ -67,7 +67,7 @@ export function growTierGaps(model: LayoutModel): boolean {
   // A part the plan declines is named, with the reason: the router lays it as it did before the plan.
   for (const { gap, plan } of plans) {
     for (const item of plan.residual) {
-      placementWarning(model, 'TIER_GAP_PART_RESIDUAL',
+      placementWarning(model, item.reason === 'row-cycle' ? 'TIER_GAP_ROW_CYCLE' : 'TIER_GAP_PART_RESIDUAL',
         `${item.link} is left to the router in the tier gap above tier ${gap.below}: ${REASONS[item.reason]}${item.granted ? ` (${item.granted}'s leg cover is granted to it)` : ''}.`, [item.link]);
     }
   }
@@ -75,6 +75,20 @@ export function growTierGaps(model: LayoutModel): boolean {
 }
 
 const MAX_ROUNDS = 6;
+
+/**
+ * The tier gaps whose plan asks for more room than they have, on the model as it stands. 7f sizes a gap on a trial; a change after
+ * it (the corridor move of `reseatLanes`, a later stage) can leave a gap short, and stage 8 then leaves its parts to the router
+ * (`fittingPlans`). This names each such gap with the ask, once, so that no part is left to the router without a diagnostic.
+ */
+export function unfitGaps(model: LayoutModel): { above: number; below: number; growth: number }[] {
+  return tierGapPlans(model).filter(({ plan }) => plan.growth > EPS && plan.parts.length)
+    .map(({ gap, plan }) => ({ above: gap.above, below: gap.below, growth: plan.growth }));
+}
+
+/** The message `TIER_GAP_PART_UNFIT` carries for a gap that does not fit after a change following 7f's growth. */
+export const unfitMessage = (below: number, growth: number): string =>
+  `the tier gap above tier ${below} asks ${growth.toFixed(2)} px more than it has; its parts are left to the router.`;
 
 /**
  * The model as 7f publishes it once the gaps have grown by `extra`: the replay that follows a growth refits the group boxes and

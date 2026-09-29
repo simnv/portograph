@@ -1,0 +1,25 @@
+# Expected: the plan finds a cycle it cannot break for link-6 and leaves it to the router
+# (TIER_GAP_ROW_CYCLE). The link between the bottom ports of r0 and r3 is a same-boundary U-turn, also residual; its stems are what
+# put the rows of link-5 and link-6 in the cycle. The diagram publishes and removes nothing.
+# Test-only input owned by ranked-groups ticket 51; test/pipeline/residual-parts.test.ts reads the placed and the routed model.
+portograph: 2
+groups:
+  src: { tier: 0 }
+  access: { tier: 1 }
+nodes:
+  r0: { group: src, class: router, ports: [{ name: a, side: bottom }] }
+  r1: { group: src, class: router, ports: [] }
+  r2: { group: src, class: router, ports: [] }
+  r3: { group: src, class: router, ports: [{ name: a, side: bottom }] }
+  s0: { group: access, class: switch, ports: [] }
+  s1: { group: access, class: switch, ports: [] }
+  s2: { group: access, class: switch, ports: [] }
+  s3: { group: access, class: switch, ports: [] }
+links:
+  - [r0, s1]
+  - [r1, s0]
+  - [r1, s3]
+  - [r2, s2]
+  - [r2, s0]
+  - [r3, s1]
+  - [r0.a, r3.a]
