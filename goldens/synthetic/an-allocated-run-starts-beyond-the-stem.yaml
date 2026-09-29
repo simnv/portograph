@@ -1,35 +1,33 @@
-# Expected: Two sibling groups of tier 4 hold a router each; both routers link to one provider in an
-# earlier tier, and each group holds a child group with a load balancer that links to servers. A link
-# that leaves a port and turns in a tier gap has an allocated run in that gap. When the port row sits
-# less than one router stem (15 px) from the gap's boundary, the stem tip lies inside the gap, and a
-# run that starts at the boundary starts closer to the port than the stem does. The router then meets
-# a required checkpoint beyond the end of its piece and skips it ("Router skipped a required
-# checkpoint"). An allocated run starts no closer to the port than the stem tip, so the checkpoint
-# lies on the path of every link (ranked-groups ticket 14, rule A).
+# Expected: A site group holds a router and a child group (ranked cells, ticket 19) of three
+# servers. Two links skip one rank, so each crosses a rank band between its ends and owns a lane
+# there. A lane reaches 12 px past its own band. The allocated run of the other link leaves its
+# lane and arrives at a port that stands on the edge of a rank cell. An interior cell edge holds no
+# padding, so that port row sits 12 px from the far lane's reach, and the 15 px stem of the port
+# ends inside the tier gap. A run that stops at the gap's boundary ends between the port and the
+# stem tip. The router then meets a required checkpoint beyond the end of its piece and skips it
+# ("Router skipped a required checkpoint"). An allocated run ends at the stem tip when the tip
+# lies inside the gap, so the checkpoint lies on the path of every link (ranked-groups ticket 14,
+# rule A).
+# The condition rests on rank cells with no padding on their interior edges and on lanes that
+# share a gap with a port; it does not rest on a rank order the derivation may change.
 # Reduced from a private sheet; names are generic.
 # Test-only input owned by ranked-groups ticket 14; test/pipeline/allocated-run-beyond-stem.test.ts reads the layout.
 portograph: 2
 profile: network
 groups:
-  wan: { tier: 3, label: "Wan" }
-  east: { tier: 4, label: "East" }
-  east-zone: { parent: east, label: "Zone" }
-  west: { tier: 4, label: "West" }
-  west-zone: { parent: west, label: "Zone" }
+  wan: { tier: 0 }
+  site: { tier: 1 }
+  zone: { parent: site }
 nodes:
-  provider: { group: wan, class: provider, label: "Provider" }
-  east-router: { group: east, class: router, label: "East router" }
-  east-server: { group: east-zone, class: ntp-stratum2, label: "East server" }
-  east-balancer: { group: east-zone, class: load-balancer, label: "East balancer" }
-  west-router: { group: west, class: router, label: "West router" }
-  west-server-1: { group: west-zone, class: ntp-stratum2, label: "West server 1" }
-  west-server-2: { group: west-zone, class: ntp-stratum2, label: "West server 2" }
-  west-balancer-1: { group: west-zone, class: load-balancer, label: "West balancer 1" }
-  west-balancer-2: { group: west-zone, class: load-balancer, label: "West balancer 2" }
+  provider: { group: wan, class: provider }
+  router: { group: site, class: router }
+  a: { group: zone, class: load-balancer }
+  b: { group: zone, class: ntp-stratum2 }
+  c: { group: zone, class: ntp-stratum2 }
 links:
-  - [east-router, provider, { class: dashed }]
-  - [west-router, provider, { class: dashed }]
-  - [east-balancer, east-server, { class: physical }]
-  - [west-balancer-1, west-server-2, { class: physical }]
-  - [west-balancer-2, west-server-1, { class: physical }]
-  - [west-balancer-2, west-server-2, { class: physical }]
+  - [router, provider, { class: dashed }]
+  - [a, b, { class: physical }]
+  - [b, c, { class: physical }]
+  - [router, c, { class: physical }]
+  - [router, b, { class: physical }]
+  - [c, a, { class: physical }]
