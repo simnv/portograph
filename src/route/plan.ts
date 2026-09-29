@@ -417,12 +417,13 @@ function gapCrosses(piece: { from: Point; to: Point; via: Point[] }, segment: Pi
  * (ticket 21). libavoid routes are orthogonal, so a slanted leg between two checkpoints is walked as an L.
  * The straight leg alone misses a run that stands right below a stem tip between two neighbouring stems:
  * the tip's only way out is across that run, whatever the slope of the leg.
+ * With `chord` false the endpoint chord does not count (ticket 30): only the legs and their L shapes do.
  */
-function gapNeeds(piece: { from: Point; to: Point; via: Point[] }, segment: Pick<PathSegment, 'from' | 'to'>): boolean {
-  if (gapCrosses(piece, segment)) return true;
+function gapNeeds(piece: { from: Point; to: Point; via: Point[] }, segment: Pick<PathSegment, 'from' | 'to'>, chord = true): boolean {
   const points = [piece.from, ...piece.via, piece.to];
-  return points.slice(1).some((to, index) => {
-    const from = points[index]!;
+  const legs = points.slice(1).map((to, index) => ({ from: points[index]!, to }));
+  if (chord ? gapCrosses(piece, segment) : legs.some(leg => crossesInterior(leg.from, leg.to, segment))) return true;
+  return legs.some(({ from, to }) => {
     if (Math.abs(from.x - to.x) <= EPS || Math.abs(from.y - to.y) <= EPS) return false;
     return [{ x: from.x, y: to.y }, { x: to.x, y: from.y }].some(corner =>
       crossesInterior(from, corner, segment) || crossesInterior(corner, to, segment));
@@ -535,11 +536,17 @@ function stemBounds(model: LayoutModel, link: LayoutLink, terminal: Point, check
     height: Math.abs(checkpoint.y - terminal.y) + 2 * clearance };
 }
 
-/** Whether a gap of `link` has to cross `stem` (ticket 22: batchmates whose stems must cross). */
+/**
+ * Whether a gap of `link` has to cross `stem` (ticket 22: batchmates whose stems must cross).
+ * A gap that carries checkpoints walks its legs, not the chord between its two ends: the chord of a
+ * nested-stem link may cut a batchmate's stem while every leg stays clear of it (ticket 30). Counting
+ * that chord split the link into a later part, and the zigzags of the earlier parts then closed the
+ * pocket of its far stem tip. A gap without checkpoints has only the chord, so it keeps it.
+ */
 function gapNeedsStem(plan: RoutePlan, link: string, stem: StemReservation): boolean {
   const own = plan.links.find(item => item.link === link);
   return stem.link !== link && !own?.ports.includes(stem.port)
-    && own!.pieces.some(piece => piece.kind === 'gap' && gapNeeds(piece, stem.segment));
+    && own!.pieces.some(piece => piece.kind === 'gap' && gapNeeds(piece, stem.segment, piece.via.length === 0));
 }
 
 /**
