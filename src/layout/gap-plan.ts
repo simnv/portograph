@@ -205,35 +205,25 @@ function unitsOf(parts: readonly Part[], split: ReadonlyMap<string, number>): Un
   return result;
 }
 
-/** O1 and O2 between whole stepped parts. Each entry names its two parts; the halves take them over (2.2). */
-interface BaseEdge { above: Part; below: Part; kind: 'O1' | 'O2' }
+/** O2 between whole stepped parts. Each entry names its two parts; the halves of a Z part take the upper edge on the first, the lower on the second (2.2). */
+interface BaseEdge { above: Part; below: Part; kind: 'O2' }
 
 function baseEdges(parts: readonly Part[], keep: number): BaseEdge[] {
   const stepped = parts.filter(part => !part.drop);
-  const whole = (part: Part): Unit => ({ id: part.id, part, half: 0, xu: part.upper.x, xl: part.lower.x,
-    lo: Math.min(part.upper.x, part.lower.x), hi: Math.max(part.upper.x, part.lower.x) });
   const result: BaseEdge[] = [];
-  for (const [index, p] of stepped.entries()) {
-    for (const q of stepped.slice(index + 1)) {
-      const a = whole(p), b = whole(q), way = Math.sign(a.xl - a.xu);
-      if (way === Math.sign(b.xl - b.xu) && !interleave(a, b) && overlaps(a, b)) {
-        // O1. Of two rightward parts the one further right at the upper end is above (ties: the lower end); leftward mirrors it.
-        const upper = (a.xu - b.xu) * way, lower = (a.xl - b.xl) * way;
-        const first = upper > EPS ? true : upper < -EPS ? false : lower > EPS ? true : lower < -EPS ? false : p.order < q.order;
-        result.push(first ? { above: p, below: q, kind: 'O1' } : { above: q, below: p, kind: 'O1' });
-      }
-    }
-    // O2. The upper end of `above` stands within `keep` of the lower end of `below`: the leg from the low boundary turns first.
-    for (const q of stepped) if (q !== p && Math.abs(p.upper.x - q.lower.x) < keep - EPS) result.push({ above: p, below: q, kind: 'O2' });
-  }
+  // O2. The upper end of `above` stands within `keep` of the lower end of `below`: the leg from the low boundary turns first.
+  for (const p of stepped) for (const q of stepped) if (q !== p && Math.abs(p.upper.x - q.lower.x) < keep - EPS) result.push({ above: p, below: q, kind: 'O2' });
   return result;
 }
 
-/** The unit-level edges: the halves carry the whole's O1 on both, its upper O2 edge on the first, its lower one on the second. */
-function expand(base: readonly BaseEdge[], split: ReadonlyMap<string, number>): PlanEdge[] {
-  const named = (part: Part, which: 'upper' | 'lower' | 'both'): string[] => split.has(part.id)
-    ? which === 'upper' ? [`${part.id}a`] : which === 'lower' ? [`${part.id}b`] : [`${part.id}a`, `${part.id}b`]
-    : [part.id];
+/**
+ * The unit-level edges. O1 is read from each unit's own span by the arithmetic of 2.1, so a half of a Z part is ordered against a
+ * part only where their spans overlap, run the same way and do not interleave (two spans that do not overlap cannot cross, in any
+ * order); a part the whole Z interleaves is left to the ZX edge. O2 is carried by end: the upper edge on the first half, the lower one
+ * on the second.
+ */
+function expand(base: readonly BaseEdge[], split: ReadonlyMap<string, number>, units: readonly Unit[]): PlanEdge[] {
+  const named = (part: Part, which: 'upper' | 'lower'): string => split.has(part.id) ? `${part.id}${which === 'upper' ? 'a' : 'b'}` : part.id;
   const result: PlanEdge[] = [], seen = new Set<string>();
   const add = (above: string, below: string, kind: PlanEdge['kind']): void => {
     const key = `${above}>${below}`;
@@ -241,11 +231,20 @@ function expand(base: readonly BaseEdge[], split: ReadonlyMap<string, number>): 
     seen.add(key);
     result.push({ above, below, kind });
   };
-  for (const edge of base) {
-    const from = edge.kind === 'O2' ? named(edge.above, 'upper') : named(edge.above, 'both');
-    const to = edge.kind === 'O2' ? named(edge.below, 'lower') : named(edge.below, 'both');
-    for (const a of from) for (const b of to) add(a, b, edge.kind);
+  const whole = (part: Part): { xu: number; xl: number } => ({ xu: part.upper.x, xl: part.lower.x });
+  for (const [index, a] of units.entries()) {
+    for (const b of units.slice(index + 1)) {
+      if (a.part === b.part) continue;
+      if ((split.has(a.part.id) || split.has(b.part.id)) && interleave(whole(a.part), whole(b.part))) continue;
+      const way = Math.sign(a.xl - a.xu);
+      if (way !== Math.sign(b.xl - b.xu) || interleave(a, b) || !overlaps(a, b)) continue;
+      // O1. Of two rightward units the one further right at the upper end is above (ties: the lower end); leftward mirrors it.
+      const upper = (a.xu - b.xu) * way, lower = (a.xl - b.xl) * way;
+      const first = upper > EPS ? true : upper < -EPS ? false : lower > EPS ? true : lower < -EPS ? false : a.part.order * 4 + a.half < b.part.order * 4 + b.half;
+      if (first) add(a.id, b.id, 'O1'); else add(b.id, a.id, 'O1');
+    }
   }
+  for (const edge of base) add(named(edge.above, 'upper'), named(edge.below, 'lower'), 'O2');
   for (const id of split.keys()) add(`${id}a`, `${id}b`, 'Z');
   return result;
 }
@@ -293,10 +292,10 @@ function reaches(edges: readonly PlanEdge[], from: string, to: string): boolean 
 }
 
 /**
- * The x of a Z part's middle drop (2.2 O6): the centre of the widest interval between the part's ends that stands
- * `keep` clear of every other leg and drop, the first of equally wide ones. Undefined where none is clear.
+ * The x a Z part's middle drop may take (2.2 O6): the centre of every interval between the part's ends that stands `keep` clear of
+ * every other leg and drop, widest first (the first of equally wide ones first). `solve` takes the first that breaks the cycle.
  */
-function middleDrop(part: Part, parts: readonly Part[], split: ReadonlyMap<string, number>, keep: number): number | undefined {
+function middleDrops(part: Part, parts: readonly Part[], split: ReadonlyMap<string, number>, keep: number): number[] {
   const centres = [part.upper.x, part.lower.x];
   for (const other of parts) {
     if (other === part) continue;
@@ -306,11 +305,9 @@ function middleDrop(part: Part, parts: readonly Part[], split: ReadonlyMap<strin
   }
   const lo = Math.min(part.upper.x, part.lower.x), hi = Math.max(part.upper.x, part.lower.x);
   const forbidden = centres.map(x => [x - keep, x + keep] as const).sort((a, b) => a[0] - b[0]);
-  let best: { from: number; to: number } | undefined, cursor = lo;
-  const take = (from: number, to: number): void => {
-    if (to < from - EPS) return;
-    if (!best || to - from > best.to - best.from + EPS) best = { from, to };
-  };
+  const found: { from: number; to: number }[] = [];
+  let cursor = lo;
+  const take = (from: number, to: number): void => { if (to >= from - EPS) found.push({ from, to }); };
   for (const [from, to] of forbidden) {
     if (to <= cursor) continue;
     if (from > hi) break;
@@ -318,14 +315,29 @@ function middleDrop(part: Part, parts: readonly Part[], split: ReadonlyMap<strin
     cursor = Math.max(cursor, to);
   }
   if (cursor <= hi) take(cursor, hi);
-  return best ? (best.from + best.to) / 2 : undefined;
+  return found.map((item, index) => ({ item, index })).sort((a, b) => (b.item.to - b.item.from) - (a.item.to - a.item.from) || a.index - b.index)
+    .map(({ item }) => (item.from + item.to) / 2);
+}
+
+/** Whether the edges close a cycle through `id`. */
+function inCycle(edges: readonly PlanEdge[], id: string): boolean {
+  const seen = new Set<string>(), todo = [id];
+  while (todo.length) {
+    const at = todo.pop()!;
+    for (const edge of edges) {
+      if (edge.above !== at) continue;
+      if (edge.below === id) return true;
+      if (!seen.has(edge.below)) { seen.add(edge.below); todo.push(edge.below); }
+    }
+  }
+  return false;
 }
 
 /** Splits cycles into Z parts (O6) and orders the parts a whole Z interleaves; returns the part to make residual otherwise. */
 function solve(parts: readonly Part[], frame: PlanFrame): Solved | { reject: Part } {
   const keep = frame.keep, base = baseEdges(parts, keep), split = new Map<string, number>();
   for (;;) {
-    const units = unitsOf(parts, split), edges = expand(base, split);
+    const units = unitsOf(parts, split), edges = expand(base, split, units);
     const cycle = findCycle(units.map(unit => unit.id), edges);
     if (!cycle) break;
     const onCycle = units.filter(unit => cycle.includes(unit.id)).map(unit => unit.part);
@@ -333,14 +345,19 @@ function solve(parts: readonly Part[], frame: PlanFrame): Solved | { reject: Par
     const unsplit = onCycle.filter(part => !split.has(part.id));
     // Where the cycle is among halves only, its latest part is residual (`TIER_GAP_ROW_CYCLE`).
     if (!unsplit.length) return { reject: latest(onCycle) };
-    const pick = latest(unsplit), middle = middleDrop(pick, parts, split, keep);
+    const pick = latest(unsplit);
+    // The widest clear interval that leaves the halves on no cycle; residual only where none does.
+    const middle = middleDrops(pick, parts, split, keep).find(candidate => {
+      const trial = new Map(split).set(pick.id, candidate), after = expand(base, trial, unitsOf(parts, trial));
+      return !inCycle(after, `${pick.id}a`) && !inCycle(after, `${pick.id}b`);
+    });
     if (middle === undefined) return { reject: pick };
     split.set(pick.id, middle);
   }
   // A part the whole Z interleaves is not left free: between the halves it can cross the Z three times. It goes above
   // the first half where that keeps the graph acyclic, else below the second half, else it is residual.
   const units = unitsOf(parts, split);
-  let edges = expand(base, split);
+  let edges = expand(base, split, units);
   for (const id of split.keys()) {
     const whole = parts.find(part => part.id === id)!;
     const zed = { xu: whole.upper.x, xl: whole.lower.x };

@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { layout, parse } from '../../src/index.js';
-import { createAttempt } from '../layout/phase-two-fixture.js';
+import { bands, bars, bundles, centre, flanks, lanes, layout, parse, rows } from '../../src/index.js';
+import { tierGapPlans } from '../../src/layout/gap-plan.js';
+import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import type { CreateRouteAttempt } from '../../src/route/worker.js';
 import { avoidAssets, spawnAvoidWorker } from './fixture.js';
 
@@ -39,18 +40,19 @@ function recording(requests: string[][]): CreateRouteAttempt {
 describe('the chord splits a batch but does not open a pending stem', () => {
   it('routes every link of two nested-stem cores through the real router, one part per fan link, and removes none', async () => {
     const requests: string[][] = [];
+    const placedModel = bands(bundles(bars(centre(flanks(lanes(rows(await placed(fixture))))))));
     const model = await layout(parse(fixture), { createElkAttempt: createAttempt, createRouteAttempt: recording(requests) });
-    // Ticket 50: five of the six fan links are planned parts (rows 280.5 to 332.5, tip to tip) and never reach the router; the sixth,
-    // link-11, stays residual because its rows form a cycle no middle drop clears (`row-cycle`), so it is the one request. Main asked
-    // for three, one part per fan link that a chord-crossed stem split.
-    expect(requests).toEqual([['link-11#0']]);
-    // KNOWN REGRESSION (ticket 50, recorded in its file; ticket 51): the residual link is routed among the covers of five reserved
-    // parts, its checkpoints stand in pockets those covers close, and stage 8 removes it (ROUTE_GAP_REJECTED). Main removed none.
-    // Spec Section 2.2 prefers a published residual with a G6 finding to a removed link; the grant that would give it is ticket 51's.
-    expect(model.removedLinks ?? []).toEqual(['link-11']);
-    expect(model.diagnostics.filter(item => item.code === 'TIER_GAP_PART_RESIDUAL').map(item => item.message))
-      .toEqual([expect.stringContaining('link-11 is left to the router')]);
-    expect(model.diagnostics.filter(item => item.code === 'ROUTE_CHECKPOINT_SKIPPED')).toEqual([]);
-    for (const link of model.links) expect(link.path === undefined, link.id).toBe(link.id === 'link-11');
+    // Ticket 50: every fan link is a planned part; the router is asked for nothing (main asked for three requests, one part per fan link
+    // a chord-crossed stem split). link-11 (87 to 265.5) crosses the four others, and its whole edges close the cycle 11 > 9 > 4 > 6 > 11:
+    // it is a Z part whose middle drop stands at 223.75, the widest clear interval that breaks the cycle (the widest of all, 164.25, leaves
+    // 11b > 10 > 9 > 4 > 6 > 11b). The order is 11a, 10, 9, 4, 5, 6, 11b.
+    expect(requests).toEqual([]);
+    const plan = tierGapPlans(placedModel).find(item => item.plan.parts.length > 2)!.plan;
+    expect(plan.residual).toEqual([]);
+    expect(plan.order.map(id => id.replace('link-', '').replace('#0', ''))).toEqual(['11a', '10', '9', '4', '5', '6', '11b']);
+    expect(plan.parts.find(part => part.link === 'link-11')!.middle).toBeCloseTo(223.75, 6);
+    expect(model.removedLinks ?? []).toEqual([]);
+    expect(model.diagnostics.filter(item => item.code === 'ROUTE_CHECKPOINT_SKIPPED' || item.code === 'ROUTE_GAP_REJECTED')).toEqual([]);
+    for (const link of model.links) expect(link.path, link.id).toBeDefined();
   }, 120000);
 });

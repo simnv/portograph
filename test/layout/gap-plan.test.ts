@@ -207,4 +207,16 @@ describe('the tier-gap plan on hand-built parts', () => {
     const clear = planGap([part('A', 0, 0, 100)], { ...frame(), blocks: [{ x0: 90, x1: 110, anchor: 'below' as const, bound: 10 }] });
     expect(clear.residual).toEqual([]);
   });
+
+  it('reads the edges of a half from its own span and breaks the cycle at the widest interval that leaves none (ticket 50, the chord fixture)', () => {
+    // link-11 87 to 265.5 crosses 4 (241.5 to 63), 5, 6 and 10 (75 to 194); the whole edges close 11 > 9 > 4 > 6 > 11. Split at the widest clear
+    // interval (164.25) the half 11b (164.25 to 265.5) would still be ordered above link-9 (63 to 122.5), whose span it cannot cross: the
+    // cycle stays. The interval 217.5 to 230 (223.75) breaks it.
+    const plan = planGap([part('4', 0, 241.5, 63), part('5', 1, 253.5, 134.5), part('6', 2, 265.5, 206), part('9', 3, 63, 122.5),
+      part('10', 4, 75, 194), part('11', 5, 87, 265.5)], frame());
+    expect(plan.residual).toEqual([]);
+    expect(plan.parts.find(item => item.id === '11')!.middle).toBeCloseTo(223.75, 6);
+    expect(plan.order).toEqual(['11a', '10', '9', '4', '5', '6', '11b']);
+    expect(plan.edges.some(item => item.above === '11b' && item.below === '9')).toBe(false);
+  });
 });
