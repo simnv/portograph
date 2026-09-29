@@ -48,10 +48,13 @@ describe('an allocated run in a tier gap', () => {
   }, 60000);
 
   it('ends each allocated run at the stem tip of the port it leads to, never between the port and the tip', async () => {
-    const model = sizeNodes(sidesOne(resolve(parse(fixture('an-allocated-run-starts-beyond-the-stem')))));
+    // A lone port (no neighbour within one tip band, ranked-groups ticket 31 round 4): the gap seats its run.
+    const model = sizeNodes(sidesOne(resolve(parse(fixture('an-allocated-run-ends-on-the-tip-of-a-lone-port')))));
     await skeleton(model, { createAttempt });
     const placed = [rows, lanes, flanks, centre, bars, bundles, bands].reduce((current, stage) => stage(current), sidesTwo(model));
     const plan = planRoute(placed);
+    const near = (a: Point, b: Point): boolean => Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6;
+    let ends = 0, pieces = 0;
     for (const item of plan.links) {
       const link = placed.links.find(entry => entry.id === item.link)!;
       for (const end of ['from', 'to'] as const) {
@@ -60,19 +63,24 @@ describe('an allocated run in a tier gap', () => {
         const tip = stemCheckpoint(placed, port);
         for (const piece of item.pieces) {
           if (piece.kind !== 'allocated') continue;
+          pieces++;
           for (const segment of piece.segments) {
             for (const point of [segment.from, segment.to]) {
               if (Math.abs(point.x - port.anchor.x) > 1e-6) continue;
               const lo = Math.min(port.anchor.y, tip.y), hi = Math.max(port.anchor.y, tip.y);
               // No end of a run lies strictly between the port and its stem tip.
               expect(point.y > lo + 1e-6 && point.y < hi - 1e-6, `${item.link} ${end}`).toBe(false);
+              if (near(point, tip) && Math.abs(tip.y - port.anchor.y) > 1) ends++;
             }
           }
         }
       }
     }
-    // Since ranked-groups ticket 31 (round 4) the port column of this fixture's one row run stands 12 px from a
-    // foreign tip column, inside the column band, so the gap leaves that run unseated and it routes free: the
-    // fixture no longer seats a run that ends on a tip, and the assertion above holds for every run that is seated.
+    expect(pieces, 'the gap seats runs').toBeGreaterThan(0);
+    // The port row lies closer than one stem to the gap, so a seated run ends on a tip.
+    expect(ends).toBeGreaterThan(0);
+    const routed = await layout(parse(fixture('an-allocated-run-ends-on-the-tip-of-a-lone-port')),
+      { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    expect(routed.removedLinks ?? []).toEqual([]);
   }, 60000);
 });

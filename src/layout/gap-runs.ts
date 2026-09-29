@@ -584,6 +584,8 @@ function allocateGap(model: LayoutModel, list: readonly Blocker[], gap: TierGap,
   const seatable = items.filter(item => !covered.has(item));
   const rows = seatable.filter(needsRow);
   // Room answers nothing where the covered runs are the whole of the gap's seating.
+  // A gap with no row to seat seats nothing, as on main: a column seated alone is a reserved wall the router must go
+  // around (sweep v7-2-0 gains a removal when the columns of a rowless gap are seated after the band covered its rows).
   if (!rows.length) return refuse(covered.size > 0 && !seatable.length);
   const order = rowOrder(rows);
   if (!order) return refuse(true);
