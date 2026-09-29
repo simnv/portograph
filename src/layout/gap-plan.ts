@@ -391,9 +391,14 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
   const residual: ResidualPart[] = [...frame.residual];
   const asPart = (input: PlanInput): Part => {
     const drop = Math.abs(input.lower.x - input.upper.x) < keep - EPS;
-    return { ...input, drop, jogged: drop && !same(input.lower.x, input.upper.x), stand: 'upper', depth: frame.bandTop - input.lower.y,
+    const jogged = drop && !same(input.lower.x, input.upper.x);
+    return { ...input, drop, jogged, stand: jogged && upperStandBlocked(input) ? 'lower' : 'upper', depth: frame.bandTop - input.lower.y,
       after: Math.max(pitch, input.labelRoom ?? 0) };
   };
+  // The long vertical of a jogged drop that stands on its upper x runs down to one clearance above the lower tip, so an obstacle anchored to the
+  // band below (a group title, a lane box) that stands over that x stops it: the drop then stands on its lower x (whose leg `blocked` reads).
+  const upperStandBlocked = (input: PlanInput): boolean => (frame.blocks ?? []).some(block => block.owner !== input.link && block.anchor === 'below'
+    && input.upper.x > block.x0 + EPS && input.upper.x < block.x1 - EPS && frame.bandTop - (input.lower.y - keep) < block.bound - EPS);
   // A leg through a fixed obstacle (2.2, residual by constraint): an upper leg reaches down from its tip past the bottom of an
   // obstacle anchored to the band above, a lower leg up from its tip past the top of one anchored to the band below.
   const blocked = (input: PlanInput): boolean => (frame.blocks ?? []).some(block => {
@@ -430,6 +435,7 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
   // A jogged drop that another part's leg crowds may still stand on its other end's x, whichever of the two came first.
   for (const [index, drop] of live.entries()) {
     if (!drop.jogged || !crowded.some(item => item.id === drop.id || item.with === drop.link)) continue;
+    if (drop.stand === 'lower' && upperStandBlocked(drop)) continue;
     const flipped: Part = { ...drop, stand: drop.stand === 'upper' ? 'lower' : 'upper' };
     const others = live.filter(other => other !== drop);
     if (others.some(other => anyNear(legsOf(other, 'upper'), legsOf(flipped, 'upper')) || anyNear(legsOf(other, 'lower'), legsOf(flipped, 'lower')))) continue;

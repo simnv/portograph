@@ -1,5 +1,7 @@
-# Expected: one tier gap owes four rows, and a group label covers the approach of exactly one of
-# them. The gap seats the other three and leaves that one out.
+# Expected (ticket 62 changed this): one tier gap owes four rows, and a group label stood over the approach of exactly one of
+# them. Placement now nudges the label along its edge off that approach, so the gap seats all four. The text below
+# is the stress ticket 09 account of the covered run, kept for the per-run decline it describes (ticket 50, the unit test in
+# `gap-plan.test.ts`).
 #
 # Four links cross the middle tier to reach four nodes in the lower tier, wired so no horizontal
 # move puts a run on one x, and each node of the lower tier also feeds the tier under it. The lower
