@@ -204,8 +204,7 @@ function plannedRuns(model: LayoutModel, plan: GapPlan, gap: TierGap): PlannedRu
     const shares = [...plan.parts.filter(other => other.link !== part.link && (other.upper.source === part.upper.source && part.upper.kind === 'tip'
       || other.lower.source === part.lower.source && part.lower.kind === 'tip')).map(other => other.link), ...crowded];
     const segments = plannedSegments(part, gap);
-    const wide = new Set<string>();
-    const grants0 = segments.map(segment => {
+    const grants = segments.map(segment => {
       if (!same(segment.from.x, segment.to.x)) return [];
       const x = segment.from.x;
       return [...new Set(plan.residual.filter(item => {
@@ -214,8 +213,6 @@ function plannedRuns(model: LayoutModel, plan: GapPlan, gap: TierGap): PlannedRu
         return span !== undefined && x > span.x0 - keep + 1e-9 && x < span.x1 + keep - 1e-9;
       }).map(item => item.link))].sort();
     });
-    for (const list of grants0) for (const id of list) wide.add(id);
-    const grants = grants0.map((list, at) => same(segments[at]!.from.x, segments[at]!.to.x) ? [...wide].sort() : list);
     return { part, segments, shares: [...new Set(shares)].sort(), grants };
   });
 }

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { bands, bars, bundles, centre, flanks, growTierGaps, lanes, layout, parse, planRoute, restoreLayoutModel, route, rows } from '../../src/index.js';
+import { allocateGapRuns, bands, bars, bundles, centre, flanks, growTierGaps, lanes, layout, parse, planRoute, restoreLayoutModel, route, rows } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { unfitGaps } from '../../src/layout/gap-room.js';
 import { tierGapPlans } from '../../src/layout/gap-plan.js';
@@ -48,8 +48,11 @@ describe('a residual part publishes with its findings named (ticket 51)', () => 
     expect(residual(model)).toEqual(['link-7:faces-away']);
     expect(codes(model)).toEqual(['TIER_GAP_PART_RESIDUAL|link-7 is left to the router in the tier gap above tier 1: a port faces away from the gap.']);
     expect(routed.removedLinks ?? []).toEqual([]);
-    // The gate names the residual link.
-    expect(failing(routed)).toEqual(['G6:parallel-clearance:link-3/link-7']);
+    // Ticket 52: the grant is the cover of the crossed vertical, not of the whole part. link-7 holds the cover of link-3's upper leg and
+    // not that of its lower leg (the segments are leg, row, leg); the wide grant of the whole part let link-7 run 3.83 px beside a
+    // leg it never crosses (G6 parallel-clearance link-3 / link-7), and the narrow one routes clear.
+    expect(allocateGapRuns(model).find(run => run.link === 'link-3')!.grants).toEqual([['link-7'], [], []]);
+    expect(failing(routed)).toEqual([]);
   }, 120000);
 
   it('names a part in a row cycle with its own code (TIER_GAP_ROW_CYCLE)', async () => {
