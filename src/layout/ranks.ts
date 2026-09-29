@@ -170,9 +170,8 @@ function spanOf(ranks: Map<string, number>, child: { members: string[] }): [numb
  * link from a pushed member into a child moves nothing, since the child is fixed. Only non-child
  * ranks grow, and by a bounded amount, so the loop ends; the round bound is a guard.
  */
-function clearSpans(input: RankInput, members: string[], edges: Edges, ranks: Map<string, number>): void {
+function clearSpans(input: RankInput, members: string[], edges: Edges, ranks: Map<string, number>, spans: [number, number][]): void {
   const owner = new Set(input.children.flatMap(child => child.members));
-  const spans = input.children.map(child => spanOf(ranks, child)).filter((span): span is [number, number] => span !== undefined);
   const { lateral, forward } = edges;
   for (let round = 0; round < 4 * members.length + 4; round += 1) {
     let changed = false;
@@ -182,6 +181,24 @@ function clearSpans(input: RankInput, members: string[], edges: Edges, ranks: Ma
     for (const [from, to] of spans) for (const id of members) if (ranks.get(id)! >= from && ranks.get(id)! <= to) raise(id, to + 1);
     if (!changed) return;
   }
+}
+
+/**
+ * Step 5, the leaf rule. A child is a leaf child when none of its members has a routed link to a
+ * parent member (a member of no child) of a deeper rank, and none of its members is an anchor: it
+ * feeds nothing below itself and hangs from nothing above the group. Ranks are those before any push.
+ */
+function leafChildren(input: RankInput, ranks: Map<string, number>, anchors: Set<string>): Set<RankInput['children'][number]> {
+  const owner = new Set(input.children.flatMap(child => child.members));
+  const leaves = new Set<RankInput['children'][number]>();
+  for (const child of input.children) {
+    const inside = new Set(child.members);
+    if (!spanOf(ranks, child) || child.members.some(id => anchors.has(id))) continue;
+    const feeds = input.routedLinks.some(link => [[link.from, link.to], [link.to, link.from]].some(([mine, other]) =>
+      inside.has(mine!) && ranks.has(other!) && !owner.has(other!) && ranks.get(other!)! > ranks.get(mine!)!));
+    if (!feeds) leaves.add(child);
+  }
+  return leaves;
 }
 
 /** A push can leave a rank empty; ranks are dense, so the members below it close up. */
@@ -219,8 +236,15 @@ export function deriveRanks(input: RankInput): RankResult {
     ranks.set(id, partner === undefined ? lastRank : ranks.get(partner)!);
   }
   // Step 5. `max(own, first rank of the child)` from the spec is a no-op here: the first rank of a
-  // child is the least rank of its members, so no member is below it.
-  clearSpans(input, members, edges, ranks);
+  // child is the least rank of its members, so no member is below it. A leaf child pushes nothing;
+  // it takes the ranks after the last rank of the rest of the group, keeping its own internal order.
+  const leaves = leafChildren(input, ranks, new Set(anchoredFrom === 'above' ? above : below));
+  const held = input.children.filter(child => !leaves.has(child)).map(child => spanOf(ranks, child)).filter((span): span is [number, number] => span !== undefined);
+  const leafSpans = new Map([...leaves].map(child => [child, spanOf(ranks, child)!]));
+  clearSpans(input, members, edges, ranks, held);
+  const leafMembers = new Set([...leaves].flatMap(child => child.members));
+  const rest = [...ranks].filter(([id]) => !leafMembers.has(id)).map(([, rank]) => rank);
+  if (rest.length) for (const [child, span] of leafSpans) for (const id of child.members) if (ranks.has(id)) ranks.set(id, ranks.get(id)! - span[0] + Math.max(...rest) + 1);
   compact(ranks);
   const rankCount = Math.max(...ranks.values(), 0) + 1;
   const spans = new Map<string, [number, number]>();

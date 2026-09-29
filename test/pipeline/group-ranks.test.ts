@@ -40,7 +40,7 @@ describe('goldens/synthetic group-ranks fixtures', () => {
 
   it('a child span pushes the parent member that stands inside it to the rank after it', () => {
     const result = ranksOf('a-group-ranks-a-child-span-past-a-parent-member', 'site', ['zone']);
-    expect(Object.fromEntries(result.ranks)).toEqual({ gw: 0, z1: 1, z2: 2, spare: 3 });
+    expect(Object.fromEntries(result.ranks)).toEqual({ gw: 0, z1: 1, z2: 2, spare: 3, tail: 3 });
     expect(result.spans.get('zone')).toEqual([1, 2]);
     expect(result.rankCount).toBe(4);
   });
