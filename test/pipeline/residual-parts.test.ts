@@ -35,7 +35,9 @@ describe('a residual part publishes with its findings named (ticket 51)', () => 
     // Ticket 59: the jog of link-4's drop, which stands on its upper x, keeps the group-edge margin (10) from the top of `access`.
     const jog = tierGapPlans(model).flatMap(({ plan }) => plan.parts).find(part => part.link === 'link-4')!;
     expect(jog.shape === 'drop' && jog.stand === 'upper' && jog.jog !== undefined).toBe(true);
-    expect(jog.jog!).toBeLessThanOrEqual(model.groups['access']!.bounds!.y - 10 + 1e-6);
+    // jog = bandTop - max(depth + k, e), e = 10.75 (the group-edge margin from the top of `access`).
+    const access = model.groups['access']!.bounds!.y;
+    expect(jog.jog!).toBeCloseTo(Math.min(jog.lower.y - 10, access - 10.75), 6);
     expect(failing(routed)).toEqual([]);
   }, 120000);
 
