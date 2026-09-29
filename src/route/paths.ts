@@ -3,6 +3,10 @@ import type { Lane, LayoutLink, LayoutModel, LayoutPath, PathSegment } from '../
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { findPort } from '../layout/row-paths.js';
 import { overlayBlockers, overlayPath } from '../layout/overlay-paths.js';
+import { stemReach } from '../layout/bands.js';
+import { equal } from '../model/json-equality.js';
+import { outward } from '../score/model.js';
+import { MIN_STEM, reservations, shrink, TOLERANCE } from './reservations.js';
 import { bottom, EPS, horizontal, length, retracingRuns, samePoint, segmentRect, vertical } from '../score/geometry.js';
 import { effectiveLayer, type LinkPlan, type RoutePlan } from './plan.js';
 import type { RouteCheckpoint } from './types.js';
@@ -201,7 +205,32 @@ export function stitchPath(model: LayoutModel, plan: LinkPlan, routes: Map<strin
   const ruled = segments.filter((_, index) => claimed[index]);
   if (retracingRuns(ruled)) throw new Error(`Reserved runs on ${link.id} retrace themselves`);
   if (retracingRuns(joined)) throw new GapRejected(`Routed path on ${link.id} retraces itself`);
+  foreignJudgement(model, link, joined, ruled);
   return { owner: { ...link.owner }, layer: 'routed', fixed: false, segments: joined, ...pathStrokeWidth(link) };
+}
+
+/**
+ * The rest of what `validateRoutedPaths` throws on for a stitched path, judged here first so a router answer that breaks it
+ * removes its link and not the sheet (ticket 47): a segment that is not a rule's own run may not enter a reservation it does
+ * not own, and the first and last run must leave the port perpendicular and be as long as the reserved stem. From a router
+ * this makes the validator's throws assertions.
+ */
+function foreignJudgement(model: LayoutModel, link: LayoutLink, segments: PathSegment[], ruled: PathSegment[]): void {
+  const isReserved = (segment: PathSegment): boolean => ruled.some(run => equal(run, segment));
+  const boxes = reservations(model, link).filter(box => box.bounds.width > 2 * TOLERANCE && box.bounds.height > 2 * TOLERANCE);
+  for (const segment of segments) {
+    if (isReserved(segment)) continue;
+    const box = boxes.find(item => segmentRect(segment, shrink(item.bounds, TOLERANCE)));
+    if (box) throw new GapRejected(`Routed path on ${link.id} enters reserved ${box.id}`);
+  }
+  const ends = link.attachments!;
+  for (const [ref, segment, first] of [[ends.from, segments[0]!, true], [ends.to, segments.at(-1)!, false]] as const) {
+    const port = findPort(model, ref);
+    if (!port?.anchor) continue;
+    if (!outward(port, segment, first)) throw new GapRejected(`Port stem on ${link.id} does not leave its side perpendicular`);
+    const required = isReserved(segment) ? MIN_STEM : Math.max(MIN_STEM, stemReach(model, model.nodes[port.ref.node]!));
+    if (length(segment) < required - EPS) throw new GapRejected(`Port stem on ${link.id} is shorter than its reserved entry`);
+  }
 }
 
 /**
