@@ -5,15 +5,17 @@ import { laneSidesHold, nodeTier, occupiedOverhang, selectAnchorTier } from './l
 import { cellReach } from './frames.js';
 import { besideWalls, frameColumns, type CellWindow, type FrameColumn } from './columns.js';
 import { findPort } from './row-paths.js';
-import { portId, bandGap } from './skeleton-graph.js';
+import { portId, bandGap, SKELETON_SPACING } from './skeleton-graph.js';
+import { crosses } from './overlay-paths.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { packRowsOf } from './grid.js';
 import { rowGap } from './sides-two.js';
-import { alignmentAllowance } from './size.js';
+import { alignmentAllowance, ownSideWidth } from './size.js';
 import { withLayoutMutation } from './mutation.js';
 import { placeOverlayFree } from './overlay-place.js';
 import { fitRegionGroup, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 import { EPS } from '../score/geometry.js';
+import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 
 export interface CentreBudget { remaining: number; passes: number }
 export function createCentreBudget(): CentreBudget { return { remaining: 8, passes: 0 }; }
@@ -69,6 +71,47 @@ function siblingLimit(model: LayoutModel, group: LayoutGroup, node: LayoutNode):
   return limit;
 }
 
+/** How far a body may grow on each side before it reaches a straight overlay chord, and the link that says so. */
+interface OverlayStops { low: number; high: number; lowLink?: string; highLink?: string }
+
+/**
+ * The overlay cap on an alignment growth (ranked-groups ticket 29). A chord is the straight segment
+ * between the two attachment anchors of an overlay link that has no end on `node`, read in the model
+ * as it stands. A chord the ungrown body already crosses is not a stop: the body is already on it.
+ * Any other chord that reaches the rows of the body lies wholly on one side of it, and the growth on
+ * that side stops one node clearance short of the place where the chord enters the body's rows. A
+ * side with no chord is unbounded; a chord nearer than the clearance leaves no growth at all.
+ */
+function overlayStops(model: LayoutModel, node: LayoutNode): OverlayStops {
+  const stops: OverlayStops = { low: -Infinity, high: Infinity };
+  const box = node.bounds!, top = box.y, bottom = box.y + box.height, boxRight = right(box);
+  const clearance = SKELETON_SPACING.nodeClearance + (node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node) / 2;
+  for (const link of model.links) {
+    if (link.layer !== 'overlay' || !link.attachments) continue;
+    const { from, to } = link.attachments;
+    if (from.node === node.id || to.node === node.id) continue;
+    const one = findPort(model, from)?.anchor, two = findPort(model, to)?.anchor;
+    if (!one || !two || crosses(one, two, box)) continue;
+    // The part of the chord inside the rows of the body: the parameter range where y is in [top, bottom].
+    let lo = 0, hi = 1;
+    if (Math.abs(two.y - one.y) <= EPS) { if (one.y <= top + EPS || one.y >= bottom - EPS) continue; }
+    else {
+      const at = [(top - one.y) / (two.y - one.y), (bottom - one.y) / (two.y - one.y)];
+      lo = Math.max(0, Math.min(...at)); hi = Math.min(1, Math.max(...at));
+      if (hi - lo <= EPS) continue;
+    }
+    const xs = [one.x + (two.x - one.x) * lo, one.x + (two.x - one.x) * hi];
+    if (Math.min(...xs) >= boxRight - EPS) {
+      const cap = Math.max(boxRight, Math.min(...xs) - clearance);
+      if (cap < stops.high) { stops.high = cap; stops.highLink = link.id; }
+    } else if (Math.max(...xs) <= box.x + EPS) {
+      const cap = Math.min(box.x, Math.max(...xs) + clearance);
+      if (cap > stops.low) { stops.low = cap; stops.lowLink = link.id; }
+    }
+  }
+  return stops;
+}
+
 /**
  * Keep compatible targets that fit between siblings and inside the node's own alignment allowance;
  * other ports retain their legal slots.
@@ -82,7 +125,7 @@ function siblingLimit(model: LayoutModel, group: LayoutGroup, node: LayoutNode):
  * one parent far to the left, one far to the right — decline the whole side, because widening to the
  * outer one is the same growth by another name.
  */
-function alignSide(node: LayoutNode, side: Side, targets: Map<string, number>, limit: WideningLimit): Set<string> {
+function alignSide(node: LayoutNode, side: Side, targets: Map<string, number>, limit: WideningLimit, stops: OverlayStops, stopped: (link: string) => void): Set<string> {
   const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
   const pitch = node.sidePitch![side]!, kept: { index: number; x: number; key: string }[] = [];
   const box = node.bounds!, oldRight = right(box);
@@ -97,6 +140,14 @@ function alignSide(node: LayoutNode, side: Side, targets: Map<string, number>, l
     if (x !== undefined && (x - index * pitch - 10 - pitch / 2 < limit.low - EPS
       || x + (ports.length - 1 - index) * pitch + 10 + pitch / 2 > limit.high + EPS)) continue;
     if (x !== undefined && reach(index, x) > allowance + EPS) continue;
+    // The overlay cap comes last, so it is named only where it alone declines the target.
+    if (x !== undefined) {
+      const beyondLow = x - index * pitch - 10 - pitch / 2 < stops.low - EPS;
+      if (beyondLow || x + (ports.length - 1 - index) * pitch + 10 + pitch / 2 > stops.high + EPS) {
+        stopped((beyondLow ? stops.lowLink : stops.highLink)!);
+        continue;
+      }
+    }
     if (x !== undefined && (!last || x - last.x >= (index - last.index) * pitch)) kept.push({ index, x, key });
   }
   if (!kept.length) return new Set();
@@ -312,12 +363,33 @@ function centreGroupStep(model: LayoutModel, context: CentreContext, tier: numbe
   }));
   const total = (values: Map<string, number>): number => [...values.values()].reduce((sum, value) => sum + value, 0);
   const missBefore = total(misses());
-  moveGroup(model, group, mean(distinctParents.values()) - mean(distinctChildren.values()), 0);
+  // The overlay walls of each body, read where the body stands as the step begins. A body an earlier
+  // pass grew toward its feeds is carried by the move below as well, and a move that carries it onto
+  // a chord is the same growth by another name: the next pass would read a chord the body already
+  // crosses and let the growth through. So the move stops at the wall for a grown body. A body that
+  // has not grown moves as it always did; the wall then bounds only the growth that follows.
+  const walls = new Map(group.rowOrder!.map(id => [id, overlayStops(model, model.nodes[id]!)]));
+  let farthestLeft = -Infinity, farthestRight = Infinity;
+  for (const [id, stops] of walls) {
+    const node = model.nodes[id]!, box = node.bounds!;
+    if (box.width <= Math.max(ownSideWidth(node, 'top'), ownSideWidth(node, 'bottom')) + EPS) continue;
+    farthestLeft = Math.max(farthestLeft, stops.low - box.x);
+    farthestRight = Math.min(farthestRight, stops.high - right(box));
+  }
+  const toMean = mean(distinctParents.values()) - mean(distinctChildren.values());
+  moveGroup(model, group, Math.max(farthestLeft, Math.min(toMean, farthestRight)), 0);
   const aligned = new Set<string>();
   for (const nodeId of group.rowOrder!) {
     const node = model.nodes[nodeId]!;
+    const stops = walls.get(nodeId)!;
+    let stoppedBy: string | undefined;
     for (const side of ['top', 'bottom'] as const) {
-      for (const key of alignSide(node, side, wanted, siblingLimit(model, group, node))) aligned.add(key);
+      for (const key of alignSide(node, side, wanted, siblingLimit(model, group, node), stops, link => { stoppedBy ??= link; })) aligned.add(key);
+    }
+    // Once per node, not once per pass and side.
+    if (stoppedBy && warn && !model.diagnostics.some(d => d.code === 'ALIGNMENT_STOPPED_AT_OVERLAY' && d.message.startsWith(`${node.id} `))) {
+      placementWarning(model, 'ALIGNMENT_STOPPED_AT_OVERLAY',
+        `${node.id} stops growing toward its feeds at the overlay link ${stoppedBy}; the ports left outside their feeds stay at pitch and routing completes them.`, [stoppedBy]);
     }
   }
   for (const feed of own) {

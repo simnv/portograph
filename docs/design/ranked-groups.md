@@ -77,7 +77,8 @@ differ.
    the last rank of the rest of the group; ticket 28 replaced that rule with the depth ranks.)
 6. **Overlay-only and unreached members.** A member no anchor reaches over the routed links (it has
    no routed link inside the group, or only routed links to members no anchor reaches) takes the
-   rank of its nearest overlay partner in the group that has one, else the last rank.
+   rank of its nearest overlay partner in the group that has one, else the last rank. In a group anchored
+   only from below the last rank is the anchors' own rank, so an unreached member stands beside them.
 7. **Output.** `rank` per member, `rankCount` per group, `span` per child group. No geometry.
 
 Alignment across a tier: a group anchored from above puts rank 0 at the tier's first sub-tier; a

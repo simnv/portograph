@@ -1,12 +1,16 @@
 # Expected: A link that skips a rank of its own frame, in a tier where a neighbour frame has a cell, keeps
 # its lane in its own frame (ranked-groups ticket 04, re-check). `west` is gateway and distribution under
-# the ISP; the access node stands alone in a child group `edge` and links to the gateway. Ticket 28 lets a
-# leaf child stand beside the parent members of its ranks, so `edge` here is not a leaf: its member links to
-# a host below it (`w-host`), which pushes the distribution switch below the rank of `edge` (rank 2). The
-# link from the gateway to the switch then crosses the sub-tier of the cell of `edge`. `east` is a two-rank
-# neighbour, so its second cell stands in the same sub-tier.
+# the ISP; two access nodes stand in a child group `edge` and link to the gateway. Ticket 28 lets a leaf child
+# stand beside the parent members of its ranks, so `edge` here is not a leaf: `w-acc` links to a host below
+# it (`w-host`), which pushes the distribution switch below the rank of `edge` (rank 2). The link from the
+# gateway to the switch then crosses the sub-tier of the cell of `edge`, and the lane it owns stands beside
+# that cell, outside the box of the `edge` frame (the link is foreign to `edge`). Only the transit lanes of
+# `west` make the `west` frame hold it: with `transitLanes` stubbed to return no box, the lane pokes 14 px
+# out of the frame. (Ticket 27 had two distribution switches in `west#1` for this; under depth ranks the
+# switch stands below the child instead.) `east` is a two-rank neighbour, so its second cell stands in the
+# same sub-tier.
 # The link is foreign to `east`, so its lane is pinned outside the `east` frame; the lane is still the
-# own-frame lane of `west`: the `west` frame grows to hold it.
+# own-frame lane of `west`: it is hosted in a cell of `west`, and the `west` frame grows to hold it.
 # Test-only input owned by ranked-groups ticket 04; test/pipeline/frame-transit.test.ts reads the layout.
 portograph: 2
 groups:
@@ -21,12 +25,14 @@ nodes:
   e-dist: { group: east, class: switch, label: East distribution }
   w-gw: { group: west, class: router, label: West gateway }
   w-dist: { group: west, class: switch, label: West distribution }
-  w-acc: { group: edge, class: access, label: West access }
+  w-acc: { group: edge, class: access, label: A }
   w-host: { group: west, class: server, label: West host }
+  w-pad: { group: edge, class: access, label: West padding access node of the main building }
 links:
   - [u0, e-gw]
   - [u1, w-gw]
   - [e-gw, e-dist]
   - [w-gw, w-dist]
   - [w-gw, w-acc]
+  - [w-gw, w-pad]
   - [w-acc, w-host]

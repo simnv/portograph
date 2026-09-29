@@ -148,8 +148,9 @@ describe('transit through a frame', () => {
     const model = await run('an-own-frame-lane-stands-beside-a-neighbour-frame');
     expect(model.diagnostics.filter(diagnostic => diagnostic.severity === 'error')).toEqual([]);
     const [east, west, edge] = [model.frames!.find(item => item.id === 'east')!, model.frames!.find(item => item.id === 'west')!, model.frames!.find(item => item.id === 'edge')!];
-    // Ticket 28: the leaf child is gone from this input (its member links deeper, so it pushes `w-dist` down), and the link
-    // that skips the rank ends in `west` and crosses the cell of `edge`, which is a cell of `west` for the lane.
+    // Ticket 28: `edge` is not a leaf here (`w-acc` links to `w-host` below it), so it pushes `w-dist` down. The link that
+    // skips the rank ends in `west` and crosses the cell of `edge`; the lane stands outside the `edge` frame and only the
+    // transit lanes of `west` make the `west` frame hold it.
     const link = model.links.find(item => item.attachments!.from.node === 'w-gw' && item.attachments!.to.node === 'w-dist')!;
     const lanes = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === link.id);
     expect(lanes.length).toBeGreaterThan(0);

@@ -32,8 +32,8 @@ describe('goldens/synthetic group-ranks fixtures', () => {
     expect(result.rankCount).toBe(3);
   });
 
-  it('a cycle sw-sw-rt-rt layers by hops: the member farthest from the anchor stands last', () => {
-    const result = ranksOf('a-group-ranks-a-cycle-of-peers', 'site');
+  it('a ring sw-sw-rt-rt layers by hops: the member farthest from the anchor stands last', () => {
+    const result = ranksOf('a-group-ranks-a-ring-by-hops', 'site');
     expect(Object.fromEntries(result.ranks)).toEqual({ rt1: 0, rt2: 1, sw1: 2, sw2: 1 });
     expect(result.rankCount).toBe(3);
   });
@@ -59,7 +59,7 @@ describe('goldens/synthetic group-ranks fixtures', () => {
   });
 
   it.each([
-    'a-group-ranks-a-plain-chain', 'a-group-ranks-a-peer-pair-under-one-uplink', 'a-group-ranks-a-cycle-of-peers', 'a-group-ranks-skip-link',
+    'a-group-ranks-a-plain-chain', 'a-group-ranks-a-peer-pair-under-one-uplink', 'a-group-ranks-a-ring-by-hops', 'a-group-ranks-skip-link',
     'a-group-ranks-a-child-span-past-a-parent-member', 'a-child-span-holds-a-parent-member-out', 'a-group-ranks-an-overlay-only-member',
   ])('%s parses, lays out and renders with today\'s pipeline', async name => {
     const model = await run(fixture(name));

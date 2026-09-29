@@ -10,6 +10,7 @@ import { GROUP_LABEL_GEOMETRY, produceGroupLabelBands, routedStroke, stemReach }
 import { GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../../src/theme/geometry.js';
 import { horizontal, segmentRect, vertical } from '../../src/score/geometry.js';
 import { findPort } from '../../src/layout/row-paths.js';
+import { stemCache, stemPlan } from '../../src/layout/sides-two.js';
 import { placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -284,4 +285,56 @@ it('carries a group label with the band the gap room moves', async () => {
   for (const band of model.labelBands) {
     expect(band.bounds.y - bandY.get(band.group)!).toBeCloseTo(shift(band.group), 9);
   }
+}, 120000);
+
+it('grows a tier gap so that the two tip rows of a link that nests a stem stand two run clearances apart (ranked-groups ticket 25)', async () => {
+  // A pending stem's obstacle reaches one obstacle expansion (11.5 px) past its tip, and a run keeps one
+  // run clearance (11.5 px) off an obstacle. The other tip row of the link must stand beyond both, so it
+  // clears the near stem's obstacle rows; this is all the rule claims (see `stemShortfall`).
+  const OBSTACLE = 11.5, CLEARANCE = 11.5;
+  const before = await beforeBands(read('a-stem-tip-clears-the-tip-that-faces-it.yaml'));
+  const owed = tierGapRoom(before).map(room => room.stems);
+  expect(owed).toHaveLength(1);
+  expect(owed[0]).toBeCloseTo(5.5, 9);
+
+  const after = bands(before);
+  expect(tierGapRoom(after).map(room => room.stems)).toEqual([0]);
+  const grown = after.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN');
+  expect(grown.map(item => item.message)).toEqual([expect.stringMatching(/grew 5\.50 px to keep the two stem tips of a link clear of each other's stem obstacle/)]);
+  const gapBefore = bandGapOf(before, tierGapRoom(before)[0]!), gapAfter = bandGapOf(after, tierGapRoom(after)[0]!);
+  expect(gapAfter - gapBefore).toBeCloseTo(5.5, 9);
+
+  // Every link: the lower tip row lies beyond the upper stem's obstacle rows (upper tip + 11.5) by a run clearance.
+  const cache = stemCache();
+  let deepest = 0;
+  for (const link of after.links) {
+    const [a, b] = [findPort(after, link.attachments!.from)!, findPort(after, link.attachments!.to)!];
+    const [upper, lower] = a.anchor!.y < b.anchor!.y ? [a, b] : [b, a];
+    const upperTip = upper.anchor!.y + stemPlan(after, upper, cache).depth;
+    const lowerTip = lower.anchor!.y - stemPlan(after, lower, cache).depth;
+    deepest = Math.max(deepest, stemPlan(after, lower, cache).depth);
+    expect(lowerTip - (upperTip + OBSTACLE), link.id).toBeGreaterThanOrEqual(CLEARANCE - 1e-9);
+  }
+  expect(deepest).toBeGreaterThan(15);
+
+  // A second call asks for nothing more. This fixture routes without the rule as well (no removed link at
+  // any growth from 0 to 34.5 px), so it pins the arithmetic, not the need; the need is the fixture below.
+  expect(growTierGaps(after)).toBe(false);
+  const routed = await route(after, { createAttempt: createAvoidAttempt });
+  expect(routed.removedLinks ?? []).toEqual([]);
+}, 120000);
+
+it('grows the gap under the far stem of link-35 by 23 px, the near stem obstacle plus a run clearance (ranked-groups ticket 25)', async () => {
+  // Measured on this fixture: 23 px keeps `removedLinks` empty through the real router, 22.9 px removes
+  // link-37 (`test/route/stem-pocket.test.ts` routes the grown sheet). The near side is flat, every tip at
+  // 15 px, and the far stems of link-35 and link-37 reach 85 px of a 100 px gap: the far tip row lay on the
+  // near tip row, inside the near stems' obstacle rows.
+  const before = await beforeBands(read('a-band-holds-the-group-that-set-its-edge.yaml'));
+  const room = tierGapRoom(before).filter(item => item.stems > 0);
+  expect(room).toHaveLength(1);
+  expect(room[0]!.stems).toBeCloseTo(23, 9);
+  const after = bands(before);
+  const grown = after.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN');
+  expect(grown.map(item => item.message)).toEqual([expect.stringMatching(/grew 23\.00 px to keep the two stem tips of a link clear of each other's stem obstacle/)]);
+  expect(tierGapRoom(after).map(item => item.stems).every(item => item === 0)).toBe(true);
 }, 120000);

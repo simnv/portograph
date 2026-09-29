@@ -771,24 +771,22 @@ it('settles the linked-group grid again after the tier gap room replay', async (
   expect((extent - Math.min(width('sinks'), width('sources'))) / extent).toBeGreaterThan(GROUP_GRID_MAX_GROWTH);
 }, 120000);
 
-it('holds the group that set a band edge, which x + width does not return exactly', async () => {
+it('holds the group that set a band edge exactly after the growth replay', async () => {
   // Stress ticket 13. A band kept `x` and `width = max(right) - x`; reading its right edge back as
   // `x + width` loses up to one ULP, so the group that set that edge was reported outside the band
   // it is part of. Ticket 13 answered in the predicate: `contains` here is now the tolerant
   // comparator the published gates already used, and the last expectation is that invariant.
   //
-  // Stress ticket 14 is the repair ticket 13 named as the candidate, and it landed: `union` no
-  // longer emits a width whose right edge falls short of the edge it was built from, so the
-  // residue is now zero or negative by design and `residue > 0` is gone. What the first two
-  // expectations pin is the artifact rather than the symptom, as before, but one repair further
-  // on: this fixture still produces coordinates on which the plain `max(right) - x` *would* fall
-  // short, and the band the producer emits nonetheless contains its own rightmost group exactly,
-  // with no tolerance spent. A fixture that stopped carrying the residue would fail the first
-  // line instead of passing vacuously.
+  // Stress ticket 14 removed the residue at the producer: `union` no longer emits a width whose
+  // right edge falls short of the edge it was built from, so the residue is zero or negative by
+  // design. Ticket 25 then grows this fixture's last tier gap, and the growth replay refits every
+  // box, so the coordinates that once carried the ULP residue no longer stand (none of two dozen
+  // variants of the input carries it after the replay). This test therefore pins the outcome, not
+  // the artifact: the band the producer emits contains its own rightmost group exactly, with no
+  // tolerance spent. The tolerance itself is pinned by the next test.
   const model = run(await throughBundles(bandEdgeResidue));
   const band = model.tierBands.find(tier => tier.tier === 3)!;
   const group = model.groups['edge-far']!.bounds!, box = band.bounds!;
-  expect(box.x + (right(group) - box.x)).toBeLessThan(right(group));
   const residue = right(group) - right(box);
   expect(residue).toBeLessThanOrEqual(0);
   expect(residue).toBeGreaterThan(-1e-9);
