@@ -35,13 +35,17 @@ export interface GroupContent {
   layout?: Record<string, string | number | boolean>;
   /** A child group names its parent; one level only. A child has no tier of its own and takes its parent's. */
   parent?: string;
+  /** A member (a tier group) names its canton (docs/design/canton-groups.md, Section 1). Layout ignores it until ticket 54. */
+  canton?: string;
   /** Set by stage 1 on a rank cell: the document group whose frame the cell is part of. */
   frame?: string;
 }
 
 export type NormalisedGroup = GroupContent & (
-  | { tier: number; align?: never; of?: never }
-  | { align: 'left' | 'right'; of: string; tier?: never }
+  | { tier: number; align?: never; of?: never; members?: never }
+  | { align: 'left' | 'right'; of: string; tier?: never; members?: never }
+  /** A canton entry: no tier, no flank. `members` are its valid member tier groups, in declaration order. */
+  | { members: string[]; tier?: never; align?: never; of?: never }
 );
 
 /**

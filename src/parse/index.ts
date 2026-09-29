@@ -30,13 +30,32 @@ function optionalStrings<T extends object, K extends keyof T & string>(input: Ma
 
 function groups(input: Map<string, unknown>, doc: NormalisedDocument, v: Validation): Map<string, number | undefined> {
   const ranks = new Map<string, number | undefined>();
+  // A canton is any existing group that a member names in `canton:`.
+  const cantonNames = new Set<string>();
+  for (const value of input.values()) {
+    const named = value instanceof Map ? value.get('canton') : undefined;
+    if (typeof named === 'string' && input.has(named)) cantonNames.add(named);
+  }
   for (const [id, value] of input) {
     const path = `$.groups.${id}`;
     if (v.identifier(id, path) === undefined) continue;
     const fields = v.map(value, path);
-    v.keys(fields, ['tier', 'align', 'of', 'parent', 'label', 'shape', 'class', 'collapsed', 'layout'], path);
+    v.keys(fields, ['tier', 'align', 'of', 'parent', 'canton', 'label', 'shape', 'class', 'collapsed', 'layout'], path);
     const content: GroupContent = { label: id, shape: 'ranked' };
     optionalStrings(fields, content, ['label', 'class'], path, v);
+    if (cantonNames.has(id)) {
+      for (const key of ['tier', 'align', 'of', 'parent', 'shape', 'layout']) if (fields.has(key)) v.report('CANTON_KEYS', `${path}.${key}`, `A canton takes a label and a class only, not ${key}`);
+      if (fields.has('canton')) v.report('CANTON_NESTED', `${path}.canton`, 'A canton is not a member of a canton; the depth is canton, member, child');
+      put(doc.groups, id, { ...content, members: [] });
+      continue;
+    }
+    let member: string | undefined;
+    if (fields.has('canton')) {
+      const ref = v.identifier(fields.get('canton'), `${path}.canton`);
+      if (ref !== undefined && !input.has(ref)) v.report('UNKNOWN_REFERENCE', `${path}.canton`, `Unknown group ${ref}`);
+      else if (ref !== undefined && (fields.has('parent') || fields.has('align'))) v.report('CANTON_MEMBER_KIND', `${path}.canton`, 'A member is a tier group: a child group takes the canton of its parent and a flank has none');
+      else member = ref;
+    }
     if (fields.has('shape')) {
       const shape = v.choice(fields.get('shape'), ['ranked', 'row', 'bar', 'grid', 'ring', 'free'], `${path}.shape`);
       if (shape === 'ranked' || shape === 'row' || shape === 'bar' || shape === 'grid') content.shape = shape;
@@ -71,7 +90,7 @@ function groups(input: Map<string, unknown>, doc: NormalisedDocument, v: Validat
       if (align !== undefined && target !== undefined) put(doc.groups, id, { ...content, align, of: target });
     } else {
       if (fields.has('of')) v.report('OF_WITHOUT_ALIGN', `${path}.of`, 'of requires align');
-      put(doc.groups, id, { ...content, tier: rank ?? 0 });
+      put(doc.groups, id, { ...content, tier: rank ?? 0, ...(member === undefined ? {} : { canton: member }) });
       ranks.set(id, rank);
     }
   }
@@ -79,6 +98,7 @@ function groups(input: Map<string, unknown>, doc: NormalisedDocument, v: Validat
     const parent = own(doc.groups, group.parent);
     const path = `$.groups.${id}.parent`;
     if (parent === undefined) v.report('UNKNOWN_REFERENCE', path, `Unknown group ${group.parent}`);
+    else if (parent.members !== undefined) v.report('CANTON_KEYS', path, 'A canton has no child groups; a member holds them');
     else if (group.parent === id || parent.parent !== undefined) v.report('NESTED_CHILD', path, 'A parent group cannot itself have a parent; groups nest one level');
     else if (parent.align !== undefined) v.report('PARENT_FLANK', path, 'A flank cannot have child groups');
     else if (parent.shape !== 'ranked') v.report('PARENT_SHAPE', path, `A group with a child is ranked, not ${parent.shape}`);
@@ -87,6 +107,7 @@ function groups(input: Map<string, unknown>, doc: NormalisedDocument, v: Validat
   for (const [id, group] of Object.entries(doc.groups)) if (group.align !== undefined) {
     const target = own(doc.groups, group.of);
     if (target === undefined) v.report('UNKNOWN_REFERENCE', `$.groups.${id}.of`, `Unknown group ${group.of}`);
+    else if (target.members !== undefined) v.report('CANTON_KEYS', `$.groups.${id}.of`, 'A canton has no flank');
     else if (group.of === id || target.align !== undefined) v.report('FLANK_OF_TIER', `$.groups.${id}.of`, 'of must name another tier group');
     const key = `${group.of}.${group.align}`;
     if (occupied.has(key)) v.report('DUPLICATE_FLANK', `$.groups.${id}.align`, 'Only one flank per side of a tier group is allowed');
@@ -168,7 +189,7 @@ function inferTiers(doc: NormalisedDocument, ranks: Map<string, number | undefin
   }
   for (const id of orderedGroupIds(doc)) {
     const group = own(doc.groups, id);
-    if (!group || group.align !== undefined || group.parent !== undefined) continue;
+    if (!group || group.align !== undefined || group.parent !== undefined || group.members !== undefined) continue;
     const rank = ranks.get(id);
     if (rank !== undefined) { explicit.set(rank, [...(explicit.get(rank) ?? []), id]); continue; }
     const set = classes.get(id) ?? new Set<string>();
@@ -193,6 +214,32 @@ function inferTiers(doc: NormalisedDocument, ranks: Map<string, number | undefin
     const group = own(doc.groups, id);
     const parent = group?.parent === undefined ? undefined : own(doc.groups, group.parent);
     if (group && parent?.tier !== undefined) group.tier = parent.tier;
+  }
+}
+
+/** Canton rules that read effective tiers, so they run after `inferTiers` (docs/design/canton-groups.md, Section 1). */
+function cantons(doc: NormalisedDocument, v: Validation): void {
+  for (const id of orderedNodeIds(doc)) {
+    const node = own(doc.nodes, id);
+    if (node && own(doc.groups, node.group)?.members !== undefined) v.report('CANTON_KEYS', `$.nodes.${id}.group`, `${node.group} is a canton and holds no node; a member holds it`);
+  }
+  const flanked = new Map<string, string>();
+  for (const id of orderedGroupIds(doc)) { const group = own(doc.groups, id); if (group?.of !== undefined) flanked.set(group.of, id); }
+  for (const id of orderedGroupIds(doc)) {
+    const group = own(doc.groups, id);
+    const canton = group?.canton === undefined ? undefined : own(doc.groups, group.canton);
+    if (!group || !canton?.members) continue;
+    const path = `$.groups.${id}.canton`;
+    if (group.shape === 'bar' || group.shape === 'grid') { v.report('CANTON_MEMBER_SHAPE', path, `A member is ranked or row, not ${group.shape}`); continue; }
+    if (flanked.has(id)) { v.report('CANTON_MEMBER_FLANK', `$.groups.${flanked.get(id)}.of`, `A flank cannot stand beside ${id}, a member of a canton`); continue; }
+    canton.members.push(id);
+  }
+  for (const id of orderedGroupIds(doc)) {
+    const canton = own(doc.groups, id);
+    if (!canton?.members) continue;
+    if (canton.members.length === 0) { v.report('CANTON_EMPTY', `$.groups.${id}`, `Canton ${id} has no member`); continue; }
+    const tiers = [...new Set(canton.members.map(m => own(doc.groups, m)?.tier ?? 0))].sort((a, b) => a - b);
+    if (tiers.some((tier, i) => i > 0 && tier !== (tiers[i - 1] ?? 0) + 1)) v.report('CANTON_TIER_GAP', `$.groups.${id}`, `The members of canton ${id} stand on tiers ${tiers.join(', ')}; a canton holds consecutive tiers`);
   }
 }
 
@@ -326,6 +373,7 @@ export function parseWithDiagnostics(text: string, options: ParseOptions = {}): 
   if (JSON.stringify(groupOrder) !== JSON.stringify(Object.keys(doc.groups))) doc.groupOrder = groupOrder;
   if (JSON.stringify(nodeOrder) !== JSON.stringify(Object.keys(doc.nodes))) doc.nodeOrder = nodeOrder;
   inferTiers(doc, ranks, v);
+  cantons(doc, v);
   if (root.has('links')) links(root.get('links'), doc, v);
   const linkInput = root.get('links');
   limits(doc, Array.isArray(linkInput) ? linkInput.length : 0, options, v);
