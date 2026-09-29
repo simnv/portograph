@@ -1166,9 +1166,9 @@ that still serialises by chord is ticket 37.
 one link: the required checkpoints first, then the stitch. Two cases reject the link. The router
 skipped a required checkpoint: `ROUTE_CHECKPOINT_SKIPPED`, with the link, the checkpoint, the
 connector and the rule that asked for it (`stem:`, `lane:` or `entry:`). Or the stitch refused the
-route: `ROUTE_GAP_REJECTED`, with the reason. Only a `GapRejected` is a rejection, and a stitched path that retraces itself is one (ticket 46;
-`validateRoutedPaths` keeps the same check as an assertion). Any other error
-stays fatal. A removed link loses its routes, adds no protective run, and keeps no label. Stage 8
+route: `ROUTE_GAP_REJECTED`, with the reason. Only a `GapRejected` is a rejection, and a stitched
+path that retraces itself is one (ticket 46; `validateRoutedPaths` keeps the same check as an
+assertion). Any other error stays fatal. A removed link loses its routes, adds no protective run, and keeps no label. Stage 8
 alone sets it. The layout JSON gains `LayoutLink.removed` and `removedLinks` (both absent when
 none), and the score counts `removedLinks`. The renderer and the drawio export draw a link only
 where it has a path, so a removed link is not drawn; `score` skips it. With `strictCheckpoints`

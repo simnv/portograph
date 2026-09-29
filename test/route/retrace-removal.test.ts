@@ -24,7 +24,7 @@ describe('a retracing route removes its link and not the sheet (ticket 46)', () 
     const warning = model.diagnostics.find(item => item.code === 'ROUTE_GAP_REJECTED')!;
     expect(warning.severity).toBe('warning');
     expect(warning.message).toContain('link-6 was removed');
-    expect(warning.message).toContain('the route retraces itself');
+    expect(warning.message).toContain('Routed path on link-6 retraces itself');
     for (const link of model.links) if (link.id !== 'link-6' && link.technique !== 'stub') expect(link.path, link.id).toBeDefined();
     expect(model.links.find(link => link.id === 'link-6')!.path).toBeUndefined();
     expect(() => validateRoutedPaths(model, true)).not.toThrow();
@@ -46,6 +46,6 @@ describe('a retracing route removes its link and not the sheet (ticket 46)', () 
     const points: Point[] = [from, first, { x: first.x, y: row + 40 }, { x: first.x + 30, y: row + 40 }, { x: first.x + 30, y: row + 20 },
       { x: first.x, y: row + 20 }, { x: first.x, y: row }, { x: second.x, y: row }, second, to];
     const done = tryStitch(model, item, new Map([[gap.connector, points]]));
-    expect(done).toEqual({ rejection: { link: item.link, code: 'ROUTE_GAP_REJECTED', reason: 'the route retraces itself' } });
+    expect(done).toEqual({ rejection: { link: item.link, code: 'ROUTE_GAP_REJECTED', reason: 'Routed path on link-5 retraces itself' } });
   }, 120000);
 });

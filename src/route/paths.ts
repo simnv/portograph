@@ -197,7 +197,10 @@ export function stitchPath(model: LayoutModel, plan: LinkPlan, routes: Map<strin
   const joined = joinSeams(segments, claimed);
   // The router's answer joined to the rules' runs may walk back along a run already drawn. That is the same
   // judgement `validateRoutedPaths` asserts (same sweep), made here first so the one link goes, not the sheet.
-  if (retracingRuns(joined)) throw new GapRejected('the route retraces itself');
+  // A retrace among the rules' own runs is a rule defect, not a router answer, and stays fatal (ticket 24's boundary).
+  const ruled = segments.filter((_, index) => claimed[index]);
+  if (retracingRuns(ruled)) throw new Error(`Reserved runs on ${link.id} retrace themselves`);
+  if (retracingRuns(joined)) throw new GapRejected(`Routed path on ${link.id} retraces itself`);
   return { owner: { ...link.owner }, layer: 'routed', fixed: false, segments: joined, ...pathStrokeWidth(link) };
 }
 
