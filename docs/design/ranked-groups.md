@@ -57,7 +57,7 @@ differ.
    decides peer-ness, and nothing reads it (ticket 27).
 3. **Layering.** Longest-path layering over the down links. Every down link rises by exactly one
    depth and peer components sit at one depth, so a member's rank is its depth. A link can skip a
-   rank only through step 5 (a child span push or a leaf child).
+   rank only through step 5 (a child span push) or step 6.
 4. **Cycles.** A ring needs no rule: depth is defined by hops, so a link closing a ring joins two
    members of equal depth (a peer link) or of depths one apart (a down link).
    *Twin lift, dropped (ticket 27).* An idea kept for the record: lift a member that shares its
@@ -67,13 +67,14 @@ differ.
 5. **Child group.** A child's members take rank `max(own, first rank of the child)` and the child's
    span is `[min, max]` of them. A parent member whose rank falls inside the span, and who is not a
    child member, is pushed to the rank after the span. A child span is therefore whole ranks.
-   A child whose members have no routed link to a deeper member outside the child (a leaf child),
-   hold no anchor and share no peer component with a member outside the leaf children takes the
-   ranks after the last rank of the rest of the group, non-leaf children included, in its own
-   internal order, and pushes nothing. Two leaf children stand side by side from that rank, in
-   declaration order; leaf children joined by a peer link start on the same rank. An overlay-only
-   leaf child goes last and overrides step 6. Only a child that feeds deeper members keeps its
-   depth position and pushes them. A group anchored from below has no leaf rule (ticket 19).
+   A child whose members have no routed link to a deeper member outside the child (a leaf child)
+   and hold no anchor pushes nothing (ticket 28): it keeps its depth ranks, and the parent members
+   whose rank falls in its span keep their rank too. They stand in the parent's own cell of that
+   rank, beside the child, so one sub-tier can hold both `G#r` and `child#r`. A child span is whole
+   ranks in y only. Only a child that feeds deeper members, or holds an anchor, pushes the parent
+   members out of its span. An overlay-only leaf child still goes after the last rank of the rest
+   (step 6). A group anchored from below has no leaf rule. (Ticket 19 put every leaf child after
+   the last rank of the rest of the group; ticket 28 replaced that rule with the depth ranks.)
 6. **Overlay-only and unreached members.** A member no anchor reaches over the routed links (it has
    no routed link inside the group, or only routed links to members no anchor reaches) takes the
    rank of its nearest overlay partner in the group that has one, else the last rank. In a group anchored
@@ -105,6 +106,16 @@ plus the label band on the title edge. A child frame is the union of its span's 
 the parent frame grows to hold the child frame plus padding. The layout JSON gains `frames`; the
 renderer draws frames and never cells.
 
+**Beside (ticket 28).** A leaf child shares sub-tiers with parent cells. In x the child frame is a
+column inside the parent frame, and the parent's cells of the child's ranks are a disjoint column
+next to it, `COLUMN_SLACK` (20 px) apart. The child goes on the side its overlay partners favour
+(the mean x of the partners outside the frame, against the mean x of those parent cells); a tie
+puts it on the right, in declaration order. `packFrameColumns` reads the stands of all frames
+before it moves a cell. `separateFrameColumns`, `columnShifts` and `holdColumnAxes` move the child
+frame and the parent cells as two columns of one parent, and centring keeps each cell inside its own
+column (`besideWalls`). A parent link that passes the child's ranks to reach a parent cell beside
+the child is foreign to the child and stays outside the child frame.
+
 **What cells are exempt from:** the label band (`bandFor` returns none for a cell; the frame owns
 one), ADR-0011 title placement, ADR-0012 linked-group grid (frames share the grid, cells do not),
 group padding, and the ADR-0013 obstacle. **What frames own:** the label band, whose room is
@@ -119,7 +130,10 @@ a frame. `validateSkeletonBands` and `mutation.ts` keep their checks on cells.
 **Transit through a frame.** A link that ends in cell `G#3` and arrives from above crosses
 sub-tiers of `G#0..G#2`. It is not foreign to `G`, so ADR-0013 permits the passage; the lane is
 reserved beside the crossed cells as today, and the frame grows to hold it. A link foreign to `G`
-never enters the frame.
+never enters the frame. A lane that a frame holds is reserved before a foreign lane, and it stays on
+its own frame's side of a foreign frame (tickets 23 and 26). A fixed-point rule (reserve, grow, place
+the foreign lane, repeat) was replaced: it does not converge, because lane x is immutable and frame
+growth only grows.
 
 **Shapes.** `ranked` is the default. `row` forces one rank. `grid` and `bar` are unchanged and
 explicit. A ranked group with one rank is indistinguishable from a `row` group, so every input
@@ -132,12 +146,21 @@ without intra-group routed links renders as before.
    partners' centres, then de-overlapped against its tier siblings with the band gap, keeping the
    order the barycentre gives. A single node with no routed links inside a cell is ordered in its
    cell by the same key. Routed geometry never moves because of this rule.
+   A free frame whose box lies wholly outside the x-span of its settled overlay partners in other
+   tiers first takes the nearest edge of that span (the into-span pre-step, ticket 22). The move stays
+   only when the total overlay chord length of the moved groups falls; else the tier goes back.
 2. **Order in a tier.** The order of frames in a tier, and of nodes in a cell, is the barycentre of
    partner positions in the adjacent sub-tiers and of overlay partners anywhere, routed and overlay
    weighted equally; one downward sweep then one upward sweep from the anchor tier; ties keep the
    ELK order. The re-order is accepted per tier only when the routed crossing count of that tier's
    regions does not rise.
-3. **Sides.** No change. A same-sub-tier overlay pair takes `left`/`right` and rides the row; a
+3. **ELK keeps the overlay edges.** ELK still reads the overlay links between tiers, because they
+   place x for straightness. A filter that hid them from ELK was tried and rejected (ticket 18): ten
+   overlay tests regress. Ticket 18 re-seats the bands after `flattenRows` instead, so the height
+   ELK gave a band no longer shows as gap between bands.
+4. **Alignment stops at a chord.** Alignment growth of a body stops short of an overlay chord
+   (`ALIGNMENT_STOPPED_AT_OVERLAY`, ticket 29). The bound of 12 stays.
+5. **Sides.** No change. A same-sub-tier overlay pair takes `left`/`right` and rides the row; a
    cross-sub-tier pair takes `top`/`bottom`.
 
 ## Section 4 — Converter and inputs

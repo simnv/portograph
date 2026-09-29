@@ -341,6 +341,11 @@ export interface LayoutModel {
   deadlineHit?: boolean;
   /** Ids of the links stage 8 removed, in model order; absent when none. The score report counts them. */
   removedLinks?: string[];
+  /**
+   * The links that hold a straight chord (ticket 34) when stage 7f begins. From then on the chord is a wall:
+   * its geometry follows the ports, the decision is never re-taken, and a move that would put a body on it is refused.
+   */
+  frozenChords?: string[];
   /** One per `document.frames` entry, in document order; absent when no group was replaced by cells. */
   frames?: Frame[];
 }
