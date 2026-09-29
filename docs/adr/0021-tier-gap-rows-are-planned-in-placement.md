@@ -63,6 +63,6 @@ neighbour's leg (tickets 45, 46). That is the pipeline's one rule broken, in one
 ## Alternatives considered
 
 - Keep the old allocation for the residual parts. Rejected on the measurement: it seated nothing
-  for them, and it was about 800 lines that the plan's nine reasons no longer reach.
+  for them, and it was 810 lines of `gap-runs.ts` (1058 became 245) that the plan's nine reasons no longer reach.
 - Amend ADR-0015 in place. Rejected: six of its amendments describe the allocation and the height
   rule as one story, and a rewrite would lose the measured history. ADR-0015 carries a pointer.
