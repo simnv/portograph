@@ -43,6 +43,8 @@ function jsonValue(value: unknown): void {
     for (const child of Object.values(value)) jsonValue(child);
   }
 }
+/** A box with its y left out: what a vertical translation keeps. */
+function verticalOnly(box: Rect): Omit<Rect, 'y'> { return { x: box.x, width: box.width, height: box.height }; }
 function same(a: unknown, b: unknown, message: string): void { if (!equal(a, b)) throw new Error(message); }
 /**
  * The tier gaps that owe a row they cannot seat. 7f has already reserved the room every gap asks
@@ -598,8 +600,9 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     if (rule === 'centre' && !equal(group.rowOrder, model.groups[id]!.rowOrder)
       && group.nodes.some(node => model.links.some(link => link.layer === 'routed' && link.attachments
         && (link.attachments.from.node === node || link.attachments.to.node === node)))) throw new Error(`Centring cannot reorder ${id}: a node of it has a routed link`);
-    if (rule === 'rows' && group.flank) same(group, model.groups[id], 'Rows cannot move flank groups');
-    if (rule === 'rows' && !group.flank && groupShape(draft, id) !== 'row') same(group, model.groups[id], 'Rows cannot change non-row groups');
+    // Rows may re-seat a whole band (ranked-groups ticket 18), so a flank or a non-row group may translate vertically with it.
+    if (rule === 'rows' && group.flank) same(verticalOnly(group.bounds!), verticalOnly(model.groups[id]!.bounds!), 'Rows cannot move flank groups');
+    if (rule === 'rows' && !group.flank && groupShape(draft, id) !== 'row') same(verticalOnly(group.bounds!), verticalOnly(model.groups[id]!.bounds!), 'Rows cannot change non-row groups');
     if (rule === 'flanks' && group.flank) same(group.bounds!.x, model.groups[id]!.bounds!.x, 'Flanks cannot translate groups horizontally');
     if (rule === 'bars' && draft.document.groups[id]!.shape !== 'bar') same(group, model.groups[id], 'Bars cannot move another group');
     if (rule === 'flanks' && !group.flank && !Object.values(model.groups).some(g => g.flank?.of === id)) same(group, model.groups[id], 'Flanks cannot move another group');
@@ -633,8 +636,16 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     if (rule === 'flanks' && !flankNodes.has(id)) same(node, old, 'Flanks cannot change unrelated nodes');
     if (rule === 'rows') {
       same(node.size, old.size, 'Rows cannot resize nodes');
-      if (model.groups[model.document.nodes[id]!.group]!.flank) same(node, old, 'Rows cannot move flank nodes');
-      if (groupShape(draft, draft.document.nodes[id]!.group) !== 'row') same(node, old, 'Rows cannot move bar nodes');
+      // A flank or non-row node moves only with its band: the vertical shift of its own group, anchors with it.
+      const seated = (): void => {
+        const dy = node.bounds!.y - old.bounds!.y;
+        same(node, { ...old, bounds: { ...old.bounds!, y: old.bounds!.y + dy }, ports: old.ports.map(port => ({ ...port,
+          ...(port.anchor ? { anchor: { x: port.anchor.x, y: port.anchor.y + dy } } : {}),
+          ...(port.pill ? { pill: { ...port.pill, bounds: { ...port.pill.bounds, y: port.pill.bounds.y + dy } } } : {}) })) }, 'Rows can only translate a flank or non-row node with its band');
+        same(dy, draft.groups[model.document.nodes[id]!.group]!.bounds!.y - model.groups[model.document.nodes[id]!.group]!.bounds!.y, 'A flank or non-row node moves with its group');
+      };
+      if (model.groups[model.document.nodes[id]!.group]!.flank) seated();
+      else if (groupShape(draft, draft.document.nodes[id]!.group) !== 'row') seated();
     }
     if (rule === 'lanes') {
       same(node.size, old.size, 'Lanes cannot resize nodes');
