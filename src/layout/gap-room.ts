@@ -19,8 +19,8 @@ import { moveGroup } from './skeleton-geometry.js';
  *
  * A gap short of what its seating needs grows by exactly the shortfall, and every band below it
  * moves down by the running total. Nothing moves horizontally, nothing moves up, and a gap whose
- * rows already fit grows by nothing. The allocation in `gap-runs.ts` is the consumer of the grown
- * gap and never its owner: it reads the room the gap has and seats what fits in it.
+ * rows already fit grows by nothing. Stage 8 (`allocateGapRuns` in `gap-runs.ts`) is the consumer of the
+ * grown gap and never its owner: it reserves the plan's parts in the room the gap has.
  *
  * **What the reservation is.** The height `H` of the tier-gap row plan (`gap-plan.ts`,
  * `docs/design/tier-gap-rows.md` Section 3): the rows of every part packed from the low boundary,
@@ -80,7 +80,7 @@ export function growTierGaps(model: LayoutModel): boolean {
   for (const { gap, plan } of plans) {
     for (const item of plan.residual) {
       placementWarning(model, item.reason === 'row-cycle' ? 'TIER_GAP_ROW_CYCLE' : 'TIER_GAP_PART_RESIDUAL',
-        `${item.link} is left to the router in the tier gap above tier ${gap.below}: ${REASONS[item.reason]}${item.granted ? ` (${item.granted}'s leg cover is granted to it)` : ''}.`, [item.link]);
+        `${item.link} is left to the router in the tier gap above tier ${gap.below}: ${REASONS[item.reason]}.`, [item.link]);
     }
   }
   return grow(model, grown);
@@ -126,7 +126,6 @@ const REASONS: Record<ResidualReason, string> = {
   'faces-away': 'a port faces away from the gap',
   'off-boundary': 'a lane end stands on no boundary of the gap',
   'crosses-lane': 'its span crosses the reserved run of a through lane',
-  'legs-within-k': 'its leg stands within a run clearance of the leg of another node',
   'row-cycle': 'its rows form a cycle',
   'crosses-shared-run': 'a leg stands over the shared run of another link',
   'leg-blocked': 'a leg would pass through a label, a lane box or an obstacle',

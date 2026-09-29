@@ -203,7 +203,7 @@ export function planRoute(model: LayoutModel): RoutePlan {
     // that is the link's own port anchor — an allocated run has neither. A link that must cross the
     // gap is given the row and nothing else; a rectangle whose segment cannot be identified keeps
     // the full protection.
-    const covers = completedRouteObstacles(model, link, `${run.planned ? 'plan' : 'gap'}:${run.link}:${run.index}`, points);
+    const covers = completedRouteObstacles(model, link, `plan:${run.link}:${run.index}`, points);
     const paired = covers.length === run.segments.length;
     for (const [index, item] of covers.entries()) {
       const segment = run.segments[index]!;
@@ -213,7 +213,7 @@ export function planRoute(model: LayoutModel): RoutePlan {
       // of them; the rectangles between do not, or the owner's other gaps could run along the run
       // the stitcher inserts verbatim.
       const terminal = index === 0 || index === covers.length - 1;
-      reserve([{ ...item, consumers: [...(terminal ? item.consumers : []), ...(across ? run.crossers : []), ...(run.shares ?? []), ...(across ? [] : run.grants ?? [])] }]);
+      reserve([{ ...item, consumers: [...(terminal ? item.consumers : []), ...(across ? run.crossers : []), ...(run.shares ?? []), ...(across ? [] : paired ? run.grants?.[index] ?? [] : [...new Set(run.grants?.flat())])] }]);
     }
   }
   const usage = portUsage(model), pins = new Map<string, RoutePin[]>(), boxes = groupBoxes(model);
