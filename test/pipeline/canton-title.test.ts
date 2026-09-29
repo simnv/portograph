@@ -147,8 +147,8 @@ links:
     for (const link of model.links.filter(item => item.sourceIndex >= 5)) {
       for (const seg of link.path?.segments ?? []) {
         if (seg.from.y !== seg.to.y || seg.from.x === seg.to.x) continue;
-        // A horizontal run inside the gap between the canton and `edge`.
-        if (seg.from.y <= bottom(west.box) || seg.from.y >= edge.bounds!.y) continue;
+        // A horizontal run inside the gap between the last canton tier and `edge`: the frame margin and the band count.
+        if (seg.from.y <= bottom(tierBand(model, 1).bounds!) || seg.from.y >= edge.bounds!.y) continue;
         rows++;
         expect(seg.from.y).toBeGreaterThanOrEqual(bottom(west.box) + GROUP_EDGE_LINK_CLEARANCE + linkStrokeWidth(link) / 2 - 1e-6);
       }

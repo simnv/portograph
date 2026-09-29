@@ -374,3 +374,5 @@ the Frames section (the canton frame, the title host), G9.
 - `validateGroupLabelBands` skips the node clearance for a canton band, and G9 accepts a member frame that overlaps the band by construction:
   `syncBands` re-derives the band from the members, so the two cannot disagree.
 - An overlay link may cross the band and its title (pre-existing for member bands; `crossingSide` counts routed links only). Ticket 60.
+- The canton band and its margin are an O5 obstacle to the tier-gap row plan, anchored to the band on the canton's title edge (see `tier-gap-rows.md`, O5).
+- A member port whose x lies within the canton's title text plus or minus 8 px on the title edge becomes a `leg-blocked` residual, and the router detours around the label, never through the text. By ADR-0011 the title edge is the one with fewer ports.
