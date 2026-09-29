@@ -384,13 +384,18 @@ parts named by the diagnostic, and 0 throws.
    described part takes `label height + 8 + stroke` (18.5 px at 9 px type) before the next row,
    or its label is suppressed as an overlay label is. The ticket 36 shape then grows 45 px instead
    of 63, v5-4-0 19 instead of 61.
+   **Decision (2026-09-29):** The row pitch is `P = k = 11.5`, and a described part takes `label height + 8 + stroke` before the next row.
 2. **Rows in the padding.** The router lays rows between a padding tip and the group edge today
    (v5-4-0's lower gap). The plan does not (`lb ≥ low + e`). Recommendation: not in the first
    version; measure the sweep's growth, then decide.
+   **Decision (2026-09-29):** The first version lays no rows in the group padding.
 3. **Legs of two nodes within `k`.** The plan makes the later part residual and grants it the
    earlier leg's cover (ticket 45's shape). The real fix is a placement rule on port x.
    Recommendation: residual with a diagnostic now; a placement ticket later.
+   **Decision (2026-09-29):** Legs of two nodes within `k` stay residual with a diagnostic, and a placement rule on port x comes later.
 4. **The shared leg at a port.** Exempt it through the plan record (recommended: the plan writes no
    model geometry) or through a declared shared run on the link.
+   **Decision (2026-09-29):** The plan record exempts the shared leg at a port.
 5. **When to delete the router-side grants** (tickets 21, 22, 30, 37). Recommendation: with ticket
    4, once the sweep shows no residual tier-gap part; keep them until then, gated by the count.
+   **Decision (2026-09-29):** The router-side grants (tickets 21, 22, 30, 37) are deleted with the last ticket, once the sweep shows no residual tier-gap part.
