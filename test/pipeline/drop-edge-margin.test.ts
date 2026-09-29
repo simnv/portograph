@@ -24,10 +24,11 @@ it('turns a drop that goes in sideways outside the group-edge link-margin', asyn
   const link = model.links.find(item => item.id === 'link-1')!;
   const box = model.groups['g11']!.bounds!, segments = link.path!.segments;
   const margin = GROUP_EDGE_LINK_CLEARANCE + 1 / 2;
-  // The plan asked for the entry point beside the edge that faces the source, on the stem's row.
-  const entry = plan.links.find(item => item.link === 'link-1')!.connectors[0]!.checkpoints
-    .find(checkpoint => checkpoint.x < box.x)!;
-  expect(box.x - entry.x).toBeGreaterThanOrEqual(margin);
+  // Before ticket 66 the title of `g11` could not clear the port's leg, so the drop went to the router and the plan asked for an entry point
+  // beside the edge that faces the source, on the stem's row. The title is now placed clear and `g11` widens, so the row plan holds the drop
+  // and asks for no checkpoint; a plan that does ask keeps it a margin beyond the edge.
+  const entry = plan.links.find(item => item.link === 'link-1')?.connectors[0]?.checkpoints.find(checkpoint => checkpoint.x < box.x);
+  if (entry) expect(box.x - entry.x).toBeGreaterThanOrEqual(margin);
   // No vertical run beside the group's side edges closer than the margin; the drop turned outside it.
   for (const segment of segments) {
     if (segment.from.x !== segment.to.x) continue;

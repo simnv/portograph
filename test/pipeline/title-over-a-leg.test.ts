@@ -37,6 +37,7 @@ describe('a title over a port\'s leg is nudged aside (ticket 62)', () => {
     expect(at(one, 'west')).toBeCloseTo(144.42626953125, 6);
     expect(at(one, 'lab#0')).toBeCloseTo(148.09423828125, 6);
     expect(at(two, 'west')).toBeCloseTo(243.45263671875, 6);
-    expect(at(two, 'lab#0')).toBeCloseTo(240.3662109375, 6);
+    // `lab#0` stood at 240.366 before ticket 66; its leg (a real one, not the phantom of B1) is a hard obstacle since, the group widens and the title stands 4.29 px further right.
+    expect(at(two, 'lab#0')).toBeCloseTo(244.65380959375, 6);
   }, 120000);
 });

@@ -77,9 +77,10 @@ describe('a residual part publishes with its findings named (ticket 51)', () => 
 
   it('names a leg through a label (leg-blocked) and a leg over a shared run (crosses-shared-run) on the corpus fixtures', async () => {
     // Since ticket 62 a title is nudged off the legs under it, so `a-tier-gap-plan-orders-every-part` plans its link-3; the residual is read on
-    // the fixture whose titles are too wide for any position to clear the leg of link-2, link-8 and link-11.
+    // the fixture whose titles are too wide for any position to clear the leg of link-2, link-8 and link-11. Since ticket 66 the leg of link-2 is a
+    // hard obstacle (its group widens, lane-feasibly) and is planned; link-8 and link-11 have no lane-feasible widening and stay residual.
     const blocked = await place(read('a-title-no-position-clears-leaves-the-leg-to-the-router'));
-    expect(residual(blocked).sort()).toEqual(['link-11:leg-blocked', 'link-2:leg-blocked', 'link-8:leg-blocked']);
+    expect(residual(blocked).sort()).toEqual(['link-11:leg-blocked', 'link-8:leg-blocked']);
     expect(codes(blocked)[0]).toMatch(/^TIER_GAP_PART_RESIDUAL\|link-\d+ is left to the router in the tier gap above tier \d: a leg would pass/);
     expect(residual(await place(read('a-tier-gap-plan-orders-every-part')))).toEqual([]);
     const shared = await place(read('a-claimed-run-clears-a-shared-run'));

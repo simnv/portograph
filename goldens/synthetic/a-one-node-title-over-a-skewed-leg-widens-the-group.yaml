@@ -1,0 +1,27 @@
+# Expected: a one-node group whose title stands over skewed legs (ticket 66). The group `mid` holds one router fed from two nodes of
+# `top` and leaving to two nodes of `low`; its two top ports stand 12 px apart, off the feeds they meet, so their legs are skewed, and
+# the title (as wide as the group's box less its insets) has no position on the edge that clears both. The legs are hard obstacles
+# like a straight feed's: the title stands clear of them and `mid` widens by the title plus the clearances beside the port, so the
+# tier-gap row plan holds both parts (no `leg-blocked`) and the router is asked for nothing.
+# Test-only input owned by ticket 66; test/pipeline/hard-legs-under-a-title.test.ts reads it.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  mid: { tier: 1, label: A rather long title for one router }
+  low: { tier: 2, label: Low }
+  side: { tier: 2, label: Side }
+nodes:
+  a0: { group: top, class: router, label: A0 }
+  a1: { group: top, class: router, label: A1 }
+  a2: { group: top, class: router, label: A2 }
+  m0: { group: mid, class: router, label: M0 }
+  z0: { group: low, class: router, label: Z0 }
+  z1: { group: low, class: router, label: Z1 }
+  z2: { group: low, class: router, label: Z2 }
+  s0: { group: side, class: router, label: S0 }
+  s1: { group: side, class: router, label: S1 }
+links:
+  - [a1, m0]
+  - [a2, m0]
+  - [m0, z1]
+  - [m0, z2]

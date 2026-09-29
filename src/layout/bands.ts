@@ -657,7 +657,7 @@ function cantonHost(model: LayoutModel, id: string, side: 'top' | 'bottom'): Lay
  * is never widened for them, and `failed` says so: the caller then leaves the whole row of titles where it was.
  */
 function titleX(model: LayoutModel, placed: LayoutLabel[], y: number, measured: { width: number; height: number },
-  start: number, limit: number, centre: number, nudge: boolean): { x: number; failed: boolean } {
+  start: number, limit: number, centre: number, nudge: boolean, widenTo: (x: number) => boolean): { x: number; failed: boolean } {
   const pick = (ranges: ForbiddenInterval[]): number | undefined => [centre, start, limit,
     ...ranges.flatMap(range => [range.low - LABEL_CLEARANCE_STEP, range.high + LABEL_CLEARANCE_STEP])]
     .filter(x => x >= start - PLACEMENT_EPS && x <= limit + PLACEMENT_EPS && ranges.every(range => x < range.low - PLACEMENT_EPS || x > range.high + PLACEMENT_EPS))
@@ -666,6 +666,9 @@ function titleX(model: LayoutModel, placed: LayoutLabel[], y: number, measured: 
   if (nudge) {
     const soft = intervals(model, placed, y, measured.height, measured.width, true), found = pick(soft);
     if (found !== undefined) return { x: found, failed: false };
+    // Ticket 66: no position on the edge clears a leg, so the leg is a hard obstacle like a straight feed's: the title stands clear of
+    // it and the group widens by the title plus the clearances beside the port, where the widening is lane-feasible.
+    const beyond = firstFree(start, soft);    if (beyond > limit + PLACEMENT_EPS && widenTo(beyond)) return { x: beyond, failed: false };
     return { x: pick(hard) ?? firstFree(start, hard), failed: soft.length !== hard.length || soft.some((range, at) => range.low !== hard[at]!.low || range.high !== hard[at]!.high) };
   }
   return { x: pick(hard) ?? firstFree(start, hard), failed: false };
@@ -677,15 +680,15 @@ function titleX(model: LayoutModel, placed: LayoutLabel[], y: number, measured: 
  * together. Nudging only some of them would plan some drops of a gap and leave the rest to the router, which lays them across the
  * planned rows.
  */
-function planLabels(model: LayoutModel, permitGrowth: boolean): LabelPlan {
-  const first = planLabelsOnce(model, permitGrowth, new Set());
-  return first.failed.size && !first.growth ? planLabelsOnce(model, permitGrowth, first.failed) : first;
+function planLabels(model: LayoutModel, permitGrowth: boolean, legs = permitGrowth): LabelPlan {
+  const first = planLabelsOnce(model, permitGrowth, new Set(), legs);
+  return first.failed.size && !first.growth ? planLabelsOnce(model, permitGrowth, first.failed, legs) : first;
 }
 
 /** The tier gap a title's edge faces: the bottom edge of tier t and the top edge of tier t + 1 face the same one. */
 const gapKey = (tier: number, side: 'top' | 'bottom'): string => String(side === 'bottom' ? tier : tier - 1);
 
-function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: ReadonlySet<string>): LabelPlan & { failed: Set<string> } {
+function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: ReadonlySet<string>, legs: boolean): LabelPlan & { failed: Set<string> } {
   const labels: LayoutLabel[] = [], blocked: string[] = [], failed = new Set<string>();
   for (const title of titles(model)) {
     const id = title.host, group = model.groups[id]!, measured = measurement(title.label);
@@ -694,7 +697,8 @@ function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: Readon
     const start = group.bounds!.x + GROUP_LABEL_GEOMETRY.horizontalInset;
     const limit = right(group.bounds!) - GROUP_LABEL_GEOMETRY.horizontalInset - measured.width;
     const centre = group.bounds!.x + (group.bounds!.width - measured.width) / 2;
-    const row = gapKey(group.tier!, title.side), placed = titleX(model, labels, y, measured, start, limit, centre, !still.has(row));
+    const row = gapKey(group.tier!, title.side), placed = titleX(model, labels, y, measured, start, limit, centre, !still.has(row),
+      x => legs && growthPlan(model, group, x + measured.width + GROUP_LABEL_GEOMETRY.horizontalInset - group.bounds!.x) !== undefined);
     if (placed.failed) failed.add(row);
     const x = placed.x;
     if (x > limit + PLACEMENT_EPS) {
@@ -717,7 +721,9 @@ function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: Readon
     const start = box.x + GROUP_LABEL_GEOMETRY.horizontalInset, limit = right(box) - GROUP_LABEL_GEOMETRY.horizontalInset - measured.width;
     const centre = box.x + (box.width - measured.width) / 2;
     const tiers = cantonTiers(model, band.group), row = gapKey(band.side === 'top' ? tiers.first : tiers.last, band.side);
-    const placed = titleX(model, labels, y, measured, start, limit, centre, !still.has(row));
+    const host = cantonHost(model, band.group, band.side);
+    const placed = titleX(model, labels, y, measured, start, limit, centre, !still.has(row), x => legs && host !== undefined
+      && growthPlan(model, host, host.bounds!.width + (x + measured.width + GROUP_LABEL_GEOMETRY.horizontalInset - box.x - box.width)) !== undefined);
     if (placed.failed) failed.add(row);
     const x = placed.x;
     if (x > limit + PLACEMENT_EPS) {
@@ -1190,6 +1196,7 @@ export function produceGroupLabelBands(model: LayoutModel): void {
   reserveInitialSpace(model);
   reserveLinkLabelRoom(model);
   const budget = createCentreBudget();
+  let extraLegPasses = 4;
   rebuildRegionGeometry(model, budget, undefined, true);
   while (true) {
     // Linked groups share a grid before labels are planned inside their (possibly wider) boxes, and
@@ -1229,6 +1236,19 @@ export function produceGroupLabelBands(model: LayoutModel): void {
     model.labels = model.labels.filter(label => label.role !== 'group');
     const plan = planLabels(model, true);
     if (!plan.growth) { model.labels.push(...plan.labels); diagnoseBlocked(model, plan.blocked); return; }
+    if (budget.remaining <= 0 && extraLegPasses > 0 && !planLabels(model, true, false).growth) {
+      extraLegPasses--;
+      const stable = routerEntryPoints(model);
+      pushFollowingGroups(model, plan.growth.group, plan.growth.width);
+      holdColumnsAfterPush(model);
+      syncBands(model, stable);
+      rebuildRegionGeometry(model, { remaining: 1, passes: 0 }, undefined, true);
+      // The pass centres again and can leave a column off its feed axis; hold it and replay once more, as the pass above did.
+      holdColumnsAfterPush(model);
+      syncBands(model, stable);
+      rebuildRegionGeometry(model, { remaining: 1, passes: 0 }, undefined, true);
+      continue;
+    }
     if (budget.remaining <= 0) {
       // The growth-permitted plan stops at the first repairable group, so re-plan for the full
       // blocked classification as well as the retained labels.
@@ -1318,7 +1338,10 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   }
   const retained = model.labels.filter(label => label.role !== 'group');
   const expected = { ...model, labels: retained };
-  const plan = planLabels(expected, !model.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE'));
+  const actualLabels = model.labels.filter(label => label.role === 'group');
+  // A title that stands clear of a widened group's legs (ticket 66) is planned with the legs on; a model that stalled plans without them.
+  let plan = planLabels(expected, true, true);
+  if (plan.growth || !equal(actualLabels, plan.labels)) plan = planLabels(expected, !model.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE'));
   if (plan.growth) throw new Error(`Group label ${plan.growth.group.id} has no reserved free gap`);
   const actual = model.labels.filter(label => label.role === 'group');
   if (!equal(actual, plan.labels)) {
