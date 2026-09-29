@@ -214,6 +214,8 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     'a-one-cell-member-keeps-its-barycentre-inside-the-column',
     'a-transit-inside-a-canton',
     'a-free-member-beside-a-held-lane-inside-its-canton',
+    // Ticket 64: the pull reads the owned lane of a transit feed, as centring does, so the last rule to run cannot flip the member.
+    'a-one-rank-member-beside-a-two-rank-member',
   ])('%s: a second layout is the same model and the column rules move nothing on it', async name => {
     const first = await run(name), second = await run(name);
     // The stage timings are the only thing that differs between two runs.

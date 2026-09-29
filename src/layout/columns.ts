@@ -303,8 +303,14 @@ function feedsFrom(model: LayoutModel, sources: ReadonlySet<string>, below: bool
         const child = findPort(model, own!), parent = findPort(model, other!);
         if (!child?.anchor || !parent?.anchor) continue;
         if (child.side !== (below ? 'top' : 'bottom') || parent.side !== (below ? 'bottom' : 'top')) continue;
+        // A link that transits the tier next to the child (7a) reaches it through its owned lane, and centring (`feeds` in
+        // `centre.ts`) puts the child under that lane, not under the parent port. Both rules read one x, or the last to run
+        // wins and a second pass flips the child back (ranked-groups ticket 64). A bundle member carries no lane here.
+        const near = below ? model.groups[ownGroup]!.tier! - 1 : model.groups[ownGroup]!.tier! + 1;
+        const lane = model.groups[otherGroup]!.tier === near || link.bundle ? undefined
+          : model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === link.id && item.tier === near);
         children.set(portId(child.ref), { x: child.anchor.x, cell: ownGroup });
-        parents.set(portId(parent.ref), parent.anchor.x);
+        parents.set(portId(parent.ref), lane?.x ?? parent.anchor.x);
       }
     }
     return { parents, children };
