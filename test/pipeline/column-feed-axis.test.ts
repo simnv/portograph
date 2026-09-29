@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
+import { bandGap } from '../../src/layout/skeleton-graph.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -25,7 +26,7 @@ describe('a column axis lands on its feed', () => {
     // `a` and `b` are fed by two neighbour gateways of one row, 94.5 px apart, and their frames cannot stand
     // closer than a frame width and a band gap. That gap between the two feeds is the least the two links
     // can jog, and the columns take it and no more: a column never widens to meet a feed.
-    const forced = (frame(model, 'a').box.width + frame(model, 'b').box.width) / 2 + 60 - (portX(model, 'x-gw2', 'top') - portX(model, 'x-gw', 'top'));
+    const forced = (frame(model, 'a').box.width + frame(model, 'b').box.width) / 2 + bandGap(model) - (portX(model, 'x-gw2', 'top') - portX(model, 'x-gw', 'top'));
     expect(jog(model, 'a-edge', 'x-gw') + jog(model, 'b-edge', 'x-gw2')).toBeLessThanOrEqual(forced + 1);
     // The alignment nothing can hold is reported for that column alone: the two others converge.
     const unresolved = model.diagnostics.filter(diagnostic => diagnostic.code === 'PLACEMENT_NON_CONVERGENCE').flatMap(diagnostic => (diagnostic.owners ?? []).flatMap(owner => 'id' in owner ? [owner.id] : []));

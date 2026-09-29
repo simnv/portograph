@@ -4,7 +4,7 @@ import { groupShape } from './grid.js';
 import { bandGap, compareId, portId } from './skeleton-graph.js';
 import { moveGroup, rebuildBands, union } from './skeleton-geometry.js';
 import { groupInsets } from './regions.js';
-import { separateFrameColumns } from './columns.js';
+import { holdColumnAxes, separateFrameColumns } from './columns.js';
 import { rowGap } from './sides-two.js';
 import { withLayoutMutation } from './mutation.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -60,6 +60,8 @@ export function repackOverlaps(draft: LayoutModel): void {
     }
   }
   separateFrameColumns(draft);
+  // The sweep pushes a frame right and never back; the pass pulls each column toward its feed again (ticket 16).
+  holdColumnAxes(draft);
   for (const band of draft.tierBands) {
     const groups = rowGroups(draft, band);
     if (!groups.length) continue;
