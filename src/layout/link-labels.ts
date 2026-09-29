@@ -342,6 +342,8 @@ export function produceLinkLabels(model: LayoutModel): void {
   for (const link of model.links) {
     const text = model.document.links[link.sourceIndex]?.label;
     if (text === undefined || text === '') continue;
+    // A removed link (ticket 24) has no path to label; its removal diagnostic already names it.
+    if (link.removed === true) continue;
     const layer = effectiveLayer(link);
     if (layer === 'overlay' && suppressOverlay) { suppressed.push(link.id); continue; }
     const label = baseLabel(`label:link:${link.id}`, link.owner, layer, text);

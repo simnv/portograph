@@ -178,6 +178,11 @@ export interface LayoutLink {
   /** Outward root-to-leaf shared runs; a pathless remainder must consume these in stage 13. */
   sharedRuns?: { from?: PathSegment[]; to?: PathSegment[] };
   stubCandidate?: boolean;
+  /**
+   * Stage 8 discarded this link's route because the router skipped a required checkpoint
+   * (`ROUTE_CHECKPOINT_SKIPPED`). A removed link has no path and is not drawn; `LayoutModel.removedLinks` lists it.
+   */
+  removed?: true;
 }
 
 export interface Lane extends OwnedElement {
@@ -334,6 +339,8 @@ export interface LayoutModel {
   anchorTier?: number;
   fallbackUsed?: boolean;
   deadlineHit?: boolean;
+  /** Ids of the links stage 8 removed, in model order; absent when none. The score report counts them. */
+  removedLinks?: string[];
   /** One per `document.frames` entry, in document order; absent when no group was replaced by cells. */
   frames?: Frame[];
 }
