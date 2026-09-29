@@ -1,0 +1,28 @@
+# Expected: a routed path that retraces itself removes its one link and the sheet is drawn (ranked-groups ticket 46).
+# Shape: ticket 42's near-vertical fixture with s0 one pixel tall (108 x 1). On main the pipeline fails with
+# `PIPELINE_FAILED: Routed path on link-6 retraces itself`; with the rule, stitching rejects that answer as
+# ROUTE_GAP_REJECTED, link-6 goes into removedLinks with a warning, and every other link is drawn.
+# Ticket 45 owns the contradiction that makes the router retrace; this input only pins the removal contract.
+# Test-only input owned by ranked-groups ticket 46; test/route/retrace-removal.test.ts reads the layout.
+portograph: 2
+groups:
+  upstream: { tier: 0 }
+  site: { tier: 1 }
+nodes:
+  isp: { group: upstream, class: provider }
+  r0: { group: site, class: router }
+  r1: { group: site, class: router }
+  r2: { group: site, class: router }
+  s0: { group: site, class: switch, size: { width: 108, height: 1 } }
+  s1: { group: site, class: switch }
+  s2: { group: site, class: switch }
+  s3: { group: site, class: switch }
+links:
+  - [isp, r0]
+  - [isp, r1]
+  - [isp, r2]
+  - [r0, s2, { class: physical, route: orthogonal }]
+  - [r1, s1, { class: physical, route: orthogonal }]
+  - [r1, s2, { class: physical, route: orthogonal }]
+  - [r2, s0, { class: physical, route: orthogonal }]
+  - [r2, s3, { class: physical, route: orthogonal }]

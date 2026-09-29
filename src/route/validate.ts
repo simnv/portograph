@@ -115,7 +115,8 @@ const drawn = (link: LayoutLink): boolean => link.technique !== 'stub' && link.r
  * A route that walks back along a run it already drew is not a path — an exact reversal is only
  * the simplest way to do it. `retracingRuns` sweeps the whole path, one interval sweep per line:
  * two pieces of the same route may touch at a bend, never share length. The overlay rule refuses a
- * candidate by the same sweep, so the producer cannot state a path this rejects.
+ * candidate by the same sweep, so the producer cannot state a path this rejects. `stitchPath` asks the same
+ * sweep of a router answer and removes the link (ticket 46), so from a router this throw is an assertion.
  */
 export function retraces(id: string, segments: PathSegment[]): void {
   if (retracingRuns(segments)) throw new Error(`Routed path on ${id} retraces itself`);
