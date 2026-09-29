@@ -778,7 +778,10 @@ function holdColumnsAfterPush(model: LayoutModel): void {
   rebuildNodeGeometry(model, [...before].filter(([group, x]) => group.bounds!.x !== x).flatMap(([group]) => group.nodes), 'current');
 }
 
-/** `closeCantons`, with the pill bounds of the moved groups rebuilt (`moveGroup` leaves them behind). */
+/**
+ * `closeCantons`, with the pill bounds of the moved groups rebuilt (`moveGroup` leaves them behind). A move leaves the region producers,
+ * `syncBands` and `replanGroupLabels` to the caller: the labels and the bands are planned in the geometry the caller replays after it.
+ */
 export function closeCantonsAndSettle(model: LayoutModel): boolean {
   const before = new Map(Object.values(model.groups).map(group => [group, group.bounds!.x]));
   const moved = closeCantons(model);
@@ -1213,6 +1216,13 @@ export function produceGroupLabelBands(model: LayoutModel): void {
       rebuildRegionGeometry(model, budget, undefined, true);
       consumeGrowthPass(budget, passes);
       continue;
+    }
+    // A spent budget cannot replay a move, so the close-up is skipped; it is said, when a canton would have moved.
+    if (budget.remaining <= 0 && closeCantons(clone(model)) && !model.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE' && item.message.startsWith('The cantons'))) {
+      model.diagnostics.push({
+        stage: 'placement', severity: 'warning', code: 'PLACEMENT_NON_CONVERGENCE',
+        message: 'The cantons stand more than a band gap apart: the shared eight-pass budget was spent before the close-up could replay; final gates decide the retained geometry.',
+      });
     }
     model.labels = model.labels.filter(label => label.role !== 'group');
     const plan = planLabels(model, true);
