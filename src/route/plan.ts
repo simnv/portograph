@@ -417,12 +417,13 @@ function gapCrosses(piece: { from: Point; to: Point; via: Point[] }, segment: Pi
  * (ticket 21). libavoid routes are orthogonal, so a slanted leg between two checkpoints is walked as an L.
  * The straight leg alone misses a run that stands right below a stem tip between two neighbouring stems:
  * the tip's only way out is across that run, whatever the slope of the leg.
+ * With `chord` false the endpoint chord does not count (ticket 30): only the legs and their L shapes do.
  */
-function gapNeeds(piece: { from: Point; to: Point; via: Point[] }, segment: Pick<PathSegment, 'from' | 'to'>): boolean {
-  if (gapCrosses(piece, segment)) return true;
+function gapNeeds(piece: { from: Point; to: Point; via: Point[] }, segment: Pick<PathSegment, 'from' | 'to'>, chord = true): boolean {
   const points = [piece.from, ...piece.via, piece.to];
-  return points.slice(1).some((to, index) => {
-    const from = points[index]!;
+  const legs = points.slice(1).map((to, index) => ({ from: points[index]!, to }));
+  if (chord ? gapCrosses(piece, segment) : legs.some(leg => crossesInterior(leg.from, leg.to, segment))) return true;
+  return legs.some(({ from, to }) => {
     if (Math.abs(from.x - to.x) <= EPS || Math.abs(from.y - to.y) <= EPS) return false;
     return [{ x: from.x, y: to.y }, { x: to.x, y: from.y }].some(corner =>
       crossesInterior(from, corner, segment) || crossesInterior(corner, to, segment));
@@ -535,11 +536,20 @@ function stemBounds(model: LayoutModel, link: LayoutLink, terminal: Point, check
     height: Math.abs(checkpoint.y - terminal.y) + 2 * clearance };
 }
 
-/** Whether a gap of `link` has to cross `stem` (ticket 22: batchmates whose stems must cross). */
-function gapNeedsStem(plan: RoutePlan, link: string, stem: StemReservation): boolean {
+/**
+ * Whether a gap of `link` has to cross `stem` (ticket 22: batchmates whose stems must cross).
+ * With `chord` true the endpoint chord counts, as the polyline does: that is the PART KEY, so a batch
+ * still splits by a chord-crossed stem and its parts route in separate requests, in order. Measured on the
+ * ticket 30 fixture: the parts still share rows 263, 278 and 293 by overlap, so the split orders the
+ * requests; it does not give each link a row of its own. With `chord` false only the
+ * legs and their L shapes count: that is the CONSUMER rule (ticket 30), a stem is passable to a later
+ * part only where the link really has to cross it, never by its endpoint chord alone. Letting the
+ * chord alone open a stem let the zigzags of the earlier parts close the pocket of a far stem tip.
+ */
+function gapNeedsStem(plan: RoutePlan, link: string, stem: StemReservation, chord = true): boolean {
   const own = plan.links.find(item => item.link === link);
   return stem.link !== link && !own?.ports.includes(stem.port)
-    && own!.pieces.some(piece => piece.kind === 'gap' && gapNeeds(piece, stem.segment));
+    && own!.pieces.some(piece => piece.kind === 'gap' && gapNeeds(piece, stem.segment, chord));
 }
 
 /**
@@ -572,7 +582,7 @@ export function pendingStemObstacles(plan: RoutePlan, batch: { links: string[] }
     // A stem of a link that shares this batch with the part being routed (a later part of one ownership
     // batch) stays passable to the links whose gap has to cross it (ticket 22); the stems of later batches
     // have no such link.
-    const crossers = mates.has(stem.link) ? batch.links.filter(id => gapNeedsStem(plan, id, stem)) : [];
+    const crossers = mates.has(stem.link) ? batch.links.filter(id => gapNeedsStem(plan, id, stem, false)) : [];
     return [{ id: `stem:${index}:${stem.link}`, bounds: stem.bounds, consumers: crossers }];
   });
 }
