@@ -63,7 +63,7 @@ export interface PlanObstacle {
 }
 
 export type ResidualReason = 'spans-two-gaps' | 'lateral-port' | 'u-turn' | 'faces-away' | 'off-boundary' | 'crosses-lane'
-  | 'legs-within-k' | 'row-cycle' | 'leg-blocked' | 'crosses-shared-run';
+  | 'row-cycle' | 'leg-blocked' | 'crosses-shared-run';
 
 /** A part the plan declines, with the reason (`TIER_GAP_PART_RESIDUAL`; `row-cycle` is `TIER_GAP_ROW_CYCLE`). */
 export interface ResidualPart {
@@ -71,8 +71,6 @@ export interface ResidualPart {
   link: string;
   order: number;
   reason: ResidualReason;
-  /** The link whose leg cover is granted to this part (2.2, residual by constraint). */
-  granted?: string;
   /** The ends, where the part has two tips facing the gap; they feed the residual term of `H` and the tips others avoid. */
   upper?: PlanEnd;
   lower?: PlanEnd;

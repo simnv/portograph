@@ -48,7 +48,7 @@ describe('a crowded pair of planned parts', () => {
     expect(plan.links.flatMap(item => item.pieces.map(piece => piece.kind)).filter(kind => kind === 'gap')).toEqual([]);
     expect(plan.links.map(item => [item.link, item.pieces[0]!.kind, item.pieces.at(-1)!.kind])).toEqual([['link-1', 'straight', 'straight'], ['link-2', 'straight', 'straight']]);
     const runs = allocateGapRuns(model);
-    expect(runs.map(run => [run.link, run.shares, run.planned])).toEqual([['link-1', ['link-2'], true], ['link-2', ['link-1'], true]]);
+    expect(runs.map(run => [run.link, run.shares])).toEqual([['link-1', ['link-2']], ['link-2', ['link-1']]]);
     expect(crowded).toEqual([{ id: 'link-2#0', link: 'link-2', with: 'link-1' }]);
   }, 60000);
 });

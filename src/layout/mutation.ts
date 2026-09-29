@@ -27,7 +27,6 @@ import { alignLinkedGroupGrid, type LinkLabelShortfall, produceGroupLabelBands, 
 import { growTierGaps } from './gap-room.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { tierGapPlans } from './gap-plan.js';
-import { tierGapRoom } from './gap-runs.js';
 import { produceLinkLabels, validateLinkLabels } from './link-labels.js';
 import { validateRoutedPaths } from '../route/validate.js';
 
@@ -49,16 +48,13 @@ function jsonValue(value: unknown): void {
 function verticalOnly(box: Rect): Omit<Rect, 'y'> { return { x: box.x, width: box.width, height: box.height }; }
 function same(a: unknown, b: unknown, message: string): void { if (!equal(a, b)) throw new Error(message); }
 /**
- * The tier gaps that owe a row they cannot seat. 7f has already reserved the room every gap asks
+ * The tier gaps whose plan asks for more height than they have. 7f has already reserved the room every gap asks
  * for, so a later reservation change that makes one of these owe more room owes it room nothing
  * will reserve.
  */
 function shortGaps(model: LayoutModel): string[] {
-  // A planned gap is short where the plan asks for more height than the gap has; a residual run is short where it has no seat.
-  const planned = tierGapPlans(model).filter(({ plan }) => plan.growth > PLACEMENT_EPS).map(({ gap }) => `gap:${gap.above}:${gap.below}`);
-  const residual = tierGapRoom(model).filter(room => room.rows > 0 && !room.refuses && room.seated < room.rows)
-    .map(room => `gap:${room.above}:${room.below}`);
-  return [...new Set([...planned, ...residual])];
+  // A gap is short where the plan asks for more height than the gap has. A residual part is the router's and is planned no seat.
+  return tierGapPlans(model).filter(({ plan }) => plan.growth > PLACEMENT_EPS).map(({ gap }) => `gap:${gap.above}:${gap.below}`);
 }
 /** Whether `after` names nothing `before` does not. A trade of one item for another is not "no worse". */
 function noNewItems(after: readonly string[], before: readonly string[]): boolean {
@@ -715,7 +711,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     if (rule !== 'lanes') rebuildLaneExtents(draft);
   }
   if (rule === 'bands') {
-    // 7f reserves two things. A tier gap grows to the rows the allocation must seat in it
+    // 7f reserves two things. A tier gap grows to the rows the plan must seat in it
     // (ADR-0015 rule 1) before any label is placed, because the growth moves whole bands down and
     // a label placed first would stay behind. The replay then rebuilds every claim the movement
     // touched, exactly as a reservation change does anywhere else in 7f.

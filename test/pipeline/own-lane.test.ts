@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { bands, bars, bundles, centre, flanks, lanes, linkLabels, planRoute, route, rows, score } from '../../src/index.js';
 import { ownedLanes } from '../../src/route/paths.js';
-import { tierGapRoom } from '../../src/layout/gap-runs.js';
+import { tierGapPlans } from '../../src/layout/gap-plan.js';
 import { segmentRect } from '../../src/score/geometry.js';
 import { placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -85,11 +85,8 @@ it('moves a corridor to the child 7c could not seat under it', async () => {
   // node keeps the width and the canvas keeps the extent 7f published.
   expect(model.nodes['node-ba002']!.bounds!.width).toBeCloseTo(145.775146484375, 6);
   // The move turns the run in the gap above the corridor from a column into a row, and 7f measured
-  // that gap before the move. No gap may end up owing a row the room it has cannot seat.
-  for (const room of tierGapRoom(model)) {
-    if (!room.rows || room.refuses) continue;
-    expect([room.below, room.seated]).toEqual([room.below, room.rows]);
-  }
+  // that gap before the move. No gap may end up owing more room than it has.
+  for (const { gap, plan } of tierGapPlans(model)) expect([gap.below, plan.growth]).toEqual([gap.below, 0]);
 }, 60000);
 
 /**
