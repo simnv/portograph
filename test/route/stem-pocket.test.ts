@@ -140,9 +140,11 @@ describe('the fixture whose far checkpoints stood in a pocket', () => {
     }
   }, 60000);
 
-  // Ticket 25: link-35 and link-37 stood in a pocket of zero width because a far stem tip lay on the edge
-  // of link-17's completed cover; the tier gap now keeps two run clearances between the two tips of a link
-  // that nests its stems, and no link of the fixture is removed.
+  // Ticket 25: link-35 and link-37 had their far stem tip on the row of the near stems' tips, inside the
+  // near stems' obstacle rows; the tier gap now keeps two run clearances between the two tips of a link
+  // that nests its stems (23 px here; 22.9 px still removes link-37), and no link of the fixture is
+  // removed. A foreign cover still ends on link-35's tip row (ticket 21's grant frees it): the rule does
+  // not claim a pocket at the tip.
   it('routes the whole fixture through the real route plan without removing a link', async () => {
     const model = await layout(parse(fixture('a-band-holds-the-group-that-set-its-edge')),
       { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });

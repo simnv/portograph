@@ -84,7 +84,7 @@ function grow(model: LayoutModel, grown: ReadonlyMap<number, number>, byStems: R
     if (extra === undefined) continue;
     placementWarning(model, 'TIER_GAP_GROWN',
       `The tier gap above tier ${band.tier} grew ${extra.toFixed(2)} px to ${byStems.has(band.tier)
-        ? 'keep the runs that cross beyond its stem tips clear of them' : 'the rows it must seat'}.`,
+        ? 'keep the two stem tips of a link clear of each other\'s stem obstacle' : 'the rows it must seat'}.`,
       band.groups, 'group');
   }
   return true;

@@ -702,9 +702,9 @@ export interface TierGapRoom {
    */
   required: number;
   /**
-   * The room the gap lacks for the stem tips that face it (ticket 25): how far its bands must move
-   * apart so that every link with a nested stem leaves two run clearances between its own two tips
-   * for a foreign run to cross beyond the deeper one. Zero where the tips already stand apart.
+   * The room the gap lacks between the two stem tips of a link that nests a stem (ticket 25): how far
+   * its bands must move apart so that the tip rows of each such link stand two run clearances apart.
+   * Zero where they already do.
    */
   stems: number;
   /**
@@ -715,18 +715,25 @@ export interface TierGapRoom {
 }
 
 /**
- * Ticket 25. A stem that reaches into a tier gap ends in a **tip**, the checkpoint stage 8 must
- * reach, and the router keeps a foreign run's centreline one run clearance off a pending stem
- * obstacle, which itself reaches one clearance past the tip. A foreign run beyond the tip is
- * therefore at least `2 * nudgingDistance` away from it; closer, its cover lies on the tip and the
- * tip has no pocket, so the link that owns the tip has a checkpoint no route can reach.
+ * Ticket 25. A stem that reaches into a tier gap ends in a **tip**, the checkpoint stage 8 must reach.
+ * The router keeps a pending stem's obstacle (`stemBounds`, `route/plan.ts`) one obstacle expansion,
+ * `nudgingDistance`, past the tip, and a run's centreline one run clearance, again `nudgingDistance`,
+ * off that obstacle. So the row of the other tip of the same link, when it lies in that stem's
+ * neighbourhood, must stand `2 * nudgingDistance` (23 px) beyond this tip row. Closer, the far tip row
+ * lies inside the near stem's obstacle rows, which wall it in from the side.
  *
- * The corridor such a run crosses in is what lies between the two tips of one link, the tip of a
- * nested stem and the tip that faces it. Where that is shorter than the band, the gap is short by
- * the difference. The nested side does not yield: a side that declines its nesting keeps flat
- * stems, where the first route laid covers the second port's stem (measured on
- * `a-band-holds-the-group-that-set-its-edge`: three links removed instead of one). The gap grows.
- * Only a side that nests asks: two flat stems keep the room they always had.
+ * Measured on `a-band-holds-the-group-that-set-its-edge` (the near side is flat, every tip at y 442;
+ * link-35 and link-37 have their far tip on that row): growing the gap by 23 px keeps `removedLinks`
+ * empty, and 22.9 px does not (link-37 is removed); 1, 5.75, 11.5 and 17.25 px remove one or two
+ * links; 14 px happens to keep it empty and is no rule. What the growth does NOT do is keep every
+ * foreign run 23 px from a tip: link-17's run still stands at y 453.5 with its cover ending on
+ * link-35's tip row, and link-35 routes because ticket 21's grant frees that cover. Only the near
+ * side's stem obstacle rows are cleared.
+ *
+ * The nested side does not yield: a side that declines its nesting keeps flat stems, where the first
+ * route laid covers the second port's stem (three links removed instead of one on the same fixture).
+ * The gap grows. Only a side that nests asks: two flat stems keep the room they always had. The rule
+ * reads the two tips of one link; the other near stems of the same side are not read.
  */
 function stemShortfall(model: LayoutModel, gap: TierGap): number {
   const cache = stemCache(), band = 2 * nudgingDistance(model);

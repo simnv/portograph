@@ -10,8 +10,8 @@ import { avoidAssets, spawnAvoidWorker } from './fixture.js';
 /**
  * Ticket 24. A route stage 8 cannot use is unusable, and one such route may not stop the sheet. Ticket
  * 21's fixture reproduced one through the real router (link-35's far stem tip lay on the edge of a
- * completed cover, so its routed gap did not meet its reserved endpoints); ticket 25 removed the cause
- * in placement, so the fixture no longer rejects anything. The real router still answers every request
+ * completed cover, so its routed gap did not meet its reserved endpoints); ticket 25 grows the gap under the far stem
+ * (placement), so the fixture no longer rejects anything. The real router still answers every request
  * here, and the answer for link-35 alone is forged to end 30 px beside its port, which stitching
  * rejects with the same reason as before. The skipped-checkpoint case is forged in `route.test.ts`.
  */
