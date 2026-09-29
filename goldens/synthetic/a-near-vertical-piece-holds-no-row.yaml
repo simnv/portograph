@@ -1,7 +1,8 @@
 # Expected: a piece whose ends are 1.1 px apart in x holds no row (ranked-groups ticket 42, rule 2). Link-5 (second router to
 # the second switch) has its two ports at x 127.4 and 128.5, a column in all but the exact-equality test, and link-7 crosses
 # it, so on main link-5 is an interleaved earlier piece and asks for a held row whose jog would be 1.1 px wide; on main the
-# pipeline fails with `PIPELINE_FAILED: Routed path on link-6 retraces itself`.
+# pipeline fails with `PIPELINE_FAILED: Routed path on link-6 retraces itself`. That is ticket 45's contradiction (link-5's
+# row span ends 10.9 px from link-6's column, inside the run clearance), which the rule avoids for dx < 11.5 only.
 # With the rule the piece holds nothing, the gap grows 77.25 px for the other pair's rows, nothing is removed and every gate
 # passes.
 # Test-only input owned by ranked-groups ticket 42; test/pipeline/near-vertical-piece.test.ts reads the layout.

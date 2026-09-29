@@ -298,7 +298,8 @@ function holdsOf(users: GapUsers, gap: TierGap, pitch: number, keep: number): vo
     if (!users.pieces.some(other => other.order > one.order && (one.upper.x - other.upper.x) * (one.lower.x - other.lower.x) < -EPS * EPS)) continue;
     // A piece whose two ends share one x is a column, and a column needs no row.
     if (same(one.upper.x, one.lower.x)) continue;
-    // Ticket 42: so is one whose ends stand under a run clearance apart, because its jog would be a few pixels wide.
+    // Ticket 42: so is one whose ends stand under a run clearance apart: its cover would be wider than the run, and the
+    // router jogs at the tip rows anyway.
     if (Math.abs(one.upper.x - one.lower.x) < keep) continue;
     const jog = one.lower.y - one.upper.y;
     if (jog < pitch - EPS) { if (one.plain) users.short = Math.max(users.short, pitch - jog); continue; }
