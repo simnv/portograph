@@ -823,7 +823,7 @@ gap keeps the room this stage gave it, and a move whose new row that room cannot
 (§ 7a states the whole condition).
 
 **Stem tips stand apart.** For a drawn link between the two tiers of a gap, where either end stands
-on a nested side, the two stem tip rows stand 23 px apart (2 × 11.5 px). The near stem's obstacle
+on a nested side, the two stem tip rows stand 23 px apart (2 × 11.5 px at the default stroke). The near stem's obstacle
 reaches 11.5 px past its tip, and a run keeps 11.5 px off an obstacle. Each tip then clears the
 obstacle of the other. `tierGapRoom` reports the shortfall as `stems`, and the gap grows by it
 (`TIER_GAP_GROWN`). The rule reads the two tips of one link only.
@@ -1138,8 +1138,9 @@ connector and the rule that asked for it (`stem:`, `lane:` or `entry:`). Or the 
 route: `ROUTE_GAP_REJECTED`, with the reason. Only a `GapRejected` is a rejection. Any other error
 stays fatal. A removed link loses its routes, adds no protective run, and keeps no label. Stage 8
 alone sets it. The layout JSON gains `LayoutLink.removed` and `removedLinks` (both absent when
-none), and the score counts `removedLinks`. The renderer, the drawio export and `score` skip a
-removed link. With `strictCheckpoints` every case keeps the throw.
+none), and the score counts `removedLinks`. The renderer and the drawio export draw a link only
+where it has a path, so a removed link is not drawn; `score` skips it. With `strictCheckpoints`
+every case keeps the throw.
 
 Ports are `ShapeConnectionPin`s, one non-zero class id per port (its ordinal after the topology
 freeze), direction = the side, **`setExclusive(false)` for any port carrying more than one link
