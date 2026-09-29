@@ -185,17 +185,16 @@ function clearSpans(input: RankInput, members: string[], edges: Edges, ranks: Ma
 
 /**
  * Step 5, the leaf rule. A child is a leaf child when none of its members has a routed link to a
- * parent member (a member of no child) of a deeper rank, and none of its members is an anchor: it
+ * member outside it (a parent member or a member of a sibling child) of a deeper rank, and none of its members is an anchor: it
  * feeds nothing below itself and hangs from nothing above the group. Ranks are those before any push.
  */
 function leafChildren(input: RankInput, ranks: Map<string, number>, anchors: Set<string>): Set<RankInput['children'][number]> {
-  const owner = new Set(input.children.flatMap(child => child.members));
   const leaves = new Set<RankInput['children'][number]>();
   for (const child of input.children) {
     const inside = new Set(child.members);
     if (!spanOf(ranks, child) || child.members.some(id => anchors.has(id))) continue;
     const feeds = input.routedLinks.some(link => [[link.from, link.to], [link.to, link.from]].some(([mine, other]) =>
-      inside.has(mine!) && ranks.has(other!) && !owner.has(other!) && ranks.get(other!)! > ranks.get(mine!)!));
+      inside.has(mine!) && ranks.has(other!) && !inside.has(other!) && ranks.get(other!)! > ranks.get(mine!)!));
     if (!feeds) leaves.add(child);
   }
   return leaves;

@@ -320,6 +320,17 @@ describe('deriveRanks: a leaf child stands at the bottom of its parent', () => {
     expect(result.spans.get('zb')).toEqual([2, 2]);
   });
 
+  it('a child that feeds a sibling child keeps its position, and the sibling stands after it', () => {
+    const result = deriveRanks(input({
+      members: ['p'], linksAbove: new Set(['p']),
+      routedLinks: [{ from: 'p', to: 'a1' }, { from: 'a1', to: 'a2' }, { from: 'a2', to: 'b1' }, { from: 'b1', to: 'b2' }],
+      children: [{ group: 'za', members: ['a1', 'a2'] }, { group: 'zb', members: ['b1', 'b2'] }],
+    }));
+    expect(asObject(result.ranks)).toEqual({ p: 0, a1: 1, a2: 2, b1: 3, b2: 4 });
+    expect(result.spans.get('za')).toEqual([1, 2]);
+    expect(result.spans.get('zb')).toEqual([3, 4]);
+  });
+
   it('a leaf child alone in its group is not moved', () => {
     const result = deriveRanks(input({
       members: ['p'], linksAbove: new Set(['p']), routedLinks: [{ from: 'p', to: 'c1' }], children: [{ group: 'zone', members: ['c1'] }],
