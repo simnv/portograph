@@ -4,7 +4,7 @@ import { layout, parse } from '../../src/index.js';
 import { resolve } from '../../src/resolve/index.js';
 import type { Point, Side } from '../../src/model/geometry.js';
 import { checkpointsHonoured } from '../../src/route/paths.js';
-import { completedCrossingObstacles, pendingStemObstacles, planRoute } from '../../src/route/plan.js';
+import { completedCrossingObstacles, crossedStems, pendingStemObstacles, planRoute } from '../../src/route/plan.js';
 import type { RouteBatch, RoutedConnector } from '../../src/route/types.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from './fixture.js';
@@ -48,6 +48,15 @@ describe('a gap owes passage to the runs its orthogonal legs cross (ticket 21)',
     expect(granted[0]!.consumers).toEqual(['link-1', 'link-2']);
   });
 
+  it('a run only the other L crosses (along the far tip, not the near one) is granted too', () => {
+    // A vertical run at x = 40, y 10 to 40: the slant passes it at y = 44.7 and the L down x = -5 is far away;
+    // only the L along y = 25 and down x = 75 crosses it.
+    const vertical = { obstacle: { id: 'routed:vertical', bounds: { x: 28.5, y: -1.5, width: 23, height: 53 }, consumers: ['link-1'] },
+      segment: { from: { x: 40, y: 10 }, to: { x: 40, y: 40 } } };
+    const granted = completedCrossingObstacles(plan, { links: ['link-2'] }, [vertical]);
+    expect(granted[0]!.consumers).toEqual(['link-1', 'link-2']);
+  });
+
   it('a run that neither the slant nor either L crosses stays an obstacle', () => {
     const granted = completedCrossingObstacles(plan, { links: ['link-2'] }, [run(55, 80, 100)]);
     expect(granted[0]!.consumers).toEqual(['link-1']);
@@ -68,6 +77,36 @@ describe('a later part of a batch keeps its stems (ticket 21, the part order)', 
   it('a link whose gap has to cross that stem is its consumer, so the crossing stays open', () => {
     const items = pendingStemObstacles(plan, { links: ['link-2'] }, new Set(['link-1']), new Set(['link-1']));
     expect(items.find(item => item.bounds === stem.bounds)!.consumers).toEqual(['link-2']);
+  });
+});
+
+describe('a batch splits by the batchmate stems its links cross (ticket 22)', () => {
+  it('only the link whose gap crosses a batchmate stem carries that stem in its key', () => {
+    const model = resolve(parse(`portograph: 2
+groups: {g: {tier: 0}}
+nodes: {a: {group: g}, b: {group: g}, c: {group: g}, d: {group: g}, e: {group: g}, f: {group: g}}
+links: [[a, b], [c, d], [e, f]]`));
+    model.groups.g!.bounds = { x: -200, y: -200, width: 600, height: 600 };
+    model.groups.g!.tier = 0;
+    const node = (id: string, point: Point, side: Side): void => {
+      model.nodes[id]!.bounds = { x: point.x - (side === 'left' ? 0 : side === 'right' ? 20 : 10),
+        y: point.y - (side === 'top' ? 0 : side === 'bottom' ? 20 : 10), width: 20, height: 20 };
+      const port = model.nodes[id]!.ports[0]!;
+      port.side = side;
+      port.anchor = point;
+    };
+    node('a', { x: -2, y: 0 }, 'bottom');
+    node('b', { x: -40, y: 80 }, 'top');
+    node('c', { x: 10, y: 10 }, 'left');
+    node('d', { x: 90, y: 10 }, 'left');
+    node('e', { x: 10, y: 60 }, 'left');
+    node('f', { x: 90, y: 60 }, 'left');
+    const plan = planRoute(model);
+    const stem = plan.stems.findIndex(item => item.link === 'link-1' && item.node === 'a');
+    const batch = { links: ['link-1', 'link-2', 'link-3'] };
+    expect(crossedStems(plan, batch, 'link-2')).toEqual([`stem:${stem}:link-1`]);
+    // Link 3 runs at y = 60, below the stem of a (y 0 to 15).
+    expect(crossedStems(plan, batch, 'link-3')).toEqual([]);
   });
 });
 

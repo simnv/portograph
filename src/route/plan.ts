@@ -530,6 +530,23 @@ function stemBounds(model: LayoutModel, link: LayoutLink, terminal: Point, check
     height: Math.abs(checkpoint.y - terminal.y) + 2 * clearance };
 }
 
+/** Whether a gap of `link` has to cross `stem` (ticket 22: batchmates whose stems must cross). */
+function gapNeedsStem(plan: RoutePlan, link: string, stem: StemReservation): boolean {
+  const own = plan.links.find(item => item.link === link);
+  return stem.link !== link && !own?.ports.includes(stem.port)
+    && own!.pieces.some(piece => piece.kind === 'gap' && gapNeeds(piece, stem.segment));
+}
+
+/**
+ * The stems of the other links of `batch` that a gap of `link` has to cross, by the id `pendingStemObstacles`
+ * gives them. A request drops a stem only when every link of it may cross it, so `crossingParts` splits a
+ * batch by this set, as it does by the completed covers.
+ */
+export function crossedStems(plan: RoutePlan, batch: { links: string[] }, link: string): string[] {
+  return plan.stems.flatMap((stem, index) => batch.links.includes(stem.link) && gapNeedsStem(plan, link, stem)
+    ? [`stem:${index}:${stem.link}`] : []);
+}
+
 /**
  * The reserved stems a batch must leave alone: those of the links no batch has routed yet. An
  * earlier batch is otherwise free to run through the outward stem of a link it has never seen, and
@@ -550,9 +567,7 @@ export function pendingStemObstacles(plan: RoutePlan, batch: { links: string[] }
     // A stem of a link that shares this batch with the part being routed (a later part of one ownership
     // batch) stays passable to the links whose gap has to cross it (ticket 22); the stems of later batches
     // have no such link.
-    const crossers = mates.has(stem.link)
-      ? batch.links.filter(id => plan.links.find(link => link.link === id)?.pieces.some(piece =>
-        piece.kind === 'gap' && gapNeeds(piece, stem.segment))) : [];
+    const crossers = mates.has(stem.link) ? batch.links.filter(id => gapNeedsStem(plan, id, stem)) : [];
     return [{ id: `stem:${index}:${stem.link}`, bounds: stem.bounds, consumers: crossers }];
   });
 }

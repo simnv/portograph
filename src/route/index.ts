@@ -2,7 +2,7 @@ import type { Point } from '../model/geometry.js';
 import type { LayoutModel } from '../model/layout.js';
 import { withLayoutMutation } from '../layout/mutation.js';
 import { completedRouteCovers, type RouteObstacle } from './obstacles.js';
-import { batchRequest, completedCrossingObstacles, pendingStemObstacles, planRoute, type RoutePlan } from './plan.js';
+import { batchRequest, completedCrossingObstacles, crossedStems, pendingStemObstacles, planRoute, type RoutePlan } from './plan.js';
 import { stitchPaths, stubCandidate } from './paths.js';
 import { ROUTE_BUDGET_MS, systemRouteClock, withRouteSession, type CreateRouteAttempt, type RouteClock } from './worker.js';
 
@@ -45,14 +45,16 @@ export function routeRemainders(model: LayoutModel): string[] { return planRoute
  * may cross it (`batchRequest`). Two links of one batch that must cross different completed runs cannot
  * share a request: the run one of them has to cross stays an obstacle for both, the pocket its far
  * checkpoint stands in closes, and libavoid drops the checkpoint and answers with a diagonal. Links that
- * may cross the same runs, which is every batch on the golden sheets, stay together in plan order.
+ * may cross the same runs, which is every batch on the golden sheets, stay together in plan order. The same
+ * holds for a batchmate's stem: a link whose gap has to cross one (ticket 22) is a part of its own.
  */
 function crossingParts(plan: RoutePlan, batch: { links: string[] },
   covers: Parameters<typeof completedCrossingObstacles>[2]): string[][] {
   const granted = completedCrossingObstacles(plan, batch, covers);
   const parts = new Map<string, string[]>();
   for (const id of batch.links) {
-    const key = granted.filter(item => item.consumers.includes(id)).map(item => item.id).sort().join('|');
+    const key = [...granted.filter(item => item.consumers.includes(id)).map(item => item.id), ...crossedStems(plan, batch, id)]
+      .sort().join('|');
     parts.set(key, [...parts.get(key) ?? [], id]);
   }
   return [...parts.values()];
