@@ -108,7 +108,7 @@ export function reservationConflicts(model: LayoutModel): ReservationConflict[] 
   return result;
 }
 
-const drawn = (link: LayoutLink): boolean => link.technique !== 'stub' && link.attachments !== undefined;
+const drawn = (link: LayoutLink): boolean => link.technique !== 'stub' && link.removed !== true && link.attachments !== undefined;
 
 /**
  * A route that walks back along a run it already drew is not a path — an exact reversal is only
@@ -129,7 +129,11 @@ export function retraces(id: string, segments: PathSegment[]): void {
 export function validateRoutedPaths(model: LayoutModel, requireComplete = false): void {
   // Built on the first overlay link and shared by the rest; a diagram with none pays nothing.
   let blockers: OverlayBlockers | undefined;
+  // A link stage 8 removed has no path, and the model lists exactly those links.
+  const removed = model.links.filter(link => link.removed === true).map(link => link.id);
+  if (removed.join('|') !== (model.removedLinks ?? []).join('|')) throw new Error('removedLinks does not list the removed links');
   for (const link of model.links) {
+    if (link.removed === true && link.path) throw new Error(`Removed link ${link.id} must not carry a path`);
     if (!drawn(link)) {
       if (link.path) throw new Error(`Link ${link.id} must not carry a path`);
       if (link.stubCandidate !== undefined) throw new Error(`Link ${link.id} cannot be a stub candidate`);
