@@ -267,7 +267,10 @@ function columnWindow(model: LayoutModel, context: CentreContext, tier: number, 
     // A child frame stands inside its parent's box with the group margin to spare, at every level.
     const reach = cellReach(model, id), inset = GROUP_PADDING * frameDepth(model, id);
     const wall = context.walls.get(id) ?? { low: -Infinity, high: Infinity };
-    return { low: Math.max(wall.low, own.x + inset + (box.x - reach.x)), high: Math.min(wall.high, own.x + own.width - inset - (reach.x + reach.width - (box.x + box.width))) };
+    // A member of a canton is walled by the canton frame box, not the column: a member that spent the slack would grow the box by it,
+    // and every replay would read the grown box and spend it again (canton-groups ticket 56).
+    const column = own.wall ?? own;
+    return { low: Math.max(wall.low, column.x + inset + (box.x - reach.x)), high: Math.min(wall.high, column.x + column.width - inset - (reach.x + reach.width - (box.x + box.width))) };
   }
   const window = { low: -Infinity, high: Infinity };
   if (!context.columns.some(column => column.from <= tier && tier <= column.to)) return window;

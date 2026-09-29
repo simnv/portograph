@@ -4,7 +4,7 @@ import type { PortRef } from '../model/document.js';
 import type { LabelBand, LayoutGroup, LayoutLabel, LayoutLink, LayoutModel, LayoutNode, LayoutPort, Owner, PathSegment } from '../model/layout.js';
 import { equal } from '../model/json-equality.js';
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
-import { orderedGroupIds } from '../model/model.js';
+import { frameSubtreeCells, orderedGroupIds } from '../model/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { createCentreBudget, type CentreBudget } from './centre.js';
@@ -65,6 +65,9 @@ function measurement(label: string) {
 
 /** One title: a group's own, or a frame's, held by the one rank cell `host` (ranked-groups spec, section 2). */
 interface Title { id: string; host: string; frame?: string; label: string; side: 'top' | 'bottom' }
+/** A canton's title: held by the sub-tier, so it names no host cell (canton-groups spec, section 3). */
+interface CantonTitle { id: string; label: string; side: 'top' | 'bottom' }
+const isCanton = (model: LayoutModel, id: string): boolean => model.document.frames?.[id]?.kind === 'canton';
 
 /**
  * The title edge of a frame (ADR-0011, read across all its cells): the horizontal edge with fewer
@@ -76,9 +79,9 @@ interface Title { id: string; host: string; frame?: string; label: string; side:
  * other edge is taken; a frame with an own cell on neither edge has no title edge (`undefined`).
  */
 export function frameSide(model: LayoutModel, frame: string): 'top' | 'bottom' | undefined {
-  // A canton frame has no own cell to host a title, so it has no title edge yet: its band is held by the
-  // sub-tier (canton-groups ticket 3), not by a cell, and `frameHost` is never asked.
-  if (model.document.frames?.[frame]?.kind === 'canton') return undefined;
+  // A canton frame has no own cell to host a title: its band is held by the sub-tier (`cantonTitles`), not by
+  // a cell, so `frameHost` is never asked and it has no cell-hosted edge.
+  if (isCanton(model, frame)) return undefined;
   const side = crossingSide(model, frame), other = side === 'top' ? 'bottom' : 'top';
   return frameHost(model, frame, side) !== undefined ? side : frameHost(model, frame, other) !== undefined ? other : undefined;
 }
@@ -120,6 +123,28 @@ function titleText(model: LayoutModel, band: LabelBand): string {
 export function carriesTitle(model: LayoutModel, group: LayoutGroup, side: 'top' | 'bottom'): boolean {
   if (group.frame === undefined) return bandSide(model, group) === side;
   return frameSide(model, group.frame) === side && frameHost(model, group.frame, side) === group.id;
+}
+
+/**
+ * The canton titles, one per canton frame, on the edge ADR-0011 picks for the whole canton (`crossingSide`
+ * reads every node of the members). Empty while a cell has no box: the band is measured from the members.
+ */
+function cantonTitles(model: LayoutModel): CantonTitle[] {
+  const frames = model.document.frames ?? {};
+  return Object.keys(frames).filter(id => isCanton(model, id)).map(id => ({ id, label: frames[id]!.label, side: crossingSide(model, id) }));
+}
+
+/** The canton frames as their members stand, before the title band is added to them. */
+function cantonBoxes(model: LayoutModel): Map<string, Rect> {
+  const boxes = new Map<string, Rect>();
+  for (const frame of deriveFrames(model, false) ?? []) if (frame.kind === 'canton') boxes.set(frame.id, frame.box);
+  return boxes;
+}
+
+/** The first and the last sub-tier a canton spans. */
+export function cantonTiers(model: LayoutModel, id: string): { first: number; last: number } {
+  const tiers = frameSubtreeCells(model.document.frames ?? {}, id).map(cell => model.groups[cell]!.tier!);
+  return { first: Math.min(...tiers), last: Math.max(...tiers) };
 }
 
 /**
@@ -321,6 +346,15 @@ function detourLabelRoom(model: LayoutModel, group: LayoutGroup): number {
   return room;
 }
 
+/** The band of a canton's title: as wide as the members' box, on the edge outside it. */
+function cantonBandFor(title: CantonTitle, box: Rect): LabelBand {
+  const height = measurement(title.label).height + GROUP_LABEL_GEOMETRY.bandExtra;
+  return { id: `label-band:${title.id}`, group: title.id, owner: { kind: 'group', id: title.id }, layer: 'routed', side: title.side,
+    bounds: { x: box.x, y: title.side === 'top' ? box.y - height : bottom(box), width: box.width, height },
+    // The margin between the band and the member frames, already inside `box`.
+    clearance: GROUP_PADDING };
+}
+
 function bandFor(model: LayoutModel, title: Title, entries: RouterEntryPoint[]): LabelBand {
   const group = model.groups[title.host]!, measured = measurement(title.label), side = title.side;
   const height = measured.height + GROUP_LABEL_GEOMETRY.bandExtra;
@@ -331,6 +365,13 @@ function bandFor(model: LayoutModel, title: Title, entries: RouterEntryPoint[]):
     clearance: clearanceFor(model, group, entries, side) };
 }
 
+/** Every band the current geometry calls for: the titles of groups and cells, then the canton titles. */
+function expectedBands(model: LayoutModel, entries: RouterEntryPoint[]): LabelBand[] {
+  const cantons = cantonTitles(model), boxes = cantons.length ? cantonBoxes(model) : new Map<string, Rect>();
+  return [...titles(model).map(title => bandFor(model, title, entries)),
+    ...cantons.filter(title => boxes.has(title.id)).map(title => cantonBandFor(title, boxes.get(title.id)!))];
+}
+
 /**
  * Rebuild every band from current group geometry; reports a changed reservation for replay.
  * Reserved link geometry is rebuilt only by the ordered replay, so a caller that has just moved
@@ -338,7 +379,7 @@ function bandFor(model: LayoutModel, title: Title, entries: RouterEntryPoint[]):
  */
 function syncBands(model: LayoutModel, entries = routerEntryPoints(model)): boolean {
   const before = new Map(model.labelBands.map(band => [band.group, band.clearance]));
-  model.labelBands = titles(model).map(title => bandFor(model, title, entries));
+  model.labelBands = expectedBands(model, entries);
   return model.labelBands.some(band => before.has(band.group) && Math.abs(before.get(band.group)! - band.clearance) > PLACEMENT_EPS);
 }
 
@@ -567,6 +608,13 @@ function shiftsWith(model: LayoutModel, plan: readonly GroupPlacement[]): Map<La
   }
 }
 
+/** The widest cell of a canton on its title edge: the one a title too wide for the canton grows. */
+function cantonHost(model: LayoutModel, id: string, side: 'top' | 'bottom'): LayoutGroup | undefined {
+  const tiers = cantonTiers(model, id), tier = side === 'top' ? tiers.first : tiers.last;
+  return frameSubtreeCells(model.document.frames ?? {}, id).map(cell => model.groups[cell]!).filter(cell => cell.tier === tier)
+    .sort((a, b) => b.bounds!.width - a.bounds!.width || a.id.localeCompare(b.id))[0];
+}
+
 function planLabels(model: LayoutModel, permitGrowth: boolean): LabelPlan {
   const labels: LayoutLabel[] = [], blocked: string[] = [];
   for (const title of titles(model)) {
@@ -593,6 +641,31 @@ function planLabels(model: LayoutModel, permitGrowth: boolean): LabelPlan {
       fontSize: GROUP_LABEL_GEOMETRY.fontSize, fontWeight: GROUP_LABEL_GEOMETRY.fontWeight,
       lineHeight: measured.lineHeight, lines: measured.lines, textRotation: 0,
       bounds: { x: x <= limit + PLACEMENT_EPS ? x : group.bounds!.x + GROUP_LABEL_GEOMETRY.horizontalInset,
+        y, width: measured.width, height: measured.height } });
+  }
+  for (const band of model.labelBands.filter(item => isCanton(model, item.group))) {
+    const title = model.document.frames![band.group]!.label, measured = measurement(title);
+    const y = band.bounds.y + GROUP_LABEL_GEOMETRY.verticalInset, box = band.bounds;
+    const start = box.x + GROUP_LABEL_GEOMETRY.horizontalInset, limit = right(box) - GROUP_LABEL_GEOMETRY.horizontalInset - measured.width;
+    const ranges = intervals(model, labels, y, measured.height, measured.width);
+    const centre = box.x + (box.width - measured.width) / 2;
+    const candidates = [centre, start, limit, ...ranges.flatMap(range => [range.low - LABEL_CLEARANCE_STEP, range.high + LABEL_CLEARANCE_STEP])]
+      .filter(x => x >= start - PLACEMENT_EPS && x <= limit + PLACEMENT_EPS && ranges.every(range => x < range.low - PLACEMENT_EPS || x > range.high + PLACEMENT_EPS))
+      .sort((a, b) => Math.abs(a - centre) - Math.abs(b - centre) || a - b);
+    const x = candidates[0] ?? firstFree(start, ranges);
+    if (x > limit + PLACEMENT_EPS) {
+      // The band is as wide as its members; a title that does not fit widens the widest cell on the title edge,
+      // as a group title does, and the frame follows the cell.
+      const width = x + measured.width + GROUP_LABEL_GEOMETRY.horizontalInset - box.x;
+      const cell = cantonHost(model, band.group, band.side);
+      if (cell === undefined || !growthPlan(model, cell, cell.bounds!.width + (width - box.width))) blocked.push(band.group);
+      else if (permitGrowth) return { labels, blocked, growth: { group: cell, width: cell.bounds!.width + (width - box.width) } };
+    }
+    labels.push({ id: `label:group:${band.group}`, owner: { ...band.owner }, layer: 'routed', role: 'group',
+      text: title, fontFamily: GROUP_LABEL_GEOMETRY.fontFamily,
+      fontSize: GROUP_LABEL_GEOMETRY.fontSize, fontWeight: GROUP_LABEL_GEOMETRY.fontWeight,
+      lineHeight: measured.lineHeight, lines: measured.lines, textRotation: 0,
+      bounds: { x: x <= limit + PLACEMENT_EPS ? x : box.x + GROUP_LABEL_GEOMETRY.horizontalInset,
         y, width: measured.width, height: measured.height } });
   }
   return { labels, blocked };
@@ -645,6 +718,23 @@ function consumeGrowthPass(budget: CentreBudget, before: number): void {
   budget.remaining--; budget.passes++;
 }
 
+/**
+ * The gap each canton band needs beside a sub-tier: the frame margin, the band, and a margin more between the
+ * band and what stands past it. `below` is keyed by the last sub-tier of a canton titled at the bottom, `above`
+ * by the first sub-tier of one titled at the top. The margin past the band is the ordinary 20 px group
+ * padding, so the room is 20 + band + 20.
+ */
+function cantonGapNeeds(model: LayoutModel): { below: Map<number, number>; above: Map<number, number> } {
+  const below = new Map<number, number>(), above = new Map<number, number>();
+  for (const band of model.labelBands) {
+    if (!isCanton(model, band.group)) continue;
+    const tiers = cantonTiers(model, band.group), need = GROUP_PADDING + band.bounds.height + GROUP_PADDING;
+    const map = band.side === 'top' ? above : below, tier = band.side === 'top' ? tiers.first : tiers.last;
+    map.set(tier, Math.max(map.get(tier) ?? 0, need));
+  }
+  return { below, above };
+}
+
 function reserveInitialSpace(model: LayoutModel): void {
   const before = new Map(model.tierBands.map(band => [band.tier, { ...band.bounds! }]));
   // The room each group already holds for a band on that side, from the reservation it carries now.
@@ -688,9 +778,17 @@ function reserveInitialSpace(model: LayoutModel): void {
   }
   holdColumnsAfterPush(model);
   rebuildBands(model);
-  let shift = 0;
+  // A canton band is held by the sub-tier, not by a cell (canton-groups spec, section 3): the gap on its edge
+  // holds the frame margin, the band and a margin more, and the tier bands past it move down by what is missing.
+  const need = cantonGapNeeds(model);
+  let shift = 0, previous: { tier: number; bottom: number; shift: number } | undefined;
   for (const tierBand of [...model.tierBands].sort((a, b) => a.tier - b.tier)) {
+    if (previous !== undefined) {
+      const gap = tierBand.bounds!.y + shift - previous.bottom;
+      shift += Math.max(0, Math.max(need.below.get(previous.tier) ?? 0, need.above.get(tierBand.tier) ?? 0) - gap);
+    }
     if (shift) for (const group of Object.values(model.groups).filter(item => item.tier === tierBand.tier)) moveGroup(model, group, 0, shift);
+    previous = { tier: tierBand.tier, bottom: bottom(tierBand.bounds!) + shift, shift };
     shift += Math.max(0, tierBand.bounds!.height - (before.get(tierBand.tier)?.height ?? tierBand.bounds!.height));
   }
   rebuildBands(model);
@@ -991,8 +1089,8 @@ export function produceGroupLabelBands(model: LayoutModel): void {
   // A frame whose extreme sub-tiers both belong to child frames has no cell of its own to hold a
   // title. It draws none, and says so.
   for (const id of Object.keys(model.document.frames ?? {})) {
-    // A canton frame draws no title until canton-groups ticket 3; that is not an unhosted title.
-    if (model.document.frames![id]!.kind === 'canton') continue;
+    // A canton's title is held by the sub-tier, not by a cell, so it is never unhosted.
+    if (isCanton(model, id)) continue;
     if (frameSide(model, id) === undefined) {
       placementWarning(model, 'FRAME_TITLE_UNHOSTED', `Frame ${id} has no own cell on its top or bottom edge; its title is not drawn.`, [id], 'group');
     }
@@ -1101,11 +1199,11 @@ export function validateGroupLabelBands(model: LayoutModel): void {
     throw new Error(`Linked groups do not share the grid their links require: ${moved.join('; ')}`);
   }
   const entries = routerEntryPoints(model);
-  const expectedBands = titles(model).map(title => bandFor(model, title, entries));
-  if (!equal(model.labelBands, expectedBands)) throw new Error('Group label bands contradict final group geometry');
+  if (!equal(model.labelBands, expectedBands(model, entries))) throw new Error('Group label bands contradict final group geometry');
   for (const band of model.labelBands) {
     if (!Number.isFinite(band.clearance) || band.clearance < GROUP_PADDING - PLACEMENT_EPS) throw new Error(`Group ${band.group} reserves less than the ordinary padding below its label band`);
-    for (const nodeId of model.groups[band.host ?? band.group]!.nodes) {
+    // A canton band stands outside its member frames, which hold the margin; the frame check (G9) reads them.
+    for (const nodeId of isCanton(model, band.group) ? [] : model.groups[band.host ?? band.group]!.nodes) {
       const box = model.nodes[nodeId]!.bounds!;
       const clear = band.side === 'top' ? box.y >= bottom(band.bounds) + band.clearance - PLACEMENT_EPS : bottom(box) <= band.bounds.y - band.clearance + PLACEMENT_EPS;
       if (!clear) throw new Error(`Group ${band.group} does not retain its reserved clearance beside its label band`);
