@@ -1,0 +1,24 @@
+# Expected: A member fed by a transit from beyond the tier it reads (ranked-groups ticket 69, found by the review of ticket 64).
+# The canton `west` holds `lab` (tier 1, two nodes, `lab#0`) above `site` (tier 2, a gateway and two servers, `site#0`, `site#1`).
+# The link from `feed` (tier 0) to the gateway transits `lab#0` through an owned lane; the link from the gateway to `l1` goes up.
+# The inner pass reads the feeds of `site` off `lab` only, so it aims at `l1`; centring reads the lane as well, so it aims at the mean.
+# A second `holdMemberWalls` on the finished layout must move nothing; it moves `site#0` and `site#1` by 4.74 px.
+# Test-only input owned by ranked-groups ticket 69; test/pipeline/canton-walls.test.ts reads the layout.
+portograph: 2
+groups:
+  west: { label: West }
+  top: { tier: 0, label: Top }
+  lab: { tier: 1, canton: west, label: Lab }
+  site: { tier: 2, canton: west, label: Site }
+nodes:
+  feed: { group: top, class: router, label: Feed }
+  gw: { group: site, class: router, label: Gateway }
+  srv: { group: site, class: server, label: Server }
+  srv2: { group: site, class: server, label: Server two }
+  l1: { group: lab, class: server, label: Lab one }
+  l2: { group: lab, class: server, label: Lab two }
+links:
+  - [feed, gw]
+  - [gw, l1]
+  - [gw, srv]
+  - [gw, srv2]
