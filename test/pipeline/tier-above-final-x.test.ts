@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
 import { layout, parse } from '../../src/index.js';
 import { COLUMN_SLACK } from '../../src/layout/columns.js';
+import { LINK_LABEL_GEOMETRY } from '../../src/layout/link-labels.js';
+import { measureText } from '../../src/text/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -19,5 +21,17 @@ describe('a tier above packs over the final x of its feeds', () => {
     // Centring moves `core` some 1 700 px from where the columns were packed. The packing reads the feed
     // of a tier only after that feed is packed toward its own feeds, so the two frames follow it.
     expect(Math.abs(tops - core)).toBeLessThanOrEqual(COLUMN_SLACK);
+  }, 60000);
+});
+
+describe('a widening body keeps the label room of its link', () => {
+  it('two switches fed through one shared feed stay a label apart', async () => {
+    // Without the floor in the widening limit, aligning each switch to the feed they share grows the two bodies
+    // into the room 7f reserved, the reservation is undone on every pass, and publication refuses the layout.
+    const model = await run('a-widening-body-keeps-its-links-label-room');
+    const left = model.nodes.left!.bounds!, right = model.nodes.right!.bounds!;
+    const label = model.document.links.find(link => link.label)!.label!;
+    const required = measureText(label, { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight }).width + 2 * LINK_LABEL_GEOMETRY.shortenMargin;
+    expect(right.x - (left.x + left.width)).toBeGreaterThanOrEqual(required);
   }, 60000);
 });
