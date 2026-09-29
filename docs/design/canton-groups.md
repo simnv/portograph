@@ -80,8 +80,10 @@ painted box in the source.
 The rule is one pass:
 
 1. A top-level group whose identifier starts with `TOKEN` (case-insensitive) is a member of that
-   canton. Identifiers, not labels, are read: on the NTP sheet two client-group labels carry
-   another continent's token while their identifiers carry the right one.
+   canton. Where two tokens match one identifier (`we` and `west`), the longest token wins.
+   Identifiers, not labels, are read: on the NTP sheet two client-group labels carry another
+   continent's token while their identifiers carry the right one. A tokenised `bar` or `grid`
+   group is left outside with a warning, because parse would refuse it (`CANTON_MEMBER_SHAPE`).
 2. Every other top-level group counts the overlay-family links of itself and its children to the
    groups step 1 tokenised, and to those only. The denominator is that count. More than half to
    one canton makes the group a member of it. Zero links, or no majority, leaves the group outside
@@ -115,9 +117,12 @@ below are consequences of that, and each names its machinery.
    holds the cantons and the units outside every canton on those tiers, and nothing else.
 2. **Stand.** `standOf(canton)`: members on distinct sub-tiers are `apart` blocks centred on the
    canton axis; two members that share sub-tiers (the two lower locations of continent A) are a
-   `beside` row, `COLUMN_SLACK` apart, on the side their overlay partners favour (ticket 28). The
-   stand's width is the widest block or row. The canton's extent is that width plus the slack on
-   each side (`extent`, `columns.ts:295`).
+   `beside` row. Each block carries `GROUP_PADDING` on both sides (`columns.ts:126-128`), so two
+   beside member frames stand 2 × `GROUP_PADDING` = 40 px apart (`packBesideRows`,
+   `columns.ts:716-717`). They stand in **declaration order**: `ownX` is undefined for a frame with
+   no own cell (`columns.ts:143`) and `place()` then returns `right` for every block
+   (`columns.ts:146`). The stand's width is the widest block or row. The canton's extent is that
+   width plus the slack on each side (`extent`, `columns.ts:295`).
 3. **Axis.** `feedReader` maps every cell of the unit to it (`columns.ts:250-273`), so the canton's
    wish is the mean of the routed feeds of all its members toward the tier packed before, less
    the members' offsets (`wanted`, `columns.ts:305-314`). That is the union of its members' feeds.
@@ -133,15 +138,21 @@ below are consequences of that, and each names its machinery.
 6. **Whole moves.** `columnShifts` and `pullTier` move the canton as a whole, one dx for every cell
    of every member on every tier, and keep sibling cantons a band gap apart.
 7. **Foreign units on a spanned tier.** A unit outside every canton in the merged step is placed
-   before or after the run of cantons. Its overlay key (`orderFramesByOverlay`) decides the side.
-   A foreign unit between two cantons was considered and rejected: a 120 px group on one tier
-   would cost 180 px of empty room between the two canton columns on every other tier of the span.
+   before or after the run of cantons. Its overlay key decides the side. No machinery does this
+   today: `orderFramesByOverlay` leaves every non-frame unit where it stands
+   (`overlay-order.ts:338`), so a one-rank group ELK put between two cantons stays there. Ticket 5
+   adds the rule, and fixture 4 starts from that ELK-between case. A foreign unit between two
+   cantons was considered and rejected: a 120 px group on one tier would cost 180 px of empty room
+   between the two canton columns on every other tier of the span.
 8. **Outside every canton** nothing changes: the three top locations, the key, the satellite row
    and the MPLS row are packed as today. An input with no `canton:` key is byte-identical.
 9. **Order.** Ticket 06b's `orderFramesByOverlay` (`overlay-order.ts:310-340`) reorders the
    cantons of the merged step as units. The key is the mean partner x over every node of the
    canton. Acceptance runs over every sub-tier of the step with the three conditions of ADR-0019.
-   Members inside a canton are ordered by the same rule with the canton column as their walls.
+   `orderFramesByOverlay` reorders top-level units only (`overlay-order.ts:321-323`), so it
+   does not order members. Ticket 5 adds an **inner overlay order**, per canton and per tier, with
+   the same key and acceptance and the canton column as the walls. Until then members stand in
+   declaration order (rule 2).
 
 ### 2b — Member-level walls (what the pack does not hold)
 
@@ -152,11 +163,20 @@ they stand (`frameColumns`, `columns.ts:826-849`), never fixed. So:
 
 1. **The canton column is derived**: the canton frame box plus `min(COLUMN_SLACK, free)` on each
    side, as `frameColumns` derives every column. A widened member widens it. `columnShifts` then
-   moves the sibling canton as a whole until the boxes are a band gap apart again.
-2. **`pullTier` respects the wall.** A member's move range (`feedRange`, `overlayRange`) is
-   intersected with its canton column, as a beside cell's window is intersected with `besideWalls`.
-   A member that cannot reach its feed because of the wall warns `COLUMN_AXIS_HELD` and names the
-   canton.
+   moves the sibling canton as a whole. At rows time `separateFrameColumns` keeps cantons a band
+   gap plus 2 × `COLUMN_SLACK` = 100 px apart (`columns.ts:393-397`, `684-687`); only 7f brings
+   them to a band gap (`holdColumnsAfterPush`, `bands.ts:623`, slack 0).
+2. **An inner pass holds the member wall.** `pullTier` has no member level: its units are the
+   `columnTiers` units, one range per top-level unit (`columns.ts:520-529`), and a member is never
+   in `standing`. The member wall is therefore a **new inner pass**: per canton and per tier, the
+   members as units, the derived canton column as the walls of the plan, the same `feedRange` and
+   `overlayRange`. It runs after `pullTier` and before centring, wherever `holdColumnAxes` runs. A
+   member that cannot reach its feed because of the wall warns `COLUMN_AXIS_HELD` and names the
+   canton. Fixture 3's "after the whole layout" assertion depends on this pass.
+   *No oscillation.* `columnShifts` moves right only, and only while boxes stand closer than gap
+   plus two slacks; `pullTier` projects with the same offsets; centring's slack falls to 0 as the
+   boxes approach a band gap (`columns.ts:839-846`). The drift is at most one slack per
+   `repackOverlaps`, which runs twice (ticket 16's bound).
 3. **A one-cell member keeps the barycentre.** `overlayFreeGroups` excludes every frame cell
    (`columns.ts:479-482`), so a one-node client group, now a one-cell frame, would lose ticket 05's
    placement. `overlayFreeGroups` admits a one-cell member frame with no routed link. `placeOverlayFree`
@@ -175,8 +195,9 @@ grown by group padding, and takes the smallest child tier. A canton frame is the
 with no own cell: the union of its member frames grown by 20 px, plus the label band.
 
 - **Every member is a frame.** A one-rank member is today a plain group with no frame
-  (`rank-cells.ts:104-106`). It becomes a one-cell frame `G#0`, so the canton frame, the columns,
-  the lanes, G9 and the overlay order read members alike. The expansion guard at `rank-cells.ts:73`
+  (`rank-cells.ts:104-106`), and a `row` member is copied without cells too (`rank-cells.ts:34`).
+  Both become a one-cell frame `G#0`, so the canton frame, the columns, the lanes, G9 and the
+  overlay order read members alike. The expansion guard at `rank-cells.ts:73`
   counts cantons as a reason to expand. `Frame.parent` (`src/model/layout.ts:110`) is the one
   containment relation for both levels.
 - **Transitive readers.** `frameCells` and `frameNodes` read direct children only
@@ -187,13 +208,22 @@ with no own cell: the union of its member frames grown by 20 px, plus the label 
 - **Title host.** `frameHost` returns `undefined` for a frame with no own cell on the edge
   (`src/layout/bands.ts:103-109`), and the title is not drawn (`FRAME_TITLE_UNHOSTED`,
   `bands.ts:992`). Ticket 03 fix A recorded the alternative, a band outside the child frame, as not
-  built. A canton builds it: its band is hosted outside every member frame, on the ADR-0011 edge.
-  On the top edge `reserveInitialSpace` (`bands.ts:645`) reserves the band above the first-tier
-  member cells and shifts them down, as it shifts rank 0 for a frame's own band. On the bottom
-  edge `pushFollowingGroups` (`bands.ts:599`) pushes the tiers below, as for a plain group's bottom
-  band. A canton fed from above (the NTP continents, whose routers reach the MPLS row) takes the
-  bottom edge. With a tier below it, the gap must hold 20 + 20 + about 23 px, more than the 60 px
-  band gap, so the push happens; on the NTP sheet only the canvas grows.
+  built. A cell-hosted canton band cannot be that alternative: `titles()` keys `hosted` by host
+  cell (`bands.ts:127-133`), so a canton band on a member's first cell collides with that member's
+  own band on the same edge, and a cell-hosted band grows the cell box (`bands.ts:682`), so
+  `cellReach` and `deriveFrames(member)` would put it inside the member frame.
+  **Decision: the canton band is held by the sub-tier.** It takes the `topShift` room only
+  (`bands.ts:670-672`, one shift for the whole sub-tier): its y lies above the moved tier band on
+  the top edge, or below the last tier band on the bottom edge; `deriveFrames(canton)` adds the
+  band to the canton box; `cellReach` is untouched; no cell hosts it and `frameHost` is not asked.
+  *Timing.* `produceGroupLabelBands` (`bands.ts:995`) calls `reserveInitialSpace` (`bands.ts:645`)
+  at the start of `bands`, before `growTierGaps` and the replay (`src/layout/mutation.ts:720-725`).
+  The bottom-edge push is the shift loop inside `reserveInitialSpace` (`bands.ts:689-695`), which
+  moves every lower tier band down by the grown height; it is not `pushFollowingGroups`
+  (`bands.ts:599-611`, the horizontal widening plan). A canton fed from above (the NTP continents,
+  whose routers reach the MPLS row) takes the bottom edge. With a tier below it, the gap must hold
+  20 + 20 + about 23 px, more than the 60 px band gap, so the shift happens; on the NTP sheet only
+  the canvas grows.
 
 **Tier gaps are global.** `rebuildBands` derives one band per sub-tier as the union of every
 group of that sub-tier (`src/layout/skeleton-geometry.ts:95-104`). The gap between two bands is
@@ -277,7 +307,7 @@ so rule 3's feed union is exercised. Fixture 11 puts it inside.
 | 1 | `a-canton-frames-two-tiers` | one canton; a two-rank location on tier 0 over a one-node client group on tier 1, one flow link | the canton frame contains both member frames plus 20 px; the client group's axis is the location's; G9 clean; the same input without `canton:` is byte-identical to today |
 | 2 | `two-cantons-are-disjoint-columns` | a wide anchor tier above two cantons of two tiers each; one cross-canton flow link | canton frame boxes a band gap apart; members inside their canton columns on both tiers; each canton's axis on the mean of its members' feeds; the order follows the overlay key, else `OVERLAY_ORDER_REFUSED` |
 | 3 | `a-narrow-tier-is-centred-in-its-canton-column` | anchor tier above; a canton whose tier-1 run is 600 px and tier-2 run 120 px, the tier-2 member fed off the axis | the tier-2 member centred at pack; after the whole layout still inside the canton column; pulled to its feed by no more than the room the column leaves; `COLUMN_AXIS_HELD` names the canton |
-| 4 | `a-foreign-unit-beside-the-run-of-cantons` | two cantons of two tiers; a plain group on tier 1 | the plain group stands before or after the run on the side its key favours; no empty room between the cantons |
+| 4 | `a-foreign-unit-beside-the-run-of-cantons` | two cantons of two tiers; a plain group on tier 1 that ELK places between them | the plain group stands before or after the run on the side its key favours; no empty room between the cantons |
 | 5 | `a-transit-inside-a-canton` | a canton of three tiers; a link from tier 0 to tier 2 of the canton; a foreign link from above the canton to below it | the first lane inside the canton frame, which grows to hold it; the foreign lane outside at one x for all three tiers; the neighbour gap a band gap after `separateFrameColumns` |
 | 6 | `a-member-widened-after-pack` | a canton whose tier-1 member has a 13-node row that `fitGroupBox` widens, beside a sibling canton | the canton column follows the widened member; the sibling canton moved as a whole; no member outside its column; G9 clean |
 | 7 | `a-tier-below-a-canton` | anchor tier above; a canton fed from above with a plain tier below it | the title on the bottom edge; the tier below pushed by the band; the gap holds 20 + 20 + band |
@@ -292,9 +322,9 @@ so rule 3's feed union is exercised. Fixture 11 puts it inside.
 |---|---|---|
 | 1 | **Schema.** `canton:`; `NormalisedGroup.canton`; the eight codes of Section 1; `CONTEXT.md` terms and invariant 2. | `test/parse`: fixture 1 parses with the member's `canton`; one test per code; `NESTED_CHILD` still refuses a child of a child. |
 | 2 | **Frames and the unit.** Every member a frame; `kind: 'canton'`; `parent` on member frames; `deriveFrames` for a canton frame; transitive `frameCells` / `frameNodes`; G9 with the transitive skip; `columnTiers` untouched, the canton as the unit; the renderer and the drawio export draw the canton frame. | Fixtures 1, 2 and 11; G9 negative test (a member frame moved out on a clone fails `frame-contains`); goldens byte-identical. |
-| 3 | **Title band.** The host outside every member frame; top edge by `reserveInitialSpace`, bottom edge by `pushFollowingGroups`; no `FRAME_TITLE_UNHOSTED` for a canton. | Fixture 7; fixture 1 with the title forced to the top edge. |
-| 4 | **Member-level walls** (Section 2b). Derived canton column; `pullTier` intersection; `overlayFreeGroups` for one-cell members; held-lane parity; idempotence. | Fixtures 3, 5, 6, 8 and 9, asserted after the whole layout. |
-| 5 | **Order and foreign units.** `orderFramesByOverlay` with cantons as units; foreign units before or after the run; the chord rule not extended; the tier-gap plan unchanged. | Fixtures 2 (the swap and the refusal) and 4; a member-to-member link across one gap keeps its planned row and takes no chord; the same gap with and without the canton has one row plan. |
+| 3 | **Title band.** The canton band held by the sub-tier: the `topShift` room in `reserveInitialSpace`, the bottom edge by its shift loop, `deriveFrames(canton)` adding the band, `cellReach` untouched, no host cell; no `FRAME_TITLE_UNHOSTED` for a canton. | Fixture 7; fixture 1 with the title forced to the top edge; a member's own top band and the canton's top band on one sub-tier do not collide. |
+| 4 | **Member-level walls** (Section 2b). Derived canton column; the new inner pass after `pullTier` and before centring; `overlayFreeGroups` for one-cell members; held-lane parity; idempotence. | Fixtures 3, 5, 6, 8 and 9, asserted after the whole layout. |
+| 5 | **Order and foreign units.** `orderFramesByOverlay` with cantons as units; the inner overlay order per canton per tier; foreign units moved before or after the run; the chord rule not extended; the tier-gap plan unchanged. | Fixtures 2 (the swap and the refusal) and 4 (from the ELK-between start); a member-to-member link across one gap keeps its planned row and takes no chord; the same gap with and without the canton has one row plan. |
 | 6 | **Converter and the NTP metric.** `--canton`, the one-pass rule, the warnings; measure the sheet. | A converter test on a synthetic drawthe.net document with two continents; fixture 10 renders with three canton frames; the NTP numbers (straight of 153, removed, canvas, Q) in the ticket's comments; the corpus differential byte-identical for every input without `canton:`. |
 
 Ticket 1 blocks 2; 2 blocks 3, 4 and 5; 4 blocks 6. Each ticket is one review step.
