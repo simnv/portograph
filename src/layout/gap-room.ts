@@ -1,6 +1,6 @@
 import type { LayoutModel } from '../model/layout.js';
 import { EPS } from '../score/geometry.js';
-import { alignLinkedGroupGrid, replanGroupLabels } from './bands.js';
+import { alignLinkedGroupGrid, cantonTiers, replanGroupLabels } from './bands.js';
 import { tierGapPlans, type ResidualReason } from './gap-plan.js';
 import { rebuildLaneExtents } from './lanes.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
@@ -41,33 +41,45 @@ import { moveGroup } from './skeleton-geometry.js';
 export function growTierGaps(model: LayoutModel): boolean {
   // The plan is read on the model as 7f will publish it (`settled`), and a stem nests only where the gap has the room
   // (`sidePlan` declines a nested turn that would stand in frozen geometry), so the tips the plan reads depend on how far the
-  // gap has opened. The growth is therefore taken to its fixed point: each round reads the plan on the model grown by the
-  // rounds before it and adds what that plan still asks for. `H` does not move with the growth except through the stems,
-  // so the rounds are few (a round that asks for nothing ends it), and the model itself is touched once, by the sum.
+  // gap has opened. The growth is therefore taken to a fixed point of `extra = H(grown by extra) − room`: each round reads the plan
+  // on the model grown by the round before and replaces the growth by the height that plan asks. The rounds are few (a round that
+  // moves nothing ends them), and the model itself is touched once, by the result.
   const grown = new Map<number, GapGrowth>();
   let plans: ReturnType<typeof tierGapPlans> = [];
-  let unfit: ReturnType<typeof tierGapPlans> = [];
+  let unfit: { above: number; below: number; ask: number }[] = [];
+  // The room each gap has on the model as it stands, before any growth: what `extra` is measured against.
+  const room = new Map<number, number>();
   for (let round = 0; round < MAX_ROUNDS; round++) {
     plans = tierGapPlans(settled(model, new Map([...grown].map(([tier, item]) => [tier, item.extra]))));
-    let more = false;
+    if (!round) for (const { gap, plan } of plans) room.set(gap.below, plan.bandTop - plan.low);
+    // Each round replaces the growth of a gap by the height its plan asks on the model grown as before: `extra = H − room`. The rounds
+    // do not accumulate. A round that adds what its trial still asks for counts a stem that nested only in a larger gap twice, and
+    // the growth then stands above the height the published plan asks (a-band-holds-the-group-that-set-its-edge: 198.5 against 187).
+    const moving: typeof unfit = [];
     for (const { gap, plan } of plans) {
-      if (plan.growth <= EPS) continue;
-      more = true;
-      grown.set(gap.below, { extra: (grown.get(gap.below)?.extra ?? 0) + plan.growth, setBy: plan.setBy });
+      const before = grown.get(gap.below)?.extra ?? 0, after = Math.max(0, plan.height - room.get(gap.below)!);
+      if (Math.abs(after - before) <= EPS) continue;
+      moving.push({ above: gap.above, below: gap.below, ask: after - before });
+      if (after <= EPS) grown.delete(gap.below); else grown.set(gap.below, { extra: after, setBy: plan.setBy });
     }
-    if (!more) break;
-    if (round === MAX_ROUNDS - 1) unfit = plans.filter(({ plan }) => plan.growth > EPS);
+    if (!moving.length) break;
+    if (round === MAX_ROUNDS - 1) unfit = moving.filter(item => item.ask > EPS);
+  }
+  // The gap that settled is named by the plan of the round that settled it.
+  for (const { gap, plan } of plans) {
+    const item = grown.get(gap.below);
+    if (item !== undefined) item.setBy = plan.setBy;
   }
   // A gap that still asks for room after the last round does not settle (spec 3): it is named, with the ask, and the router lays its
   // parts as it did before the plan.
-  for (const { gap, plan } of unfit) {
+  for (const { below, ask } of unfit) {
     placementWarning(model, 'TIER_GAP_PART_UNFIT',
-      `the tier gap above tier ${gap.below} still asks ${plan.growth.toFixed(2)} px after ${MAX_ROUNDS} rounds of growth; its parts are left to the router.`, []);
+      `the tier gap above tier ${below} still asks ${ask.toFixed(2)} px after ${MAX_ROUNDS} rounds of growth; its parts are left to the router.`, []);
   }
   // A part the plan declines is named, with the reason: the router lays it as it did before the plan.
   for (const { gap, plan } of plans) {
     for (const item of plan.residual) {
-      placementWarning(model, 'TIER_GAP_PART_RESIDUAL',
+      placementWarning(model, item.reason === 'row-cycle' ? 'TIER_GAP_ROW_CYCLE' : 'TIER_GAP_PART_RESIDUAL',
         `${item.link} is left to the router in the tier gap above tier ${gap.below}: ${REASONS[item.reason]}${item.granted ? ` (${item.granted}'s leg cover is granted to it)` : ''}.`, [item.link]);
     }
   }
@@ -75,6 +87,20 @@ export function growTierGaps(model: LayoutModel): boolean {
 }
 
 const MAX_ROUNDS = 6;
+
+/**
+ * The tier gaps whose plan asks for more room than they have, on the model as it stands. 7f sizes a gap on a trial; a change after
+ * it (the corridor move of `reseatLanes`, a later stage) can leave a gap short, and stage 8 then leaves its parts to the router
+ * (`fittingPlans`). This names each such gap with the ask, once, so that no part is left to the router without a diagnostic.
+ */
+export function unfitGaps(model: LayoutModel): { above: number; below: number; growth: number }[] {
+  return tierGapPlans(model).filter(({ plan }) => plan.growth > EPS && plan.parts.length)
+    .map(({ gap, plan }) => ({ above: gap.above, below: gap.below, growth: plan.growth }));
+}
+
+/** The message `TIER_GAP_PART_UNFIT` carries for a gap that does not fit after a change following 7f's growth. */
+export const unfitMessage = (below: number, growth: number): string =>
+  `the tier gap above tier ${below} asks ${growth.toFixed(2)} px more than it has; its parts are left to the router.`;
 
 /**
  * The model as 7f publishes it once the gaps have grown by `extra`: the replay that follows a growth refits the group boxes and
@@ -129,16 +155,26 @@ function grow(model: LayoutModel, grown: ReadonlyMap<number, GapGrowth>): boolea
  * band and its placed label sit in the group's own padding, so they travel with it: a label left
  * behind would stand in the gap the move just opened, as an obstacle nothing owns.
  */
-function moveBands(model: LayoutModel, extra: ReadonlyMap<number, number>): void {
+export function moveBands(model: LayoutModel, extra: ReadonlyMap<number, number>): void {
   let shift = 0;
+  const shifts = new Map<number, number>();
   for (const band of [...model.tierBands].sort((a, b) => a.bounds!.y - b.bounds!.y)) {
     shift += extra.get(band.tier) ?? 0;
     if (shift <= EPS) continue;
+    shifts.set(band.tier, shift);
     for (const id of band.groups) {
       moveGroup(model, model.groups[id]!, 0, shift);
       for (const entry of model.labelBands) if ((entry.host ?? entry.group) === id) entry.bounds.y += shift;
       for (const label of model.labels) if (label.role === 'group' && label.id === `label:group:${id}` && label.bounds) label.bounds.y += shift;
     }
+  }
+  // A canton band is held by its sub-tier: it moves with the tier at the edge it stands on, and so does its title.
+  for (const band of model.labelBands) {
+    if (model.document.frames?.[band.group]?.kind !== 'canton') continue;
+    const tiers = cantonTiers(model, band.group), by = shifts.get(band.side === 'top' ? tiers.first : tiers.last) ?? 0;
+    if (by <= EPS) continue;
+    band.bounds.y += by;
+    for (const label of model.labels) if (label.role === 'group' && label.id === `label:group:${band.group}` && label.bounds) label.bounds.y += by;
   }
   rebuildNodeGeometry(model, Object.keys(model.nodes), 'current');
   rebuildRegions(model);

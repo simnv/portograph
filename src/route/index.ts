@@ -1,5 +1,6 @@
 import type { Point } from '../model/geometry.js';
 import type { LayoutModel } from '../model/layout.js';
+import { unfitGaps, unfitMessage } from '../layout/gap-room.js';
 import { withLayoutMutation } from '../layout/mutation.js';
 import { completedRouteCovers, type RouteObstacle } from './obstacles.js';
 import { batchRequest, completedCrossingObstacles, crossedStems, pendingStemObstacles, planRoute, type RoutePlan } from './plan.js';
@@ -146,6 +147,13 @@ export async function route(model: LayoutModel, options: RouteOptions = {}): Pro
       link.removed = true;
       draft.diagnostics.push({ stage: 'final-geometry', severity: 'warning', code: item.code,
         message: rejectionMessage(link.id, item), owners: [{ ...link.owner }] });
+    }
+    // A gap that stopped fitting after 7f sized it (the corridor move, a later stage) is planned by nobody: its parts are the router's,
+    // and the diagnostic says so, unless 7f already named the gap (`TIER_GAP_PART_UNFIT` from the round cap).
+    for (const item of unfitGaps(model)) {
+      const named = draft.diagnostics.some(entry => entry.code === 'TIER_GAP_PART_UNFIT' && entry.message.startsWith(`the tier gap above tier ${item.below} `));
+      if (!named) draft.diagnostics.push({ stage: 'final-geometry', severity: 'warning', code: 'TIER_GAP_PART_UNFIT',
+        message: unfitMessage(item.below, item.growth), owners: [] });
     }
     if (rejections.length) draft.removedLinks = draft.links.filter(link => link.removed === true).map(link => link.id);
     for (const link of draft.links) {

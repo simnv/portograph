@@ -38,7 +38,8 @@ describe('canton frames and the unit (canton-groups ticket 2)', () => {
     expect(west.box.x).toBeCloseTo(union.x - 20, 6);
     expect(west.box.y).toBeCloseTo(union.y - 20, 6);
     expect(right(west.box)).toBeCloseTo(Math.max(right(site.box), right(clients.box)) + 20, 6);
-    expect(bottom(west.box)).toBeCloseTo(Math.max(bottom(site.box), bottom(clients.box)) + 20, 6);
+    // The canton is fed from above, so its title band (canton-groups ticket 3) stands under the members' margin.
+    expect(bottom(west.box)).toBeCloseTo(Math.max(bottom(site.box), bottom(clients.box)) + 20 + model.labelBands.find(band => band.group === 'west')!.bounds.height, 6);
     // Members on distinct tiers are centred on the canton axis at pack time (Section 2 rule 4). The one-node client group is a free
     // one-cell member (ticket 56): ticket 05's barycentre then puts it under its overlay partner, inside the canton, a few px off the axis.
     const partner = model.nodes['srv']!.bounds!, client = model.nodes['cl']!.bounds!;
@@ -49,7 +50,7 @@ describe('canton frames and the unit (canton-groups ticket 2)', () => {
     expect(right(clients.box)).toBeLessThanOrEqual(right(west.box) - 20 + 1e-6);
     expect(Math.abs(centreX(site.box) - centreX(west.box))).toBeLessThan(2);
     expect(west.tier).toBe(site.tier);
-    // No canton title yet, and so no unhosted-title warning.
+    // A canton's title is held by the sub-tier, so it is never an unhosted title.
     expect(model.diagnostics.map(d => d.code)).not.toContain('FRAME_TITLE_UNHOSTED');
     const report = score(model);
     expect(report.snapshot.gates.G9.violations).toEqual([]);

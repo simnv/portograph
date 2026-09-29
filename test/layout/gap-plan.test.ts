@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { bands, bars, bundles, centre, flanks, lanes, rows } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
-import { planGap, tierGapPlan, tierGapPlans, type GapPlan, type PlanFrame, type PlanInput } from '../../src/layout/gap-plan.js';
+import { facingTips, planGap, tierGapPlan, tierGapPlans, type GapPlan, type PlanFrame, type PlanInput } from '../../src/layout/gap-plan.js';
 import { tierGaps } from '../../src/layout/gap-runs.js';
 import { placed } from './phase-two-fixture.js';
 
@@ -238,5 +238,111 @@ describe('the tier-gap plan on hand-built parts', () => {
     expect(plan.parts.find(item => item.id === '11')!.middle).toBeCloseTo(223.75, 6);
     expect(plan.order).toEqual(['11a', '10', '9', '4', '5', '6', '11b']);
     expect(plan.edges.some(item => item.above === '11b' && item.below === '9')).toBe(false);
+  });
+});
+
+// Each entry is `run|vertical|kind` (2.1): a run crosses the upper leg of a part whose upper x lies inside its span and whose row is below it, the
+// lower leg of one whose lower x lies inside and whose row is above it, and every drop inside its span. Hand-derived from the rows and x of the plan:
+// upper gap, link-5 (38.9 to 245.5, row 156.5) over link-2's upper x 140 and the drop at 174; link-11 (-29.1 to 307.5, row 145) over the same and
+// over link-5's upper x 38.9. Lower gap, links 7 and 8 (rows 338.25 and 326.75) over link-9's upper x 174 and the drop at 307.5, link-9 (row
+// 349.75) and link-10 (row 315.25) over the drop.
+const KINDS_UPPER: string[] = ['11|2|upper-leg', '11|4|drop', '11|5|upper-leg', '5|2|upper-leg', '5|4|drop'];
+const KINDS_LOWER: string[] = ['10|11.1|drop', '7|11.1|drop', '7|9|upper-leg', '8|11.1|drop', '8|9|upper-leg', '9|11.1|drop'];
+
+/** Three tiers, a transit lane for link-2 through tier 1, and planned parts in both gaps (the pipeline test `residual-parts.test.ts` reads the same text). */
+const transit = `portograph: 2
+groups:
+  top: { tier: 0 }
+  mid: { tier: 1 }
+  low: { tier: 2 }
+nodes:
+  a: { group: top, class: router, ports: [] }
+  b: { group: top, class: router, ports: [] }
+  c: { group: top, class: router, ports: [] }
+  m0: { group: mid, class: switch, ports: [] }
+  m1: { group: mid, class: switch, ports: [] }
+  m2: { group: mid, class: switch, ports: [] }
+  e: { group: low, class: server, ports: [] }
+links:
+  - [a, m0]
+  - [b, e]
+  - [c, m2]
+  - [a, m2]
+  - [b, m1]
+  - [m0, e]
+`;
+
+describe('the follow-ups of ticket 48 (ticket 51)', () => {
+  const edited = async (): Promise<LayoutModel> => structuredClone(bands(bundles(bars(centre(flanks(lanes(rows(await placed(transit))))))))) as LayoutModel;
+
+  it('anchors an obstacle that starts inside the gap and ends below it to the band below: the rows stay above it, and H holds its need', async () => {
+    const model = await edited();
+    const { gap, plan: free } = tierGapPlans(model).find(item => item.gap.above === 0)!;
+    const top = gap.low + 20;
+    // A box in the empty x between two ends, so that no leg runs into it and only the runs that pass over it feel it.
+    const ends = [...new Set(free.parts.flatMap(item => [item.upper.x, item.lower.x]))].sort((a, b) => a - b);
+    const at = ends.findIndex((x, index) => index + 1 < ends.length && ends[index + 1]! - x > 60);
+    expect(at).toBeGreaterThanOrEqual(0);
+    const middle = (ends[at]! + ends[at + 1]!) / 2;
+    model.obstacles.push({ id: 'o', owner: { kind: 'group', id: 'mid' }, layer: 'routed', bounds: { x: middle - 2, y: top, width: 4, height: gap.high - top + 30 } });
+    const plan = tierGapPlan(model, gap);
+    // Anchored to the band above (the old reading) the rows of the parts over the box would pass below its bottom. A need moves no row.
+    expect(rowsOf(plan)).toEqual(rowsOf(free));
+    // The need is measured from the band below, k + (bandTop - box top), from the rows that pass over the box: H holds the highest of them plus it.
+    const over = plan.parts.filter(item => Math.min(item.upper.x, item.lower.x) < middle && Math.max(item.upper.x, item.lower.x) > middle).flatMap(item => item.rows);
+    expect(over.length).toBeGreaterThan(0);
+    expect(plan.height).toBeGreaterThanOrEqual(Math.max(...over) - gap.low + 11.5 + (plan.bandTop - top) - 1e-9);
+    expect(plan.height).toBeGreaterThan(free.height);
+  }, 60000);
+
+  it('keeps the stems of the bands that face the gap and no others', async () => {
+    const model = await edited();
+    const [upper, lower] = tierGapPlans(model).map(item => item.gap);
+    const band = (tier: number) => model.tierBands.find(item => item.tier === tier)!.bounds!;
+    const tier0 = facingTips(model, upper!).filter(item => item.side === 'bottom');
+    expect(tier0.length).toBeGreaterThan(0);
+    // Gap 1 > 2: the bottom stems are the tier 1 nodes'; the tier 0 stems hang from a band two above and never reach it.
+    const bottoms = facingTips(model, lower!).filter(item => item.side === 'bottom');
+    expect(bottoms.length).toBeGreaterThan(0);
+    for (const item of bottoms) expect(item.anchor.y).toBeGreaterThanOrEqual(band(1).y);
+    // Gap 0 > 1: the top stems are the tier 1 nodes'; the tier 2 node's stem is not among them.
+    for (const item of facingTips(model, upper!).filter(entry => entry.side === 'top')) expect(item.anchor.y).toBeLessThanOrEqual(band(1).y + band(1).height);
+  }, 60000);
+
+  it('grows a through-lane wall by the run clearance like every other obstacle', async () => {
+    const model = await edited();
+    const { plan } = tierGapPlans(model).find(item => item.gap.above === 0)!;
+    const part = plan.parts.find(item => item.link === 'link-3')!;
+    const lo = Math.min(part.upper.x, part.lower.x);
+    const above = model.tierBands.find(item => item.tier === 0)!.bounds!, below = model.tierBands.find(item => item.tier === 1)!.bounds!;
+    const lane = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === 'link-2')!;
+    const wall = (right: number): void => {
+      lane.bounds = { x: right - 10, y: above.y + above.height - 1, width: 10, height: below.y - above.y - above.height + 2 };
+    };
+    // The wall's right edge stands 5 px short of the part's span: within the 11.5 px clearance.
+    const residual = (): string[] => tierGapPlans(model).flatMap(item => item.plan.residual.map(entry => `${entry.link}:${entry.reason}`));
+    wall(lo - 5);
+    expect(residual()).toContain('link-3:crosses-lane');
+    // 15 px short: outside it.
+    wall(lo - 15);
+    expect(residual()).not.toContain('link-3:crosses-lane');
+  }, 60000);
+
+  it('names the kind of every forced crossing of the v5-4-0 shape, not only the pair', async () => {
+    const model = await place('a-tier-gap-plan-orders-every-part');
+    const [upper, lower] = tierGapPlans(model).filter(({ plan }) => plan.order.length);
+    const kinds = (plan: GapPlan): string[] => plan.crossings.map(item => `${short(item.run)}|${short(item.vertical)}|${item.kind}`).sort();
+    expect(kinds(upper!.plan)).toEqual(KINDS_UPPER);
+    expect(kinds(lower!.plan)).toEqual(KINDS_LOWER);
+  }, 60000);
+
+  it('packs rows at the pitch it is given: P = 17.5, the bundle pitch of the old allocation, is the spec alternative', () => {
+    const at = (pitch: number): GapPlan => planGap([part('A', 0, 0, 100), part('B', 1, 100, 200), part('C', 2, 200, 0)], { ...frame(), pitch });
+    const narrow = at(11.5), wide = at(17.5);
+    // Ca, B, A, Cb: the rows after the first are one pitch apart.
+    const rowOf = (plan: GapPlan): number[] => plan.order.map(id => plan.parts.find(item => id.startsWith(item.id))!.rows[id.endsWith('b') ? 1 : 0]!);
+    expect(rowOf(narrow).slice(1).map((y, index) => y - rowOf(narrow)[index]!)).toEqual([11.5, 11.5, 11.5]);
+    expect(rowOf(wide).slice(1).map((y, index) => y - rowOf(wide)[index]!)).toEqual([17.5, 17.5, 17.5]);
+    expect(wide.height).toBeGreaterThan(narrow.height);
   });
 });

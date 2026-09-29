@@ -65,15 +65,17 @@ router stem `m = 15 px` (`bands.ts:35`).
    lower leg (an upper leg) for the within-`k` rule of Section 2.2.
 5. **Absent, one line each.** An overlay link is not routed. A stub is not drawn. A straight chord
    (ticket 34) reserves nothing and blocks nothing; this closes ticket 44. Chords are therefore
-   invisible to the plan, and a jog may land under one. Open question (S6): accept the G6 finding, or
-   treat a chord as an O5 band for drops. A bundle member, a bar
+   invisible to the plan, and a jog may land under one. (S6, decided in ticket 51: the G6 finding is accepted. A chord as an O5 band for
+   drops and jogs needs the jog to move, and the jog stands in three terms of the plan (`jogOf`, `lbOf` and the need of every run over the
+   drop), so it is not a local change. Measured on the 53 chord-bearing inputs of the goldens and the sweep, and on the NTP sheet (102 chords): one
+   chord and one planned drop within `k` of each other, NTP links 235 and 232.) A bundle member, a bar
    drop and an end that consumes a shared run keep their own rules; their geometry is an obstacle
    to the plan, and they have no part.
-6. **Residual by shape.** These stay routed, as today, and are named `TIER_GAP_PART_RESIDUAL`: a
-   part that spans two gaps without a lane (`gap-runs.ts:216`); a lateral-port link that crosses
-   the gap; a same-boundary U-turn, both stops on `low` (`gap-runs.ts:207` and `212` both fail it
-   today); a port facing away from the gap (`pieceOf`, `gap-runs.ts:278`); a span that crosses a
-   through-lane's reserved run. A gap that holds one of these is not router-free (Section 4).
+6. **Residual by shape.** These stay routed, as today, and are named `TIER_GAP_PART_RESIDUAL` with a reason (a cycle among
+   the rows is `TIER_GAP_ROW_CYCLE`): a part that spans two gaps without a lane (`spans-two-gaps`); a lateral-port link that crosses
+   the gap (`lateral-port`); a same-boundary U-turn (`u-turn`: a link with no lane whose two ports face this gap from one band; no gap
+   stands between its stops, so it is read from the ports, ticket 51); a port facing away from the gap (`faces-away`; both stops of a
+   pair that fail the up-down test, which ticket 48 labelled `u-turn`); a span that crosses a through-lane's reserved run (`crosses-lane`). A gap that holds one of these is not router-free (Section 4).
 
 ## Section 2 — The order
 
@@ -148,6 +150,8 @@ never sees.
   the row stays above it by the clearance, and the distance is measured from `bandTop`
   (Section 3). Lane boxes overhang from both bands (`tierGaps`, `gap-runs.ts:109-116`), so each is
   anchored to its own band.
+  A canton frame reaches into the gap (its margin and its title band stand outside every member box), so a canton that
+  ends at the upper band is anchored to that band, one that starts at the lower band to that one, with the group-edge margin.
 - **O6, cycles.** O1 and O2 together can form a cycle. One shape: two aligned node pairs joined by
   an X (tickets 41 and 43), where each part's upper leg stands on the other's lower x. Another:
   A 0 → 100, B 100 → 200, C 200 → 0, a pure O2 three-cycle. Rule: while the graph of O1 ∪ O2 has a
@@ -302,9 +306,9 @@ leg, x-scoped (ticket 42 proposal 3). Neither is a separate pass.
 
 No probe. **H is computed on the geometry 7f publishes** (S1): a stem nests only where the gap has the
 room, so `H` depends on the growth. `growTierGaps` iterates to a fixed point of `geometry(growth)`:
-each round reads the plan on a trial copy grown by the rounds before it (the trial is replayed
-only where the published model is replayed) and adds what that plan still asks for. The growth is
-monotone, and the rounds are capped (6). A gap that does not settle within the cap is left to the router and named
+each round reads the plan on a trial copy grown by the round before it (the trial is replayed
+only where the published model is replayed) and replaces the growth by `H − room`, the height that plan asks less the room the gap had
+before any growth (ticket 51; adding each round's ask counted a stem that nested only in a larger gap twice). The rounds are capped (6). A gap that does not settle within the cap is left to the router and named
 `TIER_GAP_PART_UNFIT` with the ask. Then the last step: move the bands by the sum, replay, warn
 (`gap-room.ts:84-97`). The 7f order stays: labels, plan and growth, labels again, corridor move. A
 corridor move after the plan changes an x; the plan is recomputed at consumption on frozen
