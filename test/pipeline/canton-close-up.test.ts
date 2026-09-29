@@ -18,13 +18,12 @@ const heldOwners = (model: LayoutModel): string[] => model.diagnostics.filter(it
 const closeUps = (model: LayoutModel) => model.diagnostics.filter(item => item.code === COLUMN_AXIS_HELD && /cannot close up/.test(item.message));
 
 /** A second pass over the finished layout moves nothing and says nothing new. */
-function expectIdempotent(model: LayoutModel, retracted = 0): void {
+function expectIdempotent(model: LayoutModel): void {
   const copy = structuredClone(model) as LayoutModel, before = stand(copy), warnings = copy.diagnostics.length;
   holdColumnAxes(copy, 0);
   closeCantons(copy);
   expect(stand(copy)).toBe(before);
-  // `retracted`: held-axis warnings the second pass may withdraw (a member that reached its feed after the warning was raised); it adds none.
-  expect(copy.diagnostics.length).toBe(warnings - retracted);
+  expect(copy.diagnostics.length).toBe(warnings);
 }
 
 // Ranked-groups ticket 65: the cantons of a merged step close up to a band gap. Each assertion reads the model after the whole layout.
@@ -51,9 +50,7 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
     // Measured before the rule: 86.4 and 100 px on a canvas 1372.7 px wide.
     for (const [i, gap] of gaps(model).entries()) expect(Math.abs(gap - bandGap(model)), `gap ${i}`).toBeLessThan(1e-6);
     expect(model.canvas!.width).toBeLessThan(1372.7 - 20);
-    // Ticket 75: centring settles instead of burning the shared budget, so 7f replays centre again and one member reaches its feed
-    // after the axis warning for it was raised. The second pass withdraws that stale warning and moves nothing.
-    expectIdempotent(model, 1);
+    expectIdempotent(model);
   }, 120000);
 
   // Review of ticket 65: the fit keeps the pins and the units that reach their feed, and the second pass moves nothing.

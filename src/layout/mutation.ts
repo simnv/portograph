@@ -25,6 +25,7 @@ import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
 import { alignLinkedGroupGrid, closeCantonsAndSettle, type LinkLabelShortfall, produceGroupLabelBands, replanGroupLabels, reserveLinkLabelRoom, validateGroupLabelBands } from './bands.js';
+import { holdColumnAxes } from './columns.js';
 import { growTierGaps } from './gap-room.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { tierGapPlans } from './gap-plan.js';
@@ -754,6 +755,15 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
         alignLinkedGroupGrid(draft);
         replanGroupLabels(draft);
       }
+    }
+    // The held-axis warnings say where a column stands when they are raised; the replays above move columns after that (a centring replay
+    // that has budget again, ticket 75). A probe pass over a copy of the settled columns says what they say now. When the probe moves
+    // nothing, its warnings replace ours, which withdraws a warning for a column that reaches its feed. When it moves a column, the
+    // model is left as it is: a pull here is ticket 67's, which measured a worse layout.
+    const probe = clone(draft), stood = JSON.stringify(Object.values(probe.groups).map(group => group.bounds));
+    holdColumnAxes(probe, 0);
+    if (JSON.stringify(Object.values(probe.groups).map(group => group.bounds)) === stood) {
+      draft.diagnostics = [...draft.diagnostics.filter(item => item.code !== 'COLUMN_AXIS_HELD'), ...probe.diagnostics.filter(item => item.code === 'COLUMN_AXIS_HELD')];
     }
     if (!closed && !draft.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE' && item.message.startsWith('The cantons'))) draft.diagnostics.push({
       stage: 'placement', severity: 'warning', code: 'PLACEMENT_NON_CONVERGENCE',

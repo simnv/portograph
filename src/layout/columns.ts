@@ -972,6 +972,22 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
   }
   const refused = shifts.size > 0 && (!allowed || blocked);
   if (refused) for (const item of standing) if (shifts.has(item.unit.groups[0]!) && !held.has(item.unit)) held.set(item.unit, blocked ? 'segment' : 'lane');
+  // A column its siblings stop short of its feed may be held by a straight overlay link as well: the move that would reach the feed alone
+  // bends the link. The reason that names the link is the one that stays true if the sibling moves away (ticket 75: a centring that reaches
+  // its fixed point leaves the siblings closer, so the plan no longer tries the move the link refuses).
+  for (const item of standing) {
+    if (!item.unit.frame || held.has(item.unit) || !wanting.has(item.unit) || shifts.has(item.unit.groups[0]!)) continue;
+    const dx = item.x < item.from - PLACEMENT_EPS ? item.from - item.x : item.x > item.to + PLACEMENT_EPS ? item.to - item.x : 0;
+    if (dx === 0) continue;
+    const straight = straightOverlays(model), moved = new Map(item.unit.groups.map(group => [group, dx] as const));
+    const undo = exactUndo(model, moved.keys());
+    for (const [group, by] of moved) moveGroup(model, group, by, 0);
+    const nodes = [...moved.keys()].flatMap(group => group.nodes);
+    rebuildNodeGeometry(model, nodes, 'current');
+    const bent = straightOverlays(model, new Set(straight.map(({ id }) => id))).length < straight.length;
+    undo(); rebuildNodeGeometry(model, nodes, 'current');
+    if (bent) held.set(item.unit, 'segment');
+  }
   reportHeld(model, tier.filter(item => inScope(item) && !flush.has(item)), feeds, held, columnSlack, scope);
   if (scope === undefined && standing.some(item => isCanton(item.unit))) {
     const cantons = standing.filter(item => isCanton(item.unit)).map(item => item.unit.id);

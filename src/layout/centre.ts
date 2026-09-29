@@ -6,7 +6,7 @@ import { cellReach } from './frames.js';
 import { besideWalls, frameColumns, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
 import { findPort } from './row-paths.js';
 import { portId, bandGap, SKELETON_SPACING } from './skeleton-graph.js';
-import { crosses } from './overlay-paths.js';
+import { crosses, overlayBlockers, straightChord } from './overlay-paths.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { packRowsOf } from './grid.js';
 import { rowGap } from './sides-two.js';
@@ -378,7 +378,28 @@ function groupFeeds(model: LayoutModel, context: CentreContext, tier: number, li
  * moved it off its feed — so a check can excuse those and no others. Shared by the producer pass and
  * by the publication/restore check, so both read one definition.
  */
+const CHORD_STAGES = ['bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'];
+/** The overlay links that draw one straight segment in the model as it stands. */
+function straightOverlays(model: LayoutModel): Set<string> {
+  const blockers = overlayBlockers(model);
+  return new Set(model.links.filter(link => link.layer === 'overlay' && straightChord(model, link, blockers) !== undefined).map(link => link.id));
+}
 function centreGroupStep(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>): { unresolved: Set<string>; group: LayoutGroup } {
+  // From 7e on, an overlay link that draws one straight segment keeps the space placement reserved for it. A step that would put
+  // a body or a pill on one is declined as a whole, like a step that solves nothing: the group stays where it stood (ticket 75).
+  if (!CHORD_STAGES.includes(model.stage) || !model.links.some(link => link.layer === 'overlay')) return centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail);
+  const group = model.groups[id]!;
+  const held = straightOverlays(model);
+  const snapshot = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
+  const result = centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail);
+  const now = straightOverlays(model);
+  if ([...held].every(link => now.has(link))) return result;
+  model.groups[id] = snapshot.group;
+  for (const node of snapshot.nodes) model.nodes[node.id] = node;
+  packClear(model, context, tier, snapshot.group, previous);
+  return { unresolved: new Set(groupFeeds(model, context, tier, list, id, false).wanted.keys()), group: snapshot.group };
+}
+function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>): { unresolved: Set<string>; group: LayoutGroup } {
   const group = model.groups[id]!, order = context.groupOrder.get(tier)!;
   const { own, wanted, yielded, conflicts } = groupFeeds(model, context, tier, list, id, warn);
   const unresolved = new Set<string>(conflicts);
