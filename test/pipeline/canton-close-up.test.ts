@@ -1,0 +1,110 @@
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+import type { LayoutModel, Rect } from '../../src/index.js';
+import { layout, parse, score } from '../../src/index.js';
+import { COLUMN_AXIS_HELD, COLUMN_SLACK, closeCantons, holdColumnAxes } from '../../src/layout/columns.js';
+import { bandGap } from '../../src/layout/skeleton-graph.js';
+import { createAttempt } from '../layout/phase-two-fixture.js';
+import { createAvoidAttempt } from '../route/fixture.js';
+
+const run = (name: string): Promise<LayoutModel> => layout(parse(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8')),
+  { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const right = (box: Rect): number => box.x + box.width;
+const cantonBoxes = (model: LayoutModel): Rect[] => model.frames!.filter(frame => frame.kind === 'canton').map(frame => frame.box).sort((a, b) => a.x - b.x);
+const gaps = (model: LayoutModel): number[] => cantonBoxes(model).slice(1).map((box, i) => box.x - right(cantonBoxes(model)[i]!));
+const stand = (model: LayoutModel): string => JSON.stringify(Object.values(model.groups).map(group => [group.id, group.bounds?.x]));
+const heldOwners = (model: LayoutModel): string[] => model.diagnostics.filter(item => item.code === COLUMN_AXIS_HELD)
+  .flatMap(item => (item.owners ?? []).flatMap(owner => 'id' in owner ? [owner.id] : []));
+const closeUps = (model: LayoutModel) => model.diagnostics.filter(item => item.code === COLUMN_AXIS_HELD && /cannot close up/.test(item.message));
+
+/** A second pass over the finished layout moves nothing and says nothing new. */
+function expectIdempotent(model: LayoutModel): void {
+  const copy = structuredClone(model) as LayoutModel, before = stand(copy), warnings = copy.diagnostics.length;
+  holdColumnAxes(copy, 0);
+  closeCantons(copy);
+  expect(stand(copy)).toBe(before);
+  expect(copy.diagnostics.length).toBe(warnings);
+}
+
+// Ranked-groups ticket 65: the cantons of a merged step close up to a band gap. Each assertion reads the model after the whole layout.
+describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
+  it('three cantons stand a band gap apart when the anchor sub-tier stands inside their span', async () => {
+    const model = await run('three-canton-groups-close-up-to-a-band-gap');
+    expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
+    expect(cantonBoxes(model)).toHaveLength(3);
+    // Measured before the rule: 100 and 148 px on a canvas 2049.3 px wide.
+    for (const [i, gap] of gaps(model).entries()) expect(Math.abs(gap - bandGap(model)), `gap ${i}`).toBeLessThan(1e-6);
+    // No tier-0 column warns for an overlay link to a canton, and no close-up is refused.
+    expect(heldOwners(model).filter(id => id.startsWith('top-'))).toEqual([]);
+    expect(closeUps(model)).toEqual([]);
+    expect(model.canvas!.width).toBeLessThan(2049.3 - 100);
+    // The block keeps its centre (the partner mean is not a stable target, ticket "Comments"); the tier packed against the canton
+    // step, the MPLS row, stands centred on it within one column slack (measured 1.5 px).
+    const block = (cantonBoxes(model)[0]!.x + right(cantonBoxes(model)[2]!)) / 2, mpls = model.groups['mpls']!.bounds!;
+    expect(Math.abs(mpls.x + mpls.width / 2 - block)).toBeLessThan(COLUMN_SLACK);
+    expectIdempotent(model);
+  }, 120000);
+
+  it('three continents stand a band gap apart, the equality of the earlier lower bound', async () => {
+    const model = await run('three-continents');
+    // Measured before the rule: 86.4 and 100 px on a canvas 1372.7 px wide.
+    for (const [i, gap] of gaps(model).entries()) expect(Math.abs(gap - bandGap(model)), `gap ${i}`).toBeLessThan(1e-6);
+    expect(model.canvas!.width).toBeLessThan(1372.7 - 20);
+    expectIdempotent(model);
+  }, 120000);
+
+  // Review of ticket 65: the fit keeps the pins and the units that reach their feed, and the second pass moves nothing.
+  it('cantons held by an overlay link keep their pin and the gates, and a second pass moves nothing', async () => {
+    const model = await run('overlay-links-reorder-two-canton-groups');
+    expect(score(model).snapshot.gates.G6.passed).toBe(true);
+    expectIdempotent(model);
+  }, 120000);
+
+  it('a foreign unit beside a canton keeps the room the rows rule reserved, and a second pass moves nothing', async () => {
+    const model = await run('a-foreign-unit-between-two-canton-groups');
+    expect(score(model).snapshot.gates.G6.passed).toBe(true);
+    expectIdempotent(model);
+    expect(model.diagnostics.filter(item => item.code === 'PLACEMENT_NON_CONVERGENCE' && item.message.startsWith('The cantons'))).toEqual([]);
+  }, 120000);
+
+  // The refused close-up moves the nodes and puts them back: labels in node order and the geometry exact, or publication throws.
+  it('a refused close-up leaves the node labels and the geometry whole', async () => {
+    const model = await run('a-refused-close-up-keeps-the-node-labels-in-order');
+    expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
+    expect(closeUps(model).length).toBeGreaterThan(0);
+    expect(closeUps(model)[0]!.message).toContain('a straight overlay link would be bent');
+    const order = model.labels.filter(label => label.owner.kind === 'node' && label.role === 'node').map(label => (label.owner as { id: string }).id);
+    expect(order).toEqual(Object.keys(model.nodes).filter(id => order.includes(id)));
+    expectIdempotent(model);
+  }, 120000);
+
+  // Review 2: the close-up sites never pull a run that stands packed (one canton, or cantons already a band gap apart).
+  it('a second pass returns false and the close-up says nothing on packed runs', async () => {
+    for (const name of ['a-canton-band-holds-the-rows-off', 'a-canton-group-swap-is-refused-for-routed-crossings']) {
+      const model = await run(name);
+      // `holdColumnAxes` also pulls a column toward its feed at its own points (7.8 px on the first fixture on the finished layout, as on main);
+      // the close-up sites are `closeCantons`, and they leave a packed run alone.
+      const copy = structuredClone(model) as LayoutModel, before = stand(copy);
+      expect(closeCantons(copy), name).toBe(false);
+      expect(stand(copy), name).toBe(before);
+    }
+    for (const name of ['three-canton-groups-close-up-to-a-band-gap', 'a-canton-group-swap-is-refused-for-routed-crossings', 'a-foreign-unit-with-routed-links-to-two-canton-groups']) {
+      const model = await run(name);
+      expect(model.diagnostics.filter(item => item.code === 'PLACEMENT_NON_CONVERGENCE' && item.message.startsWith('The cantons')), name).toEqual([]);
+    }
+  }, 120000);
+
+  it('a held lane between two cantons keeps the run where it stands and the warning names the canton', async () => {
+    const model = await run('a-held-lane-between-two-cantons-refuses-the-close-up');
+    const [west, east] = cantonBoxes(model) as [Rect, Rect];
+    expect(model.lanes.some(lane => lane.x > right(west) && lane.x < east.x)).toBe(true);
+    // The run stays: the spacing the rows rule left (a band gap and two column slacks) is still there.
+    expect(east.x - right(west)).toBeGreaterThan(bandGap(model) + 1);
+    const held = closeUps(model);
+    expect(held).toHaveLength(1);
+    expect(held[0]!.owners).toEqual([{ kind: 'group', id: 'west' }]);
+    expect(held[0]!.message).toContain('Canton west');
+    expect(held[0]!.message).toContain('stands between two cantons');
+    expectIdempotent(model);
+  }, 120000);
+});

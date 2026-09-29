@@ -21,7 +21,7 @@ describe('three continents (canton-groups ticket 58, fixture 10)', () => {
     for (const canton of cantons) expect(canton.kind).toBe('canton');
     const ordered = [...cantons].sort((left, next) => left.box.x - next.box.x);
     for (let i = 1; i < ordered.length; i++) {
-      expect(ordered[i]!.box.x - right(ordered[i - 1]!.box), `gap ${i}`).toBeGreaterThanOrEqual(bandGap(model) - 1e-6);
+      expect(Math.abs(ordered[i]!.box.x - right(ordered[i - 1]!.box) - bandGap(model)), `gap ${i}`).toBeLessThan(1e-6);
     }
     for (const canton of ['a', 'b', 'c']) {
       for (const tier of [3, 4]) {

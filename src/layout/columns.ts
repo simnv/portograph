@@ -473,10 +473,170 @@ export function holdColumnAxes(model: LayoutModel, slack = COLUMN_SLACK): boolea
   if (model.document.frames === undefined) return false;
   const tiers = columnTiers(model);
   let moved = false;
+  // The close-up of a canton step with an authority is part of the plan of `pullTier`. The anchor step has no feed, so `closeUp`
+  // packs it alone; it comes first in the sweep, before the tiers that read it.
   for (const { index, authority } of sweepSteps(model, tiers)) {
-    if (authority !== undefined && tiers[index]!.some(unit => unit.frame)) moved = pullTier(model, tiers, index, feedReader(model, tiers, index, authority), slack) || moved;
+    if (authority === undefined) moved = closeUp(model, tiers, index, slack) || moved;
+    else if (tiers[index]!.some(unit => unit.frame)) moved = pullTier(model, tiers, index, feedReader(model, tiers, index, authority), slack) || moved;
   }
   return holdMemberWalls(model) || moved;
+}
+
+/**
+ * The close-up alone, in 7f (slack 0), for every merged step that holds a canton: the anchor step by `closeUp`, a step with an
+ * authority by the plan of `pullTier` (which closes its run and pulls it to its feeds). The centring replays after a push may widen a
+ * canton in place, so stage 7f calls this again before it plans the labels and after the tier gaps grow. It moves groups in x and
+ * nothing else: the caller replays the region producers, `syncBands` and `replanGroupLabels` after a move. Returns whether a canton moved.
+ */
+export function closeCantons(model: LayoutModel): boolean {
+  if (model.document.frames === undefined) return false;
+  const tiers = columnTiers(model), frames = model.document.frames;
+  let moved = false;
+  for (const { index, authority } of sweepSteps(model, tiers)) {
+    if (!tiers[index]!.some(unit => unit.frame && frames[unit.id]?.kind === 'canton')) continue;
+    if (authority === undefined) moved = closeUp(model, tiers, index, 0) || moved;
+    // A run that stands packed (or is one unit) is not pulled by the close-up: the pull toward the feeds is `holdColumnAxes`' own, at its own points.
+    else if (runApart(model, tiers[index]!, 0)) moved = pullTier(model, tiers, index, feedReader(model, tiers, index, authority), 0) || moved;
+  }
+  return moved;
+}
+
+/**
+ * The cantons of the anchor step close up to a band gap (ranked-groups ticket 65). The units of a step that holds a canton (the
+ * cantons and the foreign units on their tiers) are one run, kept in the order they stand and packed again a band gap apart. The
+ * pack of `packStep` sets the spacing once, at skeleton widths; every later pass narrows a canton in place or pushes one right, and
+ * nothing moved a canton toward its sibling. The run is packed again when any gap of it differs from the spacing (`runSpacing`).
+ *
+ * The anchor step has no feed, so the block keeps the centre it stands at. (Ticket 65 proposed the mean x of the overlay partners of
+ * the units, the key of `orderFramesByOverlay`. Measured, it does not settle: the tiers above the anchor step stand over the routed
+ * feeds of the cantons, so every move of the block moves them by as much, and the block chases a partner mean that runs from it by
+ * the same 340 px at every replay. Ticket review: a one-time step to the partner mean translated the whole diagram, offset 348 to
+ * 340.) A step with an authority is closed by `pullTier`, inside its plan, so that its pins and its feed ranges are kept.
+ * The plan is refused as a whole, and the run stays, when a reserved lane would end on the other side of a unit it holds, a
+ * straight overlay link would be bent, or a held lane or a foreign unit stands between two cantons of the run; a refusal warns
+ * `COLUMN_AXIS_HELD` once for the step, naming the canton.
+ *
+ * Idempotent: a run whose gaps equal the spacing is not read again. Returns whether the run moved.
+ */
+function closeUp(model: LayoutModel, tiers: Unit[][], index: number, slack: number): boolean {
+  const tier = tiers[index]!, frames = model.document.frames!;
+  const isCanton = (unit: Unit): boolean => unit.frame && frames[unit.id]?.kind === 'canton';
+  if (!tier.some(isCanton) || tier.some(unit => !unit.frame && groupShape(model, unit.id) !== 'row')) return false;
+  const derived = deriveFrames(model);
+  if (derived === undefined) return false;
+  const box = new Map(derived.map(frame => [frame.id, frame.box]));
+  const at = (unit: Unit): Rect => unit.frame ? box.get(unit.id)! : unit.groups[0]!.bounds!;
+  const run = [...tier].sort((a, b) => at(a).x - at(b).x || compareId(a.id, b.id));
+  const offsets = runSpacing(model, run, at, slack);
+  if (!run.some((unit, i) => i > 0 && Math.abs(at(unit).x - at(run[i - 1]!).x - (offsets[i]! - offsets[i - 1]!)) > PLACEMENT_EPS)) return false;
+  const last = at(run[run.length - 1]!), extent = offsets[run.length - 1]! + last.width;
+  const base = (at(run[0]!).x + last.x + last.width) / 2 - extent / 2;
+  const shifts = new Map<LayoutGroup, number>();
+  for (const [i, unit] of run.entries()) {
+    const dx = base + offsets[i]! - at(unit).x;
+    if (Math.abs(dx) > PLACEMENT_EPS) for (const group of unit.groups) shifts.set(group, dx);
+  }
+  if (!shifts.size) return false;
+  const named = run.find(unit => isCanton(unit) && unit.groups.some(group => shifts.has(group))) ?? run.find(isCanton)!;
+  let cause = stepBlock(model, tier, run, at, isCanton);
+  const proposed = [...shifts].map(([group, dx]) => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } }));
+  if (cause === undefined && !laneSidesHold(model, proposed)) cause = 'a reserved lane it would cross holds it';
+  if (cause === undefined) {
+    const straight = straightOverlays(model), undo = exactUndo(model, shifts.keys());
+    for (const [group, dx] of shifts) moveGroup(model, group, dx, 0);
+    const settle = (): void => rebuildNodeGeometry(model, [...shifts.keys()].flatMap(group => group.nodes), 'current');
+    settle();
+    // A link that stood as one segment and is not one after the move has been bent by it. In 7f (slack 0) the node bodies, read
+    // exactly, decide; a frame box counts only while the rows rule can still slide cells inside it.
+    // The count reading (ADR-0019: the straight overlay links do not fall): a block move swaps chords, and one that bends while another
+    // straightens is no loss. `pullTier` reads each link, as its moves are small (decisions-log Q102).
+    const segments = straightOverlays(model);
+    const after = new Map(deriveFrames(model)?.map(frame => [frame.id, frame.box]));
+    const bent = segments.length < straight.length || (slack > 0 && segments.some(({ ends, from, to }) => tier.some(unit => {
+      const was = unit.frame ? box.get(unit.id) : undefined, now = unit.frame ? after.get(unit.id) : undefined;
+      return was !== undefined && now !== undefined && shifts.has(unit.groups[0]!) && !unit.groups.some(group => ends.has(group.id))
+        && crosses(from, to, now) && !crosses(from, to, was);
+    })));
+    if (bent) { undo(); settle(); cause = 'a straight overlay link would be bent'; }
+  }
+  warnCloseUp(model, run.filter(isCanton).map(unit => unit.id), named.id, cause);
+  return cause === undefined;
+}
+
+/**
+ * The offset of each unit of a sorted run from the first when the run stands packed, and the one rule of the spacing that `pullTier`,
+ * `closeUp` and `columnShifts` agree on: a band gap, plus the slack of each frame that faces the gap; a frame beside a plain group
+ * always keeps `COLUMN_SLACK` on its side, as the rows rule reserves it, because the rows rule replays after 7f moves and would take
+ * back what a close-up removed.
+ */
+function runSpacing(model: LayoutModel, run: readonly Unit[], at: (unit: Unit) => Rect, slack: number): number[] {
+  const gap = bandGap(model), offsets: number[] = [];
+  let sum = 0;
+  for (const [i, unit] of run.entries()) {
+    offsets.push(sum);
+    const next = run[i + 1];
+    if (next !== undefined) sum += at(unit).width + gap + (unit.frame && next.frame ? 2 * slack : unit.frame || next.frame ? COLUMN_SLACK : 0);
+  }
+  return offsets;
+}
+
+/** Whether the units of a step stand off the spacing of `runSpacing` now: some gap of the run, in the order it stands, is not the packed one. */
+function runApart(model: LayoutModel, tier: readonly Unit[], slack: number): boolean {
+  const derived = deriveFrames(model);
+  if (derived === undefined) return false;
+  const box = new Map(derived.map(frame => [frame.id, frame.box]));
+  const at = (unit: Unit): Rect => unit.frame ? box.get(unit.id)! : unit.groups[0]!.bounds!;
+  const run = [...tier].sort((a, b) => at(a).x - at(b).x || compareId(a.id, b.id)), offsets = runSpacing(model, run, at, slack);
+  return run.some((unit, i) => i > 0 && Math.abs(at(unit).x - at(run[i - 1]!).x - (offsets[i]! - offsets[i - 1]!)) > PLACEMENT_EPS);
+}
+
+/** Why a run of cantons may not be closed at all: a foreign unit, or a held lane, stands between two cantons of it. */
+function stepBlock(model: LayoutModel, tier: readonly Unit[], run: readonly Unit[], at: (unit: Unit) => Rect, isCanton: (unit: Unit) => boolean): string | undefined {
+  const first = run.findIndex(isCanton), last = run.length - 1 - [...run].reverse().findIndex(isCanton);
+  const low = Math.min(...tier.map(unit => unit.low)), high = Math.max(...tier.map(unit => unit.high));
+  if (run.slice(first + 1, last).some(unit => !isCanton(unit))) return 'a foreign unit stands between two cantons of the run';
+  const lane = model.lanes.some(item => item.tier >= low && item.tier <= high
+    && run.slice(first, last).some((unit, i) => item.x > at(unit).x + at(unit).width - PLACEMENT_EPS && item.x < at(run[first + i + 1]!).x + PLACEMENT_EPS));
+  return lane ? 'a reserved lane stands between two cantons of the run' : undefined;
+}
+
+/**
+ * The way back for a move that may be refused: the boxes of the groups, their nodes and the anchors of their ports as they stand, put
+ * back exactly. A move by `dx` and back by `-dx` leaves float noise, and publication re-derives regions and label bands from the geometry.
+ */
+function exactUndo(model: LayoutModel, groups: Iterable<LayoutGroup>): () => void {
+  const saved = [...groups].map(group => ({ group, bounds: { ...group.bounds! }, nodes: group.nodes.map(id => ({ node: model.nodes[id]!, bounds: { ...model.nodes[id]!.bounds! },
+    anchors: model.nodes[id]!.ports.map(port => port.anchor && { ...port.anchor }) })) }));
+  return () => {
+    for (const item of saved) {
+      Object.assign(item.group.bounds!, item.bounds);
+      for (const entry of item.nodes) {
+        Object.assign(entry.node.bounds!, entry.bounds);
+        entry.node.ports.forEach((port, i) => { if (port.anchor && entry.anchors[i]) Object.assign(port.anchor, entry.anchors[i]); });
+      }
+    }
+  };
+}
+
+/** Says once for a step, naming a canton, why its run stays; an earlier warning of the step is dropped first. */
+function warnCloseUp(model: LayoutModel, cantons: readonly string[], named: string, cause: string | undefined): void {
+  model.diagnostics = model.diagnostics.filter(item => !(item.code === COLUMN_AXIS_HELD && cantons.some(id => item.message.startsWith(`Canton ${id} cannot close up`))));
+  if (cause === undefined) return;
+  model.diagnostics.push({ stage: 'placement', severity: 'warning', code: COLUMN_AXIS_HELD, owners: [{ kind: 'group', id: named }],
+    message: `Canton ${named} cannot close up to a band gap from its siblings: ${cause}, so the run of cantons stays where it stands.` });
+}
+
+/**
+ * The base `c` of a run kept packed that costs the least squared distance outside the spans `[low, high]` (a unit is content
+ * when `c` lies in its span): the point of the content set nearest to `keep` when the spans meet, the one minimum otherwise.
+ */
+function leastJog(spans: readonly { low: number; high: number }[], keep: number): number {
+  const lows = Math.max(...spans.map(span => span.low)), highs = Math.min(...spans.map(span => span.high));
+  if (lows <= highs + PLACEMENT_EPS) return Math.min(Math.max(keep, lows), Math.max(lows, highs));
+  let low = Math.min(...spans.map(span => span.low)), high = Math.max(...spans.map(span => span.high));
+  const slope = (c: number): number => spans.reduce((sum, span) => sum + (c < span.low ? c - span.low : c > span.high ? c - span.high : 0), 0);
+  for (let round = 0; round < 100; round++) { const mid = (low + high) / 2; if (slope(mid) < 0) low = mid; else high = mid; }
+  return (low + high) / 2;
 }
 
 /**
@@ -716,36 +876,92 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
     const reaching = new Set(standing.filter(item => wanting.has(item.unit) && item.from <= item.x + PLACEMENT_EPS && item.to >= item.x - PLACEMENT_EPS).map(item => item.unit));
     lefts = plan(pinned, reaching);
   }
-  const shifts = new Map<LayoutGroup, number>();
-  for (const [i, item] of standing.entries()) {
-    const dx = lefts[i]! - item.x;
-    if (Math.abs(dx) > PLACEMENT_EPS) for (const group of item.unit.groups) shifts.set(group, dx);
+  const isCanton = (unit: Unit): boolean => unit.frame && model.document.frames?.[unit.id]?.kind === 'canton';
+  /**
+   * The close-up of the run (ranked-groups ticket 65), part of this plan: the plan's own lefts with the run packed at the spacing of
+   * `runSpacing`. A pinned unit stays where it stands, so it fixes the base of the run; a unit that reaches its feed is not pushed off
+   * it, and none is pushed farther off its feed than the plan left it. With no pin the base is the least jog to the feed ranges,
+   * nearest the centre the plan gave the run. A run that cannot close says why (`cause`), and the plan stands as it is.
+   */
+  const closeRun = (planned: number[]): { lefts?: number[]; cause?: string; spread?: boolean } => {
+    if (scope !== undefined || !standing.some(item => isCanton(item.unit))) return {};
+    const run = standing.map(item => item.unit), rect = (unit: Unit): Rect => unit.frame ? box.get(unit.id)! : unit.groups[0]!.bounds!;
+    const offset = runSpacing(model, run, rect, columnSlack);
+    const apart = (lefts: readonly number[]): boolean => lefts.some((left, i) => i > 0 && Math.abs(left - lefts[i - 1]! - (offset[i]! - offset[i - 1]!)) > PLACEMENT_EPS);
+    if (!apart(standing.map(item => item.x))) return {};
+    const blockedBy = stepBlock(model, tier, run, rect, isCanton);
+    if (blockedBy !== undefined) return { cause: blockedBy };
+    if (!apart(planned)) return { spread: true };
+    const pins = standing.flatMap((item, i) => pinned.has(item.unit) ? [item.x - offset[i]!] : []);
+    const lastItem = standing[standing.length - 1]!;
+    const keep = (planned[0]! + planned[planned.length - 1]! + lastItem.width) / 2 - (offset[offset.length - 1]! + lastItem.width) / 2;
+    let base = keep;
+    if (pins.length && Math.max(...pins) - Math.min(...pins) <= PLACEMENT_EPS) base = pins[0]!;
+    else {
+      // Pins that stand apart cannot all stay: they count as points, and the run stands where it costs the least distance from them
+      // and from the feed ranges. The lane and the straight-link guards of the attempt still refuse the move.
+      const spans = standing.flatMap((item, i) => wanting.has(item.unit) ? [{ low: item.from - offset[i]!, high: item.to - offset[i]! }]
+        : pinned.has(item.unit) ? [{ low: item.x - offset[i]!, high: item.x - offset[i]! }] : []);
+      if (spans.length) base = leastJog(spans, keep);
+    }
+    const target = offset.map(value => base + value);
+    const off = (item: typeof standing[number], at: number): number => Math.max(0, item.from - at, at - item.to);
+    if (standing.some((item, i) => wanting.has(item.unit) && off(item, target[i]!) > off(item, planned[i]!) + 0.5)) return { cause: 'a feed a column reaches holds it' };
+    return { lefts: target };
+  };
+  /** Moves the units to `target` unless a lane or a straight overlay link forbids it; the move is undone when it is refused. */
+  const attempt = (target: number[], withBoxes: boolean, byCount = false): { shifts: Map<LayoutGroup, number>; allowed: boolean; blocked: boolean; bent: boolean } => {
+    const shifts = new Map<LayoutGroup, number>();
+    for (const [i, item] of standing.entries()) {
+      const dx = target[i]! - item.x;
+      if (Math.abs(dx) > PLACEMENT_EPS) for (const group of item.unit.groups) shifts.set(group, dx);
+    }
+    const allowed = shifts.size > 0 && laneSidesHold(model, [...shifts].map(([group, dx]) => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } })));
+    // A move must not put a frame into the way of an overlay link that is one straight segment: the cells slide
+    // inside the box later, so the box is what the segment must clear, and the link would be routed round the
+    // cells. The plan is refused as a whole, as for a lane, and the columns stay where they stand.
+    const straight = allowed ? straightOverlays(model) : [];
+    const before = new Map(deriveFrames(model)?.map(frame => [frame.id, frame.box]));
+    // `moveGroup` carries anchors but not pill bounds, and the straightness below reads pills: the shifted
+    // groups' node geometry is rebuilt before the reading, and again on rollback (ticket 17 review).
+    const settle = (): void => rebuildNodeGeometry(model, [...shifts.keys()].flatMap(group => group.nodes), 'current');
+    const undo = exactUndo(model, shifts.keys());
+    if (allowed) { for (const [group, dx] of shifts) moveGroup(model, group, dx, 0); settle(); }
+    const after = new Map(deriveFrames(model)?.map(frame => [frame.id, frame.box]));
+    // The ends are read after the move: a frame that ends a link takes its own ports with it.
+    const segments = straightOverlays(model, byCount ? undefined : new Set(straight.map(({ id }) => id)));
+    // A link that stood as one segment and is not one after the move has been bent by it: a node body or a pill
+    // now stands in its way. `segments` lists only the links that are still straight, so the test is a count.
+    const bent = segments.length < straight.length;
+    const blocked = bent || (withBoxes && segments.some(({ ends, from, to }) => standing.some(item => {
+      const was = item.unit.frame ? before.get(item.unit.id) : undefined, now = item.unit.frame ? after.get(item.unit.id) : undefined;
+      return was !== undefined && now !== undefined && shifts.has(item.unit.groups[0]!) && !item.unit.groups.some(group => ends.has(group.id))
+        && crosses(from, to, now) && !crosses(from, to, was);
+    })));
+    if (blocked) { undo(); settle(); }
+    return { shifts, allowed, blocked, bent };
+  };
+  const closing = closeRun(lefts);
+  let result = closing.lefts === undefined ? undefined : attempt(closing.lefts, requestedSlack > 0, true);
+  let cause = closing.cause;
+  // In 7f (slack 0) the frame boxes do not slide, so the node bodies, read exactly, decide; the close-up is refused as the plan is.
+  if (result !== undefined && result.shifts.size > 0 && (!result.allowed || result.blocked)) {
+    cause = result.blocked ? 'a straight overlay link would be bent' : 'a reserved lane it would cross holds it';
+    result = undefined;
   }
-  const allowed = shifts.size > 0 && laneSidesHold(model, [...shifts].map(([group, dx]) => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } })));
-  // A move must not put a frame into the way of an overlay link that is one straight segment: the cells slide
-  // inside the box later, so the box is what the segment must clear, and the link would be routed round the
-  // cells. The plan is refused as a whole, as for a lane, and the columns stay where they stand.
-  const straight = allowed ? straightOverlays(model) : [];
-  const before = new Map(deriveFrames(model)?.map(frame => [frame.id, frame.box]));
-  // `moveGroup` carries anchors but not pill bounds, and the straightness below reads pills: the shifted
-  // groups' node geometry is rebuilt before the reading, and again on rollback (ticket 17 review).
-  const settle = (): void => rebuildNodeGeometry(model, [...shifts.keys()].flatMap(group => group.nodes), 'current');
-  if (allowed) { for (const [group, dx] of shifts) moveGroup(model, group, dx, 0); settle(); }
-  const after = new Map(deriveFrames(model)?.map(frame => [frame.id, frame.box]));
-  // The ends are read after the move: a frame that ends a link takes its own ports with it.
-  const segments = straightOverlays(model, new Set(straight.map(({ id }) => id)));
-  // A link that stood as one segment and is not one after the move has been bent by it: a node body or a pill
-  // now stands in its way. `segments` lists only the links that are still straight, so the test is a count.
-  const bent = segments.length < straight.length;
-  const blocked = bent || segments.some(({ ends, from, to }) => standing.some(item => {
-    const was = item.unit.frame ? before.get(item.unit.id) : undefined, now = item.unit.frame ? after.get(item.unit.id) : undefined;
-    return was !== undefined && now !== undefined && shifts.has(item.unit.groups[0]!) && !item.unit.groups.some(group => ends.has(group.id))
-      && crosses(from, to, now) && !crosses(from, to, was);
-  }));
-  if (blocked) { for (const [group, dx] of shifts) moveGroup(model, group, -dx, 0); settle(); }
+  const { shifts, allowed, blocked } = result ?? attempt(lefts, true);
+  // The plan itself was refused while the run stands apart: the run stays, and the warning says why.
+  if (cause === undefined && closing.cause === undefined && shifts.size > 0 && (!allowed || blocked) && closing.spread === true) {
+    cause = blocked ? 'a straight overlay link would be bent' : 'a reserved lane it would cross holds it';
+  }
   const refused = shifts.size > 0 && (!allowed || blocked);
   if (refused) for (const item of standing) if (shifts.has(item.unit.groups[0]!) && !held.has(item.unit)) held.set(item.unit, blocked ? 'segment' : 'lane');
   reportHeld(model, tier.filter(item => inScope(item) && !flush.has(item)), feeds, held, columnSlack, scope);
+  if (scope === undefined && standing.some(item => isCanton(item.unit))) {
+    const cantons = standing.filter(item => isCanton(item.unit)).map(item => item.unit.id);
+    const named = standing.find(item => isCanton(item.unit) && item.unit.groups.some(group => shifts.has(group)))?.unit.id ?? cantons[0]!;
+    warnCloseUp(model, cantons, named, cause);
+  }
   return allowed && !blocked;
 }
 

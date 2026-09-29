@@ -215,6 +215,13 @@ held-lane parity, idempotence of the passes. What did not:
 6. **Member movers in `placeOverlayFree`.** `sweep` reads a column as a wall outside which a mover stands, so a member could never be
    placed inside its canton by it; `sweepMembers` places it between the other members of the tier and the canton box.
 
+**As built (ticket 65): the close-up.** Cantons close up to a band gap: `closeUp` (anchor step, in `holdColumnAxes` and again in 7f) and `closeRun`
+inside the plan of `pullTier` (steps with an authority), spacing by `runSpacing`, repeated after the tier-gap growth in `mutation.ts`. Two readings of
+"a straight overlay link would be bent", each where it applies (decisions-log Q102): the **close-up reads the count** (the number of straight overlay
+links after the move is not below the number before, ADR-0019's wording), because a block move swaps chords and a per-link veto lets one chord hold
+the cantons apart; **`pullTier` reads each link** (a link that was straight and is not is a refusal) for its own small moves. The anchor step keeps
+its centre: the tiers above it stand over the routed feeds of the cantons, so a block moved to the mean of its overlay partners is chased by them.
+
 ## Section 3 — Frames
 
 `deriveFrames` (`src/layout/frames.ts:44-65`) builds a frame from its cells and its child frames

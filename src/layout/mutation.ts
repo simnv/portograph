@@ -23,7 +23,7 @@ import { centreViolations, selectAnchorTier } from './centre.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
-import { alignLinkedGroupGrid, type LinkLabelShortfall, produceGroupLabelBands, replanGroupLabels, reserveLinkLabelRoom, validateGroupLabelBands } from './bands.js';
+import { alignLinkedGroupGrid, closeCantonsAndSettle, type LinkLabelShortfall, produceGroupLabelBands, replanGroupLabels, reserveLinkLabelRoom, validateGroupLabelBands } from './bands.js';
 import { growTierGaps } from './gap-room.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { tierGapPlans } from './gap-plan.js';
@@ -216,6 +216,10 @@ function validateTechniques(model: LayoutModel, baseline: LayoutModel): void {
     if (!geometrySelected) same(pick(link, ['technique']), pick(baseline.links[index]!, ['technique']), 'Link technique contradicts authored route, effective layer or M1 fallback');
   }
 }
+/** Rounds of the tier-gap growth and the canton close-up in 7f (ranked-groups ticket 65). */
+const CANTON_ROUNDS = 4;
+/** The move of a close-up round, in px, under which the cantons stand a band gap apart for every purpose (ranked-groups ticket 65). */
+const CANTON_CREEP = 0.5;
 /** Every protected result passes this same boundary, including direct freeze and restore. */
 function validatePublication(model: LayoutModel, baseline: LayoutModel): void {
   jsonValue(model);
@@ -718,17 +722,35 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     // The last confirmation of a chord was the end of 7e: from here it is a wall (ticket 34).
     freezeChords(draft);
     produceGroupLabelBands(draft);
-    if (growTierGaps(draft)) {
-      rebuildRegionGeometry(draft, undefined, undefined, true);
-      // The replay refits every group box to its content, so a linked pair the first step gave one
-      // x-extent (ADR-0012) holds two again and the published model would not be the grid's fixed
-      // point — which is what `validateGroupLabelBands` demands. The grid is settled here, before
-      // the labels are planned in these boxes, because it belongs to the replay and not to the
-      // third step: it only grows box extents onto edges that already exist and moves no node, and
-      // a label planned in the narrower box would be centred on the box the grid then widens.
-      alignLinkedGroupGrid(draft);
-      replanGroupLabels(draft);
+    // The growth of the tier gaps is measured on the columns as they stand, and the close-up of the cantons (ranked-groups ticket 65)
+    // moves them in x after centring widened one in place: so the growth is measured again after every move, and the rounds end when
+    // the close-up has nothing to move. A round that moves groups replays the region producers, and the grid and the labels after it.
+    let closed = false;
+    for (let round = 0; round < CANTON_ROUNDS && !closed; round++) {
+      if (growTierGaps(draft)) {
+        rebuildRegionGeometry(draft, undefined, undefined, true);
+        // The replay refits every group box to its content, so a linked pair the first step gave one
+        // x-extent (ADR-0012) holds two again and the published model would not be the grid's fixed
+        // point — which is what `validateGroupLabelBands` demands. The grid is settled here, before
+        // the labels are planned in these boxes, because it belongs to the replay and not to the
+        // third step: it only grows box extents onto edges that already exist and moves no node, and
+        // a label planned in the narrower box would be centred on the box the grid then widens.
+        alignLinkedGroupGrid(draft);
+        replanGroupLabels(draft);
+      }
+      // A creep under half a pixel, left by the centring replay, counts as settled; the replay still follows any move.
+      const shift = closeCantonsAndSettle(draft);
+      closed = shift < CANTON_CREEP;
+      if (shift > 0) {
+        rebuildRegionGeometry(draft, undefined, undefined, true);
+        alignLinkedGroupGrid(draft);
+        replanGroupLabels(draft);
+      }
     }
+    if (!closed && !draft.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE' && item.message.startsWith('The cantons'))) draft.diagnostics.push({
+      stage: 'placement', severity: 'warning', code: 'PLACEMENT_NON_CONVERGENCE',
+      message: `The cantons did not settle a band gap apart in ${CANTON_ROUNDS} rounds of the close-up and the replay; final gates decide the retained geometry.`,
+    });
     // 7c seats each transit feed's child under the corridor its link owns; where it could not, the
     // corridor follows the child (ticket 02). The move belongs to the transaction, not to the
     // callback, exactly as the growth above does. It runs last in 7f, after every centring replay,
