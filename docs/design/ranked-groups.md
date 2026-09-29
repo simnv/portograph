@@ -130,7 +130,10 @@ a frame. `validateSkeletonBands` and `mutation.ts` keep their checks on cells.
 **Transit through a frame.** A link that ends in cell `G#3` and arrives from above crosses
 sub-tiers of `G#0..G#2`. It is not foreign to `G`, so ADR-0013 permits the passage; the lane is
 reserved beside the crossed cells as today, and the frame grows to hold it. A link foreign to `G`
-never enters the frame.
+never enters the frame. A lane that a frame holds is reserved before a foreign lane, and it stays on
+its own frame's side of a foreign frame (tickets 23 and 26). A fixed-point rule (reserve, grow, place
+the foreign lane, repeat) was replaced: it does not converge, because lane x is immutable and frame
+growth only grows.
 
 **Shapes.** `ranked` is the default. `row` forces one rank. `grid` and `bar` are unchanged and
 explicit. A ranked group with one rank is indistinguishable from a `row` group, so every input
@@ -143,12 +146,21 @@ without intra-group routed links renders as before.
    partners' centres, then de-overlapped against its tier siblings with the band gap, keeping the
    order the barycentre gives. A single node with no routed links inside a cell is ordered in its
    cell by the same key. Routed geometry never moves because of this rule.
+   A free frame whose box lies wholly outside the x-span of its settled overlay partners in other
+   tiers first takes the nearest edge of that span (the into-span pre-step, ticket 22). The move stays
+   only when the total overlay chord length of the moved groups falls; else the tier goes back.
 2. **Order in a tier.** The order of frames in a tier, and of nodes in a cell, is the barycentre of
    partner positions in the adjacent sub-tiers and of overlay partners anywhere, routed and overlay
    weighted equally; one downward sweep then one upward sweep from the anchor tier; ties keep the
    ELK order. The re-order is accepted per tier only when the routed crossing count of that tier's
    regions does not rise.
-3. **Sides.** No change. A same-sub-tier overlay pair takes `left`/`right` and rides the row; a
+3. **ELK keeps the overlay edges.** ELK still reads the overlay links between tiers, because they
+   place x for straightness. A filter that hid them from ELK was tried and rejected (ticket 18): ten
+   overlay tests regress. Ticket 18 re-seats the bands after `flattenRows` instead, so the height
+   ELK gave a band no longer shows as gap between bands.
+4. **Alignment stops at a chord.** Alignment growth of a body stops short of an overlay chord
+   (`ALIGNMENT_STOPPED_AT_OVERLAY`, ticket 29). The bound of 12 stays.
+5. **Sides.** No change. A same-sub-tier overlay pair takes `left`/`right` and rides the row; a
    cross-sub-tier pair takes `top`/`bottom`.
 
 ## Section 4 — Converter and inputs

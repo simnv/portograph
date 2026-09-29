@@ -62,6 +62,8 @@ is correct. Placement is the cause, for two reasons.
   is not foreign to `G` and may cross the cells above it. The frame grows to hold its lane.
   A link that is foreign to `G` never enters the frame. It gets one lane x outside the frame for
   all the sub-tiers it crosses.
+  A lane that a frame holds is reserved before a foreign lane, and it stays on its frame's side of
+  a foreign frame (tickets 23 and 26).
 - ADR-0012: frames share the grid. Cells do not.
 - New gate G9: a frame contains its cells and child frames, frames of one tier do not overlap, and
   no foreign node body lies inside a frame. `frameGate` (`src/score/gates.ts`) checks it.
