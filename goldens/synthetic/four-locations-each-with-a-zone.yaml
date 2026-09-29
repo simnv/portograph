@@ -1,7 +1,9 @@
 # Expected: Four sibling locations of one tier, each with a nested zone, stand in disjoint columns
 # (ranked-groups ticket 12). Tier 0 holds two feeds. Tier 1 holds locations a to d: a core group of
-# two routers on the first rank, five switches (a to b) or three (c, d) on the second, and a child
-# zone of two time servers and a balancer on the ranks after. Overlay links join the zones of
+# two routers, five switches (a to b) or three (c, d), and a child zone of two time servers and a
+# balancer. Ranks follow the breadth-first depth from the members that link to the feeds (ticket 27):
+# the first router and its switches take the first ranks, and the second router with its switches,
+# which no feed reaches, takes the rank of the unreached members; the zone takes the ranks after. Overlay links join the zones of
 # neighbouring locations, feeds to one switch each, and the servers of every zone to a client group
 # in tier 2. The rows rule spaces the switches by the row gap, so a location is wider than the
 # stage 4 column measured; the columns then move apart as wholes, and no frame contains a node of

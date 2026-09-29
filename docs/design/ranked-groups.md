@@ -38,9 +38,9 @@ group has no tier of its own and is a span of whole ranks inside its parent.*
 ## Section 1 — Rank derivation (`src/layout/ranks.ts`, pure)
 
 Input: one document group, its members, the routed links between them, and the routed links
-from members to other tiers. The profile's tier-inference table supplies a **class rank** per
-node class where it has one: parse already infers a group's tier from its node classes, and
-that same table is the class rank, so `switch – switch` is a peer link inside an anchored group.
+from members to other tiers. The node class decides nothing here (ticket 27): a location whose
+members are all one class, as a converter emits them, has the same ranks as one whose classes
+differ.
 
 1. **Anchors.** A member with a routed link to the tier above is an anchor at rank 0. If none
    exists, the members with a routed link to the tier below are anchors at the last rank and the
@@ -48,13 +48,22 @@ that same table is the class rank, so `switch – switch` is a peer link inside 
    links toward the anchors short and vertical, and a group with no anchor has nothing to be above,
    so its internal routed links are peer links (decided 2026-09-29 on ticket 02: without this rule
    any two members joined by a link became a column).
-2. **Peer links.** A routed link between two members of equal class rank is a peer link. It never
-   lengthens a path; its two ends share a rank where the layering allows it. A link whose two ports
-   the author fixed to `left`/`right` is a peer link regardless of class.
-3. **Layering.** Longest-path layering from the anchors over the non-peer routed links inside the
-   group. A member's rank is the length of the longest such path from an anchor.
-4. **Cycles.** Depth-first from the anchors; a back link is treated as a peer link for the layering
-   and stays a routed link between two ranks for everything else.
+2. **Depth and peer links.** The **depth** of a member is its breadth-first distance from the anchor
+   set over the routed links inside the group, read as undirected. A routed link between two members
+   of equal depth is a **peer link**: it never lengthens a path, and its two ends share a rank. A
+   link from depth k to depth k+1 is a **down link** from the shallower member. A link whose two
+   ports the author fixed to `left`/`right` is also a peer link: the two ends, and every member
+   joined to them by such links, count as one node for the depth. The class rank table no longer
+   decides peer-ness, and nothing reads it (ticket 27).
+3. **Layering.** Longest-path layering over the down links. Every down link rises by exactly one
+   depth and peer components sit at one depth, so a member's rank is its depth. A link can skip a
+   rank only through step 5 (a child span push or a leaf child).
+4. **Cycles.** A ring needs no rule: depth is defined by hops, so a link closing a ring joins two
+   members of equal depth (a peer link) or of depths one apart (a down link).
+   *Twin lift, dropped (ticket 27).* An idea kept for the record: lift a member that shares its
+   neighbours with a shallower twin up to the twin's rank. No rule of this kind separates the
+   reference `wrt004` from `wrt001` and `wrt002` (K4 twins around `wrt003`), or `b` from `c` in a
+   triangle under one anchor, so it is not part of the derivation.
 5. **Child group.** A child's members take rank `max(own, first rank of the child)` and the child's
    span is `[min, max]` of them. A parent member whose rank falls inside the span, and who is not a
    child member, is pushed to the rank after the span. A child span is therefore whole ranks.
@@ -64,9 +73,10 @@ that same table is the class rank, so `switch – switch` is a peer link inside 
    internal order, and pushes nothing. Two leaf children stand side by side from that rank, in
    declaration order; leaf children joined by a peer link start on the same rank. An overlay-only
    leaf child goes last and overrides step 6. Only a child that feeds deeper members keeps its
-   longest-path position and pushes them. A group anchored from below has no leaf rule (ticket 19).
-6. **Overlay-only members.** A member with no routed link inside the group takes the rank of its
-   nearest overlay partner in the group, else the last rank.
+   depth position and pushes them. A group anchored from below has no leaf rule (ticket 19).
+6. **Overlay-only and unreached members.** A member no anchor reaches over the routed links (it has
+   no routed link inside the group, or only routed links to members no anchor reaches) takes the
+   rank of its nearest overlay partner in the group that has one, else the last rank.
 7. **Output.** `rank` per member, `rankCount` per group, `span` per child group. No geometry.
 
 Alignment across a tier: a group anchored from above puts rank 0 at the tier's first sub-tier; a
@@ -74,7 +84,9 @@ group anchored only from below puts its last rank at the tier's last sub-tier. S
 therefore align their ranks by index, as the reference draws them.
 
 Fixtures (`goldens/synthetic/`): a plain chain; a peer pair under one uplink; a cycle
-`sw–sw–rt–rt`; a child span with a parent member pushed below it; an overlay-only member.
+`sw–sw–rt–rt`; a child span with a parent member pushed below it; an overlay-only member; the
+six-body collapse (16 members of one class, six ranks), the triangle and the twin quad
+(`a-peer-link-*`, ticket 27).
 
 ## Section 2 — Rank cells and frames
 

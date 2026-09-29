@@ -29,10 +29,11 @@ const overlap = (a: { x: number; width: number }, b: { x: number; width: number 
 describe('a frame holds the lanes of the links that end in it', () => {
   it('sibling frames stand apart and no foreign lane stands inside a frame box', async () => {
     const model = await placement('a-frame-holds-its-lanes-beside-its-siblings');
-    const frames = model.frames!;
-    expect(frames.map(frame => frame.id).sort()).toEqual(['east', 'mid', 'west']);
+    // Each access node stands in a child frame (`eastc`, ...) of its location; the child is inside its parent.
+    expect(model.frames!.map(frame => frame.id).sort()).toEqual(['east', 'eastc', 'mid', 'midc', 'west', 'westc']);
+    const frames = model.frames!.filter(frame => ['east', 'mid', 'west'].includes(frame.id));
     for (const a of frames) for (const b of frames) if (a.id < b.id) expect(overlap(a.box, b.box), `${a.id} overlaps ${b.id}`).toBe(false);
-    const nodesOf = (id: string): string[] => frames.find(frame => frame.id === id)!.cells.flatMap(cell => model.groups[cell]!.nodes);
+    const nodesOf = (id: string): string[] => model.frames!.filter(frame => frame.id === id || frame.id === `${id}c`).flatMap(frame => frame.cells).flatMap(cell => model.groups[cell]!.nodes);
     let foreign = 0;
     for (const lane of model.lanes) {
       const link = model.links.find(item => item.id === (lane.owner as { id: string }).id)!;

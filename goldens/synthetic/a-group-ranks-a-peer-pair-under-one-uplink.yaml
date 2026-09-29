@@ -1,6 +1,6 @@
 # Expected: A peer pair under one uplink (ranked-groups ticket 01). The router links to the tier above
-# and is rank 0. Both switches link to it and to each other; they share a class rank, so the link
-# between them is a peer link that never lengthens a path, and the two switches stand on one rank, 1.
+# and is rank 0. Both switches link to it and to each other; they are one hop from the anchor (equal depth), so the
+# link between them is a peer link that never lengthens a path (ticket 27), and the two switches stand on one rank, 1.
 # The group has two ranks. Today the pipeline still draws the group as one row; ticket 02 reads the ranks.
 # Test-only input owned by ranked-groups ticket 01; the derivation test reads the parsed document.
 portograph: 2

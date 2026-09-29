@@ -1,13 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import { classRankOf } from '../../src/layout/rank-input.js';
 import { deriveRanks, type RankInput } from '../../src/layout/ranks.js';
 
 const chain = (...ids: string[]) => ids.slice(1).map((id, i) => ({ from: ids[i]!, to: id }));
 const input = (over: Partial<RankInput> & Pick<RankInput, 'members'>): RankInput => ({
   group: 'g', routedLinks: [], linksAbove: new Set(), linksBelow: new Set(), overlayPartners: new Map(),
-  classRank: () => undefined, children: [], ...over,
+  children: [], ...over,
 });
-const table = (values: Record<string, number>) => (node: string) => values[node.replace(/\d+$/, '')];
+// Six members of one class (ticket 27): two anchors, a pair below them, then two pairs side by side, then two pairs, then servers.
+const SIX_BODIES = {
+  members: ['crt1', 'crt2', 'crt3', 'crt4', 'srt1', 'srt2', 'rrt1', 'rrt2', 'ssw1', 'ssw2', 'rsw1', 'rsw2', 'ntp1', 'ntp2', 'slb1', 'rlb1'],
+  links: [
+    ...['crt3', 'crt4'].flatMap(id => ['crt1', 'crt2'].map(top => ({ from: top, to: id }))),
+    ...['srt1', 'srt2', 'rrt1', 'rrt2'].flatMap(id => ['crt3', 'crt4'].map(top => ({ from: top, to: id }))),
+    ...['ssw1', 'ssw2'].flatMap(id => ['srt1', 'srt2'].map(top => ({ from: top, to: id }))),
+    ...['rsw1', 'rsw2'].flatMap(id => ['rrt1', 'rrt2'].map(top => ({ from: top, to: id }))),
+    { from: 'crt3', to: 'crt4' }, { from: 'srt1', to: 'srt2' }, { from: 'rrt1', to: 'rrt2' }, { from: 'ssw1', to: 'ssw2' }, { from: 'rsw1', to: 'rsw2' },
+    { from: 'ssw1', to: 'ntp1' }, { from: 'ssw2', to: 'ntp2' }, { from: 'ntp1', to: 'slb1' }, { from: 'ntp2', to: 'rlb1' },
+  ],
+  ranks: {
+    crt1: 0, crt2: 0, crt3: 1, crt4: 1, srt1: 2, srt2: 2, rrt1: 2, rrt2: 2,
+    ssw1: 3, ssw2: 3, rsw1: 3, rsw2: 3, ntp1: 4, ntp2: 4, slb1: 5, rlb1: 5,
+  },
+};
 const asObject = (ranks: Map<string, number>) => Object.fromEntries(ranks);
 
 describe('deriveRanks: layering', () => {
@@ -19,68 +33,78 @@ describe('deriveRanks: layering', () => {
     expect(result.spans.size).toBe(0);
   });
 
-  it('a peer pair under one uplink shares one rank when the two class ranks are equal', () => {
+  it('a peer pair under one uplink shares one rank: the two ends are of equal depth', () => {
     const result = deriveRanks(input({
-      members: ['rt', 'sw1', 'sw2'], linksAbove: new Set(['rt']), classRank: table({ rt: 1, sw: 2 }),
+      members: ['rt', 'sw1', 'sw2'], linksAbove: new Set(['rt']),
       routedLinks: [{ from: 'rt', to: 'sw1' }, { from: 'rt', to: 'sw2' }, { from: 'sw1', to: 'sw2' }],
     }));
     expect(asObject(result.ranks)).toEqual({ rt: 0, sw1: 1, sw2: 1 });
     expect(result.rankCount).toBe(2);
   });
 
-  it('a peer link never lengthens a path', () => {
+  it('a peer link never lengthens a path: members of equal depth share a rank and feed the next one together', () => {
     const result = deriveRanks(input({
-      members: ['rt1', 'rt2', 'sw'], linksAbove: new Set(['rt1']), classRank: table({ rt: 1, sw: 2 }),
-      routedLinks: [{ from: 'rt1', to: 'rt2' }, { from: 'rt2', to: 'sw' }],
+      members: ['a', 'x', 'y', 'z'], linksAbove: new Set(['a']),
+      routedLinks: [{ from: 'a', to: 'x' }, { from: 'a', to: 'y' }, { from: 'x', to: 'y' }, { from: 'y', to: 'z' }],
     }));
-    expect(asObject(result.ranks)).toEqual({ rt1: 0, rt2: 0, sw: 1 });
+    expect(asObject(result.ranks)).toEqual({ a: 0, x: 1, y: 1, z: 2 });
   });
 
-  it('a cycle sw-sw-rt-rt layers as two peer pairs', () => {
+  it('a cycle rt-rt-sw-sw layers by hops: the member farthest from the anchor stands last', () => {
+    // Ticket 27: the ring has no inherent order, so class no longer pairs the ends. sw2 and rt2 are one hop
+    // from rt1 and sw1 is two hops away, whichever way round.
     const result = deriveRanks(input({
-      members: ['rt1', 'rt2', 'sw1', 'sw2'], linksAbove: new Set(['rt1']), classRank: table({ rt: 1, sw: 2 }),
+      members: ['rt1', 'rt2', 'sw1', 'sw2'], linksAbove: new Set(['rt1']),
       routedLinks: [{ from: 'rt1', to: 'rt2' }, { from: 'rt2', to: 'sw1' }, { from: 'sw1', to: 'sw2' }, { from: 'sw2', to: 'rt1' }],
     }));
-    expect(asObject(result.ranks)).toEqual({ rt1: 0, rt2: 0, sw1: 1, sw2: 1 });
+    expect(asObject(result.ranks)).toEqual({ rt1: 0, rt2: 1, sw1: 2, sw2: 1 });
   });
 
-  it('a link that skips a rank does not shorten the chain: A-B, B-C, A-C puts C on rank 2', () => {
+  it('a triangle a-b, b-c, a-c puts b and c on one rank as peers', () => {
     const result = deriveRanks(input({
       members: ['a', 'b', 'c'], linksAbove: new Set(['a']),
       routedLinks: [{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }, { from: 'a', to: 'c' }],
     }));
-    expect(asObject(result.ranks)).toEqual({ a: 0, b: 1, c: 2 });
-    expect(result.rankCount).toBe(3);
+    expect(asObject(result.ranks)).toEqual({ a: 0, b: 1, c: 1 });
+    expect(result.rankCount).toBe(2);
   });
 
-  it('a skip link on the reference location keeps the two servers on one rank', () => {
-    const routedLinks = [
-      { from: 'rt1', to: 'rt2' }, { from: 'rt1', to: 'sw1' }, { from: 'rt1', to: 'sw2' }, { from: 'rt2', to: 'sw1' }, { from: 'rt2', to: 'sw2' },
-      { from: 'sw1', to: 'sw2' }, { from: 'sw1', to: 'ntp1' }, { from: 'sw2', to: 'ntp2' }, { from: 'rt1', to: 'ntp1' },
-    ];
-    const result = deriveRanks(input({
-      members: ['rt1', 'rt2', 'sw1', 'sw2', 'ntp1', 'ntp2'], linksAbove: new Set(['rt1']), classRank: table({ rt: 1, sw: 2, ntp: 3 }), routedLinks,
-    }));
-    expect(asObject(result.ranks)).toEqual({ rt1: 0, rt2: 0, sw1: 1, sw2: 1, ntp1: 2, ntp2: 2 });
-    // The same shape without a class rank on the servers, the author writing each link downward.
-    const bare = deriveRanks(input({
-      members: ['rt1', 'rt2', 'sw1', 'sw2', 'ntp1', 'ntp2'], linksAbove: new Set(['rt1']), classRank: table({ rt: 1, sw: 2 }), routedLinks,
-    }));
-    expect(asObject(bare.ranks)).toEqual({ rt1: 0, rt2: 0, sw1: 1, sw2: 1, ntp1: 2, ntp2: 2 });
-    // A link written upward is still oriented by the class ranks.
-    const upward = deriveRanks(input({
-      members: ['rt1', 'rt2', 'sw1', 'sw2', 'ntp1', 'ntp2'], linksAbove: new Set(['rt1']), classRank: table({ rt: 1, sw: 2, ntp: 3 }),
-      routedLinks: routedLinks.map(link => link.to.startsWith('ntp') ? { from: link.to, to: link.from } : link),
-    }));
-    expect(asObject(upward.ranks)).toEqual({ rt1: 0, rt2: 0, sw1: 1, sw2: 1, ntp1: 2, ntp2: 2 });
-  });
-
-  it('links among members of one level that would close a cycle are dropped from the layering', () => {
+  it('a chain with a skip link reads the skip as a shorter path: the far end takes the depth of one hop', () => {
+    // a-b, b-c, c-d and a-d: d is one hop from a, so it stands beside b and c is the only member at depth 2.
     const result = deriveRanks(input({
       members: ['a', 'b', 'c', 'd'], linksAbove: new Set(['a']),
-      routedLinks: [{ from: 'a', to: 'b' }, { from: 'a', to: 'c' }, { from: 'a', to: 'd' }, { from: 'b', to: 'c' }, { from: 'c', to: 'd' }, { from: 'd', to: 'b' }],
+      routedLinks: [{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }, { from: 'c', to: 'd' }, { from: 'a', to: 'd' }],
     }));
-    expect(asObject(result.ranks)).toEqual({ a: 0, b: 1, c: 2, d: 3 });
+    expect(asObject(result.ranks)).toEqual({ a: 0, b: 1, c: 2, d: 1 });
+  });
+
+  it('the reference location: two routers on the anchor, a switch pair, a server pair, six members, three ranks', () => {
+    const routedLinks = [
+      { from: 'rt1', to: 'rt2' }, { from: 'rt1', to: 'sw1' }, { from: 'rt1', to: 'sw2' }, { from: 'rt2', to: 'sw1' }, { from: 'rt2', to: 'sw2' },
+      { from: 'sw1', to: 'sw2' }, { from: 'sw1', to: 'ntp1' }, { from: 'sw2', to: 'ntp2' },
+    ];
+    const result = deriveRanks(input({ members: ['rt1', 'rt2', 'sw1', 'sw2', 'ntp1', 'ntp2'], linksAbove: new Set(['rt1', 'rt2']), routedLinks }));
+    expect(asObject(result.ranks)).toEqual({ rt1: 0, rt2: 0, sw1: 1, sw2: 1, ntp1: 2, ntp2: 2 });
+    // A skip link rt1-ntp1 puts ntp1 one hop from the anchor, in the switches' rank; ntp2 stays below.
+    const skip = deriveRanks(input({
+      members: ['rt1', 'rt2', 'sw1', 'sw2', 'ntp1', 'ntp2'], linksAbove: new Set(['rt1', 'rt2']), routedLinks: [...routedLinks, { from: 'rt1', to: 'ntp1' }],
+    }));
+    expect(asObject(skip.ranks)).toEqual({ rt1: 0, rt2: 0, sw1: 1, sw2: 1, ntp1: 1, ntp2: 2 });
+  });
+
+  it('the six-body collapse: members of one class rank take the reference rows by depth (ticket 27)', () => {
+    const result = deriveRanks(input({ members: SIX_BODIES.members, linksAbove: new Set(['crt1', 'crt2']), routedLinks: SIX_BODIES.links }));
+    expect(asObject(result.ranks)).toEqual(SIX_BODIES.ranks);
+    expect(result.rankCount).toBe(6);
+  });
+
+  it('a left/right-fixed peer link is no shortcut: its two ends share a depth, and what hangs from them stands below', () => {
+    // a-b-c-d chain with b and d fixed left/right: b and d are one node for the depth, c is one hop below both.
+    const result = deriveRanks(input({
+      members: ['a', 'b', 'c', 'd'], linksAbove: new Set(['a']),
+      routedLinks: [{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }, { from: 'c', to: 'd' }, { from: 'b', to: 'd', fromSide: 'right', toSide: 'left' }],
+    }));
+    expect(asObject(result.ranks)).toEqual({ a: 0, b: 1, c: 2, d: 1 });
   });
 
   it('a diamond keeps both middle members on one rank', () => {
@@ -102,11 +126,17 @@ describe('deriveRanks: layering', () => {
     expect(side('right', 'top')).toEqual({ a: 0, b: 1 });
   });
 
-  it('a member cut off from every anchor takes an anchor of its own', () => {
+  it('a member no anchor reaches takes the last rank, whatever routed links it has among the unreachable', () => {
     const result = deriveRanks(input({
       members: ['a', 'b', 'x', 'y'], linksAbove: new Set(['a']), routedLinks: [{ from: 'a', to: 'b' }, { from: 'x', to: 'y' }],
     }));
-    expect(asObject(result.ranks)).toEqual({ a: 0, b: 1, x: 0, y: 1 });
+    expect(asObject(result.ranks)).toEqual({ a: 0, b: 1, x: 1, y: 1 });
+    // An overlay partner that has a rank wins over the last rank.
+    const overlay = deriveRanks(input({
+      members: ['a', 'b', 'x', 'y'], linksAbove: new Set(['a']), routedLinks: [{ from: 'a', to: 'b' }, { from: 'x', to: 'y' }],
+      overlayPartners: new Map([['x', ['a']]]),
+    }));
+    expect(asObject(overlay.ranks)).toEqual({ a: 0, b: 1, x: 0, y: 1 });
   });
 
   it('ignores a link that leaves the group and a link from a member to itself', () => {
@@ -156,23 +186,12 @@ describe('deriveRanks: anchors', () => {
   });
 
   it('an anchored group whose two switches are peers and both link up to the router stays two ranks', () => {
-    const classes: Record<string, string> = { rt: 'router', sw1: 'switch', sw2: 'switch' };
     const result = deriveRanks(input({
-      members: ['rt', 'sw1', 'sw2'], linksAbove: new Set(['rt']), classRank: node => classRankOf(classes[node]),
+      members: ['rt', 'sw1', 'sw2'], linksAbove: new Set(['rt']),
       routedLinks: [{ from: 'rt', to: 'sw1' }, { from: 'rt', to: 'sw2' }, { from: 'sw1', to: 'sw2' }],
     }));
     expect(asObject(result.ranks)).toEqual({ rt: 0, sw1: 1, sw2: 1 });
     expect(result.rankCount).toBe(2);
-  });
-
-  it('the class rank reads the tier-inference table at its ends and splits the middle', () => {
-    expect(['provider', 'internet', 'wan'].map(classRankOf)).toEqual([0, 0, 0]);
-    expect(classRankOf('router')).toBeLessThan(classRankOf('switch')!);
-    expect(classRankOf('switch')).toBeLessThan(classRankOf('server')!);
-    expect(classRankOf('server')).toBeLessThan(classRankOf('core')!);
-    expect(classRankOf('core')).toBe(classRankOf('backbone'));
-    expect(classRankOf('printer')).toBeUndefined();
-    expect(classRankOf(undefined)).toBeUndefined();
   });
 
   it('a group with no routed link at all is one rank', () => {
@@ -257,8 +276,8 @@ describe('deriveRanks: child groups', () => {
 
   it('a peer of a pushed member goes with it', () => {
     const result = deriveRanks(input({
-      members: ['p', 'c1', 'c2', 'x1', 'x2', 't'], linksAbove: new Set(['p']), classRank: table({ x: 3 }),
-      routedLinks: [{ from: 'p', to: 'c1' }, { from: 'c1', to: 'c2' }, { from: 'p', to: 'x1' }, { from: 'x1', to: 'x2' }, { from: 'c2', to: 't' }],
+      members: ['p', 'c1', 'c2', 'x1', 'x2', 't'], linksAbove: new Set(['p']),
+      routedLinks: [{ from: 'p', to: 'c1' }, { from: 'c1', to: 'c2' }, { from: 'p', to: 'x1' }, { from: 'p', to: 'x2' }, { from: 'x1', to: 'x2' }, { from: 'c2', to: 't' }],
       children: [{ group: 'zone', members: ['c1', 'c2'] }],
     }));
     expect(result.ranks.get('x1')).toBe(3);
@@ -333,8 +352,8 @@ describe('deriveRanks: a leaf child stands at the bottom of its parent', () => {
 
   it('a child member that is a peer of a parent member is not a leaf child, so it stays in the peer\'s rank', () => {
     const result = deriveRanks(input({
-      members: ['rt', 'sw1', 'x', 'y'], linksAbove: new Set(['rt']), classRank: table({ rt: 1, sw: 2 }),
-      routedLinks: [{ from: 'rt', to: 'sw1' }, { from: 'sw1', to: 'sw2' }, { from: 'sw1', to: 'x' }, { from: 'x', to: 'y' }],
+      members: ['rt', 'sw1', 'x', 'y'], linksAbove: new Set(['rt']),
+      routedLinks: [{ from: 'rt', to: 'sw1' }, { from: 'rt', to: 'sw2' }, { from: 'sw1', to: 'sw2' }, { from: 'sw1', to: 'x' }, { from: 'x', to: 'y' }],
       children: [{ group: 'zone', members: ['sw2'] }],
     }));
     expect(result.ranks.get('sw2')).toBe(1);
@@ -342,15 +361,14 @@ describe('deriveRanks: a leaf child stands at the bottom of its parent', () => {
   });
 
   it('two leaf children joined by a peer link start on the same rank', () => {
-    const classes: Record<string, number> = { a1: 3, b1: 3 };
     const result = deriveRanks(input({
-      members: ['p'], linksAbove: new Set(['p']), classRank: node => classes[node],
-      routedLinks: [{ from: 'p', to: 'a0' }, { from: 'a0', to: 'a1' }, { from: 'a1', to: 'b1' }],
-      children: [{ group: 'za', members: ['a0', 'a1'] }, { group: 'zb', members: ['b1'] }],
+      members: ['p'], linksAbove: new Set(['p']),
+      routedLinks: [{ from: 'p', to: 'a0' }, { from: 'a0', to: 'a1' }, { from: 'p', to: 'b0' }, { from: 'b0', to: 'b1' }, { from: 'a1', to: 'b1' }],
+      children: [{ group: 'za', members: ['a0', 'a1'] }, { group: 'zb', members: ['b0', 'b1'] }],
     }));
     expect(result.ranks.get('a1')).toBe(result.ranks.get('b1'));
     expect(result.spans.get('za')).toEqual([1, 2]);
-    expect(result.spans.get('zb')).toEqual([2, 2]);
+    expect(result.spans.get('zb')).toEqual([1, 2]);
   });
 
   it('a group anchored from below has no leaf rule: the last rank stays with the member that links below', () => {

@@ -1,7 +1,9 @@
 # Expected: A link that skips a rank of its own frame, in a tier where a neighbour frame has a cell, keeps
-# its lane in its own frame (ranked-groups ticket 04, re-check). `west` is gateway, distribution, access
-# under the ISP, and the gateway links straight to the access node, so that link crosses the sub-tier of
-# the distribution switch. `east` is a two-rank neighbour, so its second cell stands in the same sub-tier.
+# its lane in its own frame (ranked-groups ticket 04, re-check). `west` is gateway and distribution under
+# the ISP; the access node stands alone in a child group `edge` and links to the gateway. Since ticket 27 a
+# plain member is one rank below its neighbour at most, so the leaf-child rule (ticket 19) puts `edge` after
+# the last rank of `west` (rank 2), and the link crosses the sub-tier of the distribution switch. `east` is a
+# two-rank neighbour, so its second cell stands in the same sub-tier.
 # The link is foreign to `east`, so its lane is pinned outside the `east` frame; the lane is still the
 # own-frame lane of `west`: it is hosted in a cell of `west`, and the `west` frame grows to hold it.
 # Test-only input owned by ranked-groups ticket 04; test/pipeline/frame-transit.test.ts reads the layout.
@@ -10,6 +12,7 @@ groups:
   up: { tier: 0, label: Up }
   east: { tier: 1, label: East }
   west: { tier: 1, label: West }
+  edge: { parent: west, label: Edge }
 nodes:
   u0: { group: up, class: provider, label: U0 }
   u1: { group: up, class: provider, label: U1 }
@@ -17,11 +20,10 @@ nodes:
   e-dist: { group: east, class: switch, label: East distribution }
   w-gw: { group: west, class: router, label: West gateway }
   w-dist: { group: west, class: switch, label: West distribution }
-  w-acc: { group: west, class: access, label: West access }
+  w-acc: { group: edge, class: access, label: West access }
 links:
   - [u0, e-gw]
   - [u1, w-gw]
   - [e-gw, e-dist]
   - [w-gw, w-dist]
-  - [w-dist, w-acc]
   - [w-gw, w-acc]

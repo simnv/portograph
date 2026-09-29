@@ -1,10 +1,11 @@
-# Expected: A link that skips a rank (ranked-groups ticket 01, review fix). The reference sheet's
-# location: two routers and two switches, each pair joined by a peer link, every router linked to
-# every switch, one NTP server under each switch, and one direct link from Router 1 to NTP 1 that
-# skips the switch rank. Router 1 links to the tier above and is rank 0, with Router 2 beside it.
-# The switches are rank 1. Layering is the longest path, so the skip link does not pull NTP 1 up to
-# the switches' rank: both servers stand on rank 2, side by side, and the ranks are 0, 1 and 2. Today
-# the pipeline still draws the group as one row; ticket 02 reads the ranks.
+# Expected: A link that skips a rank (ranked-groups ticket 01, re-read by ticket 27). The reference
+# sheet's location: two routers and two switches, each pair joined by a peer link, every router linked
+# to every switch, one NTP server under each switch, and one direct link from Router 1 to NTP 1 that
+# skips the switch rank. Both routers link to the tier above and are rank 0. The rank of a member is
+# its breadth-first depth from the anchors, so the skip link puts NTP 1 one hop from Router 1: it
+# stands on rank 1 beside the switches (its link to Switch 1 is a peer link), and NTP 2, two hops
+# from the anchors, stands alone on rank 2. Ticket 01 read this link as leaving both servers together
+# on rank 2; the depth rule sees the shorter path instead. The ranks are 0, 1 and 2.
 # Test-only input owned by ranked-groups ticket 01; the derivation test reads the parsed document.
 portograph: 2
 groups:
@@ -20,6 +21,7 @@ nodes:
   ntp2: { group: site, class: server, label: NTP 2 }
 links:
   - [isp, rt1]
+  - [isp, rt2]
   - [rt1, rt2]
   - [rt1, sw1]
   - [rt1, sw2]

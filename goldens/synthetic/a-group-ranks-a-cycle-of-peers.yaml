@@ -1,9 +1,9 @@
-# Expected: A cycle sw-sw-rt-rt (ranked-groups ticket 01). Four physical links close a ring: rt1-rt2,
-# rt2-sw1, sw1-sw2 and sw2-rt1. Router 1 links to the tier above and is rank 0. The two routers share a
-# class rank, and so do the two switches, so rt1-rt2 and sw1-sw2 are peer links for the layering; the
-# ring therefore layers as two peer pairs, routers on rank 0 and switches on rank 1, and no path is
-# lengthened by going round. All four links stay routed links; only the layering reads two as peers.
-# Today the pipeline still draws the group as one row; ticket 02 reads the ranks.
+# Expected: A cycle sw-sw-rt-rt (ranked-groups ticket 01, re-read by ticket 27). Four physical links
+# close a ring: rt1-rt2, rt2-sw1, sw1-sw2 and sw2-rt1. Router 1 links to the tier above and is rank 0.
+# A ring has no inherent order, and the class no longer pairs its ends: the rank is the breadth-first
+# depth, so Router 2 and Switch 2 are one hop from Router 1 and share rank 1, and Switch 1, two hops
+# from it whichever way round, is rank 2. No link joins two members of equal depth, so the ring has
+# no peer link and the group has three ranks.
 # Test-only input owned by ranked-groups ticket 01; the derivation test reads the parsed document.
 portograph: 2
 groups:

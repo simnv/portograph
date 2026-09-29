@@ -21,13 +21,14 @@ is correct. Placement is the cause, for two reasons.
 ## Decision
 
 1. **Ranks are derived, not declared.** `deriveRanks` (`src/layout/ranks.ts`) takes the routed
-   links inside one group. It runs longest-path layering from the anchors over the links that are
-   not peer links. An anchor is a member with a routed link to the tier above (else to the tier
-   below; `anchoredFrom`). A group with no anchor has one rank. `classRankOf`
-   (`src/layout/rank-input.ts`) gives a class that a row of the tier-inference table names a class
-   rank. A link is a peer link when both class ranks are defined and equal. A link with both ports
-   fixed to `left` and `right` is also a peer link. `MIDDLE_CLASS_ROWS` splits the profile's one middle band into router,
-   switch and server, so that a router-switch uplink is not a peer link.
+   links inside one group. It takes the breadth-first depth from the anchors over the routed
+   links inside the group, and a member's rank is its depth. A link between two members of equal
+   depth is a peer link; a link from depth k to depth k+1 is a down link. An anchor is a member with
+   a routed link to the tier above (else to the tier below; `anchoredFrom`). A group with no anchor
+   has one rank. A link with both ports fixed to `left` and `right` is also a peer link. (Amended by
+   ranked-groups ticket 27: a first version read a class rank per node class, `classRankOf` and
+   `MIDDLE_CLASS_ROWS`, and a location of one class collapsed to one rank. The class table is no
+   longer read.)
 2. **A rank cell is a sub-tier.** In stage 1, `expandRankedGroups` (`src/layout/rank-cells.ts`)
    replaces a group `G` that has `k > 1` ranks with `k` cells `G#0..G#k-1`. Each cell is a `row`
    group on its own sub-tier and carries `frame: G`. The document records `frames`. Sub-tiers are
