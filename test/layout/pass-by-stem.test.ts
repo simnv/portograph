@@ -80,7 +80,8 @@ describe('a port that passes its row neighbour by keeps its stem', () => {
     expect(report.passed).toBe(true);
     // Pinned so the soft score cannot drift unnoticed. The order G5 demands costs this fixture
     // length and bends against the render that failed the gate, and that trade is the ticket's.
-    expect(report.Q).toBe(0.6138477956459003);
+    // Ticket 35: a one-segment routed path counts as continuous, so the pinned Q rose from 0.6138.
+    expect(report.Q).toBe(0.6840232342423915);
   }, 120000);
 
   it('ticket 21: a weighted secondary link keeps the same levelling, whatever its stroke', async () => {
