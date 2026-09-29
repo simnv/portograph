@@ -239,7 +239,7 @@ function gapUsers(model: LayoutModel, gaps: TierGap[]): Map<number, GapUsers> {
     }
   }
   const pitch = tipBand(model);
-  for (const [key, users] of result) holdsOf(users, gaps[key]!, pitch);
+  for (const [key, users] of result) holdsOf(users, gaps[key]!, pitch, nudgingDistance(model));
   return result;
 }
 
@@ -292,12 +292,15 @@ function pieceOf(model: LayoutModel, link: LayoutLink, order: number, stops: Ret
  * earlier one must be a plain port-to-port piece. Where the tip rows lie closer than one pitch the run cannot stand a
  * run clearance from both, and the gap asks for the difference (`short`).
  */
-function holdsOf(users: GapUsers, gap: TierGap, pitch: number): void {
+function holdsOf(users: GapUsers, gap: TierGap, pitch: number, keep: number): void {
   for (const one of users.pieces) {
     if (!one.plain && !one.lane) continue;
     if (!users.pieces.some(other => other.order > one.order && (one.upper.x - other.upper.x) * (one.lower.x - other.lower.x) < -EPS * EPS)) continue;
     // A piece whose two ends share one x is a column, and a column needs no row.
     if (same(one.upper.x, one.lower.x)) continue;
+    // Ticket 42: so is one whose ends stand under a run clearance apart: its cover would be wider than the run, and the
+    // router jogs at the tip rows anyway.
+    if (Math.abs(one.upper.x - one.lower.x) < keep) continue;
     const jog = one.lower.y - one.upper.y;
     if (jog < pitch - EPS) { if (one.plain) users.short = Math.max(users.short, pitch - jog); continue; }
     // A plain piece stands between two stem tips inside the gap. A lane's overhang can put the gap's edge past a tip, and
