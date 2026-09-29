@@ -6,6 +6,7 @@ import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEA
 import { GROUP_LABEL_GEOMETRY, nodeObstacleReach, routedStroke, stemReach } from './bands.js';
 import { MEMBER_GAP } from './bundle-geometry.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
+import { stemCache, stemPlan, type StemCache } from './sides-two.js';
 
 /**
  * ADR-0015 rule 1, per gap: the room every run that crosses a **tier gap** needs, allocated before
@@ -149,13 +150,15 @@ function edgeOf(gap: TierGap, point: Point): 'low' | 'high' | undefined {
  * where the port faces the gap: a port on a node's other side, or an end that consumes a shared
  * run, leaves a route placement cannot see, and the gap leaves that run out.
  */
-function reachOf(model: LayoutModel, link: LayoutLink, end: 'from' | 'to', far: Point, edge: number):
-{ point: Point } | undefined {
+function reachOf(model: LayoutModel, link: LayoutLink, end: 'from' | 'to', far: Point, edge: number,
+  cache: StemCache): { point: Point } | undefined {
   const port = findPort(model, link.attachments![end]);
   if (!port?.anchor || port.side === undefined) return undefined;
   const travel = Math.sign(far.y - edge);
   if (travel === 0 || OUTWARD[port.side] !== -travel) return undefined;
-  const stem = stemReach(model, model.nodes[link.attachments![end].node]!);
+  // The depth stage 8 checks the far checkpoint at: `stemCheckpoint` reads the same plan, so the run
+  // ends where the router's required checkpoint stands, also on a nested side that plans a deeper stem.
+  const stem = stemPlan(model, port, cache).depth;
   return { point: { x: far.x, y: far.y - travel * stem } };
 }
 
@@ -181,6 +184,7 @@ interface GapUsers { items: Participant[]; approaches: Approach[]; crossers: Cro
  * do not obstruct it.
  */
 function gapUsers(model: LayoutModel, gaps: TierGap[]): Map<number, GapUsers> {
+  const cache = stemCache();
   const result = new Map<number, GapUsers>(gaps.map((gap, key) => [key, { items: [], approaches: [], crossers: [] }]));
   for (const link of model.links) {
     if (!drawn(link)) continue;
@@ -212,7 +216,7 @@ function gapUsers(model: LayoutModel, gaps: TierGap[]): Map<number, GapUsers> {
       if (item.farOnEdge) users.approaches.push({ link: link.id, x: item.far.x, edge: item.nearEdge === 'low' ? 'high' : 'low' });
       if (!item.farOnEdge) {
         const reach = far.kind === 'port'
-          ? reachOf(model, link, nearFirst ? 'to' : 'from', far.point, item.nearEdge === 'low' ? gap.high : gap.low)
+          ? reachOf(model, link, nearFirst ? 'to' : 'from', far.point, item.nearEdge === 'low' ? gap.high : gap.low, cache)
           : undefined;
         if (!reach) { users.crossers.push(across); continue; }
         item.reach = reach.point;
