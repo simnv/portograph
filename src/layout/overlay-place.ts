@@ -5,7 +5,8 @@ import { occupiedOverhang, selectAnchorTier } from './lanes.js';
 import { overlayBlockers, overlayPath } from './overlay-paths.js';
 import { saveGroups } from './overlay-order.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
-import { groupInsets } from './regions.js';
+import { deriveFrames } from './frames.js';
+import { GROUP_PADDING, groupInsets } from './regions.js';
 import { rowGap } from './sides-two.js';
 import { bandGap, compareId } from './skeleton-graph.js';
 import { moveGroup } from './skeleton-geometry.js';
@@ -114,6 +115,8 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
   for (const tier of [...tiers.slice(at + 1), ...tiers.slice(0, at).reverse()]) {
     const groups = Object.values(model.groups).filter(group => group.tier === tier);
     const movers = groups.filter(group => free.has(group.id));
+    // A member of a canton is moved as a frame inside its canton (ticket 56); the sweep below reads every column as a wall.
+    const inner = (group: LayoutGroup): boolean => group.frame !== undefined;
     // The straight overlay links that touch or pass over this tier: a move is kept only where their
     // count, read by the real overlay decision, holds or rises (spec section 5). The mean of partners
     // in two tiers can put a body of the tier between the two ends of a link that was straight.
@@ -131,7 +134,7 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
     // the move is accepted on the total length of its overlay links, not on the straight count; the
     // straight count below judges only the fine placement that follows.
     const entering = new Map<string, number>();
-    for (const group of movers) {
+    for (const group of movers.filter(group => !inner(group))) {
       const xs = partnerXs(group.nodes, group.id);
       if (!xs.length) continue;
       const low = Math.min(...xs), high = Math.max(...xs), box = group.bounds!;
@@ -158,7 +161,11 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
       const target = keyOf(group.nodes, group.id);
       if (target !== undefined) targets.set(group.id, target);
     }
-    if (targets.size) sweep(model, tier, groups, targets, columns);
+    if (targets.size) {
+      const plain = new Map([...targets].filter(([id]) => !inner(model.groups[id]!)));
+      if (plain.size) sweep(model, tier, groups, plain, columns);
+      if (plain.size < targets.size) sweepMembers(model, tier, new Map([...targets].filter(([id]) => inner(model.groups[id]!))), columns);
+    }
     if (spanning.length && signature() !== start) {
       // `centre` moves groups with `moveGroup`, which leaves the pills behind. The count before the move
       // and the count after it must read the same kind of geometry, so the tier goes back, its pills
@@ -266,6 +273,48 @@ function sweep(model: LayoutModel, tier: number, groups: LayoutGroup[], targets:
     if (left === undefined) continue;
     const dx = left - occupied(group).low;
     if (Math.abs(dx) > PLACEMENT_EPS) moveGroup(model, group, dx, 0);
+  }
+}
+
+/**
+ * Place the free members of a canton on one tier (canton-groups ticket 56, Section 2b rule 3). A member is a frame of one
+ * cell, and its target is the mean x of its settled partners as for any free group. It stands inside its canton: the canton
+ * frame box, less the group margin, bounds the member's frame, and the other members that hold a cell on the tier are walls
+ * `2 * GROUP_PADDING` away, the beside rule. The same run packer as `sweep` places what falls between two walls.
+ */
+function sweepMembers(model: LayoutModel, tier: number, targets: ReadonlyMap<string, number>, columns: readonly FrameColumn[]): void {
+  const frames = model.document.frames, derived = deriveFrames(model);
+  if (frames === undefined || derived === undefined) return;
+  const box = new Map(derived.map(frame => [frame.id, frame.box]));
+  const gap = 2 * GROUP_PADDING;
+  const cellsOf = (id: string): string[] => [...frames[id]!.cells, ...Object.keys(frames).filter(child => frames[child]!.parent === id).flatMap(cellsOf)];
+  for (const column of columns.filter(item => item.wall !== undefined && item.from <= tier && tier <= item.to)) {
+    const movers = [...targets.keys()].filter(id => column.cells.has(id)).map(id => model.groups[id]!);
+    if (!movers.length) continue;
+    const own = new Set(movers.map(group => group.frame!));
+    const walls = Object.keys(frames).filter(id => frames[id]!.parent === column.id && !own.has(id) && cellsOf(id).some(cell => model.groups[cell]!.tier === tier))
+      .map(id => ({ low: box.get(id)!.x, high: box.get(id)!.x + box.get(id)!.width })).sort((a, b) => a.low - b.low);
+    const low = column.wall!.x + GROUP_PADDING, high = column.wall!.x + column.wall!.width - GROUP_PADDING;
+    const item = (group: LayoutGroup): Item => {
+      const frame = box.get(group.frame!)!;
+      return { id: group.id, want: targets.get(group.id)! - (group.bounds!.x + group.bounds!.width / 2 - frame.x) - 0, width: frame.width };
+    };
+    const centre = (wall: { low: number; high: number }): number => (wall.low + wall.high) / 2;
+    const interval = (group: LayoutGroup): number => walls.filter(wall => centre(wall) < targets.get(group.id)!).length;
+    const result = new Map<string, number>();
+    for (let k = 0; k <= walls.length; k++) {
+      const members = movers.filter(group => interval(group) === k).sort((a, b) => targets.get(a.id)! - targets.get(b.id)! || compareId(a.id, b.id));
+      if (!members.length) continue;
+      const before = walls[k - 1], after = walls[k];
+      const solved = packRun(members.map(item), Math.max(low, before ? before.high + gap : -Infinity), Math.min(high, after ? after.low - gap : Infinity), gap);
+      if (solved) for (const [id, x] of solved) result.set(id, x);
+    }
+    for (const group of movers) {
+      const x = result.get(group.id);
+      if (x === undefined) continue;
+      const dx = x - box.get(group.frame!)!.x;
+      if (Math.abs(dx) > PLACEMENT_EPS) moveGroup(model, group, dx, 0);
+    }
   }
 }
 

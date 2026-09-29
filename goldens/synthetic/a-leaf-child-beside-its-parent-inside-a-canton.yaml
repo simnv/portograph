@@ -1,0 +1,33 @@
+# Expected: A leaf child stands beside its parent's cells inside a canton (canton-groups ticket 56, fixture 8).
+# The canton `west` holds the member `loc` (tier 1) and the member `wing` (tier 1, beside it). `loc` has a chain
+# gw, sw, a router and a switch, and a leaf child `zone` (two nodes, hung from sw) that stands beside the router
+# and the switch, so the zone frame is a column of its own at the bottom of `loc`. The zone is inside `loc`
+# inside `west`; the beside gap is 20 px. No part of the tier gap plan is left to the router
+# (`TIER_GAP_PART_RESIDUAL`), the internal link gw to sw of `loc` included.
+# Test-only input owned by canton-groups ticket 56; test/pipeline/canton-walls.test.ts reads the layout.
+portograph: 2
+groups:
+  west: { label: West }
+  upstream: { tier: 0, label: Upstream }
+  loc: { tier: 1, canton: west, label: Location }
+  zone: { parent: loc, label: Zone }
+  wing: { tier: 1, canton: west, label: Wing }
+nodes:
+  feed: { group: upstream, class: router, label: Feed }
+  gw: { group: loc, class: router, label: Gateway }
+  sw: { group: loc, class: switch, label: Switch }
+  crt: { group: loc, class: router, label: Core router }
+  sw2: { group: loc, class: switch, label: Switch two }
+  ntp: { group: zone, class: server, label: Time }
+  fw: { group: zone, class: switch, label: Filter }
+  w1: { group: wing, class: router, label: Wing one }
+  w2: { group: wing, class: switch, label: Wing two }
+links:
+  - [feed, gw]
+  - [feed, w1]
+  - [gw, sw]
+  - [sw, ntp]
+  - [ntp, fw]
+  - [sw, crt]
+  - [crt, sw2]
+  - [w1, w2]

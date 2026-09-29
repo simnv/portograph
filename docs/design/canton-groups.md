@@ -189,6 +189,30 @@ they stand (`frameColumns`, `columns.ts:826-849`), never fixed. So:
 5. **Idempotence.** A second layout of the layout JSON moves nothing: the derived column is a
    function of the boxes, and every pull is a projection onto the same ranges.
 
+**As built (ticket 56).** What held as written: the derived column, `columnShifts` moving the sibling as a whole, the inner pass
+(`holdMemberWalls`, after `pullTier` in `holdColumnAxes`, so at rows time and in 7f), `overlayFreeGroups` admitting a one-cell member
+(`placeOverlayFree` moves it as a frame, `sweepMembers`), `COLUMN_AXIS_HELD` naming the canton (owners: the member, then the canton),
+held-lane parity, idempotence of the passes. What did not:
+
+1. **The member wall is the canton frame box less the margin, not box plus slack.** With the slack a member reaches the column edge, the
+   derived box grows by the slack, and every replay of centring (7c, 7e, 7f) reads the grown box and spends it again: fixture 3 with a
+   340 px member under a 480 px member grew the canton by 60 px in three stages. `FrameColumn.wall` carries the box; `columnWindow`,
+   the inner pass and `sweepMembers` read it. The canton column itself (box plus slack) still separates sibling cantons.
+2. **`columnWindow` was already intersected with the canton column.** Every cell of a member is a cell of the top-level frame, so centring
+   walled it from ticket 54. The change is the slack, above.
+3. **Members that share a sub-tier are not moved by the inner pass.** `packBesideRows` and `besideWalls` already own that row (the first
+   member from the left stays, the rest close up to 40 px, in rows and at both ends of centring); a pass that pulled one of them to its feed
+   would be undone by the next `packBesideRows`. The two agree: they never touch the same member.
+4. **The inner pass cannot use the merged tiers of `columnTiers`.** A canton spans several document tiers and a sibling canton spans the
+   same sub-tiers, so its members land in one merged step and no member has the previous member tier as its authority. The pass builds its
+   own tiers from the members of one canton (`columnTiers(model, canton)`); the member tier nearest the anchor reads the tier outside the
+   canton that the canton reads (`feedsFrom`).
+5. **Beside gaps.** Three beside members stand 40 and 40 px at rows time, 40 and 44 after 7f: `pushFollowingGroups` moves the following
+   cells by the growth of a cell that widened for its title (4 px for `beta`), the frame of `beta` does not grow (it is derived from the
+   bodies), and no rule repacks a beside row after 7f. Ticket 54 measured the same.
+6. **Member movers in `placeOverlayFree`.** `sweep` reads a column as a wall outside which a mover stands, so a member could never be
+   placed inside its canton by it; `sweepMembers` places it between the other members of the tier and the canton box.
+
 ## Section 3 — Frames
 
 `deriveFrames` (`src/layout/frames.ts:44-65`) builds a frame from its cells and its child frames

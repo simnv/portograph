@@ -1,0 +1,30 @@
+# Expected: A transit inside a canton (canton-groups ticket 56, held-lane parity with tickets 04, 14 and 23). The canton
+# `west` holds `gate` (tier 1), `mid` (tier 2) and `deep` (tier 3). The link from `gate-a` to `deep-a` skips the tier of `mid`,
+# so its lane is held inside the canton frame, which grows to hold it (ticket 04). The foreign link from `top` (tier 0,
+# above the canton) to `sink` (tier 4, below it) passes the canton outside its frame, at one x for all three tiers (ticket 14).
+# Test-only input owned by canton-groups ticket 56; test/pipeline/canton-walls.test.ts reads the layout.
+portograph: 2
+groups:
+  west: { label: West }
+  top: { tier: 0, label: Top }
+  gate: { tier: 1, canton: west, label: Gate }
+  mid: { tier: 2, canton: west, label: Middle }
+  deep: { tier: 3, canton: west, label: Deep }
+  sink: { tier: 4, label: Sink }
+nodes:
+  top-a: { group: top, class: router, label: Top one }
+  top-b: { group: top, class: router, label: Top two }
+  gate-a: { group: gate, class: router, label: Gate one }
+  gate-b: { group: gate, class: switch, label: Gate two }
+  mid-a: { group: mid, class: switch, label: Middle one }
+  mid-b: { group: mid, class: switch, label: Middle two }
+  mid-c: { group: mid, class: switch, label: Middle three }
+  deep-a: { group: deep, class: server, label: Deep one }
+  deep-b: { group: deep, class: server, label: Deep two }
+  sink-a: { group: sink, class: server, label: Sink }
+links:
+  - [top-a, gate-a]
+  - [gate-b, mid-a]
+  - [mid-a, deep-b]
+  - [gate-a, deep-a]
+  - [top-b, sink-a]

@@ -33,16 +33,19 @@ export interface Unit { id: string; frame: boolean; groups: LayoutGroup[]; low: 
  * the sub-tiers of its groups are contiguous and the tiers do not share one, so units whose sub-tier
  * ranges touch belong to one tier.
  */
-function columnTiers(model: LayoutModel): Unit[][] {
+function columnTiers(model: LayoutModel, only?: string): Unit[][] {
   const frames = model.document.frames ?? {};
   const childrenOf = (id: string): string[] => Object.keys(frames).filter(child => frames[child]!.parent === id);
   const cellsOf = (id: string): string[] => [...frames[id]!.cells, ...childrenOf(id).flatMap(cellsOf)];
   const units: Unit[] = [];
-  for (const id of Object.keys(frames).filter(item => frames[item]!.parent === undefined)) {
+  const unit = (id: string): void => {
     const groups = cellsOf(id).map(cell => model.groups[cell]!);
     units.push({ id, frame: true, groups, low: Math.min(...groups.map(group => group.tier!)), high: Math.max(...groups.map(group => group.tier!)) });
-  }
-  for (const group of Object.values(model.groups)) {
+  };
+  // `only` names a canton: the tiers of its members alone, the units of the inner pass of ticket 56.
+  if (only !== undefined) childrenOf(only).forEach(unit);
+  else for (const id of Object.keys(frames).filter(item => frames[item]!.parent === undefined)) unit(id);
+  for (const group of only !== undefined ? [] : Object.values(model.groups)) {
     if (!group.flank && group.frame === undefined) units.push({ id: group.id, frame: false, groups: [group], low: group.tier!, high: group.tier! });
   }
   units.sort((a, b) => a.low - b.low || a.high - b.high || compareId(a.id, b.id));
@@ -249,22 +252,27 @@ interface UnitFeeds {
  * Overlay links are the overlay order's (tickets 05 and 06), stubs draw no path.
  */
 function feedReader(model: LayoutModel, tiers: Unit[][], index: number, authority: number | undefined): (unit: Unit) => UnitFeeds {
-  const tierOf = new Map<Unit, number>(), unitOf = new Map<string, Unit>();
-  for (const [at, members] of tiers.entries()) for (const unit of members) {
-    tierOf.set(unit, at);
-    for (const group of unit.groups) unitOf.set(group.id, unit);
-  }
+  if (authority === undefined) return () => ({ parents: new Map(), children: new Map() });
+  return feedsFrom(model, new Set(tiers[authority]!.flatMap(unit => unit.groups.map(group => group.id))), index > authority);
+}
+
+/**
+ * The feeds of a unit towards `sources`, the groups of the tier that is packed before it. `below` says the unit stands
+ * below them: its ports on the side that faces them are the top ones. The inner pass of a canton (ticket 56) reads the
+ * sources off the tier of another member, or off the tier outside the canton for the member tier nearest the anchor.
+ */
+function feedsFrom(model: LayoutModel, sources: ReadonlySet<string>, below: boolean): (unit: Unit) => UnitFeeds {
   return unit => {
     const parents = new Map<string, number>(), children = new Map<string, { x: number; cell: string }>();
-    if (authority === undefined) return { parents, children };
+    const mine = new Set(unit.groups.map(group => group.id));
     for (const link of model.links) {
       if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
       for (const [own, other] of [[link.attachments.from, link.attachments.to], [link.attachments.to, link.attachments.from]]) {
         const ownGroup = model.document.nodes[own!.node]?.group, otherGroup = model.document.nodes[other!.node]?.group;
-        if (ownGroup === undefined || otherGroup === undefined || unitOf.get(ownGroup) !== unit || tierOf.get(unitOf.get(otherGroup)!) !== authority) continue;
+        if (ownGroup === undefined || otherGroup === undefined || !mine.has(ownGroup) || !sources.has(otherGroup)) continue;
         const child = findPort(model, own!), parent = findPort(model, other!);
         if (!child?.anchor || !parent?.anchor) continue;
-        if (child.side !== (index > authority ? 'top' : 'bottom') || parent.side !== (index > authority ? 'bottom' : 'top')) continue;
+        if (child.side !== (below ? 'top' : 'bottom') || parent.side !== (below ? 'bottom' : 'top')) continue;
         children.set(portId(child.ref), { x: child.anchor.x, cell: ownGroup });
         parents.set(portId(parent.ref), parent.anchor.x);
       }
@@ -436,7 +444,63 @@ export function holdColumnAxes(model: LayoutModel, slack = COLUMN_SLACK): boolea
   const tiers = columnTiers(model);
   let moved = false;
   for (const { index, authority } of sweepSteps(model, tiers)) {
-    if (authority !== undefined && tiers[index]!.some(unit => unit.frame)) moved = pullTier(model, tiers, index, authority, slack) || moved;
+    if (authority !== undefined && tiers[index]!.some(unit => unit.frame)) moved = pullTier(model, tiers, index, feedReader(model, tiers, index, authority), slack) || moved;
+  }
+  return holdMemberWalls(model) || moved;
+}
+
+/**
+ * The inner pass alone, for every canton (see `pullMembers`). `holdColumnAxes` runs it after the pass over the top-level units.
+ * Exported so that a test can hold the pass to idempotence on a finished layout apart from the pass over the columns.
+ */
+export function holdMemberWalls(model: LayoutModel): boolean {
+  if (model.document.frames === undefined) return false;
+  const tiers = columnTiers(model);
+  let moved = false;
+  for (const id of Object.keys(model.document.frames)) {
+    if (model.document.frames[id]!.kind === 'canton' && model.document.frames[id]!.parent === undefined) moved = pullMembers(model, id, tiers) || moved;
+  }
+  return moved;
+}
+
+/**
+ * The inner pass of a canton (canton-groups ticket 56, Section 2b rule 2). `pullTier` moves a canton as a whole: its
+ * units are the top-level units and a member is never one. Here the members are the units, per tier, and the
+ * derived canton box is the wall of the plan: a member is pulled to its feed, and to a partner that stays, only inside
+ * the canton, and warns `COLUMN_AXIS_HELD` naming the canton when the wall keeps it off. The same ranges (`feedRange`,
+ * `overlayRange`), the same refusals (a lane, a straight overlay link) and the same plan as `pullTier`. Members that
+ * share a sub-tier stand beside each other and are one row that `packBesideRows` packs: they are not moved here, so
+ * the two rules never fight over the gap. The canton box does not change under the pass, so it is idempotent.
+ */
+function pullMembers(model: LayoutModel, canton: string, outer: Unit[][]): boolean {
+  const frames = model.document.frames!, box = deriveFrames(model)?.find(frame => frame.id === canton)?.box;
+  if (box === undefined) return false;
+  const tiers = columnTiers(model, canton), members = tiers.flat();
+  const alone = new Set(members.filter(unit => !members.some(other => other !== unit && other.low <= unit.high && unit.low <= other.high)));
+  if (!alone.size || frames[canton] === undefined) return false;
+  const anchor = selectAnchorTier(model);
+  const inside = tiers.findIndex(tier => tier.some(unit => anchor !== undefined && unit.low <= anchor && anchor <= unit.high));
+  // The tier outside the canton that the member tier nearest the anchor reads, when the anchor stands outside the canton.
+  const at = outer.findIndex(tier => tier.some(unit => unit.id === canton)), step = sweepSteps(model, outer).find(item => item.index === at);
+  const beyond = step?.authority === undefined ? undefined : { groups: new Set(outer[step.authority]!.flatMap(unit => unit.groups.map(group => group.id))), below: at > step.authority };
+  const order: { index: number; sources: ReadonlySet<string> | undefined; below: boolean }[] = [];
+  const groupsOf = (index: number): Set<string> => new Set(tiers[index]!.flatMap(unit => unit.groups.map(group => group.id)));
+  if (inside >= 0) {
+    order.push({ index: inside, sources: undefined, below: false });
+    for (let i = inside + 1; i < tiers.length; i++) order.push({ index: i, sources: groupsOf(i - 1), below: true });
+    for (let i = inside - 1; i >= 0; i--) order.push({ index: i, sources: groupsOf(i + 1), below: false });
+  } else if (beyond !== undefined && beyond.below) {
+    order.push({ index: 0, sources: beyond.groups, below: true });
+    for (let i = 1; i < tiers.length; i++) order.push({ index: i, sources: groupsOf(i - 1), below: true });
+  } else if (beyond !== undefined) {
+    order.push({ index: tiers.length - 1, sources: beyond.groups, below: false });
+    for (let i = tiers.length - 2; i >= 0; i--) order.push({ index: i, sources: groupsOf(i + 1), below: false });
+  }
+  let moved = false;
+  for (const { index, sources, below } of order) {
+    const units = new Set(tiers[index]!.filter(unit => alone.has(unit)));
+    if (sources === undefined || !units.size) continue;
+    moved = pullTier(model, tiers, index, feedsFrom(model, sources, below), 0, { units, wall: { x: box.x, width: box.width }, canton }) || moved;
   }
   return moved;
 }
@@ -471,6 +535,14 @@ function feedRange(model: LayoutModel, unit: Unit, feeds: (unit: Unit) => UnitFe
  * place. The column pass reads the rest as partners that stay where they are.
  */
 export function overlayFreeGroups(model: LayoutModel, anchor: number | undefined): Set<string> {
+  const frames = model.document.frames;
+  // A one-node client group that is a member of a canton is a frame of one cell, and keeps ticket 05's barycentre (ticket 56):
+  // `placeOverlayFree` moves it as a frame and clamps it to its canton. A frame of other cells stays a frame the column rules own.
+  const member = (group: LayoutGroup): boolean => {
+    const own = group.frame === undefined ? undefined : frames?.[group.frame];
+    return own !== undefined && own.cells.length === 1 && own.parent !== undefined && frames![own.parent]!.kind === 'canton'
+      && !Object.values(frames!).some(frame => frame.parent === group.frame);
+  };
   const routedOut = new Set<string>();
   for (const link of model.links) {
     if (link.layer !== 'routed' || !link.attachments) continue;
@@ -479,7 +551,7 @@ export function overlayFreeGroups(model: LayoutModel, anchor: number | undefined
   }
   const parents = new Set(Object.values(model.document.groups).flatMap(group => group.parent === undefined ? [] : [group.parent]));
   return new Set(Object.values(model.groups).filter(group => group.bounds !== undefined && group.nodes.length > 0
-    && !group.flank && group.frame === undefined && group.tier !== anchor && !routedOut.has(group.id)
+    && !group.flank && (group.frame === undefined || member(group)) && group.tier !== anchor && !routedOut.has(group.id)
     && !parents.has(group.id) && model.document.groups[group.id]?.parent === undefined
     && model.document.groups[group.id]?.shape !== 'bar').map(group => group.id));
 }
@@ -509,24 +581,32 @@ function overlayRange(model: LayoutModel, unit: Unit, tier: Unit[], free: Readon
 }
 
 /** What keeps a column from its feed: an overlay link to a group that stays, a lane it may not cross, or its siblings. */
-type HeldBy = 'overlay' | 'segment' | 'lane' | 'siblings';
+type HeldBy = 'overlay' | 'segment' | 'lane' | 'siblings' | 'members' | 'canton';
 const HELD_TEXT: Record<HeldBy, string> = {
   overlay: 'an overlay link to a group that stays holds it',
   segment: 'an overlay segment holds it',
   lane: 'a reserved lane it would cross holds it',
   siblings: 'its siblings hold it a band gap away',
+  members: 'its sibling members hold it 40 px away',
+  canton: 'the canton column holds it',
 };
 
+/** The members of one canton that the inner pass may move, and the canton frame box that walls them. */
+interface MemberScope { units: ReadonlySet<Unit>; wall: Column; canton: string }
+
 /** One tier of `holdColumnAxes`: plans the pulled positions, applies them unless a lane forbids them, and reports the residuals. */
-function pullTier(model: LayoutModel, tiers: Unit[][], index: number, authority: number, columnSlack: number): boolean {
+function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (unit: Unit) => UnitFeeds, requestedSlack: number, scope?: MemberScope): boolean {
   const tier = tiers[index]!, derived = deriveFrames(model);
-  if (derived === undefined || tier.some(unit => !unit.frame && groupShape(model, unit.id) !== 'row')) return false;
+  // The inner pass of ticket 56 moves the members of one canton only and slides no cell beyond its member's box: the canton box is the wall.
+  const inScope = (unit: Unit): boolean => scope === undefined || scope.units.has(unit);
+  const columnSlack = scope === undefined ? requestedSlack : 0;
+  if (derived === undefined || tier.some(unit => inScope(unit) && !unit.frame && groupShape(model, unit.id) !== 'row')) return false;
   const box = new Map(derived.map(frame => [frame.id, frame.box]));
-  const feeds = feedReader(model, tiers, index, authority), gap = bandGap(model), free = overlayFreeGroups(model, selectAnchorTier(model));
+  const gap = bandGap(model), free = overlayFreeGroups(model, selectAnchorTier(model));
   // A frame with a feed wants the moves that reach the feed and every partner that stays (both ranges met). When
   // no move does, an overlay link to a group that stays holds the frame where it stands: it is pinned.
   const held = new Map<Unit, HeldBy>(), pinned = new Set<Unit>(), wanting = new Set<Unit>();
-  const standing = tier.map(unit => {
+  const standing = tier.filter(inScope).map(unit => {
     const at = unit.frame ? box.get(unit.id)! : unit.groups[0]!.bounds!;
     let range: MoveRange | undefined;
     if (unit.frame) {
@@ -537,14 +617,26 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, authority:
         if (met.low > met.high + PLACEMENT_EPS) { pinned.add(unit); held.set(unit, 'overlay'); range = undefined; } else range = met;
       }
     }
+    let from = at.x + (range?.low ?? 0), to = at.x + (range?.high ?? 0);
+    if (range !== undefined && scope !== undefined) {
+      // The member frame stays inside the canton frame with the group margin to spare. A range wholly beyond the wall
+      // ends at the wall, and the member is held by the canton.
+      const low = scope.wall.x + GROUP_PADDING, high = scope.wall.x + scope.wall.width - GROUP_PADDING - at.width;
+      if (high >= low) {
+        if (from > high + PLACEMENT_EPS || to < low - PLACEMENT_EPS) { held.set(unit, 'canton'); from = to = from > high ? high : low; }
+        else { from = Math.max(from, low); to = Math.min(to, high); }
+      }
+    }
     if (range !== undefined) wanting.add(unit);
-    return { unit, x: at.x, width: at.width, slack: unit.frame ? columnSlack : 0, from: at.x + (range?.low ?? 0), to: at.x + (range?.high ?? 0) };
+    return { unit, x: at.x, width: at.width, slack: unit.frame ? columnSlack : 0, from, to };
   }).sort((a, b) => a.x - b.x || compareId(a.unit.id, b.unit.id));
   // Lefts of a run kept a band gap apart, less the offset of that run, must not fall: pool adjacent violators on
   // the wanted lefts, the nearest point of each range to where the unit stands in the plan so far.
   const offsets: number[] = [];
   let sum = 0;
-  for (const [i, item] of standing.entries()) { offsets.push(sum); sum += item.width + gap + item.slack + (standing[i + 1]?.slack ?? 0); }
+  // Members of a canton stand `2 * GROUP_PADDING` apart (the beside rule); columns stand a band gap and their slack apart.
+  const spacing = scope === undefined ? gap : 2 * GROUP_PADDING;
+  for (const [i, item] of standing.entries()) { offsets.push(sum); sum += item.width + spacing + item.slack + (standing[i + 1]?.slack ?? 0); }
   // A pinned unit stays where the overlay order put it; it bounds the units on either side, whose plan is
   // clamped to it, which is exact for a fixed point.
   // The held points, as z = x - offset, must not fall along the tier, or the clamp below is not exact and a held frame
@@ -625,7 +717,7 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, authority:
   if (blocked) { for (const [group, dx] of shifts) moveGroup(model, group, -dx, 0); settle(); }
   const refused = shifts.size > 0 && (!allowed || blocked);
   if (refused) for (const item of standing) if (shifts.has(item.unit.groups[0]!) && !held.has(item.unit)) held.set(item.unit, blocked ? 'segment' : 'lane');
-  reportHeld(model, tier, feeds, held, columnSlack);
+  reportHeld(model, tier.filter(inScope), feeds, held, columnSlack, scope);
   return allowed && !blocked;
 }
 
@@ -645,16 +737,18 @@ function straightOverlays(model: LayoutModel, only?: ReadonlySet<string>): { id:
  * Says once per column, and again only with a new number, how far its feed links still jog beyond what the
  * cells inside the column can absorb by sliding to the wall: the least jog its siblings leave it.
  */
-function reportHeld(model: LayoutModel, tier: Unit[], feeds: (unit: Unit) => UnitFeeds, heldBy: ReadonlyMap<Unit, HeldBy>, slack: number): void {
+function reportHeld(model: LayoutModel, tier: Unit[], feeds: (unit: Unit) => UnitFeeds, heldBy: ReadonlyMap<Unit, HeldBy>, slack: number, scope?: MemberScope): void {
   const derived = deriveFrames(model);
   if (derived === undefined) return;
   for (const unit of tier.filter(item => item.frame)) {
-    model.diagnostics = model.diagnostics.filter(item => !(item.code === COLUMN_AXIS_HELD && item.owners?.some(owner => 'id' in owner && owner.id === unit.id)));
+    // The first owner is the column that is held; a member's warning names its canton as the second.
+    model.diagnostics = model.diagnostics.filter(item => !(item.code === COLUMN_AXIS_HELD && item.owners?.[0] !== undefined && 'id' in item.owners[0] && item.owners[0].id === unit.id));
     const range = feedRange(model, unit, feeds, derived.find(item => item.id === unit.id)!.box, slack);
     // Standing where it stands, the column reaches its feed when 0 lies in the range of moves.
     const residual = range === undefined ? 0 : Math.max(0, range.low, -range.high);
-    if (residual > 0.5) model.diagnostics.push({ stage: 'placement', severity: 'warning', code: COLUMN_AXIS_HELD, owners: [{ kind: 'group', id: unit.id }],
-      message: `Column ${unit.id} cannot reach its feed: ${HELD_TEXT[heldBy.get(unit) ?? 'siblings']}, so its feed links keep a jog of ${residual.toFixed(1)} px.` });
+    if (residual > 0.5) model.diagnostics.push({ stage: 'placement', severity: 'warning', code: COLUMN_AXIS_HELD,
+      owners: [{ kind: 'group', id: unit.id }, ...(scope ? [{ kind: 'group' as const, id: scope.canton }] : [])],
+      message: `${scope ? `Member ${unit.id} of canton ${scope.canton}` : `Column ${unit.id}`} cannot reach its feed: ${HELD_TEXT[heldBy.get(unit) ?? (scope ? 'members' : 'siblings')]}, so its feed links keep a jog of ${residual.toFixed(1)} px.` });
   }
 }
 
@@ -815,7 +909,11 @@ export function besideWalls(model: LayoutModel): Map<string, CellWindow> {
 }
 
 /** The column of one top-level frame as it stands: its x extent, the sub-tiers it spans, and its cells. */
-export interface FrameColumn extends Column { id: string; from: number; to: number; cells: ReadonlySet<string> }
+export interface FrameColumn extends Column {
+  id: string; from: number; to: number; cells: ReadonlySet<string>;
+  /** A canton's frame box, without slack: the wall of its members (ticket 56). A member never spends the slack, or the box would grow by it at every replay. */
+  wall?: Column;
+}
 
 /**
  * The columns of a model's top-level frames, read off the geometry as it stands. A parent's frame box
@@ -847,7 +945,8 @@ export function frameColumns(model: LayoutModel): FrameColumn[] {
       return Math.min(COLUMN_SLACK, free);
     };
     const low = room(-1), high = room(1);
-    return { id: frame.id, x: frame.box.x - low, width: frame.box.width + low + high, from, to, cells: new Set(cells) };
+    return { id: frame.id, x: frame.box.x - low, width: frame.box.width + low + high, from, to, cells: new Set(cells),
+      ...(frame.kind === 'canton' ? { wall: { x: frame.box.x, width: frame.box.width } } : {}) };
   });
 }
 
