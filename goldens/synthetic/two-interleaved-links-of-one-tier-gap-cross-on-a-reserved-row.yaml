@@ -1,0 +1,33 @@
+# Expected: Interleaved links of one tier gap (ranked-groups ticket 39). `site` holds three routers on rank 0 and four
+# switches on rank 1 in one frame, and the `orthogonal` route keeps the links off the ticket 34 chord. Link-4 (left
+# router to the second switch) nests its stem (depth 32.5, tip row y 280.5) and enters a plain stem (tip row y 303.5),
+# so its two tip rows lie one pitch (23 px) apart. Link-6 (middle router to the first switch) runs the other way: the
+# source ports of the pair run left to right, the target ports right to left, so it must cross link-4 once.
+# On main nothing is reserved between the two tip rows: link-4 lays a run on row 280.5, a jog of one pitch and a run on
+# row 303.5, its 23 px jog is walled by the covers of the two runs it joins, the router drops link-6's tip
+# (57, 303.5), `ROUTE_CHECKPOINT_SKIPPED`, and link-6 is removed. Link-5 also interleaves with link-6, and link-7 with
+# link-5, so their runs are held as well. The allocation now gives each earlier link of a pair the row midway between its tip
+# rows; the tip band of the nested stem of link-4 refuses the rows link-5 would take, so the gap grows until every run fits
+# (`TIER_GAP_GROWN`). Nothing is removed and every gate passes.
+# Test-only input owned by ranked-groups ticket 39; test/pipeline/interleaved-gap-links.test.ts reads the layout.
+portograph: 2
+groups:
+  upstream: { tier: 0 }
+  site: { tier: 1 }
+nodes:
+  isp: { group: upstream, class: provider }
+  r0: { group: site, class: router }
+  r1: { group: site, class: router }
+  r2: { group: site, class: router }
+  s0: { group: site, class: switch }
+  s1: { group: site, class: switch }
+  s2: { group: site, class: switch }
+  s3: { group: site, class: switch }
+links:
+  - [isp, r0]
+  - [isp, r1]
+  - [isp, r2]
+  - [r0, s1, { class: physical, route: orthogonal }]
+  - [r0, s3, { class: physical, route: orthogonal }]
+  - [r1, s0, { class: physical, route: orthogonal }]
+  - [r2, s2, { class: physical, route: orthogonal }]

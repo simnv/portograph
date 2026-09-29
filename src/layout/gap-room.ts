@@ -53,7 +53,8 @@ export function growTierGaps(model: LayoutModel): boolean {
   // or not the gap owes a row, and it needs no probe, because no seat is measured.
   const grown = new Map<number, number>(demand.filter(entry => entry.stems > EPS).map(entry => [entry.below, entry.stems]));
   const byStems = new Set(grown.keys());
-  if (!short.length) return grow(model, grown, byStems);
+  const byHeld = heldRoom(model, demand, grown, byStems);
+  if (!short.length) return grow(model, grown, byStems, byHeld);
   const seats = new Map(demand.map(room => [room.below, room.seated]));
   const room = new Map(demand.map(entry => [entry.below, entry.high - entry.low]));
 
@@ -68,14 +69,42 @@ export function growTierGaps(model: LayoutModel): boolean {
     if (!opened.has(entry.below) || entry.refuses || entry.seated <= seats.get(entry.below)!) continue;
     const extra = entry.required - room.get(entry.below)!;
     if (extra <= EPS) continue;
-    if (extra > (grown.get(entry.below) ?? 0)) byStems.delete(entry.below);
+    if (extra > (grown.get(entry.below) ?? 0)) { byStems.delete(entry.below); byHeld.delete(entry.below); }
     grown.set(entry.below, Math.max(extra, grown.get(entry.below) ?? 0));
   }
-  return grow(model, grown, byStems);
+  return grow(model, grown, byStems, byHeld);
 }
 
+/**
+ * Ticket 39. A gap that cannot hold the run an earlier link of an interleaved pair asks for between its tip rows
+ * grows until it can. The window between two tip rows is one pitch tall, and a band of a foreign nested tip row
+ * keeps a run two run clearances off it, so a run refused in the room the gap has may stand in a little more. The
+ * gap is measured on a probe, as the rows are, and grows by the smallest step that holds every run it was asked
+ * for; a gap that holds none however tall keeps what it has, and its links keep the route they have today.
+ * Returns the tiers of the gaps it grew, and records their room in `grown`.
+ */
+function heldRoom(model: LayoutModel, demand: readonly TierGapRoom[], grown: Map<number, number>, byStems: Set<number>): Set<number> {
+  const result = new Set<number>();
+  for (const entry of demand) {
+    if (entry.heldPlaced >= entry.held) continue;
+    const step = entry.pitch / 2, base = grown.get(entry.below) ?? 0;
+    for (let count = 1; count <= HELD_STEPS; count++) {
+      const probe = tierGapRoom(measured(model, new Map([[entry.below, base + count * step]]))).find(item => item.below === entry.below);
+      if (!probe || probe.heldPlaced < probe.held) continue;
+      grown.set(entry.below, base + count * step);
+      byStems.delete(entry.below);
+      result.add(entry.below);
+      break;
+    }
+  }
+  return result;
+}
+
+/** How many steps of half a pitch a gap may grow to hold the runs of its interleaved pairs. */
+const HELD_STEPS = 8;
+
 /** Moves the bands by the room each gap gained and reports it; false where nothing grew. */
-function grow(model: LayoutModel, grown: ReadonlyMap<number, number>, byStems: ReadonlySet<number>): boolean {
+function grow(model: LayoutModel, grown: ReadonlyMap<number, number>, byStems: ReadonlySet<number>, byHeld: ReadonlySet<number>): boolean {
   if (!grown.size) return false;
 
   moveBands(model, grown);
@@ -83,8 +112,9 @@ function grow(model: LayoutModel, grown: ReadonlyMap<number, number>, byStems: R
     const extra = grown.get(band.tier);
     if (extra === undefined) continue;
     placementWarning(model, 'TIER_GAP_GROWN',
-      `The tier gap above tier ${band.tier} grew ${extra.toFixed(2)} px to ${byStems.has(band.tier)
-        ? 'keep the two stem tips of a link clear of each other\'s stem obstacle' : 'the rows it must seat'}.`,
+      `The tier gap above tier ${band.tier} grew ${extra.toFixed(2)} px to ${byHeld.has(band.tier)
+        ? 'hold the run between the tip rows of two links that cross' : byStems.has(band.tier)
+          ? 'keep the two stem tips of a link clear of each other\'s stem obstacle' : 'the rows it must seat'}.`,
       band.groups, 'group');
   }
   return true;

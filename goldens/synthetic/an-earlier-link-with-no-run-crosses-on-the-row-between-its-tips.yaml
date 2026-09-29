@@ -1,0 +1,24 @@
+# Expected: Two links of one tier gap whose ends interleave, tip rows farther than one pitch apart (ranked-groups
+# ticket 39, covering ticket 41). `site` holds two routers on rank 0 and two switches on rank 1 in one frame. Link-3
+# leaves the left router for the right switch, link-4 leaves the right router for the left switch, so the pair
+# crosses once. Every stem is plain (depth 15), the tip rows lie 30 px apart (y 263 and 293), and neither link has a
+# lane or an allocated run of its own. On main the router lays link-3
+# on the tip row of its source and link-4 rides the same row, collinear with it: gates G4 and G6 fail (ticket 41
+# names the same shape, where the endpoint chord hid it until ticket 37). The allocation now gives link-3, the
+# earlier link, the row midway between the two tip rows; link-4 crosses it once and every gate passes.
+# Test-only input owned by ranked-groups ticket 39; test/pipeline/interleaved-gap-links.test.ts reads the layout.
+portograph: 2
+groups:
+  upstream: { tier: 0 }
+  site: { tier: 1 }
+nodes:
+  isp: { group: upstream, class: provider }
+  r0: { group: site, class: router }
+  r1: { group: site, class: router }
+  s0: { group: site, class: switch }
+  s1: { group: site, class: switch }
+links:
+  - [isp, r0]
+  - [isp, r1]
+  - [r0, s1, { class: physical, route: orthogonal }]
+  - [r1, s0, { class: physical, route: orthogonal }]
