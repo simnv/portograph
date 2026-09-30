@@ -38,7 +38,8 @@ export const LINK_LABEL_CODES = ['LINK_LABEL_OMITTED', 'LINK_LABEL_SHORTENED', '
 
 /** Diagram density as `pipeline.md` defines it; an empty diagram divides by one, not by zero. */
 export function overlayDensity(model: LayoutModel): number {
-  const overlay = model.links.filter(link => effectiveLayer(link) === 'overlay').length;
+  // A mesh bus is one overlay, not its members (mesh-bus.md, section 6).
+  const overlay = model.links.filter(link => effectiveLayer(link) === 'overlay' && link.meshBus === undefined).length + (model.meshBuses?.length ?? 0);
   return overlay / Math.max(1, Object.keys(model.nodes).length);
 }
 

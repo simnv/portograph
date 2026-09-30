@@ -280,7 +280,8 @@ export function stepOutOfChords(model: LayoutModel, tiers: readonly number[], fr
     if (!link.attachments) continue;
     for (const end of [link.attachments.from.node, link.attachments.to.node]) linked.add(model.document.nodes[end]!.group);
   }
-  const overlays = model.links.filter(link => link.layer === 'overlay' && link.attachments);
+  // A bus member is neither straight nor bent and is no chord to step out of (mesh-bus.md, section 4).
+  const overlays = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && link.attachments);
   if (!overlays.length) return;
   const gap = bandGap(model);
   for (const tier of tiers) {

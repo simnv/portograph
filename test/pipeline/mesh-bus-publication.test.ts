@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { drawio, layout, parse, render, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
-import { busLegCounts, busVerticals } from '../../src/layout/bus.js';
+import { busLegCounts, busVerticalCounts, busVerticals } from '../../src/layout/bus.js';
 import { produceLinkLabels } from '../../src/layout/link-labels.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -121,35 +121,32 @@ describe('the bus publishes member paths, scores, renders and exports (ticket 84
     const gap = await run(fixture('a-bus-in-a-rank-gap-grows-the-gap'));
     const bus = gap.meshBuses![0]!;
     expect(busVerticals(gap, bus)).toBe(1);
+    expect(busVerticalCounts(gap, bus)[bus.side!]).toBe(1);
     expect(busLegCounts(gap, bus)[bus.side!]).toBeGreaterThanOrEqual(busVerticals(gap, bus));
     expect(busLegCounts(gap, bus)[bus.side!]).toBeLessThan(busLegCounts(gap, bus)[bus.side === 'top' ? 'bottom' : 'top']);
   }, 60000);
 
-  it('keeps the members of a bus contiguous in the row, whatever the foreign node pulls', async () => {
-    const yaml = fixture('a-full-mesh-on-one-row-draws-as-one-bus')
-      .replace('  n5: { group: row, class: router, label: N5 }\n', '  n5: { group: row, class: router, label: N5 }\n  f1: { group: row, class: router, label: F1 }\n')
-      .replace('  - [core, n5]\n', '  - [core, n5]\n  - [core, f1]\n');
-    const model = await run(yaml);
+  it('keeps the members of a bus contiguous in the row: a foreign node is not left between two of them', async () => {
+    // Without the rule (bus pairs read as row partners) ELK's order leaves `f1` between `n2` and `n3`.
+    const model = await run(fixture('a-foreign-node-stays-out-of-a-bus-row'));
     const bus = model.meshBuses![0]!;
     expect(bus.nodes).toHaveLength(5);
     const xs = bus.nodes.map(id => model.nodes[id]!.bounds!.x), low = Math.min(...xs), high = Math.max(...xs);
-    const between = Object.values(model.nodes).filter(node => !bus.nodes.includes(node.id) && node.owner.kind === 'node' && model.groups[model.document.nodes[node.id]!.group]!.tier === bus.row && node.bounds!.x > low && node.bounds!.x < high);
-    expect(between.map(node => node.id)).toEqual([]);
+    const f1 = model.nodes['f1']!.bounds!.x;
+    expect(f1 < low || f1 > high).toBe(true);
+    expect(gates(model)).toEqual([]);
   }, 60000);
 
-  it('keeps the member frames of a bus contiguous in the tier, and a foreign frame costs bar length only', async () => {
-    const yaml = fixture('a-mesh-across-frames-draws-one-bus')
-      .replace('  east: { tier: 1, label: East }\n', '  east: { tier: 1, label: East }\n  other: { tier: 1, label: Other }\n')
-      .replace('nodes:\n', 'nodes:\n  o1: { group: other, class: router, label: O1 }\n')
-      .replace('  - [core, e1]\n', '  - [core, e1]\n  - [core, o1]\n  - [o1, m1]\n');
-    const model = await run(yaml);
+  it('keeps the member frames of a bus contiguous in the tier: a foreign frame does not lengthen the bar', async () => {
+    // Without the rule the order is east, other, west, middle... with `other` between two member frames and the bar 150 px longer.
+    const model = await run(fixture('a-foreign-frame-stays-out-of-a-bus-tier'));
     const bus = model.meshBuses![0]!;
-    const boxes = (ids: string[]) => ids.map(id => model.groups[id]!.bounds!);
-    const members = boxes(['west', 'middle', 'east']);
+    const members = ['west', 'middle', 'east'].map(id => model.groups[id]!.bounds!);
     const low = Math.min(...members.map(box => box.x)), high = Math.max(...members.map(box => box.x + box.width));
     const foreign = model.groups['other']!.bounds!;
     expect(foreign.x >= high - 1e-6 || foreign.x + foreign.width <= low + 1e-6).toBe(true);
     expect(bus.stubs).toHaveLength(6);
+    expect(gates(model)).toEqual([]);
   }, 60000);
 
   it('restores the published layout of every bus fixture, and refuses a forged member path or bus label', async () => {
@@ -166,6 +163,18 @@ describe('the bus publishes member paths, scores, renders and exports (ticket 84
     forged.labels.find(item => item.role === 'mesh-bus')!.text = 'sync mesh (9 nodes)';
     expect(() => restoreLayoutModel(JSON.stringify(forged))).toThrow();
   }, 120000);
+
+  it('keeps the bus label clear of frame side edges and cuts it out of the overlay mask', async () => {
+    const model = await run(fixture('a-bus-across-cantons-crosses-the-canton-edges'));
+    const label = model.labels.find(item => item.role === 'mesh-bus')!, box = label.bounds!;
+    for (const frame of model.frames!) {
+      if (frame.box.y >= box.y + box.height || frame.box.y + frame.box.height <= box.y) continue;
+      for (const x of [frame.box.x, frame.box.x + frame.box.width]) expect(x > box.x - 1e-6 && x < box.x + box.width + 1e-6).toBe(false);
+    }
+    const svg = render(model);
+    expect(svg).toContain(`<rect class="pg-mask-hide"`);
+    expect(svg).toContain(`x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}"`);
+  }, 60000);
 
   it('hides a bus with its class, and lists its class in the legend', async () => {
     const model = await run(fixture('a-full-mesh-on-one-row-draws-as-one-bus'));

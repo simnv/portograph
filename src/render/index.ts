@@ -226,6 +226,11 @@ function maskedBoxes(model: LayoutModel, visible: (link: LayoutLink) => boolean)
     if (label.role === 'group') boxes.push(label.bounds);
     // A hidden link's label is not drawn, so masking it would leave an unexplained gap.
     if (label.role === 'link' && labelDrawn(model, label, visible)) boxes.push(label.bounds);
+    // The bus label is cut out of the overlay layer as a link label is: the bar and stubs are overlay strokes.
+    if (label.role === 'mesh-bus') {
+      const bus = model.meshBuses?.find(item => item.label === label.id);
+      if (bus?.members.some(id => { const link = model.links.find(item => item.id === id); return link !== undefined && visible(link); })) boxes.push(label.bounds);
+    }
   }
   return boxes;
 }

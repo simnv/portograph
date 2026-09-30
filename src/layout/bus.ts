@@ -82,7 +82,7 @@ export function authoredBusSide(model: LayoutModel, bus: MeshBus): Edge | undefi
  * `provisional` is stage 2: the stage-2 sides (`side`, or the sizing estimate) of every node of the
  * row, because the row's order, and so the span, are not known before the skeleton. Otherwise it is
  * stage 5, after the skeleton: term 1 is exact within the span read off the skeleton order. Term 2
- * (no plan exists before 7a) is read only across frames or for a bus in a rank cell (`term2Applies`), as the
+ * (no plan exists before 7a) is read only across frames, and on an edge that faces a rank gap for a bus in a rank cell (`edgeFacesGap`, per edge), as the
  * ports, in the tier across the gap and on the side that faces it, of the routed links that pass the whole row, at skeleton x:
  * such a link's vertical over the span stands in the gap of its own end, and its lane stands beside the row at the lane's x, outside the
  * span, so it is counted on that edge only. A link between the row and the tier across the gap ends in a port term 1 counts. Term 3, the
@@ -97,14 +97,16 @@ export function busSide(model: LayoutModel, bus: MeshBus, provisional = false): 
 }
 
 /**
- * Whether term 2 (the verticals of the tier gap over the span) can be non-zero for this bus: across frames, where the bar stands in the sub-tier
- * gap, and for a bus in a rank cell, whose edge faces a rank gap. An in-frame bus in a frame padding has term 1 alone: a lane runs beside the
- * cells, and a drop of another tier stays outside the group box (mesh-bus.md, section 4).
+ * Whether the `edge` of the bus's row faces a gap that term 2 reads: across frames, the sub-tier gap; for a bus in a rank cell, the rank gap
+ * above a cell that is not the first rank of its frame and below one that is not the last. An in-frame bus against a frame padding has term 1
+ * alone there: a lane runs beside the cells, and a drop of another tier stays outside the group box (mesh-bus.md, section 4).
  */
-function term2Applies(model: LayoutModel, bus: MeshBus): boolean {
+function edgeFacesGap(model: LayoutModel, bus: MeshBus, edge: Edge): boolean {
   if (bus.placement === 'across-frames') return true;
   const group = Object.values(model.groups).find(item => item.nodes.includes(bus.nodes[0]!));
-  return group?.frame !== undefined;
+  if (group?.frame === undefined) return false;
+  const cells = model.document.frames?.[group.frame]?.cells, at = cells?.indexOf(group.id) ?? -1;
+  return cells !== undefined && at >= 0 && (edge === 'top' ? at > 0 : at < cells.length - 1);
 }
 
 /** The legs each horizontal edge of the row carries within the bar's span (see `busSide`): what the choice of edge compares. */
@@ -122,7 +124,7 @@ export function busLegCounts(model: LayoutModel, bus: MeshBus, provisional = fal
       if ((side === 'top' || side === 'bottom') && used.has(portId(port.ref))) counts[side]++;
     }
   }
-  if (spanned && term2Applies(model, bus)) {
+  if (spanned) {
     // Term 2, physically read. A link between a row and the tier across the gap ends at the row in a port that term 1 counts, and its
     // run in the gap lies below the band (the plan seats no row inside it), so it crosses the bar nowhere else. What does stand over
     // the span is a link that passes the whole row: one end in a tier above, the other in a tier below, which runs through the gap at
@@ -138,7 +140,8 @@ export function busLegCounts(model: LayoutModel, bus: MeshBus, provisional = fal
         const node = model.nodes[ref.node]!, port = node.ports.find(item => portId(item.ref) === portId(ref)), x = port === undefined ? undefined : portX(node, port);
         const tier = tierOf(ref.node)!;
         if ((tier !== above && tier !== below) || x === undefined || x < lo || x > hi) continue;
-        counts[tier < bus.row ? 'top' : 'bottom']++;
+        const edge = tier < bus.row ? 'top' : 'bottom';
+        if (edgeFacesGap(model, bus, edge)) counts[edge]++;
       }
     }
   }
@@ -146,22 +149,34 @@ export function busLegCounts(model: LayoutModel, bus: MeshBus, provisional = fal
 }
 
 /**
- * The verticals that cross the bar in the published layout: the routed segments (a frame-straight chord included) that pass the bar's line within its span
- * (docs/design/mesh-bus.md, section 4). No gate reads them; the overlay report counts them beside the stage-5 leg count (`busLegCounts`).
+ * The verticals that cross a bar's line in the published layout, per edge of the row: the routed segments (a frame-straight chord included)
+ * that pass the line `BUS_STUB` beyond that edge within the bar's span (docs/design/mesh-bus.md, section 4). On the bus's own edge the line
+ * is the bar; on the other edge it is where a bar would stand. No gate reads them; the overlay report counts them beside the stage-5 leg
+ * counts (`busLegCounts`), which are what the choice of edge compared.
  */
-export function busVerticals(model: LayoutModel, bus: MeshBus): number {
-  if (bus.bar === undefined) return 0;
-  const y = bus.bar.from.y, lo = Math.min(bus.bar.from.x, bus.bar.to.x), hi = Math.max(bus.bar.from.x, bus.bar.to.x);
-  let count = 0;
-  for (const link of model.links) {
-    if (link.layer !== 'routed' || link.technique === 'stub' || link.path === undefined) continue;
-    for (const segment of link.path.segments) {
-      if (!(Math.min(segment.from.y, segment.to.y) < y - 1e-6 && Math.max(segment.from.y, segment.to.y) > y + 1e-6)) continue;
-      const x = segment.from.x + (segment.to.x - segment.from.x) * (y - segment.from.y) / (segment.to.y - segment.from.y);
-      if (x >= lo - 1e-6 && x <= hi + 1e-6) count++;
+export function busVerticalCounts(model: LayoutModel, bus: MeshBus): { top: number; bottom: number } {
+  const counts = { top: 0, bottom: 0 };
+  if (bus.bar === undefined || bus.side === undefined) return counts;
+  const lo = Math.min(bus.bar.from.x, bus.bar.to.x), hi = Math.max(bus.bar.from.x, bus.bar.to.x);
+  for (const edge of ['top', 'bottom'] as const) {
+    const extent = edge === bus.side ? undefined : busExtent(model, { ...bus, side: edge });
+    const y = edge === bus.side ? bus.bar.from.y : extent === undefined ? undefined : edge === 'bottom' ? extent.edge + BUS_STUB : extent.edge - BUS_STUB;
+    if (y === undefined) continue;
+    for (const link of model.links) {
+      if (link.layer !== 'routed' || link.technique === 'stub' || link.path === undefined) continue;
+      for (const segment of link.path.segments) {
+        if (!(Math.min(segment.from.y, segment.to.y) < y - 1e-6 && Math.max(segment.from.y, segment.to.y) > y + 1e-6)) continue;
+        const x = segment.from.x + (segment.to.x - segment.from.x) * (y - segment.from.y) / (segment.to.y - segment.from.y);
+        if (x >= lo - 1e-6 && x <= hi + 1e-6) counts[edge]++;
+      }
     }
   }
-  return count;
+  return counts;
+}
+
+/** The verticals across the bar itself (the bus's own edge of `busVerticalCounts`). */
+export function busVerticals(model: LayoutModel, bus: MeshBus): number {
+  return bus.side === undefined ? 0 : busVerticalCounts(model, bus)[bus.side];
 }
 
 const portOf = (model: LayoutModel, ref: PortRef): LayoutPort | undefined =>
@@ -219,7 +234,7 @@ export function expectedBusBands(model: LayoutModel): BusBand[] {
   return result;
 }
 
-/** The x of every vertical that crosses the bus band inside the span: the routed legs of the row's nodes on the bus side, and lanes. */
+/** The x of every vertical that crosses the bus band inside the span: the routed legs of the row's nodes on the bus side, lanes, and frame and group side edges. */
 function bandVerticals(model: LayoutModel, bus: MeshBus, extent: BusExtent): number[] {
   const used = routedPorts(model), xs: number[] = [];
   const members = new Set(bus.nodes);
@@ -232,7 +247,35 @@ function bandVerticals(model: LayoutModel, bus: MeshBus, extent: BusExtent): num
     if (lane.bounds.y >= band.to || lane.bounds.y + lane.bounds.height <= band.from) continue;
     xs.push(lane.bounds.x + lane.bounds.width / 2);
   }
+  // A frame or group side edge that crosses the band is a blocker too: a label stood across it would sit on the box's edge.
+  const boxes = [...(model.frames ?? []).map(frame => frame.box), ...Object.values(model.groups).filter(group => group.frame === undefined && group.nodes.length && group.bounds !== undefined).map(group => group.bounds!)];
+  for (const box of boxes) {
+    if (box.y >= band.to || box.y + box.height <= band.from) continue;
+    xs.push(box.x, box.x + box.width);
+  }
   return xs.filter(x => x >= extent.lo - 1e-6 && x <= extent.hi + 1e-6);
+}
+
+/**
+ * The x intervals a diagonal routed segment (a frame-straight chord) covers inside the bus band: a label may not stand over one. A chord is
+ * decided before 7f (the freeze) and its path follows its ports, so it is known here.
+ */
+function bandChordSpans(model: LayoutModel, bus: MeshBus, extent: BusExtent): [number, number][] {
+  const height = busBandHeight(bus);
+  const band = extent.side === 'bottom' ? { from: extent.edge, to: extent.edge + height } : { from: extent.edge - height, to: extent.edge };
+  const spans: [number, number][] = [];
+  for (const link of model.links) {
+    if (link.layer !== 'routed' || link.technique === 'stub' || link.path === undefined) continue;
+    for (const { from, to } of link.path.segments) {
+      const dx = to.x - from.x, dy = to.y - from.y;
+      if (Math.abs(dx) < 1e-6 || Math.abs(dy) < 1e-6) continue;
+      const low = Math.max(band.from, Math.min(from.y, to.y)), high = Math.min(band.to, Math.max(from.y, to.y));
+      if (low >= high) continue;
+      const a = from.x + dx * (low - from.y) / dy, b = from.x + dx * (high - from.y) / dy;
+      spans.push([Math.min(a, b), Math.max(a, b)]);
+    }
+  }
+  return spans;
 }
 
 /**
@@ -253,10 +296,16 @@ export function busGeometry(model: LayoutModel, bus: MeshBus): Pick<MeshBus, 'ba
     stubs.push({ node: ref.node, from: { ...face }, to: { x: face.x, y } });
   }
   // A stub ends at the bar and the label stands beyond it, so a stub never touches the label; only a vertical that crosses the band does.
-  const blockers = bandVerticals(model, bus, extent).sort((a, b) => a - b);
-  const points = [extent.lo, ...blockers, extent.hi].sort((a, b) => a - b);
   const width = busLabelSize(bus).width, centre = (extent.lo + extent.hi) / 2;
-  const gaps = points.slice(1).map((high, i) => ({ from: points[i]!, to: high })).filter(gap => gap.to - gap.from >= width);
+  const blocked: [number, number][] = [...bandVerticals(model, bus, extent).map((x): [number, number] => [x, x]), ...bandChordSpans(model, bus, extent)]
+    .sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const gaps: { from: number; to: number }[] = [];
+  let cursor = extent.lo;
+  for (const [from, to] of blocked) {
+    if (from - cursor >= width) gaps.push({ from: cursor, to: from });
+    cursor = Math.max(cursor, to);
+  }
+  if (extent.hi - cursor >= width) gaps.push({ from: cursor, to: extent.hi });
   const around = gaps.find(gap => gap.from <= centre - width / 2 && gap.to >= centre + width / 2);
   const longest = [...gaps].sort((a, b) => (b.to - b.from) - (a.to - a.from) || a.from - b.from)[0];
   const room = around !== undefined ? { from: centre - width / 2, to: centre + width / 2 }

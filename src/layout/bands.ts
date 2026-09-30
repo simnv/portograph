@@ -1394,6 +1394,9 @@ export function produceGroupLabelBands(model: LayoutModel): void {
       // The growth-permitted plan stops at the first repairable group, so re-plan for the full
       // blocked classification as well as the retained labels.
       const stalled = planLabels(model, false);
+      // A title that stands on a mesh bus stub cannot move for want of a pass: it stays, and the diagnostic says so (validation accepts it).
+      for (const id of stalled.moves ?? []) if (model.titleMoves?.includes(id) !== true && !titleOnStub(model, id)) model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'MESH_BUS_TITLE_ON_STUB',
+        message: `The title of ${id} stands on the stub of a mesh bus: no position and no widening clears it, and the placement budget is spent, so it stays.`, owners: [{ kind: 'group', id }] });
       model.labels.push(...stalled.labels);
       diagnoseBlocked(model, stalled.blocked);
       if (!model.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE')) model.diagnostics.push({
@@ -1438,8 +1441,11 @@ export function replanGroupLabels(model: LayoutModel): void {
   const reserveAgain = (): void => { model.labelBands = reserved; produceGroupLabelBands(model); };
   if (syncBands(model)) { reserveAgain(); return; }
   const retained = model.labels.filter(label => label.role !== 'group');
-  const plan = planLabels({ ...model, labels: retained }, true, true, legSpentOf(model));
-  if (plan.growth || (plan.moves ?? []).some(id => model.titleMoves?.includes(id) !== true)) { reserveAgain(); return; }
+  const spent = legSpentOf(model);
+  let plan = planLabels({ ...model, labels: retained }, true, true, spent);
+  // A model that stalled (the budget spent) planned its titles without growth; the replan reads it the same way, as validation does.
+  if (plan.growth && model.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE')) plan = planLabels({ ...model, labels: retained }, false, undefined, spent);
+  if (plan.growth || (plan.moves ?? []).some(id => model.titleMoves?.includes(id) !== true && !titleOnStub(model, id))) { reserveAgain(); return; }
   model.labels = [...retained, ...plan.labels];
   diagnoseBlocked(model, plan.blocked);
 }
