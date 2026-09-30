@@ -59,6 +59,10 @@ export interface LayoutPort extends OwnedElement {
   side?: Side;
   /** Capacity estimate only; stage 5 chooses the final side from actual peer positions. */
   sizingSide?: Side;
+  /** Set only on a port a side hint moved (docs/design/side-faces.md, Section 3): `side` is the hinted lateral side. */
+  sideHint?: true;
+  /** With `sideHint`: the side stages 2 and 5 give this port without the hint. Bus edges and title edges read it. */
+  naturalSide?: Side;
   /** Stage 5 orders unused ports after linked ports unless authorOrder takes precedence. */
   unused?: boolean;
   authorOrder?: number;
@@ -417,6 +421,8 @@ export interface FrozenPort {
   ref: PortRef;
   side: Side;
   authorOrder?: number;
+  sideHint?: true;
+  naturalSide?: Side;
 }
 export interface PlacementSnapshot {
   sharedRuns: { link: string; runs: NonNullable<LayoutLink['sharedRuns']> }[];
@@ -433,5 +439,7 @@ export interface LayoutFreeze {
   version: 1;
   topology: { node: string; ports: FrozenPort[] }[];
   floors: { node: string; size: Size }[];
+  /** Present only when a run was given size floors for its hinted nodes (side-faces.md, Section 8): the stage-3 floor of each such node. */
+  nodeFloors?: { node: string; size: Size }[];
   placement?: PlacementSnapshot;
 }

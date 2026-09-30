@@ -6,7 +6,7 @@
  * the previous stage published. What this file does own is the *budget*: one remainder shared by
  * the ELK attempts and the router, so a command cannot spend a fresh stage policy per attempt.
  */
-import type { Diagnostic, LayoutModel, LayoutStage, NormalisedDocument, Side } from '../model/index.js';
+import type { Diagnostic, LayoutModel, LayoutStage, NormalisedDocument, Side, Size } from '../model/index.js';
 import { resolve } from '../resolve/index.js';
 import { sidesOne } from '../layout/sides-one.js';
 import { sizeNodes } from '../layout/size.js';
@@ -27,6 +27,7 @@ import { CommandDeadlineError, POST_PLACEMENT_RESERVE_MS, UNBOUNDED_BUDGET, type
 import { declinedFanDiagnostics, fanRoundDropped, fanRoundHolds, measureFans, type FanMeasure } from '../layout/fan-spread.js';
 import { chordClearances } from '../layout/frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
+import { sideHintDiagnostics, type SideHints } from '../layout/side-hints.js';
 
 
 /** Most runs of placement a fan's pitch may cost after the first (ticket 89). */
@@ -67,6 +68,10 @@ export interface LayoutOptions {
   strictCheckpoints?: boolean;
   clock?: ElkClock;
   onProgress?: (progress: LayoutProgress) => void;
+  /** Test only. Side hints for every placement run (port key to `left` or `right`); no measure offers one yet (ticket 115). */
+  testSideHints?: SideHints;
+  /** Test only. Stage-3 node size floors for every placement run: the sizes a measured run built its skeleton graph from (side-faces.md, Section 8). */
+  testNodeFloors?: ReadonlyMap<string, Size>;
 }
 
 /**
@@ -86,10 +91,12 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   };
 
   /** Stages 1 to 7e, the placement the chords are decided on before 7f grows a gap, and so the placement a fan is measured on. `floors` are port pitches a fan of chords needs on a face (ticket 89); the first run has none. */
-  const place = async (floors: FanMeasure['floors']): Promise<LayoutModel> => {
+  const place = async (floors: FanMeasure['floors'], hints = options.testSideHints, nodeFloors = options.testNodeFloors): Promise<LayoutModel> => {
     const resolved = step('resolve', () => resolve(document, options.diagnostics ? { diagnostics: options.diagnostics } : {}));
-    step('sides-one', () => sidesOne(resolved));
+    step('sides-one', () => sidesOne(resolved, hints));
     for (const [id, pitch] of floors) resolved.nodes[id]!.sidePitch = { ...resolved.nodes[id]!.sidePitch, ...pitch };
+    // A hinted node keeps the size the measured run gave it, so the skeleton input is the same (a floor on `size`, not on `sizeFloor`, which alignment reads).
+    for (const [id, size] of nodeFloors ?? []) resolved.nodes[id]!.size = { ...size };
     step('size', () => sizeNodes(resolved));
 
     if (budget.remainingMs() <= 0) throw new CommandDeadlineError(0, 'skeleton');
@@ -104,7 +111,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
 
     // sidesTwo freezes port topology and publishes the first protected snapshot; every region rule
     // below returns a new one, and the previous value must not be used again.
-    let model = step('sides-two', () => sidesTwo(resolved));
+    let model = step('sides-two', () => sidesTwo(resolved, nodeFloors));
     model = step('rows', () => rows(model));
     model = step('lanes', () => lanes(model));
     model = step('flanks', () => flanks(model));
@@ -150,7 +157,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   model = step('bands', () => bands(model, budget));
   // 7f moves columns in x after the chords are decided, and no rule bounds it: a pair it closes under the clearance is named here, with the
   // clearance it had at the freeze, so that a G6 failure can be traced to the move (ticket 89 review). Nothing is changed.
-  const lost: Diagnostic[] = [];
+  const lost: Diagnostic[] = [...sideHintDiagnostics(model)];
   for (const [pair, now] of chordClearances(model)) {
     const before = atFreeze.get(pair);
     if (now < STRAIGHT_PATH_CLEARANCE.path - 1e-6 && before !== undefined) {
