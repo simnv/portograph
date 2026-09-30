@@ -1,0 +1,25 @@
+# Expected: One frame of six nodes and three uplinks. The row N2, N3, N4 has unequal heights: N3 (80 px) is taller than N2 (60 px)
+# and N4. Link 4 (N2 to N5) stays orthogonal, and its tier-gap row passes under N3. The row plan seated that row from its own
+# end node's stem tip and the group margin, 10.75 px under the taller body, so G6 measured less than 10 px of clearance. The plan
+# seats a row 10 px plus both half strokes below the lowest body edge of every node it passes under or beside (ranked-groups
+# ticket 90), so the room does not depend on a neighbour's stem.
+# Test-only input owned by ranked-groups ticket 90; test/pipeline/gap-row-body-clearance.test.ts reads the layout.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, label: Site }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  n0: { group: site, class: switch, label: N0 }
+  n1: { group: site, class: switch, label: N1 }
+  n2: { group: site, class: switch, label: N2, size: { width: 60, height: 60 } }
+  n3: { group: site, class: switch, label: N3, size: { width: 60, height: 80 } }
+  n4: { group: site, class: switch, label: N4 }
+  n5: { group: site, class: switch, label: N5, size: { width: 60, height: 80 } }
+links:
+  - [isp, n4]
+  - [isp, n2]
+  - [isp, n3]
+  - [n2, n5]
+  - [n1, n3]
+  - [n0, n3]

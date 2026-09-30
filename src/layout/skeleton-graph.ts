@@ -99,7 +99,7 @@ export function buildSkeletonGraph(model: LayoutModel, tier?: number): ElkNode {
         }),
       };
     }),
-    edges: model.links.filter(link => nodes.has(link.attachments!.from.node) && nodes.has(link.attachments!.to.node))
+    edges: model.links.filter(link => link.meshBus === undefined && nodes.has(link.attachments!.from.node) && nodes.has(link.attachments!.to.node))
       .map(link => ({ id: link.id, sources: [portId(link.attachments!.from)], targets: [portId(link.attachments!.to)] })),
   };
 }

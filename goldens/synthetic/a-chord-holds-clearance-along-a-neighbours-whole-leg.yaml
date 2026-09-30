@@ -1,0 +1,20 @@
+# Expected: A narrow core router links to an edge router on the rank below (a frame chord candidate) and to a far router two
+# ranks down (a tier transit, so it stays orthogonal). Both leave the bottom face of the core, 12 px apart. The orthogonal link
+# runs a vertical leg from its port toward its gap row; the chord slants a little toward it. The chord check reads the whole leg
+# as placement will draw it (port face to the row, a stem short of the far boundary), not the 15 px stem only: the chord holds
+# the 10 px chord clearance along the leg or the link keeps the orthogonal route (ranked-groups ticket 91).
+# Test-only input owned by ranked-groups ticket 91; test/pipeline/frame-chord-leg.test.ts reads it.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, label: Site }
+  far: { tier: 2, label: Far }
+nodes:
+  isp: { group: upstream, class: provider, label: A }
+  core: { group: site, class: router, label: C }
+  edge: { group: site, class: router, label: E }
+  deep: { group: far, class: router, label: D }
+links:
+  - [isp, core]
+  - [core, edge]
+  - [core, deep]

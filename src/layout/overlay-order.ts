@@ -15,12 +15,18 @@ import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 function readDraft(model: LayoutModel) {
   const anchor = selectAnchorTier(model);
   if (anchor === undefined) return undefined;
-  const overlay = model.links.filter(link => link.layer === 'overlay' && link.attachments);
+  // A bus member is neither straight nor bent (mesh-bus.md, section 4): it is no straight overlay link to keep, and its pairs are
+  // satisfied by contiguity, which `rowTools` reads from `busDrawn`.
+  const overlay = model.links.filter(link => link.layer === 'overlay' && link.attachments && link.meshBus === undefined);
+  const members = model.links.filter(link => link.layer === 'overlay' && link.attachments && link.meshBus !== undefined);
   const groupOf = (node: string): LayoutGroup => model.groups[model.document.nodes[node]!.group]!;
   const placed = (node: string): boolean => model.nodes[node]?.bounds !== undefined && groupOf(node).bounds !== undefined && !groupOf(node).flank;
   const tiers = [...new Set(Object.values(model.groups).filter(group => !group.flank && group.nodes.length).map(group => group.tier!))].sort((a, b) => a - b);
   const index = new Map(tiers.map((tier, i) => [tier, i]));
   const tierOf = (node: string): number => index.get(groupOf(node).tier!)!;
+  const flanked = new Set(Object.values(model.groups).flatMap(group => group.flank ? [group.flank.of] : []));
+  /** Whether a group is a plain row: no flank, no flanked group, no bar, no grid. Only two bodies of such rows can be neighbours on a row. */
+  const isRow = (group: LayoutGroup): boolean => !group.flank && !flanked.has(group.id) && groupShape(model, group.id) === 'row' && model.document.groups[group.id]?.shape !== 'bar';
   const centre = (node: string): number => model.nodes[node]!.bounds!.x + model.nodes[node]!.bounds!.width / 2;
 
   interface Pair { from: string; to: string; link: LayoutLink }
@@ -28,14 +34,14 @@ function readDraft(model: LayoutModel) {
     .map(link => ({ from: link.attachments!.from.node, to: link.attachments!.to.node, link }));
   const routed = pairs(model.links.filter(link => link.layer === 'routed' && link.attachments && link.technique !== 'stub'
     && link.attachments.from.node !== link.attachments.to.node));
-  const drawn = pairs(overlay);
+  const drawn = pairs(overlay), busDrawn = pairs(members);
 
   // Who pulls whom: routed partners in the adjacent tiers, overlay partners in any other tier.
   const partners = new Map<string, string[]>();
   const pull = (one: string, other: string): void => { partners.set(one, [...(partners.get(one) ?? []), other]); };
   for (const { from, to } of routed) if (Math.abs(tierOf(from) - tierOf(to)) === 1) { pull(from, to); pull(to, from); }
   for (const { from, to } of drawn) if (tierOf(from) !== tierOf(to)) { pull(from, to); pull(to, from); }
-  const touched = new Set(drawn.flatMap(pair => [tierOf(pair.from), tierOf(pair.to)]));
+  const touched = new Set([...drawn, ...busDrawn].flatMap(pair => [tierOf(pair.from), tierOf(pair.to)]));
 
   const mean = (values: number[]): number | undefined => values.length ? values.reduce((sum, x) => sum + x, 0) / values.length : undefined;
   /** The mean x of the partners of `nodes`, leaving out any partner in `except` (what moves with the nodes). */
@@ -111,11 +117,11 @@ function readDraft(model: LayoutModel) {
    * `aligned` reads a link inside one sub-tier, when an end stands in a rank cell, on the row the cells will share,
    * and also counts `blocked`: the routed links inside one sub-tier with a body between their ends.
    */
-  const measureRange = (low: number, high: number, aligned = false): { crossings: number; straight: number; blocked: number } => {
+  const measureRange = (low: number, high: number, aligned = false, crossOnly = false): { crossings: number; straight: number; blocked: number } => {
     let crossings = 0;
     for (let a = low - 1; a <= high; a++) if (a >= 0 && a + 1 < tiers.length) crossings += regionCrossings(a, a + 1);
     const boxes = bodies(), rows = aligned ? rowBoxes() : undefined;
-    const spanning = drawn.filter(pair => Math.min(tierOf(pair.from), tierOf(pair.to)) <= high && Math.max(tierOf(pair.from), tierOf(pair.to)) >= low);
+    const spanning = drawn.filter(pair => !(crossOnly && tierOf(pair.from) === tierOf(pair.to) && isRow(groupOf(pair.from)) && isRow(groupOf(pair.to))) && Math.min(tierOf(pair.from), tierOf(pair.to)) <= high && Math.max(tierOf(pair.from), tierOf(pair.to)) >= low);
     const inside = rows === undefined ? [] : routed.filter(pair => onRow(pair) && tierOf(pair.from) >= low && tierOf(pair.from) <= high);
     return { crossings, straight: spanning.filter(pair => straight(pair, boxes, rows)).length, blocked: inside.filter(pair => !straightOnRow(pair, rows!)).length };
   };
@@ -129,10 +135,125 @@ function readDraft(model: LayoutModel) {
     });
     return items.map(item => keys.get(item) === undefined ? item : queue.shift()!);
   };
-  return { anchor, tiers, index, tierOf, partners, touched, keyOfNodes, same, measure, measureRange, reorder };
+  return { anchor, tiers, index, tierOf, groupOf, drawn, busDrawn, centre, isRow, partners, touched, keyOfNodes, same, measure, measureRange, reorder };
 }
 
 /** What both orderings (groups and nodes, and frames) read: the draft's keys, its tiers and its two measures. */
+
+/**
+ * Puts the nodes of a row group in the order `next`, left to right from the left edge of the row, and keeps the ports on their nodes.
+ * With `grow` the box may grow to the right, as far as the group to its right leaves room; without it a row that needs more room than
+ * it has is refused (a frame cell stands in a column whose width is fixed). Returns whether the row was seated.
+ */
+function reseatRow(model: LayoutModel, group: LayoutGroup, next: string[], grow: boolean): boolean {
+  const order = group.rowOrder ?? group.nodes;
+  const left = Math.min(...order.map(node => model.nodes[node]!.bounds!.x));
+  let need = left;
+  for (const [i, node] of next.entries()) need += (i ? nodeGap(model, next[i - 1]!, node) : 0) + model.nodes[node]!.bounds!.width;
+  // The box grows to the right and no neighbour is re-packed: a row that would grow past the room
+  // the group to its right leaves is refused, so that no two groups of the tier overlap.
+  const right = group.bounds!.x + group.bounds!.width, grown = Math.max(right, need + spacing.padding);
+  if (grown > right + PLACEMENT_EPS) {
+    // The least room the skeleton keeps between two groups of a tier: what ELK is given as node spacing.
+    const minGap = spacing.nodeClearance + Math.max(DEFAULT_STROKE_WIDTHS.node, ...Object.values(model.nodes).map(node => node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node));
+    const wall = Math.min(Infinity, ...Object.values(model.groups)
+      .filter(other => other !== group && other.tier === group.tier && other.bounds && other.bounds.x >= right - PLACEMENT_EPS).map(other => other.bounds!.x));
+    if (!grow || grown > wall - minGap) return false;
+  }
+  let x = left;
+  for (const [i, node] of next.entries()) {
+    if (i) x += nodeGap(model, next[i - 1]!, node);
+    const body = model.nodes[node]!, dx = x - body.bounds!.x;
+    body.bounds!.x = x;
+    for (const port of body.ports) if (port.anchor) port.anchor.x += dx;
+    x += body.bounds!.width;
+  }
+  group.rowOrder = next;
+  group.bounds!.width = Math.max(group.bounds!.width, x + spacing.padding - group.bounds!.x);
+  return true;
+}
+
+/**
+ * What both orderings share for ticket 78, the order of a row by its overlay partners. A same-row link is one straight segment
+ * only when its two ends are neighbours on the row, so the row is ordered to put linked bodies next to each other.
+ */
+function rowTools(model: LayoutModel, draft: NonNullable<ReturnType<typeof readDraft>>) {
+  const { tierOf, drawn, busDrawn, centre, index, reorder, measureRange, isRow } = draft;
+  /** The overlay links whose two ends stand in one tier, as node pairs; the members of a bus among them (contiguity satisfies them). */
+  const sameRow = [...drawn, ...busDrawn].filter(pair => pair.from !== pair.to && tierOf(pair.from) === tierOf(pair.to));
+  const linksBetween = (one: string[], two: string[]): number => sameRow.filter(pair =>
+    (one.includes(pair.from) && two.includes(pair.to)) || (one.includes(pair.to) && two.includes(pair.from))).length;
+  /** The mean x of the same-tier partners of `nodes` that stand outside `inside`. */
+  const outsideKey = (nodes: string[], inside: ReadonlySet<string>): number | undefined => {
+    const xs = sameRow.flatMap(pair => nodes.includes(pair.from) && !inside.has(pair.to) ? [centre(pair.to)]
+      : nodes.includes(pair.to) && !inside.has(pair.from) ? [centre(pair.from)] : []);
+    return xs.length ? xs.reduce((sum, x) => sum + x, 0) / xs.length : undefined;
+  };
+  /**
+   * Fragments of `items` in which linked ones stand next to each other. A fragment is grown from the heaviest pair down
+   * (an item takes at most two neighbours and a pair never closes a ring); a tie keeps the old order. A fragment keeps
+   * the direction it had, and the fragments stand where the mean old place of their items was.
+   */
+  const chain = <T>(items: T[], weight: (one: T, two: T) => number): T[][] => {
+    const edges = items.flatMap((one, i) => items.slice(i + 1).map((two, k) => ({ i, j: i + 1 + k, w: weight(one, two) })))
+      .filter(edge => edge.w > 0).sort((a, b) => b.w - a.w || a.i - b.i || a.j - b.j);
+    const parent = items.map((_, i) => i), root = (i: number): number => parent[i] === i ? i : (parent[i] = root(parent[i]!));
+    const next = new Map<number, number[]>(items.map((_, i) => [i, []]));
+    for (const { i, j } of edges) {
+      if (next.get(i)!.length > 1 || next.get(j)!.length > 1 || root(i) === root(j)) continue;
+      parent[root(i)] = root(j); next.get(i)!.push(j); next.get(j)!.push(i);
+    }
+    const seen = new Set<number>(), fragments: number[][] = [];
+    for (const start of items.keys()) {
+      if (seen.has(start) || next.get(start)!.length > 1) continue;
+      const path = [start];
+      seen.add(start);
+      for (let at = start, prev = -1; ;) {
+        const step = next.get(at)!.find(k => k !== prev);
+        if (step === undefined) break;
+        prev = at; at = step; path.push(at); seen.add(at);
+      }
+      fragments.push(path[0]! <= path[path.length - 1]! ? path : path.reverse());
+    }
+    const place = (fragment: number[]): number => fragment.reduce((sum, i) => sum + i, 0) / fragment.length;
+    return fragments.sort((a, b) => place(a) - place(b) || a[0]! - b[0]!).map(fragment => fragment.map(i => items[i]!));
+  };
+  /** The nodes of a row, chained by the overlay links inside it; a chain leans toward its partners outside the row. */
+  const chainNodes = (standing: string[]): string[] => {
+    const order = [...standing].sort((a, b) => model.nodes[a]!.bounds!.x - model.nodes[b]!.bounds!.x || standing.indexOf(a) - standing.indexOf(b));
+    const inside = new Set(order);
+    const fragments = chain(order, (one, two) => linksBetween([one], [two])).map(fragment => {
+      const first = outsideKey([fragment[0]!], inside), last = outsideKey([fragment[fragment.length - 1]!], inside);
+      return first !== undefined && last !== undefined && first > last ? [...fragment].reverse() : fragment;
+    });
+    return reorder(fragments, fragment => outsideKey(fragment, inside)).flat();
+  };
+  /**
+   * The same-row overlay links over the sub-tiers `low` to `high` (indices) that stand between neighbours on the row. The draft has not
+   * levelled the rows yet (ELK layers a row group on several heights), so a link is read from the order the bodies will stand in: the
+   * groups by x, the nodes of a group by its row order. Only a link between two nodes of row groups counts.
+   */
+  const adjacent = (low: number, high: number): number => {
+    let count = 0;
+    for (let here = low; here <= high; here++) {
+      const sequence = Object.values(model.groups).filter(group => !group.flank && index.get(group.tier!) === here && group.bounds && group.nodes.length)
+        .sort((a, b) => a.bounds!.x - b.bounds!.x || compareId(a.id, b.id))
+        .flatMap(group => (group.rowOrder ?? [...group.nodes].sort((a, b) => model.nodes[a]!.bounds!.x - model.nodes[b]!.bounds!.x))
+          .map(node => ({ node, row: isRow(group) })));
+      const at = new Map(sequence.map((entry, i) => [entry.node, i]));
+      count += sameRow.filter(pair => tierOf(pair.from) === here && sequence[at.get(pair.from)!]?.row && sequence[at.get(pair.to)!]?.row
+        && Math.abs(at.get(pair.from)! - at.get(pair.to)!) === 1).length;
+    }
+    return count;
+  };
+  /** The measures a chained order is judged by: the acceptance of the draft (cross-tier links only) and the neighbours on the row. */
+  const readChain = (low: number, high: number): ReturnType<typeof measureRange> & { near: number } =>
+    ({ ...measureRange(low, high, true, true), near: adjacent(low, high) });
+  /** Whether a chained order stands: routed crossings, blocked routed links and straight cross-tier links do not worsen, and more row links are neighbours. */
+  const gains = (before: ReturnType<typeof readChain>, after: ReturnType<typeof readChain>): boolean =>
+    after.crossings <= before.crossings && after.blocked <= before.blocked && after.straight >= before.straight && after.near > before.near;
+  return { sameRow, linksBetween, chain, chainNodes, isRow, adjacent, readChain, gains };
+}
 
 /**
  * Overlay-weighted order (ranked-groups spec, section 3.2, ticket 06).
@@ -149,8 +270,9 @@ function readDraft(model: LayoutModel) {
  *   over its own links. A partner in the same tier is left out: its position moves with the order
  *   this rule is choosing, and a pair of same-tier partners would swap places on every run.
  * - **The sweep** takes the tiers one after the other, from the anchor tier downwards and then from
- *   the anchor tier upwards. The anchor tier keeps ELK's order: it is the fixed reference. A group
- *   with no key keeps its slot; ties keep ELK's order.
+ *   the anchor tier upwards. The key order leaves the anchor tier as ELK had it: it is the fixed reference
+ *   of the sweep. Ticket 78 chains its rows by same-row partners first (see below). A group with no key
+ *   keeps its slot; ties keep ELK's order.
  * - **What moves.** A group moves only among the groups around it that can move too. A flank, a bar,
  *   a rank cell, a group that has a child group or a parent group is a wall: it keeps its place and
  *   the groups between two walls are ordered among themselves. The nodes of a `row` group are
@@ -167,13 +289,20 @@ function readDraft(model: LayoutModel) {
  * row), and a routed link is a straight line between its two body centres. `sides-two` then orders
  * the ports from the order chosen here, so no port order goes stale.
  *
+ * **Row partners** (ticket 78). After the key order, and for the anchor tier before the sweep, the groups of a
+ * run and the nodes of a `row` group are chained by their same-tier overlay links, so that linked bodies stand
+ * next to each other and the link is one straight segment. This step is judged by a third term: the routed
+ * crossings and blocked routed links do not rise, the cross-tier straight links (a same-tier link counts there
+ * only when it touches a group that is not a plain row) do not fall, and the count of same-row linked pairs that
+ * stand next to each other rises. A refusal is silent.
+ *
  * A tier that no overlay link touches keeps ELK's order, so an input with no overlay link is
  * untouched.
  */
 export function orderByOverlay(model: LayoutModel): void {
   const draft = readDraft(model);
   if (draft === undefined) return;
-  const { anchor, tiers, touched, keyOfNodes, measure, reorder } = draft;
+  const { anchor, tiers, touched, keyOfNodes, measure, index, tierOf, reorder } = draft;
 
   // ---- moving ------------------------------------------------------------------------------
 
@@ -183,10 +312,8 @@ export function orderByOverlay(model: LayoutModel): void {
     && group.frame === undefined && !parents.has(group.id) && model.document.groups[group.id]?.parent === undefined
     && model.document.groups[group.id]?.shape !== 'bar';
   const save = (groups: LayoutGroup[]): (() => void) => saveGroups(model, groups);
-  /** The least room the skeleton keeps between two groups of a tier: what ELK is given as node spacing. */
-  const minGap = spacing.nodeClearance + Math.max(DEFAULT_STROKE_WIDTHS.node, ...Object.values(model.nodes).map(node => node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node));
   /** Re-orders the groups of `tier` inside each run between two walls. Returns whether any run changed. */
-  const orderGroups = (tier: number): boolean => {
+  const orderGroups = (tier: number, pick: (run: LayoutGroup[]) => LayoutGroup[] = run => reorder(run, group => keyOfNodes(group.nodes))): boolean => {
     const groups = Object.values(model.groups).filter(group => !group.flank && group.tier === tier && group.bounds)
       .sort((a, b) => a.bounds!.x - b.bounds!.x || compareId(a.id, b.id));
     const gap = bandGap(model);
@@ -197,7 +324,7 @@ export function orderByOverlay(model: LayoutModel): void {
       runs[runs.length - 1]!.push(group);
     }
     // Keys are read before any run moves: the runs of one tier do not read each other.
-    const plans = runs.filter(run => run.length > 1).map(run => ({ run, next: reorder(run, group => keyOfNodes(group.nodes)) }))
+    const plans = runs.filter(run => run.length > 1).map(run => ({ run, next: pick(run) }))
       .filter(({ run, next }) => next.some((group, i) => group !== run[i]));
     for (const { run, next } of plans) {
       let x = Math.min(...run.map(group => group.bounds!.x));
@@ -206,46 +333,50 @@ export function orderByOverlay(model: LayoutModel): void {
     return plans.length > 0;
   };
   /** Re-orders the nodes of every movable `row` group of `tier`; returns whether any group changed. */
-  const orderNodes = (tier: number): boolean => {
+  const orderNodes = (tier: number, pick: (group: LayoutGroup, order: string[]) => string[] = (_group, order) => reorder(order, node => keyOfNodes([node]))): boolean => {
     let changed = false;
     for (const group of Object.values(model.groups).filter(group => group.tier === tier && movable(group) && !flanked.has(group.id))) {
       const order = group.rowOrder ?? group.nodes;
       if (order.length < 2 || groupShape(model, group.id) !== 'row') continue;
-      const next = reorder(order, node => keyOfNodes([node]));
+      const next = pick(group, order);
       if (next.every((node, i) => node === order[i])) continue;
-      const left = Math.min(...order.map(node => model.nodes[node]!.bounds!.x));
-      let need = left;
-      for (const [i, node] of next.entries()) need += (i ? nodeGap(model, next[i - 1]!, node) : 0) + model.nodes[node]!.bounds!.width;
-      // The box grows to the right and no neighbour is re-packed: a row that would grow past the room
-      // the group to its right leaves is refused, so that no two groups of the tier overlap.
-      const right = group.bounds!.x + group.bounds!.width, grown = Math.max(right, need + spacing.padding);
-      const wall = Math.min(Infinity, ...Object.values(model.groups)
-        .filter(other => other !== group && other.tier === tier && other.bounds && other.bounds.x >= right - PLACEMENT_EPS).map(other => other.bounds!.x));
-      if (grown > right + PLACEMENT_EPS && grown > wall - minGap) continue;
-      let x = left;
-      for (const [i, node] of next.entries()) {
-        if (i) x += nodeGap(model, next[i - 1]!, node);
-        const body = model.nodes[node]!, dx = x - body.bounds!.x;
-        body.bounds!.x = x;
-        for (const port of body.ports) if (port.anchor) port.anchor.x += dx;
-        x += body.bounds!.width;
-      }
-      group.rowOrder = next;
-      group.bounds!.width = Math.max(group.bounds!.width, x + spacing.padding - group.bounds!.x);
+      if (!reseatRow(model, group, next, true)) continue;
       changed = true;
     }
     return changed;
   };
 
+  // ---- same-row partners (ticket 78) --------------------------------------------------------
+
+  const tools = rowTools(model, draft);
+  /** The groups of a run, chained by the same-row overlay links between them. */
+  const chainGroups = (run: LayoutGroup[]): LayoutGroup[] => tools.chain(run, (one, two) => tools.linksBetween(one.nodes, two.nodes)).flat();
+  const chainRow = (_group: LayoutGroup, order: string[]): string[] => tools.chainNodes(order);
+
   const at = tiers.indexOf(anchor);
   let moved = false;
-  for (const tier of [...tiers.slice(at + 1), ...tiers.slice(0, at).reverse()]) {
+  for (const tier of [anchor, ...tiers.slice(at + 1), ...tiers.slice(0, at).reverse()]) {
     if (!touched.has(tier)) continue;
     const refused: string[] = [];
-    for (const step of [orderGroups, orderNodes]) {
+    const here = index.get(tier)!, partnered = tools.sameRow.some(pair => tierOf(pair.from) === here);
+    const steps: { run: () => boolean; chained: boolean }[] = [
+      { run: () => orderGroups(tier), chained: false },
+      { run: () => orderNodes(tier), chained: false },
+      { run: () => orderGroups(tier, chainGroups), chained: true },
+      { run: () => orderNodes(tier, chainRow), chained: true },
+    ];
+    for (const step of steps) {
+      if (step.chained ? !partnered : tier === anchor) continue;
       const groups = Object.values(model.groups).filter(group => !group.flank && group.tier === tier && group.bounds);
+      if (step.chained) {
+        // Ticket 78: the partners of a row stand together only when more of its overlay links are one straight segment and nothing else worsens.
+        const before = tools.readChain(here, here), undo = save(groups);
+        if (!step.run()) continue;
+        if (tools.gains(before, tools.readChain(here, here))) moved = true; else undo();
+        continue;
+      }
       const before = measure(tier), undo = save(groups);
-      if (!step(tier)) continue;
+      if (!step.run()) continue;
       const after = measure(tier);
       if (after.crossings > before.crossings) refused.push(`routed crossings would rise from ${before.crossings} to ${after.crossings}`);
       else if (after.straight < before.straight) refused.push(`straight overlay links would fall from ${before.straight} to ${after.straight}`);
@@ -299,8 +430,14 @@ export function saveGroups(model: LayoutModel, groups: LayoutGroup[]): () => voi
  *   keeps its place and ties keep ELK's order. A one-rank group keeps its place: the groups of the
  *   tier were ordered before, and are the walls here, as are a frame with a bar, a grid or a flanked cell.
  * - **The sweep** is the one of `orderByOverlay`, over the document tiers: from the anchor tier
- *   downwards, then upwards. A tier that holds the anchor sub-tier keeps ELK's order.
- * - **Acceptance** is per document tier with the two proxies of `orderByOverlay`, measured over all
+ *   downwards, then upwards. The key order leaves a tier that holds the anchor sub-tier as ELK had it;
+ *   only the row partners step (ticket 78, below) re-orders it, before the sweep.
+ * - **Row partners** (ticket 78): the plain frames of a run, the members of a canton that stand beside each
+ *   other and the nodes of each rank cell are chained by their same-sub-tier overlay links. Canton order never
+ *   changes. The step stands only when the routed crossings and the blocked routed links do not rise, the
+ *   cross-tier straight links do not fall, and the count of same-row linked pairs that are neighbours rises
+ *   (the third term, `near`). A refusal is silent.
+ * - **Acceptance** of the key order is per document tier with the two proxies of `orderByOverlay`, measured over all
  *   the sub-tiers of the tier: the routed crossings of the regions that touch it do not rise and the
  *   straight overlay links over it do not fall, one of the two improves. A third term guards the
  *   routed links inside one sub-tier (an end in a rank cell): the number that have a body between their
@@ -311,7 +448,8 @@ export function saveGroups(model: LayoutModel, groups: LayoutGroup[]): () => voi
 export function orderFramesByOverlay(model: LayoutModel, columns: Map<string, Column>): boolean {
   const draft = readDraft(model);
   if (draft === undefined) return false;
-  const { anchor, tiers, index, touched, partners, keyOfNodes, measureRange, reorder } = draft;
+  const { anchor, tiers, index, touched, partners, keyOfNodes, measureRange, reorder, tierOf } = draft;
+  const tools = rowTools(model, draft);
   const flanked = new Set(Object.values(model.groups).flatMap(group => group.flank ? [group.flank.of] : []));
   const free = (unit: { frame: boolean; groups: LayoutGroup[] }): boolean => unit.frame && unit.groups.every(group => group.bounds !== undefined
     && groupShape(model, group.id) === 'row' && !flanked.has(group.id) && model.document.groups[group.id]?.shape !== 'bar');
@@ -413,7 +551,7 @@ export function orderFramesByOverlay(model: LayoutModel, columns: Map<string, Co
    * move; the members take the places in the order of their keys, and a tie keeps the declaration order the pack gave. A partner in the row
    * is left out of the key (it moves with the order), a partner in a member that stands apart is read where it stands.
    */
-  const orderMembers = (tier: Tier, canton: Unit, from: number, to: number): void => {
+  const orderMembers = (tier: Tier, canton: Unit, from: number, to: number, chained = false): void => {
     type Member = { id: string; cells: string[]; nodes: string[]; range: [number, number]; x: number; width: number };
     const members: Member[] = Object.keys(frames).filter(id => frames[id]!.parent === canton.id).map(id => {
       const cells = frameSubtreeCells(frames, id), reaches = cells.map(cell => cellReach(model, cell)), tiers = cells.map(cell => model.groups[cell]!.tier!);
@@ -437,11 +575,11 @@ export function orderFramesByOverlay(model: LayoutModel, columns: Map<string, Co
     const below = low(tier) > anchor;
     rows.sort((a, b) => below ? a[0]!.range[0] - b[0]!.range[0] : b[0]!.range[0] - a[0]!.range[0]);
     const all = rows.flat(), cells = all.flatMap(member => member.cells.map(cell => model.groups[cell]!));
-    const undo = saveGroups(model, cells), before = measureRange(from, to, true), turned: string[] = [];
+    const undo = saveGroups(model, cells), before = chained ? tools.readChain(from, to) : measureRange(from, to, true), turned: string[] = [];
     for (const [at, slots] of rows.entries()) {
       // A row further from the anchor follows this one, so it is left out of the key as a row of the same order is.
       const inside = new Set(rows.slice(at).flat().flatMap(member => member.nodes));
-      const next = reorder(slots, member => keyOfNodes(member.nodes, inside));
+      const next = chained ? tools.chain(slots, (one, two) => tools.linksBetween(one.nodes, two.nodes)).flat() : reorder(slots, member => keyOfNodes(member.nodes, inside));
       if (next.every((member, i) => member === slots[i])) continue;
       let x = slots[0]!.x;
       for (const [i, member] of next.entries()) {
@@ -451,12 +589,64 @@ export function orderFramesByOverlay(model: LayoutModel, columns: Map<string, Co
       turned.push(...next.map(member => member.id));
     }
     if (!turned.length) return;
-    const verdict = judge(before, measureRange(from, to, true));
+    if (chained) {
+      if (tools.gains(before as ReturnType<typeof tools.readChain>, tools.readChain(from, to))) moved = true; else undo();
+      return;
+    }
+    const verdict = judge(before as ReturnType<typeof measureRange>, measureRange(from, to, true));
     if (verdict === undefined) { moved = true; return; }
     undo();
     refuse(tier, verdict === '' ? undefined : verdict, turned, `the members of the canton ${canton.id} on sub-tiers ${Math.min(...all.map(member => member.range[0]))} to ${Math.max(...all.map(member => member.range[1]))}`);
   };
 
+  /**
+   * Ticket 78: the row of a document tier is ordered by its overlay partners so that a same-row link stands between neighbours. Three
+   * levers, each judged by the acceptance of `tools.gains` and left silently when refused: the plain frames of a run (the cantons keep
+   * their places, ticket 57), the members of a canton that stand beside each other, and the nodes inside a cell.
+   */
+  const chainRows = (tier: Tier, from: number, to: number): void => {
+    if (!tools.sameRow.some(pair => tierOf(pair.from) >= from && tierOf(pair.from) <= to)) return;
+    // The plain frames stand in runs that no canton or foreign unit splits; each run takes the places of the run.
+    const order = standing(tier), sequence = new Map<string, number>();
+    for (let start = 0; start < order.length; start++) {
+      if (!free(order[start]!) || isCanton(order[start]!)) continue;
+      let end = start;
+      while (end + 1 < order.length && free(order[end + 1]!) && !isCanton(order[end + 1]!)) end++;
+      const run = order.slice(start, end + 1);
+      if (run.length > 1) {
+        const places = run.map(unitOrder);
+        tools.chain(run, (one, two) => tools.linksBetween(one.groups.flatMap(group => group.nodes), two.groups.flatMap(group => group.nodes))).flat()
+          .forEach((unit, i) => sequence.set(unit.id, places[i]!));
+      }
+      start = end;
+    }
+    const gainful = (act: () => boolean, groups: LayoutGroup[]): void => {
+      const cells = new Map(groups.map(group => [group.id, columns.get(group.id)])), undo = saveGroups(model, groups), before = tools.readChain(from, to);
+      if (!act()) return;
+      if (tools.gains(before, tools.readChain(from, to))) { moved = true; return; }
+      undo();
+      for (const [id, column] of cells) if (column === undefined) columns.delete(id); else columns.set(id, column);
+    };
+    const everyGroup = tier.flatMap(unit => unit.groups);
+    if ([...sequence].some(([id, place]) => place !== unitOrder(order.find(unit => unit.id === id)!))) {
+      gainful(() => { packTier(model, tier, columns, sequence); return true; }, everyGroup);
+    }
+    for (const canton of tier.filter(unit => isCanton(unit) && free(unit))) {
+      orderMembers(tier, canton, from, to, true);
+    }
+    const cells = everyGroup.filter(group => group.nodes.length > 1 && free({ frame: true, groups: [group] }));
+    gainful(() => {
+      let changed = false;
+      for (const cell of cells) {
+        const rowOrder = cell.rowOrder ?? cell.nodes, next = tools.chainNodes(rowOrder);
+        if (next.some((node, i) => node !== rowOrder[i]) && reseatRow(model, cell, next, false)) changed = true;
+      }
+      return changed;
+    }, everyGroup);
+  };
+
+  // The tier that holds the anchor sub-tier keeps ELK's order of frames; the partners of its rows are still brought together (ticket 78), before the sweep reads it.
+  for (const tier of all.filter(tier => low(tier) <= anchor && high(tier) >= anchor)) chainRows(tier, ...span(low(tier), high(tier)));
   for (const tier of sweep) {
     const [from, to] = span(low(tier), high(tier));
     const cantons = tier.filter(isCanton);
@@ -495,12 +685,13 @@ export function orderFramesByOverlay(model: LayoutModel, columns: Map<string, Co
     }
     // The frames outside every canton are ordered among themselves as 06b does; the cantons keep their places.
     const plain = standing(tier).filter(unit => free(unit) && !isCanton(unit));
-    if (plain.length < 2) continue;
-    const next = reorder(plain, keyOf);
-    if (next.every((unit, i) => unit === plain[i])) continue;
-    // The frames take the places of the frames, in the new order; every other unit keeps its place.
-    const places = plain.map(unitOrder);
-    refuse(tier, settle(tier, new Map(next.map((unit, i) => [unit.id, places[i]!])), from, to), plain.map(unit => unit.id), `the frames of sub-tiers ${low(tier)} to ${high(tier)}`);
+    const next = plain.length < 2 ? plain : reorder(plain, keyOf);
+    if (next.some((unit, i) => unit !== plain[i])) {
+      // The frames take the places of the frames, in the new order; every other unit keeps its place.
+      const places = plain.map(unitOrder);
+      refuse(tier, settle(tier, new Map(next.map((unit, i) => [unit.id, places[i]!])), from, to), plain.map(unit => unit.id), `the frames of sub-tiers ${low(tier)} to ${high(tier)}`);
+    }
+    chainRows(tier, from, to);
   }
   return moved;
 }

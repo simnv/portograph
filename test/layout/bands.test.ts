@@ -869,7 +869,7 @@ it('stress ticket 37: a corridor that follows its child leaves the grid settled 
   const laneX = (id: string): number => model.lanes.find(lane => lane.id === id)!.x;
   const beforeX = laneX('lane:"link-59":5'), afterX = laneX('lane:"link-59":6');
   expect(beforeX).toBe(909.5692545572916);
-  expect(afterX).toBe(1513.4100192412575);
+  expect(afterX).toBe(1513.365111273391); // 1513.4100192412575 before ticket 78 ordered the rows by their overlay partners
   const probe = (x: number) => [{ ...model.lanes[0]!, id: 'lane:"probe":6', tier: 6, x,
     bounds: { ...model.lanes[0]!.bounds, x: x - 17, width: 34 } }];
   const before = copy(model);

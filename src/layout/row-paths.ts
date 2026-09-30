@@ -7,7 +7,7 @@ import { groupConsumers } from '../score/model.js';
 import { portId } from './skeleton-graph.js';
 import { groupShape } from './grid.js';
 import { joinFanTrees } from './bundle-geometry.js';
-import { expectedFramePath, frameLinkCandidate, isFrameStraight } from './frame-paths.js';
+import { expectedFramePath, frameLinkCandidate, isFrameStraight, standaloneChord } from './frame-paths.js';
 
 /**
  * Coordinate magnitude beyond which an obstacle is measured instead of rejected.
@@ -216,11 +216,62 @@ function expectedLevelPath(model: LayoutModel, link: LayoutLink): LayoutPath | u
 export function rebuildRowPaths(draft: LayoutModel): void {
   const candidates = draft.links.filter(link => rowPathCandidate(draft, link));
   for (const link of candidates) delete link.path;
-  for (const link of candidates) {
+  // A stem placement promised blocks a chord only while its link stays orthogonal (ticket 88). The first pass
+  // reads the links after a candidate as orthogonal, so a link that turns straight later still blocked an
+  // earlier chord. Each further pass offers the refused frame candidates the chord again (a level pair outside a frame cannot change), keeping every chord held:
+  // a new chord only removes a stem and checks its own clearance to the held chords, so the held set only
+  // grows, and the loop ends when a pass adds none (at most one pass per candidate).
+  const decide = (link: LayoutLink): boolean => {
     const path = expectedRowPath(draft, link);
     if (path) link.path = path;
     if (automatic(draft, link)) link.technique = path ? 'straight' : 'orthogonal';
+    return path !== undefined;
+  };
+  let open = candidates.filter(link => !decide(link) && frameLinkCandidate(draft, link));
+  // Two passes, repeated until neither changes anything (ticket 89). The add-only pass above holds a chord only once every stem that blocks
+  // it has gone, so two chords that each wait for the other's stem never start. The batch pass offers the candidates left together: each is
+  // taken as straight, and a chord that fails against the others leaves and puts its stem back. Only a link that can hold alone (no tier
+  // transit, title strip, corridor or body refuses it whatever the others do) is offered, so a chord that never could hold cannot
+  // take a neighbour down with it; and the reverted links go back to the add-only pass, where they may hold alone.
+  while (draft.frozenChords === undefined) {
+    while (open.length) {
+      const next = open.filter(link => !decide(link));
+      if (next.length === open.length) break;
+      open = next;
+    }
+    const held = open.length ? batchChords(draft, open, automatic) : [];
+    if (!held.length) break;
+    open = open.filter(link => !held.includes(link));
   }
   // A straight link inside one frame is one chord between two faces, never a leaf of a fan tree.
   joinFanTrees(draft, candidates.filter(link => !isFrameStraight(draft, link)));
+}
+
+/**
+ * The candidates that hold together (ticket 89). Every link that has a chord of its own takes it as a trial; a link that fails against the
+ * others, a body or a title is taken out, all of those at once, and the rest are tried again, until none fails. Returns the links that hold;
+ * the others are as they were.
+ */
+function batchChords(draft: LayoutModel, open: readonly LayoutLink[], automatic: (model: LayoutModel, link: LayoutLink) => boolean): LayoutLink[] {
+  const before = new Map(open.map(link => [link, link.technique] as const));
+  let trial = open.filter(link => {
+    const segment = standaloneChord(draft, link);
+    if (!segment) return false;
+    link.path = { owner: { ...link.owner }, layer: 'routed', fixed: true, ...pathStrokeWidth(link), segments: [{ ...segment, straight: true }] };
+    if (automatic(draft, link)) link.technique = 'straight';
+    return true;
+  });
+  for (;;) {
+    const verdicts = trial.map(link => [link, expectedFramePath(draft, link)] as const);
+    const failing = verdicts.filter(([, path]) => path === undefined).map(([link]) => link);
+    if (!failing.length) {
+      for (const [link, path] of verdicts) if (path) link.path = path;
+      return trial;
+    }
+    for (const link of failing) {
+      delete link.path;
+      if (automatic(draft, link)) link.technique = before.get(link) ?? 'orthogonal';
+    }
+    trial = trial.filter(link => !failing.includes(link));
+  }
 }

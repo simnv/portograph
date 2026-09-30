@@ -1,0 +1,40 @@
+# Expected: a foreign frame of the tier stays out of a mesh bus across frames. Three frames (`west`, `middle`, `east`) hold a full `sync`
+# mesh of six nodes; `other`, declared between `west` and `middle` and fed by the core, would stand between two member frames if the bus
+# links were not read. The frame order (ticket 78, ticket 84) keeps the member frames contiguous, so the bar is not lengthened by it.
+# Test-only input owned by ranked-groups ticket 84; test/pipeline/mesh-bus-publication.test.ts reads it.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  west: { tier: 1, label: West }
+  other: { tier: 1, label: Other }
+  middle: { tier: 1, label: Middle }
+  east: { tier: 1, label: East }
+nodes:
+  o1: { group: other, class: router, label: O1 }
+  core: { group: top, class: router, label: Core }
+  w1: { group: west, class: router, label: W1 }
+  w2: { group: west, class: router, label: W2 }
+  m1: { group: middle, class: router, label: M1 }
+  m2: { group: middle, class: router, label: M2 }
+  e1: { group: east, class: router, label: E1 }
+  e2: { group: east, class: router, label: E2 }
+links:
+  - [core, w1]
+  - [core, m1]
+  - [core, e1]
+  - [core, o1]
+  - { from: w1, to: w2, class: sync }
+  - { from: w1, to: m1, class: sync }
+  - { from: w1, to: m2, class: sync }
+  - { from: w1, to: e1, class: sync }
+  - { from: w1, to: e2, class: sync }
+  - { from: w2, to: m1, class: sync }
+  - { from: w2, to: m2, class: sync }
+  - { from: w2, to: e1, class: sync }
+  - { from: w2, to: e2, class: sync }
+  - { from: m1, to: m2, class: sync }
+  - { from: m1, to: e1, class: sync }
+  - { from: m1, to: e2, class: sync }
+  - { from: m2, to: e1, class: sync }
+  - { from: m2, to: e2, class: sync }
+  - { from: e1, to: e2, class: sync }

@@ -196,25 +196,25 @@ describe('overlay paths', () => {
         { x: 21, y: 103 }, { x: 30, y: 103 }, { x: 30, y: 107 }]);
   });
 
-  it('draws through a body wider than the pair itself, as it always did', () => {
-    // The honest limit of "orthogonal by exception", unchanged from the derivation and pre-existing
-    // (ticket 01, open item 1): the eight ways are read off the two end boxes alone, so a body wider
-    // than the pair's own extent plus a stub lands on every one of them. The straight branch is
-    // refused, the orthogonal branch clears nothing, and its own fall-back — the shortest way clear
-    // of the link's two end boxes — is the straight anchor-to-anchor line, which the mask carries.
-    // A real overlay router that reads ways round the bodies it must pass is the fix, and it is not
-    // this ticket. Measured identical on `main`.
+  it('goes round a body wider than the pair itself (ticket 86)', () => {
+    // The eight ways are read off the two end boxes alone, so a body wider than the pair's own extent
+    // plus a stub lands on every one of them, and the ends-only fall-back used to take the level
+    // "single turn" that is one straight anchor-to-anchor line through the body. Two level ports with
+    // a body between them are the case ticket 86 names. The orthogonal branch now also tries runs
+    // outside every shape they pass, and one of them clears the body: x -4: one clearance left of the pair's own end boxes (here the two node bodies at x 0), which the hull starts from, since a run outside the pair must clear them too.
     expect(path(facingColumn({ id: 'x', bounds: { x: 10, y: 70, width: 40, height: 20 } })))
-      .toEqual([{ x: 30, y: 53 }, { x: 30, y: 107 }]);
+      .toEqual([{ x: 30, y: 53 }, { x: 30, y: 57 }, { x: -4, y: 57 }, { x: -4, y: 103 },
+        { x: 30, y: 103 }, { x: 30, y: 107 }]);
   });
 
   it('keeps clear of the two pills when a node body blocks every way round', () => {
     // Two ports on the same side of two nodes standing side by side, anchors on one line. The
     // straight branch refuses itself twice over: the segment between the two stub ends runs through
     // both bodies, and it covers both stubs, which `route/validate` would throw on. The orthogonal
-    // derivation then reaches its own fall-back — nothing the two boxes offer clears every shape, so
-    // the shortest route clear of the link's own two end boxes is taken and the body it crosses is
-    // what the renderer's mask is still there for. `overlay-blocked-by-a-body` is the fixture.
+    // derivation finds nothing the two boxes offer that clears every shape, and takes the shortest run
+    // outside every shape in the hull of the pair instead (ticket 86): over the top of both bodies,
+    // where it used to cross one and leave the renderer's mask to cut it. `overlay-blocked-by-a-body`
+    // is the fixture.
     expect(path({
       nodes: [{ id: 'i', bounds: { x: 200, y: 30, width: 60, height: 40 } },
         { id: 'j', bounds: { x: 100, y: 30, width: 60, height: 40 } }],
@@ -222,8 +222,8 @@ describe('overlay paths', () => {
         { node: 'j', name: 'west', side: 'left', anchor: { x: 100, y: 50 } }],
       links: [{ id: 'flow', from: 'i', to: 'j', layer: 'overlay',
         points: [{ x: 200, y: 50 }, { x: 100, y: 50 }] }],
-    })).toEqual([{ x: 187, y: 50 }, { x: 183, y: 50 }, { x: 183, y: 41 },
-      { x: 83, y: 41 }, { x: 83, y: 50 }, { x: 87, y: 50 }]);
+    })).toEqual([{ x: 187, y: 50 }, { x: 183, y: 50 }, { x: 183, y: 26 },
+      { x: 83, y: 26 }, { x: 83, y: 50 }, { x: 87, y: 50 }]);
   });
 
   it('never walks back the way it came, and reads the same both ways round', () => {

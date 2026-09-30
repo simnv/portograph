@@ -53,6 +53,24 @@ For every link, in this fixed order, from the document only:
    decides **how many lines stand for the set, never on which layer they are drawn**: the
    group-link takes its members' family layer, and each member keeps its own. An authored
    `route: group-link` names the aggregation and leaves the family's layer alone.
+3a. **Mesh bus** — overlay links of one class, with no authored `route:`, whose two ends stand on one
+   sub-tier (the `tier` of the layout group that holds each end: a rank cell, a one-rank group or a
+   `row` group, in any frame or canton) form a graph per row and class. A member of an overlay
+   group-link is a candidate; a routed group-link is not. The maximal cliques of ≥ 3 nodes
+   (Bron-Kerbosch with pivoting) are read largest first, ties by declaration order, and the first
+   one that passes the checks is the bus. A clique with a node of a `grid` or `bar` group or a flank
+   is declined (`shape`); one where a member holds two authored ports is declined (`named-ports`).
+   Only the clique taken removes edges, so a declined clique hides no other. The member links get
+   `meshBus` and `technique: 'mesh-bus'`, and each member node keeps one port for the bus (the
+   lowest-ordinal anonymous port of the member ends, or the one authored port, onto which bare ends
+   move). One bus per row; a clique with no node in the bus is declined as `second-mesh`. A
+   group-link that lost a member to the bus is dissolved, whole or in part: it leaves `groupLinks`,
+   its members lose `groupLink`, its inferred `ROUTE_UNSUPPORTED` warning goes, and the bus keeps its
+   ids in `dissolved`. The bus records `placement` (`in-frame` or `across-frames`) and `frames`.
+   `MESH_BUS`, `MESH_BUS_PARTIAL` and `MESH_BUS_DECLINED` report it. The step runs on the final
+   model, after the ranked groups are cells, and reads the document only, so resolving
+   `model.document` reproduces it. No geometry until tickets 83 and 84 (`docs/design/mesh-bus.md`,
+   Q105, Q106).
 4. **Bundle membership** — ≥ 2 routed links between the same node pair (ports may differ) that
    leave each shared node on one authored side; links whose authored sides differ at a shared node
    form separate cohorts, and a cohort of one stays routed with a `BUNDLE_MIXED_SIDES` warning
@@ -116,6 +134,11 @@ Same-tier peers remain unresolved until row order exists. For a shared port with
 unresolved peer directions, commit the known winner only if allocating all unresolved votes to
 either lateral side cannot change that winner, including tie priority. Otherwise defer its side
 and retain only a provisional sizing side. Stage 5 recomputes its majority from all peers.
+
+**A mesh bus port** (`docs/design/mesh-bus.md`, ticket 83) has only same-row peers and would take `left`/`right`, but a bus stands on a horizontal
+edge. Stage 2 gives it a provisional bus edge for sizing (`sizingSide`): `busSide` (`bus.ts`) with term 1 over every node of the row, read
+from the stage-2 sides (a port with no side yet counts by its sizing side), because the row's order and so the span are not known before
+the skeleton. Stage 3 counts it as one port on that edge.
 
 ## Stage 3 — size
 
@@ -302,6 +325,16 @@ shared-port peers use their mean coordinate. Capture those coordinates before th
 rebuild. Author `order:` sorts the author-ordered subsequence; free ports occupy the remaining
 positions. Preserve signed keys and the relative physical order of unequal author keys, not an
 absolute slot number.
+
+**The bus edge is read again here** (ticket 83). Once every routed port has its final side, and before the nodes are re-sized and the rows
+repacked, `busSide` counts the legs each horizontal edge of the row carries within the bar's span (the members' bus ports, first to last, at the
+skeleton's x) and fixes `bus.side` at the edge with fewer, the title edge on a tie. Term 1 is exact: the routed, non-stub ports on that edge of
+the row's nodes in the span, member or not. Term 2 has no plan before 7a, and is read as the routed links that pass the whole row (an end in a
+tier above and an end in a tier below), at the x of the port in the tier across the gap; a link between the row and the tier across the gap ends in
+a port term 1 counts, and its run lies below the band. Term 3 (lanes) is not read: it counts the same on both edges. The bus ports take that
+edge (never `left` or `right`), each is the last port in engine order on its side (an authored `order:` on a named bus port still wins), and the
+move is one more side change of the one resize. The edge is fixed at the freeze; 7f never moves it. A stage-2 estimate of the other edge is
+corrected here.
 
 A bundle's members leave each shared node on one side: the ports one bundle ties at a node (and,
 through a port in two bundles, both bundles' ports) vote as one component in stage 2 and again here
@@ -870,6 +903,28 @@ widening on demand needs one growth pass, and centring has spent the shared eigh
 therefore has `LEG_PASSES_PER_TITLE` (1) extra pass outside the shared budget; a widening past it is refused and reported as
 `GROUP_LABEL_LEG_ALLOWANCE_EXHAUSTED`, not as budget exhaustion.
 
+**The mesh bus band** (ticket 83; `docs/design/mesh-bus.md`, section 4). A bus with a fixed side asks for a band of `BUS_STUB` (15 px) plus
+`4 px + label height + 4 px` (the label is `<class> mesh (<n> nodes)` at 9 px). Two placements reserve it.
+*In-frame*: the group that holds the members (a cell or a group) holds the band on the bus edge as it holds a label band, through
+`groupInsets`: on the title edge the label band's `clearance` grows by the bus band and the title moves out by it; on the other edge the
+inset is the larger of the padding and the band. `reserveInitialSpace` shifts the nodes and grows the box by the room still missing (it
+reads the bands the model carries, so the second call reserves nothing more). The frame follows its cells.
+*Across frames*: the band stands in the sub-tier gap on the bus edge and belongs to no frame; the sub-tier holds it as it holds a canton title
+band. `cantonGapNeeds` requires 20 + band + 20 there, and 20 + bus band + canton band + 20 where a canton band stands on the same edge (the
+sum, never the larger); the loop of `reserveInitialSpace` moves the lower tiers by the shortfall. A canton whose outer edge carries the band
+grows by it between its member frames and its title band (`deriveFrames`).
+`syncBands` publishes the `BusBand` records (`busBands`; `group` names the host of an in-frame band) and the bar, the stubs and the label's room
+(`bus.bar`, `bus.stubs`, `bus.labelRoom`) beside the label bands, so every replay that rebuilds the label bands rebuilds them, before the
+tier gap grows and again after it. The bar runs at `L + 15` from the first bus port to the last, `L` being the outermost body or pill extent
+of the members' cell in-frame, and the outermost edge on the bus side of every group of the row in the span across frames (a foreign frame
+included). A stub runs from its port's outward face straight to the bar. The label's room is the centre of the bar where no vertical crosses
+the band there, else the longest clear interval; a stub ends at the bar and the label stands beyond it, so a stub never blocks it.
+A stub of an across-frames bus leaves through the padding and the label band of its frame on the bus edge: `legRects` reads it as a leg of the
+band's ports, so `titleX` nudges the title clear of it and `growthPlan` widens the frame where no x clears it. Where neither holds, the title
+goes to the other edge (`titleMoves`, read by `bandSide` and `frameSide`; the bus reads ADR-0011's own edge through `rawBandSide` and
+`rawFrameSide`) and `MESH_BUS_TITLE_MOVED` (info) says so. The tier-gap plan reads an across-frames band as an O5 band (`tier-gap-rows.md`).
+Bus members are neither straight nor bent: both `straightOverlays` and `stepOverChords` leave them out.
+
 **A tier gap grows to the height of its plan (ADR-0021).** 7f places its group labels, then reads
 the plan of each gap, then places its group labels again. The middle step is the reservation, and it
 needs the labels in front of it: a group label is an obstacle in the tier gap beside it, so a gap
@@ -1096,6 +1151,13 @@ dx until the gap is a band gap again. `orderFramesByOverlay` re-packs the column
 overlay links ask for.
 
 ## Stage 8 — route (remainder)
+
+**A mesh bus member's path is the path along the bus** (ticket 84; `docs/design/mesh-bus.md`, section 5). Stage 8 states nothing of its own for
+a member: its path is stub, bar run, stub, three orthogonal segments on the overlay layer, read off the geometry 7f published on the bus
+(`bus.stubs`, `bus.bar`; `busMemberPath` in `overlay-paths.ts`, which `overlayPath` answers for a member). `route/validate` re-derives it with the
+same producer and compares, as for every overlay path, and G7 reads each end at the port face through `overlayEndpoint`. Members are neither
+straight nor bent and enter neither the bends nor the crossings metric (routed geometry only, as no overlay path does). The verticals that cross
+each bar in the published layout are counted (`busVerticals`) beside the stage-5 leg count (`busLegCounts`); no gate reads them.
 
 **Group boxes are obstacles for foreign links (ADR-0013).** Every group box, grown by the 10 px
 edge margin, obstructs each link that neither attaches inside it, nor owns a lane in its margin,
@@ -1370,6 +1432,13 @@ suppressed when overlay density (overlay links per node, over `max(1, nodes)`) e
 profile's threshold (default 3). A suppressed label leaves no record at all, so it is not an
 omission.
 
+**The bus label** (ticket 84). Each mesh bus gets one model-owned label, `role: 'mesh-bus'`, layer `overlay`, id `label:bus:<bus>` (also `bus.label`),
+text `<class> mesh (<n> nodes)`, 9 px, heading 0, on the room 7f reserved on the bar (`bus.labelRoom`): beyond the bar, 4 px from it. It is placed
+first, so no link label takes the room, and it is not subject to the overlay density suppression. Where no interval holds it (`labelRoom`
+absent) it is omitted with its text as tooltip, and `labelsOmitted` counts it. A bus member's authored label is not placed: it goes to the bus
+tooltip in stage 11 and leaves no omission record, and 7f reserves no room for it. G3 reads a `mesh-bus` label against routed geometry (it
+leaves out every other overlay-layer label).
+
 **A drawn overlay run is an obstacle for a label.** G3 measures a label against routed geometry
 only, and the renderer masks the overlay layer out of every drawn label, so a label over an overlay
 stays readable — but the mask cuts the *overlay* under it, and an overlay path goes round the shapes
@@ -1493,6 +1562,14 @@ named port, the model link id, the merge-run id and the legend entry key. A deta
 mark or bar body carries `data-owner` and, for a mark, `data-end`, instead of repeating a `data-id`.
 Every text node and attribute is XML-escaped, including the inline style, so no source string is
 interpolated as markup.
+
+**A mesh bus** (ticket 84) is one `<g class="mesh-bus overlay <class>" data-id data-members>` in the masked overlay layer: one `<path>` for the bar
+and one per stub, each `link-line overlay-line <class>`, so the class stroke and dash apply; a `<title>` lists the members, the dissolved
+group-links and the members' authored labels. The member `<g class="link">` elements are not emitted, and one endpoint mark per stub is drawn
+above the mask at the port face. The bus label is drawn on the label layer (`link-label mesh-bus-label`). `document.overlays` hides the bus
+with its class. The draw.io export writes the bar as one `edgeStyle=none` edge with two free points, each stub as an
+`orthogonalEdgeStyle;jettySize=0` edge from its port's cell to a free point on the bar, a mark per stub on its pill, and the label as a text
+vertex on the `labels` layer; the drawn bar and stubs read back from the drawio CLI (`-x -f svg`) within 0.05 px.
 
 An inline `<style>` holds the profile theme, the generated geometry locks and the parser-filtered
 document `css:`, in that order. The theme is three paint-only sheets emitted from one data table

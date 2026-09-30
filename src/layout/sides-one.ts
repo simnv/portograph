@@ -2,6 +2,7 @@ import type { PortRef } from '../model/document.js';
 import type { Side } from '../model/geometry.js';
 import type { LayoutGroup, LayoutModel, LayoutPort } from '../model/layout.js';
 import { orderedGroupIds, orderedNodeIds } from '../model/model.js';
+import { busSide, meshBuses } from './bus.js';
 
 /** Complete tie priority for direction votes and unused-port allocation. */
 export const SIDE_TIE_ORDER: readonly Side[] = ['bottom', 'right', 'top', 'left'];
@@ -129,6 +130,15 @@ export function sidesOne(model: LayoutModel): LayoutModel {
     for (const port of unused) {
       port.side = winner(capacity, true);
       capacity[port.side]++;
+    }
+  }
+  // A mesh bus port stands on the bus edge, never on a lateral side. Stage 2 gives it a provisional bus side
+  // for sizing, read from the stage-2 sides of every node of the row (mesh-bus.md, section 4).
+  for (const bus of meshBuses(model)) {
+    const side = busSide(model, bus, true);
+    for (const ref of bus.ports) {
+      const port = model.nodes[ref.node]!.ports.find(item => portKey(item.ref) === portKey(ref));
+      if (port !== undefined && port.side === undefined) port.sizingSide = side;
     }
   }
   model.stage = 'sides-one';

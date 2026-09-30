@@ -18,6 +18,7 @@ export function score(layout: LayoutModel, options: ScoreOptions = {}): ScoreRep
     overlaps: 0, bundledLength: 0, barCross: 0, labelHits: 0, labelsOmitted: layout.labels.filter(l => l.omitted).length,
     stubs: layout.links.filter(l => l.technique === 'stub').length, removedLinks: layout.links.filter(l => l.removed === true).length, groupLinks: layout.groupLinks.length, lanesUsed: 0,
     inversions: layout.bundles.reduce((sum, b) => sum + (b.inversions ?? 0), 0), fallbackUsed: layout.fallbackUsed ?? false, deadlineHit: layout.deadlineHit ?? false,
+    ...(layout.meshBuses?.length ? { meshBuses: layout.meshBuses.length } : {}),
   };
   const gateResults = gates(layout, routed, counters), values = metrics(layout, routed), Q = weightedScore(values);
   const finite = (value: unknown): boolean => typeof value === 'number' ? Number.isFinite(value)

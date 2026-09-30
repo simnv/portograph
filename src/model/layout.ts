@@ -8,7 +8,7 @@ export type LayoutStage = 'normalised' | 'resolve' | 'sides-one' | 'size' | 'ske
 
 export type Layer = 'routed' | 'overlay';
 export type Owner =
-  | { kind: 'node' | 'group' | 'link' | 'group-link' | 'bundle' | 'shared-stem' | 'lane' | 'legend'; id: string }
+  | { kind: 'node' | 'group' | 'link' | 'group-link' | 'bundle' | 'shared-stem' | 'lane' | 'legend' | 'mesh-bus' | 'bus-band'; id: string }
   | { kind: 'barCross'; node: string; link: string };
 
 export interface OwnedElement {
@@ -30,7 +30,7 @@ export interface LayoutLabel extends OwnedElement {
   text: string;
   /** A pill label's exact port; sharing a node owner does not exempt every pill collision. */
   port?: PortRef;
-  role?: 'node' | 'description' | 'group' | 'link' | 'pill' | 'legend';
+  role?: 'node' | 'description' | 'group' | 'link' | 'pill' | 'legend' | 'mesh-bus';
   support?: LabelSupport;
   fontFamily?: string;
   fontSize?: number;
@@ -159,7 +159,7 @@ export interface LayoutLink {
   /** Effective drawing layer, authoritative after semantic resolution. */
   layer?: Layer;
   /** Effective drawing technique. M1 fallback requests remain on document.links[sourceIndex].route. */
-  technique?: Route;
+  technique?: Route | 'mesh-bus';
   /**
    * Effective stroke width, resolved in stage 1 from the author's `weight` multiplier and omitted
    * when it is the shared default. Placement reserves stroke-aware space from it before any path
@@ -168,6 +168,8 @@ export interface LayoutLink {
   strokeWidth?: number;
   bundle?: string;
   groupLink?: string;
+  /** The mesh bus (`meshBuses`) this overlay link is a member of (docs/design/mesh-bus.md); its ends sit on the bus ports. */
+  meshBus?: string;
   /** Routing must first resolve group endpoints to concrete port refs. */
   attachments?: { from: PortRef; to: PortRef };
   path?: LayoutPath;
@@ -297,6 +299,48 @@ export interface GroupLink extends OwnedElement {
   members: string[];
 }
 
+/**
+ * A full mesh of same-class overlay links among three or more nodes of one row, drawn as one bar
+ * (docs/design/mesh-bus.md, Q105). Stage 1 decides it; it has no geometry until tickets 83 and 84.
+ */
+export interface MeshBus extends OwnedElement {
+  id: string;
+  class?: string;
+  /** The row: the sub-tier its members stand on, in every frame and canton of the sheet. */
+  row: number;
+  /** `in-frame` when every member stands in one frame (a cell, a one-rank group or a `row` group), else `across-frames`. */
+  placement: 'in-frame' | 'across-frames';
+  /** The frames, or the one-rank groups with no frame, the members stand in, in order of first member. */
+  frames: string[];
+  /** Members in declaration order. */
+  nodes: string[];
+  /** The bus port of each member, same order as `nodes`. */
+  ports: PortRef[];
+  /** Member link ids. */
+  members: string[];
+  /** The group-links the bus dissolved (their former ids), whole or in part. */
+  dissolved: string[];
+  /** The horizontal edge of the row the bar stands on; fixed by stage 5 (docs/design/mesh-bus.md, section 4). */
+  side?: 'top' | 'bottom';
+  /** From 7f on: the bar, from the first bus port's x to the last. */
+  bar?: { from: Point; to: Point };
+  /** From 7f on: one stub per member, from the port's outward face straight to the bar. */
+  stubs?: { node: string; from: Point; to: Point }[];
+  /** From 7f on: the x interval of the bar the label stands in (`undefined`: no interval holds it), for stage 9. */
+  labelRoom?: { from: number; to: number };
+  /** From stage 9 on: the id of the bus label (`label:bus:<id>`); the label is omitted, with its text as tooltip, where no room held it. */
+  label?: string;
+}
+
+/** The bus band 7f reserves: `group` names the host of an in-frame band, and is absent across frames. */
+export interface BusBand extends OwnedElement {
+  id: string;
+  bus: string;
+  group?: string;
+  side: 'top' | 'bottom';
+  bounds: Rect;
+}
+
 export interface Obstacle extends OwnedElement {
   id: string;
   bounds: Rect;
@@ -332,6 +376,12 @@ export interface LayoutModel {
   labelBands: LabelBand[];
   barDrops: BarDrop[];
   groupLinks: GroupLink[];
+  /** Absent when the document holds no mesh bus. */
+  meshBuses?: MeshBus[];
+  /** Absent when no bus has a band; 7f publishes them. */
+  busBands?: BusBand[];
+  /** The ids of the titles 7f moved to their other edge (`MESH_BUS_TITLE_MOVED`); absent when none. */
+  titleMoves?: string[];
   obstacles: Obstacle[];
   diagnostics: Diagnostic[];
   runtime: LayoutRuntime;

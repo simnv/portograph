@@ -1,10 +1,12 @@
-import type { LayoutGroup, LayoutModel } from '../model/layout.js';
+import type { LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
+import type { Point } from '../model/geometry.js';
 import { frameColumns, overlayFreeGroups, type FrameColumn } from './columns.js';
 import { groupShape } from './grid.js';
-import { occupiedOverhang, selectAnchorTier } from './lanes.js';
+import { laneSidesHold, occupiedOverhang, selectAnchorTier } from './lanes.js';
 import { crosses, overlayBlockers, overlayPath, straightChord } from './overlay-paths.js';
 import { saveGroups } from './overlay-order.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
+import { orderedNodeIds } from '../model/model.js';
 import { deriveFrames } from './frames.js';
 import { GROUP_PADDING, groupInsets, placementWarning } from './regions.js';
 import { rowGap } from './sides-two.js';
@@ -58,7 +60,11 @@ import { PLACEMENT_EPS } from './tolerance.js';
  */
 export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColumn[] = frameColumns(model)): void {
   const anchor = selectAnchorTier(model);
-  if (anchor === undefined || !model.links.some(link => link.layer === 'overlay')) return;
+  if (anchor === undefined) return;
+  if (!model.links.some(link => link.layer === 'overlay')) {
+    if (standLinklessBeside(model, model.tierBands.map(band => band.tier), overlayFreeGroups(model, anchor), columns)) rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');
+    return;
+  }
   const groupOf = (node: string): string => model.document.nodes[node]!.group;
   const routedAny = new Set<string>();
   for (const link of model.links) {
@@ -120,7 +126,7 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
     // The straight overlay links that touch or pass over this tier: a move is kept only where their
     // count, read by the real overlay decision, holds or rises (spec section 5). The mean of partners
     // in two tiers can put a body of the tier between the two ends of a link that was straight.
-    const spanning = model.links.filter(link => link.layer === 'overlay' && link.attachments).filter(link => {
+    const spanning = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && link.attachments).filter(link => {
       const ends = [link.attachments!.from.node, link.attachments!.to.node].map(node => model.groups[groupOf(node)]!.tier!);
       return Math.min(...ends) <= tier && tier <= Math.max(...ends);
     });
@@ -180,7 +186,9 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
     }
     for (const group of movers) settled.add(group.id);
   }
+  const stood = standLinklessBeside(model, tiers, free, columns);
   stepOutOfChords(model, tiers, free, columns);
+  if (stood) rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');
 }
 
 /** The step of `placeOverlayFree` alone, for the 7f rounds that replay without a budget (ticket 76 review). */
@@ -188,8 +196,109 @@ export function stepLinklessOutOfChords(model: LayoutModel, columns: readonly Fr
   const anchor = selectAnchorTier(model);
   if (anchor === undefined) return false;
   const before = JSON.stringify(Object.values(model.groups).map(group => group.bounds));
-  stepOutOfChords(model, model.tierBands.map(band => band.tier), overlayFreeGroups(model, anchor), columns);
-  return JSON.stringify(Object.values(model.groups).map(group => group.bounds)) !== before;
+  const tiers = model.tierBands.map(band => band.tier), free = overlayFreeGroups(model, anchor);
+  const stood = standLinklessBeside(model, tiers, free, columns);
+  stepOutOfChords(model, tiers, free, columns);
+  const moved = JSON.stringify(Object.values(model.groups).map(group => group.bounds)) !== before;
+  // The steps rebuild the nodes of one group at a time, which moves their labels to the end of the list: the replays keep that order. A step that moves a group and a step that moves it back leave the bounds as they were and the labels not.
+  if (stood) rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');
+  return moved;
+}
+
+/**
+ * The straight overlay chords that run through the rows of a group's box, without the group, and the x-intervals of the box's left
+ * edge in which the box would touch one of them. Every chord that is straight without the group bans an interval, not only the
+ * chords that cross the box now: the nearest edge of one chord may lie inside the next (ticket 76 review).
+ */
+function chordBans(model: LayoutModel, group: LayoutGroup, overlays: readonly LayoutLink[]): { rows: { from: Point; to: Point }[]; banned: { low: number; high: number }[] } {
+  const box = group.bounds!, bare = overlayBlockers(model, new Set(group.nodes));
+  const rows = overlays.flatMap(link => {
+    const chord = straightChord(model, link, bare);
+    return chord && Math.max(chord.from.y, chord.to.y) > box.y + PLACEMENT_EPS && Math.min(chord.from.y, chord.to.y) < box.y + box.height - PLACEMENT_EPS ? [chord] : [];
+  });
+  // The x-interval of the box's left edge in which the box touches a chord: the chord's x-extent within the box's rows, less the width.
+  const banned = rows.map(({ from, to }) => {
+    const dy = to.y - from.y, low = Math.min(from.y, to.y), high = Math.max(from.y, to.y);
+    const at = (y: number): number => dy === 0 ? from.x : from.x + (to.x - from.x) * (y - from.y) / dy;
+    const xs = dy === 0 ? [from.x, to.x] : [at(Math.min(Math.max(box.y, low), high)), at(Math.min(Math.max(box.y + box.height, low), high))];
+    return { low: Math.min(...xs) - box.width, high: Math.max(...xs) };
+  });
+  return { rows, banned };
+}
+
+/**
+ * A group with no link of any member stands beside the connected diagram of its tier (ticket 92). ELK puts it where the skeleton
+ * has room, and the rules that shift the connected part later (centring, the 7f replays) leave it behind: a gap as wide as the
+ * shift. Placement reserves its place instead. After every partner is settled, a linkless group that stands outside the x-extent
+ * of the other groups of its tier, and further than one band gap from the nearest of them, moves to one band gap from the extent
+ * on the side it stood on. If that side has no room (a column of a frame, a lane), it tries the other side; if neither has, it stays.
+ * A group inside the extent stays. The step after this one (`stepOutOfChords`) moves it again where a straight chord crosses it.
+ */
+export function standLinklessBeside(model: LayoutModel, tiers: readonly number[], free: ReadonlySet<string>, columns: readonly FrameColumn[]): boolean {
+  const linked = new Set<string>();
+  for (const link of model.links) {
+    if (!link.attachments) continue;
+    for (const end of [link.attachments.from.node, link.attachments.to.node]) linked.add(model.document.nodes[end]!.group);
+  }
+  const gap = bandGap(model);
+  let moved = false;
+  for (const tier of tiers) {
+    const groups = Object.values(model.groups).filter(group => group.tier === tier && group.bounds);
+    const pending = groups.filter(group => free.has(group.id) && !linked.has(group.id) && group.frame === undefined && group.nodes.length > 0);
+    if (!pending.length) continue;
+    const span = (group: LayoutGroup): { low: number; high: number } => {
+      const reach = occupiedOverhang(model, group);
+      return { low: group.bounds!.x - reach.left, high: group.bounds!.x + group.bounds!.width + reach.right };
+    };
+    // The connected part of the tier; a tier with none has the extent of the whole connected diagram.
+    const onTier = groups.filter(group => !pending.includes(group));
+    const standing = onTier.length ? [...onTier] : Object.values(model.groups).filter(group => group.bounds && linked.has(group.id));
+    if (!standing.length) continue;
+    // The frames and lanes of the tier are part of the connected extent: the nearest connected frame is what the gap is read from. A tier
+    // with no connected group takes every column, since the frame boxes are wider than their cells.
+    const frames = columns.filter(column => !onTier.length || (column.from <= tier && tier <= column.to)).map(column => ({ low: column.x, high: column.x + column.width }));
+    const lanes = model.lanes.filter(lane => lane.tier === tier && !pending.some(item => item.id === lane.group)).map(lane => ({ low: lane.bounds.x, high: lane.bounds.x + lane.bounds.width }));
+    const walls = (other: readonly LayoutGroup[]) => [
+      ...other.map(item => ({ ...span(item), gap })),
+      ...columns.filter(column => column.from <= tier && tier <= column.to).map(column => ({ low: column.x, high: column.x + column.width, gap })),
+      ...lanes.map(lane => ({ ...lane, gap: 0 })),
+    ];
+    const overlays = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && link.attachments);
+    const rest = [...pending];
+    while (rest.length) {
+      const parts = [...standing.map(span), ...frames, ...lanes];
+      const extent = { low: Math.min(...parts.map(part => part.low)), high: Math.max(...parts.map(part => part.high)) };
+      // The pending group nearest the extent goes first, so a second one stands beside the first.
+      const distance = (group: LayoutGroup): number => {
+        const one = span(group);
+        return Math.max(extent.low - one.high, one.low - extent.high);
+      };
+      rest.sort((a, b) => distance(a) - distance(b) || compareId(a.id, b.id));
+      const group = rest.shift()!, one = span(group), reach = occupiedOverhang(model, group);
+      standing.push(group);
+      const away = distance(group);
+      if (away <= gap + PLACEMENT_EPS) continue;
+      const width = one.high - one.low, wall = walls(groups.filter(item => item !== group));
+      const box = group.bounds!, { banned } = chordBans(model, group, overlays);
+      // The chords and the lanes are read as `stepOutOfChords` reads them, so the two steps agree on where the group stands; the frozen
+      // chords of 7f are read by `laneSidesHold`.
+      const fits = (x: number): boolean => !banned.some(({ low, high }) => x > low + PLACEMENT_EPS && x < high - PLACEMENT_EPS)
+        && !wall.some(item => x - reach.left < item.high + item.gap - PLACEMENT_EPS && x - reach.left + width > item.low - item.gap + PLACEMENT_EPS)
+        && laneSidesHold(model, [{ group, bounds: { ...box, x } }], false);
+      const left = extent.low - gap - width + reach.left, right = extent.high + gap + reach.left;
+      const wasLeft = one.high <= extent.low;
+      // From the point one gap off the extent, outward to the first x clear of the chords: the edges of the banned intervals are the only other candidates.
+      const outward = (start: number, sign: 1 | -1): number | undefined => [start, ...banned.flatMap(({ low, high }) => [low, high])]
+        .filter(x => sign * (x - start) > -PLACEMENT_EPS).sort((a, b) => sign * (a - b)).find(fits);
+      const target = [wasLeft ? outward(left, -1) : outward(right, 1), wasLeft ? outward(right, 1) : outward(left, -1)].find(x => x !== undefined);
+      if (target === undefined || Math.abs(target - box.x) < PLACEMENT_EPS) continue;
+      moveGroup(model, group, target - box.x, 0);
+      moved = true;
+      // Only this group's nodes here (`span` reads its pills); the caller rebuilds every node in document order once.
+      rebuildNodeGeometry(model, group.nodes, 'current');
+    }
+  }
+  return moved;
 }
 
 /**
@@ -208,28 +317,16 @@ export function stepOutOfChords(model: LayoutModel, tiers: readonly number[], fr
     if (!link.attachments) continue;
     for (const end of [link.attachments.from.node, link.attachments.to.node]) linked.add(model.document.nodes[end]!.group);
   }
-  const overlays = model.links.filter(link => link.layer === 'overlay' && link.attachments);
+  // A bus member is neither straight nor bent and is no chord to step out of (mesh-bus.md, section 4).
+  const overlays = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && link.attachments);
   if (!overlays.length) return;
   const gap = bandGap(model);
   for (const tier of tiers) {
     const groups = Object.values(model.groups).filter(group => group.tier === tier);
     for (const group of groups.filter(item => free.has(item.id) && !linked.has(item.id) && item.frame === undefined && item.bounds)) {
-      const box = group.bounds!, own = new Set(group.nodes);
-      const bare = overlayBlockers(model, own);
-      // Every chord that is straight without the group and runs through the box's rows bans an interval of the box's x, not only the
-      // chords that cross the box now: the nearest edge of one chord may lie inside the next (ticket 76 review).
-      const rows = overlays.flatMap(link => {
-        const chord = straightChord(model, link, bare);
-        return chord && Math.max(chord.from.y, chord.to.y) > box.y + PLACEMENT_EPS && Math.min(chord.from.y, chord.to.y) < box.y + box.height - PLACEMENT_EPS ? [chord] : [];
-      });
+      const box = group.bounds!;
+      const { rows, banned } = chordBans(model, group, overlays);
       if (!rows.some(({ from, to }) => crosses(from, to, box))) continue;
-      // The x-interval of the box's left edge in which the box touches a chord: the chord's x-extent within the box's rows, less the width.
-      const banned = rows.map(({ from, to }) => {
-        const dy = to.y - from.y, low = Math.min(from.y, to.y), high = Math.max(from.y, to.y);
-        const at = (y: number): number => dy === 0 ? from.x : from.x + (to.x - from.x) * (y - from.y) / dy;
-        const xs = dy === 0 ? [from.x, to.x] : [at(Math.min(Math.max(box.y, low), high)), at(Math.min(Math.max(box.y + box.height, low), high))];
-        return { low: Math.min(...xs) - box.width, high: Math.max(...xs) };
-      });
       const reach = occupiedOverhang(model, group);
       const others = [
         ...groups.filter(item => item !== group && item.bounds).map(item => {

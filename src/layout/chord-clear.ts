@@ -110,7 +110,8 @@ const nothingNew = (before: ReadonlySet<string>, after: ReadonlySet<string>): bo
  */
 export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel) => unknown) | undefined, history: Set<string> = new Set()): boolean {
   const anchor = selectAnchorTier(model);
-  const overlays = model.links.filter(link => link.layer === 'overlay' && link.attachments);
+  // A member of a mesh bus is not a chord: it is neither straight nor bent, and the step does not read it (mesh-bus.md, section 4).
+  const overlays = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && link.attachments);
   if (anchor === undefined || !overlays.length) return false;
   const columns = frameColumns(model), movable = overlayFreeGroups(model, anchor, true), free = overlayFreeGroups(model, anchor);
   const tierOf = (node: string): number => model.groups[model.document.nodes[node]!.group]!.tier!;

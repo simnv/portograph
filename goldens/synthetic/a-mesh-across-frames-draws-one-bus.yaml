@@ -1,0 +1,37 @@
+# Expected: three groups of two nodes on tier 1 and a full `sync` mesh of the six nodes (15 links: 3 join two nodes of one
+# group, 12 form three group-links of four members). Stage 1 (ticket 82) finds one across-frames bus of six nodes and 15
+# members and dissolves the three group-links. Ticket 84 draws it: one bar across the three frames.
+# Test-only input owned by ranked-groups ticket 82; test/resolve/mesh-bus.test.ts reads it.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  west: { tier: 1, label: West }
+  middle: { tier: 1, label: Middle }
+  east: { tier: 1, label: East }
+nodes:
+  core: { group: top, class: router, label: Core }
+  w1: { group: west, class: router, label: W1 }
+  w2: { group: west, class: router, label: W2 }
+  m1: { group: middle, class: router, label: M1 }
+  m2: { group: middle, class: router, label: M2 }
+  e1: { group: east, class: router, label: E1 }
+  e2: { group: east, class: router, label: E2 }
+links:
+  - [core, w1]
+  - [core, m1]
+  - [core, e1]
+  - { from: w1, to: w2, class: sync }
+  - { from: w1, to: m1, class: sync }
+  - { from: w1, to: m2, class: sync }
+  - { from: w1, to: e1, class: sync }
+  - { from: w1, to: e2, class: sync }
+  - { from: w2, to: m1, class: sync }
+  - { from: w2, to: m2, class: sync }
+  - { from: w2, to: e1, class: sync }
+  - { from: w2, to: e2, class: sync }
+  - { from: m1, to: m2, class: sync }
+  - { from: m1, to: e1, class: sync }
+  - { from: m1, to: e2, class: sync }
+  - { from: m2, to: e1, class: sync }
+  - { from: m2, to: e2, class: sync }
+  - { from: e1, to: e2, class: sync }

@@ -18,6 +18,8 @@ export interface ScoreCounters {
   overlaps: number; bundledLength: number; barCross: number; labelHits: number;
   labelsOmitted: number; stubs: number; removedLinks: number; groupLinks: number; lanesUsed: number;
   inversions: number; fallbackUsed: boolean; deadlineHit: boolean;
+  /** The mesh buses drawn; present only when there is one, so a model without a bus keeps the counters it always had. */
+  meshBuses?: number;
 }
 export interface ScoreAdvisory { metric: string; actual: number; target: number; relation: '<=' | '>=' }
 export interface ScoreAssertion { code: 'golden-crossings' | 'baseline'; passed: boolean; actual: number; expected: number; tolerance: number }

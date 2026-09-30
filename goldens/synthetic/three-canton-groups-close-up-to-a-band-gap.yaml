@@ -7,6 +7,8 @@
 # slacks, the rows rule pushes a canton right and nothing brings it back, and no pass packs the anchor step again. Expected:
 # the three canton frames a band gap apart, centred as a block under the top locations.
 # Test-only input owned by ranked-groups ticket 65; the ticket's test reads the layout.
+# Ticket 89: the links from the two switches to their zone nodes are authored `route: orthogonal`. As frame chords they would make the
+# switches spread their ports (a fan pitch) and widen the canvas, and this input is about the close-up, not about the fan.
 portograph: 2
 groups:
   a: { label: Canton A }
@@ -114,14 +116,14 @@ links:
   - { from: t3-2, to: loc-a2-gw, class: sync }
   - { from: t3-2, to: loc-b-gw, class: sync }
   - { from: t3-2, to: loc-c-gw, class: sync }
-  - [loc-a1-sw, zone-a1-1]
-  - [loc-a1-sw, zone-a1-2]
+  - { from: loc-a1-sw, to: zone-a1-1, route: orthogonal }
+  - { from: loc-a1-sw, to: zone-a1-2, route: orthogonal }
   - [zone-a1-1, zone-a1-3]
   - [zone-a1-2, zone-a1-4]
   - [loc-a1-ac1, loc-a1-srv1]
   - [loc-a1-ac2, loc-a1-srv2]
-  - [loc-a2-sw, zone-a2-1]
-  - [loc-a2-sw, zone-a2-2]
+  - { from: loc-a2-sw, to: zone-a2-1, route: orthogonal }
+  - { from: loc-a2-sw, to: zone-a2-2, route: orthogonal }
   - [zone-a2-1, zone-a2-3]
   - [zone-a2-2, zone-a2-4]
   - [loc-a2-ac1, loc-a2-srv1]
