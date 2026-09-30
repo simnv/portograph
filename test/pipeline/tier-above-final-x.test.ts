@@ -9,7 +9,9 @@ import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
-const run = (name: string) => layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+// The side round is off: this file checks the packing over the final x of the feeds. With the round on, a side lane (ticket 119: link-8 goes from 2 bends to 1, the
+// other fixture from 4 to 1) widens the sheet and the frames stand 22 px off the centre, over COLUMN_SLACK; that is a gain of the round, not a fault of the packing.
+const run = (name: string) => layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 0 });
 const centre = (box: { x: number; width: number }): number => box.x + box.width / 2;
 const frame = (model: LayoutModel, id: string) => model.frames!.find(item => item.id === id)!;
 

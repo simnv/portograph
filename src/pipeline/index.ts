@@ -304,7 +304,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       refuse(offer.hints.keys(), offer.hints, `its stage 7f rejected it (${error.message})`);
       break;
     }
-    const verdict = judgeTrial({ routedBase, routedTrial, kept7e, trial7e, hinted: hintedLinks });
+    const verdict = judgeTrial({ routedBase, routedTrial, kept7e, trial7e, hinted: hintedLinks, lanes: new Set([...offer.promised.values()].filter(item => item.shape === 'lane').map(item => item.link)) });
     options.testSideTrace?.({ ev: 'trial', verdict, base, kept7e, trial7e, trial, routedBase, routedTrial, hinted: hintedLinks });
     options.testSideProbe?.({ offer, routedBase, routedTrial, verdict });
     if (!verdict.kept) { refuse(offer.hints.keys(), all, verdict.reason); break; }

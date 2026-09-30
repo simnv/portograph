@@ -54,6 +54,8 @@ export interface TrialInput {
   trial7e: LayoutModel;
   /** The hinted links of the trial's offer, with the bends each was promised. */
   hinted: ReadonlyMap<string, number>;
+  /** The hinted links whose hint is for the routed L through a side lane (ticket 119). Empty for a batch with no lane hint. */
+  lanes?: ReadonlySet<string>;
 }
 
 export interface Verdict {
@@ -96,6 +98,16 @@ export function judgeTrial(input: TrialInput): Verdict {
   if (worse.length > 0) return verdict(false, `a hinted link has more bends than on the baseline (${worse.join(', ')})`);
   if (removed.length > 0) return verdict(false, `the trial's route removes ${removed.join(', ')}, which the baseline's route keeps`);
   if (away.length > 0) return verdict(false, 'a hinted port faces away from its peer');
+  // A trial that holds a lane hint (ticket 119) is kept only when each lane link's own bends fall, the total bends of the sheet do not rise, and no link
+  // without a hint gets worse: a rise in total bends is never a gain, and the count of bent links cannot see what a lane gives.
+  const laneLinks = [...(input.lanes ?? [])];
+  if (laneLinks.length > 0) {
+    const notFewer = laneLinks.filter(id => !(trial.has(id) && base.has(id) && trial.get(id)! < base.get(id)!));
+    if (notFewer.length > 0) return verdict(false, `a lane link has no fewer bends than on the baseline (${notFewer.join(', ')})`);
+    if (after.total > before.total) return verdict(false, `the trial with a lane raises the total bends (${after.total} against ${before.total})`);
+    const neighbours = [...trial].filter(([id, count]) => !input.hinted.has(id) && count > (base.get(id) ?? count)).map(([id]) => id);
+    if (neighbours.length > 0) return verdict(false, `the trial with a lane makes a neighbour worse (${neighbours.join(', ')})`);
+  }
   if (!(after.bent < before.bent || (after.bent === before.bent && after.total < before.total))) {
     return verdict(false, `the routed trial gives no gain (${after.bent} bent links and ${after.total} bends, against ${before.bent} and ${before.total})`);
   }

@@ -4,7 +4,7 @@ import type { LayoutModel } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
 import { LINK_LABEL_GEOMETRY } from '../../src/layout/link-labels.js';
 import { measureText } from '../../src/text/index.js';
-import { pathBends } from '../../src/layout/side-judge.js';
+import { judgeTrial, pathBends } from '../../src/layout/side-judge.js';
 import { measureSides, plannedBends } from '../../src/layout/side-measure.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -88,6 +88,21 @@ describe('the side round offers a routed L through a side lane', () => {
     await run({ testSideTrace: (event: { ev: string; offer?: { promised: Map<string, { shape: string }> } }) => { if (event.ev === 'offer') batches.push([...event.offer!.promised.values()].map(item => item.shape)); } } as never, mixed);
     expect(batches.some(shapes => shapes.includes('straight'))).toBe(true);
     expect(batches.filter(shapes => shapes.includes('straight') && shapes.includes('lane'))).toEqual([]);
+  }, 120000);
+
+  it('keeps a lane trial only when the lane link has fewer bends, the total does not rise and no neighbour is worse (ticket 119 rule)', async () => {
+    const off = await run({ testMaxReruns: 0 }), on = await run();
+    const id = described(on).id;
+    const input = (routedBase: LayoutModel, routedTrial: LayoutModel) => ({ routedBase, routedTrial, kept7e: routedBase, trial7e: routedTrial, hinted: new Map([[id, 1]]), lanes: new Set([id]) });
+    expect(judgeTrial(input(off, on)).kept).toBe(true);
+    // No fewer bends on the lane link: the same model twice.
+    expect(judgeTrial(input(on, on))).toMatchObject({ kept: false, reason: expect.stringContaining('no fewer bends') });
+    // A neighbour without a hint gets a jog: refused although the lane link gained (and the total may rise).
+    const jogged = structuredClone(on) as LayoutModel;
+    const other = jogged.links.find(link => link.id !== id && link.path !== undefined && link.removed !== true && link.path.segments.length === 1 && pathBends(off.links.find(item => item.id === link.id)!) === 0)!;
+    const seg = other.path!.segments[0]!, mid = { x: (seg.from.x + seg.to.x) / 2 + 60, y: (seg.from.y + seg.to.y) / 2 - 60 };
+    other.path = { ...other.path!, segments: [{ ...seg, to: mid }, { ...seg, from: mid, to: seg.to }] };
+    expect(judgeTrial(input(off, jogged))).toMatchObject({ kept: false, reason: expect.stringMatching(/raises the total|worse/) });
   }, 120000);
 
   it('two runs give byte-identical layout JSON', async () => {
