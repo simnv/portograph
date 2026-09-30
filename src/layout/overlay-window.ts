@@ -25,6 +25,8 @@ import { PLACEMENT_EPS } from './tolerance.js';
 
 /** The candidates judged for one group, the mean not counted. A count, not a time (ticket 141). */
 export const CHORD_WINDOW_TRIALS = 32;
+/** The event points judged for one group (ticket 147): they only break ties inside a maximum-straight interval, so fewer are enough. */
+export const EVENT_TRIALS = 8;
 /** A parameter this close to the fixed end stands for the end itself; the interval of a shift there is unbounded. */
 const NEAR_END = 1e-9;
 /** A shift larger than this is no candidate: the interval it ends is unbounded on that side. */
@@ -67,28 +69,31 @@ export function chordWindows(from: Point, to: Point, mover: Mover, shape: Rect):
   return [{ low: Math.min(one.low, two.low), high: Math.max(one.high, two.high) }];
 }
 
-/** What a candidate x is judged by: overlay crossings (fewer is better), then straight counted chords (more is better). */
-export interface Score { crossings: number; straight: number }
+/**
+ * What a candidate x is judged by: the counted chords that are straight (more is better), whether one of them is bent that is straight
+ * at the mean (`bendsMean`), and the overlay crossings (fewer is better; `Infinity` where the candidate was not counted).
+ */
+export interface Score { crossings: number; straight: number; bendsMean: boolean }
 
 /**
- * The candidate with the fewest crossings, then the most straight chords. `score(x)` judges the group's centre at `x`. Candidates are
- * taken nearest the mean first (then the smaller x), at most `CHORD_WINDOW_TRIALS` of them besides the mean; a tie goes to the
- * nearest, so the mean stays where no other x is better. A candidate with fewer straight chords than the mean is skipped. The event
- * points have their own bound of the same count. `gained` is the rise in straight chords and `saved` the fall in crossings.
+ * The candidate with the most straight chords; among equal counts, the fewest crossings, but only among candidates that bend no chord
+ * that is straight at the mean (ticket 147, user order 2026-09-30); then the nearest to the mean, then the smaller x. `score(x, atLeast)`
+ * judges the group's centre at `x`; it may leave the crossings uncounted (`Infinity`) where fewer than `atLeast` chords are straight,
+ * because such a candidate cannot win. The mean is scored first. Candidates are taken nearest the mean first, at most
+ * `CHORD_WINDOW_TRIALS` of them besides the mean, and the event points have their own bound `EVENT_TRIALS`. `gained` is the rise in
+ * straight chords and `saved` the fall in crossings (either may be negative).
  */
-export function pickTarget(mean: number, candidates: readonly number[], score: (x: number) => Score, events: readonly number[] = []): { target: number; gained: number; saved: number } {
+export function pickTarget(mean: number, candidates: readonly number[], score: (x: number, atLeast: number) => Score, events: readonly number[] = []): { target: number; gained: number; saved: number } {
   // Each kind has its own count bound, so the many event points do not crowd out the ends of the straight windows.
-  const nearest = (list: readonly number[]): number[] => [...new Set(list)].filter(x => Math.abs(x - mean) > PLACEMENT_EPS)
-    .sort((a, b) => Math.abs(a - mean) - Math.abs(b - mean) || a - b).slice(0, CHORD_WINDOW_TRIALS);
-  const sorted = [...new Set([...nearest(candidates), ...nearest(events)])]
+  const nearest = (list: readonly number[], count: number): number[] => [...new Set(list)].filter(x => Math.abs(x - mean) > PLACEMENT_EPS)
+    .sort((a, b) => Math.abs(a - mean) - Math.abs(b - mean) || a - b).slice(0, count);
+  const sorted = [...new Set([...nearest(candidates, CHORD_WINDOW_TRIALS), ...nearest(events, EVENT_TRIALS)])]
     .sort((a, b) => Math.abs(a - mean) - Math.abs(b - mean) || a - b);
-  const base = score(mean);
+  const base = score(mean, 0);
   let target = mean, best = base;
   for (const x of sorted) {
-    const value = score(x);
-    // A candidate that leaves fewer counted chords straight than the mean does is no candidate: the tier guard of `placeOverlayFree` refuses a run that bends more links, so it would only hide the next best x.
-    if (value.straight < base.straight) continue;
-    if (value.crossings < best.crossings || (value.crossings === best.crossings && value.straight > best.straight)) { best = value; target = x; }
+    const value = score(x, best.straight);
+    if (value.straight > best.straight || (value.straight === best.straight && !value.bendsMean && value.crossings < best.crossings)) { best = value; target = x; }
   }
   return { target, gained: best.straight - base.straight, saved: base.crossings - best.crossings };
 }
@@ -96,33 +101,46 @@ export function pickTarget(mean: number, candidates: readonly number[], score: (
 /** The port a link end attaches to, as one string: two links that share it meet at its face and do not cross there. */
 export const portKey = (end: { node: string; name?: string; ordinal?: number }): string => `${end.node}/${end.name ?? `#${end.ordinal}`}`;
 
-/** The crossings of two polylines: the pairs of segments that meet, each pair once. */
-export function polylineCrossings(one: readonly Point[], two: readonly Point[]): number {
-  const box = (points: readonly Point[]): Rect => {
-    const xs = points.map(point => point.x), ys = points.map(point => point.y);
-    return { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
-  };
-  const a = box(one), b = box(two);
-  if (a.x > b.x + b.width + EPS || b.x > a.x + a.width + EPS || a.y > b.y + b.height + EPS || b.y > a.y + a.height + EPS) return 0;
-  const owner = { kind: 'link', id: '' } as const;
-  let count = 0;
-  for (let i = 1; i < one.length; i++) {
-    for (let j = 1; j < two.length; j++) {
-      if (intersection({ from: one[i - 1]!, to: one[i]!, owner }, { from: two[j - 1]!, to: two[j]!, owner })) count++;
-    }
+/** An overlay link drawn as a polyline, with its bounding box and its two port keys read once. */
+export interface Drawn { points: readonly Point[]; minX: number; maxX: number; minY: number; maxY: number; ports: readonly [string, string] }
+
+export function drawn(points: readonly Point[], ports: readonly [string, string]): Drawn {
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const point of points) {
+    if (point.x < minX) minX = point.x;
+    if (point.x > maxX) maxX = point.x;
+    if (point.y < minY) minY = point.y;
+    if (point.y > maxY) maxY = point.y;
   }
-  return count;
+  return { points, minX, maxX, minY, maxY, ports };
 }
 
-/** The crossings among overlay links drawn as `paths`; `ports[i]` holds the two port keys of path i, and two links that share a port do not cross. */
-export function overlayCrossings(paths: readonly (readonly Point[])[], ports: readonly (readonly [string, string])[]): number {
-  let count = 0;
-  for (let i = 0; i < paths.length; i++) {
-    for (let j = i + 1; j < paths.length; j++) {
-      if (ports[i]!.some(key => ports[j]!.includes(key))) continue;
-      count += polylineCrossings(paths[i]!, paths[j]!);
+const OWNER = { kind: 'link', id: '' } as const;
+
+/**
+ * The crossings of two drawn links: the points where their segments meet, each counted once (a line through a bend point meets two
+ * segments there). Links that share a port meet at its face and do not cross.
+ */
+export function drawnCrossings(one: Drawn, two: Drawn): number {
+  if (one.minX > two.maxX + EPS || two.minX > one.maxX + EPS || one.minY > two.maxY + EPS || two.minY > one.maxY + EPS) return 0;
+  if (one.ports[0] === two.ports[0] || one.ports[0] === two.ports[1] || one.ports[1] === two.ports[0] || one.ports[1] === two.ports[1]) return 0;
+  const a = { from: one.points[0]!, to: one.points[0]!, owner: OWNER }, b = { from: two.points[0]!, to: two.points[0]!, owner: OWNER };
+  let found: Point[] | undefined;
+  for (let i = 1; i < one.points.length; i++) {
+    a.from = one.points[i - 1]!; a.to = one.points[i]!;
+    for (let j = 1; j < two.points.length; j++) {
+      b.from = two.points[j - 1]!; b.to = two.points[j]!;
+      const at = intersection(a, b);
+      if (at && !found?.some(point => Math.abs(point.x - at.x) <= 2 * EPS && Math.abs(point.y - at.y) <= 2 * EPS)) (found ??= []).push(at);
     }
   }
+  return found?.length ?? 0;
+}
+
+/** The crossings among drawn overlay links, each pair once. */
+export function overlayCrossings(paths: readonly Drawn[]): number {
+  let count = 0;
+  for (let i = 0; i < paths.length; i++) for (let j = i + 1; j < paths.length; j++) count += drawnCrossings(paths[i]!, paths[j]!);
   return count;
 }
 
@@ -162,7 +180,7 @@ export function windowTarget(model: LayoutModel, group: LayoutGroup, input: Wind
   const bare = overlayBlockers(model, skip);
   const counted: Counted[] = [];
   /** The links between two settled nodes, none in the group. Their paths are read for crossings; `rows` marks those that pass the group's rows. */
-  const fixed: { link: LayoutLink; head: OverlayEnd; tail: OverlayEnd; rows: boolean; points: Point[] }[] = [];
+  const fixed: { link: LayoutLink; head: OverlayEnd; tail: OverlayEnd; rows: boolean; points: Point[]; drawn: Drawn }[] = [];
   // The group's centre stays inside the x-span of its settled partners, as the into-span step (ticket 22) puts it: a chord that is
   // straight only from far outside the span is not worth the width.
   const span: Window = { low: Infinity, high: -Infinity };
@@ -183,7 +201,8 @@ export function windowTarget(model: LayoutModel, group: LayoutGroup, input: Wind
       if (!settled.has(groupOf(from.node)) || !settled.has(groupOf(to.node))) continue;
       const low = Math.min(ends.head.face.y, ends.tail.face.y), high = Math.max(ends.head.face.y, ends.tail.face.y);
       const rows = high > box.y + PLACEMENT_EPS && low < box.y + box.height - PLACEMENT_EPS;
-      fixed.push({ link, ...ends, rows, points: chordPoints(ends.head, ends.tail, bare) });
+      const points = chordPoints(ends.head, ends.tail, bare);
+      fixed.push({ link, ...ends, rows, points, drawn: drawn(points, [portKey(from), portKey(to)]) });
       if (rows) counted.push({ link, ...ends, moves: undefined });
     }
   }
@@ -204,27 +223,28 @@ export function windowTarget(model: LayoutModel, group: LayoutGroup, input: Wind
   };
   const endsAt = ({ head, tail, moves }: Counted, dx: number): [OverlayEnd, OverlayEnd] =>
     [moves === 'head' ? shiftEnd(head, dx) : head, moves === 'tail' ? shiftEnd(tail, dx) : tail];
-  const scoreAt = (x: number): Score => {
+  let meanFlags: boolean[] | undefined;
+  const scoreAt = (x: number, atLeast: number): Score => {
     const dx = x - centre, blockers = blockersAt(dx);
-    let straight = 0;
-    const paths: Point[][] = [], ports: [string, string][] = [];
-    for (const item of counted) {
+    const flags = counted.map(item => { const [head, tail] = endsAt(item, dx); return straightBetween(head, tail, blockers) !== undefined; });
+    const straight = flags.filter(Boolean).length;
+    meanFlags ??= flags;
+    const bendsMean = flags.some((flag, index) => !flag && meanFlags![index]);
+    // The crossings are counted only where the candidate can win: it needs at least as many straight chords as the best so far, and a candidate that ties the best and bends a mean-straight chord cannot take it.
+    if (straight < atLeast || (straight === atLeast && bendsMean)) return { crossings: Infinity, straight, bendsMean };
+    const paths: Drawn[] = [];
+    counted.forEach((item, index) => {
+      if (item.moves === undefined) return;
       const [head, tail] = endsAt(item, dx);
-      const isStraight = straightBetween(head, tail, blockers) !== undefined;
-      if (isStraight) straight++;
-      if (item.moves === undefined) continue;
-      paths.push(isStraight ? [head.face, tail.face] : chordPoints(head, tail, blockers)); ports.push(keys(item.link));
-    }
+      paths.push(drawn(flags[index]! ? [head.face, tail.face] : chordPoints(head, tail, blockers), keys(item.link)));
+    });
+    let crossings = overlayCrossings(paths);
     // A link between two settled nodes that passes the group's rows may bend round a shifted shape of the group: it is read at `x`, the rest as they stand.
-    const others = fixed.map(item => ({ points: item.rows ? chordPoints(item.head, item.tail, blockers) : item.points, ports: keys(item.link) }));
-    let crossings = overlayCrossings(paths, ports);
-    for (let i = 0; i < paths.length; i++) {
-      for (const other of others) {
-        if (ports[i]!.some(key => other.ports.includes(key))) continue;
-        crossings += polylineCrossings(paths[i]!, other.points);
-      }
+    for (const item of fixed) {
+      const other = item.rows ? drawn(chordPoints(item.head, item.tail, blockers), item.drawn.ports) : item.drawn;
+      for (const path of paths) crossings += drawnCrossings(path, other);
     }
-    return { crossings, straight };
+    return { crossings, straight, bendsMean };
   };
   const shifts: number[] = [];
   const add = (found: readonly Window[], into: number[] = shifts): void => {

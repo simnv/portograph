@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import type { LayoutModel, Point, Rect } from '../../src/index.js';
+import type { LayoutModel, Rect } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
 import { deriveFrames } from '../../src/layout/frames.js';
 import { centreDraft, createCentreBudget } from '../../src/layout/centre.js';
@@ -10,7 +10,7 @@ import { withLayoutMutation } from '../../src/layout/mutation.js';
 import { rows } from '../../src/layout/rows.js';
 import { OVERLAY_WINDOW_TAKEN, placeOverlayFree, sheetGains, windowsHold } from '../../src/layout/overlay-place.js';
 import { overlayBlockers, overlayPath } from '../../src/layout/overlay-paths.js';
-import { CHORD_WINDOW_TRIALS, chordWindows, overlayCrossings, pickTarget, portKey } from '../../src/layout/overlay-window.js';
+import { CHORD_WINDOW_TRIALS, EVENT_TRIALS, chordWindows, drawn, overlayCrossings, pickTarget, portKey, type Drawn } from '../../src/layout/overlay-window.js';
 import { PLACEMENT_EPS } from '../../src/layout/tolerance.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -26,14 +26,13 @@ const groupOf = (model: LayoutModel, id: string) => Object.values(model.groups).
 const bounds = (model: LayoutModel): string => JSON.stringify(Object.values(model.groups).map(group => group.bounds));
 
 const crossingsOf = (model: LayoutModel): number => {
-  const blockers = overlayBlockers(model), paths: Point[][] = [], ports: [string, string][] = [];
+  const blockers = overlayBlockers(model), paths: Drawn[] = [];
   for (const link of model.links) {
     if (link.layer !== 'overlay' || link.meshBus !== undefined || !link.attachments) continue;
     const { segments } = overlayPath(model, link, blockers);
-    paths.push([segments[0]!.from, ...segments.map(segment => segment.to)]);
-    ports.push([portKey(link.attachments.from), portKey(link.attachments.to)]);
+    paths.push(drawn([segments[0]!.from, ...segments.map(segment => segment.to)], [portKey(link.attachments.from), portKey(link.attachments.to)]));
   }
-  return overlayCrossings(paths, ports);
+  return overlayCrossings(paths);
 };
 
 const CANTON = 'stacked-free-members-clear-each-others-chords', PLAIN = 'stacked-free-groups-clear-each-others-chords';
@@ -44,11 +43,10 @@ describe('overlay window rule (ticket 143)', () => {
   it('a free canton member stands where the chords to it are straight, not at the mean of its partners', async () => {
     const model = await run(CANTON);
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
-    // Ticket 147: 2 bend (ticket 143: 1, main: 4); the crossings fall first.
-    expect(bentTo(model, 'lower-clients').length).toBeLessThanOrEqual(2);
+    expect(bentTo(model, 'lower-clients').length).toBeLessThanOrEqual(1);
     const lower = groupOf(model, 'lower-clients');
-    // The mean of the partners is the canton axis, 289.5. Ticket 143 put it at 439.9, the x with the most straight chords; ticket 147 puts it at 400.7, where the links cross fewest.
-    expect(centreX(lower.bounds!)).toBeCloseTo(400.7, 0);
+    // The mean of the partners is the canton axis, 289.5. Ticket 143 put it at 439.9, the x with the most straight chords; ticket 147 (straight first, then crossings) puts it at 441.9.
+    expect(centreX(lower.bounds!)).toBeCloseTo(441.9, 0);
     const note = model.diagnostics.find(item => item.code === OVERLAY_WINDOW_TAKEN)!;
     expect(note.severity).toBe('info');
     expect(note.owners).toEqual([{ kind: 'group', id: lower.id }]);
@@ -97,9 +95,9 @@ describe('overlay window rule (ticket 143)', () => {
     const model = await run('three-continents');
     const overlays = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined);
     const turns = overlays.map(link => overlayPath(model, link).segments.length - 1);
-    // Ticket 147 accepts one more bent link (9, not 8) where the crossings fall (62, not 66): the user decision, crossings first.
-    expect(turns.filter(count => count > 0).length).toBeLessThanOrEqual(9);
-    expect(crossingsOf(model)).toBeLessThanOrEqual(62);
+    expect(turns.filter(count => count > 0).length).toBeLessThanOrEqual(8);
+    expect(turns.reduce((sum, count) => sum + count, 0)).toBeLessThanOrEqual(34);
+    expect(crossingsOf(model)).toBeLessThanOrEqual(66);
   }, 120000);
 
   // Unit: the blocked shifts of one chord and one body, to the epsilon.
@@ -124,31 +122,39 @@ describe('overlay window rule (ticket 143)', () => {
     });
   });
 
-  // Unit: the whole-sheet guard (ticket 147). No more bent links and no more crossings, and one of them falls; a tie keeps the means.
+  // Unit: the whole-sheet guard. No more turns, and fewer bent links or as many and fewer crossings; a tie keeps the means.
   describe('sheetGains', () => {
+    const before = { bent: 8, turns: 34, crossings: 66 };
     it('keeps the windows that save crossings and bend no more links', () => {
-      expect(sheetGains({ bent: 8, crossings: 60 }, { bent: 8, crossings: 66 })).toBe(true);
+      expect(sheetGains({ bent: 8, turns: 34, crossings: 60 }, before)).toBe(true);
     });
-    it('keeps the windows that bend fewer links and add no crossing', () => {
-      expect(sheetGains({ bent: 7, crossings: 66 }, { bent: 8, crossings: 66 })).toBe(true);
+    it('keeps the windows that bend fewer links, even with more crossings (the straight links come first)', () => {
+      expect(sheetGains({ bent: 7, turns: 30, crossings: 70 }, before)).toBe(true);
     });
-    it('refuses a run that adds a crossing, or bends one more link, or changes nothing', () => {
-      expect(sheetGains({ bent: 7, crossings: 67 }, { bent: 8, crossings: 66 })).toBe(false);
-      expect(sheetGains({ bent: 9, crossings: 60 }, { bent: 8, crossings: 66 })).toBe(false);
-      expect(sheetGains({ bent: 8, crossings: 66 }, { bent: 8, crossings: 66 })).toBe(false);
+    it('refuses more turns, more bent links, more crossings at the same bent count, and a tie', () => {
+      // Three-continents: one link fewer bent, more turns.
+      expect(sheetGains({ bent: 7, turns: 38, crossings: 60 }, before)).toBe(false);
+      expect(sheetGains({ bent: 9, turns: 34, crossings: 60 }, before)).toBe(false);
+      expect(sheetGains({ bent: 8, turns: 34, crossings: 67 }, before)).toBe(false);
+      expect(sheetGains(before, before)).toBe(false);
     });
   });
 
-  // Unit: the tier guard is the same rule on the state of the tier.
+  // Unit: the tier guard. More straight links hold; the same straight links hold with no more crossings; a swap is refused.
   describe('windowsHold', () => {
-    it('holds where the windows save crossings and bend none', () => {
-      expect(windowsHold({ bent: 3, crossings: 30 }, { bent: 3, crossings: 34 })).toBe(true);
+    const set = (...ids: string[]) => new Set(ids);
+    it('holds where the windows bend one straight link and straighten two', () => {
+      expect(windowsHold(set('b', 'c', 'd'), set('a', 'b'), () => 35, 34)).toBe(true);
     });
-    it('refuses where the windows bend a link, even if they save crossings', () => {
-      expect(windowsHold({ bent: 4, crossings: 20 }, { bent: 3, crossings: 34 })).toBe(false);
+    it('refuses a tie in the straight links where the crossings rise', () => {
+      expect(windowsHold(set('a', 'b'), set('a', 'b'), () => 35, 34)).toBe(false);
     });
-    it('refuses a tie in both', () => {
-      expect(windowsHold({ bent: 3, crossings: 34 }, { bent: 3, crossings: 34 })).toBe(false);
+    it('refuses a swap: as many straight links, one of them not the same', () => {
+      expect(windowsHold(set('a', 'c'), set('a', 'b'), () => 10, 34)).toBe(false);
+    });
+    it('holds a tie with no more crossings, and does not read the crossings when the straight test fails', () => {
+      expect(windowsHold(set('a', 'b'), set('a', 'b'), () => 34, 34)).toBe(true);
+      expect(windowsHold(set('c', 'd'), set('a', 'b', 'c'), () => { throw new Error('read'); }, 34)).toBe(false);
     });
   });
 
@@ -164,58 +170,61 @@ describe('overlay window rule (ticket 143)', () => {
     }
   }, 60000);
 
-  // Unit: the choice of the candidate, on forged scores (crossings first, then straight chords).
+  // Unit: the choice of the candidate, on forged scores (the most straight chords first, then the fewest crossings).
   describe('pickTarget', () => {
-    const score = (table: Record<number, [number, number]>) => (x: number) => ({ crossings: table[x]![0], straight: table[x]![1] });
-    it('fewer crossings win over more straight chords', () => {
-      // 140: 4 crossings, 3 straight. 60: 2 crossings, 2 straight. The mean, 100: 5 crossings, 2 straight.
-      const pick = pickTarget(100, [140, 60], score({ 100: [5, 2], 140: [4, 3], 60: [2, 2] }));
+    type Row = [straight: number, crossings: number, bendsMean?: boolean];
+    const score = (table: Record<number, Row>) => (x: number) => { const [straight, crossings, bendsMean] = table[x]!; return { straight, crossings, bendsMean: bendsMean ?? false }; };
+    it('more straight chords win over fewer crossings', () => {
+      const pick = pickTarget(100, [140, 60], score({ 100: [2, 5], 140: [3, 9], 60: [2, 1] }));
+      expect(pick).toEqual({ target: 140, gained: 1, saved: -4 });
+    });
+    it('a tie in straight chords goes to the fewest crossings', () => {
+      const pick = pickTarget(100, [140, 60], score({ 100: [2, 5], 140: [2, 3], 60: [2, 2] }));
       expect(pick).toEqual({ target: 60, gained: 0, saved: 3 });
     });
-    it('a tie in crossings goes to the most straight chords', () => {
-      const pick = pickTarget(100, [140, 60], score({ 100: [5, 2], 140: [3, 3], 60: [3, 4] }));
-      expect(pick).toEqual({ target: 60, gained: 2, saved: 2 });
+    it('a swap is refused: a tie in straight chords that bends a chord straight at the mean takes no crossing gain', () => {
+      expect(pickTarget(100, [140], score({ 100: [2, 5], 140: [2, 1, true] })).target).toBe(100);
     });
     it('a tie in both goes to the nearest to the mean, then the smaller x', () => {
-      const tie = score({ 100: [5, 2], 130: [3, 3], 110: [3, 3], 90: [3, 3] });
+      const tie = score({ 100: [2, 5], 130: [2, 3], 110: [2, 3], 90: [2, 3] });
       expect(pickTarget(100, [130, 110, 90], tie).target).toBe(90);
       expect(pickTarget(100, [130, 110], tie).target).toBe(110);
     });
-    it('stays at the mean where no candidate saves a crossing or straightens a chord', () => {
-      expect(pickTarget(100, [140, 60], score({ 100: [5, 2], 140: [5, 2], 60: [6, 3] })).target).toBe(100);
+    it('stays at the mean where no candidate is better', () => {
+      expect(pickTarget(100, [140, 60], score({ 100: [2, 5], 140: [2, 5], 60: [1, 0] })).target).toBe(100);
     });
-    it('skips a candidate that leaves fewer straight chords than the mean', () => {
-      expect(pickTarget(100, [140], score({ 100: [5, 3], 140: [1, 2] })).target).toBe(100);
+    it('passes the best straight count, so a candidate that cannot win is not counted for crossings', () => {
+      const asked: [number, number][] = [];
+      pickTarget(100, [140, 60], (x, atLeast) => { asked.push([x, atLeast]); return { straight: x === 100 ? 3 : 2, crossings: 1, bendsMean: false }; });
+      expect(asked).toEqual([[100, 0], [60, 3], [140, 3]]);
     });
-    it('reads at most CHORD_WINDOW_TRIALS candidates and as many events, nearest first', () => {
+    it('reads at most CHORD_WINDOW_TRIALS candidates and EVENT_TRIALS events, nearest first', () => {
       const candidates = Array.from({ length: CHORD_WINDOW_TRIALS + 5 }, (_, index) => 101 + index);
-      const events = Array.from({ length: CHORD_WINDOW_TRIALS + 5 }, (_, index) => 201 + index);
+      const events = Array.from({ length: EVENT_TRIALS + 5 }, (_, index) => 201 + index);
       const seen: number[] = [];
-      pickTarget(100, candidates, x => { seen.push(x); return { crossings: 5, straight: 0 }; }, events);
-      expect(seen).toHaveLength(2 * CHORD_WINDOW_TRIALS + 1);
-      expect(Math.max(...seen)).toBe(200 + CHORD_WINDOW_TRIALS);
-      expect(seen.filter(x => x > 100 && x <= 100 + CHORD_WINDOW_TRIALS)).toHaveLength(CHORD_WINDOW_TRIALS);
+      pickTarget(100, candidates, x => { seen.push(x); return { crossings: 5, straight: 0, bendsMean: false }; }, events);
+      expect(seen).toHaveLength(CHORD_WINDOW_TRIALS + EVENT_TRIALS + 1);
+      expect(Math.max(...seen)).toBe(200 + EVENT_TRIALS);
     });
   });
 
   // Ticket 147: the pass reads crossings first. One pass on the draft of the fixture, as `centreDraft` reads it, before 7f and the pack move
-  // anything: the shared group stands between the two locations and its links cross fewer others than on ticket 143's rule (34, at x 200.6).
+  // anything: the shared group stands between the two locations and its links cross no more than on ticket 143's rule (34).
   describe('crossings first (ticket 147)', () => {
     const CROSS = 'a-free-client-group-stands-where-its-overlay-links-cross-least';
-    it('one pass: the shared group stands between the locations and the overlay links cross at most 30 times', async () => {
+    it('one pass: the shared group stands between the locations and the overlay links cross at most 34 times', async () => {
       const model = flanks(lanes(rows(await placed(fixture(CROSS)))));
       const seen: { west: number; east: number; shared: number; crossings: number }[] = [];
       withLayoutMutation(model, 'centre', draft => {
-        placeOverlayFree(draft);
+        // `centreDraft` runs the passes of the steps and then the pass with windows, as the pipeline does.
+        centreDraft(draft, createCentreBudget());
         seen.push({ west: centreX(draft.groups['west']!.bounds!), east: centreX(draft.groups['east']!.bounds!),
           shared: centreX(draft.groups['shared-clients']!.bounds!), crossings: crossingsOf(draft) });
-        // The centring invariant holds on the draft only after the centre passes.
-        centreDraft(draft, createCentreBudget());
       });
       const [pass] = seen;
       expect(pass!.shared).toBeGreaterThan(pass!.west);
       expect(pass!.shared).toBeLessThan(pass!.east);
-      expect(pass!.crossings).toBeLessThanOrEqual(30);
+      expect(pass!.crossings).toBeLessThanOrEqual(34);
     }, 60000);
     it('the whole layout has no more crossings than ticket 143 left, and every gate passes', async () => {
       const model = await run(CROSS);
