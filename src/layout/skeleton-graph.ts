@@ -8,7 +8,15 @@ import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 export const SKELETON_SPACING = { padding: 12, tierGap: 60, nodeClearance: 20 } as const;
 export const groupId = (id: string): string => `group:${id}`;
 export const nodeId = (id: string): string => `node:${id}`;
-export const portId = (ref: PortRef): string => `port:${JSON.stringify([ref.node, ref.anonymous === true, ref.name ?? null, ref.ordinal])}`;
+/** Plain printable ASCII without a quote or a backslash: `JSON.stringify` returns such a string unchanged between quotes. */
+const PLAIN = /^[ !#-[\]-~]*$/;
+const quoted = (text: string): string => PLAIN.test(text) ? `"${text}"` : JSON.stringify(text);
+/** The key of a port, byte-identical to the JSON of `[node, anonymous, name, ordinal]` and built without serializing an array. */
+export const portId = (ref: PortRef): string => {
+  const ordinal = ref.ordinal;
+  if (typeof ordinal !== 'number' || !Number.isFinite(ordinal)) return `port:${JSON.stringify([ref.node, ref.anonymous === true, ref.name ?? null, ordinal])}`;
+  return `port:[${quoted(ref.node)},${ref.anonymous === true},${ref.name == null ? 'null' : quoted(ref.name)},${ordinal}]`;
+};
 export function nodeGap(model: LayoutModel, a: string, b: string): number {
   return SKELETON_SPACING.nodeClearance
     + ((model.nodes[a]!.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node) + (model.nodes[b]!.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node)) / 2;
