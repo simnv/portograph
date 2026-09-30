@@ -217,15 +217,16 @@ for round in 0 ..< SIDE_ROUNDS:                // SIDE_ROUNDS = 2: one offer, on
 **Budget** (review M4). The layout must not depend on machine speed (ticket 112). The side rounds
 therefore use the count-based gates of ticket 112 and add no clock read:
 
-- `gate()` is ticket 112's gate: a re-run starts only with `POST_PLACEMENT_RESERVE_MS +
-  FAN_RERUN_MS` (16 s) or more left before the hard command deadline.
+- `gate()` is one gate for every re-run: a re-run starts only with `RERUN_GATE_MS` (24 s =
+  `POST_PLACEMENT_RESERVE_MS` 4 s + `FAN_RERUN_MS` 6 s + `BANDS_MS` 14 s) or more left before the
+  hard command deadline (ticket 137, Section 19.5; it replaces ticket 112's 16 s gate).
 - `MAX_RERUNS` caps fan and side re-runs together. It is a **fixed constant**, never set by the
   clock. The gate alone is not enough: it is read at the start of a re-run, and a re-run that
   passes it can still leave too little time for 7f, routing, link labels and scoring, so the
-  command meets the 30 s deadline and publishes nothing.
+  command meets the 60 s deadline and publishes nothing.
 - **The rule for the constant:** `MAX_RERUNS` is the largest count for which the private sheet's
   **whole command** (first placement, every re-run with its measures, 7f, stage 8, stage 9,
-  validation and scoring) finishes before the 30 s deadline on a machine 2 times slower, with 2 s of
+  validation and scoring) finishes before the 60 s deadline on a machine 2 times slower, with 2 s of
   margin. Known numbers on a quiet machine: the first placement takes about 2 s and 7f 6.6 s. The
   rest is not measured yet. Ticket 115 measures each stage time on the sheet on a quiet machine
   (the coordinator renders it for the implementer), multiplies the total by 2 for each candidate
@@ -580,12 +581,9 @@ count a lateral chord as any straight overlay chord.
 
 **Open follow-ups (no ticket yet).**
 
-- **`FAN_RERUN_MS` is too small** (ticket 112). It is 8 s, and it stands for "one re-run to 7e and
-  7f without the chord step". On the private sheet one re-run plus 7f is about 2 + 6.6 s on a quiet
-  machine, so the gate `POST_PLACEMENT_RESERVE_MS + FAN_RERUN_MS` (16 s) can admit a re-run that
-  leaves too little for the rest of the command. The side round does not depend on this number for
-  safety: `MAX_RERUNS` is set from the whole-command projection (Section 7, *Budget*). A follow-up
-  sets `FAN_RERUN_MS` from a measurement.
+- **`FAN_RERUN_MS` was too small** (ticket 112). Closed by ticket 137 (with ticket 131): the deadline
+  is 60 s, `FAN_RERUN_MS` is 6 s, `BANDS_MS` (one 7f) is 14 s, and one gate `RERUN_GATE_MS` (24 s)
+  covers every re-run. See Section 19.5.
 
 ## 17. Decisions (2026-09-30)
 

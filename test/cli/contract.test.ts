@@ -34,10 +34,10 @@ describe('CLI contract', () => {
     expect(help).toContain(`${EXIT.processingFailure}  processing failure`);
   });
 
-  it('keeps the four exit codes distinct and the command deadline at 30 seconds', () => {
+  it('keeps the four exit codes distinct and the command deadline at 60 seconds', () => {
     expect(Object.values(EXIT)).toEqual([0, 1, 2, 3]);
     expect(new Set(Object.values(EXIT)).size).toBe(4);
-    expect(COMMAND_DEADLINE_MS).toBe(30000);
+    expect(COMMAND_DEADLINE_MS).toBe(60000);
   });
 });
 
