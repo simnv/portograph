@@ -6,13 +6,14 @@ import type { PortRef } from '../model/document.js';
 import { DEFAULT_STROKE_WIDTHS as stroke, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth, routedStrokeWidth } from '../theme/geometry.js';
 import { segmentRectDistance } from '../score/geometry.js';
 import { findPort } from './row-paths.js';
+import { groupShape } from './grid.js';
 import { portId } from './skeleton-graph.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { moveGroup, union } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { withLayoutMutation } from './mutation.js';
 import { chordsHold } from './frame-paths.js';
-import { foreignReach, foreignRoot, heldLaneReach, ownFrameCells, riserForeignReach, frameNodes } from './frames.js';
+import { cellReach, foreignReach, foreignRoot, heldLaneReach, ownFrameCells, riserForeignReach, frameNodes } from './frames.js';
 import { BUS_RUN_CLEARANCE } from './bus-room.js';
 import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 
@@ -119,9 +120,18 @@ export function laneSidesHold(model: LayoutModel, proposed: { group: LayoutGroup
   // From 7f on a straight link is a wall like a lane (ticket 34): the move is refused for that unit.
   if (!chordsHold(model, proposed, report)) return false;
   return proposed.every(({ group, bounds }) => {
-    return model.lanes.filter(lane => lane.tier === group.tier).every(lane => {
+    // A lane of either kind keeps the side of every group of its own sub-tier.
+    const sameTier = model.lanes.filter(lane => lane.tier === group.tier).every(lane => {
       const box = occupiedAt(model, group, bounds, laneLink(model, lane));
       return group.bounds!.x >= lane.x ? box.x >= right(lane.bounds) - 1e-6 : right(box) <= lane.bounds.x + 1e-6;
+    });
+    // A side lane stands outside its whole frame, so it also holds the frame's edge, in this sub-tier and in the others (transit lanes are hosted in a cell and grow the frame).
+    return sameTier && model.lanes.filter(isSideLane).every(lane => {
+      const holding = (model.frames ?? []).filter(frame => frameNodes(model, frame.id).includes(lane.port!.node));
+      if (!holding.length || !group.nodes.some(id => holding.some(frame => frameNodes(model, frame.id).includes(id)))) return true;
+      const reach = cellReach(model, group.id), dx = bounds.x - group.bounds!.x, parents = GROUP_PADDING * Math.max(0, holding.length - 1);
+      const box = union([occupiedAt(model, group, bounds, laneLink(model, lane)), { ...reach, x: reach.x + dx }, bounds]);
+      return lane.side === 'right' ? right(box) + parents <= lane.bounds.x + 1e-6 : box.x - parents >= right(lane.bounds) - 1e-6;
     });
   });
 }
@@ -198,6 +208,10 @@ function laneLink(model: LayoutModel, lane: Lane): LayoutLink | undefined {
   return lane.owner.kind === 'link' ? model.links.find(link => link.id === (lane.owner as { id: string }).id) : undefined;
 }
 function laneId(link: LayoutLink, tier: number): string { return `lane:${JSON.stringify(link.id)}:${tier}`; }
+/** The id of the side lane of a link (docs/design/side-faces.md, Section 10). */
+export const sideLaneId = (link: LayoutLink): string => `side-lane:${link.id}`;
+/** Whether a lane is a side lane; an absent `kind` reads `transit`. Every lane function that serves one kind asks this and skips the other. */
+export const isSideLane = (lane: Lane): boolean => lane.kind === 'side';
 function laneExtent(model: LayoutModel, tier: number): { y: number; height: number } {
   const box = model.tierBands.find(band => band.tier === tier)!.bounds!;
   const pad = 10 + stroke.path / 2;
@@ -208,16 +222,61 @@ function reservation(model: LayoutModel, link: LayoutLink, lane: Lane): PathSegm
   const a = { x: lane.x, y: lane.bounds.y }, b = { x: lane.x, y: bottom(lane.bounds) };
   return { from: downward ? a : b, to: downward ? b : a, owner: { kind: 'link', id: link.id }, lane: lane.id };
 }
+/**
+ * The far end of a side lane: the port that is not lateral. The lane aligns to it (7a puts the lane on its x where it can) and the lateral
+ * end is not moved under the lane, because the side run joins them at any x.
+ */
+export function sideLaneSource(link: LayoutLink, lane: Lane): PortRef {
+  const ends = link.attachments!;
+  return portId(ends.from) === portId(lane.port!) ? ends.to : ends.from;
+}
+/**
+ * The extent of a side lane: measured from the lateral port, not the band. From the band edge that faces the far end (grown by the same
+ * pad as `laneExtent`) to the port's anchor y. `rebuildLaneExtents` replays it from the port's current y.
+ */
+export function sideLaneExtent(model: LayoutModel, lane: Lane, link: LayoutLink): { y: number; height: number } {
+  const band = model.tierBands.find(item => item.tier === lane.tier)!.bounds!, pad = 10 + stroke.path / 2;
+  const at = findPort(model, lane.port!)!.anchor!.y;
+  if (nodeTier(model, sideLaneSource(link, lane).node) < lane.tier) return { y: band.y - pad, height: at - (band.y - pad) };
+  return { y: at, height: bottom(band) + pad - at };
+}
+/**
+ * The two fixed segments of a side lane, in path order: the vertical run at the lane x over the extent, then the side run from the lane x
+ * to the port's face at the port's y (the run is the port's stem: at least one stem long). Where the lateral port is the source of the link,
+ * the path leaves by the side run and both segments run the other way. Both carry `lane: <id>`.
+ */
+export function sideReservation(model: LayoutModel, link: LayoutLink, lane: Lane): PathSegment[] {
+  const anchor = findPort(model, lane.port!)!.anchor!;
+  const farAbove = nodeTier(model, sideLaneSource(link, lane).node) < lane.tier;
+  const edge = { x: lane.x, y: farAbove ? lane.bounds.y : bottom(lane.bounds) }, turn = { x: lane.x, y: anchor.y };
+  const owner = { kind: 'link' as const, id: link.id };
+  const lateralIsTarget = portId(link.attachments!.to) === portId(lane.port!);
+  return lateralIsTarget
+    ? [{ from: edge, to: turn, owner, lane: lane.id }, { from: { ...turn }, to: { x: anchor.x, y: anchor.y }, owner: { ...owner }, lane: lane.id }]
+    : [{ from: { x: anchor.x, y: anchor.y }, to: turn, owner, lane: lane.id }, { from: { ...turn }, to: edge, owner: { ...owner }, lane: lane.id }];
+}
+/** The fixed segments a link's lanes reserve, in path order: its transit lanes in tier order, or its one side lane. */
+function laneReservation(model: LayoutModel, link: LayoutLink): PathSegment[] | undefined {
+  const owned = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === link.id);
+  const side = owned.find(isSideLane);
+  if (side) return sideReservation(model, link, side);
+  const order = transitTiers(model, link);
+  owned.sort((a, b) => order.indexOf(a.tier) - order.indexOf(b.tier));
+  return owned.length ? owned.map(lane => reservation(model, link, lane)) : undefined;
+}
 /** Extent-only replay. Never allocates, moves, renames, or changes the owner of a lane. */
 export function rebuildLaneExtents(model: LayoutModel): void {
-  for (const lane of model.lanes) Object.assign(lane.bounds, laneExtent(model, lane.tier));
+  for (const lane of model.lanes) {
+    if (!isSideLane(lane)) { Object.assign(lane.bounds, laneExtent(model, lane.tier)); continue; }
+    // A side lane is replayed from its lateral port's current y, not from the band.
+    const link = laneLink(model, lane);
+    if (link?.attachments && findPort(model, lane.port!)?.anchor) Object.assign(lane.bounds, sideLaneExtent(model, lane, link));
+  }
   for (const link of model.links) {
     delete link.fixedSegments;
     if (link.bundle) continue;
-    const owned = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === link.id);
-    const order = transitTiers(model, link);
-    owned.sort((a, b) => order.indexOf(a.tier) - order.indexOf(b.tier));
-    if (owned.length) link.fixedSegments = owned.map(lane => reservation(model, link, lane));
+    const runs = laneReservation(model, link);
+    if (runs) link.fixedSegments = runs;
   }
   expandCanvas(model);
 }
@@ -317,7 +376,8 @@ export function reseatLanes(model: LayoutModel, followed?: LaneFollow[]): boolea
   // already moved, the same serialization 7a allocates in. A corridor is never measured against a
   // move that has not been made.
   for (const lane of model.lanes) {
-    if (lane.owner.kind !== 'link') continue;
+    // A side lane serves the lateral end and is never seated under a child: only transit corridors follow their child.
+    if (lane.owner.kind !== 'link' || isSideLane(lane)) continue;
     const link = model.links.find(item => item.id === (lane.owner as { id: string }).id);
     if (!link || link.bundle || !link.attachments) continue;
     // A lane that passes a frame the link is foreign to is one x for the whole frame (ticket 04); the
@@ -831,11 +891,122 @@ export function allocateLanes(model: LayoutModel): void {
       commit(link, tier, groups, nearest, x, shifts);
     }
   }
+  reserveSideLanes(model, pending, occ);
   reserveRisers(model, pending, occ);
   model.lanes = pending;
   rebuildNodeGeometry(model, Object.keys(model.nodes), 'current');
   rebuildRegions(model);
   rebuildLaneExtents(model);
+}
+/** The stem a side run keeps at least (spec Section 10: the side run is the port's stem). */
+const SIDE_RUN_STEM = 15;
+/** Whether a port sits at the mesh bus it belongs to; a bus port is never a candidate (Section 4). */
+const onMeshBus = (model: LayoutModel, ref: PortRef): boolean => (model.meshBuses ?? []).some(bus => bus.ports.some(port => portId(port) === portId(ref)));
+/**
+ * The lateral port of `link` that may take a side lane (docs/design/side-faces.md, Sections 4 and 10), or `undefined`: a routed link, not a stub,
+ * bundle member, mesh-bus link or group-link collapse, with no transit lane; one end on a lateral side (hinted or authored) that carries this
+ * link alone, the other on the facing top or bottom side of another sub-tier; neither end in a bar group or a flank, the lateral node not in a grid.
+ */
+export function sideLaneCandidate(model: LayoutModel, link: LayoutLink): PortRef | undefined {
+  if (link.layer !== 'routed' || link.technique === 'stub' || link.bundle !== undefined || link.meshBus !== undefined
+    || link.groupLink !== undefined || !link.attachments || transitTiers(model, link).length) return undefined;
+  const ends = [link.attachments.from, link.attachments.to] as const;
+  if (ends[0].node === ends[1].node) return undefined;
+  const lateral = ends.filter(end => { const side = findPort(model, end)?.side; return side === 'left' || side === 'right'; });
+  if (lateral.length !== 1) return undefined;
+  const port = lateral[0]!, far = ends.find(end => end !== port)!;
+  const [portTier, farTier] = [nodeTier(model, port.node), nodeTier(model, far.node)];
+  if (portTier === farTier || findPort(model, far)?.side !== (farTier < portTier ? 'bottom' : 'top')) return undefined;
+  if (!findPort(model, port)?.anchor || !findPort(model, far)?.anchor) return undefined;
+  if (ends.some(end => groupShape(model, model.document.nodes[end.node]!.group) === 'bar' || model.groups[model.document.nodes[end.node]!.group]?.flank !== undefined)) return undefined;
+  if (groupShape(model, model.document.nodes[port.node]!.group) === 'grid' || ends.some(end => onMeshBus(model, end))) return undefined;
+  const carried = model.links.filter(item => item.attachments && [item.attachments.from, item.attachments.to].some(end => portId(end) === portId(port)));
+  return carried.length === 1 ? port : undefined;
+}
+/** Whether no node of the port's group in its row stands beyond it on the port's side (spec Section 10: the outermost node of its row). */
+export function outermostOfRow(model: LayoutModel, port: PortRef): boolean {
+  const side = findPort(model, port)!.side, box = model.nodes[port.node]!.bounds!;
+  const group = model.groups[model.document.nodes[port.node]!.group]!;
+  return group.nodes.every(id => {
+    const other = model.nodes[id]!.bounds!;
+    if (id === port.node || other.y >= bottom(box) - 1e-6 || bottom(other) <= box.y + 1e-6) return true;
+    return side === 'right' ? other.x < right(box) - 1e-6 : right(other) > box.x + 1e-6;
+  });
+}
+/**
+ * Why a side lane cannot stand at `x` for the lateral `port` of `link`, or `undefined` when it can. The side run at the port's y must cross
+ * nothing (`body`, `frame`, `lane`); the vertical run must stand outside the node's group and frames on the port's side, clear of every group
+ * and lane of the sub-tier (`corridor`).
+ */
+function sideLaneRefusal(model: LayoutModel, link: LayoutLink, port: PortRef, x: number, pending: readonly Lane[], occ: (group: LayoutGroup, link?: LayoutLink) => Rect): string | undefined {
+  const lateral = findPort(model, port)!, anchor = lateral.anchor!, dir = lateral.side === 'right' ? 1 : -1;
+  const width = laneWidth(model, link), half = width / 2, group = model.groups[model.document.nodes[port.node]!.group]!;
+  const own = occ(group, link), holding = (model.frames ?? []).filter(frame => frameNodes(model, frame.id).includes(port.node));
+  const inner = dir > 0 ? Math.max(right(own), ...holding.map(frame => right(frame.box))) : Math.min(own.x, ...holding.map(frame => frame.box.x));
+  if (dir > 0 ? x - half < inner - 1e-6 : x + half > inner + 1e-6) return 'corridor';
+  if (Math.abs(x - anchor.x) < SIDE_RUN_STEM + routedStrokeWidth(model) / 2) return 'corridor';
+  // The side run, from the face to the lane centre, at the port's y.
+  const reach = routedStrokeWidth(model) / 2, span = { x: Math.min(anchor.x, x), width: Math.abs(x - anchor.x), y: anchor.y - reach, height: 2 * reach };
+  const across = (box: Rect): boolean => box.x < right(span) - 1e-6 && right(box) > span.x + 1e-6 && box.y < bottom(span) - 1e-6 && bottom(box) > span.y + 1e-6;
+  for (const node of Object.values(model.nodes)) {
+    if (node.id === port.node) continue;
+    if (across(node.bounds!) || node.ports.some(item => item.pill !== undefined && across(item.pill.bounds))) return 'body';
+  }
+  for (const other of Object.values(model.groups)) {
+    if (other.id === group.id || other.tier !== group.tier || other.bounds === undefined) continue;
+    if (across({ ...occ(other, link), y: other.bounds.y, height: other.bounds.height })) return other.frame !== undefined ? 'frame' : 'body';
+  }
+  for (const frame of model.frames ?? []) if (!holding.includes(frame) && across(frame.box)) return 'frame';
+  for (const lane of pending) if (across(lane.bounds)) return 'lane';
+  // The vertical run.
+  for (const other of Object.values(model.groups)) {
+    if (other.tier !== group.tier || other.bounds === undefined) continue;
+    const box = occ(other, link);
+    if (box.x < x + half - 1e-6 && right(box) > x - half + 1e-6) return 'corridor';
+  }
+  for (const lane of pending) if (lane.tier === group.tier && Math.abs(lane.x - x) < (lane.bounds.width + width) / 2 - 1e-6) return 'lane';
+  return undefined;
+}
+/**
+ * Stage 7a, after the transit lanes: a side lane for each routed lateral port (hinted or authored) whose peer is on another sub-tier
+ * (spec Section 10, decision 4). The source-aligned corridor is tried first (the far port's x), then the nearest clear exterior corridor.
+ * Nothing moves: a candidate whose corridor is not clear gets no lane and stays residual (`SIDE_LANE_REFUSED`, info, with the reason).
+ */
+function reserveSideLanes(model: LayoutModel, pending: Lane[], occ: (group: LayoutGroup, link?: LayoutLink) => Rect): void {
+  for (const link of model.links) {
+    const port = sideLaneCandidate(model, link);
+    if (port === undefined) continue;
+    const refuse = (why: string): void => {
+      model.diagnostics.push({ stage: 'placement', severity: 'info', code: 'SIDE_LANE_REFUSED', owners: [{ kind: 'link', id: link.id }],
+        message: `${link.id} has a lateral port and no side lane (${why}); the link stays residual.` });
+    };
+    if (!outermostOfRow(model, port)) { refuse('body'); continue; }
+    const lateral = findPort(model, port)!, dir = lateral.side === 'right' ? 1 : -1;
+    const group = model.groups[model.document.nodes[port.node]!.group]!, half = laneWidth(model, link) / 2;
+    const far = ((): PortRef => portId(link.attachments!.from) === portId(port) ? link.attachments!.to : link.attachments!.from)();
+    const farX = findPort(model, far)!.anchor!.x;
+    // The corridors that stand beyond the node's group and frames on the port's side: the edges of every box and lane of the sub-tier.
+    const edges = new Set<number>();
+    const add = (edge: number): void => { edges.add(edge + dir * half); };
+    for (const other of Object.values(model.groups)) if (other.tier === group.tier && other.bounds !== undefined) { const box = occ(other, link); add(dir > 0 ? right(box) : box.x); }
+    for (const frame of model.frames ?? []) add(dir > 0 ? right(frame.box) : frame.box.x);
+    for (const lane of pending) if (lane.tier === group.tier) add(dir > 0 ? right(lane.bounds) : lane.bounds.x);
+    const own = occ(group, link);
+    const inner = dir > 0 ? right(own) : own.x;
+    const exterior = [...edges].filter(x => dir * (x - (inner + dir * half)) >= -1e-6).sort((a, b) => Math.abs(a - farX) - Math.abs(b - farX) || dir * (a - b));
+    const tries = dir * (farX - inner) >= half - 1e-6 ? [farX, ...exterior.filter(x => Math.abs(x - farX) > 1e-6)] : exterior;
+    let chosen: number | undefined, first: string | undefined;
+    for (const x of tries) {
+      const why = sideLaneRefusal(model, link, port, x, pending, occ);
+      if (why === undefined) { chosen = x; break; }
+      first ??= why;
+    }
+    if (chosen === undefined) { refuse(first ?? 'corridor'); continue; }
+    const lane: Lane = { id: sideLaneId(link), owner: { kind: 'link', id: link.id }, layer: 'routed', group: group.id, tier: group.tier!,
+      side: lateral.side as 'left' | 'right', kind: 'side', port: { ...port }, x: chosen, bounds: { x: chosen - half, width: 2 * half, y: 0, height: 0 } };
+    Object.assign(lane.bounds, sideLaneExtent(model, lane, link));
+    pending.push(lane);
+  }
 }
 /** A riser lane: owned by the upper bus of a join, at the one immutable riser x, in a crossed sub-tier, clear of every body and lane. */
 function validateRiserLane(model: LayoutModel, lane: Lane): void {
@@ -855,24 +1026,32 @@ function validateRiserLane(model: LayoutModel, lane: Lane): void {
   for (const other of model.lanes) if (other !== lane && other.tier === lane.tier
     && Math.abs(other.x - lane.x) < (other.bounds.width + lane.bounds.width) / 2 - 1e-6) throw new Error('Owned lanes overlap');
 }
+/** A side lane is valid only on a candidate for it: its id, port, tier, side and group are the lateral end's, and the node is the outermost of its row. */
+function validSideLane(model: LayoutModel, lane: Lane, link: LayoutLink): boolean {
+  const candidate = sideLaneCandidate(model, link), port = lane.port, found = port === undefined ? undefined : findPort(model, port);
+  return candidate !== undefined && port !== undefined && found?.anchor !== undefined && portId(candidate) === portId(port) && lane.id === sideLaneId(link)
+    && found.side === lane.side && model.document.nodes[port.node]?.group === lane.group && nodeTier(model, port.node) === lane.tier && outermostOfRow(model, port);
+}
 /** Validate reservations independently of allocation history, including restored JSON. */
 export function validateLanes(model: LayoutModel): void {
   const risers = (model.meshBuses ?? []).filter(bus => bus.cross !== undefined).flatMap(bus => {
     const lower = model.meshBuses!.find(item => item.id === bus.joined);
     return lower === undefined || bus.riser === undefined ? [] : crossedTiers(model, bus, lower).map(tier => riserLaneId(bus.id, tier));
   });
-  const expected = [...model.links.flatMap(link => transitTiers(model, link).map(tier => laneId(link, tier))), ...risers].sort();
+  const sides = [...new Set(model.lanes.filter(isSideLane).map(lane => `side-lane:${lane.owner.kind === 'link' ? lane.owner.id : ''}`))];
+  const expected = [...model.links.flatMap(link => transitTiers(model, link).map(tier => laneId(link, tier))), ...risers, ...sides].sort();
   if (JSON.stringify(model.lanes.map(lane => lane.id).sort()) !== JSON.stringify(expected)) throw new Error('Lane reservations omit, repeat or invent a transit');
   for (const lane of model.lanes) {
     if (lane.owner.kind === 'mesh-bus') { validateRiserLane(model, lane); continue; }
     const ownerId = lane.owner.kind === 'link' ? lane.owner.id : undefined;
     const link = model.links.find(link => link.id === ownerId);
-    if (!link || lane.layer !== 'routed' || !transitTiers(model, link).includes(lane.tier) || lane.id !== laneId(link, lane.tier)
+    const side = isSideLane(lane);
+    if (!link || lane.layer !== 'routed' || (side ? !validSideLane(model, lane, link) : !transitTiers(model, link).includes(lane.tier) || lane.id !== laneId(link, lane.tier))
       || model.groups[lane.group]?.tier !== lane.tier || !['left', 'right'].includes(lane.side)
       || lane.bounds.width < laneWidth(model, link) || lane.bounds.x !== lane.x - lane.bounds.width / 2
       || !Object.values(lane.bounds).every(Number.isFinite) || !Number.isFinite(lane.x)) throw new Error('Invalid owned lane geometry');
-    const extent = laneExtent(model, lane.tier);
-    if (lane.bounds.y !== extent.y || lane.bounds.height !== extent.height) throw new Error('Lane extent contradicts tier band');
+    const extent = side ? sideLaneExtent(model, lane, link) : laneExtent(model, lane.tier);
+    if (lane.bounds.y !== extent.y || lane.bounds.height !== extent.height) throw new Error(side ? 'Side lane extent contradicts its port' : 'Lane extent contradicts tier band');
     const group = model.groups[lane.group]!;
     if (lane.side === 'left' ? lane.x >= group.bounds!.x : lane.x <= right(group.bounds!)) throw new Error(`Lane side contradicts its group: ${lane.id} / ${group.id}`);
     for (const other of Object.values(model.groups).filter(group => group.tier === lane.tier)) {
@@ -886,10 +1065,7 @@ export function validateLanes(model: LayoutModel): void {
     }
   }
   for (const link of model.links) {
-    const order = transitTiers(model, link);
-    const owned = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === link.id)
-      .sort((a, b) => order.indexOf(a.tier) - order.indexOf(b.tier));
-    const runs = owned.length ? owned.map(lane => reservation(model, link, lane)) : undefined;
+    const runs = laneReservation(model, link);
     if (!equal(link.fixedSegments, link.bundle ? undefined : runs)) throw new Error(`Fixed lane segments contradict reservations on ${link.id}`);
     if (link.path && runs && !runs.every(run => link.path!.segments.some(segment => equal(segment, run)))) {
       throw new Error('Complete path omits an immutable reserved segment');

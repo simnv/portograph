@@ -195,6 +195,14 @@ export interface LayoutLink {
 
 export interface Lane extends OwnedElement {
   id: string;
+  /**
+   * `transit` (absent reads `transit`, so an old layout restores): a full-band vertical run in a sub-tier the link crosses.
+   * `side`: the run beside the lateral end's node from the band edge facing the far end to the lateral port's y, with the side run
+   * to the port's face (docs/design/side-faces.md, Section 10). Its id is `side-lane:<link id>`.
+   */
+  kind?: 'transit' | 'side';
+  /** A side lane only: the lateral port the lane serves. `tier` is that end's sub-tier, `side` the port's side, `group` its group. */
+  port?: PortRef;
   group: string;
   tier: number;
   side: 'left' | 'right';

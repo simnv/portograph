@@ -106,7 +106,8 @@ function transitLanes(model: LayoutModel, id: string): Rect[] {
       }
       continue;
     }
-    if (!cells.has(lane.group) || lane.owner.kind !== 'link') continue;
+    // A side lane stands outside the frame of its lateral end and never grows it (side-faces.md, Section 10): this reader serves transit lanes only.
+    if (!cells.has(lane.group) || lane.owner.kind !== 'link' || lane.kind === 'side') continue;
     const owner = lane.owner.id;
     const link = model.links.find(item => item.id === owner);
     if (!link?.attachments || ![link.attachments.from.node, link.attachments.to.node].some(node => inside.has(node))) continue;
@@ -199,7 +200,8 @@ export function foreignRoot(model: LayoutModel, cell: string, link: LayoutLink):
  */
 export function heldLaneReach(model: LayoutModel, cell: string, link: LayoutLink, lane: Lane, laneOwner: LayoutLink | undefined): Rect | undefined {
   const frames = model.document.frames, first = model.document.groups[cell]?.frame;
-  if (!frames || first === undefined || lane.group !== cell || !laneOwner?.attachments || laneOwner.id === link.id) return undefined;
+  // A side lane grows no frame, so no foreign lane keeps a frame's room for it.
+  if (!frames || first === undefined || lane.group !== cell || lane.kind === 'side' || !laneOwner?.attachments || laneOwner.id === link.id) return undefined;
   const found = foreignFrame(model, cell, link);
   if (!found) return undefined;
   const ends = [laneOwner.attachments.from.node, laneOwner.attachments.to.node], chain: string[] = [];
