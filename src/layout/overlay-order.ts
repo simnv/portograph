@@ -21,6 +21,9 @@ function readDraft(model: LayoutModel) {
   const tiers = [...new Set(Object.values(model.groups).filter(group => !group.flank && group.nodes.length).map(group => group.tier!))].sort((a, b) => a - b);
   const index = new Map(tiers.map((tier, i) => [tier, i]));
   const tierOf = (node: string): number => index.get(groupOf(node).tier!)!;
+  const flanked = new Set(Object.values(model.groups).flatMap(group => group.flank ? [group.flank.of] : []));
+  /** Whether a group is a plain row: no flank, no flanked group, no bar, no grid. Only two bodies of such rows can be neighbours on a row. */
+  const isRow = (group: LayoutGroup): boolean => !group.flank && !flanked.has(group.id) && groupShape(model, group.id) === 'row' && model.document.groups[group.id]?.shape !== 'bar';
   const centre = (node: string): number => model.nodes[node]!.bounds!.x + model.nodes[node]!.bounds!.width / 2;
 
   interface Pair { from: string; to: string; link: LayoutLink }
@@ -115,7 +118,7 @@ function readDraft(model: LayoutModel) {
     let crossings = 0;
     for (let a = low - 1; a <= high; a++) if (a >= 0 && a + 1 < tiers.length) crossings += regionCrossings(a, a + 1);
     const boxes = bodies(), rows = aligned ? rowBoxes() : undefined;
-    const spanning = drawn.filter(pair => !(crossOnly && tierOf(pair.from) === tierOf(pair.to)) && Math.min(tierOf(pair.from), tierOf(pair.to)) <= high && Math.max(tierOf(pair.from), tierOf(pair.to)) >= low);
+    const spanning = drawn.filter(pair => !(crossOnly && tierOf(pair.from) === tierOf(pair.to) && isRow(groupOf(pair.from)) && isRow(groupOf(pair.to))) && Math.min(tierOf(pair.from), tierOf(pair.to)) <= high && Math.max(tierOf(pair.from), tierOf(pair.to)) >= low);
     const inside = rows === undefined ? [] : routed.filter(pair => onRow(pair) && tierOf(pair.from) >= low && tierOf(pair.from) <= high);
     return { crossings, straight: spanning.filter(pair => straight(pair, boxes, rows)).length, blocked: inside.filter(pair => !straightOnRow(pair, rows!)).length };
   };
@@ -129,7 +132,7 @@ function readDraft(model: LayoutModel) {
     });
     return items.map(item => keys.get(item) === undefined ? item : queue.shift()!);
   };
-  return { anchor, tiers, index, tierOf, groupOf, drawn, centre, partners, touched, keyOfNodes, same, measure, measureRange, reorder };
+  return { anchor, tiers, index, tierOf, groupOf, drawn, centre, isRow, partners, touched, keyOfNodes, same, measure, measureRange, reorder };
 }
 
 /** What both orderings (groups and nodes, and frames) read: the draft's keys, its tiers and its two measures. */
@@ -172,7 +175,7 @@ function reseatRow(model: LayoutModel, group: LayoutGroup, next: string[], grow:
  * only when its two ends are neighbours on the row, so the row is ordered to put linked bodies next to each other.
  */
 function rowTools(model: LayoutModel, draft: NonNullable<ReturnType<typeof readDraft>>) {
-  const { tierOf, drawn, centre, index, reorder, measureRange } = draft;
+  const { tierOf, drawn, centre, index, reorder, measureRange, isRow } = draft;
   /** The overlay links whose two ends stand in one tier, as node pairs. */
   const sameRow = drawn.filter(pair => pair.from !== pair.to && tierOf(pair.from) === tierOf(pair.to));
   const linksBetween = (one: string[], two: string[]): number => sameRow.filter(pair =>
@@ -222,8 +225,6 @@ function rowTools(model: LayoutModel, draft: NonNullable<ReturnType<typeof readD
     });
     return reorder(fragments, fragment => outsideKey(fragment, inside)).flat();
   };
-  const flanked = new Set(Object.values(model.groups).flatMap(group => group.flank ? [group.flank.of] : []));
-  const isRow = (group: LayoutGroup): boolean => !group.flank && !flanked.has(group.id) && groupShape(model, group.id) === 'row' && model.document.groups[group.id]?.shape !== 'bar';
   /**
    * The same-row overlay links over the sub-tiers `low` to `high` (indices) that stand between neighbours on the row. The draft has not
    * levelled the rows yet (ELK layers a row group on several heights), so a link is read from the order the bodies will stand in: the
@@ -266,8 +267,9 @@ function rowTools(model: LayoutModel, draft: NonNullable<ReturnType<typeof readD
  *   over its own links. A partner in the same tier is left out: its position moves with the order
  *   this rule is choosing, and a pair of same-tier partners would swap places on every run.
  * - **The sweep** takes the tiers one after the other, from the anchor tier downwards and then from
- *   the anchor tier upwards. The anchor tier keeps ELK's order: it is the fixed reference. A group
- *   with no key keeps its slot; ties keep ELK's order.
+ *   the anchor tier upwards. The key order leaves the anchor tier as ELK had it: it is the fixed reference
+ *   of the sweep. Ticket 78 chains its rows by same-row partners first (see below). A group with no key
+ *   keeps its slot; ties keep ELK's order.
  * - **What moves.** A group moves only among the groups around it that can move too. A flank, a bar,
  *   a rank cell, a group that has a child group or a parent group is a wall: it keeps its place and
  *   the groups between two walls are ordered among themselves. The nodes of a `row` group are
@@ -283,6 +285,13 @@ function rowTools(model: LayoutModel, draft: NonNullable<ReturnType<typeof readD
  * lower face of the upper body for the upper face of the lower one, a same-tier link rides the
  * row), and a routed link is a straight line between its two body centres. `sides-two` then orders
  * the ports from the order chosen here, so no port order goes stale.
+ *
+ * **Row partners** (ticket 78). After the key order, and for the anchor tier before the sweep, the groups of a
+ * run and the nodes of a `row` group are chained by their same-tier overlay links, so that linked bodies stand
+ * next to each other and the link is one straight segment. This step is judged by a third term: the routed
+ * crossings and blocked routed links do not rise, the cross-tier straight links (a same-tier link counts there
+ * only when it touches a group that is not a plain row) do not fall, and the count of same-row linked pairs that
+ * stand next to each other rises. A refusal is silent.
  *
  * A tier that no overlay link touches keeps ELK's order, so an input with no overlay link is
  * untouched.
@@ -418,8 +427,14 @@ export function saveGroups(model: LayoutModel, groups: LayoutGroup[]): () => voi
  *   keeps its place and ties keep ELK's order. A one-rank group keeps its place: the groups of the
  *   tier were ordered before, and are the walls here, as are a frame with a bar, a grid or a flanked cell.
  * - **The sweep** is the one of `orderByOverlay`, over the document tiers: from the anchor tier
- *   downwards, then upwards. A tier that holds the anchor sub-tier keeps ELK's order.
- * - **Acceptance** is per document tier with the two proxies of `orderByOverlay`, measured over all
+ *   downwards, then upwards. The key order leaves a tier that holds the anchor sub-tier as ELK had it;
+ *   only the row partners step (ticket 78, below) re-orders it, before the sweep.
+ * - **Row partners** (ticket 78): the plain frames of a run, the members of a canton that stand beside each
+ *   other and the nodes of each rank cell are chained by their same-sub-tier overlay links. Canton order never
+ *   changes. The step stands only when the routed crossings and the blocked routed links do not rise, the
+ *   cross-tier straight links do not fall, and the count of same-row linked pairs that are neighbours rises
+ *   (the third term, `near`). A refusal is silent.
+ * - **Acceptance** of the key order is per document tier with the two proxies of `orderByOverlay`, measured over all
  *   the sub-tiers of the tier: the routed crossings of the regions that touch it do not rise and the
  *   straight overlay links over it do not fall, one of the two improves. A third term guards the
  *   routed links inside one sub-tier (an end in a rank cell): the number that have a body between their
@@ -614,7 +629,7 @@ export function orderFramesByOverlay(model: LayoutModel, columns: Map<string, Co
       gainful(() => { packTier(model, tier, columns, sequence); return true; }, everyGroup);
     }
     for (const canton of tier.filter(unit => isCanton(unit) && free(unit))) {
-      gainful(() => { const was = moved; orderMembers(tier, canton, from, to, true); const changed = moved !== was; moved = was; return changed; }, everyGroup);
+      orderMembers(tier, canton, from, to, true);
     }
     const cells = everyGroup.filter(group => group.nodes.length > 1 && free({ frame: true, groups: [group] }));
     gainful(() => {
