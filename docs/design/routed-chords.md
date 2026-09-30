@@ -231,6 +231,10 @@ chord, can bring a leg nearer the chord after the decision. The plan names each 
 strictly (`TIER_GAP_CHORD_CROWDED`, info), and G6 judges, as for two verticals within `k`
 (`crowded`).
 
+*As built (ticket 101).* `PlanFrame.chords` holds the chord's x at the gap's low y and at its high y; `chordGapNotes` (`gap-plan.ts`) names both notes from the plans of the last round of `growTierGaps`,
+once each. "Within `k`" is the centre-to-centre distance, 11.5 px (`k` holds the stroke). An unfit gap (`growth > 0` after the rounds) leaves all its parts to the
+router, so every part over a chord's span there is `TIER_GAP_CHORD_EXPOSED`.
+
 **Mesh bus and riser (tickets 82 to 84, 92; 94, 96, 97).** A bus bar, a stub, a riser and a
 riser lane are overlay geometry: `straightCorridorClear` and the router leave out overlay lanes,
 so a chord may cross them, and `riserCrossings` and `busVerticalCounts` count it. An across-frames

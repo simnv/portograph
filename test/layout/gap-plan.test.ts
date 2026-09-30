@@ -380,3 +380,36 @@ describe('a riser vertical in the gap (mesh-bus.md, section 11.5)', () => {
     expect(plan.height).toBeCloseTo(base.height, 6);
   });
 });
+
+describe('a held routed chord in the gap (routed-chords.md, section 8)', () => {
+  const inputs = [part('A', 0, 0, 100), part('B', 1, 100, 200), part('C', 2, 200, 0), part('D', 3, 188, 12)];
+
+  it('takes the next interval for the middle drop of a Z part whose widest free interval holds the chord', () => {
+    const base = planGap(inputs, frame());
+    const middle = base.parts.find(item => item.id === 'C')!.middle!;
+    expect(middle).toBeCloseTo(56, 6);
+    // A slanted chord: 45 at the gap's low y, 67 at its high y. Its span is 45 to 67, and the drop keeps `keep` from all of it.
+    const plan = planGap(inputs, { ...frame(), chords: [{ low: 45, high: 67 }] });
+    expect(plan.residual).toEqual([]);
+    const moved = plan.parts.find(item => item.id === 'C')!.middle!;
+    expect(moved).toBeCloseTo(144, 6);
+    expect(moved < 45 - frame().keep + 1e-6 || moved > 67 + frame().keep - 1e-6).toBe(true);
+    // The chord asks for no height.
+    expect(plan.height).toBeCloseTo(base.height, 6);
+  });
+
+  it('plans a row that crosses the chord unchanged, and H does not change', () => {
+    const base = planGap(inputs, frame());
+    // x 150 is under the run of B (100 to 200) and of D (188 to 12): both rows cross it. It lies in an interval as wide as the one the drop took.
+    const plan = planGap(inputs, { ...frame(), chords: [{ low: 150, high: 150 }] });
+    expect(plan.parts.map(item => [item.id, item.shape, item.rows, item.middle])).toEqual(base.parts.map(item => [item.id, item.shape, item.rows, item.middle]));
+    expect(plan.order).toEqual(base.order);
+    expect(plan.height).toBeCloseTo(base.height, 6);
+    expect(plan.demand).toBeCloseTo(base.demand, 6);
+    expect(plan.residual).toEqual([]);
+  });
+
+  it('with no chord the plan is the one it was', () => {
+    expect(planGap(inputs, { ...frame(), chords: [] })).toEqual(planGap(inputs, frame()));
+  });
+});

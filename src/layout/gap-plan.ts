@@ -1,11 +1,12 @@
 import type { Point, Rect } from '../model/geometry.js';
-import type { LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
-import { bottom, EPS, right } from '../score/geometry.js';
+import type { Diagnostic, LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
+import { bottom, EPS, intersection, right, samePoint, segmentDistance } from '../score/geometry.js';
 import { measureText } from '../text/index.js';
 import { GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { cantonTiers, GROUP_LABEL_GEOMETRY, nodeObstacleReach, nudgingDistance, routedStroke } from './bands.js';
 import { drawn, edgeOf, nestedTips, stopsOf, tierGaps, type NestedTip, type TierGap } from './gap-runs.js';
 import { LINK_LABEL_GEOMETRY } from './link-labels.js';
+import { isRoutedChord } from './frame-paths.js';
 import { findPort } from './row-paths.js';
 import { bandGap } from './skeleton-graph.js';
 import { stemCache, stemPlan, type StemCache } from './sides-two.js';
@@ -104,6 +105,11 @@ export interface PlanFrame {
    * row crosses it (one accepted crossing), and a Z part's middle drop keeps `keep` from it.
    */
   verticals?: readonly number[];
+  /**
+   * The held routed chords that cross the gap, as slanted walls (docs/design/routed-chords.md, Section 8): the x of each at the gap's low y and at its
+   * high y. A Z part's middle drop keeps `keep` from the whole span of a chord in the gap. A chord asks for no height and a planned row may cross it.
+   */
+  chords?: readonly { low: number; high: number }[];
 }
 
 export type PartShape = 'drop' | 'stepped' | 'z';
@@ -305,7 +311,8 @@ function reaches(edges: readonly PlanEdge[], from: string, to: string): boolean 
  * The x a Z part's middle drop may take (2.2 O6): the centre of every interval between the part's ends that stands `keep` clear of
  * every other leg and drop, widest first (the first of equally wide ones first). `solve` takes the first that breaks the cycle.
  */
-function middleDrops(part: Part, parts: readonly Part[], split: ReadonlyMap<string, number>, keep: number, verticals: readonly number[] = []): number[] {
+function middleDrops(part: Part, parts: readonly Part[], split: ReadonlyMap<string, number>, keep: number, verticals: readonly number[] = [],
+  chords: readonly { low: number; high: number }[] = []): number[] {
   const centres = [part.upper.x, part.lower.x, ...verticals];
   for (const other of parts) {
     if (other === part) continue;
@@ -314,7 +321,9 @@ function middleDrops(part: Part, parts: readonly Part[], split: ReadonlyMap<stri
     if (middle !== undefined) centres.push(middle);
   }
   const lo = Math.min(part.upper.x, part.lower.x), hi = Math.max(part.upper.x, part.lower.x);
-  const forbidden = centres.map(x => [x - keep, x + keep] as const).sort((a, b) => a[0] - b[0]);
+  // A chord is a slanted wall: the drop keeps `keep` from its whole span in the gap, not from one x.
+  const forbidden = [...centres.map(x => [x - keep, x + keep] as const), ...chords.map(chord => [Math.min(chord.low, chord.high) - keep, Math.max(chord.low, chord.high) + keep] as const)]
+    .sort((a, b) => a[0] - b[0]);
   const found: { from: number; to: number }[] = [];
   let cursor = lo;
   const take = (from: number, to: number): void => { if (to >= from - EPS) found.push({ from, to }); };
@@ -357,7 +366,7 @@ function solve(parts: readonly Part[], frame: PlanFrame): Solved | { reject: Par
     if (!unsplit.length) return { reject: latest(onCycle) };
     const pick = latest(unsplit);
     // The widest clear interval that leaves the halves on no cycle; residual only where none does.
-    const middle = middleDrops(pick, parts, split, keep, frame.verticals).find(candidate => {
+    const middle = middleDrops(pick, parts, split, keep, frame.verticals, frame.chords).find(candidate => {
       const trial = new Map(split).set(pick.id, candidate), after = expand(base, trial, unitsOf(parts, trial));
       return !inCycle(after, `${pick.id}a`) && !inCycle(after, `${pick.id}b`);
     });
@@ -799,7 +808,63 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
     tips: tips.filter(item => item.side === 'bottom').map(item => item.tip),
     lowerTips: tips.filter(item => item.side === 'top').map(item => item.tip), residual,
     verticals: (model.meshBuses ?? []).filter(bus => bus.riser !== undefined && bus.cross !== undefined
-      && model.meshBuses!.some(other => other.id === bus.joined && bus.row <= gap.above && gap.below <= other.row)).map(bus => bus.riser!.x) });
+      && model.meshBuses!.some(other => other.id === bus.joined && bus.row <= gap.above && gap.below <= other.row)).map(bus => bus.riser!.x),
+    chords: heldChordsAcross(model, gap).map(item => ({ low: item.low, high: item.high })) });
+}
+
+/**
+ * The held routed chords that cross the whole gap, with their x at the gap's low y and at its high y (a chord is one segment, so two numbers say
+ * where it stands in the gap). A chord that ends short of the gap, or begins inside it, is no wall of this gap.
+ */
+function heldChordsAcross(model: LayoutModel, gap: TierGap): { link: LayoutLink; segment: PathSegment; low: number; high: number }[] {
+  const result: { link: LayoutLink; segment: PathSegment; low: number; high: number }[] = [];
+  for (const id of model.frozenChords ?? []) {
+    const link = model.links.find(item => item.id === id), segment = link?.path?.segments.length === 1 ? link.path.segments[0]! : undefined;
+    if (link === undefined || segment === undefined || !isRoutedChord(model, link)) continue;
+    const top = Math.min(segment.from.y, segment.to.y), floor = Math.max(segment.from.y, segment.to.y);
+    if (top > gap.low + EPS || floor < gap.high - EPS || floor - top < EPS) continue;
+    const at = (y: number): number => segment.from.x + (y - segment.from.y) / (segment.to.y - segment.from.y) * (segment.to.x - segment.from.x);
+    result.push({ link, segment, low: at(gap.low), high: at(gap.high) });
+  }
+  return result;
+}
+
+/**
+ * The plan's two notes on a held routed chord (docs/design/routed-chords.md, Section 8), as `info` diagnostics. `TIER_GAP_CHORD_CROWDED`: a planned
+ * leg, drop or middle drop of a part in the chord's gap stands within `keep` of the chord and does not cross it strictly (the freeze kept the ports
+ * and the plan keeps the middle drop off the chord, so this is what 7f moved after the freeze). `TIER_GAP_CHORD_EXPOSED`: a part the plan leaves to
+ * the router (a residual part, or any part of a gap that stays short of room) whose x-span overlaps the x-span of the chord in the gap, so the router
+ * may lay it across or beside the chord. Neither changes anything; the gates judge.
+ */
+export function chordGapNotes(model: LayoutModel, plans: readonly { gap: TierGap; plan: GapPlan }[]): Diagnostic[] {
+  const notes: Diagnostic[] = [], keep = nudgingDistance(model);
+  for (const { gap, plan } of plans) {
+    for (const held of heldChordsAcross(model, gap)) {
+      const span = { x0: Math.min(held.low, held.high), x1: Math.max(held.low, held.high) };
+      for (const part of plan.parts) {
+        const near = plannedSegments(part, gap).filter(seg => Math.abs(seg.from.x - seg.to.x) < EPS && Math.abs(seg.from.y - seg.to.y) >= EPS)
+          .some(seg => {
+            const point = intersection(seg, held.segment);
+            const strict = point !== undefined && ![seg.from, seg.to, held.segment.from, held.segment.to].some(end => samePoint(end, point));
+            return !strict && segmentDistance(seg, held.segment) < keep - EPS;
+          });
+        if (near) notes.push({ stage: 'placement', severity: 'info', code: 'TIER_GAP_CHORD_CROWDED',
+          message: `A vertical of ${part.link} in the tier gap above tier ${gap.below} stands within ${keep} px of the straight link ${held.link.id}.`,
+          owners: [{ kind: 'link', id: part.link }, { kind: 'link', id: held.link.id }] });
+      }
+      const left = new Set<string>();
+      for (const item of plan.residual) if (item.span !== undefined && item.span.x0 <= span.x1 + EPS && item.span.x1 >= span.x0 - EPS) left.add(item.link);
+      // A gap that still asks for room leaves all its parts to the router.
+      if (plan.growth > EPS) for (const part of plan.parts) {
+        const lo = Math.min(part.upper.x, part.lower.x), hi = Math.max(part.upper.x, part.lower.x);
+        if (lo <= span.x1 + EPS && hi >= span.x0 - EPS) left.add(part.link);
+      }
+      for (const link of left) notes.push({ stage: 'placement', severity: 'info', code: 'TIER_GAP_CHORD_EXPOSED',
+        message: `${link} is left to the router in the tier gap above tier ${gap.below}, over the x-span of the straight link ${held.link.id}.`,
+        owners: [{ kind: 'link', id: link }, { kind: 'link', id: held.link.id }] });
+    }
+  }
+  return notes;
 }
 
 /**
