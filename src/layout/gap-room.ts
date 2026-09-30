@@ -1,7 +1,7 @@
 import type { LayoutModel } from '../model/layout.js';
 import { EPS } from '../score/geometry.js';
 import { alignLinkedGroupGrid, cantonTiers, replanGroupLabels } from './bands.js';
-import { tierGapPlans, type GapPlan, type ResidualReason } from './gap-plan.js';
+import { chordGapNotes, tierGapPlans, type GapPlan, type ResidualReason } from './gap-plan.js';
 import type { TierGap } from './gap-runs.js';
 import { rebuildLaneExtents } from './lanes.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
@@ -47,11 +47,13 @@ export function growTierGaps(model: LayoutModel): boolean {
   // moves nothing ends them), and the model itself is touched once, by the result.
   const grown = new Map<number, GapGrowth>();
   let plans: ReturnType<typeof tierGapPlans> = [];
+  let trial = model;
   let unfit: { above: number; below: number; ask: number }[] = [];
   // The room each gap has on the model as it stands, before any growth: what `extra` is measured against.
   const room = new Map<number, number>();
   for (let round = 0; round < MAX_ROUNDS; round++) {
-    plans = tierGapPlans(settled(model, new Map([...grown].map(([tier, item]) => [tier, item.extra]))));
+    trial = settled(model, new Map([...grown].map(([tier, item]) => [tier, item.extra])));
+    plans = tierGapPlans(trial);
     if (!round) for (const { gap, plan } of plans) room.set(gap.below, plan.bandTop - plan.low);
     // Each round replaces the growth of a gap by the height its plan asks on the model grown as before: `extra = H − room`. The rounds
     // do not accumulate. A round that adds what its trial still asks for counts a stem that nested only in a larger gap twice, and
@@ -86,6 +88,10 @@ export function growTierGaps(model: LayoutModel): boolean {
       placementWarning(model, item.reason === 'row-cycle' ? 'TIER_GAP_ROW_CYCLE' : 'TIER_GAP_PART_RESIDUAL',
         `${item.link} is left to the router in the tier gap above tier ${gap.below}: ${REASONS[item.reason]}.`, [item.link]);
     }
+  }
+  // The notes on a held chord (ticket 101), once each: this runs after every move of 7f, and the plans are those of the last round.
+  for (const note of chordGapNotes(trial, plans)) {
+    if (!model.diagnostics.some(item => item.code === note.code && item.message === note.message)) model.diagnostics.push(note);
   }
   return grow(model, grown);
 }

@@ -1,0 +1,31 @@
+# Expected: A provider face that takes three cross-frame chords spreads its ports (ranked-groups ticket 102, Q108). Three location
+# frames stand on tier 1, each a core router over a router, and one provider node stands on tier 2 between two peers that hem it in:
+# the node cannot widen to put a port under each router, so the three routers reach three ports of its top face by three chords, the
+# outer two shallow. At the 12 px base pitch the three chords hold (10 px and both strokes), but the face is measured with 4 px of
+# slack for the drift of 7f, and that leaves it short: placement runs again with the pitch the face needs (16 px). All three chords
+# are one straight segment, each pair keeps 10 px or crosses strictly, and every gate passes.
+# Test-only input owned by ranked-groups ticket 102; test/pipeline/routed-chord-fan.test.ts reads the layout.
+portograph: 2
+profile: network
+groups:
+  location-a: { tier: 1, label: Location A }
+  location-b: { tier: 1, label: Location B }
+  location-c: { tier: 1, label: Location C }
+  providers: { tier: 2, label: Providers }
+nodes:
+  a-core: { group: location-a, class: router, label: Core router of the site }
+  a-router: { group: location-a, class: router, label: A router }
+  b-core: { group: location-b, class: router, label: Core router of the site }
+  b-router: { group: location-b, class: router, label: B router }
+  c-core: { group: location-c, class: router, label: Core router of the site }
+  c-router: { group: location-c, class: router, label: C router }
+  west-peer: { group: providers, class: provider, label: West peer }
+  provider: { group: providers, class: provider, label: Provider }
+  east-peer: { group: providers, class: provider, label: East peer }
+links:
+  - [a-core, a-router]
+  - [b-core, b-router]
+  - [c-core, c-router]
+  - [a-router, provider, { class: dashed }]
+  - [b-router, provider, { class: dashed }]
+  - [c-router, provider, { class: dashed }]
