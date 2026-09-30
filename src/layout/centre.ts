@@ -16,8 +16,9 @@ import { alignmentAllowance, ownSideWidth } from './size.js';
 import { withLayoutMutation } from './mutation.js';
 import { placeOverlayFree } from './overlay-place.js';
 import { fitRegionGroup, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
-import { EPS } from '../score/geometry.js';
-import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
+import { EPS, segmentRectDistance } from '../score/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
+import { chordKind, isRoutedChord } from './frame-paths.js';
 
 export interface CentreBudget { remaining: number; passes: number }
 export function createCentreBudget(): CentreBudget { return { remaining: 8, passes: 0 }; }
@@ -128,7 +129,7 @@ function overlayStops(model: LayoutModel, node: LayoutNode): OverlayStops {
  * outer one is the same growth by another name.
  */
 function alignSide(node: LayoutNode, side: Side, targets: Map<string, number>, limit: WideningLimit, stops: OverlayStops, stopped: (link: string) => void,
-  avoid: { xs: number[]; keep: number; routed: Set<string> } = { xs: [], keep: 0, routed: new Set() }): Set<string> {
+  avoid: { xs: number[]; keep: number; routed: Set<string> } = { xs: [], keep: 0, routed: new Set() }, held: ReadonlyMap<string, (x: number) => boolean> = new Map()): Set<string> {
   const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
   const pitch = node.sidePitch![side]!, kept: { index: number; x: number; key: string }[] = [];
   const box = node.bounds!, oldRight = right(box);
@@ -176,6 +177,18 @@ function alignSide(node: LayoutNode, side: Side, targets: Map<string, number>, l
     });
     if (landing.some((x, index) => avoid.routed.has(portId(ports[index]!.ref)) && avoid.xs.some(riser => Math.abs(x - riser) < avoid.keep))) return new Set();
   }
+  // A port of a held chord that is not itself an alignment target is packed against the kept ones, and the chord follows it. The chord was decided
+  // at the old x; where the new one lays it across the lane of another link, `validateLanes` refuses the fixed path at publication. The side is declined
+  // instead, like the riser case above; stage 8 routes the feeds that lose their alignment.
+  if (held.size) {
+    const seats = ports.map((_, index) => {
+      const before = [...kept].reverse().find(target => target.index <= index), after = kept.find(target => target.index >= index);
+      return before && after && before.index !== after.index ? before.x + (index - before.index) * (after.x - before.x) / (after.index - before.index)
+        : before ? before.x + (index - before.index) * pitch : first.x - (first.index - index) * pitch;
+    });
+    if (seats.some((x, index) => !kept.some(target => target.index === index) && Math.abs(x - ports[index]!.anchor!.x) > EPS
+      && held.get(portId(ports[index]!.ref))?.(x) === false)) return new Set();
+  }
   const oldX = box.x, grown = last.x + (ports.length - 1 - last.index) * pitch + 10 + pitch / 2;
   box.x = Math.min(box.x, first.x - first.index * pitch - 10 - pitch / 2);
   box.width += (oldX - box.x) + Math.max(0, grown - oldRight);
@@ -191,6 +204,60 @@ function alignSide(node: LayoutNode, side: Side, targets: Map<string, number>, l
     port.anchor = portAnchor(box, side, x - box.x);
   });
   return new Set(kept.map(target => target.key));
+}
+/**
+ * The pairs (frozen chord with an end in the group, foreign lane) whose box the chord touches, read on the anchors as they stand. The whole step is
+ * measured with it, as the riser keep-out is: the clamp, `packClear`, `standNearFeed`, the row pack and the region fit move the group after the two local
+ * guards below have looked, and a chord that follows its ports across a lane it cleared is refused by `validateLanes` at publication.
+ */
+export function chordLaneCrossings(model: LayoutModel, group: LayoutGroup): Set<string> {
+  const result = new Set<string>();
+  if (model.frozenChords === undefined) return result;
+  const inside = new Set(group.nodes);
+  for (const link of model.links) {
+    if (!link.attachments || !isRoutedChord(model, link)) continue;
+    const { from, to } = link.attachments, one = findPort(model, from)?.anchor, two = findPort(model, to)?.anchor;
+    if (!one || !two || !(inside.has(from.node) || inside.has(to.node))) continue;
+    for (const lane of model.lanes) {
+      if (lane.owner.kind === 'link' && lane.owner.id === link.id) continue;
+      if (segmentRectDistance({ from: one, to: two, owner: link.owner }, lane.bounds) < linkStrokeWidth(link) / 2 - EPS) result.add(`${link.id}|${lane.id}`);
+    }
+  }
+  return result;
+}
+/** Whether every held routed chord with one end in the group still stands clear of the foreign lane boxes after the group moves `dx` in x. */
+export function chordsClearAfterMove(model: LayoutModel, group: LayoutGroup, dx: number): boolean {
+  // Before the freeze of 7f the chords are decided again on every rebuild; only a frozen chord follows its ports whatever they do.
+  if (Math.abs(dx) <= EPS || model.frozenChords === undefined) return true;
+  const inside = new Set(group.nodes);
+  return model.links.every(link => {
+    if (!link.attachments || !isRoutedChord(model, link)) return true;
+    const { from, to } = link.attachments, one = findPort(model, from)?.anchor, two = findPort(model, to)?.anchor;
+    if (!one || !two || inside.has(from.node) === inside.has(to.node)) return true;
+    const segment = { from: inside.has(from.node) ? { x: one.x + dx, y: one.y } : one, to: inside.has(to.node) ? { x: two.x + dx, y: two.y } : two, owner: link.owner };
+    // A chord end that stands inside a lane column is a move the passes undo (they seat the lane's child again); only a chord that crosses a column
+    // between its ends is a move that stays.
+    const within = (point: { x: number; y: number }, box: { x: number; y: number; width: number; height: number }): boolean =>
+      point.x >= box.x && point.x <= box.x + box.width && point.y >= box.y && point.y <= box.y + box.height;
+    return model.lanes.every(lane => lane.owner.kind === 'link' && lane.owner.id === link.id || within(segment.from, lane.bounds) || within(segment.to, lane.bounds)
+      || segmentRectDistance(segment, lane.bounds) >= linkStrokeWidth(link) / 2 - EPS);
+  });
+}
+/** For each port of the node whose link holds a routed chord: whether the chord, with that port moved to x, still stands clear of every foreign lane box. */
+export function heldChordPorts(model: LayoutModel, node: LayoutNode): Map<string, (x: number) => boolean> {
+  const result = new Map<string, (x: number) => boolean>();
+  if (model.frozenChords === undefined) return result;
+  for (const link of model.links) {
+    if (!link.attachments || !isRoutedChord(model, link)) continue;
+    for (const [mine, other] of [[link.attachments.from, link.attachments.to], [link.attachments.to, link.attachments.from]] as const) {
+      if (mine.node !== node.id) continue;
+      const here = findPort(model, mine)?.anchor, there = findPort(model, other)?.anchor;
+      if (!here || !there) continue;
+      result.set(portId(mine), x => model.lanes.every(lane => lane.owner.kind === 'link' && lane.owner.id === link.id
+        || segmentRectDistance({ from: { x, y: here.y }, to: there, owner: link.owner }, lane.bounds) >= linkStrokeWidth(link) / 2 - EPS));
+    }
+  }
+  return result;
 }
 function geometry(model: LayoutModel): number[] {
   return Object.values(model.nodes).flatMap(node => [node.bounds!.x, node.bounds!.width, ...node.ports.map(port => port.anchor!.x)]);
@@ -419,7 +486,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   const group = model.groups[id]!, order = context.groupOrder.get(tier)!;
   const { own, wanted, yielded, conflicts } = groupFeeds(model, context, tier, list, id, warn);
   const unresolved = new Set<string>(conflicts);
-  const startPenetration = riserPenetrations(model, group);
+  const startPenetration = riserPenetrations(model, group), startCrossings = chordLaneCrossings(model, group);
   const saved = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
   // Centre under the feeds that may own an alignment; a yielded transit would only pull the group
   // away from the x its child is then aligned to.
@@ -450,14 +517,14 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   }
   const began = group.bounds!.x, toMean = mean(distinctParents.values()) - mean(distinctChildren.values());
   const shift = Math.max(farthestLeft, Math.min(toMean, farthestRight));
-  moveGroup(model, group, riserKeepOutAfterMove(model, group, shift) ? shift : 0, 0);
+  moveGroup(model, group, riserKeepOutAfterMove(model, group, shift) && chordsClearAfterMove(model, group, shift) ? shift : 0, 0);
   const aligned = new Set<string>();
   for (const nodeId of group.rowOrder!) {
     const node = model.nodes[nodeId]!;
     const stops = walls.get(nodeId)!;
     let stoppedBy: string | undefined;
     for (const side of ['top', 'bottom'] as const) {
-      for (const key of alignSide(node, side, wanted, siblingLimit(model, group, node), stops, link => { stoppedBy ??= link; }, riserAvoidance(model, group.tier!, side as 'top' | 'bottom'))) aligned.add(key);
+      for (const key of alignSide(node, side, wanted, siblingLimit(model, group, node), stops, link => { stoppedBy ??= link; }, riserAvoidance(model, group.tier!, side as 'top' | 'bottom'), heldChordPorts(model, node))) aligned.add(key);
     }
     // Once per node, not once per pass and side.
     if (stoppedBy && warn && !model.diagnostics.some(d => d.code === 'ALIGNMENT_STOPPED_AT_OVERLAY' && d.message.startsWith(`${node.id} `))) {
@@ -503,7 +570,8 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   // The riser keep-out is a post-condition of the whole step, read after the clamp (mesh-bus.md, section 11.5): the main move and the alignments were
   // measured where they were made, and the clamp, the row pack and the region fit can undo them. A step that leaves a routed port of the facing edge
   // deeper in the keep-out than the step found it (port by port) is declined like a window that cannot hold the group.
-  if (!riserNoDeeper(startPenetration, riserPenetrations(model, group))) {
+  // The same for a frozen chord: a step that leaves one across a foreign lane box that it did not cross when the step began is declined.
+  if (!riserNoDeeper(startPenetration, riserPenetrations(model, group)) || [...chordLaneCrossings(model, group)].some(pair => !startCrossings.has(pair))) {
     model.groups[id] = saved.group;
     for (const node of saved.nodes) model.nodes[node.id] = node;
     packClear(model, context, tier, saved.group, previous);
@@ -676,6 +744,9 @@ export function centreViolations(model: LayoutModel, ahead = false): string[] {
         if (step.unresolved.has(child)) continue;
         const feed = ownFeeds.get(child)!;
         if (byId.get(feed.link)?.bundle || drops.has(feed.link)) continue;
+        // A held chord runs between two faces at any angle: its child port owes it no place under the feed (ticket 100, the centring of a chord that a title band once refused).
+        // Only the publication check excuses it: the centring loop's own check (`ahead`) keeps asking for the alignment, so the passes are the ones they were.
+        if (!ahead && isRoutedChord(model, byId.get(feed.link)!) && chordKind(model, byId.get(feed.link)!) === 'cross') continue;
         if ((afterBundles && bundled.has(child)) || (atBundles && bundled.has(portId(feed.parent.ref)))) continue;
         if (isBar(feed.child.ref.node) || isBar(feed.parent.ref.node)) continue;
         const port = groupPorts.get(child)!;

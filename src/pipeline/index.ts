@@ -24,7 +24,7 @@ import { elkDeadlineMs, type CreateElkAttempt, type ElkClock } from '../layout/e
 import { route, ROUTE_BUDGET_MS, type CreateRouteAttempt } from '../route/index.js';
 import { CommandDeadlineError, POST_PLACEMENT_RESERVE_MS, UNBOUNDED_BUDGET, type Budget } from './budget.js';
 // After the stages: the modules below reach the centring module, whose import order the tests that mock it depend on.
-import { declinedFanDiagnostics, measureFans, type FanMeasure } from '../layout/fan-spread.js';
+import { declinedFanDiagnostics, fanRoundDropped, fanRoundHolds, measureFans, type FanMeasure } from '../layout/fan-spread.js';
 import { chordClearances, isRoutedChord } from '../layout/frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
 import { hintsFacingAway, sideHintDiagnostics, type SideHints } from '../layout/side-hints.js';
@@ -186,7 +186,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     if ((trial.fallbackUsed && !model.fallbackUsed) || (trial.deadlineHit && !model.deadlineHit)) {
       cut('ELK fell back or met its time limit during it, and the re-run was dropped'); break;
     }
-    if (straightChords(trial) < straightChords(model)) break;
+    if (!fanRoundHolds(model, trial)) { cuts.push(fanRoundDropped(model, trial)); break; }
     model = trial; floors = next;
   }
   // Side rounds (side-faces.md, Section 7, part 2): only when a measure offers a hint. A dropped trial leaves the model, the floors and the old
