@@ -1185,12 +1185,16 @@ export function alignLinkedGroupGrid(model: LayoutModel): boolean {
  * stub ran from the anchor it was the longest run of a pair standing close together, and 7f reserved
  * about the *stub's* midpoint, inside the source pill — a run no label ever follows.
  */
-function overlayRunMid(model: LayoutModel, link: LayoutLink, axis: 'x' | 'y'): number | undefined {
+function overlayLongestRun(model: LayoutModel, link: LayoutLink): PathSegment | undefined {
   let run: PathSegment | undefined, longest = 0;
   for (const segment of overlayPath(model, link).segments) {
     const reach = Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y);
     if (reach > longest + PLACEMENT_EPS) { longest = reach; run = segment; }
   }
+  return run;
+}
+function overlayRunMid(model: LayoutModel, link: LayoutLink, axis: 'x' | 'y'): number | undefined {
+  const run = overlayLongestRun(model, link);
   if (!run || Math.abs(run.to[axis] - run.from[axis]) <= PLACEMENT_EPS) return undefined;
   return (run.from[axis] + run.to[axis]) / 2;
 }
@@ -1231,6 +1235,30 @@ export function linkLabelGap(model: LayoutModel, a: string, b: string): number {
 
 /** One labelled link whose run is shorter than the label it carries needs, and by how much. */
 export interface LinkLabelShortfall { link: string; axis: 'row' | 'tier gap'; required: number; room: number }
+
+/**
+ * Insert `deficit` px of room at `split`: everything at or right of it moves right, in every tier (see `reserveLinkLabelRoom`). A node of tier
+ * `ownTier` moves only when it starts beyond the split; a node of any other tier moves when any part of it lies beyond. Returns the moved nodes.
+ */
+function insertRoomAt(model: LayoutModel, split: number, deficit: number, ownTier: number): string[] {
+  const moved: string[] = [];
+  for (const group of Object.values(model.groups)) {
+    if (group.bounds!.x >= split - PLACEMENT_EPS) { moveGroup(model, group, deficit, 0); moved.push(...group.nodes); continue; }
+    if (right(group.bounds!) <= split + PLACEMENT_EPS) continue;
+    // In the link's own tier a node moves only when it starts beyond the split: a node the detour must pass stays by the left end, so the run
+    // over it spans the whole gap. In any other tier a node with any part beyond the split moves, so a wide source straddling the cut moves
+    // with the bar slotted under its port and 7d's replay finds that slot where it left it.
+    const shifted = group.nodes.filter(id => group.tier === ownTier
+      ? model.nodes[id]!.bounds!.x >= split - PLACEMENT_EPS : right(model.nodes[id]!.bounds!) > split + PLACEMENT_EPS);
+    for (const id of shifted) {
+      const node = model.nodes[id]!;
+      node.bounds!.x += deficit;
+      for (const port of node.ports) { port.anchor!.x += deficit; if (port.pill) port.pill.bounds.x += deficit; }
+    }
+    if (shifted.length) { moved.push(...shifted); fitRegionGroup(model, group); }
+  }
+  return moved;
+}
 
 /**
  * A link's description influences its length (ADR-0014): the run a label will follow must be long
@@ -1287,6 +1315,21 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
       const [upper, lower, upperPort, lowerPort] = fromNode.bounds!.y <= toNode.bounds!.y ? [fromNode, toNode, from, to] : [toNode, fromNode, to, from];
       const upperTier = model.groups[model.document.nodes[upper.id]!.group]!.tier!;
       const centre = overlay ? overlayRunMid(model, link, 'y') : (upperPort.anchor!.y + lowerPort.anchor!.y) / 2;
+      // An overlay L out of a hinted lateral side (ticket 116): when its longest run is horizontal, the room is inserted at the split of that run.
+      const run = centre === undefined && overlay && (from.sideHint === true || to.sideHint === true) ? overlayLongestRun(model, link) : undefined;
+      if (run !== undefined && overlayPath(model, link).segments.length === 2 && Math.abs(run.to.y - run.from.y) <= PLACEMENT_EPS) {
+        const deficit = required - Math.abs(run.to.x - run.from.x);
+        if (deficit <= PLACEMENT_EPS) continue;
+        const split = (run.from.x + run.to.x) / 2;
+        if (model.lanes.some(lane => lane.x >= split - PLACEMENT_EPS)) { unreserved('needs room beyond a reserved lane'); continue; }
+        // The lateral end's tier is the link's own tier for the move: its body stays by the run's end.
+        const lateralNode = from.sideHint === true ? fromNode : toNode;
+        const moved = insertRoomAt(model, split, deficit, model.groups[model.document.nodes[lateralNode.id]!.group]!.tier!);
+        settle(moved);
+        record(link, 'row', required, required - deficit);
+        changed = true;
+        continue;
+      }
       if (centre === undefined) { unreserved('draws its longest overlay run across the tier gap, not along it'); continue; }
       const mid = centre;
       const room = 2 * Math.min(mid - Math.max(bottom(upper.bounds!), bottom(outer(upperPort, upper))), Math.min(lower.bounds!.y, outer(lowerPort, lower).y) - mid);
@@ -1326,23 +1369,7 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
     // move, so such a link is diagnosed instead.
     const split = (Math.max(right(leftNode.bounds!), right(outer(leftPort, leftNode))) + Math.min(rightNode.bounds!.x, outer(rightPort, rightNode).x)) / 2;
     if (model.lanes.some(lane => lane.x >= split - PLACEMENT_EPS)) { unreserved('needs room beyond a reserved lane'); continue; }
-    const moved: string[] = [];
-    for (const group of Object.values(model.groups)) {
-      if (group.bounds!.x >= split - PLACEMENT_EPS) { moveGroup(model, group, deficit, 0); moved.push(...group.nodes); continue; }
-      if (right(group.bounds!) <= split + PLACEMENT_EPS) continue;
-      // In the link's own tier a node moves only when it starts beyond the split: a node the detour
-      // must pass stays by the left end, so the run over it spans the whole gap. In any other tier a
-      // node with any part beyond the split moves, so a wide source straddling the cut moves with the
-      // bar slotted under its port and 7d's replay finds that slot where it left it.
-      const shifted = group.nodes.filter(id => group.tier === fromGroup.tier
-        ? model.nodes[id]!.bounds!.x >= split - PLACEMENT_EPS : right(model.nodes[id]!.bounds!) > split + PLACEMENT_EPS);
-      for (const id of shifted) {
-        const node = model.nodes[id]!;
-        node.bounds!.x += deficit;
-        for (const port of node.ports) { port.anchor!.x += deficit; if (port.pill) port.pill.bounds.x += deficit; }
-      }
-      if (shifted.length) { moved.push(...shifted); fitRegionGroup(model, group); }
-    }
+    const moved = insertRoomAt(model, split, deficit, fromGroup.tier!);
     settle(moved);
     record(link, 'row', wanted, room);
     changed = true;

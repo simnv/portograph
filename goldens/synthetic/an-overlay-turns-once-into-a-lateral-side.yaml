@@ -1,0 +1,28 @@
+# Expected: the side round takes one lateral side and the overlay link turns once (Q109, ticket 116). The described overlay `flow` link runs from the
+# balancer `lb`, on the left of tier 0, to the `outlet` on tier 1 at the right. `cache` stands on the second rank of the front group and covers
+# both diagonals, so on main the path goes round it with two turns or more. The outlet already holds a lateral port on its left face: `relay`, in a
+# left flank of tier 1, links to it by a routed link (the stage-2 flank rule). The round hints the outlet's overlay port to `left`: the path is one
+# vertical out of the balancer's bottom face and one horizontal run into the outlet's left face, and the hinted port stands above the flank port
+# (G5). `shim` only pushes the balancer right, so that its port stands in the gap between `relay` and `outlet`. The label stands on the longest
+# run. The picture is the mirror of the ticket's (the balancer at the left).
+# Test-only input owned by ticket 116; test/pipeline/side-round-l.test.ts reads the layout.
+portograph: 2
+groups:
+  west: { tier: 0, label: West }
+  front: { tier: 0, label: Front }
+  back: { tier: 1, label: Back }
+  edge: { align: left, of: back }
+nodes:
+  shim: { group: west, class: server, label: Shim, size: { width: 160, height: 35 } }
+  lb: { group: west, class: server, label: Balancer, size: { width: 100, height: 60 } }
+  pad: { group: front, class: server, label: Pad, size: { width: 100, height: 35 } }
+  mid: { group: front, class: server, label: Middle, size: { width: 100, height: 35 } }
+  cache: { group: front, class: server, label: Cache, size: { width: 520, height: 35 } }
+  outlet: { group: back, class: server, label: Outlet, size: { width: 160, height: 80 } }
+  relay: { group: edge, class: server, label: Relay, size: { width: 50, height: 35 } }
+links:
+  - [pad, mid]
+  - [mid, cache]
+  - [cache, outlet]
+  - { from: outlet, to: relay, label: return path to the relay }
+  - { from: lb, to: outlet, class: flow, label: health probe }

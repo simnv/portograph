@@ -12,7 +12,7 @@ import { portKey } from './sides-one.js';
 
 /**
  * The side measure (docs/design/side-faces.md, Sections 4 to 7): on a placed model (stages 1 to 7e) it names the lateral sides that would
- * give a bent overlay link one straight segment. Ticket 115 offers the straight shape of an overlay link only.
+ * give a bent overlay link one straight segment. Ticket 115 offers the straight shape of an overlay link; ticket 116 adds the L (one lateral end, one turn).
  */
 
 /** Most probes one `measureSides` call makes, in link order (a count; `SIDE_PROBE_CAPPED`). */
@@ -115,13 +115,13 @@ export interface SideOffer {
   /** New hints: `portKey` to the lateral side. Never an old hint, never a refused key. */
   hints: Map<string, 'left' | 'right'>;
   /** For each new hint, the link and the bends the probe promised (0: straight). */
-  promised: Map<string, { link: string; bends: number; shape: 'straight' }>;
+  promised: Map<string, { link: string; bends: number; shape: 'straight' | 'L' }>;
   /** True when the probe cap left candidates unprobed. */
   capped: boolean;
 }
 
 interface Lateral { ref: PortRef; key: string; side: 'left' | 'right' }
-interface Config { laterals: Lateral[]; grows: boolean; nodes: LayoutModel['nodes'] }
+interface Config { laterals: Lateral[]; grows: boolean; nodes: LayoutModel['nodes']; shape?: 'L' }
 
 /** The node with the port moved to the lateral face: a copy, the placed node is not touched. Undefined when no slot fits the box. */
 function moved(node: LayoutNode, lateral: Lateral, peerY: number): { node: LayoutNode; grows: boolean } | undefined {
@@ -144,6 +144,26 @@ function moved(node: LayoutNode, lateral: Lateral, peerY: number): { node: Layou
     return next;
   });
   return { node: { ...node, ports }, grows: others.length > 0 };
+}
+
+/**
+ * The L shape (spec Sections 5 and 11, ticket 116): one lateral end, and the overlay derivation on the probe gives exactly one turn (two
+ * segments). Offered only when the link now has two bends or more, so an L is a gain; the caller asks for it once no straight shape fits.
+ * A lateral port at both ends is not an L. No angle rule: both runs are axis-aligned.
+ */
+function lShapes(model: LayoutModel, nodes: LayoutModel['nodes'], link: LayoutLink, ends: PortRef[], laterals: Lateral[]): Config[] {
+  if (plannedBends(model, link) < 2) return [];
+  const found: Config[] = [];
+  for (const lateral of laterals) {
+    const peer = ends.find(ref => portKey(ref) !== lateral.key)!;
+    const result = moved(nodes[lateral.ref.node]!, lateral, centreOf(nodes[peer.node]!.bounds!).y);
+    if (result === undefined) continue;
+    const draft = { ...nodes, [lateral.ref.node]: result.node };
+    const probe: LayoutModel = { ...model, nodes: draft };
+    if (overlayPath(probe, link, overlayBlockers(probe)).segments.length !== 2) continue;
+    found.push({ laterals: [lateral], grows: result.grows, nodes: draft, shape: 'L' });
+  }
+  return found;
 }
 
 const centreOf = (box: Rect): { x: number; y: number } => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
@@ -207,6 +227,7 @@ export function measureSides(model: LayoutModel, refused: ReadonlySet<string>, p
     };
     for (const lateral of laterals) attempt([lateral]);
     if (laterals.length === 2) attempt(laterals);
+    if (configs.length === 0) configs.push(...lShapes(model, nodes, link, ends, laterals));
     if (configs.length === 0) continue;
     // Fewer lateral ports, then no growth, then the lower end (the deeper tier), then document order.
     const key = (config: Config): number[] => [config.laterals.length, Number(config.grows), -tierOf(config.laterals[0]!.ref), order.get(config.laterals[0]!.ref.node)!];
@@ -215,7 +236,7 @@ export function measureSides(model: LayoutModel, refused: ReadonlySet<string>, p
     nodes = best.nodes;
     for (const lateral of best.laterals) {
       offer.hints.set(lateral.key, lateral.side);
-      offer.promised.set(lateral.key, { link: link.id, bends: 0, shape: 'straight' });
+      offer.promised.set(lateral.key, best.shape === 'L' ? { link: link.id, bends: 1, shape: 'L' } : { link: link.id, bends: 0, shape: 'straight' });
     }
   }
   return offer;
