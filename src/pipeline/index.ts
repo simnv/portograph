@@ -22,7 +22,7 @@ import { bands } from '../layout/bands.js';
 import { linkLabels } from '../layout/link-labels.js';
 import { elkDeadlineMs, type CreateElkAttempt, type ElkClock } from '../layout/elk-worker.js';
 import { route, ROUTE_BUDGET_MS, type CreateRouteAttempt } from '../route/index.js';
-import { CommandDeadlineError, UNBOUNDED_BUDGET, type Budget } from './budget.js';
+import { CommandDeadlineError, POST_PLACEMENT_RESERVE_MS, UNBOUNDED_BUDGET, type Budget } from './budget.js';
 // After the stages: the modules below reach the centring module, whose import order the tests that mock it depend on.
 import { declinedFanDiagnostics, measureFans, type FanMeasure } from '../layout/fan-spread.js';
 import { chordClearances, isFrameStraight } from '../layout/frame-paths.js';
@@ -31,9 +31,10 @@ import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
 
 /** Most runs of placement a fan's pitch may cost after the first (ticket 89). */
 const FAN_ROUNDS = 2;
-/** What a probe must leave before the hard command deadline: a fixed reserve for stage 7f, routing and scoring. It is never scaled by
- * how long the first run took, so the layout does not depend on machine speed (ticket 112). */
-const FAN_ROUTE_RESERVE_MS = 5000;
+/** What one fan re-run costs to 7e and 7f, without the chord step. A re-run starts only with this plus the post-placement reserve left
+ * before the hard command deadline; the number never scales with the first run's time, so the layout does not depend on machine speed (ticket 112). */
+const FAN_RERUN_MS = 8000;
+const fanGateMs = POST_PLACEMENT_RESERVE_MS + FAN_RERUN_MS;
 const straightChords = (model: LayoutModel): number => model.links.filter(link => isFrameStraight(model, link)).length;
 
 export { CommandDeadlineError, createBudget, UNBOUNDED_BUDGET } from './budget.js';
@@ -133,7 +134,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       if (value > (next.get(id)?.[side] ?? 0)) { next.set(id, { ...next.get(id), [side]: value }); grew = true; }
     }
     if (!grew) break;
-    if (budget.remainingMs() <= FAN_ROUTE_RESERVE_MS) { cut('the command deadline leaves less than the reserve for 7f, routing and scoring'); break; }
+    if (budget.remainingMs() < fanGateMs) { cut('the command deadline leaves less than the reserve for one re-run, 7f, routing and scoring'); break; }
     let trial: LayoutModel;
     try { trial = await place(next); } catch (error) {
       if (error instanceof CommandDeadlineError) { cut('the command deadline was reached during it'); break; }

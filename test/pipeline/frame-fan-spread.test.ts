@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { Budget, LayoutLink, LayoutModel } from '../../src/index.js';
 import { layout, parse } from '../../src/index.js';
 import { ElkDeadlineError, systemElkClock } from '../../src/layout/elk-worker.js';
+import { POST_PLACEMENT_RESERVE_MS } from '../../src/pipeline/budget.js';
 import { measureFans } from '../../src/layout/fan-spread.js';
 import { standaloneChord, isFrameStraight } from '../../src/layout/frame-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -69,6 +70,17 @@ describe('a fan spreads its ports so its diagonals hold clearance', () => {
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
     expect(model.nodes['core-1']!.sidePitch!.bottom).toBe(12);
     expect(model.diagnostics.filter(item => item.code === 'FAN_SPREAD_CUT')).toHaveLength(1);
+  });
+
+  // Ticket 112 review, finding 2: a re-run starts only with the post-placement reserve plus about 8 s for one re-run and 7f left.
+  it('starts a re-run only when the post-placement reserve and one re-run remain', async () => {
+    const at = (ms: number): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
+      budget: { remainingMs: () => ms, share: stageMs => Math.min(stageMs, ms) } });
+    const under = await at(POST_PLACEMENT_RESERVE_MS + 7000), over = await at(POST_PLACEMENT_RESERVE_MS + 9000);
+    expect(under.diagnostics.filter(item => item.code === 'FAN_SPREAD_CUT')).toHaveLength(1);
+    expect(under.nodes['core-1']!.sidePitch!.bottom).toBe(12);
+    expect(over.diagnostics.filter(item => item.code === 'FAN_SPREAD_CUT')).toEqual([]);
+    expect(over.nodes['core-1']!.sidePitch!.bottom).toBeGreaterThan(12);
   });
 
   // Ticket 112: machine speed must not change the layout. A clock that makes every stage look slow, with a deadline far away, cuts nothing.
