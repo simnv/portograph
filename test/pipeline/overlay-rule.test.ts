@@ -141,16 +141,16 @@ describe('an overlay link is straight, or orthogonal round a node', () => {
     expect(score(model).snapshot.passed).toBe(true);
   }, 60000);
 
-  it('falls back to the way that clears its own two pills when a body blocks every one', async () => {
+  it('goes over the top of the bodies when the pill-relative ways are all blocked (ticket 86)', async () => {
     const model = await run(fixture('overlay-blocked-by-a-body'));
     const link = overlayOf(model), points = pointsOf(link);
     const middle = points.slice(2, -1).map((point, index) => [points[index + 1]!, point] as const);
-    // Clear of both pill boxes — the principle that survives — and across a body the mask cuts.
+    // Clear of both pill boxes and, since ticket 86, of every body: the run goes outside the hull.
     for (const [one, two] of middle) {
       for (const box of endBoxes(model, link)) expect(enters(one, two, box)).toBe(false);
     }
     const bodies = Object.values(model.nodes).map(node => node.bounds!);
-    expect(middle.some(([one, two]) => bodies.some(box => enters(one, two, box)))).toBe(true);
+    expect(middle.some(([one, two]) => bodies.some(box => enters(one, two, box)))).toBe(false);
     const svg = render(model);
     const mask = svg.slice(svg.indexOf('<mask'), svg.indexOf('</mask>'));
     for (const box of bodies) {
