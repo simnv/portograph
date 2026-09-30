@@ -2,7 +2,7 @@ import type { Side } from '../model/geometry.js';
 import type { Diagnostic, LayoutLink, LayoutModel, LayoutPort, PathSegment } from '../model/layout.js';
 import { EPS, intersection, samePoint, segmentDistance } from '../score/geometry.js';
 import { linkStrokeWidth } from '../theme/geometry.js';
-import { routedChordCandidate, standaloneChord } from './frame-paths.js';
+import { chordKind, isRoutedChord, routedChordCandidate, standaloneChord } from './frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { portId } from './skeleton-graph.js';
 
@@ -88,4 +88,14 @@ export function declinedFanDiagnostics(declined: FanMeasure['declined']): Diagno
   return declined.map(item => ({ stage: 'placement', severity: 'warning', code: 'FAN_SPREAD_DECLINED',
     message: `The ${item.side} ports of ${item.node} would need a pitch beyond ${FAN_PITCH_CAP} px to hold the chord clearance; the fan keeps the base pitch and its links may keep the orthogonal route.`,
     owners: item.links.map(id => ({ kind: 'link' as const, id })) }));
+}
+
+/**
+ * Whether a fan re-run may replace the placement it was measured on. It must not lose a frame chord: those hold the pitch floors of ticket 89, and a spread that
+ * is dropped for a cross-frame chord it lost leaves a fan of frame chords narrower than the clearance needs (G6 `parallel-clearance`, measured on the private
+ * sheet after ticket 102 counted both kinds). A cross-frame chord the spread loses is kept orthogonal; it is not worth a gate.
+ */
+export function fanRoundHolds(before: LayoutModel, after: LayoutModel): boolean {
+  const frameChords = (model: LayoutModel): number => model.links.filter(link => isRoutedChord(model, link) && chordKind(model, link) === 'frame').length;
+  return frameChords(after) >= frameChords(before);
 }

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
 import { bands, bars, bundles, centre, flanks, lanes, layout, parse, rows, score } from '../../src/index.js';
-import { declinedFanDiagnostics, FAN_PITCH_CAP, measureFans } from '../../src/layout/fan-spread.js';
+import { declinedFanDiagnostics, FAN_PITCH_CAP, fanRoundHolds, measureFans } from '../../src/layout/fan-spread.js';
 import { chordKind, isRoutedChord } from '../../src/layout/frame-paths.js';
 import { deriveFrames } from '../../src/layout/frames.js';
 import { moveGroup } from '../../src/layout/skeleton-geometry.js';
@@ -88,5 +88,18 @@ describe('a face that takes cross-frame chords spreads its ports', () => {
     expect(note!.severity).toBe('warning');
     expect(note!.message).toContain(`${FAN_PITCH_CAP} px`);
     expect(note!.owners!.length).toBeGreaterThanOrEqual(2);
+  }, 60000);
+
+  it('drops a fan re-run that loses a frame chord, and keeps one that only loses a cross-frame chord', async () => {
+    const before = await run();
+    const lose = (kind: 'frame' | 'cross'): LayoutModel => {
+      const copy = structuredClone(before) as LayoutModel;
+      const link = copy.links.find(item => chordKind(copy, item) === kind && isRoutedChord(copy, item))!;
+      link.technique = 'orthogonal'; delete link.path;
+      return copy;
+    };
+    expect(fanRoundHolds(before, before)).toBe(true);
+    expect(fanRoundHolds(before, lose('cross'))).toBe(true);
+    expect(fanRoundHolds(before, lose('frame'))).toBe(false);
   }, 60000);
 });
