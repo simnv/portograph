@@ -1,0 +1,25 @@
+# Expected: Routed chords cross the title band of their own end beside the title (ranked-groups ticket 100, Q108). One location
+# frame stands on tier 1 and links its router to both nodes of a provider row on tier 2, so two chords enter the row through its
+# top edge. A location frame on tier 3 links its router to both providers, so two more chords leave the row through its bottom
+# edge. The two edges carry the same number of routed ports and a tie keeps the title on the top edge (ADR-0011), so the two chords
+# that enter the row cross its title band. Each stays one straight segment, the title stands 8 px clear of every crossing, and
+# it stays in the gap between the two. The chords of the lower frame cross no band of the row. Every gate passes.
+# Test-only input owned by ranked-groups ticket 100; test/pipeline/routed-chord-title.test.ts reads the layout.
+portograph: 2
+profile: network
+groups:
+  upstream: { tier: 1, label: Upstream }
+  providers: { tier: 2, label: Providers }
+  lower: { tier: 3, label: Lower }
+nodes:
+  upstream-core: { group: upstream, class: router, label: Upstream core router }
+  upstream-router: { group: upstream, class: router, label: Upstream router }
+  provider-1: { group: providers, class: provider, label: Provider 1 }
+  provider-2: { group: providers, class: provider, label: Provider 2 }
+  lower-router: { group: lower, class: router, label: Lower router }
+links:
+  - [upstream-core, upstream-router]
+  - [upstream-router, provider-1, { class: dashed }]
+  - [upstream-router, provider-2, { class: dashed }]
+  - [provider-1, lower-router, { class: dashed }]
+  - [provider-2, lower-router, { class: dashed }]
