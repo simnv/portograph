@@ -1,0 +1,18 @@
+# Expected: the side round (Q109, ticket 115). `core` (tier 0) has two ranks: `server` over `sibling`, joined by one routed link, and `sibling` feeds `client`. `client` (tier 1)
+# stands down and to the right, and the overlay `sync` link runs from `server` to `client`. Both ports are on the natural faces (`bottom`,
+# `top`), and the overlay path goes round the body of `sibling`. The round measures that, offers `right` for the server's port, and after the next
+# placement run the path is one segment out of the server's right face. `SIDE_HINT_TAKEN` names it; there is no `SIDE_SHAPE_LOST`.
+# Test-only input owned by ticket 115; test/pipeline/side-round.test.ts reads the layout.
+portograph: 2
+groups:
+  core: { tier: 0, label: Core }
+  edge: { tier: 1, label: Edge }
+nodes:
+  server: { group: core, class: server, label: Server, size: { width: 240, height: 60 } }
+  sibling: { group: core, class: server, label: Sibling, size: { width: 190, height: 35 } }
+  under: { group: edge, class: server, label: Under, size: { width: 160, height: 35 } }
+  client: { group: edge, class: server, label: Client, size: { width: 170, height: 35 } }
+links:
+  - [server, sibling]
+  - [sibling, under]
+  - { from: server, to: client, class: sync }

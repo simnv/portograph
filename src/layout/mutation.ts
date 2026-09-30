@@ -12,7 +12,7 @@ import { measureText } from '../text/index.js';
 import { NODE_CONTENT_GEOMETRY } from '../theme/content.js';
 import { nodeGap } from './skeleton-graph.js';
 import { groupShape } from './grid.js';
-import { hintRefusal } from './side-hints.js';
+import { hintRefusal, SideHintRefusal } from './side-hints.js';
 import { rebuildBands, span, union, validateSkeletonBands } from './skeleton-geometry.js';
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { blockedChords, edgeLeavers, freezeChords } from './frame-paths.js';
@@ -222,17 +222,17 @@ function validatePlacementStructure(model: LayoutModel): void {
 function validateSideHints(model: LayoutModel, resolved: LayoutModel): void {
   for (const id of orderedNodeIds(model.document)) for (const port of model.nodes[id]!.ports) {
     const name = `${id}.${port.ref.name ?? '#'}${port.ref.ordinal}`;
-    if ((port.sideHint === true) !== (port.naturalSide !== undefined) || (port.sideHint !== undefined && port.sideHint !== true)) throw new Error(`Side hint on ${name} is not recorded with its natural side`);
+    if ((port.sideHint === true) !== (port.naturalSide !== undefined) || (port.sideHint !== undefined && port.sideHint !== true)) throw new SideHintRefusal(`Side hint on ${name} is not recorded with its natural side`);
     if (port.sideHint !== true) continue;
-    if (port.side !== 'left' && port.side !== 'right') throw new Error(`Side hint on ${name} is not a lateral side`);
-    if (port.naturalSide !== 'top' && port.naturalSide !== 'bottom') throw new Error(`Side hint on ${name} has a lateral natural side`);
+    if (port.side !== 'left' && port.side !== 'right') throw new SideHintRefusal(`Side hint on ${name} is not a lateral side`);
+    if (port.naturalSide !== 'top' && port.naturalSide !== 'bottom') throw new SideHintRefusal(`Side hint on ${name} has a lateral natural side`);
     const why = hintRefusal(resolved, port.ref);
-    if (why !== undefined) throw new Error(`Side hint on ${name} is not allowed: ${why}`);
+    if (why !== undefined) throw new SideHintRefusal(`Side hint on ${name} is not allowed: ${why}`);
     // The natural side is the one the run's rule gives a single-link candidate: `bottom` for a peer on a later tier, `top` for an earlier one.
     const link = model.links.find(item => [item.attachments!.from, item.attachments!.to].some(end => portKey(end) === portKey(port.ref)))!;
     const peer = portKey(link.attachments!.from) === portKey(port.ref) ? link.attachments!.to.node : link.attachments!.from.node;
     const own = model.groups[model.document.nodes[id]!.group]!.tier!, other = model.groups[model.document.nodes[peer]!.group]!.tier!;
-    if (own === other) throw new Error(`Side hint on ${name} joins two ports of one tier`);
+    if (own === other) throw new SideHintRefusal(`Side hint on ${name} joins two ports of one tier`);
     same(port.naturalSide, other > own ? 'bottom' : 'top', 'Semantic or authored side differs from document');
   }
 }
@@ -405,8 +405,8 @@ function validateGeometry(model: LayoutModel, allowNonConvergence = false): void
     const saved = model.freeze?.floors.find(floor => floor.node === id)?.size;
     const hinted = model.freeze?.nodeFloors?.find(floor => floor.node === id)?.size;
     if (hinted !== undefined) for (const dim of ['width', 'height'] as const) {
-      if (hinted[dim] < measured.sizeFloor![dim] - 1e-6) throw new Error(`Node floor of ${id} is below its content: ${dim} ${hinted[dim]} < ${measured.sizeFloor![dim]}`);
-      if (node.size[dim] < hinted[dim] - 1e-6) throw new Error(`Node ${id} is smaller than its node floor: ${dim} ${node.size[dim]} < ${hinted[dim]}`);
+      if (hinted[dim] < measured.sizeFloor![dim] - 1e-6) throw new SideHintRefusal(`Node floor of ${id} is below its content: ${dim} ${hinted[dim]} < ${measured.sizeFloor![dim]}`);
+      if (node.size[dim] < hinted[dim] - 1e-6) throw new SideHintRefusal(`Node ${id} is smaller than its node floor: ${dim} ${node.size[dim]} < ${hinted[dim]}`);
     }
     for (const dim of ['width', 'height'] as const) {
       if ((saved !== undefined && saved[dim] < measured.sizeFloor![dim]) || node.sizeFloor[dim] < measured.sizeFloor![dim] || node.sizeFloor[dim] < (saved?.[dim] ?? 0)
@@ -476,8 +476,8 @@ function validateFreeze(model: LayoutModel): void {
     const ids = orderedNodeIds(model.document).filter(id => freeze.nodeFloors!.some(floor => floor.node === id));
     same(freeze.nodeFloors.map(floor => floor.node), ids, 'Node floors name a node twice, out of order, or not at all');
     for (const floor of freeze.nodeFloors) {
-      if (!(floor.size.width > 0) || !(floor.size.height > 0)) throw new Error(`Invalid node floor on ${floor.node}`);
-      if (!model.nodes[floor.node]!.ports.some(port => port.sideHint === true)) throw new Error(`Node floor on ${floor.node}, which has no hinted port`);
+      if (!(floor.size.width > 0) || !(floor.size.height > 0)) throw new SideHintRefusal(`Invalid node floor on ${floor.node}`);
+      if (!model.nodes[floor.node]!.ports.some(port => port.sideHint === true)) throw new SideHintRefusal(`Node floor on ${floor.node}, which has no hinted port`);
     }
   }
   if (stages.indexOf(model.stage) >= stages.indexOf('bands')) {
