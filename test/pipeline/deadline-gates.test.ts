@@ -11,7 +11,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
 // 0.55 s) times the speed factor. Every later gate reads the advanced clock through the budget. Nothing waits and nothing reads real time.
 const PAST_SIBLING = 'an-overlay-leaves-a-lateral-side-past-a-sibling-body'; // one placement run, then one side trial
 const FAN = 'a-fan-spreads-its-ports-so-its-chords-hold-clearance'; // one fan re-run
-const QUIET: Record<string, number> = { place: 4000, 'rerun-fan': 2700, 'rerun-side': 2700, bands: 6500, route: 300, 'link-labels': 250 };
+const QUIET: Record<string, number> = { place: 4000, 'rerun-fan': 2700, 'rerun-side': 2700, bands: 6500, 'bands-trial': 6500, route: 300, 'route-trial': 300, 'link-labels': 250 };
 const yaml = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 
 async function at(name: string, quiet: Record<string, number>, speed: number): Promise<{ model: LayoutModel; gates: Record<string, number> }> {
@@ -37,7 +37,8 @@ describe('the command deadline and the one re-run gate', () => {
     const side = await at(PAST_SIBLING, QUIET, 2);
     expect(cuts(side.model)).toEqual([]);
     expect(side.model.nodes['server']!.ports.some(port => port.sideHint === true)).toBe(true); // the side trial ran and was kept
-    expect(side.gates['gate-side']).toBe(COMMAND_DEADLINE_MS - 2 * QUIET['place']!);
+    // The side gate reads the clock after the baseline 7f (Section 19.5): the first placement and that 7f have run.
+    expect(side.gates['gate-side']).toBe(COMMAND_DEADLINE_MS - 2 * (QUIET['place']! + QUIET['bands']!));
     expect(side.gates['gate-side']).toBeGreaterThanOrEqual(RERUN_GATE_MS);
     const fan = await at(FAN, QUIET, 2);
     expect(cuts(fan.model)).toEqual([]);
@@ -46,7 +47,7 @@ describe('the command deadline and the one re-run gate', () => {
 
   // Boundary of the side gate: the first placement takes exactly the time that leaves the gate value, and one second more or less.
   it('the side gate admits a trial with RERUN_GATE_MS + 1000 left and cuts it with RERUN_GATE_MS - 1000 left', async () => {
-    const place = (left: number): Record<string, number> => ({ place: COMMAND_DEADLINE_MS - left });
+    const place = (left: number): Record<string, number> => ({ place: COMMAND_DEADLINE_MS - left - QUIET['bands']!, bands: QUIET['bands']! });
     const over = await at(PAST_SIBLING, place(RERUN_GATE_MS + 1000), 1), under = await at(PAST_SIBLING, place(RERUN_GATE_MS - 1000), 1);
     expect(over.gates['gate-side']).toBe(RERUN_GATE_MS + 1000);
     expect(cuts(over.model)).toEqual([]);
@@ -56,7 +57,7 @@ describe('the command deadline and the one re-run gate', () => {
     expect(under.model.nodes['server']!.ports.some(port => port.sideHint === true)).toBe(false);
   }, 60000);
 
-  // On this code 7f runs once, after every re-run, so the side gate reads 60 s less the first placement: it closes when that time passes 36 s.
+  // The baseline 7f runs before the side gate, so the gate reads 60 s less the first placement and that 7f: it closes when they pass 36 s together.
   it('cuts the side trial when the first placement is slow enough, and still publishes a layout', async () => {
     const { model } = await at(PAST_SIBLING, { place: 37000 }, 1);
     expect(cuts(model)).toEqual(['SIDE_ROUND_CUT']);

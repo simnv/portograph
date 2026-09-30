@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { LayoutLink, LayoutModel } from '../../src/index.js';
 import { layout, parse } from '../../src/index.js';
 import type { SideOffer } from '../../src/layout/side-measure.js';
+import { holdColumnAxes, holdMemberWalls, packBesideRows } from '../../src/layout/columns.js';
 import { judgeTrial, predictedWorse, predictPublished, trialNotes } from '../../src/layout/side-judge.js';
 import { portKey } from '../../src/layout/sides-one.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -59,7 +60,8 @@ const bendTo = (routed: LayoutModel, id: string, bends: number): LayoutModel => 
 }) });
 const removeLink = (routed: LayoutModel, id: string): LayoutModel => ({ ...routed, links: routed.links.map(link => {
   if (link.id !== id) return link;
-  const { path: _path, ...rest } = link;
+  const rest = { ...link };
+  delete rest.path;
   return { ...rest, removed: true as const };
 }) });
 const routedNeighbour = (model: LayoutModel): string => model.links.find(item => item.layer !== 'overlay')!.id;
@@ -232,3 +234,16 @@ describe('the batch (Section 19.8)', () => {
     expect(trialNotes(plain, trial, verdict, [overlay]).map(item => item.code)).toContain('SIDE_HINT_ADDS_CROSSING');
   }, 60000);
 });
+
+describe('the fixed point (Section 19.9, ticket 136): a kept trial publishes a layout the column rules leave alone', () => {
+  const settled = (model: LayoutModel): boolean[] => {
+    const clone = structuredClone(model) as LayoutModel;
+    return [packBesideRows(clone), holdMemberWalls(clone), holdColumnAxes(clone, 0)];
+  };
+  it('the kept trial of the sibling fixture is a fixed point of the pack, the member walls and the column axes', async () => {
+    const { model } = await run(PAST_SIBLING);
+    expect(codes(model)).toContain('SIDE_HINT_TAKEN');
+    expect(settled(model)).toEqual([false, false, false]);
+  }, 60000);
+});
+

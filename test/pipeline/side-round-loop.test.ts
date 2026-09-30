@@ -29,7 +29,6 @@ const run = async (name: string, script?: Script, testMaxReruns?: number): Promi
 };
 const withoutNotes = (model: LayoutModel): string => JSON.stringify({ ...model, diagnostics: model.diagnostics.filter(item => !item.code.startsWith('SIDE_')) },
   (key, value: unknown) => key === 'runtime' ? undefined : value);
-const keyOf = (model: LayoutModel, node: string): string => portKey(model.nodes[node]!.ports.find(port => port.ref.anonymous === true)!.ref);
 const offerOf = (key: string, side: 'left' | 'right', link: string): SideOffer => ({
   hints: new Map([[key, side]]), promised: new Map([[key, { link, bends: 0, shape: 'straight' as const }]]), capped: false });
 
