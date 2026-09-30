@@ -4,6 +4,8 @@ import type { Budget, LayoutModel } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
 import { reserveLinkLabelRoom } from '../../src/layout/bands.js';
 import { crosses, overlayPath } from '../../src/layout/overlay-paths.js';
+import { LINK_LABEL_GEOMETRY } from '../../src/layout/link-labels.js';
+import { measureText } from '../../src/text/index.js';
 import { measureSides } from '../../src/layout/side-measure.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -88,7 +90,7 @@ describe('the side round offers the L shape for an overlay link', () => {
 });
 
 describe('an L is offered only when both runs are clear', () => {
-  it('offers nothing when a body of the middle rank stands on the horizontal run', async () => {
+  it('sanity: offers nothing when a body of the middle rank stands on the horizontal run', async () => {
     const model = copy(await run({ testMaxReruns: 0 }));
     const outlet = model.nodes['outlet']!, cache = model.nodes['cache']!, lb = model.nodes['lb']!;
     // Put the cache on the only two-segment way: the horizontal run into the outlet's left face, a little above the flank port.
@@ -97,7 +99,7 @@ describe('an L is offered only when both runs are clear', () => {
     expect(measureSides(model, model, new Set()).hints.size).toBe(0);
   }, 60000);
 
-  it('publishes no overlay run through a node body on a golden that once did (review H1)', async () => {
+  it('sanity: publishes no overlay run through a node body on a golden that once did (review H1)', async () => {
     // The derivation falls back to paths that ignore bodies when every way round is blocked; such a path has two segments and is no L.
     const text = readFileSync(new URL('../../goldens/synthetic/a-refused-close-up-keeps-the-node-labels-in-order.yaml', import.meta.url), 'utf8');
     const model = await run({}, text);
@@ -166,6 +168,52 @@ describe('the label room of an overlay L', () => {
     expect(model.nodes['outlet']!.bounds!.x).toBe(before);
     expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ROOM_UNRESERVED').map(item => item.message)).toEqual([expect.stringMatching(/beyond a reserved lane/)]);
     expect(model.diagnostics.find(item => item.code === 'LINK_LABEL_ROOM_UNRESERVED')!.owners).toEqual([{ kind: 'link', id: overlay(model).id }]);
+  }, 60000);
+
+  // The shortened published L reflected in x: the lateral face of the outlet now looks east and the balancer stands to the east of it.
+  async function mirrored(): Promise<LayoutModel> {
+    const { model } = await shortDrop(), width = 4000;
+    const flip = (box: { x: number; width: number }): void => { box.x = width - box.x - box.width; };
+    for (const node of Object.values(model.nodes)) {
+      flip(node.bounds!);
+      for (const port of node.ports) {
+        port.anchor!.x = width - port.anchor!.x;
+        if (port.pill) flip(port.pill.bounds);
+        if (port.side === 'left') port.side = 'right'; else if (port.side === 'right') port.side = 'left';
+      }
+    }
+    for (const group of Object.values(model.groups)) if (group.bounds) flip(group.bounds);
+    return model;
+  }
+
+  it('reserves the room on a west lateral face when the peer overhangs the face by 10 px, with no diagnostic (re-check)', async () => {
+    const model = await mirrored();
+    const lb = model.nodes['lb']!, outlet = model.nodes['outlet']!;
+    expect(overlayPath(model, overlay(model)).segments).toHaveLength(2);
+    // The balancer reaches 10 px past the outlet's right face; its port stays where it is.
+    const edge = lb.bounds!.x + lb.bounds!.width, next = outlet.bounds!.x + outlet.bounds!.width - 10;
+    lb.bounds!.x = next; lb.bounds!.width = edge - next;
+    const west = model.groups['west']!.bounds!;
+    west.width += west.x - next; west.x = next;
+    expect(overlayPath(model, overlay(model)).segments).toHaveLength(2);
+    expect(reserveLinkLabelRoom(model)).toBe(true);
+    expect(lb.bounds!.x).toBeGreaterThan(next);
+    expect(codes(model)).not.toContain('LINK_LABEL_ROOM_UNRESERVED');
+    expect(reserveLinkLabelRoom(model)).toBe(false);
+  }, 60000);
+
+  it('reserves a vertical run of an L to the lateral anchor, no more (review L1)', async () => {
+    const model = copy(await run());
+    const link = overlay(model);
+    model.document.links[link.sourceIndex]!.label = LONG;
+    const required = measureText(LONG, { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight }).width + 2 * LINK_LABEL_GEOMETRY.shortenMargin;
+    expect(reserveLinkLabelRoom(model)).toBe(true);
+    const anchor = model.nodes['outlet']!.ports.find(port => port.sideHint === true)!.anchor!.y;
+    const lb = model.nodes["lb"]!, drop = anchor - (lb.bounds!.y + lb.bounds!.height);
+    // Measured to the node top the run would end one port depth short and the tier gap would grow by that much too much.
+    expect(drop).toBeGreaterThanOrEqual(required - 1e-6);
+    expect(drop).toBeLessThan(required + 1);
+    expect(reserveLinkLabelRoom(model)).toBe(false);
   }, 60000);
 
   it('keeps the old answer for an overlay link that has no hinted end', async () => {

@@ -1396,7 +1396,9 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
         const verticalNode = lateralIsFrom ? toNode : fromNode, verticalPort = lateralIsFrom ? to : from;
         const lateralEast = lateralPort.anchor!.x > verticalPort.anchor!.x;
         const gapFrom = lateralEast ? Math.max(right(verticalNode.bounds!), right(outer(verticalPort, verticalNode))) : Math.max(right(lateralNode.bounds!), right(outer(lateralPort, lateralNode)));
-        const gapTo = lateralEast ? Math.min(lateralNode.bounds!.x, outer(lateralPort, lateralNode).x) : Math.min(verticalNode.bounds!.x, outer(verticalPort, verticalNode).x);
+        const gapTo = lateralEast ? Math.min(lateralNode.bounds!.x, outer(lateralPort, lateralNode).x) : verticalPort.anchor!.x;
+        // West of the vertical (the lateral face looks east): the peer sits in another tier, and `insertRoomAt` moves it whole when any part of it lies beyond
+        // the split, so a left edge that overhangs the lateral face does not matter: the split need only stand left of the vertical port's x.
         if (gapTo - gapFrom <= PLACEMENT_EPS) { unreserved('has no gap between the vertical run and the lateral face to insert its label room in'); continue; }
         const split = (gapFrom + gapTo) / 2;
         if (model.lanes.some(lane => lane.x >= split - PLACEMENT_EPS)) { unreserved('needs room beyond a reserved lane'); continue; }
