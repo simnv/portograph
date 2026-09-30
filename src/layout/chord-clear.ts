@@ -23,9 +23,6 @@ import { PLACEMENT_EPS } from './tolerance.js';
 /** How many candidate x a group or a node tries, nearest first, before it stays (ticket 77). */
 const CHORD_TRIALS = 24;
 
-/** How many candidates that pass the cheap checks are judged on a settled copy, nearest first: each one costs a round of the pipeline (ticket 110). */
-const SETTLED_TRIALS = 6;
-
 /** What a move must not lose or add, read off the geometry as it stands. */
 interface Reading {
   /** The overlay links drawn as one segment. */
@@ -135,12 +132,9 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
       return undefined;
     }
   };
-  /**
-   * The straight overlay count of the settled copy of the model with the move made, when it stands better than the settled copy
-   * without the move; `undefined` when it does not. Without a `follow` there is no settled copy, and the count is the caller's own.
-   */
-  const holdsSettled = (redo: () => void, undo: () => void, nodes: readonly string[], fallback: number): number | undefined => {
-    if (follow === undefined) return fallback;
+  /** Whether the settled copy of the model with the move made stands better than the settled copy without it. */
+  const holdsSettled = (redo: () => void, undo: () => void, nodes: readonly string[]): boolean => {
+    if (follow === undefined) return true;
     const after = settled();
     if (baseline === undefined) {
       undo();
@@ -151,8 +145,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
     }
     return after !== undefined && baseline !== undefined && after.overlay.size > baseline.overlay.size
       && [...baseline.routed].every(id => after.routed.has(id))
-      && nothingNew(baseline.crowded, after.crowded) && nothingNew(baseline.disordered, after.disordered) && nothingNew(baseline.residuals, after.residuals)
-      ? after.overlay.size : undefined;
+      && nothingNew(baseline.crowded, after.crowded) && nothingNew(baseline.disordered, after.disordered) && nothingNew(baseline.residuals, after.residuals);
   };
 
   /** The moves `dx` of a set of shapes that put one of them on a chord: open intervals. */
@@ -187,34 +180,28 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
   const saveGroupsOf = (nodes: readonly string[]): (() => void) => saveGroups(model, groupOfNodes(nodes));
 
   /**
-   * Try the candidates nearest first, and keep the one that leaves the most straight overlays on the settled copy (the nearest of
-   * equals): the nearest move can clear one chord and leave a wider one, and a mover that has moved is not moved again. `place(dx)`
-   * moves the mover by dx, `undo` takes it back. Returns whether one stayed.
+   * Try the candidates nearest first. `place(dx)` moves the mover by dx, `undo` takes it back. Returns whether one stayed.
    * A frozen chord a candidate would put a body on is a wall (`holds` for a group, the check below for a node).
    */
   const attempt = (key: string, candidates: readonly number[], at: number, place: (dx: number) => void, undo: () => void, nodes: readonly string[],
     holds: (x: number) => boolean): boolean => {
     const before = read(model, overlays), blocked = new Set(blockedChords(model));
-    let best: { target: number; count: number } | undefined, settledTrials = 0;
     for (const target of candidates.slice(0, CHORD_TRIALS)) {
       if (!holds(target)) continue;
       tried = true;
       place(target - at);
       rebuildNodeGeometry(model, nodes, 'current');
       const after = read(model, overlays);
-      if (after.overlay.size > before.overlay.size && [...before.routed].every(id => after.routed.has(id)) && blockedChords(model).every(id => blocked.has(id)) && settledTrials++ < SETTLED_TRIALS) {
-        const count = holdsSettled(saveGroupsOf(nodes), undo, nodes, after.overlay.size);
-        if (count !== undefined && (best === undefined || count > best.count)) best = { target, count };
+      if (after.overlay.size > before.overlay.size && [...before.routed].every(id => after.routed.has(id)) && blockedChords(model).every(id => blocked.has(id))
+        && holdsSettled(saveGroupsOf(nodes), undo, nodes)) {
+        baseline = undefined;
+        history.add(key);
+        return true;
       }
       undo();
       rebuildNodeGeometry(model, nodes, 'current');
     }
-    if (best === undefined) return false;
-    place(best.target - at);
-    rebuildNodeGeometry(model, nodes, 'current');
-    baseline = undefined;
-    history.add(key);
-    return true;
+    return false;
   };
   const nearest = (edges: readonly number[], at: number, ok: (x: number) => boolean): number[] => edges
     .filter((x, index, list) => ok(x) && Math.abs(x - at) > PLACEMENT_EPS && list.findIndex(other => Math.abs(other - x) <= PLACEMENT_EPS) === index)
