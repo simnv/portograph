@@ -214,31 +214,49 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
   // A frame of several cells slides whole inside its column slack (ticket 80): every cell takes the same dx, so the frame box, the
   // cell boxes and the rows stay as they are, and the column pass has nothing of its own to redo. The frame keeps its place among
   // the groups of its sub-tiers (the run between its neighbours' walls), inside the slack its column states, inside the box of the
-  // whole layout. A frame of a canton is the canton's, and a flank or a bar does not slide.
+  // whole layout. A member frame of a canton slides inside the canton wall. A flank or a bar does not slide.
   const frames = model.document.frames ?? {};
-  for (const column of columns) {
-    const key = `frame:${column.id}`;
-    if (history.has(key) || frames[column.id]?.kind === 'canton' || frames[column.id]?.parent !== undefined) continue;
-    const cells = [...column.cells].map(id => model.groups[id]!).filter(group => group.bounds && group.nodes.length > 0);
-    if (cells.length < 2 || cells.length !== column.cells.size || cells.some(cell => movable.has(cell.id) || cell.flank || model.document.groups[cell.id]?.shape === 'bar')) continue;
+  const cellsOf = (id: string): string[] => [...frames[id]!.cells, ...Object.keys(frames).filter(child => frames[child]!.parent === id).flatMap(cellsOf)];
+  // The units: a top-level frame in its column, or a member frame of a canton inside the canton's wall (the member's cells only).
+  const units = columns.flatMap(column => frames[column.id]?.kind === 'canton'
+    ? Object.keys(frames).filter(id => frames[id]!.parent === column.id).map(id => ({ id, column, member: true }))
+    : frames[column.id]?.parent === undefined ? [{ id: column.id, column, member: false }] : []);
+  for (const { id, column, member } of units) {
+    const key = `frame:${id}`;
+    if (history.has(key)) continue;
+    const ids = member ? cellsOf(id) : [...column.cells];
+    const cells = ids.map(cell => model.groups[cell]!).filter(group => group.bounds && group.nodes.length > 0);
+    if (cells.length < 2 || cells.length !== ids.length || cells.some(cell => movable.has(cell.id) || cell.flank || model.document.groups[cell.id]?.shape === 'bar')) continue;
+    const span = { from: Math.min(...cells.map(cell => cell.tier!)), to: Math.max(...cells.map(cell => cell.tier!)) };
     const nodes = cells.flatMap(cell => cell.nodes), skip = new Set(nodes);
     const banned = cells.flatMap(cell => bannedFor(chordsOver(cell.tier!, skip), shapesOf(cell.nodes)));
     if (!banned.some(({ low, high }) => low < -PLACEMENT_EPS && high > PLACEMENT_EPS)) continue;
-    const box = deriveFrames(model)?.find(item => item.id === column.id)?.box;
-    if (box === undefined) continue;
+    const derived = deriveFrames(model), box = derived?.find(item => item.id === id)?.box;
+    if (derived === undefined || box === undefined) continue;
     // The run of dx the frame may take: its column, the box of the layout, then the walls of the plain groups and the lanes of its sub-tiers.
     const reaches = cells.map(cell => ({ cell, reach: occupiedOverhang(model, cell) }));
-    let low = Math.max(column.x - box.x, world.low - Math.min(...reaches.map(({ cell, reach }) => cell.bounds!.x - reach.left)));
-    let high = Math.min(column.x + column.width - box.x - box.width, world.high - Math.max(...reaches.map(({ cell, reach }) => cell.bounds!.x + cell.bounds!.width + reach.right)));
+    // A member of a canton stays inside the canton's wall, less the group margin, and 2 * GROUP_PADDING from the members that share a sub-tier.
+    const wall = member ? column.wall : undefined;
+    if (member && wall === undefined) continue;
+    const roomLow = wall === undefined ? column.x : wall.x + GROUP_PADDING, roomHigh = wall === undefined ? column.x + column.width : wall.x + wall.width - GROUP_PADDING;
+    let low = Math.max(roomLow - box.x, world.low - Math.min(...reaches.map(({ cell, reach }) => cell.bounds!.x - reach.left)));
+    let high = Math.min(roomHigh - box.x - box.width, world.high - Math.max(...reaches.map(({ cell, reach }) => cell.bounds!.x + cell.bounds!.width + reach.right)));
     const walls: { low: number; high: number }[] = [];
     for (const item of all) {
-      if (item.frame !== undefined || item.tier! < column.from || item.tier! > column.to) continue;
+      if (item.frame !== undefined || item.tier! < span.from || item.tier! > span.to) continue;
       const one = occupiedOverhang(model, item);
       walls.push({ low: item.bounds!.x - one.left - gap - (box.x + box.width), high: item.bounds!.x + item.bounds!.width + one.right + gap - box.x });
     }
     for (const lane of model.lanes) {
-      if (lane.tier < column.from || lane.tier > column.to || (lane.bounds.x < box.x + box.width && lane.bounds.x + lane.bounds.width > box.x)) continue;
+      if (lane.tier < span.from || lane.tier > span.to || (lane.bounds.x < box.x + box.width && lane.bounds.x + lane.bounds.width > box.x)) continue;
       walls.push({ low: lane.bounds.x - (box.x + box.width), high: lane.bounds.x + lane.bounds.width - box.x });
+    }
+    if (member) {
+      const mine = new Set(cells.map(cell => cell.tier));
+      for (const other of derived) {
+        if (other.id === id || frames[other.id]!.parent !== column.id || !cellsOf(other.id).some(cell => mine.has(model.groups[cell]!.tier))) continue;
+        walls.push({ low: other.box.x - 2 * GROUP_PADDING - (box.x + box.width), high: other.box.x + other.box.width + 2 * GROUP_PADDING - box.x });
+      }
     }
     // A wall that already holds the frame's place pins it; a frame keeps its place in the order of the tiers it spans.
     if (walls.some(wall => wall.low < -PLACEMENT_EPS && wall.high > PLACEMENT_EPS)) continue;
@@ -275,13 +293,14 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
       const reach = occupiedOverhang(model, group);
       const routedGroup = !free.has(group.id);
       let placed = false;
-      if (!cellOfFrame(group) && !history.has(group.id) && banned.some(({ low, high }) => low < -PLACEMENT_EPS && high > PLACEMENT_EPS)) {
+      if (!history.has(group.id) && banned.some(({ low, high }) => low < -PLACEMENT_EPS && high > PLACEMENT_EPS)) {
         // The walls, as moves of the group: the run of x a move may not put the group's occupied extent into.
         const walls: { low: number; high: number }[] = [];
-        let inside = { low: world.low + reach.left, high: world.high - box.width - reach.right };
+        // A cell of a frame is bound by its frames' boxes (`sameFrames`), which the canvas holds, not by the box of the groups.
+        let inside = cellOfFrame(group) ? { low: -Infinity, high: Infinity } : { low: world.low + reach.left, high: world.high - box.width - reach.right };
         const cell = group.frame === undefined ? undefined : columns.find(column => column.cells.has(group.id));
         let skip = false;
-        if (group.frame !== undefined) {
+        if (group.frame !== undefined && !cellOfFrame(group)) {
           const frames = model.document.frames!, derived = deriveFrames(model);
           const frame = derived?.find(item => item.id === group.frame);
           if (cell?.wall === undefined || frame === undefined) skip = true;
@@ -304,7 +323,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
             const one = occupiedOverhang(model, item);
             wall(item.bounds!.x - one.left, item.bounds!.x + item.bounds!.width + one.right, gap);
           }
-          for (const column of columns.filter(item => item.from <= tier && tier <= item.to)) wall(column.x, column.x + column.width, gap);
+          for (const column of columns.filter(item => item.from <= tier && tier <= item.to && !(cellOfFrame(group) && item.cells.has(group.id)))) wall(column.x, column.x + column.width, gap);
           for (const lane of model.lanes.filter(item => item.tier === tier)) wall(lane.bounds.x, lane.bounds.x + lane.bounds.width, 0);
         }
         if (!skip) {
@@ -320,6 +339,13 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
             && !walls.some(({ low, high }) => x > low + PLACEMENT_EPS && x < high - PLACEMENT_EPS);
           const candidates = nearest([...banned.flatMap(({ low, high }) => [box.x + low, box.x + high]), ...walls.flatMap(({ low, high }) => [low, high])], box.x, feasible);
           const undo = saveGroups(model, [group]);
+          // A cell of a frame slides alone (ticket 80) only where every frame box stays as it is: the cell goes to the room its frame has beside it.
+          const boxesBefore = cellOfFrame(group) ? deriveFrames(model)?.map(item => item.box) : undefined;
+          const sameFrames = (): boolean => {
+            if (boxesBefore === undefined) return true;
+            const now = deriveFrames(model)?.map(item => item.box);
+            return now !== undefined && now.length === boxesBefore.length && now.every((one, i) => ['x', 'y', 'width', 'height'].every(k => Math.abs(one[k as keyof Rect] - boxesBefore[i]![k as keyof Rect]) <= PLACEMENT_EPS));
+          };
           // The candidates ask without a report; a frozen chord is named once, for the nearest candidate it refused, when no candidate stays.
           let refusal: { group: LayoutGroup; bounds: Rect }[] | undefined;
           placed = attempt(group.id, candidates, box.x, dx => moveGroup(model, group, dx, 0), undo, group.nodes, x => {
@@ -327,7 +353,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
             if (laneSidesHold(model, proposed, false)) return true;
             if (refusal === undefined && !chordsHold(model, proposed, false)) refusal = proposed;
             return false;
-          });
+          }, () => sameFrames());
           if (placed) moved = true;
           else if (refusal !== undefined) chordsHold(model, refusal, true);
         }
@@ -337,6 +363,29 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
       if (groupShape(model, group.id) !== 'row') continue;
       const order = [...(group.rowOrder ?? group.nodes)].sort((a, b) => model.nodes[a]!.bounds!.x - model.nodes[b]!.bounds!.x);
       const inset = groupInsets(model, group);
+      // A cell of a frame: the whole row slides inside the cell box when its nodes cannot pass one another (ticket 80). The cell box and the frame stay.
+      if (cellOfFrame(group) && order.length > 1 && !history.has(`row:${group.id}`)) {
+        const ids = order, own = bannedFor(chordsOver(tier, new Set(ids)), shapesOf(ids));
+        if (own.some(({ low, high }) => low < -PLACEMENT_EPS && high > PLACEMENT_EPS)) {
+          const bodies = ids.map(id => model.nodes[id]!.bounds!);
+          const room = { low: group.bounds!.x + inset.left - Math.min(...bodies.map(body => body.x)), high: group.bounds!.x + group.bounds!.width - inset.right - Math.max(...bodies.map(body => body.x + body.width)) };
+          const candidates = nearest(own.flatMap(({ low, high }) => [low, high]), 0, dx => dx >= room.low - PLACEMENT_EPS && dx <= room.high + PLACEMENT_EPS);
+          const before = cellReach(model, group.id);
+          const undo = saveGroups(model, [group]);
+          const slide = (dx: number): void => {
+            for (const id of ids) {
+              const node = model.nodes[id]!;
+              node.bounds!.x += dx;
+              for (const port of node.ports) if (port.anchor) port.anchor.x += dx;
+            }
+          };
+          const framed = (): boolean => {
+            const now = cellReach(model, group.id);
+            return Math.abs(now.x - before.x) <= PLACEMENT_EPS && Math.abs(now.width - before.width) <= PLACEMENT_EPS;
+          };
+          if (candidates.length && attempt(`row:${group.id}`, candidates, 0, slide, undo, ids, () => true, framed)) { moved = true; continue; }
+        }
+      }
       for (const [index, id] of order.entries()) {
         if (history.has(`node:${id}`)) continue;
         const node = model.nodes[id]!, body = { ...node.bounds! };
