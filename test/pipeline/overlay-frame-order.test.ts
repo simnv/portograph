@@ -87,7 +87,7 @@ describe('overlay-weighted order of frames', () => {
     expectColumns(model);
   }, 60000);
 
-  it('is a gain on the score: no routed link is worse, and fewer overlay links are bent than with the rule off', async () => {
+  it('is a gain on the score before the side round: no routed link is worse, and fewer overlay links are bent than with the rule off', async () => {
     // The side round is off in both arms: it takes lateral sides in the arm without the rule (bends 6 to 0) and refuses them in the arm with it, and this test
     // compares the rule alone (ticket 117).
     const model = await run(names.reorder, { testMaxReruns: 0 }), off = await runWithoutRule(names.reorder, { testMaxReruns: 0 });

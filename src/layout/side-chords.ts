@@ -24,7 +24,7 @@ const findPortSide = (model: LayoutModel, ref: PortRef): string | undefined => f
 /** Test only: the side probe of ticket 117 sets `on` to read every decision of the chord pass. Nothing in the layout reads it. */
 export const chordTrace: { on?: (event: Record<string, unknown>) => void } = {};
 
-interface Accepted { node: string; side: string; segment: PathSegment; stroke: number }
+export interface Accepted { node: string; side: string; segment: PathSegment; stroke: number }
 interface Config { laterals: ChordLateral[]; grows: boolean; nodes: LayoutModel['nodes']; segment: PathSegment }
 
 export interface ChordPass {
@@ -45,6 +45,11 @@ export function tooClose(segment: PathSegment, stroke: number, other: Accepted):
   const point = intersection(segment, other.segment);
   if (point !== undefined && ![segment.from, segment.to, other.segment.from, other.segment.to].some(end => samePoint(end, point))) return false;
   return segmentDistance(segment, other.segment) - (stroke + other.stroke) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS;
+}
+
+/** Whether a chord is too close to any chord accepted earlier in the pass, on any node or face (review M2, ticket 117). */
+export function pitchRefused(segment: PathSegment, stroke: number, accepted: readonly Accepted[]): boolean {
+  return accepted.some(other => tooClose(segment, stroke, other));
 }
 
 /**
@@ -122,7 +127,7 @@ export function measureChordSides(model: LayoutModel, nodes: LayoutModel['nodes'
         if (outward < minOutward - EPS) { note('outward angle under the minimum', { verdict: 'segment', angles, misses }); return; }
       }
       // Every chord accepted earlier in the pass, on any node or face: two near-parallel chords would both be lost at 7e (review M2, ticket 117).
-      if (accepted.some(other => tooClose(segment, stroke, other))) { note('pitch', { verdict: 'segment', angles, pitch: 'refused', misses }); return; }
+      if (pitchRefused(segment, stroke, accepted)) { note('pitch', { verdict: 'segment', angles, pitch: 'refused', misses }); return; }
       chordTrace.on?.({ ev: 'attempt', link: link.id, config: name, offered: true, why: 'candidate configuration', verdict: 'segment', angles, pitch: 'ok', misses });
       configs.push({ laterals: chosen, grows, nodes: draft, segment });
     };
