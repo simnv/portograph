@@ -109,8 +109,8 @@ The fixed-point checks of `expectedFramePath` apply unchanged:
 
 So a held chord never crosses an orthogonal leg or a mouth leg of its gap.
 
-**Angle.** There is no angle limit. A frame chord and an overlay chord take any angle, and the
-facing-edge rule already keeps a shallow chord inside the tier gap. The shallowest chord on the
+**Angle.** There is no angle limit (**maintainer, 2026-09-30:** any clear chord draws straight,
+however shallow). A frame chord and an overlay chord take any angle, and the facing-edge rule already keeps a shallow chord inside the tier gap. The shallowest chord on the
 private sheet is about 68 degrees from the vertical (391 px across, 161 px down).
 
 ## 5. The frame edge
@@ -248,11 +248,11 @@ to reach this; ticket 103 measures it.
 ## 11. Metric risks
 
 - **Crossings.** A chord crosses planned rows of its gap strictly, where the orthogonal route
-  crossed other things. The count can rise. Not a criterion on the corpus (as for frame chords and
-  overlay chords); measured and reported. On the M1 golden it is a criterion: the golden tests
-  assert 0 crossings (`golden-crossings`, `test/pipeline/golden-snapshot.test.ts`,
-  `test/route/golden.test.ts`). A chord there that crosses a row fails the golden, and the
-  maintainer's answer to open question 2 decides what follows.
+  crossed other things. The count can rise. It is not a criterion (**maintainer, 2026-09-30:** a
+  clear chord draws straight even when it adds crossings); it is measured and reported. The M1
+  golden tests assert 0 crossings (`golden-crossings`, `test/pipeline/golden-snapshot.test.ts`,
+  `test/route/golden.test.ts`). If a chord there crosses a row, the assertion changes to the
+  measured count, with a comment that cites Q108 and this decision.
 - **G6.** Two new sources, both named: a 7f x-move after the freeze (`TIER_GAP_CHORD_CROWDED`,
   and `chordClearances` for chord pairs, ticket 89), and a residual part routed without the chord
   (`TIER_GAP_CHORD_EXPOSED`). Acceptance: no new G6 finding on the corpus.
@@ -276,11 +276,9 @@ to reach this; ticket 103 measures it.
 | 103 | WAN links between location tiers draw straight (ticket 98 acceptance) | 100, 101, 102 |
 | 104 | Placement steps a body or frame off a cross-frame chord (conditional) | 103 |
 
-## 13. Open questions for the maintainer
+## 13. Maintainer's decisions (2026-09-30)
 
-1. **Angle.** This design sets no angle limit (Section 4). A chord on the private sheet runs about
-   68 degrees from the vertical. Is a limit wanted, for example 60 degrees, past which the link
-   stays orthogonal?
-2. **Crossings.** A chord that crosses the rows of its gap adds crossings. Keep it straight
-   whatever the count (this design), or refuse a chord that adds more crossings than its
-   orthogonal route had?
+1. **Angle.** No angle limit: any clear chord draws straight, however shallow (Section 4).
+2. **Crossings.** Straight anyway: a clear chord draws straight even when it adds crossings
+   (Section 11). The M1 golden's `golden-crossings` assertion takes the measured count, with a
+   comment that cites this decision.
