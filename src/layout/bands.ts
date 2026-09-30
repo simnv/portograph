@@ -9,7 +9,7 @@ import { frameSubtreeCells, orderedGroupIds } from '../model/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { createCentreBudget, type CentreBudget } from './centre.js';
-import { laneSidesHold } from './lanes.js';
+import { optionalMoveHolds, riserKeepOutBreaches } from './lanes.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { findPort, straightCorridorClear } from './row-paths.js';
@@ -25,7 +25,7 @@ import { overlayPath } from './overlay-paths.js';
 import { isRoutedChord } from './frame-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { busBandHeight, busRoom } from './bus-room.js';
-import { busGeometry, expectedBusBands, syncBusGeometry } from './bus.js';
+import { busGeometry, expectedBusBands, riserEnds, syncBusGeometry } from './bus.js';
 
 export const GROUP_LABEL_GEOMETRY = {
   fontFamily: FONT_FAMILY,
@@ -558,6 +558,22 @@ function legRects(model: LayoutModel): ForbiddenRect[] {
       }
     }
   }
+  // The riser of a join crosses each title band it passes through as a leg: the title stands clear of it (mesh-bus.md, section 11.5). Its x is fixed
+  // in 7a, so 7f places the title against a known x. It runs from the upper row to the lower row, so a band strictly between them is crossed.
+  for (const bus of model.meshBuses ?? []) {
+    if (bus.riser === undefined || bus.cross === undefined) continue;
+    const lower = model.meshBuses!.find(item => item.id === bus.joined);
+    if (lower === undefined) continue;
+    const stroke = routedStroke(model), tiers = model.tierBands;
+    const top = tiers.find(item => item.tier === bus.row)?.bounds, bottomBand = tiers.find(item => item.tier === lower.row)?.bounds;
+    if (top === undefined || bottomBand === undefined) continue;
+    for (const { band } of owned) {
+      const box = band.bounds;
+      if (bus.riser.x < box.x - PLACEMENT_EPS || bus.riser.x > right(box) + PLACEMENT_EPS) continue;
+      if (bottom(box) <= bottom(top) - PLACEMENT_EPS || box.y >= bottomBand.y + PLACEMENT_EPS) continue;
+      result.push({ id: `${bus.id}:riser:${band.group}`, bounds: { x: bus.riser.x - stroke / 2, y: box.y, width: stroke, height: box.height }, clearance: GROUP_LABEL_LINK_CLEARANCE });
+    }
+  }
   return result;
 }
 
@@ -662,7 +678,7 @@ function growthPlan(model: LayoutModel, grown: LayoutGroup, width: number): Grou
     if (!settled) return undefined;
   }
   const plan = [...tiers.values()].flatMap(item => item.rows);
-  return laneSidesHold(model, plan.map(item => ({ group: item.group,
+  return optionalMoveHolds(model, plan.map(item => ({ group: item.group,
     bounds: { ...item.group.bounds!, x: item.x, width: item.width } }))) ? plan : undefined;
 }
 
@@ -860,7 +876,7 @@ export function settleKeepOut(model: LayoutModel): boolean {
     const shifts = keepOutShifts(model);
     for (const [group, dx] of columnShifts(model, 0)) shifts.set(group, Math.max(shifts.get(group) ?? 0, dx));
     if (!shifts.size) break;
-    if (!laneSidesHold(model, [...shifts].map(([group, dx]) => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } })))) break;
+    if (!optionalMoveHolds(model, [...shifts].map(([group, dx]) => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } })))) break;
     const straight = straightOverlays(model).length, nodes = [...shifts.keys()].flatMap(group => group.nodes);
     for (const [group, dx] of shifts) moveGroup(model, group, dx, 0);
     rebuildNodeGeometry(model, nodes, 'current');
@@ -912,8 +928,9 @@ function consumeGrowthPass(budget: CentreBudget, before: number): void {
  * by the first sub-tier of one titled at the top. The margin past the band is the ordinary 20 px group
  * padding, so the room is 20 + band + 20.
  */
-function cantonGapNeeds(model: LayoutModel): { below: Map<number, number>; above: Map<number, number> } {
+function cantonGapNeeds(model: LayoutModel): { below: Map<number, number>; above: Map<number, number>; busBelow: Set<number>; busAbove: Set<number> } {
   const below = new Map<number, number>(), above = new Map<number, number>();
+  const busBelow = new Set<number>(), busAbove = new Set<number>();
   for (const band of model.labelBands) {
     if (!isCanton(model, band.group)) continue;
     const tiers = cantonTiers(model, band.group), need = GROUP_PADDING + band.bounds.height + GROUP_PADDING;
@@ -926,8 +943,9 @@ function cantonGapNeeds(model: LayoutModel): { below: Map<number, number>; above
     if (bus.placement !== 'across-frames' || bus.side === undefined) continue;
     const map = bus.side === 'top' ? above : below, height = busBandHeight(bus), known = map.get(bus.row);
     map.set(bus.row, known === undefined ? GROUP_PADDING + height + GROUP_PADDING : known + height);
+    (bus.side === 'top' ? busAbove : busBelow).add(bus.row);
   }
-  return { below, above };
+  return { below, above, busBelow, busAbove };
 }
 
 function reserveInitialSpace(model: LayoutModel): void {
@@ -988,7 +1006,12 @@ function reserveInitialSpace(model: LayoutModel): void {
   for (const tierBand of [...model.tierBands].sort((a, b) => a.tier - b.tier)) {
     if (previous !== undefined) {
       const gap = tierBand.bounds!.y + shift - previous.bottom;
-      shift += Math.max(0, Math.max(need.below.get(previous.tier) ?? 0, need.above.get(tierBand.tier) ?? 0) - gap);
+      // Two bus bands that face each other in one gap (the bars of a join on adjacent rows) are added, never compared: 20 + upper band + lower band + 20
+      // (mesh-bus.md, section 11.5, *Two bands in one gap*). A canton band on either edge is already in that edge's need.
+      const both = need.busBelow.has(previous.tier) && need.busAbove.has(tierBand.tier);
+      const wanted = both ? need.below.get(previous.tier)! + need.above.get(tierBand.tier)! - 2 * GROUP_PADDING
+        : Math.max(need.below.get(previous.tier) ?? 0, need.above.get(tierBand.tier) ?? 0);
+      shift += Math.max(0, wanted - gap);
     }
     if (shift) for (const group of Object.values(model.groups).filter(item => item.tier === tierBand.tier)) moveGroup(model, group, 0, shift);
     previous = { tier: tierBand.tier, bottom: bottom(tierBand.bounds!) + shift, shift };
@@ -1094,7 +1117,7 @@ export function alignLinkedGroupGrid(model: LayoutModel): boolean {
       const proposed = members.map(group => ({ group, bounds: { ...group.bounds!, [pos]: low, [len]: extent } as Rect }));
       const others = Object.values(model.groups).filter(group => !members.includes(group));
       if (proposed.some(item => others.some(other => rectOverlap(item.bounds, other.bounds!)))) continue;
-      if (axis === 'x' && !laneSidesHold(model, proposed)) continue;
+      if (axis === 'x' && !optionalMoveHolds(model, proposed)) continue;
       // The widening is stage 7 work: it never widens a frame into the box of another frame.
       if (widensIntoFrame(model, proposed)) continue;
       for (const item of proposed) item.group.bounds = item.bounds;
@@ -1295,6 +1318,16 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
 
 /** Transaction-owned stage-7f producer. It replaces every affected claim before publication. */
 export function produceGroupLabelBands(model: LayoutModel): void {
+  produceGroupLabelBandsRaw(model);
+  // A routed port of a member row that 7f left within the riser keep-out is reported once, on the final geometry of the producer; the entries an earlier
+  // call left are stale (mesh-bus.md, section 11.5). A title push is a move that must be made, so here the breach is a warning and not an error.
+  model.diagnostics = model.diagnostics.filter(item => item.code !== 'MESH_BUS_RISER_KEEP_OUT');
+  for (const breach of riserKeepOutBreaches(model)) {
+    model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'MESH_BUS_RISER_KEEP_OUT', owners: [{ kind: 'node', id: breach.node }],
+      message: `${breach.node} has a routed port on the facing edge within the riser keep-out of x ${Math.round(breach.riser * 100) / 100}; a leg there stands closer than the run clearance to the riser.` });
+  }
+}
+function produceGroupLabelBandsRaw(model: LayoutModel): void {
   // A frame whose extreme sub-tiers both belong to child frames has no cell of its own to hold a
   // title. It draws none, and says so.
   for (const id of Object.keys(model.document.frames ?? {})) {
@@ -1481,6 +1514,14 @@ export function validateGroupLabelBands(model: LayoutModel): void {
     const geometry = busGeometry(model, bus);
     if (!equal({ bar: bus.bar, stubs: bus.stubs, labelRoom: bus.labelRoom }, { bar: geometry?.bar, stubs: geometry?.stubs, labelRoom: geometry?.labelRoom })) {
       throw new Error(`The bar and stubs of ${bus.id} contradict final group geometry`);
+    }
+    // The riser x is fixed in 7a and never moves; 7f sets its ends on the two bars, and both bars reach it.
+    if (bus.riser !== undefined) {
+      const ends = riserEnds(model, bus);
+      if (!equal({ from: bus.riser.from, to: bus.riser.to }, { from: ends?.from, to: ends?.to })) throw new Error(`The riser of ${bus.id} contradicts the bars it joins`);
+      for (const bar of [bus, model.meshBuses!.find(item => item.id === bus.joined)]) {
+        if (bar?.bar !== undefined && (bar.bar.from.x > bus.riser.x + PLACEMENT_EPS || bar.bar.to.x < bus.riser.x - PLACEMENT_EPS)) throw new Error(`The bar of ${bar.id} does not reach the riser of ${bus.id}`);
+      }
     }
   }
   for (const band of model.labelBands) {

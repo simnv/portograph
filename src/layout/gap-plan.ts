@@ -99,6 +99,11 @@ export interface PlanFrame {
    */
   blocks?: readonly PlanObstacle[];
   residual: readonly ResidualPart[];
+  /**
+   * The x of every riser vertical that crosses the gap (mesh-bus.md, section 11.5): a mesh bus riser is no part and asks for no height, a planned
+   * row crosses it (one accepted crossing), and a Z part's middle drop keeps `keep` from it.
+   */
+  verticals?: readonly number[];
 }
 
 export type PartShape = 'drop' | 'stepped' | 'z';
@@ -300,8 +305,8 @@ function reaches(edges: readonly PlanEdge[], from: string, to: string): boolean 
  * The x a Z part's middle drop may take (2.2 O6): the centre of every interval between the part's ends that stands `keep` clear of
  * every other leg and drop, widest first (the first of equally wide ones first). `solve` takes the first that breaks the cycle.
  */
-function middleDrops(part: Part, parts: readonly Part[], split: ReadonlyMap<string, number>, keep: number): number[] {
-  const centres = [part.upper.x, part.lower.x];
+function middleDrops(part: Part, parts: readonly Part[], split: ReadonlyMap<string, number>, keep: number, verticals: readonly number[] = []): number[] {
+  const centres = [part.upper.x, part.lower.x, ...verticals];
   for (const other of parts) {
     if (other === part) continue;
     centres.push(other.upper.x, other.lower.x);
@@ -352,7 +357,7 @@ function solve(parts: readonly Part[], frame: PlanFrame): Solved | { reject: Par
     if (!unsplit.length) return { reject: latest(onCycle) };
     const pick = latest(unsplit);
     // The widest clear interval that leaves the halves on no cycle; residual only where none does.
-    const middle = middleDrops(pick, parts, split, keep).find(candidate => {
+    const middle = middleDrops(pick, parts, split, keep, frame.verticals).find(candidate => {
       const trial = new Map(split).set(pick.id, candidate), after = expand(base, trial, unitsOf(parts, trial));
       return !inCycle(after, `${pick.id}a`) && !inCycle(after, `${pick.id}b`);
     });
@@ -792,7 +797,9 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
   const tips = facingTips(model, gap, cache).filter(item => !ends.has(`${item.tip.x}|${item.tip.y}`));
   return planGap(kept, { low: gap.low, bandTop, floor, keep, pitch: keep, edge: margin, obstacles, blocks,
     tips: tips.filter(item => item.side === 'bottom').map(item => item.tip),
-    lowerTips: tips.filter(item => item.side === 'top').map(item => item.tip), residual });
+    lowerTips: tips.filter(item => item.side === 'top').map(item => item.tip), residual,
+    verticals: (model.meshBuses ?? []).filter(bus => bus.riser !== undefined && bus.cross !== undefined
+      && model.meshBuses!.some(other => other.id === bus.joined && bus.row <= gap.above && gap.below <= other.row)).map(bus => bus.riser!.x) });
 }
 
 /**

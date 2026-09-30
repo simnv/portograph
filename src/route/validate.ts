@@ -180,6 +180,17 @@ export function validateRoutedPaths(model: LayoutModel, requireComplete = false)
   for (const bus of model.meshBuses ?? []) {
     if (bus.bar === undefined || bus.stubs === undefined || bus.stubs.length !== bus.nodes.length) throw new Error(`Mesh bus ${bus.id} has no published bar and stubs`);
   }
+  // The riser of a joined pair: present on the upper bus, both ends on its x, and one end on each bar (mesh-bus.md, section 11.6). The cross paths
+  // are derived from it, so a stale x would leave the drawn riser and the paths disagreeing.
+  for (const bus of (model.meshBuses ?? []).filter(item => item.cross !== undefined)) {
+    const lower = model.meshBuses!.find(item => item.id === bus.joined), riser = bus.riser;
+    if (lower === undefined || riser?.from === undefined || riser.to === undefined || riser.from.x !== riser.x || riser.to.x !== riser.x
+      || bus.bar === undefined || lower.bar === undefined || riser.from.y !== bus.bar.from.y || riser.to.y !== lower.bar.from.y
+      || riser.x < Math.min(bus.bar.from.x, bus.bar.to.x) - EPS || riser.x > Math.max(bus.bar.from.x, bus.bar.to.x) + EPS
+      || riser.x < Math.min(lower.bar.from.x, lower.bar.to.x) - EPS || riser.x > Math.max(lower.bar.from.x, lower.bar.to.x) + EPS) {
+      throw new Error(`The riser of ${bus.id} does not stand on the bars it joins`);
+    }
+  }
   const conflicts = reservationConflicts(model);
   if (conflicts.length) {
     throw new Error(`Routed path on ${conflicts[0]!.link} enters reserved ${conflicts[0]!.reservation}`);

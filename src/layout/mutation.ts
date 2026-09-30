@@ -1,6 +1,6 @@
 import { equal } from '../model/json-equality.js';
 import type { Rect } from '../model/geometry.js';
-import type { LayoutModel, LayoutStage, PlacementSnapshot } from '../model/layout.js';
+import type { LayoutModel, LayoutStage, MeshBus, PlacementSnapshot } from '../model/layout.js';
 import { orderedNodeIds, orderedGroupIds } from '../model/model.js';
 import { resolve } from '../resolve/index.js';
 import { filterCss } from '../parse/css.js';
@@ -84,7 +84,7 @@ function semantics(model: LayoutModel) {
     links: model.links.map(link => pick(link, ['id', 'sourceIndex', 'owner', 'from', 'to', 'attachments', 'family', 'layer', 'bundle', 'groupLink', 'meshBus', 'strokeWidth'])),
     bundles: model.bundles.map(bundle => pick(bundle, ['id', 'owner', 'layer', 'nodes', 'members'])),
     groupLinks: model.groupLinks.map(group => pick(group, ['id', 'owner', 'layer', 'groups', 'members'])),
-    meshBuses: (model.meshBuses ?? []).map(bus => pick(bus, ['id', 'owner', 'layer', 'class', 'row', 'placement', 'frames', 'nodes', 'ports', 'members', 'dissolved'])),
+    meshBuses: (model.meshBuses ?? []).map(bus => pick(bus, ['id', 'owner', 'layer', 'class', 'row', 'placement', 'frames', 'nodes', 'ports', 'members', 'dissolved', 'joined', 'cross', 'meshNodes'])),
   };
 }
 function topology(model: LayoutModel) {
@@ -225,11 +225,36 @@ function validateTechniques(model: LayoutModel, baseline: LayoutModel): void {
 const CANTON_ROUNDS = 4;
 /** The move of a close-up round, in px, under which the cantons stand a band gap apart for every purpose (ranked-groups ticket 65). */
 const CANTON_CREEP = 0.5;
+/** A join is two buses that name each other; the upper bus lists its cross links, which carry its id and are not members (mesh-bus.md, section 11.6). */
+function validateJoins(model: LayoutModel): void {
+  const buses = model.meshBuses ?? [];
+  const byId = new Map(model.links.map(link => [link.id, link]));
+  for (const bus of buses) {
+    const partner = bus.joined === undefined ? undefined : buses.find(item => item.id === bus.joined);
+    if (bus.joined !== undefined) {
+      if (bus.joined === bus.id || partner?.joined !== bus.id) throw new Error(`Mesh bus ${bus.id} is joined to ${bus.joined}, which does not name it back`);
+      if ((partner.class ?? '') !== (bus.class ?? '')) throw new Error(`Mesh buses ${bus.id} and ${partner.id} are joined across two classes`);
+      if ((bus.cross === undefined) === (partner.cross === undefined)) throw new Error(`Exactly one of the joined buses ${bus.id} and ${partner.id} lists the cross links`);
+    }
+    const listed = new Set(bus.cross ?? []);
+    if (bus.cross !== undefined) {
+      if (partner === undefined || partner.row <= bus.row) throw new Error(`Mesh bus ${bus.id} lists cross links but is not the upper bus of a join`);
+      for (const id of bus.cross) {
+        const link = byId.get(id);
+        if (link?.meshBus !== bus.id || bus.members.includes(id) || partner.members.includes(id)) throw new Error(`Cross link ${id} of ${bus.id} is not a link of the join`);
+      }
+    }
+    for (const link of model.links) {
+      if (link.meshBus === bus.id && !bus.members.includes(link.id) && !listed.has(link.id)) throw new Error(`Link ${link.id} carries ${bus.id} but is neither a member nor a cross link`);
+    }
+  }
+}
 /** Every protected result passes this same boundary, including direct freeze and restore. */
 function validatePublication(model: LayoutModel, baseline: LayoutModel): void {
   jsonValue(model);
   if (hasUnsupportedClaims(model)) throw new Error('Claim validator is not implemented');
   validateTechniques(model, baseline);
+  validateJoins(model);
   validateGeometry(model, diagnosed(model));
   validateFreeze(model);
   validateRegionClaims(model);
@@ -539,8 +564,10 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
   if (returned !== undefined) throw new Error('Mutation callback must be synchronous and return void');
   jsonValue(draft);
   validateRect(draft.canvas, 'canvas');
-  same(omit(draft, ['nodes', 'groups', 'tierBands', 'labels', 'canvas', 'diagnostics', 'runtime', 'links', 'lanes', 'bundles', 'junctions', 'labelBands', 'barDrops', 'obstacles', 'regions', 'anchorTier', 'frames', 'removedLinks']),
-    omit(model, ['nodes', 'groups', 'tierBands', 'labels', 'canvas', 'diagnostics', 'runtime', 'links', 'lanes', 'bundles', 'junctions', 'labelBands', 'barDrops', 'obstacles', 'regions', 'anchorTier', 'frames', 'removedLinks']), 'Undeclared model field changed');
+  // The lanes rule alone fixes the riser of a joined pair (mesh-bus.md, section 11.5); nothing else of a bus changes in it.
+  const unriser = (value: LayoutModel): LayoutModel => rule === 'lanes' && value.meshBuses ? { ...value, meshBuses: value.meshBuses.map(bus => omit(bus, ['riser']) as MeshBus) } : value;
+  const declared = ['nodes', 'groups', 'tierBands', 'labels', 'canvas', 'diagnostics', 'runtime', 'links', 'lanes', 'bundles', 'junctions', 'labelBands', 'barDrops', 'obstacles', 'regions', 'anchorTier', 'frames', 'removedLinks'];
+  same(omit(unriser(draft), declared), omit(unriser(model), declared), 'Undeclared model field changed');
   // Stage 8 alone removes links (`ROUTE_CHECKPOINT_SKIPPED`, `ROUTE_GAP_REJECTED`); every later stage keeps the list.
   if (rule !== 'route') same(draft.removedLinks, model.removedLinks, 'Only the route rule may remove a link');
   same(draft.stage, model.stage, 'Transaction owns the stage marker');

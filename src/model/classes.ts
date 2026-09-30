@@ -18,3 +18,14 @@ export function authorClass(value: string | undefined): string | undefined {
   const kept = value.split(/\s+/).filter(part => part && !part.startsWith(RESERVED_CLASS_PREFIX));
   return kept.length ? kept.join(' ') : undefined;
 }
+
+/**
+ * Whether a link of this class draws an arrowhead. No class does today: the theme has no marker and the
+ * `css:` lock forbids `marker`, `marker-start`, `marker-mid` and `marker-end` (`parse/css.ts`). A mesh bus
+ * cannot show which way each of its links points, so a class that draws one never forms a bus
+ * (docs/design/mesh-bus.md, section 11.3, check 2).
+ */
+export function classDrawsArrowhead(klass: string): boolean {
+  void klass;
+  return false;
+}

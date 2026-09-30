@@ -1211,6 +1211,11 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     });
     const bar = [shift(bus.bar.from), shift(bus.bar.to)];
     edgeCell(cellId('bus', bus.id), layerId('overlay'), stroke(false), bar, { sourcePoint: bar[0], targetPoint: bar[1] });
+    // The riser of a join is one more free-point edge between the two bars, exported with the upper bus (mesh-bus.md, section 11.7).
+    if (bus.riser?.from !== undefined && bus.riser.to !== undefined) {
+      const riser = [shift(bus.riser.from), shift(bus.riser.to)];
+      edgeCell(cellId('busRiser', bus.id), layerId('overlay'), stroke(false), riser, { sourcePoint: riser[0], targetPoint: riser[1] });
+    }
     for (const stub of bus.stubs) {
       const ref = bus.ports.find(port => port.node === stub.node)!;
       const head = terminal('exit', ref), pill = pillEnd(ref);

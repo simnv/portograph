@@ -2,7 +2,7 @@ import type { LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
 import type { Point } from '../model/geometry.js';
 import { frameColumns, overlayFreeGroups, type FrameColumn } from './columns.js';
 import { groupShape } from './grid.js';
-import { laneSidesHold, occupiedOverhang, selectAnchorTier } from './lanes.js';
+import { optionalMoveHolds, occupiedOverhang, selectAnchorTier } from './lanes.js';
 import { crosses, overlayBlockers, overlayPath, straightChord } from './overlay-paths.js';
 import { saveGroups } from './overlay-order.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
@@ -284,7 +284,7 @@ export function standLinklessBeside(model: LayoutModel, tiers: readonly number[]
       // chords of 7f are read by `laneSidesHold`.
       const fits = (x: number): boolean => !banned.some(({ low, high }) => x > low + PLACEMENT_EPS && x < high - PLACEMENT_EPS)
         && !wall.some(item => x - reach.left < item.high + item.gap - PLACEMENT_EPS && x - reach.left + width > item.low - item.gap + PLACEMENT_EPS)
-        && laneSidesHold(model, [{ group, bounds: { ...box, x } }], false);
+        && optionalMoveHolds(model, [{ group, bounds: { ...box, x } }], false);
       const left = extent.low - gap - width + reach.left, right = extent.high + gap + reach.left;
       const wasLeft = one.high <= extent.low;
       // From the point one gap off the extent, outward to the first x clear of the chords: the edges of the banned intervals are the only other candidates.
@@ -350,6 +350,8 @@ export function stepOutOfChords(model: LayoutModel, tiers: readonly number[], fr
         const blockers = overlayBlockers(model);
         return new Set(overlays.filter(link => overlayPath(model, link, blockers).segments.length === 1).map(link => link.id));
       };
+      // A step out of a chord is optional: it is not made into the riser keep-out (mesh-bus.md, section 11.5).
+      if (!optionalMoveHolds(model, [{ group, bounds: { ...box, x: target } }], false)) continue;
       const before = straight(), undo = saveGroups(model, [group]);
       moveGroup(model, group, target - box.x, 0);
       rebuildNodeGeometry(model, group.nodes, 'current');
