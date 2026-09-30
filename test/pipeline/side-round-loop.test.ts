@@ -34,36 +34,22 @@ const offerOf = (key: string, side: 'left' | 'right', link: string): SideOffer =
   hints: new Map([[key, side]]), promised: new Map([[key, { link, bends: 0, shape: 'straight' as const }]]), capped: false });
 
 describe('the round loop (ticket 115, side-faces.md Section 7)', () => {
-  it('drops a trial in which a new hint breaks an old one: the old hint stays and the new one is refused', async () => {
-    const plain = await run(PAST_SIBLING);
-    const link = plain.links.find(item => item.layer === 'overlay')!.id;
-    const client = keyOf(plain, 'client');
-    // The second offer turns the client end of the same link to its left face: the server's straight segment then leaves its right face away from
-    // the client's left face, and the promise of the old hint (0 bends) is lost.
-    const model = await run(PAST_SIBLING, (call, real) => call === 1 ? real() : call === 2 ? offerOf(client, 'left', link) : real());
-    const server = model.nodes['server']!.ports.filter(port => port.sideHint === true);
-    expect(server.map(port => port.side)).toEqual(['right']);
-    expect(model.nodes['client']!.ports.some(port => port.sideHint === true)).toBe(false);
-    expect(model.links.find(item => item.id === link)!.path!.segments).toHaveLength(1);
-    const refused = model.diagnostics.filter(item => item.code === 'SIDE_HINT_REFUSED');
-    expect(refused).toHaveLength(1);
-    expect(refused[0]!.message).toContain('a new hint broke an old one');
-    expect(refused[0]!.message).toContain('client');
+  it('stops after a kept trial: one trial reaches 7f per command, so a second offer is never measured', async () => {
+    const model = await run(PAST_SIBLING);
+    expect(state.calls).toBe(1);
     expect(model.diagnostics.filter(item => item.code === 'SIDE_HINT_TAKEN')).toHaveLength(1);
-    expect(withoutNotes(model)).toBe(withoutNotes(plain));
   }, 60000);
 
-  it('a dropped side trial leaves the model as it was and refuses the hint whose shape was lost', async () => {
+  it('judges the published result, not the 7e shape: a scripted hint on a blocked link is kept because its routed trial has fewer bends (main refused it at 7e)', async () => {
     const plain = await run(BLOCKED);
     const link = plain.links.find(item => item.layer === 'overlay')!.id;
     const server = plain.links.find(item => item.id === link)!.attachments!.from;
     const model = await run(BLOCKED, (call, real) => call === 1 ? offerOf(portKey(server), 'right', link) : real());
-    expect(model.nodes['server']!.ports.some(port => port.sideHint === true)).toBe(false);
-    expect(withoutNotes(model)).toBe(withoutNotes(plain));
-    const refused = model.diagnostics.filter(item => item.code === 'SIDE_HINT_REFUSED');
-    expect(refused).toHaveLength(1);
-    expect(refused[0]!.message).toContain('its shape was lost');
-    expect(model.diagnostics.map(item => item.code)).not.toContain('SIDE_HINT_TAKEN');
+    const kept = model.nodes['server']!.ports.some(port => port.sideHint === true);
+    const bends = (m: LayoutModel): number => m.links.find(item => item.id === link)!.path!.segments.length - 1;
+    expect(kept).toBe(true);
+    expect(bends(model)).toBeLessThan(bends(plain));
+    expect(model.diagnostics.map(item => item.code)).not.toContain('SIDE_SHAPE_LOST');
   }, 60000);
 
   const bogus = (n: number): SideOffer => offerOf(JSON.stringify(['core-1', true, null, 90 + n]), 'right', 'link-1');

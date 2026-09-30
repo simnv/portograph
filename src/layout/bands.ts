@@ -1601,7 +1601,11 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   }
 }
 
-/** Stage 7f: reserve and place deterministic group labels, then freeze final placement. */
-export function bands(model: LayoutModel, budget?: Budget): LayoutModel {
-  return withLayoutMutation(model, 'bands', () => {}, budget);
+/**
+ * Stage 7f: reserve and place deterministic group labels, then freeze final placement. `abortAt` is a check of its own (a side trial's
+ * deadline, side-faces.md Section 19.5), apart from `budget`, which only the chord-clear step reads: it throws between the passes of 7f.
+ * A call with no `abortAt` never throws for that reason.
+ */
+export function bands(model: LayoutModel, budget?: Budget, abortAt?: () => void): LayoutModel {
+  return withLayoutMutation(model, 'bands', () => {}, budget, abortAt);
 }

@@ -615,7 +615,7 @@ function rebuildBoxes(model: LayoutModel): void {
 }
 
 /** One synchronous checked commit per stage. Future producers extend the closed validators here. */
-export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutModel) => void, budget?: Budget): LayoutModel {
+export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutModel) => void, budget?: Budget, abortAt?: () => void): LayoutModel {
   if (!protectedModels.has(model)) throw new Error('Mutation requires a protected snapshot; use restoreLayoutModel');
   if (!Object.hasOwn(permissions, rule) || stages[stages.indexOf(model.stage) + 1] !== rule) throw new Error(`Incorrect predecessor stage for ${rule}`);
   const started = Date.now(), draft = clone(model), permission = permissions[rule];
@@ -817,8 +817,10 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     // a label placed first would stay behind. The replay then rebuilds every claim the movement
     // touched, exactly as a reservation change does anywhere else in 7f.
     // The last confirmation of a chord was the end of 7e: from here it is a wall (ticket 34).
+    abortAt?.();
     freezeChords(draft);
     produceGroupLabelBands(draft);
+    abortAt?.();
     // The growth of the tier gaps is measured on the columns as they stand, and the close-up of the cantons (ranked-groups ticket 65)
     // moves them in x after centring widened one in place: so the growth is measured again after every move, and the rounds end when
     // the close-up has nothing to move. A round that moves groups replays the region producers, and the grid and the labels after it.
@@ -862,6 +864,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     let closed = false, again = false;
     const movers = new Set<string>();
     for (let round = 0; round < CANTON_ROUNDS && (!closed || again); round++) {
+      abortAt?.();
       // A creep under half a pixel, left by the centring replay, counts as settled; the replay still follows any move.
       closed = settle(draft) < CANTON_CREEP;
       // The growth and the close-up change the slope of a chord that spans a gap and the x of a column: a group with no links
@@ -896,6 +899,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     // moves no node, so the label bands 7f has just reserved keep their height and their clearance
     // as it leaves them — but a lane is an input to two of the plans inside those bands, those plans
     // are settled again below, and one of the two can move a node when it settles.
+    abortAt?.();
     const heldLanes = clone(draft.lanes), followedLanes: LaneFollow[] = [];
     if (reseatLanes(draft, followedLanes)) {
       rebuildLaneExtents(draft);
