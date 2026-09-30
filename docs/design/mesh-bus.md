@@ -83,12 +83,12 @@ port (a node with some named ends and some anonymous ends is `port`; two differe
 stay `named-ports`, read first); a class that draws no arrowhead. Direction is not read while no
 arrowhead shows. The links of a clique declined for identity stay plain overlay links, drawn by
 the overlay rule: no smaller clique inside it is read, and a later clique that shares two or more
-nodes with it is skipped, so a mesh whose links differ never becomes a smaller bus (ticket 94; built today, a smaller bus inside a refused mesh can form).
+nodes with it is skipped, so a mesh whose links differ never becomes a smaller bus  (ticket 94, built).
 `MESH_BUS_DECLINED` names the first link that differs and the value. The checks of a clique are
 read in this order: `shape`, `named-ports`, the identity reasons, then `shared-port` and `side`
 (`busPorts`). The skip of a later clique that shares two or more nodes belongs to the identity
 reasons only: after `shape`, `named-ports`, `shared-port` or `side` the next clique is read, as
-ticket 82 built it (the test *a declined clique hides no other*). Implementation: ticket 94.
+ticket 82 built it (the test *a declined clique hides no other*). Built in ticket 94 (`drawnSignature`, `identityDifference`); the skip reads cliques of the same class.
 
 **Partial mesh.** A set that misses pairs is not one bus. The largest complete part becomes the
 bus, and the rest stays plain overlay links, drawn by the overlay rule from their own ports. So a
@@ -126,7 +126,7 @@ lowest-ordinal anonymous port among its member-link ends, every member link's en
 re-attached to it, and the other anonymous ports of those ends are removed, unless another link
 uses them. When every member-link end at a node names the same authored port, that port is the bus
 port and keeps its pill. When some member-link ends at a node name a port and some do not, the bus
-is declined (`port`, see Identity; ticket 94). Built today: the bare ends move onto the one authored port. When the member links at one node name two or more different authored
+is declined (`port`, see Identity; ticket 94, built: ticket 83 moved the bare ends onto the named port). When the member links at one node name two or more different authored
 ports, the bus is declined (`MESH_BUS_DECLINED`, `named-ports`): a named port is a drawn pill with
 a meaning of its own, and the design does not merge two of them. `SHARED_PORT` does not warn on a
 bus port.
@@ -410,7 +410,7 @@ as the overlay export was (Q70): the drawn bar and stubs read back within 0.05 p
 |---|---|---|
 | `MESH_BUS` | info | A bus formed: row (sub-tier), class, placement, node count, member count, the frames spanned, the group-links dissolved. |
 | `MESH_BUS_PARTIAL` | info | A same-row same-class set had nodes the bus could not take: names them and the missing pairs; names a group-link that lost only some members to the bus and counts the members left plain. |
-| `MESH_BUS_DECLINED` | warning | Reasons: `named-ports` (two or more authored ports at one member), `label`, `weight`, `port`, `arrow` (the member links differ; names the first link that differs and the value; Section 3, *Identity*; `port` covers mixed named and bare ends (ticket 94; the ticket 94 design; built today, bare ends move onto the named port), `shared-port` (the named port a member would use also carries a link that is not a member: the bus port stands on the bus edge and would cut that link off from its own side), `side` (an authored `left` or `right` on a bus port, or an authored `top` on one and `bottom` on another: a bus stands on a horizontal edge; an authored `top` or `bottom` fixes the bus side, before any count), `shape` (a member in a `grid` or `bar` group or a flank), `second-mesh` (a second clique on a row that has a bus; lifted by ticket 85), `too-many-cliques` (more than 4,096 maximal cliques in one row and class). `shared-port`, `side` and `too-many-cliques` are built on the ticket 82 to 84 branch. |
+| `MESH_BUS_DECLINED` | warning | Reasons: `named-ports` (two or more authored ports at one member), `label`, `weight`, `port`, `arrow` (the member links differ; names the first link that differs and the value; Section 3, *Identity*; `port` covers mixed named and bare ends (ticket 94, built), `shared-port` (the named port a member would use also carries a link that is not a member; an overlay candidate whose ends stand on two rows is a possible cross link of a join and does not count, ticket 94: the bus port stands on the bus edge and would cut that link off from its own side), `side` (an authored `left` or `right` on a bus port, or an authored `top` on one and `bottom` on another: a bus stands on a horizontal edge; an authored `top` or `bottom` fixes the bus side, before any count), `shape` (a member in a `grid` or `bar` group or a flank), `second-mesh` (a second clique on a row that has a bus; lifted by ticket 85), `too-many-cliques` (more than 4,096 maximal cliques in one row and class). `shared-port`, `side` and `too-many-cliques` are built on the ticket 82 to 84 branch. |
 | `MESH_BUS_TITLE_ON_STUB` | warning | A member frame's title stands on a stub, no position and no widening clears it, and the placement budget is spent, so 7f cannot move it to the other edge (ticket 83 review): it stays, and this says so instead of stopping the run (stage `placement`, the frame as owner). |
 | `MESH_BUS_TITLE_MOVED` | info | A member frame's title left its ADR-0011 edge because no position and no widening cleared the stub (stage `placement`, the frame as owner). |
 

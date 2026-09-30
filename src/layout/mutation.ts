@@ -83,7 +83,7 @@ function semantics(model: LayoutModel) {
     links: model.links.map(link => pick(link, ['id', 'sourceIndex', 'owner', 'from', 'to', 'attachments', 'family', 'layer', 'bundle', 'groupLink', 'meshBus', 'strokeWidth'])),
     bundles: model.bundles.map(bundle => pick(bundle, ['id', 'owner', 'layer', 'nodes', 'members'])),
     groupLinks: model.groupLinks.map(group => pick(group, ['id', 'owner', 'layer', 'groups', 'members'])),
-    meshBuses: (model.meshBuses ?? []).map(bus => pick(bus, ['id', 'owner', 'layer', 'class', 'row', 'placement', 'frames', 'nodes', 'ports', 'members', 'dissolved'])),
+    meshBuses: (model.meshBuses ?? []).map(bus => pick(bus, ['id', 'owner', 'layer', 'class', 'row', 'placement', 'frames', 'nodes', 'ports', 'members', 'dissolved', 'joined', 'cross'])),
   };
 }
 function topology(model: LayoutModel) {
@@ -224,11 +224,26 @@ function validateTechniques(model: LayoutModel, baseline: LayoutModel): void {
 const CANTON_ROUNDS = 4;
 /** The move of a close-up round, in px, under which the cantons stand a band gap apart for every purpose (ranked-groups ticket 65). */
 const CANTON_CREEP = 0.5;
+/** A join is two buses that name each other; the upper bus lists its cross links, which carry its id and are not members (mesh-bus.md, section 11.6). */
+function validateJoins(model: LayoutModel): void {
+  const buses = model.meshBuses ?? [];
+  for (const bus of buses) {
+    const partner = bus.joined === undefined ? undefined : buses.find(item => item.id === bus.joined);
+    if (bus.joined !== undefined && partner?.joined !== bus.id) throw new Error(`Mesh bus ${bus.id} is joined to ${bus.joined}, which does not name it back`);
+    if (bus.cross === undefined) continue;
+    if (partner === undefined || partner.row <= bus.row) throw new Error(`Mesh bus ${bus.id} lists cross links but is not the upper bus of a join`);
+    for (const id of bus.cross) {
+      const link = model.links.find(item => item.id === id);
+      if (link?.meshBus !== bus.id || bus.members.includes(id) || partner.members.includes(id)) throw new Error(`Cross link ${id} of ${bus.id} is not a link of the join`);
+    }
+  }
+}
 /** Every protected result passes this same boundary, including direct freeze and restore. */
 function validatePublication(model: LayoutModel, baseline: LayoutModel): void {
   jsonValue(model);
   if (hasUnsupportedClaims(model)) throw new Error('Claim validator is not implemented');
   validateTechniques(model, baseline);
+  validateJoins(model);
   validateGeometry(model, diagnosed(model));
   validateFreeze(model);
   validateRegionClaims(model);

@@ -320,6 +320,10 @@ export interface MeshBus extends OwnedElement {
   members: string[];
   /** The group-links the bus dissolved (their former ids), whole or in part. */
   dissolved: string[];
+  /** On both buses of a join (mesh-bus.md, section 11): the other bus. */
+  joined?: string;
+  /** On the upper bus of a join only: the cross link ids (links with `meshBus` equal to this bus, not members). */
+  cross?: string[];
   /** The horizontal edge of the row the bar stands on; fixed by stage 5 (docs/design/mesh-bus.md, section 4). */
   side?: 'top' | 'bottom';
   /** From 7f on: the bar, from the first bus port's x to the last. */

@@ -89,6 +89,8 @@ export function authoredBusSide(model: LayoutModel, bus: MeshBus): Edge | undefi
  * lanes over the span, is equal on both edges and decides nothing. A tie takes the title edge.
  */
 export function busSide(model: LayoutModel, bus: MeshBus, provisional = false): Edge {
+  // A joined pair stands on the facing edges, fixed at stage 1 before any count (mesh-bus.md, section 11.4).
+  if (bus.joined !== undefined) return bus.cross !== undefined ? 'bottom' : 'top';
   const fixed = authoredBusSide(model, bus);
   if (fixed !== undefined) return fixed;
   const counts = busLegCounts(model, bus, provisional);
