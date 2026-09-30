@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
 import { chordKind, chordVerdict, edgeLeavers, SIDE_EDGE_SLACK } from '../../src/layout/frame-paths.js';
-import { tooClose } from '../../src/layout/side-chords.js';
+import { chordTrace, tooClose } from '../../src/layout/side-chords.js';
 import { measureSides } from '../../src/layout/side-measure.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -112,7 +112,7 @@ describe('the facing edge is read per port face', () => {
     expect(chordVerdict({ ...pair.model, frames }, pair.link, 0)).toEqual({ reason: 'frame' });
   }, 60000);
 
-  it('the fixed point keeps the corner margin plus the slack at a side edge, the freeze and edgeLeavers keep the margin alone', async () => {
+  it('the fixed point and the freeze keep the corner margin plus the slack at a side edge, edgeLeavers keeps the margin alone', async () => {
     const { model } = await run({ testMaxReruns: 0 });
     // The chord crosses the frame's left edge 12 px above the frame's bottom corner: inside the margin (10 px), outside margin plus slack (14 px).
     const near = lateralPair(model, 12);
@@ -131,6 +131,10 @@ describe('two chords from one lateral face keep the chord clearance', () => {
     expect(tooClose(chord([100, 58], [400, 158]), 1, first)).toBe(true);
     expect(tooClose(chord([100, 64], [400, 164]), 1, first)).toBe(false);
     expect(tooClose(chord([100, 70], [400, 110]), 1, first)).toBe(false);
+  });
+  it('reads a chord accepted on any node or face, not only on the same one (review M2)', () => {
+    const first = { node: 'router-a', side: 'left', segment: chord([100, 50], [400, 150]), stroke: 1 };
+    expect(tooClose(chord([100, 56], [400, 156]), 1, first)).toBe(true);
   });
 });
 
@@ -151,6 +155,12 @@ describe('a chord is offered only when the fixed point of placement would hold i
     const other = toProvider(blocked, 'east-router');
     other.path = { ...other.path!, segments: [{ ...other.path!.segments[0]!, from: { x: drawn.from.x, y: drawn.from.y + 3 }, to: { x: drawn.to.x, y: drawn.to.y + 3 } }] };
     expect(other.technique).toBe('straight');
-    expect(measureSides(blocked, blocked, new Set()).hints.size).toBe(0);
+    const events: Record<string, unknown>[] = [];
+    chordTrace.on = event => events.push(event);
+    try { expect(measureSides(blocked, blocked, new Set()).hints.size).toBe(0); } finally { delete chordTrace.on; }
+    // The refusal is the chord clearance to the held chord, named by the fixed point of placement (not the offer logic, not `chordVerdict`).
+    const refusal = events.filter(event => event['ev'] === 'attempt' && typeof event['why'] === 'string' && (event['why'] as string).startsWith('the fixed point'));
+    expect(refusal.length).toBeGreaterThan(0);
+    expect(refusal.every(event => (event['why'] as string).endsWith(': chord'))).toBe(true);
   }, 60000);
 });

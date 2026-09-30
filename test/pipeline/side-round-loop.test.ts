@@ -82,6 +82,19 @@ describe('the round loop (ticket 115, side-faces.md Section 7)', () => {
     expect(withoutNotes(model)).toBe(withoutNotes(plain));
   }, 60000);
 
+  it('refuses a hint for a chord that the trial 7e does not hold, and keeps the baseline (review M1, ticket 117)', async () => {
+    const far = 'a-location-router-leaves-a-lateral-side-toward-a-far-provider';
+    const plain = await run(far, undefined, 0);
+    const link = plain.links.find(item => item.attachments!.from.node === 'east-router' && item.attachments!.to.node === 'provider')!;
+    // The left face of the east router faces away from its peer: the chord leaves inward, so 7e cannot hold it. The scripted offer promises the straight shape.
+    const model = await run(far, call => call === 1 ? offerOf(portKey(link.attachments!.from), 'left', link.id) : { hints: new Map(), promised: new Map(), capped: false });
+    const refused = model.diagnostics.filter(item => item.code === 'SIDE_HINT_REFUSED');
+    expect(refused).toHaveLength(1);
+    expect(refused[0]!.message).toContain('does not hold its chord at stage 7e');
+    expect(model.nodes['east-router']!.ports.some(port => port.sideHint === true)).toBe(false);
+    expect(withoutNotes(model)).toBe(withoutNotes(plain));
+  }, 60000);
+
   it('lets a placement error that is no hint refusal surface', async () => {
     state.script = undefined; state.calls = 0;
     // The second placement run (the side trial) throws a TypeError from the progress callback of its `resolve` stage.

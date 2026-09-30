@@ -260,7 +260,7 @@ export function chordSegment(model: LayoutModel, link: LayoutLink): PathSegment 
 
 /**
  * Extra room a chord keeps from the corners of a side edge it leaves through, at the probe and the fixed point (docs/design/side-faces.md, Section 9):
- * the shape is judged at 7e and drawn after 7f, which moves columns and grows gaps. The freeze and `edgeLeavers` read the margin alone.
+ * the shape is judged at 7e and drawn after 7f, which moves columns and grows gaps. The freeze names the refusal `standaloneChord` gave at 7e, so it reads the slack too; `edgeLeavers` and `blockedChords` (after the freeze) read the margin alone.
  */
 export const SIDE_EDGE_SLACK = 4;
 

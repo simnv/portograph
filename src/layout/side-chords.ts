@@ -38,8 +38,8 @@ export interface ChordPass {
 }
 
 /**
- * Whether the lateral chord from one face stands closer than the chord clearance to an accepted chord on the same face (`pitch`, spec Section 8):
- * two chords from one lateral face are not spread in the first version, so the second is refused. A strict crossing is excused, as G6 excuses it.
+ * Whether a chord stands closer than the chord clearance to a chord accepted earlier in the pass, on any node or face (`pitch`, spec Section 8, and review M2):
+ * lateral faces are not spread in the first version, and two near-parallel chords would both be lost at 7e. A strict crossing is excused, as G6 excuses it.
  */
 export function tooClose(segment: PathSegment, stroke: number, other: Accepted): boolean {
   const point = intersection(segment, other.segment);
@@ -120,8 +120,9 @@ export function measureChordSides(model: LayoutModel, nodes: LayoutModel['nodes'
         const outward = dx * (lateral.side === 'right' ? 1 : -1) / length;
         angles.push(`${lateral.ref.node}: ${(Math.asin(Math.max(-1, Math.min(1, outward))) * 180 / Math.PI).toFixed(1)} deg`);
         if (outward < minOutward - EPS) { note('outward angle under the minimum', { verdict: 'segment', angles, misses }); return; }
-        if (accepted.some(other => other.node === lateral.ref.node && other.side === lateral.side && tooClose(segment, stroke, other))) { note('pitch', { verdict: 'segment', angles, pitch: 'refused', misses }); return; }
       }
+      // Every chord accepted earlier in the pass, on any node or face: two near-parallel chords would both be lost at 7e (review M2, ticket 117).
+      if (accepted.some(other => tooClose(segment, stroke, other))) { note('pitch', { verdict: 'segment', angles, pitch: 'refused', misses }); return; }
       chordTrace.on?.({ ev: 'attempt', link: link.id, config: name, offered: true, why: 'candidate configuration', verdict: 'segment', angles, pitch: 'ok', misses });
       configs.push({ laterals: chosen, grows, nodes: draft, segment });
     };
