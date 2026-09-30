@@ -13,7 +13,7 @@ import { rowGap } from './sides-two.js';
 import { bandGap, compareId } from './skeleton-graph.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { PLACEMENT_EPS } from './tolerance.js';
-import { windowTarget, type Window } from './overlay-window.js';
+import { overlayCrossings, portKey, windowTarget, type Window } from './overlay-window.js';
 
 /** A free group stands where its overlay chords are straight and not at the mean of its partners (ticket 143, info). */
 export const OVERLAY_WINDOW_TAKEN = 'OVERLAY_WINDOW_TAKEN';
@@ -52,14 +52,14 @@ export const OVERLAY_WINDOW_TAKEN = 'OVERLAY_WINDOW_TAKEN';
  * from the place the group entered at, so a group ends inside its span even where the fine move is
  * refused.
  *
- * **The window rule** (ticket 143, Q112). The mean is the target of a group only where no other x keeps more of its overlay chords
+ * **The window rule** (ticket 143, Q112; ticket 147 made the objective crossings first, then straight chords). The mean is the target of a group only where no other x keeps more of its overlay chords
  * straight (`windowTarget`, `overlay-window.ts`). The candidates are the mean and the two ends of every x-interval in which a chord
  * enters a shape, at most `CHORD_WINDOW_TRIALS` of them, taken nearest the mean first. A plain group stays between its walls and inside the
  * x-extent of the settled groups, a member inside its canton wall, and both inside the x-span of the settled partners. The tier guard below
- * stays; a tier whose windows bend a link that was straight and straighten no more links than they bend goes back to the means. The
+ * stays in a new form (ticket 147): a tier keeps its windows only where overlay crossings and bent overlay links do not rise and one of them falls (`windowsHold`); a tie keeps the means, and a window of an earlier run gives way to the means only for the same gain. The
  * windows are read once, at the end of `centreDraft`, where centring has left the partners (the passes call this with `windows = false`: a
  * window read earlier changes what the order rules of the later passes see). A run with windows is kept only where the whole sheet
- * gains, read on every overlay link: fewer bent links and no more turns in all; otherwise it goes back and places the means.
+ * gains (`sheetGains`, the same rule), read on every overlay link; otherwise it goes back and places the means.
  *
  * A partner counts only when it is *settled*: a group that is not free, or a free group of a tier
  * nearer the anchor tier that this pass has already placed. Tiers are taken from the anchor tier
@@ -92,30 +92,36 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
   place(model, columns, false);
 }
 
-/** Whether a run with windows gains on the whole sheet: fewer bent overlay links than before and no more turns in all. */
-export function sheetGains(windows: { bent: number; turns: number }, before: { bent: number; turns: number }): boolean {
-  return windows.bent < before.bent && windows.turns <= before.turns;
+/** What the guards read of the overlay links: how many bend, and how many times the drawn paths cross (ticket 147). */
+export interface OverlayState { bent: number; crossings: number }
+
+/**
+ * Whether a run with windows gains on the whole sheet: no more bent overlay links and no more overlay crossings than before, and at
+ * least one of them falls. A tie in both keeps the means (ticket 147).
+ */
+export function sheetGains(windows: OverlayState, before: OverlayState): boolean {
+  return windows.bent <= before.bent && windows.crossings <= before.crossings && (windows.bent < before.bent || windows.crossings < before.crossings);
 }
 
 /**
- * Whether the windows of a tier are kept: they must leave more overlay links straight than the tier had, or as many with none of them bent.
- * A window that bends one straight link and straightens two holds; one that bends two and straightens one does not.
+ * Whether the windows of a tier are kept: the same rule as the whole sheet (`sheetGains`), read on the tier's state. A window that
+ * bends no more links and adds no crossing, and saves at least one of them, holds (ticket 147).
  */
-export function windowsHold(windows: ReadonlySet<string>, before: ReadonlySet<string>): boolean {
-  return windows.size > before.size || (windows.size === before.size && [...before].every(id => windows.has(id)));
-}
+export const windowsHold = sheetGains;
 
-/** The bent overlay links and the turns of all of them, as the overlay rule draws them now. A mesh bus member is no chord. */
-function overlayTurns(model: LayoutModel): { bent: number; turns: number } {
+/** The bent overlay links and the crossings among the drawn overlay paths, as the overlay rule draws them now. A mesh bus member is no chord. */
+function overlayTurns(model: LayoutModel): OverlayState {
   const blockers = overlayBlockers(model);
-  let bent = 0, turns = 0;
+  let bent = 0;
+  const paths: Point[][] = [], ports: [string, string][] = [];
   for (const link of model.links) {
     if (link.layer !== 'overlay' || link.meshBus !== undefined || !link.attachments) continue;
-    const count = overlayPath(model, link, blockers).segments.length - 1;
-    if (count > 0) bent++;
-    turns += count;
+    const { segments } = overlayPath(model, link, blockers);
+    if (segments.length > 1) bent++;
+    paths.push([segments[0]!.from, ...segments.map(segment => segment.to)]);
+    ports.push([portKey(link.attachments.from), portKey(link.attachments.to)]);
   }
-  return { bent, turns };
+  return { bent, crossings: overlayCrossings(paths, ports) };
 }
 
 function place(model: LayoutModel, columns: readonly FrameColumn[], windows: boolean, state?: { windowed: boolean }): void {
@@ -222,6 +228,8 @@ function place(model: LayoutModel, columns: readonly FrameColumn[], windows: boo
     }
     const start = signature();
     const undo = saveGroups(model, groups);
+    // A window stands in this tier from an earlier run: a run without windows gives it up only for a gain (ticket 147).
+    const held = movers.some(group => model.diagnostics.some(item => item.code === OVERLAY_WINDOW_TAKEN && item.owners?.[0]?.kind === 'group' && item.owners[0].id === group.id));
     for (const group of movers) orderNodes(model, group, node => keyOf([node], group.id), routedAny);
     const noted = (group: LayoutGroup) => (item: { code: string; owners?: readonly { kind: string; id?: string }[] }): boolean =>
       item.code === OVERLAY_WINDOW_TAKEN && item.owners?.[0]?.kind === 'group' && item.owners[0].id === group.id;
@@ -231,7 +239,7 @@ function place(model: LayoutModel, columns: readonly FrameColumn[], windows: boo
       if (target !== undefined) means.set(group.id, target);
     }
     // The window rule (ticket 143): a target is the x that keeps the most overlay chords straight, the mean where none is better.
-    const chosen = new Map(means), taken: { group: LayoutGroup; mean: number; target: number; gained: number }[] = [];
+    const chosen = new Map(means), taken: { group: LayoutGroup; mean: number; target: number; gained: number; saved: number }[] = [];
     if (windows && means.size && overlays.length) {
       const walls = tierWalls(model, tier, groups, new Set(means.keys()), columns);
       // A plain group stays inside the x-extent of the settled groups: an x past it is no wall the sweep knows, and would widen the canvas.
@@ -242,7 +250,7 @@ function place(model: LayoutModel, columns: readonly FrameColumn[], windows: boo
         const range = mean === undefined ? undefined : targetRange(model, tier, group, mean, walls, extent, [...means.keys()].filter(id => inner(model.groups[id]!)), columns);
         if (mean === undefined || range === undefined) continue;
         const pick = windowTarget(model, group, { mean, range, settled, overlays });
-        if (pick.target !== mean) { chosen.set(group.id, pick.target); taken.push({ group, mean, target: pick.target, gained: pick.gained }); }
+        if (pick.target !== mean) { chosen.set(group.id, pick.target); taken.push({ group, mean, target: pick.target, gained: pick.gained, saved: pick.saved }); }
       }
     }
     const apply = (targets: ReadonlyMap<string, number>): void => {
@@ -259,12 +267,12 @@ function place(model: LayoutModel, columns: readonly FrameColumn[], windows: boo
       const redo = saveGroups(model, groups);
       undo();
       rebuildNodeGeometry(model, nodesOfTier, 'current');
-      const before = straightIds();
+      const before = straightIds(), stateBefore = taken.length || held ? overlayTurns(model) : undefined;
       redo();
       rebuildNodeGeometry(model, nodesOfTier, 'current');
       let after = straightIds(), windowed = taken.length > 0;
-      // The windows are kept only where they straighten more links than they bend, or bend none that was straight (`windowsHold`).
-      if (windowed && !windowsHold(after, before)) {
+      // The windows are kept only where they bend no more overlay links and add no crossing, and save one of them (`windowsHold`); a tie keeps the means.
+      if (windowed && !windowsHold(overlayTurns(model), stateBefore!)) {
         undo();
         rebuildNodeGeometry(model, nodesOfTier, 'current');
         apply(means);
@@ -273,12 +281,15 @@ function place(model: LayoutModel, columns: readonly FrameColumn[], windows: boo
         windowed = false;
       }
       let restored = false;
-      if (after.size < before.size) { undo(); rebuildNodeGeometry(model, nodesOfTier, 'current'); windowed = false; restored = true; }
+      // The means replace a window of an earlier run only where they gain on it.
+      if (after.size < before.size || (held && !windowed && signature() !== start && !windowsHold(overlayTurns(model), stateBefore!))) {
+        undo(); rebuildNodeGeometry(model, nodesOfTier, 'current'); windowed = false; restored = true;
+      }
       if (!restored) {
         // The note follows the place the group stands at: it is dropped when the group moves to the mean and is stated again when a window holds.
         model.diagnostics = model.diagnostics.filter(item => !movers.some(group => noted(group)(item)));
-        if (windowed) for (const { group, mean, target, gained } of taken) {
-          const message = `Group ${group.id} stands at x ${target.toFixed(1)} and not at x ${mean.toFixed(1)}, the mean of its partners: ${gained} more overlay ${gained === 1 ? 'chord is' : 'chords are'} straight.`;
+        if (windowed) for (const { group, mean, target, gained, saved } of taken) {
+          const message = `Group ${group.id} stands at x ${target.toFixed(1)} and not at x ${mean.toFixed(1)}, the mean of its partners: ${saved} fewer overlay ${saved === 1 ? 'crossing' : 'crossings'}, ${Math.abs(gained)} ${gained < 0 ? 'fewer' : 'more'} overlay ${Math.abs(gained) === 1 ? 'chord is' : 'chords are'} straight.`;
           model.diagnostics.push({ stage: 'placement', severity: 'info', code: OVERLAY_WINDOW_TAKEN, message, owners: [{ kind: 'group', id: group.id }] });
         }
       }

@@ -1,0 +1,46 @@
+# Expected: A free client group fed from two locations stands where its overlay links cross least (ranked-groups ticket 147, decisions-log
+# Q112). Tier 1 holds two locations side by side, `west` and `east`, two load balancers each, hung from `core` by routed links. Tier 2 holds
+# `upper-clients` and tier 3 holds `shared-clients`; both have no routed link, and each of their servers syncs with all four load balancers
+# (two partners under each location). The bodies of the upper group stand near the chords of the lower group.
+# Ticket 143's rule put the lower group at the x with the most straight chords; the crossings-first rule puts it at the x where its links
+# cross the fewest others, between the two locations.
+# Test-only input owned by ranked-groups ticket 147; test/pipeline/overlay-window.test.ts reads the layout.
+portograph: 2
+groups:
+  core: { tier: 0, label: Core }
+  west: { tier: 1, label: West }
+  east: { tier: 1, label: East }
+  upper-clients: { tier: 2, label: Upper clients }
+  shared-clients: { tier: 3, label: Shared clients }
+nodes:
+  core-1: { group: core, class: router, label: Core 1 }
+  core-2: { group: core, class: router, label: Core 2 }
+  west-a: { group: west, class: server, label: West A }
+  west-b: { group: west, class: server, label: West B }
+  east-a: { group: east, class: server, label: East A }
+  east-b: { group: east, class: server, label: East B }
+  up-1: { group: upper-clients, class: server, label: Upper 1 }
+  up-2: { group: upper-clients, class: server, label: Upper 2 }
+  sh-1: { group: shared-clients, class: server, label: Shared 1 }
+  sh-2: { group: shared-clients, class: server, label: Shared 2 }
+links:
+  - [core-1, west-a]
+  - [core-1, west-b]
+  - [core-2, east-a]
+  - [core-2, east-b]
+  - [west-a, up-1, { class: sync }]
+  - [west-b, up-1, { class: sync }]
+  - [east-a, up-1, { class: sync }]
+  - [east-b, up-1, { class: sync }]
+  - [west-a, up-2, { class: sync }]
+  - [west-b, up-2, { class: sync }]
+  - [east-a, up-2, { class: sync }]
+  - [east-b, up-2, { class: sync }]
+  - [west-a, sh-1, { class: sync }]
+  - [west-b, sh-1, { class: sync }]
+  - [east-a, sh-1, { class: sync }]
+  - [east-b, sh-1, { class: sync }]
+  - [west-a, sh-2, { class: sync }]
+  - [west-b, sh-2, { class: sync }]
+  - [east-a, sh-2, { class: sync }]
+  - [east-b, sh-2, { class: sync }]

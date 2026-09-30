@@ -1,7 +1,7 @@
 import type { Point, Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
-import { EPS } from '../score/geometry.js';
-import { chordEnds, overlayBlockers, straightBetween, type OverlayEnd, type OverlayShape, type ShapeQuery } from './overlay-paths.js';
+import { EPS, intersection } from '../score/geometry.js';
+import { chordEnds, chordPoints, overlayBlockers, straightBetween, type OverlayEnd, type OverlayShape, type ShapeQuery } from './overlay-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 
 /**
@@ -15,6 +15,12 @@ import { PLACEMENT_EPS } from './tolerance.js';
  * interval, pushed out by `PLACEMENT_EPS`; `windowTarget` judges every candidate with the overlay rule's own straight test and takes
  * the one that keeps the most chords straight, the nearest the mean on a tie. It reads only *settled* geometry: the shapes of a free
  * group that the pass has not placed yet are left out, so a second run finds the same x. There is no clock: the bound is a count.
+ *
+ * **Crossings first** (ticket 147, decisions-log Q112, user decision 2026-09-30). The objective is lexicographic: the fewest overlay
+ * crossings, then the most straight chords, then the nearest to the mean, then the smaller x. The crossings are counted between the
+ * paths of the group's own counted overlay links at the candidate x (the straight chord, or the planned orthogonal path where a shape
+ * stands on it) and every overlay link whose two groups are settled. Routed links are not counted: their paths do not exist yet at
+ * placement. The candidates add the x values where a link starts or stops crossing another (the `events` of `windowTarget`).
  */
 
 /** The candidates judged for one group, the mean not counted. A count, not a time (ticket 141). */
@@ -61,24 +67,66 @@ export function chordWindows(from: Point, to: Point, mover: Mover, shape: Rect):
   return [{ low: Math.min(one.low, two.low), high: Math.max(one.high, two.high) }];
 }
 
+/** What a candidate x is judged by: overlay crossings (fewer is better), then straight counted chords (more is better). */
+export interface Score { crossings: number; straight: number }
+
 /**
- * The candidate that keeps the most chords straight. `count(x)` is the number of straight chords with the group's centre at `x`.
- * Candidates are taken nearest the mean first (then the smaller x), at most `CHORD_WINDOW_TRIALS` of them besides the mean; a tie
- * goes to the nearest, so the mean stays where no other x is better.
+ * The candidate with the fewest crossings, then the most straight chords. `score(x)` judges the group's centre at `x`. Candidates are
+ * taken nearest the mean first (then the smaller x), at most `CHORD_WINDOW_TRIALS` of them besides the mean; a tie goes to the
+ * nearest, so the mean stays where no other x is better. A candidate with fewer straight chords than the mean is skipped. The event
+ * points have their own bound of the same count. `gained` is the rise in straight chords and `saved` the fall in crossings.
  */
-export function pickTarget(mean: number, candidates: readonly number[], count: (x: number) => number): { target: number; gained: number } {
-  const sorted = [...new Set(candidates)].filter(x => Math.abs(x - mean) > PLACEMENT_EPS)
+export function pickTarget(mean: number, candidates: readonly number[], score: (x: number) => Score, events: readonly number[] = []): { target: number; gained: number; saved: number } {
+  // Each kind has its own count bound, so the many event points do not crowd out the ends of the straight windows.
+  const nearest = (list: readonly number[]): number[] => [...new Set(list)].filter(x => Math.abs(x - mean) > PLACEMENT_EPS)
     .sort((a, b) => Math.abs(a - mean) - Math.abs(b - mean) || a - b).slice(0, CHORD_WINDOW_TRIALS);
-  const base = count(mean);
+  const sorted = [...new Set([...nearest(candidates), ...nearest(events)])]
+    .sort((a, b) => Math.abs(a - mean) - Math.abs(b - mean) || a - b);
+  const base = score(mean);
   let target = mean, best = base;
   for (const x of sorted) {
-    const value = count(x);
-    if (value > best) { best = value; target = x; }
+    const value = score(x);
+    // A candidate that leaves fewer counted chords straight than the mean does is no candidate: the tier guard of `placeOverlayFree` refuses a run that bends more links, so it would only hide the next best x.
+    if (value.straight < base.straight) continue;
+    if (value.crossings < best.crossings || (value.crossings === best.crossings && value.straight > best.straight)) { best = value; target = x; }
   }
-  return { target, gained: best - base };
+  return { target, gained: best.straight - base.straight, saved: base.crossings - best.crossings };
 }
 
-interface Counted { head: OverlayEnd; tail: OverlayEnd; moves: 'head' | 'tail' | undefined }
+/** The port a link end attaches to, as one string: two links that share it meet at its face and do not cross there. */
+export const portKey = (end: { node: string; name?: string; ordinal?: number }): string => `${end.node}/${end.name ?? `#${end.ordinal}`}`;
+
+/** The crossings of two polylines: the pairs of segments that meet, each pair once. */
+export function polylineCrossings(one: readonly Point[], two: readonly Point[]): number {
+  const box = (points: readonly Point[]): Rect => {
+    const xs = points.map(point => point.x), ys = points.map(point => point.y);
+    return { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
+  };
+  const a = box(one), b = box(two);
+  if (a.x > b.x + b.width + EPS || b.x > a.x + a.width + EPS || a.y > b.y + b.height + EPS || b.y > a.y + a.height + EPS) return 0;
+  const owner = { kind: 'link', id: '' } as const;
+  let count = 0;
+  for (let i = 1; i < one.length; i++) {
+    for (let j = 1; j < two.length; j++) {
+      if (intersection({ from: one[i - 1]!, to: one[i]!, owner }, { from: two[j - 1]!, to: two[j]!, owner })) count++;
+    }
+  }
+  return count;
+}
+
+/** The crossings among overlay links drawn as `paths`; `ports[i]` holds the two port keys of path i, and two links that share a port do not cross. */
+export function overlayCrossings(paths: readonly (readonly Point[])[], ports: readonly (readonly [string, string])[]): number {
+  let count = 0;
+  for (let i = 0; i < paths.length; i++) {
+    for (let j = i + 1; j < paths.length; j++) {
+      if (ports[i]!.some(key => ports[j]!.includes(key))) continue;
+      count += polylineCrossings(paths[i]!, paths[j]!);
+    }
+  }
+  return count;
+}
+
+interface Counted { link: LayoutLink; head: OverlayEnd; tail: OverlayEnd; moves: 'head' | 'tail' | undefined }
 
 const shiftEnd = (end: OverlayEnd, dx: number): OverlayEnd => ({
   anchor: { x: end.anchor.x + dx, y: end.anchor.y }, box: { ...end.box, x: end.box.x + dx },
@@ -98,12 +146,13 @@ export interface WindowInput {
 }
 
 /**
- * The centre x for a free group: the candidate that keeps the most of its counted chords straight. The counted chords are the overlay
- * links of the group's nodes to settled partners on other tiers, and the overlay links between two settled nodes whose segment
- * passes the rows of the group. A mesh bus member is no chord. Chords to a free group the pass has not placed are not counted, and
- * the shapes of that group are not read (they stand where ELK left them, and a second run would read another place).
+ * The centre x for a free group: the candidate with the fewest overlay crossings, then the most straight counted chords. The counted
+ * chords are the overlay links of the group's nodes to settled partners on other tiers, and the overlay links between two settled
+ * nodes whose segment passes the rows of the group. A mesh bus member is no chord. Chords to a free group the pass has not placed are
+ * not counted, and the shapes of that group are not read (they stand where ELK left them, and a second run would read another place).
+ * The crossings are read between the group's own counted links and every overlay link whose two groups are settled.
  */
-export function windowTarget(model: LayoutModel, group: LayoutGroup, input: WindowInput): { target: number; gained: number } {
+export function windowTarget(model: LayoutModel, group: LayoutGroup, input: WindowInput): { target: number; gained: number; saved: number } {
   const groupOf = (node: string): string => model.document.nodes[node]!.group;
   const box = group.bounds!, centre = box.x + box.width / 2;
   const { settled } = input;
@@ -112,6 +161,8 @@ export function windowTarget(model: LayoutModel, group: LayoutGroup, input: Wind
   for (const other of Object.values(model.groups)) if (!settled.has(other.id) && other.id !== group.id) for (const node of other.nodes) skip.add(node);
   const bare = overlayBlockers(model, skip);
   const counted: Counted[] = [];
+  /** The links between two settled nodes, none in the group. Their paths are read for crossings; `rows` marks those that pass the group's rows. */
+  const fixed: { link: LayoutLink; head: OverlayEnd; tail: OverlayEnd; rows: boolean; points: Point[] }[] = [];
   // The group's centre stays inside the x-span of its settled partners, as the into-span step (ticket 22) puts it: a chord that is
   // straight only from far outside the span is not worth the width.
   const span: Window = { low: Infinity, high: -Infinity };
@@ -125,39 +176,66 @@ export function windowTarget(model: LayoutModel, group: LayoutGroup, input: Wind
     if (inFrom || inTo) {
       const otherGroup = groupOf(inFrom ? to.node : from.node);
       if (!settled.has(otherGroup) || model.groups[otherGroup]!.tier === group.tier) continue;
-      counted.push({ ...ends, moves: inFrom ? 'head' : 'tail' });
+      counted.push({ link, ...ends, moves: inFrom ? 'head' : 'tail' });
       const partner = model.nodes[inFrom ? to.node : from.node]!.bounds!, at = partner.x + partner.width / 2;
       span.low = Math.min(span.low, at); span.high = Math.max(span.high, at);
     } else {
       if (!settled.has(groupOf(from.node)) || !settled.has(groupOf(to.node))) continue;
       const low = Math.min(ends.head.face.y, ends.tail.face.y), high = Math.max(ends.head.face.y, ends.tail.face.y);
-      if (high > box.y + PLACEMENT_EPS && low < box.y + box.height - PLACEMENT_EPS) counted.push({ ...ends, moves: undefined });
+      const rows = high > box.y + PLACEMENT_EPS && low < box.y + box.height - PLACEMENT_EPS;
+      fixed.push({ link, ...ends, rows, points: chordPoints(ends.head, ends.tail, bare) });
+      if (rows) counted.push({ link, ...ends, moves: undefined });
     }
   }
-  if (!counted.length) return { target: input.mean, gained: 0 };
+  if (!counted.length) return { target: input.mean, gained: 0, saved: 0 };
+  const own = counted.filter(item => item.moves !== undefined);
   // The shapes of the group: they move with it.
-  const own: OverlayShape[] = [];
+  const shapesOfGroup: OverlayShape[] = [];
   for (const id of group.nodes) {
     const node = model.nodes[id]!;
-    if (node.bounds) own.push({ ...node.bounds });
-    for (const port of node.ports) if (port.pill && port.ref.anonymous !== true) own.push({ ...port.pill.bounds, pill: true });
+    if (node.bounds) shapesOfGroup.push({ ...node.bounds });
+    for (const port of node.ports) if (port.pill && port.ref.anonymous !== true) shapesOfGroup.push({ ...port.pill.bounds, pill: true });
   }
-  const straightAt = (x: number): number => {
-    const dx = x - centre;
-    const shapes = own.map(shape => ({ ...shape, x: shape.x + dx }));
-    const blockers: ShapeQuery = { some: (bounds, predicate, work, padding) => bare.some(bounds, predicate, work, padding) || shapes.some(shape => predicate(shape)) };
-    return counted.filter(({ head, tail, moves }) =>
-      straightBetween(moves === 'head' ? shiftEnd(head, dx) : head, moves === 'tail' ? shiftEnd(tail, dx) : tail, blockers) !== undefined).length;
+  const keys = (link: LayoutLink): [string, string] => [portKey(link.attachments!.from), portKey(link.attachments!.to)];
+  /** The blockers with the group's own shapes shifted by `dx`. */
+  const blockersAt = (dx: number): ShapeQuery => {
+    const shapes = shapesOfGroup.map(shape => ({ ...shape, x: shape.x + dx }));
+    return { some: (bounds, predicate, work, padding) => bare.some(bounds, predicate, work, padding) || shapes.some(shape => predicate(shape)) };
+  };
+  const endsAt = ({ head, tail, moves }: Counted, dx: number): [OverlayEnd, OverlayEnd] =>
+    [moves === 'head' ? shiftEnd(head, dx) : head, moves === 'tail' ? shiftEnd(tail, dx) : tail];
+  const scoreAt = (x: number): Score => {
+    const dx = x - centre, blockers = blockersAt(dx);
+    let straight = 0;
+    const paths: Point[][] = [], ports: [string, string][] = [];
+    for (const item of counted) {
+      const [head, tail] = endsAt(item, dx);
+      const isStraight = straightBetween(head, tail, blockers) !== undefined;
+      if (isStraight) straight++;
+      if (item.moves === undefined) continue;
+      paths.push(isStraight ? [head.face, tail.face] : chordPoints(head, tail, blockers)); ports.push(keys(item.link));
+    }
+    // A link between two settled nodes that passes the group's rows may bend round a shifted shape of the group: it is read at `x`, the rest as they stand.
+    const others = fixed.map(item => ({ points: item.rows ? chordPoints(item.head, item.tail, blockers) : item.points, ports: keys(item.link) }));
+    let crossings = overlayCrossings(paths, ports);
+    for (let i = 0; i < paths.length; i++) {
+      for (const other of others) {
+        if (ports[i]!.some(key => other.ports.includes(key))) continue;
+        crossings += polylineCrossings(paths[i]!, other.points);
+      }
+    }
+    return { crossings, straight };
   };
   const shifts: number[] = [];
-  const add = (found: readonly Window[]): void => {
+  const add = (found: readonly Window[], into: number[] = shifts): void => {
     for (const { low, high } of found) {
-      if (Number.isFinite(low) && Math.abs(low) < UNBOUNDED) shifts.push(low - PLACEMENT_EPS);
-      if (Number.isFinite(high) && Math.abs(high) < UNBOUNDED) shifts.push(high + PLACEMENT_EPS);
+      if (Number.isFinite(low) && Math.abs(low) < UNBOUNDED) into.push(low - PLACEMENT_EPS);
+      if (Number.isFinite(high) && Math.abs(high) < UNBOUNDED) into.push(high + PLACEMENT_EPS);
     }
   };
+  const eventShifts: number[] = [];
   for (const { head, tail, moves } of counted) {
-    if (moves === undefined) { for (const shape of own) add(chordWindows(head.face, tail.face, 'shape', shape)); continue; }
+    if (moves === undefined) { for (const shape of shapesOfGroup) add(chordWindows(head.face, tail.face, 'shape', shape)); continue; }
     const fixedEnd = moves === 'head' ? tail : head, movingEnd = moves === 'head' ? head : tail;
     const low = Math.min(head.face.y, tail.face.y), high = Math.max(head.face.y, tail.face.y);
     const seen: OverlayShape[] = [];
@@ -175,6 +253,35 @@ export function windowTarget(model: LayoutModel, group: LayoutGroup, input: Wind
       shifts.push(moving ? along / end.out.x - Math.sign(end.out.x) * PLACEMENT_EPS : -along / end.out.x + Math.sign(end.out.x) * PLACEMENT_EPS);
     }
   }
-  const candidates = shifts.map(dx => centre + dx).filter(x => x >= Math.max(input.range.low, span.low) - PLACEMENT_EPS && x <= Math.min(input.range.high, span.high) + PLACEMENT_EPS);
-  return pickTarget(input.mean, candidates, straightAt);
+  // The events (ticket 147): the shifts at which an own link starts or stops crossing another link. The straight line from the fixed end
+  // `f` to the moving end `m` passes a point `p` that moves with the group (rate 1) or stands (rate 0) at one shift; a fixed segment is
+  // met by the moving end of a link at another.
+  const through = (f: Point, m: Point, p: Point, rate: number): Window[] => {
+    const dy = m.y - f.y;
+    if (Math.abs(dy) <= EPS) return [];
+    const t = (p.y - f.y) / dy;
+    if (t < 0 || t > 1 || Math.abs(t - rate) < 1e-9) return [];
+    const dx = (p.x - f.x - (m.x - f.x) * t) / (t - rate);
+    return [{ low: dx, high: dx }];
+  };
+  const pointsOfFixed = fixed.flatMap(item => item.points);
+  for (const item of own) {
+    const f = (item.moves === 'head' ? item.tail : item.head).face, m = (item.moves === 'head' ? item.head : item.tail).face;
+    for (const p of pointsOfFixed) add(through(f, m, p, 0), eventShifts);
+    for (const other of own) {
+      if (other === item) continue;
+      add(through(f, m, (other.moves === 'head' ? other.head : other.tail).face, 1), eventShifts);
+      add(through(f, m, (other.moves === 'head' ? other.tail : other.head).face, 0), eventShifts);
+    }
+    for (const { points } of fixed) {
+      for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1]!, b = points[i]!;
+        if (Math.abs(b.y - a.y) <= EPS || m.y < Math.min(a.y, b.y) || m.y > Math.max(a.y, b.y)) continue;
+        const dx = a.x + (b.x - a.x) * (m.y - a.y) / (b.y - a.y) - m.x;
+        add([{ low: dx, high: dx }], eventShifts);
+      }
+    }
+  }
+  const inside = (list: readonly number[]): number[] => list.map(dx => centre + dx).filter(x => x >= Math.max(input.range.low, span.low) - PLACEMENT_EPS && x <= Math.min(input.range.high, span.high) + PLACEMENT_EPS);
+  return pickTarget(input.mean, inside(shifts), scoreAt, inside(eventShifts));
 }
