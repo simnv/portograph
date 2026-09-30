@@ -1,0 +1,25 @@
+# Expected: a routed link leaves a lateral side (Q109, ticket 117). Two location frames stand on tier 1, a core over a router each, wide enough that the frames stand
+# far apart: one far to the left and one far to the right of a small provider node on tier 2 (a group of one node). Each router links to the provider (`dashed`).
+# On main the link from the far router keeps the orthogonal route: its shallow chord from the router's bottom face meets the provider group through the group's
+# side edge, not its top edge, so the link is refused (`ROUTED_CHORD_REFUSED`, reason `edge`). The side round gives the provider's port the lateral side that faces the
+# far router (`right`): the link is one segment that leaves the router's bottom face through the frame's bottom edge, at least the margin from each corner, and enters
+# the provider group through its side edge, the edge its port faces. Every gate passes. (The provider is the lower end: the ranking takes the lower end when both
+# ends give a clear chord.)
+# Test-only input owned by ticket 117; test/pipeline/routed-chord-lateral.test.ts reads the layout.
+portograph: 2
+profile: network
+groups:
+  west: { tier: 1, label: West }
+  east: { tier: 1, label: East }
+  providers: { tier: 2, label: Provider }
+nodes:
+  west-core: { group: west, class: router, label: West core router, size: { width: 700, height: 50 } }
+  west-router: { group: west, class: router, label: West router, size: { width: 200, height: 50 } }
+  east-core: { group: east, class: router, label: East core router, size: { width: 700, height: 50 } }
+  east-router: { group: east, class: router, label: East router, size: { width: 200, height: 50 } }
+  provider: { group: providers, class: provider, label: Provider }
+links:
+  - [west-core, west-router]
+  - [east-core, east-router]
+  - [west-router, provider, { class: dashed }]
+  - [east-router, provider, { class: dashed }]

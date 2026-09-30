@@ -9,6 +9,7 @@ import { transitTiers } from './lanes.js';
 import { crosses, overlayBlockers, overlayPath, straightChord, type OverlayBlockers } from './overlay-paths.js';
 import { facingSide, hintRefusal } from './side-hints.js';
 import { portKey } from './sides-one.js';
+import { measureChordSides } from './side-chords.js';
 
 /**
  * The side measure (docs/design/side-faces.md, Sections 4 to 7): on a placed model (stages 1 to 7e) it names the lateral sides that would
@@ -218,5 +219,10 @@ export function measureSides(model: LayoutModel, refused: ReadonlySet<string>, p
       offer.promised.set(lateral.key, { link: link.id, bends: 0, shape: 'straight' });
     }
   }
+  // The routed chord shape (ticket 117): its own pass over the routed links, on the nodes the overlay pass left.
+  const chords = measureChordSides(model, nodes, refused, moved, MIN_OUTWARD, refusedKey, link => plannedBends(model, link, blockers), probes, probeCap);
+  for (const [key, side] of chords.hints) offer.hints.set(key, side);
+  for (const [key, item] of chords.promised) offer.promised.set(key, item);
+  offer.capped ||= chords.capped;
   return offer;
 }
