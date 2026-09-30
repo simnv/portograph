@@ -694,6 +694,20 @@ none fits, the group goes past the tier's end. A move that bends an overlay link
 as `LINKLESS_GROUP_MOVE_REFUSED`. The 7f rounds that replay the growth of the tier gaps and the close-up of the cantons
 run the same step again (`stepLinklessOutOfChords`), because a growth changes the slope of a chord that spans two gaps.
 
+**A chord between two tiers keeps the tiers between free of nodes** (ranked-groups ticket 77, Q64). A straight overlay chord
+between nodes on two tiers reserves its path through the tiers between them. `centreDraft` ends with `stepOverChords`, and
+the 7f rounds run it again after `stepLinklessOutOfChords`. A free group (no routed link) that has an overlay link, on a tier
+strictly between the two ends of a chord, tries the x where a node body or pill of its own meets the end of such a chord's
+interval, nearest first. The chords are the ones straight once the group's own nodes are taken away. A candidate must keep the
+band gap to the groups, columns and lanes of the tier (inside its canton, less the group margin, for a member of one), stay
+inside the box of the whole layout (so the canvas does not widen), and pass `laneSidesHold`. It is kept only when the straight
+overlay count, read by the real overlay decision, rises: a move that bends a straight link and straightens two is taken, one
+that only bends is undone. A group with a routed link is not moved, because its links are the walls of its x. What is left
+is a chord blocked by two groups, or by a node of a group that a routed link holds, and a hub group between many chords,
+where only a move of one node inside its group could clear the chord (not done). A step that moved makes the 7f round run
+again, so the growth of the tier gaps is measured on the geometry that stands. `refreshHeldWarnings` withdraws only a
+warning that states a jog.
+
 ### 7d — bars
 
 For each `bar` group, after 7c so all source ports are final: each node is a horizontal bar;

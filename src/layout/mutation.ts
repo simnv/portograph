@@ -760,6 +760,8 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
         rebuildRegionGeometry(draft, undefined, undefined, true);
         alignLinkedGroupGrid(draft);
         replanGroupLabels(draft);
+        // A step out of a chord is followed by a growth measured again and a close-up on the geometry that stands (ticket 77).
+        closed = false;
       }
     }
     // The held-axis warnings say where a column stood when they were raised; the replays above move columns after that (a centring replay

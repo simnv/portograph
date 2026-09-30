@@ -88,4 +88,22 @@ describe('a frame keeps out of the clearance of a foreign drop (ticket 75)', () 
     refreshHeldWarnings(model);
     expect(messages()).toEqual(published);
   }, 120000);
+  it('a canton warning that states no jog is left as it is when its column reaches its feed (ticket 77)', async () => {
+    const model = structuredClone(await layout(parse(readFileSync(new URL('../../goldens/synthetic/a-held-lane-between-two-cantons-refuses-the-close-up.yaml', import.meta.url), 'utf8')),
+      { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt })) as LayoutModel;
+    // `east` is held 59.64 px from its feed. Stand it on its feed, and the residual the refresh reads is 0: a warning that states a jog is withdrawn,
+    // and one that states none (a canton that cannot close up) stays.
+    const cells = (id: string): string[] => [...model.document.frames![id]!.cells, ...Object.keys(model.document.frames!).filter(child => model.document.frames![child]!.parent === id).flatMap(cells)];
+    for (const cell of cells('east')) {
+      const group = model.groups[cell]!;
+      moveGroup(model, group, -59.64263916015631, 0);
+      rebuildNodeGeometry(model, group.nodes, 'current');
+    }
+    model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'COLUMN_AXIS_HELD', owners: [{ kind: 'group', id: 'east' }],
+      message: 'Canton east cannot close up to a band gap from its siblings: its siblings hold it, so the run of cantons stays where it stands.' });
+    refreshHeldWarnings(model);
+    const held = model.diagnostics.filter(item => item.code === 'COLUMN_AXIS_HELD').map(item => item.message);
+    expect(held.filter(message => message.includes('cannot reach its feed') && message.includes('Column east'))).toEqual([]);
+    expect(held.some(message => message.startsWith('Canton east cannot close up'))).toBe(true);
+  }, 120000);
 });

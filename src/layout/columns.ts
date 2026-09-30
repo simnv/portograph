@@ -518,6 +518,8 @@ export function refreshHeldWarnings(model: LayoutModel): void {
     // A member of a canton is read by the inner pass, with the canton wall; its warning is left as it is.
     if (item.code !== COLUMN_AXIS_HELD || item.owners?.length !== 1 || owner === undefined || !('id' in owner) || !residual.has(owner.id)) return [item];
     const jog = residual.get(owner.id)!;
+    // Only a message that states a jog is ours to withdraw; a canton's "cannot close up" states none, and its residual is not the jog (ticket 77).
+    if (!/jog of [\d.]+ px/.test(item.message)) return [item];
     return jog > 0.5 ? [{ ...item, message: item.message.replace(/jog of [\d.]+ px/, `jog of ${jog.toFixed(1)} px`) }] : [];
   });
 }

@@ -1,0 +1,28 @@
+# Expected: A node with an overlay link stands where its body crosses no straight overlay chord of a longer link (ticket 77).
+# `src` (tier 0) syncs with `far` (tier 2). `mid` (tier 1) is one node with a sync link of its own to `near`
+# (tier 2), so it is not a linkless group: the barycentre of its partners puts it on the chord from `src` to `far`.
+# Placement steps `mid` to the nearest x where the chord is clear and both links are one straight segment.
+# `hosts` (tier 3, four nodes) is the anchor tier, so `mid` is free to move.
+# Test-only input owned by ranked-groups ticket 77; test/pipeline/chord-clear.test.ts reads the layout.
+portograph: 2
+groups:
+  sources: { tier: 0, label: Sources }
+  middle: { tier: 1, label: Middle }
+  targets: { tier: 2, label: Targets }
+  hosts: { tier: 3, label: Hosts }
+nodes:
+  src: { group: sources, class: server, label: Source }
+  mid: { group: middle, class: server, label: Middle }
+  near: { group: targets, class: server, label: Near }
+  far: { group: targets, class: server, label: Far }
+  h1: { group: hosts, class: server, label: Host 1 }
+  h2: { group: hosts, class: server, label: Host 2 }
+  h3: { group: hosts, class: server, label: Host 3 }
+  h4: { group: hosts, class: server, label: Host 4 }
+links:
+  - [near, h1]
+  - [near, h2]
+  - [far, h3]
+  - [far, h4]
+  - [src, far, { class: sync }]
+  - [mid, far, { class: sync }]
