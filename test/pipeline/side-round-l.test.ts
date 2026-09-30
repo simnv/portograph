@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import type { Budget, LayoutModel } from '../../src/index.js';
+import type { LayoutModel } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
 import { reserveLinkLabelRoom } from '../../src/layout/bands.js';
 import { crosses, overlayPath } from '../../src/layout/overlay-paths.js';
@@ -57,10 +57,9 @@ describe('the side round offers the L shape for an overlay link', () => {
   }, 60000);
 
   it('on the natural sides the same link goes round the cache with two turns or more', async () => {
-    const budget: Budget = { remainingMs: () => 1000, share: stageMs => stageMs };
-    const model = await run({ budget });
+    const model = await run({ testMaxReruns: 0 });
     expect(overlay(model).path!.segments.length).toBeGreaterThan(2);
-    expect(codes(model)).toContain('SIDE_ROUND_CUT');
+    expect(codes(model)).toContain('SIDE_ROUND_SKIPPED');
   }, 60000);
 
   it('two runs give byte-identical layout JSON', async () => {

@@ -44,11 +44,10 @@ describe('the side round takes a lateral side for an overlay link past a sibling
   }, 60000);
 
   it('on main the same link goes round the sibling, so the hint is what straightens it', async () => {
-    // A layout with the round cut by a deadline that leaves less than the reserve keeps the natural sides: the path is bent.
-    const budget: Budget = { remainingMs: () => 1000, share: stageMs => stageMs };
-    const { model } = await run(PAST_SIBLING, { budget });
+    // A layout with no side round (the count of re-runs is 0, ticket 141) keeps the natural sides: the path is bent.
+    const { model } = await run(PAST_SIBLING, { testMaxReruns: 0 });
     expect(model.links.find(item => item.layer === 'overlay')!.path!.segments.length).toBeGreaterThan(1);
-    expect(codes(model)).toContain('SIDE_ROUND_CUT');
+    expect(codes(model)).toContain('SIDE_ROUND_SKIPPED');
     expect(model.nodes['server']!.ports.some(item => item.sideHint === true)).toBe(false);
   }, 60000);
 
@@ -97,8 +96,7 @@ describe('a diagram with no side candidate is the layout main makes', () => {
 
 describe('the probe', () => {
   it('offers the right face for the server port, and nothing once that key is refused', async () => {
-    const budget: Budget = { remainingMs: () => 1000, share: stageMs => stageMs };
-    const { model } = await run(PAST_SIBLING, { budget });
+    const { model } = await run(PAST_SIBLING, { testMaxReruns: 0 });
     const offer = measureSides(model, model, new Set());
     expect([...offer.hints.values()]).toEqual(['right']);
     expect([...offer.promised.values()]).toEqual([expect.objectContaining({ bends: 0, shape: 'straight' })]);
@@ -117,8 +115,7 @@ describe('the probe', () => {
   }, 60000);
 
   it('stops at the probe cap and says so', async () => {
-    const budget: Budget = { remainingMs: () => 1000, share: stageMs => stageMs };
-    const { model } = await run(PAST_SIBLING, { budget });
+    const { model } = await run(PAST_SIBLING, { testMaxReruns: 0 });
     const offer = measureSides(model, model, new Set(), 0);
     expect(offer.capped).toBe(true);
     expect(offer.hints.size).toBe(0);

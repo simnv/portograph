@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import type { Budget, LayoutLink, LayoutModel } from '../../src/index.js';
 import { layout, parse } from '../../src/index.js';
 import { ElkDeadlineError, systemElkClock } from '../../src/layout/elk-worker.js';
-import { RERUN_GATE_MS } from '../../src/pipeline/budget.js';
 import { measureFans } from '../../src/layout/fan-spread.js';
 import { standaloneChord, isRoutedChord } from '../../src/layout/frame-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -62,25 +61,16 @@ describe('a fan spreads its ports so its diagonals hold clearance', () => {
     expect(measured.declined).toEqual([]);
   });
 
-  // Review of ticket 89, finding 1: a probe run only while the budget could pay for it, and the first placement is published otherwise.
-  it('publishes the first placement when the budget cannot pay for a probe', async () => {
-    const budget: Budget = { remainingMs: () => 3000, share: stageMs => Math.min(stageMs, 3000) };
-    const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, budget });
-    expect(fan(model).filter(link => link.technique === 'straight')).toHaveLength(2);
-    expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
-    expect(model.nodes['core-1']!.sidePitch!.bottom).toBe(12);
-    expect(model.diagnostics.filter(item => item.code === 'FAN_SPREAD_CUT')).toHaveLength(1);
-  });
-
-  // Ticket 112 review, finding 2: a re-run starts only with the post-placement reserve plus one re-run and 7f left (RERUN_GATE_MS).
-  it('starts a re-run only when the post-placement reserve, one re-run and 7f remain', async () => {
+  // Ticket 141: the time left never decides whether a fan re-run runs. A budget of 3 s or 600 s, held fixed, gives the same layout.
+  it('gives the same layout at any time left: the fan re-run does not read the clock', async () => {
     const at = (ms: number): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
       budget: { remainingMs: () => ms, share: stageMs => Math.min(stageMs, ms) } });
-    const under = await at(RERUN_GATE_MS - 1000), over = await at(RERUN_GATE_MS + 1000);
-    expect(under.diagnostics.filter(item => item.code === 'FAN_SPREAD_CUT')).toHaveLength(1);
-    expect(under.nodes['core-1']!.sidePitch!.bottom).toBe(12);
-    expect(over.diagnostics.filter(item => item.code === 'FAN_SPREAD_CUT')).toEqual([]);
-    expect(over.nodes['core-1']!.sidePitch!.bottom).toBeGreaterThan(12);
+    const short = await at(3000), long = await at(600_000);
+    const shape = (model: LayoutModel): unknown => model.links.map(link => [link.id, link.technique, link.path!.segments]);
+    expect(shape(short)).toEqual(shape(long));
+    expect(short.nodes['core-1']!.sidePitch!.bottom).toBeGreaterThan(12);
+    expect(short.diagnostics.filter(item => item.code === 'FAN_SPREAD_CUT')).toEqual([]);
+    expect(fan(short).filter(link => link.technique === 'straight')).toHaveLength(8);
   });
 
   // Ticket 112: machine speed must not change the layout. A clock that makes every stage look slow, with a deadline far away, cuts nothing.
