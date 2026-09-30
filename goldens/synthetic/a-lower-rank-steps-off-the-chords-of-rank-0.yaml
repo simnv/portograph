@@ -1,0 +1,24 @@
+portograph: 2
+groups:
+  core: { tier: 0, label: Core }
+  west: { label: West }
+  site: { tier: 1, canton: west, label: Site }
+  zone: { parent: site, label: Zone }
+  clients: { tier: 2, canton: west, label: Clients }
+nodes:
+  core-1: { group: core, class: router, label: Core 1 }
+  gw: { group: site, class: router, label: Gateway }
+  up-a: { group: zone, class: switch, label: Upper A }
+  up-b: { group: zone, class: switch, label: Upper B }
+  low-a: { group: zone, class: server, label: Lower A }
+  low-b: { group: zone, class: server, label: Lower B }
+  c-1: { group: clients, class: server, label: Client 1 }
+  c-2: { group: clients, class: server, label: Client 2 }
+links:
+  - [core-1, gw]
+  - [gw, up-a]
+  - [gw, up-b]
+  - [up-a, low-a]
+  - [up-b, low-b]
+  - [up-a, c-1, { class: sync }]
+  - [up-b, c-2, { class: sync }]
