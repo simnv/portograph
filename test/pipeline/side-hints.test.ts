@@ -7,7 +7,7 @@ import { portKey, sidesOne } from '../../src/layout/sides-one.js';
 import { sizeNodes } from '../../src/layout/size.js';
 import { rowGap } from '../../src/layout/sides-two.js';
 import { groupPadding } from '../../src/layout/regions.js';
-import { rawBandSide } from '../../src/layout/bands.js';
+import { rawBandSide, rawFrameSide } from '../../src/layout/bands.js';
 import { busSide, meshBuses } from '../../src/layout/bus.js';
 import type { ElkNode } from 'elkjs/lib/elk-api.js';
 import type { CreateElkAttempt } from '../../src/layout/elk-worker.js';
@@ -237,7 +237,7 @@ links: [[a.p, b]]
 });
 
 describe('restore checks the stored hint against the document and the geometry (ticket 114, spec Section 13)', () => {
-  it('accepts the hinted layout, and rejects a hint that faces away or a floor below the content', async () => {
+  it('accepts the hinted layout, and rejects a forged natural side or a floor below the content', async () => {
     const yaml = fixture('a-side-hint-moves-a-port-to-a-lateral-side');
     const plain = await run(yaml);
     const { key } = port(plain.model, 'server', 1);
@@ -247,8 +247,6 @@ describe('restore checks the stored hint against the document and the geometry (
 
     const forge = (change: (copy: Forged) => void): string => { const copy = JSON.parse(json) as Forged; change(copy); return JSON.stringify(copy); };
     const hinted = (copy: Forged) => copy.nodes.server!.ports.find(item => item.sideHint)!;
-    // The peer stands right of the node; the hint says left.
-    expect(() => restoreLayoutModel(forge(copy => { hinted(copy).side = 'left'; }))).toThrow(/faces away from its peer/);
     // The hint without its natural side, and a natural side that is lateral.
     expect(() => restoreLayoutModel(forge(copy => { delete hinted(copy).naturalSide; }))).toThrow(/natural side/);
     expect(() => restoreLayoutModel(forge(copy => { hinted(copy).naturalSide = 'left'; }))).toThrow(/natural side|differs from document/);
@@ -349,5 +347,64 @@ links:
     const hinted = await run(yaml, new Map([[key, 'right']]));
     expect(port(hinted.model, 'm3', 4).port.side).toBe('right');
     expect(hinted.model.meshBuses![0]!.side).toBe('top');
+  }, 60000);
+});
+
+describe('review fixes (ticket 114)', () => {
+  it('a hint on a node with a spare port does not throw, and the ELK graph differs only by the reserved height', async () => {
+    const yaml = `portograph: 2
+groups: {g: {tier: 0}, h: {tier: 1}}
+nodes:
+  a: {group: g, ports: [p, spare]}
+  b: {group: h}
+links: [[a.p, b]]
+`;
+    const plain = await run(yaml);
+    const { key } = port(plain.model, 'a', 0);
+    const hinted = await run(yaml, new Map([[key, 'right']]), graphSizes(plain.graph, ['a']));
+    // The spare port stays where the stage-2 rule put it (on `right`), so the hinted face now holds two ports and stage 3 reserves that height:
+    // the node is taller in the graph, and nothing else in it differs (ports, sides, other nodes).
+    const flat = (graph: ElkNode): string => JSON.stringify(graph, (key, value: unknown) => key === 'height' || key === 'elk.nodeSize.minimum' ? undefined : value);
+    expect(flat(hinted.graph)).toBe(flat(plain.graph));
+    expect(graphSizes(hinted.graph, ['a']).get('a')!.height).toBeGreaterThan(graphSizes(plain.graph, ['a']).get('a')!.height);
+    const spare = (model: LayoutModel) => model.nodes['a']!.ports.find(item => item.ref.name === 'spare')!.side;
+    expect(spare(hinted.model)).toBe(spare(plain.model));
+  }, 60000);
+
+  it('a hint that faces away after 7f publishes with SIDE_HINT_FACES_AWAY, and restore accepts it', async () => {
+    const yaml = fixture('a-side-hint-moves-a-port-to-a-lateral-side');
+    const plain = await run(yaml);
+    const { key } = port(plain.model, 'server', 1);
+    const { model } = await run(yaml, new Map([[key, 'left']]), graphSizes(plain.graph, ['server']));
+    const away = model.diagnostics.filter(d => d.code === 'SIDE_HINT_FACES_AWAY');
+    expect(away).toEqual([expect.objectContaining({ severity: 'warning', owners: [{ kind: 'link', id: model.links[1]!.id }] })]);
+    expect(plain.model.diagnostics.some(d => d.code === 'SIDE_HINT_FACES_AWAY')).toBe(false);
+    expect(restoreLayoutModel(JSON.stringify(model)).nodes['server']!.ports.filter(item => item.sideHint)).toHaveLength(1);
+  }, 60000);
+
+  it('the frame title edge counts a hinted port on its natural side', async () => {
+    const yaml = `portograph: 2
+groups:
+  above: {tier: 0}
+  stack: {tier: 1}
+  below: {tier: 2}
+nodes:
+  core: {group: above}
+  r0: {group: stack}
+  r1: {group: stack}
+  d: {group: below}
+links:
+  - [core, r0]
+  - [r0, r1]
+  - [r1, d]
+`;
+    const plain = await run(yaml);
+    expect(plain.model.document.frames?.['stack']).toBeDefined();
+    const { key } = port(plain.model, 'r1', 2);
+    const hinted = await run(yaml, new Map([[key, 'right']]));
+    expect(port(hinted.model, 'r1', 2).port.side).toBe('right');
+    // One crossing port on top and one at the bottom tie, and the tie keeps the top; the hinted side would count only the top port and move the title.
+    expect(rawFrameSide(plain.model, 'stack')).toBe('top');
+    expect(rawFrameSide(hinted.model, 'stack')).toBe('top');
   }, 60000);
 });

@@ -5,14 +5,14 @@ import { orderedNodeIds, orderedGroupIds } from '../model/model.js';
 import { resolve } from '../resolve/index.js';
 import { filterCss } from '../parse/css.js';
 import { Validation } from '../parse/validation.js';
-import { sidesOne, SIDE_TIE_ORDER } from './sides-one.js';
+import { portKey, sidesOne, SIDE_TIE_ORDER } from './sides-one.js';
 import { sizeNodes } from './size.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { measureText } from '../text/index.js';
 import { NODE_CONTENT_GEOMETRY } from '../theme/content.js';
 import { nodeGap } from './skeleton-graph.js';
 import { groupShape } from './grid.js';
-import { facingSide, hintRefusal } from './side-hints.js';
+import { hintRefusal } from './side-hints.js';
 import { rebuildBands, span, union, validateSkeletonBands } from './skeleton-geometry.js';
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { blockedChords, edgeLeavers, freezeChords } from './frame-paths.js';
@@ -155,14 +155,14 @@ function validateDocumentCss(model: LayoutModel): void {
   throw new Error(`Document css is not normalised: ${codes}`);
 }
 
-function validateDocument(model: LayoutModel, restoring = false): LayoutModel {
+function validateDocument(model: LayoutModel): LayoutModel {
   validateDocumentCss(model);
   const resolved = resolve(model.document);
   same(semantics(model), semantics(resolved), 'Resolved semantics differ from document');
   same(Object.keys(model.nodes).sort(), Object.keys(resolved.nodes).sort(), 'Node membership differs from document');
   same(Object.keys(model.groups).sort(), Object.keys(resolved.groups).sort(), 'Group membership differs from document');
   const predicted = sidesOne(resolved);
-  validateSideHints(model, resolved, restoring);
+  validateSideHints(model, resolved);
   for (const id of orderedNodeIds(model.document)) {
     const node = model.nodes[id]!, original = predicted.nodes[id]!;
     same(pick(node, ['id', 'owner', 'layer']), pick(original, ['id', 'owner', 'layer']), 'Node identity differs from document');
@@ -216,9 +216,10 @@ function validatePlacementStructure(model: LayoutModel): void {
 /**
  * A side hint is an input of placement, so restore checks what it stored, not the round that chose it (side-faces.md, Section 13, review L2):
  * `sideHint` and `naturalSide` come together; the natural side is `top` or `bottom` and is not the port's side; the port is a candidate
- * under Section 4, items 2 to 6, read from the document; and, on a restored layout, the hinted side is the one that faces the peer.
+ * under Section 4, items 2 to 6, read from the document; and the natural side is the one the stage-5 rule gives. Whether the hint still faces its peer is
+ * not checked: restore accepts every layout the pipeline publishes, and 7f names a hint that faces away (`SIDE_HINT_FACES_AWAY`).
  */
-function validateSideHints(model: LayoutModel, resolved: LayoutModel, restoring: boolean): void {
+function validateSideHints(model: LayoutModel, resolved: LayoutModel): void {
   for (const id of orderedNodeIds(model.document)) for (const port of model.nodes[id]!.ports) {
     const name = `${id}.${port.ref.name ?? '#'}${port.ref.ordinal}`;
     if ((port.sideHint === true) !== (port.naturalSide !== undefined) || (port.sideHint !== undefined && port.sideHint !== true)) throw new Error(`Side hint on ${name} is not recorded with its natural side`);
@@ -227,11 +228,12 @@ function validateSideHints(model: LayoutModel, resolved: LayoutModel, restoring:
     if (port.naturalSide !== 'top' && port.naturalSide !== 'bottom') throw new Error(`Side hint on ${name} has a lateral natural side`);
     const why = hintRefusal(resolved, port.ref);
     if (why !== undefined) throw new Error(`Side hint on ${name} is not allowed: ${why}`);
-    if (!restoring) continue;
-    const link = model.links.find(item => [item.attachments!.from, item.attachments!.to].some(end => end.node === id && end.ordinal === port.ref.ordinal && end.name === port.ref.name && (end.anonymous ?? false) === (port.ref.anonymous ?? false)))!;
-    const peer = link.attachments!.from.node === id && link.attachments!.to.node !== id ? link.attachments!.to.node : link.attachments!.from.node;
-    const a = model.nodes[id]!.bounds, b = model.nodes[peer]!.bounds;
-    if (a !== undefined && b !== undefined && facingSide(a.x + a.width / 2, b.x + b.width / 2) !== port.side) throw new Error(`Side hint on ${name} faces away from its peer`);
+    // The natural side is the one the run's rule gives a single-link candidate: `bottom` for a peer on a later tier, `top` for an earlier one.
+    const link = model.links.find(item => [item.attachments!.from, item.attachments!.to].some(end => portKey(end) === portKey(port.ref)))!;
+    const peer = portKey(link.attachments!.from) === portKey(port.ref) ? link.attachments!.to.node : link.attachments!.from.node;
+    const own = model.groups[model.document.nodes[id]!.group]!.tier!, other = model.groups[model.document.nodes[peer]!.group]!.tier!;
+    if (own === other) throw new Error(`Side hint on ${name} joins two ports of one tier`);
+    same(port.naturalSide, other > own ? 'bottom' : 'top', 'Semantic or authored side differs from document');
   }
 }
 function validateTechniques(model: LayoutModel, baseline: LayoutModel): void {
@@ -508,7 +510,7 @@ export function restoreLayoutModel(json: string): LayoutModel {
     resolve(model.document);
     return model;
   }
-  const baseline = validateDocument(model, true);
+  const baseline = validateDocument(model);
   return protect(model, baseline);
 }
 

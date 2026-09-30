@@ -515,7 +515,11 @@ count a lateral chord as any straight overlay chord.
 - **Restore (ADR-0010).** `restoreLayoutModel` compares resolved semantics with the document. A
   hinted port has a side the document does not give. The topology baseline records each hint and
   its natural side; restore checks that the natural side is the one stages 2 and 5 give, that the
-  hint is the lateral side that faces the peer, and that the port is a candidate (Section 4).
+  port is a candidate (Section 4). Restore does **not** check that the hint faces the peer
+  (coordinator, 2026-09-30, ticket 114 review): restore accepts every layout the pipeline publishes,
+  and 7f can move a column after the round judged the shape. The round drops a trial where facing
+  fails at 7e. At the end of 7f, `SIDE_HINT_FACES_AWAY` (warning, placement) names the link of a
+  hinted port that then faces away, and `SIDE_SHAPE_LOST` covers the published shape.
   Restore checks the stored invariants, not the history (review L2): the stored `naturalSide`, the
   hint and the stored `nodeFloors` are checked against the document and the geometry; restore does
   not re-run the round.

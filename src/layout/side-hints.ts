@@ -1,6 +1,6 @@
 import type { PortRef } from '../model/document.js';
 import type { Side } from '../model/geometry.js';
-import type { LayoutModel, LayoutPort } from '../model/layout.js';
+import type { Diagnostic, LayoutModel, LayoutPort } from '../model/layout.js';
 import { busOfPort } from './bus.js';
 import { authoredSide, groupShape } from './grid.js';
 import { portKey, tiedPortComponents } from './sides-one.js';
@@ -62,3 +62,25 @@ export function checkSideHints(model: LayoutModel, hints: SideHints): void {
 export const facingSide = (nodeCentreX: number, peerCentreX: number): Side => peerCentreX > nodeCentreX ? 'right' : 'left';
 
 export const isHinted = (port: LayoutPort): boolean => port.sideHint === true;
+
+/**
+ * `SIDE_HINT_FACES_AWAY` (warning, placement), read at the end of 7f: a hinted port whose peer now stands on the side the port does not face.
+ * The round drops a trial that fails this at 7e; 7f can still move a column. Restore does not refuse such a layout (ADR-0010: it accepts
+ * every layout the pipeline publishes), so the published shape is named here and by `SIDE_SHAPE_LOST` (side-faces.md, Section 13).
+ */
+export function sideHintDiagnostics(model: LayoutModel): Diagnostic[] {
+  const found: Diagnostic[] = [];
+  for (const link of model.links) {
+    const ends = link.attachments;
+    if (ends === undefined) continue;
+    for (const [own, peer] of [[ends.from, ends.to], [ends.to, ends.from]] as const) {
+      const port = model.nodes[own.node]!.ports.find(item => portKey(item.ref) === portKey(own));
+      const a = model.nodes[own.node]!.bounds, b = model.nodes[peer.node]!.bounds;
+      if (port?.sideHint !== true || a === undefined || b === undefined) continue;
+      if (facingSide(a.x + a.width / 2, b.x + b.width / 2) === port.side) continue;
+      found.push({ stage: 'placement', severity: 'warning', code: 'SIDE_HINT_FACES_AWAY',
+        message: `The side hint on ${describe(own)} faces away from its peer ${peer.node} after stage 7f.`, owners: [{ kind: 'link', id: link.id }] });
+    }
+  }
+  return found;
+}

@@ -27,7 +27,7 @@ import { CommandDeadlineError, POST_PLACEMENT_RESERVE_MS, UNBOUNDED_BUDGET, type
 import { declinedFanDiagnostics, measureFans, type FanMeasure } from '../layout/fan-spread.js';
 import { chordClearances, isRoutedChord } from '../layout/frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
-import type { SideHints } from '../layout/side-hints.js';
+import { sideHintDiagnostics, type SideHints } from '../layout/side-hints.js';
 
 
 /** Most runs of placement a fan's pitch may cost after the first (ticket 89). */
@@ -158,7 +158,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   model = step('bands', () => bands(model, budget));
   // 7f moves columns in x after the chords are decided, and no rule bounds it: a pair it closes under the clearance is named here, with the
   // clearance it had at the freeze, so that a G6 failure can be traced to the move (ticket 89 review). Nothing is changed.
-  const lost: Diagnostic[] = [];
+  const lost: Diagnostic[] = [...sideHintDiagnostics(model)];
   for (const [pair, now] of chordClearances(model)) {
     const before = atFreeze.get(pair);
     if (now < STRAIGHT_PATH_CLEARANCE.path - 1e-6 && before !== undefined) {

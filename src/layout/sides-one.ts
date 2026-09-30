@@ -135,7 +135,7 @@ export function sidesOne(model: LayoutModel, hints: SideHints = NO_SIDE_HINTS): 
           if (safe && natural !== 'top' && natural !== 'bottom') throw new Error(`Side hint on ${port.ref.node}.${port.ref.name ?? '#'}${port.ref.ordinal} refused: its natural side is ${natural}`);
           port.sideHint = true; port.naturalSide = natural; port.side = hint;
           if (!safe) port.sizingSide = natural;
-          capacity[hint]++;
+          capacity[natural]++; // the natural side: an unused port is placed by the stage-2 rule, which no hint may change
         } else {
           if (safe) port.side = selected;
           else port.sizingSide = winner(entry.predicted);
