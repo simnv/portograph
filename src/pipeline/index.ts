@@ -31,8 +31,8 @@ import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
 
 /** Most runs of placement a fan's pitch may cost after the first (ticket 89). */
 const FAN_ROUNDS = 2;
-/** What a probe must leave in the budget: this many runs to 7e for stage 7f, and a fixed reserve for routing (ticket 89 review). */
-const FAN_PROBE_FACTOR = 4;
+/** What a probe must leave before the hard command deadline: a fixed reserve for stage 7f, routing and scoring. It is never scaled by
+ * how long the first run took, so the layout does not depend on machine speed (ticket 112). */
 const FAN_ROUTE_RESERVE_MS = 5000;
 const straightChords = (model: LayoutModel): number => model.links.filter(link => isFrameStraight(model, link)).length;
 
@@ -115,14 +115,17 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   };
   // A fan of chords whose neighbours stand closer than the chord clearance is spread by placement, not found by routing (ticket 89):
   // the placed chords say the pitch each face needs, and placement runs again with those floors until no face needs more.
-  const placeStarted = now();
   let model = await place(new Map());
-  // A probe runs only while the budget could still pay for it, for stage 7f (a few times a run to 7e) and for routing after it, and
-  // a probe that meets the deadline or makes ELK fall back is dropped: the placement already made stands (ticket 89 review).
-  const firstMs = now() - placeStarted;
-  const affordable = (): boolean => budget.remainingMs() > FAN_PROBE_FACTOR * firstMs + FAN_ROUTE_RESERVE_MS;
+  // The re-runs are bounded by FAN_ROUNDS alone. The clock is read only against the hard command deadline: a re-run that would leave
+  // less than a fixed reserve for 7f, routing and scoring is cut, and a warning says so (ticket 112). A probe that meets the deadline
+  // or makes ELK fall back is dropped too: the placement already made stands (ticket 89 review).
+  const cuts: Diagnostic[] = [];
+  const cut = (why: string): void => {
+    cuts.push({ stage: 'placement', severity: 'warning', code: 'FAN_SPREAD_CUT',
+      message: `A fan re-run was cut: ${why}. The fans keep the pitch of the last completed placement, and this layout may differ from one made with more time.` });
+  };
   let floors: FanMeasure['floors'] = new Map();
-  for (let round = 0; round < FAN_ROUNDS && affordable(); round++) {
+  for (let round = 0; round < FAN_ROUNDS; round++) {
     const measure = measureFans(model);
     const next: FanMeasure['floors'] = new Map(floors);
     let grew = false;
@@ -130,9 +133,10 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       if (value > (next.get(id)?.[side] ?? 0)) { next.set(id, { ...next.get(id), [side]: value }); grew = true; }
     }
     if (!grew) break;
+    if (budget.remainingMs() <= FAN_ROUTE_RESERVE_MS) { cut('the command deadline leaves less than the reserve for routing'); break; }
     let trial: LayoutModel;
     try { trial = await place(next); } catch (error) {
-      if (error instanceof CommandDeadlineError) break;
+      if (error instanceof CommandDeadlineError) { cut('the command deadline was reached during it'); break; }
       throw error;
     }
     if ((trial.fallbackUsed && !model.fallbackUsed) || (trial.deadlineHit && !model.deadlineHit)) break;
@@ -165,5 +169,5 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   });
   report('route', routeStarted);
 
-  return step('link-labels', () => linkLabels(model, [...declined, ...lost]));
+  return step('link-labels', () => linkLabels(model, [...cuts, ...declined, ...lost]));
 }

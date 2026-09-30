@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { Budget, LayoutLink, LayoutModel } from '../../src/index.js';
 import { layout, parse } from '../../src/index.js';
+import { systemElkClock } from '../../src/layout/elk-worker.js';
 import { measureFans } from '../../src/layout/fan-spread.js';
 import { standaloneChord, isFrameStraight } from '../../src/layout/frame-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -67,6 +68,20 @@ describe('a fan spreads its ports so its diagonals hold clearance', () => {
     expect(fan(model).filter(link => link.technique === 'straight')).toHaveLength(2);
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
     expect(model.nodes['core-1']!.sidePitch!.bottom).toBe(12);
+    expect(model.diagnostics.filter(item => item.code === 'FAN_SPREAD_CUT')).toHaveLength(1);
+  });
+
+  // Ticket 112: machine speed must not change the layout. A clock that makes every stage look slow, with a deadline far away, cuts nothing.
+  it('gives the same layout on a slow clock at a normal deadline, with no cut warning', async () => {
+    let tick = 0;
+    const clock = { ...systemElkClock, now: () => (tick += 4000) };
+    const budget: Budget = { remainingMs: () => 600_000, share: stageMs => stageMs };
+    const slow = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, budget, clock });
+    const fast = await run();
+    const shape = (model: LayoutModel): unknown => model.links.map(link => [link.id, link.technique, link.path!.segments]);
+    expect(shape(slow)).toEqual(shape(fast));
+    expect(slow.nodes['core-1']!.sidePitch).toEqual(fast.nodes['core-1']!.sidePitch);
+    expect(slow.diagnostics.filter(item => item.code === 'FAN_SPREAD_CUT')).toEqual([]);
   });
 
   // Finding 2: two chord ports k pitch steps apart with a port between them that carries no chord. The floor is the pitch plus the share of
