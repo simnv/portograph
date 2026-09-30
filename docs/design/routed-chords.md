@@ -153,6 +153,11 @@ stub does the same, Q106):
   does not fit. Where it cannot widen, `ROUTED_CHORD_TITLE` (warning) names the link and the group,
   and G3 judges.
 
+*As built (ticket 100).* The crossing rectangle is wider in x on a slanted chord: the half stroke and the 8 px margin are taken along the normal of the
+chord, so the x growth is (half stroke + 8) / cos of the angle to the vertical (a vertical chord gives 8 px). Measured: a title 8 px from the bounding box stood
+7.8 px from a 52 degree chord, and G3 failed. The margin is in the rectangle; the planner adds no clearance to it. A held chord's child port owes it no place under
+its feed, so `centreViolations` excuses it.
+
 A foreign title band stands inside its foreign frame box, so the foreign-frame wall covers it.
 
 ## 7. When the decision is made and frozen

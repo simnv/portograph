@@ -1,3 +1,4 @@
+import { goldenWithRemainders } from '../golden-remainders.js';
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { allocateGapRuns, bands, bars, bundles, centre, flanks, growTierGaps, lanes, linkLabels, planRoute, route, rows, score } from '../../src/index.js';
@@ -102,7 +103,8 @@ it('reserves the columns of a gap whose runs keep one x and leaves the golden wh
   // The M1 golden's four transit links descend on the x of their own lanes, so no run needs a row. Ticket 50: the plan
   // reserves each such run as a drop (one vertical, tip to tip), where the old allocation reserved nothing; the two runs of its one
   // populated gap are verticals and no row, and the gap asks for nothing (H is the 60 px band gap).
-  const golden = readFileSync(new URL('../../goldens/m1-sip-edge.yaml', import.meta.url), 'utf8');
+  // The two provider links are read on the variant that keeps them orthogonal: on the golden they hold their chord (ticket 100).
+  const golden = goldenWithRemainders();
   const before = await place(golden);
   expect(before.lanes.length).toBe(4);
   const runs = allocateGapRuns(before);

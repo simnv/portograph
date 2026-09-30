@@ -5,6 +5,7 @@ import type { LayoutModel } from '../../src/index.js';
 import { facingTips, planGap, tierGapPlan, tierGapPlans, type GapPlan, type PlanFrame, type PlanInput } from '../../src/layout/gap-plan.js';
 import { tierGaps } from '../../src/layout/gap-runs.js';
 import { placed } from './phase-two-fixture.js';
+import { orthogonalLinks } from '../orthogonal-links.js';
 
 /**
  * The tier-gap row plan (`docs/design/tier-gap-rows.md`, ranked-groups ticket 48) on the four shapes of Section 2.4, read from the
@@ -14,6 +15,9 @@ import { placed } from './phase-two-fixture.js';
 const read = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const place = async (name: string): Promise<LayoutModel> =>
   bands(bundles(bars(centre(flanks(lanes(rows(await placed(read(name)))))))));
+/** The same input with every link authored `route: orthogonal`: Q108 gives a link between frames its chord, and the plan of the orthogonal parts is the subject here. */
+const placeBent = async (name: string): Promise<LayoutModel> =>
+  bands(bundles(bars(centre(flanks(lanes(rows(await placed(orthogonalLinks(read(name))))))))));
 
 /** `link-4#0a` is `link-4a`; the spec names the halves of a Z part so. */
 const short = (id: string): string => id.replace('link-', '').replace('#0', '').replace(/#(\d)/, '.$1');
@@ -94,7 +98,7 @@ describe('the tier-gap plan on the four shapes of the spec (Section 2.4)', () =>
   });
 
   it('plans both gaps of the v5-4-0 shape: rows, forced crossings, link-3 planned clear of the label, growth 0 after 7f', async () => {
-    const model = await place('a-tier-gap-plan-orders-every-part');
+    const model = await placeBent('a-tier-gap-plan-orders-every-part');
     const [upper, lower] = tierGapPlans(model).filter(({ plan }) => plan.order.length);
     // The spec's link-3 (row 179.5, the term that asked for 9.25 px) stands 102.5 under the `access` group label. Ticket 50 declined it
     // (`leg-blocked`); since ticket 62 the label is nudged along its edge off the leg at placement, so the plan lays it as the spec does.
@@ -312,7 +316,8 @@ describe('the follow-ups of ticket 48 (ticket 51)', () => {
   }, 60000);
 
   it('keeps the stems of the bands that face the gap and no others', async () => {
-    const model = await edited();
+    // Read on the orthogonal variant: on the input itself a link between the tiers takes its chord and leaves the plan (Q108).
+    const model = structuredClone(bands(bundles(bars(centre(flanks(lanes(rows(await placed(orthogonalLinks(transit))))))))));
     const [upper, lower] = tierGapPlans(model).map(item => item.gap);
     const band = (tier: number) => model.tierBands.find(item => item.tier === tier)!.bounds!;
     const tier0 = facingTips(model, upper!).filter(item => item.side === 'bottom');
@@ -345,7 +350,7 @@ describe('the follow-ups of ticket 48 (ticket 51)', () => {
   }, 60000);
 
   it('names the kind of every forced crossing of the v5-4-0 shape, not only the pair', async () => {
-    const model = await place('a-tier-gap-plan-orders-every-part');
+    const model = await placeBent('a-tier-gap-plan-orders-every-part');
     const [upper, lower] = tierGapPlans(model).filter(({ plan }) => plan.order.length);
     const kinds = (plan: GapPlan): string[] => plan.crossings.map(item => `${short(item.run)}|${short(item.vertical)}|${item.kind}`).sort();
     expect(kinds(upper!.plan)).toEqual(KINDS_UPPER);
