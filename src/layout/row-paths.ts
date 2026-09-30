@@ -218,7 +218,7 @@ export function rebuildRowPaths(draft: LayoutModel): void {
   for (const link of candidates) delete link.path;
   // A stem placement promised blocks a chord only while its link stays orthogonal (ticket 88). The first pass
   // reads the links after a candidate as orthogonal, so a link that turns straight later still blocked an
-  // earlier chord. Each further pass offers the refused links the chord again, keeping every chord held:
+  // earlier chord. Each further pass offers the refused frame candidates the chord again (a level pair outside a frame cannot change), keeping every chord held:
   // a new chord only removes a stem and checks its own clearance to the held chords, so the held set only
   // grows, and the loop ends when a pass adds none (at most one pass per candidate).
   const decide = (link: LayoutLink): boolean => {
@@ -227,7 +227,7 @@ export function rebuildRowPaths(draft: LayoutModel): void {
     if (automatic(draft, link)) link.technique = path ? 'straight' : 'orthogonal';
     return path !== undefined;
   };
-  let open = candidates.filter(link => !decide(link));
+  let open = candidates.filter(link => !decide(link) && frameLinkCandidate(draft, link));
   while (open.length && draft.frozenChords === undefined) {
     const next = open.filter(link => !decide(link));
     if (next.length === open.length) break;
