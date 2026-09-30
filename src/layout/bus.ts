@@ -1,6 +1,7 @@
 import type { PortRef } from '../model/document.js';
 import type { Point } from '../model/geometry.js';
 import type { BusBand, LayoutGroup, LayoutModel, LayoutNode, LayoutPort, MeshBus } from '../model/layout.js';
+import { naturalSideOf } from './port-side.js';
 import { rawBandSide, rawFrameSide } from './bands.js';
 import { overlayEndpoint } from './overlay-paths.js';
 import { portId } from './skeleton-graph.js';
@@ -56,7 +57,7 @@ function routedPorts(model: LayoutModel): Set<string> {
   return result;
 }
 
-const sideOf = (port: LayoutPort): string | undefined => port.side ?? port.sizingSide;
+const sideOf = (port: LayoutPort): string | undefined => naturalSideOf(port);
 const centreX = (node: LayoutNode): number | undefined => node.bounds === undefined ? undefined : node.bounds.x + node.bounds.width / 2;
 const portX = (node: LayoutNode, port: LayoutPort): number | undefined => port.anchor?.x ?? centreX(node);
 

@@ -1,0 +1,15 @@
+# Expected: a test side hint (Q109, ticket 114) puts the server's port on the link to the right-hand client on `right`, with `naturalSide: bottom`.
+# The ports are anonymous, so the hint changes no content inset and no pill. With the measured stage-3 sizes as floors the ELK graph is the
+# same as without the hint, and the server is no narrower. Test-only input owned by ticket 114; no measure offers a hint yet.
+portograph: 2
+profile: network
+groups:
+  core: { tier: 0 }
+  edge: { tier: 1 }
+nodes:
+  server: { group: core, class: server, ports: [] }
+  under: { group: edge, class: server, ports: [] }
+  beside: { group: edge, class: server, ports: [] }
+links:
+  - [server, under]
+  - [server, beside]

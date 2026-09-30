@@ -1,5 +1,5 @@
 import type { PortRef } from '../model/document.js';
-import type { Rect, Side } from '../model/geometry.js';
+import type { Rect, Side, Size } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel, LayoutPort, PathSegment } from '../model/layout.js';
 import { orderedNodeIds, orderedGroupIds } from '../model/model.js';
 import { SIDE_TIE_ORDER, portKey, tiedPortComponents } from './sides-one.js';
@@ -683,7 +683,7 @@ export function rowGap(model: LayoutModel, a: string, b: string): number {
 }
 
 /** Resolve all direction votes, resize and repack in skeleton order; retain the returned snapshot. */
-export function sidesTwo(model: LayoutModel): LayoutModel {
+export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Size>): LayoutModel {
   if (model.stage !== 'skeleton' || model.freeze) throw new Error('Phase-two sides require the skeleton stage');
   const peers = new Map<string, PortRef[]>();
   for (const link of model.links) {
@@ -744,6 +744,14 @@ export function sidesTwo(model: LayoutModel): LayoutModel {
     for (const { id, port } of members) for (const side of SIDE_TIE_ORDER) votes[side] += voteFor(id, port)[side];
     const chosen: Side = decided.size ? [...decided][0]! : SIDE_TIE_ORDER.reduce((best, side) => votes[side] > votes[best] ? side : best, 'bottom');
     for (const { port } of members) port.side = chosen;
+  }
+  // A hinted port whose natural side stage 2 could only estimate takes the side its vote gives now, before the bus edge reads it (side-faces.md, Section 7).
+  for (const id of orderedNodeIds(model.document)) for (const port of model.nodes[id]!.ports) {
+    if (port.sideHint !== true || port.sizingSide === undefined) continue;
+    const votes = voteFor(id, port);
+    const natural = SIDE_TIE_ORDER.reduce((best, side) => votes[side] > votes[best] ? side : best, 'bottom' as Side);
+    if (natural !== 'top' && natural !== 'bottom') throw new Error(`Side hint on ${id}.${port.ref.name ?? '#'}${port.ref.ordinal} refused: its natural side is ${natural}`);
+    port.naturalSide = natural;
   }
   // The bus edge is read after the routed sides are settled (a shared port recomputes its majority), within the span
   // the skeleton order gives, and before stage 5 resizes the nodes and repacks the rows.
@@ -848,5 +856,5 @@ export function sidesTwo(model: LayoutModel): LayoutModel {
   if (Object.keys(model.groups).length) stackBands(model, true);
   rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');
   model.stage = 'sides-two';
-  return freezePortTopology(model);
+  return freezePortTopology(model, nodeFloors);
 }

@@ -29,6 +29,8 @@ export function rebuildNodeGeometry(draft: LayoutModel, nodeIds: readonly string
       }
       y += block.height + theme.contentGap;
     }
+    // The ports of a face are centred over the whole box at the face's pitch, in engine order. A face that lost a port to a side hint (ADR-0022)
+    // keeps the box width its size floor holds, so the ports left on it keep their order and their pitch, with an equal margin at both ends.
     for (const side of SIDE_TIE_ORDER) {
       const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
       const horizontal = side === 'top' || side === 'bottom';
