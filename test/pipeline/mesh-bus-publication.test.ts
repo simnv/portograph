@@ -169,7 +169,12 @@ describe('the bus publishes member paths, scores, renders and exports (ticket 84
     const bus = model.meshBuses![0]!, band = model.busBands![0]!.bounds;
     const lo = Math.min(bus.bar!.from.x, bus.bar!.to.x), hi = Math.max(bus.bar!.from.x, bus.bar!.to.x);
     const link = model.links.find(item => item.layer === 'routed')!;
-    link.path!.segments = [{ from: { x: hi + 80, y: band.y - 20 }, to: { x: hi + 140, y: band.y + band.height + 20 }, owner: link.path!.segments[0]!.owner }];
+    // One chord over the centre of the bar, where the label would stand, and one past its end.
+    const centre = (lo + hi) / 2, owner = link.path!.segments[0]!.owner;
+    link.path!.segments = [
+      { from: { x: centre - 5, y: band.y - 20 }, to: { x: centre + 5, y: band.y + band.height + 20 }, owner },
+      { from: { x: hi + 80, y: band.y - 20 }, to: { x: hi + 140, y: band.y + band.height + 20 }, owner },
+    ];
     const room = busGeometry(model, bus)!.labelRoom!;
     expect(room.from).toBeGreaterThanOrEqual(lo - 1e-6);
     expect(room.to).toBeLessThanOrEqual(hi + 1e-6);
