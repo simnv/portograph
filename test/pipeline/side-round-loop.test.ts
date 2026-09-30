@@ -85,14 +85,17 @@ describe('the round loop (ticket 115, side-faces.md Section 7)', () => {
     expect(withoutNotes(model)).toBe(withoutNotes(await run(FAN)));
   }, 60000);
 
-  it('drops a trial that adds an overlay crossing at a moved port, though its planned bends fall (review M1)', async () => {
+  it('keeps a trial that adds an overlay crossing at a moved port and reports it (Q109, decision 3)', async () => {
     // On this input 7f straightens link-6 by itself. A scripted hint on its probe end passes the shape test but makes it cross link-5.
     const plain = await run(TWO_TIERS, undefined, 0);
     const link = plain.links.find(item => item.id === 'link-6')!;
     const model = await run(TWO_TIERS, (call, real) => call === 1 ? offerOf(portKey(link.attachments!.from), 'right', link.id) : real());
-    expect(model.nodes['probe']!.ports.some(port => port.sideHint === true)).toBe(false);
-    expect(model.diagnostics.map(item => item.code)).not.toContain('SIDE_HINT_TAKEN');
-    expect(withoutNotes(model)).toBe(withoutNotes(plain));
+    expect(model.nodes['probe']!.ports.some(port => port.sideHint === true)).toBe(true);
+    expect(model.diagnostics.map(item => item.code)).toContain('SIDE_HINT_TAKEN');
+    const note = model.diagnostics.find(item => item.code === 'SIDE_HINT_ADDS_CROSSING')!;
+    expect(note.severity).toBe('info');
+    expect(note.owners).toEqual([{ kind: 'link', id: 'link-6' }]);
+    expect(note.message).toMatch(/adds \d+ overlay crossing/);
   }, 60000);
 
   it('lets a placement error that is no hint refusal surface', async () => {

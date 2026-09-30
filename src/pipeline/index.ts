@@ -240,11 +240,15 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     const failed = [...all.keys()].filter(key => away.has(key) || (promisedAll.has(key)
       && plannedBends(trial, trial.links.find(link => link.id === promisedAll.get(key)!.link)!, blockers) > promisedAll.get(key)!.bends));
     const before = bendTotals(model), after = bendTotals(trial);
-    // A hint must not add an overlay crossing at a moved port: it is real in the drawing, and no other test of the round sees it.
+    // Fewer bends win even when crossings rise (Q109, decision 3): a crossing added at a moved port is reported, not a reason to refuse.
     const movedNodes = new Set([...offer.hints.keys()].map(key => (JSON.parse(key) as [string])[0]));
     if (failed.length === 0 && (after.bent < before.bent || (after.bent === before.bent && after.total < before.total))
-      && straightChords(trial) >= straightChords(model)
-      && overlayCrossingsAt(trial, movedNodes) <= overlayCrossingsAt(model, movedNodes)) {
+      && straightChords(trial) >= straightChords(model)) {
+      const added = overlayCrossingsAt(trial, movedNodes) - overlayCrossingsAt(model, movedNodes);
+      if (added > 0) for (const id of new Set([...offer.promised.values()].map(item => item.link))) {
+        sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_HINT_ADDS_CROSSING',
+          message: `The side hint for ${id} adds ${added} overlay crossing${added === 1 ? '' : 's'} at the moved ports; fewer bends win (Q109).`, owners: [{ kind: 'link', id }] });
+      }
       model = trial; hints = all;
       for (const [key, item] of offer.promised) promised.set(key, item);
       continue;
