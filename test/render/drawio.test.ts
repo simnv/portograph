@@ -294,6 +294,23 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
     expect(on.offset).toBeUndefined();
   }, 60000);
 
+  it('attaches a label on a joined run of collinear pieces to the piece it stands on (ticket 142)', async () => {
+    const model = await pipeline(fixture('a-side-lane-label-spans-the-collinear-pieces'));
+    const link = model.links.find(item => item.fixedSegments !== undefined)!;
+    const label = model.labels.find(item => item.owner.kind === 'link' && item.owner.id === link.id)!;
+    const support = label.support as { segment: number; through: number };
+    expect(support.through).toBeGreaterThan(support.segment);
+    const segments = link.path!.segments, at = (n: number) => segments.slice(0, n).reduce((sum, s) => sum + Math.hypot(s.to.x - s.from.x, s.to.y - s.from.y), 0);
+    const total = at(segments.length), middle = (at(support.segment) + at(support.through + 1)) / 2;
+    const cell = cells(drawio(model, { labels: 'on-run' })).get(id('link', link.id))!;
+    // The label is stated at the middle of the joined run, on the line: not clamped to the 15 px stem, and with at most the sub-pixel rounding of the arc length as offset.
+    expect(Math.hypot(cell.offset?.x ?? 0, cell.offset?.y ?? 0)).toBeLessThan(1);
+    expect(Number(cell.geometry['y'])).toBeCloseTo(0, 9);
+    // The export's polyline is a few px off the path (terminals), so the arc length is checked to within 10 px.
+    expect(Math.abs((Number(cell.geometry['x']) / 2 + 0.5) * total - middle)).toBeLessThan(10);
+    expect(middle).toBeGreaterThan(at(support.segment + 1));
+  }, 60000);
+
   it('carries both appearances in one file, because draw.io inverts a colour it is given alone', async () => {
     const model = await pipeline(fixture('drawio-constructs'));
     const auto = cells(drawio(model));

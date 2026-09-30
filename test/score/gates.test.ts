@@ -143,6 +143,21 @@ describe('G3 labels', () => {
     model.labels[0]!.support = { kind: 'link-segment', link: 'ab', segment: 1 };
     expect(gate(model, 'G3').passed).toBe(true);
   });
+  it('exempts every piece of a joined run from its label support (ticket 142)', () => {
+    const model = simple(), link = model.links[0]!;
+    // Segment 0 is cut in two collinear pieces; the label stands on the second and names both.
+    link.path!.segments = [
+      { from: { x: 30, y: 40 }, to: { x: 30, y: 60 }, owner: link.owner },
+      { from: { x: 30, y: 60 }, to: { x: 30, y: 90 }, owner: link.owner },
+    ];
+    model.labels.push({ ...label('link text', 30.5, 80, { kind: 'link', id: 'ab' }), role: 'link',
+      support: { kind: 'link-segment', link: 'ab', segment: 0 } });
+    expect(gate(model, 'G3').violations.map(v => v.elements)).toEqual([['link text', 'ab']]);
+    model.labels[0]!.support = { kind: 'link-segment', link: 'ab', segment: 0, through: 1 };
+    expect(gate(model, 'G3').passed).toBe(true);
+    model.labels[0]!.support = { kind: 'link-segment', link: 'ab', segment: 0, through: 0 };
+    expect(gate(model, 'G3').passed).toBe(false);
+  });
   it('exempts pill text only from its specific pill and incident stem', () => {
     const model = simple(), p = model.nodes.a!.ports[0]!;
     p.pill = { size: { width: 24, height: 10 }, bounds: { x: 18, y: 35, width: 24, height: 10 }, owner: { kind: 'node', id: 'a' }, layer: 'routed', radius: 2, textRotation: 0 };

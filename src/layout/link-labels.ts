@@ -187,7 +187,8 @@ interface Supported { segments: PathSegment[]; half: number; support: (index: nu
  * The supports of a link path (ticket 142). A link with a lane piece publishes one straight run as
  * several collinear consecutive pieces (stem, gap part, lane), and 7a reserved the label room over
  * the whole run. The label placer reads each such run as one segment, so the label stands on the
- * run whose room was reserved. A link with no lane piece keeps one support per segment.
+ * run whose room was reserved. A link with no lane piece keeps one support per segment. In a lane
+ * link every collinear same-direction pair is joined, also a pair away from the lane run.
  */
 export function labelRuns(segments: PathSegment[]): { segment: PathSegment; first: number; last: number }[] {
   const runs: { segment: PathSegment; first: number; last: number }[] = segments.map((segment, at) => ({ segment, first: at, last: at }));
