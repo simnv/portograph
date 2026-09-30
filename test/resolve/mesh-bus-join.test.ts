@@ -161,6 +161,34 @@ describe('two buses over two rows (stage 1, ticket 94)', () => {
   });
 });
 
+describe('review fixes (ticket 94)', () => {
+  const port = (id: string) => id === 'a1' ? '  a1: { group: r0, ports: [{ name: p }] }' : `  ${id}: { group: r${id.startsWith('a') ? 0 : 1} }`;
+  const meshOn = (extra: string) => rows([{ ids: ['a1', 'a2', 'a3'], node: port }, { ids: ['c1'], node: port }],
+    [link('a1.p', 'a2'), link('a1.p', 'a3'), link('a2', 'a3'), extra]);
+
+  it('keeps shared-port for a link of another class on a bus port', () => {
+    const model = resolve(parse(meshOn(link('a1.p', 'c1', '', 'flow'))));
+    expect(model.meshBuses).toBeUndefined();
+    expect(codes(model, 'MESH_BUS_DECLINED')[0]!.message).toContain('shared-port');
+  });
+
+  it('keeps shared-port for a same-class link to a node that no bus can hold', () => {
+    const model = resolve(parse(meshOn(link('a1.p', 'c1'))));
+    expect(model.meshBuses).toBeUndefined();
+    expect(codes(model, 'MESH_BUS_DECLINED')[0]!.message).toContain('shared-port');
+  });
+
+  it('does not report small-row for a node that a partial mesh left out, and reports the group-link the join splits', () => {
+    const b = ['b1', 'b2', 'b3', 'b4'];
+    const model = resolve(parse(rows([{ ids: UP }, { ids: [...b, 'b5'] }],
+      [...within(UP), ...within(b), link('b1', 'b5'), link('b2', 'b5'), ...across(UP, [...b, 'b5'])])));
+    expect(model.meshBuses).toHaveLength(2);
+    expect(model.meshBuses![0]!.joined).toBe('mesh-bus-2');
+    expect(declined(model).filter(d => d.message.includes('small-row'))).toHaveLength(0);
+    expect(codes(model, 'MESH_BUS_PARTIAL').some(d => d.message.includes('lost 12 of its 15') && d.message.includes('join'))).toBe(true);
+  });
+});
+
 describe('one-row identity (stage 1, ticket 94)', () => {
   const ids = ['n1', 'n2', 'n3', 'n4', 'n5'];
   const one = (links: string[], node?: (id: string) => string) => resolve(parse(rows([{ ids, node }], links)));

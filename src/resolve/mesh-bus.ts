@@ -93,10 +93,28 @@ export function detectMeshBuses(model: LayoutModel): void {
     && model.document.links[link.sourceIndex]!.route === undefined
     && !(link.groupLink !== undefined && groupLinkLayer.get(link.groupLink) !== 'overlay')
     && link.removed !== true && link.attachments !== undefined;
-  // A candidate between two rows may be a cross link of a join, which shares the bus port (section 11.3): it is not a foreign link.
-  const mayCross = (link: LayoutLink): boolean => isCandidate(link) && rowOf(link.attachments!.from.node) !== undefined
-    && rowOf(link.attachments!.to.node) !== undefined && rowOf(link.attachments!.from.node) !== rowOf(link.attachments!.to.node);
   const rows = new Map<number, Map<string, Mesh>>();
+  // The nodes of each row and class that stand in a clique of three or more: the nodes a bus can hold.
+  const busable = new Map<string, Set<number>>();
+  const canBeBus = (row: number, klass: string, node: number): boolean => {
+    const key = `${row}\0${klass}`;
+    if (!busable.has(key)) {
+      const mesh = rows.get(row)?.get(klass);
+      const cliques = mesh === undefined ? undefined : maximalCliques(mesh.adjacency);
+      busable.set(key, new Set((cliques ?? []).filter(clique => clique.length >= 3).flat()));
+    }
+    return busable.get(key)!.has(node);
+  };
+  // A link of the mesh's class whose far end can be a node of a bus on another row may be a cross link of a join, which shares the bus port
+  // (section 11.3): it is not a foreign link. Any other link on the port is (`shared-port`).
+  const mayCross = (link: LayoutLink, klass: string, names: string[]): boolean => {
+    if (!isCandidate(link) || (model.document.links[link.sourceIndex]!.class ?? '') !== klass) return false;
+    const ends = [link.attachments!.from.node, link.attachments!.to.node];
+    const far = ends.find(node => !names.includes(node));
+    if (far === undefined || ends.filter(node => names.includes(node)).length !== 1) return false;
+    const row = rowOf(far);
+    return row !== undefined && row !== rowOf(ends.find(node => names.includes(node))!) && canBeBus(row, klass, order.get(far)!);
+  };
   for (const link of model.links) {
     const authored = model.document.links[link.sourceIndex]!;
     if (!isCandidate(link)) continue;
@@ -192,7 +210,7 @@ export function detectMeshBuses(model: LayoutModel): void {
       if (two !== undefined) { decline('named-ports', two); continue; }
       const different = identityDifference(model, mesh.klass, members);
       if (different !== undefined) { differing.push({ mesh, clique }); decline(different.reason, different.detail); continue; }
-      const taken = busPorts(model, names, members, mayCross);
+      const taken = busPorts(model, names, members, link => mayCross(link, mesh.klass, names));
       if ('reason' in taken) { decline(taken.reason, taken.detail); continue; }
       const chosen = taken.ports;
       bus = new Set(clique);
@@ -318,7 +336,7 @@ function statedSide(model: LayoutModel, ref: PortRef): string | undefined {
  */
 function joinBuses(model: LayoutModel, buses: MeshBus[], candidates: LayoutLink[], report: (code: string, severity: Diagnostic['severity'], message: string, links: LayoutLink[]) => void,
   rowOf: (node: string) => number | undefined, linkIndex: Map<LayoutLink, number>, nodeIds: string[]): void {
-  if (buses.length < 2 && !buses.length) return;
+  if (!buses.length) return;
   const klassOf = (link: LayoutLink): string => model.document.links[link.sourceIndex]!.class ?? '';
   const nameOf = (bus: MeshBus): string => bus.class === undefined ? 'unclassed' : bus.class;
   const busOfNode = new Map<string, MeshBus>();
@@ -387,7 +405,7 @@ function joinBuses(model: LayoutModel, buses: MeshBus[], candidates: LayoutLink[
     const { upper, lower } = pair;
     if (part.get(upper)!.size > 2) {
       report('MESH_BUS_JOIN_DECLINED', 'info', `${upper.id} (row ${upper.row}) and ${lower.id} (row ${lower.row}), class ${nameOf(upper)} stay two buses, three-rows: `
-        + `${[...part.get(upper)!].map(bus => bus.id).join(', ')} form a complete mesh over three rows or more, and a riser joins two rows only`, pair.cross);
+        + `${[...part.get(upper)!].map(bus => bus.id).join(', ')} join three rows or more, and a riser joins two rows only`, pair.cross);
       continue;
     }
     const ports = new Map<string, PortRef>();
@@ -399,6 +417,9 @@ function joinBuses(model: LayoutModel, buses: MeshBus[], candidates: LayoutLink[
     upper.cross = pair.cross.map(link => link.id);
     upper.dissolved.push(...dissolved.map(item => item.id));
     const named = dissolved.length ? `; dissolved ${dissolved.map(item => item.id).join(', ')}` : '';
+    for (const item of dissolved) if (item.left.length) {
+      report('MESH_BUS_PARTIAL', 'info', `${item.id} lost ${item.taken} of its ${item.taken + item.left.length} members to the join of ${upper.id} and ${lower.id}; ${item.left.length} stay plain overlay links`, item.left);
+    }
     report('MESH_BUS_JOIN', 'info', `Mesh buses ${upper.id} (row ${upper.row}) and ${lower.id} (row ${lower.row}) joined: ${nameOf(upper)} mesh of ${upper.nodes.length + lower.nodes.length} nodes and ${pair.cross.length} cross links${named}`, pair.cross);
   }
 
@@ -411,7 +432,8 @@ function joinBuses(model: LayoutModel, buses: MeshBus[], candidates: LayoutLink[
       const [x, y] = ends(link);
       const [inBus, other] = bus.nodes.includes(x) ? [x, y] : bus.nodes.includes(y) ? [y, x] : [undefined, undefined];
       const row = other === undefined ? undefined : rowOf(other);
-      if (inBus === undefined || other === undefined || row === undefined || row === bus.row || busOfNode.has(other)) continue;
+      if (inBus === undefined || other === undefined || row === undefined || row === bus.row || busOfNode.has(other)
+        || buses.some(item => item.row === row && (item.class ?? '') === klass)) continue;
       outside.set(row, (outside.get(row) ?? new Set()).add(other));
     }
     for (const [row, set] of [...outside].sort((a, b) => a[0] - b[0])) {

@@ -83,7 +83,7 @@ port (a node with some named ends and some anonymous ends is `port`; two differe
 stay `named-ports`, read first); a class that draws no arrowhead. Direction is not read while no
 arrowhead shows. The links of a clique declined for identity stay plain overlay links, drawn by
 the overlay rule: no smaller clique inside it is read, and a later clique that shares two or more
-nodes with it is skipped, so a mesh whose links differ never becomes a smaller bus  (ticket 94, built).
+nodes with it is skipped, so a mesh whose links differ never becomes a smaller bus (ticket 94, built).
 `MESH_BUS_DECLINED` names the first link that differs and the value. The checks of a clique are
 read in this order: `shape`, `named-ports`, the identity reasons, then `shared-port` and `side`
 (`busPorts`). The skip of a later clique that shares two or more nodes belongs to the identity
@@ -126,7 +126,7 @@ lowest-ordinal anonymous port among its member-link ends, every member link's en
 re-attached to it, and the other anonymous ports of those ends are removed, unless another link
 uses them. When every member-link end at a node names the same authored port, that port is the bus
 port and keeps its pill. When some member-link ends at a node name a port and some do not, the bus
-is declined (`port`, see Identity; ticket 94, built: ticket 83 moved the bare ends onto the named port). When the member links at one node name two or more different authored
+is declined (`port`, see Identity; ticket 94, built; before it, the bare ends moved onto the named port). When the member links at one node name two or more different authored
 ports, the bus is declined (`MESH_BUS_DECLINED`, `named-ports`): a named port is a drawn pill with
 a meaning of its own, and the design does not merge two of them. `SHARED_PORT` does not warn on a
 bus port.
