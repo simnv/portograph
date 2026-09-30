@@ -334,6 +334,8 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
     const laneOwner = lane.owner;
     const owns = laneOwner.kind === 'link' && laneOwner.id === s.link.id || laneOwner.kind === 'bundle' && laneOwner.id === s.link.bundle && model.bundles.some(b => b.id === laneOwner.id && b.owner.kind === 'bundle' && b.owner.id === b.id && b.members.includes(s.link.id));
     if (owns && s.segment.lane === lane.id && vertical(s.segment) && near(s.segment.from.x, lane.x)) lanesUsed.add(lane.id);
+    // The side run of a side lane starts at the lane x and leaves the lane's box sideways (side-faces.md, Section 10): its owner's reserved run.
+    else if (owns && lane.kind === 'side' && s.segment.lane === lane.id && near(s.segment.from.y, s.segment.to.y)) lanesUsed.add(lane.id);
     else fail('G4', 'lane-owner', [s.link.id, lane.id], 'Only its owner may occupy a reserved lane');
   }
   counters.lanesUsed = lanesUsed.size;

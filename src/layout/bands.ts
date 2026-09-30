@@ -9,7 +9,7 @@ import { frameSubtreeCells, orderedGroupIds } from '../model/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { createCentreBudget, type CentreBudget } from './centre.js';
-import { optionalMoveHolds, riserKeepOutBreaches } from './lanes.js';
+import { isSideLane, optionalMoveHolds, riserKeepOutBreaches } from './lanes.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { findPort, straightCorridorClear } from './row-paths.js';
@@ -1289,7 +1289,12 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
       const centre = overlay ? overlayRunMid(model, link, 'y') : (upperPort.anchor!.y + lowerPort.anchor!.y) / 2;
       if (centre === undefined) { unreserved('draws its longest overlay run across the tier gap, not along it'); continue; }
       const mid = centre;
-      const room = 2 * Math.min(mid - Math.max(bottom(upper.bounds!), bottom(outer(upperPort, upper))), Math.min(lower.bounds!.y, outer(lowerPort, lower).y) - mid);
+      // A side lane (side-faces.md, Section 10): the label rides the vertical run, the drop and the lane, so the run ends at the lateral port's y,
+      // not at the node's face. The move in y below moves the lateral node with its tier, and the lane's extent follows the port.
+      const laned = model.lanes.some(lane => isSideLane(lane) && lane.owner.kind === 'link' && lane.owner.id === link.id);
+      const upperEdge = laned && upperPort.side !== 'bottom' ? upperPort.anchor!.y : Math.max(bottom(upper.bounds!), bottom(outer(upperPort, upper)));
+      const lowerEdge = laned && lowerPort.side !== 'top' ? lowerPort.anchor!.y : Math.min(lower.bounds!.y, outer(lowerPort, lower).y);
+      const room = 2 * Math.min(mid - upperEdge, lowerEdge - mid);
       const deficit = required - room;
       if (deficit <= PLACEMENT_EPS) continue;
       const moved = Object.values(model.groups).filter(group => group.tier! > upperTier);

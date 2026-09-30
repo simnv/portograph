@@ -43,12 +43,14 @@ links: [[a.p, b.p], [m.p, c.p], [m.q, c.q]]`;
 /**
  * One gap the router really has to answer. Stage 8 claims a gap whose two ends stand on one line
  * and whose corridor is clear, so a facing pair reaches no batch at all; a right port feeding a top
- * port has to turn, which is what the tests below need the worker for.
+ * port has to turn, which is what the tests below need the worker for. `z` stands beyond `a` in its row, so `a.p` gets no side lane
+ * (side-faces.md, Section 10: a side lane needs the outermost node of its row) and the turn stays the router's.
  */
 const bending = `portograph: 2
 groups: {up: {tier: 0}, low: {tier: 1}}
 nodes:
   a: {group: up, ports: [{name: p, side: right}]}
+  z: {group: up}
   b: {group: low, ports: [{name: p, side: top}]}
 links: [[a.p, b.p]]`;
 
@@ -243,12 +245,13 @@ groups: {top-group: {tier: 0}, mid: {tier: 1}, low: {tier: 2}, low2: {tier: 2}}
 nodes:
   a: {group: top-group, ports: [{name: p, side: right}]}
   m: {group: mid, ports: [{name: p, side: bottom}, {name: q, side: bottom}, {name: r, side: right}]}
+  y: {group: mid, ports: [{name: s, side: top}]}
   b: {group: low, ports: [{name: p, side: top}]}
   c: {group: low, ports: [{name: p, side: top}, {name: q, side: top}]}
   b2: {group: low2, ports: [{name: p, side: top}]}
 links: [[a.p, b.p], [m.p, c.p], [m.q, c.q], [m.r, b2.p]]`);
     const plan = planRoute(before);
-    // link-1 owns a transit lane and link-4 does not, so they cannot share one obstacle set.
+    // link-1 owns a transit lane and link-4 does not, so they cannot share one obstacle set (`y` stands beyond `m` in its row: no side lane for link-4).
     expect(plan.batches.map(batch => batch.links)).toEqual([['link-1'], ['link-4']]);
     const exchange: { sent: RouteBatch[]; received: RoutedConnector[] } = { sent: [], received: [] };
     const model = await route(before, { createAttempt: recordingAttempt(exchange) });
