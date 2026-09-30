@@ -190,12 +190,13 @@ Every consumer of `isFrameStraight` reads the wider predicate (renamed `isRouted
 (continuity 1, Q94).
 
 **Bundles (7e).** A bundle's zones and member paths are derived after the rows rule decides. The draft clears them before it decides
-(`rebuildRegionGeometry`), and the validator's re-derivation of the rows rule clears them on its clone as well, so both read the same state; both
-kinds read the bundle zones and member paths that stand (none) and a chord may cross a bundle row later (G6 excuses a strict crossing).
+(`rebuildRegionGeometry`) and the validator's re-derivation clears them on its clone, so the rows rule never sees a bundle, for either kind of
+chord. A chord that crosses a bundle is judged by G6 afterwards, as on main.
 
-**Fan branches.** A shared-port fan tree reserves its branch run at placement. A branch that runs within the group edge margin of a group its link
-does not consume is released to the router (`FAN_BRANCH_THROUGH_GROUP`, warning): nothing else checks a branch against group boxes, and a chord that
-removed the stem which hemmed it exposed the case (`a-claimed-run-clears-a-shared-run`, G2 through-group).
+**Fan branches.** A shared-port fan tree reserves its branch run at placement, and nothing checks it against group boxes. A branch that a gate
+would fail, a run through a foreign group box (G2) or along a box edge inside the edge margin (G6), is released to the router
+(`FAN_BRANCH_THROUGH_GROUP`, warning); a branch that only meets a group at a right angle stays. A chord that removed the stem which hemmed a branch
+exposed the case (`a-claimed-run-clears-a-shared-run`). The release is a fallback: ticket 113 keeps the planner's branches clear of foreign groups.
 
 **Lanes (7a).** A lane is reserved before a chord is final, and a lane box is a wall to a chord.
 Lanes read a chord that is held at 7a: `corridorFree` keeps a lane's descent off every fixed path,

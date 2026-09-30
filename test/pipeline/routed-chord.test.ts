@@ -178,9 +178,9 @@ describe('what a chord leaves to its neighbours', () => {
     const model = await run(fixture('a-claimed-run-clears-a-shared-run'));
     expect(model.links.find(link => link.id === 'link-3')!.technique).toBe('straight');
     // The fan branch of link-1 ran along the tip row through `low`; it is released to the router, as main released it by chance.
-    expect(model.diagnostics.some(item => item.code === 'FAN_BRANCH_THROUGH_GROUP')).toBe(true);
     const report = score(model).snapshot;
     for (const [id, gate] of Object.entries(report.gates)) expect([id, gate.violations]).toEqual([id, []]);
+    expect(model.diagnostics.some(item => item.code === 'FAN_BRANCH_THROUGH_GROUP')).toBe(true);
   }, 60000);
 
   it('names a held chord that leaves its frame by a side edge after 7f (edge)', async () => {
@@ -190,5 +190,16 @@ describe('what a chord leaves to its neighbours', () => {
     const from = link.attachments!.from.node, frame = model.frames!.find(item => item.cells.some(cell => model.groups[cell]!.nodes.includes(from)))!;
     frame.box = { ...frame.box, x: frame.box.x + frame.box.width - 5, width: 40 };
     expect(edgeLeavers(model)).toContain(link.id);
+  }, 60000);
+
+  it('emits STRAIGHT_LINK_EDGE when 7f leaves a held chord leaving by a side edge', async () => {
+    const model = await run(fixture('a-bus-leaves-a-title-edge-with-more-legs'));
+    const named = model.diagnostics.filter(item => item.code === 'STRAIGHT_LINK_EDGE');
+    expect(named.length).toBeGreaterThan(0);
+    for (const item of named) {
+      expect(item.severity).toBe('warning');
+      expect(item.message).toMatch(/\(edge\)\.$/);
+      expect(edgeLeavers(model)).toContain((item.owners![0] as { id: string }).id);
+    }
   }, 60000);
 });
