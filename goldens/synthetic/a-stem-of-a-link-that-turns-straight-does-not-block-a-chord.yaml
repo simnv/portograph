@@ -1,0 +1,25 @@
+# Expected: One frame of six nodes and three uplinks. Link 6 (N1 to N4) and link 7 (N1 to N3) both take the straight chord.
+# The greedy order of ranked-groups ticket 34 read link 7 as orthogonal while it decided link 6, so the 15 px stem
+# link 7 would have reserved at its port kept link 6 from its chord; link 7 then turned straight anyway and never
+# used the stem. A stem blocks a chord only while its link stays orthogonal at the fixed point (ticket 88).
+# Test-only input owned by ranked-groups ticket 88; test/pipeline/frame-straight.test.ts reads the layout.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, label: Site }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  n0: { group: site, class: switch, label: N0 }
+  n1: { group: site, class: switch, label: N1 }
+  n2: { group: site, class: switch, label: N2 }
+  n3: { group: site, class: switch, label: N3 }
+  n4: { group: site, class: switch, label: N4 }
+  n5: { group: site, class: switch, label: N5 }
+links:
+  - [isp, n0]
+  - [isp, n1]
+  - [isp, n2]
+  - [n0, n5]
+  - [n2, n4]
+  - [n1, n4]
+  - [n1, n3]
