@@ -155,7 +155,9 @@ acceptance (Section 15) uses the bends the published paths have.
 
 > **Amended (Section 19, 2026-09-30).** Candidates are read on the baseline (the kept model after
 > 7f). A trial is screened by a prediction and kept only on its 7f output, under a trial budget.
-> The pseudo-code and the budget below are the first version.
+> The command deadline is now 60 s (user decision); the rule "the whole command fits at 2x" below
+> stands, and Section 19.5 re-derives the constants. The pseudo-code and the numbers below are the
+> first version.
 
 **Why not stage 5 alone.** Stage 5 knows only the skeleton's x. Stages 7a to 7c move groups and
 nodes by far more than a pitch, so a lateral side chosen from skeleton x is often wrong at 7e.
@@ -621,9 +623,10 @@ count a lateral chord as any straight overlay chord.
 | 120 | A transit lane ends in a lateral side (conditional) | 119, 121 |
 | 121 | Links between tiers bend less (acceptance) | 116, 117, 119 |
 | 122 | A side lane joins the tier-gap plan and the route | 118 |
-| 133 | The side round judges the published geometry (Section 19) | 115 |
+| 133 | The side round judges the published geometry (Section 19) | 115, 137 |
 | 134 | Stage 7f holds a promised overlay L (conditional, Section 19.6) | 116, 133 |
 | 135 | Stage 7f costs 6.5 s on the private sheet | — |
+| 137 | The command deadline is 60 s, and every re-run reads one gate (Section 19.5; closes 131) | — |
 | 136 | A hinted placement run leaves the column packing off its fixed point (Section 19.9) | — |
 
 ## 19. Amendment 1 (2026-09-30): the round judges the published geometry
@@ -707,7 +710,7 @@ for round in 0 ..< SIDE_ROUNDS:            // SIDE_ROUNDS = 2 (a count)
   offer = measureSides(base, kept7e, refused)   // overlay probes on base, routed probes on kept7e
   if offer is empty: break
   if reruns >= MAX_RERUNS: note(SIDE_ROUND_SKIPPED); break
-  if remaining() < SIDE_TAIL_RESERVE_MS + SIDE_TRIAL_MS: cut(SIDE_ROUND_CUT); break
+  if remaining() < RERUN_GATE_MS: cut(SIDE_ROUND_CUT); break    // a guard; never at 2x on the sheet
   trial7e = place(floors, offer) under the trial budget; reruns += 1
   if cut or elkCut(trial7e): cut(SIDE_ROUND_CUT); break
   pred = predictPublished(trial7e, kept7e, base)
@@ -745,38 +748,62 @@ publish base (route, link labels, score)
   `SIDE_HINT_FACES_AWAY` stay. On a kept trial, rule 4 has already tested them exactly, so they
   are guards and must read 0.
 
-### 19.5 Budget and the trial budget
+### 19.5 Budget: a 60 s deadline (user decision)
 
-The trial runs when the baseline is complete. A trial that runs out of time is dropped and the
-baseline publishes. So a side trial cannot make the command miss its deadline.
+**Decided by the user (2026-09-30):** the command deadline goes from 30 s to 60 s
+(`COMMAND_DEADLINE_MS`, ticket 137), so the side trial always fits on the sheet and the layout does
+not depend on machine speed. **The rule of Section 7 is restored:** the private sheet's whole
+command, on its worst path, finishes before the deadline on a machine 2 times slower, with 2 s of
+margin, and no clock gate cuts at 2x or faster. The clock gates stay only as a guard against the
+hard deadline.
 
-- **Trial budget.** The trial's placement run and its 7f read a budget equal to the command's
-  remainder less `SIDE_TAIL_RESERVE_MS` = 3 s (route, link labels, scoring and the SVG after a cut:
-  0.55 s on the sheet, quiet). When it reaches 0, the trial throws `CommandDeadlineError` at the next
-  stage or 7f pass, and the round cuts (`SIDE_ROUND_CUT`). 7f's own gates (the chord-clear step
-  against `POST_PLACEMENT_RESERVE_MS`) keep reading the command budget, as in the baseline. Ticket
-  133 adds an abort check between 7f passes if 7f has none.
-- **Entry gate.** A trial starts only with `SIDE_TAIL_RESERVE_MS + SIDE_TRIAL_MS` (13 s) or more
-  left. `SIDE_TRIAL_MS` = 10 s: one re-run to 7e plus one 7f on the sheet, quiet (2.7 + 6.5 s),
-  rounded up. It is a fixed constant, never measured at run time. For side trials this gate
-  replaces the fan gate, because the baseline 7f no longer runs after the trial.
-- Both reads are against the hard deadline (ticket 112). Every other bound is a count:
-  `SIDE_ROUNDS`, `MAX_RERUNS`, `MAX_SIDE_VERIFY`, `PROBE_CAP`.
+**The sheet at 2x** (quiet times doubled: first placement 4.0 s, fan re-run 2.7 s, 7f 6.5 s, route
+plus link labels plus score 0.55 s, measures about 0.1 s):
 
-**The sheet** (quiet machine: first placement 4.0 s, fan re-run 2.7 s, 7f 6.5 s, tail 0.55 s):
+| Path | Quiet | 2x | Against 60 s at 2x |
+|---|---|---|---|
+| No candidate (main today) | 4.0 + 2 × 2.7 + 6.5 + 0.55 = 16.5 s | 33.0 s | 27.0 s left |
+| One trial, screened out | 16.5 + 2.7 = 19.2 s | 38.4 s | 21.6 s left |
+| One trial, verified (worst path) | 16.5 + 2.7 + 6.5 = 25.7 s | 51.4 s | 8.6 s left, ≥ 2 s |
 
-| Path | Time | Against 30 s |
-|---|---|---|
-| No candidate (main today) | 4.0 + 2 × 2.7 + 6.5 + 0.55 = 16.5 s | fits to 1.8x |
-| One trial, screened out | 16.5 + 2.7 = 19.2 s | fits to 1.55x |
-| One trial, verified | 16.5 + 2.7 + 6.5 = 25.7 s | fits to 1.17x |
-| Entry gate at the start of the trial | 30 − 16.0 = 14.0 s left, 13 s needed | opens to about 1.06x |
+**The constants.** Each is a fixed number, set from the sheet at 2x and rounded up; none is read
+from the clock at run time.
 
-`MAX_RERUNS` = 3 with 2 fan re-runs leaves one side trial on the sheet. At 2x main already misses
-the deadline (33 s, ticket 131). There the entry gate stays shut, so this amendment adds no deadline
-miss. The rule of Section 7, "the whole command fits at 2x", cannot hold on the sheet while 7f costs
-6.5 s. The trial budget replaces it as the safety argument. The sheet gets its side gain only on a
-machine within about 6 % of the quiet reference, until 7f is faster (ticket 135).
+| Constant | Value | Stands for | Sheet at 2x |
+|---|---|---|---|
+| `COMMAND_DEADLINE_MS` | 60000 (was 30000) | the hard deadline | — |
+| `FAN_RERUN_MS` | 6000 (was 8000) | one placement re-run to 7e, fan or side | 5.4 s |
+| `BANDS_MS` (new) | 14000 | one 7f | 13.0 s |
+| `POST_PLACEMENT_RESERVE_MS` | 4000 (was 8000) | route, link labels, score, validation and the SVG after 7f | 1.1 s measured; SVG and validation to be measured by ticket 137 |
+| `RERUN_GATE_MS` | `POST_PLACEMENT_RESERVE_MS + FAN_RERUN_MS + BANDS_MS` = 24000 | what must be left to start any re-run | — |
+
+- **One gate for every re-run.** A fan re-run or a side trial starts only with `RERUN_GATE_MS` left.
+  After a fan re-run, the baseline 7f and the tail must still fit; after a side trial, its 7f and
+  the tail. Both are one re-run, one 7f and the tail. This replaces ticket 112's fan gate
+  (`POST_PLACEMENT_RESERVE_MS + FAN_RERUN_MS`, which left out 7f; ticket 131).
+- **Gate readings on the sheet at 2x:** fan gate 1 at about 8.1 s (51.9 s left), fan gate 2 at
+  about 13.5 s (46.5 s left), the side gate after the baseline 7f at about 32.0 s (28.0 s left).
+  Each passes; the side gate has 4.0 s spare. The side gate closes at about 2.25x, where the worst
+  path (25.7 s × 2.25 + 2 s) also reaches 60 s, so the gates and the rule agree.
+- **The trial budget stays as a guard.** The trial's placement run and its 7f read the command's
+  remainder less `POST_PLACEMENT_RESERVE_MS`. At 2x on the sheet that is 24.0 s against 18.4 s
+  needed. It acts only above about 2.25x: the trial then throws `CommandDeadlineError` at the next
+  stage or 7f pass, the round cuts (`SIDE_ROUND_CUT`) and the baseline publishes, so a side trial
+  never makes the command miss its deadline. 7f's own gate (the chord-clear step against
+  `POST_PLACEMENT_RESERVE_MS`) reads the command budget, in the trial as in the baseline. Ticket 133
+  adds an abort check between 7f passes if 7f has none.
+- **`MAX_RERUNS` stays 3** (2 fan re-runs and one side trial on the sheet). A fourth re-run (the
+  screen's re-place of a pruned batch) fits in time (51.4 + 5.4 + 2 = 58.8 s at 2x), but its gate
+  reads 22.6 s left, under 24 s, so the gate would cut at 2x. The rule asks for no cut at 2x, so 3
+  is the largest count. On a diagram with fewer fan re-runs the second side round can run.
+- `MAX_SIDE_VERIFY` stays 1: a second verified 7f adds 18.4 s at 2x (69.8 s).
+- Every other bound is a count: `FAN_ROUNDS`, `SIDE_ROUNDS`, `MAX_RERUNS`, `MAX_SIDE_VERIFY`,
+  `PROBE_CAP`.
+- The ELK policy (ADR-0006: 10 s, or 20 s above 300 nodes) and the router's own `ROUTE_BUDGET_MS`
+  do not change. `budget.share` still caps them by what remains.
+- Lowering `POST_PLACEMENT_RESERVE_MS` from 8 s to 4 s moves the point where 7f's chord-clear step
+  stops trying movers. The sheet at 2x starts its 7f with about 46 s left, far from either value;
+  the goldens never come near a gate. Ticket 137 confirms with the corpus differential.
 
 ### 19.6 A hold for an overlay L in 7f: deferred
 
@@ -797,7 +824,7 @@ verified trial refused because an L was lost.
 
 On the private sheet the side round gets **one trial at most**: `MAX_RERUNS` = 3 and the fan rounds
 spend 2 (ticket 117 measured it: one trial, refused, then `SIDE_ROUND_SKIPPED`). Section 19.5 shows
-that the time also allows no more. The design follows from that.
+that the gates at 2x also allow no more, even with the 60 s deadline. The design follows from that.
 
 - **A trial is a batch.** It carries every hint of the offer, as today: `measureSides` accepts the
   hints in link order on one clone, so each probe sees the hints before it. One trial per link
@@ -821,11 +848,11 @@ that the time also allows no more. The design follows from that.
   be judged on a model that the fans then move. And the baseline must be main's 7f output for
   byte-identity (Section 19.7).
 - Per family the counts stay: `FAN_ROUNDS` = 2, `SIDE_ROUNDS` = 2, `MAX_RERUNS` = 3 in all,
-  `MAX_SIDE_VERIFY` = 1. Raising `MAX_RERUNS` does not help the sheet: the time does not allow a
-  second trial (Section 19.5).
+  `MAX_SIDE_VERIFY` = 1. Raising `MAX_RERUNS` to 4 would make the fourth gate cut at 2x
+  (Section 19.5).
 - Ticket 133 reports, on the sheet, what the second fan re-run changes in the published baseline.
-  When it changes no published link, ticket 131 may lower `FAN_ROUNDS` for large inputs by a count
-  rule, and the freed re-run goes to the side screen.
+  When it changes no published link, a later ticket may lower `FAN_ROUNDS` for large inputs by a
+  count rule, and the freed re-run goes to the side screen.
 
 ### 19.9 Notes from ticket 117
 
@@ -839,16 +866,15 @@ that the time also allows no more. The design follows from that.
   pack that did not run. Ticket 136 diagnoses and fixes it in placement. Until then, ticket 133's
   acceptance runs the fixed-point check on each kept trial of the corpus.
 
-### 19.10 Open for the maintainer
+### 19.10 User decisions (2026-09-30)
 
-1. **The sheet and machine speed.** The sheet can afford a verified trial only on a machine within
-   about 6 % of the quiet reference (Section 19.5). A slower machine publishes the baseline with
-   `SIDE_ROUND_CUT`: never worse, but a different layout. Options: (a) accept this until ticket 135
-   makes 7f faster; (b) refuse side trials on large inputs by a count rule (for example, node
-   count), so the sheet never gets a side gain and never depends on the machine; (c) accept a trial
-   on the prediction alone (+2.7 s, fits to 1.55x), which can publish a worse sheet. **Recommended:
-   (a).** (c) breaks the aim that a side hint never makes the sheet worse.
-2. **Net count or no collateral.** Rule 4 keeps a batch when the net bent count falls, even when
-   some neighbours without a hint bend more (they are named). The stricter rule, "no link gets
-   worse", would have refused ticket 116's trial and most batches on the sheet. **Recommended: the
-   net count**, as decided for crossings (Section 17, decision 3).
+1. **Raise the time limit (user).** The command deadline goes from 30 s to 60 s, so the side trial
+   always fits on the sheet at 2x and the result does not depend on machine speed. The gates are
+   re-derived and stay only as a guard against the hard deadline; Section 7's rule that the whole
+   command fits at 2x is restored (Section 19.5). Ticket 137 makes the change and closes ticket
+   131. Rejected with it: side gains only on a quiet machine; refusing side trials on large inputs;
+   keeping a trial on the prediction alone (it can publish a worse sheet).
+2. **Net count (user).** A trial is kept when the bent links fall across the whole sheet (or stay
+   equal while the total bends fall) and no hinted link is worse than on the baseline (rule 4). Each
+   neighbour without a hint whose bends rise is named in `SIDE_HINT_BENDS_NEIGHBOUR`. The stricter
+   rule "no link gets worse" is rejected. This matches Section 17, decision 3, for crossings.
