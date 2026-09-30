@@ -207,20 +207,26 @@ function alignSide(node: LayoutNode, side: Side, targets: Map<string, number>, l
 }
 /** Whether every held routed chord with one end in the group still stands clear of the foreign lane boxes after the group moves `dx` in x. */
 function chordsClearAfterMove(model: LayoutModel, group: LayoutGroup, dx: number): boolean {
-  if (Math.abs(dx) <= EPS) return true;
+  // Before the freeze of 7f the chords are decided again on every rebuild; only a frozen chord follows its ports whatever they do.
+  if (Math.abs(dx) <= EPS || model.frozenChords === undefined) return true;
   const inside = new Set(group.nodes);
   return model.links.every(link => {
     if (!link.attachments || !isRoutedChord(model, link)) return true;
     const { from, to } = link.attachments, one = findPort(model, from)?.anchor, two = findPort(model, to)?.anchor;
     if (!one || !two || inside.has(from.node) === inside.has(to.node)) return true;
     const segment = { from: inside.has(from.node) ? { x: one.x + dx, y: one.y } : one, to: inside.has(to.node) ? { x: two.x + dx, y: two.y } : two, owner: link.owner };
-    return model.lanes.every(lane => lane.owner.kind === 'link' && lane.owner.id === link.id
+    // A chord end that stands inside a lane column is a move the passes undo (they seat the lane's child again); only a chord that crosses a column
+    // between its ends is a move that stays.
+    const within = (point: { x: number; y: number }, box: { x: number; y: number; width: number; height: number }): boolean =>
+      point.x >= box.x && point.x <= box.x + box.width && point.y >= box.y && point.y <= box.y + box.height;
+    return model.lanes.every(lane => lane.owner.kind === 'link' && lane.owner.id === link.id || within(segment.from, lane.bounds) || within(segment.to, lane.bounds)
       || segmentRectDistance(segment, lane.bounds) >= linkStrokeWidth(link) / 2 - EPS);
   });
 }
 /** For each port of the node whose link holds a routed chord: whether the chord, with that port moved to x, still stands clear of every foreign lane box. */
 function heldChordPorts(model: LayoutModel, node: LayoutNode): Map<string, (x: number) => boolean> {
   const result = new Map<string, (x: number) => boolean>();
+  if (model.frozenChords === undefined) return result;
   for (const link of model.links) {
     if (!link.attachments || !isRoutedChord(model, link)) continue;
     for (const [mine, other] of [[link.attachments.from, link.attachments.to], [link.attachments.to, link.attachments.from]] as const) {
