@@ -1,0 +1,46 @@
+# Expected: Two free groups on consecutive tiers stand where the overlay chords to the lower one are straight (ranked-groups ticket 143,
+# decisions-log Q112). This is the plain-group variant of `stacked-free-members-clear-each-others-chords`: no canton. The routed
+# groups `west` and `east` stand on tier 1 under the core row. The free groups `upper-clients` (tier 2) and `lower-clients` (tier 3) have
+# no routed link. Every server of `west` and `east` syncs with every client server by an overlay link. The mean of the partners is the
+# axis for both groups, so on the mean the chords to `lower-clients` cross the body row of `upper-clients` and bend; the rule moves
+# `lower-clients` to the nearest x where its chords are straight.
+# Test-only input owned by ranked-groups ticket 143; test/pipeline/overlay-window.test.ts reads the layout.
+portograph: 2
+groups:
+  core: { tier: 0, label: Core }
+  west: { tier: 1, label: West }
+  east: { tier: 1, label: East }
+  upper-clients: { tier: 2, label: Upper clients }
+  lower-clients: { tier: 3, label: Lower clients }
+nodes:
+  core-1: { group: core, class: router, label: Core 1 }
+  core-2: { group: core, class: router, label: Core 2 }
+  west-a: { group: west, class: server, label: West A }
+  west-b: { group: west, class: server, label: West B }
+  east-a: { group: east, class: server, label: East A }
+  east-b: { group: east, class: server, label: East B }
+  up-1: { group: upper-clients, class: server, label: Upper 1 }
+  up-2: { group: upper-clients, class: server, label: Upper 2 }
+  low-1: { group: lower-clients, class: server, label: Lower 1 }
+  low-2: { group: lower-clients, class: server, label: Lower 2 }
+links:
+  - [core-1, west-a]
+  - [core-1, west-b]
+  - [core-2, east-a]
+  - [core-2, east-b]
+  - [west-a, up-1, { class: sync }]
+  - [west-a, up-2, { class: sync }]
+  - [west-b, up-1, { class: sync }]
+  - [west-b, up-2, { class: sync }]
+  - [east-a, up-1, { class: sync }]
+  - [east-a, up-2, { class: sync }]
+  - [east-b, up-1, { class: sync }]
+  - [east-b, up-2, { class: sync }]
+  - [west-a, low-1, { class: sync }]
+  - [west-a, low-2, { class: sync }]
+  - [west-b, low-1, { class: sync }]
+  - [west-b, low-2, { class: sync }]
+  - [east-a, low-1, { class: sync }]
+  - [east-a, low-2, { class: sync }]
+  - [east-b, low-1, { class: sync }]
+  - [east-b, low-2, { class: sync }]

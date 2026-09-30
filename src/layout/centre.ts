@@ -640,7 +640,9 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
   if (settleRows(model)) rebuildRegions(model);
   // Free groups first: the steps below read where every group stands (ranked-groups spec 3.1).
   let columns = frameColumns(model);
-  placeOverlayFree(model, columns);
+  // The first run has no windows: the partners stand where the skeleton left them, and a window read there fixes an x that the order rules
+  // of the passes below read (ticket 143). The runs after a pass of steps read the partners where centring left them.
+  placeOverlayFree(model, columns, false);
   let context = centreContext(model, anchor, columns), built = geometry(model);
   let unresolved = new Set<string>(), ran = false;
   while (budget.remaining > 0) {
