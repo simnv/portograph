@@ -19,11 +19,22 @@ interface Mesh { klass: string; classIndex: number; nodes: number[]; adjacency: 
 
 const edgeKey = (a: number, b: number): string => a < b ? `${a}:${b}` : `${b}:${a}`;
 
-/** Every maximal clique (Bron-Kerbosch with pivoting). The nodes of one row are tens, and the degree is bounded. */
-function maximalCliques(adjacency: Map<number, Set<number>>): number[][] {
+/** The most maximal cliques read for one row and class; a graph with more is declined (`too-many-cliques`). */
+export const CLIQUE_LIMIT = 4096;
+
+/**
+ * The maximal cliques (Bron-Kerbosch with pivoting), or `undefined` past `CLIQUE_LIMIT`. The degree limit does not
+ * bound the work: a row of 28 nodes can hold 16,384 maximal cliques, and their number grows exponentially.
+ */
+function maximalCliques(adjacency: Map<number, Set<number>>): number[][] | undefined {
   const result: number[][] = [];
+  let exceeded = false;
   const expand = (clique: number[], candidates: Set<number>, excluded: Set<number>): void => {
-    if (!candidates.size && !excluded.size) { result.push([...clique].sort((x, y) => x - y)); return; }
+    if (exceeded) return;
+    if (!candidates.size && !excluded.size) {
+      if (result.length >= CLIQUE_LIMIT) exceeded = true; else result.push([...clique].sort((x, y) => x - y));
+      return;
+    }
     let pivot = -1, best = -1;
     for (const u of [...candidates, ...excluded]) {
       let shared = 0;
@@ -39,7 +50,7 @@ function maximalCliques(adjacency: Map<number, Set<number>>): number[][] {
     }
   };
   expand([], new Set(adjacency.keys()), new Set());
-  return result;
+  return exceeded ? undefined : result;
 }
 
 /** Lexicographic order of two sorted declaration-index lists. */
@@ -134,19 +145,32 @@ export function detectMeshBuses(model: LayoutModel): void {
     // Every maximal clique of three or more, per class, of the whole graph: the checks read them all,
     // and only the clique taken as the bus removes edges, so a declined clique hides no other one.
     const found: { mesh: Mesh; clique: number[] }[] = [];
-    for (const mesh of classes.values()) for (const clique of maximalCliques(mesh.adjacency)) if (clique.length >= 3) found.push({ mesh, clique });
+    for (const mesh of classes.values()) {
+      const cliques = maximalCliques(mesh.adjacency);
+      if (cliques === undefined) {
+        const all = [...mesh.edges.values()].flatMap(edge => edge.links);
+        report('MESH_BUS_DECLINED', 'warning', `The ${label(mesh)} links in ${row} draw as plain overlay links, too-many-cliques: more than ${CLIQUE_LIMIT} maximal cliques`, all);
+        continue;
+      }
+      for (const clique of cliques) if (clique.length >= 3) found.push({ mesh, clique });
+    }
     found.sort((a, b) => b.clique.length - a.clique.length || compareIndices(a.clique, b.clique) || a.mesh.classIndex - b.mesh.classIndex);
-    let bus: Set<number> | undefined;
+    let bus: Set<number> | undefined, busMesh: Mesh | undefined;
     const reported: number[][] = [];
     for (const { mesh, clique } of found) {
-      const members = linksAmong(mesh, clique);
       const names = clique.map(index => nodeIds[index]!);
+      if (bus !== undefined) {
+        // A clique of the bus's class whose nodes outside the bus each touch two or more bus nodes is a part of the
+        // partial mesh (the nodes MESH_BUS_PARTIAL names). Any other clique is a second mesh; one that shares
+        // an edge with a mesh already reported is the same mesh.
+        const partOfBus = mesh === busMesh && clique.every(node => bus!.has(node)
+          || [...mesh.adjacency.get(node)!].filter(other => bus!.has(other)).length >= 2);
+        if (partOfBus || reported.some(other => clique.filter(node => other.includes(node)).length >= 2)) continue;
+      }
+      const members = linksAmong(mesh, clique);
       const decline = (reason: string, detail: string): void => report('MESH_BUS_DECLINED', 'warning',
         `Mesh of ${names.join(', ')} (${label(mesh)}) in ${row} draws as plain overlay links, ${reason}: ${detail}`, members);
       if (bus !== undefined) {
-        // A clique through a bus node is a part of the mesh the bus left plain, not a second mesh; one that
-        // shares an edge with a mesh already reported is the same mesh.
-        if (clique.some(node => bus!.has(node)) || reported.some(other => clique.filter(node => other.includes(node)).length >= 2)) continue;
         reported.push(clique);
         decline('second-mesh', 'a row holds one bus in this version');
         continue;
@@ -156,6 +180,7 @@ export function detectMeshBuses(model: LayoutModel): void {
       const chosen = busPorts(names, members);
       if (typeof chosen === 'string') { decline('named-ports', `${chosen} has two or more authored ports on the member links`); continue; }
       bus = new Set(clique);
+      busMesh = mesh;
       const id = `mesh-bus-${buses.length + 1}`;
       attach(model, id, chosen, members);
       const frames = [...new Set(names.map(frameOf))];
@@ -227,7 +252,7 @@ function dropBusSharedPortWarnings(model: LayoutModel): void {
       const end = match ? model.document.links[Number(match[1])]?.[match[2] as 'from' | 'to'] : undefined;
       if (end?.node === undefined) return true;
       // Keep the warning when any link that is not a member uses the port.
-      const users = model.links.filter(link => [link.attachments!.from, link.attachments!.to].some(ref => ref.node === end.node && ref.name === end.name));
+      const users = model.links.filter(link => [link.attachments!.from, link.attachments!.to].some(ref => sameRef(ref, end as PortRef)));
       return !(users.length && users.every(link => link.meshBus !== undefined));
     }
     const owners = diagnostic.owners ?? [];

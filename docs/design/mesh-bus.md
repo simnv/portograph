@@ -60,8 +60,10 @@ class. A link with an authored `route:` is not a candidate, as for a group-link;
 on every member is the opt-out.
 
 **The bus.** For each row and class, take the graph of candidate links. Find its maximal cliques
-(Bron-Kerbosch with pivoting; a row holds tens of nodes, and the scale envelope of degree 64 or
-less bounds the work) and read them largest first; ties between cliques of equal size go to the
+(Bron-Kerbosch with pivoting) and read them largest first. The degree limit does not bound the
+work: the number of maximal cliques grows exponentially (a row of 28 nodes can hold 16,384). The
+search stops at 4,096 maximal cliques per row and class; the class is then declined
+(`MESH_BUS_DECLINED`, `too-many-cliques`) and its links stay plain. Ties between cliques of equal size go to the ties between cliques of equal size go to the
 clique whose sorted declaration indices come first, compared one by one. The first clique of three
 or more nodes that passes the checks below is the bus. The bus takes every candidate link among
 its nodes.
@@ -88,9 +90,15 @@ overlay links from their own ports. `MESH_BUS` names every dissolved group-link;
 names a group-link that lost only some members and counts the ones left plain. A group-link is
 never kept beside a bus that holds one of its members.
 
-**Overlapping cliques and a second mesh.** In the first version a row holds at most one bus. A
-second clique of three or more nodes on the same row, of the same class or of another class, is
-reported as `MESH_BUS_DECLINED` (`second-mesh`) and its links stay plain. Ticket 85 lifts the
+**Overlapping cliques and a second mesh.** In the first version a row holds at most one bus. After
+the bus is taken, every other maximal clique of three or more nodes of the row is read. It is
+skipped when it has the bus's class and each of its nodes outside the bus touches two or more bus
+nodes: those are the nodes `MESH_BUS_PARTIAL` names, and the clique is a part of the partial mesh.
+Any other clique is a second mesh, of the same class or of another, and is reported as
+`MESH_BUS_DECLINED` (`second-mesh`), once per mesh (a clique that shares an edge with one already
+reported is the same mesh); its links stay plain. So a 12-node set that misses two disjoint pairs
+gives no decline. A `sync` bus {a, b, c, d} with a `mgmt` triangle {a, x, y} is declined, and so
+is a `sync` triangle {d, x, y}, because x and y touch one bus node at most. Ticket 85 lifts the
 limit: buses of one row stack their bars outward.
 
 **Ports.** The bus needs one port per member. The parser gives each bare link end its own
@@ -358,7 +366,7 @@ as the overlay export was (Q70): the drawn bar and stubs read back within 0.05 p
 |---|---|---|
 | `MESH_BUS` | info | A bus formed: row (sub-tier), class, placement, node count, member count, the frames spanned, the group-links dissolved. |
 | `MESH_BUS_PARTIAL` | info | A same-row same-class set had nodes the bus could not take: names them and the missing pairs; names a group-link that lost only some members to the bus and counts the members left plain. |
-| `MESH_BUS_DECLINED` | warning | Reasons: `named-ports` (two or more authored ports at one member), `shape` (a member in a `grid` or `bar` group or a flank), `second-mesh` (a second clique on a row that has a bus; lifted by ticket 85). |
+| `MESH_BUS_DECLINED` | warning | Reasons: `named-ports` (two or more authored ports at one member), `shape` (a member in a `grid` or `bar` group or a flank), `second-mesh` (a second clique on a row that has a bus; lifted by ticket 85), `too-many-cliques` (more than 4,096 maximal cliques in one row and class). |
 | `MESH_BUS_TITLE_MOVED` | info | A member frame's title left its ADR-0011 edge because no position and no widening cleared the stub (stage `placement`, the frame as owner). |
 
 The first three are `stage: 'model'`, with the member links as owners.

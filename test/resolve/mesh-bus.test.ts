@@ -217,4 +217,46 @@ describe('mesh bus detection (stage 1)', () => {
       expect(JSON.stringify(resolve(first.document))).toBe(JSON.stringify(first));
     }
   });
+
+  it('gives no decline for a 12-node set that misses two disjoint pairs', () => {
+    const ids = Array.from({ length: 12 }, (_, i) => `n${i + 1}`);
+    const links = pairs(ids).filter(link => !/from: n1, to: n2,|from: n3, to: n4,/.test(link));
+    const model = resolve(parse(oneRow(ids, links)));
+    expect(model.meshBuses![0]!.nodes).toHaveLength(10);
+    expect(codes(model, 'MESH_BUS_DECLINED')).toHaveLength(0);
+  });
+
+  it('declines a triangle of another class through a bus node as a second mesh', () => {
+    const model = resolve(parse(oneRow(['a', 'b', 'c', 'd', 'x', 'y'], [...pairs(['a', 'b', 'c', 'd']), ...pairs(['a', 'x', 'y'], 'flow')])));
+    expect(model.meshBuses).toHaveLength(1);
+    const declined = codes(model, 'MESH_BUS_DECLINED');
+    expect(declined).toHaveLength(1);
+    expect(declined[0]!.message).toContain('second-mesh');
+  });
+
+  it('declines a triangle of the bus class whose outside nodes touch one bus node', () => {
+    const model = resolve(parse(oneRow(['a', 'b', 'c', 'd', 'x', 'y'], [...pairs(['a', 'b', 'c', 'd']), ...pairs(['d', 'x', 'y'])])));
+    expect(model.meshBuses![0]!.nodes).toEqual(['a', 'b', 'c', 'd']);
+    const declined = codes(model, 'MESH_BUS_DECLINED');
+    expect(declined).toHaveLength(1);
+    expect(declined[0]!.message).toContain('second-mesh');
+  });
+
+  it('declines the triangle through the node that touches one bus node in the corridor input without its opt-out', () => {
+    const text = fixture('a-corridor-moves-after-the-grid-settles').replaceAll(', route: overlay', '');
+    const model = resolve(parse(text));
+    expect(model.meshBuses).toHaveLength(2);
+    expect(codes(model, 'MESH_BUS_DECLINED').some(d => d.message.includes('second-mesh'))).toBe(true);
+  });
+
+  it('stops the clique search and declines, in bounded time, on a row of 40 nodes with a million maximal cliques', () => {
+    const ids = Array.from({ length: 40 }, (_, i) => `n${i + 1}`);
+    // The complement of a perfect matching has 2^20 maximal cliques.
+    const links = pairs(ids).filter(link => { const [, a, b] = /from: n(\d+), to: n(\d+),/.exec(link)!.map(Number); return !(a! % 2 === 1 && b === a! + 1); });
+    const started = Date.now();
+    const model = resolve(parse(oneRow(ids, links)));
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(model.meshBuses).toBeUndefined();
+    expect(codes(model, 'MESH_BUS_DECLINED')[0]!.message).toContain('too-many-cliques');
+  });
 });
