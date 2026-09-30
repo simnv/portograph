@@ -77,16 +77,14 @@ member links. An authored opt-in for a partial mesh is an open question (Section
 **Side.** The bus stands on the horizontal edge of the row that fewer legs cross (maintainer,
 2026-09-30: *"whichever has fewer legs"*). The **leg count** of an edge is the number of verticals
 placement will put across the bus band on that edge, within the bar's span (from the first bus
-port to the last, in the row's order):
+port to the last, in the row's order): one for each routed, non-stub port on that side of a node
+of the row that stands in the span, a member or not (the leg of that port).
 
-- one for each routed, non-stub port on that side of a node of the row that stands in the span, a
-  member or not (the leg of that port);
-- one for each routed link that transits the row's cell inside its frame (a link between two cells
-  of the frame on both sides of this cell: its lane stands inside the frame, at one x, and crosses
-  the whole cell). It counts on each edge it crosses: both edges of a middle cell, the interior
-  edge of an end cell.
-
-A lane outside the frame, and a drop of another tier, never enter the span, so they add nothing.
+Nothing else enters the span. A transit lane, inside the frame or outside it, is reserved beside
+the cells it crosses (7a; ranked-groups spec, "Transit through a frame"), so it stands outside the
+row's nodes and so outside the span; 7a also runs after the stage-5 read. A drop of another tier
+runs in a tier gap, outside the group box that holds the band. The count reads port sides and the
+row order only, so it is known before the freeze.
 The title edge is a candidate: there the bar stands between the bodies and the title, and the
 title moves out by the bus band. **Tie rule:** the title edge wins, because nothing else runs
 there. A cell of a frame that has no title edge of its own (a middle cell) takes, on a tie, the
@@ -105,8 +103,9 @@ leg counts read from the stage-2 sides, over every node of the row, because the 
 so the span are not known before the skeleton. Stage 3 counts it as one port on that side. Stage
 5 reads the counts again after the routed sides are settled (a shared port recomputes its
 majority, which can change a side and the title edge), now within the span read off the skeleton
-order, and moves the bus port if the side changed, resizing the node as for a side that gained a
-port. That stage-5 read is the one that stands: the side is fixed at the freeze and 7f never
+order, and moves the bus port if the side changed. The read comes before stage 5 resizes the
+nodes and repacks the rows, so the move is one more side change of that one resize, and no group,
+tier band or frame has been measured from the old side. That stage-5 read is the one that stands: the side is fixed at the freeze and 7f never
 moves the bus, whatever verticals its label read finds. Stage 5 never gives it left or right from the row order, as it does for
 another same-tier overlay port. The bus port is the last port in engine order on its side; an
 authored `order:` on a named bus port wins. Identity, count and side are fixed at the freeze at the
@@ -126,8 +125,10 @@ the 20 px of frame padding, so the frame grows on the bus edge by the difference
 label band grows a group (ADR-0011). On the title edge the band lies between the bodies and the
 label band: the label band's `clearance` grows by the bus band, the title moves out by it, and the
 frame grows by the whole band. The label stands beyond the bar, centred on the bar's
-midpoint, at heading 0 (ADR-0014). When a vertical that placement puts across the band (a routed
-leg of the row's own ports, a lane, a planned drop of another tier) crosses the centred label box,
+midpoint, at heading 0 (ADR-0014). When a vertical that placement puts across the band crosses the
+centred label box (a routed leg of the row's own ports, or a transit lane beside the row, which a
+label wider than the bar's span can reach; the leg count reads the span only, so it leaves the
+lanes out),
 the label takes the longest clear interval of the bar between two consecutive stubs and verticals; when no interval holds it, it goes to the tooltip and `labelsOmitted` counts it.
 
 **Who reserves it.** Three steps, all in placement, in pipeline order:
