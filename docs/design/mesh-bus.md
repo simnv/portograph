@@ -131,8 +131,14 @@ port to the last, in the row's order):
 1. one for each routed, non-stub port on that side of a node of the row that stands in the span, a
    member or not (the leg of that port);
 2. one for each vertical of a planned part of the sub-tier gap on that edge (ADR-0021) that stands
-   over the span: the legs and drops of the ports of the tier across the gap, and of ports of the
-   row's own nodes outside the span whose part runs back over it;
+   over the span *and reaches the band*. That is a link that passes the whole row (one end in a
+   tier above, the other in a tier below): its port in the tier across the gap on that edge runs a
+   vertical in the gap at its own x before the link turns to its lane. A link between the row and
+   the tier across the gap ends in a port term 1 counts, and the run of its part lies below the
+   band (the plan seats no row inside it), so it is not counted twice and its far port is not counted
+   at all (ticket 83 measured that counting every port of the tier across the gap contradicts the
+   acceptance fixture: a lower tier that stands under the span has ports over it whose links end
+   outside it);
 3. one for each lane through that gap over the span, transit or foreign.
 
 For an in-frame bus in a frame padding only term 1 can be non-zero, as before: a lane is reserved
@@ -166,9 +172,9 @@ are not known before the skeleton. Stage 3 counts it as one port on that side. S
 counts again after the routed sides are settled (a shared port recomputes its majority, which can
 change a side and the title edge), now within the span read off the skeleton order, and moves the
 bus port if the side changed. Term 1 is exact at that read (port sides and row order). Term 2 has
-no plan yet at stage 5 (the ADR-0021 plan is made in 7a): stage 5 reads it as the routed ports of
-the tier across the gap on the side that faces the gap, and the routed ports of the row's nodes
-outside the span whose other end stands over it, each at its skeleton x. Term 3 is not read at
+no plan yet at stage 5 (the ADR-0021 plan is made in 7a): stage 5 reads it as the ports, in the
+tier across the gap and on the side that faces it, of the routed links that pass the whole row, each
+at its skeleton x. Term 3 is not read at
 stage 5: lanes are reserved in 7a, and a lane counts the same on both edges. All inputs are
 deterministic (sides, skeleton order and x), so the read is. Term 2 is provisional, because 7a to
 7f move x, and the side is still fixed at the freeze. That is accepted: a leg that moves into the
@@ -257,8 +263,21 @@ band grows a frame on its title edge. The label stands beyond the bar, centred o
 midpoint, at heading 0 (ADR-0014). When a vertical that placement puts across the band crosses the
 centred label box (a leg of term 1, a part of term 2, a lane of term 3, or a transit lane beside
 the span that a label wider than the bar can reach), the label takes the longest clear interval of
-the bar between two consecutive stubs and verticals; when no interval holds it, it goes to the
-tooltip and `labelsOmitted` counts it.
+the bar between two consecutive verticals (a stub ends at the bar and the label stands beyond it, so
+a stub never blocks the label; ticket 83); when no interval holds it, it goes to the tooltip and
+`labelsOmitted` counts it. Placement records the interval on the bus (`labelRoom`) for stage 9.
+
+**The frames of a bus** (`frames`, ticket 83). `frames` lists the direct frame of each member's cell,
+or the one-rank group itself, in order of first member. It does not carry the parent chain: nothing in
+placement needs it. The canton band reads `document.frames` (`cantonTiers`) to find the canton whose
+outer edge the band lies on, and the bar's line reads the groups of the row, not the frames. A reader
+that wants a canton finds it from the frame's `parent`.
+
+**A title moved by a stub** (`titleMoves`, ticket 83). `MESH_BUS_TITLE_MOVED` is raised by 7f when a title
+stands on a bus stub after the nudge and the widening: `planLabels` reports the title, 7f records its id in
+`titleMoves`, and `bandSide` and `frameSide` (which every consumer of a title edge reads) answer the
+other edge from then on, where the frame has a cell to host it. The bus reads ADR-0011's own edge
+(`rawBandSide`, `rawFrameSide`), so a moved title never moves a bus.
 
 **Who reserves it.** Three steps, all in placement, in pipeline order:
 

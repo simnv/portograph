@@ -135,6 +135,11 @@ unresolved peer directions, commit the known winner only if allocating all unres
 either lateral side cannot change that winner, including tie priority. Otherwise defer its side
 and retain only a provisional sizing side. Stage 5 recomputes its majority from all peers.
 
+**A mesh bus port** (`docs/design/mesh-bus.md`, ticket 83) has only same-row peers and would take `left`/`right`, but a bus stands on a horizontal
+edge. Stage 2 gives it a provisional bus edge for sizing (`sizingSide`): `busSide` (`bus.ts`) with term 1 over every node of the row, read
+from the stage-2 sides (a port with no side yet counts by its sizing side), because the row's order and so the span are not known before
+the skeleton. Stage 3 counts it as one port on that edge.
+
 ## Stage 3 — size
 
 Per node, per side: `pitch(side) = max(12, largest rendered pill extent along that side + 4)`.
@@ -320,6 +325,16 @@ shared-port peers use their mean coordinate. Capture those coordinates before th
 rebuild. Author `order:` sorts the author-ordered subsequence; free ports occupy the remaining
 positions. Preserve signed keys and the relative physical order of unequal author keys, not an
 absolute slot number.
+
+**The bus edge is read again here** (ticket 83). Once every routed port has its final side, and before the nodes are re-sized and the rows
+repacked, `busSide` counts the legs each horizontal edge of the row carries within the bar's span (the members' bus ports, first to last, at the
+skeleton's x) and fixes `bus.side` at the edge with fewer, the title edge on a tie. Term 1 is exact: the routed, non-stub ports on that edge of
+the row's nodes in the span, member or not. Term 2 has no plan before 7a, and is read as the routed links that pass the whole row (an end in a
+tier above and an end in a tier below), at the x of the port in the tier across the gap; a link between the row and the tier across the gap ends in
+a port term 1 counts, and its run lies below the band. Term 3 (lanes) is not read: it counts the same on both edges. The bus ports take that
+edge (never `left` or `right`), each is the last port in engine order on its side (an authored `order:` on a named bus port still wins), and the
+move is one more side change of the one resize. The edge is fixed at the freeze; 7f never moves it. A stage-2 estimate of the other edge is
+corrected here.
 
 A bundle's members leave each shared node on one side: the ports one bundle ties at a node (and,
 through a port in two bundles, both bundles' ports) vote as one component in stage 2 and again here
@@ -887,6 +902,28 @@ title edge widened 39 of 178 sheets, 1513 px in all, against 8 sheets and 242 px
 widening on demand needs one growth pass, and centring has spent the shared eight-pass budget on every measured sheet that has such a leg. Each title
 therefore has `LEG_PASSES_PER_TITLE` (1) extra pass outside the shared budget; a widening past it is refused and reported as
 `GROUP_LABEL_LEG_ALLOWANCE_EXHAUSTED`, not as budget exhaustion.
+
+**The mesh bus band** (ticket 83; `docs/design/mesh-bus.md`, section 4). A bus with a fixed side asks for a band of `BUS_STUB` (15 px) plus
+`4 px + label height + 4 px` (the label is `<class> mesh (<n> nodes)` at 9 px). Two placements reserve it.
+*In-frame*: the group that holds the members (a cell or a group) holds the band on the bus edge as it holds a label band, through
+`groupInsets`: on the title edge the label band's `clearance` grows by the bus band and the title moves out by it; on the other edge the
+inset is the larger of the padding and the band. `reserveInitialSpace` shifts the nodes and grows the box by the room still missing (it
+reads the bands the model carries, so the second call reserves nothing more). The frame follows its cells.
+*Across frames*: the band stands in the sub-tier gap on the bus edge and belongs to no frame; the sub-tier holds it as it holds a canton title
+band. `cantonGapNeeds` requires 20 + band + 20 there, and 20 + bus band + canton band + 20 where a canton band stands on the same edge (the
+sum, never the larger); the loop of `reserveInitialSpace` moves the lower tiers by the shortfall. A canton whose outer edge carries the band
+grows by it between its member frames and its title band (`deriveFrames`).
+`syncBands` publishes the `BusBand` records (`busBands`; `group` names the host of an in-frame band) and the bar, the stubs and the label's room
+(`bus.bar`, `bus.stubs`, `bus.labelRoom`) beside the label bands, so every replay that rebuilds the label bands rebuilds them, before the
+tier gap grows and again after it. The bar runs at `L + 15` from the first bus port to the last, `L` being the outermost body or pill extent
+of the members' cell in-frame, and the outermost edge on the bus side of every group of the row in the span across frames (a foreign frame
+included). A stub runs from its port's outward face straight to the bar. The label's room is the centre of the bar where no vertical crosses
+the band there, else the longest clear interval; a stub ends at the bar and the label stands beyond it, so a stub never blocks it.
+A stub of an across-frames bus leaves through the padding and the label band of its frame on the bus edge: `legRects` reads it as a leg of the
+band's ports, so `titleX` nudges the title clear of it and `growthPlan` widens the frame where no x clears it. Where neither holds, the title
+goes to the other edge (`titleMoves`, read by `bandSide` and `frameSide`; the bus reads ADR-0011's own edge through `rawBandSide` and
+`rawFrameSide`) and `MESH_BUS_TITLE_MOVED` (info) says so. The tier-gap plan reads an across-frames band as an O5 band (`tier-gap-rows.md`).
+Bus members are neither straight nor bent: both `straightOverlays` and `stepOverChords` leave them out.
 
 **A tier gap grows to the height of its plan (ADR-0021).** 7f places its group labels, then reads
 the plan of each gap, then places its group labels again. The middle step is the reservation, and it
