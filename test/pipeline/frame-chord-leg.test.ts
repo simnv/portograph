@@ -1,8 +1,9 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
 import { expectedFramePath, orthogonalLeg } from '../../src/layout/frame-paths.js';
+import { findPort } from '../../src/layout/row-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -30,11 +31,12 @@ async function crowded(slant: number): Promise<{ model: LayoutModel; chord: stri
 }
 
 describe('a frame chord holds its clearance along a neighbour\'s whole leg', () => {
-  it('reads the leg to a stem short of the tier gap it faces, not the 15 px stem', async () => {
+  it('reads a transit leg as the whole tier gap it faces, not the 15 px stem', async () => {
     const { model } = await crowded(0);
     const transit = model.links.find(link => link.attachments!.to.node === 'deep' && link.attachments!.from.node === 'core')!;
     const leg = orthogonalLeg(model, transit, 'from')!;
-    expect(Math.abs(leg.to.y - leg.from.y)).toBeGreaterThan(15);
+    const edge = model.tierBands.filter(band => band.bounds!.y > leg.from.y + 1e-6).map(band => band.bounds!.y).sort((a, b) => a - b)[0]!;
+    expect(leg.to.y).toBeCloseTo(edge, 6);
     expect(leg.to.x).toBe(leg.from.x);
   });
 
@@ -53,4 +55,37 @@ describe('a frame chord holds its clearance along a neighbour\'s whole leg', () 
     expect(score(model).snapshot.gates.G6.violations).toEqual([]);
     expect(model.removedLinks ?? []).toEqual([]);
   });
+
+  // Review of ticket 91, finding 1: the bound must be an upper bound on every leg the plan seats. Each published first or last vertical run of a
+  // routed link that is not a chord is compared with `orthogonalLeg` on the same published model.
+  it('bounds every published end leg of the synthetic inputs', async () => {
+    const names = readdirSync(new URL('../../goldens/synthetic/', import.meta.url)).filter(name => /fan|gap|row|leg|chord|tier|canton|held|leaf|lateral|title|narrow/.test(name) && name.endsWith('.yaml'));
+    expect(names.length).toBeGreaterThan(20);
+    let checked = 0;
+    for (const name of names) {
+      let model: LayoutModel;
+      try { model = await layout(parse(readFileSync(new URL(`../../goldens/synthetic/${name}`, import.meta.url), 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt }); } catch { continue; }
+      for (const link of model.links) {
+        if (link.layer !== 'routed' || link.technique === 'straight' || link.technique === 'stub' || !link.path || link.path.segments.length < 2) continue;
+        for (const end of ['from', 'to'] as const) {
+          const port = findPort(model, link.attachments![end]);
+          if (!port?.anchor || (port.side !== 'top' && port.side !== 'bottom')) continue;
+          const segments = end === 'from' ? link.path.segments : [...link.path.segments].reverse().map(s => ({ from: s.to, to: s.from }));
+          let y = port.anchor.y;
+          for (const segment of segments) {
+            if (Math.abs(segment.from.x - port.anchor.x) > 1e-6 || Math.abs(segment.to.x - port.anchor.x) > 1e-6 || Math.abs(segment.from.y - y) > 1e-6) break;
+            y = segment.to.y;
+          }
+          // The chord stands in the gap the port faces: a run that goes on through a band by a lane is measured to the band edge.
+          const sign = port.side === 'bottom' ? 1 : -1;
+          const edges = model.tierBands.map(band => (sign > 0 ? band.bounds!.y : band.bounds!.y + band.bounds!.height) - port.anchor!.y).filter(d => d * sign > 1e-6).map(Math.abs);
+          const published = Math.min(Math.abs(y - port.anchor.y), edges.length ? Math.min(...edges) : Infinity);
+          const bound = orthogonalLeg(model, link, end)!;
+          expect(published, `${name} ${link.id}.${end}`).toBeLessThanOrEqual(Math.abs(bound.to.y - bound.from.y) + 1e-6);
+          checked++;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(50);
+  }, 120000);
 });

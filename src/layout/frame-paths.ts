@@ -3,7 +3,7 @@ import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { effectiveLayer } from '../score/model.js';
 import { overlayBlockers, straightChord } from './overlay-paths.js';
 import { groupShape } from './grid.js';
-import { bandSide, frameSide } from './bands.js';
+import { bandSide, frameSide, GROUP_LABEL_GEOMETRY } from './bands.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE, straightCorridorClear } from './row-paths.js';
 
 const OUTWARD = { top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } } as const;
@@ -132,29 +132,29 @@ export function standaloneChord(model: LayoutModel, link: LayoutLink): PathSegme
   return segment;
 }
 
-
-/** The length of a stem: the router leaves every port outward by at least this. */
-const STEM_LENGTH = 15;
-
 /**
  * The reserved vertical run of a link that stays orthogonal, at one end: from the port face outward to the row the plan will
- * seat, which is not known before 7f, so to the near edge of the tier gap it faces, and not past the other end's face when
- * that stands in the same gap. A side port or a port with no tier gap beyond it keeps the stem alone (ticket 91).
+ * seat, which is not known before 7f: the whole tier gap it faces when the link runs on through it, or a drop to the far port's stem tip when
+ * that port stands in the band across the gap. A side port or a port with no tier gap beyond it keeps the stem alone (ticket 91).
  */
 export function orthogonalLeg(model: LayoutModel, link: LayoutLink, end: 'from' | 'to'): PathSegment | undefined {
   const port = findPort(model, link.attachments![end]), out = port?.side === undefined ? undefined : OUTWARD[port.side];
   if (!port?.anchor || !out) return undefined;
-  let length = STEM_LENGTH;
+  let length: number = GROUP_LABEL_GEOMETRY.routerStem;
   if (out.x === 0) {
     const y = port.anchor.y;
-    const edges = model.tierBands.flatMap(band => band.bounds ? [band.bounds] : [])
-      .map(box => out.y > 0 ? box.y : box.y + box.height).filter(edge => (edge - y) * out.y > EPS);
-    if (edges.length) {
-      // The row stays a stem short of the far boundary, where the stem of the port that meets the leg begins (ticket 91).
-      let reach = (out.y > 0 ? Math.min(...edges) : Math.max(...edges)) - out.y * STEM_LENGTH;
+    const boxes = model.tierBands.flatMap(band => band.bounds ? [band.bounds] : []);
+    const edgeOf = (box: Rect): number => out.y > 0 ? box.y : box.y + box.height;
+    const across = boxes.filter(box => (edgeOf(box) - y) * out.y > EPS).sort((a, b) => (edgeOf(a) - edgeOf(b)) * out.y)[0];
+    if (across) {
+      const edge = edgeOf(across);
       const far = findPort(model, link.attachments![end === 'from' ? 'to' : 'from']);
-      // The far end's face bounds the leg when it faces this gap: the leg never runs past it.
-      if (far?.anchor && far.side === (out.y > 0 ? 'top' : 'bottom') && (far.anchor.y - y) * out.y > EPS && (far.anchor.y - out.y * STEM_LENGTH - reach) * out.y < 0) reach = far.anchor.y - out.y * STEM_LENGTH;
+      // The far end stands in the band across the gap, facing back: the link ends in this gap, and its longest vertical is a drop to the
+      // far port's stem tip (a row stands at most there; a row nearer the edge, at the group-edge margin, is shorter). Otherwise the
+      // link runs on through the gap by a lane and the leg is the whole gap (ticket 91).
+      const meets = far?.anchor !== undefined && far.side === (out.y > 0 ? 'top' : 'bottom')
+        && far.anchor.y >= across.y - EPS && far.anchor.y <= across.y + across.height + EPS;
+      const reach = meets ? far!.anchor!.y - out.y * GROUP_LABEL_GEOMETRY.routerStem : edge;
       length = Math.max(length, Math.abs(reach - y));
     }
   }
