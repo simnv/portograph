@@ -12,6 +12,10 @@ import { portId } from './skeleton-graph.js';
  */
 export const FAN_PITCH_CAP = 60;
 
+/** Extra clearance a fan is measured for, so that the drift of 7f (columns move in x after the freeze) does not close a pair under 10 px.
+ * Measured on the private sheet: 0 gave 3 G6 pairs, 3 gave 1, 4 gave none, 5 none (wider), 8 fell back on a declined face and 2 new G6 pairs. */
+export const FAN_SLACK = 4;
+
 /** The faces whose ports need a wider pitch, and the faces that would need more than the cap. */
 export interface FanMeasure {
   floors: Map<string, Partial<Record<Side, number>>>;
@@ -39,7 +43,7 @@ export function measureFans(model: LayoutModel): FanMeasure {
   for (const link of candidates) for (const end of [link.attachments!.from, link.attachments!.to]) {
     byPort.set(portId(end), [...(byPort.get(portId(end)) ?? []), link]);
   }
-  const clearance = STRAIGHT_PATH_CLEARANCE.path;
+  const clearance = STRAIGHT_PATH_CLEARANCE.path + FAN_SLACK;
   const held = (a: PathSegment, b: PathSegment, la: LayoutLink, lb: LayoutLink): boolean =>
     strictCrossing(a, b) || segmentDistance(a, b) - (linkStrokeWidth(la) + linkStrokeWidth(lb)) / 2 >= clearance - EPS;
   for (const node of Object.values(model.nodes)) {
