@@ -8,7 +8,7 @@ export type LayoutStage = 'normalised' | 'resolve' | 'sides-one' | 'size' | 'ske
 
 export type Layer = 'routed' | 'overlay';
 export type Owner =
-  | { kind: 'node' | 'group' | 'link' | 'group-link' | 'bundle' | 'shared-stem' | 'lane' | 'legend'; id: string }
+  | { kind: 'node' | 'group' | 'link' | 'group-link' | 'bundle' | 'shared-stem' | 'lane' | 'legend' | 'mesh-bus'; id: string }
   | { kind: 'barCross'; node: string; link: string };
 
 export interface OwnedElement {
@@ -159,7 +159,7 @@ export interface LayoutLink {
   /** Effective drawing layer, authoritative after semantic resolution. */
   layer?: Layer;
   /** Effective drawing technique. M1 fallback requests remain on document.links[sourceIndex].route. */
-  technique?: Route;
+  technique?: Route | 'mesh-bus';
   /**
    * Effective stroke width, resolved in stage 1 from the author's `weight` multiplier and omitted
    * when it is the shared default. Placement reserves stroke-aware space from it before any path
@@ -168,6 +168,8 @@ export interface LayoutLink {
   strokeWidth?: number;
   bundle?: string;
   groupLink?: string;
+  /** The mesh bus (`meshBuses`) this overlay link is a member of (docs/design/mesh-bus.md); its ends sit on the bus ports. */
+  meshBus?: string;
   /** Routing must first resolve group endpoints to concrete port refs. */
   attachments?: { from: PortRef; to: PortRef };
   path?: LayoutPath;
@@ -297,6 +299,23 @@ export interface GroupLink extends OwnedElement {
   members: string[];
 }
 
+/**
+ * A full mesh of same-class overlay links among three or more nodes of one row, drawn as one bar
+ * (docs/design/mesh-bus.md, Q105). Stage 1 decides it; it has no geometry until tickets 83 and 84.
+ */
+export interface MeshBus extends OwnedElement {
+  id: string;
+  class?: string;
+  /** The row: a rank cell or the group id. */
+  row: string;
+  /** Members in declaration order. */
+  nodes: string[];
+  /** The bus port of each member, same order as `nodes`. */
+  ports: PortRef[];
+  /** Member link ids. */
+  members: string[];
+}
+
 export interface Obstacle extends OwnedElement {
   id: string;
   bounds: Rect;
@@ -332,6 +351,8 @@ export interface LayoutModel {
   labelBands: LabelBand[];
   barDrops: BarDrop[];
   groupLinks: GroupLink[];
+  /** Absent when the document holds no mesh bus. */
+  meshBuses?: MeshBus[];
   obstacles: Obstacle[];
   diagnostics: Diagnostic[];
   runtime: LayoutRuntime;

@@ -5,6 +5,7 @@ import {
 } from '../model/index.js';
 import { enclosedBundle } from '../layout/grid.js';
 import { expandRankedGroups } from '../layout/rank-cells.js';
+import { detectMeshBuses } from './mesh-bus.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 
 export interface ResolveOptions {
@@ -373,5 +374,9 @@ export function resolveBeforeExpansion(input: NormalisedDocument, options: Resol
 export function resolve(input: NormalisedDocument, options: ResolveOptions = {}): LayoutModel {
   const model = resolveBeforeExpansion(input, options);
   const expanded = expandRankedGroups(model);
-  return expanded === undefined ? model : resolveBeforeExpansion(expanded, options);
+  // The rank derivation reads the model before expansion and needs the ports as written, so only
+  // the final model is searched for mesh buses: rows exist only once the groups are cells.
+  const final = expanded === undefined ? model : resolveBeforeExpansion(expanded, options);
+  detectMeshBuses(final);
+  return final;
 }

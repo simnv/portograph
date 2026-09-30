@@ -1,0 +1,225 @@
+import { orderedGroupIds, orderedNodeIds, type Diagnostic, type LayoutLink, type LayoutModel, type MeshBus, type Owner, type PortRef } from '../model/index.js';
+import { groupShape } from '../layout/grid.js';
+
+/**
+ * Stage 1, after aggregation: find the mesh buses (docs/design/mesh-bus.md, section 3; Q105).
+ *
+ * A bus is the maximum clique of three or more nodes in the graph of the overlay links of one class
+ * that join two nodes of one row. The member links get `meshBus` and `technique: 'mesh-bus'`, their
+ * ends move to one bus port per node, and the anonymous ports that only those ends used are removed.
+ * The bus has no geometry yet. The function reads the document and the resolved links only, in
+ * declaration order, so the same document gives the same buses. It changes `attachments` and ports
+ * and never the document, so resolving `model.document` reproduces the model (`mutation.ts`).
+ */
+
+const MISSING_PAIR_LIMIT = 8;
+
+interface Edge { a: number; b: number; links: LayoutLink[] }
+interface Mesh { klass: string; classIndex: number; nodes: number[]; adjacency: Map<number, Set<number>>; edges: Map<string, Edge> }
+
+const edgeKey = (a: number, b: number): string => a < b ? `${a}:${b}` : `${b}:${a}`;
+
+/** Every maximal clique (Bron-Kerbosch with pivoting). The nodes of one row are tens, and the degree is bounded. */
+function maximalCliques(adjacency: Map<number, Set<number>>): number[][] {
+  const result: number[][] = [];
+  const expand = (clique: number[], candidates: Set<number>, excluded: Set<number>): void => {
+    if (!candidates.size && !excluded.size) { result.push([...clique].sort((x, y) => x - y)); return; }
+    let pivot = -1, best = -1;
+    for (const u of [...candidates, ...excluded]) {
+      let shared = 0;
+      for (const v of candidates) if (adjacency.get(u)!.has(v)) shared++;
+      if (shared > best) { best = shared; pivot = u; }
+    }
+    for (const v of [...candidates]) {
+      if (adjacency.get(pivot)!.has(v)) continue;
+      const near = adjacency.get(v)!;
+      expand([...clique, v], new Set([...candidates].filter(u => near.has(u))), new Set([...excluded].filter(u => near.has(u))));
+      candidates.delete(v);
+      excluded.add(v);
+    }
+  };
+  expand([], new Set(adjacency.keys()), new Set());
+  return result;
+}
+
+/** Lexicographic order of two sorted declaration-index lists. */
+function compareIndices(a: number[], b: number[]): number {
+  for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] !== b[i]) return a[i]! - b[i]!;
+  return a.length - b.length;
+}
+
+function largestClique(adjacency: Map<number, Set<number>>): number[] | undefined {
+  const cliques = maximalCliques(adjacency).filter(clique => clique.length >= 3);
+  cliques.sort((a, b) => b.length - a.length || compareIndices(a, b));
+  return cliques[0];
+}
+
+/** The graph without the edges among `clique`: what a second mesh may still use. */
+function withoutClique(adjacency: Map<number, Set<number>>, clique: number[]): Map<number, Set<number>> {
+  const inside = new Set(clique);
+  const result = new Map<number, Set<number>>();
+  for (const [node, near] of adjacency) {
+    const kept = new Set([...near].filter(other => !(inside.has(node) && inside.has(other))));
+    if (kept.size) result.set(node, kept);
+  }
+  return result;
+}
+
+const sameRef = (a: PortRef, b: PortRef): boolean => a.node === b.node && a.ordinal === b.ordinal
+  && (a.name ?? undefined) === (b.name ?? undefined) && (a.anonymous ?? false) === (b.anonymous ?? false);
+
+export function detectMeshBuses(model: LayoutModel): void {
+  const nodeIds = orderedNodeIds(model.document);
+  const order = new Map(nodeIds.map((id, index) => [id, index]));
+  const linkIndex = new Map(model.links.map((link, index) => [link, index]));
+  const report = (code: string, severity: Diagnostic['severity'], message: string, links: LayoutLink[]): void => {
+    model.diagnostics.push({ stage: 'model', severity, code, message, owners: links.map((link): Owner => link.owner) });
+  };
+
+  // Candidates: overlay family, no authored route, both ends in one row. Grouped by row, then class.
+  const rows = new Map<string, Map<string, Mesh>>();
+  for (const link of model.links) {
+    const authored = model.document.links[link.sourceIndex]!;
+    if (link.layer !== 'overlay' || link.family !== 'overlay' || authored.route !== undefined
+      || link.groupLink !== undefined || link.removed === true || !link.attachments) continue;
+    const from = link.attachments.from.node, to = link.attachments.to.node;
+    if (from === to) continue;
+    const row = model.document.nodes[from]!.group;
+    if (row !== model.document.nodes[to]!.group || model.groups[row] === undefined) continue;
+    const klass = authored.class ?? '';
+    const classes = rows.get(row) ?? new Map<string, Mesh>();
+    rows.set(row, classes);
+    const mesh: Mesh = classes.get(klass) ?? { klass, classIndex: classes.size, nodes: [], adjacency: new Map(), edges: new Map() };
+    classes.set(klass, mesh);
+    const a = order.get(from)!, b = order.get(to)!;
+    for (const [x, y] of [[a, b], [b, a]] as const) {
+      if (!mesh.adjacency.has(x)) { mesh.adjacency.set(x, new Set()); mesh.nodes.push(x); }
+      mesh.adjacency.get(x)!.add(y);
+    }
+    const key = edgeKey(a, b);
+    const edge = mesh.edges.get(key) ?? { a: Math.min(a, b), b: Math.max(a, b), links: [] };
+    edge.links.push(link);
+    mesh.edges.set(key, edge);
+  }
+
+  const linksAmong = (mesh: Mesh, clique: number[]): LayoutLink[] => {
+    const inside = new Set(clique);
+    return [...mesh.edges.values()].filter(edge => inside.has(edge.a) && inside.has(edge.b)).flatMap(edge => edge.links)
+      .sort((x, y) => linkIndex.get(x)! - linkIndex.get(y)!);
+  };
+  const label = (mesh: Mesh): string => mesh.klass === '' ? 'unclassed' : mesh.klass;
+  const buses: MeshBus[] = [];
+
+  function partial(mesh: Mesh, clique: number[], names: string[], members: LayoutLink[], row: string): void {
+    const inside = new Set(clique);
+    // A node the bus left out but that joins two or more members is part of the mesh the author drew.
+    const left = mesh.nodes.filter(node => !inside.has(node)
+      && [...mesh.adjacency.get(node)!].filter(other => inside.has(other)).length >= 2);
+    if (!left.length) return;
+    const considered = [...clique, ...left].sort((x, y) => x - y);
+    const missing: string[] = [];
+    for (let i = 0; i < considered.length; i++) for (let j = i + 1; j < considered.length; j++) {
+      if (!mesh.adjacency.get(considered[i]!)?.has(considered[j]!)) missing.push(`${nodeIds[considered[i]!]}-${nodeIds[considered[j]!]}`);
+    }
+    const shown = missing.slice(0, MISSING_PAIR_LIMIT).join(', ') + (missing.length > MISSING_PAIR_LIMIT ? `, and ${missing.length - MISSING_PAIR_LIMIT} more` : '');
+    const leftNames = left.map(node => nodeIds[node]).join(', ');
+    const extra = [...mesh.edges.values()].filter(edge => left.includes(edge.a) || left.includes(edge.b)).flatMap(edge => edge.links);
+    report('MESH_BUS_PARTIAL', 'info',
+      `The ${label(mesh)} mesh in ${row} is not complete: ${leftNames} stay out of the bus of ${names.length} nodes; missing pairs: ${shown}`,
+      [...members, ...extra.filter(link => !members.includes(link))]);
+  }
+
+  for (const row of orderedGroupIds(model.document)) {
+    const classes = rows.get(row);
+    if (classes === undefined) continue;
+    // Every clique of three or more, per class: the largest first, then the largest of the edges it leaves.
+    const found: { mesh: Mesh; clique: number[] }[] = [];
+    for (const mesh of classes.values()) {
+      let adjacency = mesh.adjacency;
+      for (let clique = largestClique(adjacency); clique !== undefined; clique = largestClique(adjacency)) {
+        found.push({ mesh, clique });
+        adjacency = withoutClique(adjacency, clique);
+      }
+    }
+    found.sort((a, b) => b.clique.length - a.clique.length || compareIndices(a.clique, b.clique) || a.mesh.classIndex - b.mesh.classIndex);
+    let taken = false;
+    for (const { mesh, clique } of found) {
+      const members = linksAmong(mesh, clique);
+      const names = clique.map(index => nodeIds[index]!);
+      const decline = (reason: string, detail: string): void => report('MESH_BUS_DECLINED', 'warning',
+        `Mesh of ${names.join(', ')} (${label(mesh)}) in ${row} draws as plain overlay links, ${reason}: ${detail}`, members);
+      if (taken) { decline('second-mesh', 'a row holds one bus in this version'); continue; }
+      const shape = groupShape(model, row);
+      if (shape === 'grid' || shape === 'bar') { decline('shape', `${row} is a ${shape} group and holds no bus`); continue; }
+      const chosen = busPorts(names, members);
+      if (typeof chosen === 'string') { decline('named-ports', `${chosen} has two or more authored ports on the member links`); continue; }
+      taken = true;
+      const id = `mesh-bus-${buses.length + 1}`;
+      attach(model, id, chosen, members);
+      buses.push({
+        id, owner: { kind: 'mesh-bus', id }, layer: 'overlay', row, nodes: names,
+        ports: names.map(name => ({ ...chosen.get(name)! })), members: members.map(link => link.id),
+        ...(mesh.klass === '' ? {} : { class: mesh.klass }),
+      });
+      report('MESH_BUS', 'info', `Mesh bus ${id}: ${names.length} nodes and ${members.length} ${label(mesh)} links in ${row}`, members);
+      partial(mesh, clique, names, members, row);
+    }
+  }
+  if (buses.length) model.meshBuses = buses;
+  dropBusSharedPortWarnings(model);
+}
+
+/** The bus port of each member node, or the id of the node whose member links name two authored ports. */
+function busPorts(names: string[], members: LayoutLink[]): Map<string, PortRef> | string {
+  const ports = new Map<string, PortRef>();
+  const ends = members.flatMap(link => [link.attachments!.from, link.attachments!.to]);
+  for (const name of names) {
+    const mine = ends.filter(ref => ref.node === name);
+    const named = new Map<string, PortRef>();
+    for (const ref of mine) if (ref.anonymous !== true) named.set(ref.name!, ref);
+    if (named.size > 1) return name;
+    const anonymous = mine.filter(ref => ref.anonymous === true).sort((a, b) => a.ordinal - b.ordinal)[0];
+    ports.set(name, named.size ? [...named.values()][0]! : anonymous!);
+  }
+  return ports;
+}
+
+/** Re-attach every member end to its bus port, then remove the anonymous ports nothing else uses. */
+function attach(model: LayoutModel, id: string, ports: Map<string, PortRef>, members: LayoutLink[]): void {
+  const former: PortRef[] = [];
+  for (const link of members) {
+    link.meshBus = id;
+    link.technique = 'mesh-bus';
+    const ends = link.attachments!;
+    for (const key of ['from', 'to'] as const) {
+      const bus = ports.get(ends[key].node)!;
+      if (!sameRef(ends[key], bus)) former.push(ends[key]);
+      ends[key] = { ...bus };
+    }
+  }
+  const used = model.links.flatMap(link => link.attachments ? [link.attachments.from, link.attachments.to] : []);
+  for (const ref of former) {
+    if (ref.anonymous !== true || used.some(other => sameRef(other, ref))) continue;
+    const node = model.nodes[ref.node]!;
+    const index = node.ports.findIndex(port => sameRef(port.ref, ref));
+    if (index >= 0) node.ports.splice(index, 1);
+  }
+}
+
+/** `SHARED_PORT` does not warn on a bus port: sharing it is what a bus is. */
+function dropBusSharedPortWarnings(model: LayoutModel): void {
+  if (!model.meshBuses?.length) return;
+  const members = new Set(model.links.filter(link => link.meshBus !== undefined).map(link => link.id));
+  const bySource = new Map<number, LayoutLink[]>();
+  for (const link of model.links) bySource.set(link.sourceIndex, [...(bySource.get(link.sourceIndex) ?? []), link]);
+  model.diagnostics = model.diagnostics.filter(diagnostic => {
+    if (diagnostic.code !== 'SHARED_PORT') return true;
+    if ('path' in diagnostic && typeof diagnostic.path === 'string') {
+      const match = /^\$\.links\[(\d+)\]\./.exec(diagnostic.path);
+      const links = match ? bySource.get(Number(match[1])) : undefined;
+      return !(links?.length && links.every(link => link.meshBus !== undefined));
+    }
+    const owners = diagnostic.owners ?? [];
+    return !(owners.length && owners.every(owner => owner.kind === 'link' && members.has(owner.id)));
+  });
+}
