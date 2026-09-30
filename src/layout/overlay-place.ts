@@ -71,6 +71,14 @@ export const OVERLAY_WINDOW_TAKEN = 'OVERLAY_WINDOW_TAKEN';
  * and may move, so `centreDraft` runs the pass again after each pass of its steps: the free groups
  * end at the mean of partners that stand where centring left them.
  */
+/**
+ * Test hooks (ticket 143 probe). All off by default, and then the pass is as documented. Each one turns one review fix back to the
+ * behaviour of d686704 on its own: `baselineStart` (M3: both guards compare with the state the run began in, not with a run of the means),
+ * `allGroups` (M2: the windows are chosen on every link that spans the tier, not on the placed groups), `keepWindow` (M2: a run without
+ * windows does not place the means over a window). `log` collects the refusals when it is set.
+ */
+export const overlayProbe: { baselineStart: boolean; allGroups: boolean; keepWindow: boolean; log?: string[] } = { baselineStart: false, allGroups: false, keepWindow: false };
+
 export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColumn[] = frameColumns(model), windows = true): void {
   if (!windows) { place(model, columns, false); return; }
   // The windows are kept only where the whole sheet gains against the means: fewer bent overlay links than a run that places the means, and
@@ -87,14 +95,19 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
     model.diagnostics = [...diagnostics];
     rebuildNodeGeometry(model, moved.flatMap(group => group.nodes), 'current');
   };
-  place(model, columns, false);
-  const means = overlayTurns(model);
-  revert();
+  let means: { bent: number; turns: number };
+  if (overlayProbe.baselineStart) means = overlayTurns(model);
+  else {
+    place(model, columns, false);
+    means = overlayTurns(model);
+    revert();
+  }
   const state = { windowed: false };
   place(model, columns, true, state);
   if (!state.windowed) return;
   const after = overlayTurns(model);
   if (sheetGains(after, means)) return;
+  overlayProbe.log?.push(`sheet: refused, windows bent ${after.bent} turns ${after.turns}, ${overlayProbe.baselineStart ? 'start' : 'means'} bent ${means.bent} turns ${means.turns}`);
   revert();
   place(model, columns, false);
 }
@@ -290,15 +303,20 @@ function place(model: LayoutModel, columns: readonly FrameColumn[], windows: boo
       rebuildNodeGeometry(model, nodesOfTier, 'current');
       let after = straightIds(), windowed = taken.length > 0;
       // The windows are kept only where they leave more links straight than the means do (`windowsHold`).
-      if (windowed && !windowsHold(placedIds(), meansIds!)) {
+      const heldAgainst = !windowed ? before : overlayProbe.baselineStart ? before : overlayProbe.allGroups ? meansAll! : meansIds!;
+      const heldWindows = !windowed || overlayProbe.baselineStart || overlayProbe.allGroups ? after : placedIds();
+      const held = overlayProbe.baselineStart ? after.size > before.size || (after.size === before.size && [...before].every(id => after.has(id))) : windowsHold(heldWindows, heldAgainst);
+      if (windowed && !held) {
+        overlayProbe.log?.push(`tier ${tier}: windows refused by the choice against ${overlayProbe.baselineStart ? 'the start' : 'the means'}: windows ${heldWindows.size} straight, ${overlayProbe.baselineStart ? 'start' : 'means'} ${heldAgainst.size}`);
         redoMeans!();
         rebuildNodeGeometry(model, nodesOfTier, 'current');
         after = meansAll!;
         windowed = false;
       }
       // A run that places the means and meets a window of an earlier run places them for real: the guard below would hold the window (hysteresis).
-      const leaving = !windows && prior.length > 0;
+      const leaving = !windows && prior.length > 0 && !overlayProbe.keepWindow;
       let restored = false;
+      if (windowed && after.size < before.size && !leaving) overlayProbe.log?.push(`tier ${tier}: windows refused by the guard against the tier's start: ${after.size} straight, start ${before.size}`);
       if (after.size < before.size && !leaving) { undo(); rebuildNodeGeometry(model, nodesOfTier, 'current'); windowed = false; restored = true; }
       if (!restored) {
         // The note follows the place the group stands at: it is dropped when the group moves to the mean and is stated again when a window holds.
