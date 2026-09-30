@@ -777,7 +777,9 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
       const linkless = stepLinklessOutOfChords(draft);
       // A chord between two tiers keeps the tiers between it free of nodes. A move is judged on a copy that the replays and a round of
       // `settle` have run, which is what the next round does.
-      const cleared = round < CANTON_ROUNDS - 1 && stepOverChords(draft, probe => { replays(probe); settle(probe); }, movers, budget);
+      // After a stop for the budget the step is not called again: it would warn a second time for the same movers (ticket 111).
+      const stopped = draft.diagnostics.some(item => item.code === 'CHORD_CLEAR_BUDGET');
+      const cleared = round < CANTON_ROUNDS - 1 && !stopped && stepOverChords(draft, probe => { replays(probe); settle(probe); }, movers, budget);
       if (linkless || cleared) replays(draft);
       again = cleared;
     }

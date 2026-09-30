@@ -1,5 +1,5 @@
 import type { Rect } from '../model/geometry.js';
-import { UNBOUNDED_BUDGET, type Budget } from '../pipeline/budget.js';
+import { POST_PLACEMENT_RESERVE_MS, UNBOUNDED_BUDGET, type Budget } from '../pipeline/budget.js';
 import type { LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
 import { orderedNodeIds } from '../model/model.js';
 import { EPS } from '../score/geometry.js';
@@ -23,6 +23,9 @@ import { PLACEMENT_EPS } from './tolerance.js';
 
 /** How many candidate x a group or a node tries, nearest first, before it stays (ticket 77). */
 const CHORD_TRIALS = 24;
+
+/** How many candidates that pass the cheap checks are judged on a settled copy, nearest first: each one costs a round of the pipeline (ticket 110). */
+const SETTLED_TRIALS = 6;
 
 /** The most a slide may grow a canton (and the canvas) beyond its wall, and the share of the canvas width all slides together may add (ticket 80). */
 const SLIDE_GROWTH = 40, CANVAS_GROWTH_SHARE = 0.05;
@@ -144,12 +147,9 @@ const nothingNew = (before: ReadonlySet<string>, after: ReadonlySet<string>): bo
  * copy, so a slide the column pass would undo is never kept. A frame of a canton stays.
  * Otherwise the mover goes back and the next candidate is tried. A mover that has moved in an earlier round (`history`) is left
  * where it stands, so the rounds converge. Returns whether anything stayed moved.
- * Once the `budget` has less than `CHORD_RESERVE_MS` left (ticket 111), no further mover is tried: every move already kept stays, and a
+ * Once the `budget` has less than `POST_PLACEMENT_RESERVE_MS` left (ticket 111), no further mover is tried: every move already kept stays, and a
  * warning names how many movers were not tried. The routing and the scoring after 7f need that reserve.
  */
-/** What the step leaves in the command budget for the routing and the scoring after 7f (ticket 111). */
-export const CHORD_RESERVE_MS = 8000;
-
 export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel) => unknown) | undefined, history: Set<string> = new Set(), budget: Budget = UNBOUNDED_BUDGET): boolean {
   const anchor = selectAnchorTier(model);
   // A member of a mesh bus is not a chord: it is neither straight nor bent, and the step does not read it (mesh-bus.md, section 4).
@@ -164,7 +164,9 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
   const world = { low: Math.min(...all.map(group => group.bounds!.x)), high: Math.max(...all.map(group => group.bounds!.x + group.bounds!.width)) };
   const tiers = [...new Set(all.map(group => group.tier!))].sort((a, b) => a - b);
   /** Whether any trial ran: each one rebuilds labels a group at a time and so moves them to the end of the list. */
-  let tried = false, moved = false, skipped = 0;
+  let tried = false, moved = false;
+  /** The movers refused for the budget, by key. */
+  const skipped = new Set<string>();
   /** The verdict on the settled copy of the model as it stands, without a move. It holds until a move stays. */
   let baseline: Verdict | undefined;
 
@@ -178,9 +180,12 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
       return undefined;
     }
   };
-  /** Whether the settled copy of the model with the move made stands better than the settled copy without it. */
-  const holdsSettled = (redo: () => void, undo: () => void, nodes: readonly string[]): boolean => {
-    if (follow === undefined) return true;
+  /**
+   * The straight overlay count of the settled copy of the model with the move made, when it stands better than the settled copy
+   * without the move; `undefined` when it does not. Without a `follow` there is no settled copy, and the count is the caller's own.
+   */
+  const holdsSettled = (redo: () => void, undo: () => void, nodes: readonly string[], fallback: number): number | undefined => {
+    if (follow === undefined) return fallback;
     const after = settled();
     if (baseline === undefined) {
       undo();
@@ -193,7 +198,8 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
       && [...baseline.routed].every(id => after.routed.has(id))
       && after.drift <= Math.max(baseline.drift, REST) + PLACEMENT_EPS
       && after.width <= Math.max(baseline.width, edge().base * (1 + CANVAS_GROWTH_SHARE)) + PLACEMENT_EPS
-      && nothingNew(baseline.crowded, after.crowded) && nothingNew(baseline.disordered, after.disordered) && nothingNew(baseline.residuals, after.residuals);
+      && nothingNew(baseline.crowded, after.crowded) && nothingNew(baseline.disordered, after.disordered) && nothingNew(baseline.residuals, after.residuals)
+      ? after.overlay.size : undefined;
   };
 
   /** The moves `dx` of a set of shapes that put one of them on a chord: open intervals. */
@@ -228,13 +234,16 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
   const saveGroupsOf = (nodes: readonly string[]): (() => void) => saveGroups(model, groupOfNodes(nodes));
 
   /**
-   * Try the candidates nearest first. `place(dx)` moves the mover by dx, `undo` takes it back. Returns whether one stayed.
+   * Try the candidates nearest first, and keep the one that leaves the most straight overlays on the settled copy (the nearest of
+   * equals): the nearest move can clear one chord and leave a wider one, and a mover that has moved is not moved again. At most
+   * SETTLED_TRIALS candidates are judged on a settled copy. `place(dx)` moves the mover by dx, `undo` takes it back. Returns whether one stayed.
    * A frozen chord a candidate would put a body on is a wall (`holds` for a group, the check below for a node).
    */
   const attempt = (key: string, candidates: readonly number[], at: number, place: (dx: number) => void, undo: () => void, nodes: readonly string[],
     holds: (x: number) => boolean, extra: () => boolean = () => true): boolean => {
-    if (budget.remainingMs() < CHORD_RESERVE_MS) { skipped++; return false; }
+    if (budget.remainingMs() < POST_PLACEMENT_RESERVE_MS) { skipped.add(key); return false; }
     const before = read(model, overlays), blocked = new Set(blockedChords(model));
+    let best: { target: number; count: number } | undefined, settledTrials = 0;
     for (const target of candidates.slice(0, CHORD_TRIALS)) {
       if (!holds(target)) continue;
       tried = true;
@@ -242,15 +251,19 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
       rebuildNodeGeometry(model, nodes, 'current');
       const after = read(model, overlays);
       if (extra() && after.overlay.size > before.overlay.size && [...before.routed].every(id => after.routed.has(id)) && blockedChords(model).every(id => blocked.has(id))
-        && holdsSettled(saveGroupsOf(nodes), undo, nodes)) {
-        baseline = undefined;
-        history.add(key);
-        return true;
+        && settledTrials++ < SETTLED_TRIALS) {
+        const count = holdsSettled(saveGroupsOf(nodes), undo, nodes, after.overlay.size);
+        if (count !== undefined && (best === undefined || count > best.count)) best = { target, count };
       }
       undo();
       rebuildNodeGeometry(model, nodes, 'current');
     }
-    return false;
+    if (best === undefined) return false;
+    place(best.target - at);
+    rebuildNodeGeometry(model, nodes, 'current');
+    baseline = undefined;
+    history.add(key);
+    return true;
   };
   const nearest = (edges: readonly number[], at: number, ok: (x: number) => boolean): number[] => edges
     .filter((x, index, list) => ok(x) && Math.abs(x - at) > PLACEMENT_EPS && list.findIndex(other => Math.abs(other - x) <= PLACEMENT_EPS) === index)
@@ -489,9 +502,9 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
     }
   }
   if (tried) rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');
-  if (skipped) model.diagnostics.push({
+  if (skipped.size) model.diagnostics.push({
     stage: 'placement', severity: 'warning', code: 'CHORD_CLEAR_BUDGET',
-    message: `The step over the chords stopped with the command budget nearly spent: ${skipped} mover${skipped === 1 ? ' was' : 's were'} not tried; the moves already kept stay.`,
+    message: `The step over the chords stopped with the command budget nearly spent: ${skipped.size} mover${skipped.size === 1 ? ' was' : 's were'} not tried; the moves already kept stay.`,
   });
   return moved;
 }
