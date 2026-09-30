@@ -105,6 +105,27 @@ describe('the side round offers a routed L through a side lane', () => {
     expect(judgeTrial(input(off, jogged))).toMatchObject({ kept: false, reason: expect.stringMatching(/raises the total|worse/) });
   }, 120000);
 
+  it('refuses what the old judge kept: the lane link 2 to 1, one neighbour 1 to 0, another 1 to 3 (ticket 119 review, L1)', async () => {
+    const on = await run();
+    const id = described(on).id;
+    const others = on.links.filter(link => link.id !== id && link.path !== undefined && link.removed !== true && link.path.segments.length === 1).slice(0, 2);
+    expect(others).toHaveLength(2);
+    const bent = (model: LayoutModel, link: LayoutModel['links'][number], turns: number): void => {
+      const seg = model.links.find(item => item.id === link.id)!.path!.segments[0]!;
+      const points = [seg.from, { x: seg.from.x + 60, y: seg.from.y + 40 }, { x: seg.from.x + 120, y: seg.from.y }, { x: seg.from.x + 180, y: seg.from.y + 40 }, seg.to].slice(0, turns + 2);
+      points[points.length - 1] = seg.to;
+      model.links.find(item => item.id === link.id)!.path = { ...model.links.find(item => item.id === link.id)!.path!, segments: points.slice(1).map((to, i) => ({ ...seg, from: points[i]!, to })) };
+    };
+    // Base: the lane link has two turns, the first neighbour one, the second one. Trial: 1, 0 and 3.
+    const base = structuredClone(on) as LayoutModel, trial = structuredClone(on) as LayoutModel;
+    bent(base, described(base), 2); bent(base, others[0]!, 1); bent(base, others[1]!, 1);
+    bent(trial, described(trial), 1); bent(trial, others[1]!, 3);
+    const input = (lanes?: Set<string>) => ({ routedBase: base, routedTrial: trial, kept7e: base, trial7e: trial, hinted: new Map([[id, 1]]), ...(lanes === undefined ? {} : { lanes }) });
+    // Without the lane rule (the old judge) the bent links fall or the total falls, and the trial is kept.
+    expect(judgeTrial(input()).kept).toBe(true);
+    expect(judgeTrial(input(new Set([id])))).toMatchObject({ kept: false, reason: expect.stringMatching(/raises the total|worse/) });
+  }, 120000);
+
   it('two runs give byte-identical layout JSON', async () => {
     const strip = (model: LayoutModel): string => JSON.stringify(model, (key, value: unknown) => key === 'runtime' ? undefined : value);
     expect(strip(await run())).toBe(strip(await run()));
