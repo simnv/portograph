@@ -45,7 +45,7 @@ const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
  * While one publication is validated its model does not change, and each validator clones it. The model is serialized once and every
  * clone parses that text. The one write validation makes to the model (a diagnostic) drops the text.
  */
-let publishing: { model: LayoutModel; text?: string } | undefined;
+let publishing: { model: LayoutModel; text?: string | undefined } | undefined;
 function cloneModel(model: LayoutModel): LayoutModel {
   if (publishing?.model !== model) return clone(model);
   return JSON.parse(publishing.text ??= JSON.stringify(model)) as LayoutModel;
