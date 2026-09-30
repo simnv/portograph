@@ -1,4 +1,5 @@
 import type { Rect } from '../model/geometry.js';
+import { POST_PLACEMENT_RESERVE_MS, UNBOUNDED_BUDGET, type Budget } from '../pipeline/budget.js';
 import type { LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
 import { orderedNodeIds } from '../model/model.js';
 import { EPS } from '../score/geometry.js';
@@ -146,8 +147,10 @@ const nothingNew = (before: ReadonlySet<string>, after: ReadonlySet<string>): bo
  * copy, so a slide the column pass would undo is never kept. A frame of a canton stays.
  * Otherwise the mover goes back and the next candidate is tried. A mover that has moved in an earlier round (`history`) is left
  * where it stands, so the rounds converge. Returns whether anything stayed moved.
+ * Once the `budget` has less than `POST_PLACEMENT_RESERVE_MS` left (ticket 111), no further mover is tried: every move already kept stays, and a
+ * warning names how many movers were not tried. The routing and the scoring after 7f need that reserve.
  */
-export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel) => unknown) | undefined, history: Set<string> = new Set()): boolean {
+export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel) => unknown) | undefined, history: Set<string> = new Set(), budget: Budget = UNBOUNDED_BUDGET): boolean {
   const anchor = selectAnchorTier(model);
   // A member of a mesh bus is not a chord: it is neither straight nor bent, and the step does not read it (mesh-bus.md, section 4).
   const overlays = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && link.attachments);
@@ -162,6 +165,8 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
   const tiers = [...new Set(all.map(group => group.tier!))].sort((a, b) => a - b);
   /** Whether any trial ran: each one rebuilds labels a group at a time and so moves them to the end of the list. */
   let tried = false, moved = false;
+  /** The movers refused for the budget, by key. */
+  const skipped = new Set<string>();
   /** The verdict on the settled copy of the model as it stands, without a move. It holds until a move stays. */
   let baseline: Verdict | undefined;
 
@@ -236,6 +241,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
    */
   const attempt = (key: string, candidates: readonly number[], at: number, place: (dx: number) => void, undo: () => void, nodes: readonly string[],
     holds: (x: number) => boolean, extra: () => boolean = () => true): boolean => {
+    if (budget.remainingMs() < POST_PLACEMENT_RESERVE_MS) { skipped.add(key); return false; }
     const before = read(model, overlays), blocked = new Set(blockedChords(model));
     let best: { target: number; count: number } | undefined, settledTrials = 0;
     for (const target of candidates.slice(0, CHORD_TRIALS)) {
@@ -496,5 +502,9 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
     }
   }
   if (tried) rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');
+  if (skipped.size) model.diagnostics.push({
+    stage: 'placement', severity: 'warning', code: 'CHORD_CLEAR_BUDGET',
+    message: `The step over the chords stopped with the command budget nearly spent: ${skipped.size} mover${skipped.size === 1 ? ' was' : 's were'} not tried; the moves already kept stay.`,
+  });
   return moved;
 }
