@@ -1,3 +1,4 @@
+import type { PortRef } from '../model/document.js';
 import type { Point, Rect, Side } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel, LayoutNode, LayoutPath, LayoutPort, PathSegment } from '../model/layout.js';
 import { bottom, EPS, retracingRuns, right, samePoint } from '../score/geometry.js';
@@ -393,6 +394,8 @@ function straightBetween(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBl
  * leaves as it was.
  */
 export function overlayPath(model: LayoutModel, link: LayoutLink, blockers?: OverlayBlockers): LayoutPath {
+  const along = link.meshBus === undefined ? undefined : busMemberPath(model, link);
+  if (along !== undefined) return along;
   const attachments = link.attachments!;
   const from = findPort(model, attachments.from), to = findPort(model, attachments.to);
   const one = from && overlayEnd(model.nodes[attachments.from.node]!, from);
@@ -416,6 +419,23 @@ export function overlayPath(model: LayoutModel, link: LayoutLink, blockers?: Ove
   const points = built.length > 1 ? built : [built[0]!, { ...built[0]! }];
   const segments: PathSegment[] = points.slice(1).map((point, index) =>
     ({ from: { ...points[index]! }, to: { ...point }, owner: { ...link.owner } }));
+  return { owner: { ...link.owner }, layer: 'overlay', fixed: false, ...pathStrokeWidth(link), segments };
+}
+
+/**
+ * The path of a mesh bus member: along the bus, stub, bar run, stub (docs/design/mesh-bus.md, section 5). Both stubs and the bar are
+ * the geometry 7f published on the bus (`bus.stubs`, `bus.bar`), so stage 8 states nothing of its own and `route/validate` compares
+ * against the same line. A bus whose geometry is not published yet (the side is fixed at stage 5, the bar at 7f) has no such path, and
+ * the member keeps the overlay rule's until it has.
+ */
+export function busMemberPath(model: LayoutModel, link: LayoutLink): LayoutPath | undefined {
+  const bus = model.meshBuses?.find(item => item.id === link.meshBus);
+  if (bus?.bar === undefined || bus.stubs === undefined || link.attachments === undefined) return undefined;
+  const stubOf = (ref: PortRef): { node: string; from: Point; to: Point } | undefined => bus.stubs!.find(stub => stub.node === ref.node);
+  const one = stubOf(link.attachments.from), two = stubOf(link.attachments.to);
+  if (one === undefined || two === undefined) return undefined;
+  const points = [one.from, one.to, two.to, two.from];
+  const segments: PathSegment[] = points.slice(1).map((point, index) => ({ from: { ...points[index]! }, to: { ...point }, owner: { ...link.owner } }));
   return { owner: { ...link.owner }, layer: 'overlay', fixed: false, ...pathStrokeWidth(link), segments };
 }
 

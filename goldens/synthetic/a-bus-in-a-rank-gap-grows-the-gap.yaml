@@ -1,0 +1,32 @@
+# Expected: one frame of three ranks under a core that feeds rank 0, so the frame title stands at the bottom. Rank 1 holds four nodes
+# in a `sync` mesh. Rank 0 feeds two of them and three of them feed rank 2, so the middle cell counts two legs on top and three at
+# the bottom: the bus stands on top, in the rank gap above rank 1, and the gap grows by the band (ticket 83). One of the two down links of
+# rank 0 crosses the bar as a vertical, and the other passes beside its end (it stands outside the bar's span).
+# Test-only input owned by ranked-groups ticket 83; test/pipeline/mesh-bus-placement.test.ts reads the layout.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  stack: { tier: 1, label: Stack }
+nodes:
+  core: { group: top, class: router, label: Core }
+  r0: { group: stack, class: router, label: R0 }
+  m1: { group: stack, class: switch, label: M1 }
+  m2: { group: stack, class: switch, label: M2 }
+  m3: { group: stack, class: switch, label: M3 }
+  m4: { group: stack, class: switch, label: M4 }
+  a1: { group: stack, class: server, label: A1 }
+  a2: { group: stack, class: server, label: A2 }
+  a3: { group: stack, class: server, label: A3 }
+links:
+  - [core, r0]
+  - [r0, m1]
+  - [r0, m2]
+  - [m2, a1]
+  - [m3, a2]
+  - [m4, a3]
+  - { from: m1, to: m2, class: sync }
+  - { from: m1, to: m3, class: sync }
+  - { from: m1, to: m4, class: sync }
+  - { from: m2, to: m3, class: sync }
+  - { from: m2, to: m4, class: sync }
+  - { from: m3, to: m4, class: sync }

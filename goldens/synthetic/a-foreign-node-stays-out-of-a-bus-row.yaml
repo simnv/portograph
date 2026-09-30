@@ -1,0 +1,33 @@
+# Expected: a foreign node of the row stays out of a mesh bus. Five nodes of `row` are a `sync` mesh (one bus); `f1`, declared between
+# `n2` and `n3`, is fed by the core and feeds a node below. ELK, which is not given the bus links, would leave it between two members;
+# the row order (ticket 78, ticket 84) keeps the five members contiguous, so `f1` stands outside the bar's span.
+# Test-only input owned by ranked-groups ticket 84; test/pipeline/mesh-bus-publication.test.ts reads it.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  row: { tier: 1, label: Row }
+  low: { tier: 2, label: Low }
+nodes:
+  core: { group: top, class: router, label: Core }
+  n1: { group: row, class: router, label: N1 }
+  n2: { group: row, class: router, label: N2 }
+  f1: { group: row, class: router, label: F1 }
+  n3: { group: row, class: router, label: N3 }
+  n4: { group: row, class: router, label: N4 }
+  n5: { group: row, class: router, label: N5 }
+  d1: { group: low, class: router, label: D1 }
+links:
+  - [core, n1]
+  - [core, f1]
+  - [core, n5]
+  - [f1, d1]
+  - { from: n1, to: n2, class: sync }
+  - { from: n1, to: n3, class: sync }
+  - { from: n1, to: n4, class: sync }
+  - { from: n1, to: n5, class: sync }
+  - { from: n2, to: n3, class: sync }
+  - { from: n2, to: n4, class: sync }
+  - { from: n2, to: n5, class: sync }
+  - { from: n3, to: n4, class: sync }
+  - { from: n3, to: n5, class: sync }
+  - { from: n4, to: n5, class: sync }

@@ -277,7 +277,8 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       if (runs) fail('G6', 'segment-group-edge', [s.link.id, group.id], `Routed segment runs along a group edge closer than ${GROUP_EDGE_LINK_CLEARANCE} px beyond its half stroke`);
     }
   }
-  const labels = model.labels.filter(l => !l.omitted && l.layer !== 'overlay');
+  // G3 leaves out the labels of overlay links; the label of a mesh bus is read against routed geometry (mesh-bus.md, section 5).
+  const labels = model.labels.filter(l => !l.omitted && (l.layer !== 'overlay' || l.role === 'mesh-bus'));
   for (let i = 0; i < labels.length; i++) {
     const label = labels[i]!;
     const associatedPill = label.role === 'pill' && label.port ? port(model, label.port)?.pill : undefined;

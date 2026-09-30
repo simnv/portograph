@@ -3,6 +3,7 @@ import type { Rect, Side } from '../model/geometry.js';
 import { measurePortPill } from '../text/index.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { rebuildBands, union } from './skeleton-geometry.js';
+import { heldBusRoom } from './bus-room.js';
 
 export const right = (box: Rect): number => box.x + box.width;
 export const bottom = (box: Rect): number => box.y + box.height;
@@ -44,7 +45,12 @@ export const bandHeldBy = (model: LayoutModel, groupId: string): LayoutModel['la
   model.labelBands.find(item => (item.host ?? item.group) === groupId);
 export function groupInsets(model: LayoutModel, group: LayoutGroup): { top: number; right: number; bottom: number; left: number } {
   const padding = groupPadding(model, group), band = bandHeldBy(model, group.id);
-  return band ? { ...padding, [band.side]: band.bounds.height + band.clearance } : padding;
+  const inset = band ? { ...padding, [band.side]: band.bounds.height + band.clearance } : padding;
+  // An in-frame bus band lies against the padding on its edge (mesh-bus.md, section 4). On the title edge it is
+  // already in the band's clearance.
+  const bus = heldBusRoom(model, group);
+  for (const side of ['top', 'bottom'] as const) if (bus[side] > 0 && band?.side !== side) inset[side] = Math.max(padding[side], bus[side]);
+  return inset;
 }
 export function fitRegionGroup(model: LayoutModel, group: LayoutGroup): void {
   if (!group.nodes.length) return;

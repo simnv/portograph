@@ -969,7 +969,8 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       waypoints + dangling + residualPoint(label?.at))));
   };
 
-  const drawn = layout.links.filter(link => link.technique !== 'stub' && link.path && visible(link));
+  // A mesh bus member is not a connector of its own: the bus is a bar and its stubs, exported below (mesh-bus.md, section 6).
+  const drawn = layout.links.filter(link => link.technique !== 'stub' && link.path && link.meshBus === undefined && visible(link));
   /** Every connector a link became, with the polyline draw.io will really draw for each. */
   const edgeRuns = new Map<string, Connector[]>();
 
@@ -1186,6 +1187,46 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
             html: 1, fillColor: paint.overlay.mark, strokeColor: 'none', points: '[]',
           }), mark.host ? relative(box, mark.host.box) : box);
       }
+    }
+  }
+
+  // ---- mesh buses ---------------------------------------------------------------------------
+  // The bar is one edge with `edgeStyle=none` and two free points; each stub is an edge from its port's cell to a free point on the
+  // bar, orthogonal with `jettySize=0`, as an axis-aligned overlay is exported. All take the class stroke and dash an overlay link
+  // takes, on the overlay layer, and the label is a text vertex on the labels layer.
+  for (const bus of layout.meshBuses ?? []) {
+    if (bus.bar === undefined || bus.stubs === undefined) continue;
+    const first = bus.members.map(id => byId.get(id)).find(link => link !== undefined && visible(link));
+    if (first === undefined) continue;
+    const authored = linkClass(first), klass = linkClassStyle(authored);
+    const themed = authored !== undefined && NETWORK_LINK_CLASSES.some(([key]) => key === authored);
+    const stroke = (square: boolean, extra: Readonly<Record<string, StyleValue>> = {}): string => styleString([], {
+      edgeStyle: square ? 'orthogonalEdgeStyle' : 'none', jettySize: square ? 0 : undefined,
+      rounded: 0, html: 1, endArrow: 'none', startArrow: 'none',
+      strokeColor: dual(of => !themed ? NETWORK_THEME[of].overlay.stroke : klass.strokes[of]),
+      strokeWidth: linkStrokeWidth(first),
+      opacity: Math.round(paint.overlay.opacity * 100),
+      ...dashEntries(klass.dash),
+      ...extra,
+    });
+    const bar = [shift(bus.bar.from), shift(bus.bar.to)];
+    edgeCell(cellId('bus', bus.id), layerId('overlay'), stroke(false), bar, { sourcePoint: bar[0], targetPoint: bar[1] });
+    for (const stub of bus.stubs) {
+      const ref = bus.ports.find(port => port.node === stub.node)!;
+      const head = terminal('exit', ref), pill = pillEnd(ref);
+      const points = [head?.at ?? shift(stub.from), shift(stub.to)];
+      edgeCell(cellId('busStub', bus.id, stub.node), layerId('overlay'), stroke(true, head?.style ?? {}), points,
+        { source: head?.cell, sourcePoint: head ? undefined : points[0], targetPoint: points[1] });
+      const at = pill ? pill.at : shift(stub.from);
+      const box = { x: at.x - OVERLAY_ENDPOINT_RADIUS, y: at.y - OVERLAY_ENDPOINT_RADIUS,
+        width: 2 * OVERLAY_ENDPOINT_RADIUS, height: 2 * OVERLAY_ENDPOINT_RADIUS };
+      vertex(cellId('busMark', bus.id, stub.node), pill?.cell ?? layerId('overlay'),
+        styleString(['ellipse'], { html: 1, fillColor: paint.overlay.mark, strokeColor: 'none', points: '[]' }),
+        pill ? relative(box, pill.box) : box);
+    }
+    const label = layout.labels.find(item => item.id === bus.label);
+    if (label !== undefined && !label.omitted && label.bounds !== undefined) {
+      textCell(cellId('busLabel', bus.id), layerId('labels'), label, shiftRect(label.bounds), paint.link.label);
     }
   }
 

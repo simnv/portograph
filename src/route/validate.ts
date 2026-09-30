@@ -176,6 +176,10 @@ export function validateRoutedPaths(model: LayoutModel, requireComplete = false)
       if (length(segment) < required - EPS) throw new Error(`Port stem on ${link.id} is shorter than its reserved entry`);
     }
   }
+  // 7f publishes the bar and the stubs of every bus, and every member path is derived from them (mesh-bus.md, section 5).
+  for (const bus of model.meshBuses ?? []) {
+    if (bus.bar === undefined || bus.stubs === undefined || bus.stubs.length !== bus.nodes.length) throw new Error(`Mesh bus ${bus.id} has no published bar and stubs`);
+  }
   const conflicts = reservationConflicts(model);
   if (conflicts.length) {
     throw new Error(`Routed path on ${conflicts[0]!.link} enters reserved ${conflicts[0]!.reservation}`);

@@ -61,8 +61,10 @@ class. A link with an authored `route:` is not a candidate, as for a group-link;
 on every member is the opt-out.
 
 **The bus.** For each row and class, take the graph of candidate links. Find its maximal cliques
-(Bron-Kerbosch with pivoting; a row holds tens of nodes, and the scale envelope of degree 64 or
-less bounds the work) and read them largest first; ties between cliques of equal size go to the
+(Bron-Kerbosch with pivoting) and read them largest first. The degree limit does not bound the
+work: the number of maximal cliques grows exponentially (a row of 28 nodes can hold 16,384). The
+search stops at 4,096 maximal cliques per row and class; the class is then declined
+(`MESH_BUS_DECLINED`, `too-many-cliques`) and its links stay plain. Ties between cliques of equal size go to the
 clique whose sorted declaration indices come first, compared one by one. The first clique of three
 or more nodes that passes the checks below is the bus. The bus takes every candidate link among
 its nodes.
@@ -81,7 +83,7 @@ port (a node with some named ends and some anonymous ends is `port`; two differe
 stay `named-ports`, read first); a class that draws no arrowhead. Direction is not read while no
 arrowhead shows. The links of a clique declined for identity stay plain overlay links, drawn by
 the overlay rule: no smaller clique inside it is read, and a later clique that shares two or more
-nodes with it is skipped, so a mesh whose links differ never becomes a smaller bus.
+nodes with it is skipped, so a mesh whose links differ never becomes a smaller bus (ticket 94; built today, a smaller bus inside a refused mesh can form).
 `MESH_BUS_DECLINED` names the first link that differs and the value. The checks of a clique are
 read in this order: `shape`, `named-ports`, the identity reasons, then `shared-port` and `side`
 (`busPorts`). The skip of a later clique that shares two or more nodes belongs to the identity
@@ -106,9 +108,15 @@ overlay links from their own ports. `MESH_BUS` names every dissolved group-link;
 names a group-link that lost only some members and counts the ones left plain. A group-link is
 never kept beside a bus that holds one of its members.
 
-**Overlapping cliques and a second mesh.** In the first version a row holds at most one bus. A
-second clique of three or more nodes on the same row, of the same class or of another class, is
-reported as `MESH_BUS_DECLINED` (`second-mesh`) and its links stay plain. Ticket 85 lifts the
+**Overlapping cliques and a second mesh.** In the first version a row holds at most one bus. After
+the bus is taken, every other maximal clique of three or more nodes of the row is read. It is
+skipped when it has the bus's class and each of its nodes outside the bus touches two or more bus
+nodes: those are the nodes `MESH_BUS_PARTIAL` names, and the clique is a part of the partial mesh.
+Any other clique is a second mesh, of the same class or of another, and is reported as
+`MESH_BUS_DECLINED` (`second-mesh`), once per mesh (a clique that shares an edge with one already
+reported is the same mesh); its links stay plain. So a 12-node set that misses two disjoint pairs
+gives no decline. A `sync` bus {a, b, c, d} with a `mgmt` triangle {a, x, y} is declined, and so
+is a `sync` triangle {d, x, y}, because x and y touch one bus node at most. Ticket 85 lifts the
 limit: buses of one row stack their bars outward.
 
 **Ports.** The bus needs one port per member. The parser gives each bare link end its own
@@ -118,7 +126,7 @@ lowest-ordinal anonymous port among its member-link ends, every member link's en
 re-attached to it, and the other anonymous ports of those ends are removed, unless another link
 uses them. When every member-link end at a node names the same authored port, that port is the bus
 port and keeps its pill. When some member-link ends at a node name a port and some do not, the bus
-is declined (`port`, see Identity). When the member links at one node name two or more different authored
+is declined (`port`, see Identity; ticket 94). Built today: the bare ends move onto the one authored port. When the member links at one node name two or more different authored
 ports, the bus is declined (`MESH_BUS_DECLINED`, `named-ports`): a named port is a drawn pill with
 a meaning of its own, and the design does not merge two of them. `SHARED_PORT` does not warn on a
 bus port.
@@ -142,8 +150,14 @@ port to the last, in the row's order):
 1. one for each routed, non-stub port on that side of a node of the row that stands in the span, a
    member or not (the leg of that port);
 2. one for each vertical of a planned part of the sub-tier gap on that edge (ADR-0021) that stands
-   over the span: the legs and drops of the ports of the tier across the gap, and of ports of the
-   row's own nodes outside the span whose part runs back over it;
+   over the span *and reaches the band*. That is a link that passes the whole row (one end in a
+   tier above, the other in a tier below): its port in the tier across the gap on that edge runs a
+   vertical in the gap at its own x before the link turns to its lane. A link between the row and
+   the tier across the gap ends in a port term 1 counts, and the run of its part lies below the
+   band (the plan seats no row inside it), so it is not counted twice and its far port is not counted
+   at all (ticket 83 measured that counting every port of the tier across the gap contradicts the
+   acceptance fixture: a lower tier that stands under the span has ports over it whose links end
+   outside it);
 3. one for each lane through that gap over the span, transit or foreign.
 
 For an in-frame bus in a frame padding only term 1 can be non-zero, as before: a lane is reserved
@@ -177,9 +191,12 @@ are not known before the skeleton. Stage 3 counts it as one port on that side. S
 counts again after the routed sides are settled (a shared port recomputes its majority, which can
 change a side and the title edge), now within the span read off the skeleton order, and moves the
 bus port if the side changed. Term 1 is exact at that read (port sides and row order). Term 2 has
-no plan yet at stage 5 (the ADR-0021 plan is made in 7a): stage 5 reads it as the routed ports of
-the tier across the gap on the side that faces the gap, and the routed ports of the row's nodes
-outside the span whose other end stands over it, each at its skeleton x. Term 3 is not read at
+no plan yet at stage 5 (the ADR-0021 plan is made in 7a): stage 5 reads it as the ports, in the
+tier across the gap and on the side that faces it, of the routed links that pass the whole row, each
+at its skeleton x. It is read only across frames and for a bus in a rank cell; an in-frame bus in a frame padding has term 1
+alone. Such a link's vertical over the span stands in the gap of its own end and its lane stands beside the row, outside the
+span, so it counts on that edge only (ticket 83 review). An authored `side: top|bottom` on a bus port fixes the side before any
+count. Term 3 is not read at
 stage 5: lanes are reserved in 7a, and a lane counts the same on both edges. All inputs are
 deterministic (sides, skeleton order and x), so the read is. Term 2 is provisional, because 7a to
 7f move x, and the side is still fixed at the freeze. That is accepted: a leg that moves into the
@@ -268,8 +285,21 @@ band grows a frame on its title edge. The label stands beyond the bar, centred o
 midpoint, at heading 0 (ADR-0014). When a vertical that placement puts across the band crosses the
 centred label box (a leg of term 1, a part of term 2, a lane of term 3, or a transit lane beside
 the span that a label wider than the bar can reach), the label takes the longest clear interval of
-the bar between two consecutive stubs and verticals; when no interval holds it, it goes to the
-tooltip and `labelsOmitted` counts it.
+the bar between two consecutive verticals (a stub ends at the bar and the label stands beyond it, so
+a stub never blocks the label; ticket 83); when no interval holds it, it goes to the tooltip and
+`labelsOmitted` counts it. Placement records the interval on the bus (`labelRoom`) for stage 9.
+
+**The frames of a bus** (`frames`, ticket 83). `frames` lists the direct frame of each member's cell,
+or the one-rank group itself, in order of first member. It does not carry the parent chain: nothing in
+placement needs it. The canton band reads `document.frames` (`cantonTiers`) to find the canton whose
+outer edge the band lies on, and the bar's line reads the groups of the row, not the frames. A reader
+that wants a canton finds it from the frame's `parent`.
+
+**A title moved by a stub** (`titleMoves`, ticket 83). `MESH_BUS_TITLE_MOVED` is raised by 7f when a title
+stands on a bus stub after the nudge and the widening: `planLabels` reports the title, 7f records its id in
+`titleMoves`, and `bandSide` and `frameSide` (which every consumer of a title edge reads) answer the
+other edge from then on, where the frame has a cell to host it. The bus reads ADR-0011's own edge
+(`rawBandSide`, `rawFrameSide`), so a moved title never moves a bus.
 
 **Who reserves it.** Three steps, all in placement, in pipeline order:
 
@@ -380,7 +410,8 @@ as the overlay export was (Q70): the drawn bar and stubs read back within 0.05 p
 |---|---|---|
 | `MESH_BUS` | info | A bus formed: row (sub-tier), class, placement, node count, member count, the frames spanned, the group-links dissolved. |
 | `MESH_BUS_PARTIAL` | info | A same-row same-class set had nodes the bus could not take: names them and the missing pairs; names a group-link that lost only some members to the bus and counts the members left plain. |
-| `MESH_BUS_DECLINED` | warning | Reasons: `named-ports` (two or more authored ports at one member), `label`, `weight`, `port`, `arrow` (the member links differ; names the first link that differs and the value; Section 3, *Identity*), `shared-port` (the named port a member would use also carries a link that is not a member), `side` (an authored `left` or `right` on a bus port, or `top` on one and `bottom` on another), `shape` (a member in a `grid` or `bar` group or a flank), `second-mesh` (a second clique on a row that has a bus; lifted by ticket 85), `too-many-cliques` (more than 4,096 maximal cliques in one row and class). `shared-port`, `side` and `too-many-cliques` are built on the ticket 82 to 84 branch; this row is their union with the identity reasons. |
+| `MESH_BUS_DECLINED` | warning | Reasons: `named-ports` (two or more authored ports at one member), `label`, `weight`, `port`, `arrow` (the member links differ; names the first link that differs and the value; Section 3, *Identity*; `port` covers mixed named and bare ends (ticket 94; the ticket 94 design; built today, bare ends move onto the named port), `shared-port` (the named port a member would use also carries a link that is not a member: the bus port stands on the bus edge and would cut that link off from its own side), `side` (an authored `left` or `right` on a bus port, or an authored `top` on one and `bottom` on another: a bus stands on a horizontal edge; an authored `top` or `bottom` fixes the bus side, before any count), `shape` (a member in a `grid` or `bar` group or a flank), `second-mesh` (a second clique on a row that has a bus; lifted by ticket 85), `too-many-cliques` (more than 4,096 maximal cliques in one row and class). `shared-port`, `side` and `too-many-cliques` are built on the ticket 82 to 84 branch. |
+| `MESH_BUS_TITLE_ON_STUB` | warning | A member frame's title stands on a stub, no position and no widening clears it, and the placement budget is spent, so 7f cannot move it to the other edge (ticket 83 review): it stays, and this says so instead of stopping the run (stage `placement`, the frame as owner). |
 | `MESH_BUS_TITLE_MOVED` | info | A member frame's title left its ADR-0011 edge because no position and no widening cleared the stub (stage `placement`, the frame as owner). |
 
 The first three are `stage: 'model'`, with the member links as owners. A mesh over two rows adds

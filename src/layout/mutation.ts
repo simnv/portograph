@@ -80,9 +80,10 @@ function protect(model: LayoutModel, baseline: LayoutModel): LayoutModel {
 }
 function semantics(model: LayoutModel) {
   return {
-    links: model.links.map(link => pick(link, ['id', 'sourceIndex', 'owner', 'from', 'to', 'attachments', 'family', 'layer', 'bundle', 'groupLink', 'strokeWidth'])),
+    links: model.links.map(link => pick(link, ['id', 'sourceIndex', 'owner', 'from', 'to', 'attachments', 'family', 'layer', 'bundle', 'groupLink', 'meshBus', 'strokeWidth'])),
     bundles: model.bundles.map(bundle => pick(bundle, ['id', 'owner', 'layer', 'nodes', 'members'])),
     groupLinks: model.groupLinks.map(group => pick(group, ['id', 'owner', 'layer', 'groups', 'members'])),
+    meshBuses: (model.meshBuses ?? []).map(bus => pick(bus, ['id', 'owner', 'layer', 'class', 'row', 'placement', 'frames', 'nodes', 'ports', 'members', 'dissolved'])),
   };
 }
 function topology(model: LayoutModel) {
@@ -494,7 +495,7 @@ function hasUnsupportedClaims(model: LayoutModel): boolean {
     || model.obstacles.length > 0 || (!bandsStage && model.labelBands.length > 0)
     || (!labelStage && model.legend !== undefined)
     || nonNodeLabels.some(label => !(bandsStage && label.role === 'group')
-      && !(labelStage && (label.role === 'link' || label.role === 'legend')));
+      && !(labelStage && (label.role === 'link' || label.role === 'legend' || label.role === 'mesh-bus')));
 }
 function rebuildBoxes(model: LayoutModel): void {
   for (const group of Object.values(model.groups)) {

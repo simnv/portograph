@@ -60,6 +60,17 @@ export function deriveFrames(model: LayoutModel, withBands = true): Frame[] | un
     // union of its members grown by the margin, plus the band on the title edge.
     const band = withBands && source.kind === 'canton' ? model.labelBands.find(item => item.group === id && item.host === undefined) : undefined;
     let box = union(boxes);
+    // An across-frames bus band on the canton's outer edge lies between the member frames and the canton's title band (mesh-bus.md,
+    // section 4): the canton box grows by it, and the title band moves out by it.
+    if (source.kind === 'canton') {
+      const all = frameSubtreeCells(model.document.frames ?? {}, id).map(cell => model.groups[cell]!.tier!);
+      for (const held of model.busBands ?? []) {
+        const bus = model.meshBuses?.find(item => item.id === held.bus);
+        if (bus?.placement !== 'across-frames' || bus.row !== (held.side === 'top' ? Math.min(...all) : Math.max(...all))) continue;
+        if (held.bounds.x >= box.x + box.width || held.bounds.x + held.bounds.width <= box.x) continue;
+        box = held.side === 'top' ? { ...box, y: box.y - held.bounds.height, height: box.height + held.bounds.height } : { ...box, height: box.height + held.bounds.height };
+      }
+    }
     if (band !== undefined) {
       const room = band.bounds.height;
       box = band.side === 'top' ? { ...box, y: box.y - room, height: box.height + room } : { ...box, height: box.height + room };

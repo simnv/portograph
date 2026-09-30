@@ -1,0 +1,28 @@
+# Expected: the ten `sync` links among the five nodes of `row` draw as one mesh bus (ticket 82 detects it in stage 1; ticket 84
+# draws it): one bus of five nodes and ten members, one bus port per node, MESH_BUS once. The core node feeds the first and the
+# last node by routed links, so the row's title falls at the bottom.
+# Test-only input owned by ranked-groups ticket 82; test/resolve/mesh-bus.test.ts reads it.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  row: { tier: 1, label: Row }
+nodes:
+  core: { group: top, class: router, label: Core }
+  n1: { group: row, class: router, label: N1 }
+  n2: { group: row, class: router, label: N2 }
+  n3: { group: row, class: router, label: N3 }
+  n4: { group: row, class: router, label: N4 }
+  n5: { group: row, class: router, label: N5 }
+links:
+  - [core, n1]
+  - [core, n5]
+  - { from: n1, to: n2, class: sync }
+  - { from: n1, to: n3, class: sync }
+  - { from: n1, to: n4, class: sync }
+  - { from: n1, to: n5, class: sync }
+  - { from: n2, to: n3, class: sync }
+  - { from: n2, to: n4, class: sync }
+  - { from: n2, to: n5, class: sync }
+  - { from: n3, to: n4, class: sync }
+  - { from: n3, to: n5, class: sync }
+  - { from: n4, to: n5, class: sync }

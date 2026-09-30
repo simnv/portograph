@@ -1,0 +1,21 @@
+# Expected: three one-node groups on one tier, fed from above, three `sync` links (no group-link: a group-link needs two nodes a
+# side). Stage 1 finds one across-frames bus of three nodes; ticket 84 draws a stub through each frame's bottom band.
+# Test-only input owned by ranked-groups ticket 82; test/resolve/mesh-bus.test.ts reads it.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  west: { tier: 1, label: West }
+  middle: { tier: 1, label: Middle }
+  east: { tier: 1, label: East }
+nodes:
+  core: { group: top, class: router, label: Core }
+  w: { group: west, class: router, label: W }
+  m: { group: middle, class: router, label: M }
+  e: { group: east, class: router, label: E }
+links:
+  - [core, w]
+  - [core, m]
+  - [core, e]
+  - { from: w, to: m, class: sync }
+  - { from: w, to: e, class: sync }
+  - { from: m, to: e, class: sync }
