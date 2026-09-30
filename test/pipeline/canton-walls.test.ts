@@ -277,7 +277,14 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     expect(settled(hinted)).toEqual([false, false, false]);
     // The grid and the pack settle inside their round bound (they did not step against each other, 22 to 45 grid passes in 4 rounds, before ticket 136's rework).
     expect(hinted.diagnostics.filter(item => item.code === 'GROUP_GRID_NON_CONVERGENCE')).toEqual([]);
-    console.log('EXTENT', hinted.canvas!.width, hinted.canvas!.height);
+    // Pinned: the grid gives way to the pack. With the widening allowed, the pair takes one extent of 534.1 px at x 1070.3 and the canvas is 2182 px wide.
+    const loc = hinted.groups['loc-a2#0']!.bounds!;
+    expect([loc.x, loc.width]).toEqual([expect.closeTo(982.1, 1), expect.closeTo(372.4, 1)]);
+    expect(hinted.canvas!.width).toBeCloseTo(2039, -1);
+    expect(hinted.canvas!.width).toBeLessThan(2100);
+    const yields = hinted.diagnostics.filter(item => item.code === 'GROUP_GRID_YIELDS_TO_PACK');
+    expect(yields.length).toBeGreaterThan(0);
+    expect(yields.every(item => item.severity === 'info' && item.owners!.length >= 2)).toBe(true);
   }, 60000);
   it.each([
     'two-canton-groups-are-disjoint-columns', 'three-canton-groups-close-up-to-a-band-gap', 'a-canton-group-frames-two-tiers', 'a-canton-holds-three-members-on-one-tier',

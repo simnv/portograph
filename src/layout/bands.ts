@@ -889,12 +889,15 @@ function holdColumnsAfterPush(model: LayoutModel): boolean {
   return moved.length > 0;
 }
 
-/** Whether the beside rows would move on a copy of the model with the proposed boxes in place: the pack the grid must not open. */
-function packOpens(model: LayoutModel, proposed: readonly { group: LayoutGroup; bounds: Rect }[]): boolean {
+/** The groups the beside rows would move on a copy of the model with the proposed boxes in place: the rows the grid must not open, judged one by one. */
+function packOpens(model: LayoutModel, proposed: readonly { group: LayoutGroup; bounds: Rect }[]): Set<string> {
   const trial = clone(model);
   for (const item of proposed) trial.groups[item.group.id]!.bounds = { ...item.bounds };
-  return packBesideRows(trial, cell => !trial.groups[cell]!.flank);
+  const before = new Map(Object.values(trial.groups).map(group => [group.id, group.bounds!.x]));
+  packBesideRows(trial, cell => !trial.groups[cell]!.flank);
+  return new Set(Object.values(trial.groups).filter(group => Math.abs(group.bounds!.x - before.get(group.id)!) > PLACEMENT_EPS).map(group => group.id));
 }
+const sameSet = (a: ReadonlySet<string>, b: ReadonlySet<string>): boolean => a.size === b.size && [...a].every(id => b.has(id));
 
 /** The beside rows are packed against the frames the grid widened; true when a group moved. The columns are not pulled here: the pull answers a push, and this move is the pack's alone. */
 function packRowsAfterGrid(model: LayoutModel): boolean {
@@ -908,27 +911,31 @@ function packRowsAfterGrid(model: LayoutModel): boolean {
 
 /**
  * The linked-group grid, then the rows it disturbed (ticket 136). The grid widens a box in place, which widens the derived frame, and a beside row
- * stood packed against the narrower one. The grid refuses a widening that the pack would undo (`packOpens`), so on a packed model it leaves the rows
- * packed. On a model that stood open before the grid the rows are packed once after it, the region producers are replayed as any move asks, and the grid is read once more.
- * At most `GRID_PACK_ROUNDS` rounds; a grid that still widens after them is warned (`GROUP_GRID_NON_CONVERGENCE`). Returns whether the grid widened a box.
- * With a shared `budget` the replay spends a pass of it.
+ * stood packed against the narrower one. The grid gives way to the pack: it refuses a widening that changes which groups the pack would move (`packOpens`,
+ * named by `GROUP_GRID_YIELDS_TO_PACK`), so on a packed row it leaves the row packed. A row that stood open before the grid is packed once after it, the region
+ * producers are replayed as any move asks, and the grid is read once more. At most `GRID_PACK_ROUNDS` rounds; when the grid still widens after them, the model is
+ * left with the grid aligned and `GROUP_GRID_NON_CONVERGENCE` says a row may stand open. That warning is withdrawn by the next call that settles.
+ * Returns whether the grid widened a box. With a shared `budget` the replay spends a pass of it.
  */
 export function alignLinkedGroupGridAndPack(model: LayoutModel, budget?: CentreBudget): boolean {
+  // A warning of an earlier call is stale once a later call settles: it is raised again below when this one does not.
+  model.diagnostics = model.diagnostics.filter(item => !(item.code === 'GROUP_GRID_NON_CONVERGENCE' && item.message.startsWith(GRID_PACK_WARNING)));
   let widened = false;
   for (let round = 0; round < GRID_PACK_ROUNDS; round++) {
     if (!alignLinkedGroupGrid(model)) return widened;
     widened = true;
-    // A grid that refuses what the pack would undo widens onto a packed model and leaves the rows packed; a model that was open before the grid is packed once.
+    // A grid that refuses what the pack would undo widens onto a packed row and leaves it packed; a row that stood open before the grid is packed once.
     if (!packRowsAfterGrid(model)) return widened;
     const passes = budget?.passes ?? 0;
     rebuildRegionGeometry(model, budget, undefined, true);
     if (budget !== undefined) consumeGrowthPass(budget, passes);
   }
-  // The grid widened after the last pack: no third round is made, and the published rows are open by the last widening.
-  if (alignLinkedGroupGrid(clone(model))) placementWarning(model, 'GROUP_GRID_NON_CONVERGENCE', `The linked-group grid and the pack of the beside rows did not settle in ${GRID_PACK_ROUNDS} rounds; final gates decide the retained boxes.`, [], 'group');
+  // The grid still widened after the last pack. The model is left with the grid aligned (`validateGroupLabelBands` reads the grid, and accepts it) and a row may stand open: say so.
+  if (alignLinkedGroupGrid(model)) placementWarning(model, 'GROUP_GRID_NON_CONVERGENCE', `${GRID_PACK_WARNING} ${GRID_PACK_ROUNDS} rounds; the grid is left aligned and a beside row may stand open.`, [], 'group');
   return widened;
 }
-/** The rounds of the grid and the pack: one to pack the rows a model stood open in, one to read the grid on the packed rows. The grid refuses a widening the pack would undo, so a packed model needs no more. */
+const GRID_PACK_WARNING = 'The linked-group grid and the pack of the beside rows did not settle in';
+/** The rounds of the grid and the pack: one to pack the rows a model stood open in, one to read the grid on the packed rows. The grid refuses a widening that changes which rows the pack moves, so a packed model needs no more. */
 const GRID_PACK_ROUNDS = 2;
 
 /**
@@ -1172,7 +1179,9 @@ function widensIntoFrame(model: LayoutModel, proposed: { group: LayoutGroup; bou
  * a bounded number of passes because every pass only merges extents.
  */
 export function alignLinkedGroupGrid(model: LayoutModel): boolean {
-  let changed = false, basePacked: boolean | undefined;
+  let changed = false, base: Set<string> | undefined;
+  const refused = new Set<string>();
+  model.diagnostics = model.diagnostics.filter(item => item.code !== 'GROUP_GRID_YIELDS_TO_PACK');
   // Within one call extents only grow and only ever onto existing box edges, so the process terminates; the cap
   // exhausting is a defect signal, not a design bound. Across calls nothing is monotone: a replay refits the boxes and a pack moves a
   // frame, so the grid and the pack end by the round bound of `alignLinkedGroupGridAndPack`, not by growth (ticket 136). Pairs × groups passes cover any cascade in
@@ -1201,16 +1210,27 @@ export function alignLinkedGroupGrid(model: LayoutModel): boolean {
       // The widening is stage 7 work: it never widens a frame into the box of another frame.
       if (widensIntoFrame(model, proposed)) continue;
       // A widening the pack would undo is refused (ticket 136): the widened frame moves the beside row, the grid puts the moved box back onto the
-      // extent of its partner, and the two step against each other. Judged only when the model stands packed now, so a widening is never blamed for
-      // a row that was open before it.
-      if (basePacked === undefined && model.document.frames !== undefined) basePacked = !packOpens(model, []);
-      if (basePacked === true && packOpens(model, proposed)) continue;
+      // extent of its partner, and the two step against each other. The grid gives way. Judged row by row: the groups the pack would move after the widening
+      // must be the groups it would move before it, so a row that stood open already does not excuse a widening that opens another.
+      if (model.document.frames !== undefined) {
+        const key = members.map(group => group.id).join('|');
+        if (refused.has(key)) continue;
+        base ??= packOpens(model, []);
+        if (!sameSet(base, packOpens(model, proposed))) {
+          refused.add(key);
+          const ids = orderedGroupIds(model.document).filter(id => members.some(group => group.id === id));
+          model.diagnostics.push({ stage: 'placement', severity: 'info', code: 'GROUP_GRID_YIELDS_TO_PACK',
+            message: `The linked groups ${ids.join(', ')} keep their own extents: sharing one would open a row that the pack of the beside rows holds, and the grid gives way to the pack.`,
+            owners: ids.map(id => ({ kind: 'group' as const, id })) });
+          continue;
+        }
+      }
       for (const item of proposed) item.group.bounds = item.bounds;
       moved = changed = true;
     }
     if (!moved) break;
   }
-  if (pass >= bound) placementWarning(model, 'GROUP_GRID_NON_CONVERGENCE', 'Linked-group grid did not settle within its pass bound; final gates decide the retained boxes.', [], 'group');
+  if (pass >= bound) placementWarning(model, 'GROUP_GRID_NON_CONVERGENCE', 'Linked-group grid did not settle within its pass bound; the boxes it reached are kept.', [], 'group');
   if (changed) { rebuildBands(model); rebuildRegions(model); }
   return changed;
 }
