@@ -1,0 +1,30 @@
+# Expected: A member frame of a canton slides off a straight overlay chord and may grow its canton (ticket 80).
+# The canton `west` holds the location `loc` (a core cell on tier 1, a zone cell on tier 2 with a long title). `src` (tier 0) syncs with
+# `dst` (tier 3). The frame stands against its canton wall, so any slide passes the wall and grows the canton: the test stands the frame on
+# the chord and runs the step with the growth allowed, then with the spend used up (40 px a slide, 5 % of the canvas in all).
+# Test-only input owned by ranked-groups ticket 80; test/pipeline/chord-clear.test.ts.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  west: { label: West }
+  loc: { tier: 1, canton: west, label: Site }
+  loc-zone: { parent: loc, label: The zone of the site with a long title }
+  bottom: { tier: 3, label: Bottom }
+  wide: { tier: 3, label: Wide }
+nodes:
+  src: { group: top, class: server, label: Source }
+  up: { group: top, class: router, label: Uplink }
+  gw: { group: loc, class: router, label: Gateway }
+  sw: { group: loc-zone, class: switch, label: Switch }
+  sw2: { group: loc-zone, class: switch, label: Switch two }
+  dst: { group: bottom, class: server, label: Target }
+  w1: { group: wide, class: server, label: Wide one }
+  w2: { group: wide, class: server, label: Wide two }
+links:
+  - [src, gw]
+  - [up, gw]
+  - [gw, sw]
+  - [sw2, dst]
+  - [sw, w1]
+  - [sw, w2]
+  - [src, dst, { class: sync }]
