@@ -350,6 +350,8 @@ export function stepOutOfChords(model: LayoutModel, tiers: readonly number[], fr
         const blockers = overlayBlockers(model);
         return new Set(overlays.filter(link => overlayPath(model, link, blockers).segments.length === 1).map(link => link.id));
       };
+      // A step out of a chord is optional: it is not made into the riser keep-out (mesh-bus.md, section 11.5).
+      if (!optionalMoveHolds(model, [{ group, bounds: { ...box, x: target } }], false)) continue;
       const before = straight(), undo = saveGroups(model, [group]);
       moveGroup(model, group, target - box.x, 0);
       rebuildNodeGeometry(model, group.nodes, 'current');

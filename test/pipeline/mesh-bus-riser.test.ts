@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { centre, flanks, lanes, layout, parse, rows, score } from '../../src/index.js';
+import { bars, bundles, centre, flanks, lanes, layout, parse, rows, score } from '../../src/index.js';
 import { placed as placedModel } from '../layout/phase-two-fixture.js';
 import type { LayoutModel } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
-import { laneSidesHold, optionalMoveHolds, riserKeepOutBreaches } from '../../src/layout/lanes.js';
+import { laneSidesHold, optionalMoveHolds, riserKeepOutBreaches, riserNoDeeper, riserPenetrations } from '../../src/layout/lanes.js';
 import { routedStrokeWidth } from '../../src/theme/geometry.js';
 import { BUS_RUN_CLEARANCE } from '../../src/layout/bus-room.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -190,6 +190,24 @@ describe('the riser in placement (ticket 96)', () => {
       const model = await run(fixture(name));
       expect(riserKeepOutBreaches(model), `${name} published`).toEqual([]);
       expect(model.diagnostics.filter(d => d.code === 'MESH_BUS_RISER_KEEP_OUT')).toEqual([]);
+    }
+  });
+
+  it('lets no optional mover put a routed port deeper into the riser keep-out, stage by stage (7a to 7e)', async () => {
+    const depths = (model: LayoutModel): Map<string, number> => {
+      const all = new Map<string, number>();
+      for (const group of Object.values(model.groups)) for (const [key, depth] of riserPenetrations(model, group)) all.set(key, depth);
+      return all;
+    };
+    for (const name of JOINED_NAMES) {
+      const afterLanes = lanes(rows(await placedModel(fixture(name))));
+      const afterFlanks = flanks(afterLanes), afterCentre = centre(afterFlanks), afterBars = bars(afterCentre), afterBundles = bundles(afterBars);
+      let previous = depths(afterLanes);
+      for (const [stage, model] of [['flanks', afterFlanks], ['centre', afterCentre], ['bars', afterBars], ['bundles', afterBundles]] as const) {
+        const now = depths(model);
+        expect(riserNoDeeper(previous, now), `${name} at ${stage}`).toBe(true);
+        previous = now;
+      }
     }
   });
 });

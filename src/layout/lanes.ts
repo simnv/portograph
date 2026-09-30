@@ -164,22 +164,29 @@ export function riserKeepOutBreaches(model: LayoutModel): { node: string; riser:
   }
   return breaches;
 }
-/** How far the routed ports of the facing edge of `group` stand inside the riser keep-out after a move by `dx`, summed (zero: none does). */
-export function riserPenetration(model: LayoutModel, group: LayoutGroup, dx = 0): number {
-  const keep = riserKeepOut(model) - 1e-6;
-  return facingRoutedPorts(model, group).reduce((sum, item) => sum + item.ports.reduce((inner, port) => inner + Math.max(0, keep - Math.abs(port.x + dx - item.riser)), 0), 0);
+/** How far each routed port of the facing edge of `group` stands inside the riser keep-out after a move by `dx` (a port outside it has no entry). */
+export function riserPenetrations(model: LayoutModel, group: LayoutGroup, dx = 0): Map<string, number> {
+  const keep = riserKeepOut(model) - 1e-6, result = new Map<string, number>();
+  for (const item of facingRoutedPorts(model, group)) for (const port of item.ports) {
+    const depth = keep - Math.abs(port.x + dx - item.riser);
+    if (depth > 1e-9) result.set(`${port.node}:${port.ordinal}`, Math.max(result.get(`${port.node}:${port.ordinal}`) ?? 0, depth));
+  }
+  return result;
+}
+/** Whether no port is deeper in the keep-out in `after` than in `before`. A port is judged by itself: a move that frees one port does not pay for pushing another deeper. */
+export function riserNoDeeper(before: ReadonlyMap<string, number>, after: ReadonlyMap<string, number>): boolean {
+  return [...after].every(([key, depth]) => depth <= (before.get(key) ?? 0) + 1e-9);
 }
 /**
  * A move of a member row keeps every routed port of its facing edge `k` plus half a stroke from the riser x, as a move is measured against a lane
- * (mesh-bus.md, section 11.5). A move that makes a breach smaller is allowed. Only the moves that can be declined ask it: a move that must be made
+ * (mesh-bus.md, section 11.5). A move is refused when any port goes deeper in the keep-out; one that makes a breach smaller is allowed. Only the moves that can be declined ask it: a move that must be made
  * (`packClear`) is never refused for it.
  */
 function riserKeepOutHolds(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[]): boolean {
   return proposed.every(({ group, bounds }) => {
     const dx = bounds.x - group.bounds!.x;
     if (Math.abs(dx) <= 1e-9) return true;
-    const after = riserPenetration(model, group, dx);
-    return after <= 1e-9 || after < riserPenetration(model, group) - 1e-9;
+    return riserNoDeeper(riserPenetrations(model, group), riserPenetrations(model, group, dx));
   });
 }
 /** `laneSidesHold` and the riser keep-out: what a move that can be declined must pass. */

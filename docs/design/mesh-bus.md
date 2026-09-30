@@ -698,7 +698,7 @@ chooses, keep `k` from the riser vertical, as they keep it from each other leg a
 A leg or drop stands at its port or lane x, which the plan does not move, so the plan cannot keep
 it from the riser. Placement does: the riser x keeps `k` plus half a stroke from every routed port
 x on the facing edge of both member rows and from every lane box in the gaps it crosses (the
-**riser keep-out**). Stage 7a takes only slots that hold it, and each later move of a node of a
+**riser keep-out**; ticket 97 adds the x of every bus port of both facing edges, that is, of every stub, so the riser does not meet a bar beside a stub. The stub part is a 7a rule only: later moves measure routed ports, not stubs). Stage 7a takes only slots that hold it, and each later move of a node of a
 member row is measured against the riser x, as a cell move is against a lane. In a crossed
 sub-tier the riser lane keeps bodies, and so their ports, out. Nothing is planned along the
 riser. Where the riser crosses the band of another bus (a bus of another row or class between
@@ -748,7 +748,7 @@ one record per bus.
 member: the stub of the `from` node, the run along that node's bar from the stub's foot to the
 riser x, the riser, the run along the other bar from the riser x to the stub's foot, the stub of
 the `to` node. A run of length zero (a stub at the riser x) is left out, and two consecutive
-collinear segments are merged, so a cross path has one to five segments (one when both stubs stand on the riser x, as on adjacent rows; five in general), all orthogonal, on the
+collinear segments are merged, so a cross path has one to five segments (one when both stubs stand on the riser x, five in general), all orthogonal, on the
 overlay layer. `route/validate` derives it again and compares. G7 reads each end at the port face
 (`overlayEndpoint`).
 
