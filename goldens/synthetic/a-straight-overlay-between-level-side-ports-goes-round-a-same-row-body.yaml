@@ -1,0 +1,23 @@
+# Expected: ranked-groups ticket 86. `a.p` (right) and `c.p` (left) stand level on one row and the
+# body of `m` stands between them: three routed links from the row above hold the order a m c, so
+# ticket 78's ordering cannot make the pair adjacent. The straight segment between the two facing
+# ports would run through `m`, so the link takes the orthogonal branch. Every run round the two pills
+# alone lies inside `m`, which is taller than a pill; the branch also tries runs outside every shape
+# in the hull of the pair, and the link goes over the top of the row: out of `a.p` by the clearance,
+# up above all three bodies, across, down and into `c.p`. No segment enters a node body.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  row: { tier: 1, label: Row }
+nodes:
+  t1: { group: top, class: server, label: t1 }
+  t2: { group: top, class: server, label: t2 }
+  t3: { group: top, class: server, label: t3 }
+  a: { group: row, class: server, label: a, ports: [{ name: p, side: right }] }
+  m: { group: row, class: server, label: m }
+  c: { group: row, class: server, label: c, ports: [{ name: p, side: left }] }
+links:
+  - [t1, a]
+  - [t2, m]
+  - [t3, c]
+  - [a.p, c.p, { route: overlay }]
