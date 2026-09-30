@@ -8,7 +8,7 @@ import { frameSubtreeCells, orderedGroupIds } from '../model/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { createCentreBudget, type CentreBudget } from './centre.js';
-import { laneSidesHold } from './lanes.js';
+import { laneSidesHold, riserKeepOutBreaches } from './lanes.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { findPort, straightCorridorClear } from './row-paths.js';
@@ -404,6 +404,12 @@ function syncBands(model: LayoutModel, entries = routerEntryPoints(model)): bool
   const busBands = expectedBusBands(model);
   if (busBands.length) model.busBands = busBands; else delete model.busBands;
   syncBusGeometry(model);
+  // A routed port of a member row that a later move left within the riser keep-out is reported, once per node (mesh-bus.md, section 11.5).
+  for (const breach of riserKeepOutBreaches(model)) {
+    if (model.diagnostics.some(item => item.code === 'MESH_BUS_RISER_KEEP_OUT' && item.owners?.some(owner => owner.kind === 'node' && owner.id === breach.node))) continue;
+    model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'MESH_BUS_RISER_KEEP_OUT', owners: [{ kind: 'node', id: breach.node }],
+      message: `${breach.node} has a routed port on the facing edge within the riser keep-out of x ${Math.round(breach.riser * 100) / 100}; a leg there stands closer than the run clearance to the riser.` });
+  }
   return model.labelBands.some(band => before.has(band.group) && Math.abs(before.get(band.group)! - band.clearance) > PLACEMENT_EPS);
 }
 

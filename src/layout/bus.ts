@@ -186,6 +186,27 @@ export function busVerticalCounts(model: LayoutModel, bus: MeshBus): { top: numb
   return counts;
 }
 
+/**
+ * The routed segments that cross the riser of a join in the published layout (mesh-bus.md, section 11.5): no gate reads them (the riser is overlay),
+ * so the report counts them. Zero for a bus that is not the upper bus of a join, or before 7f has set the riser's ends.
+ */
+export function riserCrossings(model: LayoutModel, bus: MeshBus): number {
+  const riser = bus.riser;
+  if (riser?.from === undefined || riser.to === undefined) return 0;
+  const y0 = Math.min(riser.from.y, riser.to.y), y1 = Math.max(riser.from.y, riser.to.y);
+  let count = 0;
+  for (const link of model.links) {
+    if (link.layer !== 'routed' || link.technique === 'stub' || link.path === undefined) continue;
+    for (const { from, to } of link.path.segments) {
+      const lo = Math.min(from.x, to.x), hi = Math.max(from.x, to.x);
+      if (!(lo < riser.x - 1e-6 && hi > riser.x + 1e-6)) continue;
+      const y = hi - lo < 1e-9 ? from.y : from.y + (to.y - from.y) * (riser.x - from.x) / (to.x - from.x);
+      if (y > y0 + 1e-6 && y < y1 - 1e-6) count++;
+    }
+  }
+  return count;
+}
+
 /** The verticals across the bar itself (the bus's own edge of `busVerticalCounts`). */
 export function busVerticals(model: LayoutModel, bus: MeshBus): number {
   return bus.side === undefined ? 0 : busVerticalCounts(model, bus)[bus.side];

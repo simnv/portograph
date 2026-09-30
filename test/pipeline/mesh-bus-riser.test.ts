@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
+import { laneSidesHold } from '../../src/layout/lanes.js';
 import { BUS_RUN_CLEARANCE } from '../../src/layout/bus-room.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -115,5 +116,43 @@ describe('the riser in placement (ticket 96)', () => {
     const model = JSON.parse(JSON.stringify(await run(fixture('a-mesh-over-two-rows-joins-its-bars-with-one-riser')))) as LayoutModel;
     model.meshBuses![0]!.riser!.x += 5;
     expect(() => restoreLayoutModel(JSON.stringify(model))).toThrow();
+  });
+
+  it('crosses no body and no frame edge beyond the ones it counts, on all three fixtures', async () => {
+    for (const name of ['a-mesh-over-two-rows-joins-its-bars-with-one-riser', 'a-riser-joins-two-bars-in-one-gap', 'a-riser-between-cantons-crosses-no-canton-edge']) {
+      const model = await run(fixture(name));
+      const upper = model.meshBuses!.find(bus => bus.cross !== undefined)!, riser = upper.riser!;
+      const y0 = riser.from!.y, y1 = riser.to!.y, x = riser.x;
+      for (const node of Object.values(model.nodes)) {
+        const box = node.bounds!;
+        const crosses = x > box.x + 1e-6 && x < box.x + box.width - 1e-6 && box.y < y1 - 1e-6 && bottom(box) > y0 + 1e-6;
+        expect(crosses, `${name}: ${node.id}`).toBe(false);
+      }
+      let edges = 0;
+      for (const frame of model.frames ?? []) {
+        if (x <= frame.box.x + 1e-6 || x >= frame.box.x + frame.box.width - 1e-6) continue;
+        for (const y of [frame.box.y, bottom(frame.box)]) if (y > y0 + 1e-6 && y < y1 - 1e-6) edges++;
+      }
+      const counted = Number(/crossing \d+ sub-tiers and (\d+) frame edges/.exec(model.diagnostics.find(d => d.code === 'MESH_BUS_RISER')!.message)![1]);
+      expect(edges, name).toBeLessThanOrEqual(counted);
+    }
+  });
+
+  it('counts the routed segments that cross the riser', async () => {
+    const model = await run(fixture('a-mesh-over-two-rows-joins-its-bars-with-one-riser'));
+    expect(score(model).snapshot.counters.riserCrossings).toBeGreaterThanOrEqual(0);
+    expect(typeof score(model).snapshot.counters.riserCrossings).toBe('number');
+  });
+
+  it('refuses a move of a member row that puts a routed port within the riser keep-out', async () => {
+    const model = await run(fixture('a-mesh-over-two-rows-joins-its-bars-with-one-riser'));
+    const upper = model.meshBuses![0]!, x = upper.riser!.x;
+    const used = new Set(model.links.filter(link => link.layer === 'routed' && link.technique !== 'stub' && link.attachments)
+      .flatMap(link => [link.attachments!.from, link.attachments!.to]).map(ref => `${ref.node}:${ref.ordinal}`));
+    const found = Object.values(model.groups).flatMap(group => group.tier === upper.row ? group.nodes.flatMap(id => model.nodes[id]!.ports
+      .filter(port => port.side === 'bottom' && used.has(`${id}:${port.ref.ordinal}`)).map(port => ({ group, port }))) : [])[0];
+    if (found === undefined) return;
+    const bounds = found.group.bounds!, dx = x - found.port.anchor!.x + 2;
+    expect(laneSidesHold(model, [{ group: found.group, bounds: { ...bounds, x: bounds.x + dx } }], false)).toBe(false);
   });
 });

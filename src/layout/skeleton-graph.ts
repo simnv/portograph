@@ -2,7 +2,6 @@ import type { ElkNode } from 'elkjs/lib/elk-api.js';
 import type { PortRef } from '../model/document.js';
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { orderedGroupIds } from '../model/model.js';
-import { isCrossLink } from './bus-room.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 
 export const SKELETON_SPACING = { padding: 12, tierGap: 60, nodeClearance: 20 } as const;
@@ -100,7 +99,7 @@ export function buildSkeletonGraph(model: LayoutModel, tier?: number): ElkNode {
         }),
       };
     }),
-    edges: model.links.filter(link => (link.meshBus === undefined || isCrossLink(model, link)) && nodes.has(link.attachments!.from.node) && nodes.has(link.attachments!.to.node))
+    edges: model.links.filter(link => link.meshBus === undefined && nodes.has(link.attachments!.from.node) && nodes.has(link.attachments!.to.node))
       .map(link => ({ id: link.id, sources: [portId(link.attachments!.from)], targets: [portId(link.attachments!.to)] })),
   };
 }

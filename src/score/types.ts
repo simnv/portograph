@@ -20,6 +20,8 @@ export interface ScoreCounters {
   inversions: number; fallbackUsed: boolean; deadlineHit: boolean;
   /** The mesh buses drawn; present only when there is one, so a model without a bus keeps the counters it always had. */
   meshBuses?: number;
+  /** The routed segments that cross a mesh bus riser (mesh-bus.md, section 11.5); no gate reads them. */
+  riserCrossings?: number;
 }
 export interface ScoreAdvisory { metric: string; actual: number; target: number; relation: '<=' | '>=' }
 export interface ScoreAssertion { code: 'golden-crossings' | 'baseline'; passed: boolean; actual: number; expected: number; tolerance: number }

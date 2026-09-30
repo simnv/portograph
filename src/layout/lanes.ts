@@ -118,11 +118,57 @@ function occupiedAt(model: LayoutModel, group: LayoutGroup, bounds: Rect, link?:
 export function laneSidesHold(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[], report = true): boolean {
   // From 7f on a straight link is a wall like a lane (ticket 34): the move is refused for that unit.
   if (!chordsHold(model, proposed, report)) return false;
+  if (!riserKeepOutHolds(model, proposed)) return false;
   return proposed.every(({ group, bounds }) => {
     return model.lanes.filter(lane => lane.tier === group.tier).every(lane => {
       const box = occupiedAt(model, group, bounds, laneLink(model, lane));
       return group.bounds!.x >= lane.x ? box.x >= right(lane.bounds) - 1e-6 : right(box) <= lane.bounds.x + 1e-6;
     });
+  });
+}
+/** The x distance the riser keeps from a routed port on the facing edge of a member row: `k` plus half a stroke (mesh-bus.md, section 11.5). */
+const riserKeepOut = (model: LayoutModel): number => BUS_RUN_CLEARANCE + routedStrokeWidth(model) / 2;
+/** The routed ports on the facing edge of a member row of a join, per join: the ports the riser keeps out of. */
+function facingRoutedPorts(model: LayoutModel, group: LayoutGroup): { riser: number; ports: { node: string; ordinal: number; x: number }[] }[] {
+  const result: { riser: number; ports: { node: string; ordinal: number; x: number }[] }[] = [];
+  for (const upper of (model.meshBuses ?? []).filter(bus => bus.riser !== undefined && bus.cross !== undefined)) {
+    const lower = model.meshBuses!.find(bus => bus.id === upper.joined);
+    const side = group.tier === upper.row ? 'bottom' : lower !== undefined && group.tier === lower.row ? 'top' : undefined;
+    if (side === undefined) continue;
+    const used = new Set(model.links.filter(link => link.layer === 'routed' && link.technique !== 'stub' && link.attachments)
+      .flatMap(link => [portId(link.attachments!.from), portId(link.attachments!.to)]));
+    const ports = group.nodes.flatMap(id => model.nodes[id]!.ports.filter(port => port.side === side && port.anchor !== undefined && used.has(portId(port.ref)))
+      .map(port => ({ node: id, ordinal: port.ref.ordinal, x: port.anchor!.x })));
+    result.push({ riser: upper.riser!.x, ports });
+  }
+  return result;
+}
+/** The riser x and the keep-out to hold for the ports on `side` of the nodes of `tier`: the riser of every join whose member row that is. */
+export function riserAvoidance(model: LayoutModel, tier: number, side: 'top' | 'bottom'): { xs: number[]; keep: number } {
+  const xs = (model.meshBuses ?? []).filter(bus => bus.riser !== undefined && bus.cross !== undefined).flatMap(upper => {
+    const lower = model.meshBuses!.find(bus => bus.id === upper.joined);
+    return (tier === upper.row && side === 'bottom') || (lower !== undefined && tier === lower.row && side === 'top') ? [upper.riser!.x] : [];
+  });
+  return { xs, keep: riserKeepOut(model) - 1e-6 };
+}
+/** Whether a move of `group` by `dx` keeps its facing routed ports out of the riser keep-out. */
+export function riserKeepOutAfterMove(model: LayoutModel, group: LayoutGroup, dx: number): boolean {
+  return riserKeepOutHolds(model, [{ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } }]);
+}
+/** The routed ports of a member row that stand within the riser keep-out now: what 7f reports (`MESH_BUS_RISER_KEEP_OUT`). */
+export function riserKeepOutBreaches(model: LayoutModel): { node: string; riser: number }[] {
+  const breaches: { node: string; riser: number }[] = [];
+  for (const group of Object.values(model.groups)) for (const item of facingRoutedPorts(model, group)) {
+    for (const port of item.ports) if (Math.abs(port.x - item.riser) < riserKeepOut(model) - 1e-6 && !breaches.some(b => b.node === port.node)) breaches.push({ node: port.node, riser: item.riser });
+  }
+  return breaches;
+}
+/** A move of a member row must keep every routed port of its facing edge `k` plus half a stroke from the riser x, as a move is measured against a lane. */
+function riserKeepOutHolds(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[]): boolean {
+  const keep = riserKeepOut(model) - 1e-6;
+  return proposed.every(({ group, bounds }) => {
+    const dx = bounds.x - group.bounds!.x;
+    return Math.abs(dx) <= 1e-9 || facingRoutedPorts(model, group).every(item => item.ports.every(port => Math.abs(port.x + dx - item.riser) >= keep));
   });
 }
 /** The link a lane belongs to. */
@@ -375,7 +421,7 @@ function reserveRisers(model: LayoutModel, pending: Lane[], occ: (group: LayoutG
     const lower = model.meshBuses!.find(bus => bus.id === upper.joined);
     if (lower === undefined) continue;
     const members = [...upper.nodes, ...lower.nodes], crossed = crossedTiers(model, upper, lower);
-    const width = laneWidth(model), half = width / 2, keepOut = BUS_RUN_CLEARANCE + routedStrokeWidth(model) / 2;
+    const width = laneWidth(model), half = width / 2, keepOut = riserKeepOut(model);
     const spanOf = (bus: { ports: PortRef[] }): { lo: number; hi: number } => {
       const xs = bus.ports.map(ref => findPort(model, ref)!.anchor!.x);
       return { lo: Math.min(...xs), hi: Math.max(...xs) };
