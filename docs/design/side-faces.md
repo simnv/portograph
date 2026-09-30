@@ -937,3 +937,11 @@ sections above:
 11. The trial's `place` and `bands` take their own `abortAt`; the baseline 7f never throws for a
     side reason.
 12. `MAX_RERUNS` = 3 is set by the gate margin, not by the time rule (Section 19.5).
+
+### 19.12 Notes from ticket 119: the routed L through a side lane
+
+1. **A lane hint is its own kind.** The hint map carries only `left` or `right`. A port hinted for the routed L also carries `laneHint` (with `sideHint`; recorded in the layout JSON and checked at restore). `sidesOne` sets it from a set of keys the round passes to the placement run. `chordKind` gives no chord to a link with a `laneHint` port, so 7a reserves the lane and the fixed point never claims the link. Without this flag, `sideLaneCandidate` refuses every hinted candidate that has a chord kind (ticket 117), and no lane can stand.
+2. **The probe.** `measureLaneSides` (`src/layout/side-lanes.ts`) is the third pass of `measureSides`, after the overlay and the chord pass. A link is a candidate when it is routed, has no hinted end, and plans two bends or more on the baseline. One end takes the facing side. The probe is 7a's own corridor test at the far port's x (`probeSideLane`, `alignedOnly`); an exterior corridor is never offered, because it would give three bends. The lower end is the first choice, then document order. Each accepted lane is added to the lanes the next probe reads.
+3. **The judge.** Before 7f, the round refuses a trial in which a lane hint has no source-aligned side lane at 7e (`a port hinted for a side lane has no source-aligned lane at stage 7e`). The routed judgment of Section 19.4 then decides. `plannedBends` reads a side lane: 1 when source-aligned, 3 when not.
+4. **A chord wins.** When a lateral chord is clear, the chord pass takes the link (0 bends). The lane is offered only where no chord can stand.
+5. **The label.** The room is reserved on the vertical run (ticket 118). Stage 9 puts the label on the longest single segment. The vertical run is three collinear pieces (stem, gap part, lane), so a side run that is longer than the longest piece takes the label. This is open (see the ticket comments).

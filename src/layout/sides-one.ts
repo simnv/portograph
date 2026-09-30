@@ -56,7 +56,7 @@ export function tiedPortComponents(model: LayoutModel): Map<string, string> {
  * side and records the side the rule gives as `naturalSide`. For a port the rule leaves undecided that is the capacity estimate, kept in
  * `sizingSide` for stage 5, which replaces it with the side its vote gives.
  */
-export function sidesOne(model: LayoutModel, hints: SideHints = NO_SIDE_HINTS): LayoutModel {
+export function sidesOne(model: LayoutModel, hints: SideHints = NO_SIDE_HINTS, laneHints: ReadonlySet<string> = new Set()): LayoutModel {
   if (model.stage !== 'resolve') throw new Error('Phase-one sides require the resolve stage');
   if (hints.size) checkSideHints(model, hints);
   const components = tiedPortComponents(model);
@@ -134,6 +134,7 @@ export function sidesOne(model: LayoutModel, hints: SideHints = NO_SIDE_HINTS): 
           const natural = safe ? selected : winner(entry.predicted);
           if (safe && natural !== 'top' && natural !== 'bottom') throw new SideHintRefusal(`Side hint on ${port.ref.node}.${port.ref.name ?? '#'}${port.ref.ordinal} refused: its natural side is ${natural}`);
           port.sideHint = true; port.naturalSide = natural; port.side = hint;
+          if (laneHints.has(portKey(port.ref))) port.laneHint = true;
           if (!safe) port.sizingSide = natural;
           capacity[natural]++; // the natural side: an unused port is placed by the stage-2 rule, which no hint may change
         } else {

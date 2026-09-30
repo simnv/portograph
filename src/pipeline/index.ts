@@ -121,10 +121,10 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
 
   /** Stages 1 to 7e, the placement the chords are decided on before 7f grows a gap, and so the placement a fan is measured on. `floors` are port pitches a fan of chords needs on a face (ticket 89); the first run has none. */
   const stage3Sizes = new WeakMap<LayoutModel, Map<string, Size>>();
-  const place = async (floors: FanMeasure['floors'], hints = options.testSideHints, nodeFloors = options.testNodeFloors, abort?: (stage: string) => void): Promise<LayoutModel> => {
+  const place = async (floors: FanMeasure['floors'], hints = options.testSideHints, nodeFloors = options.testNodeFloors, abort?: (stage: string) => void, laneKeys: ReadonlySet<string> = new Set()): Promise<LayoutModel> => {
     const stepIn = <T>(stage: LayoutStage, run: () => T): T => { abort?.(stage); return step(stage, run); };
     const resolved = stepIn('resolve', () => resolve(document, options.diagnostics ? { diagnostics: options.diagnostics } : {}));
-    stepIn('sides-one', () => sidesOne(resolved, hints));
+    stepIn('sides-one', () => sidesOne(resolved, hints, laneKeys));
     for (const [id, pitch] of floors) resolved.nodes[id]!.sidePitch = { ...resolved.nodes[id]!.sidePitch, ...pitch };
     // A hinted node keeps the size the measured run gave it, so the skeleton input is the same (a floor on `size`, not on `sizeFloor`, which alignment reads).
     for (const [id, size] of nodeFloors ?? []) resolved.nodes[id]!.size = { ...size };
@@ -199,6 +199,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   let kept7e = model;
   let base = await timed('bands', () => step('bands', () => bands(kept7e, budget)));
   let hints = new Map<string, 'left' | 'right'>(options.testSideHints ?? []);
+  let laneKeys = new Set<string>();
   const promised: SideOffer['promised'] = new Map(), refused = new Set<string>(), sideNotes: Diagnostic[] = [];
   const trialLinks = new Map<string, string>();
   const refuse = (keys: Iterable<string>, side: ReadonlyMap<string, 'left' | 'right'>, reason: string): void => {
@@ -248,9 +249,10 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       const size = stage3Sizes.get(kept7e)?.get(node);
       if (size !== undefined) nodeFloors.set(node, { ...size });
     }
+    const allLanes = new Set([...laneKeys, ...[...offer.promised].filter(([, item]) => item.shape === 'lane').map(([key]) => key)]);
     let trial7e: LayoutModel;
     reruns++;
-    try { trial7e = await timed('rerun-side', () => place(floors, all, nodeFloors, trialAbort)); } catch (error) {
+    try { trial7e = await timed('rerun-side', () => place(floors, all, nodeFloors, trialAbort, allLanes)); } catch (error) {
       if (error instanceof CommandDeadlineError) { cutSide('the command deadline was reached during it'); break; }
       // Only the layout's own refusals drop the offer; anything else (a TypeError) is a bug and must surface.
       if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError)) throw error;
@@ -264,12 +266,22 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     // no lane (`sideLaneCandidate`) and no chord, and the router would find its route (review M1, ticket 117).
     const chordLost = [...new Map([...promised, ...offer.promised])].filter(([, item]) => {
       const link = trial7e.links.find(candidate => candidate.id === item.link);
-      return link !== undefined && link.layer === 'routed' && !isRoutedChord(trial7e, link);
+      return item.shape === 'straight' && link !== undefined && link.layer === 'routed' && !isRoutedChord(trial7e, link);
     });
     if (chordLost.length > 0) {
       const own = chordLost.map(([key]) => key).filter(key => offer.hints.has(key));
       refuse(own.length > 0 && own.length === chordLost.length ? own : offer.hints.keys(), all,
         `a port hinted for a chord does not hold its chord at stage 7e (${[...new Set(chordLost.map(([, item]) => item.link))].join(', ')})`);
+      continue;
+    }
+    // A port hinted for the routed L must own a source-aligned side lane at the trial's 7e (ticket 119). Without one the router would find its route (an
+    // exterior corridor gives three bends), so the hint is refused before 7f.
+    const laneLost = [...new Map([...promised, ...offer.promised])].filter(([, item]) => item.shape === 'lane'
+      && !trial7e.lanes.some(lane => lane.kind === 'side' && lane.owner.kind === 'link' && lane.owner.id === item.link && lane.aligned === true));
+    if (laneLost.length > 0) {
+      const own = laneLost.map(([key]) => key).filter(key => offer.hints.has(key));
+      refuse(own.length > 0 && own.length === laneLost.length ? own : offer.hints.keys(), all,
+        `a port hinted for a side lane has no source-aligned lane at stage 7e (${[...new Set(laneLost.map(([, item]) => item.link))].join(', ')})`);
       continue;
     }
     const hintedLinks = new Map([...offer.promised.values()].map(item => [item.link, item.bends] as const));
@@ -298,7 +310,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     if (!verdict.kept) { refuse(offer.hints.keys(), all, verdict.reason); break; }
     // Kept: the trial is the baseline now. The notes name what the net count accepted.
     keptNotes.push(...trialNotes(routedBase, routedTrial, verdict, hintedLinks.keys()));
-    base = trial; kept7e = trial7e; hints = all; routedFinal = routedTrial;
+    base = trial; kept7e = trial7e; hints = all; laneKeys = allLanes; routedFinal = routedTrial;
     for (const [key, item] of offer.promised) promised.set(key, item);
     break; // one trial reaches 7f per command
   }

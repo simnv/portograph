@@ -1,0 +1,34 @@
+# Expected: side-faces.md, Section 10 and Q109 (ticket 119). The input of ticket 118 with no author `side:`. The load balancer `lb` stands at the right of
+# tier 0; `outlet` is the last node of its row in tier 1. The link `lb` to `outlet` is described. On the natural sides it is stepped (three segments or
+# more). The side round puts the port `feed` on the right side by a hint: 7a reserves a side lane at the x of the port of `lb`, so the link is one drop,
+# one turn and one side run (one bend), and its label stands on the vertical run. No `SIDE_SHAPE_LOST`.
+# Test-only input owned by ticket 119; test/pipeline/side-round-lane.test.ts reads it.
+portograph: 2
+groups:
+  front: { tier: 0, label: Front }
+  bank: { tier: 1, label: Bank }
+nodes:
+  fe: { group: front, class: router, label: FE }
+  fe2: { group: front, class: router, label: FE2 }
+  fe3: { group: front, class: router, label: FE3 }
+  fe4: { group: front, class: router, label: FE4 }
+  fe5: { group: front, class: router, label: FE5 }
+  fe6: { group: front, class: router, label: FE6 }
+  fe7: { group: front, class: router, label: FE7 }
+  fe8: { group: front, class: router, label: FE8 }
+  fe9: { group: front, class: router, label: FE9 }
+  fe10: { group: front, class: router, label: FE10 }
+  fe11: { group: front, class: router, label: FE11 }
+  fe12: { group: front, class: router, label: FE12 }
+  lb: { group: front, class: router, label: LB }
+  spare: { group: bank, class: server, label: Spare }
+  outlet: { group: bank, class: server, label: Outlet }
+  tail: { group: bank, class: server, label: Tail }
+links:
+  - [fe, spare]
+  - [fe2, spare]
+  - [fe3, spare]
+  - [fe4, spare]
+  - [spare, tail]
+  - [outlet, tail]
+  - [lb, outlet, { label: Health checks of the load balancer reach the outlet through the side of the bank }]

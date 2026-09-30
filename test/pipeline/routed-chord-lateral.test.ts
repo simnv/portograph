@@ -157,7 +157,11 @@ describe('a chord is offered only when the fixed point of placement would hold i
     expect(other.technique).toBe('straight');
     const events: Record<string, unknown>[] = [];
     chordTrace.on = event => events.push(event);
-    try { expect(measureSides(blocked, blocked, new Set()).hints.size).toBe(0); } finally { delete chordTrace.on; }
+    try {
+      // A routed L through a side lane (ticket 119) may take the link the chord cannot: only the chord shape is counted here.
+      const offer = measureSides(blocked, blocked, new Set());
+      expect([...offer.promised.values()].filter(item => item.shape === 'straight')).toEqual([]);
+    } finally { delete chordTrace.on; }
     // The refusal is the chord clearance to the held chord, named by the fixed point of placement (not the offer logic, not `chordVerdict`).
     const refusal = events.filter(event => event['ev'] === 'attempt' && typeof event['why'] === 'string' && (event['why'] as string).startsWith('the fixed point'));
     expect(refusal.length).toBeGreaterThan(0);

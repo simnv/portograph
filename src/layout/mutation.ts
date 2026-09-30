@@ -105,7 +105,7 @@ function semantics(model: LayoutModel) {
 function topology(model: LayoutModel) {
   return orderedNodeIds(model.document).map(id => ({ node: id, ports: model.nodes[id]!.ports.map(port => {
     if (!port.side) throw new Error(`Missing final side on ${id}`);
-    return { ref: port.ref, side: port.side, ...pick(port, ['authorOrder', 'sideHint', 'naturalSide']) };
+    return { ref: port.ref, side: port.side, ...pick(port, ['authorOrder', 'sideHint', 'laneHint', 'naturalSide']) };
   }) }));
 }
 /**
@@ -117,7 +117,7 @@ function structure(model: LayoutModel, ordered = false) {
   return {
     nodes: Object.fromEntries(Object.entries(model.nodes).map(([id, node]) => [id, {
       ...pick(node, ['id', 'owner', 'layer', 'strokeWidth']),
-      ports: node.ports.map(port => pick(port, ['ref', 'class', 'side', 'authorOrder', 'owner', 'layer', 'unused', 'sizingSide', 'sideHint', 'naturalSide'])),
+      ports: node.ports.map(port => pick(port, ['ref', 'class', 'side', 'authorOrder', 'owner', 'layer', 'unused', 'sizingSide', 'sideHint', 'laneHint', 'naturalSide'])),
     }])),
     groups: Object.fromEntries(Object.entries(model.groups).map(([id, group]) => [id, pick(group, ordered ? ['id', 'owner', 'layer', 'nodes', 'tier', 'frame', 'flank'] : ['id', 'owner', 'layer', 'nodes', 'tier', 'frame', 'flank', 'rowOrder'])])),
     ...pick(model, ['fallbackUsed', 'deadlineHit']),
@@ -237,6 +237,7 @@ function validateSideHints(model: LayoutModel, resolved: LayoutModel): void {
   for (const id of orderedNodeIds(model.document)) for (const port of model.nodes[id]!.ports) {
     const name = `${id}.${port.ref.name ?? '#'}${port.ref.ordinal}`;
     if ((port.sideHint === true) !== (port.naturalSide !== undefined) || (port.sideHint !== undefined && port.sideHint !== true)) throw new SideHintRefusal(`Side hint on ${name} is not recorded with its natural side`);
+    if (port.laneHint !== undefined && (port.laneHint !== true || port.sideHint !== true)) throw new SideHintRefusal(`Lane hint on ${name} is not a side hint`);
     if (port.sideHint !== true) continue;
     if (port.side !== 'left' && port.side !== 'right') throw new SideHintRefusal(`Side hint on ${name} is not a lateral side`);
     if (port.naturalSide !== 'top' && port.naturalSide !== 'bottom') throw new SideHintRefusal(`Side hint on ${name} has a lateral natural side`);

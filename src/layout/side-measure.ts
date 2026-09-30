@@ -5,11 +5,12 @@ import { placePortPill } from '../geometry/index.js';
 import { measurePortPill } from '../text/index.js';
 import { EPS } from '../score/geometry.js';
 import { isRoutedChord } from './frame-paths.js';
-import { transitTiers } from './lanes.js';
+import { isSideLane, transitTiers } from './lanes.js';
 import { crosses, overlayBlockers, overlayPath, straightChord, type OverlayBlockers } from './overlay-paths.js';
 import { facingSide, hintRefusal } from './side-hints.js';
 import { portKey } from './sides-one.js';
 import { measureChordSides } from './side-chords.js';
+import { measureLaneSides } from './side-lanes.js';
 
 /**
  * The side measure (docs/design/side-faces.md, Sections 4 to 7): on a placed model (stages 1 to 7e) it names the lateral sides that would
@@ -37,6 +38,9 @@ export function plannedBends(model: LayoutModel, link: LayoutLink, blockers?: Ov
   if (link.attachments === undefined) return 0;
   if (isOverlay(link)) return Math.max(0, overlayPath(model, link, blockers).segments.length - 1);
   if (isRoutedChord(model, link)) return 0;
+  // A side lane (spec Section 6): one bend into the lateral port, and a stepped part in the gap above a lane the far port does not stand on.
+  const lane = model.lanes.find(item => isSideLane(item) && item.owner.kind === 'link' && item.owner.id === link.id);
+  if (lane !== undefined) return lane.aligned === true ? 1 : 3;
   if (link.path?.fixed === true) return Math.max(0, link.path.segments.length - 1);
   const refs = [link.attachments.from, link.attachments.to];
   const ends = refs.map(ref => model.nodes[ref.node]?.ports.find(port => portKey(port.ref) === portKey(ref))?.anchor);
@@ -51,7 +55,7 @@ export interface SideOffer {
   /** New hints: `portKey` to the lateral side. Never an old hint, never a refused key. */
   hints: Map<string, 'left' | 'right'>;
   /** For each new hint, the link and the bends the probe promised (0: straight). */
-  promised: Map<string, { link: string; bends: number; shape: 'straight' | 'L' }>;
+  promised: Map<string, { link: string; bends: number; shape: 'straight' | 'L' | 'lane' }>;
   /** True when the probe cap left candidates unprobed. */
   capped: boolean;
   /**
@@ -202,6 +206,12 @@ export function measureSides(model: LayoutModel, kept7e: LayoutModel, refused: R
   for (const [key, side] of chords.hints) offer.hints.set(key, side);
   for (const [key, item] of chords.promised) offer.promised.set(key, item);
   offer.capped ||= chords.capped;
-  offer.probes = { base: chords.base, kept7e: chords.nodes };
+  // The routed L through a side lane (ticket 119): a third pass on the same two clones.
+  const taken = new Set([...offer.hints.keys()]);
+  const lanes = measureLaneSides(kept7e, chords.nodes, chords.base, refused, taken, moved, refusedKey, link => plannedBends(model, model.links.find(item => item.id === link.id) ?? link, blockers), chords.probes, probeCap);
+  for (const [key, side] of lanes.hints) offer.hints.set(key, side);
+  for (const [key, item] of lanes.promised) offer.promised.set(key, item);
+  offer.capped ||= lanes.capped;
+  offer.probes = { base: lanes.base, kept7e: lanes.nodes };
   return offer;
 }
