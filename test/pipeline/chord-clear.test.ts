@@ -291,8 +291,9 @@ describe('the step over a chord reads the command budget (ticket 111)', () => {
   }, 60000);
 
   it('a command whose budget falls under the reserve at 7f publishes with exactly one warning (a-corridor-moves-after-the-grid-settles)', async () => {
-    let late = false;
-    const budget = budgetOf(() => (late ? POST_PLACEMENT_RESERVE_MS - 1000 : Infinity));
+    // The first three reads after `bundles` see room, so a move stays and 7f would run a second round: the guard is what keeps one warning.
+    let late = false, reads = 0;
+    const budget = budgetOf(() => (!late || reads++ < 3 ? Infinity : POST_PLACEMENT_RESERVE_MS - 1000));
     const model = await layout(parse(fixture('a-corridor-moves-after-the-grid-settles')), {
       createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, budget,
       onProgress: progress => { if (progress.stage === 'bundles') late = true; },
