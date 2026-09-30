@@ -2,7 +2,7 @@ import type { PortRef } from '../model/document.js';
 import type { LayoutLink, LayoutModel, LayoutNode, PathSegment } from '../model/layout.js';
 import { linkStrokeWidth } from '../theme/geometry.js';
 import { EPS, intersection, samePoint, segmentDistance } from '../score/geometry.js';
-import { chordKind, chordVerdict, edgeMisses, isRoutedChord, SIDE_EDGE_SLACK } from './frame-paths.js';
+import { chordKind, chordVerdict, edgeMisses, fixedPointRefusal, isRoutedChord, SIDE_EDGE_SLACK } from './frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { straightChord } from './overlay-paths.js';
 import { findPort } from './row-paths.js';
@@ -108,6 +108,10 @@ export function measureChordSides(model: LayoutModel, nodes: LayoutModel['nodes'
       const misses = raw === undefined ? [] : edgeMisses(probe, link, { from: raw.from, to: raw.to, owner: { ...link.owner } }).map(m => `${m.box}/${m.side}: ${m.miss === Infinity ? 'no crossing' : `${m.miss.toFixed(1)} px`}`);
       if (!('segment' in verdict)) { note(`chordVerdict refuses: ${verdict.reason}`, { verdict: verdict.reason, misses }); return; }
       const segment = verdict.segment, stroke = linkStrokeWidth(link);
+      // Placement holds a chord only when the fixed point of `rebuildRowPaths` does (`expectedFramePath`): the chords already held and the legs of the links that
+      // stay orthogonal keep their clearance from it, and its own title fits. A chord that fails there is never held at 7e, so the hint would give no gain.
+      const held = fixedPointRefusal(probe, link, { ...segment, straight: true });
+      if (held !== undefined) { note(`the fixed point of placement would refuse it: ${held}`, { verdict: 'segment', misses }); return; }
       const length = Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y);
       if (length <= EPS) { note('zero length', { misses }); return; }
       const angles: string[] = [];

@@ -444,7 +444,7 @@ function mouthLegs(model: LayoutModel, link: LayoutLink): { leg: PathSegment; ot
  * The checks of the fixed point on a chord that stands alone: the chords already held and the vertical legs of the links that stay
  * orthogonal, mouth legs of the gap's lanes included. The first that fails names the refusal.
  */
-function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment): 'chord' | 'leg' | 'title' | undefined {
+export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment): 'chord' | 'leg' | 'title' | undefined {
   // Two chords are no obstacle to each other for the router, but G6 still measures their clearance:
   // only a strict crossing excuses a pair that stands closer than 10 px (a shared end does not).
   const stroke = linkStrokeWidth(link);

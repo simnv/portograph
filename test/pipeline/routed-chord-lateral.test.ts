@@ -4,6 +4,7 @@ import type { LayoutModel } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
 import { chordKind, chordVerdict, edgeLeavers, SIDE_EDGE_SLACK } from '../../src/layout/frame-paths.js';
 import { tooClose } from '../../src/layout/side-chords.js';
+import { measureSides } from '../../src/layout/side-measure.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -131,4 +132,25 @@ describe('two chords from one lateral face keep the chord clearance', () => {
     expect(tooClose(chord([100, 64], [400, 164]), 1, first)).toBe(false);
     expect(tooClose(chord([100, 70], [400, 110]), 1, first)).toBe(false);
   });
+});
+
+describe('a chord is offered only when the fixed point of placement would hold it (ticket 117, sheet finding)', () => {
+  it('offers the far link its lateral side, and offers nothing when a held chord stands 3 px from the chord it would draw', async () => {
+    const on = await run();
+    expect(toProvider(on.model, 'west-router').technique).toBe('straight');
+    const off = await run({ testMaxReruns: 0 });
+    // The chord the probe draws: the router's bottom face to the middle of the provider's right face (`moved` puts a lone lateral port at the face centre).
+    const end = toProvider(off.model, 'west-router').attachments!, router = off.model.nodes['west-router']!, provider = off.model.nodes['provider']!.bounds!;
+    const drawn = { from: router.ports.find(port => port.side === 'bottom')!.anchor!, to: { x: provider.x + provider.width, y: provider.y + provider.height / 2 } };
+    expect(end.to.node).toBe('provider');
+    const plain = structuredClone(off.model) as LayoutModel;
+    expect(measureSides(plain, plain, new Set()).hints.size).toBe(1);
+    // The other provider link is a held chord in the way: its segment runs 3 px from the chord the hint would give, so the fixed point of placement refuses
+    // that chord (`chord`), although `chordVerdict` alone accepts it.
+    const blocked = structuredClone(off.model) as LayoutModel;
+    const other = toProvider(blocked, 'east-router');
+    other.path = { ...other.path!, segments: [{ ...other.path!.segments[0]!, from: { x: drawn.from.x, y: drawn.from.y + 3 }, to: { x: drawn.to.x, y: drawn.to.y + 3 } }] };
+    expect(other.technique).toBe('straight');
+    expect(measureSides(blocked, blocked, new Set()).hints.size).toBe(0);
+  }, 60000);
 });
