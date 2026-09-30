@@ -3,7 +3,7 @@ import type { LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import { bottom, EPS, right } from '../score/geometry.js';
 import { measureText } from '../text/index.js';
 import { GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
-import { cantonTiers, GROUP_LABEL_GEOMETRY, nudgingDistance, routedStroke } from './bands.js';
+import { cantonTiers, GROUP_LABEL_GEOMETRY, nodeObstacleReach, nudgingDistance, routedStroke } from './bands.js';
 import { drawn, edgeOf, nestedTips, stopsOf, tierGaps, type NestedTip, type TierGap } from './gap-runs.js';
 import { LINK_LABEL_GEOMETRY } from './link-labels.js';
 import { findPort } from './row-paths.js';
@@ -743,6 +743,16 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
       const bound = keep + bandTop - held.bounds.y;
       if (bound > 0) { obstacles.push({ x0, x1, anchor: 'below', bound }); }
     }
+  }
+  // A gap row keeps a node's obstacle reach off every body it passes under or beside (ticket 90), the shorter bodies of a row of unequal
+  // heights among them: the plan seats a row from the lowest body edge of the band above (the highest of the band below), so its room
+  // never depends on a neighbour's stem. Rows are seated from `low`/`bandTop`, so a body that ends short of them is met too.
+  for (const node of Object.values(model.nodes)) {
+    const box = node.bounds;
+    if (!box || node.layer === 'overlay') continue;
+    const reach = nodeObstacleReach(model, node), x0 = box.x - reach, x1 = right(box) + reach;
+    if (bottom(box) <= gap.low + EPS && bottom(box) + reach > gap.low) obstacles.push({ x0, x1, anchor: 'above', bound: bottom(box) + reach });
+    if (box.y >= gap.high - EPS && reach + bandTop - box.y > 0) obstacles.push({ x0, x1, anchor: 'below', bound: reach + bandTop - box.y });
   }
   // A canton frame is no group box, and it reaches into the gap: its margin and its title band stand below its last sub-tier
   // (or above its first), outside every member box. A canton that ends at this gap's upper band is an O5 band anchored to it,
