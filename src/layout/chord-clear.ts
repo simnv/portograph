@@ -8,7 +8,7 @@ import type { Segment } from '../score/model.js';
 import { frameColumns, overlayFreeGroups } from './columns.js';
 import { groupShape } from './grid.js';
 import { deriveFrames } from './frames.js';
-import { isFrameStraight } from './frame-paths.js';
+import { blockedChords, chordsHold, isFrameStraight } from './frame-paths.js';
 import { laneSidesHold, occupiedOverhang, selectAnchorTier } from './lanes.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { saveGroups } from './overlay-order.js';
@@ -29,6 +29,13 @@ interface Reading {
   overlay: Set<string>;
   /** The routed links that run on one axis, or hold a straight chord: a drop that stays vertical stays straight. */
   routed: Set<string>;
+}
+
+/** A reading of a model that has settled: the two above, and the findings the gates and the tier-gap plan would make. */
+interface Verdict extends Reading {
+  crowded: Set<string>;
+  disordered: Set<string>;
+  residuals: Set<string>;
 }
 
 const copy = (model: LayoutModel): LayoutModel => JSON.parse(JSON.stringify(model)) as LayoutModel;
@@ -66,8 +73,16 @@ function disordered(model: LayoutModel): Set<string> {
   return found;
 }
 
-/** Whether the pairs `after` state are all pairs `before` stated. */
-const nothingNew = (before: ReadonlySet<string>, after: ReadonlySet<string>): boolean => [...after].every(pair => before.has(pair));
+/** The tier-gap parts the plan declines: the placement proxy for a routed crossing the router would have to make. */
+const residuals = (model: LayoutModel): Set<string> => new Set(model.diagnostics
+  .filter(item => item.code === 'TIER_GAP_PART_RESIDUAL' || item.code === 'TIER_GAP_ROW_CYCLE')
+  .map(item => `${item.code}:${JSON.stringify(item.owners ?? [])}`));
+
+const verdict = (model: LayoutModel, overlays: readonly LayoutLink[]): Verdict =>
+  ({ ...read(model, overlays), crowded: crowded(model), disordered: disordered(model), residuals: residuals(model) });
+
+/** Whether every finding `after` states was stated by `before`. */
+const nothingNew = (before: ReadonlySet<string>, after: ReadonlySet<string>): boolean => [...after].every(item => before.has(item));
 
 /**
  * A straight overlay chord between two tiers is a reservation for the tiers between them (ticket 77, Q64). Run in 7f, after the
@@ -79,15 +94,17 @@ const nothingNew = (before: ReadonlySet<string>, after: ReadonlySet<string>): bo
  * link keeps its place in the order of its tier, so the move creates no crossing among the links it holds. A node moves inside the
  * box of its group, in the row it stands in, keeping the row gap to its neighbours.
  *
- * A candidate is kept only when all of these hold, read on the geometry after the move:
- * - `laneSidesHold`: a lane keeps its side and a frozen chord stays clear of every body;
- * - the straight overlay count rises (a move that bends one link and straightens two is a trade that counts);
- * - no routed link that ran on one axis, or held a chord, stops doing so;
- * - after `settle` has run on a copy (the growth of the tier gaps, the close-up, the replays), no pair of routed links stands closer
- *   than G6 allows that did not stand so before the move, and no port stands out of the order of its far ends (G5) that did not before.
- * Otherwise the mover goes back and the next candidate is tried. Returns whether anything stayed moved.
+ * A candidate is kept only when both of these hold:
+ * - on the geometry after the move, `laneSidesHold` (a lane keeps its side, a frozen chord stays clear of every body), and the
+ *   straight overlay count rises (a move that bends one link and straightens two is a trade that counts);
+ * - on a copy of the model that `follow` has run, which is what the pipeline does next (the replays of the regions, the grid and
+ *   the labels, then a round of the growth and the close-up), against the copy of the model without the move: the straight overlay
+ *   count still rises, no routed link that ran on one axis or held a chord stops doing so, and no pair of routed links (G6), no
+ *   port out of the order of its far ends (G5) and no tier-gap part the plan declines appears that was not there before.
+ * Otherwise the mover goes back and the next candidate is tried. A mover that has moved in an earlier round (`history`) is left
+ * where it stands, so the rounds converge. Returns whether anything stayed moved.
  */
-export function stepOverChords(model: LayoutModel, settle: ((probe: LayoutModel) => unknown) | undefined): boolean {
+export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel) => unknown) | undefined, history: Set<string> = new Set()): boolean {
   const anchor = selectAnchorTier(model);
   const overlays = model.links.filter(link => link.layer === 'overlay' && link.attachments);
   if (anchor === undefined || !overlays.length) return false;
@@ -101,25 +118,33 @@ export function stepOverChords(model: LayoutModel, settle: ((probe: LayoutModel)
   const tiers = [...new Set(all.map(group => group.tier!))].sort((a, b) => a - b);
   /** Whether any trial ran: each one rebuilds labels a group at a time and so moves them to the end of the list. */
   let tried = false, moved = false;
+  /** The verdict on the settled copy of the model as it stands, without a move. It holds until a move stays. */
+  let baseline: Verdict | undefined;
 
-  /** Whether `probe` (the model with the move made) settles into no new crowded pair; the baseline is the model before the move. */
-  const settles = (redo: () => void, undo: () => void, nodes: readonly string[]): boolean => {
-    if (settle === undefined) return true;
+  /** The verdict on a settled copy of the model as it stands now, or `undefined` when the copy cannot be settled. */
+  const settled = (): Verdict | undefined => {
     try {
-      const after = copy(model);
-      settle(after);
+      const probe = copy(model);
+      follow!(probe);
+      return verdict(probe, overlays);
+    } catch {
+      return undefined;
+    }
+  };
+  /** Whether the settled copy of the model with the move made stands better than the settled copy without it. */
+  const holdsSettled = (redo: () => void, undo: () => void, nodes: readonly string[]): boolean => {
+    if (follow === undefined) return true;
+    const after = settled();
+    if (baseline === undefined) {
       undo();
       rebuildNodeGeometry(model, nodes, 'current');
-      const before = copy(model);
-      settle(before);
+      baseline = settled();
       redo();
       rebuildNodeGeometry(model, nodes, 'current');
-      return nothingNew(crowded(before), crowded(after)) && nothingNew(disordered(before), disordered(after));
-    } catch {
-      redo();
-      rebuildNodeGeometry(model, nodes, 'current');
-      return false;
     }
+    return after !== undefined && baseline !== undefined && after.overlay.size > baseline.overlay.size
+      && [...baseline.routed].every(id => after.routed.has(id))
+      && nothingNew(baseline.crowded, after.crowded) && nothingNew(baseline.disordered, after.disordered) && nothingNew(baseline.residuals, after.residuals);
   };
 
   /** The moves `dx` of a set of shapes that put one of them on a chord: open intervals. */
@@ -150,31 +175,33 @@ export function stepOverChords(model: LayoutModel, settle: ((probe: LayoutModel)
       return chord ? [chord] : [];
     });
   };
+  const groupOfNodes = (nodes: readonly string[]): LayoutGroup[] => [...new Set(nodes.map(id => model.groups[model.document.nodes[id]!.group]!))];
+  const saveGroupsOf = (nodes: readonly string[]): (() => void) => saveGroups(model, groupOfNodes(nodes));
 
   /**
-   * Try the candidates nearest first. `place(x)` puts the mover at x, `undo` takes it back. Returns whether one stayed.
-   * Every trial's rebuild is `rebuild`, the geometry of the mover's nodes.
+   * Try the candidates nearest first. `place(dx)` moves the mover by dx, `undo` takes it back. Returns whether one stayed.
+   * A frozen chord a candidate would put a body on is a wall (`holds` for a group, the check below for a node).
    */
-  const attempt = (candidates: readonly number[], at: number, place: (x: number) => void, undo: () => void, nodes: readonly string[],
+  const attempt = (key: string, candidates: readonly number[], at: number, place: (dx: number) => void, undo: () => void, nodes: readonly string[],
     holds: (x: number) => boolean): boolean => {
-    const before = read(model, overlays);
+    const before = read(model, overlays), blocked = new Set(blockedChords(model));
     for (const target of candidates.slice(0, CHORD_TRIALS)) {
       if (!holds(target)) continue;
       tried = true;
       place(target - at);
       rebuildNodeGeometry(model, nodes, 'current');
       const after = read(model, overlays);
-      if (after.overlay.size > before.overlay.size && [...before.routed].every(id => after.routed.has(id))) {
-        const kept = saveGroupsOf(nodes);
-        if (settles(kept, undo, nodes)) return true;
+      if (after.overlay.size > before.overlay.size && [...before.routed].every(id => after.routed.has(id)) && blockedChords(model).every(id => blocked.has(id))
+        && holdsSettled(saveGroupsOf(nodes), undo, nodes)) {
+        baseline = undefined;
+        history.add(key);
+        return true;
       }
       undo();
       rebuildNodeGeometry(model, nodes, 'current');
     }
     return false;
   };
-  const groupOfNodes = (nodes: readonly string[]): LayoutGroup[] => [...new Set(nodes.map(id => model.groups[model.document.nodes[id]!.group]!))];
-  const saveGroupsOf = (nodes: readonly string[]): (() => void) => saveGroups(model, groupOfNodes(nodes));
   const nearest = (edges: readonly number[], at: number, ok: (x: number) => boolean): number[] => edges
     .filter((x, index, list) => ok(x) && Math.abs(x - at) > PLACEMENT_EPS && list.findIndex(other => Math.abs(other - x) <= PLACEMENT_EPS) === index)
     .sort((a, b) => Math.abs(a - at) - Math.abs(b - at) || a - b);
@@ -193,7 +220,7 @@ export function stepOverChords(model: LayoutModel, settle: ((probe: LayoutModel)
       const reach = occupiedOverhang(model, group);
       const routedGroup = !free.has(group.id);
       let placed = false;
-      if (banned.some(({ low, high }) => low < -PLACEMENT_EPS && high > PLACEMENT_EPS)) {
+      if (!history.has(group.id) && banned.some(({ low, high }) => low < -PLACEMENT_EPS && high > PLACEMENT_EPS)) {
         // The walls, as moves of the group: the run of x a move may not put the group's occupied extent into.
         const walls: { low: number; high: number }[] = [];
         let inside = { low: world.low + reach.left, high: world.high - box.width - reach.right };
@@ -226,8 +253,10 @@ export function stepOverChords(model: LayoutModel, settle: ((probe: LayoutModel)
           for (const lane of model.lanes.filter(item => item.tier === tier)) wall(lane.bounds.x, lane.bounds.x + lane.bounds.width, 0);
         }
         if (!skip) {
-          // A group that holds a routed link keeps its place in the order of its tier: the run between its neighbours' walls.
+          // A group that holds a routed link keeps its place in the order of its tier: the run between its neighbours' walls. A wall
+          // that already holds the group's place is a wall on both sides, and the group stays.
           if (routedGroup) {
+            if (walls.some(wall => wall.low < box.x - PLACEMENT_EPS && wall.high > box.x + PLACEMENT_EPS)) inside = { low: box.x, high: box.x };
             const below = walls.filter(wall => wall.high <= box.x + PLACEMENT_EPS).map(wall => wall.high);
             const above = walls.filter(wall => wall.low >= box.x - PLACEMENT_EPS).map(wall => wall.low);
             inside = { low: Math.max(inside.low, ...below), high: Math.min(inside.high, ...above) };
@@ -236,9 +265,16 @@ export function stepOverChords(model: LayoutModel, settle: ((probe: LayoutModel)
             && !walls.some(({ low, high }) => x > low + PLACEMENT_EPS && x < high - PLACEMENT_EPS);
           const candidates = nearest([...banned.flatMap(({ low, high }) => [box.x + low, box.x + high]), ...walls.flatMap(({ low, high }) => [low, high])], box.x, feasible);
           const undo = saveGroups(model, [group]);
-          placed = attempt(candidates, box.x, dx => moveGroup(model, group, dx, 0), undo, group.nodes,
-            x => laneSidesHold(model, [{ group, bounds: { ...box, x } }]));
+          // The candidates ask without a report; a frozen chord is named once, for the nearest candidate it refused, when no candidate stays.
+          let refusal: { group: LayoutGroup; bounds: Rect }[] | undefined;
+          placed = attempt(group.id, candidates, box.x, dx => moveGroup(model, group, dx, 0), undo, group.nodes, x => {
+            const proposed = [{ group, bounds: { ...box, x } }];
+            if (laneSidesHold(model, proposed, false)) return true;
+            if (refusal === undefined && !chordsHold(model, proposed, false)) refusal = proposed;
+            return false;
+          });
           if (placed) moved = true;
+          else if (refusal !== undefined) chordsHold(model, refusal, true);
         }
       }
       if (placed) continue;
@@ -247,6 +283,7 @@ export function stepOverChords(model: LayoutModel, settle: ((probe: LayoutModel)
       const order = [...(group.rowOrder ?? group.nodes)].sort((a, b) => model.nodes[a]!.bounds!.x - model.nodes[b]!.bounds!.x);
       const inset = groupInsets(model, group);
       for (const [index, id] of order.entries()) {
+        if (history.has(`node:${id}`)) continue;
         const node = model.nodes[id]!, body = { ...node.bounds! };
         const lowest = index === 0 ? group.bounds!.x + inset.left : model.nodes[order[index - 1]!]!.bounds!.x + model.nodes[order[index - 1]!]!.bounds!.width + rowGap(model, order[index - 1]!, id);
         const highest = index === order.length - 1 ? group.bounds!.x + group.bounds!.width - inset.right - body.width
@@ -260,7 +297,8 @@ export function stepOverChords(model: LayoutModel, settle: ((probe: LayoutModel)
           node.bounds!.x += dx;
           for (const port of node.ports) if (port.anchor) port.anchor.x += dx;
         };
-        if (attempt(candidates, body.x, shift, undo, [id], () => true)) moved = true;
+        // A frozen chord is a wall for a node as for a group: `attempt` refuses a candidate that puts a body on one.
+        if (attempt(`node:${id}`, candidates, body.x, shift, undo, [id], () => true)) moved = true;
       }
     }
   }

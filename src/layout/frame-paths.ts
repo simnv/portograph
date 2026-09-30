@@ -184,7 +184,7 @@ export function blockedChords(model: LayoutModel): string[] {
  * The 7f counterpart of `laneSidesHold`: a move that fails is refused for that unit, and the link is named
  * in a diagnostic. Nothing is held before 7f, so centring and the column rules pass through here unchanged.
  */
-export function chordsHold(model: LayoutModel, proposed: { group: { nodes: string[]; bounds?: Rect }; bounds: Rect }[]): boolean {
+export function chordsHold(model: LayoutModel, proposed: { group: { nodes: string[]; bounds?: Rect }; bounds: Rect }[], report = true): boolean {
   if (!model.frozenChords?.length) return true;
   const nodes = { ...model.nodes };
   for (const { group, bounds } of proposed) {
@@ -202,7 +202,8 @@ export function chordsHold(model: LayoutModel, proposed: { group: { nodes: strin
     }
   }
   const held = blockedChords({ ...model, nodes });
-  for (const id of held) {
+  // A caller that tries many candidates asks with `report` off and reports the final verdict itself (ticket 77).
+  if (report) for (const id of held) {
     if (!model.diagnostics.some(item => item.code === 'STRAIGHT_LINK_HELD' && item.owners?.some(owner => owner.kind === 'link' && owner.id === id))) {
       model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'STRAIGHT_LINK_HELD',
         message: `A move that would put a body on the straight link ${id} is refused.`, owners: [{ kind: 'link', id }] });

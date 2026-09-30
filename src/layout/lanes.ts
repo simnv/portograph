@@ -114,9 +114,9 @@ function occupiedAt(model: LayoutModel, group: LayoutGroup, bounds: Rect, link?:
  * immutable after allocation, so a movement that fails this is geometrically infeasible rather than
  * something an ordered replay can repair. This is the same occupied extent `validateLanes` measures.
  */
-export function laneSidesHold(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[]): boolean {
+export function laneSidesHold(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[], report = true): boolean {
   // From 7f on a straight link is a wall like a lane (ticket 34): the move is refused for that unit.
-  if (!chordsHold(model, proposed)) return false;
+  if (!chordsHold(model, proposed, report)) return false;
   return proposed.every(({ group, bounds }) => {
     return model.lanes.filter(lane => lane.tier === group.tier).every(lane => {
       const box = occupiedAt(model, group, bounds, laneLink(model, lane));

@@ -91,4 +91,12 @@ describe('the step over a chord, where the mover holds routed links or shares a 
     expect(JSON.stringify(group.bounds)).toBe(stood);
     expect(overlayPath(model, link).segments.length).toBeGreaterThan(1);
   }, 60000);
+  it('a routed group moves in one round only, and the last round runs no step (a-corridor-moves-after-the-grid-settles)', async () => {
+    const model = await run(fixture('a-corridor-moves-after-the-grid-settles'));
+    // Main 6757da1 moves `row-11` by 0 here. The first try moved it -25, +82, +0.5 and +0.7 px in four rounds and kept nothing after the first.
+    expect(Math.abs(model.groups['row-11']!.bounds!.x - 1587.4)).toBeLessThan(30);
+    expect(model.diagnostics.filter(d => d.code === 'PLACEMENT_NON_CONVERGENCE' && d.message.startsWith('The cantons'))).toEqual([]);
+    // The centring warning on main stands; the step adds none.
+    expect(model.diagnostics.filter(d => d.code === 'PLACEMENT_NON_CONVERGENCE')).toHaveLength(1);
+  }, 120000);
 });

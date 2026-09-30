@@ -756,22 +756,28 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
       }
       return shift;
     };
-    let closed = false;
-    for (let round = 0; round < CANTON_ROUNDS && !closed; round++) {
+    /** The replays a move of groups is followed by: the regions, the grid and the labels. */
+    const replays = (model: LayoutModel): void => {
+      rebuildRegionGeometry(model, undefined, undefined, true);
+      alignLinkedGroupGrid(model);
+      replanGroupLabels(model);
+    };
+    // The cantons close up when a round's close-up has nothing to move. The step over a chord (ticket 77) has its own convergence: a round
+    // that moved something runs one more, so the growth and the close-up are measured on the geometry that stands, and the last round runs
+    // no step, since its move could not be measured again. A mover moves in one round only, so the rounds end.
+    let closed = false, again = false;
+    const movers = new Set<string>();
+    for (let round = 0; round < CANTON_ROUNDS && (!closed || again); round++) {
       // A creep under half a pixel, left by the centring replay, counts as settled; the replay still follows any move.
       closed = settle(draft) < CANTON_CREEP;
       // The growth and the close-up change the slope of a chord that spans a gap and the x of a column: a group with no links
       // steps out of a chord again, after the replays (ticket 76 review). Cheap and idempotent.
       const linkless = stepLinklessOutOfChords(draft);
-      // A chord between two tiers keeps the tiers between it free of nodes (ticket 77). A move is judged on the copy that `settle` has run.
-      const cleared = stepOverChords(draft, settle);
-      if (linkless || cleared) {
-        rebuildRegionGeometry(draft, undefined, undefined, true);
-        alignLinkedGroupGrid(draft);
-        replanGroupLabels(draft);
-        // The growth is measured again and the close-up runs on the geometry that stands.
-        closed = closed && !cleared;
-      }
+      // A chord between two tiers keeps the tiers between it free of nodes. A move is judged on a copy that the replays and a round of
+      // `settle` have run, which is what the next round does.
+      const cleared = round < CANTON_ROUNDS - 1 && stepOverChords(draft, probe => { replays(probe); settle(probe); }, movers);
+      if (linkless || cleared) replays(draft);
+      again = cleared;
     }
     // The held-axis warnings say where a column stood when they were raised; the replays above move columns after that (a centring replay
     // that has budget again, ticket 75). A probe pass over a copy says what they say now. When it moves nothing its warnings replace ours,
