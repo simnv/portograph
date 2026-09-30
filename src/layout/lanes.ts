@@ -12,7 +12,7 @@ import { PLACEMENT_EPS } from './tolerance.js';
 import { moveGroup, union } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { withLayoutMutation } from './mutation.js';
-import { chordsHold } from './frame-paths.js';
+import { chordKind, chordsHold } from './frame-paths.js';
 import { deriveFrames, foreignReach, foreignRoot, heldLaneReach, ownFrameCells, riserForeignReach, frameNodes } from './frames.js';
 import { BUS_RUN_CLEARANCE } from './bus-room.js';
 import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
@@ -1014,6 +1014,9 @@ export function sideLaneCandidate(model: LayoutModel, link: LayoutLink): PortRef
   if (!findPort(model, port)?.anchor || !findPort(model, far)?.anchor) return undefined;
   if (ends.some(end => groupShape(model, model.document.nodes[end.node]!.group) === 'bar' || model.groups[model.document.nodes[end.node]!.group]?.flank !== undefined)) return undefined;
   if (groupShape(model, model.document.nodes[port.node]!.group) === 'grid' || ends.some(end => onMeshBus(model, end))) return undefined;
+  // A hinted lateral port whose link is a routed chord candidate (ticket 117) has the chord as its reserved path, not a side lane: the lane is
+  // for the one-bend shape. Both would claim one link, and the route would drop the lane's reserved segments.
+  if (findPort(model, port)?.sideHint === true && chordKind(model, link) !== undefined) return undefined;
   const carried = model.links.filter(item => item.attachments && [item.attachments.from, item.attachments.to].some(end => portId(end) === portId(port)));
   return carried.length === 1 ? port : undefined;
 }

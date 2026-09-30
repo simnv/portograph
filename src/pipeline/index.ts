@@ -26,7 +26,7 @@ import { route, RouteDeadlineError, ROUTE_BUDGET_MS, type CreateRouteAttempt } f
 import { CommandDeadlineError, POST_PLACEMENT_RESERVE_MS, RERUN_GATE_MS, UNBOUNDED_BUDGET, type Budget } from './budget.js';
 // After the stages: the modules below reach the centring module, whose import order the tests that mock it depend on.
 import { declinedFanDiagnostics, fanRoundDropped, fanRoundHolds, measureFans, type FanMeasure } from '../layout/fan-spread.js';
-import { chordClearances } from '../layout/frame-paths.js';
+import { chordClearances, isRoutedChord } from '../layout/frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
 import { SideHintRefusal, sideHintDiagnostics, type SideHints } from '../layout/side-hints.js';
 import { measureSides, refusedKey, type SideOffer } from '../layout/side-measure.js';
@@ -92,6 +92,8 @@ export interface LayoutOptions {
   testMaxReruns?: number;
   /** Test only. Called with the wall time of each placement run, measure, 7f, route and score-ready stage, and the budget left (ticket 115 timing). */
   testTiming?: (label: string, durationMs: number, remainingMs: number) => void;
+  /** Test only (the side probe of ticket 117). Called with the offer, and with the trial and its verdict; it changes nothing. */
+  testSideTrace?: (event: Record<string, unknown>) => void;
 }
 
 /**
@@ -228,6 +230,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   const keptNotes: Diagnostic[] = [];
   for (let round = 0; round < SIDE_ROUNDS; round++) {
     const offer = await timed('measureSides', () => measureSides(base, kept7e, refused));
+    options.testSideTrace?.({ ev: 'offer', round, offer, base, kept7e });
     if (offer.capped) sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_PROBE_CAPPED', message: 'The side measure stopped at its probe cap; the links after it were not probed.' });
     if (offer.hints.size === 0) break;
     if (reruns >= maxReruns) {
@@ -257,6 +260,18 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     if ((trial7e.fallbackUsed && !kept7e.fallbackUsed) || (trial7e.deadlineHit && !kept7e.deadlineHit)) {
       cutSide('ELK fell back or met its time limit during it, and the re-run was dropped'); break;
     }
+    // A port hinted for the straight shape of a routed link (this round's, or kept) must hold its chord at the trial's 7e. Otherwise it would be routed with
+    // no lane (`sideLaneCandidate`) and no chord, and the router would find its route (review M1, ticket 117).
+    const chordLost = [...new Map([...promised, ...offer.promised])].filter(([, item]) => {
+      const link = trial7e.links.find(candidate => candidate.id === item.link);
+      return link !== undefined && link.layer === 'routed' && !isRoutedChord(trial7e, link);
+    });
+    if (chordLost.length > 0) {
+      const own = chordLost.map(([key]) => key).filter(key => offer.hints.has(key));
+      refuse(own.length > 0 && own.length === chordLost.length ? own : offer.hints.keys(), all,
+        `a port hinted for a chord does not hold its chord at stage 7e (${[...new Set(chordLost.map(([, item]) => item.link))].join(', ')})`);
+      continue;
+    }
     const hintedLinks = new Map([...offer.promised.values()].map(item => [item.link, item.bends] as const));
     // The predictor prunes only when another round and another re-run remain, and only the hints it calls worse (Section 19.3).
     if (round + 1 < SIDE_ROUNDS && reruns < maxReruns) {
@@ -278,6 +293,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       break;
     }
     const verdict = judgeTrial({ routedBase, routedTrial, kept7e, trial7e, hinted: hintedLinks });
+    options.testSideTrace?.({ ev: 'trial', verdict, base, kept7e, trial7e, trial, routedBase, routedTrial, hinted: hintedLinks });
     options.testSideProbe?.({ offer, routedBase, routedTrial, verdict });
     if (!verdict.kept) { refuse(offer.hints.keys(), all, verdict.reason); break; }
     // Kept: the trial is the baseline now. The notes name what the net count accepted.

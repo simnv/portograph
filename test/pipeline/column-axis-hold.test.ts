@@ -85,7 +85,10 @@ describe('columns hold their feed axis after rows and centre', () => {
   it('a plan that would put a frame across a straight overlay link is refused, and says an overlay segment holds it', async () => {
     // In the six-sync fixture the overlay link `ntp1` to `b-edge` is one diagonal. Pulling `a` under its feed slides the
     // cells of `a` into it, so the plan is refused as a whole and the link stays one segment.
-    const model = await run(readFileSync(new URL('../../goldens/synthetic/an-overlay-frame-reorder-is-refused-with-six-sync-links.yaml', import.meta.url), 'utf8'));
+    // The side round is off: it gives a-core a lateral side (link-2, 2 bends to 0, routed bent links 2 to 1, ticket 117), 7c then drops that link's pull on `a`,
+    // and the plan this test reads is never made. The test checks the column-axis pass on the layout it runs on.
+    const model = await layout(parse(readFileSync(new URL('../../goldens/synthetic/an-overlay-frame-reorder-is-refused-with-six-sync-links.yaml', import.meta.url), 'utf8')),
+      { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 0 });
     const ntp = model.links.find(link => link.layer === 'overlay' && [link.attachments!.from.node, link.attachments!.to.node].sort().join() === 'b-edge,ntp1')!;
     expect(ntp.path!.segments).toHaveLength(1);
     const held = model.diagnostics.filter(diagnostic => diagnostic.code === COLUMN_AXIS_HELD && diagnostic.owners?.some(owner => 'id' in owner && owner.id === 'a'));

@@ -55,8 +55,10 @@ A link is a cross-frame candidate when all of these are true:
    false). A free group is its own frame here (`frameOfGroup`).
 3. The two end groups are on two consecutive **document** tiers. Both are tier groups or canton
    members; a canton adds no tier.
-4. After the side freeze (ADR-0009), the port on the upper end is on `bottom` and the port on the
-   lower end is on `top`.
+4. After the side freeze (ADR-0009), the port on the upper end is on `bottom` or on a lateral side that
+   a side hint gave it (`sideHint`), and the port on the lower end is on `top` or on a lateral side
+   that a side hint gave it (`docs/design/side-faces.md`, Section 9; ticket 117). A lateral side that
+   is not a hint (an author `side:`) does not make a candidate.
 
 Items 1 to 3 are known at stage 1. Item 4 is known after stage 6. The document tier of item 3 is the authored tier: stage 1 keeps it beside the
 sub-tier as `documentTier` on every group of an expanded document, because `tier` is a sub-tier from then on (ticket 99). `rebuildRowPaths` runs after
@@ -91,7 +93,7 @@ A cross-frame chord adds:
   is equal to the cells after every transaction, so the check reads it directly.
 - **The facing edge.** At each end, the chord leaves every box of `groupBoxes` that holds that
   end and not the other end (the end frame or free group, its parent frame, its canton frame)
-  through the horizontal edge its port faces: the point where the chord meets that edge's y lies
+  through the edge its port faces (the bottom or top edge; for a lateral port the side edge, `side-faces.md` Section 9): the point where the chord meets that edge's y lies
   on the edge, at least the group edge link-margin from each corner. A chord that would leave
   through a side edge is refused. So the chord never runs in the column slack between sibling
   frames, which centring spends and where lanes stand.

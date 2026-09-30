@@ -9,6 +9,7 @@ import { transitTiers } from './lanes.js';
 import { crosses, overlayBlockers, overlayPath, straightChord, type OverlayBlockers } from './overlay-paths.js';
 import { facingSide, hintRefusal } from './side-hints.js';
 import { portKey } from './sides-one.js';
+import { measureChordSides } from './side-chords.js';
 
 /**
  * The side measure (docs/design/side-faces.md, Sections 4 to 7): on a placed model (stages 1 to 7e) it names the lateral sides that would
@@ -195,6 +196,12 @@ export function measureSides(model: LayoutModel, kept7e: LayoutModel, refused: R
       offer.promised.set(lateral.key, best.shape === 'L' ? { link: link.id, bends: 1, shape: 'L' } : { link: link.id, bends: 0, shape: 'straight' });
     }
   }
-  offer.probes = { base: nodes, kept7e: nodes7e };
+  // The routed chord shape (ticket 117): its own pass over the routed links. It probes on the kept 7e model (placement decides a chord, 7f holds it) and
+  // reads "bent now" on the baseline; each accepted hint is applied to both clones.
+  const chords = measureChordSides(kept7e, nodes7e, nodes, refused, moved, MIN_OUTWARD, refusedKey, link => plannedBends(model, model.links.find(item => item.id === link.id) ?? link, blockers), probes, probeCap);
+  for (const [key, side] of chords.hints) offer.hints.set(key, side);
+  for (const [key, item] of chords.promised) offer.promised.set(key, item);
+  offer.capped ||= chords.capped;
+  offer.probes = { base: chords.base, kept7e: chords.nodes };
   return offer;
 }

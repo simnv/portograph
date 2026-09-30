@@ -41,7 +41,11 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
     expect(model.canvas!.width).toBeLessThan(2049.3 - 100);
     // The block keeps its centre (the partner mean is not a stable target, ticket "Comments"); the tier packed against the canton
     // step, the MPLS row, stands centred on it within one column slack (measured 1.5 px).
-    const block = (cantonBoxes(model)[0]!.x + right(cantonBoxes(model)[2]!)) / 2, mpls = model.groups['mpls']!.bounds!;
+    // With the side round on, m1 (in mpls) takes a lateral side (ticket 117, link-4 freed) and 7c drops that link's pull (side-faces.md, Section 7), so the
+    // centre is read on the layout with the round off; the gaps above are read on both.
+    const plain = await layout(parse(readFileSync(new URL('../../goldens/synthetic/three-canton-groups-close-up-to-a-band-gap.yaml', import.meta.url), 'utf8')),
+      { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 0 });
+    const block = (cantonBoxes(plain)[0]!.x + right(cantonBoxes(plain)[2]!)) / 2, mpls = plain.groups['mpls']!.bounds!;
     expect(Math.abs(mpls.x + mpls.width / 2 - block)).toBeLessThan(COLUMN_SLACK);
     expectIdempotent(model);
   }, 120000);

@@ -7,7 +7,9 @@ import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
-const run = (name: string) => layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+// The side round is off: a chord it frees is a diagonal, and this test reads the column axis (ticket 117).
+const run = (name: string) => layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
+  ...(name === 'a-column-centres-under-two-feeds' ? { testMaxReruns: 0 } : {}) });
 const codes = (model: LayoutModel): string[] => model.diagnostics.map(diagnostic => diagnostic.code);
 /** The x of the first port of a node on a side. */
 const portX = (model: LayoutModel, node: string, side: 'top' | 'bottom'): number => model.nodes[node]!.ports.find(port => port.side === side)!.anchor!.x;

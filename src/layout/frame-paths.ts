@@ -1,4 +1,4 @@
-import type { LayoutLink, LayoutModel, LayoutPath, PathSegment } from '../model/layout.js';
+import type { LayoutLink, LayoutModel, LayoutPath, LayoutPort, PathSegment } from '../model/layout.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { effectiveLayer } from '../score/model.js';
 import { overlayBlockers, straightChord } from './overlay-paths.js';
@@ -79,8 +79,12 @@ export function chordKind(model: LayoutModel, link: LayoutLink): ChordKind | und
   const tiers = [documentTier(model, a), documentTier(model, b)];
   if (tiers[0] === undefined || tiers[1] === undefined || Math.abs(tiers[0] - tiers[1]) !== 1) return undefined;
   const [upper, lower] = tiers[0] < tiers[1] ? [from, to] : [to, from];
-  return findPort(model, upper)?.side === 'bottom' && findPort(model, lower)?.side === 'top' ? 'cross' : undefined;
+  return facesAllowed(findPort(model, upper), 'bottom') && facesAllowed(findPort(model, lower), 'top') ? 'cross' : undefined;
 }
+
+/** A cross-frame chord leaves the natural face of its end, or the lateral side a hint gave the port (docs/design/side-faces.md, Section 9). */
+const facesAllowed = (port: LayoutPort | undefined, natural: 'top' | 'bottom'): boolean =>
+  port?.side === natural || (port?.sideHint === true && (port.side === 'left' || port.side === 'right'));
 /** Topology-only test: the frame rule owns this link's path whenever geometry makes it eligible. */
 export function frameLinkCandidate(model: LayoutModel, link: LayoutLink): boolean {
   return chordKind(model, link) === 'frame';
@@ -254,6 +258,12 @@ export function chordSegment(model: LayoutModel, link: LayoutLink): PathSegment 
   return { from: chord.from, to: chord.to, owner: { ...link.owner } };
 }
 
+/**
+ * Extra room a chord keeps from the corners of a side edge it leaves through, at the probe and the fixed point (docs/design/side-faces.md, Section 9):
+ * the shape is judged at 7e and drawn after 7f, which moves columns and grows gaps. The freeze names the refusal `standaloneChord` gave at 7e, so it reads the slack too; `edgeLeavers` and `blockedChords` (after the freeze) read the margin alone.
+ */
+export const SIDE_EDGE_SLACK = 4;
+
 /** The first check that refused a chord (`ROUTED_CHORD_REFUSED`, docs/design/routed-chords.md, Section 10). */
 export type ChordRefusal = 'transit' | 'faces' | 'edge' | 'frame' | 'title' | 'body' | 'pill' | 'lane' | 'corridor' | 'chord' | 'leg';
 
@@ -275,11 +285,12 @@ function holders(model: LayoutModel, node: string): Set<string> {
  * and does not consume the link is a wall with the group edge margin; a box that holds one end only is left through the horizontal edge the port
  * faces, at least the margin from each corner. Reads `model.frames`, which equals the cells after every transaction.
  */
-function crossRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment): 'edge' | 'frame' | undefined {
+function crossRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment, sideSlack = 0): 'edge' | 'frame' | undefined {
   const ends = link.attachments!, stroke = linkStrokeWidth(link);
   const from = holders(model, ends.from.node), to = holders(model, ends.to.node);
   const sides = { from: findPort(model, ends.from)?.side, to: findPort(model, ends.to)?.side };
-  const dy = segment.to.y - segment.from.y;
+  const dx = segment.to.x - segment.from.x, dy = segment.to.y - segment.from.y;
+  const margin = GROUP_EDGE_LINK_CLEARANCE - EPS;
   for (const { id, bounds } of groupBoxes(model)) {
     const one = from.has(id), two = to.has(id);
     if (one && two) continue;
@@ -288,13 +299,47 @@ function crossRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment
       continue;
     }
     const side = one ? sides.from : sides.to;
+    if (side === 'left' || side === 'right') {
+      // A lateral port leaves through the side edge it faces, at least the margin (and the slack) from each corner.
+      const edge = side === 'right' ? bounds.x + bounds.width : bounds.x;
+      const t = Math.abs(dx) < EPS ? Infinity : (edge - segment.from.x) / dx;
+      const y = segment.from.y + t * dy, room = margin + sideSlack;
+      if (!(t >= -EPS && t <= 1 + EPS) || y < bounds.y + room || y > bounds.y + bounds.height - room) return 'edge';
+      continue;
+    }
     if (side !== 'top' && side !== 'bottom') return 'edge';
     const edge = side === 'bottom' ? bounds.y + bounds.height : bounds.y;
     const t = Math.abs(dy) < EPS ? Infinity : (edge - segment.from.y) / dy;
-    const x = segment.from.x + t * (segment.to.x - segment.from.x);
-    if (!(t >= -EPS && t <= 1 + EPS) || x < bounds.x + GROUP_EDGE_LINK_CLEARANCE - EPS || x > bounds.x + bounds.width - GROUP_EDGE_LINK_CLEARANCE + EPS) return 'edge';
+    const x = segment.from.x + t * dx;
+    if (!(t >= -EPS && t <= 1 + EPS) || x < bounds.x + margin || x > bounds.x + bounds.width - margin) return 'edge';
   }
   return undefined;
+}
+
+/**
+ * Diagnostic only (the side probe of ticket 117): for each box that holds one end only, the edge the chord should leave through, and the miss in px:
+ * 0 when the chord meets that edge inside the corner margin, else how far outside it (`Infinity`: the chord does not meet that edge's line between its ends).
+ */
+export function edgeMisses(model: LayoutModel, link: LayoutLink, segment: PathSegment): { box: string; side: string | undefined; miss: number }[] {
+  const ends = link.attachments!, from = holders(model, ends.from.node), to = holders(model, ends.to.node);
+  const sides = { from: findPort(model, ends.from)?.side, to: findPort(model, ends.to)?.side };
+  const dx = segment.to.x - segment.from.x, dy = segment.to.y - segment.from.y, margin = GROUP_EDGE_LINK_CLEARANCE;
+  const found: { box: string; side: string | undefined; miss: number }[] = [];
+  for (const { id, bounds } of groupBoxes(model)) {
+    const one = from.has(id), two = to.has(id);
+    if (one === two) continue;
+    const side = one ? sides.from : sides.to;
+    let miss = Infinity;
+    if (side === 'left' || side === 'right') {
+      const t = Math.abs(dx) < EPS ? Infinity : ((side === 'right' ? bounds.x + bounds.width : bounds.x) - segment.from.x) / dx, y = segment.from.y + t * dy;
+      if (t >= -EPS && t <= 1 + EPS) miss = Math.max(0, bounds.y + margin - y, y - (bounds.y + bounds.height - margin));
+    } else if (side === 'top' || side === 'bottom') {
+      const t = Math.abs(dy) < EPS ? Infinity : ((side === 'bottom' ? bounds.y + bounds.height : bounds.y) - segment.from.y) / dy, x = segment.from.x + t * dx;
+      if (t >= -EPS && t <= 1 + EPS) miss = Math.max(0, bounds.x + margin - x, x - (bounds.x + bounds.width - margin));
+    }
+    found.push({ box: id, side, miss });
+  }
+  return found;
 }
 
 /**
@@ -302,7 +347,7 @@ function crossRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment
  * them, the foreign frames and the facing edge (a cross-frame chord), the title strips and the corridor the bodies and reservations leave
  * (ticket 89 review).
  */
-export function chordVerdict(model: LayoutModel, link: LayoutLink): { segment: PathSegment } | { reason: ChordRefusal } {
+export function chordVerdict(model: LayoutModel, link: LayoutLink, sideSlack = 0): { segment: PathSegment } | { reason: ChordRefusal } {
   const kind = chordKind(model, link);
   const geometry = straightChord(model, link, undefined, true);
   if (!geometry || Math.hypot(geometry.to.x - geometry.from.x, geometry.to.y - geometry.from.y) < 1e-6) return { reason: 'faces' };
@@ -315,7 +360,7 @@ export function chordVerdict(model: LayoutModel, link: LayoutLink): { segment: P
   if (kind === 'cross') {
     // The port sides say which end is upper; the faces must agree, or the chord leaves a port inward.
     if (!(geometry.to.y > geometry.from.y === (tiers[0]! < tiers[1]!))) return { reason: 'faces' };
-    const reason = crossRefusal(model, link, line);
+    const reason = crossRefusal(model, link, line, sideSlack);
     if (reason) return { reason };
   }
   if (titleRefusal(model, link, line, false)) return { reason: 'title' };
@@ -330,7 +375,7 @@ export function chordVerdict(model: LayoutModel, link: LayoutLink): { segment: P
 
 /** The chord of the link when nothing that no other link can change refuses it. The fan rules ask this first. */
 export function standaloneChord(model: LayoutModel, link: LayoutLink): PathSegment | undefined {
-  const verdict = chordVerdict(model, link);
+  const verdict = chordVerdict(model, link, SIDE_EDGE_SLACK);
   return 'segment' in verdict ? verdict.segment : undefined;
 }
 
@@ -399,7 +444,7 @@ function mouthLegs(model: LayoutModel, link: LayoutLink): { leg: PathSegment; ot
  * The checks of the fixed point on a chord that stands alone: the chords already held and the vertical legs of the links that stay
  * orthogonal, mouth legs of the gap's lanes included. The first that fails names the refusal.
  */
-function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment): 'chord' | 'leg' | 'title' | undefined {
+export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment): 'chord' | 'leg' | 'title' | undefined {
   // Two chords are no obstacle to each other for the router, but G6 still measures their clearance:
   // only a strict crossing excuses a pair that stands closer than 10 px (a shared end does not).
   const stroke = linkStrokeWidth(link);
@@ -460,7 +505,7 @@ export function freezeChords(model: LayoutModel): void {
   const held = model.links.filter(link => isRoutedChord(model, link)).map(link => link.id);
   for (const link of model.links) {
     if (held.includes(link.id) || chordKind(model, link) !== 'cross') continue;
-    const verdict = chordVerdict(model, link);
+    const verdict = chordVerdict(model, link, SIDE_EDGE_SLACK);
     // A candidate no check refuses is not refused: it names nothing (it has no reason to give).
     const reason: ChordRefusal | undefined = 'reason' in verdict ? verdict.reason : fixedPointRefusal(model, link, verdict.segment);
     if (reason === undefined) continue;

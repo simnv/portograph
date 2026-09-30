@@ -12,16 +12,16 @@ const names = {
   six: 'an-overlay-frame-reorder-is-refused-with-six-sync-links',
 } as const;
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
-const run = (name: string): Promise<LayoutModel> => layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const run = (name: string, extra: { testMaxReruns?: number } = {}): Promise<LayoutModel> => layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, ...extra });
 /** The same layout with the order of frames switched off: what ELK and the packing leave. */
-async function runWithoutRule(name: string): Promise<{ model: LayoutModel; metrics: ReturnType<typeof score>['snapshot']['metrics'] }> {
+async function runWithoutRule(name: string, extra: { testMaxReruns?: number } = {}): Promise<{ model: LayoutModel; metrics: ReturnType<typeof score>['snapshot']['metrics'] }> {
   vi.resetModules();
   vi.doMock('../../src/layout/overlay-order.js', async importOriginal => ({
     ...await importOriginal<typeof import('../../src/layout/overlay-order.js')>(), orderFramesByOverlay: () => false,
   }));
   try {
     const api = await import('../../src/index.js');
-    const model = await api.layout(api.parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const model = await api.layout(api.parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, ...extra });
     return { model, metrics: api.score(model).snapshot.metrics };
   } finally {
     vi.doUnmock('../../src/layout/overlay-order.js');
@@ -88,7 +88,9 @@ describe('overlay-weighted order of frames', () => {
   }, 60000);
 
   it('is a gain on the score: no routed link is worse, and fewer overlay links are bent than with the rule off', async () => {
-    const model = await run(names.reorder), off = await runWithoutRule(names.reorder);
+    // The side round is off in both arms: it takes lateral sides in the arm without the rule (bends 6 to 0) and refuses them in the arm with it, and this test
+    // compares the rule alone (ticket 117).
+    const model = await run(names.reorder, { testMaxReruns: 0 }), off = await runWithoutRule(names.reorder, { testMaxReruns: 0 });
     const on = score(model).snapshot.metrics;
     // The rule moved B: with it off, B stands between A and C.
     const [a, b, c] = ['a', 'b', 'c'].map(id => off.model.frames!.find(item => item.id === id)!.box);
