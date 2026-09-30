@@ -1,4 +1,5 @@
 import type { PortRef } from '../model/document.js';
+import type { Point } from '../model/geometry.js';
 import type { BusBand, LayoutGroup, LayoutModel, LayoutNode, LayoutPort, MeshBus } from '../model/layout.js';
 import { rawBandSide, rawFrameSide } from './bands.js';
 import { overlayEndpoint } from './overlay-paths.js';
@@ -10,12 +11,21 @@ import { portId } from './skeleton-graph.js';
  * its bar and stubs run. Nothing here is discovered in routing.
  */
 
-import { BUS_STUB, busBandHeight, busLabelSize } from './bus-room.js';
-export { BUS_STUB, BUS_LABEL_FONT, BUS_LABEL_GAP, busBandHeight, busLabelSize, busLabelText, busRoom, heldBusRoom, inFrameBusOf } from './bus-room.js';
+import { BUS_STUB, busBandHeight, busCarriesLabel, busLabelSize } from './bus-room.js';
+export { isCrossLink, BUS_STUB, BUS_RUN_CLEARANCE, busCarriesLabel, BUS_LABEL_FONT, BUS_LABEL_GAP, busBandHeight, busLabelSize, busLabelText, busRoom, heldBusRoom, inFrameBusOf } from './bus-room.js';
 
 export type Edge = 'top' | 'bottom';
 
 export const meshBuses = (model: LayoutModel): MeshBus[] => model.meshBuses ?? [];
+
+/** The upper bus of the join `bus` belongs to (the bus itself when it is the upper one), or `undefined` when it is joined to none. */
+export function joinUpper(model: LayoutModel, bus: MeshBus): MeshBus | undefined {
+  if (bus.joined === undefined) return undefined;
+  return bus.cross !== undefined ? bus : meshBuses(model).find(item => item.id === bus.joined);
+}
+
+/** The riser of the join `bus` belongs to, once stage 7a has fixed it. */
+export const riserOf = (model: LayoutModel, bus: MeshBus): NonNullable<MeshBus['riser']> | undefined => joinUpper(model, bus)?.riser;
 
 /** The bus whose bus port `ref` is, if any. */
 export function busOfPort(model: LayoutModel, ref: PortRef): MeshBus | undefined {
@@ -89,6 +99,8 @@ export function authoredBusSide(model: LayoutModel, bus: MeshBus): Edge | undefi
  * lanes over the span, is equal on both edges and decides nothing. A tie takes the title edge.
  */
 export function busSide(model: LayoutModel, bus: MeshBus, provisional = false): Edge {
+  // A joined pair stands on the facing edges, fixed at stage 1 before any count (mesh-bus.md, section 11.4).
+  if (bus.joined !== undefined) return bus.cross !== undefined ? 'bottom' : 'top';
   const fixed = authoredBusSide(model, bus);
   if (fixed !== undefined) return fixed;
   const counts = busLegCounts(model, bus, provisional);
@@ -174,6 +186,27 @@ export function busVerticalCounts(model: LayoutModel, bus: MeshBus): { top: numb
   return counts;
 }
 
+/**
+ * The routed segments that cross the riser of a join in the published layout (mesh-bus.md, section 11.5): no gate reads them (the riser is overlay),
+ * so the report counts them. Zero for a bus that is not the upper bus of a join, or before 7f has set the riser's ends.
+ */
+export function riserCrossings(model: LayoutModel, bus: MeshBus): number {
+  const riser = bus.riser;
+  if (riser?.from === undefined || riser.to === undefined) return 0;
+  const y0 = Math.min(riser.from.y, riser.to.y), y1 = Math.max(riser.from.y, riser.to.y);
+  let count = 0;
+  for (const link of model.links) {
+    if (link.layer !== 'routed' || link.technique === 'stub' || link.path === undefined) continue;
+    for (const { from, to } of link.path.segments) {
+      const lo = Math.min(from.x, to.x), hi = Math.max(from.x, to.x);
+      if (!(lo < riser.x - 1e-6 && hi > riser.x + 1e-6)) continue;
+      const y = hi - lo < 1e-9 ? from.y : from.y + (to.y - from.y) * (riser.x - from.x) / (to.x - from.x);
+      if (y > y0 + 1e-6 && y < y1 - 1e-6) count++;
+    }
+  }
+  return count;
+}
+
 /** The verticals across the bar itself (the bus's own edge of `busVerticalCounts`). */
 export function busVerticals(model: LayoutModel, bus: MeshBus): number {
   return bus.side === undefined ? 0 : busVerticalCounts(model, bus)[bus.side];
@@ -197,7 +230,9 @@ export function busExtent(model: LayoutModel, bus: MeshBus): BusExtent | undefin
   if (side === undefined) return undefined;
   const xs = bus.ports.map(ref => { const port = portOf(model, ref), node = model.nodes[ref.node]; return port?.anchor?.x ?? (node === undefined ? undefined : centreX(node)); });
   if (xs.some(x => x === undefined)) return undefined;
-  const lo = Math.min(...(xs as number[])), hi = Math.max(...(xs as number[]));
+  // A joined bar runs to the riser (mesh-bus.md, section 11.5): the riser x fixed in 7a is part of the interval.
+  const riser = riserOf(model, bus);
+  const lo = Math.min(...(xs as number[]), ...(riser ? [riser.x] : [])), hi = Math.max(...(xs as number[]), ...(riser ? [riser.x] : []));
   const pick = side === 'bottom' ? Math.max : Math.min;
   let edge: number;
   if (bus.placement === 'in-frame') {
@@ -253,6 +288,9 @@ function bandVerticals(model: LayoutModel, bus: MeshBus, extent: BusExtent): num
     if (box.y >= band.to || box.y + box.height <= band.from) continue;
     xs.push(box.x, box.x + box.width);
   }
+  // The riser leaves the bar: one more vertical across the band of a bar that carries the label (and across the band of another bus it crosses).
+  const riser = riserOf(model, bus);
+  if (riser !== undefined) xs.push(riser.x);
   return xs.filter(x => x >= extent.lo - 1e-6 && x <= extent.hi + 1e-6);
 }
 
@@ -309,8 +347,8 @@ export function busGeometry(model: LayoutModel, bus: MeshBus): Pick<MeshBus, 'ba
     cursor = Math.max(cursor, to);
   }
   if (extent.hi - cursor >= width) gaps.push({ from: cursor, to: extent.hi });
-  const around = gaps.find(gap => gap.from <= centre - width / 2 && gap.to >= centre + width / 2);
-  const longest = [...gaps].sort((a, b) => (b.to - b.from) - (a.to - a.from) || a.from - b.from)[0];
+  const around = !busCarriesLabel(bus) ? undefined : gaps.find(gap => gap.from <= centre - width / 2 && gap.to >= centre + width / 2);
+  const longest = !busCarriesLabel(bus) ? undefined : [...gaps].sort((a, b) => (b.to - b.from) - (a.to - a.from) || a.from - b.from)[0];
   const room = around !== undefined ? { from: centre - width / 2, to: centre + width / 2 }
     : longest === undefined ? undefined : { from: (longest.from + longest.to - width) / 2, to: (longest.from + longest.to + width) / 2 };
   return { bar: { from: { x: extent.lo, y }, to: { x: extent.hi, y } }, stubs, ...(room !== undefined ? { labelRoom: room } : {}) };
@@ -323,4 +361,17 @@ export function syncBusGeometry(model: LayoutModel): void {
     const geometry = busGeometry(model, bus);
     if (geometry !== undefined) Object.assign(bus, geometry);
   }
+  for (const bus of meshBuses(model)) if (bus.riser !== undefined) {
+    const ends = riserEnds(model, bus);
+    delete bus.riser.from; delete bus.riser.to;
+    if (ends !== undefined) Object.assign(bus.riser, ends);
+  }
+}
+
+/** The ends of the riser on the two bars, once both bars stand (7f): `undefined` before. */
+export function riserEnds(model: LayoutModel, upper: MeshBus): { from: Point; to: Point } | undefined {
+  const lower = meshBuses(model).find(item => item.id === upper.joined);
+  const upperGeometry = busGeometry(model, upper), lowerGeometry = lower === undefined ? undefined : busGeometry(model, lower);
+  if (upper.riser === undefined || upperGeometry === undefined || lowerGeometry === undefined) return undefined;
+  return { from: { x: upper.riser.x, y: upperGeometry.bar!.from.y }, to: { x: upper.riser.x, y: lowerGeometry.bar!.from.y } };
 }

@@ -1,0 +1,65 @@
+# Expected: two cantons side by side, each with two one-node groups on tier 1, one router on tier 2 fed by both tier-1 nodes of its canton
+# and one group of two nodes on tier 3 fed by that router. A full `sync` mesh joins the four tier-1 nodes and the four tier-3 nodes (6 + 6 +
+# 16 = 28 links). Both cantons hold members of both buses, so the riser lane can stand in either canton or between them; the slot that
+# crosses the fewest frame edges wins, then the tie rule.
+# Test-only input owned by ranked-groups ticket 96; test/pipeline/mesh-bus-riser.test.ts reads it.
+portograph: 2
+groups:
+  west: { label: West }
+  east: { label: East }
+  w-top-a: { tier: 1, canton: west }
+  w-top-b: { tier: 1, canton: west }
+  w-mid: { tier: 2, canton: west }
+  w-low: { tier: 3, canton: west }
+  e-top-a: { tier: 1, canton: east }
+  e-top-b: { tier: 1, canton: east }
+  e-mid: { tier: 2, canton: east }
+  e-low: { tier: 3, canton: east }
+nodes:
+  w1: { group: w-top-a, class: router, label: W1 }
+  w2: { group: w-top-b, class: router, label: W2 }
+  wr: { group: w-mid, class: router, label: WR }
+  x1: { group: w-low, class: router, label: X1 }
+  x2: { group: w-low, class: router, label: X2 }
+  e1: { group: e-top-a, class: router, label: E1 }
+  e2: { group: e-top-b, class: router, label: E2 }
+  er: { group: e-mid, class: router, label: ER }
+  x3: { group: e-low, class: router, label: X3 }
+  x4: { group: e-low, class: router, label: X4 }
+links:
+  - [w1, wr]
+  - [w2, wr]
+  - [wr, x1]
+  - [wr, x2]
+  - [e1, er]
+  - [e2, er]
+  - [er, x3]
+  - [er, x4]
+  - { from: w1, to: w2, class: sync }
+  - { from: w1, to: e1, class: sync }
+  - { from: w1, to: e2, class: sync }
+  - { from: w2, to: e1, class: sync }
+  - { from: w2, to: e2, class: sync }
+  - { from: e1, to: e2, class: sync }
+  - { from: x1, to: x2, class: sync }
+  - { from: x1, to: x3, class: sync }
+  - { from: x1, to: x4, class: sync }
+  - { from: x2, to: x3, class: sync }
+  - { from: x2, to: x4, class: sync }
+  - { from: x3, to: x4, class: sync }
+  - { from: w1, to: x1, class: sync }
+  - { from: w1, to: x2, class: sync }
+  - { from: w1, to: x3, class: sync }
+  - { from: w1, to: x4, class: sync }
+  - { from: w2, to: x1, class: sync }
+  - { from: w2, to: x2, class: sync }
+  - { from: w2, to: x3, class: sync }
+  - { from: w2, to: x4, class: sync }
+  - { from: e1, to: x1, class: sync }
+  - { from: e1, to: x2, class: sync }
+  - { from: e1, to: x3, class: sync }
+  - { from: e1, to: x4, class: sync }
+  - { from: e2, to: x1, class: sync }
+  - { from: e2, to: x2, class: sync }
+  - { from: e2, to: x3, class: sync }
+  - { from: e2, to: x4, class: sync }

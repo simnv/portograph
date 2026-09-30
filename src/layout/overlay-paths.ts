@@ -431,11 +431,20 @@ export function overlayPath(model: LayoutModel, link: LayoutLink, blockers?: Ove
 export function busMemberPath(model: LayoutModel, link: LayoutLink): LayoutPath | undefined {
   const bus = model.meshBuses?.find(item => item.id === link.meshBus);
   if (bus?.bar === undefined || bus.stubs === undefined || link.attachments === undefined) return undefined;
-  const stubOf = (ref: PortRef): { node: string; from: Point; to: Point } | undefined => bus.stubs!.find(stub => stub.node === ref.node);
+  // A cross link of a join runs along both bars and the riser (mesh-bus.md, section 11.6): stub, bar run, riser, bar run, stub.
+  const cross = bus.cross?.includes(link.id) === true;
+  const partner = cross ? model.meshBuses?.find(item => item.id === bus.joined) : undefined;
+  const stubs = [...bus.stubs, ...(partner?.stubs ?? [])];
+  if (cross && (partner?.bar === undefined || partner.stubs === undefined || bus.riser === undefined)) return undefined;
+  const stubOf = (ref: PortRef): { node: string; from: Point; to: Point } | undefined => stubs.find(stub => stub.node === ref.node);
   const one = stubOf(link.attachments.from), two = stubOf(link.attachments.to);
   if (one === undefined || two === undefined) return undefined;
-  const points = [one.from, one.to, two.to, two.from];
-  const segments: PathSegment[] = points.slice(1).map((point, index) => ({ from: { ...points[index]! }, to: { ...point }, owner: { ...link.owner } }));
+  const riser = bus.riser;
+  const points = cross && riser !== undefined
+    ? [one.from, one.to, { x: riser.x, y: one.to.y }, { x: riser.x, y: two.to.y }, two.to, two.from]
+    : [one.from, one.to, two.to, two.from];
+  const path = cross ? straighten(compact(points)) : points;
+  const segments: PathSegment[] = path.slice(1).map((point, index) => ({ from: { ...path[index]! }, to: { ...point }, owner: { ...link.owner } }));
   return { owner: { ...link.owner }, layer: 'overlay', fixed: false, ...pathStrokeWidth(link), segments };
 }
 

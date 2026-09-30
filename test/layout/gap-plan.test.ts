@@ -362,3 +362,16 @@ describe('the follow-ups of ticket 48 (ticket 51)', () => {
     expect(wide.height).toBeGreaterThan(narrow.height);
   });
 });
+
+describe('a riser vertical in the gap (mesh-bus.md, section 11.5)', () => {
+  it('moves the middle drop of a Z part off the riser, and asks for no height', () => {
+    const inputs = [part('A', 0, 0, 100), part('B', 1, 100, 200), part('C', 2, 200, 0), part('D', 3, 188, 12)];
+    const base = planGap(inputs, frame());
+    const middle = base.parts.find(item => item.id === 'C')!.middle!;
+    const plan = planGap(inputs, { ...frame(), verticals: [middle] });
+    expect(plan.residual).toEqual([]);
+    const moved = plan.parts.find(item => item.id === 'C')!.middle!;
+    expect(Math.abs(moved - middle)).toBeGreaterThanOrEqual(frame().keep - 1e-6);
+    expect(plan.height).toBeCloseTo(base.height, 6);
+  });
+});

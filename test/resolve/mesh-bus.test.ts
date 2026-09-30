@@ -171,17 +171,18 @@ describe('mesh bus detection (stage 1)', () => {
     expect(codes(model, 'MESH_BUS_PARTIAL')).toHaveLength(1);
   });
 
-  it('splits a mesh on two sub-tiers by sub-tier and leaves the cross links plain', () => {
+  it('splits a mesh on two sub-tiers by sub-tier, then joins the two buses with its cross links', () => {
     const upper = ['a1', 'a2', 'a3'], lower = ['b1', 'b2', 'b3'];
     const links = [...pairs(upper), ...pairs(lower), ...upper.flatMap(a => lower.map(b => `{ from: ${a}, to: ${b}, class: sync }`))];
     const nodes = [...upper.map(id => `  ${id}: { group: west }`), ...lower.map(id => `  ${id}: { group: east }`)].join('\n');
     const model = resolve(parse(doc('  west: { tier: 0 }\n  east: { tier: 1 }', nodes, links)));
     expect(model.meshBuses!.map(bus => [bus.row, bus.nodes.length, bus.members.length])).toEqual([[0, 3, 3], [1, 3, 3]]);
-    const cross = model.links.filter(link => link.meshBus === undefined);
+    const cross = model.links.filter(link => link.meshBus === 'mesh-bus-1' && !model.meshBuses![0]!.members.includes(link.id));
     expect(cross).toHaveLength(9);
-    // The cross set is a group-link, and the bus takes none of its members.
-    expect(model.groupLinks).toHaveLength(1);
-    expect(cross.every(link => link.groupLink === 'group-link-1')).toBe(true);
+    expect(model.meshBuses![0]).toMatchObject({ joined: 'mesh-bus-2', dissolved: ['group-link-1'] });
+    // The cross set is a group-link, and the join takes all of its members.
+    expect(model.groupLinks).toEqual([]);
+    expect(cross.every(link => link.groupLink === undefined)).toBe(true);
   });
 
   it('leaves a routed group-link alone', () => {

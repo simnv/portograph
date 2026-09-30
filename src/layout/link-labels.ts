@@ -8,7 +8,7 @@ import { effectiveLayer } from '../score/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
 import { CANVAS_MARGIN, DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { drawnBoxes as paintedBoxes, produceLegend } from './legend.js';
-import { BUS_LABEL_FONT, BUS_LABEL_GAP, busLabelText } from './bus-room.js';
+import { BUS_LABEL_FONT, BUS_LABEL_GAP, busCarriesLabel, busLabelText } from './bus-room.js';
 import { withLayoutMutation } from './mutation.js';
 import { RectangleIndex, type RectangleBounds } from './rectangle-index.js';
 
@@ -315,6 +315,8 @@ export function produceLinkLabels(model: LayoutModel): void {
   // A bus label stands on the room 7f reserved on its bar (mesh-bus.md, sections 4 and 6). It is placed first, so that no link label
   // takes the room, and it is not subject to the overlay density suppression, which reads the labels of overlay links.
   for (const bus of model.meshBuses ?? []) {
+    // A joined mesh has one label, on the bar of the bus with more members; the other bar has none (mesh-bus.md, section 11.5).
+    if (!busCarriesLabel(bus)) continue;
     const text = busLabelText(bus), id = `label:bus:${bus.id}`;
     const base: LayoutLabel = { id, owner: { ...bus.owner }, layer: 'overlay', role: 'mesh-bus', text,
       fontFamily: BUS_LABEL_FONT.fontFamily, fontSize: BUS_LABEL_FONT.fontSize, fontWeight: BUS_LABEL_FONT.fontWeight, textRotation: 0 };

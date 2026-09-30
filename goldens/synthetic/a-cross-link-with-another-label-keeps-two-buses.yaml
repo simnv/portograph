@@ -1,0 +1,59 @@
+# Expected: the same mesh, with one cross link labelled `backup`. The links of the whole mesh do not draw alike, so the buses are not
+# joined: two buses, MESH_BUS_JOIN_DECLINED reason `label` naming the `backup` link, and the 15 cross links stay plain overlay links.
+# Test-only input owned by ranked-groups ticket 94; test/resolve/mesh-bus-join.test.ts reads it.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  g1: { tier: 1 }
+  g2: { tier: 1 }
+  g3: { tier: 1 }
+  mid: { tier: 2, label: Middle }
+  low: { tier: 3, label: Low }
+nodes:
+  core: { group: top, class: router, label: Core }
+  a1: { group: g1, class: router, label: A1 }
+  a2: { group: g2, class: router, label: A2 }
+  a3: { group: g3, class: router, label: A3 }
+  m1: { group: mid, class: router, label: M1 }
+  m2: { group: mid, class: router, label: M2 }
+  b1: { group: low, class: router, label: B1 }
+  b2: { group: low, class: router, label: B2 }
+  b3: { group: low, class: router, label: B3 }
+  b4: { group: low, class: router, label: B4 }
+  b5: { group: low, class: router, label: B5 }
+links:
+  - [core, a1]
+  - [core, a2]
+  - [core, a3]
+  - [a1, m1]
+  - [a3, m2]
+  - [m1, b1]
+  - [m2, b5]
+  - { from: a1, to: a2, class: sync }
+  - { from: a1, to: a3, class: sync }
+  - { from: a2, to: a3, class: sync }
+  - { from: b1, to: b2, class: sync }
+  - { from: b1, to: b3, class: sync }
+  - { from: b1, to: b4, class: sync }
+  - { from: b1, to: b5, class: sync }
+  - { from: b2, to: b3, class: sync }
+  - { from: b2, to: b4, class: sync }
+  - { from: b2, to: b5, class: sync }
+  - { from: b3, to: b4, class: sync }
+  - { from: b3, to: b5, class: sync }
+  - { from: b4, to: b5, class: sync }
+  - { from: a1, to: b1, class: sync }
+  - { from: a1, to: b2, class: sync }
+  - { from: a1, to: b3, class: sync }
+  - { from: a1, to: b4, class: sync }
+  - { from: a1, to: b5, class: sync }
+  - { from: a2, to: b1, class: sync }
+  - { from: a2, to: b2, class: sync }
+  - { from: a2, to: b3, class: sync, label: backup }
+  - { from: a2, to: b4, class: sync }
+  - { from: a2, to: b5, class: sync }
+  - { from: a3, to: b1, class: sync }
+  - { from: a3, to: b2, class: sync }
+  - { from: a3, to: b3, class: sync }
+  - { from: a3, to: b4, class: sync }
+  - { from: a3, to: b5, class: sync }
