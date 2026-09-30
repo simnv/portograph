@@ -15,7 +15,10 @@ import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 function readDraft(model: LayoutModel) {
   const anchor = selectAnchorTier(model);
   if (anchor === undefined) return undefined;
-  const overlay = model.links.filter(link => link.layer === 'overlay' && link.attachments);
+  // A bus member is neither straight nor bent (mesh-bus.md, section 4): it is no straight overlay link to keep, and its pairs are
+  // satisfied by contiguity, which `rowTools` reads from `busDrawn`.
+  const overlay = model.links.filter(link => link.layer === 'overlay' && link.attachments && link.meshBus === undefined);
+  const members = model.links.filter(link => link.layer === 'overlay' && link.attachments && link.meshBus !== undefined);
   const groupOf = (node: string): LayoutGroup => model.groups[model.document.nodes[node]!.group]!;
   const placed = (node: string): boolean => model.nodes[node]?.bounds !== undefined && groupOf(node).bounds !== undefined && !groupOf(node).flank;
   const tiers = [...new Set(Object.values(model.groups).filter(group => !group.flank && group.nodes.length).map(group => group.tier!))].sort((a, b) => a - b);
@@ -31,14 +34,14 @@ function readDraft(model: LayoutModel) {
     .map(link => ({ from: link.attachments!.from.node, to: link.attachments!.to.node, link }));
   const routed = pairs(model.links.filter(link => link.layer === 'routed' && link.attachments && link.technique !== 'stub'
     && link.attachments.from.node !== link.attachments.to.node));
-  const drawn = pairs(overlay);
+  const drawn = pairs(overlay), busDrawn = pairs(members);
 
   // Who pulls whom: routed partners in the adjacent tiers, overlay partners in any other tier.
   const partners = new Map<string, string[]>();
   const pull = (one: string, other: string): void => { partners.set(one, [...(partners.get(one) ?? []), other]); };
   for (const { from, to } of routed) if (Math.abs(tierOf(from) - tierOf(to)) === 1) { pull(from, to); pull(to, from); }
   for (const { from, to } of drawn) if (tierOf(from) !== tierOf(to)) { pull(from, to); pull(to, from); }
-  const touched = new Set(drawn.flatMap(pair => [tierOf(pair.from), tierOf(pair.to)]));
+  const touched = new Set([...drawn, ...busDrawn].flatMap(pair => [tierOf(pair.from), tierOf(pair.to)]));
 
   const mean = (values: number[]): number | undefined => values.length ? values.reduce((sum, x) => sum + x, 0) / values.length : undefined;
   /** The mean x of the partners of `nodes`, leaving out any partner in `except` (what moves with the nodes). */
@@ -132,7 +135,7 @@ function readDraft(model: LayoutModel) {
     });
     return items.map(item => keys.get(item) === undefined ? item : queue.shift()!);
   };
-  return { anchor, tiers, index, tierOf, groupOf, drawn, centre, isRow, partners, touched, keyOfNodes, same, measure, measureRange, reorder };
+  return { anchor, tiers, index, tierOf, groupOf, drawn, busDrawn, centre, isRow, partners, touched, keyOfNodes, same, measure, measureRange, reorder };
 }
 
 /** What both orderings (groups and nodes, and frames) read: the draft's keys, its tiers and its two measures. */
@@ -175,9 +178,9 @@ function reseatRow(model: LayoutModel, group: LayoutGroup, next: string[], grow:
  * only when its two ends are neighbours on the row, so the row is ordered to put linked bodies next to each other.
  */
 function rowTools(model: LayoutModel, draft: NonNullable<ReturnType<typeof readDraft>>) {
-  const { tierOf, drawn, centre, index, reorder, measureRange, isRow } = draft;
-  /** The overlay links whose two ends stand in one tier, as node pairs. */
-  const sameRow = drawn.filter(pair => pair.from !== pair.to && tierOf(pair.from) === tierOf(pair.to));
+  const { tierOf, drawn, busDrawn, centre, index, reorder, measureRange, isRow } = draft;
+  /** The overlay links whose two ends stand in one tier, as node pairs; the members of a bus among them (contiguity satisfies them). */
+  const sameRow = [...drawn, ...busDrawn].filter(pair => pair.from !== pair.to && tierOf(pair.from) === tierOf(pair.to));
   const linksBetween = (one: string[], two: string[]): number => sameRow.filter(pair =>
     (one.includes(pair.from) && two.includes(pair.to)) || (one.includes(pair.to) && two.includes(pair.from))).length;
   /** The mean x of the same-tier partners of `nodes` that stand outside `inside`. */

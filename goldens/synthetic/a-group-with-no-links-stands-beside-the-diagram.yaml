@@ -1,0 +1,28 @@
+# Expected: A group with no links stands beside the connected diagram, not a canvas away (ticket 92).
+# `key` (tier 1) holds two nodes and has no link, and no other group stands in its tier. The connected diagram
+# is the chain `source`, `relay`, `hosts` in tiers 0, 2 and 3. ELK sets the linkless group beside the diagram
+# on either side; a later shift of the connected part (the mesh bus sheet, where the bus members leave the
+# ELK graph) leaves it behind. Placement stands `key` at most one band gap from the nearest connected group
+# on the side ELK chose, so the canvas is the connected extent plus `key` and one band gap.
+# Test-only input owned by ranked-groups ticket 92; test/pipeline/linkless-group-beside.test.ts reads the layout.
+portograph: 2
+groups:
+  key: { tier: 1, label: Key }
+  sources: { tier: 0, label: Sources }
+  relays: { tier: 2, label: Relays }
+  hosts: { tier: 3, label: Hosts }
+nodes:
+  k1: { group: key, class: server, label: Key 1 }
+  k2: { group: key, class: server, label: Key 2 }
+  src: { group: sources, class: server, label: Source }
+  rel: { group: relays, class: server, label: Relay }
+  h1: { group: hosts, class: server, label: Host 1 }
+  h2: { group: hosts, class: server, label: Host 2 }
+  h3: { group: hosts, class: server, label: Host 3 }
+  h4: { group: hosts, class: server, label: Host 4 }
+links:
+  - [src, rel]
+  - [rel, h1]
+  - [rel, h2]
+  - [rel, h3]
+  - [rel, h4]

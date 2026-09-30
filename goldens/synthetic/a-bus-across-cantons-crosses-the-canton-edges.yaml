@@ -1,0 +1,30 @@
+# Expected: two cantons of two tiers each, a router on the upper tier of each feeding two servers on the lower tier of its canton,
+# and a full `sync` mesh of the four servers (six links, one group-link of four members between the two server groups). Stage 1
+# (ticket 82) finds one across-frames bus of four nodes and dissolves the group-link. Ticket 84 draws the bar across both cantons.
+# Test-only input owned by ranked-groups ticket 82; test/resolve/mesh-bus.test.ts reads it.
+portograph: 2
+groups:
+  west: { label: West }
+  east: { label: East }
+  west-edge: { tier: 1, canton: west, label: West edge }
+  west-servers: { tier: 2, canton: west, label: West servers }
+  east-edge: { tier: 1, canton: east, label: East edge }
+  east-servers: { tier: 2, canton: east, label: East servers }
+nodes:
+  rw: { group: west-edge, class: router, label: RW }
+  sw1: { group: west-servers, class: server, label: SW1 }
+  sw2: { group: west-servers, class: server, label: SW2 }
+  re: { group: east-edge, class: router, label: RE }
+  se1: { group: east-servers, class: server, label: SE1 }
+  se2: { group: east-servers, class: server, label: SE2 }
+links:
+  - [rw, sw1]
+  - [rw, sw2]
+  - [re, se1]
+  - [re, se2]
+  - { from: sw1, to: sw2, class: sync }
+  - { from: sw1, to: se1, class: sync }
+  - { from: sw1, to: se2, class: sync }
+  - { from: sw2, to: se1, class: sync }
+  - { from: sw2, to: se2, class: sync }
+  - { from: se1, to: se2, class: sync }

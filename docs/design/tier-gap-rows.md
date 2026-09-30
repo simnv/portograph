@@ -140,6 +140,11 @@ never sees.
   lower tip row and its jog. A part's own turn may stand on its own tip row: its stem is claimed
   (Section 4), so no pocket is needed. A **residual** part keeps ticket 25's `2k` between its two
   tip rows and ticket 31's `2k` band round its tips, because it is routed.
+- **O5 and the mesh bus band** (ticket 83). The bus band of an across-frames mesh bus stands in the gap on its bus edge and belongs to no
+  group: it is an O5 band anchored to the row's sub-tier band over the bar's span, plus `k` (above the gap: a lower bound at the band's
+  bottom plus `k`; below it: a need of `k` past the band's top). No planned row lies inside it. It stops no leg: every vertical of the
+  bus's leg count crosses the bar as one vertical, accepted, and the plan neither makes such a leg residual nor probes for one. An
+  in-frame band lies inside a group box (or a canton frame), which is an O5 band already.
 - **O5, obstacles and anchoring.** A run keeps `e` from a horizontal group edge it would run along
   (`alongGroupEdge`, `gap-runs.ts:493-508`), the label clearance from a group label, and `k` from a
   lane box, a bundle envelope, a bar band, a shared run and a fixed obstacle. These are y bands

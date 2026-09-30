@@ -1047,7 +1047,7 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
 export function straightOverlays(model: LayoutModel, only?: ReadonlySet<string>): { id: string; ends: Set<string>; from: Point; to: Point }[] {
   const found: { id: string; ends: Set<string>; from: Point; to: Point }[] = [];
   for (const link of model.links) {
-    if (link.layer !== 'overlay' || !link.attachments || (only && !only.has(link.id))) continue;
+    if (link.layer !== 'overlay' || link.meshBus !== undefined || !link.attachments || (only && !only.has(link.id))) continue;
     const { segments } = overlayPath(model, link);
     if (segments.length !== 1) continue;
     found.push({ id: link.id, ends: new Set([link.attachments.from.node, link.attachments.to.node].map(node => model.document.nodes[node]!.group)), from: segments[0]!.from, to: segments[0]!.to });

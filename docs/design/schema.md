@@ -151,8 +151,8 @@ family; none carries `route:`. Membership is preserved in the model.
 | Stage | Errors (stop) | Warnings |
 |---|---|---|
 | parse | bad identifier; unknown reference; node without `group`; `tier` + `align`; `align` without `of`; `of` not a tier group; two flanks on one side; link with < 2 endpoints; version missing | locked CSS property |
-| model | `route: merge` without membership in a bundle of ≥ 2 | `*` created an anonymous port on a node that has named ports; > 1 link on a port (network); tier with no nodes; mixed top/bottom classes; > 30 nodes; `stub`/`group-link` in M1 |
-| placement | — | flank has more distinct links than the peer's facing ports; bar sources closer than pitch; bundle inversions from author order; both margins full (canvas widened) |
+| model | `route: merge` without membership in a bundle of ≥ 2 | `*` created an anonymous port on a node that has named ports; > 1 link on a port (network); tier with no nodes; mixed top/bottom classes; > 30 nodes; `stub`/`group-link` in M1; `MESH_BUS_DECLINED` (`named-ports`, `shared-port`, `side`, `shape`, `second-mesh`, `too-many-cliques`); info: `MESH_BUS`, `MESH_BUS_PARTIAL` (docs/design/mesh-bus.md, section 7) |
+| placement | — | info: `MESH_BUS_TITLE_MOVED`; flank has more distinct links than the peer's facing ports; bar sources closer than pitch; bundle inversions from author order; both margins full (canvas widened) |
 | final geometry | gate failures (see `quality.md`) | advisories |
 
 ## Migration from d3-fd (`diagram:` format)
