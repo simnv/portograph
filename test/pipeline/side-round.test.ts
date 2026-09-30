@@ -74,7 +74,7 @@ describe('a diagram with no side candidate is the layout main makes', () => {
     const { model, places } = await run(FAN);
     expect(places).toBe(2);
     expect(hash(model)).toBe('6e2c23e8fd517290');
-    expect(measureSides(model, new Set()).hints.size).toBe(0);
+    expect(measureSides(model, model, new Set()).hints.size).toBe(0);
     expect(codes(model).filter(code => code.startsWith('SIDE_'))).toEqual([]);
   }, 60000);
 
@@ -90,7 +90,7 @@ describe('a diagram with no side candidate is the layout main makes', () => {
     expect(model.links.find(item => item.layer === 'overlay')!.path!.segments.length).toBeGreaterThan(1);
     expect(places).toBe(1);
     expect(hash(model)).toBe('db6682b2a4f8f87c');
-    expect(measureSides(model, new Set()).hints.size).toBe(0);
+    expect(measureSides(model, model, new Set()).hints.size).toBe(0);
     expect(codes(model).filter(code => code.startsWith('SIDE_'))).toEqual([]);
   }, 60000);
 });
@@ -99,11 +99,11 @@ describe('the probe', () => {
   it('offers the right face for the server port, and nothing once that key is refused', async () => {
     const budget: Budget = { remainingMs: () => 1000, share: stageMs => stageMs };
     const { model } = await run(PAST_SIBLING, { budget });
-    const offer = measureSides(model, new Set());
+    const offer = measureSides(model, model, new Set());
     expect([...offer.hints.values()]).toEqual(['right']);
     expect([...offer.promised.values()]).toEqual([expect.objectContaining({ bends: 0, shape: 'straight' })]);
     const [key] = [...offer.hints.keys()];
-    expect(measureSides(model, new Set([`${key}|right`])).hints.size).toBe(0);
+    expect(measureSides(model, model, new Set([`${key}|right`])).hints.size).toBe(0);
   }, 60000);
 
   it('refuses a lateral segment that leaves its face at less than 15 degrees', async () => {
@@ -113,13 +113,13 @@ describe('the probe', () => {
     const model = await layout(parse(yaml), { createElkAttempt: () => { places++; return createAttempt(); }, createRouteAttempt: createAvoidAttempt });
     expect(model.links.find(item => item.layer === 'overlay')!.path!.segments.length).toBeGreaterThan(1);
     expect(places).toBe(1);
-    expect(measureSides(model, new Set()).hints.size).toBe(0);
+    expect(measureSides(model, model, new Set()).hints.size).toBe(0);
   }, 60000);
 
   it('stops at the probe cap and says so', async () => {
     const budget: Budget = { remainingMs: () => 1000, share: stageMs => stageMs };
     const { model } = await run(PAST_SIBLING, { budget });
-    const offer = measureSides(model, new Set(), 0);
+    const offer = measureSides(model, model, new Set(), 0);
     expect(offer.capped).toBe(true);
     expect(offer.hints.size).toBe(0);
   }, 60000);
