@@ -10,6 +10,7 @@ import { sizeNodes } from './size.js';
 import { bandGap, nodeGap, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { moveGroup, stackBands } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
+import { SideHintRefusal } from './side-hints.js';
 import { carriesTitle, nodeObstacleReach, nudgingDistance, routedStroke, stemReach } from './bands.js';
 import { MEMBER_GAP, fanEnd } from './bundle-geometry.js';
 import { laneSource, laneWidth, transitTiers } from './lanes.js';
@@ -750,7 +751,7 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
     if (port.sideHint !== true || port.sizingSide === undefined) continue;
     const votes = voteFor(id, port);
     const natural = SIDE_TIE_ORDER.reduce((best, side) => votes[side] > votes[best] ? side : best, 'bottom' as Side);
-    if (natural !== 'top' && natural !== 'bottom') throw new Error(`Side hint on ${id}.${port.ref.name ?? '#'}${port.ref.ordinal} refused: its natural side is ${natural}`);
+    if (natural !== 'top' && natural !== 'bottom') throw new SideHintRefusal(`Side hint on ${id}.${port.ref.name ?? '#'}${port.ref.ordinal} refused: its natural side is ${natural}`);
     port.naturalSide = natural;
   }
   // The bus edge is read after the routed sides are settled (a shared port recomputes its majority), within the span

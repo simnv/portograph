@@ -10,6 +10,8 @@ import { portKey, tiedPortComponents } from './sides-one.js';
  * run, keyed by `portKey`. A hint ranks below an author `side:` and above the stage-2 rule. It is an input of placement (ADR-0022), never
  * written in the YAML.
  */
+/** A placement run refused a side hint (not a candidate, a lateral vote, a floor below the content). The side round drops the offer; every other error is a bug. */
+export class SideHintRefusal extends Error {}
 export type SideHints = ReadonlyMap<string, 'left' | 'right'>;
 export const NO_SIDE_HINTS: SideHints = new Map();
 
@@ -42,7 +44,8 @@ export function hintRefusal(model: LayoutModel, ref: PortRef): string | undefine
   if (model.groups[group]?.flank !== undefined) return 'the node is in a flank';
   const other = ends(link).map(end => end).find(end => portKey(end) !== key) ?? ref;
   const tiers = [ref.node, other.node].map(node => model.groups[model.document.nodes[node]!.group]!.tier!);
-  if (Object.values(model.groups).some(item => item.tier! > Math.min(...tiers) && item.tier! < Math.max(...tiers))) return 'the link owns a transit lane';
+  // Only a routed link owns a transit lane (`transitTiers` is empty for any other layer): an overlay link may cross a sub-tier.
+  if (link.layer === 'routed' && Object.values(model.groups).some(item => item.tier! > Math.min(...tiers) && item.tier! < Math.max(...tiers))) return 'the link owns a transit lane';
   return undefined;
 }
 
@@ -51,10 +54,10 @@ export function checkSideHints(model: LayoutModel, hints: SideHints): void {
   for (const [key, side] of hints) {
     const [node] = JSON.parse(key) as [string];
     const port = model.nodes[node]?.ports.find(item => portKey(item.ref) === key);
-    if (port === undefined) throw new Error(`Side hint names a port the document does not have: ${key}`);
-    if (side !== 'left' && side !== 'right') throw new Error(`Side hint on ${describe(port.ref)} must be left or right`);
+    if (port === undefined) throw new SideHintRefusal(`Side hint names a port the document does not have: ${key}`);
+    if (side !== 'left' && side !== 'right') throw new SideHintRefusal(`Side hint on ${describe(port.ref)} must be left or right`);
     const why = hintRefusal(model, port.ref);
-    if (why !== undefined) throw new Error(`Side hint on ${describe(port.ref)} refused: ${why}`);
+    if (why !== undefined) throw new SideHintRefusal(`Side hint on ${describe(port.ref)} refused: ${why}`);
   }
 }
 
@@ -69,7 +72,13 @@ export const isHinted = (port: LayoutPort): boolean => port.sideHint === true;
  * every layout the pipeline publishes), so the published shape is named here and by `SIDE_SHAPE_LOST` (side-faces.md, Section 13).
  */
 export function sideHintDiagnostics(model: LayoutModel): Diagnostic[] {
-  const found: Diagnostic[] = [];
+  return hintsFacingAway(model).map(({ link, own, peer }) => ({ stage: 'placement' as const, severity: 'warning' as const, code: 'SIDE_HINT_FACES_AWAY',
+    message: `The side hint on ${describe(own)} faces away from its peer ${peer.node} after stage 7f.`, owners: [{ kind: 'link' as const, id: link }] }));
+}
+
+/** Each hinted port whose peer stands on the side the port does not face, in link order (the round reads it at 7e, the pipeline after 7f). */
+export function hintsFacingAway(model: LayoutModel): { key: string; link: string; own: PortRef; peer: PortRef }[] {
+  const found: { key: string; link: string; own: PortRef; peer: PortRef }[] = [];
   for (const link of model.links) {
     const ends = link.attachments;
     if (ends === undefined) continue;
@@ -78,8 +87,7 @@ export function sideHintDiagnostics(model: LayoutModel): Diagnostic[] {
       const a = model.nodes[own.node]!.bounds, b = model.nodes[peer.node]!.bounds;
       if (port?.sideHint !== true || a === undefined || b === undefined) continue;
       if (facingSide(a.x + a.width / 2, b.x + b.width / 2) === port.side) continue;
-      found.push({ stage: 'placement', severity: 'warning', code: 'SIDE_HINT_FACES_AWAY',
-        message: `The side hint on ${describe(own)} faces away from its peer ${peer.node} after stage 7f.`, owners: [{ kind: 'link', id: link.id }] });
+      found.push({ key: portKey(own), link: link.id, own, peer });
     }
   }
   return found;
