@@ -29,7 +29,7 @@ async function loadLibrary() {
 }
 
 /** The deadline a command really gets. The environment override exists so tests can prove the
- * termination path with real computational work instead of waiting half a minute. */
+ * termination path with real computational work instead of waiting a minute. */
 function deadlineMs(fallback) {
   const raw = process.env.PORTOGRAPH_COMMAND_DEADLINE_MS;
   if (raw === undefined) return fallback;
