@@ -84,6 +84,8 @@ export interface LayoutOptions {
   onProgress?: (progress: LayoutProgress) => void;
   /** Test only. Side hints for every placement run (port key to `left` or `right`); no measure offers one yet (ticket 115). */
   testSideHints?: SideHints;
+  /** Test only: called after the side trial is judged, with the offer, the two routed models and the verdict. */
+  testSideProbe?: (event: { offer: SideOffer; routedBase: LayoutModel; routedTrial: LayoutModel; verdict: ReturnType<typeof judgeTrial> }) => void;
   /** Test only. Stage-3 node size floors for every placement run: the sizes a measured run built its skeleton graph from (side-faces.md, Section 8). */
   testNodeFloors?: ReadonlyMap<string, Size>;
   /** Test only. Replaces `MAX_RERUNS` for one command. */
@@ -292,6 +294,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     }
     const verdict = judgeTrial({ routedBase, routedTrial, kept7e, trial7e, hinted: hintedLinks });
     options.testSideTrace?.({ ev: 'trial', verdict, base, kept7e, trial7e, trial, routedBase, routedTrial, hinted: hintedLinks });
+    options.testSideProbe?.({ offer, routedBase, routedTrial, verdict });
     if (!verdict.kept) { refuse(offer.hints.keys(), all, verdict.reason); break; }
     // Kept: the trial is the baseline now. The notes name what the net count accepted.
     keptNotes.push(...trialNotes(routedBase, routedTrial, verdict, hintedLinks.keys()));
