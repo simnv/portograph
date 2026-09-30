@@ -3360,28 +3360,29 @@
           "ordinal": 1
         }
       },
-      "technique": "orthogonal",
+      "technique": "straight",
       "path": {
         "owner": {
           "kind": "link",
           "id": "link-1"
         },
         "layer": "routed",
-        "fixed": false,
+        "fixed": true,
         "segments": [
           {
             "from": {
               "x": 252.0146484375,
-              "y": 93
+              "y": 106
             },
             "to": {
               "x": 252.0146484375,
-              "y": 242
+              "y": 229
             },
             "owner": {
               "kind": "link",
               "id": "link-1"
-            }
+            },
+            "straight": true
           }
         ]
       }
@@ -3417,28 +3418,29 @@
           "ordinal": 1
         }
       },
-      "technique": "orthogonal",
+      "technique": "straight",
       "path": {
         "owner": {
           "kind": "link",
           "id": "link-2"
         },
         "layer": "routed",
-        "fixed": false,
+        "fixed": true,
         "segments": [
           {
             "from": {
               "x": 573.0244140625,
-              "y": 93
+              "y": 106
             },
             "to": {
               "x": 573.0244140625,
-              "y": 242
+              "y": 229
             },
             "owner": {
               "kind": "link",
               "id": "link-2"
-            }
+            },
+            "straight": true
           }
         ]
       }
@@ -7910,32 +7912,7 @@
   ],
   "groupLinks": [],
   "obstacles": [],
-  "diagnostics": [
-    {
-      "stage": "placement",
-      "severity": "info",
-      "code": "ROUTED_CHORD_REFUSED",
-      "message": "The link link-1 keeps the orthogonal route between frames: title.",
-      "owners": [
-        {
-          "kind": "link",
-          "id": "link-1"
-        }
-      ]
-    },
-    {
-      "stage": "placement",
-      "severity": "info",
-      "code": "ROUTED_CHORD_REFUSED",
-      "message": "The link link-2 keeps the orthogonal route between frames: title.",
-      "owners": [
-        {
-          "kind": "link",
-          "id": "link-2"
-        }
-      ]
-    }
-  ],
+  "diagnostics": [],
   "canvas": {
     "x": -1,
     "y": -0.5,
@@ -13283,6 +13260,10 @@
     }
   },
   "anchorTier": 1,
+  "frozenChords": [
+    "link-1",
+    "link-2"
+  ],
   "legend": {
     "id": "legend",
     "owner": {

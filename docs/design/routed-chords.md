@@ -153,6 +153,11 @@ stub does the same, Q106):
   does not fit. Where it cannot widen, `ROUTED_CHORD_TITLE` (warning) names the link and the group,
   and G3 judges.
 
+*As built (ticket 100).* The crossing rectangle is wider in x on a slanted chord: the half stroke and the 8 px margin are taken along the normal of the
+chord, so the x growth is (half stroke + 8) / cos of the angle to the vertical (a vertical chord gives 8 px). Measured: a title 8 px from the bounding box stood
+7.8 px from a 52 degree chord, and G3 failed. The margin is in the rectangle; the planner adds no clearance to it. A held chord's child port owes it no place under
+its feed, so `centreViolations` excuses it (a cross-frame chord only; ADR-0010 amendment, ticket 130).
+
 A foreign title band stands inside its foreign frame box, so the foreign-frame wall covers it.
 
 ## 7. When the decision is made and frozen
@@ -166,6 +171,10 @@ held chord keeps its chord, and a refused candidate stays orthogonal (ticket 34)
 The fan rule (ticket 89) reads the cross-frame candidates too: `measureFans` offers a face its
 spread pitch (up to 60 px) when two chords at that face stand closer than the chord clearance. A
 provider node that takes chords from three locations on one top face needs this.
+
+*As built (ticket 102).* Nothing beyond ticket 99: `measureFans` reads `routedChordCandidate`, `fanRoundHolds` drops a fan re-run when the number of held chords of both kinds falls (`FAN_ROUND_DROPPED`, info, names the lost and gained chords), unless the kept placement has a chord pair under the 10 px clearance that the re-run clears and no frame chord is lost. A face is measured with `FAN_SLACK` (4 px) of drift room, so three
+cross-frame chords that hold at the 12 px base pitch can still put a 16 px floor on their face; the fixture `a-provider-face-spreads-for-three-routed-chords` shows that. A face whose neighbouring chords
+need more than 60 px is declined (`FAN_SPREAD_DECLINED`); the unit test forges the shallow geometry, and no layout input reaches it.
 
 After the freeze, `chordsHold` and `blockedChords` also read foreign frame and canton boxes and
 the facing-edge rule for a cross-frame chord. `chordsHold` moves nodes only today, so it derives
@@ -225,6 +234,10 @@ A 7f move in x (the canton close-up, column moves), or a gap that grows in y and
 chord, can bring a leg nearer the chord after the decision. The plan names each planned vertical within `k` of a held chord that does not cross it
 strictly (`TIER_GAP_CHORD_CROWDED`, info), and G6 judges, as for two verticals within `k`
 (`crowded`).
+
+*As built (ticket 101).* `PlanFrame.chords` holds the chord's x at the gap's low y and at its high y; `chordGapNotes` (`gap-plan.ts`) names both notes from the plans of the last round of `growTierGaps`,
+once each. "Within `k`" is the centre-to-centre distance, 11.5 px (`k` holds the stroke). An unfit gap (`growth > 0` after the rounds) leaves all its parts to the
+router, so every part over a chord's span there is `TIER_GAP_CHORD_EXPOSED`.
 
 **Mesh bus and riser (tickets 82 to 84, 92; 94, 96, 97).** A bus bar, a stub, a riser and a
 riser lane are overlay geometry: `straightCorridorClear` and the router leave out overlay lanes,

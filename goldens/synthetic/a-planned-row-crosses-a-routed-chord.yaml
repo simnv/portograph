@@ -1,0 +1,29 @@
+# Expected: A row of the tier-gap plan crosses a held routed chord, and that is legal (ranked-groups ticket 101, Q108). This is
+# `a-routed-link-between-frames-draws-straight` (two location frames on tier 1, a provider row on tier 2, each router linked to
+# each provider) with one more link across the same gap, from the core of the west frame to the second provider, authored
+# `route: orthogonal`. Its leg stands beside the chord of the west router, and another link of that router keeps the orthogonal
+# route (its chord would not keep 10 px from that leg). The plan seats that link's row across the chords of the gap. A row that
+# crosses a chord strictly is no G6 finding, and the plan keeps every leg and drop 10 px from the chords it does not cross.
+# Every gate passes.
+# Test-only input owned by ranked-groups ticket 101; test/pipeline/routed-chord-gap.test.ts reads the layout.
+portograph: 2
+profile: network
+groups:
+  east: { tier: 1, label: East }
+  west: { tier: 1, label: West }
+  providers: { tier: 2, label: Providers of the upstream transit service }
+nodes:
+  east-core: { group: east, class: router, label: East core router of the site }
+  east-router: { group: east, class: router, label: East router }
+  west-core: { group: west, class: router, label: West core router of the site }
+  west-router: { group: west, class: router, label: West router }
+  provider-1: { group: providers, class: provider, label: Provider 1 }
+  provider-2: { group: providers, class: provider, label: Provider 2 }
+links:
+  - [east-core, east-router]
+  - [west-core, west-router]
+  - [east-router, provider-1, { class: dashed }]
+  - [east-router, provider-2, { class: dashed }]
+  - [west-router, provider-1, { class: dashed }]
+  - [west-router, provider-2, { class: dashed }]
+  - [west-core, provider-2, { class: dashed, route: orthogonal }]
