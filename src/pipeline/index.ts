@@ -22,8 +22,8 @@ import { bundles } from '../layout/bundles.js';
 import { bands } from '../layout/bands.js';
 import { linkLabels } from '../layout/link-labels.js';
 import { elkDeadlineMs, type CreateElkAttempt, type ElkClock } from '../layout/elk-worker.js';
-import { route, RouteDeadlineError, ROUTE_BUDGET_MS, type CreateRouteAttempt } from '../route/index.js';
-import { CommandDeadlineError, POST_PLACEMENT_RESERVE_MS, RERUN_GATE_MS, UNBOUNDED_BUDGET, type Budget } from './budget.js';
+import { route, ROUTE_BUDGET_MS, type CreateRouteAttempt } from '../route/index.js';
+import { CommandDeadlineError, UNBOUNDED_BUDGET, type Budget } from './budget.js';
 // After the stages: the modules below reach the centring module, whose import order the tests that mock it depend on.
 import { declinedFanDiagnostics, fanRoundDropped, fanRoundHolds, measureFans, type FanMeasure } from '../layout/fan-spread.js';
 import { chordClearances, isRoutedChord } from '../layout/frame-paths.js';
@@ -39,8 +39,8 @@ const FAN_ROUNDS = 2;
 const SIDE_ROUNDS = 2;
 /**
  * Most placement re-runs of one command, fan and side together (side-faces.md, Section 7, *Budget*). A count, never set by the clock.
- * 3 = the two fan rounds and one side trial: the largest count with no gate cut on the private sheet at 2 times slower, whose whole
- * command ends 2 s or more before the 60 s deadline (side-faces.md, Section 19.5). A fourth re-run would read under RERUN_GATE_MS at 2x.
+ * 3 = the two fan rounds and one side trial. On the private sheet (about 23 s quiet, 3 re-runs) the command ends about 14 s before the 60 s
+ * deadline at 2 times slower, and a fourth re-run (2.7 s + 6.5 s of 7f, quiet) would not fit. The clock never chooses between layouts (ticket 141).
  */
 export const MAX_RERUNS = 3;
 /** `node.name#ordinal`, or `node.#ordinal` for an anonymous port, from a port key. */
@@ -158,9 +158,9 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   // the placed chords say the pitch each face needs, and placement runs again with those floors until no face needs more.
   let model = await timed('place', () => place(new Map()));
   let reruns = 0;
-  // The re-runs are bounded by FAN_ROUNDS alone. The clock is read only against the hard command deadline: a re-run starts only when
-  // the post-placement reserve plus one re-run (the fan gate) remains; otherwise it is cut, and a warning says so (ticket 112). A probe that meets the deadline
-  // or makes ELK fall back is dropped too: the placement already made stands (ticket 89 review).
+  // The re-runs are bounded by FAN_ROUNDS alone, and no re-run reads the clock (ticket 141): the same input gives the same layout at any speed.
+  // The command deadline ends the whole command with an error (`step`, `route`, `trialAbort`) and never picks a layout. A re-run that makes ELK
+  // fall back (an ELK error, never a timeout: a timeout ends the command) is dropped: the placement already made stands (ticket 89 review).
   const cuts: Diagnostic[] = [];
   const cut = (why: string): void => {
     cuts.push({ stage: 'placement', severity: 'warning', code: 'FAN_SPREAD_CUT',
@@ -179,25 +179,21 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       if (value > (next.get(id)?.[side] ?? 0)) { next.set(id, { ...next.get(id), [side]: value }); grew = true; }
     }
     if (!grew) break;
-    options.testTiming?.('gate-fan', 0, budget.remainingMs());
-    if (budget.remainingMs() < RERUN_GATE_MS) { cut('the command deadline leaves less than the reserve for one re-run, 7f, routing and scoring'); break; }
-    let trial: LayoutModel;
     reruns++;
-    try { trial = await timed('rerun-fan', () => place(next)); } catch (error) {
-      if (error instanceof CommandDeadlineError) { cut('the command deadline was reached during it'); break; }
-      throw error;
-    }
-    if ((trial.fallbackUsed && !model.fallbackUsed) || (trial.deadlineHit && !model.deadlineHit)) {
-      cut('ELK fell back or met its time limit during it, and the re-run was dropped'); break;
+    const trial = await timed('rerun-fan', () => place(next));
+    if (trial.fallbackUsed && !model.fallbackUsed) {
+      cut('ELK fell back during it, and the re-run was dropped'); break;
     }
     if (!fanRoundHolds(model, trial)) { cuts.push(fanRoundDropped(model, trial)); break; }
     model = trial; floors = next;
   }
   // Side rounds (side-faces.md, Section 19). 7f runs on the kept model first: its output is the baseline, the model the command publishes when no
   // trial is kept. A measure reads the baseline. One batched trial reaches 7f per command; it is kept only on its routed result. Every bound is a
-  // count (SIDE_ROUNDS, MAX_RERUNS); the clock is read only against the hard-deadline gates.
+  // count (SIDE_ROUNDS, MAX_RERUNS); the clock only ends the whole command at its deadline (ticket 141).
+  // The abort check of 7f, the baseline's and the trial's: the command deadline, checked between the passes. It ends the whole command, so it never picks a layout (ticket 141).
+  const trialAbort = (stage: string): void => { if (budget.remainingMs() <= 0) throw new CommandDeadlineError(0, stage); };
   let kept7e = model;
-  let base = await timed('bands', () => step('bands', () => bands(kept7e, budget)));
+  let base = await timed('bands', () => step('bands', () => bands(kept7e, () => trialAbort('bands'))));
   let hints = new Map<string, 'left' | 'right'>(options.testSideHints ?? []);
   let laneKeys = new Set<string>();
   const promised: SideOffer['promised'] = new Map(), refused = new Set<string>(), sideNotes: Diagnostic[] = [];
@@ -224,8 +220,6 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     report('route', started, trial);
     return routed;
   };
-  // The guard of a trial: its own deadline, the command's remainder less the post-placement reserve (Section 19.5). The baseline passes none.
-  const trialAbort = (stage: string): void => { if (budget.remainingMs() <= POST_PLACEMENT_RESERVE_MS) throw new CommandDeadlineError(0, stage); };
   const maxReruns = options.testMaxReruns ?? MAX_RERUNS;
   let routedBase: LayoutModel | undefined, routedFinal: LayoutModel | undefined;
   const keptNotes: Diagnostic[] = [];
@@ -238,8 +232,6 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_ROUND_SKIPPED', message: `A side round was skipped: the command has made its ${maxReruns} placement re-runs.` });
       break;
     }
-    options.testTiming?.('gate-side', 0, budget.remainingMs());
-    if (budget.remainingMs() < RERUN_GATE_MS) { cutSide('the command deadline leaves less than the reserve for one re-run, 7f, routing and scoring'); break; }
     const all = new Map([...hints, ...offer.hints]);
     for (const [key, item] of offer.promised) trialLinks.set(key, item.link);
     const nodeFloors = new Map(options.testNodeFloors ?? []);
@@ -253,14 +245,13 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     let trial7e: LayoutModel;
     reruns++;
     try { trial7e = await timed('rerun-side', () => place(floors, all, nodeFloors, trialAbort, allLanes)); } catch (error) {
-      if (error instanceof CommandDeadlineError) { cutSide('the command deadline was reached during it'); break; }
       // Only the layout's own refusals drop the offer; anything else (a TypeError) is a bug and must surface.
       if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError)) throw error;
       refuse(offer.hints.keys(), offer.hints, `the placement run rejected it (${error.message})`);
       continue;
     }
-    if ((trial7e.fallbackUsed && !kept7e.fallbackUsed) || (trial7e.deadlineHit && !kept7e.deadlineHit)) {
-      cutSide('ELK fell back or met its time limit during it, and the re-run was dropped'); break;
+    if (trial7e.fallbackUsed && !kept7e.fallbackUsed) {
+      cutSide('ELK fell back during it, and the re-run was dropped'); break;
     }
     // A port hinted for the straight shape of a routed link (this round's, or kept) must hold its chord at the trial's 7e. Otherwise it would be routed with
     // no lane (`sideLaneCandidate`) and no chord, and the router would find its route (review M1, ticket 117).
@@ -293,13 +284,10 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     }
     let trial: LayoutModel, routedTrial: LayoutModel;
     try {
-      trial = await timed('bands-trial', () => step('bands', () => bands(trial7e, budget, () => trialAbort('bands')), true));
+      trial = await timed('bands-trial', () => step('bands', () => bands(trial7e, () => trialAbort('bands')), true));
       routedBase ??= await routeModel(base);
-      // The trial's route starts only with time left after the reserve: the baseline is routed, so a cut here publishes it.
-      trialAbort('route');
       routedTrial = await routeModel(trial, true);
     } catch (error) {
-      if (error instanceof CommandDeadlineError || error instanceof RouteDeadlineError) { cutSide('the command deadline was reached during its stage 7f or its route'); break; }
       if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError)) throw error;
       refuse(offer.hints.keys(), offer.hints, `its stage 7f rejected it (${error.message})`);
       break;

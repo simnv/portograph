@@ -22,7 +22,6 @@ import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
 import { centreViolations, selectAnchorTier } from './centre.js';
 import { stepLinklessOutOfChords } from './overlay-place.js';
-import type { Budget } from '../pipeline/budget.js';
 import { stepOverChords } from './chord-clear.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
@@ -616,7 +615,7 @@ function rebuildBoxes(model: LayoutModel): void {
 }
 
 /** One synchronous checked commit per stage. Future producers extend the closed validators here. */
-export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutModel) => void, budget?: Budget, abortAt?: () => void): LayoutModel {
+export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutModel) => void, abortAt?: () => void): LayoutModel {
   if (!protectedModels.has(model)) throw new Error('Mutation requires a protected snapshot; use restoreLayoutModel');
   if (!Object.hasOwn(permissions, rule) || stages[stages.indexOf(model.stage) + 1] !== rule) throw new Error(`Incorrect predecessor stage for ${rule}`);
   const started = Date.now(), draft = clone(model), permission = permissions[rule];
@@ -873,9 +872,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
       const linkless = stepLinklessOutOfChords(draft);
       // A chord between two tiers keeps the tiers between it free of nodes. A move is judged on a copy that the replays and a round of
       // `settle` have run, which is what the next round does.
-      // After a stop for the budget the step is not called again: it would warn a second time for the same movers (ticket 111).
-      const stopped = draft.diagnostics.some(item => item.code === 'CHORD_CLEAR_BUDGET');
-      const cleared = round < CANTON_ROUNDS - 1 && !stopped && stepOverChords(draft, probe => { replays(probe); settle(probe); }, movers, budget);
+      const cleared = round < CANTON_ROUNDS - 1 && stepOverChords(draft, probe => { replays(probe); settle(probe); }, movers);
       if (linkless || cleared) replays(draft);
       again = cleared;
     }

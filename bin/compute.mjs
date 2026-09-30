@@ -27,7 +27,7 @@ function readInput(path) {
 
 async function run(request, emit) {
   const api = await loadLibrary();
-  const { CommandDeadlineError, ParseError, ResolveError, createBudget, formatDiagnostic, layout,
+  const { CommandDeadlineError, ElkDeadlineError, RouteDeadlineError, ParseError, ResolveError, createBudget, formatDiagnostic, layout,
     drawio, migrateWithDiagnostics, parseWithDiagnostics, render, restoreFinalLayout, score,
     serializeLayoutModel } = api;
 
@@ -121,7 +121,7 @@ async function run(request, emit) {
       for (const diagnostic of error.diagnostics) say(diagnostic);
       return failure('input', `${input} cannot be laid out`);
     }
-    if (error instanceof CommandDeadlineError) return failure('processing', error.message, 'COMMAND_DEADLINE');
+    if (error instanceof CommandDeadlineError || error instanceof RouteDeadlineError || error instanceof ElkDeadlineError) return failure('processing', error.message, 'COMMAND_DEADLINE');
     return failure('processing', `layout failed: ${error.message}`, 'PIPELINE_FAILED');
   }
   for (const diagnostic of model.diagnostics) say(diagnostic);

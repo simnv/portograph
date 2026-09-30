@@ -10,8 +10,12 @@ ELK partitioning expressed tiers correctly on the golden but threw (NPE / stack 
 order; a crash at 1,000 proves no threshold is safe (codex F17).
 
 ## Decision
+
+> **Amended 2026-09-30 (ticket 141, Q111):** a deadline is not a fallback trigger. It ends the whole command (`COMMAND_DEADLINE`), so that the time an
+> ELK run takes never picks between two layouts. Only an ELK exception runs the per-tier fallback below.
+
 Attempt partitioning always, with `partitioning.activate=true`, inside a worker with a deadline
-(10 s at ≤ 300 nodes, 20 s above). On exception **or deadline**, terminate the worker, run ELK
+(10 s at ≤ 300 nodes, 20 s above). On exception, terminate the worker, run ELK
 once per tier band without partitioning, stack the bands, record a warning. After either path,
 validate that every group lies inside its tier band and no groups overlap (gate G8); a violation
 after fallback is a hard failure. This ADR is authoritative over any threshold mentioned elsewhere. "Beautiful" is targeted to ~30 nodes (Störrle, Kobourov);
@@ -22,6 +26,6 @@ above that the tool warns and offers `collapsed:` groups; above 1,000 it refuses
 
 ## Consequences
 - Two code paths for tiering, both tested at 100 / 300 / 1,000 synthetic nodes, with fallback
-  exercised by injected failure and by deadline — never by relying on a particular ELK crash.
+  exercised by injected failure — never by relying on a particular ELK crash.
 - Work is bounded at parse: links ≤ 10 × N, ports ≤ 20 per node, degree ≤ 64 (warning beyond).
 - No automatic diagram splitting in v1.

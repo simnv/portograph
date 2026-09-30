@@ -1,14 +1,15 @@
 import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ElkNode } from 'elkjs/lib/elk-api.js';
 import { parse } from '../../src/parse/index.js';
 import { resolve } from '../../src/resolve/index.js';
 import { sidesOne } from '../../src/layout/sides-one.js';
 import { sizeNodes } from '../../src/layout/size.js';
 import { skeleton, buildSkeletonGraph, validateSkeletonBands } from '../../src/layout/skeleton.js';
-import { createWorkerElkAttempt, type ElkWorker } from '../../src/layout/elk-worker.js';
+import { createWorkerElkAttempt, ElkDeadlineError, type ElkWorker } from '../../src/layout/elk-worker.js';
 const require = createRequire(import.meta.url);
+afterEach(() => { vi.useRealTimers(); });
 const Worker = require('web-worker') as new (url: string) => ElkWorker;
 const createAttempt = () => createWorkerElkAttempt(new Worker(require.resolve('elkjs/lib/elk-worker.min.js')));
 const sized = (yaml: string) => sizeNodes(sidesOne(resolve(parse(yaml))));
@@ -57,24 +58,25 @@ describe('stage 4 skeleton', () => {
     expect(model.deadlineHit).not.toBe(true);
     expect(validateSkeletonBands(model)).toEqual([]);
   });
-  it('falls back after an injected 25-second stall without waiting in real time', async () => {
+  it('ends the command after an injected 25-second stall, with no fallback, without waiting in real time (ticket 141)', async () => {
     vi.useFakeTimers();
-    let attempts = 0;
-    const terminated = vi.fn();
-    const factory = () => {
-      attempts++;
-      return { layout: (graph: ElkNode) => attempts === 1
-        ? new Promise<ElkNode>(resolve => setTimeout(() => resolve(graph), 25000))
-        : Promise.resolve(positioned(graph)), terminateWorker: terminated };
-    };
-    const model = simple();
-    const promise = skeleton(model, { createAttempt: factory });
-    await vi.advanceTimersByTimeAsync(10001);
-    await promise;
-    expect(model.deadlineHit).toBe(true);
-    expect(model.fallbackUsed).toBe(true);
-    expect(terminated).toHaveBeenCalledTimes(4);
-    vi.useRealTimers();
+    try {
+      let attempts = 0;
+      const terminated = vi.fn();
+      const factory = () => {
+        attempts++;
+        return { layout: (graph: ElkNode) => new Promise<ElkNode>(resolve => setTimeout(() => resolve(graph), 25000)), terminateWorker: terminated };
+      };
+      const model = simple();
+      const promise = skeleton(model, { createAttempt: factory });
+      const settled = expect(promise).rejects.toBeInstanceOf(ElkDeadlineError);
+      await vi.advanceTimersByTimeAsync(10001);
+      await settled;
+      expect(attempts).toBe(1);
+      expect(model.deadlineHit).toBe(true);
+      expect(model.fallbackUsed).not.toBe(true);
+      expect(terminated).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); }
   });
   it('rejects successful but invalid partitions and validates fallback output', async () => {
     let attempts = 0;

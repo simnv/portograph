@@ -1,4 +1,3 @@
-import type { Budget } from '../pipeline/budget.js';
 import type { Point, Rect, Side } from '../model/geometry.js';
 import { stemCache, stemDepth } from './sides-two.js';
 import type { PortRef } from '../model/document.js';
@@ -1709,10 +1708,10 @@ export function validateGroupLabelBands(model: LayoutModel): void {
 }
 
 /**
- * Stage 7f: reserve and place deterministic group labels, then freeze final placement. `abortAt` is a check of its own (a side trial's
- * deadline, side-faces.md Section 19.5), apart from `budget`, which only the chord-clear step reads: it throws between the passes of 7f.
+ * Stage 7f: reserve and place deterministic group labels, then freeze final placement. `abortAt` is a check of the command deadline (a side trial's,
+ * side-faces.md Section 19.5): it throws between the passes of 7f and so ends the whole command. It never changes the layout (ticket 141).
  * A call with no `abortAt` never throws for that reason.
  */
-export function bands(model: LayoutModel, budget?: Budget, abortAt?: () => void): LayoutModel {
-  return withLayoutMutation(model, 'bands', () => {}, budget, abortAt);
+export function bands(model: LayoutModel, abortAt?: () => void): LayoutModel {
+  return withLayoutMutation(model, 'bands', () => {}, abortAt);
 }

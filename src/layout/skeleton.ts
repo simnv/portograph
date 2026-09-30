@@ -52,13 +52,13 @@ export async function skeleton(model: LayoutModel, options: SkeletonOptions = {}
         throw error;
       }
     } catch (error) {
+      // A deadline is not a fallback trigger (ticket 141): what ELK finishes in time must not choose between two layouts. It ends the command.
+      if (error instanceof ElkDeadlineError) { work.deadlineHit = true; throw error; }
       const diagnostics = work.diagnostics;
       work = copy(model);
       work.diagnostics = diagnostics;
       work.fallbackUsed = true;
-      if (error instanceof ElkDeadlineError) work.deadlineHit = true;
-      work.diagnostics.push({ stage: 'placement', severity: 'warning',
-        code: error instanceof ElkDeadlineError ? 'ELK_DEADLINE' : 'ELK_FALLBACK',
+      work.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'ELK_FALLBACK',
         message: `Partitioned skeleton failed; laying out each tier band: ${String(error)}` });
       const tiers = [...new Set(Object.values(work.groups).filter(group => !group.flank).map(group => group.tier!))].sort((a, b) => a - b);
       for (const tier of tiers) {
@@ -73,7 +73,7 @@ export async function skeleton(model: LayoutModel, options: SkeletonOptions = {}
           const errors = validateSkeletonBands(bandModel, false, tier);
           if (errors.length) throw new SkeletonError(errors.join('; '));
         } catch (error) {
-          if (error instanceof ElkDeadlineError) work.deadlineHit = true;
+          if (error instanceof ElkDeadlineError) { work.deadlineHit = true; throw error; }
           throw new SkeletonError(`Fallback tier ${tier} failed: ${String(error)}`);
         }
       }

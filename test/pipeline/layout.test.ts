@@ -7,6 +7,7 @@ import {
 } from '../../src/index.js';
 import type { ElkAttempt, ElkClock, GateId, LayoutProgress } from '../../src/index.js';
 import { skeleton } from '../../src/layout/skeleton.js';
+import { ElkDeadlineError } from '../../src/layout/elk-worker.js';
 import { sidesOne } from '../../src/layout/sides-one.js';
 import { sizeNodes } from '../../src/layout/size.js';
 import { resolve } from '../../src/resolve/index.js';
@@ -115,7 +116,7 @@ describe('ELK attempts draw from one remainder', () => {
     const injected = (): ElkAttempt =>
       ({ layout: () => { advance(900); return Promise.reject(new Error('injected partition failure')); }, terminateWorker: () => {} });
     await expect(skeleton(model, { createAttempt: injected, clock, layoutBudgetMs: 10000, budget: createBudget(800, now) }))
-      .rejects.toThrow(/Fallback tier 0 failed/);
+      .rejects.toBeInstanceOf(ElkDeadlineError);
     expect(model.deadlineHit).toBe(true);
     expect(model.diagnostics.some(item => item.code === 'ELK_SKELETON_FAILED')).toBe(true);
   }, 60000);
