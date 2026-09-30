@@ -71,6 +71,19 @@ its nodes.
 (`MESH_BUS_DECLINED`, `shape`). A clique in which the member links at one node name two or more
 different authored ports is declined (`named-ports`, see Ports). The next clique is then read.
 
+**Identity** (maintainer, 2026-09-30, Q107: *"only if this is really a bus; if links differ in
+some way, use straight diagonals"*, for a one-row bus too). A clique whose member links do not all
+have one drawn signature is declined with the reason of the first difference, in this order:
+`label`, `weight`, `port`, `arrow`. The signature and the order are those of the join (Section
+11.3, check 2): the same label string, character for character (absent equals only absent); the
+same resolved stroke width; at each node every member end anonymous, or every end naming the same
+port (a node with some named ends and some anonymous ends is `port`; two different named ports
+stay `named-ports`, read first); a class that draws no arrowhead. Direction is not read while no
+arrowhead shows. The links of a clique declined for identity stay plain overlay links, drawn by
+the overlay rule: no smaller clique inside it is read, and a later clique that shares two or more
+nodes with it is skipped, so a mesh whose links differ never becomes a smaller bus.
+`MESH_BUS_DECLINED` names the first link that differs and the value. Implementation: ticket 94.
+
 **Partial mesh.** A set that misses pairs is not one bus. The largest complete part becomes the
 bus, and the rest stays plain overlay links, drawn by the overlay rule from their own ports. So a
 12-node set that misses two disjoint pairs gives a bus of 10 nodes and 19 plain links.
@@ -100,7 +113,8 @@ sized for them (invariant 3). Stage 1 collapses them: the **bus port** of a memb
 lowest-ordinal anonymous port among its member-link ends, every member link's end at that node is
 re-attached to it, and the other anonymous ports of those ends are removed, unless another link
 uses them. When every member-link end at a node names the same authored port, that port is the bus
-port and keeps its pill. When the member links at one node name two or more different authored
+port and keeps its pill. When some member-link ends at a node name a port and some do not, the bus
+is declined (`port`, see Identity). When the member links at one node name two or more different authored
 ports, the bus is declined (`MESH_BUS_DECLINED`, `named-ports`): a named port is a drawn pill with
 a meaning of its own, and the design does not merge two of them. `SHARED_PORT` does not warn on a
 bus port.
@@ -344,7 +358,8 @@ no line today (M1 draws its members), and the bus tooltip names it. One endpoint
 as every mark is. The label is a model-owned label (`role: 'mesh-bus'`), text
 `<class> mesh (<n> nodes)`, `FONT_FAMILY` 9 px, drawn on the label layer. It is not subject to the
 overlay density suppression, which reads overlay link labels. The legend lists the class as it does
-today. A member's authored label goes to the bus tooltip, with the member list and the dissolved
+today. The members' one authored label (Section 3, *Identity*: all members carry the same one, or
+none) goes to the bus tooltip once, with the member list and the dissolved
 group-links, and leaves no omission record.
 
 **draw.io.** The bar is one edge with `edgeStyle=none` and two free points, no terminals. Each
@@ -361,7 +376,7 @@ as the overlay export was (Q70): the drawn bar and stubs read back within 0.05 p
 |---|---|---|
 | `MESH_BUS` | info | A bus formed: row (sub-tier), class, placement, node count, member count, the frames spanned, the group-links dissolved. |
 | `MESH_BUS_PARTIAL` | info | A same-row same-class set had nodes the bus could not take: names them and the missing pairs; names a group-link that lost only some members to the bus and counts the members left plain. |
-| `MESH_BUS_DECLINED` | warning | Reasons: `named-ports` (two or more authored ports at one member), `shape` (a member in a `grid` or `bar` group or a flank), `second-mesh` (a second clique on a row that has a bus; lifted by ticket 85). |
+| `MESH_BUS_DECLINED` | warning | Reasons: `named-ports` (two or more authored ports at one member), `label`, `weight`, `port`, `arrow` (the member links differ; names the first link that differs and the value; Section 3, *Identity*), `shape` (a member in a `grid` or `bar` group or a flank), `second-mesh` (a second clique on a row that has a bus; lifted by ticket 85). |
 | `MESH_BUS_TITLE_MOVED` | info | A member frame's title left its ADR-0011 edge because no position and no widening cleared the stub (stage `placement`, the frame as owner). |
 
 The first three are `stage: 'model'`, with the member links as owners. A mesh over two rows adds
@@ -494,8 +509,9 @@ overlay link.
 **Each row must qualify alone.** The join joins two buses that Section 3 already found. A row
 whose part of the mesh has one or two nodes has no bus, so it has no bar to join, and its cross
 links stay plain. This is the first version; a riser that ends in the stub of a one-node row is
-an open question (Section 11.11). A row whose bus is declined (`shape`, `named-ports`,
-`shared-port`, `side`) has no bus, so it has no join.
+left for later (Section 11.11). A row whose bus is declined (`shape`, `named-ports`,
+`shared-port`, `side`, or an identity reason `label`, `weight`, `port`, `arrow`) has no bus, so
+it has no join.
 
 **The pair.** For each class, and for each two buses of that class on rows `r1 < r2`, the pair
 **qualifies** when every check below passes, read in this order. The first check that fails gives
@@ -521,8 +537,9 @@ the reason, and the next checks are not read.
 
    A named port that all ends at one node share is not a difference: it is that node's bus port,
    as in Section 3. A node where some ends name a port and some do not is a difference: the author
-   pointed some links at a drawn pill and not the others. The check reads the members inside each
-   row too, so a row bus that took such a mixed node (Section 3 permits it) cannot be joined.
+   pointed some links at a drawn pill and not the others. Each row bus has already passed the same
+   check on its own members (Section 3, *Identity*), so for the join the check compares the cross
+   links with each other and with the members of both buses.
    **Arrowheads and direction.** No class draws an arrowhead today: the theme has no marker, and
    the `css:` lock forbids `marker`, `marker-start`, `marker-mid` and `marker-end`
    (`parse/css.ts`). The check is a function of the class (`classDrawsArrowhead`, false for every
@@ -559,7 +576,8 @@ count (the sum of the two buses), the count of cross links and the dissolved gro
 
 ### 11.4 Sides
 
-The sides of a joined pair are fixed at stage 1: the **upper bar on the bottom edge** of its row,
+**Maintainer's decision (2026-09-30): "facing edges".** The sides of a joined pair are fixed at
+stage 1: the **upper bar on the bottom edge** of its row,
 the **lower bar on the top edge** of its row. `busSide` returns that edge before any count, as it
 returns an authored side (`authoredBusSide`). Stage 2 sizes the bus port on it. Stage 5 does not
 read the leg count again for a joined bus.
@@ -569,7 +587,8 @@ rows, and it crosses neither member row. A bar on the far edge would need a rise
 own row beside the member frames, through one more tier band and two more gaps, and that crosses
 the other stubs of its own bar. The cost: the leg rule (*"whichever has fewer legs"*) is not read
 for a joined bar. The legs on a facing edge cross the bar as verticals, as term 1's legs do, and
-the report counts them. This is a question for the maintainer (Section 11.11).
+the report counts them. The maintainer accepted that cost: the fewer-legs rule does not apply to
+the two joined bars.
 
 With ticket 85 (stacked bars), the joined bar is the outermost bar of its row's stack on the
 facing edge, so the riser leaves it and crosses no other bar of its own row.
@@ -758,21 +777,24 @@ bar is, on the `overlay` layer, in the class stroke and dash. Verified with the 
   its lanes, the frame and canton edges it crosses, the bar extension, and the routed segments
   across the riser and across each bar.
 
-### 11.11 Open questions for the maintainer
+### 11.11 Answers and open questions
 
-1. **The facing edges.** A joined pair takes the facing edges and does not read the leg rule
-   (Section 11.4). The alternative keeps the leg rule and lets the riser pass the member row of a
-   bar on its far edge (one more tier band and two more gaps, a riser lane beside the member
-   frames). The first render of the NTP sheet shows how many legs cross the bars on the facing
-   edges.
-2. **A row of one or two nodes.** In the first version such a row has no bus, and its cross links
-   stay plain (`small-row`). A possible extension: a row of two draws a bar between its two stubs,
-   and a row of one ends the riser in its stub (the riser x is then that node's bus port x,
+Answered by the maintainer (2026-09-30):
+
+- **The facing edges.** *"Facing edges"*: a joined pair uses the edges that face each other, and
+  the fewer-legs rule does not apply to the two joined bars (Section 11.4).
+- **The same identity for one row.** The rule *"only if this is really a bus; if links differ in
+  some way, use straight diagonals"* applies to a one-row bus too: it is declined with `label`,
+  `weight`, `port` or `arrow` when its member links differ, and its links stay plain overlay links
+  (Section 3, *Identity*).
+- **Rows of one or two nodes, and three rows or more.** The refusals stand as the v1 rule
+  (`small-row`, `three-rows`).
+
+Open for later:
+
+1. **A row of one or two nodes.** A possible extension: a row of two draws a bar between its two
+   stubs, and a row of one ends the riser in its stub (the riser x is then that node's bus port x,
    reserved in 7a as any riser x).
-3. **Three rows and more.** Refused (`three-rows`). A chain of risers, one between each two
-   adjacent rows, needs the middle bar to reach two risers from one edge. The design does not do
-   it until an input asks for it.
-4. **The same identity for one row.** A one-row bus (Section 3) does not read the labels or the
-   weights of its members: a member's own label goes to the tooltip. The join reads them. Whether
-   a one-row bus also refuses on a label or weight difference is for the maintainer; no input of
-   the corpus is known to reach it.
+2. **Three rows and more.** A chain of risers, one between each two adjacent rows, needs the
+   middle bar to reach two risers from one edge. The design does not do it until an input asks for
+   it.
