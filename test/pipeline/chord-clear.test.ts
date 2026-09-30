@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
-import { spent, stepOverChords } from '../../src/layout/chord-clear.js';
+import { overlayCrossings, pickRankMove, spent, stepOverChords } from '../../src/layout/chord-clear.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { deriveFrames } from '../../src/layout/frames.js';
 import { crosses, overlayBlockers, overlayPath, straightChord } from '../../src/layout/overlay-paths.js';
@@ -270,4 +270,152 @@ describe('the mover takes the position that clears the most chords (ticket 110)'
     expect(stepOverChords(model, () => undefined)).toBe(true);
     expect(straight()).toBe(2);
   }, 60000);
+});
+
+/**
+ * Ticket 146. A lower rank of a ranked group stands on the overlay chords of the ranks above it, and its cell has no room of its own: the step
+ * gives it the frame span and the growth budget of ticket 80, and keeps the move with the fewest overlay crossings.
+ */
+describe('a lower rank steps off the chords of the ranks above (ticket 146)', () => {
+  const NAME = 'a-lower-rank-steps-off-the-chords-of-rank-0';
+  const copy = (model: LayoutModel): LayoutModel => JSON.parse(JSON.stringify(model)) as LayoutModel;
+  const x = (model: LayoutModel, id: string): number => model.nodes[id]!.bounds!.x;
+  const overlays = (model: LayoutModel) => model.links.filter(link => link.layer === 'overlay');
+  const crossingsOf = (model: LayoutModel): number => {
+    const blockers = overlayBlockers(model);
+    return overlayCrossings(overlays(model).map(link => overlayPath(model, link, blockers).segments));
+  };
+  /** The state main leaves: the row of the lower rank stands under rank 0 (low-a 0.5 px left of up-a, as the column pass sets it). */
+  const restore = (model: LayoutModel): void => {
+    const row = model.groups['zone#2']!;
+    moveGroup(model, row, x(model, 'up-a') - 0.5 - x(model, 'low-a'), 0);
+    rebuildNodeGeometry(model, row.nodes, 'current');
+    // The grid widened the boxes of the column to hold the row where it stood: they go back to the span of rank 0 and the row.
+    const left = x(model, 'low-a'), width = x(model, 'low-b') + model.nodes['low-b']!.bounds!.width - left;
+    for (const id of ['core', 'site#0', 'zone#1', 'zone#2']) model.groups[id]!.bounds = { ...model.groups[id]!.bounds!, x: left, width };
+  };
+
+  it('both sync links are one segment, and the feeds stay one segment each', async () => {
+    const model = await run(fixture(NAME));
+    expect(model.diagnostics.filter(d => d.severity === 'error')).toEqual([]);
+    expect(overlays(model)).toHaveLength(2);
+    for (const link of overlays(model)) expect(link.path!.segments, link.id).toHaveLength(1);
+    for (const link of model.links.filter(item => item.layer === 'routed')) expect(link.path!.segments, link.id).toHaveLength(1);
+    expect(model.diagnostics.some(d => d.code === 'RANK_STEPPED_OFF_CHORD')).toBe(true);
+  }, 60000);
+
+  it('the row of the lower rank moves as one, inside 40 px, and the overlay crossings are not above main', async () => {
+    const model = await run(fixture(NAME));
+    const a = x(model, 'low-a') - x(model, 'up-a'), b = x(model, 'low-b') - x(model, 'up-b');
+    // On main the two ranks stand under one another (0.5 px apart and 0).
+    expect(Math.abs(a)).toBeGreaterThan(20);
+    expect(Math.abs(a)).toBeLessThanOrEqual(40.5);
+    expect(a - b).toBeCloseTo(-0.5, 1);
+    expect(x(model, 'low-b') - (x(model, 'low-a') + model.nodes['low-a']!.bounds!.width)).toBeCloseTo(21.5, 1);
+    expect(crossingsOf(model)).toBe(0);
+  }, 60000);
+
+  it('rank 0 and its parent keep their x (no rank 0 moves by this rule)', async () => {
+    const model = await run(fixture(NAME));
+    expect(x(model, 'gw')).toBeCloseTo(84.0, 0);
+    expect(x(model, 'up-a')).toBeCloseTo(72.5, 0);
+    expect(x(model, 'up-b')).toBeCloseTo(149.0, 0);
+  }, 60000);
+
+  it('one node of a lower rank moves into the room the step gives it, and the step says so', async () => {
+    const model = copy(await run(fixture(NAME)));
+    restore(model);
+    expect(overlays(model).filter(link => overlayPath(model, link).segments.length === 1)).toHaveLength(0);
+    const at = { a: x(model, 'low-a'), b: x(model, 'low-b') };
+    // The row mover is spent: one node moves alone, and the cell box follows it.
+    model.diagnostics = [];
+    const history = new Set(['rank:zone#2']);
+    expect(stepOverChords(model, undefined, history)).toBe(true);
+    expect([...history]).toContain('node:low-a');
+    expect(Math.abs(x(model, 'low-a') - at.a) + Math.abs(x(model, 'low-b') - at.b)).toBeGreaterThan(1);
+    const box = model.groups['zone#2']!.bounds!;
+    for (const id of ['low-a', 'low-b']) {
+      expect(x(model, id)).toBeGreaterThanOrEqual(box.x - 1e-6);
+      expect(x(model, id) + model.nodes[id]!.bounds!.width).toBeLessThanOrEqual(box.x + box.width + 1e-6);
+    }
+    expect(model.diagnostics.some(d => d.code === 'RANK_STEPPED_OFF_CHORD')).toBe(true);
+  }, 60000);
+
+  it('a move that needs more growth than the budget holds is refused', async () => {
+    const model = copy(await run(fixture(NAME)));
+    restore(model);
+    // 20 px of the 40 are spent: the row needs 32.8 and each node 23.4.
+    spent.set(model, { base: model.canvas!.width, grown: 20 });
+    const row = JSON.stringify(model.groups['zone#2']!.bounds);
+    const history = new Set<string>();
+    expect(stepOverChords(model, undefined, history), [...history].join()).toBe(false);
+    expect(JSON.stringify(model.groups['zone#2']!.bounds)).toBe(row);
+  }, 60000);
+
+  it('the guard fixture (a fan over the row): no lower rank moves', async () => {
+    const yaml = `portograph: 2
+groups:
+  core: { tier: 0, label: Core }
+  west: { label: West }
+  site: { tier: 1, canton: west, label: Site }
+  zone: { parent: site, label: Zone }
+  clients: { tier: 2, canton: west, label: Clients }
+nodes:
+  core-1: { group: core, class: router, label: Core 1 }
+  gw: { group: site, class: router, label: Gateway }
+  sw: { group: site, class: switch, label: Switch }
+  up-a: { group: zone, class: switch, label: Upper A }
+  up-b: { group: zone, class: switch, label: Upper B }
+  up-c: { group: zone, class: switch, label: Upper C }
+  low-a: { group: zone, class: server, label: Lower A }
+  low-b: { group: zone, class: server, label: Lower B }
+  c-1: { group: clients, class: server, label: Client 1 }
+  c-2: { group: clients, class: server, label: Client 2 }
+  c-3: { group: clients, class: server, label: Client 3 }
+links:
+  - [core-1, gw]
+  - [gw, sw]
+  - [sw, up-a]
+  - [sw, up-b]
+  - [sw, up-c]
+  - [up-a, low-a]
+  - [up-b, low-b]
+  - [up-a, c-1, { class: sync }]
+  - [up-a, c-2, { class: sync }]
+  - [up-b, c-1, { class: sync }]
+  - [up-b, c-3, { class: sync }]
+`;
+    const model = await run(yaml);
+    expect(model.diagnostics.some(d => d.code === 'RANK_STEPPED_OFF_CHORD')).toBe(false);
+    expect(overlays(model).filter(link => link.path!.segments.length > 1)).toHaveLength(1);
+  }, 60000);
+
+  it('four-locations-each-with-a-zone: nothing moves (its lower rank stands outside a canton)', async () => {
+    const model = await run(fixture('four-locations-each-with-a-zone'));
+    expect(model.diagnostics.some(d => d.code === 'RANK_STEPPED_OFF_CHORD')).toBe(false);
+  }, 60000);
+});
+
+describe('pickRankMove and overlayCrossings (ticket 146)', () => {
+  const base = { crossings: 3, straight: 5 };
+  it('fewer crossings beat more straight links', () => {
+    const fewer = { dx: 30, crossings: 1, straight: 6 }, more = { dx: 5, crossings: 2, straight: 9 };
+    expect(pickRankMove([more, fewer], base)).toBe(fewer);
+  });
+  it('equal crossings: more straight links win, then the nearest move, then the smaller dx', () => {
+    const a = { dx: 10, crossings: 2, straight: 6 }, b = { dx: 40, crossings: 2, straight: 7 }, c = { dx: -10, crossings: 2, straight: 6 };
+    expect(pickRankMove([a, b], base)).toBe(b);
+    expect(pickRankMove([a, c], base)).toBe(c);
+    expect(pickRankMove([{ ...a, dx: 20 }, a], base)).toBe(a);
+  });
+  it('a move that adds a crossing, or gains no straight link, is never taken', () => {
+    expect(pickRankMove([{ dx: 1, crossings: 4, straight: 9 }], base)).toBeUndefined();
+    expect(pickRankMove([{ dx: 1, crossings: 3, straight: 5 }], base)).toBeUndefined();
+  });
+  it('counts a strict crossing once, and not a touch at an end or a parallel pair', () => {
+    const seg = (a: [number, number], b: [number, number]) => [{ from: { x: a[0], y: a[1] }, to: { x: b[0], y: b[1] } }];
+    expect(overlayCrossings([seg([0, 0], [10, 10]), seg([0, 10], [10, 0])])).toBe(1);
+    expect(overlayCrossings([seg([0, 0], [10, 10]), seg([10, 10], [20, 0])])).toBe(0);
+    expect(overlayCrossings([seg([0, 0], [10, 10]), seg([0, 5], [10, 15])])).toBe(0);
+  });
 });
