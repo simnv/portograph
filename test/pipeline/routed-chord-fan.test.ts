@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
 import { bands, bars, bundles, centre, flanks, lanes, layout, parse, rows, score } from '../../src/index.js';
 import { declinedFanDiagnostics, FAN_PITCH_CAP, fanRoundHolds, measureFans } from '../../src/layout/fan-spread.js';
-import { chordKind, isRoutedChord } from '../../src/layout/frame-paths.js';
+import { chordClearances, chordKind, isRoutedChord } from '../../src/layout/frame-paths.js';
 import { deriveFrames } from '../../src/layout/frames.js';
 import { moveGroup } from '../../src/layout/skeleton-geometry.js';
 import { intersection, samePoint, segmentDistance } from '../../src/score/geometry.js';
@@ -90,16 +90,46 @@ describe('a face that takes cross-frame chords spreads its ports', () => {
     expect(note!.owners!.length).toBeGreaterThanOrEqual(2);
   }, 60000);
 
-  it('drops a fan re-run that loses a frame chord, and keeps one that only loses a cross-frame chord', async () => {
+  const lose = (model: LayoutModel, id: string): LayoutModel => {
+    const copy = structuredClone(model) as LayoutModel;
+    const link = copy.links.find(item => item.id === id)!;
+    link.technique = 'orthogonal'; delete link.path;
+    return copy;
+  };
+
+  it('drops a fan re-run that loses a chord of either kind, compared by link id', async () => {
     const before = await run();
-    const lose = (kind: 'frame' | 'cross'): LayoutModel => {
-      const copy = structuredClone(before) as LayoutModel;
-      const link = copy.links.find(item => chordKind(copy, item) === kind && isRoutedChord(copy, item))!;
-      link.technique = 'orthogonal'; delete link.path;
-      return copy;
-    };
+    const [first, second] = crossChords(before);
     expect(fanRoundHolds(before, before)).toBe(true);
-    expect(fanRoundHolds(before, lose('cross'))).toBe(true);
-    expect(fanRoundHolds(before, lose('frame'))).toBe(false);
+    expect(fanRoundHolds(before, lose(before, first!.id))).toBe(false);
+    // A swap keeps the count and still loses a chord.
+    expect(fanRoundHolds(lose(before, first!.id), lose(before, second!.id))).toBe(false);
   }, 60000);
+
+  it('keeps a re-run that gives up a cross-frame chord only to clear a pair the kept placement holds under the clearance', async () => {
+    const after = await run();
+    const [a, b, c] = ['link-4', 'link-5', 'link-6'].map(id => after.links.find(item => item.id === id)!);
+    expect(crossChords(after).map(link => link.id)).toEqual(expect.arrayContaining(['link-4', 'link-5', 'link-6']));
+    // The kept placement: the second chord forged to end 4 px left of the first, on the same row, so that the pair stands under the clearance.
+    const before = structuredClone(after) as LayoutModel;
+    const one = before.links.find(item => item.id === a!.id)!.path!.segments[0]!;
+    const other = before.links.find(item => item.id === b!.id)!.path!.segments[0]!;
+    other.to = { ...other.to, x: one.to.x - 4 };
+    expect(chordClearances(before).get(`${a!.id}|${b!.id}`)).toBeLessThan(10);
+    const cleared = lose(after, c!.id);
+    expect(chordClearances(cleared).get(`${a!.id}|${b!.id}`) ?? Infinity).toBeGreaterThanOrEqual(10);
+    expect(fanRoundHolds(before, cleared)).toBe(true);
+    // Without the pair under the clearance the same loss is dropped.
+    expect(fanRoundHolds(after, cleared)).toBe(false);
+    // The pair the re-run does not clear keeps the placement it was measured on.
+    expect(fanRoundHolds(before, lose(before, c!.id))).toBe(false);
+  }, 60000);
+
+  it('keeps all three chords of detoured-stem-checkpoint straight through the fan rounds (Q 0.8140, not 0.7645)', async () => {
+    const stem = readFileSync(new URL('../../goldens/synthetic/detoured-stem-checkpoint.yaml', import.meta.url), 'utf8');
+    const model = await layout(parse(stem), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const straight = model.links.filter(link => link.technique === 'straight' && link.path?.segments.length === 1);
+    expect(straight.map(link => link.id).sort()).toEqual(model.links.map(link => link.id).sort());
+    expect(score(model).snapshot.Q).toBeGreaterThan(0.8);
+  }, 120000);
 });

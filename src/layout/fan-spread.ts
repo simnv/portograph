@@ -2,7 +2,7 @@ import type { Side } from '../model/geometry.js';
 import type { Diagnostic, LayoutLink, LayoutModel, LayoutPort, PathSegment } from '../model/layout.js';
 import { EPS, intersection, samePoint, segmentDistance } from '../score/geometry.js';
 import { linkStrokeWidth } from '../theme/geometry.js';
-import { chordKind, isRoutedChord, routedChordCandidate, standaloneChord } from './frame-paths.js';
+import { chordClearances, chordKind, isRoutedChord, routedChordCandidate, standaloneChord } from './frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { portId } from './skeleton-graph.js';
 
@@ -91,11 +91,23 @@ export function declinedFanDiagnostics(declined: FanMeasure['declined']): Diagno
 }
 
 /**
- * Whether a fan re-run may replace the placement it was measured on. It must not lose a frame chord: those hold the pitch floors of ticket 89, and a spread that
- * is dropped for a cross-frame chord it lost leaves a fan of frame chords narrower than the clearance needs (G6 `parallel-clearance`, measured on the private
- * sheet after ticket 102 counted both kinds). A cross-frame chord the spread loses is kept orthogonal; it is not worth a gate.
+ * Whether a fan re-run may replace the placement it was measured on. It must keep every held chord of either kind, compared by link id (a swap does not
+ * pass): a frame chord holds the pitch floors of ticket 89, and a cross-frame chord lost to a spread leaves an orthogonal route that costs Q (measured on
+ * `detoured-stem-checkpoint`, 0.8140 to 0.7645). One exception: the kept placement has a chord pair under the parallel clearance that the re-run clears,
+ * and the re-run loses no frame chord; a cross-frame chord may then be given up for the gate (ticket 102 review).
  */
 export function fanRoundHolds(before: LayoutModel, after: LayoutModel): boolean {
-  const frameChords = (model: LayoutModel): number => model.links.filter(link => isRoutedChord(model, link) && chordKind(model, link) === 'frame').length;
-  return frameChords(after) >= frameChords(before);
+  const held = (model: LayoutModel): Map<string, ReturnType<typeof chordKind>> =>
+    new Map(model.links.filter(link => isRoutedChord(model, link)).map(link => [link.id, chordKind(model, link)]));
+  const was = held(before), now = held(after);
+  const lost = [...was].filter(([id]) => !now.has(id));
+  if (lost.length === 0) return true;
+  if (lost.some(([, kind]) => kind === 'frame')) return false;
+  const clearance = STRAIGHT_PATH_CLEARANCE.path - 1e-6, then = chordClearances(after);
+  for (const [pair, gap] of chordClearances(before)) {
+    if (gap >= clearance) continue;
+    const cleared = then.get(pair);
+    if (pair.split('|').every(id => now.has(id)) && (cleared === undefined || cleared >= clearance)) return true;
+  }
+  return false;
 }
