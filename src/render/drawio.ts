@@ -978,8 +978,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   const labelPoint = (label: LayoutLabel, link: LayoutLink): Point => {
     const measured = centre(shiftRect(label.bounds!));
     if (placement !== 'on-run' || label.support?.kind !== 'link-segment') return measured;
-    const support = link.path!.segments[label.support.segment];
-    if (support === undefined) return measured;
+    const first = link.path!.segments[label.support.segment], last = link.path!.segments[label.support.through ?? label.support.segment];
+    if (first === undefined || last === undefined) return measured;
+    const support = { from: first.from, to: last.to };
     return shift(project({ x: measured.x + canvas.x, y: measured.y + canvas.y }, support));
   };
 
@@ -1080,10 +1081,12 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
    * the segment stage 9 measured the label against, and stating the label against it is what keeps
    * the label on it when the diagram is edited.
    */
-  const supportIn = (label: LayoutLabel, link: LayoutLink, run: Run): number | undefined => {
+  const supportIn = (label: LayoutLabel, link: LayoutLink, run: Run): readonly [number, number] | undefined => {
     if (label.support?.kind !== 'link-segment') return undefined;
-    const at = label.support.segment;
-    return at >= run.first && at <= run.last ? at - run.first : undefined;
+    // A label on a joined run of collinear pieces (ticket 142) may be attached to any of them: the
+    // remainder rule picks the piece the label stands on, not the first.
+    const first = Math.max(label.support.segment, run.first), last = Math.min(label.support.through ?? label.support.segment, run.last);
+    return first <= last ? [first - run.first, last - run.first] : undefined;
   };
 
   const taken = new Set<string>();
@@ -1462,7 +1465,7 @@ function decodeEdgeLabel(points: readonly Point[], label: EdgeLabel): Point {
  * everywhere else. The work is linear in the number of segments: the candidates are read in
  * ascending order and draw.io's own walk only ever moves forward, so it is walked once.
  */
-function edgeLabel(points: readonly Point[], at: Point, support?: number): EdgeLabel {
+function edgeLabel(points: readonly Point[], at: Point, support?: readonly [number, number]): EdgeLabel {
   const spans = spansOf(points);
   const total = spans.reduce((sum, span) => sum + span, 0);
   const start = points[0] ?? at;
@@ -1513,7 +1516,7 @@ function edgeLabel(points: readonly Point[], at: Point, support?: number): EdgeL
     const candidate = { label: { x, y }, left, beside: Math.abs(y) };
     if (closer(candidate, best)) best = candidate;
     // A zero-length supporting segment states no direction, so it can carry nothing.
-    if (index - 1 === support && span > 0 && closer(candidate, onSupport)) onSupport = candidate;
+    if (support !== undefined && index - 1 >= support[0] && index - 1 <= support[1] && span > 0 && closer(candidate, onSupport)) onSupport = candidate;
   }
   const chosen = onSupport ?? best!;
   if (chosen.left <= EPS) return chosen.label;

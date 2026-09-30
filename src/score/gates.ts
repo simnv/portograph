@@ -319,7 +319,7 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       // label exempt nothing.
       const support = label.support;
       if (support?.kind === 'link-segment' && label.owner.kind === 'link' && label.owner.id === support.link
-        && support.link === s.link.id && support.segment === s.index) continue;
+        && support.link === s.link.id && s.index >= support.segment && s.index <= (support.through ?? support.segment)) continue;
       if (segmentRectDistance(s.segment, label.bounds!) < s.stroke / 2 + margin - EPS) hit(s.link.id);
     }
   }

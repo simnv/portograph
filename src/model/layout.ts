@@ -20,9 +20,11 @@ export interface OwnedElement {
  * The final path geometry a visible label was measured against. A link label names the one
  * supporting segment G3 exempts from its clearance zone; a multiplicity label names its counted
  * merge run and gets no segment exemption at all. A stale reference exempts nothing.
+ * `through` (ticket 142) ends a run of collinear consecutive pieces of one link, which the label
+ * stands on whole: `segment` to `through` are all its supporting segments.
  */
 export type LabelSupport =
-  | { kind: 'link-segment'; link: string; segment: number }
+  | { kind: 'link-segment'; link: string; segment: number; through?: number }
   | { kind: 'merge-run'; bundle: string; run: string };
 
 export interface LayoutLabel extends OwnedElement {

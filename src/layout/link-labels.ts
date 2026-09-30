@@ -138,7 +138,8 @@ function collides(index: ObstacleIndex, box: Rect, support: LabelSupport | undef
     if (item.overlay && !overlayCounts) return false;
     if (!item.segment) return rectDistance(box, item.bounds) < item.clearance + EPS;
     if (segmentRect(item.segment, box)) return true;
-    const supporting = support?.kind === 'link-segment' && support.link === item.link && support.segment === item.index;
+    const supporting = support?.kind === 'link-segment' && support.link === item.link
+      && item.index !== undefined && item.index >= support.segment && item.index <= (support.through ?? support.segment);
     return !supporting && segmentRectDistance(item.segment, box) < item.clearance + EPS;
   });
 }
@@ -181,6 +182,37 @@ export function candidateBox(segment: PathSegment, half: number, size: { width: 
 
 interface Placement { segment: number; bounds: Rect; textRotation: number; text: string; lines: string[]; lineHeight: number }
 interface Supported { segments: PathSegment[]; half: number; support: (index: number) => LabelSupport | undefined }
+
+/**
+ * The supports of a link path (ticket 142). A link with a lane piece publishes one straight run as
+ * several collinear consecutive pieces (stem, gap part, lane), and 7a reserved the label room over
+ * the whole run. The label placer reads each such run as one segment, so the label stands on the
+ * run whose room was reserved. A link with no lane piece keeps one support per segment. In a lane
+ * link every collinear same-direction pair is joined, also a pair away from the lane run.
+ */
+export function labelRuns(segments: PathSegment[]): { segment: PathSegment; first: number; last: number }[] {
+  const runs: { segment: PathSegment; first: number; last: number }[] = segments.map((segment, at) => ({ segment, first: at, last: at }));
+  if (!segments.some(segment => segment.lane !== undefined)) return runs;
+  const merged: typeof runs = [];
+  for (const run of runs) {
+    const before = merged[merged.length - 1];
+    if (before && collinearContinuation(before.segment, run.segment)) {
+      before.segment = { ...before.segment, to: run.segment.to };
+      before.last = run.last;
+    } else merged.push({ ...run });
+  }
+  return merged;
+}
+
+/** True when `next` starts where `run` ends and both go the same way along one axis. */
+function collinearContinuation(run: PathSegment, next: PathSegment): boolean {
+  if (run.straight === true || next.straight === true) return false;
+  if (Math.abs(run.to.x - next.from.x) > EPS || Math.abs(run.to.y - next.from.y) > EPS) return false;
+  const vertical = (s: PathSegment) => Math.abs(s.to.x - s.from.x) <= EPS && Math.abs(s.to.y - s.from.y) > EPS;
+  const horizontal = (s: PathSegment) => Math.abs(s.to.y - s.from.y) <= EPS && Math.abs(s.to.x - s.from.x) > EPS;
+  return vertical(run) && vertical(next) && Math.sign(run.to.y - run.from.y) === Math.sign(next.to.y - next.from.y)
+    || horizontal(run) && horizontal(next) && Math.sign(run.to.x - run.from.x) === Math.sign(next.to.x - next.from.x);
+}
 
 const measure = (text: string) =>
   measureText(text, { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight });
@@ -368,8 +400,10 @@ export function produceLinkLabels(model: LayoutModel): void {
     if (layer === 'overlay' && suppressOverlay) { suppressed.push(link.id); continue; }
     const label = baseLabel(`label:link:${link.id}`, link.owner, layer, text);
     const drawable = link.technique !== 'stub' && link.path !== undefined;
-    emit(label, drawable ? { segments: link.path!.segments, half: halfStroke(link.path),
-      support: at => ({ kind: 'link-segment', link: link.id, segment: at }) } : undefined, true);
+    const runs = drawable ? labelRuns(link.path!.segments) : [];
+    emit(label, drawable ? { segments: runs.map(run => run.segment), half: halfStroke(link.path),
+      support: at => ({ kind: 'link-segment', link: link.id, segment: runs[at]!.first,
+        ...(runs[at]!.last > runs[at]!.first ? { through: runs[at]!.last } : {}) }) } : undefined, true);
   }
 
   const byId = new Map(model.links.map(link => [link.id, link]));
