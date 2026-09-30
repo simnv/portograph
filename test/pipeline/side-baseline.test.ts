@@ -5,6 +5,7 @@ import { layout, parse } from '../../src/index.js';
 import type { SideOffer } from '../../src/layout/side-measure.js';
 import { holdColumnAxes, holdMemberWalls, packBesideRows } from '../../src/layout/columns.js';
 import { judgeTrial, predictedWorse, predictPublished, trialNotes } from '../../src/layout/side-judge.js';
+import { RouteDeadlineError } from '../../src/index.js';
 import { portKey } from '../../src/layout/sides-one.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -136,7 +137,9 @@ describe('the trial deadline (Section 19.5)', () => {
     expect(labels).not.toContain('bands-trial');
     expect(model.nodes['server']!.ports.some(port => port.sideHint === true)).toBe(false);
     expect(withoutNotes(model)).toBe(withoutNotes(plain.model));
-    expect(remaining).toBeGreaterThan(0);
+    // The command ended with its baseline routed and inside the budget it had left (the fake budget never reached 0).
+    expect(labels).toContain('route');
+    expect(remaining).toBe(3000);
   }, 60000);
 
   it('the baseline 7f has no deadline of its own: with less than the reserve left, it runs and publishes', async () => {
@@ -244,6 +247,50 @@ describe('the fixed point (Section 19.9, ticket 136): a kept trial publishes a l
     const { model } = await run(PAST_SIBLING);
     expect(codes(model)).toContain('SIDE_HINT_TAKEN');
     expect(settled(model)).toEqual([false, false, false]);
+  }, 60000);
+});
+
+describe('the judgment reads more than the counts', () => {
+  it('a hinted link that gets worse refuses the trial though two other links go straight (a net gain)', async () => {
+    const { model: plain } = await run(PAST_SIBLING, { testMaxReruns: 0 });
+    const overlay = overlayOf(plain).id, routed = plain.links.filter(item => item.layer !== 'overlay').map(item => item.id);
+    expect(routed).toHaveLength(2);
+    const base = bendTo(bendTo(plain, routed[0]!, 2), routed[1]!, 2); // bent: two routed links and the overlay link
+    const trial = bendTo(plain, overlay, 4); // the routed links go straight, the hinted link gets worse than its 2
+    const verdict = judgeTrial({ routedBase: base, routedTrial: trial, kept7e: plain, trial7e: plain, hinted: new Map([[overlay, 0]]) });
+    expect(verdict.kept).toBe(false);
+    expect(verdict.worse).toEqual([overlay]);
+    expect(verdict.reason).toContain('more bends than on the baseline');
+  }, 60000);
+
+  it('a hint that already faces away on the baseline is not the trial\'s failure (the awayBefore exclusion)', async () => {
+    const { model: plain } = await run(PAST_SIBLING, { testMaxReruns: 0 });
+    const key = portKey(overlayOf(plain).attachments!.from);
+    const { model: away } = await run(PAST_SIBLING, { testMaxReruns: 0, testSideHints: new Map([[key, 'left' as const]]) });
+    const verdict = judgeTrial({ routedBase: away, routedTrial: away, kept7e: away, trial7e: away, hinted: new Map() });
+    expect(verdict.away).toEqual([]);
+    expect(verdict.reason).toContain('no gain');
+  }, 60000);
+});
+
+describe('the trial route is cut too (Section 19.5)', () => {
+  it('a route deadline in the trial\'s route cuts the round and the baseline publishes', async () => {
+    const plain = await run(PAST_SIBLING, { testMaxReruns: 0 });
+    const { model } = await run(PAST_SIBLING, {}, undefined, (routed, call) => { if (call === 2) throw new RouteDeadlineError(1); return routed; });
+    expect(codes(model)).toContain('SIDE_ROUND_CUT');
+    expect(model.nodes['server']!.ports.some(port => port.sideHint === true)).toBe(false);
+    expect(withoutNotes(model)).toBe(withoutNotes(plain.model));
+  }, 60000);
+
+  it('a budget under the reserve after the baseline route cuts the trial before its route starts', async () => {
+    const plain = await run(PAST_SIBLING, { testMaxReruns: 0 });
+    let remaining = 600_000;
+    const budget = { remainingMs: () => remaining, share: (stageMs: number) => Math.min(stageMs, remaining) };
+    const { model, labels } = await run(PAST_SIBLING, { budget }, undefined, (routed, call) => { if (call === 1) remaining = 3000; return routed; });
+    expect(codes(model)).toContain('SIDE_ROUND_CUT');
+    expect(labels).not.toContain('route-trial');
+    expect(remaining).toBeGreaterThan(0);
+    expect(withoutNotes(model)).toBe(withoutNotes(plain.model));
   }, 60000);
 });
 

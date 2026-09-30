@@ -22,7 +22,7 @@ import { bundles } from '../layout/bundles.js';
 import { bands } from '../layout/bands.js';
 import { linkLabels } from '../layout/link-labels.js';
 import { elkDeadlineMs, type CreateElkAttempt, type ElkClock } from '../layout/elk-worker.js';
-import { route, ROUTE_BUDGET_MS, type CreateRouteAttempt } from '../route/index.js';
+import { route, RouteDeadlineError, ROUTE_BUDGET_MS, type CreateRouteAttempt } from '../route/index.js';
 import { CommandDeadlineError, POST_PLACEMENT_RESERVE_MS, RERUN_GATE_MS, UNBOUNDED_BUDGET, type Budget } from './budget.js';
 // After the stages: the modules below reach the centring module, whose import order the tests that mock it depend on.
 import { declinedFanDiagnostics, fanRoundDropped, fanRoundHolds, measureFans, type FanMeasure } from '../layout/fan-spread.js';
@@ -266,9 +266,11 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     try {
       trial = await timed('bands-trial', () => step('bands', () => bands(trial7e, budget, () => trialAbort('bands')), true));
       routedBase ??= await routeModel(base);
+      // The trial's route starts only with time left after the reserve: the baseline is routed, so a cut here publishes it.
+      trialAbort('route');
       routedTrial = await routeModel(trial, true);
     } catch (error) {
-      if (error instanceof CommandDeadlineError) { cutSide('the command deadline was reached during its stage 7f or its route'); break; }
+      if (error instanceof CommandDeadlineError || error instanceof RouteDeadlineError) { cutSide('the command deadline was reached during its stage 7f or its route'); break; }
       if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError)) throw error;
       refuse(offer.hints.keys(), offer.hints, `its stage 7f rejected it (${error.message})`);
       break;
