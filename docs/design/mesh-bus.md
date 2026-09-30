@@ -748,7 +748,7 @@ one record per bus.
 member: the stub of the `from` node, the run along that node's bar from the stub's foot to the
 riser x, the riser, the run along the other bar from the riser x to the stub's foot, the stub of
 the `to` node. A run of length zero (a stub at the riser x) is left out, and two consecutive
-collinear segments are merged, so a cross path has three to five segments, all orthogonal, on the
+collinear segments are merged, so a cross path has one to five segments (one when both stubs stand on the riser x, as on adjacent rows; five in general), all orthogonal, on the
 overlay layer. `route/validate` derives it again and compares. G7 reads each end at the port face
 (`overlayEndpoint`).
 
@@ -796,7 +796,7 @@ bar is, on the `overlay` layer, in the class stroke and dash. Verified with the 
   `MESH_BUS_JOIN` once; sides bottom and top. After placement: one riser lane in tier 2, outside
   the `mid` frame (it holds no member); the riser crosses no body and no frame edge except the
   top edge of `low` (forced for every x); one label `sync mesh (8 nodes)` on the lower bar; 28
-  links with `technique: 'mesh-bus'`, the 15 cross paths of three to five segments; zero straight
+  links with `technique: 'mesh-bus'`, the 15 cross paths of one to five segments; zero straight
   and zero bent overlay links; every gate passing.
 - `goldens/synthetic/a-cross-link-with-another-label-keeps-two-buses.yaml`: the same, with one
   cross link labelled `backup`. Expected: two buses, each on its own leg-rule side, no riser,

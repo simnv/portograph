@@ -58,6 +58,16 @@ describe('the riser in placement (ticket 96)', () => {
     }
   });
 
+  it('keeps the riser as far as the keep-out from every stub of both facing edges', async () => {
+    for (const name of JOINED_NAMES) {
+      const model = await run(fixture(name));
+      const upper = model.meshBuses!.find(bus => bus.cross !== undefined)!, keep = BUS_RUN_CLEARANCE + routedStrokeWidth(model) / 2 - 1e-6;
+      for (const bus of model.meshBuses!) for (const stub of bus.stubs!) {
+        expect(Math.abs(stub.from.x - upper.riser!.x), `${name}: stub of ${stub.node}`).toBeGreaterThanOrEqual(keep);
+      }
+    }
+  });
+
   it('puts the one label on the bar with more members, and none on the other bar', async () => {
     const model = await run(fixture('a-mesh-over-two-rows-joins-its-bars-with-one-riser'));
     const [upper, lower] = model.meshBuses!;

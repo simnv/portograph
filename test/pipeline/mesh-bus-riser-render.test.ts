@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { drawio, layout, parse, render, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
+import { validateRoutedPaths } from '../../src/route/validate.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -70,6 +71,24 @@ describe('the riser publishes paths, renders and exports (ticket 97)', () => {
     const svg = render(model);
     expect(count(svg, /<g class="mesh-bus/g)).toBe(0);
     expect(count(svg, /riser/g)).toBe(0);
+    // The same layout with the class shown draws the riser, so the hidden count above is the class hiding it.
+    model.document.overlays = {};
+    expect(count(render(model), /class="[^"]*riser[^"]*"/g)).toBe(1);
+  }, 60000);
+
+  it('names the authored label of every cross link in the upper bus tooltip when all the links share it', async () => {
+    const yaml = fixture('a-mesh-over-two-rows-joins-its-bars-with-one-riser').replace(/class: sync \}/g, 'class: sync, label: Sync }');
+    const model = await run(yaml);
+    const upper = model.meshBuses![0]!;
+    expect(upper.cross).toHaveLength(15);
+    const svg = render(model);
+    for (const id of upper.cross!) expect(svg).toContain(`${id}: Sync`);
+  }, 60000);
+
+  it('refuses a stale riser end', async () => {
+    const model = thaw(await run(fixture('a-mesh-over-two-rows-joins-its-bars-with-one-riser')));
+    model.meshBuses![0]!.riser!.from!.x += 3;
+    expect(() => validateRoutedPaths(model)).toThrow(/riser/);
   }, 60000);
 
   it('restores a joined layout as a fixed point', async () => {

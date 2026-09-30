@@ -461,6 +461,11 @@ function reserveRisers(model: LayoutModel, pending: Lane[], occ: (group: LayoutG
         for (const port of model.nodes[id]!.ports) if (port.side === side && routedUsed.has(portId(port.ref)) && port.anchor) blocked.push([port.anchor.x - keepOut, port.anchor.x + keepOut]);
       }
     }
+    // The riser meets each bar at its own x; it keeps the same distance from every stub of both facing edges, so it does not read as a riser into a node.
+    for (const bus of [upper, lower]) for (const ref of bus.ports) {
+      const anchor = findPort(model, ref)?.anchor;
+      if (anchor !== undefined) blocked.push([anchor.x - keepOut, anchor.x + keepOut]);
+    }
     for (const lane of pending.filter(item => item.tier >= upper.row && item.tier <= lower.row)) blocked.push([lane.bounds.x - keepOut - half, right(lane.bounds) + keepOut + half]);
     blocked.sort((a, b) => a[0] - b[0]);
     const merged: [number, number][] = [];

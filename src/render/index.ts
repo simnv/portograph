@@ -336,7 +336,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
       d: pathData([{ from, to, owner: { ...bus.owner } }]) });
     // The riser of a join is one more line in the upper bus's group (mesh-bus.md, section 11.7); it carries no mark.
     const riser = bus.riser?.from !== undefined && bus.riser.to !== undefined ? line(bus.riser.from, bus.riser.to, 'riser') : '';
-    const authoredLabels = bus.members.flatMap(id => {
+    const authoredLabels = [...bus.members, ...(bus.cross ?? [])].flatMap(id => {
       const link = memberOf(id), text = link === undefined ? undefined : layout.document.links[link.sourceIndex]?.label;
       return text ? [`${id}: ${text}`] : [];
     });
