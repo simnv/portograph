@@ -26,7 +26,7 @@ const CHORD_TRIALS = 24;
 /** The most a slide may grow a canton (and the canvas) beyond its wall, and the share of the canvas width all slides together may add (ticket 80). */
 const SLIDE_GROWTH = 40, CANVAS_GROWTH_SHARE = 0.05;
 /** The growth the slides of a model have spent, against the canvas width when the first slide was asked. */
-const spent = new WeakMap<LayoutModel, { base: number; grown: number }>();
+export const spent = new WeakMap<LayoutModel, { base: number; grown: number }>();
 
 /** What a move must not lose or add, read off the geometry as it stands. */
 interface Reading {
@@ -41,8 +41,10 @@ interface Verdict extends Reading {
   crowded: Set<string>;
   disordered: Set<string>;
   residuals: Set<string>;
-  /** Whether the column rules leave the settled model where it stands (ticket 67's fixed point). */
-  fixed: boolean;
+  /** The farthest a group moves when the column rules are asked of the settled model: 0 at their fixed point (ticket 67). */
+  drift: number;
+  /** The canvas width of the settled model. */
+  width: number;
 }
 
 const copy = (model: LayoutModel): LayoutModel => JSON.parse(JSON.stringify(model)) as LayoutModel;
@@ -86,20 +88,34 @@ const residuals = (model: LayoutModel): Set<string> => new Set(model.diagnostics
   .map(item => `${item.code}:${JSON.stringify(item.owners ?? [])}`));
 
 /**
- * Whether the column rules, asked of a copy of a settled model, move nothing: the fixed point a finished layout keeps (ticket 67). The
- * pipeline does not ask them again after 7f, so a slide the rules would undo is a position they do not accept.
+ * The creep the rounds of 7f end under (`CANTON_CREEP` of the mutation step): a settled model that drifts less than this is at rest.
+ * A slide is judged against the larger of this and the drift the model had before it, so a creep of a fraction of a pixel does not
+ * turn the guard off.
  */
-function atFixedPoint(model: LayoutModel): boolean {
+const REST = 0.5;
+
+/**
+ * How far the column rules move a group, asked of a copy of a settled model (ticket 67's fixed point: 0 when they move nothing). The
+ * pipeline does not ask them again after 7f, so a slide they would undo is a position they do not accept. `Infinity` when they fail.
+ */
+function drift(model: LayoutModel): number {
   try {
-    const clone = copy(model);
-    return columnShifts(clone, 0).size === 0 && !packBesideRows(clone) && !holdMemberWalls(clone) && !holdColumnAxes(clone, 0);
+    const clone = copy(model), before = new Map(Object.values(clone.groups).map(group => [group.id, { ...group.bounds! }]));
+    columnShifts(clone, 0);
+    packBesideRows(clone);
+    holdMemberWalls(clone);
+    holdColumnAxes(clone, 0);
+    return Math.max(0, ...Object.values(clone.groups).map(group => {
+      const was = before.get(group.id)!;
+      return Math.max(Math.abs(group.bounds!.x - was.x), Math.abs(group.bounds!.y - was.y));
+    }));
   } catch {
-    return false;
+    return Infinity;
   }
 }
 
 const verdict = (model: LayoutModel, overlays: readonly LayoutLink[]): Verdict =>
-  ({ ...read(model, overlays), crowded: crowded(model), disordered: disordered(model), residuals: residuals(model), fixed: atFixedPoint(model) });
+  ({ ...read(model, overlays), crowded: crowded(model), disordered: disordered(model), residuals: residuals(model), drift: drift(model), width: model.canvas?.width ?? 0 });
 
 /** Whether every finding `after` states was stated by `before`. */
 const nothingNew = (before: ReadonlySet<string>, after: ReadonlySet<string>): boolean => [...after].every(item => before.has(item));
@@ -169,7 +185,9 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
     }
     return after !== undefined && baseline !== undefined && after.overlay.size > baseline.overlay.size
       && [...baseline.routed].every(id => after.routed.has(id))
-      && (after.fixed || !baseline.fixed) && nothingNew(baseline.crowded, after.crowded) && nothingNew(baseline.disordered, after.disordered) && nothingNew(baseline.residuals, after.residuals);
+      && after.drift <= Math.max(baseline.drift, REST) + PLACEMENT_EPS
+      && after.width <= Math.max(baseline.width, edge().base * (1 + CANVAS_GROWTH_SHARE)) + PLACEMENT_EPS
+      && nothingNew(baseline.crowded, after.crowded) && nothingNew(baseline.disordered, after.disordered) && nothingNew(baseline.residuals, after.residuals);
   };
 
   /** The moves `dx` of a set of shapes that put one of them on a chord: open intervals. */
@@ -241,8 +259,16 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
     return found;
   };
   const outward = (before: Rect, now: Rect): number => Math.max(0, before.x - now.x) + Math.max(0, now.x + now.width - (before.x + before.width));
-  const mayGrow = (before: Rect, now: Rect): boolean => {
+  /** Whether a cell stands in a frame of a canton: only there may its frame edge move out (the decision covers member frames and cantons). */
+  const inCanton = (group: LayoutGroup): boolean => {
+    const all = model.document.frames ?? {};
+    let at = group.frame;
+    while (at !== undefined && all[at]?.parent !== undefined) at = all[at]!.parent;
+    return at !== undefined && all[at]?.kind === 'canton';
+  };
+  const mayGrow = (group: LayoutGroup, before: Rect, now: Rect): boolean => {
     const budget = edge(), by = outward(before, now);
+    if (!inCanton(group)) return Math.abs(now.x - before.x) <= PLACEMENT_EPS && Math.abs(now.width - before.width) <= PLACEMENT_EPS;
     return by <= Math.min(SLIDE_GROWTH, CANVAS_GROWTH_SHARE * budget.base - budget.grown) + PLACEMENT_EPS;
   };
   // A frame of several cells slides whole inside its column slack (ticket 80): every cell takes the same dx, so the frame box, the
@@ -421,7 +447,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
               for (const port of node.ports) if (port.anchor) port.anchor.x += dx;
             }
           };
-          const framed = (): boolean => mayGrow(before, cellReach(model, group.id));
+          const framed = (): boolean => mayGrow(group, before, cellReach(model, group.id));
           if (candidates.length && attempt(`row:${group.id}`, candidates, 0, slide, undo, ids, () => true, framed)) {
             moved = true;
             edge().grown += outward(before, cellReach(model, group.id));
@@ -447,7 +473,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
         // A frozen chord is a wall for a node as for a group: `attempt` refuses a candidate that puts a body on one.
         // A node of a cell moves only where the frame stays as it is: the frame edge stands off the outermost body (`cellReach`).
         const reach = cellOfFrame(group) ? cellReach(model, group.id) : undefined;
-        const framed = (): boolean => reach === undefined || mayGrow(reach, cellReach(model, group.id));
+        const framed = (): boolean => reach === undefined || mayGrow(group, reach, cellReach(model, group.id));
         if (attempt(`node:${id}`, candidates, body.x, shift, undo, [id], () => true, framed)) {
           moved = true;
           if (reach !== undefined) edge().grown += outward(reach, cellReach(model, group.id));

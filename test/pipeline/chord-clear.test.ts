@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
-import { stepOverChords } from '../../src/layout/chord-clear.js';
+import { spent, stepOverChords } from '../../src/layout/chord-clear.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { deriveFrames } from '../../src/layout/frames.js';
 import { crosses, overlayPath, straightChord } from '../../src/layout/overlay-paths.js';
@@ -166,4 +166,87 @@ describe('a frame of two cells steps off a straight overlay chord inside its col
     expect(stepOverChords(model, undefined)).toBe(false);
     expect(JSON.stringify(cells.map(id => model.groups[id]!.bounds))).toBe(stood);
   }, 60000);
+});
+
+/** Ticket 80, review: the paths the first tests did not reach, and the growth of a canton by a slide (coordinator decision). */
+describe('the slide paths of a frame, judged and capped (ticket 80)', () => {
+  const copy = (model: LayoutModel): LayoutModel => JSON.parse(JSON.stringify(model)) as LayoutModel;
+  const NAME = 'a-frame-slides-off-a-straight-chord-inside-its-column-slack';
+  const overlay = (model: LayoutModel) => model.links.find(link => link.layer === 'overlay')!;
+  const box = (model: LayoutModel) => deriveFrames(model)!.find(frame => frame.id === 'loc')!.box;
+  const stand = (model: LayoutModel, ids: string[], dx: number): void => {
+    for (const id of ids) {
+      const node = model.nodes[id]!;
+      node.bounds!.x += dx;
+      for (const port of node.ports) if (port.anchor) port.anchor.x += dx;
+    }
+    rebuildNodeGeometry(model, ids, 'current');
+  };
+
+  it('the row of a cell of a canton member slides as one, and the cell box stays', async () => {
+    const model = copy(await run(fixture('a-canton-member-frame-slides-off-a-straight-chord')));
+    const link = overlay(model), chord = straightChord(model, link)!, zone = model.groups['loc-zone#1']!;
+    const cell = { ...zone.bounds! };
+    stand(model, ['sw', 'sw2'], 10);
+    expect(crosses(chord.from, chord.to, model.nodes['sw2']!.bounds!)).toBe(true);
+    const history = new Set(['frame:loc']);
+    expect(stepOverChords(model, undefined, history)).toBe(true);
+    expect(history.has('row:loc-zone#1') || history.has('node:sw2')).toBe(true);
+    expect(crosses(chord.from, chord.to, model.nodes['sw2']!.bounds!)).toBe(false);
+    expect(zone.bounds).toEqual(cell);
+  }, 60000);
+
+  it('a cell slides alone inside its frame where every frame box stays', async () => {
+    const model = copy(await run(fixture(NAME)));
+    const core = model.groups['loc#0']!, frames = deriveFrames(model)!.map(frame => frame.box);
+    const link = overlay(model), chord = straightChord(model, link)!;
+    moveGroup(model, core, 60, 0);
+    rebuildNodeGeometry(model, core.nodes, 'current');
+    const at = core.bounds!.x;
+    expect(stepOverChords(model, undefined, new Set(['frame:loc']))).toBe(true);
+    expect(Math.abs(core.bounds!.x - at)).toBeGreaterThan(1);
+    expect(deriveFrames(model)!.map(frame => frame.box)).toEqual(frames);
+    expect(crosses(chord.from, chord.to, model.nodes['gw']!.bounds!)).toBe(false);
+  }, 60000);
+
+  it('a cell of a frame that is not in a canton never moves its frame edge', async () => {
+    const model = copy(await run(fixture(NAME)));
+    for (const id of ['sw', 'sw2']) stand(model, [id], 40);
+    const frame = { ...box(model) };
+    stepOverChords(model, undefined, new Set(['frame:loc']));
+    expect(box(model)).toEqual(frame);
+  }, 60000);
+
+  it('a slide of a canton member may pass the wall, and is refused when the growth is spent', async () => {
+    const yaml = fixture('a-canton-member-frame-slides-off-a-straight-chord');
+    const model = copy(await run(yaml));
+    const link = overlay(model), chord = straightChord(model, link)!;
+    const cellsOf = ['loc#0', 'loc-zone#1'], nodes = ['gw', 'sw', 'sw2'];
+    const standOn = (m: LayoutModel): void => {
+      for (const id of cellsOf) moveGroup(m, m.groups[id]!, 20, 0);
+      rebuildNodeGeometry(m, nodes, 'current');
+    };
+    const spentUp = copy(model);
+    standOn(model);
+    standOn(spentUp);
+    expect(crosses(chord.from, chord.to, model.nodes['sw2']!.bounds!)).toBe(true);
+    const at = model.groups['loc#0']!.bounds!.x;
+    expect(stepOverChords(model, undefined)).toBe(true);
+    const slid = Math.abs(model.groups['loc#0']!.bounds!.x - at);
+    expect(slid).toBeGreaterThan(0);
+    expect(slid).toBeLessThanOrEqual(40 + 1e-6);
+    expect(crosses(chord.from, chord.to, model.nodes['sw2']!.bounds!)).toBe(false);
+    // The growth of all the slides together is used up: the same candidate is refused and the frame stays.
+    spent.set(spentUp, { base: 100, grown: 5 });
+    const stood = spentUp.groups['loc#0']!.bounds!.x;
+    stepOverChords(spentUp, undefined);
+    expect(spentUp.groups['loc#0']!.bounds!.x).toBe(stood);
+  }, 60000);
+
+  it('a slide the column rules would undo is refused in a real layout (three-canton-groups-close-up-to-a-band-gap)', async () => {
+    const model = await run(fixture('three-canton-groups-close-up-to-a-band-gap'));
+    // A slide of a member frame by 63 px straightened two chords in an earlier build and left the finished layout off the fixed point of the
+    // column rules: `packBesideRows` moved it back. The canvas is the one of main (1921.3), not the widened one (1984.5).
+    expect(model.canvas!.width).toBeLessThan(1930);
+  }, 120000);
 });
