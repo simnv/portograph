@@ -14,6 +14,7 @@ const run = (name: string): Promise<LayoutModel> => layout(parse(source(name)), 
 const thaw = (model: LayoutModel): LayoutModel => JSON.parse(JSON.stringify(model)) as LayoutModel;
 const sideLane = (model: LayoutModel): Lane => model.lanes.find(lane => lane.kind === 'side')!;
 const ownerOf = (model: LayoutModel, lane: Lane): LayoutLink => model.links.find(link => link.id === (lane.owner as { id: string }).id)!;
+const CROSS = 'a-far-end-between-the-anchor-and-a-side-lane';
 const failed = (model: LayoutModel): string[] => Object.entries(score(model).snapshot.gates).filter(([, gate]) => !gate.passed).map(([id]) => id);
 const NEW = 'a-link-drops-beside-a-frame-into-a-lateral-side', HELD = 'a-held-lane-stays-on-its-frames-side-of-a-foreign-frame';
 const CENTRED = 'a-far-port-is-centred-under-a-side-lane', RISER = 'a-riser-keeps-out-of-a-side-lane';
@@ -64,10 +65,32 @@ describe('a side lane joins the tier-gap plan and the route (ticket 122)', () =>
     const lane = sideLane(model), link = ownerOf(model, lane);
     const far = model.nodes['lb']!.ports.find(port => port.ref.ordinal === link.attachments!.from.ordinal)!.anchor!;
     expect(model.anchorTier).not.toBe(nodeTierOf(model, 'lb'));
-    expect(lane.aligned).toBe(true);
+    // 7a did not seat the lane on the far port's x; centring did, and recorded it.
+    expect(lane.aligned).toBeUndefined();
+    expect(model.diagnostics.filter(item => item.code === 'SIDE_LANE_SEATED')).toEqual([expect.objectContaining({ severity: 'info', owners: [{ kind: 'link', id: link.id }] })]);
+    expect(model.diagnostics.some(item => item.code === 'SIDE_SHAPE_LOST')).toBe(false);
     expect(far.x).toBeCloseTo(lane.x, 6);
     expect(bends(link)).toBe(1);
     expect(link.removed).toBeUndefined();
+  }, 120000);
+
+  it('7c holds the far port on the lane when the far end stands between the anchor and the lateral end', async () => {
+    const model = await run(CROSS);
+    const lane = sideLane(model), link = ownerOf(model, lane);
+    expect(nodeTierOf(model, 'lb')).toBeLessThan(nodeTierOf(model, 'outlet'));
+    expect(model.anchorTier).toBeLessThan(nodeTierOf(model, 'lb'));
+    expect(findFar(model, link, lane).x).toBeCloseTo(lane.x, 6);
+    expect(bends(link)).toBe(1);
+    expect(model.diagnostics.some(item => item.code === 'SIDE_SHAPE_LOST')).toBe(false);
+  }, 120000);
+
+  it('a lane the far port never stood on gives no SIDE_SHAPE_LOST (held lane and riser fixtures)', async () => {
+    for (const name of [HELD, RISER]) {
+      const model = await run(name);
+      expect(model.diagnostics.filter(item => item.code === 'SIDE_SHAPE_LOST'), name).toEqual([]);
+    }
+    const riser = await run(RISER);
+    expect(Math.abs(findFar(riser, ownerOf(riser, sideLane(riser)), sideLane(riser)).x - sideLane(riser).x)).toBeLessThan(1e-6);
   }, 120000);
 
   it('a 7f column move of the far end group off the lane x is refused (SIDE_LANE_HELD); without the guard the part turns stepped and SIDE_SHAPE_LOST fires', async () => {

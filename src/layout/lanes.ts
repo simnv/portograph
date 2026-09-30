@@ -116,7 +116,7 @@ function occupiedAt(model: LayoutModel, group: LayoutGroup, bounds: Rect, link?:
  * immutable after allocation, so a movement that fails this is geometrically infeasible rather than
  * something an ordered replay can repair. This is the same occupied extent `validateLanes` measures.
  */
-export function laneSidesHold(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[], report = true): boolean {
+export function laneSidesHold(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[], report = true, frames = true): boolean {
   // From 7f on a straight link is a wall like a lane (ticket 34): the move is refused for that unit.
   if (!chordsHold(model, proposed, report)) return false;
   return proposed.every(({ group, bounds }) => {
@@ -126,7 +126,7 @@ export function laneSidesHold(model: LayoutModel, proposed: { group: LayoutGroup
       return group.bounds!.x >= lane.x ? box.x >= right(lane.bounds) - 1e-6 : right(box) <= lane.bounds.x + 1e-6;
     });
     return sameTier;
-  }) && sideLaneFramesHold(model, proposed);
+  }) && (!frames || sideLaneFramesHold(model, proposed));
 }
 /** The frame boxes as they would stand with the proposed group boxes: `deriveFrames` on a trial that has the groups and their bodies moved. */
 function framesAfter(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[]): Map<string, Rect> | undefined {
@@ -248,18 +248,30 @@ export function optionalMoveHolds(model: LayoutModel, proposed: { group: LayoutG
   return riserKeepOutHolds(model, proposed) && laneSidesHold(model, proposed, report) && sideLanesHold(model, proposed, report);
 }
 /**
+ * The end of 7c: a side lane whose far port centring has put on the lane x (and that 7a did not seat there) is recorded once (`SIDE_LANE_SEATED`,
+ * info), because `aligned` cannot change after 7a. `SIDE_SHAPE_LOST` warns when 7f moves such a port off the lane.
+ */
+export function recordSeatedSideLanes(model: LayoutModel): void {
+  for (const lane of model.lanes.filter(isSideLane)) {
+    const link = laneLink(model, lane), far = link?.attachments ? findPort(model, sideLaneSource(link, lane))?.anchor : undefined;
+    if (link === undefined || far === undefined || lane.aligned === true || Math.abs(far.x - lane.x) > PLACEMENT_EPS) continue;
+    placementInfo(model, 'SIDE_LANE_SEATED', `The far port of ${link.id} stands on its side lane after centring.`, link.id);
+  }
+}
+/**
  * The findings of the end of 7f about the side lanes (side-faces.md, Sections 10 and 11): `SIDE_SHAPE_LOST` (warning) names each link whose lane
  * 7a seated on the far port's x and whose far port has left it, so the drop is a stepped part; `SIDE_LANE_INSIDE_FRAME` (warning) names each
  * link whose lane a frame box of its end now crosses. `validateLanes` does not throw for either: a forced 7f move can cause them after 7a.
  */
 export function sideLaneFindings(model: LayoutModel): Diagnostic[] {
   const result: Diagnostic[] = [];
+  const seated = new Set(model.diagnostics.filter(item => item.code === 'SIDE_LANE_SEATED').flatMap(item => (item.owners ?? []).flatMap(owner => 'id' in owner ? [owner.id] : [])));
   for (const lane of model.lanes.filter(isSideLane)) {
     const link = laneLink(model, lane);
     if (!link?.attachments) continue;
     const owners = [{ kind: 'link' as const, id: link.id }];
     const far = findPort(model, sideLaneSource(link, lane))?.anchor;
-    if (lane.aligned === true && far !== undefined && Math.abs(far.x - lane.x) > PLACEMENT_EPS) {
+    if ((lane.aligned === true || seated.has(link.id)) && far !== undefined && Math.abs(far.x - lane.x) > PLACEMENT_EPS) {
       result.push({ stage: 'placement', severity: 'warning', code: 'SIDE_SHAPE_LOST', owners,
         message: `${link.id} lost its drop: the far port stands ${Math.round(Math.abs(far.x - lane.x) * 100) / 100} px off its side lane, so the part is stepped.` });
     }
@@ -1052,11 +1064,6 @@ function sideLaneRefusal(model: LayoutModel, link: LayoutLink, port: PortRef, x:
  * (spec Section 10, decision 4). The source-aligned corridor is tried first (the far port's x), then the nearest clear exterior corridor.
  * Nothing moves: a candidate whose corridor is not clear gets no lane and stays residual (`SIDE_LANE_REFUSED`, info, with the reason).
  */
-/** Whether 7c centres the far end's tier (it is not the anchor tier), so the side lane's feed brings the far port under the lane x. */
-function centredOntoLane(model: LayoutModel, far: PortRef): boolean {
-  const anchor = selectAnchorTier(model);
-  return anchor !== undefined && nodeTier(model, far.node) !== anchor && model.groups[model.document.nodes[far.node]!.group]!.flank === undefined;
-}
 function reserveSideLanes(model: LayoutModel, pending: Lane[], occ: (group: LayoutGroup, link?: LayoutLink) => Rect): void {
   for (const link of model.links) {
     const port = sideLaneCandidate(model, link);
@@ -1091,7 +1098,7 @@ function reserveSideLanes(model: LayoutModel, pending: Lane[], occ: (group: Layo
     }
     if (chosen === undefined) { refuse(first ?? 'corridor'); continue; }
     const lane: Lane = { id: sideLaneId(link), owner: { kind: 'link', id: link.id }, layer: 'routed', group: group.id, tier: group.tier!,
-      side: lateral.side as 'left' | 'right', kind: 'side', port: { ...port }, ...(Math.abs(chosen - farX) <= 1e-6 || centredOntoLane(model, far) ? { aligned: true as const } : {}), x: chosen, bounds: { x: chosen - half, width: 2 * half, y: 0, height: 0 } };
+      side: lateral.side as 'left' | 'right', kind: 'side', port: { ...port }, ...(Math.abs(chosen - farX) <= 1e-6 ? { aligned: true as const } : {}), x: chosen, bounds: { x: chosen - half, width: 2 * half, y: 0, height: 0 } };
     Object.assign(lane.bounds, sideLaneExtent(model, lane, link));
     pending.push(lane);
   }
