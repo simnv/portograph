@@ -240,6 +240,14 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     expect(JSON.stringify(Object.values(clone.groups).map(group => [group.id, group.bounds]))).toBe(before);
   }, 60000);
 
+  // Ticket 117, open finding: with the side round on, this input takes a lateral side (m1, link-4 freed) and the finished layout is not at the fixed point of
+  // `packBesideRows`: on a copy it moves loc-a2 by +83.3 px and zone-a2 by +170.9 px. The held chord is not the reason (`blockedChords` is empty after the move,
+  // no clearance is under 12 px); `holdColumnAxes` and `holdMemberWalls` move nothing. `it.fails` turns green-to-red when the cause is fixed.
+  it.fails('three-canton-groups-close-up-to-a-band-gap with the side round on: packBesideRows moves nothing on the finished layout', async () => {
+    const model = await layout(parse(fixture('three-canton-groups-close-up-to-a-band-gap')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    expect(packBesideRows(structuredClone(model) as LayoutModel)).toBe(false);
+  }, 60000);
+
   // Ticket 67: the mixed run of a foreign unit between two cantons converges by a third each round of 7f (1.551, 0.517, 0.172 px), and the rounds end
   // under the creep of half a pixel. What is left is that creep, not a pull that goes the wrong way: a second pull moves the run as one block by less
   // than it. The bound of 0.1 is measured (0.057); the guaranteed bound is CANTON_CREEP x the ratio of the rounds, about 0.167.
