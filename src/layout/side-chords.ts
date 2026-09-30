@@ -2,8 +2,10 @@ import type { PortRef } from '../model/document.js';
 import type { LayoutLink, LayoutModel, LayoutNode, PathSegment } from '../model/layout.js';
 import { linkStrokeWidth } from '../theme/geometry.js';
 import { EPS, intersection, samePoint, segmentDistance } from '../score/geometry.js';
-import { chordKind, chordVerdict, isRoutedChord, SIDE_EDGE_SLACK } from './frame-paths.js';
+import { chordKind, chordVerdict, edgeMisses, isRoutedChord, SIDE_EDGE_SLACK } from './frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
+import { straightChord } from './overlay-paths.js';
+import { findPort } from './row-paths.js';
 import { facingSide, hintRefusal } from './side-hints.js';
 import { portKey } from './sides-one.js';
 
@@ -16,6 +18,11 @@ import { portKey } from './sides-one.js';
 export interface ChordLateral { ref: PortRef; key: string; side: 'left' | 'right' }
 /** Moves a port to a lateral face on a copy of its node (`moved` of the side measure). Undefined when no slot fits. */
 export type MovePort = (node: LayoutNode, lateral: ChordLateral, peerY: number) => { node: LayoutNode; grows: boolean } | undefined;
+
+const findPortSide = (model: LayoutModel, ref: PortRef): string | undefined => findPort(model, ref)?.side;
+
+/** Test only: the side probe of ticket 117 sets `on` to read every decision of the chord pass. Nothing in the layout reads it. */
+export const chordTrace: { on?: (event: Record<string, unknown>) => void } = {};
 
 interface Accepted { node: string; side: string; segment: PathSegment; stroke: number }
 interface Config { laterals: ChordLateral[]; grows: boolean; nodes: LayoutModel['nodes']; segment: PathSegment }
@@ -55,51 +62,68 @@ export function measureChordSides(model: LayoutModel, nodes: LayoutModel['nodes'
   const centreOf = (node: LayoutNode): { x: number; y: number } => ({ x: node.bounds!.x + node.bounds!.width / 2, y: node.bounds!.y + node.bounds!.height / 2 });
   const accepted: Accepted[] = [];
   for (const link of model.links) {
-    if (link.layer !== 'routed' || link.attachments === undefined || link.removed === true || isRoutedChord(model, link) || bends(link) === 0) continue;
+    if (link.layer !== 'routed' || link.attachments === undefined || link.removed === true) continue;
+    if (isRoutedChord(model, link) || bends(link) === 0) { chordTrace.on?.({ ev: 'skip', link: link.id, why: isRoutedChord(model, link) ? 'a held chord' : 'no planned bends on the baseline' }); continue; }
     const ends = [link.attachments.from, link.attachments.to];
-    if (ends[0]!.node === ends[1]!.node || tierOf(ends[0]!) === tierOf(ends[1]!)) continue;
+    if (ends[0]!.node === ends[1]!.node || tierOf(ends[0]!) === tierOf(ends[1]!)) { chordTrace.on?.({ ev: 'skip', link: link.id, why: 'one node or one sub-tier' }); continue; }
     const laterals: ChordLateral[] = [];
+    const rejects: string[] = [];
     for (const [index, ref] of ends.entries()) {
       const peer = ends[1 - index]!, node = pass.nodes[ref.node]!, key = portKey(ref);
       const port = node.ports.find(item => portKey(item.ref) === key);
-      if (port === undefined || port.sideHint === true || (port.side !== 'top' && port.side !== 'bottom')) continue;
-      if (hintRefusal(model, ref) !== undefined || node.bounds === undefined || pass.nodes[peer.node]?.bounds === undefined) continue;
+      if (port === undefined || port.sideHint === true || (port.side !== 'top' && port.side !== 'bottom')) { rejects.push(`${ref.node} end: port side ${port?.side}${port?.sideHint === true ? ' (hinted)' : ''}, no lateral candidate`); continue; }
+      const why = hintRefusal(model, ref);
+      if (why !== undefined || node.bounds === undefined || pass.nodes[peer.node]?.bounds === undefined) { rejects.push(`${ref.node} end: ${why ?? 'no box'}`); continue; }
       const side = facingSide(centreOf(node).x, centreOf(pass.nodes[peer.node]!).x) as 'left' | 'right';
-      if (refused.has(refusedKey(key, side))) continue;
+      if (refused.has(refusedKey(key, side))) { rejects.push(`${ref.node} end: ${side} refused earlier`); continue; }
       laterals.push({ ref, key, side });
     }
+    if (chordTrace.on !== undefined) {
+      const first = chordVerdict(model, link, SIDE_EDGE_SLACK);
+      chordTrace.on({ ev: 'link', link: link.id, ends: ends.map(ref => `${ref.node}#${ref.ordinal} ${findPortSide(model, ref)}`), kind: chordKind(model, link) ?? 'not a candidate at the natural faces',
+        verdict: 'reason' in first ? first.reason : 'segment', rejects });
+    }
     if (laterals.length === 0) continue;
-    if (pass.probes >= probeCap) { pass.capped = true; break; }
+    if (pass.probes >= probeCap) { pass.capped = true; chordTrace.on?.({ ev: 'capped', link: link.id }); break; }
     pass.probes++;
     const configs: Config[] = [];
     const attempt = (chosen: ChordLateral[]): void => {
+      const name = chosen.map(l => `${l.ref.node}:${l.side}`).join(' + ');
+      const note = (why: string, extra: Record<string, unknown> = {}): void => { chordTrace.on?.({ ev: 'attempt', link: link.id, config: name, offered: false, why, ...extra }); };
       let draft = pass.nodes, grows = false;
       for (const lateral of chosen) {
         const peer = ends.find(ref => portKey(ref) !== lateral.key)!;
         const result = moved(draft[lateral.ref.node]!, lateral, centreOf(draft[peer.node]!).y);
-        if (result === undefined) return;
+        if (result === undefined) { note('no slot on the lateral face'); return; }
         // A hinted port: the chord rule reads a lateral face only on a port a hint moved.
         const node: LayoutNode = { ...result.node, ports: result.node.ports.map(port => portKey(port.ref) === lateral.key ? { ...port, sideHint: true } : port) };
         draft = { ...draft, [lateral.ref.node]: node };
         grows ||= result.grows;
       }
       const probe: LayoutModel = { ...model, nodes: draft };
-      if (chordKind(probe, link) === undefined) return;
+      if (chordKind(probe, link) === undefined) { note('chordKind is undefined with these faces'); return; }
       const verdict = chordVerdict(probe, link, SIDE_EDGE_SLACK);
-      if (!('segment' in verdict)) return;
+      // The raw chord, for the exit-edge miss, whatever the verdict says.
+      const raw = chordTrace.on === undefined ? undefined : straightChord(probe, link, undefined, true);
+      const misses = raw === undefined ? [] : edgeMisses(probe, link, { from: raw.from, to: raw.to, owner: { ...link.owner } }).map(m => `${m.box}/${m.side}: ${m.miss === Infinity ? 'no crossing' : `${m.miss.toFixed(1)} px`}`);
+      if (!('segment' in verdict)) { note(`chordVerdict refuses: ${verdict.reason}`, { verdict: verdict.reason, misses }); return; }
       const segment = verdict.segment, stroke = linkStrokeWidth(link);
       const length = Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y);
-      if (length <= EPS) return;
+      if (length <= EPS) { note('zero length', { misses }); return; }
+      const angles: string[] = [];
       for (const lateral of chosen) {
         const dx = portKey(ends[0]!) === lateral.key ? segment.to.x - segment.from.x : segment.from.x - segment.to.x;
-        if (dx * (lateral.side === 'right' ? 1 : -1) / length < minOutward - EPS) return;
-        if (accepted.some(other => other.node === lateral.ref.node && other.side === lateral.side && tooClose(segment, stroke, other))) return;
+        const outward = dx * (lateral.side === 'right' ? 1 : -1) / length;
+        angles.push(`${lateral.ref.node}: ${(Math.asin(Math.max(-1, Math.min(1, outward))) * 180 / Math.PI).toFixed(1)} deg`);
+        if (outward < minOutward - EPS) { note('outward angle under the minimum', { verdict: 'segment', angles, misses }); return; }
+        if (accepted.some(other => other.node === lateral.ref.node && other.side === lateral.side && tooClose(segment, stroke, other))) { note('pitch', { verdict: 'segment', angles, pitch: 'refused', misses }); return; }
       }
+      chordTrace.on?.({ ev: 'attempt', link: link.id, config: name, offered: true, why: 'candidate configuration', verdict: 'segment', angles, pitch: 'ok', misses });
       configs.push({ laterals: chosen, grows, nodes: draft, segment });
     };
     for (const lateral of laterals) attempt([lateral]);
     if (laterals.length === 2) attempt(laterals);
-    if (configs.length === 0) continue;
+    if (configs.length === 0) { chordTrace.on?.({ ev: 'none', link: link.id }); continue; }
     const key = (config: Config): number[] => [config.laterals.length, Number(config.grows), -tierOf(config.laterals[0]!.ref), order.get(config.laterals[0]!.ref.node)!];
     configs.sort((a, b) => { const x = key(a), y = key(b), at = x.findIndex((value, index) => value !== y[index]); return at < 0 ? 0 : x[at]! - y[at]!; });
     const best = configs[0]!;
@@ -117,5 +141,6 @@ export function measureChordSides(model: LayoutModel, nodes: LayoutModel['nodes'
       accepted.push({ node: lateral.ref.node, side: lateral.side, segment: best.segment, stroke: linkStrokeWidth(link) });
     }
   }
+  chordTrace.on?.({ ev: 'summary', probesIn: probes, probesOut: pass.probes, cap: probeCap, capped: pass.capped });
   return pass;
 }

@@ -317,6 +317,32 @@ function crossRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment
 }
 
 /**
+ * Diagnostic only (the side probe of ticket 117): for each box that holds one end only, the edge the chord should leave through, and the miss in px:
+ * 0 when the chord meets that edge inside the corner margin, else how far outside it (`Infinity`: the chord does not meet that edge's line between its ends).
+ */
+export function edgeMisses(model: LayoutModel, link: LayoutLink, segment: PathSegment): { box: string; side: string | undefined; miss: number }[] {
+  const ends = link.attachments!, from = holders(model, ends.from.node), to = holders(model, ends.to.node);
+  const sides = { from: findPort(model, ends.from)?.side, to: findPort(model, ends.to)?.side };
+  const dx = segment.to.x - segment.from.x, dy = segment.to.y - segment.from.y, margin = GROUP_EDGE_LINK_CLEARANCE;
+  const found: { box: string; side: string | undefined; miss: number }[] = [];
+  for (const { id, bounds } of groupBoxes(model)) {
+    const one = from.has(id), two = to.has(id);
+    if (one === two) continue;
+    const side = one ? sides.from : sides.to;
+    let miss = Infinity;
+    if (side === 'left' || side === 'right') {
+      const t = Math.abs(dx) < EPS ? Infinity : ((side === 'right' ? bounds.x + bounds.width : bounds.x) - segment.from.x) / dx, y = segment.from.y + t * dy;
+      if (t >= -EPS && t <= 1 + EPS) miss = Math.max(0, bounds.y + margin - y, y - (bounds.y + bounds.height - margin));
+    } else if (side === 'top' || side === 'bottom') {
+      const t = Math.abs(dy) < EPS ? Infinity : ((side === 'bottom' ? bounds.y + bounds.height : bounds.y) - segment.from.y) / dy, x = segment.from.x + t * dx;
+      if (t >= -EPS && t <= 1 + EPS) miss = Math.max(0, bounds.x + margin - x, x - (bounds.x + bounds.width - margin));
+    }
+    found.push({ box: id, side, miss });
+  }
+  return found;
+}
+
+/**
  * The chord of the link when nothing that no other link can change refuses it, or the first check that does: the two faces, the tiers between
  * them, the foreign frames and the facing edge (a cross-frame chord), the title strips and the corridor the bodies and reservations leave
  * (ticket 89 review).

@@ -90,6 +90,8 @@ export interface LayoutOptions {
   testMaxReruns?: number;
   /** Test only. Called with the wall time of each placement run, measure, 7f, route and score-ready stage, and the budget left (ticket 115 timing). */
   testTiming?: (label: string, durationMs: number, remainingMs: number) => void;
+  /** Test only (the side probe of ticket 117). Called with the offer, and with the trial and its verdict; it changes nothing. */
+  testSideTrace?: (event: Record<string, unknown>) => void;
 }
 
 /**
@@ -226,6 +228,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   const keptNotes: Diagnostic[] = [];
   for (let round = 0; round < SIDE_ROUNDS; round++) {
     const offer = await timed('measureSides', () => measureSides(base, kept7e, refused));
+    options.testSideTrace?.({ ev: 'offer', round, offer, base, kept7e });
     if (offer.capped) sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_PROBE_CAPPED', message: 'The side measure stopped at its probe cap; the links after it were not probed.' });
     if (offer.hints.size === 0) break;
     if (reruns >= maxReruns) {
@@ -276,6 +279,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       break;
     }
     const verdict = judgeTrial({ routedBase, routedTrial, kept7e, trial7e, hinted: hintedLinks });
+    options.testSideTrace?.({ ev: 'trial', verdict, base, kept7e, trial7e, trial, routedBase, routedTrial, hinted: hintedLinks });
     if (!verdict.kept) { refuse(offer.hints.keys(), all, verdict.reason); break; }
     // Kept: the trial is the baseline now. The notes name what the net count accepted.
     keptNotes.push(...trialNotes(routedBase, routedTrial, verdict, hintedLinks.keys()));
