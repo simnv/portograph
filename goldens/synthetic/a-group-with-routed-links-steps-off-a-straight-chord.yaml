@@ -1,0 +1,34 @@
+# Expected: A group with routed links steps along its tier off a straight overlay chord (ticket 77).
+# `src` (tier 0) syncs with `f1` (tier 2). `mid` (tier 1) has a routed link to each of `p1` and `p2`, so neither runs on one axis
+# and no straight link bends when `mid` moves. The test puts `mid` on the chord after layout, runs the step and reads the placed
+# model. Test-only input owned by ranked-groups ticket 77; test/pipeline/chord-clear.test.ts.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  middle: { tier: 1, label: Middle }
+  targets: { tier: 2, label: Targets }
+  hosts: { tier: 3, label: Hosts }
+nodes:
+  p1: { group: top, class: server, label: Parent 1 }
+  p2: { group: top, class: server, label: Parent 2 }
+  src: { group: top, class: server, label: Source }
+  mid: { group: middle, class: server, label: Middle }
+  f1: { group: targets, class: server, label: Far 1 }
+  f2: { group: targets, class: server, label: Far 2 }
+  f3: { group: targets, class: server, label: Far 3 }
+  h1: { group: hosts, class: server, label: Host 1 }
+  h2: { group: hosts, class: server, label: Host 2 }
+  h3: { group: hosts, class: server, label: Host 3 }
+  h4: { group: hosts, class: server, label: Host 4 }
+  h5: { group: hosts, class: server, label: Host 5 }
+  h6: { group: hosts, class: server, label: Host 6 }
+links:
+  - [p1, mid]
+  - [p2, mid]
+  - [f1, h1]
+  - [f1, h2]
+  - [f2, h3]
+  - [f2, h4]
+  - [f3, h5]
+  - [f3, h6]
+  - [src, f1, { class: sync }]

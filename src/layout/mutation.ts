@@ -21,6 +21,7 @@ import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
 import { centreViolations, selectAnchorTier } from './centre.js';
 import { stepLinklessOutOfChords } from './overlay-place.js';
+import { stepOverChords } from './chord-clear.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
@@ -727,41 +728,49 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     // The growth of the tier gaps is measured on the columns as they stand, and the close-up of the cantons (ranked-groups ticket 65)
     // moves them in x after centring widened one in place: so the growth is measured again after every move, and the rounds end when
     // the close-up has nothing to move. A round that moves groups replays the region producers, and the grid and the labels after it.
-    let closed = false;
-    for (let round = 0; round < CANTON_ROUNDS && !closed; round++) {
-      if (growTierGaps(draft)) {
-        rebuildRegionGeometry(draft, undefined, undefined, true);
+    // One round of the growth and the close-up, on any model: the loop below runs it on the draft, and the step over a chord (ticket 77)
+    // runs it on a copy to see what a move settles into. It returns the shift of the close-up.
+    const settle = (model: LayoutModel): number => {
+      if (growTierGaps(model)) {
+        rebuildRegionGeometry(model, undefined, undefined, true);
         // The replay refits every group box to its content, so a linked pair the first step gave one
         // x-extent (ADR-0012) holds two again and the published model would not be the grid's fixed
         // point — which is what `validateGroupLabelBands` demands. The grid is settled here, before
         // the labels are planned in these boxes, because it belongs to the replay and not to the
         // third step: it only grows box extents onto edges that already exist and moves no node, and
         // a label planned in the narrower box would be centred on the box the grid then widens.
-        alignLinkedGroupGrid(draft);
-        replanGroupLabels(draft);
+        alignLinkedGroupGrid(model);
+        replanGroupLabels(model);
       }
-      // A creep under half a pixel, left by the centring replay, counts as settled; the replay still follows any move.
-      const shift = closeCantonsAndSettle(draft);
-      closed = shift < CANTON_CREEP;
+      const shift = closeCantonsAndSettle(model);
       if (shift > 0) {
-        rebuildRegionGeometry(draft, undefined, undefined, true);
-        alignLinkedGroupGrid(draft);
-        replanGroupLabels(draft);
+        rebuildRegionGeometry(model, undefined, undefined, true);
+        alignLinkedGroupGrid(model);
+        replanGroupLabels(model);
       }
       // A frame edge a foreign drop would run along is moved off it before anything is planned in the geometry (ticket 75).
-      if (settleKeepOut(draft)) {
-        rebuildRegionGeometry(draft, undefined, undefined, true);
-        alignLinkedGroupGrid(draft);
-        replanGroupLabels(draft);
+      if (settleKeepOut(model)) {
+        rebuildRegionGeometry(model, undefined, undefined, true);
+        alignLinkedGroupGrid(model);
+        replanGroupLabels(model);
       }
+      return shift;
+    };
+    let closed = false;
+    for (let round = 0; round < CANTON_ROUNDS && !closed; round++) {
+      // A creep under half a pixel, left by the centring replay, counts as settled; the replay still follows any move.
+      closed = settle(draft) < CANTON_CREEP;
       // The growth and the close-up change the slope of a chord that spans a gap and the x of a column: a group with no links
       // steps out of a chord again, after the replays (ticket 76 review). Cheap and idempotent.
-      if (stepLinklessOutOfChords(draft)) {
+      const linkless = stepLinklessOutOfChords(draft);
+      // A chord between two tiers keeps the tiers between it free of nodes (ticket 77). A move is judged on the copy that `settle` has run.
+      const cleared = stepOverChords(draft, settle);
+      if (linkless || cleared) {
         rebuildRegionGeometry(draft, undefined, undefined, true);
         alignLinkedGroupGrid(draft);
         replanGroupLabels(draft);
-        // A step out of a chord is followed by a growth measured again and a close-up on the geometry that stands (ticket 77).
-        closed = false;
+        // The growth is measured again and the close-up runs on the geometry that stands.
+        closed = closed && !cleared;
       }
     }
     // The held-axis warnings say where a column stood when they were raised; the replays above move columns after that (a centring replay

@@ -767,9 +767,10 @@ function feedRange(model: LayoutModel, unit: Unit, feeds: (unit: Unit) => UnitFe
 
 /**
  * The groups `placeOverlayFree` (ticket 05) may move: no routed link out, and no other rule that owns the group's
- * place. The column pass reads the rest as partners that stay where they are.
+ * place. The column pass reads the rest as partners that stay where they are. `withRouted` keeps the groups that have a routed
+ * link out and drops nothing else: the step over a chord moves those under its own acceptance (ticket 77).
  */
-export function overlayFreeGroups(model: LayoutModel, anchor: number | undefined): Set<string> {
+export function overlayFreeGroups(model: LayoutModel, anchor: number | undefined, withRouted = false): Set<string> {
   const frames = model.document.frames;
   // A one-node client group that is a member of a canton is a frame of one cell, and keeps ticket 05's barycentre (ticket 56):
   // `placeOverlayFree` moves it as a frame and clamps it to its canton. A frame of other cells stays a frame the column rules own.
@@ -786,7 +787,7 @@ export function overlayFreeGroups(model: LayoutModel, anchor: number | undefined
   }
   const parents = new Set(Object.values(model.document.groups).flatMap(group => group.parent === undefined ? [] : [group.parent]));
   return new Set(Object.values(model.groups).filter(group => group.bounds !== undefined && group.nodes.length > 0
-    && !group.flank && (group.frame === undefined || member(group)) && group.tier !== anchor && !routedOut.has(group.id)
+    && !group.flank && (group.frame === undefined || member(group)) && group.tier !== anchor && (withRouted || !routedOut.has(group.id))
     && !parents.has(group.id) && model.document.groups[group.id]?.parent === undefined
     && model.document.groups[group.id]?.shape !== 'bar').map(group => group.id));
 }

@@ -695,18 +695,18 @@ as `LINKLESS_GROUP_MOVE_REFUSED`. The 7f rounds that replay the growth of the ti
 run the same step again (`stepLinklessOutOfChords`), because a growth changes the slope of a chord that spans two gaps.
 
 **A chord between two tiers keeps the tiers between free of nodes** (ranked-groups ticket 77, Q64). A straight overlay chord
-between nodes on two tiers reserves its path through the tiers between them. `centreDraft` ends with `stepOverChords`, and
-the 7f rounds run it again after `stepLinklessOutOfChords`. A free group (no routed link) that has an overlay link, on a tier
-strictly between the two ends of a chord, tries the x where a node body or pill of its own meets the end of such a chord's
-interval, nearest first. The chords are the ones straight once the group's own nodes are taken away. A candidate must keep the
-band gap to the groups, columns and lanes of the tier (inside its canton, less the group margin, for a member of one), stay
-inside the box of the whole layout (so the canvas does not widen), and pass `laneSidesHold`. It is kept only when the straight
-overlay count, read by the real overlay decision, rises: a move that bends a straight link and straightens two is taken, one
-that only bends is undone. A group with a routed link is not moved, because its links are the walls of its x. What is left
-is a chord blocked by two groups, or by a node of a group that a routed link holds, and a hub group between many chords,
-where only a move of one node inside its group could clear the chord (not done). A step that moved makes the 7f round run
-again, so the growth of the tier gaps is measured on the geometry that stands. `refreshHeldWarnings` withdraws only a
-warning that states a jog.
+between nodes on two tiers reserves its path through the tiers between them. `stepOverChords` (`chord-clear.ts`) runs once
+in each 7f round, after `stepLinklessOutOfChords`, and not in 7c: a move made there cannot be judged on the geometry that
+settles after it. A group (with an overlay link, not in the anchor tier, not in a frame of several cells) or a node of a row
+that stands on the chord of a longer link tries the x where one of its bodies or pills meets the end of the chord's blocked
+interval, nearest first. A group moves whole, keeps the band gap to the groups, columns and lanes of its tier (inside its
+canton for a member), stays inside the box of the whole layout, and, when it holds a routed link, keeps its place in the
+order of its tier. A node moves alone, inside the box its group has and in its row's order. A candidate stays only when the
+straight overlay count rises, `laneSidesHold` passes, every routed link that ran on one axis or held a chord still does, and
+a copy of the model run through one round of the growth and the close-up (`settle`) has no G6 or G5 finding that the same
+copy without the move lacks (`parallelClearance` and `portOrder`, the gates' own predicates). Left bent: a chord blocked by
+two groups, and a blocker in a frame of several cells. A step that moved runs the round again, so the growth of the tier gaps
+is measured on the geometry that stands. `refreshHeldWarnings` withdraws only a warning that states a jog.
 
 ### 7d — bars
 

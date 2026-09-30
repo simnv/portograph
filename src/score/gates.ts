@@ -1,4 +1,4 @@
-import type { Frame, LayoutModel, LayoutNode, PathSegment, Point, Rect } from '../model/index.js';
+import type { Frame, LayoutLink, LayoutModel, LayoutNode, PathSegment, Point, Rect } from '../model/index.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
 import { EPS, bottom, contains, horizontal, intersection, length, near, overlapSegment, rectDistance, rectOverlap, right, samePoint, segmentDistance, segmentRect, segmentRectDistance, vertical } from './geometry.js';
 
@@ -85,6 +85,88 @@ function frameGate(model: LayoutModel, fail: (id: GateId, code: string, elements
       if (held.has(node.id) || !node.bounds) continue;
       if (rectOverlap(frame.box, node.bounds)) fail('G9', 'frame-foreign-node', [frame.id, node.id], 'A node outside the frame lies inside it');
     }
+  }
+}
+
+/**
+ * G5 `port-order` / `author-port-order`: on each side, ports order by their far ends unless authored. The gate reads it, and so does
+ * placement, which asks whether a move of a group turns the far ends of a port over (ticket 77): one predicate.
+ */
+export function portOrder(model: LayoutModel, nodes: readonly LayoutNode[], routedLinks: ReadonlySet<LayoutLink>,
+  fail: (id: GateId, code: string, elements: string[], message: string) => void): void {
+  // Every port's far anchors, recorded in one pass over the routed links. The port-order gate below
+  // reads this index; scanning every link for every port made the gate quadratic in the diagram.
+  // A link is seen from both of its ends, exactly as the gate saw it, and a link whose far port is
+  // missing contributes nothing, as before.
+  const farAnchors = new Map<string, Point[]>();
+  for (const link of model.links) {
+    if (!routedLinks.has(link)) continue;
+    const ends = endpoints(link);
+    for (const [near, far] of [[ends.from, ends.to], [ends.to, ends.from]] as const) {
+      const target = port(model, far);
+      if (!target) continue;
+      const at = refKey(near), list = farAnchors.get(at);
+      if (list) list.push(target.anchor!); else farAnchors.set(at, [target.anchor!]);
+    }
+  }
+  for (const node of nodes) for (const side of ['top', 'right', 'bottom', 'left'] as const) {
+    const alongX = side === 'top' || side === 'bottom';
+    const positions = node.ports.filter(p => p.side === side && p.authorOrder === undefined).flatMap(p => {
+      const peers = farAnchors.get(refKey(p.ref));
+      if (!peers?.length) return [];
+      let min = Infinity, max = -Infinity;
+      for (const anchor of peers) {
+        const at = alongX ? anchor.x : anchor.y;
+        if (at < min) min = at;
+        if (at > max) max = at;
+      }
+      return [{ own: alongX ? p.anchor!.x : p.anchor!.y, min, max }];
+    });
+    for (let i = 0; i < positions.length; i++) for (let j = i + 1; j < positions.length; j++) {
+      const a = positions[i]!, b = positions[j]!;
+      if (a.own < b.own - EPS && a.min > b.max + EPS || b.own < a.own - EPS && b.min > a.max + EPS)
+        fail('G5', 'port-order', [node.id], 'Port order must match strictly separated far-end ranges unless authored');
+    }
+    const authored = node.ports.filter(p => p.side === side && p.authorOrder !== undefined)
+      .sort((a, b) => (side === 'top' || side === 'bottom' ? a.anchor!.x - b.anchor!.x : a.anchor!.y - b.anchor!.y));
+    if (authored.some((p, i) => i > 0 && p.authorOrder! < authored[i - 1]!.authorOrder!))
+      fail('G5', 'author-port-order', [node.id], 'Physical port order reverses unequal authored keys');
+  }
+}
+
+/**
+ * G6 `parallel-clearance` / `bundle-member-gap` over the routed segments: every pair that stands closer than its clearance and is
+ * not excused. The gate reads it, and so does placement, which asks it of a model it has not routed (ticket 77): one predicate.
+ */
+export function parallelClearance(model: LayoutModel, routed: Segment[], fail: (id: GateId, code: string, elements: string[], message: string) => void): void {
+  for (let i = 0; i < routed.length; i++) for (let j = i + 1; j < routed.length; j++) {
+    const a = routed[i]!, b = routed[j]!;
+    if (a.link.id === b.link.id && Math.abs(a.index - b.index) <= 1) continue;
+    // Axis-aligned pairs on the same axis, and any pair where a declared straight bundle member is
+    // involved (ADR-0017): a diagonal has no axis, so its clearance is measured by distance against
+    // every other segment it does not cross.
+    const diagonal = a.segment.straight === true || b.segment.straight === true;
+    if (!diagonal && !(horizontal(a.segment) && horizontal(b.segment) || vertical(a.segment) && vertical(b.segment))) continue;
+    if (diagonal) {
+      // Only a strict crossing — interior of both runs — excuses the pair; an endpoint or T contact
+      // still owes the clearance.
+      const point = intersection(a.segment, b.segment);
+      const strict = point !== undefined
+        && ![a.segment.from, a.segment.to, b.segment.from, b.segment.to].some(end => samePoint(end, point));
+      if (strict) continue;
+    }
+    // One link's own staircase tread is not a clearance pair. Stage 7a reserves a lane at a fixed x
+    // and states that routing completes the attachment jog, so a tread shorter than the clearance
+    // is expected geometry rather than a corridor two objects share.
+    if (staircaseTread(a, b)) continue;
+    const overlap = overlapSegment(a.segment, b.segment);
+    if (overlap && sharedStem(model, a, b, overlap) || junctionFan(model, a, b)) continue;
+    const bundle = bundlePair(model, a, b);
+    // Merged members intentionally share one rendered run. Other bundle runs retain memberGap.
+    if (overlap && mergedRun(model, a, b, overlap)) continue;
+    const min = bundle ? model.bundles.find(item => item.id === a.link.bundle)!.memberGap ?? 16 : 10;
+    const distance = segmentDistance(a.segment, b.segment) - (a.stroke + b.stroke) / 2;
+    if (distance < min - EPS) fail('G6', bundle ? 'bundle-member-gap' : 'parallel-clearance', [a.link.id, b.link.id], `Parallel clearance is below ${min} px`);
   }
 }
 
@@ -288,74 +370,9 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
     // its own and reserves geometry no stage measured.
     if (path!.filter(s => s.straight === true).length > 1) fail('G5', 'orthogonal-path', [link.id], 'A member may declare only one straight segment');
   }
-  // Every port's far anchors, recorded in one pass over the routed links. The port-order gate below
-  // reads this index; scanning every link for every port made the gate quadratic in the diagram.
-  // A link is seen from both of its ends, exactly as the gate saw it, and a link whose far port is
-  // missing contributes nothing, as before.
-  const farAnchors = new Map<string, Point[]>();
-  for (const link of model.links) {
-    if (!routedLinks.has(link)) continue;
-    const ends = endpoints(link);
-    for (const [near, far] of [[ends.from, ends.to], [ends.to, ends.from]] as const) {
-      const target = port(model, far);
-      if (!target) continue;
-      const at = refKey(near), list = farAnchors.get(at);
-      if (list) list.push(target.anchor!); else farAnchors.set(at, [target.anchor!]);
-    }
-  }
-  for (const node of nodes) for (const side of ['top', 'right', 'bottom', 'left'] as const) {
-    const alongX = side === 'top' || side === 'bottom';
-    const positions = node.ports.filter(p => p.side === side && p.authorOrder === undefined).flatMap(p => {
-      const peers = farAnchors.get(refKey(p.ref));
-      if (!peers?.length) return [];
-      let min = Infinity, max = -Infinity;
-      for (const anchor of peers) {
-        const at = alongX ? anchor.x : anchor.y;
-        if (at < min) min = at;
-        if (at > max) max = at;
-      }
-      return [{ own: alongX ? p.anchor!.x : p.anchor!.y, min, max }];
-    });
-    for (let i = 0; i < positions.length; i++) for (let j = i + 1; j < positions.length; j++) {
-      const a = positions[i]!, b = positions[j]!;
-      if (a.own < b.own - EPS && a.min > b.max + EPS || b.own < a.own - EPS && b.min > a.max + EPS)
-        fail('G5', 'port-order', [node.id], 'Port order must match strictly separated far-end ranges unless authored');
-    }
-    const authored = node.ports.filter(p => p.side === side && p.authorOrder !== undefined)
-      .sort((a, b) => (side === 'top' || side === 'bottom' ? a.anchor!.x - b.anchor!.x : a.anchor!.y - b.anchor!.y));
-    if (authored.some((p, i) => i > 0 && p.authorOrder! < authored[i - 1]!.authorOrder!))
-      fail('G5', 'author-port-order', [node.id], 'Physical port order reverses unequal authored keys');
-  }
+  portOrder(model, nodes, routedLinks, fail);
 
-  for (let i = 0; i < routed.length; i++) for (let j = i + 1; j < routed.length; j++) {
-    const a = routed[i]!, b = routed[j]!;
-    if (a.link.id === b.link.id && Math.abs(a.index - b.index) <= 1) continue;
-    // Axis-aligned pairs on the same axis, and any pair where a declared straight bundle member is
-    // involved (ADR-0017): a diagonal has no axis, so its clearance is measured by distance against
-    // every other segment it does not cross.
-    const diagonal = a.segment.straight === true || b.segment.straight === true;
-    if (!diagonal && !(horizontal(a.segment) && horizontal(b.segment) || vertical(a.segment) && vertical(b.segment))) continue;
-    if (diagonal) {
-      // Only a strict crossing — interior of both runs — excuses the pair; an endpoint or T contact
-      // still owes the clearance.
-      const point = intersection(a.segment, b.segment);
-      const strict = point !== undefined
-        && ![a.segment.from, a.segment.to, b.segment.from, b.segment.to].some(end => samePoint(end, point));
-      if (strict) continue;
-    }
-    // One link's own staircase tread is not a clearance pair. Stage 7a reserves a lane at a fixed x
-    // and states that routing completes the attachment jog, so a tread shorter than the clearance
-    // is expected geometry rather than a corridor two objects share.
-    if (staircaseTread(a, b)) continue;
-    const overlap = overlapSegment(a.segment, b.segment);
-    if (overlap && sharedStem(model, a, b, overlap) || junctionFan(model, a, b)) continue;
-    const bundle = bundlePair(model, a, b);
-    // Merged members intentionally share one rendered run. Other bundle runs retain memberGap.
-    if (overlap && mergedRun(model, a, b, overlap)) continue;
-    const min = bundle ? model.bundles.find(item => item.id === a.link.bundle)!.memberGap ?? 16 : 10;
-    const distance = segmentDistance(a.segment, b.segment) - (a.stroke + b.stroke) / 2;
-    if (distance < min - EPS) fail('G6', bundle ? 'bundle-member-gap' : 'parallel-clearance', [a.link.id, b.link.id], `Parallel clearance is below ${min} px`);
-  }
+  parallelClearance(model, routed, fail);
   return result;
 }
 

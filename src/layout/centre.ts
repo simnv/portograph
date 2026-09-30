@@ -3,7 +3,7 @@ import type { Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
 import { laneSidesHold, nodeTier, occupiedOverhang, selectAnchorTier } from './lanes.js';
 import { cellReach } from './frames.js';
-import { besideWalls, frameColumns, keepOutShifts, overlayFreeGroups, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
+import { besideWalls, frameColumns, keepOutShifts, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
 import { findPort } from './row-paths.js';
 import { portId, bandGap, SKELETON_SPACING } from './skeleton-graph.js';
 import { crosses, overlayBlockers, straightChord } from './overlay-paths.js';
@@ -14,7 +14,7 @@ import { rowGap } from './sides-two.js';
 import { linkLabelGap } from './bands.js';
 import { alignmentAllowance, ownSideWidth } from './size.js';
 import { withLayoutMutation } from './mutation.js';
-import { placeOverlayFree, stepOverChords } from './overlay-place.js';
+import { placeOverlayFree } from './overlay-place.js';
 import { fitRegionGroup, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 import { EPS } from '../score/geometry.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
@@ -525,16 +525,6 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
 }
 /** Reusable bounded producer. The caller shares one budget across all ordered placement replay. */
 export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
-  centreSteps(model, budget);
-  // Centring has settled: a free group that stands on a straight cross-tier overlay chord steps off it (ticket 77).
-  const anchor = model.anchorTier;
-  if (anchor !== undefined && model.links.some(link => link.layer === 'overlay')) {
-    const before = geometry(model);
-    stepOverChords(model, overlayFreeGroups(model, anchor), frameColumns(model));
-    if (geometry(model).some((value, i) => Math.abs(value - before[i]!) > 0.5)) rebuildRegions(model);
-  }
-}
-function centreSteps(model: LayoutModel, budget: CentreBudget): void {
   if (!Number.isSafeInteger(budget.remaining) || !Number.isSafeInteger(budget.passes) || budget.remaining < 0
     || budget.passes < 0 || budget.remaining + budget.passes > 8) throw new Error('Centering requires one shared eight-pass budget');
   const anchor = selectAnchorTier(model);
