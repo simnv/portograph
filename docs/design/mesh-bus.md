@@ -39,9 +39,9 @@ nodes of the same row. Candidates are grouped by row and by class. A link with a
 `route:` is not a candidate, as for a group-link; `route: overlay` on every member is the opt-out.
 
 **The bus.** For each row and class, take the graph of candidate links. Find its maximum clique
-(Bron-Kerbosch with pivoting; a row holds tens of nodes, and the 64-link degree cap bounds the
-work). A clique of three or more nodes is the bus. Ties between cliques of equal size go to the
-clique whose members come first in declaration order. The bus takes every candidate link among its
+(Bron-Kerbosch with pivoting; a row holds tens of nodes, and the scale envelope of degree 64 or
+less bounds the work). A clique of three or more nodes is the bus. Ties between cliques of equal
+size go to the clique whose sorted declaration indices come first, compared one by one. The bus takes every candidate link among its
 nodes.
 
 **Partial mesh.** A set that misses pairs is not one bus. The largest complete part becomes the
@@ -75,14 +75,19 @@ member links. An authored opt-in for a partial mesh is an open question (Section
 
 **Side.** The bus stands on the horizontal edge of the row opposite the row's title (ADR-0011):
 `bandSide` for a lone row group, the opposite of `frameSide` for a cell of a frame. Ties keep the
-title on top, so the bus goes to the bottom. `bandSide` counts routed ports only, so a bus port
+title on top, so the bus goes to the bottom. A frame with no title edge (`frameSide` gives none)
+also puts the bus at the bottom. `bandSide` counts routed ports only, so a bus port
 never moves a title. The bus side of a cell in the middle of a frame is a rank gap. That is
 accepted: the bar lies in the gap and the routed parts of that gap cross it as verticals.
 
-**Bus port side and order.** Stage 2 gives a bus port the bus side. Stage 5 never revisits it (a
-same-tier overlay port is otherwise left/right from the row order). The bus port is the last port
-in engine order on its side; an authored `order:` on a named bus port wins. Stage 3 counts it as
-one port on that side. Identity, count and side are fixed before the freeze (invariant 4).
+**Bus port side and order.** Stage 2 gives a bus port the bus side as the routed sides read then,
+and stage 3 counts it as one port on that side. Stage 5 can change a routed port's side (a shared
+port recomputes its majority), and so the title edge, so stage 5 reads the bus side again after
+the routed sides are settled and moves the bus port if the side changed, resizing the node as for a
+side that gained a port. Stage 5 never gives it left or right from the row order, as it does for
+another same-tier overlay port. The bus port is the last port in engine order on its side; an
+authored `order:` on a named bus port wins. Identity, count and side are fixed at the freeze at the
+end of stage 5 (invariant 4).
 
 **Geometry.** Let `L` be the line of the outermost body or pill extent of the row on the bus
 side, the line the frame padding is measured from. The bar runs at `L + BUS_STUB` (15 px, the
@@ -96,27 +101,30 @@ plus the room beyond it. With a label the room is `4 px + label height + 4 px`; 
 the run clearance `k` (11.5 px). The band is about 34 px with a label and 27 px without, against
 the 20 px of frame padding, so the frame grows on the bus edge by the difference, as a bottom
 label band grows a group (ADR-0011). The label stands beyond the bar, centred on the bar's
-midpoint, at heading 0 (ADR-0014). When a routed leg of the row's own ports crosses the centred
-label box, the label takes the longest clear interval of the bar between two consecutive stubs and
-legs; when no interval holds it, it goes to the tooltip and `labelsOmitted` counts it.
+midpoint, at heading 0 (ADR-0014). When a vertical that placement puts across the band (a routed
+leg of the row's own ports, a lane, a planned drop of another tier) crosses the centred label box,
+the label takes the longest clear interval of the bar between two consecutive stubs and verticals; when no interval holds it, it goes to the tooltip and `labelsOmitted` counts it.
 
-**Who reserves it.** Three places, in pipeline order:
+**Who reserves it.** Three steps, all in placement, in pipeline order:
 
-1. Stage 4 `reserveInitialSpace` gives the row at least the band's height of padding on the bus
-   side, as it does for the label band, so the skeleton leaves the room.
+1. Stage 7f `produceGroupLabelBands` calls `reserveInitialSpace`, which grows a group by the room
+   its label band still needs. It counts the bus band the same way on the bus side (`groupInsets`
+   gains it), so the group grows and the tiers below move before the tier-gap growth. The skeleton
+   (stage 4) reserves no band, for a title or for a bus.
 2. Stage 7f `produceBusBands` runs beside `produceGroupLabelBands`, before the tier-gap growth and
    again after it. It publishes the `BusBand` with its bounds and the bar and stub geometry read
    off the settled row. `rebuildFrames` adds it to the frame edge as it adds the label band.
 3. The tier-gap plan (ADR-0021) reads the bus band as an O5 band anchored to the row's band over
    the bar's span, plus `k`. No planned row lies inside it. A leg that leaves a bus-side port of a
-   member crosses the bar as one vertical; that is a bus. `growTierGaps` grows the gap by the
+   member crosses the bar as one vertical, and that crossing is accepted. `growTierGaps` grows the gap by the
    formula and probes nothing.
 
 Publication and restore re-run the band on a copy and reject a model it would still change, as
 they do for label bands.
 
 **Interaction with the other overlay rules.** A bus member link is not a chord. `straightOverlays`
-(the count the column and centring passes hold) leaves bus members out; they are neither straight
+(two functions of that name, in `columns.ts` and `centre.ts`: the count the column and centring
+passes hold) leaves bus members out; they are neither straight
 nor bent. `stepOverChords` (ticket 77) does not read them. `placeOverlayFree` already leaves out
 same-tier partners. The overlay order of ticket 78 reads the members of a bus as one contiguous
 block: every pair inside the block is satisfied by contiguity, and a foreign node under the bar
