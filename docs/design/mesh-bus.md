@@ -18,8 +18,9 @@ over hiding the non-adjacent pairs.
 ## 2. The rule in one paragraph
 
 When the overlay links of one class join every pair of a set of three or more nodes on one row,
-they draw as one **bus**: one straight **bar** along the row on the side away from the row's
-title, one short **stub** from each member node to the bar, and one label. The member links stay
+they draw as one **bus**: one straight **bar** along the row on the horizontal edge that fewer
+legs cross (the title edge on a tie), one short **stub** from each member node to the bar, and one
+label. The member links stay
 in the document and in layout.json. Only the drawing aggregates them. The bus is decided at stage 1
 from the document. Its space is reserved during placement. Nothing about it is found during
 routing.
@@ -73,18 +74,40 @@ member links. An authored opt-in for a partial mesh is an open question (Section
 
 ## 4. Placement
 
-**Side.** The bus stands on the horizontal edge of the row opposite the row's title (ADR-0011):
-`bandSide` for a lone row group, the opposite of `frameSide` for a cell of a frame. Ties keep the
-title on top, so the bus goes to the bottom. A frame with no title edge (`frameSide` gives none)
-also puts the bus at the bottom. `bandSide` counts routed ports only, so a bus port
-never moves a title. The bus side of a cell in the middle of a frame is a rank gap. That is
+**Side.** The bus stands on the horizontal edge of the row that fewer legs cross (maintainer,
+2026-09-30: *"whichever has fewer legs"*). The **leg count** of an edge is the number of verticals
+placement will put across the bus band on that edge, within the bar's span (from the first bus
+port to the last, in the row's order):
+
+- one for each routed, non-stub port on that side of a node of the row that stands in the span, a
+  member or not (the leg of that port);
+- one for each routed link that transits the row's cell inside its frame (a link between two cells
+  of the frame on both sides of this cell: its lane stands inside the frame, at one x, and crosses
+  the whole cell). It counts on each edge it crosses: both edges of a middle cell, the interior
+  edge of an end cell.
+
+A lane outside the frame, and a drop of another tier, never enter the span, so they add nothing.
+The title edge is a candidate: there the bar stands between the bodies and the title, and the
+title moves out by the bus band. **Tie rule:** the title edge wins, because nothing else runs
+there. A cell of a frame that has no title edge of its own (a middle cell) takes, on a tie, the
+edge on the frame's title side, so the buses of one frame stack the same way. A frame with no
+title edge (`frameSide` gives none) takes the bottom. `busSide` (`bands.ts`) reads the counts;
+the answer is one of `top` and `bottom`, never `left` or `right`. ADR-0011 is not changed: the
+title edge is still read from routed ports, and `bandSide` and `frameSide` count only routed
+ports, so a bus port never moves a title. On a row whose feeds all enter one edge the two rules
+agree, the bus takes the title edge, and the bar is crossed by nothing. They differ where the
+routed ports of the row's nodes outside the span decide the title, and the span itself is
+quieter on the other edge. The bus side of a cell in the middle of a frame is a rank gap. That is
 accepted: the bar lies in the gap and the routed parts of that gap cross it as verticals.
 
-**Bus port side and order.** Stage 2 gives a bus port the bus side as the routed sides read then,
-and stage 3 counts it as one port on that side. Stage 5 can change a routed port's side (a shared
-port recomputes its majority), and so the title edge, so stage 5 reads the bus side again after
-the routed sides are settled and moves the bus port if the side changed, resizing the node as for a
-side that gained a port. Stage 5 never gives it left or right from the row order, as it does for
+**Bus port side and order.** Stage 2 gives a bus port a provisional bus side for sizing: the
+leg counts read from the stage-2 sides, over every node of the row, because the row's order and
+so the span are not known before the skeleton. Stage 3 counts it as one port on that side. Stage
+5 reads the counts again after the routed sides are settled (a shared port recomputes its
+majority, which can change a side and the title edge), now within the span read off the skeleton
+order, and moves the bus port if the side changed, resizing the node as for a side that gained a
+port. That stage-5 read is the one that stands: the side is fixed at the freeze and 7f never
+moves the bus, whatever verticals its label read finds. Stage 5 never gives it left or right from the row order, as it does for
 another same-tier overlay port. The bus port is the last port in engine order on its side; an
 authored `order:` on a named bus port wins. Identity, count and side are fixed at the freeze at the
 end of stage 5 (invariant 4).
@@ -100,7 +123,9 @@ overlay stroke and dash.
 plus the room beyond it. With a label the room is `4 px + label height + 4 px`; without one it is
 the run clearance `k` (11.5 px). The band is about 34 px with a label and 27 px without, against
 the 20 px of frame padding, so the frame grows on the bus edge by the difference, as a bottom
-label band grows a group (ADR-0011). The label stands beyond the bar, centred on the bar's
+label band grows a group (ADR-0011). On the title edge the band lies between the bodies and the
+label band: the label band's `clearance` grows by the bus band, the title moves out by it, and the
+frame grows by the whole band. The label stands beyond the bar, centred on the bar's
 midpoint, at heading 0 (ADR-0014). When a vertical that placement puts across the band (a routed
 leg of the row's own ports, a lane, a planned drop of another tier) crosses the centred label box,
 the label takes the longest clear interval of the bar between two consecutive stubs and verticals; when no interval holds it, it goes to the tooltip and `labelsOmitted` counts it.
@@ -195,7 +220,8 @@ All three are `stage: 'model'`, with the member links as owners.
 ## 8. What does not change
 
 - The overlay rule (Q64) for every link that is not a bus member.
-- ADR-0011: the title edge is read from routed ports; a bus port is overlay.
+- ADR-0011: the title edge is read from routed ports; a bus port is overlay. The bus side is a
+  rule of its own (fewer legs, the title edge on a tie) and moves no title.
 - ADR-0021: the plan gains one O5 band and no new part kind.
 - Group-links (Q70): a bus is inside one group; a group-link joins two. A link is never both.
 - The bundle rules: a bus member is overlay and never a bundle member.
@@ -205,20 +231,25 @@ All three are `stage: 'model'`, with the member links as owners.
 - `goldens/synthetic/a-full-mesh-on-one-row-draws-as-one-bus.yaml`: one core node on tier 0
   with a routed link to the first and the last of five nodes in one group on tier 1, and ten
   `sync` links among the five. Expected: one bus of five nodes and ten members, one bar and five
-  stubs, the title at the bottom and the bus on top, the two routed legs crossing the bar, zero
-  bent overlay links, every gate passing.
+  stubs; the title is at the bottom (fed from above), the top edge has two legs and the bottom
+  none, so the bus is at the bottom too, between the bodies and the title, and the title moves
+  down by the band; no leg crosses the bar; zero bent overlay links; every gate passing.
+- `goldens/synthetic/a-bus-leaves-a-title-edge-with-more-legs.yaml`: a row of seven nodes, the
+  first five in a `sync` mesh, the core above feeding the first and the fifth, and the sixth and
+  seventh each feeding three nodes of a tier below. ADR-0011 counts top 2 against bottom 6 and
+  puts the title on top; the span holds two legs on top and none at the bottom, so the bus is at
+  the bottom, opposite the title. The reverse fixture is the first one above. A tie (one leg on
+  each edge inside the span) takes the title edge; an inline test covers it.
 - Corpus differential gains no gate finding and removes no link.
 - Private NTP sheet: same-row bent overlay count 56 to 0, two buses (12 and 3 nodes). Report
   bent overlays, Q, G6, crossings and canvas.
 
 ## 10. Open questions for the maintainer
 
-1. **The bus edge is the busy edge.** ADR-0011 puts the title on the edge with fewer routed
-   ports, so the edge opposite the title is where the routed feeds enter. On a row fed from above
-   the bar runs at 15 px above the bodies, and every feed leg crosses it. The alternative is the
-   title edge, between the bodies and the title: nothing else stands there, and the frame grows
-   by the same band. The design follows the decision; the alternative is one line in `busSide`.
-2. **An authored opt-in** for a partial mesh (a `mesh:` key on the group, or `route: mesh-bus` on
+The bus side was open (the busy edge against the title edge) and is answered: *"whichever has
+fewer legs"* (maintainer, 2026-09-30), Section 4.
+
+1. **An authored opt-in** for a partial mesh (a `mesh:` key on the group, or `route: mesh-bus` on
    the links) is not in the first version.
-3. **A bus across sibling cells of one canton** (one bar through two frames) is not in the first
+2. **A bus across sibling cells of one canton** (one bar through two frames) is not in the first
    version; the set splits per row.
