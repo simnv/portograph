@@ -775,8 +775,8 @@ read the time left, so on a slow machine the same input could publish another la
 - The chord-clear step of 7f lost its clock guard and its `CHORD_CLEAR_BUDGET` warning. It is already bounded by counts (`CHORD_TRIALS`,
   `SETTLED_TRIALS`, one move per mover, `CANTON_ROUNDS`). `bands` and `withLayoutMutation` take no budget any more, only `abortAt`.
 - Why these counts: on the private sheet the worst path (4.0 s first placement, two fan re-runs and one side trial of 2.7 s each, two 7f of
-  6.5 s at most (the baseline and the trial), two routes; the fans run no 7f) is about 23 s quiet and about 46 s at 2x, which leaves 14 s before 60 s. A fourth re-run adds 2.7 + 6.5 s quiet,
-  or 18.4 s at 2x: 64 s, over the deadline. So 3 is the largest count that fits at 2x.
+  6.5 s at most (the baseline and the trial), two routes; the fans run no 7f) is about 25.7 s quiet (the measured command is 23.1 s) and about 51 s at 2x, which leaves about 9 s before 60 s. A fourth re-run adds 2.7 + 6.5 s quiet,
+  or 18.4 s at 2x: about 69 s, over the deadline. So 3 is the largest count that fits at 2x.
 - **An ELK timeout is not a fallback trigger** (ticket 141; amends ADR-0006). `skeleton` rethrows `ElkDeadlineError`: at the partitioned
   attempt (no per-tier fallback), and unwrapped from the per-tier attempt. An ELK error that is no timeout keeps the deterministic per-tier
   fallback, and a re-run that fell back is dropped (`FAN_SPREAD_CUT`, `SIDE_ROUND_CUT`). The `deadlineHit` tests in the loops are gone.
@@ -953,3 +953,13 @@ sections above:
 11. The trial's `place` and `bands` take their own `abortAt`; the baseline 7f never throws for a
     side reason.
 12. `MAX_RERUNS` = 3 is set by the 2x fit of the sheet, not by a gate (Section 19.5, ticket 141).
+
+### 19.12 Notes from ticket 119: the routed L through a side lane
+
+1. **A lane hint is its own kind.** The hint map carries only `left` or `right`. A port hinted for the routed L also carries `laneHint` (with `sideHint`; recorded in the layout JSON and checked at restore). `sidesOne` sets it from a set of keys the round passes to the placement run. `chordKind` gives no chord to a link with a `laneHint` port, so 7a reserves the lane and the fixed point never claims the link. Without this flag, `sideLaneCandidate` refuses every hinted candidate that has a chord kind (ticket 117), and no lane can stand.
+2. **The probe.** `measureLaneSides` (`src/layout/side-lanes.ts`) is the third pass of `measureSides`, after the overlay and the chord pass. A link is a candidate when it is routed, has no hinted end, and plans two bends or more on the baseline. One end takes the facing side. The probe is 7a's own corridor test at the far port's x (`probeSideLane`, `alignedOnly`); an exterior corridor is never offered, because it would give three bends. The lower end is the first choice, then document order. Each accepted lane is added to the lanes the next probe reads.
+3. **The judge.** Before 7f, the round refuses a trial in which a lane hint has no source-aligned side lane at 7e (`a port hinted for a side lane has no source-aligned lane at stage 7e`). Then `judgeTrial` decides. A batch that holds a lane hint is kept only when (a) each lane link has fewer turns than on the baseline, (b) the total turns of the sheet do not rise, and (c) no link without a hint has more turns; the general gain rule of Section 19.4 also applies. A turn is a change of direction (`pathBends`), so the collinear pieces of a lane path count nothing. `plannedBends` reads a side lane: 1 when source-aligned, 3 when not.
+4. **A chord wins, per sheet.** When the chord pass offers any chord hint, the lane pass does not run in that offer: a side lane is a wall in the corridor at 7a and can cost a chord its hold at 7e. The rule is per sheet, not per link. Limit: only one trial reaches 7f per command (`MAX_SIDE_VERIFY`, Section 19.2, rule 5). So on a sheet whose chord trial reaches 7f, no lane is offered at all. A lane is offered only in an offer that holds no chord hint (a round after a refused chord trial, or a sheet with no chord offer).
+5. **The label.** The room is reserved on the vertical run (ticket 118). Stage 9 puts the label on the longest single segment. The vertical run is three collinear pieces (stem, gap part, lane), so a side run that is longer than the longest piece takes the label. Ticket 142 owns this.
+6. **A lost authored lane (review L2).** The trial's 7a reserves the hinted lane first, and then the other lanes. It can take the corridor of an authored lateral port's lane, and that link then loses its lane. The neighbour rule (c) of note 3 catches it, because the link gets more turns. The cost is a wasted re-run, not a wrong sheet.
+7. **The label.** Ticket 142 owns the collinear pieces and the label of a lane link (the acceptance line of ticket 119 points to it).

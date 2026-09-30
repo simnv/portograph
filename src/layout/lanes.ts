@@ -1064,6 +1064,54 @@ function sideLaneRefusal(model: LayoutModel, link: LayoutLink, port: PortRef, x:
   for (const lane of pending) if (lane.tier === group.tier && Math.abs(lane.x - x) < (lane.bounds.width + width) / 2 - 1e-6) return 'lane';
   return undefined;
 }
+function pickSideLane(model: LayoutModel, link: LayoutLink, port: PortRef, pending: readonly Lane[], occ: (group: LayoutGroup, link?: LayoutLink) => Rect, alignedOnly = false): { x: number } | { why: string } {
+  if (!outermostOfRow(model, port)) return { why: 'body' };
+  const lateral = findPort(model, port)!, dir = lateral.side === 'right' ? 1 : -1;
+  const group = model.groups[model.document.nodes[port.node]!.group]!, half = laneWidth(model, link) / 2;
+  const far = portId(link.attachments!.from) === portId(port) ? link.attachments!.to : link.attachments!.from;
+  const farX = findPort(model, far)!.anchor!.x;
+  // The corridors that stand beyond the node's group and frames on the port's side: the edges of every box and lane of the sub-tier.
+  const edges = new Set<number>();
+  const add = (edge: number): void => { edges.add(edge + dir * half); };
+  // The far edge of each box (the lane stands beyond it) and its near edge (the lane stands in the gap before it).
+  const addBox = (box: Rect): void => { add(dir > 0 ? right(box) : box.x); edges.add((dir > 0 ? box.x : right(box)) - dir * half); };
+  for (const other of Object.values(model.groups)) if (other.tier === group.tier && other.bounds !== undefined) addBox(occ(other, link));
+  for (const frame of model.frames ?? []) addBox(frame.box);
+  for (const lane of pending) if (lane.tier === group.tier) addBox(lane.bounds);
+  const own = occ(group, link);
+  const inner = dir > 0 ? right(own) : own.x;
+  const exterior = [...edges].filter(x => dir * (x - (inner + dir * half)) >= -1e-6).sort((a, b) => Math.abs(a - farX) - Math.abs(b - farX) || dir * (a - b));
+  const aligned = dir * (farX - inner) >= half - 1e-6;
+  const tries = alignedOnly ? (aligned ? [farX] : []) : aligned ? [farX, ...exterior.filter(x => Math.abs(x - farX) > 1e-6)] : exterior;
+  let first: string | undefined;
+  for (const x of tries) {
+    const why = sideLaneRefusal(model, link, port, x, pending, occ);
+    if (why === undefined) return { x };
+    // The reason that blocks is the first that names something in the way; `corridor` only says a window did not fit.
+    if (first === undefined || first === 'corridor') first = why;
+  }
+  return { why: first ?? 'corridor' };
+}
+/** The side lane of `link` into its lateral `port` at `x`, extent read from the port's anchor now. */
+function buildSideLane(model: LayoutModel, link: LayoutLink, port: PortRef, x: number): Lane {
+  const lateral = findPort(model, port)!, group = model.groups[model.document.nodes[port.node]!.group]!, half = laneWidth(model, link) / 2;
+  const far = portId(link.attachments!.from) === portId(port) ? link.attachments!.to : link.attachments!.from;
+  const farX = findPort(model, far)!.anchor!.x;
+  const lane: Lane = { id: sideLaneId(link), owner: { kind: 'link', id: link.id }, layer: 'routed', group: group.id, tier: group.tier!,
+    side: lateral.side as 'left' | 'right', kind: 'side', port: { ...port }, ...(Math.abs(x - farX) <= 1e-6 ? { aligned: true as const } : {}), x, bounds: { x: x - half, width: 2 * half, y: 0, height: 0 } };
+  Object.assign(lane.bounds, sideLaneExtent(model, lane, link));
+  return lane;
+}
+/**
+ * The source-aligned side lane of `link` into its lateral `port` on `model`, or undefined when its corridor is not clear (ticket 119, the side
+ * round's probe). It runs the allocation's own test at the far port's x only, with `extra` (the lanes the round accepted earlier) added to the
+ * model's lanes. The lane it returns is not added to the model.
+ */
+export function probeSideLane(model: LayoutModel, link: LayoutLink, port: PortRef, extra: readonly Lane[] = []): Lane | undefined {
+  const pending = [...model.lanes, ...extra];
+  const picked = pickSideLane(model, link, port, pending, (group, item) => occupied(model, group, item, pending), true);
+  return 'x' in picked ? buildSideLane(model, link, port, picked.x) : undefined;
+}
 /**
  * Stage 7a, after the transit lanes: a side lane for each routed lateral port (hinted or authored) whose peer is on another sub-tier
  * (spec Section 10, decision 4). The source-aligned corridor is tried first (the far port's x), then the nearest clear exterior corridor.
@@ -1073,39 +1121,13 @@ function reserveSideLanes(model: LayoutModel, pending: Lane[], occ: (group: Layo
   for (const link of model.links) {
     const port = sideLaneCandidate(model, link);
     if (port === undefined) continue;
-    const refuse = (why: string): void => {
+    const picked = pickSideLane(model, link, port, pending, occ);
+    if (!('x' in picked)) {
       model.diagnostics.push({ stage: 'placement', severity: 'info', code: 'SIDE_LANE_REFUSED', owners: [{ kind: 'link', id: link.id }],
-        message: `${link.id} has a lateral port and no side lane (${why}); the link stays residual.` });
-    };
-    if (!outermostOfRow(model, port)) { refuse('body'); continue; }
-    const lateral = findPort(model, port)!, dir = lateral.side === 'right' ? 1 : -1;
-    const group = model.groups[model.document.nodes[port.node]!.group]!, half = laneWidth(model, link) / 2;
-    const far = ((): PortRef => portId(link.attachments!.from) === portId(port) ? link.attachments!.to : link.attachments!.from)();
-    const farX = findPort(model, far)!.anchor!.x;
-    // The corridors that stand beyond the node's group and frames on the port's side: the edges of every box and lane of the sub-tier.
-    const edges = new Set<number>();
-    const add = (edge: number): void => { edges.add(edge + dir * half); };
-    // The far edge of each box (the lane stands beyond it) and its near edge (the lane stands in the gap before it).
-    const addBox = (box: Rect): void => { add(dir > 0 ? right(box) : box.x); edges.add((dir > 0 ? box.x : right(box)) - dir * half); };
-    for (const other of Object.values(model.groups)) if (other.tier === group.tier && other.bounds !== undefined) addBox(occ(other, link));
-    for (const frame of model.frames ?? []) addBox(frame.box);
-    for (const lane of pending) if (lane.tier === group.tier) addBox(lane.bounds);
-    const own = occ(group, link);
-    const inner = dir > 0 ? right(own) : own.x;
-    const exterior = [...edges].filter(x => dir * (x - (inner + dir * half)) >= -1e-6).sort((a, b) => Math.abs(a - farX) - Math.abs(b - farX) || dir * (a - b));
-    const tries = dir * (farX - inner) >= half - 1e-6 ? [farX, ...exterior.filter(x => Math.abs(x - farX) > 1e-6)] : exterior;
-    let chosen: number | undefined, first: string | undefined;
-    for (const x of tries) {
-      const why = sideLaneRefusal(model, link, port, x, pending, occ);
-      if (why === undefined) { chosen = x; break; }
-      // The reason that blocks is the first that names something in the way; `corridor` only says a window did not fit.
-      if (first === undefined || first === 'corridor') first = why;
+        message: `${link.id} has a lateral port and no side lane (${picked.why}); the link stays residual.` });
+      continue;
     }
-    if (chosen === undefined) { refuse(first ?? 'corridor'); continue; }
-    const lane: Lane = { id: sideLaneId(link), owner: { kind: 'link', id: link.id }, layer: 'routed', group: group.id, tier: group.tier!,
-      side: lateral.side as 'left' | 'right', kind: 'side', port: { ...port }, ...(Math.abs(chosen - farX) <= 1e-6 ? { aligned: true as const } : {}), x: chosen, bounds: { x: chosen - half, width: 2 * half, y: 0, height: 0 } };
-    Object.assign(lane.bounds, sideLaneExtent(model, lane, link));
-    pending.push(lane);
+    pending.push(buildSideLane(model, link, port, picked.x));
   }
 }
 /** A riser lane: owned by the upper bus of a join, at the one immutable riser x, in a crossed sub-tier, clear of every body and lane. */

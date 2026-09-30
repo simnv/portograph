@@ -26,6 +26,6 @@ above that the tool warns and offers `collapsed:` groups; above 1,000 it refuses
 
 ## Consequences
 - Two code paths for tiering, both tested at 100 / 300 / 1,000 synthetic nodes, with fallback
-  exercised by injected failure and by deadline — never by relying on a particular ELK crash.
+  exercised by injected failure — never by relying on a particular ELK crash.
 - Work is bounded at parse: links ≤ 10 × N, ports ≤ 20 per node, degree ≤ 64 (warning beyond).
 - No automatic diagram splitting in v1.

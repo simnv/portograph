@@ -61,6 +61,8 @@ export interface LayoutPort extends OwnedElement {
   sizingSide?: Side;
   /** Set only on a port a side hint moved (docs/design/side-faces.md, Section 3): `side` is the hinted lateral side. */
   sideHint?: true;
+  /** With `sideHint`: the hint is for the routed L through a side lane (ticket 119), so the link never takes a chord and 7a reserves the lane. */
+  laneHint?: true;
   /** With `sideHint`: the side stages 2 and 5 give this port without the hint. Bus edges and title edges read it. */
   naturalSide?: Side;
   /** Stage 5 orders unused ports after linked ports unless authorOrder takes precedence. */
@@ -432,6 +434,7 @@ export interface FrozenPort {
   side: Side;
   authorOrder?: number;
   sideHint?: true;
+  laneHint?: true;
   naturalSide?: Side;
 }
 export interface PlacementSnapshot {

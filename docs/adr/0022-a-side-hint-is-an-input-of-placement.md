@@ -50,3 +50,7 @@ That list is the whole of placement.
 - A restored layout whose peer moved to the other side of a hinted node after the round is refused.
   The round keeps a trial only when the planned bends hold, so a published layout passes.
 - Cost: one more placement run for each accepted round. The budget rules are in the spec, Section 7.
+
+## Note (2026-09-30, ticket 119): the lane hint
+
+A hint may carry one more bit: `laneHint`, for the routed L through a side lane. The round passes the keys of such hints to the placement run next to the hint map; `sidesOne` records `laneHint: true` on the port (with `sideHint`), `freeze.topology` stores it, and restore checks that it comes only with `sideHint`. `chordKind` gives no chord to a link with a `laneHint` port, so 7a reserves the lane and the fixed point never claims the link. The hint is still an input of placement and is never written in the YAML.

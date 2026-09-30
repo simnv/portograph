@@ -1,0 +1,46 @@
+# Expected: a chord hint and a lane hint in one offer (ticket 119). The far location router (ticket 117) wants a lateral chord to the provider, and the outlet (ticket 118 shape)
+# wants a side lane. The side round never offers the lane in the batch that holds a chord hint: a side lane would stand as a wall in the chord's corridor at 7a, and the chord
+# would be lost at 7e. The chord wins; the lane waits for a later batch.
+# Test-only input owned by ticket 119; test/pipeline/side-round-lane.test.ts reads the offer.
+portograph: 2
+profile: network
+groups:
+  west: { tier: 1, label: West }
+  east: { tier: 1, label: East }
+  providers: { tier: 2, label: Provider }
+  front: { tier: 0, label: Front }
+  bank: { tier: 1, label: Bank }
+nodes:
+  west-core: { group: west, class: router, label: West core router, size: { width: 700, height: 50 } }
+  west-router: { group: west, class: router, label: West router, size: { width: 200, height: 50 } }
+  east-core: { group: east, class: router, label: East core router, size: { width: 700, height: 50 } }
+  east-router: { group: east, class: router, label: East router, size: { width: 200, height: 50 } }
+  provider: { group: providers, class: provider, label: Provider }
+  fe: { group: front, class: router, label: FE }
+  fe2: { group: front, class: router, label: FE2 }
+  fe3: { group: front, class: router, label: FE3 }
+  fe4: { group: front, class: router, label: FE4 }
+  fe5: { group: front, class: router, label: FE5 }
+  fe6: { group: front, class: router, label: FE6 }
+  fe7: { group: front, class: router, label: FE7 }
+  fe8: { group: front, class: router, label: FE8 }
+  fe9: { group: front, class: router, label: FE9 }
+  fe10: { group: front, class: router, label: FE10 }
+  fe11: { group: front, class: router, label: FE11 }
+  fe12: { group: front, class: router, label: FE12 }
+  lb: { group: front, class: router, label: LB }
+  spare: { group: bank, class: server, label: Spare }
+  outlet: { group: bank, class: server, label: Outlet }
+  tail: { group: bank, class: server, label: Tail }
+links:
+  - [west-core, west-router]
+  - [east-core, east-router]
+  - [west-router, provider, { class: dashed }]
+  - [east-router, provider, { class: dashed }]
+  - [fe, spare]
+  - [fe2, spare]
+  - [fe3, spare]
+  - [fe4, spare]
+  - [spare, tail]
+  - [outlet, tail]
+  - [lb, outlet, { label: Health checks of the load balancer reach the outlet through the side of the bank }]

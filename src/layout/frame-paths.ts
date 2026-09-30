@@ -71,6 +71,8 @@ export function chordKind(model: LayoutModel, link: LayoutLink): ChordKind | und
   if (route !== undefined && route !== 'straight') return undefined;
   const { from, to } = link.attachments;
   if (from.node === to.node) return undefined;
+  // A port hinted for the routed L (ticket 119) owns a side lane, not a chord.
+  if ([from, to].some(end => findPort(model, end)?.laneHint === true)) return undefined;
   const a = model.document.nodes[from.node]?.group, b = model.document.nodes[to.node]?.group;
   if (a === undefined || b === undefined) return undefined;
   // A flank and a bar own their links' paths (flank and bar rules), and a bar is not a frame member.

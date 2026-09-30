@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ElkNode } from 'elkjs/lib/elk-api.js';
 import { parse } from '../../src/parse/index.js';
 import { resolve } from '../../src/resolve/index.js';
@@ -9,6 +9,7 @@ import { sizeNodes } from '../../src/layout/size.js';
 import { skeleton, buildSkeletonGraph, validateSkeletonBands } from '../../src/layout/skeleton.js';
 import { createWorkerElkAttempt, ElkDeadlineError, type ElkWorker } from '../../src/layout/elk-worker.js';
 const require = createRequire(import.meta.url);
+afterEach(() => { vi.useRealTimers(); });
 const Worker = require('web-worker') as new (url: string) => ElkWorker;
 const createAttempt = () => createWorkerElkAttempt(new Worker(require.resolve('elkjs/lib/elk-worker.min.js')));
 const sized = (yaml: string) => sizeNodes(sidesOne(resolve(parse(yaml))));
