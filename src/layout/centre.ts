@@ -1,7 +1,7 @@
 import type { LayoutGroup, LayoutModel, LayoutNode, LayoutPort } from '../model/layout.js';
 import type { Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
-import { laneSidesHold, optionalMoveHolds, nodeTier, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
+import { isSideLane, laneSidesHold, optionalMoveHolds, sideLaneSource, nodeTier, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
 import { cellReach } from './frames.js';
 import { besideWalls, frameColumns, keepOutShifts, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
 import { findPort } from './row-paths.js';
@@ -50,6 +50,16 @@ function feeds(model: LayoutModel, tier: number, authority: number): Feed[] {
       if (parentTier !== authority && (!lane || link.bundle)) continue;
       result.push({ parent, child, link: link.id, x: lane ? lane.x : parent.anchor!.x,
         key: portId(parent.ref), transit: Boolean(lane) });
+    }
+    // A side lane is one feed of its link: the far port is the child and sits under the lane's x (side-faces.md, Section 10, *The far port*).
+    const side = model.lanes.find(lane => isSideLane(lane) && lane.owner.kind === 'link' && lane.owner.id === link.id);
+    if (side) {
+      const farRef = sideLaneSource(link, side), lateralRef = side.port!;
+      const [farTier, lateralTier] = [nodeTier(model, farRef.node), nodeTier(model, lateralRef.node)];
+      if (farTier === tier && !(tier > authority ? lateralTier > authority : lateralTier < authority)
+        && ![farRef.node, lateralRef.node].some(id => model.groups[model.document.nodes[id]!.group]!.flank)) {
+        result.push({ parent: findPort(model, lateralRef)!, child: findPort(model, farRef)!, link: link.id, x: side.x, key: portId(lateralRef), transit: true });
+      }
     }
   }
   return result;

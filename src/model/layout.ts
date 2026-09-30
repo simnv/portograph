@@ -203,6 +203,8 @@ export interface Lane extends OwnedElement {
   kind?: 'transit' | 'side';
   /** A side lane only: the lateral port the lane serves. `tier` is that end's sub-tier, `side` the port's side, `group` its group. */
   port?: PortRef;
+  /** A side lane only: the lane was seated on the far port's x in 7a, so its part is a drop. `SIDE_SHAPE_LOST` reads it. */
+  aligned?: true;
   group: string;
   tier: number;
   side: 'left' | 'right';

@@ -9,7 +9,7 @@ import { frameSubtreeCells, orderedGroupIds } from '../model/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { createCentreBudget, type CentreBudget } from './centre.js';
-import { isSideLane, optionalMoveHolds, riserKeepOutBreaches } from './lanes.js';
+import { isSideLane, optionalMoveHolds, riserKeepOutBreaches, sideLaneFindings } from './lanes.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { findPort, straightCorridorClear } from './row-paths.js';
@@ -1362,6 +1362,9 @@ export function produceGroupLabelBands(model: LayoutModel): void {
   // A routed port of a member row that 7f left within the riser keep-out is reported once, on the final geometry of the producer; the entries an earlier
   // call left are stale (mesh-bus.md, section 11.5). A title push is a move that must be made, so here the breach is a warning and not an error.
   model.diagnostics = model.diagnostics.filter(item => item.code !== 'MESH_BUS_RISER_KEEP_OUT');
+  // The side lanes' findings are read once, on the final geometry of the producer (side-faces.md, Sections 10 and 11).
+  model.diagnostics = model.diagnostics.filter(item => item.code !== 'SIDE_SHAPE_LOST' && item.code !== 'SIDE_LANE_FRAME_CROSSED');
+  model.diagnostics.push(...sideLaneFindings(model));
   for (const breach of riserKeepOutBreaches(model)) {
     model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'MESH_BUS_RISER_KEEP_OUT', owners: [{ kind: 'node', id: breach.node }],
       message: `${breach.node} has a routed port on the facing edge within the riser keep-out of x ${Math.round(breach.riser * 100) / 100}; a leg there stands closer than the run clearance to the riser.` });
