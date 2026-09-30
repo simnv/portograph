@@ -218,7 +218,7 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     'a-one-rank-member-beside-a-two-rank-member',
     // Ticket 67: the finished layout is a fixed point of the column pull (a packed run with a pin; the lone column stays open, see the ticket).
     'a-canton-group-swap-is-refused-for-routed-crossings',
-    'three-canton-groups-close-up-to-a-band-gap',
+    // 'three-canton-groups-close-up-to-a-band-gap' is out since ticket 80: a member frame slides past its beside-row place to straighten a chord.
     // Tickets 69 and 70: the pull reads a transit from beyond the authority tier, and a declined member stands at the in-wall x nearest its feed, where the pull puts it.
     'a-transit-from-beyond-the-authority-tier-into-a-member',
   ])('%s: a second layout is the same model and the column rules move nothing on it', async name => {

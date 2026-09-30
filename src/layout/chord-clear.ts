@@ -23,6 +23,11 @@ import { PLACEMENT_EPS } from './tolerance.js';
 /** How many candidate x a group or a node tries, nearest first, before it stays (ticket 77). */
 const CHORD_TRIALS = 24;
 
+/** The most a slide may grow a canton (and the canvas) beyond its wall, and the share of the canvas width all slides together may add (ticket 80). */
+const SLIDE_GROWTH = 40, CANVAS_GROWTH_SHARE = 0.05;
+/** The growth the slides of a model have spent, against the canvas width when the first slide was asked. */
+const spent = new WeakMap<LayoutModel, { base: number; grown: number }>();
+
 /** What a move must not lose or add, read off the geometry as it stands. */
 interface Reading {
   /** The overlay links drawn as one segment. */
@@ -211,6 +216,20 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
     .filter((x, index, list) => ok(x) && Math.abs(x - at) > PLACEMENT_EPS && list.findIndex(other => Math.abs(other - x) <= PLACEMENT_EPS) === index)
     .sort((a, b) => Math.abs(a - at) - Math.abs(b - at) || a - b);
 
+  /**
+   * The growth a cell's frame edge may take when its bodies move (ticket 80): the frame stands off the outermost body, so the frame, the
+   * canton derived from it and the canvas widen by what the edge moves out. Capped for one move and for all of them together.
+   */
+  const edge = (): { base: number; grown: number } => {
+    const found = spent.get(model) ?? { base: model.canvas?.width ?? 0, grown: 0 };
+    spent.set(model, found);
+    return found;
+  };
+  const outward = (before: Rect, now: Rect): number => Math.max(0, before.x - now.x) + Math.max(0, now.x + now.width - (before.x + before.width));
+  const mayGrow = (before: Rect, now: Rect): boolean => {
+    const budget = edge(), by = outward(before, now);
+    return by <= Math.min(SLIDE_GROWTH, CANVAS_GROWTH_SHARE * budget.base - budget.grown) + PLACEMENT_EPS;
+  };
   // A frame of several cells slides whole inside its column slack (ticket 80): every cell takes the same dx, so the frame box, the
   // cell boxes and the rows stay as they are, and the column pass has nothing of its own to redo. The frame keeps its place among
   // the groups of its sub-tiers (the run between its neighbours' walls), inside the slack its column states, inside the box of the
@@ -239,8 +258,12 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
     const wall = member ? column.wall : undefined;
     if (member && wall === undefined) continue;
     const roomLow = wall === undefined ? column.x : wall.x + GROUP_PADDING, roomHigh = wall === undefined ? column.x + column.width : wall.x + wall.width - GROUP_PADDING;
-    let low = Math.max(roomLow - box.x, world.low - Math.min(...reaches.map(({ cell, reach }) => cell.bounds!.x - reach.left)));
-    let high = Math.min(roomHigh - box.x - box.width, world.high - Math.max(...reaches.map(({ cell, reach }) => cell.bounds!.x + cell.bounds!.width + reach.right)));
+    // A slide of a canton member may pass the wall: the canton is derived from its members and grows with it, and the close-up packs its
+    // neighbours again. The growth is capped for one slide and for all of them together.
+    const budget = edge();
+    const grow = member ? Math.max(0, Math.min(SLIDE_GROWTH, CANVAS_GROWTH_SHARE * budget.base - budget.grown)) : 0;
+    let low = Math.max(roomLow - grow - box.x, world.low - grow - Math.min(...reaches.map(({ cell, reach }) => cell.bounds!.x - reach.left)));
+    let high = Math.min(roomHigh + grow - box.x - box.width, world.high + grow - Math.max(...reaches.map(({ cell, reach }) => cell.bounds!.x + cell.bounds!.width + reach.right)));
     const walls: { low: number; high: number }[] = [];
     for (const item of all) {
       if (item.frame !== undefined || item.tier! < span.from || item.tier! > span.to) continue;
@@ -266,14 +289,18 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
     if (!candidates.length) continue;
     const undo = saveGroups(model, cells);
     let refusal: { group: LayoutGroup; bounds: Rect }[] | undefined;
+    const at = cells[0]!.bounds!.x;
     const placed = attempt(key, candidates, 0, dx => { for (const cell of cells) moveGroup(model, cell, dx, 0); }, undo, nodes, dx => {
       const proposed = cells.map(group => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } }));
       if (laneSidesHold(model, proposed, false)) return true;
       if (refusal === undefined && !chordsHold(model, proposed, false)) refusal = proposed;
       return false;
     });
-    if (placed) moved = true;
-    else if (refusal !== undefined) chordsHold(model, refusal, true);
+    if (placed) {
+      moved = true;
+      const dx = cells[0]!.bounds!.x - at;
+      budget.grown += Math.max(0, roomLow - (box.x + dx), box.x + dx + box.width - roomHigh);
+    } else if (refusal !== undefined) chordsHold(model, refusal, true);
   }
 
   /** A cell of a frame that the whole-group step leaves to the column pass: its nodes move alone, inside the cell's slack (ticket 80). */
@@ -379,11 +406,12 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
               for (const port of node.ports) if (port.anchor) port.anchor.x += dx;
             }
           };
-          const framed = (): boolean => {
-            const now = cellReach(model, group.id);
-            return Math.abs(now.x - before.x) <= PLACEMENT_EPS && Math.abs(now.width - before.width) <= PLACEMENT_EPS;
-          };
-          if (candidates.length && attempt(`row:${group.id}`, candidates, 0, slide, undo, ids, () => true, framed)) { moved = true; continue; }
+          const framed = (): boolean => mayGrow(before, cellReach(model, group.id));
+          if (candidates.length && attempt(`row:${group.id}`, candidates, 0, slide, undo, ids, () => true, framed)) {
+            moved = true;
+            edge().grown += outward(before, cellReach(model, group.id));
+            continue;
+          }
         }
       }
       for (const [index, id] of order.entries()) {
@@ -404,12 +432,11 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
         // A frozen chord is a wall for a node as for a group: `attempt` refuses a candidate that puts a body on one.
         // A node of a cell moves only where the frame stays as it is: the frame edge stands off the outermost body (`cellReach`).
         const reach = cellOfFrame(group) ? cellReach(model, group.id) : undefined;
-        const framed = (): boolean => {
-          if (reach === undefined) return true;
-          const now = cellReach(model, group.id);
-          return Math.abs(now.x - reach.x) <= PLACEMENT_EPS && Math.abs(now.width - reach.width) <= PLACEMENT_EPS;
-        };
-        if (attempt(`node:${id}`, candidates, body.x, shift, undo, [id], () => true, framed)) moved = true;
+        const framed = (): boolean => reach === undefined || mayGrow(reach, cellReach(model, group.id));
+        if (attempt(`node:${id}`, candidates, body.x, shift, undo, [id], () => true, framed)) {
+          moved = true;
+          if (reach !== undefined) edge().grown += outward(reach, cellReach(model, group.id));
+        }
       }
     }
   }
