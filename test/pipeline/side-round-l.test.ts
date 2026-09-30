@@ -4,6 +4,7 @@ import type { Budget, LayoutModel } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
 import { reserveLinkLabelRoom } from '../../src/layout/bands.js';
 import { overlayPath } from '../../src/layout/overlay-paths.js';
+import { optionalMoveHolds } from '../../src/layout/lanes.js';
 import { measureSides } from '../../src/layout/side-measure.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -126,5 +127,28 @@ describe('the label room of an overlay L', () => {
     for (const node of Object.values(model.nodes)) for (const port of node.ports) delete port.sideHint;
     expect(reserveLinkLabelRoom(model)).toBe(false);
     expect(codes(model)).toContain('LINK_LABEL_ROOM_UNRESERVED');
+  }, 60000);
+});
+
+describe('stage 7f holds a promised overlay L (ticket 134)', () => {
+  const cacheGroup = (model: LayoutModel): string => model.document.nodes['cache']!.group === undefined ? '' : Object.values(model.groups).find(group => group.nodes.includes('cache'))!.id;
+  const propose = (model: LayoutModel, id: string, dx: number) => ({ group: model.groups[id]!, bounds: { ...model.groups[id]!.bounds!, x: model.groups[id]!.bounds!.x + dx } });
+
+  it('refuses an optional move that puts a body of the middle rank on the vertical run', async () => {
+    const model = copy(await run());
+    const link = overlay(model);
+    expect(link.path!.segments).toHaveLength(2);
+    // The front group stands right of the vertical run; pulling it left by 250 px puts the cache on the run.
+    expect(optionalMoveHolds(copy(model), [propose(model, cacheGroup(model), -250)], false)).toBe(false);
+    const reported = copy(model);
+    expect(optionalMoveHolds(reported, [propose(reported, cacheGroup(reported), -250)])).toBe(false);
+    expect(reported.diagnostics.find(item => item.code === 'SIDE_L_HELD')!.owners).toEqual([{ kind: 'link', id: link.id }]);
+  }, 60000);
+
+  it('allows a move that leaves both runs clear, and holds nothing on a model with no side hint', async () => {
+    const model = copy(await run());
+    expect(optionalMoveHolds(copy(model), [propose(model, cacheGroup(model), 20)], false)).toBe(true);
+    const plain = copy(await run({ testMaxReruns: 0 }));
+    expect(optionalMoveHolds(plain, [propose(plain, cacheGroup(plain), -250)], false)).toBe(true);
   }, 60000);
 });
