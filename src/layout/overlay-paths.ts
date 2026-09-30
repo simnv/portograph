@@ -182,7 +182,7 @@ function tooClose(head: OverlayEnd, tail: OverlayEnd): boolean {
  * the principle that must survive (`.scratch/drawio-export/issues/02-maintainer-edit-principles.md`,
  * principle 2). Only when even that fails does the caller keep the straight segment.
  */
-function between(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers): Point[] | undefined {
+function between(head: OverlayEnd, tail: OverlayEnd, blockers: ShapeQuery): Point[] | undefined {
   const from = head.clear, to = tail.clear;
   const boxes = [head.box, tail.box];
   const before = (of: (box: Rect) => number): number => Math.min(...boxes.map(of)) - OVERLAY_PILL_CLEARANCE;
@@ -359,6 +359,18 @@ export function straightBetween(head: OverlayEnd, tail: OverlayEnd, blockers: Sh
 }
 
 /**
+ * The polyline of an overlay link from two ends: the straight segment, or the orthogonal derivation where a shape stands on it.
+ * `overlayPath` draws exactly this; the window rule of `placeOverlayFree` (ticket 147) reads it for a shifted end, without a model copy.
+ */
+export function chordPoints(one: OverlayEnd, two: OverlayEnd, blockers: ShapeQuery): Point[] {
+  const { head, tail } = tooClose(one, two)
+    ? { head: { ...one, clear: one.face }, tail: { ...two, clear: two.face } }
+    : { head: one, tail: two };
+  const middle = straightBetween(head, tail, blockers) ?? between(head, tail, blockers);
+  return middle ? straighten(compact([head.face, ...middle, tail.face])) : [{ ...one.face }, { ...two.face }];
+}
+
+/**
  * The polyline an overlay link draws: **one straight segment from one pill face to the other**, at
  * whatever angle that is — unless a node body or a pill stands on it, and then the orthogonal
  * derivation of `between` answers instead, leaving each face outward by `OVERLAY_PILL_CLEARANCE`
@@ -402,19 +414,13 @@ export function overlayPath(model: LayoutModel, link: LayoutLink, blockers?: Ove
   const from = findPort(model, attachments.from), to = findPort(model, attachments.to);
   const one = from && overlayEnd(model.nodes[attachments.from.node]!, from);
   const two = to && overlayEnd(model.nodes[attachments.to.node]!, to);
-  const { head, tail } = one && two && tooClose(one, two)
-    ? { head: { ...one, clear: one.face }, tail: { ...two, clear: two.face } }
-    : { head: one, tail: two };
-  const shapes = head && tail ? blockers ?? overlayBlockers(model) : undefined;
-  const middle = head && tail && shapes
-    ? straightBetween(head, tail, shapes) ?? between(head, tail, shapes) : undefined;
+  const shapes = one && two ? blockers ?? overlayBlockers(model) : undefined;
   // The two ends of the drawn line, whichever branch answers: the port's own outward face, and the
   // anchor only where there is no face to read — an end that states no side. G7 `endpoint-anchor`
   // and `route/validate` read `overlayEndpoint`, which is this same pair.
   const ends = [{ end: one, port: from! }, { end: two, port: to! }]
     .map(({ end, port }) => end ? { ...end.face } : { ...port.anchor! });
-  const built = head && tail && middle
-    ? straighten(compact([head.face, ...middle, tail.face])) : ends;
+  const built = one && two && shapes ? chordPoints(one, two, shapes) : ends;
   // Two pill faces that meet exactly leave the tooClose branch nothing between them and `compact`
   // drops the repeat, so the one point is restated as the degenerate segment it is: a published
   // path is never empty, and both ends of this one are still the face the gate names.
