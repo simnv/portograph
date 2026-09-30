@@ -427,6 +427,6 @@ export function validateLinkLabels(model: LayoutModel): void {
 }
 
 /** Stage 9: measure and place post-route link and multiplicity labels. */
-export function linkLabels(model: LayoutModel): LayoutModel {
-  return withLayoutMutation(model, 'link-labels', () => {});
+export function linkLabels(model: LayoutModel, notes: readonly Diagnostic[] = []): LayoutModel {
+  return withLayoutMutation(model, 'link-labels', draft => { draft.diagnostics.push(...notes); });
 }

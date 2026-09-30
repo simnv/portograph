@@ -105,13 +105,19 @@ function titleStrips(model: LayoutModel): Rect[] {
   return strips;
 }
 
+/** The bare chord of the link between its two faces, or undefined when its ends coincide. Nothing is checked. */
+export function chordSegment(model: LayoutModel, link: LayoutLink): PathSegment | undefined {
+  const chord = straightChord(model, link);
+  if (!chord || Math.hypot(chord.to.x - chord.from.x, chord.to.y - chord.from.y) < 1e-6) return undefined;
+  return { from: chord.from, to: chord.to, owner: { ...link.owner } };
+}
+
 /** The chord this rule pins for the link, or undefined when a body stands on it or a gate would fail it. */
 export function expectedFramePath(model: LayoutModel, link: LayoutLink): LayoutPath | undefined {
   if (!frameLinkCandidate(model, link)) return undefined;
   if (model.frozenChords !== undefined) return frozenChordPath(model, link);
-  const chord = straightChord(model, link);
-  if (!chord || Math.hypot(chord.to.x - chord.from.x, chord.to.y - chord.from.y) < 1e-6) return undefined;
-  const segment: PathSegment = { from: chord.from, to: chord.to, owner: { ...link.owner } };
+  const segment = chordSegment(model, link);
+  if (!segment) return undefined;
   // A link that crosses a tier it does not end in needs the lane lanes.ts reserves for it, and a lane
   // cannot be given back after 7c has aligned the ends under it. Such a link keeps the lane and the
   // orthogonal route, so that no move after stage 7a can leave a transit without its reservation.
@@ -127,9 +133,7 @@ export function expectedFramePath(model: LayoutModel, link: LayoutLink): LayoutP
   for (const other of model.links) {
     if (other.id === link.id || !isFrameStraight(model, other)) continue;
     const run = other.path!.segments[0]!;
-    const point = intersection(segment, run);
-    const strict = point !== undefined && ![segment.from, segment.to, run.from, run.to].some(end => samePoint(end, point));
-    if (!strict && segmentDistance(segment, run) - (stroke + linkStrokeWidth(other)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return undefined;
+    if (!chordsApart(segment, run, stroke, linkStrokeWidth(other))) return undefined;
   }
   // The router leaves every other port by a stem of at least 15 px, and G6 keeps that stem 10 px from the
   // chord. Stage 8 cannot make room the chord took, so the chord stays clear of every stem placement has
@@ -177,6 +181,12 @@ export function blockedChords(model: LayoutModel): string[] {
     const link = model.links.find(item => item.id === id);
     return link !== undefined && straightChord(model, link, blockers) === undefined;
   });
+}
+/** Whether two chords keep the chord clearance to each other, or cross strictly (G6 excuses only a strict crossing). */
+function chordsApart(a: PathSegment, b: PathSegment, strokeA: number, strokeB: number): boolean {
+  const point = intersection(a, b);
+  const strict = point !== undefined && ![a.from, a.to, b.from, b.to].some(end => samePoint(end, point));
+  return strict || segmentDistance(a, b) - (strokeA + strokeB) / 2 >= STRAIGHT_PATH_CLEARANCE.path - EPS;
 }
 
 /**

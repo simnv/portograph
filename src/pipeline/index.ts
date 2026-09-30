@@ -6,7 +6,7 @@
  * the previous stage published. What this file does own is the *budget*: one remainder shared by
  * the ELK attempts and the router, so a command cannot spend a fresh stage policy per attempt.
  */
-import type { Diagnostic, LayoutModel, LayoutStage, NormalisedDocument } from '../model/index.js';
+import type { Diagnostic, LayoutModel, LayoutStage, NormalisedDocument, Side } from '../model/index.js';
 import { resolve } from '../resolve/index.js';
 import { sidesOne } from '../layout/sides-one.js';
 import { sizeNodes } from '../layout/size.js';
@@ -23,6 +23,14 @@ import { linkLabels } from '../layout/link-labels.js';
 import { elkDeadlineMs, type CreateElkAttempt, type ElkClock } from '../layout/elk-worker.js';
 import { route, ROUTE_BUDGET_MS, type CreateRouteAttempt } from '../route/index.js';
 import { CommandDeadlineError, UNBOUNDED_BUDGET, type Budget } from './budget.js';
+// After the stages: the modules below reach the centring module, whose import order the tests that mock it depend on.
+import { declinedFanDiagnostics, measureFans, type FanMeasure } from '../layout/fan-spread.js';
+import { isFrameStraight } from '../layout/frame-paths.js';
+
+
+/** Most runs of placement a fan's pitch may cost after the first (ticket 89). */
+const FAN_ROUNDS = 2;
+const straightChords = (model: LayoutModel): number => model.links.filter(link => isFrameStraight(model, link)).length;
 
 export { CommandDeadlineError, createBudget, UNBOUNDED_BUDGET } from './budget.js';
 export type { Budget } from './budget.js';
@@ -73,31 +81,52 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     return result;
   };
 
-  const resolved = step('resolve', () => resolve(document, options.diagnostics ? { diagnostics: options.diagnostics } : {}));
-  step('sides-one', () => sidesOne(resolved));
-  step('size', () => sizeNodes(resolved));
+  /** Stages 1 to 7e, the placement the chords are decided on before 7f grows a gap, and so the placement a fan is measured on. `floors` are port pitches a fan of chords needs on a face (ticket 89); the first run has none. */
+  const place = async (floors: FanMeasure['floors']): Promise<LayoutModel> => {
+    const resolved = step('resolve', () => resolve(document, options.diagnostics ? { diagnostics: options.diagnostics } : {}));
+    step('sides-one', () => sidesOne(resolved));
+    for (const [id, pitch] of floors) resolved.nodes[id]!.sidePitch = { ...resolved.nodes[id]!.sidePitch, ...pitch };
+    step('size', () => sizeNodes(resolved));
 
-  if (budget.remainingMs() <= 0) throw new CommandDeadlineError(0, 'skeleton');
-  const skeletonStarted = now();
-  await skeleton(resolved, {
-    ...(options.createElkAttempt ? { createAttempt: options.createElkAttempt } : {}),
-    ...(clock ? { clock } : {}),
-    layoutBudgetMs: options.elkBudgetMs ?? elkDeadlineMs(Object.keys(resolved.nodes).length),
-    budget,
-  });
-  report('skeleton', skeletonStarted);
+    if (budget.remainingMs() <= 0) throw new CommandDeadlineError(0, 'skeleton');
+    const skeletonStarted = now();
+    await skeleton(resolved, {
+      ...(options.createElkAttempt ? { createAttempt: options.createElkAttempt } : {}),
+      ...(clock ? { clock } : {}),
+      layoutBudgetMs: options.elkBudgetMs ?? elkDeadlineMs(Object.keys(resolved.nodes).length),
+      budget,
+    });
+    report('skeleton', skeletonStarted);
 
-  // sidesTwo freezes port topology and publishes the first protected snapshot; every region rule
-  // below returns a new one, and the previous value must not be used again.
-  let model = step('sides-two', () => sidesTwo(resolved));
-  model = step('rows', () => rows(model));
-  model = step('lanes', () => lanes(model));
-  model = step('flanks', () => flanks(model));
-  model = step('centre', () => centre(model));
-  model = step('bars', () => bars(model));
-  model = step('bundles', () => bundles(model));
+    // sidesTwo freezes port topology and publishes the first protected snapshot; every region rule
+    // below returns a new one, and the previous value must not be used again.
+    let model = step('sides-two', () => sidesTwo(resolved));
+    model = step('rows', () => rows(model));
+    model = step('lanes', () => lanes(model));
+    model = step('flanks', () => flanks(model));
+    model = step('centre', () => centre(model));
+    model = step('bars', () => bars(model));
+    model = step('bundles', () => bundles(model));
+    return model;
+  };
+  // A fan of chords whose neighbours stand closer than the chord clearance is spread by placement, not found by routing (ticket 89):
+  // the placed chords say the pitch each face needs, and placement runs again with those floors until no face needs more.
+  let model = await place(new Map());
+  let floors: FanMeasure['floors'] = new Map();
+  for (let round = 0; round < FAN_ROUNDS; round++) {
+    const measure = measureFans(model);
+    const next: FanMeasure['floors'] = new Map(floors);
+    let grew = false;
+    for (const [id, pitch] of measure.floors) for (const [side, value] of Object.entries(pitch) as [Side, number][]) {
+      if (value > (next.get(id)?.[side] ?? 0)) { next.set(id, { ...next.get(id), [side]: value }); grew = true; }
+    }
+    if (!grew) break;
+    const trial = await place(next);
+    if (straightChords(trial) < straightChords(model)) break;
+    model = trial; floors = next;
+  }
+  const declined = declinedFanDiagnostics(measureFans(model).declined);
   model = step('bands', () => bands(model));
-
   if (budget.remainingMs() <= 0) throw new CommandDeadlineError(0, 'route');
   const routeStarted = now();
   model = await route(model, {
@@ -110,5 +139,5 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   });
   report('route', routeStarted);
 
-  return step('link-labels', () => linkLabels(model));
+  return step('link-labels', () => linkLabels(model, declined));
 }
