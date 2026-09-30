@@ -279,8 +279,9 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     expect(hinted.diagnostics.filter(item => item.code === 'GROUP_GRID_NON_CONVERGENCE')).toEqual([]);
     // Pinned: the grid gives way to the pack. With the widening allowed, the pair takes one extent of 534.1 px at x 1070.3 and the canvas is 2182 px wide.
     const loc = hinted.groups['loc-a2#0']!.bounds!;
-    expect([loc.x, loc.width]).toEqual([expect.closeTo(982.1, 1), expect.closeTo(372.4, 1)]);
-    expect(hinted.canvas!.width).toBeCloseTo(2039, -1);
+    // Ticket 143: the window rule stands cl-a3 at x 765.3 (gaining two straight overlay chords) and the pack that follows reads that place: loc-a2 stands at x 1084.9, 224.6 wide (main: 982.1, 372.4 wide) and the canvas is 118 px narrower. The price: the overlay bent count of this hinted run goes from 9 to 10: link-45 (`loc-a2-sw` to `cl-a3-2`) bends, because the pack that follows the window moves `loc-a2` and the 7f step does not repair it (ticket 143 review, finding 1).
+    expect([loc.x, loc.width]).toEqual([expect.closeTo(1084.9, 1), expect.closeTo(224.6, 1)]);
+    expect(hinted.canvas!.width).toBeCloseTo(1921, -1);
     expect(hinted.canvas!.width).toBeLessThan(2100);
     const yields = hinted.diagnostics.filter(item => item.code === 'GROUP_GRID_YIELDS_TO_PACK');
     expect(yields.length).toBeGreaterThan(0);

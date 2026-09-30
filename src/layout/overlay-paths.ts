@@ -30,6 +30,8 @@ const NORMAL: Readonly<Record<Side, Point>> = {
 /** Every node body and every drawn port pill: the shapes an overlay link goes round. */
 export type OverlayShape = Rect & { readonly pill?: true };
 export type OverlayBlockers = RectangleIndex<OverlayShape>;
+/** What the straight test asks of the shapes: the index, or a composite that adds shapes the index does not hold (ticket 143). */
+export type ShapeQuery = Pick<OverlayBlockers, 'some'>;
 
 export function overlayBlockers(model: LayoutModel, skip?: ReadonlySet<string>): OverlayBlockers {
   const boxes: { bounds: Rect; value: OverlayShape }[] = [];
@@ -111,9 +113,9 @@ const polylineLength = (points: readonly Point[]): number => points.slice(1)
  * draws none: the straight branch drops its own two pills from the shapes it tests against, and a
  * node body is not one of them.
  */
-interface OverlayEnd { anchor: Point; box: Rect; pill: Rect | undefined; face: Point; clear: Point; out: Point }
+export interface OverlayEnd { anchor: Point; box: Rect; pill: Rect | undefined; face: Point; clear: Point; out: Point }
 
-function overlayEnd(node: LayoutNode, port: LayoutPort): OverlayEnd | undefined {
+export function overlayEnd(node: LayoutNode, port: LayoutPort): OverlayEnd | undefined {
   if (!port.anchor || !port.side || !node.bounds) return undefined;
   const pill = port.pill && port.ref.anonymous !== true ? port.pill.bounds : undefined;
   const box = pill ?? node.bounds;
@@ -334,7 +336,7 @@ function between(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers):
  * read as an obstruction. Every node **body** stays, the link's own two included: a port on the far
  * side of its own body still has that body in the way.
  */
-function straightBetween(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers): Point[] | undefined {
+export function straightBetween(head: OverlayEnd, tail: OverlayEnd, blockers: ShapeQuery): Point[] | undefined {
   const from = head.face, to = tail.face;
   /** Whether the segment leaves this end outward rather than turning back into its own port. */
   const leaves = (end: OverlayEnd, towards: Point, away: Point): boolean =>
@@ -463,4 +465,17 @@ export function straightChord(model: LayoutModel, link: LayoutLink, blockers?: O
   if (!one || !two) return undefined;
   if (!geometryOnly && !straightBetween(one, two, blockers ?? overlayBlockers(model))) return undefined;
   return { from: { ...one.face }, to: { ...two.face } };
+}
+
+/**
+ * The two overlay ends of a link as the straight test reads them, or `undefined` where an end states no side (ticket 143). The
+ * window rule of `placeOverlayFree` shifts one end and asks `straightBetween` again, without a model copy.
+ */
+export function chordEnds(model: LayoutModel, link: LayoutLink): { head: OverlayEnd; tail: OverlayEnd } | undefined {
+  const ends = link.attachments;
+  if (!ends) return undefined;
+  const from = findPort(model, ends.from), to = findPort(model, ends.to);
+  const head = from && model.nodes[ends.from.node] && overlayEnd(model.nodes[ends.from.node]!, from);
+  const tail = to && model.nodes[ends.to.node] && overlayEnd(model.nodes[ends.to.node]!, to);
+  return head && tail ? { head, tail } : undefined;
 }

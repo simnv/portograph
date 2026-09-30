@@ -13,6 +13,10 @@ import { rowGap } from './sides-two.js';
 import { bandGap, compareId } from './skeleton-graph.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { windowTarget, type Window } from './overlay-window.js';
+
+/** A free group stands where its overlay chords are straight and not at the mean of its partners (ticket 143, info). */
+export const OVERLAY_WINDOW_TAKEN = 'OVERLAY_WINDOW_TAKEN';
 
 /**
  * Overlay barycentre for the free (ranked-groups spec, section 3.1, ticket 05).
@@ -48,6 +52,15 @@ import { PLACEMENT_EPS } from './tolerance.js';
  * from the place the group entered at, so a group ends inside its span even where the fine move is
  * refused.
  *
+ * **The window rule** (ticket 143, Q112). The mean is the target of a group only where no other x keeps more of its overlay chords
+ * straight (`windowTarget`, `overlay-window.ts`). The candidates are the mean and the two ends of every x-interval in which a chord
+ * enters a shape, at most `CHORD_WINDOW_TRIALS` of them, taken nearest the mean first. A plain group stays between its walls and inside the
+ * x-extent of the settled groups, a member inside its canton wall, and both inside the x-span of the settled partners. The tier guard below
+ * stays; a tier whose windows bend a link that was straight and straighten no more links than they bend goes back to the means. The
+ * windows are read once, at the end of `centreDraft`, where centring has left the partners (the passes call this with `windows = false`: a
+ * window read earlier changes what the order rules of the later passes see). A run with windows is kept only where the whole sheet
+ * gains, read on every overlay link: fewer bent links and no more turns in all; otherwise it goes back and places the means.
+ *
  * A partner counts only when it is *settled*: a group that is not free, or a free group of a tier
  * nearer the anchor tier that this pass has already placed. Tiers are taken from the anchor tier
  * outward, in the order the centre steps take them. Because a target reads only settled positions
@@ -58,7 +71,54 @@ import { PLACEMENT_EPS } from './tolerance.js';
  * and may move, so `centreDraft` runs the pass again after each pass of its steps: the free groups
  * end at the mean of partners that stand where centring left them.
  */
-export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColumn[] = frameColumns(model)): void {
+export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColumn[] = frameColumns(model), windows = true): void {
+  if (!windows) { place(model, columns, false); return; }
+  // The windows are kept only where the whole sheet gains: fewer bent overlay links and no more turns in all, read on every overlay link and
+  // not only on the chords the rule counted (ticket 143, three-continents). A run that fails goes back to the state it began in and places
+  // the means alone.
+  const groups = Object.values(model.groups), diagnostics = [...model.diagnostics];
+  const undo = saveGroups(model, groups), start = new Map(groups.map(group => [group.id, JSON.stringify(group.bounds)]));
+  const before = overlayTurns(model), state = { windowed: false };
+  place(model, columns, true, state);
+  if (!state.windowed) return;
+  if (sheetGains(overlayTurns(model), before)) return;
+  const moved = groups.filter(group => JSON.stringify(group.bounds) !== start.get(group.id));
+  // A run that moved nothing leaves the model as it was, and a model that is frozen is not written.
+  if (moved.length || model.diagnostics.length !== diagnostics.length) {
+    undo();
+    model.diagnostics = [...diagnostics];
+    rebuildNodeGeometry(model, moved.flatMap(group => group.nodes), 'current');
+  }
+  place(model, columns, false);
+}
+
+/** Whether a run with windows gains on the whole sheet: fewer bent overlay links than before and no more turns in all. */
+export function sheetGains(windows: { bent: number; turns: number }, before: { bent: number; turns: number }): boolean {
+  return windows.bent < before.bent && windows.turns <= before.turns;
+}
+
+/**
+ * Whether the windows of a tier are kept: they must leave more overlay links straight than the tier had, or as many with none of them bent.
+ * A window that bends one straight link and straightens two holds; one that bends two and straightens one does not.
+ */
+export function windowsHold(windows: ReadonlySet<string>, before: ReadonlySet<string>): boolean {
+  return windows.size > before.size || (windows.size === before.size && [...before].every(id => windows.has(id)));
+}
+
+/** The bent overlay links and the turns of all of them, as the overlay rule draws them now. A mesh bus member is no chord. */
+function overlayTurns(model: LayoutModel): { bent: number; turns: number } {
+  const blockers = overlayBlockers(model);
+  let bent = 0, turns = 0;
+  for (const link of model.links) {
+    if (link.layer !== 'overlay' || link.meshBus !== undefined || !link.attachments) continue;
+    const count = overlayPath(model, link, blockers).segments.length - 1;
+    if (count > 0) bent++;
+    turns += count;
+  }
+  return { bent, turns };
+}
+
+function place(model: LayoutModel, columns: readonly FrameColumn[], windows: boolean, state?: { windowed: boolean }): void {
   const anchor = selectAnchorTier(model);
   if (anchor === undefined) return;
   if (!model.links.some(link => link.layer === 'overlay')) {
@@ -117,6 +177,7 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
     return total;
   };
 
+  const overlays = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && link.attachments);
   const tiers = model.tierBands.map(band => band.tier), at = tiers.indexOf(anchor);
   for (const tier of [...tiers.slice(at + 1), ...tiers.slice(0, at).reverse()]) {
     const groups = Object.values(model.groups).filter(group => group.tier === tier);
@@ -130,9 +191,9 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
       const ends = [link.attachments!.from.node, link.attachments!.to.node].map(node => model.groups[groupOf(node)]!.tier!);
       return Math.min(...ends) <= tier && tier <= Math.max(...ends);
     });
-    const straightCount = (): number => {
+    const straightIds = (): Set<string> => {
       const blockers = overlayBlockers(model);
-      return spanning.filter(link => overlayPath(model, link, blockers).segments.length === 1).length;
+      return new Set(spanning.filter(link => overlayPath(model, link, blockers).segments.length === 1).map(link => link.id));
     };
     const nodesOfTier = groups.flatMap(group => group.nodes);
     const signature = (): string => JSON.stringify(groups.map(group => [group.bounds, group.rowOrder, group.nodes.map(node => model.nodes[node]!.bounds)]));
@@ -162,16 +223,35 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
     const start = signature();
     const undo = saveGroups(model, groups);
     for (const group of movers) orderNodes(model, group, node => keyOf([node], group.id), routedAny);
-    const targets = new Map<string, number>();
+    const noted = (group: LayoutGroup) => (item: { code: string; owners?: readonly { kind: string; id?: string }[] }): boolean =>
+      item.code === OVERLAY_WINDOW_TAKEN && item.owners?.[0]?.kind === 'group' && item.owners[0].id === group.id;
+    const means = new Map<string, number>();
     for (const group of movers) {
       const target = keyOf(group.nodes, group.id);
-      if (target !== undefined) targets.set(group.id, target);
+      if (target !== undefined) means.set(group.id, target);
     }
-    if (targets.size) {
+    // The window rule (ticket 143): a target is the x that keeps the most overlay chords straight, the mean where none is better.
+    const chosen = new Map(means), taken: { group: LayoutGroup; mean: number; target: number; gained: number }[] = [];
+    if (windows && means.size && overlays.length) {
+      const walls = tierWalls(model, tier, groups, new Set(means.keys()), columns);
+      // A plain group stays inside the x-extent of the settled groups: an x past it is no wall the sweep knows, and would widen the canvas.
+      const boxes = Object.values(model.groups).filter(item => settled.has(item.id) && item.bounds).map(item => item.bounds!);
+      const extent = boxes.length ? { low: Math.min(...boxes.map(box => box.x)), high: Math.max(...boxes.map(box => box.x + box.width)) } : undefined;
+      for (const group of movers) {
+        const mean = means.get(group.id);
+        const range = mean === undefined ? undefined : targetRange(model, tier, group, mean, walls, extent, [...means.keys()].filter(id => inner(model.groups[id]!)), columns);
+        if (mean === undefined || range === undefined) continue;
+        const pick = windowTarget(model, group, { mean, range, settled, overlays });
+        if (pick.target !== mean) { chosen.set(group.id, pick.target); taken.push({ group, mean, target: pick.target, gained: pick.gained }); }
+      }
+    }
+    const apply = (targets: ReadonlyMap<string, number>): void => {
+      if (!targets.size) return;
       const plain = new Map([...targets].filter(([id]) => !inner(model.groups[id]!)));
       if (plain.size) sweep(model, tier, groups, plain, columns);
       if (plain.size < targets.size) sweepMembers(model, tier, new Map([...targets].filter(([id]) => inner(model.groups[id]!))), columns);
-    }
+    };
+    apply(chosen);
     if (spanning.length && signature() !== start) {
       // `centre` moves groups with `moveGroup`, which leaves the pills behind. The count before the move
       // and the count after it must read the same kind of geometry, so the tier goes back, its pills
@@ -179,11 +259,31 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
       const redo = saveGroups(model, groups);
       undo();
       rebuildNodeGeometry(model, nodesOfTier, 'current');
-      const before = straightCount();
+      const before = straightIds();
       redo();
       rebuildNodeGeometry(model, nodesOfTier, 'current');
-      if (straightCount() < before) { undo(); rebuildNodeGeometry(model, nodesOfTier, 'current'); }
-    }
+      let after = straightIds(), windowed = taken.length > 0;
+      // The windows are kept only where they straighten more links than they bend, or bend none that was straight (`windowsHold`).
+      if (windowed && !windowsHold(after, before)) {
+        undo();
+        rebuildNodeGeometry(model, nodesOfTier, 'current');
+        apply(means);
+        rebuildNodeGeometry(model, nodesOfTier, 'current');
+        after = straightIds();
+        windowed = false;
+      }
+      let restored = false;
+      if (after.size < before.size) { undo(); rebuildNodeGeometry(model, nodesOfTier, 'current'); windowed = false; restored = true; }
+      if (!restored) {
+        // The note follows the place the group stands at: it is dropped when the group moves to the mean and is stated again when a window holds.
+        model.diagnostics = model.diagnostics.filter(item => !movers.some(group => noted(group)(item)));
+        if (windowed) for (const { group, mean, target, gained } of taken) {
+          const message = `Group ${group.id} stands at x ${target.toFixed(1)} and not at x ${mean.toFixed(1)}, the mean of its partners: ${gained} more overlay ${gained === 1 ? 'chord is' : 'chords are'} straight.`;
+          model.diagnostics.push({ stage: 'placement', severity: 'info', code: OVERLAY_WINDOW_TAKEN, message, owners: [{ kind: 'group', id: group.id }] });
+        }
+      }
+      if (windowed && state) state.windowed = true;
+    } else if (state && taken.length && !spanning.length && signature() !== start) state.windowed = true;
     for (const group of movers) settled.add(group.id);
   }
   const stood = standLinklessBeside(model, tiers, free, columns);
@@ -400,6 +500,60 @@ function orderNodes(model: LayoutModel, group: LayoutGroup, key: (node: string) 
 interface Wall { low: number; high: number; centre: number; gap: number }
 interface Item { id: string; want: number; width: number }
 
+/** The walls of one tier for the groups with a target: every group without one that no frame column holds, every column and every lane. */
+function tierWalls(model: LayoutModel, tier: number, groups: readonly LayoutGroup[], targeted: ReadonlySet<string>, columns: readonly FrameColumn[]): Wall[] {
+  const gap = bandGap(model);
+  return [
+    // A cell is walled by its frame's column, which is wider than the cell where a neighbour rank is wider.
+    ...groups.filter(group => !targeted.has(group.id) && !columns.some(column => column.cells.has(group.id))).map(group => {
+      const reach = occupiedOverhang(model, group), low = group.bounds!.x - reach.left, high = group.bounds!.x + group.bounds!.width + reach.right;
+      return { low, high, centre: (low + high) / 2, gap };
+    }),
+    ...columns.filter(column => column.from <= tier && tier <= column.to).map((column): Wall => ({ low: column.x, high: column.x + column.width,
+      centre: column.x + column.width / 2, gap })),
+    ...model.lanes.filter(lane => lane.tier === tier).map((lane): Wall => ({ low: lane.bounds.x, high: lane.bounds.x + lane.bounds.width,
+      centre: lane.bounds.x + lane.bounds.width / 2, gap: 0 })),
+  ].sort((a, b) => a.low - b.low);
+}
+
+/**
+ * The room a canton column leaves the members of one tier (ticket 56): the walls of the other members and the lanes, the low and high
+ * edge of the canton wall less the margin, and the box of every member frame. `sweepMembers` packs inside it, and the window rule
+ * (ticket 143) reads the same numbers, so a target it takes is a place the sweep allows.
+ */
+function memberSpace(model: LayoutModel, column: FrameColumn, tier: number, moverIds: readonly string[]) {
+  const frames = model.document.frames!, derived = deriveFrames(model)!;
+  const box = new Map(derived.map(frame => [frame.id, frame.box]));
+  const gap = 2 * GROUP_PADDING;
+  const cellsOf = (id: string): string[] => [...frames[id]!.cells, ...Object.keys(frames).filter(child => frames[child]!.parent === id).flatMap(cellsOf)];
+  const own = new Set(moverIds.filter(id => column.cells.has(id)).map(id => model.groups[id]!.frame!));
+  const walls = [
+    ...Object.keys(frames).filter(id => frames[id]!.parent === column.id && !own.has(id) && cellsOf(id).some(cell => model.groups[cell]!.tier === tier))
+      .map(id => ({ low: box.get(id)!.x, high: box.get(id)!.x + box.get(id)!.width, gap })),
+    ...model.lanes.filter(lane => lane.tier === tier).map(lane => ({ low: lane.bounds.x, high: lane.bounds.x + lane.bounds.width, gap: 0 })),
+  ].sort((a, b) => a.low - b.low);
+  return { box, gap, walls, low: column.wall!.x + GROUP_PADDING, high: column.wall!.x + column.wall!.width - GROUP_PADDING };
+}
+
+/**
+ * The centre x that `sweep` or `sweepMembers` allows a free group whose mean target is `mean`: inside the interval between two walls
+ * that holds the mean (a plain group), or inside the canton wall less the margin and between the walls of the other members (a member).
+ */
+function targetRange(model: LayoutModel, tier: number, group: LayoutGroup, mean: number, walls: readonly Wall[], extent: Window | undefined, memberIds: readonly string[], columns: readonly FrameColumn[]): Window | undefined {
+  const centre = group.bounds!.x + group.bounds!.width / 2;
+  if (group.frame === undefined) {
+    const k = walls.filter(wall => wall.centre < mean).length, before = walls[k - 1], after = walls[k], reach = occupiedOverhang(model, group);
+    const half = group.bounds!.width / 2;
+    return { low: Math.max(before ? before.high + before.gap : -Infinity, extent ? extent.low : -Infinity) + reach.left + half,
+      high: Math.min(after ? after.low - after.gap : Infinity, extent ? extent.high : Infinity) - reach.right - half };
+  }
+  const column = columns.find(item => item.wall !== undefined && item.from <= tier && tier <= item.to && item.cells.has(group.id));
+  if (!column || model.document.frames === undefined || deriveFrames(model) === undefined) return undefined;
+  const space = memberSpace(model, column, tier, memberIds), frame = space.box.get(group.frame)!, offset = centre - frame.x;
+  const k = space.walls.filter(wall => (wall.low + wall.high) / 2 < mean).length, before = space.walls[k - 1], after = space.walls[k];
+  return { low: Math.max(space.low, before ? before.high + before.gap : -Infinity) + offset, high: Math.min(space.high, after ? after.low - after.gap : Infinity) - frame.width + offset };
+}
+
 /**
  * Place the free groups that have a target between the walls of one tier. Every group of the tier
  * that has no target, and every lane, is a wall. A group takes the interval its target falls in;
@@ -411,17 +565,7 @@ function sweep(model: LayoutModel, tier: number, groups: LayoutGroup[], targets:
   const reach = new Map(groups.map(group => [group.id, occupiedOverhang(model, group)]));
   const occupied = (group: LayoutGroup): { low: number; high: number } => ({
     low: group.bounds!.x - reach.get(group.id)!.left, high: group.bounds!.x + group.bounds!.width + reach.get(group.id)!.right });
-  const walls: Wall[] = [
-    // A cell is walled by its frame's column, which is wider than the cell where a neighbour rank is wider.
-    ...groups.filter(group => !targets.has(group.id) && !columns.some(column => column.cells.has(group.id))).map(group => {
-      const box = occupied(group);
-      return { ...box, centre: (box.low + box.high) / 2, gap };
-    }),
-    ...columns.filter(column => column.from <= tier && tier <= column.to).map((column): Wall => ({ low: column.x, high: column.x + column.width,
-      centre: column.x + column.width / 2, gap })),
-    ...model.lanes.filter(lane => lane.tier === tier).map((lane): Wall => ({ low: lane.bounds.x, high: lane.bounds.x + lane.bounds.width,
-      centre: lane.bounds.x + lane.bounds.width / 2, gap: 0 })),
-  ].sort((a, b) => a.low - b.low);
+  const walls = tierWalls(model, tier, groups, new Set(targets.keys()), columns);
   const movers = groups.filter(group => targets.has(group.id));
   const interval = (centre: number): number => walls.filter(wall => wall.centre < centre).length;
   const item = (group: LayoutGroup): Item => {
@@ -468,21 +612,11 @@ function sweep(model: LayoutModel, tier: number, groups: LayoutGroup[], targets:
  * `sweep` places what falls between two walls.
  */
 function sweepMembers(model: LayoutModel, tier: number, targets: ReadonlyMap<string, number>, columns: readonly FrameColumn[]): void {
-  const frames = model.document.frames, derived = deriveFrames(model);
-  if (frames === undefined || derived === undefined) return;
-  const box = new Map(derived.map(frame => [frame.id, frame.box]));
-  const gap = 2 * GROUP_PADDING;
-  const cellsOf = (id: string): string[] => [...frames[id]!.cells, ...Object.keys(frames).filter(child => frames[child]!.parent === id).flatMap(cellsOf)];
+  if (model.document.frames === undefined || deriveFrames(model) === undefined) return;
   for (const column of columns.filter(item => item.wall !== undefined && item.from <= tier && tier <= item.to)) {
     const movers = [...targets.keys()].filter(id => column.cells.has(id)).map(id => model.groups[id]!);
     if (!movers.length) continue;
-    const own = new Set(movers.map(group => group.frame!));
-    const walls = [
-      ...Object.keys(frames).filter(id => frames[id]!.parent === column.id && !own.has(id) && cellsOf(id).some(cell => model.groups[cell]!.tier === tier))
-        .map(id => ({ low: box.get(id)!.x, high: box.get(id)!.x + box.get(id)!.width, gap })),
-      ...model.lanes.filter(lane => lane.tier === tier).map(lane => ({ low: lane.bounds.x, high: lane.bounds.x + lane.bounds.width, gap: 0 })),
-    ].sort((a, b) => a.low - b.low);
-    const low = column.wall!.x + GROUP_PADDING, high = column.wall!.x + column.wall!.width - GROUP_PADDING;
+    const { box, gap, walls, low, high } = memberSpace(model, column, tier, movers.map(group => group.id));
     const item = (group: LayoutGroup): Item => {
       const frame = box.get(group.frame!)!;
       return { id: group.id, want: targets.get(group.id)! - (group.bounds!.x + group.bounds!.width / 2 - frame.x) - 0, width: frame.width };

@@ -630,6 +630,12 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
 }
 /** Reusable bounded producer. The caller shares one budget across all ordered placement replay. */
 export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
+  centrePasses(model, budget);
+  // The windows of the overlay barycentre are read once, where centring has left the partners (ticket 143): a window read in a pass
+  // is read on geometry that a later step moves.
+  if (selectAnchorTier(model) !== undefined) { placeOverlayFree(model); rebuildRegions(model); }
+}
+function centrePasses(model: LayoutModel, budget: CentreBudget): void {
   if (!Number.isSafeInteger(budget.remaining) || !Number.isSafeInteger(budget.passes) || budget.remaining < 0
     || budget.passes < 0 || budget.remaining + budget.passes > 8) throw new Error('Centering requires one shared eight-pass budget');
   const anchor = selectAnchorTier(model);
@@ -640,7 +646,9 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
   if (settleRows(model)) rebuildRegions(model);
   // Free groups first: the steps below read where every group stands (ranked-groups spec 3.1).
   let columns = frameColumns(model);
-  placeOverlayFree(model, columns);
+  // The first run has no windows: the partners stand where the skeleton left them, and a window read there fixes an x that the order rules
+  // of the passes below read (ticket 143). The runs after a pass of steps read the partners where centring left them.
+  placeOverlayFree(model, columns, false);
   let context = centreContext(model, anchor, columns), built = geometry(model);
   let unresolved = new Set<string>(), ran = false;
   while (budget.remaining > 0) {
@@ -670,7 +678,7 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
       }
     }
     // A partner that a step above moved is read where it stands now (the pass is idempotent).
-    placeOverlayFree(model, columns);
+    placeOverlayFree(model, columns, false);
     rebuildRegions(model);
     const after = geometry(model);
     if (!stepped && after.every((value, i) => Math.abs(value - before[i]!) <= 0.5)) {
