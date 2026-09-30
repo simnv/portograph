@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { layout, parse, score } from '../../src/index.js';
+import { layout, parse, score, validateLanes } from '../../src/index.js';
 import type { Lane, LayoutLink, LayoutModel } from '../../src/index.js';
 import { BUS_RUN_CLEARANCE } from '../../src/layout/bus-room.js';
-import { laneWidth, optionalMoveHolds, reserveRisers, sideLaneFindings, sideLanesHold } from '../../src/layout/lanes.js';
+import { laneSidesHold, laneWidth, optionalMoveHolds, reserveRisers, sideLaneFindings, sideLanesHold } from '../../src/layout/lanes.js';
 import { routedStrokeWidth } from '../../src/theme/geometry.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -43,7 +43,7 @@ describe('a side lane joins the tier-gap plan and the route (ticket 122)', () =>
     expect(segments.slice(0, -1).every(segment => Math.abs(segment.from.x - lane.x) < 1e-6 && Math.abs(segment.to.x - lane.x) < 1e-6)).toBe(true);
     expect(last.to).toEqual(model.nodes['outlet']!.ports.find(port => port.ref.name === 'feed')!.anchor);
     expect(failed(model)).toEqual([]);
-    expect(model.diagnostics.filter(item => item.code === 'SIDE_SHAPE_LOST' || item.code === 'SIDE_LANE_FRAME_CROSSED')).toEqual([]);
+    expect(model.diagnostics.filter(item => item.code === 'SIDE_SHAPE_LOST' || item.code === 'SIDE_LANE_INSIDE_FRAME')).toEqual([]);
   }, 120000);
 
   it('a side lane that is not source-aligned gives a stepped part to its mouth, and the path still validates', async () => {
@@ -97,7 +97,7 @@ describe('a side lane joins the tier-gap plan and the route (ticket 122)', () =>
     const link = ownerOf(model, sideLane(model));
     const frame = model.frames![0]!;
     frame.box = { ...frame.box, width: frame.box.width + 60 };
-    expect(sideLaneFindings(model)).toEqual([expect.objectContaining({ code: 'SIDE_LANE_FRAME_CROSSED', severity: 'warning', owners: [{ kind: 'link', id: link.id }] })]);
+    expect(sideLaneFindings(model)).toEqual([expect.objectContaining({ code: 'SIDE_LANE_INSIDE_FRAME', severity: 'warning', owners: [{ kind: 'link', id: link.id }] })]);
   }, 120000);
 });
 
@@ -124,5 +124,61 @@ describe('the riser keeps out of a side lane (ticket 122, Section 13)', () => {
     reserveRisers(model, pending, group => group.bounds!);
     const half = laneWidth(model) / 2;
     expect(Math.abs(upper!.riser!.x - x0)).toBeGreaterThanOrEqual(17 + half + BUS_RUN_CLEARANCE + routedStrokeWidth(model) / 2 - 1e-6);
+  }, 120000);
+});
+
+describe('review fixes of ticket 118 (placement against the frames as the transit lanes leave them)', () => {
+  // The review repro: the transit lanes of a canton member grow its frame past a side lane placed against the frame boxes of before them.
+  const CANTON = `portograph: 2
+groups:
+  west: { label: West }
+  top: { tier: 0, label: Top }
+  gate: { tier: 1, canton: west, label: Gate }
+  mid: { tier: 2, canton: west, label: Middle }
+  deep: { tier: 3, canton: west, label: Deep }
+nodes:
+  lb: { group: top, class: router, label: LB }
+  g1: { group: gate, class: router, label: G1 }
+  g2: { group: gate, class: router, label: G2, ports: [{ name: feed, side: right }] }
+  m1: { group: mid, class: switch, label: M1 }
+  m2: { group: mid, class: switch, label: M2 }
+  m3: { group: mid, class: switch, label: M3 }
+  m4: { group: mid, class: switch, label: M4 }
+  d1: { group: deep, class: server, label: D1 }
+links:
+  - [lb, g1]
+  - [g1, d1]
+  - [g2, d1]
+  - [lb, g2.feed]
+`;
+  it('a side lane stands beyond the frame that a transit lane of the same canton grows', async () => {
+    const model = await layout(parse(CANTON), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const lane = sideLane(model), west = model.frames!.find(frame => frame.id === 'west')!;
+    expect(lane.bounds.x).toBeGreaterThanOrEqual(west.box.x + west.box.width - 1e-6);
+    expect(model.diagnostics.filter(item => item.code === 'SIDE_LANE_INSIDE_FRAME')).toEqual([]);
+    expect(ownerOf(model, lane).removed).toBeUndefined();
+  }, 120000);
+
+  it('a move that would widen the frame across the side lane is refused, and a move away is not', async () => {
+    const model = thaw(await run(NEW));
+    const lane = sideLane(model), cell = model.groups[model.document.nodes['outlet']!.group]!;
+    // Inside the slack of the group box (the lane stands a frame margin beyond it), so the group check passes and the frame box decides.
+    const frame = model.frames!.find(item => item.id === model.groups[cell.id]!.frame) ?? model.frames![0]!;
+    const slack = lane.bounds.x - (frame.box.x + frame.box.width), dx = slack + 2;
+    expect(slack).toBeGreaterThan(0);
+    const towards = [{ group: cell, bounds: { ...cell.bounds!, x: cell.bounds!.x + dx } }], away = [{ group: cell, bounds: { ...cell.bounds!, x: cell.bounds!.x - 8 } }];
+    expect(laneSidesHold(model, towards, false)).toBe(false);
+    expect(laneSidesHold(model, away, false)).toBe(true);
+    expect(lane.tier).toBe(cell.tier);
+  }, 120000);
+
+  it('a node beyond the port in its row after 7a is a warning, not a reason to refuse the publication', async () => {
+    const model = thaw(await run(NEW));
+    expect(sideLaneFindings(model)).toEqual([]);
+    const spare = model.nodes['spare']!, outlet = model.nodes['outlet']!;
+    spare.bounds!.x = outlet.bounds!.x + outlet.bounds!.width + 6;
+    spare.bounds!.width = 12;
+    expect(() => validateLanes(model)).not.toThrow();
+    expect(sideLaneFindings(model).map(item => item.code)).toEqual(['SIDE_LANE_NOT_OUTERMOST']);
   }, 120000);
 });

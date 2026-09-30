@@ -67,18 +67,14 @@ describe('placement reserves a side lane into a lateral port (ticket 118)', () =
     expect(lane.id).toBe(before.id);
   }, 120000);
 
-  it('validateLanes rejects a side lane with the full band as its extent and a side lane on a node that is not the outermost of its row', async () => {
+  it('validateLanes rejects a side lane with the full band as its extent, a foreign id and a second lane', async () => {
     const model = await run(source(FIXTURE));
     expect(() => validateLanes(copy(model))).not.toThrow();
     const band = copy(model);
     const tier = band.tierBands.find(item => item.tier === sideLanes(band)[0]!.tier)!.bounds!, pad = 10 + 1;
     Object.assign(sideLanes(band)[0]!.bounds, { y: tier.y - pad, height: tier.height + 2 * pad });
     expect(() => validateLanes(band)).toThrow(/extent/);
-    // The outlet is last in its row; put its neighbour beyond it and it is no longer the outermost node on the right.
-    const inner = copy(model);
-    const spare = inner.nodes['spare']!, outlet = inner.nodes['outlet']!;
-    spare.bounds!.x = outlet.bounds!.x + outlet.bounds!.width + 10;
-    expect(() => validateLanes(inner)).toThrow(/Invalid owned lane geometry/);
+    // The candidacy is frozen at 7a: a neighbour that stands beyond the outlet later is a warning of 7f (side-lane-route.test.ts), not a throw.
     // A side lane with a foreign id, and a second side lane for the same link.
     const renamed = copy(model);
     sideLanes(renamed)[0]!.id = 'side-lane:other';

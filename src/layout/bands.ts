@@ -1363,7 +1363,7 @@ export function produceGroupLabelBands(model: LayoutModel): void {
   // call left are stale (mesh-bus.md, section 11.5). A title push is a move that must be made, so here the breach is a warning and not an error.
   model.diagnostics = model.diagnostics.filter(item => item.code !== 'MESH_BUS_RISER_KEEP_OUT');
   // The side lanes' findings are read once, on the final geometry of the producer (side-faces.md, Sections 10 and 11).
-  model.diagnostics = model.diagnostics.filter(item => item.code !== 'SIDE_SHAPE_LOST' && item.code !== 'SIDE_LANE_FRAME_CROSSED');
+  model.diagnostics = model.diagnostics.filter(item => item.code !== 'SIDE_SHAPE_LOST' && item.code !== 'SIDE_LANE_INSIDE_FRAME' && item.code !== 'SIDE_LANE_NOT_OUTERMOST');
   model.diagnostics.push(...sideLaneFindings(model));
   for (const breach of riserKeepOutBreaches(model)) {
     model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'MESH_BUS_RISER_KEEP_OUT', owners: [{ kind: 'node', id: breach.node }],
