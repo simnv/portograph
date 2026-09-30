@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
-import { expectedFramePath, orthogonalLeg } from '../../src/layout/frame-paths.js';
+import { expectedFramePath, isFrameStraight, orthogonalLeg } from '../../src/layout/frame-paths.js';
 import { findPort } from '../../src/layout/row-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -77,7 +77,7 @@ describe('a frame chord holds its clearance along a neighbour\'s whole leg', () 
             y = segment.to.y;
           }
           // Runs inside the gap the port faces only: a run that goes on through a band (a lane run, a straight drop) is clipped at the band edge. A chord
-          // of a canton frame can cross that band; its clearance to those runs is not checked here (a separate ticket).
+          // of a canton frame does not cross it (ticket 95, asserted below).
           const sign = port.side === 'bottom' ? 1 : -1;
           const edges = model.tierBands.map(band => (sign > 0 ? band.bounds!.y : band.bounds!.y + band.bounds!.height) - port.anchor!.y).filter(d => d * sign > 1e-6).map(Math.abs);
           const published = Math.min(Math.abs(y - port.anchor.y), edges.length ? Math.min(...edges) : Infinity);
@@ -89,4 +89,30 @@ describe('a frame chord holds its clearance along a neighbour\'s whole leg', () 
     }
     expect(checked).toBeGreaterThan(50);
   }, 120000);
+
+  // Ticket 95: a frame chord never leaves its tier gap. `standaloneChord` refuses a link that spans a tier band it does not end in, so no chord meets
+  // a lane run or a drop in a band: the runs the leg bound clips at the band edge cannot come near a chord. Measured over every synthetic input.
+  it('keeps every published frame chord out of the tier bands its ends do not stand in', async () => {
+    const names = readdirSync(new URL('../../goldens/synthetic/', import.meta.url)).filter(name => name.endsWith('.yaml'));
+    let checked = 0;
+    for (const name of names) {
+      let model: LayoutModel;
+      try { model = await layout(parse(readFileSync(new URL(`../../goldens/synthetic/${name}`, import.meta.url), 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt }); } catch { continue; }
+      for (const link of model.links) {
+        if (!isFrameStraight(model, link)) continue;
+        const s = link.path!.segments[0]!;
+        const ends = [link.attachments!.from.node, link.attachments!.to.node].map(id => model.groups[model.document.nodes[id]!.group]!.tier!);
+        for (const band of model.tierBands) {
+          const b = band.bounds;
+          if (!b || ends.includes(band.tier)) continue;
+          for (let t = 0.02; t < 1; t += 0.02) {
+            const x = s.from.x + (s.to.x - s.from.x) * t, y = s.from.y + (s.to.y - s.from.y) * t;
+            expect(x > b.x && x < b.x + b.width && y > b.y + 0.5 && y < b.y + b.height - 0.5, `${name} ${link.id} in band ${band.tier}`).toBe(false);
+          }
+        }
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(100);
+  }, 300000);
 });
