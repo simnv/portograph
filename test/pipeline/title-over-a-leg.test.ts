@@ -6,7 +6,6 @@ import { tierGapPlans } from '../../src/layout/gap-plan.js';
 import { GROUP_LABEL_LINK_CLEARANCE } from '../../src/theme/geometry.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
-import { orthogonalLinks } from '../orthogonal-links.js';
 
 /** Ticket 62: a title band nudges along its edge to clear the legs of the ports under it, before the row plan reads the labels. */
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
@@ -20,8 +19,7 @@ const partResiduals = (model: LayoutModel): string[] => model.diagnostics.filter
 
 describe('a title over a port\'s leg is nudged aside (ticket 62)', () => {
   it('the canton title clears the legs of the member routers, and no part is leg-blocked', async () => {
-    // The legs are those of the orthogonal routes; Q108 gives these links a chord (ticket 100), so the subject is the orthogonal variant.
-    const model = await layout(parse(orthogonalLinks(fixture('a-title-over-a-ports-leg-is-nudged-aside'))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const model = await run('a-title-over-a-ports-leg-is-nudged-aside');
     const title = model.labels.find(label => label.id === 'label:group:west')!.bounds!;
     const legs = legsOf(model, 'bottom', ['r0', 'r1', 'r2']);
     expect(legs.length).toBeGreaterThan(0);

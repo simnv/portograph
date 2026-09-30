@@ -1,4 +1,4 @@
-import { goldenWithRemainders } from '../golden-remainders.js';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { PortRef } from '../../src/model/document.js';
 import type { LayoutModel, PathSegment } from '../../src/model/layout.js';
@@ -13,6 +13,7 @@ import { expectedRowPath, rowPathCandidate, straightCorridorClear } from '../../
 import { rowGap } from '../../src/layout/sides-two.js';
 import { placed, simple } from './phase-two-fixture.js';
 
+const golden = readFileSync(new URL('../../goldens/m1-sip-edge.yaml', import.meta.url), 'utf8');
 const advance = (model: LayoutModel, rules: PlacementRule[]) => rules.reduce((m, rule) => withLayoutMutation(m, rule, () => {}), model);
 const copy = (model: LayoutModel): LayoutModel => JSON.parse(serializeLayoutModel(model));
 const moveNode = (model: LayoutModel, id: string, dx: number, dy: number) => {
@@ -62,8 +63,7 @@ links: [[a.p, b.q]]`;
 
 describe('stage 6 rows on the golden', () => {
   it('flattens tiers, aligns both EBR bundle endpoints and pins nothing', async () => {
-    // The two provider links hold their chord on the golden (ticket 100), and this test pins that no link has a path: read them orthogonal.
-    const input = await placed(goldenWithRemainders()), before = serializeLayoutModel(input);
+    const input = await placed(golden), before = serializeLayoutModel(input);
     const model = rows(input);
     expect(model.stage).toBe('rows');
     expect(serializeLayoutModel(input)).toBe(before);

@@ -22,7 +22,7 @@ import { withLayoutMutation } from './mutation.js';
 import { effectiveLayer } from '../score/model.js';
 import { LINK_LABEL_GEOMETRY, overlayLabelsSuppressed } from './link-labels.js';
 import { overlayPath } from './overlay-paths.js';
-import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
+import { isRoutedChord } from './frame-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { busBandHeight, busRoom } from './bus-room.js';
 import { busGeometry, expectedBusBands, riserEnds, syncBusGeometry } from './bus.js';
@@ -430,15 +430,11 @@ function segmentRect(segment: PathSegment, stroke: number): Rect {
  * the mandatory outward shared runs of both ends. A complete bundle path repeats the runs it
  * consumed, so identical stroke-aware rectangles with identical ownership collapse to one entry.
  */
-function linkRects(model: LayoutModel, link: LayoutModel['links'][number]): ForbiddenRect[] {
+function linkRects(link: LayoutModel['links'][number]): ForbiddenRect[] {
   const stroke = linkStrokeWidth(link) / 2;
   // A stage-8 remainder (`fixed: false`) is routed around this placement, so only the runs a rule
   // reserved count here; re-deriving a label against a later route would let routing move it.
-  let reserved = link.path?.fixed === false ? [] : link.path?.segments ?? [];
-  // A cross-frame chord reserves the part of its run inside each title band it crosses, not the box of the whole run: it crosses the band of its
-  // own end beside the title (ticket 100, docs/design/routed-chords.md Section 6). A frame chord keeps its box.
-  const crossings = chordCrossings(model, link);
-  if (crossings) reserved = [];
+  const reserved = link.path?.fixed === false ? [] : link.path?.segments ?? [];
   const sources: [string, PathSegment[]][] = [['path', reserved],
     ['fixed', link.fixedSegments ?? []], ['shared:from', link.sharedRuns?.from ?? []],
     ['shared:to', link.sharedRuns?.to ?? []]];
@@ -448,19 +444,6 @@ function linkRects(model: LayoutModel, link: LayoutModel['links'][number]): Forb
     if (seen.has(key)) continue;
     seen.add(key);
     result.push({ id: `${link.id}:${kind}:${index}`, bounds, clearance: GROUP_LABEL_LINK_CLEARANCE });
-  }
-  // The margin is in the rectangle (it is wider on a slanted chord), so no clearance is added.
-  for (const { band, bounds } of crossings ?? []) result.push({ id: `${link.id}:chord:${band.group}`, bounds });
-  return result;
-}
-
-/** The label bands a held cross-frame chord crosses, with its crossing rectangle in each: its run between the band's top and bottom y, grown by half the stroke. */
-function chordCrossings(model: LayoutModel, link: LayoutModel['links'][number]): { band: LabelBand; bounds: Rect }[] | undefined {
-  if (link.technique !== 'straight' || !isRoutedChord(model, link) || chordKind(model, link) !== 'cross') return undefined;
-  const segment = link.path!.segments[0]!, half = linkStrokeWidth(link) / 2, result: { band: LabelBand; bounds: Rect }[] = [];
-  for (const band of model.labelBands) {
-    const bounds = crossingRect(segment, band.bounds.y, bottom(band.bounds), half);
-    if (bounds && bounds.x <= right(band.bounds) && right(bounds) >= band.bounds.x) result.push({ band, bounds });
   }
   return result;
 }
@@ -501,7 +484,7 @@ function forbiddenRects(model: LayoutModel, placed: LayoutLabel[]): ForbiddenRec
     }
   }
   for (const obstacle of model.obstacles) if (obstacle.layer !== 'overlay') result.push({ id: obstacle.id, bounds: obstacle.bounds, clearance: margin });
-  for (const link of model.links) result.push(...linkRects(model, link), ...feedCorridorRects(model, link));
+  for (const link of model.links) result.push(...linkRects(link), ...feedCorridorRects(model, link));
   return result;
 }
 
@@ -533,6 +516,7 @@ function feedCorridorRects(model: LayoutModel, link: LayoutModel['links'][number
  * where no position on the edge clears every leg.
  */
 function legRects(model: LayoutModel): ForbiddenRect[] {
+  const result: ForbiddenRect[] = [];
   const frames = model.document.frames ?? {};
   // A canton band stands under its last sub-tier (over its first): only the members of that edge tier draw a leg through it.
   const membersOf = (band: LabelBand): Set<string> => {
@@ -540,28 +524,18 @@ function legRects(model: LayoutModel): ForbiddenRect[] {
     const tiers = cantonTiers(model, band.group), edge = band.side === 'top' ? tiers.first : tiers.last;
     return new Set(frameSubtreeCells(frames, band.group).filter(cell => model.groups[cell]?.tier === edge).flatMap(cell => model.groups[cell]!.nodes));
   };
-  return legRectsFor(model, model.labelBands.map(band => ({ id: band.group, bounds: band.bounds, side: band.side, members: membersOf(band) })));
-}
-
-/** A title band, or the strip that stands for it before 7f: where it is, on which edge, and the nodes whose ports on that edge draw a leg through it. */
-export interface LegBand { id?: string; bounds: Rect; side: 'top' | 'bottom'; members: ReadonlySet<string> }
-
-/**
- * `legRects` for the given bands. Ticket 100 reads it before 7f for the strips of `titleStrips` (there is no label band yet), with the link that
- * asks left out: it is the chord being tried and draws no leg.
- */
-export function legRectsFor(model: LayoutModel, owned: readonly LegBand[], skip?: string): ForbiddenRect[] {
-  const result: ForbiddenRect[] = [];
+  const owned = model.labelBands.map(band => ({ band, members: membersOf(band) }));
   for (const link of model.links) {
     if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments || link.bundle) continue;
-    if (isRoutedChord(model, link) || link.id === skip) continue;
+    if (isRoutedChord(model, link)) continue;
     const stroke = routedStroke(model);
     for (const end of ['from', 'to'] as const) {
       const ref = link.attachments[end], port = findPort(model, ref);
       if (!port?.anchor || (port.side !== 'top' && port.side !== 'bottom')) continue;
       const anchor = port.anchor;
-      for (const { side, bounds: box, members } of owned) {
-        if (side !== port.side || !members.has(ref.node)) continue;
+      for (const { band, members } of owned) {
+        if (band.side !== port.side || !members.has(ref.node)) continue;
+        const box = band.bounds;
         if (anchor.x < box.x - PLACEMENT_EPS || anchor.x > right(box) + PLACEMENT_EPS) continue;
         const y = Math.min(anchor.y, box.y), far = Math.max(anchor.y, bottom(box));
         result.push({ id: `${link.id}:leg:${end}`, bounds: { x: anchor.x - stroke / 2, y, width: stroke, height: far - y }, clearance: GROUP_LABEL_LINK_CLEARANCE });
@@ -575,9 +549,9 @@ export function legRectsFor(model: LayoutModel, owned: readonly LegBand[], skip?
     for (const ref of bus.ports) {
       const port = findPort(model, ref);
       if (!port?.anchor) continue;
-      for (const { side, bounds: box, members } of owned) {
-        if (side !== bus.side || !members.has(ref.node)) continue;
-        const stroke = routedStroke(model);
+      for (const { band, members } of owned) {
+        if (band.side !== bus.side || !members.has(ref.node)) continue;
+        const box = band.bounds, stroke = routedStroke(model);
         if (port.anchor.x < box.x - PLACEMENT_EPS || port.anchor.x > right(box) + PLACEMENT_EPS) continue;
         const y = Math.min(port.anchor.y, box.y), far = Math.max(port.anchor.y, bottom(box));
         result.push({ id: `${bus.id}:stub:${ref.node}`, bounds: { x: port.anchor.x - stroke / 2, y, width: stroke, height: far - y }, clearance: GROUP_LABEL_LINK_CLEARANCE });
@@ -593,10 +567,11 @@ export function legRectsFor(model: LayoutModel, owned: readonly LegBand[], skip?
     const stroke = routedStroke(model), tiers = model.tierBands;
     const top = tiers.find(item => item.tier === bus.row)?.bounds, bottomBand = tiers.find(item => item.tier === lower.row)?.bounds;
     if (top === undefined || bottomBand === undefined) continue;
-    for (const { id, bounds: box } of owned) {
+    for (const { band } of owned) {
+      const box = band.bounds;
       if (bus.riser.x < box.x - PLACEMENT_EPS || bus.riser.x > right(box) + PLACEMENT_EPS) continue;
       if (bottom(box) <= bottom(top) - PLACEMENT_EPS || box.y >= bottomBand.y + PLACEMENT_EPS) continue;
-      result.push({ id: `${bus.id}:riser:${id}`, bounds: { x: bus.riser.x - stroke / 2, y: box.y, width: stroke, height: box.height }, clearance: GROUP_LABEL_LINK_CLEARANCE });
+      result.push({ id: `${bus.id}:riser:${band.group}`, bounds: { x: bus.riser.x - stroke / 2, y: box.y, width: stroke, height: box.height }, clearance: GROUP_LABEL_LINK_CLEARANCE });
     }
   }
   return result;
@@ -938,16 +913,6 @@ function diagnoseBlocked(model: LayoutModel, blocked: string[]): void {
   for (const id of blocked) {
     placementWarning(model, 'GROUP_LABEL_GAP_INFEASIBLE', `Group ${id} has no free label gap between `
       + 'the reserved lanes of its tier; final gates decide the retained geometry.', [id], 'group');
-    // A held cross-frame chord that crosses this title's band takes the room it needed: named, and the gates judge (ticket 100).
-    for (const link of model.links) {
-      if (chordCrossings(model, link)?.some(({ band }) => band.group === id || band.host === id)) {
-        const message = `The title of ${id} has no room beside the straight link ${link.id}; final gates decide the retained geometry.`;
-        if (!model.diagnostics.some(item => item.code === 'ROUTED_CHORD_TITLE' && item.message === message)) {
-          model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'ROUTED_CHORD_TITLE', message,
-            owners: [{ kind: 'link', id: link.id }, { kind: 'group', id }] });
-        }
-      }
-    }
   }
 }
 

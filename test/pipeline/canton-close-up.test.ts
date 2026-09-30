@@ -6,7 +6,6 @@ import { COLUMN_AXIS_HELD, COLUMN_SLACK, closeCantons, holdColumnAxes } from '..
 import { bandGap } from '../../src/layout/skeleton-graph.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
-import { orthogonalLinks } from '../orthogonal-links.js';
 
 const run = (name: string): Promise<LayoutModel> => layout(parse(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8')),
   { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
@@ -70,8 +69,7 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
 
   // The refused close-up moves the nodes and puts them back: labels in node order and the geometry exact, or publication throws.
   it('a refused close-up leaves the node labels and the geometry whole', async () => {
-    // The refused close-up needs the routed links orthogonal; Q108 gives them a chord (ticket 100), so the subject is the orthogonal variant.
-    const model = await layout(parse(orthogonalLinks(readFileSync(new URL('../../goldens/synthetic/a-refused-close-up-keeps-the-node-labels-in-order.yaml', import.meta.url), 'utf8'))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const model = await run('a-refused-close-up-keeps-the-node-labels-in-order');
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
     expect(closeUps(model).length).toBeGreaterThan(0);
     expect(closeUps(model)[0]!.message).toContain('a straight overlay link would be bent');

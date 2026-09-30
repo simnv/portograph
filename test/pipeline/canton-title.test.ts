@@ -7,7 +7,6 @@ import { GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../../src/theme/geom
 import { bandGap } from '../../src/layout/skeleton-graph.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
-import { orthogonalLinks } from '../orthogonal-links.js';
 
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (text: string) => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
@@ -137,8 +136,7 @@ links:
   }, 60000);
 
   it('the row plan keeps its rows off the canton band and its margin (review B1)', async () => {
-    // The subject is the orthogonal row plan; Q108 gives these links a chord (ticket 100), so it is read on the orthogonal variant.
-    const model = await run(orthogonalLinks(fixture('a-canton-band-holds-the-rows-off')));
+    const model = await run(fixture('a-canton-band-holds-the-rows-off'));
     clean(model);
     expect(model.removedLinks ?? []).toEqual([]);
     const west = frameOf(model, 'west'), band = bandOf(model, 'west');

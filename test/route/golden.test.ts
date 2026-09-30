@@ -1,4 +1,5 @@
-import { goldenWithRemainders } from '../golden-remainders.js';
+import { APPROVED_Q } from '../golden-baseline.js';
+import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { bands, bars, bundles, centre, flanks, lanes, restoreLayoutModel, route, routeRemainders, rows, score } from '../../src/index.js';
 import type { GateId } from '../../src/index.js';
@@ -7,8 +8,7 @@ import { reservationConflicts } from '../../src/route/validate.js';
 import { placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from './fixture.js';
 
-// The two provider links are read on the variant that keeps them orthogonal: on the golden they hold their chord (ticket 100).
-const yaml = goldenWithRemainders();
+const yaml = readFileSync(new URL('../../goldens/m1-sip-edge.yaml', import.meta.url), 'utf8');
 
 it('routes the measured JPEG golden remainder and scores the complete diagram', async () => {
   const before = bands(bundles(bars(centre(flanks(lanes(rows(await placed(yaml))))))));
@@ -45,8 +45,7 @@ it('routes the measured JPEG golden remainder and scores the complete diagram', 
   expect(report.metrics.crossings.count).toBe(0);
   expect(report.counters).toMatchObject({ overlaps: 0, labelHits: 0, barCross: 3, lanesUsed: 4, stubs: 0 });
   expect(report.assertions).toEqual([{ code: 'golden-crossings', passed: true, actual: 0, expected: 0, tolerance: 0 }]);
-  // The Q of the golden before ticket 100 gave its two provider links their chord (the variant keeps them orthogonal).
-  expect(report.Q).toBeCloseTo(0.8986107135065587, 12);
+  expect(report.Q).toBeCloseTo(APPROVED_Q, 12);
 
   // Placement is frozen: stage 8 adds paths only, and the result restores byte-equal.
   expect(model.freeze!.placement).toEqual(before.freeze!.placement);

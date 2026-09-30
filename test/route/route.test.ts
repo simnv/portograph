@@ -327,12 +327,11 @@ links: [[a.p, b.p], [m.p, c.p], [m.q, c.q], [m.r, b2.p]]`);
   });
 
   it('rejects a published route through its own endpoint group label', async () => {
-    // `b` also feeds `c`, so `low` keeps its title on top (ADR-0011 tie rule), where a→b can be forged through it. a→b is authored orthogonal: Q108 (ticket 100) gives it a chord
-    // that crosses the title band beside the title, and the forged route is an orthogonal one.
+    // `b` also feeds `c`, so `low` keeps its title on top (ADR-0011 tie rule), where a→b can be forged through it.
     const model = await routed(`portograph: 2
 groups: {up: {tier: 0}, low: {tier: 1}, lower: {tier: 2}}
 nodes: {a: {group: up}, b: {group: low}, c: {group: lower}}
-links: [[a, b, {route: orthogonal}], [b, c]]`);
+links: [[a, b], [b, c]]`);
     const forged = JSON.parse(JSON.stringify(model)) as LayoutModel;
     const label = model.labels.find(item => item.role === 'group' && item.owner.kind === 'group' && item.owner.id === 'low')!;
     const link = forged.links[0]!, segments = link.path!.segments;

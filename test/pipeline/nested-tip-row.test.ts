@@ -7,7 +7,6 @@ import { stemReach } from '../../src/layout/bands.js';
 import { stemCache, stemPlan } from '../../src/layout/sides-two.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
-import { orthogonalLinks } from '../orthogonal-links.js';
 
 const read = (name: string): string =>
   readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
@@ -83,11 +82,10 @@ it('grows the gap for the row a nested tip band denies, allocates that row and k
   // Through the published model. The near server nests three stems, and the tip band of the deepest one
   // spans the leg that runs along it. The one transit row of the last gap must seat above that band, so
   // the gap grows by the seat: a row left unseated routes free, next to the tip, or the router drops a link.
-  // Read with every link authored orthogonal: Q108 (ticket 100) gives link-2 its chord once the fan spread has run, and a chord seats no row.
-  const pipeline = bands(bundles(bars(centre(flanks(lanes(rows(await placed(orthogonalLinks(read(FIXTURE))))))))));
+  const pipeline = bands(bundles(bars(centre(flanks(lanes(rows(await placed(read(FIXTURE)))))))));
   const seated = allocatedRows(pipeline);
   expect(seated.length, 'the gap seats its row').toBeGreaterThan(0);
-  const routed = await layout(parse(orthogonalLinks(read(FIXTURE))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const routed = await layout(parse(read(FIXTURE)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   expect(routed.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN').map(item => item.message))
     .toEqual([expect.stringMatching(/The tier gap above tier 2 grew [\d.]+ px to hold the rows of its parts/)]);
   expect(routed.removedLinks ?? []).toEqual([]);

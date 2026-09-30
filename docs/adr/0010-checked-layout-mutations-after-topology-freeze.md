@@ -118,5 +118,3 @@ checked outward margin translations; all owner and occupied-order guards remain 
 leaves bar groups to stage 7d on every replay. Stage 7f prefers the centered label position, then the
 nearest clear gap; its bounded widening fallback and immutable-lane checks are unchanged. Label-band
 clearance also includes measured top pill padding, a frozen input independent of later route paths.
-
-Amendment (2026-09-30, ranked-groups ticket 100 review): publication does not check the stage 7c alignment of a child port that a held cross-frame chord feeds. A chord runs between two faces at any angle, so its child port owes it no place under the feed. The excuse is narrower than the invariant: it applies only to the publication check (`ahead` false), only to a link whose `chordKind` is `cross`, and the centring loop's own check keeps asking for the alignment. The cause of one case is not traced: in `a-canton-band-holds-the-rows-off` the stage 7c step cannot resolve the child port of link-5, yet at `bands` it can (ticket 130).
