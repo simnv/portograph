@@ -10,6 +10,7 @@ import { GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../../src
 import { horizontal, segmentRect, vertical } from '../../src/score/geometry.js';
 import { placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { orthogonalLinks } from '../orthogonal-links.js';
 
 const read = (name: string): string =>
   readFileSync(new URL(`../../goldens/synthetic/${name}`, import.meta.url), 'utf8');
@@ -276,7 +277,7 @@ it('grows the gap of the band that sets the group edge to the rows of its 25 par
   // above the band below: H = 206.25 + 41.5 - 11.5 = 236.25 px against a room of 49.25. The router discovered those rows before
   // (G4 18, G6 47 on main); they are reserved now, and the gap grows 187 px, the height the published plan asks: 7f replaces the growth of
   // each round by `H - room` and does not accumulate it (ticket 51; the rounds added 198.5 px while they accumulated).
-  const before = await beforeBands(read('a-band-holds-the-group-that-set-its-edge.yaml'));
+  const before = await beforeBands(orthogonalLinks(read('a-band-holds-the-group-that-set-its-edge.yaml')));
   const after = bands(before);
   const grown = after.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN');
   expect(grown.map(item => item.message)).toEqual([expect.stringMatching(/grew 187\.00 px to hold the rows of its parts \(set by link-36#0\)/)]);

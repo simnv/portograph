@@ -35,7 +35,7 @@ groups: {upper: {tier: 0}, lower: {tier: 1}}
 nodes:
   source: {group: upper, ports: [{name: p, side: bottom}]}
   target: {group: lower, ports: [{name: p, side: top}]}
-links: [[source.p, target.p, {label: ${text}}]]`);
+links: [[source.p, target.p, {label: ${text}, route: orthogonal}]]`);
   const drop = vertical.links[0]!.path!.segments, label = linkLabel(vertical);
   expect(drop).toHaveLength(1);
   const source = vertical.nodes.source!, target = vertical.nodes.target!;

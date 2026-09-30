@@ -21,9 +21,9 @@ nodes:
   h3: { group: hosts, class: server, label: Host 3 }
   h4: { group: hosts, class: server, label: Host 4 }
 links:
-  - [p, ma]
-  - [far, h1]
-  - [far, h2]
-  - [far, h3]
-  - [far, h4]
+  - [p, ma, { route: orthogonal }]
+  - [far, h1, { route: orthogonal }]
+  - [far, h2, { route: orthogonal }]
+  - [far, h3, { route: orthogonal }]
+  - [far, h4, { route: orthogonal }]
   - [src, far, { class: sync }]

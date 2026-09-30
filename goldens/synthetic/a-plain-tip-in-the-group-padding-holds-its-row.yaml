@@ -15,5 +15,5 @@ nodes:
   s0: { group: site, class: switch }
   s1: { group: site, class: switch }
 links:
-  - [isp0, s1]
-  - [isp1, s0]
+  - [isp0, s1, { route: orthogonal }]
+  - [isp1, s0, { route: orthogonal }]

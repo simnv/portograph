@@ -25,7 +25,7 @@ nodes:
   left: { group: lower, class: provider, ports: [{ name: u, side: top }, { name: d, side: bottom }] }
   right: { group: lower, class: router, ports: [{ name: u, side: top }, { name: d, side: bottom }] }
 links:
-  - [feed-a.d, left.u]
-  - [feed-b.d, right.u]
-  - [feed-c.d, right.u]
-  - [feed-d.d, left.u]
+  - [feed-a.d, left.u, { route: orthogonal }]
+  - [feed-b.d, right.u, { route: orthogonal }]
+  - [feed-c.d, right.u, { route: orthogonal }]
+  - [feed-d.d, left.u, { route: orthogonal }]

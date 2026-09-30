@@ -13,4 +13,4 @@ nodes:
   child: { group: child-group, ports: [{ name: p, side: top }] }
 links:
   - [left.p, right.p, { route: orthogonal }]
-  - [neighbour.p, child.p]
+  - [neighbour.p, child.p, { route: orthogonal }]

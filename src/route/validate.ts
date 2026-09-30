@@ -7,7 +7,7 @@ import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { EPS, horizontal, length, retracingRuns, samePoint, segmentRect, vertical } from '../score/geometry.js';
 import { outward } from '../score/model.js';
 import { effectiveLayer, reversedRuns } from './plan.js';
-import { isFrameStraight } from '../layout/frame-paths.js';
+import { isRoutedChord } from '../layout/frame-paths.js';
 import { overlayBlockers, overlayEndpoint, overlayPath, type OverlayBlockers } from '../layout/overlay-paths.js';
 import { ownedLanes, stubCandidate } from './paths.js';
 import { MIN_STEM, reservations, TOLERANCE, shrink } from './reservations.js';
@@ -110,7 +110,7 @@ export function validateRoutedPaths(model: LayoutModel, requireComplete = false)
     // be drawn (stress ticket 30); `overlayEndpoint` names that point, and an end with no side to
     // leave by has no face and keeps its anchor. The rule is the same one in both families — a path
     // starts and ends where its ports are — read at the point each family really draws.
-    const attach = (port: LayoutPort, node: string): Point => (effectiveLayer(link) === 'routed' && !isFrameStraight(model, link)
+    const attach = (port: LayoutPort, node: string): Point => (effectiveLayer(link) === 'routed' && !isRoutedChord(model, link)
       ? undefined : overlayEndpoint(model.nodes[node], port)) ?? port.anchor!;
     if (!samePoint(path.segments[0]!.from, attach(from, ends.from.node))
       || !samePoint(path.segments.at(-1)!.to, attach(to, ends.to.node))) {

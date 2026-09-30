@@ -17,9 +17,9 @@ nodes:
   e1: { group: east, class: router, label: E1 }
   e2: { group: east, class: router, label: E2 }
 links:
-  - [core, w1]
-  - [core, m1]
-  - [core, e1]
+  - [core, w1, { route: orthogonal }]
+  - [core, m1, { route: orthogonal }]
+  - [core, e1, { route: orthogonal }]
   - { from: w1, to: w2, class: sync }
   - { from: w1, to: m1, class: sync }
   - { from: w1, to: m2, class: sync }

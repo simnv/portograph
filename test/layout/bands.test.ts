@@ -196,9 +196,9 @@ nodes:
 links:
   - [parent.p, blocked-node.p]
   - [parent.q, blocked-node.q]
-  - [neighbour-node.p, child.p]
-  - [blocked-node.r, sink.p]
-  - [blocked-node.s, sink.q]`;
+  - [neighbour-node.p, child.p, {route: orthogonal}]
+  - [blocked-node.r, sink.p, {route: orthogonal}]
+  - [blocked-node.s, sink.q, {route: orthogonal}]`;
     // `blocked` feeds `sink` with as many bottom ports as it has top ports, so its title stays on top
     // and the bundle from `parent` still enters beside that title (ADR-0011 tie rule).
     const before = await throughBundles(yaml);

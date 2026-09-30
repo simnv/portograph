@@ -39,6 +39,8 @@ export interface GroupContent {
   canton?: string;
   /** Set by stage 1 on a rank cell: the document group whose frame the cell is part of. */
   frame?: string;
+  /** Set by stage 1 on an expanded document: the authored tier, which `tier` no longer is once a tier takes several sub-tiers (routed chords read it). */
+  documentTier?: number;
 }
 
 export type NormalisedGroup = GroupContent & (

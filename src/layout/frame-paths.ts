@@ -5,13 +5,16 @@ import { overlayBlockers, straightChord } from './overlay-paths.js';
 import { groupShape } from './grid.js';
 import { bandSide, frameSide, GROUP_LABEL_GEOMETRY, nudgingDistance } from './bands.js';
 import { stopsOf } from './gap-runs.js';
-import { findPort, STRAIGHT_PATH_CLEARANCE, straightCorridorClear } from './row-paths.js';
+import { findPort, STRAIGHT_PATH_CLEARANCE, straightCorridorClear, type CorridorOptions } from './row-paths.js';
 
 const OUTWARD = { top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } } as const;
 import { measureText } from '../text/index.js';
 import { EPS, intersection, samePoint, segmentDistance, segmentRectDistance } from '../score/geometry.js';
 import { GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
 import type { Rect } from '../model/geometry.js';
+import { groupBoxes, groupConsumers } from '../score/model.js';
+import { GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
+import { deriveFrames } from './frames.js';
 
 /**
  * The **straight** technique of a routed link inside one frame (ticket 34).
@@ -37,19 +40,52 @@ function sameFrame(model: LayoutModel, a: string, b: string): boolean {
   return a === b || parentFrame(model, a) === b || parentFrame(model, b) === a;
 }
 
+/** What a routed chord joins: two ends in one frame (`frame`), or in two frames on consecutive document tiers (`cross`, Q108). */
+export type ChordKind = 'frame' | 'cross';
+
+/** The authored tier of a layout group: a cell reads its frame's, a child group its parent's. */
+function documentTier(model: LayoutModel, id: string): number | undefined {
+  let group = id;
+  for (let depth = 0; depth < 4; depth++) {
+    const source = model.document.groups[group];
+    if (source === undefined) return undefined;
+    // An expanded document keeps the authored tier beside the sub-tier (stage 1); an unexpanded one has only the authored tier.
+    if (source.documentTier !== undefined || source.tier !== undefined) return source.documentTier ?? source.tier;
+    if (source.parent === undefined) return undefined;
+    group = source.parent;
+  }
+  return undefined;
+}
+
+/**
+ * The kind of chord a link may take, or undefined when it is no candidate. A frame chord is topology only, known from stage 1. A cross-frame
+ * chord also reads the ports the side freeze fixed (stage 6): the upper end leaves by `bottom`, the lower end by `top`
+ * (docs/design/routed-chords.md, Section 3).
+ */
+export function chordKind(model: LayoutModel, link: LayoutLink): ChordKind | undefined {
+  if (link.layer !== 'routed' || !link.attachments || link.bundle !== undefined) return undefined;
+  if (link.technique === 'stub' || effectiveLayer(link) !== 'routed') return undefined;
+  const route = model.document.links[link.sourceIndex]?.route;
+  if (route !== undefined && route !== 'straight') return undefined;
+  const { from, to } = link.attachments;
+  if (from.node === to.node) return undefined;
+  const a = model.document.nodes[from.node]?.group, b = model.document.nodes[to.node]?.group;
+  if (a === undefined || b === undefined) return undefined;
+  // A flank and a bar own their links' paths (flank and bar rules), and a bar is not a frame member.
+  if ([a, b].some(id => model.groups[id]?.flank !== undefined || groupShape(model, id) === 'bar')) return undefined;
+  if (sameFrame(model, frameOfGroup(model, a), frameOfGroup(model, b))) return 'frame';
+  const tiers = [documentTier(model, a), documentTier(model, b)];
+  if (tiers[0] === undefined || tiers[1] === undefined || Math.abs(tiers[0] - tiers[1]) !== 1) return undefined;
+  const [upper, lower] = tiers[0] < tiers[1] ? [from, to] : [to, from];
+  return findPort(model, upper)?.side === 'bottom' && findPort(model, lower)?.side === 'top' ? 'cross' : undefined;
+}
 /** Topology-only test: the frame rule owns this link's path whenever geometry makes it eligible. */
 export function frameLinkCandidate(model: LayoutModel, link: LayoutLink): boolean {
-  if (link.layer !== 'routed' || !link.attachments || link.bundle !== undefined) return false;
-  if (link.technique === 'stub' || effectiveLayer(link) !== 'routed') return false;
-  const route = model.document.links[link.sourceIndex]?.route;
-  if (route !== undefined && route !== 'straight') return false;
-  const { from, to } = link.attachments;
-  if (from.node === to.node) return false;
-  const a = model.document.nodes[from.node]?.group, b = model.document.nodes[to.node]?.group;
-  if (a === undefined || b === undefined) return false;
-  // A flank and a bar own their links' paths (flank and bar rules), and a bar is not a frame member.
-  if ([a, b].some(id => model.groups[id]?.flank !== undefined || groupShape(model, id) === 'bar')) return false;
-  return sameFrame(model, frameOfGroup(model, a), frameOfGroup(model, b));
+  return chordKind(model, link) === 'frame';
+}
+/** Whether the link may take a routed chord of either kind. */
+export function routedChordCandidate(model: LayoutModel, link: LayoutLink): boolean {
+  return chordKind(model, link) !== undefined;
 }
 
 /**
@@ -57,9 +93,9 @@ export function frameLinkCandidate(model: LayoutModel, link: LayoutLink): boolea
  * run, no stem and no bar membership, and it is no obstacle to the router: like an overlay link it
  * is read by node bodies and pills only.
  */
-export function isFrameStraight(model: LayoutModel, link: LayoutLink): boolean {
+export function isRoutedChord(model: LayoutModel, link: LayoutLink): boolean {
   return link.technique === 'straight' && link.path?.fixed === true && link.path.segments.length === 1
-    && link.path.segments[0]!.straight === true && frameLinkCandidate(model, link);
+    && link.path.segments[0]!.straight === true && routedChordCandidate(model, link);
 }
 
 /**
@@ -103,6 +139,19 @@ function titleStrips(model: LayoutModel): Rect[] {
   for (const [id, group] of Object.entries(model.groups)) {
     if (group.frame === undefined && group.bounds && group.nodes.length) add(model.document.groups[id]?.label, sides.get(id), group.bounds);
   }
+  // A canton holds its title in a band of its sub-tier, not in a cell (canton-groups ticket 3). The band exists from 7f on; before it the
+  // title edge is the strip outside the box the members give.
+  for (const [id, frame] of Object.entries(model.document.frames ?? {})) {
+    const box = frame.kind === 'canton' ? model.frames?.find(item => item.id === id)?.box : undefined, side = sides.get(id);
+    if (!box || side === undefined || !frame.label) continue;
+    const band = model.labelBands.find(item => item.group === id && item.host === undefined);
+    if (band) strips.push({ x: box.x, y: band.bounds.y - GROUP_LABEL_LINK_CLEARANCE, width: box.width, height: band.bounds.height + 2 * GROUP_LABEL_LINK_CLEARANCE });
+    else {
+      const room = measureText(frame.label, { fontSize: 12, weight: 700 }).height + 8;
+      strips.push({ x: box.x, y: side === 'top' ? box.y - room - GROUP_LABEL_LINK_CLEARANCE : box.y + box.height - GROUP_LABEL_LINK_CLEARANCE,
+        width: box.width, height: room + 2 * GROUP_LABEL_LINK_CLEARANCE });
+    }
+  }
   return strips;
 }
 
@@ -113,24 +162,84 @@ export function chordSegment(model: LayoutModel, link: LayoutLink): PathSegment 
   return { from: chord.from, to: chord.to, owner: { ...link.owner } };
 }
 
+/** The first check that refused a chord (`ROUTED_CHORD_REFUSED`, docs/design/routed-chords.md, Section 10). */
+export type ChordRefusal = 'transit' | 'faces' | 'edge' | 'frame' | 'title' | 'body' | 'pill' | 'lane' | 'corridor' | 'chord' | 'leg';
+
+/** The ids of the groups, frames and parents above them that hold this node. */
+function holders(model: LayoutModel, node: string): Set<string> {
+  const ids = new Set<string>();
+  let id: string | undefined = model.document.nodes[node]?.group;
+  for (let depth = 0; id !== undefined && depth < 6 && !ids.has(id); depth++) {
+    ids.add(id);
+    const frame = frameOfGroup(model, id);
+    ids.add(frame);
+    id = model.document.frames?.[frame]?.parent ?? model.document.groups[frame]?.parent;
+  }
+  return ids;
+}
+
 /**
- * The chord of the link when nothing that no other link can change refuses it: the two faces, the tiers between them, the title strips and
- * the corridor the bodies and reservations leave (ticket 89 review). The fan rules ask this first: a link that fails here is no reason to
- * widen a face or to offer a chord to its neighbours.
+ * What a cross-frame chord must clear beyond the bodies (docs/design/routed-chords.md, Section 4). Every box of `groupBoxes` that holds neither end
+ * and does not consume the link is a wall with the group edge margin; a box that holds one end only is left through the horizontal edge the port
+ * faces, at least the margin from each corner. Reads `model.frames`, which equals the cells after every transaction.
  */
-export function standaloneChord(model: LayoutModel, link: LayoutLink): PathSegment | undefined {
-  const segment = chordSegment(model, link);
-  if (!segment) return undefined;
+function crossRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment): 'edge' | 'frame' | undefined {
+  const ends = link.attachments!, stroke = linkStrokeWidth(link);
+  const from = holders(model, ends.from.node), to = holders(model, ends.to.node);
+  const sides = { from: findPort(model, ends.from)?.side, to: findPort(model, ends.to)?.side };
+  const dy = segment.to.y - segment.from.y;
+  for (const { id, bounds } of groupBoxes(model)) {
+    const one = from.has(id), two = to.has(id);
+    if (one && two) continue;
+    if (!one && !two) {
+      if (segmentRectDistance(segment, bounds) < GROUP_EDGE_LINK_CLEARANCE + stroke / 2 - EPS && !groupConsumers(model, id).includes(link.id)) return 'frame';
+      continue;
+    }
+    const side = one ? sides.from : sides.to;
+    if (side !== 'top' && side !== 'bottom') return 'edge';
+    const edge = side === 'bottom' ? bounds.y + bounds.height : bounds.y;
+    const t = Math.abs(dy) < EPS ? Infinity : (edge - segment.from.y) / dy;
+    const x = segment.from.x + t * (segment.to.x - segment.from.x);
+    if (!(t >= -EPS && t <= 1 + EPS) || x < bounds.x + GROUP_EDGE_LINK_CLEARANCE - EPS || x > bounds.x + bounds.width - GROUP_EDGE_LINK_CLEARANCE + EPS) return 'edge';
+  }
+  return undefined;
+}
+
+/**
+ * The chord of the link when nothing that no other link can change refuses it, or the first check that does: the two faces, the tiers between
+ * them, the foreign frames and the facing edge (a cross-frame chord), the title strips and the corridor the bodies and reservations leave
+ * (ticket 89 review).
+ */
+export function chordVerdict(model: LayoutModel, link: LayoutLink): { segment: PathSegment } | { reason: ChordRefusal } {
+  const kind = chordKind(model, link);
+  const geometry = straightChord(model, link, undefined, true);
+  if (!geometry || Math.hypot(geometry.to.x - geometry.from.x, geometry.to.y - geometry.from.y) < 1e-6) return { reason: 'faces' };
   // A link that crosses a tier it does not end in needs the lane lanes.ts reserves for it, and a lane
   // cannot be given back after 7c has aligned the ends under it. Such a link keeps the lane and the
   // orthogonal route, so that no move after stage 7a can leave a transit without its reservation.
   const tiers = [link.attachments!.from.node, link.attachments!.to.node].map(id => model.groups[model.document.nodes[id]!.group]!.tier!);
-  if (model.tierBands.some(band => band.tier > Math.min(...tiers) && band.tier < Math.max(...tiers))) return undefined;
-  if (titleStrips(model).some(strip => segmentRectDistance(segment, strip) === 0)) return undefined;
+  if (model.tierBands.some(band => band.tier > Math.min(...tiers) && band.tier < Math.max(...tiers))) return { reason: 'transit' };
+  const line: PathSegment = { from: geometry.from, to: geometry.to, owner: { ...link.owner } };
+  if (kind === 'cross') {
+    // The port sides say which end is upper; the faces must agree, or the chord leaves a port inward.
+    if (!(geometry.to.y > geometry.from.y === (tiers[0]! < tiers[1]!))) return { reason: 'faces' };
+    const reason = crossRefusal(model, link, line);
+    if (reason) return { reason };
+  }
+  if (titleStrips(model).some(strip => segmentRectDistance(line, strip) === 0)) return { reason: 'title' };
+  const segment = chordSegment(model, link);
+  if (!segment) return { reason: 'body' };
   // The chord must also hold every clearance the gates measure a routed segment against (G2, G6),
   // or a published straight link would fail the gate its rule was meant to satisfy.
-  if (!straightCorridorClear(model, link, segment)) return undefined;
-  return segment;
+  const refusal: NonNullable<CorridorOptions['refusal']> = {};
+  if (!straightCorridorClear(model, link, segment, { refusal })) return { reason: refusal.reason ?? 'corridor' };
+  return { segment };
+}
+
+/** The chord of the link when nothing that no other link can change refuses it. The fan rules ask this first. */
+export function standaloneChord(model: LayoutModel, link: LayoutLink): PathSegment | undefined {
+  const verdict = chordVerdict(model, link);
+  return 'segment' in verdict ? verdict.segment : undefined;
 }
 
 /**
@@ -174,19 +283,38 @@ export function orthogonalLeg(model: LayoutModel, link: LayoutLink, end: 'from' 
   return { from: port.anchor, to: { x: port.anchor.x + length * out.x, y: port.anchor.y + length * out.y }, owner: { ...link.owner } };
 }
 
-/** The chord this rule pins for the link, or undefined when a body stands on it or a gate would fail it. */
-export function expectedFramePath(model: LayoutModel, link: LayoutLink): LayoutPath | undefined {
-  if (!frameLinkCandidate(model, link)) return undefined;
-  if (model.frozenChords !== undefined) return frozenChordPath(model, link);
-  const segment = standaloneChord(model, link);
-  if (!segment) return undefined;
+/**
+ * The mouth legs of the lanes that end on a boundary of the chord's gap: at the lane's x, from the lane box's end through the whole gap.
+ * The row a mouth leg meets is not known before 7f, so the chord holds the clearance along all of it.
+ */
+function mouthLegs(model: LayoutModel, link: LayoutLink): { leg: PathSegment; other: LayoutLink | undefined }[] {
+  const ends = [link.attachments!.from.node, link.attachments!.to.node].map(id => model.groups[model.document.nodes[id]!.group]!.tier!);
+  const [low, high] = [Math.min(...ends), Math.max(...ends)];
+  const upper = model.tierBands.find(band => band.tier === low)?.bounds, lower = model.tierBands.find(band => band.tier === high)?.bounds;
+  if (low === high || !upper || !lower) return [];
+  const legs: { leg: PathSegment; other: LayoutLink | undefined }[] = [];
+  for (const lane of model.lanes) {
+    if (lane.layer === 'overlay' || (lane.tier !== low && lane.tier !== high)) continue;
+    const from = lane.tier === low ? lane.bounds.y + lane.bounds.height : upper.y + upper.height;
+    const to = lane.tier === low ? lower.y : lane.bounds.y;
+    const owner = lane.owner.kind === 'link' ? lane.owner.id : undefined;
+    legs.push({ leg: { from: { x: lane.x, y: from }, to: { x: lane.x, y: to }, owner: { ...lane.owner } }, other: model.links.find(item => item.id === owner) });
+  }
+  return legs;
+}
+
+/**
+ * The checks of the fixed point on a chord that stands alone: the chords already held and the vertical legs of the links that stay
+ * orthogonal, mouth legs of the gap's lanes included. The first that fails names the refusal.
+ */
+function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment): 'chord' | 'leg' | undefined {
   // Two chords are no obstacle to each other for the router, but G6 still measures their clearance:
   // only a strict crossing excuses a pair that stands closer than 10 px (a shared end does not).
   const stroke = linkStrokeWidth(link);
   for (const other of model.links) {
-    if (other.id === link.id || !isFrameStraight(model, other)) continue;
+    if (other.id === link.id || !isRoutedChord(model, other)) continue;
     const run = other.path!.segments[0]!;
-    if (!chordsApart(segment, run, stroke, linkStrokeWidth(other))) return undefined;
+    if (!chordsApart(segment, run, stroke, linkStrokeWidth(other))) return 'chord';
   }
   // The router leaves every other port by a stem of at least 15 px, and G6 keeps that stem 10 px from the
   // chord. Stage 8 cannot make room the chord took, so the chord stays clear of every stem placement has
@@ -194,12 +322,24 @@ export function expectedFramePath(model: LayoutModel, link: LayoutLink): LayoutP
   // to the link's gap row, so the chord holds the clearance against the whole leg (ticket 91).
   for (const other of model.links) {
     if (other.id === link.id || other.layer !== 'routed' || other.technique === 'stub' || !other.attachments || other.removed === true) continue;
-    if (isFrameStraight(model, other)) continue;
+    if (isRoutedChord(model, other)) continue;
     for (const end of ['from', 'to'] as const) {
       const leg = orthogonalLeg(model, other, end);
-      if (leg && segmentDistance(segment, leg) - (stroke + linkStrokeWidth(other)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return undefined;
+      if (leg && segmentDistance(segment, leg) - (stroke + linkStrokeWidth(other)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return 'leg';
     }
   }
+  for (const { leg, other } of mouthLegs(model, link)) {
+    if (segmentDistance(segment, leg) - (stroke + (other ? linkStrokeWidth(other) : stroke)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return 'leg';
+  }
+  return undefined;
+}
+
+/** The chord this rule pins for the link, or undefined when a body stands on it or a gate would fail it. */
+export function expectedFramePath(model: LayoutModel, link: LayoutLink): LayoutPath | undefined {
+  if (!routedChordCandidate(model, link)) return undefined;
+  if (model.frozenChords !== undefined) return frozenChordPath(model, link);
+  const segment = standaloneChord(model, link);
+  if (!segment || fixedPointRefusal(model, link, segment) !== undefined) return undefined;
   // Declared, at any angle: the segment has no axis to read, so the gates measure it by distance.
   segment.straight = true;
   return { owner: { ...link.owner }, layer: 'routed', fixed: true, ...pathStrokeWidth(link), segments: [segment] };
@@ -218,20 +358,52 @@ function frozenChordPath(model: LayoutModel, link: LayoutLink): LayoutPath | und
   return { owner: { ...link.owner }, layer: 'routed', fixed: true, ...pathStrokeWidth(link), segments: [segment] };
 }
 
-/** The chords held at the start of 7f: the links that are straight now. */
+/**
+ * The chords held at the start of 7f: the links that are straight now. Every cross-frame candidate that is not held is named once
+ * (`ROUTED_CHORD_REFUSED`, info) with the first check that refuses it.
+ */
 export function freezeChords(model: LayoutModel): void {
-  const held = model.links.filter(link => isFrameStraight(model, link)).map(link => link.id);
+  const held = model.links.filter(link => isRoutedChord(model, link)).map(link => link.id);
+  for (const link of model.links) {
+    if (held.includes(link.id) || chordKind(model, link) !== 'cross') continue;
+    const verdict = chordVerdict(model, link);
+    // A candidate no check refuses is not refused: it names nothing (it has no reason to give).
+    const reason: ChordRefusal | undefined = 'reason' in verdict ? verdict.reason : fixedPointRefusal(model, link, verdict.segment);
+    if (reason === undefined) continue;
+    model.diagnostics.push({ stage: 'placement', severity: 'info', code: 'ROUTED_CHORD_REFUSED',
+      message: `The link ${link.id} keeps the orthogonal route between frames: ${reason}.`, owners: [{ kind: 'link', id: link.id }] });
+  }
   // No field where nothing is held, so a model without a chord keeps the shape it always had.
   if (held.length) model.frozenChords = held;
 }
 
-/** The frozen chords a body or a foreign pill stands on. Empty when none is held. */
+/**
+ * The frozen chords a body or a foreign pill stands on, and a cross-frame chord a foreign frame stands on. Empty when none is held.
+ */
 export function blockedChords(model: LayoutModel): string[] {
   if (!model.frozenChords?.length) return [];
   const blockers = overlayBlockers(model);
   return model.frozenChords.filter(id => {
     const link = model.links.find(item => item.id === id);
-    return link !== undefined && straightChord(model, link, blockers) === undefined;
+    if (link === undefined) return false;
+    const chord = straightChord(model, link, blockers);
+    if (chord === undefined) return true;
+    // Only a foreign frame is a wall after the freeze. The facing edge is a decision rule: a 7f move in x (a title widening pushes a
+    // column) turns the chord shallower, and refusing that move leaves the title unfit (measured: `a-member-title-widens-a-beside-row`
+    // gains G6 when the edge is held, none when it is not). The chord then keeps its two faces and may leave its frame by a side edge.
+    return chordKind(model, link) === 'cross' && crossRefusal(model, link, { ...chord, owner: { ...link.owner } }) === 'frame';
+  });
+}
+/**
+ * The frozen cross-frame chords that leave a frame by a side edge, or inside the corner margin, once 7f has moved the columns. The move is not
+ * refused (`blockedChords`), so the chord is named here and the gates judge it (ticket 99, review).
+ */
+export function edgeLeavers(model: LayoutModel): string[] {
+  if (!model.frozenChords?.length) return [];
+  return model.frozenChords.filter(id => {
+    const link = model.links.find(item => item.id === id);
+    const chord = link === undefined || chordKind(model, link) !== 'cross' ? undefined : straightChord(model, link, undefined, true);
+    return link !== undefined && chord !== undefined && crossRefusal(model, link, { ...chord, owner: { ...link.owner } }) === 'edge';
   });
 }
 /** Whether two chords keep the chord clearance to each other, or cross strictly (G6 excuses only a strict crossing). */
@@ -246,12 +418,13 @@ function chordsApart(a: PathSegment, b: PathSegment, strokeA: number, strokeB: n
  * The 7f counterpart of `laneSidesHold`: a move that fails is refused for that unit, and the link is named
  * in a diagnostic. Nothing is held before 7f, so centring and the column rules pass through here unchanged.
  */
-export function chordsHold(model: LayoutModel, proposed: { group: { nodes: string[]; bounds?: Rect }; bounds: Rect }[], report = true): boolean {
+export function chordsHold(model: LayoutModel, proposed: { group: { id?: string; nodes: string[]; bounds?: Rect }; bounds: Rect }[], report = true): boolean {
   if (!model.frozenChords?.length) return true;
-  const nodes = { ...model.nodes };
+  const nodes = { ...model.nodes }, groups = { ...model.groups };
   for (const { group, bounds } of proposed) {
     const from = group.bounds;
     if (!from) continue;
+    if (group.id !== undefined && groups[group.id]) groups[group.id] = { ...groups[group.id]!, bounds: { ...bounds } };
     const dx = bounds.x - from.x, dy = bounds.y - from.y;
     if (!dx && !dy) continue;
     for (const id of group.nodes) {
@@ -263,7 +436,10 @@ export function chordsHold(model: LayoutModel, proposed: { group: { nodes: strin
           ...(port.pill ? { pill: { ...port.pill, bounds: { ...port.pill.bounds, x: port.pill.bounds.x + dx, y: port.pill.bounds.y + dy } } } : {}) })) };
     }
   }
-  const held = blockedChords({ ...model, nodes });
+  // A cross-frame chord reads the frame boxes, which follow the cells: the proposed cells give the frames the move would draw.
+  const moved = { ...model, nodes, groups };
+  const frames = model.frozenChords.some(id => chordKind(model, model.links.find(link => link.id === id)!) === 'cross') ? deriveFrames(moved) : undefined;
+  const held = blockedChords(frames ? { ...moved, frames } : moved);
   // A caller that tries many candidates asks with `report` off and reports the final verdict itself (ticket 77).
   if (report) for (const id of held) {
     if (!model.diagnostics.some(item => item.code === 'STRAIGHT_LINK_HELD' && item.owners?.some(owner => owner.kind === 'link' && owner.id === id))) {
@@ -279,7 +455,7 @@ export function chordsHold(model: LayoutModel, proposed: { group: { nodes: strin
  * Read before and after 7f, it says which pairs 7f closed under the clearance (ticket 89 review); it moves nothing.
  */
 export function chordClearances(model: LayoutModel, within = 30): Map<string, number> {
-  const chords = model.links.filter(link => isFrameStraight(model, link));
+  const chords = model.links.filter(link => isRoutedChord(model, link));
   const result = new Map<string, number>();
   for (const [index, one] of chords.entries()) for (const other of chords.slice(index + 1)) {
     const a = one.path!.segments[0]!, b = other.path!.segments[0]!;

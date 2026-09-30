@@ -25,7 +25,7 @@ import { route, ROUTE_BUDGET_MS, type CreateRouteAttempt } from '../route/index.
 import { CommandDeadlineError, POST_PLACEMENT_RESERVE_MS, UNBOUNDED_BUDGET, type Budget } from './budget.js';
 // After the stages: the modules below reach the centring module, whose import order the tests that mock it depend on.
 import { declinedFanDiagnostics, measureFans, type FanMeasure } from '../layout/fan-spread.js';
-import { chordClearances, isFrameStraight } from '../layout/frame-paths.js';
+import { chordClearances, isRoutedChord } from '../layout/frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
 
 
@@ -35,7 +35,7 @@ const FAN_ROUNDS = 2;
  * before the hard command deadline; the number never scales with the first run's time, so the layout does not depend on machine speed (ticket 112). */
 const FAN_RERUN_MS = 8000;
 const fanGateMs = POST_PLACEMENT_RESERVE_MS + FAN_RERUN_MS;
-const straightChords = (model: LayoutModel): number => model.links.filter(link => isFrameStraight(model, link)).length;
+const straightChords = (model: LayoutModel): number => model.links.filter(link => isRoutedChord(model, link)).length;
 
 export { CommandDeadlineError, createBudget, UNBOUNDED_BUDGET } from './budget.js';
 export type { Budget } from './budget.js';

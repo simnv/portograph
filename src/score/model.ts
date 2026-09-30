@@ -1,6 +1,6 @@
 import type { Junction, Layer, LayoutLink, LayoutModel, LayoutPort, PathSegment, PortRef, Rect } from '../model/index.js';
 import { frameSubtreeCells } from '../model/index.js';
-import { isFrameStraight } from '../layout/frame-paths.js';
+import { isRoutedChord } from '../layout/frame-paths.js';
 import { overlayEndpoint } from '../layout/overlay-paths.js';
 import { linkStrokeWidth } from '../theme/geometry.js';
 import { EPS, bottom, contains, horizontal, length, near, pointRect, right, samePoint, vertical } from './geometry.js';
@@ -114,7 +114,7 @@ export function incident(model: LayoutModel, s: Segment, node: string): boolean 
   const ends = endpoints(s.link);
   return ([['from', 0, true], ['to', s.link.path!.segments.length - 1, false]] as const).some(([end, index, first]) => {
     const p = port(model, ends[end]);
-    if (p !== undefined && ends[end].node === node && s.index === index && isFrameStraight(model, s.link)) {
+    if (p !== undefined && ends[end].node === node && s.index === index && isRoutedChord(model, s.link)) {
       // A straight link inside one frame leaves the port's own face at any angle (ticket 34).
       const face = overlayEndpoint(model.nodes[node], p) ?? p.anchor!;
       return samePoint(first ? s.segment.from : s.segment.to, face);

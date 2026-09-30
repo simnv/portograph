@@ -6,13 +6,15 @@ import { tierGapPlans } from '../../src/layout/gap-plan.js';
 import { score } from '../../src/score/index.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { orthogonalLinks } from '../orthogonal-links.js';
 
 /**
  * Ranked-groups ticket 50 (`docs/design/tier-gap-rows.md`, Section 5, ticket 2): 7f grows every tier gap by the plan's `H` and stage 8
  * reserves the planned parts tip to tip. The fixtures are the four shapes of Section 2.4, through the real router.
  */
 const read = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
-const place = async (name: string): Promise<LayoutModel> => bands(bundles(bars(centre(flanks(lanes(rows(await placed(read(name)))))))));
+const place = async (name: string, orthogonal = false): Promise<LayoutModel> =>
+  bands(bundles(bars(centre(flanks(lanes(rows(await placed(orthogonal ? orthogonalLinks(read(name)) : read(name)))))))));
 const growth = (model: LayoutModel): number[] => model.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN')
   .map(item => Number(/grew ([\d.]+) px/.exec(item.message)![1]));
 const failing = (model: LayoutModel): string[] => Object.entries(score(model).snapshot.gates)
@@ -70,7 +72,7 @@ describe('7f grows the gaps by the plan and stage 8 reserves what it planned (ra
   }, 120000);
 
   it('leaves a part that crosses the shared run of another link to the router (crosses-shared-run)', async () => {
-    const model = await place('a-claimed-run-clears-a-shared-run');
+    const model = await place('a-claimed-run-clears-a-shared-run', true);
     const residual = tierGapPlans(model).flatMap(({ plan }) => plan.residual.map(item => `${item.link}:${item.reason}`));
     expect(residual).toContain('link-3:crosses-shared-run');
     expect(planRoute(model).links.find(item => item.link === 'link-3')!.pieces.map(piece => piece.kind)).toEqual(['gap']);

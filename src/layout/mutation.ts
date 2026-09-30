@@ -14,7 +14,7 @@ import { nodeGap } from './skeleton-graph.js';
 import { groupShape } from './grid.js';
 import { rebuildBands, span, union, validateSkeletonBands } from './skeleton-geometry.js';
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
-import { blockedChords, freezeChords } from './frame-paths.js';
+import { blockedChords, edgeLeavers, freezeChords } from './frame-paths.js';
 import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, flankPair } from './flanks.js';
 import { type LaneFollow, lanesHoldTheirChild, rebuildLaneExtents, reseatLanes, validateLanes, transitTiers } from './lanes.js';
 import { rebuildFrames } from './frames.js';
@@ -294,6 +294,12 @@ function validateRegionClaims(model: LayoutModel): void {
   if (stages.indexOf(model.stage) < stages.indexOf('rows')) return;
   // Clear both kinds together so stale paths cannot suppress their replacements.
   for (const link of expected.links) if (rowPathCandidate(expected, link) || flankPathCandidate(expected, link)) delete link.path;
+  // The draft decides the rows rule before it derives the bundles (`rebuildRegionGeometry` clears the member paths and the zones first): no member
+  // path and no zone stand yet. The re-derivation reads the same state, or a chord decided without them would be refused with them (ticket 99).
+  if (bundleStage) {
+    for (const link of expected.links) if (link.bundle) delete link.path;
+    for (const bundle of expected.bundles) { delete bundle.rows; delete bundle.envelope; delete bundle.centreline; delete bundle.envelopeParts; }
+  }
   rebuildRowPaths(expected);
   const flankStage = stages.indexOf(model.stage) >= stages.indexOf('flanks');
   if (flankStage) {
@@ -900,6 +906,12 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
   if (rule === 'bands') for (const id of blockedChords(draft)) {
     draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'STRAIGHT_LINK_BLOCKED',
       message: `A body stands on the straight link ${id} that 7f could not move.`, owners: [{ kind: 'link', id }] });
+  }
+  // 7f may turn a held cross-frame chord shallow (a title widening pushes a column). The move is not refused, so the chord that now leaves its
+  // frame by a side edge, or inside the 10 px corner margin, is named (reason `edge`); the gates judge it.
+  if (rule === 'bands') for (const id of edgeLeavers(draft)) {
+    draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'STRAIGHT_LINK_EDGE',
+      message: `The straight link ${id} leaves its frame by a side edge or inside the corner margin after 7f (edge).`, owners: [{ kind: 'link', id }] });
   }
   draft.stage = rule;
   draft.runtime.stages.push({ stage: rule, durationMs: Date.now() - started });

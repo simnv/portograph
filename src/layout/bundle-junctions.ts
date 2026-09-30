@@ -7,6 +7,9 @@ import { STRAIGHT_PATH_CLEARANCE, findPort } from './row-paths.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { GROUP_LABEL_GEOMETRY, nodeObstacleReach, nudgingDistance, routedStroke, stemReach } from './bands.js';
 import { stemCache, stemPlan } from './sides-two.js';
+import { groupBoxes, groupConsumers } from '../score/model.js';
+import { segmentRectDistance } from '../score/geometry.js';
+import { GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
 
 export interface BundleFans {
   members: Member[];
@@ -488,6 +491,29 @@ function releaseHemmedFans(model: LayoutModel): void {
   }
   if (!branches.length) return;
   const release = new Set<string>();
+  // A reserved branch that a gate would fail is released to the router as well (ticket 99): a run through a foreign group box (G2), or along a
+  // box edge inside the edge margin (G6). A branch that only meets a group at a right angle stays. Nothing else checks a branch against group
+  // boxes: `a-claimed-run-clears-a-shared-run` kept its branch through a neighbour group only because another link's stem happened to hem it,
+  // and a chord that removed that stem exposed it. Follow-up: ticket 113 keeps the planner's branches clear of foreign groups.
+  const boxes = groupBoxes(model);
+  const failsGate = (run: PathSegment, box: Rect, stroke: number): boolean => {
+    if (segmentRectDistance(run, box) <= 1e-6 && Math.min(run.from.x, run.to.x) < box.x + box.width - 1e-6 && Math.max(run.from.x, run.to.x) > box.x + 1e-6
+      && Math.min(run.from.y, run.to.y) < box.y + box.height - 1e-6 && Math.max(run.from.y, run.to.y) > box.y + 1e-6) return true;
+    const margin = GROUP_EDGE_LINK_CLEARANCE + stroke / 2;
+    const bottomEdge = box.y + box.height, rightEdge = box.x + box.width;
+    const along = (edge: number, low: number, high: number, at: number, from: number, to: number, inner: [number, number]): boolean =>
+      !(at > inner[0] + 1e-6 && at < inner[1] - 1e-6) && Math.abs(at - edge) < margin - 1e-6 && Math.min(from, to) < high - 1e-6 && Math.max(from, to) > low + 1e-6;
+    if (Math.abs(run.from.y - run.to.y) < 1e-6) return [box.y, bottomEdge].some(edge => along(edge, box.x, rightEdge, run.from.y, run.from.x, run.to.x, [box.y, bottomEdge]));
+    return Math.abs(run.from.x - run.to.x) < 1e-6 && [box.x, rightEdge].some(edge => along(edge, box.y, bottomEdge, run.from.x, run.from.y, run.to.y, [box.x, rightEdge]));
+  };
+  for (const item of branches) {
+    const stroke = linkStrokeWidth(item.link);
+    const foreign = boxes.find(({ id, bounds }) => item.runs.some(run => failsGate(run, bounds, stroke)) && !groupConsumers(model, id).includes(item.link.id));
+    if (!foreign) continue;
+    release.add(`${item.link.id}:${item.end}`);
+    placementWarning(model, 'FAN_BRANCH_THROUGH_GROUP',
+      `${item.link.id}'s reserved branch would fail a gate at the group ${foreign.id}; it keeps its shared stem and stage 8 routes the rest (ticket 99).`, [item.link.id]);
+  }
   for (const link of model.links) {
     // Stage 8 approaches a port only for a link it routes, and `planRoute` passes over every link
     // that already holds a complete path — one a rule pinned, and a bundle member, whose path

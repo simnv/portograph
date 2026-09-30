@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
-import { expectedFramePath, isFrameStraight, orthogonalLeg } from '../../src/layout/frame-paths.js';
+import { expectedFramePath, isRoutedChord, orthogonalLeg } from '../../src/layout/frame-paths.js';
 import { findPort } from '../../src/layout/row-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -99,7 +99,7 @@ describe('a frame chord holds its clearance along a neighbour\'s whole leg', () 
       let model: LayoutModel;
       try { model = await layout(parse(readFileSync(new URL(`../../goldens/synthetic/${name}`, import.meta.url), 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt }); } catch { continue; }
       for (const link of model.links) {
-        if (!isFrameStraight(model, link)) continue;
+        if (!isRoutedChord(model, link)) continue;
         const s = link.path!.segments[0]!;
         const ends = [link.attachments!.from.node, link.attachments!.to.node].map(id => model.groups[model.document.nodes[id]!.group]!.tier!);
         for (const band of model.tierBands) {

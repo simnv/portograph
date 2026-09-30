@@ -5,6 +5,7 @@ import type { LayoutModel } from '../../src/index.js';
 import { tierGapPlans } from '../../src/layout/gap-plan.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { orthogonalLinks } from '../orthogonal-links.js';
 
 // A gap the plan does not fit is left to the router (`fittingPlans`): nothing is planned into it, and libavoid routes its links among
 // the reserved parts of the other gaps. Ticket 52 deleted the allocation that used to seat such links (`allocateGap`, the holds and the
@@ -58,7 +59,7 @@ describe('a gap the plan does not fit is left to the router with a diagnostic (t
     // the router it is routed among the completed covers of its neighbours. The gap above tier 3 grows the 23 px the old measure gave
     // it (the plan asks for 198.5 more).
     growth.tiers = new Map([[3, 23]]);
-    const published = await publish('a-band-holds-the-group-that-set-its-edge');
+    const published = await layout(parse(orthogonalLinks(fixture('a-band-holds-the-group-that-set-its-edge'))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     expect(published.diagnostics.filter(item => item.code === 'TIER_GAP_PART_UNFIT').map(item => item.message))
       .toEqual(['the tier gap above tier 3 asks 164.00 px more than it has; its parts are left to the router.']);
     expect(removalsAreNamed(published)).toBe(true);

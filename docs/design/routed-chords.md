@@ -58,7 +58,8 @@ A link is a cross-frame candidate when all of these are true:
 4. After the side freeze (ADR-0009), the port on the upper end is on `bottom` and the port on the
    lower end is on `top`.
 
-Items 1 to 3 are known at stage 1. Item 4 is known after stage 6. `rebuildRowPaths` runs after
+Items 1 to 3 are known at stage 1. Item 4 is known after stage 6. The document tier of item 3 is the authored tier: stage 1 keeps it beside the
+sub-tier as `documentTier` on every group of an expanded document, because `tier` is a sub-tier from then on (ticket 99). `rebuildRowPaths` runs after
 stage 6 only, so the candidate is fixed before the first chord is read.
 
 A group-link member is a candidate, as inside one frame (Q96), because it draws as its own link.
@@ -173,12 +174,29 @@ foreign frame on a held chord, or makes it leave by a side edge, is refused
 (`STRAIGHT_LINK_HELD`); a move 7f cannot refuse keeps the chord and names it
 (`STRAIGHT_LINK_BLOCKED`), as today.
 
+*As built (ticket 99); coordinator's decision, 2026-09-30.* After the freeze only a foreign frame or canton box refuses a move; the facing edge is a
+rule of the decision and is not held. Trace: holding it left `a-member-title-widens-a-beside-row` with G6. There 7f widens a member's title,
+pushes the column of the next member, the chord of that member turns shallow and would leave its frame by a side edge, the move is refused, the
+title stays unfit (`GROUP_LABEL_GAP_INFEASIBLE`) and the orthogonal fallbacks of the neighbours run along a frame edge. Released, the title widens and
+no gate is gained. A held chord may therefore leave its frame through a side edge after 7f; it is named, not refused: at the end of 7f
+`STRAIGHT_LINK_EDGE` (warning, placement) names each frozen cross-frame chord that leaves by a side edge or inside the 10 px corner margin
+(reason `edge`), and the gates judge it.
+
 ## 8. How the other rules treat a held chord
 
 Every consumer of `isFrameStraight` reads the wider predicate (renamed `isRoutedChord`):
 `routerEntryPoints` and `legRects` (no stem, no leg), `route/obstacles.ts` (no router obstacle),
 `route/validate.ts` and G7 (ends on the faces), G5 (no stem, one declared diagonal), the score
 (continuity 1, Q94).
+
+**Bundles (7e).** A bundle's zones and member paths are derived after the rows rule decides. The draft clears them before it decides
+(`rebuildRegionGeometry`) and the validator's re-derivation clears them on its clone, so the rows rule never sees a bundle, for either kind of
+chord. A chord that crosses a bundle is judged by G6 afterwards, as on main.
+
+**Fan branches.** A shared-port fan tree reserves its branch run at placement, and nothing checks it against group boxes. A branch that a gate
+would fail, a run through a foreign group box (G2) or along a box edge inside the edge margin (G6), is released to the router
+(`FAN_BRANCH_THROUGH_GROUP`, warning); a branch that only meets a group at a right angle stays. A chord that removed the stem which hemmed a branch
+exposed the case (`a-claimed-run-clears-a-shared-run`). The release is a fallback: ticket 113 keeps the planner's branches clear of foreign groups.
 
 **Lanes (7a).** A lane is reserved before a chord is final, and a lane box is a wall to a chord.
 Lanes read a chord that is held at 7a: `corridorFree` keeps a lane's descent off every fixed path,

@@ -20,6 +20,6 @@ nodes:
   m2: { group: mid, class: provider, label: "m2" }
   l1: { group: low, class: tbr, label: "l1" }
 links:
-  - [h1, m1]
-  - [h1, m2]
-  - [m2, l1]
+  - [h1, m1, { route: orthogonal }]
+  - [h1, m2, { route: orthogonal }]
+  - [m2, l1, { route: orthogonal }]

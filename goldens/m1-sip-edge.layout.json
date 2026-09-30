@@ -3360,6 +3360,7 @@
           "ordinal": 1
         }
       },
+      "technique": "orthogonal",
       "path": {
         "owner": {
           "kind": "link",
@@ -3416,6 +3417,7 @@
           "ordinal": 1
         }
       },
+      "technique": "orthogonal",
       "path": {
         "owner": {
           "kind": "link",
@@ -7908,7 +7910,32 @@
   ],
   "groupLinks": [],
   "obstacles": [],
-  "diagnostics": [],
+  "diagnostics": [
+    {
+      "stage": "placement",
+      "severity": "info",
+      "code": "ROUTED_CHORD_REFUSED",
+      "message": "The link link-1 keeps the orthogonal route between frames: title.",
+      "owners": [
+        {
+          "kind": "link",
+          "id": "link-1"
+        }
+      ]
+    },
+    {
+      "stage": "placement",
+      "severity": "info",
+      "code": "ROUTED_CHORD_REFUSED",
+      "message": "The link link-2 keeps the orthogonal route between frames: title.",
+      "owners": [
+        {
+          "kind": "link",
+          "id": "link-2"
+        }
+      ]
+    }
+  ],
   "canvas": {
     "x": -1,
     "y": -0.5,

@@ -25,8 +25,8 @@ nodes:
   site-3: { group: sites, class: router, label: Site 3, ports: [{ name: up, side: top }] }
   site-4: { group: sites, class: router, label: Site 4, ports: [{ name: up, side: top }] }
 links:
-  - [provider.p1, site-1.up]
-  - [provider.p2, site-2.up]
-  - [provider.p3, site-3.up]
-  - [provider.p4, site-4.up]
+  - [provider.p1, site-1.up, { route: orthogonal }]
+  - [provider.p2, site-2.up, { route: orthogonal }]
+  - [provider.p3, site-3.up, { route: orthogonal }]
+  - [provider.p4, site-4.up, { route: orthogonal }]
   - [clock, lab, { class: sync }]

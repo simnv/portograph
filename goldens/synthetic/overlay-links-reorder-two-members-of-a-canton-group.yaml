@@ -24,10 +24,10 @@ nodes:
   ga-gw: { group: gamma, class: router, label: Gamma gateway }
   lab-srv: { group: lab, class: server, label: Lab server }
 links:
-  - [hub, al-gw]
-  - [hub, be-gw]
-  - [hub, ga-gw]
-  - [al-gw, lab-srv]
+  - [hub, al-gw, { route: orthogonal }]
+  - [hub, be-gw, { route: orthogonal }]
+  - [hub, ga-gw, { route: orthogonal }]
+  - [al-gw, lab-srv, { route: orthogonal }]
   - { from: probe, to: be-gw, class: flow }
   - { from: al-gw, to: ga-gw, class: flow }
   - { from: al-gw, to: ga-gw, class: flow }
