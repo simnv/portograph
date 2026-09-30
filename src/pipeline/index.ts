@@ -24,8 +24,8 @@ import { elkDeadlineMs, type CreateElkAttempt, type ElkClock } from '../layout/e
 import { route, ROUTE_BUDGET_MS, type CreateRouteAttempt } from '../route/index.js';
 import { CommandDeadlineError, POST_PLACEMENT_RESERVE_MS, UNBOUNDED_BUDGET, type Budget } from './budget.js';
 // After the stages: the modules below reach the centring module, whose import order the tests that mock it depend on.
-import { declinedFanDiagnostics, measureFans, type FanMeasure } from '../layout/fan-spread.js';
-import { chordClearances, isRoutedChord } from '../layout/frame-paths.js';
+import { declinedFanDiagnostics, fanRoundDropped, fanRoundHolds, measureFans, type FanMeasure } from '../layout/fan-spread.js';
+import { chordClearances } from '../layout/frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
 
 
@@ -35,7 +35,6 @@ const FAN_ROUNDS = 2;
  * before the hard command deadline; the number never scales with the first run's time, so the layout does not depend on machine speed (ticket 112). */
 const FAN_RERUN_MS = 8000;
 const fanGateMs = POST_PLACEMENT_RESERVE_MS + FAN_RERUN_MS;
-const straightChords = (model: LayoutModel): number => model.links.filter(link => isRoutedChord(model, link)).length;
 
 export { CommandDeadlineError, createBudget, UNBOUNDED_BUDGET } from './budget.js';
 export type { Budget } from './budget.js';
@@ -143,7 +142,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     if ((trial.fallbackUsed && !model.fallbackUsed) || (trial.deadlineHit && !model.deadlineHit)) {
       cut('ELK fell back or met its time limit during it, and the re-run was dropped'); break;
     }
-    if (straightChords(trial) < straightChords(model)) break;
+    if (!fanRoundHolds(model, trial)) { cuts.push(fanRoundDropped(model, trial)); break; }
     model = trial; floors = next;
   }
   const declined = declinedFanDiagnostics(measureFans(model).declined);

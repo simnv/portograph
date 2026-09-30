@@ -18,6 +18,7 @@ import { placeOverlayFree } from './overlay-place.js';
 import { fitRegionGroup, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 import { EPS } from '../score/geometry.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
+import { chordKind, isRoutedChord } from './frame-paths.js';
 
 export interface CentreBudget { remaining: number; passes: number }
 export function createCentreBudget(): CentreBudget { return { remaining: 8, passes: 0 }; }
@@ -676,6 +677,9 @@ export function centreViolations(model: LayoutModel, ahead = false): string[] {
         if (step.unresolved.has(child)) continue;
         const feed = ownFeeds.get(child)!;
         if (byId.get(feed.link)?.bundle || drops.has(feed.link)) continue;
+        // A held chord runs between two faces at any angle: its child port owes it no place under the feed (ticket 100, the centring of a chord that a title band once refused).
+        // Only the publication check excuses it: the centring loop's own check (`ahead`) keeps asking for the alignment, so the passes are the ones they were.
+        if (!ahead && isRoutedChord(model, byId.get(feed.link)!) && chordKind(model, byId.get(feed.link)!) === 'cross') continue;
         if ((afterBundles && bundled.has(child)) || (atBundles && bundled.has(portId(feed.parent.ref)))) continue;
         if (isBar(feed.child.ref.node) || isBar(feed.parent.ref.node)) continue;
         const port = groupPorts.get(child)!;

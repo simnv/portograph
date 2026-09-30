@@ -1,3 +1,4 @@
+import { goldenWithRemainders as remaindersText } from '../golden-remainders.js';
 import { GROUP_PADDING } from '../../src/layout/regions.js';
 import { GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../../src/theme/geometry.js';
 import { readFileSync } from 'node:fs';
@@ -23,6 +24,8 @@ import { generateScaleYaml } from '../../scripts/scale-input.mjs';
 import { placed } from './phase-two-fixture.js';
 
 const golden = readFileSync(new URL('../../goldens/m1-sip-edge.yaml', import.meta.url), 'utf8');
+// Q108 (ticket 100) gives the two provider links their chord; the tests of the two remainders read them on the variant that keeps them orthogonal.
+const goldenWithRemainders = remaindersText();
 /** Stress ticket 05's fixture: one tier gap owes four rows, so 7f's third step really runs. */
 const rowsOwed = readFileSync(new URL('../../goldens/synthetic/a-tier-gap-grows-to-its-rows.yaml', import.meta.url), 'utf8');
 /** Stress ticket 13's fixture: a tier band whose rightmost group starts 1 624.76 px from its x. */
@@ -99,7 +102,7 @@ function run(model: LayoutModel): LayoutModel {
 
 describe('group label bands', () => {
   it('places all six real golden labels in clear measured bands', async () => {
-    const before = await throughBundles(golden), model = run(before);
+    const before = await throughBundles(goldenWithRemainders), model = run(before);
     const groupIds = Object.keys(model.document.groups);
 
     expect(model.stage).toBe('bands');
@@ -157,7 +160,7 @@ describe('group label bands', () => {
   });
 
   it('keeps every required router entry point outside the stroke-aware label band obstacles', async () => {
-    const model = run(await throughBundles(golden));
+    const model = run(await throughBundles(goldenWithRemainders));
     const remainders = model.links.filter(link => !link.path).map(link => link.id);
     expect(remainders).toEqual(['link-1', 'link-2']);
 
