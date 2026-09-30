@@ -17,6 +17,7 @@ import { fitRegionGroup } from './regions.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { gridCells, gridRowGap, groupShape, isGridGroup, packGridRows } from './grid.js';
 import { freezePortTopology } from './mutation.js';
+import { busOfPort, busSide, meshBuses } from './bus.js';
 const key = portId;
 
 /**
@@ -734,6 +735,8 @@ export function sidesTwo(model: LayoutModel): LayoutModel {
     }
   }
   for (const [root, members] of undecided) {
+    // A bus port takes the bus edge once every routed port has settled (below), never a side from the row order.
+    if (members.every(({ port }) => busOfPort(model, port.ref) !== undefined)) continue;
     const decided = new Set<Side>();
     for (const port of membersByRoot.get(root) ?? []) if (port.side !== undefined) decided.add(port.side);
     if (decided.size > 1) throw new Error(`Bundle members at ${members[0]!.id} leave on different decided sides`);
@@ -741,6 +744,15 @@ export function sidesTwo(model: LayoutModel): LayoutModel {
     for (const { id, port } of members) for (const side of SIDE_TIE_ORDER) votes[side] += voteFor(id, port)[side];
     const chosen: Side = decided.size ? [...decided][0]! : SIDE_TIE_ORDER.reduce((best, side) => votes[side] > votes[best] ? side : best, 'bottom');
     for (const { port } of members) port.side = chosen;
+  }
+  // The bus edge is read after the routed sides are settled (a shared port recomputes its majority), within the span
+  // the skeleton order gives, and before stage 5 resizes the nodes and repacks the rows.
+  for (const bus of meshBuses(model)) {
+    bus.side = busSide(model, bus);
+    for (const ref of bus.ports) {
+      const port = model.nodes[ref.node]!.ports.find(item => key(item.ref) === key(ref))!;
+      if (port.side === undefined) port.side = bus.side;
+    }
   }
   for (const id of orderedNodeIds(model.document)) for (const port of model.nodes[id]!.ports) delete port.sizingSide;
   // Transit corridors are wider than the ordinary port pitch. Reserve that capacity on the end the
@@ -812,6 +824,8 @@ export function sidesTwo(model: LayoutModel): LayoutModel {
       };
       const ports = node.ports.filter(port => port.side === side);
       const far = (ref: PortRef): number => {
+        // The bus port is the last port in engine order on its side (an authored `order:` still wins below).
+        if (busOfPort(model, ref) !== undefined) return Number.MAX_VALUE;
         const list = peers.get(key(ref)) ?? [];
         return list.length ? list.reduce((sum, peer) => sum + coordinate(peer), 0) / list.length : Infinity;
       };

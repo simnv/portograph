@@ -23,6 +23,8 @@ import { LINK_LABEL_GEOMETRY, overlayLabelsSuppressed } from './link-labels.js';
 import { overlayPath } from './overlay-paths.js';
 import { isFrameStraight } from './frame-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { busBandHeight, busRoom } from './bus-room.js';
+import { busGeometry, expectedBusBands, syncBusGeometry } from './bus.js';
 
 export const GROUP_LABEL_GEOMETRY = {
   fontFamily: FONT_FAMILY,
@@ -294,8 +296,10 @@ function clearanceFor(model: LayoutModel, group: LayoutGroup, entries: RouterEnt
   const members = new Set(group.nodes);
   const reach = Math.max(0, ...entries.filter(entry => entry.side === side && members.has(entry.node)).map(entry => entry.outward));
   const room = detourLabelRoom(model, group);
-  if (reach <= 0) return Math.max(groupPadding(model, group)[side], room);
-  return Math.max(groupPadding(model, group)[side], room, reach + strokeAllowance(model) + GROUP_LABEL_GEOMETRY.entryTolerance);
+  // An in-frame bus on the title edge lies between the bodies and the title: the clearance grows by the bus band.
+  const bus = busRoom(model, group)[side];
+  if (reach <= 0) return Math.max(groupPadding(model, group)[side], room) + bus;
+  return Math.max(groupPadding(model, group)[side], room, reach + strokeAllowance(model) + GROUP_LABEL_GEOMETRY.entryTolerance) + bus;
 }
 
 type SameTierEnds = { leftPort: LayoutPort; leftNode: LayoutNode; rightPort: LayoutPort; rightNode: LayoutNode };
@@ -380,6 +384,9 @@ function expectedBands(model: LayoutModel, entries: RouterEntryPoint[]): LabelBa
 function syncBands(model: LayoutModel, entries = routerEntryPoints(model)): boolean {
   const before = new Map(model.labelBands.map(band => [band.group, band.clearance]));
   model.labelBands = expectedBands(model, entries);
+  const busBands = expectedBusBands(model);
+  if (busBands.length) model.busBands = busBands; else delete model.busBands;
+  syncBusGeometry(model);
   return model.labelBands.some(band => before.has(band.group) && Math.abs(before.get(band.group)! - band.clearance) > PLACEMENT_EPS);
 }
 
@@ -514,6 +521,22 @@ function legRects(model: LayoutModel): ForbiddenRect[] {
         if (anchor.x < box.x - PLACEMENT_EPS || anchor.x > right(box) + PLACEMENT_EPS) continue;
         const y = Math.min(anchor.y, box.y), far = Math.max(anchor.y, bottom(box));
         result.push({ id: `${link.id}:leg:${end}`, bounds: { x: anchor.x - stroke / 2, y, width: stroke, height: far - y }, clearance: GROUP_LABEL_LINK_CLEARANCE });
+      }
+    }
+  }
+  // A stub of an across-frames bus leaves its port through the padding and the label band of the member's frame on the bus side: a leg
+  // of the band's ports, so the title stands clear of it as of a routed leg (mesh-bus.md, section 4, *A stub through a title band*).
+  for (const bus of model.meshBuses ?? []) {
+    if (bus.placement !== 'across-frames' || bus.side === undefined) continue;
+    for (const ref of bus.ports) {
+      const port = findPort(model, ref);
+      if (!port?.anchor) continue;
+      for (const { band, members } of owned) {
+        if (band.side !== bus.side || !members.has(ref.node)) continue;
+        const box = band.bounds, stroke = routedStroke(model);
+        if (port.anchor.x < box.x - PLACEMENT_EPS || port.anchor.x > right(box) + PLACEMENT_EPS) continue;
+        const y = Math.min(port.anchor.y, box.y), far = Math.max(port.anchor.y, bottom(box));
+        result.push({ id: `${bus.id}:stub:${ref.node}`, bounds: { x: port.anchor.x - stroke / 2, y, width: stroke, height: far - y }, clearance: GROUP_LABEL_LINK_CLEARANCE });
       }
     }
   }
@@ -874,6 +897,13 @@ function cantonGapNeeds(model: LayoutModel): { below: Map<number, number>; above
     const map = band.side === 'top' ? above : below, tier = band.side === 'top' ? tiers.first : tiers.last;
     map.set(tier, Math.max(map.get(tier) ?? 0, need));
   }
+  // An across-frames bus band lies in the gap on its edge and belongs to no frame: it is held by the sub-tier, as a canton band is.
+  // On an edge that also carries a canton band the need is the sum, 20 + bus band + canton band + 20, and never the larger of the two.
+  for (const bus of model.meshBuses ?? []) {
+    if (bus.placement !== 'across-frames' || bus.side === undefined) continue;
+    const map = bus.side === 'top' ? above : below, height = busBandHeight(bus), known = map.get(bus.row);
+    map.set(bus.row, known === undefined ? GROUP_PADDING + height + GROUP_PADDING : known + height);
+  }
   return { below, above };
 }
 
@@ -884,6 +914,7 @@ function reserveInitialSpace(model: LayoutModel): void {
   // room still missing, never the whole band again. The map is empty on the first call, where the
   // group holds the ordinary padding and the shift is the whole band beyond it.
   const held = new Map(model.labelBands.map(band => [band.host ?? band.group, band]));
+  const heldBus = new Map((model.busBands ?? []).filter(band => band.group !== undefined).map(band => [band.group!, band]));
   const entries = routerEntryPoints(model);
   syncBands(model, entries);
   // The band replaces the ordinary padding on its side, and its clearance replaces that padding
@@ -893,28 +924,35 @@ function reserveInitialSpace(model: LayoutModel): void {
   // flank stays level with the peer whose band grew more. A frame's band is held by one rank cell
   // (`band.host`), so only that cell asks for room; the other cells of the frame hold no band and
   // take the levelling shift of their sub-tier like any group without a title.
+  // An in-frame mesh bus band is held the same way (mesh-bus.md, section 4): on the title edge it is in the band's clearance;
+  // on the other edge it lies against the padding, and the group grows by the difference.
   const ids = orderedGroupIds(model.document);
   const shifts = new Map(ids.map(id => {
-    const group = model.groups[id]!, band = bandHeldBy(model, id);
-    if (band === undefined) return [id, 0];
-    const prior = held.get(id);
-    const room = prior !== undefined && prior.side === band.side
-      ? prior.bounds.height + prior.clearance : groupPadding(model, group)[band.side];
-    return [id, band.bounds.height + band.clearance - room];
+    const group = model.groups[id]!, band = bandHeldBy(model, id), result = { top: 0, bottom: 0 };
+    if (band !== undefined) {
+      const prior = held.get(id);
+      const room = prior !== undefined && prior.side === band.side
+        ? prior.bounds.height + prior.clearance : groupPadding(model, group)[band.side];
+      result[band.side] = band.bounds.height + band.clearance - room;
+    }
+    const bus = busRoom(model, group), padding = groupPadding(model, group), prior = heldBus.get(id);
+    for (const side of ['top', 'bottom'] as const) {
+      if (bus[side] <= 0 || band?.side === side) continue;
+      const have = prior !== undefined && prior.side === side ? Math.max(padding[side], prior.bounds.height) : padding[side];
+      result[side] = Math.max(padding[side], bus[side]) - have;
+    }
+    return [id, result];
   }));
-  const topShift = (tier: number) => Math.max(0, ...ids
-    .filter(id => model.groups[id]!.tier === tier && bandHeldBy(model, id)?.side === 'top')
-    .map(id => shifts.get(id)!));
+  const topShift = (tier: number) => Math.max(0, ...ids.filter(id => model.groups[id]!.tier === tier).map(id => shifts.get(id)!.top));
   for (const id of ids) {
     const group = model.groups[id]!, band = bandHeldBy(model, id), shift = shifts.get(id)!;
-    const side = band?.side ?? 'top';
-    const down = Math.max(side === 'top' ? shift : 0, topShift(group.tier!));
+    const down = topShift(group.tier!);
     for (const nodeId of group.nodes) {
       const node = model.nodes[nodeId]!;
       node.bounds!.y += down;
       for (const port of node.ports) port.anchor!.y += down;
     }
-    group.bounds!.height += side === 'top' ? down : down + shift;
+    group.bounds!.height += down + shift.bottom;
     pushFollowingGroups(model, group, Math.max(group.bounds!.width,
       band === undefined ? 0 : measurement(titleText(model, band)).width + 2 * GROUP_LABEL_GEOMETRY.horizontalInset));
   }
@@ -1386,6 +1424,15 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   }
   const entries = routerEntryPoints(model);
   if (!equal(model.labelBands, expectedBands(model, entries))) throw new Error('Group label bands contradict final group geometry');
+  // The bus bands and the bar and stubs of every bus are read off the settled row and frames; the side is fixed at the freeze (mesh-bus.md, section 4).
+  if (!equal(model.busBands ?? [], expectedBusBands(model))) throw new Error('Bus bands contradict final group geometry');
+  for (const bus of model.meshBuses ?? []) {
+    for (const ref of bus.ports) if (findPort(model, ref)?.side !== bus.side) throw new Error(`Bus port of ${ref.node} does not stand on the side ${bus.id} was fixed on`);
+    const geometry = busGeometry(model, bus);
+    if (!equal({ bar: bus.bar, stubs: bus.stubs, labelRoom: bus.labelRoom }, { bar: geometry?.bar, stubs: geometry?.stubs, labelRoom: geometry?.labelRoom })) {
+      throw new Error(`The bar and stubs of ${bus.id} contradict final group geometry`);
+    }
+  }
   for (const band of model.labelBands) {
     if (!Number.isFinite(band.clearance) || band.clearance < GROUP_PADDING - PLACEMENT_EPS) throw new Error(`Group ${band.group} reserves less than the ordinary padding below its label band`);
     // A canton band stands outside its member frames, which hold the margin; the frame check (G9) reads them.

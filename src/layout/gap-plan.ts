@@ -730,6 +730,20 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
     if (bottom(box) <= gap.low + EPS && bottom(box) + margin > gap.low) obstacles.push({ x0, x1, anchor: 'above', bound: bottom(box) + margin });
     if (box.y >= gap.high - EPS && margin + bandTop - box.y > 0) obstacles.push({ x0, x1, anchor: 'below', bound: margin + bandTop - box.y });
   }
+  // An across-frames mesh bus band stands in the gap on its bus edge and belongs to no group (mesh-bus.md, section 4): an O5 band anchored to
+  // the row's sub-tier band over the bar's span, plus `k`. No planned row lies inside it. A band in a frame is inside a group box already.
+  for (const held of model.busBands ?? []) {
+    const bus = model.meshBuses?.find(item => item.id === held.bus);
+    if (bus?.placement !== 'across-frames') continue;
+    const x0 = held.bounds.x - keep, x1 = right(held.bounds) + keep;
+    if (held.side === 'bottom' && bus.row === gap.above) {
+      const bound = bottom(held.bounds) + keep;
+      if (bound > gap.low) { obstacles.push({ x0, x1, anchor: 'above', bound }); }
+    } else if (held.side === 'top' && bus.row === gap.below) {
+      const bound = keep + bandTop - held.bounds.y;
+      if (bound > 0) { obstacles.push({ x0, x1, anchor: 'below', bound }); }
+    }
+  }
   // A canton frame is no group box, and it reaches into the gap: its margin and its title band stand below its last sub-tier
   // (or above its first), outside every member box. A canton that ends at this gap's upper band is an O5 band anchored to it,
   // one that starts at this gap's lower band is anchored to that, both with the group-edge margin. One that spans the gap is

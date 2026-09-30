@@ -383,7 +383,7 @@ const CHORD_STAGES = ['bundles', 'bands', 'route', 'link-labels', 'validate', 'e
 /** The overlay links that draw one straight segment in the model as it stands. */
 function straightOverlays(model: LayoutModel): Set<string> {
   const blockers = overlayBlockers(model);
-  return new Set(model.links.filter(link => link.layer === 'overlay' && straightChord(model, link, blockers) !== undefined).map(link => link.id));
+  return new Set(model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && straightChord(model, link, blockers) !== undefined).map(link => link.id));
 }
 function centreGroupStep(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>): { unresolved: Set<string>; group: LayoutGroup } {
   // From 7e on, an overlay link that draws one straight segment keeps the space placement reserved for it. A step that leaves fewer

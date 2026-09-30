@@ -8,7 +8,7 @@ export type LayoutStage = 'normalised' | 'resolve' | 'sides-one' | 'size' | 'ske
 
 export type Layer = 'routed' | 'overlay';
 export type Owner =
-  | { kind: 'node' | 'group' | 'link' | 'group-link' | 'bundle' | 'shared-stem' | 'lane' | 'legend' | 'mesh-bus'; id: string }
+  | { kind: 'node' | 'group' | 'link' | 'group-link' | 'bundle' | 'shared-stem' | 'lane' | 'legend' | 'mesh-bus' | 'bus-band'; id: string }
   | { kind: 'barCross'; node: string; link: string };
 
 export interface OwnedElement {
@@ -320,6 +320,23 @@ export interface MeshBus extends OwnedElement {
   members: string[];
   /** The group-links the bus dissolved (their former ids), whole or in part. */
   dissolved: string[];
+  /** The horizontal edge of the row the bar stands on; fixed by stage 5 (docs/design/mesh-bus.md, section 4). */
+  side?: 'top' | 'bottom';
+  /** From 7f on: the bar, from the first bus port's x to the last. */
+  bar?: { from: Point; to: Point };
+  /** From 7f on: one stub per member, from the port's outward face straight to the bar. */
+  stubs?: { node: string; from: Point; to: Point }[];
+  /** From 7f on: the x interval of the bar the label stands in (`undefined`: no interval holds it), for stage 9. */
+  labelRoom?: { from: number; to: number };
+}
+
+/** The bus band 7f reserves: `group` names the host of an in-frame band, and is absent across frames. */
+export interface BusBand extends OwnedElement {
+  id: string;
+  bus: string;
+  group?: string;
+  side: 'top' | 'bottom';
+  bounds: Rect;
 }
 
 export interface Obstacle extends OwnedElement {
@@ -359,6 +376,8 @@ export interface LayoutModel {
   groupLinks: GroupLink[];
   /** Absent when the document holds no mesh bus. */
   meshBuses?: MeshBus[];
+  /** Absent when no bus has a band; 7f publishes them. */
+  busBands?: BusBand[];
   obstacles: Obstacle[];
   diagnostics: Diagnostic[];
   runtime: LayoutRuntime;

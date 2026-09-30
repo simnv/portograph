@@ -120,7 +120,7 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
     // The straight overlay links that touch or pass over this tier: a move is kept only where their
     // count, read by the real overlay decision, holds or rises (spec section 5). The mean of partners
     // in two tiers can put a body of the tier between the two ends of a link that was straight.
-    const spanning = model.links.filter(link => link.layer === 'overlay' && link.attachments).filter(link => {
+    const spanning = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && link.attachments).filter(link => {
       const ends = [link.attachments!.from.node, link.attachments!.to.node].map(node => model.groups[groupOf(node)]!.tier!);
       return Math.min(...ends) <= tier && tier <= Math.max(...ends);
     });
