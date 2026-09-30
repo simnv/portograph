@@ -84,4 +84,17 @@ describe('the tier-gap plan and a held routed chord', () => {
     expect(chordGapNotes(model, short).filter(item => item.code === 'TIER_GAP_CHORD_EXPOSED').length).toBeGreaterThan(0);
     expect(chordGapNotes(model, plans).filter(item => item.code === 'TIER_GAP_CHORD_EXPOSED')).toEqual([]);
   }, 60000);
+
+  it('keeps the middle drop of a Z part off a held chord of its gap (tierGapPlan hands the chords to the plan)', async () => {
+    const model = await atBands('an-earlier-link-with-no-run-crosses-on-the-row-between-its-tips');
+    const zed = (m: LayoutModel) => tierGapPlans(m).flatMap(item => item.plan.parts.filter(part => part.shape === 'z').map(part => ({ gap: item.gap, middle: part.middle! })))[0]!;
+    const free = zed(model);
+    expect(free.middle).toBeCloseTo(92.75, 6);
+    // Link-1 is a held chord of another gap; forged to stand vertical across this gap at the free middle drop, it is a wall the drop must keep 11.5 px from.
+    const forged = structuredClone(model);
+    const segment = forged.links.find(link => link.id === 'link-1')!.path!.segments[0]!;
+    segment.from = { x: free.middle, y: free.gap.low - 10 }; segment.to = { x: free.middle, y: free.gap.high + 10 };
+    expect(forged.frozenChords).toContain('link-1');
+    expect(Math.abs(zed(forged).middle - free.middle)).toBeGreaterThanOrEqual(11.5 - 1e-6);
+  }, 60000);
 });

@@ -158,4 +158,11 @@ describe('a cross-frame chord crosses the title band of its own end', () => {
     expect(linkOf(short, 'upstream-router', 'provider-1').technique).toBe('straight');
     expect(refusals(short)).toEqual([]);
   }, 60000);
+
+  it('widens the crossing rectangle by the slant of the chord: the full layout of a canton band passes G3 (label-collision)', async () => {
+    // Measured: with the widening left out (`slant = 1`) this layout fails G3 `label-collision` on a slanted chord.
+    const model = await run(fixture('a-canton-band-holds-the-rows-off'));
+    expect(model.links.some(link => chordKind(model, link) === 'cross' && link.path!.segments[0]!.from.x !== link.path!.segments[0]!.to.x)).toBe(true);
+    gates(model);
+  }, 60000);
 });
