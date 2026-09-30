@@ -261,9 +261,12 @@ describe('restore checks the stored hint against the document and the geometry (
 });
 
 describe('with no hint the layout is byte-identical to main (ticket 114)', () => {
-  // Hashes of the layout JSON without `runtime`, measured on main at e30c100.
+  // Hashes of the layout JSON without `runtime`, measured on main at e30c100. `a-group-holds-both-ends-of-a-bundle` is re-baselined for ranked-groups tickets
+  // 100-102: link-1 takes a routed chord across its own title band (technique straight, one segment, `frozenChords`; the `ROUTED_CHORD_REFUSED` note is gone),
+  // and nothing else in its layout differs (diffed against main's src at 964d77f). The other three fixtures are untouched by them. Each also compares a
+  // no-hint run with a run with empty hint and floor maps, which is the ticket 114 claim itself.
   const main: Record<string, string> = {
-    'a-group-holds-both-ends-of-a-bundle': '73b7d5b542beac36',
+    'a-group-holds-both-ends-of-a-bundle': 'b11defc7dffb0055',
     'a-bus-in-a-rank-gap-grows-the-gap': '2bf7ca0b64536533',
     'a-linked-node-steps-out-of-a-straight-chord': '36092f8a7ee662fb',
     'a-bar-end-keeps-its-corridor': '94c507c2774f69cf',
