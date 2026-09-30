@@ -21,6 +21,7 @@ vi.mock('../../src/layout/side-measure.js', async importOriginal => {
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const PAST_SIBLING = 'an-overlay-leaves-a-lateral-side-past-a-sibling-body';
 const BLOCKED = 'an-overlay-keeps-its-natural-side-when-the-lateral-segment-is-blocked';
+const TWO_TIERS = 'members-of-two-tiers-stand-as-two-rows';
 const FAN = 'a-fan-spreads-its-ports-so-its-chords-hold-clearance';
 const run = async (name: string, script?: Script, testMaxReruns?: number): Promise<LayoutModel> => {
   state.script = script; state.calls = 0;
@@ -82,5 +83,34 @@ describe('the round loop (ticket 115, side-faces.md Section 7)', () => {
     expect(model.diagnostics.filter(item => item.code === 'SIDE_HINT_REFUSED')).toHaveLength(2);
     expect(state.calls).toBe(2);
     expect(withoutNotes(model)).toBe(withoutNotes(await run(FAN)));
+  }, 60000);
+
+  it('drops a trial that adds an overlay crossing at a moved port, though its planned bends fall (review M1)', async () => {
+    // On this input 7f straightens link-6 by itself. A scripted hint on its probe end passes the shape test but makes it cross link-5.
+    const plain = await run(TWO_TIERS, undefined, 0);
+    const link = plain.links.find(item => item.id === 'link-6')!;
+    const model = await run(TWO_TIERS, (call, real) => call === 1 ? offerOf(portKey(link.attachments!.from), 'right', link.id) : real());
+    expect(model.nodes['probe']!.ports.some(port => port.sideHint === true)).toBe(false);
+    expect(model.diagnostics.map(item => item.code)).not.toContain('SIDE_HINT_TAKEN');
+    expect(withoutNotes(model)).toBe(withoutNotes(plain));
+  }, 60000);
+
+  it('lets a placement error that is no hint refusal surface', async () => {
+    state.script = undefined; state.calls = 0;
+    // The second placement run (the side trial) throws a TypeError from the progress callback of its `resolve` stage.
+    let resolves = 0;
+    const onProgress = (progress: { stage: string }): void => { if (progress.stage === 'resolve' && ++resolves === 2) throw new TypeError('boom'); };
+    await expect(layout(parse(fixture(PAST_SIBLING)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, onProgress })).rejects.toThrow(TypeError);
+  }, 60000);
+
+  it('does not blame a new hint for an old one that already faced away on the kept model (review L1)', async () => {
+    const plain = await run(PAST_SIBLING, undefined, 0);
+    const link = plain.links.find(item => item.layer === 'overlay')!;
+    // A test hint on the server end that faces away from the client, from the first placement on. The scripted offer is for the client end.
+    state.script = (call, real) => call === 1 ? offerOf(portKey(link.attachments!.to), 'left', link.id) : real(); state.calls = 0;
+    const model = await layout(parse(fixture(PAST_SIBLING)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
+      testSideHints: new Map([[portKey(link.attachments!.from), 'left' as const]]) });
+    const refused = model.diagnostics.filter(item => item.code === 'SIDE_HINT_REFUSED');
+    expect(refused.map(item => item.message).join()).not.toContain('broke an old one');
   }, 60000);
 });

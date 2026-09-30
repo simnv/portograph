@@ -1,12 +1,12 @@
 import type { PortRef } from '../model/document.js';
 import type { Point, Rect } from '../model/geometry.js';
-import type { LayoutLink, LayoutModel, LayoutNode, LayoutPort } from '../model/layout.js';
+import type { LayoutLink, LayoutModel, LayoutNode, LayoutPort, PathSegment } from '../model/layout.js';
 import { placePortPill } from '../geometry/index.js';
 import { measurePortPill } from '../text/index.js';
-import { EPS } from '../score/geometry.js';
+import { EPS, intersection, samePoint } from '../score/geometry.js';
 import { isRoutedChord } from './frame-paths.js';
 import { transitTiers } from './lanes.js';
-import { overlayBlockers, overlayPath, straightChord, type OverlayBlockers } from './overlay-paths.js';
+import { crosses, overlayBlockers, overlayPath, straightChord, type OverlayBlockers } from './overlay-paths.js';
 import { facingSide, hintRefusal } from './side-hints.js';
 import { portKey } from './sides-one.js';
 
@@ -55,6 +55,60 @@ export function bendTotals(model: LayoutModel): { bent: number; total: number } 
     if (bends > 0) { bent++; total += bends; }
   }
   return { bent, total };
+}
+
+/** Extra room 7f may take: it grows tier gaps after 7e, so a segment that misses every body by less than this at 7e can still publish straight (as `FAN_SLACK`). */
+export const NATURAL_SLACK = 4;
+const NORMAL_OF: Readonly<Record<string, Point>> = { top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } };
+const shrink = (box: Rect, by: number): Rect => ({ x: box.x + by, y: box.y + by, width: Math.max(0, box.width - 2 * by), height: Math.max(0, box.height - 2 * by) });
+
+/**
+ * Whether the overlay link's straight segment between its natural faces is clear of every foreign body and pill once each is pulled in by
+ * `NATURAL_SLACK`. Such a link is bent at 7e only by a margin 7f closes, and it publishes straight without a hint (ticket 115 review, M1).
+ */
+function naturalStraightNearlyClear(model: LayoutModel, link: LayoutLink, blockers: OverlayBlockers): boolean {
+  const chord = straightChord(model, link, blockers, true);
+  if (chord === undefined) return false;
+  const ends = [link.attachments!.from, link.attachments!.to].map(ref => model.nodes[ref.node]?.ports.find(port => portKey(port.ref) === portKey(ref)));
+  const dir = { x: chord.to.x - chord.from.x, y: chord.to.y - chord.from.y };
+  const leaves = (port: LayoutPort | undefined, sign: number): boolean => port?.side !== undefined
+    && sign * (dir.x * NORMAL_OF[port.side]!.x + dir.y * NORMAL_OF[port.side]!.y) >= -EPS;
+  if (!leaves(ends[0], 1) || !leaves(ends[1], -1)) return false;
+  const own = ends.flatMap(port => port?.pill && port.ref.anonymous !== true ? [port.pill.bounds] : []);
+  const window: Rect = { x: Math.min(chord.from.x, chord.to.x), y: Math.min(chord.from.y, chord.to.y), width: Math.abs(dir.x), height: Math.abs(dir.y) };
+  return !blockers.some(window, box => !own.some(pill => pill.x === box.x && pill.y === box.y && pill.width === box.width && pill.height === box.height)
+    && crosses(chord.from, chord.to, shrink(box, NATURAL_SLACK)));
+}
+
+const strictCrossing = (a: PathSegment, b: PathSegment): boolean => {
+  const point = intersection(a, b);
+  return point !== undefined && ![a.from, a.to, b.from, b.to].some(end => samePoint(end, point));
+};
+
+/**
+ * How many pairs of links cross where one of the pair is an overlay link ending on one of `nodes` (spec Section 15 reports crossings; the round
+ * must not add one at a moved port). It reads the segments known at 7e with no router: the derived path of an overlay link, the pinned path of
+ * a chord or a level path. A pair counts once.
+ */
+export function overlayCrossingsAt(model: LayoutModel, nodes: ReadonlySet<string>): number {
+  const blockers = overlayBlockers(model), cache = new Map<string, PathSegment[]>();
+  const segments = (link: LayoutLink): PathSegment[] => {
+    if (cache.has(link.id)) return cache.get(link.id)!;
+    // A link 7f will straighten by itself is read as its natural chord, the shape it publishes, not as the bent path it has at 7e.
+    const chord = isOverlay(link) && naturalStraightNearlyClear(model, link, blockers) ? straightChord(model, link, blockers, true) : undefined;
+    cache.set(link.id, chord !== undefined ? [{ from: chord.from, to: chord.to, owner: link.owner }]
+      : isOverlay(link) ? overlayPath(model, link, blockers).segments : link.path?.segments ?? []);
+    return cache.get(link.id)!;
+  };
+  const near = model.links.filter(link => isOverlay(link) && (nodes.has(link.attachments!.from.node) || nodes.has(link.attachments!.to.node)));
+  const pairs = new Set<string>();
+  for (const one of near) for (const other of model.links) {
+    if (other.id === one.id || other.attachments === undefined) continue;
+    const key = one.id < other.id ? `${one.id}|${other.id}` : `${other.id}|${one.id}`;
+    if (pairs.has(key)) continue;
+    if (segments(one).some(a => segments(other).some(b => strictCrossing(a, b)))) pairs.add(key);
+  }
+  return pairs.size;
 }
 
 export interface SideOffer {
@@ -114,7 +168,7 @@ export function measureSides(model: LayoutModel, refused: ReadonlySet<string>, p
   const tierOf = (ref: PortRef): number => model.groups[model.document.nodes[ref.node]!.group]!.tier!;
   let nodes: LayoutModel['nodes'] = model.nodes;
   let probes = 0;
-  for (const link of model.links.filter(item => isOverlay(item) && plannedBends(model, item, blockers) > 0)) {
+  for (const link of model.links.filter(item => isOverlay(item) && plannedBends(model, item, blockers) > 0 && !naturalStraightNearlyClear(model, item, blockers))) {
     const ends = [link.attachments!.from, link.attachments!.to];
     if (ends[0]!.node === ends[1]!.node || tierOf(ends[0]!) === tierOf(ends[1]!)) continue;
     const laterals: Lateral[] = [];
@@ -142,7 +196,7 @@ export function measureSides(model: LayoutModel, refused: ReadonlySet<string>, p
       }
       const probe: LayoutModel = { ...model, nodes: draft };
       const chord = straightChord(probe, link, overlayBlockers(probe));
-            if (chord === undefined) return;
+      if (chord === undefined) return;
       const length = Math.hypot(chord.to.x - chord.from.x, chord.to.y - chord.from.y);
       if (length <= EPS) return;
       for (const lateral of chosen) {

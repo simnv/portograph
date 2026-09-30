@@ -10,7 +10,8 @@ import type { Diagnostic, LayoutModel, LayoutStage, NormalisedDocument, Side, Si
 import { resolve } from '../resolve/index.js';
 import { sidesOne } from '../layout/sides-one.js';
 import { sizeNodes } from '../layout/size.js';
-import { skeleton } from '../layout/skeleton.js';
+import { skeleton, SkeletonError } from '../layout/skeleton.js';
+import { BundleFeasibilityError } from '../layout/bundle-paths.js';
 import { sidesTwo } from '../layout/sides-two.js';
 import { rows } from '../layout/rows.js';
 import { lanes } from '../layout/lanes.js';
@@ -27,8 +28,8 @@ import { CommandDeadlineError, POST_PLACEMENT_RESERVE_MS, UNBOUNDED_BUDGET, type
 import { declinedFanDiagnostics, fanRoundDropped, fanRoundHolds, measureFans, type FanMeasure } from '../layout/fan-spread.js';
 import { chordClearances, isRoutedChord } from '../layout/frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
-import { hintsFacingAway, sideHintDiagnostics, type SideHints } from '../layout/side-hints.js';
-import { bendTotals, measureSides, plannedBends, refusedKey, type SideOffer } from '../layout/side-measure.js';
+import { hintsFacingAway, SideHintRefusal, sideHintDiagnostics, type SideHints } from '../layout/side-hints.js';
+import { bendTotals, measureSides, overlayCrossingsAt, plannedBends, refusedKey, type SideOffer } from '../layout/side-measure.js';
 import { overlayBlockers } from '../layout/overlay-paths.js';
 
 
@@ -224,19 +225,26 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     reruns++;
     try { trial = await timed('rerun-side', () => place(floors, all, nodeFloors)); } catch (error) {
       if (error instanceof CommandDeadlineError) { cutSide('the command deadline was reached during it'); break; }
-      refuse(offer.hints.keys(), offer.hints, `the placement run rejected it (${error instanceof Error ? error.message : String(error)})`);
+      // Only the layout's own refusals drop the offer; anything else (a TypeError) is a bug and must surface.
+      if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError)) throw error;
+      refuse(offer.hints.keys(), offer.hints, `the placement run rejected it (${error.message})`);
       continue;
     }
     if ((trial.fallbackUsed && !model.fallbackUsed) || (trial.deadlineHit && !model.deadlineHit)) {
       cutSide('ELK fell back or met its time limit during it, and the re-run was dropped'); break;
     }
-    const blockers = overlayBlockers(trial), away = new Set(hintsFacingAway(trial).map(item => item.key));
+    const blockers = overlayBlockers(trial), awayBefore = new Set(hintsFacingAway(model).map(item => item.key));
+    // A hint that already faced away on the kept model is not this trial's failure.
+    const away = new Set(hintsFacingAway(trial).map(item => item.key).filter(key => !awayBefore.has(key)));
     const promisedAll = new Map([...promised, ...offer.promised]);
     const failed = [...all.keys()].filter(key => away.has(key) || (promisedAll.has(key)
       && plannedBends(trial, trial.links.find(link => link.id === promisedAll.get(key)!.link)!, blockers) > promisedAll.get(key)!.bends));
     const before = bendTotals(model), after = bendTotals(trial);
+    // A hint must not add an overlay crossing at a moved port: it is real in the drawing, and no other test of the round sees it.
+    const movedNodes = new Set([...offer.hints.keys()].map(key => (JSON.parse(key) as [string])[0]));
     if (failed.length === 0 && (after.bent < before.bent || (after.bent === before.bent && after.total < before.total))
-      && straightChords(trial) >= straightChords(model)) {
+      && straightChords(trial) >= straightChords(model)
+      && overlayCrossingsAt(trial, movedNodes) <= overlayCrossingsAt(model, movedNodes)) {
       model = trial; hints = all;
       for (const [key, item] of offer.promised) promised.set(key, item);
       continue;

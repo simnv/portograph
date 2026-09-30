@@ -10,6 +10,8 @@ import { portKey, tiedPortComponents } from './sides-one.js';
  * run, keyed by `portKey`. A hint ranks below an author `side:` and above the stage-2 rule. It is an input of placement (ADR-0022), never
  * written in the YAML.
  */
+/** A placement run refused a side hint (not a candidate, a lateral vote, a floor below the content). The side round drops the offer; every other error is a bug. */
+export class SideHintRefusal extends Error {}
 export type SideHints = ReadonlyMap<string, 'left' | 'right'>;
 export const NO_SIDE_HINTS: SideHints = new Map();
 
@@ -52,10 +54,10 @@ export function checkSideHints(model: LayoutModel, hints: SideHints): void {
   for (const [key, side] of hints) {
     const [node] = JSON.parse(key) as [string];
     const port = model.nodes[node]?.ports.find(item => portKey(item.ref) === key);
-    if (port === undefined) throw new Error(`Side hint names a port the document does not have: ${key}`);
-    if (side !== 'left' && side !== 'right') throw new Error(`Side hint on ${describe(port.ref)} must be left or right`);
+    if (port === undefined) throw new SideHintRefusal(`Side hint names a port the document does not have: ${key}`);
+    if (side !== 'left' && side !== 'right') throw new SideHintRefusal(`Side hint on ${describe(port.ref)} must be left or right`);
     const why = hintRefusal(model, port.ref);
-    if (why !== undefined) throw new Error(`Side hint on ${describe(port.ref)} refused: ${why}`);
+    if (why !== undefined) throw new SideHintRefusal(`Side hint on ${describe(port.ref)} refused: ${why}`);
   }
 }
 

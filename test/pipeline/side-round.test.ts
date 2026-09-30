@@ -12,6 +12,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const PAST_SIBLING = 'an-overlay-leaves-a-lateral-side-past-a-sibling-body';
 const BLOCKED = 'an-overlay-keeps-its-natural-side-when-the-lateral-segment-is-blocked';
+const TWO_TIERS = 'members-of-two-tiers-stand-as-two-rows';
 const FAN = 'a-fan-spreads-its-ports-so-its-chords-hold-clearance';
 const withoutRuntime = (model: LayoutModel): string => JSON.stringify(model, (key, value: unknown) => key === 'runtime' ? undefined : value);
 const hash = (model: LayoutModel): string => createHash('sha256').update(withoutRuntime(model)).digest('hex').slice(0, 16);
@@ -75,6 +76,13 @@ describe('a diagram with no side candidate is the layout main makes', () => {
     expect(hash(model)).toBe('6e2c23e8fd517290');
     expect(measureSides(model, new Set()).hints.size).toBe(0);
     expect(codes(model).filter(code => code.startsWith('SIDE_'))).toEqual([]);
+  }, 60000);
+
+  it('a link that 7f straightens by itself is no candidate: same bytes as with no side round (review M1)', async () => {
+    const off = await run(TWO_TIERS, { testMaxReruns: 0 }), on = await run(TWO_TIERS);
+    expect(on.places).toBe(1);
+    expect(hash(on.model)).toBe(hash(off.model));
+    expect(codes(on.model).filter(code => code.startsWith('SIDE_'))).toEqual([]);
   }, 60000);
 
   it('a bent overlay link whose lateral segment is also blocked gets no hint and the model is main\'s', async () => {

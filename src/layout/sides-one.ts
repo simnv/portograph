@@ -3,7 +3,7 @@ import type { Side } from '../model/geometry.js';
 import type { LayoutGroup, LayoutModel, LayoutPort } from '../model/layout.js';
 import { orderedGroupIds, orderedNodeIds } from '../model/model.js';
 import { busSide, meshBuses } from './bus.js';
-import { checkSideHints, NO_SIDE_HINTS, type SideHints } from './side-hints.js';
+import { checkSideHints, NO_SIDE_HINTS, SideHintRefusal, type SideHints } from './side-hints.js';
 
 /** Complete tie priority for direction votes and unused-port allocation. */
 export const SIDE_TIE_ORDER: readonly Side[] = ['bottom', 'right', 'top', 'left'];
@@ -132,7 +132,7 @@ export function sidesOne(model: LayoutModel, hints: SideHints = NO_SIDE_HINTS): 
         const hint = hints.get(portKey(port.ref));
         if (hint !== undefined) {
           const natural = safe ? selected : winner(entry.predicted);
-          if (safe && natural !== 'top' && natural !== 'bottom') throw new Error(`Side hint on ${port.ref.node}.${port.ref.name ?? '#'}${port.ref.ordinal} refused: its natural side is ${natural}`);
+          if (safe && natural !== 'top' && natural !== 'bottom') throw new SideHintRefusal(`Side hint on ${port.ref.node}.${port.ref.name ?? '#'}${port.ref.ordinal} refused: its natural side is ${natural}`);
           port.sideHint = true; port.naturalSide = natural; port.side = hint;
           if (!safe) port.sizingSide = natural;
           capacity[natural]++; // the natural side: an unused port is placed by the stage-2 rule, which no hint may change
