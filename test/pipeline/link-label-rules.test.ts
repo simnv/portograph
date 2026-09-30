@@ -266,7 +266,9 @@ links: [{from: source.p, to: target.p, route: overlay${label}}]`;
   // segment between facing side ports and no body lies over it. The gap holds the label, reserved in placement.
   expect(plain.links[0]!.path!.segments).toHaveLength(1);
   expect(labelled.links[0]!.path!.segments).toHaveLength(1);
-  expect(gap(labelled)).toBeGreaterThanOrEqual(width('mid label') + 2 * LINK_LABEL_GEOMETRY.shortenMargin);
+  // Exactly the room the label needs, symmetric about the run's midpoint: a straight link reserves no detour stem
+  // (review of ticket 78; the gap was 9 px before the label and is the label room after it).
+  expect(gap(labelled)).toBeCloseTo(width('mid label') + 2 * LINK_LABEL_GEOMETRY.shortenMargin, 6);
 }, 60000);
 
 it('ADR-0014: a routed link between two flanks detouring around the core group reserves both stems', async () => {
