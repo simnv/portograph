@@ -153,6 +153,10 @@ acceptance (Section 15) uses the bends the published paths have.
 
 ## 7. When the side is chosen: the side round
 
+> **Amended (Section 19, 2026-09-30).** Candidates are read on the baseline (the kept model after
+> 7f). A trial is screened by a prediction and kept only on its 7f output, under a trial budget.
+> The pseudo-code and the budget below are the first version.
+
 **Why not stage 5 alone.** Stage 5 knows only the skeleton's x. Stages 7a to 7c move groups and
 nodes by far more than a pitch, so a lateral side chosen from skeleton x is often wrong at 7e.
 
@@ -459,7 +463,8 @@ No new path rule. `overlay-paths.ts` derives the path from the frozen ports as t
 - L: the orthogonal branch's single turn. It is taken only when the derivation gives exactly one
   turn on the trial.
 
-**Shape held after 7f** (review M2). An overlay path is not a claim, and 7f can move a body onto it
+**Shape held after 7f** (review M2; amended by Section 19: a trial is kept only when each promised
+shape holds on its 7f output, so the check below is a guard). An overlay path is not a claim, and 7f can move a body onto it
 after the round judged it at 7e. At the end of 7f, `SIDE_SHAPE_LOST` (warning, placement) names each
 hinted link whose derived path has more bends than the round promised. The acceptance (Section 15)
 counts it and must find 0 on the corpus. `SIDE_SHAPE_LOST` reads every hinted shape:
@@ -609,10 +614,241 @@ count a lateral chord as any straight overlay chord.
 |---|---|---|
 | 114 | A side hint puts a port on a lateral side in the next placement run | — |
 | 115 | The side round straightens an overlay link from a lateral side | 114 |
-| 116 | An overlay link turns once into a lateral side | 115 |
-| 117 | A routed chord leaves a lateral side | 115 |
+| 116 | An overlay link turns once into a lateral side | 115, 133 |
+| 117 | A routed chord leaves a lateral side | 115 (133 for the round) |
 | 118 | Placement reserves a side lane into a lateral port | 114 |
-| 119 | The side round offers a routed L through a side lane | 115, 118, 122 |
+| 119 | The side round offers a routed L through a side lane | 115, 118, 122, 133 |
 | 120 | A transit lane ends in a lateral side (conditional) | 119, 121 |
 | 121 | Links between tiers bend less (acceptance) | 116, 117, 119 |
 | 122 | A side lane joins the tier-gap plan and the route | 118 |
+| 133 | The side round judges the published geometry (Section 19) | 115 |
+| 134 | Stage 7f holds a promised overlay L (conditional, Section 19.6) | 116, 133 |
+| 135 | Stage 7f costs 6.5 s on the private sheet | — |
+| 136 | A hinted placement run leaves the column packing off its fixed point (Section 19.9) | — |
+
+## 19. Amendment 1 (2026-09-30): the round judges the published geometry
+
+This section amends Sections 6, 7, 11, 14 and 15. Where they differ, this section wins. Row Q109a of
+the decisions log records it.
+
+### 19.1 Why
+
+Ticket 116 measured the round on the private canton sheet. The round judges a trial at 7e, and 7e
+does not predict what 7f publishes:
+
+- 7f moves every tier down, by a different amount per tier. End nodes move 66 to 237 px in y between
+  7e and publication, and each tier gap grows by about 80 to 90 px. The x moves are small (−28 to
+  +44 px). The diagonals get steeper and clear bodies that blocked them at 7e.
+- Of about 60 overlay links, 9 publish straight but plan 2 to 4 bends at 7e. To see their natural
+  straight as clear at 7e needs 8 to 32 px of slack. In a small fixture a link that needs 16 px stays
+  bent, and a link that needs 32 px publishes straight. No value of `NATURAL_SLACK` separates the
+  two.
+- Result: 4 links gain, but the bent overlay links go from 22 to 24. A link that is straight when
+  published got a hint and went 1 → 4 segments (after 7f the L's vertical crosses a body of a middle
+  row). A second L lost its shape (5 → 4). Three straight neighbours went 1 → 3; two neighbours
+  gained.
+
+The cause is one error: the round compares two 7e models, but it must compare two published models.
+A slack cannot fix it. A hold in 7f (Section 19.6) fixes only the L that the round promised, not the
+baseline and not the neighbours.
+
+### 19.2 The rule
+
+1. **The baseline is published geometry.** 7f runs on the kept model (after the fan rounds) before
+   the side round. Its output is the **baseline**: the model the command publishes when no trial is
+   kept. This 7f is not extra work, because the command runs it in any case.
+2. **Candidates are read on the baseline.** `measureSides` reads "bent now" and probes the overlay
+   shapes on the baseline, so a link that publishes straight is never a candidate. `NATURAL_SLACK`,
+   `naturalStraightNearlyClear` and `predictedBends` are removed. The routed shapes (a chord, ticket
+   117; a side lane, ticket 119) keep their probe on the kept 7e model, because placement decides
+   them in 7a to 7e and holds them in 7f (`freezeChords`, `sideLanesHold`). Their "bent now" is read
+   on the baseline, as for every link.
+3. **A trial is screened by a prediction.** The trial runs placement to 7e, as today. The
+   **predictor** moves each trial node by the move that 7f gave the same node in the kept model
+   (Section 19.3). The round reads each promise, each facing test and the bend totals of **all**
+   links on the predicted model. A trial that fails the screen is dropped. It costs one re-run and
+   no 7f.
+4. **A trial is kept only on its published result.** A trial that passes the screen runs 7f. The
+   round then compares the two published models exactly: no hinted link has more bends than on the
+   baseline, no hinted port faces away, the bent links fall (or stay equal while the total bends
+   fall) counted over all links, and the straight routed chords do not fall. Otherwise the baseline
+   is published. **A side hint therefore never makes the published sheet worse** by that count. A
+   trial is a batch (Section 19.8), so a hint that gives fewer bends than today but more than it
+   promised does not refuse the batch; info `SIDE_SHAPE_SHORT` names it.
+5. **At most one trial reaches 7f per command** (`MAX_SIDE_VERIFY = 1`, a count). After that 7f
+   the round stops, kept or not.
+
+### 19.3 The predictor
+
+`predictPublished(trial7e, kept7e, baseline)` returns a clone of `trial7e` in which:
+
+- each node moves by `baseline − kept7e` of the same node (the x and y of the top-left corner). Its
+  ports, anchors and pills move with it. The node keeps its trial size;
+- each group box and frame box is the baseline box, moved by the trial's 7e offset from the kept 7e
+  box and grown by the trial's 7e growth;
+- lanes, runs and pinned paths do not move. The predictor serves overlay paths and facing tests
+  only. The routed shapes are held in 7f, and the round reads them on `trial7e`, as today.
+
+The move is per node, not per tier, because the x moves differ inside one tier. The predictor reads
+no router and no clock. It costs one clone and one `bendTotals` (milliseconds on the sheet). It is a
+screen, not a judge. When it is wrong, the round spends one 7f for no gain, or it misses a gain. It
+cannot publish a worse sheet, because rule 4 judges the real 7f output. Ticket 133 reports its
+agreement with the published bends, link by link.
+
+### 19.4 The round, amended
+
+```
+model  = place(floors = {}, hints = {}); fan rounds as Section 7, part 1   // unchanged
+kept7e = model
+declined = measureFans(kept7e); atFreeze = chordClearances(kept7e)        // unchanged, read at 7e
+base   = bands(kept7e)                     // the baseline: the same 7f that main runs
+refused = {}; verified = 0
+for round in 0 ..< SIDE_ROUNDS:            // SIDE_ROUNDS = 2 (a count)
+  offer = measureSides(base, kept7e, refused)   // overlay probes on base, routed probes on kept7e
+  if offer is empty: break
+  if reruns >= MAX_RERUNS: note(SIDE_ROUND_SKIPPED); break
+  if remaining() < SIDE_TAIL_RESERVE_MS + SIDE_TRIAL_MS: cut(SIDE_ROUND_CUT); break
+  trial7e = place(floors, offer) under the trial budget; reruns += 1
+  if cut or elkCut(trial7e): cut(SIDE_ROUND_CUT); break
+  pred = predictPublished(trial7e, kept7e, base)
+  if not holds(pred, offer) or not gains(pred, base, trial7e, kept7e):
+    refuse(worse ∩ offer, else the whole offer); continue       // screened out, no 7f spent
+  short = hints that miss their promise on pred
+  if short is not empty and round + 1 < SIDE_ROUNDS and reruns < MAX_RERUNS:
+    refuse(short); continue                                      // prune, and place the batch again
+  if verified >= MAX_SIDE_VERIFY: note(SIDE_ROUND_SKIPPED); break
+  trial = bands(trial7e) under the trial budget; verified += 1
+  if cut: cut(SIDE_ROUND_CUT); break                             // the baseline stands
+  if holds(trial, offer) and gains(trial, base, trial7e, kept7e):
+    base = trial; kept7e = trial7e; hints = offer                // publish the trial
+    declined, atFreeze = read again on trial7e
+  else: refuse(offer)
+  break                                                          // one verified 7f per command
+publish base (route, link labels, score)
+```
+
+- `holds(m, offer)`: on `m`, no hinted link has more bends than on the baseline (`worse` names
+  those that do), and no hinted port faces away (`hintsFacingAway`). A hinted link with fewer bends
+  than on the baseline but more than promised is `short`: it prunes the batch when a re-run is left,
+  and else it is kept and named by `SIDE_SHAPE_SHORT` (info).
+- `gains(m, base, trial7e, kept7e)`: on `m` against `base`, by `plannedBends` over **every** link,
+  the bent count falls, or it is equal and the total bends fall; and `straightChords(trial7e) >=
+  straightChords(kept7e)`. This is idea (c) of the review: collateral is counted on every link, not
+  only near the moved nodes. It costs a few milliseconds, so no locality rule is necessary.
+- Crossings stay out of the test (Section 17, decision 3). `SIDE_HINT_ADDS_CROSSING` (ticket 116)
+  reports them on a kept trial.
+- A kept trial names, as info `SIDE_HINT_BENDS_NEIGHBOUR`, each link without a hint whose bends
+  rose: the collateral that the net count accepted.
+- Hints are no longer kept across rounds, because only one trial reaches 7f. The retry (round 2)
+  offers again on the same baseline, less the keys that the screen refused.
+- `SIDE_SHAPE_LOST` (now: a hinted link with more bends than on the baseline) and
+  `SIDE_HINT_FACES_AWAY` stay. On a kept trial, rule 4 has already tested them exactly, so they
+  are guards and must read 0.
+
+### 19.5 Budget and the trial budget
+
+The trial runs when the baseline is complete. A trial that runs out of time is dropped and the
+baseline publishes. So a side trial cannot make the command miss its deadline.
+
+- **Trial budget.** The trial's placement run and its 7f read a budget equal to the command's
+  remainder less `SIDE_TAIL_RESERVE_MS` = 3 s (route, link labels, scoring and the SVG after a cut:
+  0.55 s on the sheet, quiet). When it reaches 0, the trial throws `CommandDeadlineError` at the next
+  stage or 7f pass, and the round cuts (`SIDE_ROUND_CUT`). 7f's own gates (the chord-clear step
+  against `POST_PLACEMENT_RESERVE_MS`) keep reading the command budget, as in the baseline. Ticket
+  133 adds an abort check between 7f passes if 7f has none.
+- **Entry gate.** A trial starts only with `SIDE_TAIL_RESERVE_MS + SIDE_TRIAL_MS` (13 s) or more
+  left. `SIDE_TRIAL_MS` = 10 s: one re-run to 7e plus one 7f on the sheet, quiet (2.7 + 6.5 s),
+  rounded up. It is a fixed constant, never measured at run time. For side trials this gate
+  replaces the fan gate, because the baseline 7f no longer runs after the trial.
+- Both reads are against the hard deadline (ticket 112). Every other bound is a count:
+  `SIDE_ROUNDS`, `MAX_RERUNS`, `MAX_SIDE_VERIFY`, `PROBE_CAP`.
+
+**The sheet** (quiet machine: first placement 4.0 s, fan re-run 2.7 s, 7f 6.5 s, tail 0.55 s):
+
+| Path | Time | Against 30 s |
+|---|---|---|
+| No candidate (main today) | 4.0 + 2 × 2.7 + 6.5 + 0.55 = 16.5 s | fits to 1.8x |
+| One trial, screened out | 16.5 + 2.7 = 19.2 s | fits to 1.55x |
+| One trial, verified | 16.5 + 2.7 + 6.5 = 25.7 s | fits to 1.17x |
+| Entry gate at the start of the trial | 30 − 16.0 = 14.0 s left, 13 s needed | opens to about 1.06x |
+
+`MAX_RERUNS` = 3 with 2 fan re-runs leaves one side trial on the sheet. At 2x main already misses
+the deadline (33 s, ticket 131). There the entry gate stays shut, so this amendment adds no deadline
+miss. The rule of Section 7, "the whole command fits at 2x", cannot hold on the sheet while 7f costs
+6.5 s. The trial budget replaces it as the safety argument. The sheet gets its side gain only on a
+machine within about 6 % of the quiet reference, until 7f is faster (ticket 135).
+
+### 19.6 A hold for an overlay L in 7f: deferred
+
+7f could hold an overlay L as a keep-out for its two runs, as `sideLanesHold` holds a side lane.
+Under rule 4 a lost L no longer publishes a worse sheet; it only drops a trial. A hold would let more
+trials pass, but it constrains 7f for every other link, and the L's own ends move in 7f, so the
+keep-out must move with them. Ticket 134 builds it only when the measurement of ticket 133 shows a
+verified trial refused because an L was lost.
+
+### 19.7 Byte-identity
+
+- A diagram with no side candidate on the baseline publishes the bytes of main. The baseline is
+  main's 7f output, and the round adds no diagnostic.
+- A diagram whose round keeps no trial publishes the geometry and the SVG of main. Only info
+  diagnostics (`SIDE_HINT_REFUSED`, `SIDE_ROUND_SKIPPED`) and the `SIDE_ROUND_CUT` warning are added.
+
+### 19.8 One trial per sheet: the batch and the shared cap
+
+On the private sheet the side round gets **one trial at most**: `MAX_RERUNS` = 3 and the fan rounds
+spend 2 (ticket 117 measured it: one trial, refused, then `SIDE_ROUND_SKIPPED`). Section 19.5 shows
+that the time also allows no more. The design follows from that.
+
+- **A trial is a batch.** It carries every hint of the offer, as today: `measureSides` accepts the
+  hints in link order on one clone, so each probe sees the hints before it. One trial per link
+  would give the sheet one link.
+- **A batch is judged as a whole, by the net count** (rule 4): the bent links over all links fall,
+  and no hinted link is worse than on the baseline. A hint that falls short of its promise but
+  still gains does not refuse the batch. The first version asked every hint to give its promised
+  shape, so one short hint refused the whole batch; with one trial, the sheet then gained nothing.
+- **The screen prunes when it can.** When the prediction says some hints fall short or get worse,
+  and a re-run and a round are left, the round refuses those hints and places the rest again. On
+  the sheet no re-run is left, so the batch goes to 7f as it is, unless the screen refuses it
+  whole (a predicted net loss, or a hinted link predicted worse).
+- **A batch that fails at 7f is refused whole.** No second 7f is allowed, so no subset is tried.
+  This is the known limit of Section 7 (`refused` is greedy), now with exact data.
+
+**Fans and sides share `MAX_RERUNS`; fans keep priority.**
+
+- The fan loop spends a re-run only when a floor grows. A fan round that changes nothing already
+  costs no re-run, so "side trials first when fans change nothing" is already the behaviour.
+- Fans must run first. The fan floors move chords and nodes; a side trial judged before them would
+  be judged on a model that the fans then move. And the baseline must be main's 7f output for
+  byte-identity (Section 19.7).
+- Per family the counts stay: `FAN_ROUNDS` = 2, `SIDE_ROUNDS` = 2, `MAX_RERUNS` = 3 in all,
+  `MAX_SIDE_VERIFY` = 1. Raising `MAX_RERUNS` does not help the sheet: the time does not allow a
+  second trial (Section 19.5).
+- Ticket 133 reports, on the sheet, what the second fan re-run changes in the published baseline.
+  When it changes no published link, ticket 131 may lower `FAN_ROUNDS` for large inputs by a count
+  rule, and the freed re-run goes to the side screen.
+
+### 19.9 Notes from ticket 117
+
+- **A routed chord owns its path.** A hinted lateral port whose link is a routed chord candidate gets
+  no side lane (ticket 117). The chord is its reserved path. This agrees with Section 10.
+- **A kept trial off the fixed point.** On `three-canton-groups-close-up-to-a-band-gap`, a kept
+  side trial leaves the published layout off the fixed point of the column rules: on a copy,
+  `packBesideRows` then moves two groups by +83 and +171 px; without the hint it moves nothing. This
+  is a placement defect of the hinted run (probably an anchor-step pack that 7c or 7f leaves
+  unfinished), not a judging error. Rule 4 judges the layout that is published, so it cannot see a
+  pack that did not run. Ticket 136 diagnoses and fixes it in placement. Until then, ticket 133's
+  acceptance runs the fixed-point check on each kept trial of the corpus.
+
+### 19.10 Open for the maintainer
+
+1. **The sheet and machine speed.** The sheet can afford a verified trial only on a machine within
+   about 6 % of the quiet reference (Section 19.5). A slower machine publishes the baseline with
+   `SIDE_ROUND_CUT`: never worse, but a different layout. Options: (a) accept this until ticket 135
+   makes 7f faster; (b) refuse side trials on large inputs by a count rule (for example, node
+   count), so the sheet never gets a side gain and never depends on the machine; (c) accept a trial
+   on the prediction alone (+2.7 s, fits to 1.55x), which can publish a worse sheet. **Recommended:
+   (a).** (c) breaks the aim that a side hint never makes the sheet worse.
+2. **Net count or no collateral.** Rule 4 keeps a batch when the net bent count falls, even when
+   some neighbours without a hint bend more (they are named). The stricter rule, "no link gets
+   worse", would have refused ticket 116's trial and most batches on the sheet. **Recommended: the
+   net count**, as decided for crossings (Section 17, decision 3).
