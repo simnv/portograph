@@ -370,8 +370,8 @@ count a lateral chord as any straight overlay chord.
 **Must not regress** (corpus differential over all of `goldens/`, against main):
 
 - **Gates:** no gate gained in any file. G5 and G6 finding counts do not rise.
-- **Crossings:** the corpus total does not rise. A file may rise only where a new straight chord
-  crosses a planned row (the Q108 rule: straight anyway); each such file is listed.
+- **Crossings:** not a criterion (Section 17, decisions 3; Q108 for chords). The corpus total and
+  each file that rises are reported, with the link that adds the crossing.
 - **Q:** the corpus mean does not fall. Each file that falls by more than 0.005 is listed with its
   cause.
 - **Links removed:** 0.
@@ -397,20 +397,21 @@ count a lateral chord as any straight overlay chord.
   source-aligned). Only straight and L are offered, and a transit lane that loses its mouth part
   (ticket 120).
 
-## 17. Open questions
+## 17. Decisions (2026-09-30)
 
-1. **The mechanism.** The side round runs placement again (Section 7). The other way is a new
-   stage after 7c that changes sides and replays every consumer, which amends ADR-0009.
-   *Recommendation:* the round. It keeps ADR-0009 and has one producer. The cost is one more full
-   placement for a diagram that takes a hint; the scale bench (ticket 17 inputs) measures it, and
-   the command deadline still bounds it.
-2. **Height growth.** A lateral face may grow its node with no cap (Section 8), or the offer can
-   stop at the height the node already has. *Recommendation:* no cap, reserved at size time, and
-   the corpus differential reports canvas growth. A router or a provider that takes several lateral chords on one face needs growth.
-3. **Crossings for an L.** Q108 takes a clear chord even when it adds a crossing. The same rule for
-   an L? *Recommendation:* yes; fewer bends win, and crossings are reported.
-4. **Author lateral ports and the side lane** (Section 10). *Recommendation:* yes; it replaces a
-   residual part with a planned one.
+1. **The mechanism** (coordinator). The side hint is applied by running placement again
+   (Section 7). A late stage after 7c that changes sides is rejected: it would amend ADR-0009 and
+   replay every consumer of sides. The scale bench (ticket 17 inputs) measures the cost of the
+   extra run, and the command deadline still bounds it.
+2. **Height growth** (maintainer). No cap. A lateral face grows its node as far as its ports need,
+   reserved at size time (Section 8). The corpus differential and the private sheet report canvas
+   growth.
+3. **Crossings for an L** (maintainer). Fewer bends win for a one-bend route even when crossings
+   rise, as Q108 decided for chords. Crossings are not a criterion of the side round. Total corpus
+   crossings are still measured and reported (Section 15).
+4. **Author lateral ports and the side lane** (coordinator). An author `left` or `right` port whose
+   peer is on another sub-tier also gets a side lane (Section 10). It replaces a residual part with
+   a planned one.
 
 ## 18. Tickets
 
