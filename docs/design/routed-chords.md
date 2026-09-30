@@ -172,6 +172,10 @@ The fan rule (ticket 89) reads the cross-frame candidates too: `measureFans` off
 spread pitch (up to 60 px) when two chords at that face stand closer than the chord clearance. A
 provider node that takes chords from three locations on one top face needs this.
 
+*As built (ticket 102).* Nothing beyond ticket 99: `measureFans` reads `routedChordCandidate`, `straightChords` counts `isRoutedChord`. A face is measured with `FAN_SLACK` (4 px) of drift room, so three
+cross-frame chords that hold at the 12 px base pitch can still put a 16 px floor on their face; the fixture `a-provider-face-spreads-for-three-routed-chords` shows that. A face whose neighbouring chords
+need more than 60 px is declined (`FAN_SPREAD_DECLINED`); the unit test forges the shallow geometry, and no layout input reaches it.
+
 After the freeze, `chordsHold` and `blockedChords` also read foreign frame and canton boxes and
 the facing-edge rule for a cross-frame chord. `chordsHold` moves nodes only today, so it derives
 the frames of the proposed cells (`deriveFrames`) before it reads them. A 7f move that puts a
