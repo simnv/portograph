@@ -82,7 +82,7 @@ drew it. Network diagrams first; software architecture and electrical panels nex
 
 | Quantity | Value | Origin |
 |---|---|---|
-| Port pitch on a side | max(12 px, rendered pill extent along the side + 4 px) | measured pill geometry; JPEG orientation |
+| Port pitch on a side | max(12 px, rendered pill extent along the side + 4 px); on a top or bottom face that carries two or more frame chords, the larger pitch at which neighbouring chords keep the 10 px chord clearance, up to 60 px (a face that would need more keeps the base pitch, `FAN_SPREAD_DECLINED`). Measured on the placed chords at the end of 7e; placement then runs again with the pitch as a floor, twice at most (`measureFans`, ticket 89) | measured pill geometry; JPEG orientation; ticket 89 |
 | Group padding | 20 px beyond node bodies and named port pills, including pill half stroke | maintainer M1 visual review (12 → 20, 2026-09-11) |
 | Group title edge | the horizontal edge with fewer incident link ports (fed from above → bottom); ties keep the top; titles stay horizontal | ADR-0011, maintainer 2026-09-12 |
 | Linked-group grid | groups joined by vertical links share x-extent and width, by horizontal links y-extent and height, when neither is smaller than the union by more than 30 % | ADR-0012, maintainer 2026-09-12 |
