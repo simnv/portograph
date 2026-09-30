@@ -83,7 +83,7 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
   if (!state.windowed) return;
   if (sheetGains(overlayTurns(model), before)) return;
   const moved = groups.filter(group => JSON.stringify(group.bounds) !== start.get(group.id));
-  // A run that moved nothing leaves the model as it was, and a model that is frozen is not written.
+  // A run that moved no group and added no note has nothing to put back: the restore would only write the saved values over the same ones.
   if (moved.length || model.diagnostics.length !== diagnostics.length) {
     undo();
     model.diagnostics = [...diagnostics];

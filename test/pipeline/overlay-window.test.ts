@@ -111,6 +111,9 @@ describe('overlay window rule (ticket 143)', () => {
     it('keeps the windows that bend fewer links and add no turn', () => {
       expect(sheetGains({ bent: 7, turns: 30 }, { bent: 8, turns: 34 })).toBe(true);
     });
+    it('keeps the windows that bend fewer links with the same turns', () => {
+      expect(sheetGains({ bent: 7, turns: 34 }, { bent: 8, turns: 34 })).toBe(true);
+    });
     it('refuses more bent links, or more turns, or no gain', () => {
       expect(sheetGains({ bent: 9, turns: 38 }, { bent: 8, turns: 34 })).toBe(false);
       expect(sheetGains({ bent: 7, turns: 36 }, { bent: 8, turns: 34 })).toBe(false);
