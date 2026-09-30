@@ -27,7 +27,7 @@ import { stepOverChords } from './chord-clear.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
-import { alignLinkedGroupGrid, closeCantonsAndSettle, settleKeepOut, type LinkLabelShortfall, produceGroupLabelBands, replanGroupLabels, reserveLinkLabelRoom, validateGroupLabelBands } from './bands.js';
+import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, type LinkLabelShortfall, produceGroupLabelBands, replanGroupLabels, reserveLinkLabelRoom, validateGroupLabelBands } from './bands.js';
 import { holdColumnAxes, refreshHeldWarnings } from './columns.js';
 import { growTierGaps } from './gap-room.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -833,21 +833,21 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
         // x-extent (ADR-0012) holds two again and the published model would not be the grid's fixed
         // point — which is what `validateGroupLabelBands` demands. The grid is settled here, before
         // the labels are planned in these boxes, because it belongs to the replay and not to the
-        // third step: it only grows box extents onto edges that already exist and moves no node, and
-        // a label planned in the narrower box would be centred on the box the grid then widens.
-        alignLinkedGroupGrid(model);
+        // third step: it grows box extents onto edges that already exist, and moves a node only to pack beside rows that stood open
+        // before it (once, then the replay; ticket 136), and a label planned in the narrower box would be centred on the box the grid then widens.
+        alignLinkedGroupGridAndPack(model);
         replanGroupLabels(model);
       }
       const shift = closeCantonsAndSettle(model);
       if (shift > 0) {
         rebuildRegionGeometry(model, undefined, undefined, true);
-        alignLinkedGroupGrid(model);
+        alignLinkedGroupGridAndPack(model);
         replanGroupLabels(model);
       }
       // A frame edge a foreign drop would run along is moved off it before anything is planned in the geometry (ticket 75).
       if (settleKeepOut(model)) {
         rebuildRegionGeometry(model, undefined, undefined, true);
-        alignLinkedGroupGrid(model);
+        alignLinkedGroupGridAndPack(model);
         replanGroupLabels(model);
       }
       return shift;
@@ -855,7 +855,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     /** The replays a move of groups is followed by: the regions, the grid and the labels. */
     const replays = (model: LayoutModel): void => {
       rebuildRegionGeometry(model, undefined, undefined, true);
-      alignLinkedGroupGrid(model);
+      alignLinkedGroupGridAndPack(model);
       replanGroupLabels(model);
     };
     // The cantons close up when a round's close-up has nothing to move. The step over a chord (ticket 77) has its own convergence: a round
@@ -916,6 +916,10 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
       // move that trades one unverified alignment, one short gap or one short run for another is not
       // "no worse", it is a different diagram with the same tally.
       //
+      // The settling below can move whole frames: where the grid widens a box beside rows that stood open, it packs them once (ticket 136), and a
+      // corridor stands where the replay reads it, not where it stood before. So "the corridors are fixed" above holds for the move this transaction makes, not
+      // for the trial that follows it, and the fourth criterion reads the settled model.
+      //
       // The fourth reads what the move is *for*. A corridor moves to stand at its child's port and
       // buys that one alignment; the settling below can move a node under it — `replanGroupLabels`
       // falls back to the full producer, which reserves room and pushes the groups after it — and a
@@ -937,7 +941,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
       // places, and on `a-corridor-moves-after-the-grid-settles` the grid really does widen a box by
       // 29.03 px here. The accepted model is the trial itself, so nothing is re-derived twice.
       const settled = clone(draft);
-      alignLinkedGroupGrid(settled);
+      alignLinkedGroupGridAndPack(settled);
       replanGroupLabels(settled);
       const afterRoom: LinkLabelShortfall[] = [], heldRoom: LinkLabelShortfall[] = [];
       reserveLinkLabelRoom(clone(settled), afterRoom);
