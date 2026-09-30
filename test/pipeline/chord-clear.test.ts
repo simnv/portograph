@@ -4,6 +4,7 @@ import { layout, parse } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { stepOverChords } from '../../src/layout/chord-clear.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
+import { deriveFrames } from '../../src/layout/frames.js';
 import { crosses, overlayPath, straightChord } from '../../src/layout/overlay-paths.js';
 import { moveGroup } from '../../src/layout/skeleton-geometry.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -99,4 +100,70 @@ describe('the step over a chord, where the mover holds routed links or shares a 
     // The centring warning on main stands; the step adds none.
     expect(model.diagnostics.filter(d => d.code === 'PLACEMENT_NON_CONVERGENCE')).toHaveLength(1);
   }, 120000);
+});
+
+/**
+ * Ticket 80. A frame of several cells is the column pass's unit: it slides whole inside the slack its column states to clear a
+ * straight chord, and a node of one of its cells moves inside that cell's slack, the cell box and so the frame unchanged.
+ */
+describe('a frame of two cells steps off a straight overlay chord inside its column slack (ticket 80)', () => {
+  const copy = (model: LayoutModel): LayoutModel => JSON.parse(JSON.stringify(model)) as LayoutModel;
+  const NAME = 'a-frame-slides-off-a-straight-chord-inside-its-column-slack';
+  const overlay = (model: LayoutModel) => model.links.find(link => link.layer === 'overlay')!;
+  const cells = ['loc#0', 'loc-zone#1'];
+  const box = (model: LayoutModel) => deriveFrames(model)!.find(frame => frame.id === 'loc')!.box;
+
+  it('the whole frame moves by one dx, inside the slack, and the chord is one segment again', async () => {
+    const model = copy(await run(fixture(NAME)));
+    const link = overlay(model);
+    expect(link.path!.segments).toHaveLength(1);
+    const chord = straightChord(model, link)!, at = cells.map(id => model.groups[id]!.bounds!.x), frame = box(model);
+    const nodes = model.groups['loc-zone#1']!.nodes.concat(model.groups['loc#0']!.nodes);
+    const nodeAt = Object.fromEntries(nodes.map(id => [id, model.nodes[id]!.bounds!.x]));
+    // Stand the frame on the chord, as an earlier pass could leave it.
+    for (const id of cells) moveGroup(model, model.groups[id]!, 12, 0);
+    rebuildNodeGeometry(model, nodes, 'current');
+    expect(crosses(chord.from, chord.to, model.nodes['sw2']!.bounds!)).toBe(true);
+    expect(overlayPath(model, link).segments.length).toBeGreaterThan(1);
+    expect(stepOverChords(model, undefined)).toBe(true);
+    expect(overlayPath(model, link).segments).toHaveLength(1);
+    expect(crosses(chord.from, chord.to, model.nodes['sw2']!.bounds!)).toBe(false);
+    const dx = model.groups['loc#0']!.bounds!.x - at[0]!;
+    expect(dx).not.toBe(12);
+    expect(Math.abs(dx)).toBeLessThanOrEqual(20 + 1e-6);
+    // Every cell and node took the same dx, and the frame keeps its size.
+    expect(model.groups['loc-zone#1']!.bounds!.x - at[1]!).toBeCloseTo(dx, 6);
+    for (const id of nodes) expect(model.nodes[id]!.bounds!.x - nodeAt[id]!).toBeCloseTo(dx, 6);
+    expect(box(model).width).toBeCloseTo(frame.width, 6);
+    expect(Math.abs(box(model).x - frame.x)).toBeLessThanOrEqual(20 + 1e-6);
+  }, 60000);
+
+  it('a node of a cell moves alone inside the cell box, and the frame stays as it is', async () => {
+    const model = copy(await run(fixture(NAME)));
+    const link = overlay(model), zone = model.groups['loc-zone#1']!, node = model.nodes['sw2']!;
+    const chord = straightChord(model, link)!;
+    const y = node.bounds!.y + node.bounds!.height / 2;
+    const on = chord.from.x + (chord.to.x - chord.from.x) * (y - chord.from.y) / (chord.to.y - chord.from.y);
+    const shift = on - (node.bounds!.x + node.bounds!.width / 2);
+    node.bounds!.x += shift;
+    for (const port of node.ports) if (port.anchor) port.anchor.x += shift;
+    rebuildNodeGeometry(model, ['sw2'], 'current');
+    const before = { zone: { ...zone.bounds! }, frame: { ...box(model) }, sw: model.nodes['sw']!.bounds!.x };
+    expect(overlayPath(model, link).segments.length).toBeGreaterThan(1);
+    // The frame's own step is spent: the node is the one that moves.
+    expect(stepOverChords(model, undefined, new Set(['frame:loc']))).toBe(true);
+    expect(overlayPath(model, link).segments).toHaveLength(1);
+    expect(crosses(chord.from, chord.to, node.bounds!)).toBe(false);
+    expect(node.bounds!.x).not.toBeCloseTo(before.zone.x, 6);
+    expect(zone.bounds).toEqual(before.zone);
+    expect(box(model)).toEqual(before.frame);
+    expect(model.nodes['sw']!.bounds!.x).toBe(before.sw);
+  }, 60000);
+
+  it('a frame with no slack to clear the chord stays where it is', async () => {
+    const model = copy(await run(fixture(NAME)));
+    const stood = JSON.stringify(cells.map(id => model.groups[id]!.bounds));
+    expect(stepOverChords(model, undefined)).toBe(false);
+    expect(JSON.stringify(cells.map(id => model.groups[id]!.bounds))).toBe(stood);
+  }, 60000);
 });

@@ -7,7 +7,7 @@ import { linkStrokeWidth } from '../theme/geometry.js';
 import type { Segment } from '../score/model.js';
 import { frameColumns, overlayFreeGroups } from './columns.js';
 import { groupShape } from './grid.js';
-import { deriveFrames } from './frames.js';
+import { cellReach, deriveFrames } from './frames.js';
 import { blockedChords, chordsHold, isFrameStraight } from './frame-paths.js';
 import { laneSidesHold, occupiedOverhang, selectAnchorTier } from './lanes.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
@@ -101,6 +101,10 @@ const nothingNew = (before: ReadonlySet<string>, after: ReadonlySet<string>): bo
  *   the labels, then a round of the growth and the close-up), against the copy of the model without the move: the straight overlay
  *   count still rises, no routed link that ran on one axis or held a chord stops doing so, and no pair of routed links (G6), no
  *   port out of the order of its far ends (G5) and no tier-gap part the plan declines appears that was not there before.
+ * A frame of several cells (ticket 80) is the column pass's unit: it slides whole, every cell by the same dx, inside the slack its column
+ * states (`frameColumns`), inside the box of the layout, between the plain groups and the lanes of its sub-tiers, and a node of one of its
+ * cells moves alone inside the cell box when the frame edge (`cellReach`) stays as it is. The same acceptance judges both, on the settled
+ * copy, so a slide the column pass would undo is never kept. A frame of a canton stays.
  * Otherwise the mover goes back and the next candidate is tried. A mover that has moved in an earlier round (`history`) is left
  * where it stands, so the rounds converge. Returns whether anything stayed moved.
  */
@@ -183,7 +187,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
    * A frozen chord a candidate would put a body on is a wall (`holds` for a group, the check below for a node).
    */
   const attempt = (key: string, candidates: readonly number[], at: number, place: (dx: number) => void, undo: () => void, nodes: readonly string[],
-    holds: (x: number) => boolean): boolean => {
+    holds: (x: number) => boolean, extra: () => boolean = () => true): boolean => {
     const before = read(model, overlays), blocked = new Set(blockedChords(model));
     for (const target of candidates.slice(0, CHORD_TRIALS)) {
       if (!holds(target)) continue;
@@ -191,7 +195,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
       place(target - at);
       rebuildNodeGeometry(model, nodes, 'current');
       const after = read(model, overlays);
-      if (after.overlay.size > before.overlay.size && [...before.routed].every(id => after.routed.has(id)) && blockedChords(model).every(id => blocked.has(id))
+      if (extra() && after.overlay.size > before.overlay.size && [...before.routed].every(id => after.routed.has(id)) && blockedChords(model).every(id => blocked.has(id))
         && holdsSettled(saveGroupsOf(nodes), undo, nodes)) {
         baseline = undefined;
         history.add(key);
@@ -206,6 +210,56 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
     .filter((x, index, list) => ok(x) && Math.abs(x - at) > PLACEMENT_EPS && list.findIndex(other => Math.abs(other - x) <= PLACEMENT_EPS) === index)
     .sort((a, b) => Math.abs(a - at) - Math.abs(b - at) || a - b);
 
+  // A frame of several cells slides whole inside its column slack (ticket 80): every cell takes the same dx, so the frame box, the
+  // cell boxes and the rows stay as they are, and the column pass has nothing of its own to redo. The frame keeps its place among
+  // the groups of its sub-tiers (the run between its neighbours' walls), inside the slack its column states, inside the box of the
+  // whole layout. A frame of a canton is the canton's, and a flank or a bar does not slide.
+  const frames = model.document.frames ?? {};
+  for (const column of columns) {
+    const key = `frame:${column.id}`;
+    if (history.has(key) || frames[column.id]?.kind === 'canton' || frames[column.id]?.parent !== undefined) continue;
+    const cells = [...column.cells].map(id => model.groups[id]!).filter(group => group.bounds && group.nodes.length > 0);
+    if (cells.length < 2 || cells.length !== column.cells.size || cells.some(cell => movable.has(cell.id) || cell.flank || model.document.groups[cell.id]?.shape === 'bar')) continue;
+    const nodes = cells.flatMap(cell => cell.nodes), skip = new Set(nodes);
+    const banned = cells.flatMap(cell => bannedFor(chordsOver(cell.tier!, skip), shapesOf(cell.nodes)));
+    if (!banned.some(({ low, high }) => low < -PLACEMENT_EPS && high > PLACEMENT_EPS)) continue;
+    const box = deriveFrames(model)?.find(item => item.id === column.id)?.box;
+    if (box === undefined) continue;
+    // The run of dx the frame may take: its column, the box of the layout, then the walls of the plain groups and the lanes of its sub-tiers.
+    const reaches = cells.map(cell => ({ cell, reach: occupiedOverhang(model, cell) }));
+    let low = Math.max(column.x - box.x, world.low - Math.min(...reaches.map(({ cell, reach }) => cell.bounds!.x - reach.left)));
+    let high = Math.min(column.x + column.width - box.x - box.width, world.high - Math.max(...reaches.map(({ cell, reach }) => cell.bounds!.x + cell.bounds!.width + reach.right)));
+    const walls: { low: number; high: number }[] = [];
+    for (const item of all) {
+      if (item.frame !== undefined || item.tier! < column.from || item.tier! > column.to) continue;
+      const one = occupiedOverhang(model, item);
+      walls.push({ low: item.bounds!.x - one.left - gap - (box.x + box.width), high: item.bounds!.x + item.bounds!.width + one.right + gap - box.x });
+    }
+    for (const lane of model.lanes) {
+      if (lane.tier < column.from || lane.tier > column.to || (lane.bounds.x < box.x + box.width && lane.bounds.x + lane.bounds.width > box.x)) continue;
+      walls.push({ low: lane.bounds.x - (box.x + box.width), high: lane.bounds.x + lane.bounds.width - box.x });
+    }
+    // A wall that already holds the frame's place pins it; a frame keeps its place in the order of the tiers it spans.
+    if (walls.some(wall => wall.low < -PLACEMENT_EPS && wall.high > PLACEMENT_EPS)) continue;
+    low = Math.max(low, ...walls.filter(wall => wall.high <= PLACEMENT_EPS).map(wall => wall.high));
+    high = Math.min(high, ...walls.filter(wall => wall.low >= -PLACEMENT_EPS).map(wall => wall.low));
+    const candidates = nearest(banned.flatMap(({ low: from, high: to }) => [from, to]), 0, dx => dx >= low - PLACEMENT_EPS && dx <= high + PLACEMENT_EPS);
+    if (!candidates.length) continue;
+    const undo = saveGroups(model, cells);
+    let refusal: { group: LayoutGroup; bounds: Rect }[] | undefined;
+    const placed = attempt(key, candidates, 0, dx => { for (const cell of cells) moveGroup(model, cell, dx, 0); }, undo, nodes, dx => {
+      const proposed = cells.map(group => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } }));
+      if (laneSidesHold(model, proposed, false)) return true;
+      if (refusal === undefined && !chordsHold(model, proposed, false)) refusal = proposed;
+      return false;
+    });
+    if (placed) moved = true;
+    else if (refusal !== undefined) chordsHold(model, refusal, true);
+  }
+
+  /** A cell of a frame that the whole-group step leaves to the column pass: its nodes move alone, inside the cell's slack (ticket 80). */
+  const cellOfFrame = (group: LayoutGroup): boolean => group.frame !== undefined && !movable.has(group.id) && !group.flank
+    && model.document.groups[group.id]?.shape !== 'bar' && !frames[group.frame]?.kind?.startsWith('canton');
   for (const tier of tiers) {
     const groups = all.filter(group => group.tier === tier);
     const over = overlays.some(link => {
@@ -213,14 +267,14 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
       return Math.min(...ends) < tier && tier < Math.max(...ends);
     });
     if (!over) continue;
-    for (const group of groups.filter(item => movable.has(item.id) && linked.has(item.id))) {
+    for (const group of groups.filter(item => (movable.has(item.id) || cellOfFrame(item)) && linked.has(item.id))) {
       // Whole group.
       const box = { ...group.bounds! };
       const banned = bannedFor(chordsOver(tier, new Set(group.nodes)), shapesOf(group.nodes));
       const reach = occupiedOverhang(model, group);
       const routedGroup = !free.has(group.id);
       let placed = false;
-      if (!history.has(group.id) && banned.some(({ low, high }) => low < -PLACEMENT_EPS && high > PLACEMENT_EPS)) {
+      if (!cellOfFrame(group) && !history.has(group.id) && banned.some(({ low, high }) => low < -PLACEMENT_EPS && high > PLACEMENT_EPS)) {
         // The walls, as moves of the group: the run of x a move may not put the group's occupied extent into.
         const walls: { low: number; high: number }[] = [];
         let inside = { low: world.low + reach.left, high: world.high - box.width - reach.right };
@@ -298,7 +352,14 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
           for (const port of node.ports) if (port.anchor) port.anchor.x += dx;
         };
         // A frozen chord is a wall for a node as for a group: `attempt` refuses a candidate that puts a body on one.
-        if (attempt(`node:${id}`, candidates, body.x, shift, undo, [id], () => true)) moved = true;
+        // A node of a cell moves only where the frame stays as it is: the frame edge stands off the outermost body (`cellReach`).
+        const reach = cellOfFrame(group) ? cellReach(model, group.id) : undefined;
+        const framed = (): boolean => {
+          if (reach === undefined) return true;
+          const now = cellReach(model, group.id);
+          return Math.abs(now.x - reach.x) <= PLACEMENT_EPS && Math.abs(now.width - reach.width) <= PLACEMENT_EPS;
+        };
+        if (attempt(`node:${id}`, candidates, body.x, shift, undo, [id], () => true, framed)) moved = true;
       }
     }
   }
