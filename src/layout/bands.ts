@@ -45,7 +45,7 @@ const OUTWARD: Record<Side, Point> = {
 };
 
 interface ForbiddenInterval { low: number; high: number; id: string }
-interface LabelPlan { labels: LayoutLabel[]; growth?: { group: LayoutGroup; width: number; title: string; row: string }; blocked: string[] }
+interface LabelPlan { labels: LayoutLabel[]; growth?: { group: LayoutGroup; width: number; title: string; row: string }; blocked: string[]; moves?: string[] }
 /** Where one tier's groups land when the grown group takes its new width. */
 interface GroupPlacement { group: LayoutGroup; x: number; width: number }
 /** A point stage 8 must reach outside every obstacle to honour this placement. */
@@ -81,6 +81,17 @@ const isCanton = (model: LayoutModel, id: string): boolean => model.document.fra
  * other edge is taken; a frame with an own cell on neither edge has no title edge (`undefined`).
  */
 export function frameSide(model: LayoutModel, frame: string): 'top' | 'bottom' | undefined {
+  const side = rawFrameSide(model, frame);
+  if (side === undefined || !titleMoved(model, frame)) return side;
+  const other = side === 'top' ? 'bottom' : 'top';
+  return frameHost(model, frame, other) !== undefined ? other : side;
+}
+
+/** A title 7f moved to the other edge because no position and no widening cleared a bus stub (`MESH_BUS_TITLE_MOVED`). */
+const titleMoved = (model: LayoutModel, id: string): boolean => model.titleMoves?.includes(id) === true;
+
+/** ADR-0011's edge, before any title is moved: the mesh bus reads this one, since a bus side is fixed at stage 5. */
+export function rawFrameSide(model: LayoutModel, frame: string): 'top' | 'bottom' | undefined {
   // A canton frame has no own cell to host a title: its band is held by the sub-tier (`cantonTitles`), not by
   // a cell, so `frameHost` is never asked and it has no cell-hosted edge.
   if (isCanton(model, frame)) return undefined;
@@ -279,6 +290,12 @@ export function bandEntryConflicts(model: LayoutModel, entries = routerEntryPoin
  * only, so placement, publication and restore agree.
  */
 export function bandSide(model: LayoutModel, group: LayoutGroup): 'top' | 'bottom' {
+  const side = rawBandSide(model, group);
+  return titleMoved(model, group.id) ? (side === 'top' ? 'bottom' : 'top') : side;
+}
+
+/** ADR-0011's edge, before any title is moved. */
+export function rawBandSide(model: LayoutModel, group: LayoutGroup): 'top' | 'bottom' {
   const members = new Set(group.nodes), counts = { top: 0, bottom: 0 };
   for (const link of model.links) {
     if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
@@ -716,7 +733,8 @@ function planLabels(model: LayoutModel, permitGrowth: boolean, legs = permitGrow
 const gapKey = (tier: number, side: 'top' | 'bottom'): string => String(side === 'bottom' ? tier : tier - 1);
 
 function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: ReadonlySet<string>, legs: boolean, spent: LegSpent): LabelPlan & { failed: Set<string> } {
-  const labels: LayoutLabel[] = [], blocked: string[] = [], failed = new Set<string>();
+  const labels: LayoutLabel[] = [], blocked: string[] = [], failed = new Set<string>(), moves: string[] = [];
+  const stubs = legs ? legRects(model).filter(item => item.id.includes(':stub:')) : [];
   for (const title of titles(model)) {
     const id = title.host, group = model.groups[id]!, measured = measurement(title.label);
     const band = bandHeldBy(model, id);
@@ -735,6 +753,10 @@ function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: Readon
       if (!growthPlan(model, group, width)) blocked.push(id);
       else if (permitGrowth) return { labels, blocked, failed, growth: { group, width, title: title.id, row } };
     }
+    // A bus stub no position and no widening clears is a fault of the title's edge, not a leg the router may cross: the title goes to the
+    // other edge (mesh-bus.md, section 4, *A stub through a title band*).
+    const at = x <= limit + PLACEMENT_EPS ? x : group.bounds!.x + GROUP_LABEL_GEOMETRY.horizontalInset;
+    if (stubs.some(item => item.bounds.x < at + measured.width && right(item.bounds) > at && intersectsY(item.bounds, y, measured.height))) moves.push(title.id);
     labels.push({ id: `label:group:${id}`, owner: { ...group.owner }, layer: 'routed', role: 'group',
       text: title.label, fontFamily: GROUP_LABEL_GEOMETRY.fontFamily,
       fontSize: GROUP_LABEL_GEOMETRY.fontSize, fontWeight: GROUP_LABEL_GEOMETRY.fontWeight,
@@ -768,7 +790,7 @@ function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: Readon
       bounds: { x: x <= limit + PLACEMENT_EPS ? x : box.x + GROUP_LABEL_GEOMETRY.horizontalInset,
         y, width: measured.width, height: measured.height } });
   }
-  return { labels, blocked, failed };
+  return { labels, blocked, failed, ...(moves.length ? { moves } : {}) };
 }
 
 /** Passes outside the shared budget a title may take to widen its group for a leg (ticket 66; the widening is one push and two replays). */
@@ -1320,6 +1342,18 @@ export function produceGroupLabelBands(model: LayoutModel): void {
     // (`mutation.ts`, with its own rounds), and says so there when they do not settle; a warning here would fire on a run it closes later.
     model.labels = model.labels.filter(label => label.role !== 'group');
     const plan = planLabels(model, true, true, spent);
+    const fresh = (plan.moves ?? []).filter(id => model.titleMoves?.includes(id) !== true);
+    if (!plan.growth && fresh.length && budget.remaining > 0) {
+      // The title goes to the other edge; the reservation, the regions and the labels are made again for the edge it now stands on.
+      model.titleMoves = [...(model.titleMoves ?? []), ...fresh];
+      for (const id of fresh) model.diagnostics.push({ stage: 'placement', severity: 'info', code: 'MESH_BUS_TITLE_MOVED',
+        message: `The title of ${id} moved to its other edge: no position and no widening clears the stub of a mesh bus across it.`, owners: [{ kind: 'group', id }] });
+      reserveInitialSpace(model);
+      const passes = budget.passes;
+      rebuildRegionGeometry(model, budget, undefined, true);
+      consumeGrowthPass(budget, passes);
+      continue;
+    }
     if (!plan.growth) { model.labels.push(...plan.labels); diagnoseBlocked(model, plan.blocked); return; }
     // A widening for a leg only (no hard obstacle asks for it) needs a pass the shared budget no longer has: centring spends it before any leg
     // is known (ticket 66). Each title (keyed by the title that asked, not the cell that grows: one cell can host a member title and a canton title) has an allowance of `LEG_PASSES_PER_TITLE` passes outside the shared budget; a title past it keeps the soft rule.
@@ -1396,7 +1430,7 @@ export function replanGroupLabels(model: LayoutModel): void {
   if (syncBands(model)) { reserveAgain(); return; }
   const retained = model.labels.filter(label => label.role !== 'group');
   const plan = planLabels({ ...model, labels: retained }, true, true, legSpentOf(model));
-  if (plan.growth) { reserveAgain(); return; }
+  if (plan.growth || (plan.moves ?? []).some(id => model.titleMoves?.includes(id) !== true)) { reserveAgain(); return; }
   model.labels = [...retained, ...plan.labels];
   diagnoseBlocked(model, plan.blocked);
 }
@@ -1455,6 +1489,7 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   let plan = planLabels(expected, true, true, spent);
   if (plan.growth || !equal(actualLabels, plan.labels)) plan = planLabels(expected, !model.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE'), undefined, spent);
   if (plan.growth) throw new Error(`Group label ${plan.growth.group.id} has no reserved free gap`);
+  if ((plan.moves ?? []).some(id => model.titleMoves?.includes(id) !== true)) throw new Error('A group label stands on the stub of a mesh bus and was not moved');
   const actual = model.labels.filter(label => label.role === 'group');
   if (!equal(actual, plan.labels)) {
     // The sentence named neither the label nor the amount, and the first difference is the one that

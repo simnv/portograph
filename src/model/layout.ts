@@ -378,6 +378,8 @@ export interface LayoutModel {
   meshBuses?: MeshBus[];
   /** Absent when no bus has a band; 7f publishes them. */
   busBands?: BusBand[];
+  /** The ids of the titles 7f moved to their other edge (`MESH_BUS_TITLE_MOVED`); absent when none. */
+  titleMoves?: string[];
   obstacles: Obstacle[];
   diagnostics: Diagnostic[];
   runtime: LayoutRuntime;

@@ -1,6 +1,6 @@
 import type { PortRef } from '../model/document.js';
 import type { BusBand, LayoutGroup, LayoutModel, LayoutNode, LayoutPort, MeshBus } from '../model/layout.js';
-import { bandSide, frameSide } from './bands.js';
+import { rawBandSide, rawFrameSide } from './bands.js';
 import { overlayEndpoint } from './overlay-paths.js';
 import { portId } from './skeleton-graph.js';
 
@@ -53,9 +53,9 @@ const portX = (node: LayoutNode, port: LayoutPort): number | undefined => port.a
 /** The edge whose title the bus takes on a tie (mesh-bus.md, section 4, *Side*). */
 export function busTitleEdge(model: LayoutModel, bus: MeshBus): Edge {
   const own = (entry: string): Edge | undefined => {
-    if (model.document.frames?.[entry] !== undefined) return frameSide(model, entry);
+    if (model.document.frames?.[entry] !== undefined) return rawFrameSide(model, entry);
     const group = model.groups[entry];
-    return group === undefined ? undefined : bandSide(model, group);
+    return group === undefined ? undefined : rawBandSide(model, group);
   };
   if (bus.placement === 'in-frame') return own(bus.frames[0]!) ?? 'bottom';
   const counts = { top: 0, bottom: 0 };
