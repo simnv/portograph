@@ -75,6 +75,13 @@ export function busTitleEdge(model: LayoutModel, bus: MeshBus): Edge {
  * Term 3, the lanes, is equal on both edges and decides nothing. A tie takes the title edge.
  */
 export function busSide(model: LayoutModel, bus: MeshBus, provisional = false): Edge {
+  const counts = busLegCounts(model, bus, provisional);
+  if (counts.top !== counts.bottom) return counts.top < counts.bottom ? 'top' : 'bottom';
+  return busTitleEdge(model, bus);
+}
+
+/** The legs each horizontal edge of the row carries within the bar's span (see `busSide`): what the choice of edge compares. */
+export function busLegCounts(model: LayoutModel, bus: MeshBus, provisional = false): { top: number; bottom: number } {
   const row = busRowNodes(model, bus), used = routedPorts(model), members = new Set(bus.nodes);
   const counts = { top: 0, bottom: 0 };
   const xs = bus.nodes.map(id => centreX(model.nodes[id]!)).filter((x): x is number => x !== undefined);
@@ -108,8 +115,26 @@ export function busSide(model: LayoutModel, bus: MeshBus, provisional = false): 
       }
     }
   }
-  if (counts.top !== counts.bottom) return counts.top < counts.bottom ? 'top' : 'bottom';
-  return busTitleEdge(model, bus);
+  return counts;
+}
+
+/**
+ * The verticals that cross the bar in the published layout: the routed segments (a frame-straight chord included) that pass the bar's line within its span
+ * (docs/design/mesh-bus.md, section 4). No gate reads them; the overlay report counts them beside the stage-5 leg count (`busLegCounts`).
+ */
+export function busVerticals(model: LayoutModel, bus: MeshBus): number {
+  if (bus.bar === undefined) return 0;
+  const y = bus.bar.from.y, lo = Math.min(bus.bar.from.x, bus.bar.to.x), hi = Math.max(bus.bar.from.x, bus.bar.to.x);
+  let count = 0;
+  for (const link of model.links) {
+    if (link.layer !== 'routed' || link.technique === 'stub' || link.path === undefined) continue;
+    for (const segment of link.path.segments) {
+      if (!(Math.min(segment.from.y, segment.to.y) < y - 1e-6 && Math.max(segment.from.y, segment.to.y) > y + 1e-6)) continue;
+      const x = segment.from.x + (segment.to.x - segment.from.x) * (y - segment.from.y) / (segment.to.y - segment.from.y);
+      if (x >= lo - 1e-6 && x <= hi + 1e-6) count++;
+    }
+  }
+  return count;
 }
 
 const portOf = (model: LayoutModel, ref: PortRef): LayoutPort | undefined =>

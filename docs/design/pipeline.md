@@ -1152,6 +1152,13 @@ overlay links ask for.
 
 ## Stage 8 — route (remainder)
 
+**A mesh bus member's path is the path along the bus** (ticket 84; `docs/design/mesh-bus.md`, section 5). Stage 8 states nothing of its own for
+a member: its path is stub, bar run, stub, three orthogonal segments on the overlay layer, read off the geometry 7f published on the bus
+(`bus.stubs`, `bus.bar`; `busMemberPath` in `overlay-paths.ts`, which `overlayPath` answers for a member). `route/validate` re-derives it with the
+same producer and compares, as for every overlay path, and G7 reads each end at the port face through `overlayEndpoint`. Members are neither
+straight nor bent and enter neither the bends nor the crossings metric (routed geometry only, as no overlay path does). The verticals that cross
+each bar in the published layout are counted (`busVerticals`) beside the stage-5 leg count (`busLegCounts`); no gate reads them.
+
 **Group boxes are obstacles for foreign links (ADR-0013).** Every group box, grown by the 10 px
 edge margin, obstructs each link that neither attaches inside it, nor owns a lane in its margin,
 nor crosses one of its declared bars. Attached links still cross their own boundary at ports. The
@@ -1425,6 +1432,13 @@ suppressed when overlay density (overlay links per node, over `max(1, nodes)`) e
 profile's threshold (default 3). A suppressed label leaves no record at all, so it is not an
 omission.
 
+**The bus label** (ticket 84). Each mesh bus gets one model-owned label, `role: 'mesh-bus'`, layer `overlay`, id `label:bus:<bus>` (also `bus.label`),
+text `<class> mesh (<n> nodes)`, 9 px, heading 0, on the room 7f reserved on the bar (`bus.labelRoom`): beyond the bar, 4 px from it. It is placed
+first, so no link label takes the room, and it is not subject to the overlay density suppression. Where no interval holds it (`labelRoom`
+absent) it is omitted with its text as tooltip, and `labelsOmitted` counts it. A bus member's authored label is not placed: it goes to the bus
+tooltip in stage 11 and leaves no omission record, and 7f reserves no room for it. G3 reads a `mesh-bus` label against routed geometry (it
+leaves out every other overlay-layer label).
+
 **A drawn overlay run is an obstacle for a label.** G3 measures a label against routed geometry
 only, and the renderer masks the overlay layer out of every drawn label, so a label over an overlay
 stays readable — but the mask cuts the *overlay* under it, and an overlay path goes round the shapes
@@ -1548,6 +1562,14 @@ named port, the model link id, the merge-run id and the legend entry key. A deta
 mark or bar body carries `data-owner` and, for a mark, `data-end`, instead of repeating a `data-id`.
 Every text node and attribute is XML-escaped, including the inline style, so no source string is
 interpolated as markup.
+
+**A mesh bus** (ticket 84) is one `<g class="mesh-bus overlay <class>" data-id data-members>` in the masked overlay layer: one `<path>` for the bar
+and one per stub, each `link-line overlay-line <class>`, so the class stroke and dash apply; a `<title>` lists the members, the dissolved
+group-links and the members' authored labels. The member `<g class="link">` elements are not emitted, and one endpoint mark per stub is drawn
+above the mask at the port face. The bus label is drawn on the label layer (`link-label mesh-bus-label`). `document.overlays` hides the bus
+with its class. The draw.io export writes the bar as one `edgeStyle=none` edge with two free points, each stub as an
+`orthogonalEdgeStyle;jettySize=0` edge from its port's cell to a free point on the bar, a mark per stub on its pill, and the label as a text
+vertex on the `labels` layer; the drawn bar and stubs read back from the drawio CLI (`-x -f svg`) within 0.05 px.
 
 An inline `<style>` holds the profile theme, the generated geometry locks and the parser-filtered
 document `css:`, in that order. The theme is three paint-only sheets emitted from one data table

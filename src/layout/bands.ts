@@ -1146,7 +1146,7 @@ export function linkLabelGap(model: LayoutModel, a: string, b: string): number {
   let gap = 0;
   for (const link of model.links) {
     const text = model.document.links[link.sourceIndex]?.label;
-    if (!text || link.technique === 'stub' || link.bundle || !link.attachments) continue;
+    if (!text || link.technique === 'stub' || link.bundle || link.meshBus !== undefined || !link.attachments) continue;
     const ends = [link.attachments.from.node, link.attachments.to.node];
     if (!(ends.includes(a) && ends.includes(b))) continue;
     const from = findPort(model, link.attachments.from), to = findPort(model, link.attachments.to);
@@ -1202,7 +1202,8 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
   const settle = (nodes: string[]): void => { if (nodes.length) rebuildNodeGeometry(model, nodes, 'current'); };
   for (const link of model.links) {
     const text = model.document.links[link.sourceIndex]?.label;
-    if (!text || link.technique === 'stub' || link.bundle || !link.attachments) continue;
+    // A bus member's label goes to the bus tooltip (mesh-bus.md, section 6): it asks for no room.
+    if (!text || link.technique === 'stub' || link.bundle || link.meshBus !== undefined || !link.attachments) continue;
     if (effectiveLayer(link) === 'overlay' && suppressed) continue;
     const from = findPort(model, link.attachments.from), to = findPort(model, link.attachments.to);
     if (!from?.anchor || !to?.anchor) continue;

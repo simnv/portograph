@@ -495,7 +495,7 @@ function hasUnsupportedClaims(model: LayoutModel): boolean {
     || model.obstacles.length > 0 || (!bandsStage && model.labelBands.length > 0)
     || (!labelStage && model.legend !== undefined)
     || nonNodeLabels.some(label => !(bandsStage && label.role === 'group')
-      && !(labelStage && (label.role === 'link' || label.role === 'legend')));
+      && !(labelStage && (label.role === 'link' || label.role === 'legend' || label.role === 'mesh-bus')));
 }
 function rebuildBoxes(model: LayoutModel): void {
   for (const group of Object.values(model.groups)) {

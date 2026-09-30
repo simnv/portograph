@@ -8,6 +8,7 @@ import { effectiveLayer } from '../score/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
 import { CANVAS_MARGIN, DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { drawnBoxes as paintedBoxes, produceLegend } from './legend.js';
+import { BUS_LABEL_FONT, BUS_LABEL_GAP, busLabelText } from './bus-room.js';
 import { withLayoutMutation } from './mutation.js';
 import { RectangleIndex, type RectangleBounds } from './rectangle-index.js';
 
@@ -310,6 +311,20 @@ export function produceLinkLabels(model: LayoutModel): void {
   const index = buildObstacles(model);
   const suppressOverlay = overlayLabelsSuppressed(model);
   const produced: LayoutLabel[] = [], suppressed: string[] = [];
+  // A bus label stands on the room 7f reserved on its bar (mesh-bus.md, sections 4 and 6). It is placed first, so that no link label
+  // takes the room, and it is not subject to the overlay density suppression, which reads the labels of overlay links.
+  for (const bus of model.meshBuses ?? []) {
+    const text = busLabelText(bus), id = `label:bus:${bus.id}`;
+    const base: LayoutLabel = { id, owner: { ...bus.owner }, layer: 'overlay', role: 'mesh-bus', text,
+      fontFamily: BUS_LABEL_FONT.fontFamily, fontSize: BUS_LABEL_FONT.fontSize, fontWeight: BUS_LABEL_FONT.fontWeight, textRotation: 0 };
+    bus.label = id;
+    if (bus.bar === undefined || bus.labelRoom === undefined) { produced.push(omitted(base)); continue; }
+    const measured = measure(text);
+    const y = bus.side === 'top' ? bus.bar.from.y - BUS_LABEL_GAP - measured.height : bus.bar.from.y + BUS_LABEL_GAP;
+    const bounds = { x: bus.labelRoom.from, y, width: measured.width, height: measured.height };
+    produced.push({ ...base, lines: measured.lines, lineHeight: measured.lineHeight, bounds });
+    index.add({ bounds, clearance: 0 });
+  }
   /**
    * The four rungs, in the order the diagram is best read in: the whole text clear of every drawn
    * overlay run, the whole text allowed to cross one, then the same two with shortened text
@@ -344,6 +359,8 @@ export function produceLinkLabels(model: LayoutModel): void {
     if (text === undefined || text === '') continue;
     // A removed link (ticket 24) has no path to label; its removal diagnostic already names it.
     if (link.removed === true) continue;
+    // A bus member draws no line of its own: its label is in the bus tooltip (mesh-bus.md, section 6).
+    if (link.meshBus !== undefined) continue;
     const layer = effectiveLayer(link);
     if (layer === 'overlay' && suppressOverlay) { suppressed.push(link.id); continue; }
     const label = baseLabel(`label:link:${link.id}`, link.owner, layer, text);
@@ -409,11 +426,13 @@ const linkLabelDiagnostics = (model: LayoutModel): Diagnostic[] =>
 /** Recheck the exact stage-9 claims. Publication and restore run the one deterministic producer. */
 export function validateLinkLabels(model: LayoutModel): void {
   const expected = JSON.parse(JSON.stringify(model)) as LayoutModel;
-  expected.labels = expected.labels.filter(label => label.role !== 'link' && label.role !== 'legend');
+  expected.labels = expected.labels.filter(label => label.role !== 'link' && label.role !== 'legend' && label.role !== 'mesh-bus');
+  for (const bus of expected.meshBuses ?? []) delete bus.label;
   delete expected.legend;
   expected.diagnostics = expected.diagnostics.filter(item => !(LINK_LABEL_CODES as readonly string[]).includes(item.code));
   produceLinkLabels(expected);
   if (!equal(model.labels, expected.labels)) throw new Error('Link labels contradict measured post-route placement');
+  if (!equal(model.meshBuses, expected.meshBuses)) throw new Error('Bus labels contradict the rooms 7f reserved');
   if (!equal(model.legend, expected.legend)) throw new Error('Legend contradicts the measured classes and final geometry');
   if (!equal(linkLabelDiagnostics(model), linkLabelDiagnostics(expected))) throw new Error('Link-label diagnostics contradict measured post-route placement');
   // Restore has no predecessor transaction to compare against, so the canvas is stated

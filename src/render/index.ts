@@ -320,11 +320,28 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
         authored, locks.stroke(linkStrokeWidth(link))), d: data }));
   };
 
-  const drawn = layout.links.filter(link => link.technique !== 'stub' && link.path && visible(link));
+  // A mesh bus member draws no line of its own: the bus draws one bar and one stub per member port (mesh-bus.md, section 6).
+  const drawn = layout.links.filter(link => link.technique !== 'stub' && link.path && link.meshBus === undefined && visible(link));
+  const memberOf = (id: string): LayoutLink | undefined => layout.links.find(link => link.id === id);
+  const buses = (layout.meshBuses ?? []).filter(bus => bus.bar !== undefined && bus.stubs !== undefined
+    && bus.members.some(id => { const link = memberOf(id); return link !== undefined && visible(link); }));
+  const busElements = buses.map(bus => {
+    const first = memberOf(bus.members[0]!)!, authored = linkClassToken(layout, first);
+    const line = (from: Point, to: Point): string => element('path', { class: classes('link-line', 'overlay-line', authored, locks.stroke(linkStrokeWidth(first))),
+      d: pathData([{ from, to, owner: { ...bus.owner } }]) });
+    const authoredLabels = bus.members.flatMap(id => {
+      const link = memberOf(id), text = link === undefined ? undefined : layout.document.links[link.sourceIndex]?.label;
+      return text ? [`${id}: ${text}`] : [];
+    });
+    const lines = [`${bus.class ?? 'unclassed'} mesh: ${bus.nodes.join(', ')}`, `links: ${bus.members.join(', ')}`,
+      ...(bus.dissolved.length ? [`group-links: ${bus.dissolved.join(', ')}`] : []), ...authoredLabels];
+    return element('g', { class: classes('mesh-bus', 'overlay', authored), 'data-id': bus.id, 'data-members': bus.members.join(' ') },
+      element('title', {}, escapeText(lines.join('\n'))) + line(bus.bar!.from, bus.bar!.to) + bus.stubs!.map(stub => line(stub.from, stub.to)).join(''));
+  }).join('');
   const byId = new Map(layout.links.map(link => [link.id, link]));
   const bundleOf = new Map(layout.bundles.map(bundle => [bundle.id, bundle]));
   const overlayPaths = drawn.filter(link => effectiveLayer(link) === 'overlay')
-    .map(link => linkElement(link, undefined)).join('');
+    .map(link => linkElement(link, undefined)).join('') + busElements;
   const routedPaths = drawn.filter(link => effectiveLayer(link) === 'routed')
     .map(link => linkElement(link, link.bundle ? bundleOf.get(link.bundle) : undefined)).join('');
   // One counted merge trunk is painted once by its bundle, never once per member.
@@ -393,7 +410,14 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
         owner, link ? linkClassToken(layout, link) : undefined);
     }).join('');
 
-  const marks = drawn.filter(link => effectiveLayer(link) === 'overlay').flatMap(link => {
+  const busLabels = buses.flatMap(bus => {
+    const label = layout.labels.find(item => item.id === bus.label);
+    return label === undefined || label.omitted || label.bounds === undefined ? []
+      : [textElement(label, locks, classes('link-label', 'mesh-bus-label'), bus.id, authorClass(bus.class))];
+  });
+  const busMarks = buses.flatMap(bus => bus.stubs!.map(stub => element('circle', { class: classes('overlay-endpoint', authorClass(bus.class)),
+    'data-owner': bus.id, 'data-end': stub.node, cx: stub.from.x, cy: stub.from.y, r: OVERLAY_ENDPOINT_RADIUS }))).join('');
+  const marks = busMarks + drawn.filter(link => effectiveLayer(link) === 'overlay').flatMap(link => {
     const segments = link.path!.segments;
     if (!segments.length) return [];
     return ([['from', segments[0]!.from], ['to', segments.at(-1)!.to]] as const).map(([end, point]) =>
@@ -425,7 +449,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
         legendSwatch(entry) + (label ? textElement(label, locks, 'legend-label', entry.id) : ''));
     }).join('')) : '';
 
-  const overlayVisible = drawn.some(link => effectiveLayer(link) === 'overlay');
+  const overlayVisible = drawn.some(link => effectiveLayer(link) === 'overlay') || buses.length > 0;
   const mask = overlayVisible ? element('mask', { id: MASK_ID, maskUnits: 'userSpaceOnUse',
     // The mask means luminance: white shows the overlay, black cuts it out. Said here, on the
     // element, so no rule can reinterpret the cutouts as opaque alpha.
@@ -445,7 +469,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     + (crossedBodies.length ? element('g', { class: 'nodes crossed-bars' }, crossedBodies.join('')) : '')
     + element('g', { class: 'links' }, routedPaths + trunks)
     + element('g', { class: 'nodes' }, nodes)
-    + element('g', { class: 'labels' }, groupLabels + linkLabels)
+    + element('g', { class: 'labels' }, groupLabels + linkLabels + busLabels.join(''))
     + (marks ? element('g', { class: 'overlay-marks' }, marks) : '')
     + legend;
   const title = layout.document.title !== undefined && layout.document.title !== ''

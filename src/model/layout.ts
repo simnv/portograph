@@ -30,7 +30,7 @@ export interface LayoutLabel extends OwnedElement {
   text: string;
   /** A pill label's exact port; sharing a node owner does not exempt every pill collision. */
   port?: PortRef;
-  role?: 'node' | 'description' | 'group' | 'link' | 'pill' | 'legend';
+  role?: 'node' | 'description' | 'group' | 'link' | 'pill' | 'legend' | 'mesh-bus';
   support?: LabelSupport;
   fontFamily?: string;
   fontSize?: number;
@@ -328,6 +328,8 @@ export interface MeshBus extends OwnedElement {
   stubs?: { node: string; from: Point; to: Point }[];
   /** From 7f on: the x interval of the bar the label stands in (`undefined`: no interval holds it), for stage 9. */
   labelRoom?: { from: number; to: number };
+  /** From stage 9 on: the id of the bus label (`label:bus:<id>`); the label is omitted, with its text as tooltip, where no room held it. */
+  label?: string;
 }
 
 /** The bus band 7f reserves: `group` names the host of an in-frame band, and is absent across frames. */
