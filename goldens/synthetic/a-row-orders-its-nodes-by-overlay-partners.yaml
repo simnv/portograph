@@ -1,0 +1,21 @@
+# Expected: ranked-groups ticket 78. The four nodes of `R` stand in the order n1 n2 n3 n4 as the
+# author wrote them, and the overlay partners are n1-n3 and n2-n4. Each link has one body between
+# its ends, so both bend. The row is ordered by its partners (n1 n3 n2 n4, or an equivalent order):
+# the two linked nodes of each pair stand next to each other and both overlay links are one
+# straight segment between facing side ports. The routed links from `T` do not cross.
+portograph: 2
+groups:
+  T: { tier: 0, label: Group T }
+  R: { tier: 1, label: Group R }
+nodes:
+  t0: { group: T, class: server, label: t0 }
+  t1: { group: T, class: server, label: t1 }
+  n1: { group: R, class: server, label: n1 }
+  n2: { group: R, class: server, label: n2 }
+  n3: { group: R, class: server, label: n3 }
+  n4: { group: R, class: server, label: n4 }
+links:
+  - [t0, n1]
+  - [t1, n4]
+  - [n1, n3, { route: overlay }]
+  - [n2, n4, { route: overlay }]

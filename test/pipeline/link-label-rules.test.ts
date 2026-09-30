@@ -251,7 +251,7 @@ it('ADR-0014: among shortened placements the one keeping the most characters win
   expect(label.text.length).toBeGreaterThan(20);
 });
 
-it('ADR-0014: an overlay link over a neighbour reserves no detour stems, since it stays straight', async () => {
+it('ADR-0014: a same-row overlay link stands between neighbours (ticket 78), stays straight and reserves its label in the gap between its ports', async () => {
   const yaml = (label: string) => `portograph: 2
 groups: {g: {tier: 0}}
 nodes:
@@ -262,11 +262,11 @@ nodes:
 links: [{from: source.p, to: target.p, route: overlay${label}}]`;
   const gap = (model: LayoutModel) => model.nodes.target!.ports[0]!.pill!.bounds.x - (model.nodes.source!.ports[0]!.pill!.bounds.x + model.nodes.source!.ports[0]!.pill!.bounds.width);
   const plain = await run(yaml('')), labelled = await run(yaml(', label: mid label'));
-  expect(width('mid label') + 2 * LINK_LABEL_GEOMETRY.shortenMargin).toBeLessThanOrEqual(gap(plain));
-  expect(gap(labelled)).toBeCloseTo(gap(plain), 9);
-  // The straight overlay crosses node `above`; whether stage 9 finds a clear spot beside it is the
-  // ladder's business, not the reservation's.
+  // The row is ordered by its partners: source and target stand next to each other, so the link is one straight
+  // segment between facing side ports and no body lies over it. The gap holds the label, reserved in placement.
+  expect(plain.links[0]!.path!.segments).toHaveLength(1);
   expect(labelled.links[0]!.path!.segments).toHaveLength(1);
+  expect(gap(labelled)).toBeGreaterThanOrEqual(width('mid label') + 2 * LINK_LABEL_GEOMETRY.shortenMargin);
 }, 60000);
 
 it('ADR-0014: a routed link between two flanks detouring around the core group reserves both stems', async () => {

@@ -11,6 +11,7 @@ const names = {
   indifferent: 'overlay-links-reorder-an-indifferent-tier',
   crossings: 'an-overlay-reorder-is-refused-for-routed-crossings',
   bend: 'an-overlay-reorder-is-refused-when-a-link-would-bend',
+  partners: 'a-row-orders-its-nodes-by-overlay-partners',
 } as const;
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (yaml: string): Promise<LayoutModel> =>
@@ -63,6 +64,36 @@ describe('overlay-weighted order', () => {
     expect(overlays(model)).toHaveLength(4);
     expect(straight(model)).toBe(4);
     expect(score(model).snapshot.metrics.crossings.count).toBe(0);
+  });
+
+
+  describe('the partners of a row (ticket 78)', () => {
+    const nodeLeft = (model: LayoutModel, id: string): number => model.nodes[id]!.bounds!.x;
+    it('stands the linked nodes of a row next to each other, and both overlay links are one straight segment', async () => {
+      const model = await run(fixture(names.partners));
+      expect(errors(model)).toEqual([]);
+      const order = ['n1', 'n2', 'n3', 'n4'].sort((a, b) => nodeLeft(model, a) - nodeLeft(model, b));
+      // n1 stands next to n3 and n2 next to n4; the author wrote n1 n2 n3 n4.
+      expect(Math.abs(order.indexOf('n1') - order.indexOf('n3'))).toBe(1);
+      expect(Math.abs(order.indexOf('n2') - order.indexOf('n4'))).toBe(1);
+      expect(overlays(model)).toHaveLength(2);
+      expect(straight(model)).toBe(2);
+      expect(model.groups.R!.rowOrder).toEqual(order);
+      expect(score(model).snapshot.metrics.crossings.count).toBe(0);
+      expect(refusals(model)).toEqual([]);
+    });
+
+    it('keeps the order of a row whose partners are already neighbours', async () => {
+      // n1-n2 and n3-n4 already stand next to each other: nothing gains, so the order the author wrote stands.
+      const yaml = fixture(names.partners).replace('[n1, n3, { route: overlay }]', '[n1, n2, { route: overlay }]').replace('[n2, n4, { route: overlay }]', '[n3, n4, { route: overlay }]');
+      const model = await run(yaml);
+      expect(straight(model)).toBe(2);
+      expect(['n1', 'n2', 'n3', 'n4'].map(id => nodeLeft(model, id))).toEqual([...['n1', 'n2', 'n3', 'n4'].map(id => nodeLeft(model, id))].sort((a, b) => a - b));
+    });
+
+    it('is deterministic', async () => {
+      expect(geometry(await run(fixture(names.partners)))).toEqual(geometry(await run(fixture(names.partners))));
+    });
   });
 
   it.each(Object.values(names))('is idempotent and deterministic on %s', async name => {
