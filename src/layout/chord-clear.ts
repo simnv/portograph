@@ -23,6 +23,9 @@ import { PLACEMENT_EPS } from './tolerance.js';
 /** How many candidate x a group or a node tries, nearest first, before it stays (ticket 77). */
 const CHORD_TRIALS = 24;
 
+/** How many candidates that pass the cheap checks are judged on a settled copy, nearest first: each one costs a round of the pipeline (ticket 110). */
+const SETTLED_TRIALS = 6;
+
 /** What a move must not lose or add, read off the geometry as it stands. */
 interface Reading {
   /** The overlay links drawn as one segment. */
@@ -192,14 +195,14 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
   const attempt = (key: string, candidates: readonly number[], at: number, place: (dx: number) => void, undo: () => void, nodes: readonly string[],
     holds: (x: number) => boolean): boolean => {
     const before = read(model, overlays), blocked = new Set(blockedChords(model));
-    let best: { target: number; count: number } | undefined;
+    let best: { target: number; count: number } | undefined, settledTrials = 0;
     for (const target of candidates.slice(0, CHORD_TRIALS)) {
       if (!holds(target)) continue;
       tried = true;
       place(target - at);
       rebuildNodeGeometry(model, nodes, 'current');
       const after = read(model, overlays);
-      if (after.overlay.size > before.overlay.size && [...before.routed].every(id => after.routed.has(id)) && blockedChords(model).every(id => blocked.has(id))) {
+      if (after.overlay.size > before.overlay.size && [...before.routed].every(id => after.routed.has(id)) && blockedChords(model).every(id => blocked.has(id)) && settledTrials++ < SETTLED_TRIALS) {
         const count = holdsSettled(saveGroupsOf(nodes), undo, nodes, after.overlay.size);
         if (count !== undefined && (best === undefined || count > best.count)) best = { target, count };
       }

@@ -117,7 +117,7 @@ describe('the mover takes the position that clears the most chords (ticket 110)'
     rebuildNodeGeometry(model, group.nodes, 'current');
     const straight = (): number => chords.filter(link => overlayPath(model, link).segments.length === 1).length;
     expect(straight()).toBeLessThan(2);
-    expect(stepOverChords(model, undefined)).toBe(true);
+    expect(stepOverChords(model, () => undefined)).toBe(true);
     expect(straight()).toBe(2);
   }, 60000);
 });
