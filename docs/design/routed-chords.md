@@ -174,10 +174,13 @@ foreign frame on a held chord, or makes it leave by a side edge, is refused
 (`STRAIGHT_LINK_HELD`); a move 7f cannot refuse keeps the chord and names it
 (`STRAIGHT_LINK_BLOCKED`), as today.
 
-*As built (ticket 99).* After the freeze only a foreign frame or canton box refuses a move; the facing edge is a rule of the decision and is not
-held. Measured on the corpus: holding it left `a-member-title-widens-a-beside-row` with G6 (a 7f title widening pushes a column, the chord
-turns shallower, the move is refused, the title stays unfit and the neighbours' orthogonal fallbacks run along a frame edge), and three
-`STRAIGHT_LINK_BLOCKED` warnings; releasing it leaves no gate gained. A held chord may therefore leave its frame through a side edge after 7f.
+*As built (ticket 99); coordinator's decision, 2026-09-30.* After the freeze only a foreign frame or canton box refuses a move; the facing edge is a
+rule of the decision and is not held. Trace: holding it left `a-member-title-widens-a-beside-row` with G6. There 7f widens a member's title,
+pushes the column of the next member, the chord of that member turns shallow and would leave its frame by a side edge, the move is refused, the
+title stays unfit (`GROUP_LABEL_GAP_INFEASIBLE`) and the orthogonal fallbacks of the neighbours run along a frame edge. Released, the title widens and
+no gate is gained. A held chord may therefore leave its frame through a side edge after 7f; it is named, not refused: at the end of 7f
+`STRAIGHT_LINK_EDGE` (warning, placement) names each frozen cross-frame chord that leaves by a side edge or inside the 10 px corner margin
+(reason `edge`), and the gates judge it.
 
 ## 8. How the other rules treat a held chord
 
@@ -186,9 +189,13 @@ Every consumer of `isFrameStraight` reads the wider predicate (renamed `isRouted
 `route/validate.ts` and G7 (ends on the faces), G5 (no stem, one declared diagonal), the score
 (continuity 1, Q94).
 
-**Bundles (7e).** A bundle's zones and member paths are derived in 7e, after the rows rule has decided and before the transaction re-derives it, so a
-cross-frame chord reads neither (`ignoreBundles` of the corridor test): reading them made the draft and its re-derivation disagree. A chord may
-cross a bundle row strictly (G6 excuses it); the corpus shows no gate gained.
+**Bundles (7e).** A bundle's zones and member paths are derived after the rows rule decides. The draft clears them before it decides
+(`rebuildRegionGeometry`), and the validator's re-derivation of the rows rule clears them on its clone as well, so both read the same state; both
+kinds read the bundle zones and member paths that stand (none) and a chord may cross a bundle row later (G6 excuses a strict crossing).
+
+**Fan branches.** A shared-port fan tree reserves its branch run at placement. A branch that runs within the group edge margin of a group its link
+does not consume is released to the router (`FAN_BRANCH_THROUGH_GROUP`, warning): nothing else checks a branch against group boxes, and a chord that
+removed the stem which hemmed it exposed the case (`a-claimed-run-clears-a-shared-run`, G2 through-group).
 
 **Lanes (7a).** A lane is reserved before a chord is final, and a lane box is a wall to a chord.
 Lanes read a chord that is held at 7a: `corridorFree` keeps a lane's descent off every fixed path,

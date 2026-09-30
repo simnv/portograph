@@ -9,6 +9,7 @@ import { GROUP_EDGE_LINK_CLEARANCE } from '../../src/theme/geometry.js';
 import { score } from '../../src/score/index.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { orthogonalLinks } from '../orthogonal-links.js';
 
 /**
  * Ranked-groups ticket 51 (`docs/design/tier-gap-rows.md`, Section 1 item 6 and Section 2.2): every reason a part of a tier gap is
@@ -83,7 +84,7 @@ describe('a residual part publishes with its findings named (ticket 51)', () => 
     expect(residual(blocked).sort()).toEqual(['link-11:leg-blocked', 'link-8:leg-blocked']);
     expect(codes(blocked)[0]).toMatch(/^TIER_GAP_PART_RESIDUAL\|link-\d+ is left to the router in the tier gap above tier \d: a leg would pass/);
     expect(residual(await place(read('a-tier-gap-plan-orders-every-part')))).toEqual([]);
-    const shared = await place(read('a-claimed-run-clears-a-shared-run'));
+    const shared = await place(orthogonalLinks(read('a-claimed-run-clears-a-shared-run')));
     expect(residual(shared)).toContain('link-3:crosses-shared-run');
     expect(codes(shared).join('\n')).toContain('a leg stands over the shared run of another link');
   }, 120000);

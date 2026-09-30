@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { LayoutLink, LayoutModel, Rect } from '../../src/index.js';
 import { bands, bars, bundles, centre, flanks, layout, lanes, parse, rows, score } from '../../src/index.js';
 import { tierGapPlans } from '../../src/layout/gap-plan.js';
-import { frameLinkCandidate, isRoutedChord } from '../../src/layout/frame-paths.js';
+import { chordKind, frameLinkCandidate, isRoutedChord } from '../../src/layout/frame-paths.js';
 import { bandGap } from '../../src/layout/skeleton-graph.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -17,6 +17,8 @@ const members = 'overlay-links-reorder-two-members-of-a-canton-group';
 const membersRefused = 'a-member-order-is-refused-for-routed-crossings';
 const transit = 'a-transit-inside-a-canton';
 const across = 'a-link-between-two-members-of-a-canton-group';
+/** The same input with the three links between the members orthogonal: the row plan of the gap between two members reads no chord. */
+const acrossOrthogonal = (): string => fixture(across).replace(/^( {2}- \[s\d, l\d)\]/gm, '$1, { route: orthogonal }]');
 
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const lay = (text: string): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
@@ -227,9 +229,24 @@ describe('the overlay order of canton groups (canton-groups ticket 57)', () => {
     expect(score(model).snapshot.gates.G9.passed).toBe(true);
   }, 60000);
 
-  // Section 4 rules 2 and 4: the chord rule is not extended to a canton; the tier-gap plan does not read the canton.
-  it('gives no chord to a link between two members and keeps its planned row', async () => {
+  // Q108 (ticket 99) supersedes Section 4 rule 2: members are sibling frames, so a link between two members on consecutive tiers is a cross-frame
+  // candidate and takes its chord where it is clear. Rule 4 stands: the tier-gap plan does not read the canton.
+  it('gives a chord to a link between two members where it is clear, and every gate passes', async () => {
     const model = await run(across);
+    expect(errors(model)).toEqual([]);
+    const crossing = model.links.filter(link => ['link-4', 'link-5', 'link-6'].includes(link.id));
+    expect(crossing).toHaveLength(3);
+    for (const link of crossing) {
+      expect(chordKind(model, link), link.id).toBe('cross');
+      expect(isRoutedChord(model, link), link.id).toBe(true);
+      expect(link.technique, link.id).toBe('straight');
+    }
+    const report = score(model).snapshot;
+    for (const [id, gate] of Object.entries(report.gates)) expect([id, gate.violations]).toEqual([id, []]);
+  }, 60000);
+
+  it('keeps the planned row of a link between two members that stays orthogonal', async () => {
+    const model = await lay(acrossOrthogonal());
     expect(errors(model)).toEqual([]);
     const crossing = model.links.filter(link => ['link-4', 'link-5', 'link-6'].includes(link.id));
     expect(crossing).toHaveLength(3);
@@ -239,7 +256,7 @@ describe('the overlay order of canton groups (canton-groups ticket 57)', () => {
       expect(link.technique, link.id).not.toBe('straight');
     }
     // The plan of the gap between the two tiers, read where the placement leaves it, seats each link on its rows; the published path keeps them.
-    const stage = bands(bundles(bars(centre(flanks(lanes(rows(await placed(fixture(across)))))))));
+    const stage = bands(bundles(bars(centre(flanks(lanes(rows(await placed(acrossOrthogonal()))))))));
     const gap = tierGapPlans(stage).find(item => item.gap.above === 1 && item.gap.below === 2)!;
     expect(gap.plan.parts).toHaveLength(3);
     for (const part of gap.plan.parts) {
@@ -250,7 +267,7 @@ describe('the overlay order of canton groups (canton-groups ticket 57)', () => {
   }, 60000);
 
   it('plans the gap between two members as the same gap without the canton', async () => {
-    const stage = bands(bundles(bars(centre(flanks(lanes(rows(await placed(fixture(across)))))))));
+    const stage = bands(bundles(bars(centre(flanks(lanes(rows(await placed(acrossOrthogonal()))))))));
     const plan = (model: LayoutModel) => tierGapPlans(model).map(({ gap, plan: one }) => ({ gap, growth: one.growth, parts: one.parts }));
     const withCanton = plan(stage);
     expect(withCanton.find(item => item.gap.above === 1)!.parts).toHaveLength(3);

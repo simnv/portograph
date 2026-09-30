@@ -7,6 +7,9 @@ import { STRAIGHT_PATH_CLEARANCE, findPort } from './row-paths.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { GROUP_LABEL_GEOMETRY, nodeObstacleReach, nudgingDistance, routedStroke, stemReach } from './bands.js';
 import { stemCache, stemPlan } from './sides-two.js';
+import { groupBoxes, groupConsumers } from '../score/model.js';
+import { segmentRectDistance } from '../score/geometry.js';
+import { GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
 
 export interface BundleFans {
   members: Member[];
@@ -488,6 +491,19 @@ function releaseHemmedFans(model: LayoutModel): void {
   }
   if (!branches.length) return;
   const release = new Set<string>();
+  // A reserved branch that runs through, or within the edge margin of, a group its link does not consume is released to the router as well
+  // (ticket 99). Nothing else checks a branch against group boxes: `a-claimed-run-clears-a-shared-run` kept its branch through a neighbour
+  // group only because another link's stem happened to hem it, and a chord that removed that stem exposed it (G2 through-group).
+  const boxes = groupBoxes(model);
+  for (const item of branches) {
+    const margin = GROUP_EDGE_LINK_CLEARANCE + linkStrokeWidth(item.link) / 2;
+    const foreign = boxes.find(({ id, bounds }) => item.runs.some(run => segmentRectDistance(run, bounds) < margin - 1e-6)
+      && !groupConsumers(model, id).includes(item.link.id));
+    if (!foreign) continue;
+    release.add(`${item.link.id}:${item.end}`);
+    placementWarning(model, 'FAN_BRANCH_THROUGH_GROUP',
+      `${item.link.id}'s reserved branch runs within the group edge margin of ${foreign.id}; it keeps its shared stem and stage 8 routes the rest (ticket 99).`, [item.link.id]);
+  }
   for (const link of model.links) {
     // Stage 8 approaches a port only for a link it routes, and `planRoute` passes over every link
     // that already holds a complete path — one a rule pinned, and a bundle member, whose path

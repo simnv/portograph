@@ -5,6 +5,7 @@ import { findPort } from '../../src/layout/row-paths.js';
 import { segmentDistance } from '../../src/score/geometry.js';
 import { placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { orthogonalLinks } from '../orthogonal-links.js';
 
 const fixture = readFileSync(new URL('../../goldens/synthetic/a-straight-gap-needs-no-router.yaml', import.meta.url), 'utf8');
 
@@ -84,7 +85,7 @@ it('claims no run through a node the piece does not attach to', async () => {
  */
 it('claims no run across a reserved run the corridor predicate cannot see', async () => {
   const yaml = readFileSync(new URL('../../goldens/synthetic/a-claimed-run-clears-a-shared-run.yaml', import.meta.url), 'utf8');
-  const before = bands(bundles(bars(centre(flanks(lanes(rows(await placed(yaml))))))));
+  const before = bands(bundles(bars(centre(flanks(lanes(rows(await placed(orthogonalLinks(yaml)))))))));
   const bar = before.links.find(item => item.id === 'link-2')!.sharedRuns!.from!;
   const plan = planRoute(before);
   expect(plan.links.find(item => item.link === 'link-3')!.pieces.map(piece => piece.kind)).toEqual(['gap']);

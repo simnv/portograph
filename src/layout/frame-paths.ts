@@ -232,7 +232,7 @@ export function chordVerdict(model: LayoutModel, link: LayoutLink): { segment: P
   // The chord must also hold every clearance the gates measure a routed segment against (G2, G6),
   // or a published straight link would fail the gate its rule was meant to satisfy.
   const refusal: NonNullable<CorridorOptions['refusal']> = {};
-  if (!straightCorridorClear(model, link, segment, { refusal, ...(kind === 'cross' ? { ignoreBundles: true } : {}) })) return { reason: refusal.reason ?? 'corridor' };
+  if (!straightCorridorClear(model, link, segment, { refusal })) return { reason: refusal.reason ?? 'corridor' };
   return { segment };
 }
 
@@ -367,7 +367,9 @@ export function freezeChords(model: LayoutModel): void {
   for (const link of model.links) {
     if (held.includes(link.id) || chordKind(model, link) !== 'cross') continue;
     const verdict = chordVerdict(model, link);
-    const reason: ChordRefusal = 'reason' in verdict ? verdict.reason : fixedPointRefusal(model, link, verdict.segment) ?? 'chord';
+    // A candidate no check refuses is not refused: it names nothing (it has no reason to give).
+    const reason: ChordRefusal | undefined = 'reason' in verdict ? verdict.reason : fixedPointRefusal(model, link, verdict.segment);
+    if (reason === undefined) continue;
     model.diagnostics.push({ stage: 'placement', severity: 'info', code: 'ROUTED_CHORD_REFUSED',
       message: `The link ${link.id} keeps the orthogonal route between frames: ${reason}.`, owners: [{ kind: 'link', id: link.id }] });
   }
@@ -390,6 +392,18 @@ export function blockedChords(model: LayoutModel): string[] {
     // column) turns the chord shallower, and refusing that move leaves the title unfit (measured: `a-member-title-widens-a-beside-row`
     // gains G6 when the edge is held, none when it is not). The chord then keeps its two faces and may leave its frame by a side edge.
     return chordKind(model, link) === 'cross' && crossRefusal(model, link, { ...chord, owner: { ...link.owner } }) === 'frame';
+  });
+}
+/**
+ * The frozen cross-frame chords that leave a frame by a side edge, or inside the corner margin, once 7f has moved the columns. The move is not
+ * refused (`blockedChords`), so the chord is named here and the gates judge it (ticket 99, review).
+ */
+export function edgeLeavers(model: LayoutModel): string[] {
+  if (!model.frozenChords?.length) return [];
+  return model.frozenChords.filter(id => {
+    const link = model.links.find(item => item.id === id);
+    const chord = link === undefined || chordKind(model, link) !== 'cross' ? undefined : straightChord(model, link, undefined, true);
+    return link !== undefined && chord !== undefined && crossRefusal(model, link, { ...chord, owner: { ...link.owner } }) === 'edge';
   });
 }
 /** Whether two chords keep the chord clearance to each other, or cross strictly (G6 excuses only a strict crossing). */

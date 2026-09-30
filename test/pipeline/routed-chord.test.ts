@@ -3,8 +3,9 @@ import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
 import { routerEntryPoints } from '../../src/layout/bands.js';
-import { chordKind, chordVerdict, chordsHold, expectedFramePath } from '../../src/layout/frame-paths.js';
+import { chordKind, chordVerdict, chordsHold, edgeLeavers, expectedFramePath } from '../../src/layout/frame-paths.js';
 import { tierGapPlans } from '../../src/layout/gap-plan.js';
+import { segmentRectDistance } from '../../src/score/geometry.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -142,21 +143,52 @@ describe('a held cross-frame chord is a chord to every stage', () => {
     expect(parts.filter(id => held.has(id))).toEqual([]);
   }, 60000);
 
-  it('refuses a 7f move that puts a foreign frame on it, and names the link (STRAIGHT_LINK_HELD)', async () => {
+  it('refuses a 7f move that puts only a foreign frame box on it, and names the link (STRAIGHT_LINK_HELD)', async () => {
     const model = await run(fixture(STRAIGHT));
     const link = model.links.find(item => model.frozenChords!.includes(item.id) && chordKind(model, item) === 'cross' && item.attachments!.from.node === 'east-router'
       && item.attachments!.to.node === 'provider-1')!;
-    const chord = link.path!.segments[0]!, mid = { x: (chord.from.x + chord.to.x) / 2, y: (chord.from.y + chord.to.y) / 2 };
-    // Move both cells of the west frame so that the frame stands on the middle of the chord.
+    const chord = link.path!.segments[0]!;
     const cells = model.document.frames!['west']!.cells.map(cell => model.groups[cell]!);
     const box = model.frames!.find(item => item.id === 'west')!.box;
-    const dx = mid.x - (box.x + box.width / 2), dy = mid.y - (box.y + box.height / 2);
-    const proposed = cells.map(group => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx, y: group.bounds!.y + dy } }));
+    const bodies = cells.flatMap(group => group.nodes.map(id => model.nodes[id]!.bounds!));
+    const move = (dx: number, dy: number) => cells.map(group => ({ id: group.id, bounds: { ...group.bounds!, x: group.bounds!.x + dx, y: group.bounds!.y + dy } }));
+    // A move that leaves the frame box 2 to 8 px from the chord, and every body of the frame 12 px or more from it: the chord is clear of every body
+    // and pill (the corridor keeps 10 px) and only the frame wall (10 px and half the stroke) is broken. The stale `model.frames` is clear.
+    let found: { dx: number; dy: number } | undefined;
+    for (const dy of [0, 40, 80, 120]) for (let dx = -100; dx <= 500 && !found; dx++) {
+      const shifted = { ...box, x: box.x + dx, y: box.y + dy };
+      const near = segmentRectDistance(chord, shifted);
+      if (near > 2 && near < 8 && bodies.every(body => segmentRectDistance(chord, { ...body, x: body.x + dx, y: body.y + dy }) >= 12)) found = { dx, dy };
+    }
+    expect(found).toBeDefined();
+    expect(segmentRectDistance(chord, box)).toBeGreaterThan(10.75);
     const draft = structuredClone(model);
-    expect(chordsHold(draft, proposed.map(item => ({ group: draft.groups[item.group.id]!, bounds: item.bounds })))).toBe(false);
+    const proposed = (target: LayoutModel) => move(found!.dx, found!.dy).map(item => ({ group: target.groups[item.id]!, bounds: item.bounds }));
+    expect(chordsHold(draft, proposed(draft))).toBe(false);
     expect(draft.diagnostics.some(item => item.code === 'STRAIGHT_LINK_HELD' && item.owners?.some(owner => owner.kind === 'link' && owner.id === link.id))).toBe(true);
-    // A move that leaves the chord clear is not refused.
-    const still = structuredClone(model);
-    expect(chordsHold(still, proposed.map(item => ({ group: still.groups[item.group.id]!, bounds: { ...item.group.bounds!, y: item.group.bounds!.y + 1 } })))).toBe(true);
+    // The same cells one pitch away from the chord are not refused for this link: the frames are derived from the proposed cells, not read stale.
+    const clear = structuredClone(model);
+    chordsHold(clear, cells.map(group => ({ group: clear.groups[group.id]!, bounds: { ...group.bounds!, x: group.bounds!.x + found!.dx - 40, y: group.bounds!.y + found!.dy } })));
+    expect(clear.diagnostics.some(item => item.code === 'STRAIGHT_LINK_HELD' && item.owners?.some(owner => owner.kind === 'link' && owner.id === link.id))).toBe(false);
+  }, 60000);
+});
+
+describe('what a chord leaves to its neighbours', () => {
+  it('leaves link-1 of a shared port a route that clears the neighbour group (main text of the fixture, no gate fails)', async () => {
+    const model = await run(fixture('a-claimed-run-clears-a-shared-run'));
+    expect(model.links.find(link => link.id === 'link-3')!.technique).toBe('straight');
+    // The fan branch of link-1 ran along the tip row through `low`; it is released to the router, as main released it by chance.
+    expect(model.diagnostics.some(item => item.code === 'FAN_BRANCH_THROUGH_GROUP')).toBe(true);
+    const report = score(model).snapshot;
+    for (const [id, gate] of Object.entries(report.gates)) expect([id, gate.violations]).toEqual([id, []]);
+  }, 60000);
+
+  it('names a held chord that leaves its frame by a side edge after 7f (edge)', async () => {
+    const model = structuredClone(await run(fixture(STRAIGHT)));
+    expect(edgeLeavers(model)).toEqual([]);
+    const link = model.links.find(item => model.frozenChords!.includes(item.id) && chordKind(model, item) === 'cross')!;
+    const from = link.attachments!.from.node, frame = model.frames!.find(item => item.cells.some(cell => model.groups[cell]!.nodes.includes(from)))!;
+    frame.box = { ...frame.box, x: frame.box.x + frame.box.width - 5, width: 40 };
+    expect(edgeLeavers(model)).toContain(link.id);
   }, 60000);
 });

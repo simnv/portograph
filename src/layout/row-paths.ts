@@ -93,8 +93,6 @@ function automatic(model: LayoutModel, link: LayoutLink): boolean {
  */
 export interface CorridorOptions {
   stroke?: number;
-  /** A cross-frame chord reads no bundle: 7e derives the bundle zones and paths after the rows rule has decided (docs/design/routed-chords.md, Section 8). */
-  ignoreBundles?: boolean;
   /** Receives the first check that refused the corridor (`ROUTED_CHORD_REFUSED`). */
   refusal?: { reason?: 'body' | 'pill' | 'lane' | 'frame' | 'corridor' };
   attached?: { nodes: readonly string[]; ports: readonly string[] };
@@ -172,9 +170,6 @@ export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segm
   for (const other of model.links) {
     // A straight link inside one frame is no obstacle: like an overlay link it reads bodies only.
     if (other.id === link.id || other.layer === 'overlay' || isRoutedChord(model, other)) continue;
-    // A bundle member's path is produced by stage 7e, after the rows rule decides, and `rebuildRowPaths` in 7e runs before it: a cross-frame
-    // chord cannot read it without the transaction's own re-derivation disagreeing with the draft. A strict crossing of a row is legal (G6).
-    if (options.ignoreBundles === true && other.bundle !== undefined) continue;
     const otherStroke = linkStrokeWidth(other);
     const runReach = STRAIGHT_PATH_CLEARANCE.path + (stroke + otherStroke) / 2 + 1;
     // A stage-8 remainder (`fixed: false`) is routed around this corridor, so it is not an
@@ -186,7 +181,7 @@ export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segm
       if (segmentDistance(segment, run) - (stroke + otherStroke) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return refuse('corridor');
     }
   }
-  for (const bundle of options.ignoreBundles === true ? [] : model.bundles) {
+  for (const bundle of model.bundles) {
     for (const zone of [bundle.rows, bundle.envelope]) {
       if (zone && !beyond(zone, laneReach) && segmentRectDistance(segment, zone) < stroke / 2 - EPS) return refuse('corridor');
     }
