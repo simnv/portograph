@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { drawio, layout, parse, render, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
-import { busLegCounts, busVerticalCounts, busVerticals } from '../../src/layout/bus.js';
+import { busGeometry, busLegCounts, busVerticalCounts, busVerticals } from '../../src/layout/bus.js';
 import { produceLinkLabels } from '../../src/layout/link-labels.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -163,6 +163,17 @@ describe('the bus publishes member paths, scores, renders and exports (ticket 84
     forged.labels.find(item => item.role === 'mesh-bus')!.text = 'sync mesh (9 nodes)';
     expect(() => restoreLayoutModel(JSON.stringify(forged))).toThrow();
   }, 120000);
+
+  it('keeps the label room inside the bar when a chord crosses the band beyond its end', async () => {
+    const model = thaw(await run(fixture('a-full-mesh-on-one-row-draws-as-one-bus')));
+    const bus = model.meshBuses![0]!, band = model.busBands![0]!.bounds;
+    const lo = Math.min(bus.bar!.from.x, bus.bar!.to.x), hi = Math.max(bus.bar!.from.x, bus.bar!.to.x);
+    const link = model.links.find(item => item.layer === 'routed')!;
+    link.path!.segments = [{ from: { x: hi + 80, y: band.y - 20 }, to: { x: hi + 140, y: band.y + band.height + 20 }, owner: link.path!.segments[0]!.owner }];
+    const room = busGeometry(model, bus)!.labelRoom!;
+    expect(room.from).toBeGreaterThanOrEqual(lo - 1e-6);
+    expect(room.to).toBeLessThanOrEqual(hi + 1e-6);
+  }, 60000);
 
   it('keeps the bus label clear of frame side edges and cuts it out of the overlay mask', async () => {
     const model = await run(fixture('a-bus-across-cantons-crosses-the-canton-edges'));

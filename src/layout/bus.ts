@@ -301,7 +301,10 @@ export function busGeometry(model: LayoutModel, bus: MeshBus): Pick<MeshBus, 'ba
     .sort((a, b) => a[0] - b[0] || a[1] - b[1]);
   const gaps: { from: number; to: number }[] = [];
   let cursor = extent.lo;
-  for (const [from, to] of blocked) {
+  for (const [start, end] of blocked) {
+    // Every blocker is clipped to the bar's span, so no gap reaches past the bar's ends.
+    if (end < extent.lo || start > extent.hi) continue;
+    const from = Math.min(start, extent.hi), to = Math.min(end, extent.hi);
     if (from - cursor >= width) gaps.push({ from: cursor, to: from });
     cursor = Math.max(cursor, to);
   }
