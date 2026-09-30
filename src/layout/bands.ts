@@ -1159,6 +1159,10 @@ export function alignLinkedGroupGrid(model: LayoutModel): boolean {
       moved = changed = true;
     }
     if (!moved) break;
+    // A widened box is a wider frame, and a frame stands in a row a pack laid out against the narrower one: the beside rows are packed against it
+    // and the columns held again, so the model leaves the grid at the fixed point of those rules too (ticket 136). A move of a whole child frame
+    // can change which pairs merge, and the next pass reads that.
+    holdColumnsAfterPush(model);
   }
   if (pass >= bound) placementWarning(model, 'GROUP_GRID_NON_CONVERGENCE', 'Linked-group grid did not settle within its pass bound; final gates decide the retained boxes.', [], 'group');
   if (changed) { rebuildBands(model); rebuildRegions(model); }

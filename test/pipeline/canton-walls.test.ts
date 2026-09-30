@@ -5,6 +5,7 @@ import { layout, parse, score } from '../../src/index.js';
 import { columnShifts, holdColumnAxes, holdMemberWalls, overlayFreeGroups, packBesideRows } from '../../src/layout/columns.js';
 import { deriveFrames } from '../../src/layout/frames.js';
 import { selectAnchorTier } from '../../src/layout/lanes.js';
+import { portKey } from '../../src/layout/sides-one.js';
 import { placeOverlayFree } from '../../src/layout/overlay-place.js';
 import { rows } from '../../src/layout/rows.js';
 import { bandGap } from '../../src/layout/skeleton-graph.js';
@@ -258,5 +259,26 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     expect(Math.abs(chord - centreX(lab))).toBeLessThan(1e-6);
     expect(chord <= provider.x || chord >= right(provider), 'the chord does not run through the provider').toBe(true);
     expect(inside(inner(boxOf(model, 'west')), frameOf(model, 'providers').box)).toBe(true);
+  }, 60000);
+
+  // Ticket 136: every published layout stands at the fixed point of the three column rules, hinted or not. The pack is the rule that a widening of a
+  // box after the last pack (the linked-group grid) used to leave behind.
+  const settled = (model: LayoutModel): boolean[] => {
+    const clone = structuredClone(model) as LayoutModel;
+    return [packBesideRows(clone), holdMemberWalls(clone), holdColumnAxes(clone, 0)];
+  };
+  it('three-canton-groups-close-up-to-a-band-gap with a side hint on m1: the finished layout is the fixed point of the pack (ticket 136)', async () => {
+    // The hint frees link-4 to the left face of m1 (the port the side round offers); the wider node changes the grid of a linked pair after 7f packed the row.
+    const hinted = await layout(parse(fixture('three-canton-groups-close-up-to-a-band-gap')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
+      testSideHints: new Map([[portKey({ node: 'm1', anonymous: true, name: null, ordinal: 2 } as never), 'left' as const]]) });
+    expect(settled(hinted)).toEqual([false, false, false]);
+  }, 60000);
+  it.each([
+    'two-canton-groups-are-disjoint-columns', 'three-canton-groups-close-up-to-a-band-gap', 'a-canton-group-frames-two-tiers', 'a-canton-holds-three-members-on-one-tier',
+    'a-canton-holds-two-members-on-one-tier', 'a-child-frame-stands-inside-its-parent', 'a-frame-shares-the-grid-with-its-linked-group', 'a-leaf-child-and-its-beside-cells-stay-one-row',
+    'a-leaf-child-beside-its-parent-inside-a-canton', 'a-leaf-child-stands-beside-its-parent-members', 'a-member-title-widens-a-beside-row', 'a-member-widened-after-pack',
+    'a-one-rank-member-beside-a-two-rank-member', 'a-foreign-unit-between-two-canton-groups', 'a-canton-with-a-tier-below', 'a-group-with-no-links-stands-beside-a-canton',
+  ])('%s: with no hint the finished layout is the fixed point of the pack, the member walls and the column axes (ticket 136)', async name => {
+    expect(settled(await run(name))).toEqual([false, false, false]);
   }, 60000);
 });
