@@ -16,8 +16,8 @@ import { alignmentAllowance, ownSideWidth } from './size.js';
 import { withLayoutMutation } from './mutation.js';
 import { placeOverlayFree } from './overlay-place.js';
 import { fitRegionGroup, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
-import { EPS } from '../score/geometry.js';
-import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
+import { EPS, segmentRectDistance } from '../score/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { chordKind, isRoutedChord } from './frame-paths.js';
 
 export interface CentreBudget { remaining: number; passes: number }
@@ -129,7 +129,7 @@ function overlayStops(model: LayoutModel, node: LayoutNode): OverlayStops {
  * outer one is the same growth by another name.
  */
 function alignSide(node: LayoutNode, side: Side, targets: Map<string, number>, limit: WideningLimit, stops: OverlayStops, stopped: (link: string) => void,
-  avoid: { xs: number[]; keep: number; routed: Set<string> } = { xs: [], keep: 0, routed: new Set() }): Set<string> {
+  avoid: { xs: number[]; keep: number; routed: Set<string> } = { xs: [], keep: 0, routed: new Set() }, held: ReadonlyMap<string, (x: number) => boolean> = new Map()): Set<string> {
   const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
   const pitch = node.sidePitch![side]!, kept: { index: number; x: number; key: string }[] = [];
   const box = node.bounds!, oldRight = right(box);
@@ -177,6 +177,18 @@ function alignSide(node: LayoutNode, side: Side, targets: Map<string, number>, l
     });
     if (landing.some((x, index) => avoid.routed.has(portId(ports[index]!.ref)) && avoid.xs.some(riser => Math.abs(x - riser) < avoid.keep))) return new Set();
   }
+  // A port of a held chord that is not itself an alignment target is packed against the kept ones, and the chord follows it. The chord was decided
+  // at the old x; where the new one lays it across the lane of another link, `validateLanes` refuses the fixed path at publication. The side is declined
+  // instead, like the riser case above; stage 8 routes the feeds that lose their alignment.
+  if (held.size) {
+    const seats = ports.map((_, index) => {
+      const before = [...kept].reverse().find(target => target.index <= index), after = kept.find(target => target.index >= index);
+      return before && after && before.index !== after.index ? before.x + (index - before.index) * (after.x - before.x) / (after.index - before.index)
+        : before ? before.x + (index - before.index) * pitch : first.x - (first.index - index) * pitch;
+    });
+    if (seats.some((x, index) => !kept.some(target => target.index === index) && Math.abs(x - ports[index]!.anchor!.x) > EPS
+      && held.get(portId(ports[index]!.ref))?.(x) === false)) return new Set();
+  }
   const oldX = box.x, grown = last.x + (ports.length - 1 - last.index) * pitch + 10 + pitch / 2;
   box.x = Math.min(box.x, first.x - first.index * pitch - 10 - pitch / 2);
   box.width += (oldX - box.x) + Math.max(0, grown - oldRight);
@@ -192,6 +204,34 @@ function alignSide(node: LayoutNode, side: Side, targets: Map<string, number>, l
     port.anchor = portAnchor(box, side, x - box.x);
   });
   return new Set(kept.map(target => target.key));
+}
+/** Whether every held routed chord with one end in the group still stands clear of the foreign lane boxes after the group moves `dx` in x. */
+function chordsClearAfterMove(model: LayoutModel, group: LayoutGroup, dx: number): boolean {
+  if (Math.abs(dx) <= EPS) return true;
+  const inside = new Set(group.nodes);
+  return model.links.every(link => {
+    if (!link.attachments || !isRoutedChord(model, link)) return true;
+    const { from, to } = link.attachments, one = findPort(model, from)?.anchor, two = findPort(model, to)?.anchor;
+    if (!one || !two || inside.has(from.node) === inside.has(to.node)) return true;
+    const segment = { from: inside.has(from.node) ? { x: one.x + dx, y: one.y } : one, to: inside.has(to.node) ? { x: two.x + dx, y: two.y } : two, owner: link.owner };
+    return model.lanes.every(lane => lane.owner.kind === 'link' && lane.owner.id === link.id
+      || segmentRectDistance(segment, lane.bounds) >= linkStrokeWidth(link) / 2 - EPS);
+  });
+}
+/** For each port of the node whose link holds a routed chord: whether the chord, with that port moved to x, still stands clear of every foreign lane box. */
+function heldChordPorts(model: LayoutModel, node: LayoutNode): Map<string, (x: number) => boolean> {
+  const result = new Map<string, (x: number) => boolean>();
+  for (const link of model.links) {
+    if (!link.attachments || !isRoutedChord(model, link)) continue;
+    for (const [mine, other] of [[link.attachments.from, link.attachments.to], [link.attachments.to, link.attachments.from]] as const) {
+      if (mine.node !== node.id) continue;
+      const here = findPort(model, mine)?.anchor, there = findPort(model, other)?.anchor;
+      if (!here || !there) continue;
+      result.set(portId(mine), x => model.lanes.every(lane => lane.owner.kind === 'link' && lane.owner.id === link.id
+        || segmentRectDistance({ from: { x, y: here.y }, to: there, owner: link.owner }, lane.bounds) >= linkStrokeWidth(link) / 2 - EPS));
+    }
+  }
+  return result;
 }
 function geometry(model: LayoutModel): number[] {
   return Object.values(model.nodes).flatMap(node => [node.bounds!.x, node.bounds!.width, ...node.ports.map(port => port.anchor!.x)]);
@@ -451,14 +491,14 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   }
   const began = group.bounds!.x, toMean = mean(distinctParents.values()) - mean(distinctChildren.values());
   const shift = Math.max(farthestLeft, Math.min(toMean, farthestRight));
-  moveGroup(model, group, riserKeepOutAfterMove(model, group, shift) ? shift : 0, 0);
+  moveGroup(model, group, riserKeepOutAfterMove(model, group, shift) && chordsClearAfterMove(model, group, shift) ? shift : 0, 0);
   const aligned = new Set<string>();
   for (const nodeId of group.rowOrder!) {
     const node = model.nodes[nodeId]!;
     const stops = walls.get(nodeId)!;
     let stoppedBy: string | undefined;
     for (const side of ['top', 'bottom'] as const) {
-      for (const key of alignSide(node, side, wanted, siblingLimit(model, group, node), stops, link => { stoppedBy ??= link; }, riserAvoidance(model, group.tier!, side as 'top' | 'bottom'))) aligned.add(key);
+      for (const key of alignSide(node, side, wanted, siblingLimit(model, group, node), stops, link => { stoppedBy ??= link; }, riserAvoidance(model, group.tier!, side as 'top' | 'bottom'), heldChordPorts(model, node))) aligned.add(key);
     }
     // Once per node, not once per pass and side.
     if (stoppedBy && warn && !model.diagnostics.some(d => d.code === 'ALIGNMENT_STOPPED_AT_OVERLAY' && d.message.startsWith(`${node.id} `))) {
