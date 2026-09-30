@@ -816,8 +816,8 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
         // x-extent (ADR-0012) holds two again and the published model would not be the grid's fixed
         // point — which is what `validateGroupLabelBands` demands. The grid is settled here, before
         // the labels are planned in these boxes, because it belongs to the replay and not to the
-        // third step: it only grows box extents onto edges that already exist and moves no node, and
-        // a label planned in the narrower box would be centred on the box the grid then widens.
+        // third step: it grows box extents onto edges that already exist, and moves a node only to pack beside rows that stood open
+        // before it (once, then the replay; ticket 136), and a label planned in the narrower box would be centred on the box the grid then widens.
         alignLinkedGroupGridAndPack(model);
         replanGroupLabels(model);
       }
@@ -896,6 +896,10 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
       // and by here the corridors are fixed. The first three are compared as sets, not as counts: a
       // move that trades one unverified alignment, one short gap or one short run for another is not
       // "no worse", it is a different diagram with the same tally.
+      //
+      // The settling below can move whole frames: where the grid widens a box beside rows that stood open, it packs them once (ticket 136), and a
+      // corridor stands where the replay reads it, not where it stood before. So "the corridors are fixed" above holds for the move this transaction makes, not
+      // for the trial that follows it, and the fourth criterion reads the settled model.
       //
       // The fourth reads what the move is *for*. A corridor moves to stand at its child's port and
       // buys that one alignment; the settling below can move a node under it — `replanGroupLabels`

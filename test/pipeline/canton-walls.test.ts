@@ -271,7 +271,13 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     // The hint frees link-4 to the left face of m1 (the port the side round offers); the wider node changes the grid of a linked pair after 7f packed the row.
     const hinted = await layout(parse(fixture('three-canton-groups-close-up-to-a-band-gap')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
       testSideHints: new Map([[portKey({ node: 'm1', anonymous: true, name: null, ordinal: 2 } as never), 'left' as const]]) });
+    // The hint took: the port is a hinted lateral port (the fixture is not the plain layout by another name).
+    const port = hinted.nodes['m1']!.ports.find(item => portKey(item.ref) === portKey({ node: 'm1', anonymous: true, name: null, ordinal: 2 } as never))!;
+    expect([port.sideHint, port.side]).toEqual([true, 'left']);
     expect(settled(hinted)).toEqual([false, false, false]);
+    // The grid and the pack settle inside their round bound (they did not step against each other, 22 to 45 grid passes in 4 rounds, before ticket 136's rework).
+    expect(hinted.diagnostics.filter(item => item.code === 'GROUP_GRID_NON_CONVERGENCE')).toEqual([]);
+    console.log('EXTENT', hinted.canvas!.width, hinted.canvas!.height);
   }, 60000);
   it.each([
     'two-canton-groups-are-disjoint-columns', 'three-canton-groups-close-up-to-a-band-gap', 'a-canton-group-frames-two-tiers', 'a-canton-holds-three-members-on-one-tier',

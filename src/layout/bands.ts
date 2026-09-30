@@ -889,6 +889,13 @@ function holdColumnsAfterPush(model: LayoutModel): boolean {
   return moved.length > 0;
 }
 
+/** Whether the beside rows would move on a copy of the model with the proposed boxes in place: the pack the grid must not open. */
+function packOpens(model: LayoutModel, proposed: readonly { group: LayoutGroup; bounds: Rect }[]): boolean {
+  const trial = clone(model);
+  for (const item of proposed) trial.groups[item.group.id]!.bounds = { ...item.bounds };
+  return packBesideRows(trial, cell => !trial.groups[cell]!.flank);
+}
+
 /** The beside rows are packed against the frames the grid widened; true when a group moved. The columns are not pulled here: the pull answers a push, and this move is the pack's alone. */
 function packRowsAfterGrid(model: LayoutModel): boolean {
   if (model.document.frames === undefined) return false;
@@ -900,25 +907,29 @@ function packRowsAfterGrid(model: LayoutModel): boolean {
 }
 
 /**
- * The linked-group grid, then the rows and the columns it disturbed (ticket 136). The grid widens a box in place, which widens the derived frame, and a beside
- * row stood packed against the narrower one; so after a widening the rows are packed and the columns held again, and a move of groups replays the region
- * producers (labels, row paths, regions) as any movement does. A move can change what the grid merges, so the pair runs until the grid widens nothing or the
- * pack moves nothing. Returns whether the grid widened a box. With a shared `budget` the replay spends a pass of it.
+ * The linked-group grid, then the rows it disturbed (ticket 136). The grid widens a box in place, which widens the derived frame, and a beside row
+ * stood packed against the narrower one. The grid refuses a widening that the pack would undo (`packOpens`), so on a packed model it leaves the rows
+ * packed. On a model that stood open before the grid the rows are packed once after it, the region producers are replayed as any move asks, and the grid is read once more.
+ * At most `GRID_PACK_ROUNDS` rounds; a grid that still widens after them is warned (`GROUP_GRID_NON_CONVERGENCE`). Returns whether the grid widened a box.
+ * With a shared `budget` the replay spends a pass of it.
  */
 export function alignLinkedGroupGridAndPack(model: LayoutModel, budget?: CentreBudget): boolean {
   let widened = false;
   for (let round = 0; round < GRID_PACK_ROUNDS; round++) {
-    if (!alignLinkedGroupGrid(model)) break;
+    if (!alignLinkedGroupGrid(model)) return widened;
     widened = true;
-    if (!packRowsAfterGrid(model)) break;
+    // A grid that refuses what the pack would undo widens onto a packed model and leaves the rows packed; a model that was open before the grid is packed once.
+    if (!packRowsAfterGrid(model)) return widened;
     const passes = budget?.passes ?? 0;
     rebuildRegionGeometry(model, budget, undefined, true);
     if (budget !== undefined) consumeGrowthPass(budget, passes);
   }
+  // The grid widened after the last pack: no third round is made, and the published rows are open by the last widening.
+  if (alignLinkedGroupGrid(clone(model))) placementWarning(model, 'GROUP_GRID_NON_CONVERGENCE', `The linked-group grid and the pack of the beside rows did not settle in ${GRID_PACK_ROUNDS} rounds; final gates decide the retained boxes.`, [], 'group');
   return widened;
 }
-/** A guard: the grid and the pack settle in two rounds on the corpus. */
-const GRID_PACK_ROUNDS = 4;
+/** The rounds of the grid and the pack: one to pack the rows a model stood open in, one to read the grid on the packed rows. The grid refuses a widening the pack would undo, so a packed model needs no more. */
+const GRID_PACK_ROUNDS = 2;
 
 /**
  * The frames whose edge a foreign drop would run along move right by the smallest amount that leaves the band, and the frames after them
@@ -1161,9 +1172,10 @@ function widensIntoFrame(model: LayoutModel, proposed: { group: LayoutGroup; bou
  * a bounded number of passes because every pass only merges extents.
  */
 export function alignLinkedGroupGrid(model: LayoutModel): boolean {
-  let changed = false;
-  // Extents only grow and only ever onto existing box edges, so the process terminates; the cap
-  // exhausting is a defect signal, not a design bound. Pairs × groups passes cover any cascade in
+  let changed = false, basePacked: boolean | undefined;
+  // Within one call extents only grow and only ever onto existing box edges, so the process terminates; the cap
+  // exhausting is a defect signal, not a design bound. Across calls nothing is monotone: a replay refits the boxes and a pack moves a
+  // frame, so the grid and the pack end by the round bound of `alignLinkedGroupGridAndPack`, not by growth (ticket 136). Pairs × groups passes cover any cascade in
   // which each pass enables one more merge under the cap.
   const groupCount = Object.keys(model.groups).length;
   const bound = groupCount * Math.max(1, linkedGroupPairs(model).length) + 2;
@@ -1188,6 +1200,11 @@ export function alignLinkedGroupGrid(model: LayoutModel): boolean {
       if (axis === 'x' && !optionalMoveHolds(model, proposed)) continue;
       // The widening is stage 7 work: it never widens a frame into the box of another frame.
       if (widensIntoFrame(model, proposed)) continue;
+      // A widening the pack would undo is refused (ticket 136): the widened frame moves the beside row, the grid puts the moved box back onto the
+      // extent of its partner, and the two step against each other. Judged only when the model stands packed now, so a widening is never blamed for
+      // a row that was open before it.
+      if (basePacked === undefined && model.document.frames !== undefined) basePacked = !packOpens(model, []);
+      if (basePacked === true && packOpens(model, proposed)) continue;
       for (const item of proposed) item.group.bounds = item.bounds;
       moved = changed = true;
     }
