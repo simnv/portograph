@@ -37,8 +37,7 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
     // No tier-0 column warns for an overlay link to a canton, and no close-up is refused.
     expect(heldOwners(model).filter(id => id.startsWith('top-'))).toEqual([]);
     expect(closeUps(model)).toEqual([]);
-    // Ticket 80: a slide that straightens a chord may grow a canton, up to 5 % of the canvas width in all (1921.3 to 1984.5 here).
-    expect(model.canvas!.width).toBeLessThan((2049.3 - 100) * 1.05);
+    expect(model.canvas!.width).toBeLessThan(2049.3 - 100);
     // The block keeps its centre (the partner mean is not a stable target, ticket "Comments"); the tier packed against the canton
     // step, the MPLS row, stands centred on it within one column slack (measured 1.5 px).
     const block = (cantonBoxes(model)[0]!.x + right(cantonBoxes(model)[2]!)) / 2, mpls = model.groups['mpls']!.bounds!;

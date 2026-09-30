@@ -5,7 +5,7 @@ import { EPS } from '../score/geometry.js';
 import { parallelClearance, portOrder } from '../score/gates.js';
 import { linkStrokeWidth } from '../theme/geometry.js';
 import type { Segment } from '../score/model.js';
-import { frameColumns, overlayFreeGroups } from './columns.js';
+import { columnShifts, frameColumns, holdColumnAxes, holdMemberWalls, overlayFreeGroups, packBesideRows } from './columns.js';
 import { groupShape } from './grid.js';
 import { cellReach, deriveFrames } from './frames.js';
 import { blockedChords, chordsHold, isFrameStraight } from './frame-paths.js';
@@ -41,6 +41,8 @@ interface Verdict extends Reading {
   crowded: Set<string>;
   disordered: Set<string>;
   residuals: Set<string>;
+  /** Whether the column rules leave the settled model where it stands (ticket 67's fixed point). */
+  fixed: boolean;
 }
 
 const copy = (model: LayoutModel): LayoutModel => JSON.parse(JSON.stringify(model)) as LayoutModel;
@@ -83,8 +85,21 @@ const residuals = (model: LayoutModel): Set<string> => new Set(model.diagnostics
   .filter(item => item.code === 'TIER_GAP_PART_RESIDUAL' || item.code === 'TIER_GAP_ROW_CYCLE')
   .map(item => `${item.code}:${JSON.stringify(item.owners ?? [])}`));
 
+/**
+ * Whether the column rules, asked of a copy of a settled model, move nothing: the fixed point a finished layout keeps (ticket 67). The
+ * pipeline does not ask them again after 7f, so a slide the rules would undo is a position they do not accept.
+ */
+function atFixedPoint(model: LayoutModel): boolean {
+  try {
+    const clone = copy(model);
+    return columnShifts(clone, 0).size === 0 && !packBesideRows(clone) && !holdMemberWalls(clone) && !holdColumnAxes(clone, 0);
+  } catch {
+    return false;
+  }
+}
+
 const verdict = (model: LayoutModel, overlays: readonly LayoutLink[]): Verdict =>
-  ({ ...read(model, overlays), crowded: crowded(model), disordered: disordered(model), residuals: residuals(model) });
+  ({ ...read(model, overlays), crowded: crowded(model), disordered: disordered(model), residuals: residuals(model), fixed: atFixedPoint(model) });
 
 /** Whether every finding `after` states was stated by `before`. */
 const nothingNew = (before: ReadonlySet<string>, after: ReadonlySet<string>): boolean => [...after].every(item => before.has(item));
@@ -154,7 +169,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
     }
     return after !== undefined && baseline !== undefined && after.overlay.size > baseline.overlay.size
       && [...baseline.routed].every(id => after.routed.has(id))
-      && nothingNew(baseline.crowded, after.crowded) && nothingNew(baseline.disordered, after.disordered) && nothingNew(baseline.residuals, after.residuals);
+      && (after.fixed || !baseline.fixed) && nothingNew(baseline.crowded, after.crowded) && nothingNew(baseline.disordered, after.disordered) && nothingNew(baseline.residuals, after.residuals);
   };
 
   /** The moves `dx` of a set of shapes that put one of them on a chord: open intervals. */
