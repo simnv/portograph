@@ -242,8 +242,8 @@ therefore use the count-based gates of ticket 112 and add no clock read:
 - `measureFans` and `measureSides` are part of the measured total, per round.
 - **Measured (ticket 115, private sheet, quiet machine, dist workers):** first placement 3958 ms; two fan re-runs 2681 and 2729 ms;
   `measureFans` 35 and 29 ms, `measureSides` 7 ms; 7f 6462 ms, route 281 ms, labels 237 ms, score 24 ms (tail about 7004 ms); whole command
-  16.5 s. Gates read 25983 and 23273 ms left. Projection: 2 re-runs 16.4 s quiet, about 33 s at 2x, so main already misses the deadline at
-  2x (ticket 131). 3 re-runs 19.1 s quiet, which fits at 1.45x but not at 1.5x. The sheet has no side candidate with the straight overlay
+  16.5 s. Gates read 25983 and 23273 ms left. Projection: 2 re-runs 16.4 s quiet, about 33 s at 2x, so main missed the 30 s deadline at
+  2x (ticket 131; the deadline is 60 s since ticket 137, and at 2x the same run fits). 3 re-runs 19.1 s quiet, which fits at 1.45x but not at 1.5x. The sheet has no side candidate with the straight overlay
   shape yet, so no side round ran. `MAX_RERUNS` stays 3 (provisional) until ticket 121, when tickets 116, 117 and 119 give the sheet real
   side candidates and the constant is set from a new measurement.
 - The probe has a cap: at most `PROBE_CAP = 256` probes per `measureSides` call, in link order.
