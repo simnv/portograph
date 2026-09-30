@@ -117,8 +117,8 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   // A fan of chords whose neighbours stand closer than the chord clearance is spread by placement, not found by routing (ticket 89):
   // the placed chords say the pitch each face needs, and placement runs again with those floors until no face needs more.
   let model = await place(new Map());
-  // The re-runs are bounded by FAN_ROUNDS alone. The clock is read only against the hard command deadline: a re-run that would leave
-  // less than a fixed reserve for 7f, routing and scoring is cut, and a warning says so (ticket 112). A probe that meets the deadline
+  // The re-runs are bounded by FAN_ROUNDS alone. The clock is read only against the hard command deadline: a re-run starts only when
+  // the post-placement reserve plus one re-run (the fan gate) remains; otherwise it is cut, and a warning says so (ticket 112). A probe that meets the deadline
   // or makes ELK fall back is dropped too: the placement already made stands (ticket 89 review).
   const cuts: Diagnostic[] = [];
   const cut = (why: string): void => {
