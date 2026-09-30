@@ -1,9 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { layout, parse, score } from '../../src/index.js';
+import { centre, flanks, lanes, layout, parse, rows, score } from '../../src/index.js';
+import { placed as placedModel } from '../layout/phase-two-fixture.js';
 import type { LayoutModel } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
-import { laneSidesHold } from '../../src/layout/lanes.js';
+import { laneSidesHold, optionalMoveHolds, riserKeepOutBreaches } from '../../src/layout/lanes.js';
+import { routedStrokeWidth } from '../../src/theme/geometry.js';
 import { BUS_RUN_CLEARANCE } from '../../src/layout/bus-room.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -12,6 +14,8 @@ const fixture = (name: string): string => readFileSync(new URL(`../../goldens/sy
 const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const gates = (model: LayoutModel): string[] => Object.entries(score(model).snapshot.gates).filter(([, gate]) => !gate.passed).map(([id]) => id);
 const riserLanes = (model: LayoutModel) => model.lanes.filter(lane => lane.owner.kind === 'mesh-bus');
+const EXPECTED_CROSSINGS = 2;
+const JOINED_NAMES = ['a-mesh-over-two-rows-joins-its-bars-with-one-riser', 'a-riser-joins-two-bars-in-one-gap', 'a-riser-between-cantons-crosses-no-canton-edge'];
 const bottom = (box: { y: number; height: number }) => box.y + box.height;
 
 describe('the riser in placement (ticket 96)', () => {
@@ -48,7 +52,7 @@ describe('the riser in placement (ticket 96)', () => {
     for (const [bus, side] of [[upper, 'bottom'], [lower, 'top']] as const) {
       for (const node of Object.values(model.nodes).filter(item => model.groups[model.document.nodes[item.id]!.group]!.tier === bus.row)) {
         for (const port of node.ports) if (port.side === side && used.has(`${node.id}:${port.ref.ordinal}`)) {
-          expect(Math.abs(port.anchor!.x - x)).toBeGreaterThanOrEqual(BUS_RUN_CLEARANCE);
+          expect(Math.abs(port.anchor!.x - x)).toBeGreaterThanOrEqual(BUS_RUN_CLEARANCE + routedStrokeWidth(model) / 2 - 1e-6);
         }
       }
     }
@@ -106,7 +110,7 @@ describe('the riser in placement (ticket 96)', () => {
   });
 
   it('restores the three fixtures as fixed points', async () => {
-    for (const name of ['a-mesh-over-two-rows-joins-its-bars-with-one-riser', 'a-riser-joins-two-bars-in-one-gap']) {
+    for (const name of ['a-mesh-over-two-rows-joins-its-bars-with-one-riser', 'a-riser-joins-two-bars-in-one-gap', 'a-riser-between-cantons-crosses-no-canton-edge']) {
       const model = await run(fixture(name));
       expect(JSON.stringify(restoreLayoutModel(JSON.stringify(model)))).toBe(JSON.stringify(model));
     }
@@ -140,8 +144,19 @@ describe('the riser in placement (ticket 96)', () => {
 
   it('counts the routed segments that cross the riser', async () => {
     const model = await run(fixture('a-mesh-over-two-rows-joins-its-bars-with-one-riser'));
-    expect(score(model).snapshot.counters.riserCrossings).toBeGreaterThanOrEqual(0);
-    expect(typeof score(model).snapshot.counters.riserCrossings).toBe('number');
+    const riser = model.meshBuses![0]!.riser!, y0 = riser.from!.y, y1 = riser.to!.y;
+    // An independent count: the routed segments that pass the riser x strictly, between the two bars.
+    let expected = 0;
+    for (const link of model.links) {
+      if (link.layer !== 'routed' || link.technique === 'stub' || link.path === undefined) continue;
+      for (const { from, to } of link.path.segments) {
+        if (!(Math.min(from.x, to.x) < riser.x - 1e-6 && Math.max(from.x, to.x) > riser.x + 1e-6)) continue;
+        const y = to.x === from.x ? from.y : from.y + (to.y - from.y) * (riser.x - from.x) / (to.x - from.x);
+        if (y > y0 + 1e-6 && y < y1 - 1e-6) expected++;
+      }
+    }
+    expect(score(model).snapshot.counters.riserCrossings).toBe(expected);
+    expect(expected).toBe(EXPECTED_CROSSINGS);
   });
 
   it('refuses a move of a member row that puts a routed port within the riser keep-out', async () => {
@@ -153,6 +168,18 @@ describe('the riser in placement (ticket 96)', () => {
       .filter(port => port.side === 'bottom' && used.has(`${id}:${port.ref.ordinal}`)).map(port => ({ group, port }))) : [])[0];
     if (found === undefined) return;
     const bounds = found.group.bounds!, dx = x - found.port.anchor!.x + 2;
-    expect(laneSidesHold(model, [{ group: found.group, bounds: { ...bounds, x: bounds.x + dx } }], false)).toBe(false);
+    expect(optionalMoveHolds(model, [{ group: found.group, bounds: { ...bounds, x: bounds.x + dx } }], false)).toBe(false);
+    // A move that must be made is never vetoed by the keep-out (`packClear` uses `laneSidesHold` alone).
+    expect(laneSidesHold(model, [{ group: found.group, bounds: { ...bounds, x: bounds.x + dx } }], false)).toBe(true);
+  });
+
+  it('leaves no routed port within k of the riser after 7c, and none at publication', async () => {
+    for (const name of JOINED_NAMES) {
+      const placed = centre(flanks(lanes(rows(await placedModel(fixture(name))))));
+      expect(riserKeepOutBreaches(placed), `${name} after 7c`).toEqual([]);
+      const model = await run(fixture(name));
+      expect(riserKeepOutBreaches(model), `${name} published`).toEqual([]);
+      expect(model.diagnostics.filter(d => d.code === 'MESH_BUS_RISER_KEEP_OUT')).toEqual([]);
+    }
   });
 });

@@ -118,7 +118,6 @@ function occupiedAt(model: LayoutModel, group: LayoutGroup, bounds: Rect, link?:
 export function laneSidesHold(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[], report = true): boolean {
   // From 7f on a straight link is a wall like a lane (ticket 34): the move is refused for that unit.
   if (!chordsHold(model, proposed, report)) return false;
-  if (!riserKeepOutHolds(model, proposed)) return false;
   return proposed.every(({ group, bounds }) => {
     return model.lanes.filter(lane => lane.tier === group.tier).every(lane => {
       const box = occupiedAt(model, group, bounds, laneLink(model, lane));
@@ -144,12 +143,14 @@ function facingRoutedPorts(model: LayoutModel, group: LayoutGroup): { riser: num
   return result;
 }
 /** The riser x and the keep-out to hold for the ports on `side` of the nodes of `tier`: the riser of every join whose member row that is. */
-export function riserAvoidance(model: LayoutModel, tier: number, side: 'top' | 'bottom'): { xs: number[]; keep: number } {
+export function riserAvoidance(model: LayoutModel, tier: number, side: 'top' | 'bottom'): { xs: number[]; keep: number; routed: Set<string> } {
+  const routed = new Set(model.links.filter(link => link.layer === 'routed' && link.technique !== 'stub' && link.attachments)
+    .flatMap(link => [portId(link.attachments!.from), portId(link.attachments!.to)]));
   const xs = (model.meshBuses ?? []).filter(bus => bus.riser !== undefined && bus.cross !== undefined).flatMap(upper => {
     const lower = model.meshBuses!.find(bus => bus.id === upper.joined);
     return (tier === upper.row && side === 'bottom') || (lower !== undefined && tier === lower.row && side === 'top') ? [upper.riser!.x] : [];
   });
-  return { xs, keep: riserKeepOut(model) - 1e-6 };
+  return { xs, keep: riserKeepOut(model) - 1e-6, routed };
 }
 /** Whether a move of `group` by `dx` keeps its facing routed ports out of the riser keep-out. */
 export function riserKeepOutAfterMove(model: LayoutModel, group: LayoutGroup, dx: number): boolean {
@@ -163,13 +164,27 @@ export function riserKeepOutBreaches(model: LayoutModel): { node: string; riser:
   }
   return breaches;
 }
-/** A move of a member row must keep every routed port of its facing edge `k` plus half a stroke from the riser x, as a move is measured against a lane. */
-function riserKeepOutHolds(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[]): boolean {
+/** How far the routed ports of the facing edge of `group` stand inside the riser keep-out after a move by `dx`, summed (zero: none does). */
+export function riserPenetration(model: LayoutModel, group: LayoutGroup, dx = 0): number {
   const keep = riserKeepOut(model) - 1e-6;
+  return facingRoutedPorts(model, group).reduce((sum, item) => sum + item.ports.reduce((inner, port) => inner + Math.max(0, keep - Math.abs(port.x + dx - item.riser)), 0), 0);
+}
+/**
+ * A move of a member row keeps every routed port of its facing edge `k` plus half a stroke from the riser x, as a move is measured against a lane
+ * (mesh-bus.md, section 11.5). A move that makes a breach smaller is allowed. Only the moves that can be declined ask it: a move that must be made
+ * (`packClear`) is never refused for it.
+ */
+function riserKeepOutHolds(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[]): boolean {
   return proposed.every(({ group, bounds }) => {
     const dx = bounds.x - group.bounds!.x;
-    return Math.abs(dx) <= 1e-9 || facingRoutedPorts(model, group).every(item => item.ports.every(port => Math.abs(port.x + dx - item.riser) >= keep));
+    if (Math.abs(dx) <= 1e-9) return true;
+    const after = riserPenetration(model, group, dx);
+    return after <= 1e-9 || after < riserPenetration(model, group) - 1e-9;
   });
+}
+/** `laneSidesHold` and the riser keep-out: what a move that can be declined must pass. */
+export function optionalMoveHolds(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[], report = true): boolean {
+  return riserKeepOutHolds(model, proposed) && laneSidesHold(model, proposed, report);
 }
 /** The link a lane belongs to. */
 function laneLink(model: LayoutModel, lane: Lane): LayoutLink | undefined {

@@ -16,7 +16,7 @@ import { rebuildBands, span, union, validateSkeletonBands } from './skeleton-geo
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { blockedChords, freezeChords } from './frame-paths.js';
 import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, flankPair } from './flanks.js';
-import { type LaneFollow, lanesHoldTheirChild, rebuildLaneExtents, reseatLanes, validateLanes, transitTiers } from './lanes.js';
+import { type LaneFollow, lanesHoldTheirChild, rebuildLaneExtents, riserKeepOutBreaches, reseatLanes, validateLanes, transitTiers } from './lanes.js';
 import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
 import { centreViolations, selectAnchorTier } from './centre.js';
@@ -272,6 +272,12 @@ function validateRegionClaims(model: LayoutModel): void {
   }
   if (stages.indexOf(model.stage) >= stages.indexOf('lanes')) {
     validateLanes(model);
+    // Up to 7e every mover that can be declined declines a move into the riser keep-out; 7f's title pushes cannot, so from there it is a warning
+    // (`MESH_BUS_RISER_KEEP_OUT`) and not an error (mesh-bus.md, section 11.5).
+    if (stages.indexOf(model.stage) <= stages.indexOf('bundles') && !diagnosed(model)) {
+      const breach = riserKeepOutBreaches(model)[0];
+      if (breach !== undefined) throw new Error(`Port of ${breach.node} stands within the riser keep-out (${model.stage})`);
+    }
     rebuildRegions(expected);
     same(model.regions, expected.regions, 'Region geometry contradicts current groups');
   }

@@ -9,7 +9,7 @@ import { columnShifts, frameColumns, holdColumnAxes, holdMemberWalls, overlayFre
 import { groupShape } from './grid.js';
 import { cellReach, deriveFrames } from './frames.js';
 import { blockedChords, chordsHold, isFrameStraight } from './frame-paths.js';
-import { laneSidesHold, occupiedOverhang, selectAnchorTier } from './lanes.js';
+import { optionalMoveHolds, occupiedOverhang, selectAnchorTier } from './lanes.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { saveGroups } from './overlay-order.js';
 import { overlayBlockers, overlayPath, straightChord } from './overlay-paths.js';
@@ -333,7 +333,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
     const at = cells[0]!.bounds!.x;
     const placed = attempt(key, candidates, 0, dx => { for (const cell of cells) moveGroup(model, cell, dx, 0); }, undo, nodes, dx => {
       const proposed = cells.map(group => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } }));
-      if (laneSidesHold(model, proposed, false)) return true;
+      if (optionalMoveHolds(model, proposed, false)) return true;
       if (refusal === undefined && !chordsHold(model, proposed, false)) refusal = proposed;
       return false;
     });
@@ -418,7 +418,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
           let refusal: { group: LayoutGroup; bounds: Rect }[] | undefined;
           placed = attempt(group.id, candidates, box.x, dx => moveGroup(model, group, dx, 0), undo, group.nodes, x => {
             const proposed = [{ group, bounds: { ...box, x } }];
-            if (laneSidesHold(model, proposed, false)) return true;
+            if (optionalMoveHolds(model, proposed, false)) return true;
             if (refusal === undefined && !chordsHold(model, proposed, false)) refusal = proposed;
             return false;
           }, () => sameFrames());

@@ -1,7 +1,7 @@
 import type { LayoutGroup, LayoutModel, LayoutNode, LayoutPort } from '../model/layout.js';
 import type { Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
-import { laneSidesHold, nodeTier, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, selectAnchorTier } from './lanes.js';
+import { laneSidesHold, optionalMoveHolds, nodeTier, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserPenetration, selectAnchorTier } from './lanes.js';
 import { cellReach } from './frames.js';
 import { besideWalls, frameColumns, keepOutShifts, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
 import { findPort } from './row-paths.js';
@@ -128,7 +128,7 @@ function overlayStops(model: LayoutModel, node: LayoutNode): OverlayStops {
  * outer one is the same growth by another name.
  */
 function alignSide(node: LayoutNode, side: Side, targets: Map<string, number>, limit: WideningLimit, stops: OverlayStops, stopped: (link: string) => void,
-  avoid: { xs: number[]; keep: number } = { xs: [], keep: 0 }): Set<string> {
+  avoid: { xs: number[]; keep: number; routed: Set<string> } = { xs: [], keep: 0, routed: new Set() }): Set<string> {
   const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
   const pitch = node.sidePitch![side]!, kept: { index: number; x: number; key: string }[] = [];
   const box = node.bounds!, oldRight = right(box);
@@ -174,7 +174,7 @@ function alignSide(node: LayoutNode, side: Side, targets: Map<string, number>, l
       return before && after && before.index !== after.index ? before.x + (index - before.index) * (after.x - before.x) / (after.index - before.index)
         : before ? before.x + (index - before.index) * pitch : first.x - (first.index - index) * pitch;
     });
-    if (landing.some(x => avoid.xs.some(riser => Math.abs(x - riser) < avoid.keep))) return new Set();
+    if (landing.some((x, index) => avoid.routed.has(portId(ports[index]!.ref)) && avoid.xs.some(riser => Math.abs(x - riser) < avoid.keep))) return new Set();
   }
   const oldX = box.x, grown = last.x + (ports.length - 1 - last.index) * pitch + 10 + pitch / 2;
   box.x = Math.min(box.x, first.x - first.index * pitch - 10 - pitch / 2);
@@ -356,7 +356,7 @@ function standNearFeed(model: LayoutModel, context: CentreContext, tier: number,
   const window = reservedWindow(model, context, tier, id), low = Math.max(wideLow, window.low), high = Math.min(wideHigh, window.high);
   if (!inCanton(model, group) || !Number.isFinite(target) || box.width > high - low + EPS) return;
   const dx = Math.max(low, Math.min(target, high - box.width)) - box.x;
-  if (Math.abs(dx) <= EPS || !laneSidesHold(model, [{ group, bounds: { ...box, x: box.x + dx } }])) return;
+  if (Math.abs(dx) <= EPS || !optionalMoveHolds(model, [{ group, bounds: { ...box, x: box.x + dx } }])) return;
   moveGroup(model, group, dx, 0);
 }
 
@@ -419,6 +419,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   const group = model.groups[id]!, order = context.groupOrder.get(tier)!;
   const { own, wanted, yielded, conflicts } = groupFeeds(model, context, tier, list, id, warn);
   const unresolved = new Set<string>(conflicts);
+  const startPenetration = riserPenetration(model, group);
   const saved = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
   // Centre under the feeds that may own an alignment; a yielded transit would only pull the group
   // away from the x its child is then aligned to.
@@ -499,6 +500,16 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   }
   const x = Math.max(low, Math.min(group.bounds!.x, high - group.bounds!.width));
   moveGroup(model, group, x - group.bounds!.x, 0);
+  // The riser keep-out is a post-condition of the whole step, read after the clamp (mesh-bus.md, section 11.5): the main move and the alignments were
+  // measured where they were made, and the clamp, the row pack and the region fit can undo them. A step that leaves a routed port of the facing edge
+  // deeper in the keep-out than the step found it is declined like a window that cannot hold the group.
+  if (riserPenetration(model, group) > startPenetration + 1e-9) {
+    model.groups[id] = saved.group;
+    for (const node of saved.nodes) model.nodes[node.id] = node;
+    packClear(model, context, tier, saved.group, previous);
+    standNearFeed(model, context, tier, id, saved.group, began + Math.max(farthestLeft, Math.min(toMean, farthestRight)), low, high);
+    return { unresolved: new Set(wanted.keys()), group: saved.group };
+  }
   for (const [key, want] of wanted) {
     const port = group.nodes.flatMap(id => model.nodes[id]!.ports).find(port => portId(port.ref) === key)!;
     if (Math.abs(port.anchor!.x - want) > 0.5) unresolved.add(key);

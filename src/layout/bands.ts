@@ -8,7 +8,7 @@ import { frameSubtreeCells, orderedGroupIds } from '../model/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { createCentreBudget, type CentreBudget } from './centre.js';
-import { laneSidesHold, riserKeepOutBreaches } from './lanes.js';
+import { optionalMoveHolds, riserKeepOutBreaches } from './lanes.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { findPort, straightCorridorClear } from './row-paths.js';
@@ -404,12 +404,6 @@ function syncBands(model: LayoutModel, entries = routerEntryPoints(model)): bool
   const busBands = expectedBusBands(model);
   if (busBands.length) model.busBands = busBands; else delete model.busBands;
   syncBusGeometry(model);
-  // A routed port of a member row that a later move left within the riser keep-out is reported, once per node (mesh-bus.md, section 11.5).
-  for (const breach of riserKeepOutBreaches(model)) {
-    if (model.diagnostics.some(item => item.code === 'MESH_BUS_RISER_KEEP_OUT' && item.owners?.some(owner => owner.kind === 'node' && owner.id === breach.node))) continue;
-    model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'MESH_BUS_RISER_KEEP_OUT', owners: [{ kind: 'node', id: breach.node }],
-      message: `${breach.node} has a routed port on the facing edge within the riser keep-out of x ${Math.round(breach.riser * 100) / 100}; a leg there stands closer than the run clearance to the riser.` });
-  }
   return model.labelBands.some(band => before.has(band.group) && Math.abs(before.get(band.group)! - band.clearance) > PLACEMENT_EPS);
 }
 
@@ -683,7 +677,7 @@ function growthPlan(model: LayoutModel, grown: LayoutGroup, width: number): Grou
     if (!settled) return undefined;
   }
   const plan = [...tiers.values()].flatMap(item => item.rows);
-  return laneSidesHold(model, plan.map(item => ({ group: item.group,
+  return optionalMoveHolds(model, plan.map(item => ({ group: item.group,
     bounds: { ...item.group.bounds!, x: item.x, width: item.width } }))) ? plan : undefined;
 }
 
@@ -881,7 +875,7 @@ export function settleKeepOut(model: LayoutModel): boolean {
     const shifts = keepOutShifts(model);
     for (const [group, dx] of columnShifts(model, 0)) shifts.set(group, Math.max(shifts.get(group) ?? 0, dx));
     if (!shifts.size) break;
-    if (!laneSidesHold(model, [...shifts].map(([group, dx]) => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } })))) break;
+    if (!optionalMoveHolds(model, [...shifts].map(([group, dx]) => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } })))) break;
     const straight = straightOverlays(model).length, nodes = [...shifts.keys()].flatMap(group => group.nodes);
     for (const [group, dx] of shifts) moveGroup(model, group, dx, 0);
     rebuildNodeGeometry(model, nodes, 'current');
@@ -1122,7 +1116,7 @@ export function alignLinkedGroupGrid(model: LayoutModel): boolean {
       const proposed = members.map(group => ({ group, bounds: { ...group.bounds!, [pos]: low, [len]: extent } as Rect }));
       const others = Object.values(model.groups).filter(group => !members.includes(group));
       if (proposed.some(item => others.some(other => rectOverlap(item.bounds, other.bounds!)))) continue;
-      if (axis === 'x' && !laneSidesHold(model, proposed)) continue;
+      if (axis === 'x' && !optionalMoveHolds(model, proposed)) continue;
       // The widening is stage 7 work: it never widens a frame into the box of another frame.
       if (widensIntoFrame(model, proposed)) continue;
       for (const item of proposed) item.group.bounds = item.bounds;
@@ -1323,6 +1317,16 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
 
 /** Transaction-owned stage-7f producer. It replaces every affected claim before publication. */
 export function produceGroupLabelBands(model: LayoutModel): void {
+  produceGroupLabelBandsRaw(model);
+  // A routed port of a member row that 7f left within the riser keep-out is reported once, on the final geometry of the producer; the entries an earlier
+  // call left are stale (mesh-bus.md, section 11.5). A title push is a move that must be made, so here the breach is a warning and not an error.
+  model.diagnostics = model.diagnostics.filter(item => item.code !== 'MESH_BUS_RISER_KEEP_OUT');
+  for (const breach of riserKeepOutBreaches(model)) {
+    model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'MESH_BUS_RISER_KEEP_OUT', owners: [{ kind: 'node', id: breach.node }],
+      message: `${breach.node} has a routed port on the facing edge within the riser keep-out of x ${Math.round(breach.riser * 100) / 100}; a leg there stands closer than the run clearance to the riser.` });
+  }
+}
+function produceGroupLabelBandsRaw(model: LayoutModel): void {
   // A frame whose extreme sub-tiers both belong to child frames has no cell of its own to hold a
   // title. It draws none, and says so.
   for (const id of Object.keys(model.document.frames ?? {})) {
