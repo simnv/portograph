@@ -137,11 +137,11 @@ describe('two chords from one lateral face keep the chord clearance', () => {
     expect(tooClose(chord([100, 56], [400, 156]), 1, first)).toBe(true);
   });
   it('pitchRefused reads every accepted chord: one on another node refuses a near chord, and a far one does not', () => {
-    const onOtherNode = { node: 'router-a', side: 'left', segment: chord([100, 50], [400, 150]), stroke: 1 };
-    const onThisNode = { node: 'router-b', side: 'right', segment: chord([100, 300], [400, 400]), stroke: 1 };
-    // The candidate belongs to router-b; the near chord stands on router-a, and it is the first of the list.
-    expect(pitchRefused(chord([100, 56], [400, 156]), 1, [onOtherNode, onThisNode])).toBe(true);
-    expect(pitchRefused(chord([100, 56], [400, 156]), 1, [onThisNode])).toBe(false);
+    const near = { node: 'router-a', side: 'left', segment: chord([100, 50], [400, 150]), stroke: 1 };
+    const far = { node: 'router-b', side: 'right', segment: chord([100, 300], [400, 400]), stroke: 1 };
+    // The candidate belongs to router-b; the near chord stands on router-a (another node), and it is the first of the list.
+    expect(pitchRefused(chord([100, 56], [400, 156]), 1, [near, far])).toBe(true);
+    expect(pitchRefused(chord([100, 56], [400, 156]), 1, [far])).toBe(false);
     expect(pitchRefused(chord([100, 56], [400, 156]), 1, [])).toBe(false);
   });
 });
