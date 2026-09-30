@@ -824,12 +824,12 @@ export function sidesTwo(model: LayoutModel): LayoutModel {
       };
       const ports = node.ports.filter(port => port.side === side);
       const far = (ref: PortRef): number => {
-        // The bus port is the last port in engine order on its side (an authored `order:` still wins below).
-        if (busOfPort(model, ref) !== undefined) return Number.MAX_VALUE;
         const list = peers.get(key(ref)) ?? [];
         return list.length ? list.reduce((sum, peer) => sum + coordinate(peer), 0) / list.length : Infinity;
       };
-      ports.sort((a, b) => far(a.ref) - far(b.ref));
+      // The bus port is the last port in engine order on its side, after a peerless port too (an authored `order:` still wins below).
+      const isBus = (ref: PortRef): number => busOfPort(model, ref) !== undefined ? 1 : 0;
+      ports.sort((a, b) => isBus(a.ref) - isBus(b.ref) || (far(a.ref) === far(b.ref) ? 0 : far(a.ref) - far(b.ref)));
       const authored = ports.filter(port => port.authorOrder !== undefined).sort((a, b) => a.authorOrder! - b.authorOrder!);
       let next = 0;
       const ordered = ports.map(port => port.authorOrder === undefined ? port : authored[next++]!);

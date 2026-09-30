@@ -177,8 +177,9 @@ export function detectMeshBuses(model: LayoutModel): void {
       }
       const off = names.map(name => ({ name, kind: offRow(name) })).find(item => item.kind !== undefined);
       if (off !== undefined) { decline('shape', `${off.name} stands in a ${off.kind}, which is on no row`); continue; }
-      const chosen = busPorts(names, members);
-      if (typeof chosen === 'string') { decline('named-ports', `${chosen} has two or more authored ports on the member links`); continue; }
+      const found = busPorts(model, names, members);
+      if ('reason' in found) { decline(found.reason, found.detail); continue; }
+      const chosen = found.ports;
       bus = new Set(clique);
       busMesh = mesh;
       const id = `mesh-bus-${buses.length + 1}`;
@@ -204,19 +205,36 @@ export function detectMeshBuses(model: LayoutModel): void {
   dropBusSharedPortWarnings(model);
 }
 
-/** The bus port of each member node, or the id of the node whose member links name two authored ports. */
-function busPorts(names: string[], members: LayoutLink[]): Map<string, PortRef> | string {
+/**
+ * The bus port of each member node, or the reason the mesh cannot take one (mesh-bus.md, section 3):
+ * `named-ports` (two or more authored ports at a member), `shared-port` (the named port a member would use also carries a link that is not
+ * a member: the bus port stands on the bus edge, and that link would be cut off from its own side) and `side` (an authored `left` or
+ * `right` on a bus port, or authored `top` and `bottom` on two of them: a bus stands on a horizontal edge, and an authored `top` or
+ * `bottom` fixes it).
+ */
+function busPorts(model: LayoutModel, names: string[], members: LayoutLink[]): { ports: Map<string, PortRef> } | { reason: 'named-ports' | 'shared-port' | 'side'; detail: string } {
   const ports = new Map<string, PortRef>();
   const ends = members.flatMap(link => [link.attachments!.from, link.attachments!.to]);
+  const authored = new Set<string>();
   for (const name of names) {
     const mine = ends.filter(ref => ref.node === name);
     const named = new Map<string, PortRef>();
     for (const ref of mine) if (ref.anonymous !== true) named.set(ref.name!, ref);
-    if (named.size > 1) return name;
+    if (named.size > 1) return { reason: 'named-ports', detail: `${name} has two or more authored ports on the member links` };
     const anonymous = mine.filter(ref => ref.anonymous === true).sort((a, b) => a.ordinal - b.ordinal)[0];
-    ports.set(name, named.size ? [...named.values()][0]! : anonymous!);
+    const chosen = named.size ? [...named.values()][0]! : anonymous!;
+    if (named.size) {
+      const other = model.links.find(link => !members.includes(link) && link.attachments !== undefined
+        && [link.attachments.from, link.attachments.to].some(ref => sameRef(ref, chosen)));
+      if (other !== undefined) return { reason: 'shared-port', detail: `${name}.${chosen.name} also carries ${other.id}, which is not a member` };
+      const side = model.document.nodes[name]?.ports.find(port => port.name === chosen.name && port.ordinal === chosen.ordinal)?.side;
+      if (side === 'left' || side === 'right') return { reason: 'side', detail: `${name}.${chosen.name} states side ${side}, and a bus stands on a horizontal edge` };
+      if (side !== undefined) authored.add(side);
+    }
+    ports.set(name, chosen);
   }
-  return ports;
+  if (authored.size > 1) return { reason: 'side', detail: 'the bus ports state both top and bottom' };
+  return { ports };
 }
 
 /** Re-attach every member end to its bus port, then remove the anonymous ports nothing else uses. */

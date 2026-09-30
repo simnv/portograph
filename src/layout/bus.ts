@@ -63,21 +63,48 @@ export function busTitleEdge(model: LayoutModel, bus: MeshBus): Edge {
   return counts.top > counts.bottom ? 'top' : 'bottom';
 }
 
+/** The horizontal edge an author fixed on a bus port (`side: top|bottom`); stage 1 declines a bus whose ports state `left`, `right` or both edges. */
+export function authoredBusSide(model: LayoutModel, bus: MeshBus): Edge | undefined {
+  for (const ref of bus.ports) {
+    if (ref.anonymous === true) continue;
+    const side = model.document.nodes[ref.node]?.ports.find(port => port.name === ref.name && port.ordinal === ref.ordinal)?.side;
+    if (side === 'top' || side === 'bottom') return side;
+  }
+  return undefined;
+}
+
 /**
  * The horizontal edge of the row that fewer legs cross (maintainer, 2026-09-30: *"whichever has
  * fewer legs"*), within the bar's span.
  *
+ * An authored `side: top|bottom` on a bus port fixes the edge (`authoredBusSide`), before any count.
+ *
  * `provisional` is stage 2: the stage-2 sides (`side`, or the sizing estimate) of every node of the
  * row, because the row's order, and so the span, are not known before the skeleton. Otherwise it is
- * stage 5, after the skeleton: term 1 is exact within the span read off the skeleton order, and term 2
- * (no plan exists before 7a) is read as the routed ports of the tier across the gap that face it and
- * the routed ports of the row's nodes outside the span whose other end stands over it, at skeleton x.
- * Term 3, the lanes, is equal on both edges and decides nothing. A tie takes the title edge.
+ * stage 5, after the skeleton: term 1 is exact within the span read off the skeleton order. Term 2
+ * (no plan exists before 7a) is read only across frames or for a bus in a rank cell (`term2Applies`), as the
+ * ports, in the tier across the gap and on the side that faces it, of the routed links that pass the whole row, at skeleton x:
+ * such a link's vertical over the span stands in the gap of its own end, and its lane stands beside the row at the lane's x, outside the
+ * span, so it is counted on that edge only. A link between the row and the tier across the gap ends in a port term 1 counts. Term 3, the
+ * lanes over the span, is equal on both edges and decides nothing. A tie takes the title edge.
  */
 export function busSide(model: LayoutModel, bus: MeshBus, provisional = false): Edge {
+  const fixed = authoredBusSide(model, bus);
+  if (fixed !== undefined) return fixed;
   const counts = busLegCounts(model, bus, provisional);
   if (counts.top !== counts.bottom) return counts.top < counts.bottom ? 'top' : 'bottom';
   return busTitleEdge(model, bus);
+}
+
+/**
+ * Whether term 2 (the verticals of the tier gap over the span) can be non-zero for this bus: across frames, where the bar stands in the sub-tier
+ * gap, and for a bus in a rank cell, whose edge faces a rank gap. An in-frame bus in a frame padding has term 1 alone: a lane runs beside the
+ * cells, and a drop of another tier stays outside the group box (mesh-bus.md, section 4).
+ */
+function term2Applies(model: LayoutModel, bus: MeshBus): boolean {
+  if (bus.placement === 'across-frames') return true;
+  const group = Object.values(model.groups).find(item => item.nodes.includes(bus.nodes[0]!));
+  return group?.frame !== undefined;
 }
 
 /** The legs each horizontal edge of the row carries within the bar's span (see `busSide`): what the choice of edge compares. */
@@ -95,7 +122,7 @@ export function busLegCounts(model: LayoutModel, bus: MeshBus, provisional = fal
       if ((side === 'top' || side === 'bottom') && used.has(portId(port.ref))) counts[side]++;
     }
   }
-  if (spanned) {
+  if (spanned && term2Applies(model, bus)) {
     // Term 2, physically read. A link between a row and the tier across the gap ends at the row in a port that term 1 counts, and its
     // run in the gap lies below the band (the plan seats no row inside it), so it crosses the bar nowhere else. What does stand over
     // the span is a link that passes the whole row: one end in a tier above, the other in a tier below, which runs through the gap at

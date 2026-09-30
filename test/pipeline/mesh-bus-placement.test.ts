@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
-import { busExtent, busGeometry, busSide } from '../../src/layout/bus.js';
+import { busExtent, busGeometry, busLegCounts, busSide } from '../../src/layout/bus.js';
 import { bandSide, rawBandSide } from '../../src/layout/bands.js';
 import { resolve } from '../../src/resolve/index.js';
 import { sidesOne } from '../../src/layout/sides-one.js';
@@ -93,6 +93,10 @@ links:
 `;
     const model = await run(yaml);
     const band = model.labelBands.find(item => item.group === 'row')!;
+    const counts = busLegCounts(model, model.meshBuses![0]!);
+    // A real tie: the same number of legs on both edges, so only the title edge decides.
+    expect(counts.top).toBe(counts.bottom);
+    expect(counts.top).toBeGreaterThan(0);
     expect(model.meshBuses![0]!.side).toBe(band.side);
     expect(gates(model)).toEqual([]);
   }, 60000);
@@ -315,11 +319,13 @@ describe('the side of a bus (ticket 83)', () => {
   it('counts a foreign lane on both edges: it decides no side, and the label stands beside it', async () => {
     const model = JSON.parse(JSON.stringify(await run(fixture('a-mesh-across-frames-draws-one-bus')))) as LayoutModel;
     const bus = model.meshBuses![0]!;
-    const side = busSide(model, bus), before = busGeometry(model, bus)!.labelRoom!;
+    const side = busSide(model, bus), counts = busLegCounts(model, bus), before = busGeometry(model, bus)!.labelRoom!;
     // A lane between two member frames, through the band, at the middle of the bar where the label stands.
     const x = (bus.bar!.from.x + bus.bar!.to.x) / 2, band = model.busBands![0]!.bounds;
     model.lanes.push({ id: 'lane:foreign', owner: { kind: 'link', id: 'link-1' }, layer: 'routed', group: 'middle', tier: bus.row, side: 'right', x,
       bounds: { x: x - 5, y: band.y - 40, width: 10, height: band.height + 80 } });
+    // The lane crosses the band on both edges: the counts of the two edges do not move.
+    expect(busLegCounts(model, bus)).toEqual(counts);
     expect(busSide(model, bus)).toBe(side);
     const after = busGeometry(model, bus)!.labelRoom!;
     expect(before.from).toBeLessThan(x);

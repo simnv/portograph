@@ -174,7 +174,10 @@ change a side and the title edge), now within the span read off the skeleton ord
 bus port if the side changed. Term 1 is exact at that read (port sides and row order). Term 2 has
 no plan yet at stage 5 (the ADR-0021 plan is made in 7a): stage 5 reads it as the ports, in the
 tier across the gap and on the side that faces it, of the routed links that pass the whole row, each
-at its skeleton x. Term 3 is not read at
+at its skeleton x. It is read only across frames and for a bus in a rank cell; an in-frame bus in a frame padding has term 1
+alone. Such a link's vertical over the span stands in the gap of its own end and its lane stands beside the row, outside the
+span, so it counts on that edge only (ticket 83 review). An authored `side: top|bottom` on a bus port fixes the side before any
+count. Term 3 is not read at
 stage 5: lanes are reserved in 7a, and a lane counts the same on both edges. All inputs are
 deterministic (sides, skeleton order and x), so the read is. Term 2 is provisional, because 7a to
 7f move x, and the side is still fixed at the freeze. That is accepted: a leg that moves into the
@@ -385,7 +388,8 @@ as the overlay export was (Q70): the drawn bar and stubs read back within 0.05 p
 |---|---|---|
 | `MESH_BUS` | info | A bus formed: row (sub-tier), class, placement, node count, member count, the frames spanned, the group-links dissolved. |
 | `MESH_BUS_PARTIAL` | info | A same-row same-class set had nodes the bus could not take: names them and the missing pairs; names a group-link that lost only some members to the bus and counts the members left plain. |
-| `MESH_BUS_DECLINED` | warning | Reasons: `named-ports` (two or more authored ports at one member), `shape` (a member in a `grid` or `bar` group or a flank), `second-mesh` (a second clique on a row that has a bus; lifted by ticket 85), `too-many-cliques` (more than 4,096 maximal cliques in one row and class). |
+| `MESH_BUS_DECLINED` | warning | Reasons: `named-ports` (two or more authored ports at one member), `shared-port` (the named port a member would use also carries a link that is not a member: the bus port stands on the bus edge and would cut that link off from its own side), `side` (an authored `left` or `right` on a bus port, or an authored `top` on one and `bottom` on another: a bus stands on a horizontal edge; an authored `top` or `bottom` fixes the bus side, before any count), `shape` (a member in a `grid` or `bar` group or a flank), `second-mesh` (a second clique on a row that has a bus; lifted by ticket 85), `too-many-cliques` (more than 4,096 maximal cliques in one row and class). |
+| `MESH_BUS_TITLE_ON_STUB` | warning | A member frame's title stands on a stub, no position and no widening clears it, and the placement budget is spent, so 7f cannot move it to the other edge (ticket 83 review): it stays, and this says so instead of stopping the run (stage `placement`, the frame as owner). |
 | `MESH_BUS_TITLE_MOVED` | info | A member frame's title left its ADR-0011 edge because no position and no widening cleared the stub (stage `placement`, the frame as owner). |
 
 The first three are `stage: 'model'`, with the member links as owners.

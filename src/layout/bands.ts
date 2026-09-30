@@ -1136,6 +1136,11 @@ function overlayRunMid(model: LayoutModel, link: LayoutLink, axis: 'x' | 'y'): n
   return (run.from[axis] + run.to[axis]) / 2;
 }
 
+/** Whether 7f reported that the title of `id` stays on a mesh bus stub for want of a pass (`MESH_BUS_TITLE_ON_STUB`). */
+function titleOnStub(model: LayoutModel, id: string): boolean {
+  return model.diagnostics.some(item => item.code === 'MESH_BUS_TITLE_ON_STUB' && item.owners?.some(owner => owner.kind === 'group' && owner.id === id));
+}
+
 /**
  * The gap two nodes of one row must keep between their bodies for the label of a routed link between them: the room
  * `reserveLinkLabelRoom` reserves, read as a floor by the stages that widen a body into the row (ticket 33). Zero
@@ -1355,6 +1360,9 @@ export function produceGroupLabelBands(model: LayoutModel): void {
       consumeGrowthPass(budget, passes);
       continue;
     }
+    // With no pass left the title cannot move to its other edge: it stays on the stub, and the diagnostic says so.
+    if (!plan.growth && fresh.length) for (const id of fresh) if (!titleOnStub(model, id)) model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'MESH_BUS_TITLE_ON_STUB',
+      message: `The title of ${id} stands on the stub of a mesh bus: no position and no widening clears it, and the placement budget is spent, so it stays.`, owners: [{ kind: 'group', id }] });
     if (!plan.growth) { model.labels.push(...plan.labels); diagnoseBlocked(model, plan.blocked); return; }
     // A widening for a leg only (no hard obstacle asks for it) needs a pass the shared budget no longer has: centring spends it before any leg
     // is known (ticket 66). Each title (keyed by the title that asked, not the cell that grows: one cell can host a member title and a canton title) has an allowance of `LEG_PASSES_PER_TITLE` passes outside the shared budget; a title past it keeps the soft rule.
@@ -1490,7 +1498,7 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   let plan = planLabels(expected, true, true, spent);
   if (plan.growth || !equal(actualLabels, plan.labels)) plan = planLabels(expected, !model.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE'), undefined, spent);
   if (plan.growth) throw new Error(`Group label ${plan.growth.group.id} has no reserved free gap`);
-  if ((plan.moves ?? []).some(id => model.titleMoves?.includes(id) !== true)) throw new Error('A group label stands on the stub of a mesh bus and was not moved');
+  if ((plan.moves ?? []).some(id => model.titleMoves?.includes(id) !== true && !titleOnStub(model, id))) throw new Error('A group label stands on the stub of a mesh bus and was not moved');
   const actual = model.labels.filter(label => label.role === 'group');
   if (!equal(actual, plan.labels)) {
     // The sentence named neither the label nor the amount, and the first difference is the one that
