@@ -51,7 +51,7 @@ groups: {up: {tier: 0}, low: {tier: 1}}
 nodes:
   a: {group: up, ports: [{name: p, side: bottom}]}
   b: {group: low, ports: [{name: p, side: top}]}
-links: [[a.p, b.p]]`)))));
+links: [[a.p, b.p, {route: orthogonal}]]`)))));
   expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
   // Slide the child node 5 px inside its own box: every containment check still holds, only the
   // alignment 7c established is gone.
@@ -88,7 +88,7 @@ nodes:
     ports:
       - {name: p, side: top, order: 0}
       - {name: q, side: top, order: 1}
-links: [[a.p, c.q], [b.p, c.p]]`)))));
+links: [[a.p, c.q, {route: orthogonal}], [b.p, c.p, {route: orthogonal}]]`)))));
   expect(incompatible.diagnostics.map(d => d.code)).toEqual(expect.arrayContaining(['CENTRE_ALIGNMENT_INFEASIBLE', 'PLACEMENT_NON_CONVERGENCE']));
   expect(restoreLayoutModel(JSON.stringify(incompatible))).toEqual(incompatible);
   // The infeasible port excuses only itself: sliding the node also moves its feasible sibling off b.p.
@@ -109,7 +109,7 @@ nodes:
   b: {group: up, ports: [{name: p, side: bottom}]}
   c: {group: left, ports: [{name: p, side: top}]}
   d: {group: right, ports: [{name: p, side: top}]}
-links: [[a.p, c.p], [b.p, d.p]]`)))));
+links: [[a.p, c.p, {route: orthogonal}], [b.p, d.p, {route: orthogonal}]]`)))));
   expect(restoreLayoutModel(JSON.stringify(twoChildren))).toEqual(twoChildren);
   const forged = JSON.parse(JSON.stringify(twoChildren)) as LayoutModel;
   forged.nodes.c!.bounds!.x += 5;

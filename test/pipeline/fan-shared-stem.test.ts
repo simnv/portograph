@@ -395,7 +395,7 @@ it('stress 10: a checkpoint inside a link\'s own reserved run is not hemmed, and
   // The same diagram with one feed off `right`, so that port carries a single link and its end
   // reserves nothing: the descent now closes the only approach stage 8 has, and the branch gives
   // way. One link decides it, so the rule is pinned in both directions and no-op is not an answer.
-  const bare = await run(fixture('a-reserved-approach-cannot-be-hemmed').replace('  - [feed-c.d, right.u]\n', ''));
+  const bare = await run(fixture('a-reserved-approach-cannot-be-hemmed').replace('  - [feed-c.d, right.u, { route: orthogonal }]\n', ''));
   expect(bare.diagnostics.some(item => item.code === 'FAN_BRANCH_HEMMED')).toBe(true);
   const alone = bare.links.filter(link => link.attachments!.to.node === 'right');
   expect(alone).toHaveLength(1);

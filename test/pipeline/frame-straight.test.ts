@@ -84,8 +84,9 @@ describe('a link inside one frame is a straight segment', () => {
     const blocked = linkOf(model, 'west', 'east');
     expect(blocked.technique).toBe('orthogonal');
     expect(blocked.path!.segments.length).toBeGreaterThan(1);
-    // The link that leaves the frame is unchanged.
-    expect(linkOf(model, 'isp', 'gw1').technique).toBeUndefined();
+    // The link that leaves the frame, between the ISP and a frame on the next tier, is a cross-frame chord since Q108 (ticket 99): the
+    // gateway stands on the top sub-tier and its port faces the ISP's.
+    expect(linkOf(model, 'isp', 'gw1').technique).toBe('straight');
   });
 
   it('reserves no lane, no gap run and no stem for a straight link', async () => {

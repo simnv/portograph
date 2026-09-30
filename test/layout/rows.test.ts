@@ -444,7 +444,7 @@ describe('row paths inside later transactions', () => {
     const cross = `portograph: 2
 groups: {g: {tier: 0}, h: {tier: 1}}
 nodes: {a: {group: g, ports: [p]}, b: {group: h, ports: [q]}}
-links: [[a.p, b.q]]`;
+links: [[a.p, b.q, {route: orthogonal}]]`;
     const tiers = await placed(cross);
     expect(() => withLayoutMutation(tiers, 'rows', draft => {
       draft.links[0]!.path = { owner, layer: 'routed', fixed: true, segments: [{ from: anchorOf(draft, 'a', 0), to: anchorOf(draft, 'b', 0), owner }] };
@@ -453,9 +453,10 @@ links: [[a.p, b.q]]`;
   });
   it('rejects a geometry-selected technique on a link no rule validates', async () => {
     const cross = advance(await placed(`portograph: 2
-groups: {g: {tier: 0}, h: {tier: 1}}
-nodes: {a: {group: g, ports: [p]}, b: {group: h, ports: [q]}}
+groups: {g: {tier: 0}, m: {tier: 1}, h: {tier: 2}}
+nodes: {a: {group: g, ports: [p]}, mid: {group: m}, b: {group: h, ports: [q]}}
 links: [[a.p, b.q]]`), ['rows']);
+    // Two tiers apart: no chord rule takes it (Q108 takes consecutive document tiers only).
     // The resolver leaves an automatic routed technique unset; only a rule validator may select one.
     expect(cross.links[0]!.technique).toBeUndefined();
     expect(rowPathCandidate(cross, cross.links[0]!)).toBe(false);

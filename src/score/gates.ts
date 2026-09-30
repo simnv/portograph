@@ -20,7 +20,7 @@ const measurable = (x: number, y: number, right: number, bottom: number): boolea
   x > -REJECT_LIMIT && y > -REJECT_LIMIT && right < REJECT_LIMIT && bottom < REJECT_LIMIT;
 import { anchorOnBoundary, barContact, bundlePair, effectiveLayer, endpoints, groupBoxes, groupConsumers, incident, junctionFan, mergedRun, outward, port, refEqual, refKey, sharedStem } from './model.js';
 import { overlayEndpoint } from '../layout/overlay-paths.js';
-import { isFrameStraight } from '../layout/frame-paths.js';
+import { isRoutedChord } from '../layout/frame-paths.js';
 import type { Segment } from './model.js';
 import type { GateId, GateResult, ScoreCounters } from './types.js';
 
@@ -348,7 +348,7 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       // exactly one point per end — `overlayEndpoint`, the producer's own — and an end that states
       // no side has no face to read and keeps its anchor.
       // A straight link inside one frame (ticket 34) ends on the face too: one segment, no stem.
-      const overlay = effectiveLayer(link) !== 'routed' || isFrameStraight(model, link);
+      const overlay = effectiveLayer(link) !== 'routed' || isRoutedChord(model, link);
       const at = (item: typeof from, ref: { node: string }): Point =>
         (overlay ? overlayEndpoint(model.nodes[ref.node], item) : undefined) ?? item.anchor!;
       if (!samePoint(path[0]!.from, at(from, ends.from)) || !samePoint(path.at(-1)!.to, at(to, ends.to))) fail('G7', 'endpoint-anchor', [link.id], 'Link endpoints must equal the point their ports state');
@@ -356,7 +356,7 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
     }
     if (!routedLinks.has(link)) continue;
     // A straight link inside one frame is one segment between two faces: it has no stem and may be a diagonal.
-    const framed = isFrameStraight(model, link);
+    const framed = isRoutedChord(model, link);
     if (!framed && (!outward(from, path![0]!, true) || !outward(to, path!.at(-1)!, false) || length(path![0]!) < 15 - EPS || length(path!.at(-1)!) < 15 - EPS)) fail('G5', 'port-stem', [link.id], 'Port stems must exit perpendicular and extend at least 15 px');
     // A declared diagonal is legal only on a member of a bundle that owns the segment (ADR-0017);
     // anywhere else `straight: true` is an unowned claim and the gate treats it as a bent path.

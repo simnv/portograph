@@ -11,4 +11,4 @@ nodes:
   source: { group: upper, label: S, ports: [{ name: p, side: bottom }] }
   target: { group: lower, label: T, ports: [{ name: p, side: top }] }
 links:
-  - [source.p, target.p, { label: uplink }]
+  - [source.p, target.p, { label: uplink, route: orthogonal }]

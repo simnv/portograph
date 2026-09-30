@@ -24,9 +24,9 @@ nodes:
   s2: { group: site, class: switch }
   s3: { group: site, class: switch }
 links:
-  - [isp, r0]
-  - [isp, r1]
-  - [isp, r2]
+  - [isp, r0, { route: orthogonal }]
+  - [isp, r1, { route: orthogonal }]
+  - [isp, r2, { route: orthogonal }]
   - [r0, s2, { class: physical, route: orthogonal }]
   - [r0, s3, { class: physical, route: orthogonal }]
   - [r1, s0, { class: physical, route: orthogonal }]

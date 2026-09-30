@@ -1,0 +1,30 @@
+# Expected: A routed link between two groups keeps the orthogonal route when a foreign group box stands on its chord
+# (ranked-groups ticket 99, Q108). Two feeds stand on tier 0 and three groups on tier 1; `wide` is a free group, its own frame for
+# this rule. `middle` links up to both feeds. The chord from m1 to b1 leaves m1 for the far left and would run over the top of
+# `wide`, a box that holds neither end, so that link is not held: it stays orthogonal (`technique: 'orthogonal'`) and
+# `ROUTED_CHORD_REFUSED` names the first check that failed, `frame`. The chords that clear every box (w1 to each feed) are held:
+# only the link whose chord meets a foreign box is refused.
+# Test-only input owned by ranked-groups ticket 99; test/pipeline/routed-chord.test.ts reads the layout.
+portograph: 2
+groups:
+  feed-a: { tier: 0, label: "Feed A" }
+  feed-b: { tier: 0, label: "Feed B" }
+  wide: { tier: 1, label: "Wide" }
+  middle: { tier: 1, label: "Middle" }
+  edge: { tier: 1, label: "Edge" }
+nodes:
+  a1: { group: feed-a, class: router, label: "a1" }
+  a2: { group: feed-a, class: router, label: "a2" }
+  a3: { group: feed-a, class: router, label: "a3" }
+  b1: { group: feed-b, class: router, label: "b1" }
+  b2: { group: feed-b, class: router, label: "b2" }
+  b3: { group: feed-b, class: router, label: "b3" }
+  w1: { group: wide, class: rr, label: "w1" }
+  m1: { group: middle, class: provider, label: "m1" }
+  e1: { group: edge, class: provider, label: "e1" }
+links:
+  - [w1, a1]
+  - [w1, b3]
+  - [m1, a1]
+  - [m1, b1]
+  - [e1, m1]

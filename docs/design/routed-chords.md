@@ -58,7 +58,8 @@ A link is a cross-frame candidate when all of these are true:
 4. After the side freeze (ADR-0009), the port on the upper end is on `bottom` and the port on the
    lower end is on `top`.
 
-Items 1 to 3 are known at stage 1. Item 4 is known after stage 6. `rebuildRowPaths` runs after
+Items 1 to 3 are known at stage 1. Item 4 is known after stage 6. The document tier of item 3 is the authored tier: stage 1 keeps it beside the
+sub-tier as `documentTier` on every group of an expanded document, because `tier` is a sub-tier from then on (ticket 99). `rebuildRowPaths` runs after
 stage 6 only, so the candidate is fixed before the first chord is read.
 
 A group-link member is a candidate, as inside one frame (Q96), because it draws as its own link.
@@ -173,12 +174,21 @@ foreign frame on a held chord, or makes it leave by a side edge, is refused
 (`STRAIGHT_LINK_HELD`); a move 7f cannot refuse keeps the chord and names it
 (`STRAIGHT_LINK_BLOCKED`), as today.
 
+*As built (ticket 99).* After the freeze only a foreign frame or canton box refuses a move; the facing edge is a rule of the decision and is not
+held. Measured on the corpus: holding it left `a-member-title-widens-a-beside-row` with G6 (a 7f title widening pushes a column, the chord
+turns shallower, the move is refused, the title stays unfit and the neighbours' orthogonal fallbacks run along a frame edge), and three
+`STRAIGHT_LINK_BLOCKED` warnings; releasing it leaves no gate gained. A held chord may therefore leave its frame through a side edge after 7f.
+
 ## 8. How the other rules treat a held chord
 
 Every consumer of `isFrameStraight` reads the wider predicate (renamed `isRoutedChord`):
 `routerEntryPoints` and `legRects` (no stem, no leg), `route/obstacles.ts` (no router obstacle),
 `route/validate.ts` and G7 (ends on the faces), G5 (no stem, one declared diagonal), the score
 (continuity 1, Q94).
+
+**Bundles (7e).** A bundle's zones and member paths are derived in 7e, after the rows rule has decided and before the transaction re-derives it, so a
+cross-frame chord reads neither (`ignoreBundles` of the corridor test): reading them made the draft and its re-derivation disagree. A chord may
+cross a bundle row strictly (G6 excuses it); the corpus shows no gate gained.
 
 **Lanes (7a).** A lane is reserved before a chord is final, and a lane box is a wall to a chord.
 Lanes read a chord that is held at 7a: `corridorFree` keeps a lane's descent off every fixed path,

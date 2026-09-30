@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { Budget, LayoutLink, LayoutModel } from '../../src/index.js';
 import { layout, parse } from '../../src/index.js';
 import { measureFans } from '../../src/layout/fan-spread.js';
-import { standaloneChord, isFrameStraight } from '../../src/layout/frame-paths.js';
+import { standaloneChord, isRoutedChord } from '../../src/layout/frame-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -90,7 +90,7 @@ describe('a fan spreads its ports so its diagonals hold clearance', () => {
   it('offers only links that can hold alone', async () => {
     const model = await run();
     for (const link of fan(model)) {
-      if (isFrameStraight(model, link)) expect(standaloneChord(model, link), link.id).toBeDefined();
+      if (isRoutedChord(model, link)) expect(standaloneChord(model, link), link.id).toBeDefined();
     }
   });
 });

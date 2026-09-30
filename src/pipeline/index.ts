@@ -25,7 +25,7 @@ import { route, ROUTE_BUDGET_MS, type CreateRouteAttempt } from '../route/index.
 import { CommandDeadlineError, UNBOUNDED_BUDGET, type Budget } from './budget.js';
 // After the stages: the modules below reach the centring module, whose import order the tests that mock it depend on.
 import { declinedFanDiagnostics, measureFans, type FanMeasure } from '../layout/fan-spread.js';
-import { chordClearances, isFrameStraight } from '../layout/frame-paths.js';
+import { chordClearances, isRoutedChord } from '../layout/frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
 
 
@@ -34,7 +34,7 @@ const FAN_ROUNDS = 2;
 /** What a probe must leave in the budget: this many runs to 7e for stage 7f, and a fixed reserve for routing (ticket 89 review). */
 const FAN_PROBE_FACTOR = 4;
 const FAN_ROUTE_RESERVE_MS = 5000;
-const straightChords = (model: LayoutModel): number => model.links.filter(link => isFrameStraight(model, link)).length;
+const straightChords = (model: LayoutModel): number => model.links.filter(link => isRoutedChord(model, link)).length;
 
 export { CommandDeadlineError, createBudget, UNBOUNDED_BUDGET } from './budget.js';
 export type { Budget } from './budget.js';

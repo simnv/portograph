@@ -5,7 +5,7 @@ import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEA
 import { groupBoxes, groupConsumers } from '../score/model.js';
 import { GROUP_LABEL_GEOMETRY, routedStroke } from '../layout/bands.js';
 import { portId } from '../layout/skeleton-graph.js';
-import { isFrameStraight } from '../layout/frame-paths.js';
+import { isRoutedChord } from '../layout/frame-paths.js';
 import { bottom, right } from '../score/geometry.js';
 import type { RoutePin } from './types.js';
 
@@ -215,7 +215,7 @@ export function reservedRunObstacles(model: LayoutModel): RouteObstacle[] {
   for (const link of model.links) {
     // A straight link inside one frame is no router obstacle, like an overlay link (ticket 34): routes that
     // cross a tier gap must be able to cross its chord, and G6 excuses a strict crossing.
-    if (link.layer === 'overlay' || link.technique === 'stub' || isFrameStraight(model, link)) continue;
+    if (link.layer === 'overlay' || link.technique === 'stub' || isRoutedChord(model, link)) continue;
     const clearance = runClearance(link, stroke), anchors = anchorsOf(model, link);
     for (const chain of reservedChains(link)) {
       const points = chainPoints(chain.segments);

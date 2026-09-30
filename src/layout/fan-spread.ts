@@ -2,7 +2,7 @@ import type { Side } from '../model/geometry.js';
 import type { Diagnostic, LayoutLink, LayoutModel, LayoutPort, PathSegment } from '../model/layout.js';
 import { EPS, intersection, samePoint, segmentDistance } from '../score/geometry.js';
 import { linkStrokeWidth } from '../theme/geometry.js';
-import { frameLinkCandidate, standaloneChord } from './frame-paths.js';
+import { routedChordCandidate, standaloneChord } from './frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { portId } from './skeleton-graph.js';
 
@@ -39,7 +39,7 @@ function strictCrossing(a: PathSegment, b: PathSegment): boolean {
 export function measureFans(model: LayoutModel): FanMeasure {
   const floors: FanMeasure['floors'] = new Map(), declined: FanMeasure['declined'] = [];
   // A link whose chord no other link can free (a tier transit, a title strip, a corridor, a body) is no reason to widen a face.
-  const candidates = model.links.filter(link => link.attachments && frameLinkCandidate(model, link) && standaloneChord(model, link) !== undefined);
+  const candidates = model.links.filter(link => link.attachments && routedChordCandidate(model, link) && standaloneChord(model, link) !== undefined);
   const byPort = new Map<string, LayoutLink[]>();
   for (const link of candidates) for (const end of [link.attachments!.from, link.attachments!.to]) {
     byPort.set(portId(end), [...(byPort.get(portId(end)) ?? []), link]);

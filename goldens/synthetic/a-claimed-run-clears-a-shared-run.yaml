@@ -17,6 +17,6 @@ nodes:
   m2: { group: mid, class: provider, label: "m2", ports: [{ name: a, side: bottom, order: 1 }, { name: b, side: bottom, order: 2 }] }
   l1: { group: low, class: tbr, label: "l1" }
 links:
-  - [h1.p, m1]
-  - [h1.p, m2.a]
-  - [m2.b, l1]
+  - [h1.p, m1, { route: orthogonal }]
+  - [h1.p, m2.a, { route: orthogonal }]
+  - [m2.b, l1, { route: orthogonal }]

@@ -7,7 +7,7 @@ import { groupConsumers } from '../score/model.js';
 import { portId } from './skeleton-graph.js';
 import { groupShape } from './grid.js';
 import { joinFanTrees } from './bundle-geometry.js';
-import { expectedFramePath, frameLinkCandidate, isFrameStraight, standaloneChord } from './frame-paths.js';
+import { expectedFramePath, isRoutedChord, routedChordCandidate, standaloneChord } from './frame-paths.js';
 
 /**
  * Coordinate magnitude beyond which an obstacle is measured instead of rejected.
@@ -73,7 +73,7 @@ export function rowPathCandidate(model: LayoutModel, link: LayoutLink): boolean 
   const route = model.document.links[link.sourceIndex]?.route;
   if (route !== undefined && route !== 'straight' && route !== 'orthogonal') return false;
   // A group-link member is a candidate by the frame rule only (ticket 38): it never takes a level path.
-  return frameLinkCandidate(model, link) || (link.groupLink === undefined && lateral(model, link) !== undefined);
+  return routedChordCandidate(model, link) || (link.groupLink === undefined && lateral(model, link) !== undefined);
 }
 function automatic(model: LayoutModel, link: LayoutLink): boolean {
   return model.document.links[link.sourceIndex]?.route === undefined;
@@ -93,6 +93,10 @@ function automatic(model: LayoutModel, link: LayoutLink): boolean {
  */
 export interface CorridorOptions {
   stroke?: number;
+  /** A cross-frame chord reads no bundle: 7e derives the bundle zones and paths after the rows rule has decided (docs/design/routed-chords.md, Section 8). */
+  ignoreBundles?: boolean;
+  /** Receives the first check that refused the corridor (`ROUTED_CHORD_REFUSED`). */
+  refusal?: { reason?: 'body' | 'pill' | 'lane' | 'frame' | 'corridor' };
   attached?: { nodes: readonly string[]; ports: readonly string[] };
 }
 
@@ -107,6 +111,10 @@ export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segm
   const attached = options.attached ?? { nodes: [ends.from.node, ends.to.node], ports: [portId(ends.from), portId(ends.to)] };
   const endNodes = new Set(attached.nodes);
   const endPorts = new Set(attached.ports);
+  const refuse = (reason: NonNullable<NonNullable<CorridorOptions['refusal']>['reason']>): false => {
+    if (options.refusal) options.refusal.reason = reason;
+    return false;
+  };
   const ownsObstacle = (owner: { kind: string; id?: string }): boolean => owner.kind === 'link' && owner.id === link.id;
   // The corridor is closed by whatever comes nearer than a clearance, so anything further than the
   // clearance from the segment's own bounding box cannot close it. Rejecting such a shape by four
@@ -138,20 +146,20 @@ export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segm
     if (node.layer === 'overlay' || !node.bounds) continue;
     const nodeStroke = node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node;
     if (!beyond(node.bounds, STRAIGHT_PATH_CLEARANCE.node + (stroke + nodeStroke) / 2 + 1) && !endNodes.has(node.id)
-      && segmentRectDistance(segment, node.bounds) - (stroke + nodeStroke) / 2 < STRAIGHT_PATH_CLEARANCE.node - EPS) return false;
+      && segmentRectDistance(segment, node.bounds) - (stroke + nodeStroke) / 2 < STRAIGHT_PATH_CLEARANCE.node - EPS) return refuse('body');
     for (const port of node.ports) {
       if (!port.pill || port.pill.layer === 'overlay' || beyond(port.pill.bounds, pillReach) || endPorts.has(portId(port.ref))) continue;
-      if (segmentRectDistance(segment, port.pill.bounds) - (stroke + DEFAULT_STROKE_WIDTHS.pill) / 2 < -EPS) return false;
+      if (segmentRectDistance(segment, port.pill.bounds) - (stroke + DEFAULT_STROKE_WIDTHS.pill) / 2 < -EPS) return refuse('pill');
     }
   }
   for (const label of model.labels) {
     if (label.omitted || !label.bounds || label.layer === 'overlay' || beyond(label.bounds, labelReach) || ownsObstacle(label.owner)) continue;
     if (label.role === 'pill' && label.port && endPorts.has(portId(label.port))) continue;
-    if (segmentRectDistance(segment, label.bounds) < stroke / 2 + (label.role === 'group' ? GROUP_LABEL_LINK_CLEARANCE : 0) - EPS) return false;
+    if (segmentRectDistance(segment, label.bounds) < stroke / 2 + (label.role === 'group' ? GROUP_LABEL_LINK_CLEARANCE : 0) - EPS) return refuse('corridor');
   }
   for (const lane of model.lanes) {
     if (lane.layer === 'overlay' || beyond(lane.bounds, laneReach) || ownsObstacle(lane.owner)) continue;
-    if (segmentRectDistance(segment, lane.bounds) < stroke / 2 - EPS) return false;
+    if (segmentRectDistance(segment, lane.bounds) < stroke / 2 - EPS) return refuse('lane');
   }
   // A foreign group box, with its edge margin, is closed to this link (ADR-0013): placement must
   // not reserve a straight corridor that stage 8 would then be forbidden to use. The consumer test
@@ -159,11 +167,14 @@ export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segm
   for (const [id, group] of Object.entries(model.groups)) {
     if (!group.bounds || !group.nodes.length || beyond(group.bounds, groupReach)) continue;
     if (groupConsumers(model, id).includes(link.id)) continue;
-    if (segmentRectDistance(segment, group.bounds) < GROUP_EDGE_LINK_CLEARANCE + stroke / 2 - EPS) return false;
+    if (segmentRectDistance(segment, group.bounds) < GROUP_EDGE_LINK_CLEARANCE + stroke / 2 - EPS) return refuse('frame');
   }
   for (const other of model.links) {
     // A straight link inside one frame is no obstacle: like an overlay link it reads bodies only.
-    if (other.id === link.id || other.layer === 'overlay' || isFrameStraight(model, other)) continue;
+    if (other.id === link.id || other.layer === 'overlay' || isRoutedChord(model, other)) continue;
+    // A bundle member's path is produced by stage 7e, after the rows rule decides, and `rebuildRowPaths` in 7e runs before it: a cross-frame
+    // chord cannot read it without the transaction's own re-derivation disagreeing with the draft. A strict crossing of a row is legal (G6).
+    if (options.ignoreBundles === true && other.bundle !== undefined) continue;
     const otherStroke = linkStrokeWidth(other);
     const runReach = STRAIGHT_PATH_CLEARANCE.path + (stroke + otherStroke) / 2 + 1;
     // A stage-8 remainder (`fixed: false`) is routed around this corridor, so it is not an
@@ -172,17 +183,17 @@ export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segm
     const foreign = other.path?.fixed === false ? [] : other.path?.segments ?? [];
     for (const run of [...foreign, ...(other.fixedSegments ?? [])]) {
       if (beyondRun(run, runReach)) continue;
-      if (segmentDistance(segment, run) - (stroke + otherStroke) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return false;
+      if (segmentDistance(segment, run) - (stroke + otherStroke) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return refuse('corridor');
     }
   }
-  for (const bundle of model.bundles) {
+  for (const bundle of options.ignoreBundles === true ? [] : model.bundles) {
     for (const zone of [bundle.rows, bundle.envelope]) {
-      if (zone && !beyond(zone, laneReach) && segmentRectDistance(segment, zone) < stroke / 2 - EPS) return false;
+      if (zone && !beyond(zone, laneReach) && segmentRectDistance(segment, zone) < stroke / 2 - EPS) return refuse('corridor');
     }
   }
   for (const obstacle of model.obstacles) {
     if (beyond(obstacle.bounds, laneReach) || ownsObstacle(obstacle.owner)) continue;
-    if (segmentRectDistance(segment, obstacle.bounds) < stroke / 2 - EPS) return false;
+    if (segmentRectDistance(segment, obstacle.bounds) < stroke / 2 - EPS) return refuse('corridor');
   }
   return true;
 }
@@ -193,7 +204,7 @@ export function expectedRowPath(model: LayoutModel, link: LayoutLink): LayoutPat
   const level = link.groupLink === undefined ? expectedLevelPath(model, link) : undefined;
   // A level facing pair the rows rule pins keeps its anchor-to-anchor segment. Every other link inside
   // one frame answers to the frame rule, which reads the chord between the two faces (ticket 34).
-  return level ?? (frameLinkCandidate(model, link) ? expectedFramePath(model, link) : undefined);
+  return level ?? (routedChordCandidate(model, link) ? expectedFramePath(model, link) : undefined);
 }
 function expectedLevelPath(model: LayoutModel, link: LayoutLink): LayoutPath | undefined {
   const pair = facingPair(model, link);
@@ -227,7 +238,7 @@ export function rebuildRowPaths(draft: LayoutModel): void {
     if (automatic(draft, link)) link.technique = path ? 'straight' : 'orthogonal';
     return path !== undefined;
   };
-  let open = candidates.filter(link => !decide(link) && frameLinkCandidate(draft, link));
+  let open = candidates.filter(link => !decide(link) && routedChordCandidate(draft, link));
   // Two passes, repeated until neither changes anything (ticket 89). The add-only pass above holds a chord only once every stem that blocks
   // it has gone, so two chords that each wait for the other's stem never start. The batch pass offers the candidates left together: each is
   // taken as straight, and a chord that fails against the others leaves and puts its stem back. Only a link that can hold alone (no tier
@@ -244,7 +255,7 @@ export function rebuildRowPaths(draft: LayoutModel): void {
     open = open.filter(link => !held.includes(link));
   }
   // A straight link inside one frame is one chord between two faces, never a leaf of a fan tree.
-  joinFanTrees(draft, candidates.filter(link => !isFrameStraight(draft, link)));
+  joinFanTrees(draft, candidates.filter(link => !isRoutedChord(draft, link)));
 }
 
 /**

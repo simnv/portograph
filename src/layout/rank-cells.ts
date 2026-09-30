@@ -120,7 +120,7 @@ export function expandRankedGroups(model: LayoutModel): NormalisedDocument | und
     const plan = plans.get(id);
     if (group.parent !== undefined) {
       // A child of a group that is not replaced stays an ordinary group on its parent's sub-tier.
-      if (!plans.get(group.parent)!.expands) put(id, { ...group, tier: base(group.parent) } as NormalisedGroup);
+      if (!plans.get(group.parent)!.expands) put(id, { ...group, tier: base(group.parent), documentTier: source.groups[group.parent]!.tier! } as NormalisedGroup);
       continue;
     }
     if (plan === undefined) {
@@ -129,7 +129,7 @@ export function expandRankedGroups(model: LayoutModel): NormalisedDocument | und
       continue;
     }
     if (!plan.expands) {
-      put(id, { ...group, tier: base(id) } as NormalisedGroup);
+      put(id, { ...group, tier: base(id), documentTier: group.tier! } as NormalisedGroup);
       continue;
     }
     const withStyle = (owner: string) => {
@@ -141,7 +141,7 @@ export function expandRankedGroups(model: LayoutModel): NormalisedDocument | und
       frames[owner] = { label: item.label, ...(item.class !== undefined ? { class: item.class } : {}), ...(owner !== id ? { parent: id } : cantons.includes(cantonOf(id) ?? '') ? { parent: cantonOf(id)! } : {}), cells: [] };
     }
     for (const cell of plan.cells) {
-      put(cell.id, { ...withStyle(cell.frame), tier: base(id) + cell.rank, frame: cell.frame } as NormalisedGroup);
+      put(cell.id, { ...withStyle(cell.frame), tier: base(id) + cell.rank, frame: cell.frame, documentTier: source.groups[id]!.tier! } as NormalisedGroup);
       frames[cell.frame]!.cells.push(cell.id);
       for (const node of cell.members) expanded.nodes[node]!.group = cell.id;
     }

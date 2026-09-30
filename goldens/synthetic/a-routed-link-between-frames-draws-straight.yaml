@@ -1,0 +1,28 @@
+# Expected: Two routed links between frames draw as one straight segment each (ranked-groups ticket 99, Q108). Two location
+# frames stand on tier 1, each a core over a router, and a provider row of two nodes stands on tier 2. Each router links to
+# each provider, so four links join two frames to one free group across one tier gap. Each router leaves its frame by its
+# bottom edge and each provider takes the link on its top edge, so the chord is clear of every foreign frame, leaves each
+# end through the edge its port faces, and meets no title: the frames keep their titles on the top edge and the providers
+# keep theirs on the bottom edge (the edge with fewer routed ports, ADR-0011). Every link is `technique: 'straight'`, one
+# segment, at whatever angle; every gate passes.
+# Test-only input owned by ranked-groups ticket 99; test/pipeline/routed-chord.test.ts reads the layout.
+portograph: 2
+profile: network
+groups:
+  east: { tier: 1, label: East }
+  west: { tier: 1, label: West }
+  providers: { tier: 2, label: Providers of the upstream transit service }
+nodes:
+  east-core: { group: east, class: router, label: East core router of the site }
+  east-router: { group: east, class: router, label: East router }
+  west-core: { group: west, class: router, label: West core router of the site }
+  west-router: { group: west, class: router, label: West router }
+  provider-1: { group: providers, class: provider, label: Provider 1 }
+  provider-2: { group: providers, class: provider, label: Provider 2 }
+links:
+  - [east-core, east-router]
+  - [west-core, west-router]
+  - [east-router, provider-1, { class: dashed }]
+  - [east-router, provider-2, { class: dashed }]
+  - [west-router, provider-1, { class: dashed }]
+  - [west-router, provider-2, { class: dashed }]

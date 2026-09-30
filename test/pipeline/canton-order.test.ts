@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { LayoutLink, LayoutModel, Rect } from '../../src/index.js';
 import { bands, bars, bundles, centre, flanks, layout, lanes, parse, rows, score } from '../../src/index.js';
 import { tierGapPlans } from '../../src/layout/gap-plan.js';
-import { frameLinkCandidate, isFrameStraight } from '../../src/layout/frame-paths.js';
+import { frameLinkCandidate, isRoutedChord } from '../../src/layout/frame-paths.js';
 import { bandGap } from '../../src/layout/skeleton-graph.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -235,7 +235,7 @@ describe('the overlay order of canton groups (canton-groups ticket 57)', () => {
     expect(crossing).toHaveLength(3);
     for (const link of crossing) {
       expect(frameLinkCandidate(model, link), link.id).toBe(false);
-      expect(isFrameStraight(model, link), link.id).toBe(false);
+      expect(isRoutedChord(model, link), link.id).toBe(false);
       expect(link.technique, link.id).not.toBe('straight');
     }
     // The plan of the gap between the two tiers, read where the placement leaves it, seats each link on its rows; the published path keeps them.

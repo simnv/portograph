@@ -8,7 +8,7 @@ import type { Segment } from '../score/model.js';
 import { frameColumns, overlayFreeGroups } from './columns.js';
 import { groupShape } from './grid.js';
 import { deriveFrames } from './frames.js';
-import { blockedChords, chordsHold, isFrameStraight } from './frame-paths.js';
+import { blockedChords, chordsHold, isRoutedChord } from './frame-paths.js';
 import { laneSidesHold, occupiedOverhang, selectAnchorTier } from './lanes.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { saveGroups } from './overlay-order.js';
@@ -47,7 +47,7 @@ function read(model: LayoutModel, overlays: readonly LayoutLink[]): Reading {
   const blockers = overlayBlockers(model);
   const overlay = new Set(overlays.filter(link => overlayPath(model, link, blockers).segments.length === 1).map(link => link.id));
   const routed = new Set(routedLinks(model).filter(link => {
-    if (isFrameStraight(model, link)) return true;
+    if (isRoutedChord(model, link)) return true;
     const from = findPort(model, link.attachments!.from)?.anchor, to = findPort(model, link.attachments!.to)?.anchor;
     return from !== undefined && to !== undefined && (Math.abs(from.x - to.x) <= 0.5 || Math.abs(from.y - to.y) <= 0.5);
   }).map(link => link.id));
