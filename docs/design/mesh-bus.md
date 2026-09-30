@@ -1,7 +1,8 @@
 # Mesh bus — a full mesh on one row draws as one bar
 
-Status: design (ticket 81, 2026-09-30; amended the same day for a bus across frames). Decisions
-Q105 and Q106. Implementation: tickets 82 to 85 under `.scratch/ranked-groups/issues/`.
+Status: design (ticket 81, 2026-09-30; amended the same day for a bus across frames, and by
+ticket 93 for a mesh over two rows, Section 11). Decisions Q105, Q106 and Q107. Implementation:
+tickets 82 to 85, and 94, 96 and 97 for Section 11, under `.scratch/ranked-groups/issues/`.
 
 ## 1. The problem
 
@@ -50,7 +51,7 @@ one-rank group and `row` group of that sub-tier, in every frame and canton of th
 a `grid` group, a `bar` group or a flank is not on a row: a grid packs its nodes in several lines,
 a bar spans the tier, and a flank stands beside the tier. Detection runs per row, so a set of
 nodes on two sub-tiers splits by sub-tier, and the links between the two parts stay plain overlay
-links.
+links, unless the two buses are joined by one riser (Section 11, Q107).
 
 **Candidate links.** An overlay-family link (step 2) with no authored `route:`, whose two ends are
 nodes of one row. A member of an overlay group-link (step 3) is a candidate: aggregation says how
@@ -313,6 +314,8 @@ interface BusBand extends OwnedElement { id: string; bus: string; group?: string
                                                   // group: the host frame of an in-frame band; none across frames
 ```
 
+A joined pair (Section 11) adds `joined`, `cross` and `riser` to its buses (Section 11.6).
+
 A member link keeps its class, family and layer (`overlay`), gets `meshBus` and
 `technique: 'mesh-bus'`, and has no `groupLink`. Stage 8 publishes its path as the path along the
 bus: stub, bar run, stub (three segments, orthogonal, on the overlay layer). `route/validate`
@@ -361,7 +364,8 @@ as the overlay export was (Q70): the drawn bar and stubs read back within 0.05 p
 | `MESH_BUS_DECLINED` | warning | Reasons: `named-ports` (two or more authored ports at one member), `shape` (a member in a `grid` or `bar` group or a flank), `second-mesh` (a second clique on a row that has a bus; lifted by ticket 85). |
 | `MESH_BUS_TITLE_MOVED` | info | A member frame's title left its ADR-0011 edge because no position and no widening cleared the stub (stage `placement`, the frame as owner). |
 
-The first three are `stage: 'model'`, with the member links as owners.
+The first three are `stage: 'model'`, with the member links as owners. A mesh over two rows adds
+`MESH_BUS_JOIN`, `MESH_BUS_JOIN_DECLINED` and `MESH_BUS_RISER` (Section 11.9).
 
 ## 8. What does not change
 
@@ -371,7 +375,9 @@ The first three are `stage: 'model'`, with the member links as owners.
   a stub as it stands clear of a leg (ticket 62, Q103); the move to the other edge is the last
   resort and is reported.
 - ADR-0021: the plan gains one O5 band per bus and no new part kind. The tier gap stays one height
-  for the sheet.
+  for the sheet. A joined pair (Section 11) adds a riser vertical to each gap the riser crosses
+  (rows cross it; drops keep `k` from it) and a riser lane, owned by the bus, to each sub-tier it
+  crosses; still no new part kind.
 - ADR-0019 and the canton design: frames, columns, the column slack and the canton box are derived
   as today; a band on a canton's outer edge is added to the canton box as its title band is.
 - Group-links (Q70): aggregation runs first and is not changed. A bus dissolves the group-links it
@@ -444,3 +450,329 @@ one bar in the gap beside the row of frames (maintainer, 2026-09-30, Q106).
    1 and the order at stage 4, so a decline would have to come after the freeze. Until the
    maintainer decides, the bar crosses that frame's side edges perpendicular, as it crosses a
    canton. No input of the corpus is known to reach the case; ticket 83 reports any that does.
+
+## 11. A mesh over two rows: one riser (ticket 93, Q107)
+
+### 11.1 The problem
+
+Detection runs per row (Section 3), so a complete graph whose nodes stand on two rows gives two
+buses, and the links between the two rows stay plain overlay links. On the private NTP sheet the
+105 `sync` links among 15 servers are one complete graph: 3 servers on one row, 12 on a row two
+tiers below (3 + 36 + 66 = 105 = 15 · 14 / 2). After tickets 82 to 84 each row draws its own bus
+(3 and 12 nodes). The 36 cross links still draw one by one, and 35 of them bend.
+
+The maintainer chose (2026-09-30) **one vertical riser that joins the two bars**, labelled as one
+mesh, over straight diagonals and over the detours, on one condition: *"only if this is really a
+bus; if links differ in some way, use straight diagonals"*. So the join is strict: every link of
+the mesh must draw the same, and any difference that the drawing shows refuses the join.
+
+### 11.2 The rule in one paragraph
+
+Two buses of one class on two rows are **joined** when a link of that class joins every node of
+one bus to every node of the other (the **cross links**) and every link of the mesh is
+**identical** (Section 11.3). Each bus keeps its bar, its stubs and its band. The upper bar stands
+on the bottom edge of its row and the lower bar on the top edge of its row. One **riser**, a
+vertical at one x, runs from the upper bar to the lower bar. One label names the whole mesh
+(`sync mesh (15 nodes)`). A cross link draws along the bus: stub, bar run, riser, bar run, stub.
+The join is decided at stage 1 from the document. The riser's x and its room in every tier band
+it crosses are reserved in placement (stage 7a, as lanes). Nothing about it is found during
+routing. When a check fails, the two buses stay apart and the cross links stay plain overlay
+links, drawn by the overlay rule (Q64: one straight segment unless a body is in the way).
+
+### 11.3 Detection (stage 1)
+
+The join runs in `detectMeshBuses`, after the buses of every row are found (Section 3) and before
+bundle membership (step 4). It reads the document, the resolved links and the buses only.
+
+**Cross candidates.** An overlay-family link with no authored `route:`, not removed, whose two
+ends are nodes of two buses of the link's class on two different rows. A member of an overlay
+group-link is a candidate, as in Section 3. A link with an authored `route:` is not a candidate,
+so `route: overlay` on the cross links is the opt-out of the join. A cross link with one end on a
+node that no bus holds (a node that a partial mesh left out) is not a candidate: it stays a plain
+overlay link.
+
+**Each row must qualify alone.** The join joins two buses that Section 3 already found. A row
+whose part of the mesh has one or two nodes has no bus, so it has no bar to join, and its cross
+links stay plain. This is the first version; a riser that ends in the stub of a one-node row is
+an open question (Section 11.11). A row whose bus is declined (`shape`, `named-ports`,
+`shared-port`, `side`) has no bus, so it has no join.
+
+**The pair.** For each class, and for each two buses of that class on rows `r1 < r2`, the pair
+**qualifies** when every check below passes, read in this order. The first check that fails gives
+the reason, and the next checks are not read.
+
+1. **Complete** (`incomplete`). A cross candidate joins each node of the upper bus to each node of
+   the lower bus. A pair that only a link of another class joins, or only a link with an authored
+   `route:`, is missing. So a class difference on a cross link is read here: 35 `sync` cross links
+   and one `flow` cross link are an incomplete `sync` set.
+2. **Identical** (`label`, `weight`, `port`, `arrow`). Every link of the joined mesh (the members
+   of both buses and every cross candidate between them) has the same **drawn signature**:
+
+   | Attribute | Same when | A difference refuses with |
+   |---|---|---|
+   | class | the same authored class string; no class equals no class | (check 1: the pair is missing) |
+   | label | both have no `label`, or both have a `label` and the two strings are equal character for character (no trim, no case fold) | `label` |
+   | weight | the resolved stroke width (`strokeWidth(weight)`, the drawn width) is equal | `weight` |
+   | dash | always, when the class is the same: the class gives the dash, and no link field states one | (none) |
+   | port | at each node, every end of every link of the joined mesh is anonymous, or every end names the same port | `port` |
+   | arrowhead | the class draws no arrowhead | `arrow` |
+   | direction | not read while the class draws no arrowhead | (none) |
+   | route | no link has an authored `route:` | (check 1) |
+
+   A named port that all ends at one node share is not a difference: it is that node's bus port,
+   as in Section 3. A node where some ends name a port and some do not is a difference: the author
+   pointed some links at a drawn pill and not the others. The check reads the members inside each
+   row too, so a row bus that took such a mixed node (Section 3 permits it) cannot be joined.
+   **Arrowheads and direction.** No class draws an arrowhead today: the theme has no marker, and
+   the `css:` lock forbids `marker`, `marker-start`, `marker-mid` and `marker-end`
+   (`parse/css.ts`). The check is a function of the class (`classDrawsArrowhead`, false for every
+   class of the network profile). When a class draws one, a bus cannot show which way each link
+   points, so the join is refused (`arrow`), whatever the directions are. While no arrowhead is
+   drawn, direction does not show and is not read: the 36 cross links of the NTP sheet, all
+   written from the upper row to the lower row, pass, and a cross link written the other way
+   passes too.
+3. **Side** (`side`). No bus port of the upper bus states `side: top`, and no bus port of the
+   lower bus states `side: bottom` (Section 11.4: a joined bar stands on the edge that faces the
+   other row).
+4. **Three rows** (`three-rows`). Take the graph whose vertices are the buses of the class and
+   whose edges are the pairs that pass checks 1 to 3. A connected part of two buses is joined. A
+   connected part of three or more buses (a complete graph over three rows) is not joined at all,
+   and each pair in it is refused with `three-rows`. A bus that qualifies with two partners is not
+   joined to one of them, because the drawing would then show a mesh of two rows where the author
+   drew three. A chain of risers is an open question (Section 11.11).
+
+**When a join is refused.** The two buses stay as Section 3 found them, each with its own side
+rule (fewer legs, the title edge on a tie). The cross links stay plain overlay links, each from
+its own port, drawn by the overlay rule: one straight segment from port face to port face, or an
+orthogonal path where a node body is in the way. `MESH_BUS_JOIN_DECLINED` (info) names the two
+buses and the reason; for `label`, `weight`, `port` and `arrow` it also names the first link that
+differs and the value that differs. It is reported only where the author drew a mesh across: each
+node of both buses has at least one cross link of the class to the other bus. Otherwise the pair
+is silent, because a few links between two rows are not a mesh.
+
+**When a join is made.** Each cross candidate of the pair gets `meshBus` (the upper bus's id) and
+`technique: 'mesh-bus'`, and its two ends move to the bus ports of their nodes (Section 3). The
+anonymous ports that only those ends used are removed, as in Section 3, so a node of the 12-node
+row carries one port for its 14 mesh links. A group-link whose members the join takes is
+dissolved (Section 3). `MESH_BUS_JOIN` (info) names the two buses, the rows, the class, the node
+count (the sum of the two buses), the count of cross links and the dissolved group-links.
+
+### 11.4 Sides
+
+The sides of a joined pair are fixed at stage 1: the **upper bar on the bottom edge** of its row,
+the **lower bar on the top edge** of its row. `busSide` returns that edge before any count, as it
+returns an authored side (`authoredBusSide`). Stage 2 sizes the bus port on it. Stage 5 does not
+read the leg count again for a joined bus.
+
+Why: on the facing edges the riser runs only in the tier gaps and tier bands between the two
+rows, and it crosses neither member row. A bar on the far edge would need a riser that passes its
+own row beside the member frames, through one more tier band and two more gaps, and that crosses
+the other stubs of its own bar. The cost: the leg rule (*"whichever has fewer legs"*) is not read
+for a joined bar. The legs on a facing edge cross the bar as verticals, as term 1's legs do, and
+the report counts them. This is a question for the maintainer (Section 11.11).
+
+With ticket 85 (stacked bars), the joined bar is the outermost bar of its row's stack on the
+facing edge, so the riser leaves it and crosses no other bar of its own row.
+
+### 11.5 The riser in placement
+
+**What it crosses.** The riser runs at one x from the upper bar (in the gap below the upper row)
+to the lower bar (in the gap above the lower row). On its way it crosses the rest of the gap below
+the upper bar, each sub-tier band strictly between the two rows (the **crossed sub-tiers**), each
+tier gap between them, and the gap above the lower row down to the lower bar. Where the rows are
+adjacent sub-tiers, both bars stand in the one gap between them, and the riser crosses no
+sub-tier band.
+
+**Riser lanes.** In each crossed sub-tier the riser holds a **riser lane**: a lane (CONTEXT.md,
+*lane*) with the bus as owner (`{ kind: 'mesh-bus', id }`, layer `overlay`), id
+`riser:<bus>:<sub-tier>`, as wide as the lane-width rule gives a link with no pill, at the riser's
+x, one x for all crossed sub-tiers. `allocateLanes` (stage 7a) reserves it after the lanes of
+every routed link, with the same tools: it can move groups of a crossed sub-tier aside to open the
+slot (`LANE_MARGIN_EXPANDED`), and its x is immutable after that. Each later move of a cell is
+measured against it, as against any lane, so no body, frame or other lane can come to stand on
+the riser after 7a. For the foreign rule (ADR-0013, `foreignReach`) the riser counts as a link
+whose ends are the member nodes of both buses. A frame or canton that holds a member of either bus
+is not foreign to it: the riser lane can stand inside it, and the frame grows to hold it, as for
+any lane it holds. Every other frame and canton is foreign, and the riser lane stands outside it.
+A riser lane has no routed reservation segment, and `laneLink` gives no link for it.
+
+**The riser's x.** Stage 7a reads the spans of the two bars from the bus port anchors (the x of
+the first and the last bus port of each bus), and the slots the lane rule offers in all crossed
+sub-tiers at one x: the column slack beside each group and the frame and canton margins. Where no
+sub-tier is crossed, each x between the two spans is a slot. Stage 7a takes the slot with, in
+this order:
+
+1. the **fewest frame edges crossed** by the riser and by the two bar runs that extend to reach
+   it: group frames, member frames and canton frames, each edge crossing counted once. A crossing
+   that every slot makes (an in-frame bar leaves its frame through its edge) decides nothing;
+2. the **fewest groups moved aside** to open the slot, then the least total distance moved;
+3. the **least bar extension**: the length by which the two bars must grow beyond their spans to
+   reach the riser (zero for an x inside both spans);
+4. **tie**: the x nearest the midpoint of the shorter bar's span; then the smaller x.
+
+No body is crossed: in a crossed sub-tier the lane rule keeps each body out, and at the two member
+rows the riser stands beyond the bars, outside the row. `MESH_BUS_RISER` (info, stage `placement`)
+records the x, the crossed sub-tiers, the frame edges crossed, the groups moved and the bar
+extension.
+
+**The bars reach the riser.** From 7a on, each bar runs from the smaller of its first bus port x
+and the riser x to the larger of its last bus port x and the riser x, and its bus band covers the
+same interval. Stages 7b to 7f can move the members. The riser x does not move, and 7f sets each
+bar on the new interval. The extension is read on geometry that placement has settled, so nothing
+waits for routing.
+
+**Two bands in one gap.** Where the rows are adjacent, the gap between them holds the band of the
+upper bar (anchored to the upper band) and the band of the lower bar (anchored to the lower band).
+The shift loop of `reserveInitialSpace` requires that gap to hold 20 + upper band + lower band + 20
+(the frame margins and both bands), more where a canton title band stands on either edge (Section
+4, *Who reserves it*). The two bands are added, never compared.
+
+**In the tier gaps.** The riser is not a part: it is not routed, and it asks the plan for no
+height. The plan (ADR-0021) reads it as a **riser vertical** of each gap it crosses, over its run
+in that gap. A planned row crosses it as one crossing, and that crossing is accepted, as a
+vertical that crosses a bar is (Section 4). A drop, a jog and a Z part's middle drop keep `k` from
+the riser vertical, as they keep it from each other leg and drop (O2, O6). Nothing is planned along
+it. No gate reads a crossing of the riser (it is overlay), so the report counts, per riser, the
+routed segments that cross it in the published layout (`riserCrossings`).
+
+**Frames and cantons.** Where the riser leaves a frame or a canton, it crosses the horizontal edge
+once, perpendicular, as a stub does (Section 4, *Stubs, across-frames*). Where it crosses a title
+band (a member frame's or a canton's), the title stands clear of it as of a leg: `legRects` reads
+the riser x, the title takes the free x nearest the centre, the frame widens where no x clears it
+and the widening is lane-feasible, and only as the last resort the title moves to the other edge
+(`MESH_BUS_TITLE_MOVED`). The riser x is fixed in 7a, so 7f places the title against a known x.
+
+**The label.** The joined mesh has one label, `<class> mesh (<n> nodes)`, with `n` the node count
+of both buses (`sync mesh (15 nodes)`). It stands on the bar of the bus with more members (on a
+tie, the upper bar), by that bar's label rule (Section 4, *Bus band*). The riser leaves that bar
+through the label room, so its x is one more vertical across the band: the label takes the centre
+only where the riser does not cross the centred box, else the longest clear interval. The other
+bar's band has no label room: it is the stub, the bar and the run clearance `k`.
+
+**What placement reserves, in order.** Stage 1: the join, the sides and the bus ports. Stage 2:
+the bus ports sized on the facing edges. Stage 7a: the riser x and the riser lanes. Stage 7f: the
+bars over their extended intervals, both bands, the titles clear of the stubs and the riser, the
+riser geometry (`riser.from`, `riser.to`) and the label room. `growTierGaps` reads the bands as O5
+bands and the riser verticals as above. Routing reads all of it and finds nothing.
+
+### 11.6 layout.json
+
+```ts
+interface MeshBus {                               // added fields
+  joined?: string;                                // on both buses of a join: the other bus
+  cross?: string[];                               // on the upper bus only: the cross link ids
+  riser?: {                                       // on the upper bus only
+    x: number;                                    // from 7a; immutable
+    lanes: string[];                              // riser lane ids, crossed sub-tier order; [] for adjacent rows
+    from?: Point; to?: Point;                     // from 7f: on the upper bar, on the lower bar
+  };
+}
+```
+
+Each bus keeps its own record, bar, stubs, band and `members` (its own row). A cross link has
+`meshBus` (the upper bus id) and `technique: 'mesh-bus'`, and is listed in `cross`, not in
+`members`. The bus that carries the label has `label`; the other has none. `meshBuses` still holds
+one record per bus.
+
+**Cross link path.** Stage 8 publishes it from the link's `from` end to its `to` end, as for a
+member: the stub of the `from` node, the run along that node's bar from the stub's foot to the
+riser x, the riser, the run along the other bar from the riser x to the stub's foot, the stub of
+the `to` node. A run of length zero (a stub at the riser x) is left out, and two consecutive
+collinear segments are merged, so a cross path has three to five segments, all orthogonal, on the
+overlay layer. `route/validate` derives it again and compares. G7 reads each end at the port face
+(`overlayEndpoint`).
+
+### 11.7 Score
+
+Member and cross paths are overlay, so they enter neither bends nor crossings. Counters gain
+`meshBusRisers` (present only with a riser). The overlay report counts a cross link in the `bus`
+column. It counts, per riser, the routed segments that cross it (`riserCrossings`) and, per bar,
+the verticals that cross it (Section 4). G3 reads the one label (role `mesh-bus`). No gate treats
+the riser or a riser lane as an obstacle to a routed link.
+
+### 11.8 Render and draw.io
+
+**SVG.** The riser is one more `<path>` in the `<g class="mesh-bus ...">` of the upper bus, class
+`link-line overlay-line <class> riser`, in the class stroke and dash. The `<g>` of each bus carries
+`data-joined` with the other bus id. No mark stands on the riser or where it meets a bar: marks
+stand at port faces only. The cross links emit no `<g class="link">`. The tooltip of each bus
+names both buses, the members, the cross links and the dissolved group-links.
+`document.overlays` hides both buses and the riser with the class. The riser is in the masked
+overlay layer, below routed links and labels.
+
+**draw.io.** The riser is one edge, `edgeStyle=none`, with two free points and no terminals, as a
+bar is, on the `overlay` layer, in the class stroke and dash. Verified with the drawio CLI
+(`-x -f svg`) as for the bar: the drawn riser reads back within 0.05 px.
+
+### 11.9 Diagnostics
+
+| Code | Severity | When |
+|---|---|---|
+| `MESH_BUS_JOIN` | info | Two buses were joined: the buses, the rows, the class, the node count, the cross link count, the dissolved group-links. Stage `model`; owners: the cross links. |
+| `MESH_BUS_JOIN_DECLINED` | info | A pair of buses with a cross link from each node was not joined. Reasons: `incomplete` (names the missing pairs, and the other class where one joins a pair), `label`, `weight`, `port`, `arrow` (the first link that differs and the value), `side`, `three-rows`, `small-row` (a row part of one or two nodes, every pair linked). Stage `model`; owners: the cross links. |
+| `MESH_BUS_RISER` | info | The riser was placed: x, crossed sub-tiers, frame edges crossed, groups moved, bar extension. Stage `placement`; owner: the upper bus. |
+
+`MESH_BUS_JOIN_DECLINED` is info, not a warning: a refused join is the maintainer's rule at work
+(the links differ, so they draw as they are), not a defect of the input.
+
+### 11.10 Acceptance
+
+- `goldens/synthetic/a-mesh-over-two-rows-joins-its-bars-with-one-riser.yaml`: a `core` node on
+  tier 0; three one-node groups `a1`, `a2`, `a3` on tier 1, each fed by `core`; one group `mid` of
+  two nodes on tier 2, `m1` fed by `a1` and `m2` fed by `a3`; one group `low` of five nodes `b1` to
+  `b5` on tier 3, `b1` fed by `m1` and `b5` fed by `m2`; a full `sync` mesh of the eight nodes `a1`
+  to `a3` and `b1` to `b5`: 3 + 10 + 15 = 28 links, the 15 cross links written from `a` to `b`.
+  Expected after stage 1: two buses (3 nodes across three frames, 5 nodes in one frame), joined;
+  `MESH_BUS_JOIN` once; sides bottom and top. After placement: one riser lane in tier 2, outside
+  the `mid` frame (it holds no member); the riser crosses no body and no frame edge except the
+  top edge of `low` (forced for every x); one label `sync mesh (8 nodes)` on the lower bar; 28
+  links with `technique: 'mesh-bus'`, the 15 cross paths of three to five segments; zero straight
+  and zero bent overlay links; every gate passing.
+- `goldens/synthetic/a-cross-link-with-another-label-keeps-two-buses.yaml`: the same, with one
+  cross link labelled `backup`. Expected: two buses, each on its own leg-rule side, no riser,
+  `MESH_BUS_JOIN_DECLINED` reason `label` naming that link; the 15 cross links are plain overlay
+  links (straight, or orthogonal where a body is in the way); two bus labels.
+- `goldens/synthetic/a-riser-joins-two-bars-in-one-gap.yaml`: the two rows on adjacent tiers,
+  three one-node groups over one group of four, a full `sync` mesh (3 + 6 + 12 = 21 links).
+  Expected: both bars in the one gap, the gap grown to at least 20 + both bands + 20, no riser
+  lane, the riser from bar to bar.
+- `goldens/synthetic/a-riser-between-cantons-crosses-no-canton-edge.yaml`: two cantons side by
+  side, each with two one-node groups on tier 1, one router on tier 2 and one group of two nodes on
+  tier 3; a full `sync` mesh of the eight nodes on tiers 1 and 3 (6 + 6 + 16 = 28 links). Expected:
+  both cantons hold members of both buses, so the riser lane can stand in either or between them;
+  the x rule takes the slot that crosses the fewest frame edges, then the tie rule; each bar
+  crosses the canton side edges as Q106 says; no gate finding.
+- Inline tests (stage 1): `weight`; `port` (one cross end names a port at a node whose other ends
+  are anonymous); `arrow` (a stubbed `classDrawsArrowhead`); `side`; `three-rows` (three rows,
+  each pair complete: three buses, no riser); `small-row` (a row of two nodes and a row of five);
+  `incomplete` (one cross pair missing; one cross pair of class `flow`); a cross link written from
+  the lower row to the upper row that joins.
+- Inline tests (placement): the x rule (a slot beside a wide middle frame against one that moves a
+  group; the least extension; the tie); a riser through a title band nudges the title; a later
+  cell move does not move a riser lane.
+- Corpus differential gains no gate finding and removes no link; an input that holds a mesh over
+  two rows is reported.
+- Private NTP sheet: the 3-node and 12-node buses joined by one riser, 105 links drawn by the join
+  (69 members and 36 cross links), one label `sync mesh (15 nodes)` in place of two; bent overlay
+  links fall by 35 and straight overlay links by 1. Report Q, G6, crossings, canvas, the riser x,
+  its lanes, the frame and canton edges it crosses, the bar extension, and the routed segments
+  across the riser and across each bar.
+
+### 11.11 Open questions for the maintainer
+
+1. **The facing edges.** A joined pair takes the facing edges and does not read the leg rule
+   (Section 11.4). The alternative keeps the leg rule and lets the riser pass the member row of a
+   bar on its far edge (one more tier band and two more gaps, a riser lane beside the member
+   frames). The first render of the NTP sheet shows how many legs cross the bars on the facing
+   edges.
+2. **A row of one or two nodes.** In the first version such a row has no bus, and its cross links
+   stay plain (`small-row`). A possible extension: a row of two draws a bar between its two stubs,
+   and a row of one ends the riser in its stub (the riser x is then that node's bus port x,
+   reserved in 7a as any riser x).
+3. **Three rows and more.** Refused (`three-rows`). A chain of risers, one between each two
+   adjacent rows, needs the middle bar to reach two risers from one edge. The design does not do
+   it until an input asks for it.
+4. **The same identity for one row.** A one-row bus (Section 3) does not read the labels or the
+   weights of its members: a member's own label goes to the tooltip. The join reads them. Whether
+   a one-row bus also refuses on a label or weight difference is for the maintainer; no input of
+   the corpus is known to reach it.
