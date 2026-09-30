@@ -79,7 +79,8 @@ function occupied(model: LayoutModel, group: LayoutGroup, link?: LayoutLink, lan
   // (ticket 04), so it never enters the frame. A link that ends inside the frame is not asked for more.
   const reach = link && foreignReach(model, group.id, link), box = group.bounds!;
   // The lanes of links that end in the frame, reserved beside this cell, grow the frame.
-  const taken = link ? lanes.map(lane => heldLaneReach(model, group.id, link, lane, laneLink(model, lane))).filter((item): item is Rect => item !== undefined) : [];
+  // `heldLaneReach` answers nothing for a lane of another group, whatever its owner is, so only the lanes of this group look their owner up.
+  const taken = link ? lanes.map(lane => heldLaneReach(model, group.id, link, lane, lane.group === group.id ? laneLink(model, lane) : undefined)).filter((item): item is Rect => item !== undefined) : [];
   return union([box, ...(reach ? [{ x: reach.x, y: box.y, width: reach.width, height: box.height }] : []),
     ...taken.map(item => ({ x: item.x, y: box.y, width: item.width, height: box.height })), ...group.nodes.flatMap(id => {
     const node = model.nodes[id]!, box = node.bounds!, clearance = 10 + ((node.strokeWidth ?? stroke.node) + routed) / 2;
@@ -175,12 +176,13 @@ function facingRoutedPorts(model: LayoutModel, group: LayoutGroup): { riser: num
 }
 /** The riser x and the keep-out to hold for the ports on `side` of the nodes of `tier`: the riser of every join whose member row that is. */
 export function riserAvoidance(model: LayoutModel, tier: number, side: 'top' | 'bottom'): { xs: number[]; keep: number; routed: Set<string> } {
-  const routed = new Set(model.links.filter(link => link.layer === 'routed' && link.technique !== 'stub' && link.attachments)
-    .flatMap(link => [portId(link.attachments!.from), portId(link.attachments!.to)]));
   const xs = (model.meshBuses ?? []).filter(bus => bus.riser !== undefined && bus.cross !== undefined).flatMap(upper => {
     const lower = model.meshBuses!.find(bus => bus.id === upper.joined);
     return (tier === upper.row && side === 'bottom') || (lower !== undefined && tier === lower.row && side === 'top') ? [upper.riser!.x] : [];
   });
+  // The routed ports are read only where a riser stands on this side, so no riser means no scan of the links.
+  const routed = new Set<string>(xs.length === 0 ? [] : model.links.filter(link => link.layer === 'routed' && link.technique !== 'stub' && link.attachments)
+    .flatMap(link => [portId(link.attachments!.from), portId(link.attachments!.to)]));
   return { xs, keep: riserKeepOut(model) - 1e-6, routed };
 }
 /** Whether a move of `group` by `dx` keeps its facing routed ports out of the riser keep-out. */

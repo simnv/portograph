@@ -245,8 +245,7 @@ describe('the slide paths of a frame, judged and capped (ticket 80)', () => {
   }, 60000);
 
   it('a slide the column rules would undo is refused in a real layout (three-canton-groups-close-up-to-a-band-gap)', async () => {
-    // The side round is off: it takes a lateral side on this input (ticket 117) and widens the canvas; this test reads the slide rule alone.
-    const model = await layout(parse(fixture('three-canton-groups-close-up-to-a-band-gap')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 0 });
+    const model = await layout(parse(fixture('three-canton-groups-close-up-to-a-band-gap')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     // A slide of a member frame by 63 px straightened two chords in an earlier build and left the finished layout off the fixed point of the
     // column rules: `packBesideRows` moved it back. The canvas is the one of main (1921.3), not the widened one (1984.5).
     expect(model.canvas!.width).toBeLessThan(1930);

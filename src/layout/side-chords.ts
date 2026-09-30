@@ -22,6 +22,8 @@ interface Config { laterals: ChordLateral[]; grows: boolean; nodes: LayoutModel[
 
 export interface ChordPass {
   nodes: LayoutModel['nodes'];
+  /** The baseline clone with every accepted hint applied in its own coordinates (side-faces.md, Section 19.2). */
+  base: LayoutModel['nodes'];
   hints: Map<string, 'left' | 'right'>;
   promised: Map<string, { link: string; bends: 0; shape: 'straight' }>;
   probes: number;
@@ -45,9 +47,9 @@ export function tooClose(segment: PathSegment, stroke: number, other: Accepted):
  * the overlay's: fewer lateral ports, no node growth, the lower end, document order. An accepted configuration is applied to the probe nodes before
  * the next link is read. `nodes` is the probe node map on entry (it may hold overlay hints) and on return.
  */
-export function measureChordSides(model: LayoutModel, nodes: LayoutModel['nodes'], refused: ReadonlySet<string>, moved: MovePort, minOutward: number,
+export function measureChordSides(model: LayoutModel, nodes: LayoutModel['nodes'], base: LayoutModel['nodes'], refused: ReadonlySet<string>, moved: MovePort, minOutward: number,
   refusedKey: (key: string, side: string) => string, bends: (link: LayoutLink) => number, probes: number, probeCap: number): ChordPass {
-  const pass: ChordPass = { nodes, hints: new Map(), promised: new Map(), probes, capped: false };
+  const pass: ChordPass = { nodes, base, hints: new Map(), promised: new Map(), probes, capped: false };
   const order = new Map(Object.keys(model.document.nodes).map((id, index) => [id, index]));
   const tierOf = (ref: PortRef): number => model.groups[model.document.nodes[ref.node]!.group]!.tier!;
   const centreOf = (node: LayoutNode): { x: number; y: number } => ({ x: node.bounds!.x + node.bounds!.width / 2, y: node.bounds!.y + node.bounds!.height / 2 });
@@ -102,6 +104,13 @@ export function measureChordSides(model: LayoutModel, nodes: LayoutModel['nodes'
     configs.sort((a, b) => { const x = key(a), y = key(b), at = x.findIndex((value, index) => value !== y[index]); return at < 0 ? 0 : x[at]! - y[at]!; });
     const best = configs[0]!;
     pass.nodes = best.nodes;
+    // The same hints on the baseline clone, in its coordinates; a node with no box or no slot there keeps its ports.
+    for (const lateral of best.laterals) {
+      const peer = ends.find(ref => portKey(ref) !== lateral.key)!;
+      const node = pass.base[lateral.ref.node], peerBox = pass.base[peer.node]?.bounds;
+      const result = node?.bounds !== undefined && peerBox !== undefined ? moved(node, lateral, centreOf(pass.base[peer.node]!).y) : undefined;
+      if (result !== undefined) pass.base = { ...pass.base, [lateral.ref.node]: { ...result.node, ports: result.node.ports.map(port => portKey(port.ref) === lateral.key ? { ...port, sideHint: true } : port) } };
+    }
     for (const lateral of best.laterals) {
       pass.hints.set(lateral.key, lateral.side);
       pass.promised.set(lateral.key, { link: link.id, bends: 0, shape: 'straight' });

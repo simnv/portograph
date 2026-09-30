@@ -37,8 +37,9 @@ export interface FacingPair {
 }
 
 export function findPort(model: LayoutModel, ref: PortRef): LayoutPort | undefined {
-  const key = portId(ref);
-  return model.nodes[ref.node]?.ports.find(port => portId(port.ref) === key);
+  // The fields `portId` keys on, compared without building the key.
+  const anonymous = ref.anonymous === true, name = ref.name ?? null;
+  return model.nodes[ref.node]?.ports.find(({ ref: at }) => at.ordinal === ref.ordinal && at.node === ref.node && (at.name ?? null) === name && (at.anonymous === true) === anonymous);
 }
 function rowNode(model: LayoutModel, id: string): boolean {
   const document = model.document.nodes[id];

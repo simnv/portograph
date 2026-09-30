@@ -27,7 +27,7 @@ import { stepOverChords } from './chord-clear.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
-import { alignLinkedGroupGrid, closeCantonsAndSettle, settleKeepOut, type LinkLabelShortfall, produceGroupLabelBands, replanGroupLabels, reserveLinkLabelRoom, validateGroupLabelBands } from './bands.js';
+import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, type LinkLabelShortfall, produceGroupLabelBands, replanGroupLabels, reserveLinkLabelRoom, validateGroupLabelBands } from './bands.js';
 import { holdColumnAxes, refreshHeldWarnings } from './columns.js';
 import { growTierGaps } from './gap-room.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -41,6 +41,15 @@ const stages: LayoutStage[] = ['normalised', 'resolve', 'sides-one', 'size', 'sk
   'rows', 'lanes', 'flanks', 'centre', 'bars', 'bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'];
 const protectedModels = new WeakSet<LayoutModel>();
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+/**
+ * While one publication is validated its model does not change, and each validator clones it. The model is serialized once and every
+ * clone parses that text. The one write validation makes to the model (a diagnostic) drops the text.
+ */
+let publishing: { model: LayoutModel; text?: string | undefined } | undefined;
+function cloneModel(model: LayoutModel): LayoutModel {
+  if (publishing?.model !== model) return clone(model);
+  return JSON.parse(publishing.text ??= JSON.stringify(model)) as LayoutModel;
+}
 function jsonValue(value: unknown): void {
   if (typeof value === 'number' && !Number.isFinite(value)) throw new Error('Layout requires finite numbers');
   if (value === undefined || typeof value === 'function' || typeof value === 'symbol' || typeof value === 'bigint') throw new Error('Layout must contain JSON values');
@@ -73,8 +82,13 @@ function omit(value: object, keys: readonly string[]): object {
   return Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)));
 }
 function protect(model: LayoutModel, baseline: LayoutModel): LayoutModel {
-  validatePublication(model, baseline);
-  const result = clone(model);
+  const outer = publishing;
+  let result: LayoutModel;
+  publishing = { model };
+  try {
+    validatePublication(model, baseline);
+    result = cloneModel(model);
+  } finally { publishing = outer; }
   const freeze = (value: unknown): void => {
     if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value); }
   };
@@ -290,7 +304,7 @@ function validatePublication(model: LayoutModel, baseline: LayoutModel): void {
 }
 /** The same ordered producers validate every publication, including restored JSON. */
 function validateRegionClaims(model: LayoutModel): void {
-  const expected = clone(model);
+  const expected = cloneModel(model);
   const barStage = stages.indexOf(model.stage) >= stages.indexOf('bars');
   const bundleStage = stages.indexOf(model.stage) >= stages.indexOf('bundles');
   if (barStage) {
@@ -316,6 +330,7 @@ function validateRegionClaims(model: LayoutModel): void {
       const message = `Centring invariant unverified after a spent budget: ${centring.join('; ')}`;
       if (!model.diagnostics.some(d => d.code === 'CENTRE_INVARIANT_UNVERIFIED' && d.message === message)) {
         model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'CENTRE_INVARIANT_UNVERIFIED', message });
+        if (publishing?.model === model) publishing.text = undefined;
       }
     }
   }
@@ -333,7 +348,7 @@ function validateRegionClaims(model: LayoutModel): void {
   const flankStage = stages.indexOf(model.stage) >= stages.indexOf('flanks');
   if (flankStage) {
     if (!bundleStage) {
-      const ordered = clone(model); normalizePrimaryBundlePorts(ordered);
+      const ordered = cloneModel(model); normalizePrimaryBundlePorts(ordered);
       for (const id of Object.keys(model.nodes)) same(model.nodes[id]!.ports.map(port => port.engineOrder), ordered.nodes[id]!.ports.map(port => port.engineOrder), 'Primary bundle facing order contradicts normalization');
     }
     rebuildFlankPaths(expected);
@@ -384,7 +399,7 @@ function validateGeometry(model: LayoutModel, allowNonConvergence = false): void
   validatePlacementStructure(model);
   if (model.runtime.stages.some(entry => !stages.includes(entry.stage) || entry.durationMs < 0)
     || (model.runtime.totalMs !== undefined && model.runtime.totalMs < 0)) throw new Error('Invalid runtime measurement');
-  const expected = clone(model);
+  const expected = cloneModel(model);
   // Fresh measurement cannot inherit a forged floor, inset, content size or pitch.
   for (const node of Object.values(expected.nodes)) {
     delete node.sizeFloor; delete node.size; delete node.contentSize; delete node.contentInsets; delete node.sidePitch;
@@ -600,7 +615,7 @@ function rebuildBoxes(model: LayoutModel): void {
 }
 
 /** One synchronous checked commit per stage. Future producers extend the closed validators here. */
-export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutModel) => void, budget?: Budget): LayoutModel {
+export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutModel) => void, budget?: Budget, abortAt?: () => void): LayoutModel {
   if (!protectedModels.has(model)) throw new Error('Mutation requires a protected snapshot; use restoreLayoutModel');
   if (!Object.hasOwn(permissions, rule) || stages[stages.indexOf(model.stage) + 1] !== rule) throw new Error(`Incorrect predecessor stage for ${rule}`);
   const started = Date.now(), draft = clone(model), permission = permissions[rule];
@@ -802,8 +817,10 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     // a label placed first would stay behind. The replay then rebuilds every claim the movement
     // touched, exactly as a reservation change does anywhere else in 7f.
     // The last confirmation of a chord was the end of 7e: from here it is a wall (ticket 34).
+    abortAt?.();
     freezeChords(draft);
     produceGroupLabelBands(draft);
+    abortAt?.();
     // The growth of the tier gaps is measured on the columns as they stand, and the close-up of the cantons (ranked-groups ticket 65)
     // moves them in x after centring widened one in place: so the growth is measured again after every move, and the rounds end when
     // the close-up has nothing to move. A round that moves groups replays the region producers, and the grid and the labels after it.
@@ -816,21 +833,21 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
         // x-extent (ADR-0012) holds two again and the published model would not be the grid's fixed
         // point — which is what `validateGroupLabelBands` demands. The grid is settled here, before
         // the labels are planned in these boxes, because it belongs to the replay and not to the
-        // third step: it only grows box extents onto edges that already exist and moves no node, and
-        // a label planned in the narrower box would be centred on the box the grid then widens.
-        alignLinkedGroupGrid(model);
+        // third step: it grows box extents onto edges that already exist, and moves a node only to pack beside rows that stood open
+        // before it (once, then the replay; ticket 136), and a label planned in the narrower box would be centred on the box the grid then widens.
+        alignLinkedGroupGridAndPack(model);
         replanGroupLabels(model);
       }
       const shift = closeCantonsAndSettle(model);
       if (shift > 0) {
         rebuildRegionGeometry(model, undefined, undefined, true);
-        alignLinkedGroupGrid(model);
+        alignLinkedGroupGridAndPack(model);
         replanGroupLabels(model);
       }
       // A frame edge a foreign drop would run along is moved off it before anything is planned in the geometry (ticket 75).
       if (settleKeepOut(model)) {
         rebuildRegionGeometry(model, undefined, undefined, true);
-        alignLinkedGroupGrid(model);
+        alignLinkedGroupGridAndPack(model);
         replanGroupLabels(model);
       }
       return shift;
@@ -838,7 +855,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     /** The replays a move of groups is followed by: the regions, the grid and the labels. */
     const replays = (model: LayoutModel): void => {
       rebuildRegionGeometry(model, undefined, undefined, true);
-      alignLinkedGroupGrid(model);
+      alignLinkedGroupGridAndPack(model);
       replanGroupLabels(model);
     };
     // The cantons close up when a round's close-up has nothing to move. The step over a chord (ticket 77) has its own convergence: a round
@@ -847,6 +864,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     let closed = false, again = false;
     const movers = new Set<string>();
     for (let round = 0; round < CANTON_ROUNDS && (!closed || again); round++) {
+      abortAt?.();
       // A creep under half a pixel, left by the centring replay, counts as settled; the replay still follows any move.
       closed = settle(draft) < CANTON_CREEP;
       // The growth and the close-up change the slope of a chord that spans a gap and the x of a column: a group with no links
@@ -881,6 +899,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     // moves no node, so the label bands 7f has just reserved keep their height and their clearance
     // as it leaves them — but a lane is an input to two of the plans inside those bands, those plans
     // are settled again below, and one of the two can move a node when it settles.
+    abortAt?.();
     const heldLanes = clone(draft.lanes), followedLanes: LaneFollow[] = [];
     if (reseatLanes(draft, followedLanes)) {
       rebuildLaneExtents(draft);
@@ -896,6 +915,10 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
       // and by here the corridors are fixed. The first three are compared as sets, not as counts: a
       // move that trades one unverified alignment, one short gap or one short run for another is not
       // "no worse", it is a different diagram with the same tally.
+      //
+      // The settling below can move whole frames: where the grid widens a box beside rows that stood open, it packs them once (ticket 136), and a
+      // corridor stands where the replay reads it, not where it stood before. So "the corridors are fixed" above holds for the move this transaction makes, not
+      // for the trial that follows it, and the fourth criterion reads the settled model.
       //
       // The fourth reads what the move is *for*. A corridor moves to stand at its child's port and
       // buys that one alignment; the settling below can move a node under it — `replanGroupLabels`
@@ -918,7 +941,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
       // places, and on `a-corridor-moves-after-the-grid-settles` the grid really does widen a box by
       // 29.03 px here. The accepted model is the trial itself, so nothing is re-derived twice.
       const settled = clone(draft);
-      alignLinkedGroupGrid(settled);
+      alignLinkedGroupGridAndPack(settled);
       replanGroupLabels(settled);
       const afterRoom: LinkLabelShortfall[] = [], heldRoom: LinkLabelShortfall[] = [];
       reserveLinkLabelRoom(clone(settled), afterRoom);

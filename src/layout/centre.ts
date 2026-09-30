@@ -506,10 +506,15 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   const distinctChildren = new Map(chosen.map(feed => [portId(feed.child.ref), feed.child.anchor!.x]));
   const mean = (values: Iterable<number>) => { const xs = [...values]; return xs.reduce((sum, x) => sum + x, 0) / xs.length; };
   /** How far each wanted port is from the x its feed asks for, in the model as it now stands. */
-  const misses = (): Map<string, number> => new Map([...wanted].map(([key, want]) => {
-    const port = group.nodes.flatMap(node => model.nodes[node]!.ports).find(port => portId(port.ref) === key);
-    return [key, port?.anchor ? Math.abs(port.anchor.x - want) : 0];
-  }));
+  const misses = (): Map<string, number> => {
+    // One index of the group's ports per reading, the first port of a key first, as `find` gave it.
+    const ports = new Map<string, LayoutPort>();
+    for (const node of group.nodes) for (const item of model.nodes[node]!.ports) { const at = portId(item.ref); if (!ports.has(at)) ports.set(at, item); }
+    return new Map([...wanted].map(([key, want]) => {
+      const port = ports.get(key);
+      return [key, port?.anchor ? Math.abs(port.anchor.x - want) : 0];
+    }));
+  };
   const total = (values: Map<string, number>): number => [...values.values()].reduce((sum, value) => sum + value, 0);
   const missBefore = total(misses());
   // The overlay walls of each body, read where the body stands as the step begins. A body an earlier
@@ -730,6 +735,8 @@ export function centreViolations(model: LayoutModel, ahead = false): string[] {
   // large model that block is more than a third of the JSON the per-group copy below would carry.
   const { freeze: _frozen, ...replayed } = model;
   void _frozen;
+  // Every trial starts from the same model, so it is serialized once, on the first trial, and each trial parses that text.
+  let replayedText: string | undefined;
   for (const { tier, authority } of context.steps) {
     const list = feeds(model, tier, authority), order = context.groupOrder.get(tier)!;
     const tail = tailReservation(model, context, tier, order);
@@ -738,7 +745,7 @@ export function centreViolations(model: LayoutModel, ahead = false): string[] {
       const group = model.groups[id]!;
       const owned = groupFeeds(model, context, tier, list, id, false);
       if (model.document.groups[id]!.shape === 'bar' || !owned.own.length) { previous = group; continue; }
-      const trial = JSON.parse(JSON.stringify(replayed)) as LayoutModel;
+      const trial = JSON.parse(replayedText ??= JSON.stringify(replayed)) as LayoutModel;
       const step = centreGroupStep(trial, centreContext(trial, anchor), tier, feeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, tail);
       previous = group;
       // Both lookups below read one key per wanted child; keying them once keeps the scan of the

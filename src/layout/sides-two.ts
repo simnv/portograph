@@ -652,13 +652,25 @@ export function rowGap(model: LayoutModel, a: string, b: string): number {
   // `fanEnd` is where that fan's leaves actually finish; the far side still needs its own stem past
   // them. Reserved here because two nodes in one row are separated here and nowhere else — moving
   // their group moves both. Read back by `edgeAwareRows`, never discovered.
+  // The routed links of each port key in link order, indexed on first use: one pass over the links serves every port of both nodes.
+  let linksAt: Map<string, LayoutLink[]> | undefined;
+  const routedAt = (at: string): LayoutLink[] => {
+    if (!linksAt) {
+      linksAt = new Map();
+      for (const link of model.links) {
+        if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
+        const from = key(link.attachments.from), to = key(link.attachments.to);
+        for (const end of from === to ? [from] : [from, to]) { const list = linksAt.get(end); if (list) list.push(link); else linksAt.set(end, [link]); }
+      }
+    }
+    return linksAt.get(at) ?? [];
+  };
   const fanPorts = (id: string, side: 'left' | 'right'): Map<string, number> => {
     const result = new Map<string, number>(), node = model.nodes[id];
     if (!node) return result;
     for (const port of node.ports) {
       if (port.side !== side || !port.anchor) continue;
-      const links = model.links.filter(link => link.layer === 'routed' && link.technique !== 'stub' && link.attachments
-        && [link.attachments.from, link.attachments.to].some(ref => key(ref) === key(port.ref)));
+      const links = routedAt(key(port.ref));
       if (links.length >= 2) result.set(key(port.ref), fanEnd(model, port, links));
     }
     return result;

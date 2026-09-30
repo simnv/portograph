@@ -18,6 +18,8 @@ after fallback is a hard failure. This ADR is authoritative over any threshold m
 above that the tool warns and offers `collapsed:` groups; above 1,000 it refuses without `--force`.
 "Workable" = layout under 30 s, renders, warnings not failures.
 
+*Amendment (2026-09-30, Q109a, ticket 137):* the whole-command deadline is now 60 s (`COMMAND_DEADLINE_MS`), and "workable" moves to 60 s with it: layout under 60 s, renders, warnings not failures. The per-stage ELK deadlines above are unchanged.
+
 ## Consequences
 - Two code paths for tiering, both tested at 100 / 300 / 1,000 synthetic nodes, with fallback
   exercised by injected failure and by deadline — never by relying on a particular ELK crash.
