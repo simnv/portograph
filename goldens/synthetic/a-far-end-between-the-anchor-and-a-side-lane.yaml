@@ -1,0 +1,26 @@
+# Expected: side-faces.md, Section 10, *The far port*. Tier 0 holds the most nodes (the anchor tier), the far end `lb` stands on tier 1 and the frame
+# `bank` with the lateral port `feed` (author side right) on tier 2, so the far end stands between the anchor and the lateral end. `lb` also hangs from
+# `c1`, which pulls it left. 7c adds the side lane as a feed of `lb` whatever side of the anchor the lateral end stands on, so centring puts the port of
+# `lb` on the lane x and the part is a drop.
+# Test-only input owned by ticket 122; test/pipeline/side-lane-route.test.ts reads it.
+portograph: 2
+groups:
+  core: { tier: 0, label: Core }
+  edge: { tier: 1, label: Edge }
+  bank: { tier: 2, label: Bank }
+nodes:
+  c1: { group: core, class: router, label: C1 }
+  c2: { group: core, class: router, label: C2 }
+  c3: { group: core, class: router, label: C3 }
+  c4: { group: core, class: router, label: C4 }
+  lb: { group: edge, class: router, label: LB }
+  spare: { group: bank, class: server, label: Spare }
+  spare2: { group: bank, class: server, label: Spare2 }
+  outlet: { group: bank, class: server, label: Outlet, ports: [{ name: feed, side: right }] }
+  tail: { group: bank, class: server, label: Tail }
+links:
+  - [c1, lb]
+  - [spare, tail]
+  - [spare2, tail]
+  - [outlet, tail]
+  - [lb, outlet.feed, { label: Health }]

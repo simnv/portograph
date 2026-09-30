@@ -38,6 +38,7 @@ const twoTierBend = `portograph: 2
 groups: {up: {tier: 0}, low: {tier: 1, label: Lower}}
 nodes:
   a: {group: up, ports: [{name: p, side: right}]}
+  z: {group: up}
   b: {group: low, ports: [{name: p, side: top}]}
 links: [[a.p, b.p]]`;
 
@@ -176,7 +177,9 @@ links: [[a.p, b.p], [a.p, b.q]]`);
 groups: {top-group: {tier: 0}, mid: {tier: 1}, low: {tier: 2}}
 nodes:
   a: {group: top-group, ports: [{name: p, side: right}]}
+  az: {group: top-group}
   m: {group: mid, ports: [{name: q, side: right}]}
+  mz: {group: mid}
   b: {group: low, ports: [{name: p, side: top}]}
   c: {group: low, ports: [{name: p, side: top}]}
 links: [[a.p, b.p], [m.q, c.p]]`);
@@ -211,6 +214,7 @@ groups: {top-group: {tier: 0}, mid: {tier: 1}, low: {tier: 2}}
 nodes:
   a: {group: top-group, ports: [{name: p, side: right}]}
   m: {group: mid, ports: [{name: q, side: right}]}
+  mz: {group: mid}
   b: {group: low, ports: [{name: p, side: left}]}
   c: {group: low, ports: [{name: p, side: top}]}
 links: [[a.p, b.p], [m.q, c.p]]`);
@@ -280,6 +284,7 @@ nodes:
   a: {group: ga, ports: [{name: p, side: bottom}, {name: q, side: bottom}]}
   b: {group: gb, ports: [{name: p, side: top}, {name: q, side: top}]}
   c: {group: gb, ports: [{name: p, side: right}]}
+  cz: {group: gb}
 links: [[a.p, b.p], [a.q, b.q], [c.p, a.p]]`);
     const plan = planRoute(model);
     expect(plan.remainders).toEqual(['link-3']);
@@ -298,8 +303,10 @@ links: [[a.p, b.p], [a.q, b.q], [c.p, a.p]]`);
 groups: {ga: {tier: 0}, gb: {tier: 1}}
 nodes:
   a: {group: ga, ports: [{name: p, side: bottom}]}
+  bz: {group: gb}
   b: {group: gb, ports: [{name: p, side: left}]}
   c: {group: gb, ports: [{name: p, side: right}]}
+  cz: {group: gb}
 links: [[a.p, b.p], [a.p, c.p]]`);
     // Ticket 20: the shared port owns a junction tree, so neither remainder needs a pin on `a`.
     expect(model.junctions).toHaveLength(1);
@@ -320,7 +327,9 @@ links: [[a.p, b.p], [a.p, c.p]]`);
     const model = await throughBands(`portograph: 2
 groups: {t0: {tier: 0}, t1: {tier: 1}, t2: {tier: 2}, t3: {tier: 3}, t4: {tier: 4}}
 nodes:
+  hz: {group: t2}
   hub: {group: t2, ports: [{name: n, side: top}, {name: s, side: bottom}, {name: w, side: left}, {name: e, side: right}]}
+  hy: {group: t2}
   a: {group: t0, ports: [{name: p, side: bottom}]}
   b: {group: t4, ports: [{name: p, side: top}]}
   c: {group: t1, ports: [{name: p, side: bottom}]}

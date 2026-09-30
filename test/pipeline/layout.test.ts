@@ -34,6 +34,7 @@ const bendingTiers = `portograph: 2
 groups: {top: {tier: 0}, low: {tier: 1}}
 nodes:
   a: {group: top, ports: [{name: p, side: right}]}
+  z: {group: top}
   b: {group: low, ports: [{name: p, side: top}]}
 links: [[a.p, b.p]]`;
 

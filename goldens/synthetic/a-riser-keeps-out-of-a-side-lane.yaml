@@ -1,0 +1,64 @@
+# Expected: the mesh of a-mesh-over-two-rows-joins-its-bars-with-one-riser, plus a routed link from the port `feed-from-the-upstream-balancer` of `outlet` to `m1`, which the
+# author puts on the left side. `outlet` stands alone in `wing`, on tier 1 between the second and the third frame of the upper member row. Its lateral port gets a side lane in the band
+# of the member row (side-faces.md, Section 10), and the riser keeps the run clearance from that lane (Section 13, ticket 122): 7a reserves the side
+# lane before the riser, so `reserveRisers` reads it as a pending lane of the member rows' tiers.
+# Test-only input owned by ticket 122; test/pipeline/side-lane-route.test.ts reads it.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  g1: { tier: 1 }
+  g2: { tier: 1 }
+  wing: { tier: 1, label: Wing }
+  g3: { tier: 1 }
+  mid: { tier: 2, label: Middle }
+  low: { tier: 3, label: Low }
+nodes:
+  core: { group: top, class: router, label: Core }
+  a1: { group: g1, class: router, label: A1 }
+  a2: { group: g2, class: router, label: A2 }
+  a3: { group: g3, class: router, label: A3 }
+  outlet: { group: wing, class: server, label: Outlet, ports: [{ name: feed-from-the-upstream-balancer, side: right }] }
+  m1: { group: mid, class: router, label: M1 }
+  m2: { group: mid, class: router, label: M2 }
+  b1: { group: low, class: router, label: B1 }
+  b2: { group: low, class: router, label: B2 }
+  b3: { group: low, class: router, label: B3 }
+  b4: { group: low, class: router, label: B4 }
+  b5: { group: low, class: router, label: B5 }
+links:
+  - [core, a1]
+  - [core, a2]
+  - [core, a3]
+  - [a1, m1]
+  - [a3, m2]
+  - [outlet.feed-from-the-upstream-balancer, m2]
+  - [m2, b1]
+  - [m2, b5]
+  - { from: a1, to: a2, class: sync }
+  - { from: a1, to: a3, class: sync }
+  - { from: a2, to: a3, class: sync }
+  - { from: b1, to: b2, class: sync }
+  - { from: b1, to: b3, class: sync }
+  - { from: b1, to: b4, class: sync }
+  - { from: b1, to: b5, class: sync }
+  - { from: b2, to: b3, class: sync }
+  - { from: b2, to: b4, class: sync }
+  - { from: b2, to: b5, class: sync }
+  - { from: b3, to: b4, class: sync }
+  - { from: b3, to: b5, class: sync }
+  - { from: b4, to: b5, class: sync }
+  - { from: a1, to: b1, class: sync }
+  - { from: a1, to: b2, class: sync }
+  - { from: a1, to: b3, class: sync }
+  - { from: a1, to: b4, class: sync }
+  - { from: a1, to: b5, class: sync }
+  - { from: a2, to: b1, class: sync }
+  - { from: a2, to: b2, class: sync }
+  - { from: a2, to: b3, class: sync }
+  - { from: a2, to: b4, class: sync }
+  - { from: a2, to: b5, class: sync }
+  - { from: a3, to: b1, class: sync }
+  - { from: a3, to: b2, class: sync }
+  - { from: a3, to: b3, class: sync }
+  - { from: a3, to: b4, class: sync }
+  - { from: a3, to: b5, class: sync }

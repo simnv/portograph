@@ -1,0 +1,21 @@
+# Expected: side-faces.md, Section 10, *The far port*. The frame `bank` on tier 1 holds three nodes in its first rank and the tier above holds two, so tier 1 is the
+# anchor tier and tier 0 is centred after 7a has seated the side lane. The described link runs from `lb` to the port `feed` of `outlet`, which the
+# author puts on the right side. `lb` also feeds `spare`, which pulls it left of the frame; the lane stands beside the frame, and 7a seats it where the port of `lb` is clear of the frame or at the nearest clear corridor. 7c adds the side lane as a feed of `lb`, so
+# centring holds the port of `lb` on the lane x and the part is a drop.
+# Test-only input owned by ticket 122; test/pipeline/side-lane-route.test.ts reads it.
+portograph: 2
+groups:
+  edge: { tier: 0, label: Edge }
+  bank: { tier: 1, label: Bank }
+nodes:
+  lb: { group: edge, class: router, label: LB }
+  spare: { group: bank, class: server, label: Spare }
+  spare2: { group: bank, class: server, label: Spare2 }
+  outlet: { group: bank, class: server, label: Outlet, ports: [{ name: feed, side: right }] }
+  tail: { group: bank, class: server, label: Tail }
+links:
+  - [lb, spare]
+  - [spare, tail]
+  - [spare2, tail]
+  - [outlet, tail]
+  - [lb, outlet.feed, { label: Health }]
