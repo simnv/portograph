@@ -1,0 +1,25 @@
+# Expected: side-faces.md, Section 19.12, note 5 (ticket 142). A routed link runs through a side lane and its vertical run is published as three
+# collinear pieces (stem, gap part, lane). The description is longer than every single piece and longer than the side run, so stage 9 must place it on
+# the whole vertical run, whose room 7a reserved. The label stays whole.
+# Test-only input owned by ticket 142; test/pipeline/side-lane-label.test.ts reads it.
+portograph: 2
+groups:
+  core: { tier: 0, label: Core }
+  edge: { tier: 1, label: Edge }
+  bank: { tier: 2, label: Bank }
+nodes:
+  c1: { group: core, class: router, label: C1 }
+  c2: { group: core, class: router, label: C2 }
+  c3: { group: core, class: router, label: C3 }
+  c4: { group: core, class: router, label: C4 }
+  lb: { group: edge, class: router, label: LB }
+  spare: { group: bank, class: server, label: Spare }
+  spare2: { group: bank, class: server, label: Spare2 }
+  outlet: { group: bank, class: server, label: Outlet, ports: [{ name: feed, side: right }] }
+  tail: { group: bank, class: server, label: Tail }
+links:
+  - [c1, lb]
+  - [spare, tail]
+  - [spare2, tail]
+  - [outlet, tail]
+  - [lb, outlet.feed, { label: Health checks of the load balancer reach the outlet through the side of the bank }]

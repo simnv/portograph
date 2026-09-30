@@ -978,8 +978,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   const labelPoint = (label: LayoutLabel, link: LayoutLink): Point => {
     const measured = centre(shiftRect(label.bounds!));
     if (placement !== 'on-run' || label.support?.kind !== 'link-segment') return measured;
-    const support = link.path!.segments[label.support.segment];
-    if (support === undefined) return measured;
+    const first = link.path!.segments[label.support.segment], last = link.path!.segments[label.support.through ?? label.support.segment];
+    if (first === undefined || last === undefined) return measured;
+    const support = { from: first.from, to: last.to };
     return shift(project({ x: measured.x + canvas.x, y: measured.y + canvas.y }, support));
   };
 
