@@ -1,0 +1,30 @@
+# Expected: Two core routers each link to the same four edge routers on the rank below, both ranks in one ranked group (one frame).
+# Every link is a pin-to-pin diagonal chord. The four ports on a core router's bottom face stand at the base port pitch,
+# so neighbouring chords run closer than the 10 px chord clearance near the face, and on main only the two outer links
+# (core-1 to edge-1 and core-2 to edge-4) take the frame chord; the other six keep the orthogonal route. Placement spreads
+# the ports of the fan (and grows the node) until neighbouring chords hold the clearance, so all eight links take the
+# frame-straight technique (ranked-groups ticket 89).
+# Test-only input owned by ranked-groups ticket 89; test/pipeline/frame-fan-spread.test.ts reads it.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, label: Site }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  core-1: { group: site, class: router, label: Core 1 }
+  core-2: { group: site, class: router, label: Core 2 }
+  edge-1: { group: site, class: router, label: Edge 1 }
+  edge-2: { group: site, class: router, label: Edge 2 }
+  edge-3: { group: site, class: router, label: Edge 3 }
+  edge-4: { group: site, class: router, label: Edge 4 }
+links:
+  - [isp, core-1]
+  - [isp, core-2]
+  - [core-1, edge-1]
+  - [core-1, edge-2]
+  - [core-1, edge-3]
+  - [core-1, edge-4]
+  - [core-2, edge-1]
+  - [core-2, edge-2]
+  - [core-2, edge-3]
+  - [core-2, edge-4]
