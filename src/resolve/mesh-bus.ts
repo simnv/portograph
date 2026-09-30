@@ -1,4 +1,4 @@
-import { orderedGroupIds, orderedNodeIds, type Diagnostic, type LayoutLink, type LayoutModel, type MeshBus, type Owner, type PortRef } from '../model/index.js';
+import { orderedNodeIds, type Diagnostic, type LayoutLink, type LayoutModel, type MeshBus, type Owner, type PortRef } from '../model/index.js';
 import { groupShape } from '../layout/grid.js';
 
 /**
@@ -76,16 +76,33 @@ export function detectMeshBuses(model: LayoutModel): void {
     model.diagnostics.push({ stage: 'model', severity, code, message, owners: links.map((link): Owner => link.owner) });
   };
 
-  // Candidates: overlay family, no authored route, both ends in one row. Grouped by row, then class.
-  const rows = new Map<string, Map<string, Mesh>>();
+  // The layout group that holds each node: a rank cell for a ranked group, the group itself otherwise.
+  const holder = new Map<string, string>();
+  for (const [id, group] of Object.entries(model.groups)) for (const node of group.nodes) holder.set(node, id);
+  const groupLinkLayer = new Map(model.groupLinks.map(record => [record.id, record.layer]));
+  // The sub-tier of a node's row; a node of a group with no tier stands on no row.
+  const rowOf = (node: string): number | undefined => model.groups[holder.get(node) ?? '']?.tier;
+  // A grid, a bar and a flank are on no row: a clique that holds one of their nodes is declined (`shape`).
+  const offRow = (node: string): string | undefined => {
+    const id = holder.get(node);
+    if (id === undefined) return undefined;
+    const shape = groupShape(model, id);
+    return model.groups[id]!.flank !== undefined ? 'flank' : shape === 'grid' || shape === 'bar' ? shape : undefined;
+  };
+  const frameOf = (node: string): string => model.groups[holder.get(node)!]!.frame ?? holder.get(node)!;
+
+  // Candidates: overlay family, no authored route, both ends on one sub-tier. A member of an overlay
+  // group-link is a candidate: the bus is the stronger aggregation of the same links.
+  const rows = new Map<number, Map<string, Mesh>>();
   for (const link of model.links) {
     const authored = model.document.links[link.sourceIndex]!;
     if (link.layer !== 'overlay' || link.family !== 'overlay' || authored.route !== undefined
-      || link.groupLink !== undefined || link.removed === true || !link.attachments) continue;
+      || (link.groupLink !== undefined && groupLinkLayer.get(link.groupLink) !== 'overlay')
+      || link.removed === true || !link.attachments) continue;
     const from = link.attachments.from.node, to = link.attachments.to.node;
     if (from === to) continue;
-    const row = model.document.nodes[from]!.group;
-    if (row !== model.document.nodes[to]!.group || model.groups[row] === undefined) continue;
+    const row = rowOf(from);
+    if (row === undefined || row !== rowOf(to)) continue;
     const klass = authored.class ?? '';
     const classes = rows.get(row) ?? new Map<string, Mesh>();
     rows.set(row, classes);
@@ -110,7 +127,7 @@ export function detectMeshBuses(model: LayoutModel): void {
   const label = (mesh: Mesh): string => mesh.klass === '' ? 'unclassed' : mesh.klass;
   const buses: MeshBus[] = [];
 
-  function partial(mesh: Mesh, clique: number[], names: string[], members: LayoutLink[], row: string): void {
+  function partial(mesh: Mesh, clique: number[], names: string[], members: LayoutLink[], row: number): void {
     const inside = new Set(clique);
     // A node the bus left out but that joins two or more members is part of the mesh the author drew.
     const left = mesh.nodes.filter(node => !inside.has(node)
@@ -129,9 +146,8 @@ export function detectMeshBuses(model: LayoutModel): void {
       [...members, ...extra.filter(link => !members.includes(link))]);
   }
 
-  for (const row of orderedGroupIds(model.document)) {
-    const classes = rows.get(row);
-    if (classes === undefined) continue;
+  for (const row of [...rows.keys()].sort((a, b) => a - b)) {
+    const classes = rows.get(row)!;
     // Every clique of three or more, per class: the largest first, then the largest of the edges it leaves.
     const found: { mesh: Mesh; clique: number[] }[] = [];
     for (const mesh of classes.values()) {
@@ -149,19 +165,27 @@ export function detectMeshBuses(model: LayoutModel): void {
       const decline = (reason: string, detail: string): void => report('MESH_BUS_DECLINED', 'warning',
         `Mesh of ${names.join(', ')} (${label(mesh)}) in ${row} draws as plain overlay links, ${reason}: ${detail}`, members);
       if (taken) { decline('second-mesh', 'a row holds one bus in this version'); continue; }
-      const shape = groupShape(model, row);
-      if (shape === 'grid' || shape === 'bar') { decline('shape', `${row} is a ${shape} group and holds no bus`); continue; }
+      const off = names.map(name => ({ name, kind: offRow(name) })).find(item => item.kind !== undefined);
+      if (off !== undefined) { decline('shape', `${off.name} stands in a ${off.kind}, which is on no row`); continue; }
       const chosen = busPorts(names, members);
       if (typeof chosen === 'string') { decline('named-ports', `${chosen} has two or more authored ports on the member links`); continue; }
       taken = true;
       const id = `mesh-bus-${buses.length + 1}`;
       attach(model, id, chosen, members);
+      const frames = [...new Set(names.map(frameOf))];
+      const dissolved = dissolve(model, new Set(members.map(link => link.id)));
       buses.push({
         id, owner: { kind: 'mesh-bus', id }, layer: 'overlay', row, nodes: names,
+        placement: frames.length === 1 ? 'in-frame' : 'across-frames', frames,
         ports: names.map(name => ({ ...chosen.get(name)! })), members: members.map(link => link.id),
+        dissolved: dissolved.map(item => item.id),
         ...(mesh.klass === '' ? {} : { class: mesh.klass }),
       });
-      report('MESH_BUS', 'info', `Mesh bus ${id}: ${names.length} nodes and ${members.length} ${label(mesh)} links in ${row}`, members);
+      const named = dissolved.length ? `; dissolved ${dissolved.map(item => item.id).join(', ')}` : '';
+      report('MESH_BUS', 'info', `Mesh bus ${id}: ${names.length} nodes and ${members.length} ${label(mesh)} links on sub-tier ${row}, ${frames.length === 1 ? 'in' : 'across'} ${frames.join(', ')}${named}`, members);
+      for (const item of dissolved) if (item.left.length) {
+        report('MESH_BUS_PARTIAL', 'info', `${item.id} lost ${item.taken} of its ${item.taken + item.left.length} members to ${id}; ${item.left.length} stay plain overlay links`, item.left);
+      }
       partial(mesh, clique, names, members, row);
     }
   }
@@ -222,4 +246,24 @@ function dropBusSharedPortWarnings(model: LayoutModel): void {
     const owners = diagnostic.owners ?? [];
     return !(owners.length && owners.every(owner => owner.kind === 'link' && members.has(owner.id)));
   });
+}
+
+/**
+ * A group-link the bus takes members from is dissolved, whole or in part: a near-complete set is
+ * drawn as its members, and the bus is the stronger aggregation of the same links. The record
+ * leaves `groupLinks`, its members lose `groupLink`, and the `ROUTE_UNSUPPORTED` warning that
+ * `recordAggregations` gave an inferred group-link goes with it.
+ */
+function dissolve(model: LayoutModel, taken: Set<string>): { id: string; taken: number; left: LayoutLink[] }[] {
+  const result: { id: string; taken: number; left: LayoutLink[] }[] = [];
+  for (const record of model.groupLinks.filter(item => item.members.some(id => taken.has(id)))) {
+    const links = model.links.filter(link => record.members.includes(link.id));
+    result.push({ id: record.id, taken: links.filter(link => taken.has(link.id)).length, left: links.filter(link => !taken.has(link.id)) });
+    for (const link of links) delete link.groupLink;
+    const ids = new Set(record.members);
+    model.diagnostics = model.diagnostics.filter(diagnostic => !(diagnostic.code === 'ROUTE_UNSUPPORTED'
+      && diagnostic.owners?.length === ids.size && diagnostic.owners.every(owner => owner.kind === 'link' && ids.has(owner.id))));
+  }
+  model.groupLinks = model.groupLinks.filter(item => !result.some(done => done.id === item.id));
+  return result;
 }

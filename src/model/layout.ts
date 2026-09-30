@@ -306,14 +306,20 @@ export interface GroupLink extends OwnedElement {
 export interface MeshBus extends OwnedElement {
   id: string;
   class?: string;
-  /** The row: a rank cell or the group id. */
-  row: string;
+  /** The row: the sub-tier its members stand on, in every frame and canton of the sheet. */
+  row: number;
+  /** `in-frame` when every member stands in one frame (a cell, a one-rank group or a `row` group), else `across-frames`. */
+  placement: 'in-frame' | 'across-frames';
+  /** The frames, or the one-rank groups with no frame, the members stand in, in order of first member. */
+  frames: string[];
   /** Members in declaration order. */
   nodes: string[];
   /** The bus port of each member, same order as `nodes`. */
   ports: PortRef[];
   /** Member link ids. */
   members: string[];
+  /** The group-links the bus dissolved (their former ids), whole or in part. */
+  dissolved: string[];
 }
 
 export interface Obstacle extends OwnedElement {

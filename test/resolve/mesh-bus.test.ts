@@ -19,7 +19,7 @@ describe('mesh bus detection (stage 1)', () => {
     const model = resolve(parse(fixture('a-full-mesh-on-one-row-draws-as-one-bus')));
     expect(model.meshBuses).toHaveLength(1);
     const bus = model.meshBuses![0]!;
-    expect(bus).toMatchObject({ id: 'mesh-bus-1', class: 'sync', row: 'row', layer: 'overlay', nodes: ['n1', 'n2', 'n3', 'n4', 'n5'] });
+    expect(bus).toMatchObject({ id: 'mesh-bus-1', class: 'sync', row: 1, placement: 'in-frame', frames: ['row'], dissolved: [], layer: 'overlay', nodes: ['n1', 'n2', 'n3', 'n4', 'n5'] });
     expect(bus.members).toHaveLength(10);
     for (const id of bus.nodes) {
       const anonymous = model.nodes[id]!.ports.filter(port => port.ref.anonymous);
@@ -77,13 +77,47 @@ describe('mesh bus detection (stage 1)', () => {
     expect(codes(model, 'SHARED_PORT')).toHaveLength(0);
   });
 
-  it('splits a mesh across two groups into two buses with the cross links plain', () => {
+  it('takes a mesh across two groups as one bus, with the group-links dissolved', () => {
     const left = ['a1', 'a2', 'a3'], right = ['b1', 'b2', 'b3'];
     const links = [...pairs(left), ...pairs(right), ...left.flatMap(a => right.map(b => `{ from: ${a}, to: ${b}, class: sync }`))];
     const nodes = [...left.map(id => `  ${id}: { group: west }`), ...right.map(id => `  ${id}: { group: east }`)].join('\n');
     const model = resolve(parse(doc('  west: { tier: 0 }\n  east: { tier: 0 }', nodes, links)));
-    expect(model.meshBuses!.map(bus => [bus.row, bus.nodes.length, bus.members.length])).toEqual([['west', 3, 3], ['east', 3, 3]]);
-    expect(model.links.filter(link => link.meshBus === undefined)).toHaveLength(9);
+    expect(model.meshBuses).toHaveLength(1);
+    expect(model.meshBuses![0]).toMatchObject({ placement: 'across-frames', frames: ['west', 'east'], dissolved: ['group-link-1'] });
+    expect(model.meshBuses![0]!.nodes).toHaveLength(6);
+    expect(model.meshBuses![0]!.members).toHaveLength(15);
+    expect(model.groupLinks).toEqual([]);
+    expect(model.links.every(link => link.groupLink === undefined && link.meshBus === 'mesh-bus-1')).toBe(true);
+    expect(codes(model, 'ROUTE_UNSUPPORTED')).toHaveLength(0);
+  });
+
+  it('dissolves a group-link the bus takes only part of, and leaves the rest plain', () => {
+    // Groups of two with the complete cross set (one group-link of four) and a1-a2: the bus is a1 a2 b1.
+    const links = ['a1-a2', 'a1-b1', 'a1-b2', 'a2-b1', 'a2-b2'].map(pair => { const [f, t] = pair.split('-'); return `{ from: ${f}, to: ${t}, class: sync }`; });
+    const nodes = ['a1', 'a2'].map(id => `  ${id}: { group: west }`).concat(['b1', 'b2'].map(id => `  ${id}: { group: east }`)).join('\n');
+    const model = resolve(parse(doc('  west: { tier: 0 }\n  east: { tier: 0 }', nodes, links)));
+    expect(model.meshBuses![0]).toMatchObject({ nodes: ['a1', 'a2', 'b1'], dissolved: ['group-link-1'] });
+    expect(model.meshBuses![0]!.members).toHaveLength(3);
+    expect(model.groupLinks).toEqual([]);
+    expect(model.links.filter(link => link.meshBus === undefined && link.layer === 'overlay')).toHaveLength(2);
+    expect(model.links.every(link => link.groupLink === undefined)).toBe(true);
+    expect(codes(model, 'MESH_BUS_PARTIAL').some(d => d.message.includes('group-link-1 lost 2 of its 4'))).toBe(true);
+  });
+
+  it('reads the fixtures of a mesh across frames, of one-node groups and across cantons', () => {
+    const frames = resolve(parse(fixture('a-mesh-across-frames-draws-one-bus')));
+    expect(frames.meshBuses).toHaveLength(1);
+    expect(frames.meshBuses![0]).toMatchObject({ placement: 'across-frames', dissolved: ['group-link-1', 'group-link-2', 'group-link-3'] });
+    expect(frames.meshBuses![0]!.nodes).toHaveLength(6);
+    expect(frames.meshBuses![0]!.members).toHaveLength(15);
+    expect(frames.groupLinks).toEqual([]);
+    expect(codes(frames, 'MESH_BUS')).toHaveLength(1);
+    const single = resolve(parse(fixture('a-mesh-of-one-node-groups-draws-one-bus')));
+    expect(single.meshBuses![0]).toMatchObject({ placement: 'across-frames' });
+    expect(single.meshBuses![0]!.nodes).toHaveLength(3);
+    const cantons = resolve(parse(fixture('a-bus-across-cantons-crosses-the-canton-edges')));
+    expect(cantons.meshBuses![0]).toMatchObject({ placement: 'across-frames', dissolved: ['group-link-1'] });
+    expect(cantons.meshBuses![0]!.members).toHaveLength(6);
   });
 
   it('gives no bus when every member carries route: overlay', () => {
