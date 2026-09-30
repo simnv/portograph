@@ -16,6 +16,7 @@ const gates = (model: LayoutModel): string[] => Object.entries(score(model).snap
 const riserLanes = (model: LayoutModel) => model.lanes.filter(lane => lane.owner.kind === 'mesh-bus');
 const EXPECTED_CROSSINGS = 2;
 const JOINED_NAMES = ['a-mesh-over-two-rows-joins-its-bars-with-one-riser', 'a-riser-joins-two-bars-in-one-gap', 'a-riser-between-cantons-crosses-no-canton-edge'];
+const thaw = (model: LayoutModel): LayoutModel => JSON.parse(JSON.stringify(model)) as LayoutModel;
 const bottom = (box: { y: number; height: number }) => box.y + box.height;
 
 describe('the riser in placement (ticket 96)', () => {
@@ -199,15 +200,86 @@ describe('the riser in placement (ticket 96)', () => {
       for (const group of Object.values(model.groups)) for (const [key, depth] of riserPenetrations(model, group)) all.set(key, depth);
       return all;
     };
+    let seen = 0;
     for (const name of JOINED_NAMES) {
-      const afterLanes = lanes(rows(await placedModel(fixture(name))));
-      const afterFlanks = flanks(afterLanes), afterCentre = centre(afterFlanks), afterBars = bars(afterCentre), afterBundles = bundles(afterBars);
-      let previous = depths(afterLanes);
+      const clean = lanes(rows(await placedModel(fixture(name))));
+      // 7a keeps the riser out of every routed facing port, so the model is forged: the riser and its lanes move to 3 px from one such port, and the
+      // stages then run from a model that starts inside the keep-out. Each stage may keep or reduce the depth of a port, never increase it.
+      const start = forgeNearPort(clean);
+      if (start === undefined) continue;
+      let previous = depths(start);
+      expect(previous.size, `${name}: the forged start has a port in the keep-out`).toBeGreaterThan(0);
+      seen += previous.size;
+      const afterFlanks = flanks(start), afterCentre = centre(afterFlanks), afterBars = bars(afterCentre), afterBundles = bundles(afterBars);
       for (const [stage, model] of [['flanks', afterFlanks], ['centre', afterCentre], ['bars', afterBars], ['bundles', afterBundles]] as const) {
         const now = depths(model);
         expect(riserNoDeeper(previous, now), `${name} at ${stage}`).toBe(true);
         previous = now;
       }
     }
+    expect(seen).toBeGreaterThan(0);
+  });
+
+  it('judges a port by itself: a move that frees one port and pushes the other deeper is refused', async () => {
+    const model = thaw(await run(fixture('a-mesh-over-two-rows-joins-its-bars-with-one-riser')));
+    const upper = model.meshBuses![0]!, lowerRow = model.meshBuses![1]!.row;
+    const group = Object.values(model.groups).find(item => item.tier === lowerRow && item.nodes.length > 1)!;
+    const used = new Set(model.links.filter(link => link.layer === 'routed' && link.technique !== 'stub' && link.attachments)
+      .flatMap(link => [link.attachments!.from, link.attachments!.to]).map(ref => `${ref.node}:${ref.ordinal}`));
+    const ports = group.nodes.flatMap(id => model.nodes[id]!.ports.filter(port => port.side === 'top' && used.has(`${id}:${port.ref.ordinal}`)));
+    expect(ports.length).toBeGreaterThanOrEqual(2);
+    const keep = BUS_RUN_CLEARANCE + routedStrokeWidth(model) / 2;
+    // Two facing routed ports 8 px apart, the riser 1 px from the first: the first is deep in the keep-out, the second nearly as deep.
+    ports[0]!.anchor!.x = 500;
+    ports[1]!.anchor!.x = 508;
+    upper.riser!.x = 501;
+    const bounds = group.bounds!;
+    // dx = -keep frees the first port (it lands keep + 1 from the riser) and leaves the second inside the keep-out, deeper than it was.
+    const move = [{ group, bounds: { ...bounds, x: bounds.x - keep } }];
+    const before = riserPenetrations(model, group), after = riserPenetrations(model, group, -keep);
+    const total = (m: Map<string, number>): number => [...m.values()].reduce((sum, depth) => sum + depth, 0);
+    expect(total(after)).toBeLessThan(total(before));
+    expect(riserNoDeeper(before, after)).toBe(false);
+    expect(optionalMoveHolds(model, move, false)).toBe(false);
+  });
+
+  it('measures riserNoDeeper port by port', () => {
+    expect(riserNoDeeper(new Map([['b', 5]]), new Map([['a', 3]]))).toBe(false);
+    expect(riserNoDeeper(new Map([['a', 0], ['b', 5]]), new Map([['a', 3], ['b', 0]]))).toBe(false);
+    expect(riserNoDeeper(new Map([['a', 3], ['b', 5]]), new Map([['a', 3]]))).toBe(true);
+    expect(riserNoDeeper(new Map(), new Map())).toBe(true);
+  });
+
+  it('asks the keep-out from every optional mover: only packClear calls laneSidesHold', () => {
+    const source = (name: string): string => readFileSync(new URL(`../../src/layout/${name}.ts`, import.meta.url), 'utf8');
+    const calls = (name: string): number => (source(name).match(/\blaneSidesHold\(model/g) ?? []).length;
+    const asks = (name: string): number => (source(name).match(/\boptionalMoveHolds\(model/g) ?? []).length;
+    for (const name of ['columns', 'bands', 'chord-clear', 'overlay-place']) {
+      expect(calls(name), `${name} calls laneSidesHold directly`).toBe(0);
+      expect(asks(name), `${name} asks optionalMoveHolds`).toBeGreaterThan(0);
+    }
+    expect(calls('centre'), 'centre: packClear alone').toBe(1);
+    expect(asks('centre')).toBeGreaterThan(0);
+    expect(source('centre')).toMatch(/function packClear[\s\S]*?laneSidesHold\(model/);
   });
 });
+
+/** A lanes-stage model with its riser (and riser lanes) moved to 3 px from one routed port of a facing edge. */
+function forgeNearPort(model: LayoutModel): LayoutModel | undefined {
+  const upper = model.meshBuses!.find(bus => bus.cross !== undefined)!, lowerRow = model.meshBuses!.find(bus => bus.id === upper.joined)!.row;
+  const used = new Set(model.links.filter(link => link.layer === 'routed' && link.technique !== 'stub' && link.attachments)
+    .flatMap(link => [link.attachments!.from, link.attachments!.to]).map(ref => `${ref.node}:${ref.ordinal}`));
+  const xs = Object.values(model.nodes).flatMap(node => {
+    const tier = model.groups[model.document.nodes[node.id]!.group]!.tier;
+    const side = tier === upper.row ? 'bottom' : tier === lowerRow ? 'top' : undefined;
+    return node.ports.filter(port => port.side === side && used.has(`${node.id}:${port.ref.ordinal}`)).map(port => port.anchor!.x);
+  });
+  for (const x of xs) for (const offset of [3, -3]) {
+    const copy = thaw(model);
+    const bus = copy.meshBuses!.find(item => item.id === upper.id)!;
+    bus.riser!.x = x + offset;
+    for (const lane of copy.lanes.filter(item => item.owner.kind === 'mesh-bus')) { lane.x = x + offset; lane.bounds.x = lane.x - lane.bounds.width / 2; }
+    try { return restoreLayoutModel(JSON.stringify(copy)); } catch { /* this x crosses a body; try the next */ }
+  }
+  return undefined;
+}
