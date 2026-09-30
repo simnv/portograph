@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { Budget, LayoutLink, LayoutModel } from '../../src/index.js';
 import { layout, parse } from '../../src/index.js';
-import { systemElkClock } from '../../src/layout/elk-worker.js';
+import { ElkDeadlineError, systemElkClock } from '../../src/layout/elk-worker.js';
 import { measureFans } from '../../src/layout/fan-spread.js';
 import { standaloneChord, isFrameStraight } from '../../src/layout/frame-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -82,6 +82,20 @@ describe('a fan spreads its ports so its diagonals hold clearance', () => {
     expect(shape(slow)).toEqual(shape(fast));
     expect(slow.nodes['core-1']!.sidePitch).toEqual(fast.nodes['core-1']!.sidePitch);
     expect(slow.diagnostics.filter(item => item.code === 'FAN_SPREAD_CUT')).toEqual([]);
+  });
+
+  // Ticket 112 review, finding 1: a re-run dropped because ELK met its limit is reported, not silent.
+  it('reports a cut when the ELK attempt of a re-run meets its limit', async () => {
+    let calls = 0;
+    const createElkAttempt: typeof createAttempt = () => {
+      const real = createAttempt();
+      if (++calls !== 2) return real;
+      return { layout: async () => { real.terminateWorker(); throw new ElkDeadlineError(1); }, terminateWorker: () => real.terminateWorker() };
+    };
+    const model = await layout(parse(yaml), { createElkAttempt, createRouteAttempt: createAvoidAttempt });
+    expect(calls).toBeGreaterThan(1);
+    expect(model.diagnostics.filter(item => item.code === 'FAN_SPREAD_CUT')).toHaveLength(1);
+    expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
   });
 
   // Finding 2: two chord ports k pitch steps apart with a port between them that carries no chord. The floor is the pitch plus the share of

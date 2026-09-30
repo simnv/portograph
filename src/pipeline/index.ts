@@ -133,13 +133,15 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       if (value > (next.get(id)?.[side] ?? 0)) { next.set(id, { ...next.get(id), [side]: value }); grew = true; }
     }
     if (!grew) break;
-    if (budget.remainingMs() <= FAN_ROUTE_RESERVE_MS) { cut('the command deadline leaves less than the reserve for routing'); break; }
+    if (budget.remainingMs() <= FAN_ROUTE_RESERVE_MS) { cut('the command deadline leaves less than the reserve for 7f, routing and scoring'); break; }
     let trial: LayoutModel;
     try { trial = await place(next); } catch (error) {
       if (error instanceof CommandDeadlineError) { cut('the command deadline was reached during it'); break; }
       throw error;
     }
-    if ((trial.fallbackUsed && !model.fallbackUsed) || (trial.deadlineHit && !model.deadlineHit)) break;
+    if ((trial.fallbackUsed && !model.fallbackUsed) || (trial.deadlineHit && !model.deadlineHit)) {
+      cut('ELK fell back or met its time limit during it, and the re-run was dropped'); break;
+    }
     if (straightChords(trial) < straightChords(model)) break;
     model = trial; floors = next;
   }
