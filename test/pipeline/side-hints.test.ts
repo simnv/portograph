@@ -195,6 +195,18 @@ links: [[a.p, b], [mid, b]]
 `;
     expect(() => hint(yaml, at('a', 'p'))).toThrow(/transit lane/);
   });
+  it('refuses, at stage 5, a port whose stage-2 side was an estimate and whose vote is lateral', async () => {
+    const yaml = `portograph: 2
+groups: {g: {tier: 0}}
+nodes:
+  a: {group: g, ports: [p]}
+  b: {group: g, ports: [q]}
+links: [[a.p, b.q]]
+`;
+    const plain = await run(yaml);
+    const { key } = port(plain.model, 'a', 0);
+    await expect(run(yaml, new Map([[key, 'right']]))).rejects.toThrow(/its natural side is (left|right)/);
+  }, 60000);
   it('refuses a fan and a route override, and accepts the plain port', () => {
     const fan = `portograph: 2
 groups: {g: {tier: 0}, h: {tier: 1}}
