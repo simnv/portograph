@@ -208,7 +208,9 @@ export function measureSides(model: LayoutModel, kept7e: LayoutModel, refused: R
   offer.capped ||= chords.capped;
   // The routed L through a side lane (ticket 119): a third pass on the same two clones.
   const taken = new Set([...offer.hints.keys()]);
-  const lanes = measureLaneSides(kept7e, chords.nodes, chords.base, refused, taken, moved, refusedKey, link => plannedBends(model, model.links.find(item => item.id === link.id) ?? link, blockers), chords.probes, probeCap);
+  // A chord wins over a lane: a side lane stands as a wall in the corridor at 7a and can cost a chord its hold at 7e, so a batch that holds a chord hint holds no lane hint.
+  const lanes = chords.hints.size > 0 ? { hints: new Map<string, 'left' | 'right'>(), promised: new Map<string, { link: string; bends: 1; shape: 'lane' }>(), probes: chords.probes, capped: false, nodes: chords.nodes, base: chords.base }
+    : measureLaneSides(kept7e, chords.nodes, chords.base, refused, taken, moved, refusedKey, link => plannedBends(model, model.links.find(item => item.id === link.id) ?? link, blockers), chords.probes, probeCap);
   for (const [key, side] of lanes.hints) offer.hints.set(key, side);
   for (const [key, item] of lanes.promised) offer.promised.set(key, item);
   offer.capped ||= lanes.capped;

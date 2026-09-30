@@ -82,6 +82,14 @@ describe('the side round offers a routed L through a side lane', () => {
     expect(offered(blocked)).toEqual({ hint: undefined, shape: undefined });
   }, 120000);
 
+  it('never offers a lane hint in a batch that holds a chord hint (a lane wall can cost the chord its hold at 7e)', async () => {
+    const mixed = readFileSync(new URL('../../goldens/synthetic/a-chord-hint-and-a-lane-hint-never-share-a-batch.yaml', import.meta.url), 'utf8');
+    const batches: string[][] = [];
+    await run({ testSideTrace: (event: { ev: string; offer?: { promised: Map<string, { shape: string }> } }) => { if (event.ev === 'offer') batches.push([...event.offer!.promised.values()].map(item => item.shape)); } } as never, mixed);
+    expect(batches.some(shapes => shapes.includes('straight'))).toBe(true);
+    expect(batches.filter(shapes => shapes.includes('straight') && shapes.includes('lane'))).toEqual([]);
+  }, 120000);
+
   it('two runs give byte-identical layout JSON', async () => {
     const strip = (model: LayoutModel): string => JSON.stringify(model, (key, value: unknown) => key === 'runtime' ? undefined : value);
     expect(strip(await run())).toBe(strip(await run()));
