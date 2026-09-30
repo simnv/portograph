@@ -604,7 +604,10 @@ count a lateral chord as any straight overlay chord.
    growth.
 3. **Crossings for an L** (maintainer). Fewer bends win for a one-bend route even when crossings
    rise, as Q108 decided for chords. Crossings are not a criterion of the side round. Total corpus
-   crossings are still measured and reported (Section 15).
+   crossings are still measured and reported (Section 15). Coordinator, 2026-09-30: this holds for the
+   straight shape and the L alike. The round does not drop a trial for an overlay crossing added at a
+   moved port; it keeps the trial and emits the info diagnostic `SIDE_HINT_ADDS_CROSSING` (link and
+   count). The false-gain case of ticket 115 (review M1) is closed by the natural-clear candidate test.
 4. **Author lateral ports and the side lane** (coordinator). An author `left` or `right` port whose
    peer is on another sub-tier also gets a side lane (Section 10). It replaces a residual part with
    a planned one.

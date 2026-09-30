@@ -6,13 +6,13 @@ import { measurePortPill } from '../text/index.js';
 import { EPS } from '../score/geometry.js';
 import { isRoutedChord } from './frame-paths.js';
 import { transitTiers } from './lanes.js';
-import { overlayBlockers, overlayPath, straightChord, type OverlayBlockers } from './overlay-paths.js';
+import { crosses, overlayBlockers, overlayPath, straightChord, type OverlayBlockers } from './overlay-paths.js';
 import { facingSide, hintRefusal } from './side-hints.js';
 import { portKey } from './sides-one.js';
 
 /**
  * The side measure (docs/design/side-faces.md, Sections 4 to 7): on a placed model (stages 1 to 7e) it names the lateral sides that would
- * give a bent overlay link one straight segment. Ticket 115 offers the straight shape of an overlay link only.
+ * give a bent overlay link one straight segment. Ticket 115 offers the straight shape of an overlay link; ticket 116 adds the L (one lateral end, one turn).
  */
 
 /** Most probes one `measureSides` call makes, in link order (a count; `SIDE_PROBE_CAPPED`). */
@@ -50,7 +50,7 @@ export interface SideOffer {
   /** New hints: `portKey` to the lateral side. Never an old hint, never a refused key. */
   hints: Map<string, 'left' | 'right'>;
   /** For each new hint, the link and the bends the probe promised (0: straight). */
-  promised: Map<string, { link: string; bends: number; shape: 'straight' }>;
+  promised: Map<string, { link: string; bends: number; shape: 'straight' | 'L' }>;
   /** True when the probe cap left candidates unprobed. */
   capped: boolean;
   /**
@@ -61,7 +61,7 @@ export interface SideOffer {
 }
 
 interface Lateral { ref: PortRef; key: string; side: 'left' | 'right' }
-interface Config { laterals: Lateral[]; grows: boolean; nodes: LayoutModel['nodes']; nodes7e: LayoutModel['nodes'] }
+interface Config { laterals: Lateral[]; grows: boolean; nodes: LayoutModel['nodes']; nodes7e: LayoutModel['nodes']; shape?: 'L' }
 
 /** The node with the port moved to the lateral face: a copy, the placed node is not touched. Undefined when no slot fits the box. */
 function moved(node: LayoutNode, lateral: Lateral, peerY: number): { node: LayoutNode; grows: boolean } | undefined {
@@ -87,6 +87,34 @@ function moved(node: LayoutNode, lateral: Lateral, peerY: number): { node: Layou
 }
 
 const centreOf = (box: Rect): { x: number; y: number } => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
+
+/**
+ * The L shape (spec Sections 5 and 11, ticket 116): one lateral end, and the overlay derivation on the baseline probe gives exactly one turn
+ * (two segments). The caller asks for it once no straight shape fits; it is a gain only when the link has two bends or more now. A lateral
+ * port at both ends is not an L, and no angle rule applies: both runs are axis-aligned. The same hint goes on the kept 7e clone (`attempt`).
+ */
+function lShapes(model: LayoutModel, kept7e: LayoutModel, nodes: LayoutModel['nodes'], nodes7e: LayoutModel['nodes'], link: LayoutLink, ends: PortRef[], laterals: Lateral[]): Config[] {
+  if (plannedBends(model, link) < 2) return [];
+  const found: Config[] = [];
+  for (const lateral of laterals) {
+    const peer = ends.find(ref => portKey(ref) !== lateral.key)!;
+    const result = moved(nodes[lateral.ref.node]!, lateral, centreOf(nodes[peer.node]!.bounds!).y);
+    if (result === undefined) continue;
+    const draft = { ...nodes, [lateral.ref.node]: result.node };
+    const probe: LayoutModel = { ...model, nodes: draft };
+    const blockers = overlayBlockers(probe), segments = overlayPath(probe, link, blockers).segments;
+    // `between()` falls back to paths that ignore pills and then bodies when every way round is blocked, and such a path can still have two
+    // segments: an L is offered only when both runs are clear of every body and every foreign pill (ticket 116 review, H1).
+    const own = ends.flatMap(ref => { const pill = probe.nodes[ref.node]?.ports.find(port => portKey(port.ref) === portKey(ref))?.pill; return pill === undefined ? [] : [pill.bounds]; });
+    const clear = segments.every(({ from, to }) => !blockers.some({ x: Math.min(from.x, to.x), y: Math.min(from.y, to.y), width: Math.abs(to.x - from.x), height: Math.abs(to.y - from.y) },
+      box => !own.some(pill => pill.x === box.x && pill.y === box.y && pill.width === box.width && pill.height === box.height) && crosses(from, to, box)));
+    if (segments.length !== 2 || !clear) continue;
+    const node7e = nodes7e[lateral.ref.node], peer7e = kept7e.nodes[peer.node]?.bounds;
+    const result7e = node7e?.bounds !== undefined && peer7e !== undefined ? moved(node7e, lateral, centreOf(peer7e).y) : undefined;
+    found.push({ laterals: [lateral], grows: result.grows, nodes: draft, nodes7e: result7e !== undefined ? { ...nodes7e, [lateral.ref.node]: result7e.node } : nodes7e, shape: 'L' });
+  }
+  return found;
+}
 
 /**
  * The lateral sides to try in the next placement run (spec Sections 4, 5 and 7). Candidates are overlay links that are bent now and whose
@@ -155,6 +183,7 @@ export function measureSides(model: LayoutModel, kept7e: LayoutModel, refused: R
     };
     for (const lateral of laterals) attempt([lateral]);
     if (laterals.length === 2) attempt(laterals);
+    if (configs.length === 0) configs.push(...lShapes(model, kept7e, nodes, nodes7e, link, ends, laterals));
     if (configs.length === 0) continue;
     // Fewer lateral ports, then no growth, then the lower end (the deeper tier), then document order.
     const key = (config: Config): number[] => [config.laterals.length, Number(config.grows), -tierOf(config.laterals[0]!.ref), order.get(config.laterals[0]!.ref.node)!];
@@ -163,7 +192,7 @@ export function measureSides(model: LayoutModel, kept7e: LayoutModel, refused: R
     nodes = best.nodes; nodes7e = best.nodes7e;
     for (const lateral of best.laterals) {
       offer.hints.set(lateral.key, lateral.side);
-      offer.promised.set(lateral.key, { link: link.id, bends: 0, shape: 'straight' });
+      offer.promised.set(lateral.key, best.shape === 'L' ? { link: link.id, bends: 1, shape: 'L' } : { link: link.id, bends: 0, shape: 'straight' });
     }
   }
   offer.probes = { base: nodes, kept7e: nodes7e };

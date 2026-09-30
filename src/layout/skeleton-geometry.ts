@@ -123,6 +123,8 @@ export function validateSkeletonBands(model: LayoutModel, includeFlanks = true, 
   }
   return errors;
 }
+/** Test only (the side probe, ticket 134): called after each `moveGroup`. Unset in production, so it costs one comparison. */
+export const moveTrace: { hook?: (model: LayoutModel, group: LayoutGroup, dx: number, dy: number) => void } = {};
 export function moveGroup(model: LayoutModel, group: LayoutGroup, dx: number, dy: number): void {
   group.bounds!.x += dx; group.bounds!.y += dy;
   for (const id of group.nodes) {
@@ -130,6 +132,7 @@ export function moveGroup(model: LayoutModel, group: LayoutGroup, dx: number, dy
     node.bounds!.x += dx; node.bounds!.y += dy;
     for (const port of node.ports) if (port.anchor) { port.anchor.x += dx; port.anchor.y += dy; }
   }
+  moveTrace.hook?.(model, group, dx, dy);
 }
 function packRow(model: LayoutModel, group: LayoutGroup, order: string[]): void {
   const original = group.bounds ?? { x: 0, y: 0, width: 0, height: 0 };
