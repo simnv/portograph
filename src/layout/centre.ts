@@ -205,8 +205,28 @@ function alignSide(node: LayoutNode, side: Side, targets: Map<string, number>, l
   });
   return new Set(kept.map(target => target.key));
 }
+/**
+ * The pairs (frozen chord with an end in the group, foreign lane) whose box the chord touches, read on the anchors as they stand. The whole step is
+ * measured with it, as the riser keep-out is: the clamp, `packClear`, `standNearFeed`, the row pack and the region fit move the group after the two local
+ * guards below have looked, and a chord that follows its ports across a lane it cleared is refused by `validateLanes` at publication.
+ */
+export function chordLaneCrossings(model: LayoutModel, group: LayoutGroup): Set<string> {
+  const result = new Set<string>();
+  if (model.frozenChords === undefined) return result;
+  const inside = new Set(group.nodes);
+  for (const link of model.links) {
+    if (!link.attachments || !isRoutedChord(model, link)) continue;
+    const { from, to } = link.attachments, one = findPort(model, from)?.anchor, two = findPort(model, to)?.anchor;
+    if (!one || !two || !(inside.has(from.node) || inside.has(to.node))) continue;
+    for (const lane of model.lanes) {
+      if (lane.owner.kind === 'link' && lane.owner.id === link.id) continue;
+      if (segmentRectDistance({ from: one, to: two, owner: link.owner }, lane.bounds) < linkStrokeWidth(link) / 2 - EPS) result.add(`${link.id}|${lane.id}`);
+    }
+  }
+  return result;
+}
 /** Whether every held routed chord with one end in the group still stands clear of the foreign lane boxes after the group moves `dx` in x. */
-function chordsClearAfterMove(model: LayoutModel, group: LayoutGroup, dx: number): boolean {
+export function chordsClearAfterMove(model: LayoutModel, group: LayoutGroup, dx: number): boolean {
   // Before the freeze of 7f the chords are decided again on every rebuild; only a frozen chord follows its ports whatever they do.
   if (Math.abs(dx) <= EPS || model.frozenChords === undefined) return true;
   const inside = new Set(group.nodes);
@@ -224,7 +244,7 @@ function chordsClearAfterMove(model: LayoutModel, group: LayoutGroup, dx: number
   });
 }
 /** For each port of the node whose link holds a routed chord: whether the chord, with that port moved to x, still stands clear of every foreign lane box. */
-function heldChordPorts(model: LayoutModel, node: LayoutNode): Map<string, (x: number) => boolean> {
+export function heldChordPorts(model: LayoutModel, node: LayoutNode): Map<string, (x: number) => boolean> {
   const result = new Map<string, (x: number) => boolean>();
   if (model.frozenChords === undefined) return result;
   for (const link of model.links) {
@@ -466,7 +486,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   const group = model.groups[id]!, order = context.groupOrder.get(tier)!;
   const { own, wanted, yielded, conflicts } = groupFeeds(model, context, tier, list, id, warn);
   const unresolved = new Set<string>(conflicts);
-  const startPenetration = riserPenetrations(model, group);
+  const startPenetration = riserPenetrations(model, group), startCrossings = chordLaneCrossings(model, group);
   const saved = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
   // Centre under the feeds that may own an alignment; a yielded transit would only pull the group
   // away from the x its child is then aligned to.
@@ -550,7 +570,8 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   // The riser keep-out is a post-condition of the whole step, read after the clamp (mesh-bus.md, section 11.5): the main move and the alignments were
   // measured where they were made, and the clamp, the row pack and the region fit can undo them. A step that leaves a routed port of the facing edge
   // deeper in the keep-out than the step found it (port by port) is declined like a window that cannot hold the group.
-  if (!riserNoDeeper(startPenetration, riserPenetrations(model, group))) {
+  // The same for a frozen chord: a step that leaves one across a foreign lane box that it did not cross when the step began is declined.
+  if (!riserNoDeeper(startPenetration, riserPenetrations(model, group)) || [...chordLaneCrossings(model, group)].some(pair => !startCrossings.has(pair))) {
     model.groups[id] = saved.group;
     for (const node of saved.nodes) model.nodes[node.id] = node;
     packClear(model, context, tier, saved.group, previous);
