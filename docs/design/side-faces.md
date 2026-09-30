@@ -1,6 +1,7 @@
 # Lateral sides for links between tiers (design)
 
-Q109. Status: design (2026-09-30). Tickets 114 to 121 under `.scratch/ranked-groups/issues/`.
+Q109. Status: design (2026-09-30), amended after the Opus review the same day (H1, H2, M1 to M6,
+L1 to L6). Tickets 114 to 122 under `.scratch/ranked-groups/issues/`.
 
 ## 1. Problem
 
@@ -84,6 +85,13 @@ A link end is a **candidate** when all of these are true:
 4. The port has no author `side:`. The link has no author `route: orthogonal`.
 5. The node is not in a `grid` group, a `bar` group or a flank. The grid vote already reads
    geometry (stage 5), and bars and flanks own their sides.
+6. The link owns no transit lane (`transitTiers` is empty): its ends stand on adjacent sub-tiers.
+   A transit link belongs to ticket 120 (review M6).
+7. The link is **bent now**: its planned bends on the measured model are more than 0 (Section 6).
+   A straight link is never probed (review M4).
+
+An author lateral port is no hint candidate (item 4), but it may get a side lane (Section 10,
+decision 4).
 
 The lateral side offered is the one that faces the peer: `right` when the peer's centre x is
 greater than the node's centre x, else `left`. The other lateral side faces away and fails
@@ -104,6 +112,11 @@ reads the shape a probe gives (Section 7):
 
 "Lateral at both ends" is offered for the straight shape only. An L has one lateral end by
 definition.
+
+**Minimum outward angle** (review L1). A straight segment from a lateral face leaves at
+`MIN_LATERAL_ANGLE = 15°` or more from the face: its horizontal component out of the face is at
+least `sin 15°` of its length. A steeper segment rides the node's own edge and reads as a link to
+the corner; it keeps the natural face. The probe reads this for both families.
 
 **Order of preference.**
 
@@ -149,42 +162,103 @@ of sides between stage 5 and 7c would need a replay: the stage-5 resize and repa
 the feeds that centring reads (7c), the bus side (`busSide`), and the ADR-0011 title edge. That
 list is the whole placement. Running placement again is the same work, and it has one producer.
 
-**The round.** `measureSides(model, refused)` runs where `measureFans` runs, on the model that
-`place()` returns (stages 1 to 7e). It returns side hints. The loop in `src/pipeline/index.ts`
-merges the hints with the fan floors and runs `place(floors, hints)` again:
+**The round** (review H2). `measureSides(model, refused)` runs on the model that `place()` returns
+(stages 1 to 7e), after the fan rounds. Fan floors keep ticket 89's loop unchanged. Side hints get
+their own rounds after it. In pseudo-code:
 
-1. The loop has one cap for both kinds, `PLACEMENT_ROUNDS = 3` (today `FAN_ROUNDS = 2`).
-2. A round runs only when the measure gives a new floor or a new hint.
-3. A trial is kept when all of these hold:
-   - every hint of the trial gives its shape: `plannedBends` of that link on the trial is the
-     bends the measure promised, or fewer;
-   - the bent-link count falls, or stays the same while the total planned bends fall;
-   - the straight chord count does not fall (the existing fan rule).
-4. A hint that does not give its shape goes into `refused` and is never offered again. When rounds
-   remain, the loop runs once more with the delivered hints only. When no round remains, the trial
-   is dropped and the last kept model stands.
-5. A kept hint stays in every later round. So the hint set grows, the refused set grows, and the
-   loop ends.
+```
+model  = place(floors = {}, hints = {})
+floors = {}; hints = {}; refused = {}          // refused: a set of (port, side) keys
+reruns = 0                                     // every place() after the first
 
-**What a hint changes in the new run.**
+// 1. Fan rounds: ticket 89's loop, unchanged (cap FAN_ROUNDS = 2, code FAN_SPREAD_CUT).
+for round in 0 ..< FAN_ROUNDS:
+  next = floors ∪max measureFans(model).floors
+  if next == floors: break
+  if not gate(): cut(FAN_SPREAD_CUT); break
+  trial = place(next, hints); reruns += 1
+  if elkCut(trial): cut(FAN_SPREAD_CUT); break
+  if straightChords(trial) < straightChords(model): break     // drop the trial, keep floors
+  model = trial; floors = next
 
-- **Stage 2** (`sidesOne`): a port with a hint takes the hint's side. It records `naturalSide`,
-  the side the stage-2 rule gives it (for a port the stage-2 rule leaves undecided, the side
-  stage 5 gives it in the measured round).
-- **Stage 3** (`sizeNodes`): the node is sized with the port on the lateral side. The node takes
-  its measured size as a floor (`nodeFloors`), so the natural face never shrinks between rounds
-  (Section 8).
-- **Stage 4** (skeleton): ELK gets each hinted port on its natural side (`skeleton-graph.ts` reads
-  `naturalSide ?? side ?? sizingSide`). When the node sizes are equal, the ELK input is the same as
-  in the measured round, and so is the skeleton.
-- **Stage 5** (`sidesTwo`): the side is already set, so stage 5 does not change it. The engine
-  order on the lateral side sorts by the peer's y, as for any lateral port. The row gap reserves
-  the pill of a named lateral port (the facing-pill rule). `busSide` and the ADR-0011 title edge
-  read a hinted port on its natural side, so a hint never moves a bus or a title.
-- **7a to 7f**: no change for overlay hints. For routed hints, see Sections 9 and 10.
+// 2. Side rounds: only when a hint is offered.
+for round in 0 ..< SIDE_ROUNDS:                // SIDE_ROUNDS = 2: one offer, one retry
+  offer = measureSides(model, refused)          // new hints only; never an old or refused key
+  if offer is empty: break
+  if reruns >= MAX_RERUNS: note(SIDE_ROUND_SKIPPED); break      // a count, not the clock
+  if not gate(): cut(SIDE_ROUND_CUT); break
+  trial = place(floors, hints ∪ offer); reruns += 1
+  if elkCut(trial): cut(SIDE_ROUND_CUT); break
+  failed = { h in hints ∪ offer : plannedBends(trial, link(h)) > promised(h) }
+  if failed is empty
+     and (bent(trial) < bent(model)
+          or (bent(trial) == bent(model) and totalBends(trial) < totalBends(model)))
+     and straightChords(trial) >= straightChords(model):
+    model = trial; hints = hints ∪ offer; continue
+  // the trial is dropped: model, floors and the old hints stay as they were
+  if failed ∩ hints is not empty: refused = refused ∪ offer     // a new hint broke an old one
+  else if failed ∩ offer is not empty: refused = refused ∪ (failed ∩ offer)
+  else: refused = refused ∪ offer                               // every shape held, no gain
+```
 
-**The probe.** The measure never runs placement. It clones the 7e model, puts the port on the
-lateral side, re-sizes that node in place (the top edge stays, the height grows downward when the
+- **Fan-only diagrams.** When no hint is offered, part 2 does nothing, and the loop is ticket 89's
+  loop with the same cap and the same rule. The output is byte-identical to main. There is no third
+  fan round.
+- **An old hint** is never withdrawn. It gave its shape on the kept model. A trial in which it
+  fails is dropped, and the new hints of that trial are refused.
+- **Floors** do not change in part 2. A dropped side trial leaves them as they were. A side round
+  adds no fan measure: a lateral chord that would need a spread is refused by the probe (`pitch`,
+  Section 8).
+- **Known limit: `refused` is greedy and keyed by hint.** A hint refused in a trial with another
+  hint is not offered again, even when it would give its shape alone, and a key refused for one
+  geometry stays refused after the geometry changes. The retry round offers only the hints that
+  were not refused; nothing searches subsets.
+
+**Budget** (review M4). The layout must not depend on machine speed (ticket 112). The side rounds
+therefore use the count-based gates of ticket 112 and add no clock read:
+
+- `gate()` is ticket 112's gate: a re-run starts only with `POST_PLACEMENT_RESERVE_MS +
+  FAN_RERUN_MS` (16 s) or more left before the hard command deadline.
+- `MAX_RERUNS = 3` caps fan and side re-runs together, by count.
+- Measured on the private sheet on a quiet machine: the first placement takes about 2 s and 7f
+  6.6 s, with a 30 s deadline. On a machine 2 times slower, a re-run takes about 4 s, so the gate
+  is read at about 26, 22 and 18 s left: three re-runs pass the 16 s gate, and no cut fires. This
+  holds only when `measureFans` plus `measureSides` stay under 0.5 s (quiet machine) per round.
+  Ticket 115 measures `measureSides` time and the ms left at each gate on the private sheet. If the
+  projection for a 2 times slower machine falls under 16 s plus 1 s of margin at the third gate,
+  `MAX_RERUNS` becomes 2 by rule (a constant), not by the clock.
+- The probe has a cap: at most `PROBE_CAP = 256` probes per `measureSides` call, in link order.
+  The candidates after the cap are not probed that round (`SIDE_PROBE_CAPPED`, info). The cap is a
+  count.
+
+**What a hint changes in the new run** (review M3). Each reader of a side is named here, with the
+side it reads.
+
+| Reader | Side read | Why |
+|---|---|---|
+| Stage 2 (`sidesOne`) | hinted | It applies the hint and records `naturalSide`: the side the stage-2 rule gives, or, for a port that rule leaves undecided, the side stage 5 gave in the measured round. |
+| Stage 3 (`sizeNodes`) | hinted | The lateral face is reserved at size time. The measured size is a floor (`nodeFloors`). |
+| Stage 4 (ELK, `skeleton-graph.ts`) | natural | `naturalSide ?? side ?? sizingSide`. With equal sizes the ELK input is the same as in the measured round. |
+| `busSide` (`bus.ts`, `sideOf`), at stage 2 and at stage 5 | natural | A hint never moves a bus edge. |
+| ADR-0011 title edge (`frameSide`) | natural | A hint never moves a title. |
+| Stage 5 engine order, `rowGap`, content insets, `groupPadding` | hinted | These are the geometry of the port as drawn. |
+| 7a to 7e (lanes, row paths, chords, bundles) | hinted | They reserve the drawn shape. |
+| 7c feeds (the axis on the mean x of routed feeds) | hinted | **Decided:** a feed reads the port's real anchor. A natural-side anchor does not exist on the drawn node. The axis moves by at most half the node width, and the trial measures the result. |
+
+**What a named lateral port changes** (it has a pill; an anonymous port has none):
+
+- the node's content inset on the lateral side (the larger of 10 px and the pill's inward half
+  extent plus 4 px), so the content interior can narrow and `contentW` can grow;
+- `groupPadding` on that side, which stage 5 reserves beyond named pills;
+- `rowGap` toward the row neighbour on that side: the facing pill and the 15 px stem.
+
+So a named lateral port can change the node width and the row x after the skeleton, and the trial
+measures it. Ticket 114's byte-identical ELK test uses an anonymous port and passes the measured
+size floors.
+
+**The probe.** The measure never runs placement. It makes **one** clone of the 7e model for the
+whole call and resets the touched node and links after each probe (review M4). It puts the port on
+the lateral side, re-sizes that node in place (the top edge stays, the height grows downward when the
 lateral face needs more room), re-derives its anchors from the slots, and reads the shape:
 `overlayPath` for an overlay link, `chordVerdict` for a chord, and the side-lane corridor test
 (Section 10) for an L. The trial then says whether the shape holds after placement moves.
@@ -197,7 +271,7 @@ pitch is `max(12, pill height + 4)`, so 14 px for a named pill and 12 px for an 
 - **Height.** A lateral face that takes hints can need more height. The growth is **reserved at
   size time**: stage 3 of the new run sizes the node with the port on the lateral side. It is not
   found on demand. A taller node makes its row and its sub-tier band taller, and everything below
-  moves down. The trial measures the result, and rule 3 of the round refuses a trial where this
+  moves down. The trial measures the result, and the round (Section 7) drops a trial where this
   loses a shape.
 - **Width.** A port that leaves the top or bottom face frees one slot there. The node keeps the
   measured round's width as a floor (`nodeFloors`), so the other ports on that face keep their
@@ -227,6 +301,10 @@ lateral port the words stay and the reading changes:
 - The chord meets that edge at least the group edge link-margin (10 px plus half the stroke) from
   each corner. For a side edge, that is the edge's y-range less the margin at the top and at the
   bottom.
+- **Slack** (review M2). The shape is judged at 7e and drawn after 7f, which moves columns and
+  grows gaps. So the probe and the fixed point read the corner margin plus `SIDE_EDGE_SLACK = 4 px`
+  (as `FAN_SLACK` does for the chord clearance) for an exit through a side edge. The freeze and
+  `edgeLeavers` read the margin alone.
 - A chord that leaves by any other edge is refused (`edge`), as today. For a lateral port, a
   horizontal edge is now the wrong edge: a chord steep enough to reach the frame's bottom edge
   before its side edge keeps the bottom face. So the two faces split the work: a steep chord takes
@@ -271,14 +349,47 @@ at a right angle, so G6 (`segment-group-edge`) does not apply. Nothing may stand
 and the lane at the port's y: no body, no pill, no foreign lane, no foreign frame. So in the first
 version the lateral node is the outermost node of its row, on that side, within its frame.
 
-**Reservation.** 7a allocates the side lane with `allocateLanes`, as a lane for one sub-tier, with
-the lateral end's band as its extent, cut at the port's y. It tries the source-aligned corridor
-first (the x of the upper port), then the nearest clear exterior corridor, as for a transit lane.
-The side run is a fixed segment of the lane owner (`fixedSegments`). The lane source's anchor is
-then fixed in x, as for every lane (ADR-0010, 7a). The stem length (15 px) and the edge margin
-(10 px plus half the stroke) fit inside the 20 px frame padding plus the lane's own clearance, so
-the frame does not grow for the run. The frame grows for the lane only where the existing lane rule
-says so.
+**A new lane kind** (review H1). A transit lane does not fit: `laneExtent` gives a full band,
+`validateLanes` expects the ids of `transitTiers(link)` and bounds equal to the band,
+`reservation()` writes one full vertical run, `rebuildLaneExtents` resets every lane to its band,
+and `laneSource` aligns to the end nearer the anchor tier. The side lane is its own kind:
+
+- **Model.** `Lane.kind: 'transit' | 'side'` (absent reads `transit`, so old layouts restore). A
+  side lane adds `port: PortRef` (the lateral port). Its id is `side-lane:<link id>`. `tier` is the
+  lateral end's sub-tier; `side` is the port's side; `group` is the lateral end's group.
+- **Extent.** Measured from the port, not the band: from the band edge that faces the far end
+  (grown by the same `10 + stroke / 2` pad as `laneExtent`) to the port's anchor y. A function
+  `sideLaneExtent(model, lane)` gives it.
+- **Replay.** `rebuildLaneExtents` recomputes a side lane from `sideLaneExtent` with the port's
+  current anchor y, so a 7d or 7f move in y (a band that grows, a node that moves down) moves the
+  end of the lane with the port. The lane's x, owner and id never change after 7a (ADR-0010).
+- **Alignment end.** `sideLaneSource(link)` is the far end (the port that is not lateral), not the
+  end nearer the anchor tier. 7c holds that end's anchor x fixed, as it holds a transit source
+  (ADR-0010, 7a: "transit source anchors remain fixed"). The lateral end is not moved under the
+  lane: the side run joins them at any x.
+- **Reservation.** `sideReservation(model, link, lane)` writes two fixed segments, in path order:
+  the vertical run at the lane x over the extent, then the **side run** from the lane x to the
+  port's face at the port's y. Both carry `lane: <id>`. The side run is at least one stem (15 px)
+  long, so it is the port's stem.
+- **`validateLanes`.** The expected ids are the transit ids plus a side-lane id for each link that
+  has one. A side lane is valid only on a candidate for it (a routed link with no transit lane, a
+  lateral port whose peer is on another sub-tier, the node outermost on that side of its row in its
+  frame). Its bounds equal `sideLaneExtent`, and `fixedSegments` equal `sideReservation`. The other
+  lane checks (width, side of the group, occupied groups, overlap with lanes, fixed paths across a
+  foreign lane) apply unchanged.
+- **Route validation.** `route/validate` accepts a complete path that ends in the side run: the
+  last segment is horizontal, ends on the lateral port's face, and equals the reserved side run.
+  The existing check "the complete path holds every immutable reserved segment" covers both runs.
+- **Allocation.** 7a allocates side lanes with the transit lanes in `allocateLanes`: the
+  source-aligned corridor first (the far port's x), then the nearest clear exterior corridor. A
+  link whose corridor is not clear gets no side lane and stays residual (`SIDE_LANE_REFUSED`, info,
+  with the reason `body`, `lane`, `frame` or `corridor`).
+- **Size.** The stem (15 px) and the edge margin (10 px plus half the stroke) fit inside the 20 px
+  frame padding plus the lane's own clearance, so the frame does not grow for the run. The frame
+  grows for the lane only where the existing lane rule says so.
+
+Ticket 118 builds the model, the allocation, the replay and `validateLanes`. Ticket 122 builds the
+tier-gap mouth, the stitch and route validation, and the riser keep-out.
 
 **The tier-gap plan.** The part in the gap between the two ends is a normal part, from the upper
 tip to the side lane's mouth (ADR-0021). A source-aligned side lane makes it a drop.
@@ -287,6 +398,12 @@ tip to the side lane's mouth (ADR-0021). A source-aligned side lane makes it a d
 **Author lateral ports.** The side lane also serves a lateral port with an author `side:` whose
 peer is on another sub-tier. That port is residual today (`lateral-port`). The corpus differential
 of ticket 118 lists each such link.
+
+**Link-label room** (review M1). `reserveLinkLabelRoom` measures the face-to-face gap, and
+`overlayRunMid(..., 'y')` has no answer for an L whose longest run is horizontal. For a link with a
+lateral end, the room is reserved in placement on the longest run of the planned shape: the side
+run or the lane vertical for a side lane, and the horizontal or vertical run of an overlay L, read
+on the axis of that run. Tickets 116, 118 and 119 each add their case.
 
 **Transit lanes (ticket 120).** A link that already owns a transit lane toward its lower end (the
 long vertical of the maintainer's example) can run that lane on through the lower end's band to
@@ -302,6 +419,12 @@ No new path rule. `overlay-paths.ts` derives the path from the frozen ports as t
 - L: the orthogonal branch's single turn. It is taken only when the derivation gives exactly one
   turn on the trial.
 
+**Shape held after 7f** (review M2). An overlay path is not a claim, and 7f can move a body onto it
+after the round judged it at 7e. At the end of 7f, `SIDE_SHAPE_LOST` (warning, placement) names each
+hinted link whose derived path has more bends than the round promised. The acceptance (Section 15)
+counts it and must find 0 on the corpus. A routed chord is held by `freezeChords` and a side lane by
+its reservation, so neither needs the check; `SIDE_SHAPE_LOST` reads them too, as a guard.
+
 An overlay lateral port puts a pill on the lateral face. Stage 5's row gap already reserves room for
 facing named pills. The overlay endpoint mark stands on the port's own outward face, as today. The
 placement steps of tickets 76, 77 and 80 read the chords as they stand after the side freeze; they
@@ -316,8 +439,9 @@ count a lateral chord as any straight overlay chord.
 | Natural face width (a floor) | stage 3 (`nodeFloors`) | ticket 114 |
 | Pill room in the row gap | stage 5 (`rowGap`, facing pills) | unchanged |
 | A routed chord from a lateral face | the `rebuildRowPaths` fixed point, frozen at the start of 7f | ticket 117 |
-| Side lane and side run | 7a (`allocateLanes`, `fixedSegments`) | ticket 118 |
-| The part in the gap above a side lane | the tier-gap plan, 7f (ADR-0021) | ticket 118 |
+| Side lane and side run | 7a (`allocateLanes`, `sideReservation`), extent replayed from the port's y | ticket 118 |
+| The part in the gap above a side lane | the tier-gap plan, 7f (ADR-0021) | ticket 122 |
+| Link-label room on a lateral shape | 7f (`reserveLinkLabelRoom`) | tickets 116, 118, 119 |
 | An overlay path | derived from the frozen ports (stage 8 publishes it) | unchanged |
 
 ## 13. Interactions
@@ -335,7 +459,7 @@ count a lateral chord as any straight overlay chord.
 - **Mesh bus stubs.** A bus port is never a candidate, and `busSide` reads hinted ports on their
   natural side, so the bus keeps its edge and a joined pair keeps its facing edges (Q107).
 - **Riser keep-out.** A side lane is a lane. 7a places it with the other lanes, and the riser
-  keep-out reads it as a fixed-x leg of the member row in whose band it stands. Ticket 118 checks
+  keep-out reads it as a fixed-x leg of the member row in whose band it stands. Ticket 122 checks
   the order inside `allocateLanes` (`reserveRisers` against pending lanes) and adds that read if it
   is missing. A side run may cross a riser lane at a right angle (overlay geometry; counted as a
   crossing).
@@ -347,23 +471,29 @@ count a lateral chord as any straight overlay chord.
   as any cross-frame chord.
 - **Lanes.** A side lane is an obstacle to every link, its owner included, as every lane is. It is
   a wall to every chord.
-- **Link labels (ADR-0014).** A label on a side run is horizontal (0 degrees). The label room of a
-  described link is reserved on its longest run, as today.
+- **Link labels (ADR-0014).** A label on a side run is horizontal (0 degrees). The label room is
+  reserved on the longest run of the planned shape (Section 10, *Link-label room*).
 - **Restore (ADR-0010).** `restoreLayoutModel` compares resolved semantics with the document. A
   hinted port has a side the document does not give. The topology baseline records each hint and
   its natural side; restore checks that the natural side is the one stages 2 and 5 give, that the
   hint is the lateral side that faces the peer, and that the port is a candidate (Section 4).
-- **draw.io export.** Ports already carry any of the four sides. No change.
+  Restore checks the stored invariants, not the history (review L2): the stored `naturalSide`, the
+  hint and the stored `nodeFloors` are checked against the document and the geometry; restore does
+  not re-run the round.
+- **draw.io export.** Ports already carry any of the four sides. No change in code; ticket 121
+  checks a lateral port and a side run through the drawio CLI (review L4).
 
 ## 14. Determinism
 
 - The hints are a function of the placed geometry and link order only.
 - The probe and the round read no clock. The round cap is a count.
-- The loop keeps the one clock read it has today: a re-run does not start after the hard command
-  deadline (`FAN_SPREAD_CUT`, renamed `PLACEMENT_ROUND_CUT` and extended to side hints). That
-  fallback names itself, as it does for fans. No corpus input and no private input reaches it.
-- ELK is deterministic for one input. With equal node sizes, a hinted run gives ELK the same input
-  as the measured run (Section 7).
+- The loop keeps the one clock read it has today, ticket 112's gate against the hard command
+  deadline. Fan re-runs keep `FAN_SPREAD_CUT` (no rename, so no reader breaks; review L3). Side
+  re-runs add `SIDE_ROUND_CUT`. Both name the cut. The budget of Section 7 keeps the private sheet
+  clear of both on a machine 2 times slower.
+- Every other bound is a count: `FAN_ROUNDS`, `SIDE_ROUNDS`, `MAX_RERUNS`, `PROBE_CAP`.
+- ELK is deterministic for one input. With equal node sizes and anonymous ports, a hinted run gives
+  ELK the same input as the measured run (Section 7).
 
 ## 15. Metrics and acceptance
 
@@ -381,9 +511,11 @@ count a lateral chord as any straight overlay chord.
 
 - **Bent links fall** on the corpus: the count of links whose published path has more than one
   segment, routed and overlay counted apart, falls, and no file gains a bent link.
-- **Private sheet** (link ids only): the overlay link past the sibling body is one segment; at least
-  6 of the 9 `edge` refusals draw straight; the routed and overlay bent counts fall; Q is not below
+- **Private sheet** (link ids only): the overlay link past the sibling body is one segment; the
+  number of the 9 `edge` refusals that draw straight is reported, link by link (a reported number,
+  not a gate; review L6); the routed and overlay bent counts fall; Q is not below
   0.8188; no gate fails; crossings are reported.
+- **`SIDE_SHAPE_LOST`:** 0 on the corpus.
 - **M1 golden:** rendered again; each changed link is named and reviewed by `agy -p` against
   `docs/design/quality.md`.
 
@@ -422,6 +554,7 @@ count a lateral chord as any straight overlay chord.
 | 116 | An overlay link turns once into a lateral side | 115 |
 | 117 | A routed chord leaves a lateral side | 115 |
 | 118 | Placement reserves a side lane into a lateral port | 114 |
-| 119 | The side round offers a routed L through a side lane | 115, 118 |
+| 119 | The side round offers a routed L through a side lane | 115, 118, 122 |
 | 120 | A transit lane ends in a lateral side (conditional) | 119, 121 |
 | 121 | Links between tiers bend less (acceptance) | 116, 117, 119 |
+| 122 | A side lane joins the tier-gap plan and the route | 118 |
