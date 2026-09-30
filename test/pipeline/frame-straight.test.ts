@@ -47,6 +47,21 @@ describe('a held chord is a wall from stage 7f on', () => {
   });
 });
 
+describe('a stem blocks a chord only while its link stays orthogonal (ticket 88)', () => {
+  const name = 'a-stem-of-a-link-that-turns-straight-does-not-block-a-chord';
+  it('turns both links straight where the greedy order refused the earlier one', async () => {
+    const model = await run(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
+    for (const [from, to] of [['n1', 'n4'], ['n1', 'n3']]) {
+      const link = linkOf(model, from!, to!);
+      expect(link.technique, link.id).toBe('straight');
+      expect(link.path!.segments).toHaveLength(1);
+      expect(model.frozenChords).toContain(link.id);
+    }
+    expect(model.removedLinks ?? []).toEqual([]);
+    expect(model.diagnostics.filter(item => item.code === 'STRAIGHT_LINK_BLOCKED')).toEqual([]);
+  });
+});
+
 describe('a link inside one frame is a straight segment', () => {
   it('takes the straight technique for a clear chord, vertical or diagonal, and keeps the blocked one orthogonal', async () => {
     const model = await run(source);
