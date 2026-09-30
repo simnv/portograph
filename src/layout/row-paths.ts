@@ -216,10 +216,22 @@ function expectedLevelPath(model: LayoutModel, link: LayoutLink): LayoutPath | u
 export function rebuildRowPaths(draft: LayoutModel): void {
   const candidates = draft.links.filter(link => rowPathCandidate(draft, link));
   for (const link of candidates) delete link.path;
-  for (const link of candidates) {
+  // A stem placement promised blocks a chord only while its link stays orthogonal (ticket 88). The first pass
+  // reads the links after a candidate as orthogonal, so a link that turns straight later still blocked an
+  // earlier chord. Each further pass offers the refused links the chord again, keeping every chord held:
+  // a new chord only removes a stem and checks its own clearance to the held chords, so the held set only
+  // grows, and the loop ends when a pass adds none (at most one pass per candidate).
+  const decide = (link: LayoutLink): boolean => {
     const path = expectedRowPath(draft, link);
     if (path) link.path = path;
     if (automatic(draft, link)) link.technique = path ? 'straight' : 'orthogonal';
+    return path !== undefined;
+  };
+  let open = candidates.filter(link => !decide(link));
+  while (open.length && draft.frozenChords === undefined) {
+    const next = open.filter(link => !decide(link));
+    if (next.length === open.length) break;
+    open = next;
   }
   // A straight link inside one frame is one chord between two faces, never a leaf of a fan tree.
   joinFanTrees(draft, candidates.filter(link => !isFrameStraight(draft, link)));
