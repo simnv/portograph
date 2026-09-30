@@ -25,11 +25,15 @@ import { route, ROUTE_BUDGET_MS, type CreateRouteAttempt } from '../route/index.
 import { CommandDeadlineError, UNBOUNDED_BUDGET, type Budget } from './budget.js';
 // After the stages: the modules below reach the centring module, whose import order the tests that mock it depend on.
 import { declinedFanDiagnostics, measureFans, type FanMeasure } from '../layout/fan-spread.js';
-import { isFrameStraight } from '../layout/frame-paths.js';
+import { chordClearances, isFrameStraight } from '../layout/frame-paths.js';
+import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
 
 
 /** Most runs of placement a fan's pitch may cost after the first (ticket 89). */
 const FAN_ROUNDS = 2;
+/** What a probe must leave in the budget: this many runs to 7e for stage 7f, and a fixed reserve for routing (ticket 89 review). */
+const FAN_PROBE_FACTOR = 4;
+const FAN_ROUTE_RESERVE_MS = 5000;
 const straightChords = (model: LayoutModel): number => model.links.filter(link => isFrameStraight(model, link)).length;
 
 export { CommandDeadlineError, createBudget, UNBOUNDED_BUDGET } from './budget.js';
@@ -111,9 +115,14 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   };
   // A fan of chords whose neighbours stand closer than the chord clearance is spread by placement, not found by routing (ticket 89):
   // the placed chords say the pitch each face needs, and placement runs again with those floors until no face needs more.
+  const placeStarted = now();
   let model = await place(new Map());
+  // A probe runs only while the budget could still pay for it, for stage 7f (a few times a run to 7e) and for routing after it, and
+  // a probe that meets the deadline or makes ELK fall back is dropped: the placement already made stands (ticket 89 review).
+  const firstMs = now() - placeStarted;
+  const affordable = (): boolean => budget.remainingMs() > FAN_PROBE_FACTOR * firstMs + FAN_ROUTE_RESERVE_MS;
   let floors: FanMeasure['floors'] = new Map();
-  for (let round = 0; round < FAN_ROUNDS; round++) {
+  for (let round = 0; round < FAN_ROUNDS && affordable(); round++) {
     const measure = measureFans(model);
     const next: FanMeasure['floors'] = new Map(floors);
     let grew = false;
@@ -121,12 +130,29 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       if (value > (next.get(id)?.[side] ?? 0)) { next.set(id, { ...next.get(id), [side]: value }); grew = true; }
     }
     if (!grew) break;
-    const trial = await place(next);
+    let trial: LayoutModel;
+    try { trial = await place(next); } catch (error) {
+      if (error instanceof CommandDeadlineError) break;
+      throw error;
+    }
+    if ((trial.fallbackUsed && !model.fallbackUsed) || (trial.deadlineHit && !model.deadlineHit)) break;
     if (straightChords(trial) < straightChords(model)) break;
     model = trial; floors = next;
   }
   const declined = declinedFanDiagnostics(measureFans(model).declined);
+  const atFreeze = chordClearances(model);
   model = step('bands', () => bands(model));
+  // 7f moves columns in x after the chords are decided, and no rule bounds it: a pair it closes under the clearance is named here, with the
+  // clearance it had at the freeze, so that a G6 failure can be traced to the move (ticket 89 review). Nothing is changed.
+  const lost: Diagnostic[] = [];
+  for (const [pair, now] of chordClearances(model)) {
+    const before = atFreeze.get(pair);
+    if (now < STRAIGHT_PATH_CLEARANCE.path - 1e-6 && before !== undefined) {
+      lost.push({ stage: 'placement', severity: 'warning', code: 'CHORD_CLEARANCE_LOST',
+        message: `Stage 7f moved the straight links ${pair.replace('|', ' and ')} from ${before.toFixed(1)} px apart to ${now.toFixed(1)} px, under the ${STRAIGHT_PATH_CLEARANCE.path} px chord clearance.`,
+        owners: pair.split('|').map(id => ({ kind: 'link' as const, id })) });
+    }
+  }
   if (budget.remainingMs() <= 0) throw new CommandDeadlineError(0, 'route');
   const routeStarted = now();
   model = await route(model, {
@@ -139,5 +165,5 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   });
   report('route', routeStarted);
 
-  return step('link-labels', () => linkLabels(model, declined));
+  return step('link-labels', () => linkLabels(model, [...declined, ...lost]));
 }

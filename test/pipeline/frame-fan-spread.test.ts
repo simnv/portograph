@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import type { LayoutLink, LayoutModel } from '../../src/index.js';
+import type { Budget, LayoutLink, LayoutModel } from '../../src/index.js';
 import { layout, parse } from '../../src/index.js';
 import { measureFans } from '../../src/layout/fan-spread.js';
+import { standaloneChord, isFrameStraight } from '../../src/layout/frame-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -57,5 +58,39 @@ describe('a fan spreads its ports so its diagonals hold clearance', () => {
     const measured = measureFans(model);
     expect([...measured.floors]).toEqual([]);
     expect(measured.declined).toEqual([]);
+  });
+
+  // Review of ticket 89, finding 1: a probe run only while the budget could pay for it, and the first placement is published otherwise.
+  it('publishes the first placement when the budget cannot pay for a probe', async () => {
+    const budget: Budget = { remainingMs: () => 3000, share: stageMs => Math.min(stageMs, 3000) };
+    const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, budget });
+    expect(fan(model).filter(link => link.technique === 'straight')).toHaveLength(2);
+    expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
+    expect(model.nodes['core-1']!.sidePitch!.bottom).toBe(12);
+  });
+
+  // Finding 2: two chord ports k pitch steps apart with a port between them that carries no chord. The floor is the pitch plus the share of
+  // the slide, and the face is not declined for a span that is not a pitch.
+  it('measures a face with an orthogonal link between two chords by the pitch, not by the gap', async () => {
+    const model = structuredClone(await run()) as LayoutModel;
+    const core = model.nodes['core-1']!;
+    const ports = core.ports.filter(port => port.side === 'bottom').sort((a, b) => a.anchor!.x - b.anchor!.x);
+    ports.forEach((port, i) => { port.anchor!.x = ports[0]!.anchor!.x + 12 * i; });
+    core.sidePitch!.bottom = 12;
+    const all = measureFans(model).floors.get('core-1')!.bottom!;
+    const middle = fan(model).find(link => link.attachments!.from.node === 'core-1' && link.attachments!.from.ordinal === ports[1]!.ref.ordinal)!;
+    model.document.links[middle.sourceIndex]!.route = 'orthogonal';
+    const measured = measureFans(model);
+    expect(measured.declined).toEqual([]);
+    expect(measured.floors.get('core-1')?.bottom ?? 0).toBeLessThanOrEqual(all);
+    expect(all).toBeLessThan(60);
+  });
+
+  // Finding 3: a link no other link can free is no reason to widen a face; on the published fixture every chord that holds passes the check.
+  it('offers only links that can hold alone', async () => {
+    const model = await run();
+    for (const link of fan(model)) {
+      if (isFrameStraight(model, link)) expect(standaloneChord(model, link), link.id).toBeDefined();
+    }
   });
 });

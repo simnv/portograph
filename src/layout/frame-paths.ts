@@ -112,10 +112,12 @@ export function chordSegment(model: LayoutModel, link: LayoutLink): PathSegment 
   return { from: chord.from, to: chord.to, owner: { ...link.owner } };
 }
 
-/** The chord this rule pins for the link, or undefined when a body stands on it or a gate would fail it. */
-export function expectedFramePath(model: LayoutModel, link: LayoutLink): LayoutPath | undefined {
-  if (!frameLinkCandidate(model, link)) return undefined;
-  if (model.frozenChords !== undefined) return frozenChordPath(model, link);
+/**
+ * The chord of the link when nothing that no other link can change refuses it: the two faces, the tiers between them, the title strips and
+ * the corridor the bodies and reservations leave (ticket 89 review). The fan rules ask this first: a link that fails here is no reason to
+ * widen a face or to offer a chord to its neighbours.
+ */
+export function standaloneChord(model: LayoutModel, link: LayoutLink): PathSegment | undefined {
   const segment = chordSegment(model, link);
   if (!segment) return undefined;
   // A link that crosses a tier it does not end in needs the lane lanes.ts reserves for it, and a lane
@@ -127,6 +129,15 @@ export function expectedFramePath(model: LayoutModel, link: LayoutLink): LayoutP
   // The chord must also hold every clearance the gates measure a routed segment against (G2, G6),
   // or a published straight link would fail the gate its rule was meant to satisfy.
   if (!straightCorridorClear(model, link, segment)) return undefined;
+  return segment;
+}
+
+/** The chord this rule pins for the link, or undefined when a body stands on it or a gate would fail it. */
+export function expectedFramePath(model: LayoutModel, link: LayoutLink): LayoutPath | undefined {
+  if (!frameLinkCandidate(model, link)) return undefined;
+  if (model.frozenChords !== undefined) return frozenChordPath(model, link);
+  const segment = standaloneChord(model, link);
+  if (!segment) return undefined;
   // Two chords are no obstacle to each other for the router, but G6 still measures their clearance:
   // only a strict crossing excuses a pair that stands closer than 10 px (a shared end does not).
   const stroke = linkStrokeWidth(link);
@@ -220,4 +231,22 @@ export function chordsHold(model: LayoutModel, proposed: { group: { nodes: strin
     }
   }
   return held.length === 0;
+}
+
+/**
+ * The clearance of every pair of held chords that stands nearer than `within` px and does not cross strictly, keyed `a|b` in link order.
+ * Read before and after 7f, it says which pairs 7f closed under the clearance (ticket 89 review); it moves nothing.
+ */
+export function chordClearances(model: LayoutModel, within = 30): Map<string, number> {
+  const chords = model.links.filter(link => isFrameStraight(model, link));
+  const result = new Map<string, number>();
+  for (const [index, one] of chords.entries()) for (const other of chords.slice(index + 1)) {
+    const a = one.path!.segments[0]!, b = other.path!.segments[0]!;
+    if (Math.min(a.from.x, a.to.x) - within > Math.max(b.from.x, b.to.x) || Math.min(b.from.x, b.to.x) - within > Math.max(a.from.x, a.to.x)
+      || Math.min(a.from.y, a.to.y) - within > Math.max(b.from.y, b.to.y) || Math.min(b.from.y, b.to.y) - within > Math.max(a.from.y, a.to.y)) continue;
+    const point = intersection(a, b);
+    if (point !== undefined && ![a.from, a.to, b.from, b.to].some(end => samePoint(end, point))) continue;
+    result.set(`${one.id}|${other.id}`, segmentDistance(a, b) - (linkStrokeWidth(one) + linkStrokeWidth(other)) / 2);
+  }
+  return result;
 }

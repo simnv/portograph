@@ -2,7 +2,7 @@ import type { Side } from '../model/geometry.js';
 import type { Diagnostic, LayoutLink, LayoutModel, LayoutPort, PathSegment } from '../model/layout.js';
 import { EPS, intersection, samePoint, segmentDistance } from '../score/geometry.js';
 import { linkStrokeWidth } from '../theme/geometry.js';
-import { chordSegment, frameLinkCandidate } from './frame-paths.js';
+import { frameLinkCandidate, standaloneChord } from './frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { portId } from './skeleton-graph.js';
 
@@ -38,7 +38,8 @@ function strictCrossing(a: PathSegment, b: PathSegment): boolean {
  */
 export function measureFans(model: LayoutModel): FanMeasure {
   const floors: FanMeasure['floors'] = new Map(), declined: FanMeasure['declined'] = [];
-  const candidates = model.links.filter(link => link.attachments && frameLinkCandidate(model, link));
+  // A link whose chord no other link can free (a tier transit, a title strip, a corridor, a body) is no reason to widen a face.
+  const candidates = model.links.filter(link => link.attachments && frameLinkCandidate(model, link) && standaloneChord(model, link) !== undefined);
   const byPort = new Map<string, LayoutLink[]>();
   for (const link of candidates) for (const end of [link.attachments!.from, link.attachments!.to]) {
     byPort.set(portId(end), [...(byPort.get(portId(end)) ?? []), link]);
@@ -56,16 +57,19 @@ export function measureFans(model: LayoutModel): FanMeasure {
       const tooClose: string[] = [];
       for (let i = 1; i < ports.length; i++) {
         const p = ports[i - 1]!, q = ports[i]!, gap = q.anchor.x - p.anchor.x;
+        // The two ports may stand k pitch steps apart (a port between them that carries no chord, or a spread centring made); a slide of t px
+        // over k steps is t / k on each, so the floor is the pitch the face has plus that share, never the gap.
+        const pitch = node.sidePitch?.[side] ?? 12, steps = Math.max(1, Math.round(gap / pitch));
         for (const la of byPort.get(portId(p.ref))!) for (const lb of byPort.get(portId(q.ref))!) {
           if (la.id === lb.id) continue;
-          const a = chordSegment(model, la), b = chordSegment(model, lb);
+          const a = standaloneChord(model, la), b = standaloneChord(model, lb);
           if (!a || !b || held(a, b, la, lb)) continue;
           // The chord of `lb` leaves this face at its own end; that end slides along the face.
           const start = lb.attachments!.from.node === node.id && portId(lb.attachments!.from) === portId(q.ref) ? 'from' : 'to';
           let need: number | undefined;
-          for (let t = 1; t <= FAN_PITCH_CAP; t++) {
+          for (let t = 1; t <= FAN_PITCH_CAP * steps; t++) {
             const moved: PathSegment = { ...b, [start]: { x: b[start].x + t, y: b[start].y } };
-            if (held(a, moved, la, lb)) { need = gap + t; break; }
+            if (held(a, moved, la, lb)) { need = pitch + Math.ceil(t / steps); break; }
           }
           tooClose.push(la.id, lb.id);
           if (need === undefined || need > FAN_PITCH_CAP) floor = Infinity; else floor = Math.max(floor, need);
@@ -79,9 +83,9 @@ export function measureFans(model: LayoutModel): FanMeasure {
   return { floors, declined };
 }
 
-/** One diagnostic per declined face: the fan keeps the base pitch and its links keep the orthogonal route. */
+/** One diagnostic per declined face: the fan keeps the base pitch and its links may keep the orthogonal route. */
 export function declinedFanDiagnostics(declined: FanMeasure['declined']): Diagnostic[] {
   return declined.map(item => ({ stage: 'placement', severity: 'warning', code: 'FAN_SPREAD_DECLINED',
-    message: `The ${item.side} ports of ${item.node} would need a pitch beyond ${FAN_PITCH_CAP} px to hold the chord clearance; the fan keeps the base pitch and its links keep the orthogonal route.`,
+    message: `The ${item.side} ports of ${item.node} would need a pitch beyond ${FAN_PITCH_CAP} px to hold the chord clearance; the fan keeps the base pitch and its links may keep the orthogonal route.`,
     owners: item.links.map(id => ({ kind: 'link' as const, id })) }));
 }
