@@ -38,3 +38,10 @@ export const UNBOUNDED_BUDGET: Budget = {
   remainingMs: () => Number.POSITIVE_INFINITY,
   share: stageMs => stageMs,
 };
+
+/**
+ * What a command keeps in its budget for the work after stage 7f: routing, link labels, scoring and the SVG (ticket 111). A fixed
+ * time against the hard deadline, never a share of a measured time, so the layout does not depend on the speed of the machine.
+ * The chord-clear step stops trying movers when less than this is left.
+ */
+export const POST_PLACEMENT_RESERVE_MS = 8000;

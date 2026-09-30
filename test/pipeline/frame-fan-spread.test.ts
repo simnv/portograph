@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { Budget, LayoutLink, LayoutModel } from '../../src/index.js';
 import { layout, parse } from '../../src/index.js';
+import { ElkDeadlineError, systemElkClock } from '../../src/layout/elk-worker.js';
+import { POST_PLACEMENT_RESERVE_MS } from '../../src/pipeline/budget.js';
 import { measureFans } from '../../src/layout/fan-spread.js';
 import { standaloneChord, isFrameStraight } from '../../src/layout/frame-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -67,6 +69,45 @@ describe('a fan spreads its ports so its diagonals hold clearance', () => {
     expect(fan(model).filter(link => link.technique === 'straight')).toHaveLength(2);
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
     expect(model.nodes['core-1']!.sidePitch!.bottom).toBe(12);
+    expect(model.diagnostics.filter(item => item.code === 'FAN_SPREAD_CUT')).toHaveLength(1);
+  });
+
+  // Ticket 112 review, finding 2: a re-run starts only with the post-placement reserve plus about 8 s for one re-run and 7f left.
+  it('starts a re-run only when the post-placement reserve and one re-run remain', async () => {
+    const at = (ms: number): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
+      budget: { remainingMs: () => ms, share: stageMs => Math.min(stageMs, ms) } });
+    const under = await at(POST_PLACEMENT_RESERVE_MS + 7000), over = await at(POST_PLACEMENT_RESERVE_MS + 9000);
+    expect(under.diagnostics.filter(item => item.code === 'FAN_SPREAD_CUT')).toHaveLength(1);
+    expect(under.nodes['core-1']!.sidePitch!.bottom).toBe(12);
+    expect(over.diagnostics.filter(item => item.code === 'FAN_SPREAD_CUT')).toEqual([]);
+    expect(over.nodes['core-1']!.sidePitch!.bottom).toBeGreaterThan(12);
+  });
+
+  // Ticket 112: machine speed must not change the layout. A clock that makes every stage look slow, with a deadline far away, cuts nothing.
+  it('gives the same layout on a slow clock at a normal deadline, with no cut warning', async () => {
+    let tick = 0;
+    const clock = { ...systemElkClock, now: () => (tick += 4000) };
+    const budget: Budget = { remainingMs: () => 600_000, share: stageMs => stageMs };
+    const slow = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, budget, clock });
+    const fast = await run();
+    const shape = (model: LayoutModel): unknown => model.links.map(link => [link.id, link.technique, link.path!.segments]);
+    expect(shape(slow)).toEqual(shape(fast));
+    expect(slow.nodes['core-1']!.sidePitch).toEqual(fast.nodes['core-1']!.sidePitch);
+    expect(slow.diagnostics.filter(item => item.code === 'FAN_SPREAD_CUT')).toEqual([]);
+  });
+
+  // Ticket 112 review, finding 1: a re-run dropped because ELK met its limit is reported, not silent.
+  it('reports a cut when the ELK attempt of a re-run meets its limit', async () => {
+    let calls = 0;
+    const createElkAttempt: typeof createAttempt = () => {
+      const real = createAttempt();
+      if (++calls !== 2) return real;
+      return { layout: async () => { real.terminateWorker(); throw new ElkDeadlineError(1); }, terminateWorker: () => real.terminateWorker() };
+    };
+    const model = await layout(parse(yaml), { createElkAttempt, createRouteAttempt: createAvoidAttempt });
+    expect(calls).toBeGreaterThan(1);
+    expect(model.diagnostics.filter(item => item.code === 'FAN_SPREAD_CUT')).toHaveLength(1);
+    expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
   });
 
   // Finding 2: two chord ports k pitch steps apart with a port between them that carries no chord. The floor is the pitch plus the share of

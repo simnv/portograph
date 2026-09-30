@@ -1,3 +1,4 @@
+import type { Budget } from '../pipeline/budget.js';
 import type { Point, Rect, Side } from '../model/geometry.js';
 import { stemCache, stemDepth } from './sides-two.js';
 import type { PortRef } from '../model/document.js';
@@ -1561,6 +1562,6 @@ export function validateGroupLabelBands(model: LayoutModel): void {
 }
 
 /** Stage 7f: reserve and place deterministic group labels, then freeze final placement. */
-export function bands(model: LayoutModel): LayoutModel {
-  return withLayoutMutation(model, 'bands', () => {});
+export function bands(model: LayoutModel, budget?: Budget): LayoutModel {
+  return withLayoutMutation(model, 'bands', () => {}, budget);
 }

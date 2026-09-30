@@ -3,9 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { spent, stepOverChords } from '../../src/layout/chord-clear.js';
+import { POST_PLACEMENT_RESERVE_MS } from '../../src/pipeline/budget.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { deriveFrames } from '../../src/layout/frames.js';
-import { crosses, overlayPath, straightChord } from '../../src/layout/overlay-paths.js';
+import { crosses, overlayBlockers, overlayPath, straightChord } from '../../src/layout/overlay-paths.js';
 import { moveGroup } from '../../src/layout/skeleton-geometry.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -249,4 +250,76 @@ describe('the slide paths of a frame, judged and capped (ticket 80)', () => {
     // column rules: `packBesideRows` moved it back. The canvas is the one of main (1921.3), not the widened one (1984.5).
     expect(model.canvas!.width).toBeLessThan(1930);
   }, 120000);
+});
+
+describe('the step over a chord reads the command budget (ticket 111)', () => {
+  const copy = (model: LayoutModel): LayoutModel => JSON.parse(JSON.stringify(model)) as LayoutModel;
+  const budgetOf = (ms: () => number) => ({ remainingMs: ms, share: (stage: number) => Math.min(stage, ms()) });
+  const stood = async (): Promise<LayoutModel> => {
+    const model = copy(await run(fixture('a-group-with-routed-links-steps-off-a-straight-chord')));
+    const link = model.links.find(item => item.layer === 'overlay')!, group = model.groups['middle']!, node = model.nodes['mid']!;
+    const chord = straightChord(model, link)!, y = node.bounds!.y + node.bounds!.height / 2;
+    moveGroup(model, group, chord.from.x + (chord.to.x - chord.from.x) * (y - chord.from.y) / (chord.to.y - chord.from.y) - (node.bounds!.x + node.bounds!.width / 2), 0);
+    rebuildNodeGeometry(model, group.nodes, 'current');
+    return model;
+  };
+
+  it('a budget under the reserve tries no mover, keeps the model and warns with the count', async () => {
+    const model = await stood(), before = JSON.stringify(model.groups);
+    expect(stepOverChords(model, undefined, new Set(), budgetOf(() => POST_PLACEMENT_RESERVE_MS - 1))).toBe(false);
+    expect(JSON.stringify(model.groups)).toBe(before);
+    const warning = model.diagnostics.find(item => item.code === 'CHORD_CLEAR_BUDGET')!;
+    expect(warning.severity).toBe('warning');
+    expect(warning.message).toMatch(/\d+ movers? (was|were) not tried/);
+    expect(model.diagnostics.filter(item => item.code === 'CHORD_CLEAR_BUDGET')).toHaveLength(1);
+  }, 60000);
+
+  it('a budget that falls under the reserve after one trial keeps the accepted move and stops', async () => {
+    const model = await stood();
+    let reads = 0;
+    // The first mover sees room; every later read sees none.
+    expect(stepOverChords(model, undefined, new Set(), budgetOf(() => (reads++ === 0 ? Infinity : 0)))).toBe(true);
+    expect(overlayPath(model, model.links.find(item => item.layer === 'overlay')!).segments).toHaveLength(1);
+  }, 60000);
+
+  it('a budget with room changes nothing against the unbounded step', async () => {
+    const a = await stood(), b = await stood();
+    stepOverChords(a, undefined);
+    stepOverChords(b, undefined, new Set(), budgetOf(() => 1e9));
+    expect(JSON.stringify(b.groups)).toBe(JSON.stringify(a.groups));
+    expect(b.diagnostics.some(item => item.code === 'CHORD_CLEAR_BUDGET')).toBe(false);
+  }, 60000);
+
+  it('a command whose budget falls under the reserve at 7f publishes with exactly one warning (a-corridor-moves-after-the-grid-settles)', async () => {
+    // The first three reads after `bundles` see room, so a move stays and 7f would run a second round: the guard is what keeps one warning.
+    let late = false, reads = 0;
+    const budget = budgetOf(() => (!late || reads++ < 3 ? Infinity : POST_PLACEMENT_RESERVE_MS - 1000));
+    const model = await layout(parse(fixture('a-corridor-moves-after-the-grid-settles')), {
+      createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, budget,
+      onProgress: progress => { if (progress.stage === 'bundles') late = true; },
+    });
+    expect(model.stage).toBe('link-labels');
+    expect(model.diagnostics.filter(item => item.code === 'CHORD_CLEAR_BUDGET')).toHaveLength(1);
+  }, 60000);
+});
+
+describe('the mover takes the position that clears the most chords (ticket 110)', () => {
+  const copy = (model: LayoutModel): LayoutModel => JSON.parse(JSON.stringify(model)) as LayoutModel;
+
+  it('a group that stands on two close chords goes to the edge that clears both, not the nearest edge that clears one', async () => {
+    const model = copy(await run(fixture('a-mover-takes-the-position-that-clears-most-chords')));
+    const chords = model.links.filter(link => link.layer === 'overlay' && link.attachments!.from.node.startsWith('src-'));
+    expect(chords).toHaveLength(2);
+    const group = model.groups['middle']!, node = model.nodes['mid']!;
+    // Stand `mid` on the first chord, as an earlier centring could leave it: the second chord is close, so the nearest edge clears one only.
+    const chord = straightChord(model, chords[0]!, overlayBlockers(model, new Set(group.nodes)))!;
+    const y = node.bounds!.y + node.bounds!.height / 2;
+    const at = chord.from.x + (chord.to.x - chord.from.x) * (y - chord.from.y) / (chord.to.y - chord.from.y);
+    moveGroup(model, group, at - (node.bounds!.x + node.bounds!.width / 2), 0);
+    rebuildNodeGeometry(model, group.nodes, 'current');
+    const straight = (): number => chords.filter(link => overlayPath(model, link).segments.length === 1).length;
+    expect(straight()).toBeLessThan(2);
+    expect(stepOverChords(model, () => undefined)).toBe(true);
+    expect(straight()).toBe(2);
+  }, 60000);
 });
