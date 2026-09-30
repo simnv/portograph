@@ -4,7 +4,7 @@ import { layout, parse } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { stepOverChords } from '../../src/layout/chord-clear.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
-import { crosses, overlayPath, straightChord } from '../../src/layout/overlay-paths.js';
+import { crosses, overlayBlockers, overlayPath, straightChord } from '../../src/layout/overlay-paths.js';
 import { moveGroup } from '../../src/layout/skeleton-geometry.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -99,4 +99,25 @@ describe('the step over a chord, where the mover holds routed links or shares a 
     // The centring warning on main stands; the step adds none.
     expect(model.diagnostics.filter(d => d.code === 'PLACEMENT_NON_CONVERGENCE')).toHaveLength(1);
   }, 120000);
+});
+
+describe('the mover takes the position that clears the most chords (ticket 110)', () => {
+  const copy = (model: LayoutModel): LayoutModel => JSON.parse(JSON.stringify(model)) as LayoutModel;
+
+  it('a group that stands on two close chords goes to the edge that clears both, not the nearest edge that clears one', async () => {
+    const model = copy(await run(fixture('a-mover-takes-the-position-that-clears-most-chords')));
+    const chords = model.links.filter(link => link.layer === 'overlay' && link.attachments!.from.node.startsWith('src-'));
+    expect(chords).toHaveLength(2);
+    const group = model.groups['middle']!, node = model.nodes['mid']!;
+    // Stand `mid` on the first chord, as an earlier centring could leave it: the second chord is close, so the nearest edge clears one only.
+    const chord = straightChord(model, chords[0]!, overlayBlockers(model, new Set(group.nodes)))!;
+    const y = node.bounds!.y + node.bounds!.height / 2;
+    const at = chord.from.x + (chord.to.x - chord.from.x) * (y - chord.from.y) / (chord.to.y - chord.from.y);
+    moveGroup(model, group, at - (node.bounds!.x + node.bounds!.width / 2), 0);
+    rebuildNodeGeometry(model, group.nodes, 'current');
+    const straight = (): number => chords.filter(link => overlayPath(model, link).segments.length === 1).length;
+    expect(straight()).toBeLessThan(2);
+    expect(stepOverChords(model, undefined)).toBe(true);
+    expect(straight()).toBe(2);
+  }, 60000);
 });
