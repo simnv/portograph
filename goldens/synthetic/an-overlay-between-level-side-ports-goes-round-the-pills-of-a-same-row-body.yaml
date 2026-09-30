@@ -1,0 +1,33 @@
+# Expected: ranked-groups ticket 86, review finding 1. As
+# `a-straight-overlay-between-level-side-ports-goes-round-a-same-row-body`, but `m` also has a top
+# port and a bottom port, fed by routed links from the tiers above and below, so a pill hangs off
+# each of its long edges. The run over the row must clear those pills too: the extent of the shapes
+# the run passes is grown until it meets no more, and the link goes round `m` and both its pills.
+# No segment of the overlay path enters a node body or a pill.
+portograph: 2
+groups:
+  above: { tier: 0, label: Above }
+  row: { tier: 1, label: Row }
+  below: { tier: 2, label: Below }
+nodes:
+  t1: { group: above, class: server, label: t1 }
+  t2: { group: above, class: server, label: t2 }
+  t3: { group: above, class: server, label: t3 }
+  a: { group: row, class: server, label: a, ports: [{ name: p, side: right }] }
+  m:
+    group: row
+    class: server
+    label: m
+    ports: [{ name: u, side: top }, { name: d, side: bottom }]
+  c: { group: row, class: server, label: c, ports: [{ name: p, side: left }] }
+  b1: { group: below, class: server, label: b1 }
+  b2: { group: below, class: server, label: b2 }
+  b3: { group: below, class: server, label: b3 }
+links:
+  - [t1, a]
+  - [t2, m.u]
+  - [t3, c]
+  - [a, b1]
+  - [m.d, b2]
+  - [c, b3]
+  - [a.p, c.p, { route: overlay }]

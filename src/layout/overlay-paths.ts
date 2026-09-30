@@ -27,15 +27,16 @@ const NORMAL: Readonly<Record<Side, Point>> = {
 };
 
 /** Every node body and every drawn port pill: the shapes an overlay link goes round. */
-export type OverlayBlockers = RectangleIndex<Rect>;
+export type OverlayShape = Rect & { readonly pill?: true };
+export type OverlayBlockers = RectangleIndex<OverlayShape>;
 
 export function overlayBlockers(model: LayoutModel, skip?: ReadonlySet<string>): OverlayBlockers {
-  const boxes: { bounds: Rect; value: Rect }[] = [];
+  const boxes: { bounds: Rect; value: OverlayShape }[] = [];
   for (const [id, node] of Object.entries(model.nodes)) {
     if (skip?.has(id)) continue;
     if (node.bounds) boxes.push({ bounds: node.bounds, value: node.bounds });
     for (const port of node.ports) {
-      if (port.pill && port.ref.anonymous !== true) boxes.push({ bounds: port.pill.bounds, value: port.pill.bounds });
+      if (port.pill && port.ref.anonymous !== true) boxes.push({ bounds: port.pill.bounds, value: { ...port.pill.bounds, pill: true } });
     }
   }
   return new RectangleIndex(boxes);
@@ -190,22 +191,33 @@ function between(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers):
     (Math.max(...boxes.map(low)) + Math.min(...boxes.map(high))) / 2;
   const midX = gap(box => box.x, right), midY = gap(box => box.y, bottom);
   const turn = { x: to.x, y: from.y }, bend = { x: from.x, y: to.y };
-  // The shapes that stand in the hull of the two ends and their cleared points. The four runs round
+  // The shapes that stand in the way of a run outside the pair. The four runs round
   // the pair are read off the two end boxes alone, and a body taller than a pill (every node body is)
   // that stands between two level side ports holds all four inside itself — so a second set of runs
-  // goes round **those shapes**, one clearance outside the hull they make together (ticket 86).
-  const cleared = [...boxes, { x: Math.min(from.x, to.x), y: Math.min(from.y, to.y),
-    width: Math.abs(to.x - from.x), height: Math.abs(to.y - from.y) }];
-  const hull: Rect = { x: Math.min(...cleared.map(box => box.x)), y: Math.min(...cleared.map(box => box.y)),
-    width: 0, height: 0 };
-  hull.width = Math.max(...cleared.map(right)) - hull.x;
-  hull.height = Math.max(...cleared.map(bottom)) - hull.y;
-  const standing: Rect[] = [...boxes];
-  blockers.some(hull, box => { standing.push(box); return false; });
-  const outerAbove = Math.min(above, Math.min(...standing.map(box => box.y)) - OVERLAY_PILL_CLEARANCE);
-  const outerBelow = Math.max(below, Math.max(...standing.map(bottom)) + OVERLAY_PILL_CLEARANCE);
-  const outerLeft = Math.min(left, Math.min(...standing.map(box => box.x)) - OVERLAY_PILL_CLEARANCE);
-  const outerFar = Math.max(far, Math.max(...standing.map(right)) + OVERLAY_PILL_CLEARANCE);
+  // goes round **those shapes**, one clearance outside the extent they make together (ticket 86).
+  // The hull is grown to a fixed point: it starts as the rectangle the two end boxes and the two
+  // cleared points span, every shape it meets one clearance out is added, and it is read again, so a
+  // pill that hangs off a standing body is inside the runs' clearance too.
+  const meets = (box: Rect, other: Rect): boolean => box.x <= right(other) - EPS && right(box) >= other.x + EPS
+    && box.y <= bottom(other) - EPS && bottom(box) >= other.y + EPS;
+  const hull = { left: Math.min(from.x, to.x, ...boxes.map(box => box.x)), top: Math.min(from.y, to.y, ...boxes.map(box => box.y)),
+    right: Math.max(from.x, to.x, ...boxes.map(right)), bottom: Math.max(from.y, to.y, ...boxes.map(bottom)) };
+  for (let grown = true; grown;) {
+    grown = false;
+    const reach: Rect = { x: hull.left - OVERLAY_PILL_CLEARANCE, y: hull.top - OVERLAY_PILL_CLEARANCE,
+      width: hull.right - hull.left + 2 * OVERLAY_PILL_CLEARANCE, height: hull.bottom - hull.top + 2 * OVERLAY_PILL_CLEARANCE };
+    blockers.some(reach, box => {
+      if (!meets(reach, box)) return false;
+      if (box.x < hull.left || right(box) > hull.right || box.y < hull.top || bottom(box) > hull.bottom) grown = true;
+      hull.left = Math.min(hull.left, box.x); hull.right = Math.max(hull.right, right(box));
+      hull.top = Math.min(hull.top, box.y); hull.bottom = Math.max(hull.bottom, bottom(box));
+      return false;
+    });
+  }
+  const outerAbove = Math.min(above, hull.top - OVERLAY_PILL_CLEARANCE);
+  const outerBelow = Math.max(below, hull.bottom + OVERLAY_PILL_CLEARANCE);
+  const outerLeft = Math.min(left, hull.left - OVERLAY_PILL_CLEARANCE);
+  const outerFar = Math.max(far, hull.right + OVERLAY_PILL_CLEARANCE);
   const ways: Point[][] = [
     // One turn, starting the way the source port faces.
     ...(head.out.x !== 0 ? [[turn], [bend]] : [[bend], [turn]]),
@@ -218,7 +230,7 @@ function between(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers):
     // is what an overlap gives — is refused by the same test as every other candidate.
     [{ x: midX, y: from.y }, { x: midX, y: to.y }],
     [{ x: from.x, y: midY }, { x: to.x, y: midY }],
-    // Right round every shape that stands in the pair's hull.
+    // Right round every shape that stands in the way of a run outside the pair.
     [{ x: from.x, y: outerAbove }, { x: to.x, y: outerAbove }],
     [{ x: from.x, y: outerBelow }, { x: to.x, y: outerBelow }],
     [{ x: outerLeft, y: from.y }, { x: outerLeft, y: to.y }],
@@ -253,6 +265,12 @@ function between(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers):
       width: Math.abs(two.x - one.x), height: Math.abs(two.y - one.y) };
     return blockers.some(box, blocker => enters(one, two, blocker));
   });
+  const clearOfPills = (points: readonly Point[]): boolean => everySegment(points, (one, two) => {
+    const box = { x: Math.min(one.x, two.x), y: Math.min(one.y, two.y),
+      width: Math.abs(two.x - one.x), height: Math.abs(two.y - one.y) };
+    return blockers.some(box, blocker => blocker.pill === true && enters(one, two, blocker))
+      || boxes.some(end => enters(one, two, end));
+  });
   const clearOfEnds = (points: readonly Point[]): boolean =>
     everySegment(points, (one, two) => boxes.some(box => enters(one, two, box)));
   // A way round can land on the line the two cleared points already share, and then it states a corner
@@ -274,7 +292,7 @@ function between(head: OverlayEnd, tail: OverlayEnd, blockers: OverlayBlockers):
     }
     return best?.points;
   };
-  return shortest(clearOfAll) ?? shortest(clearOfEnds);
+  return shortest(clearOfAll) ?? shortest(clearOfPills) ?? shortest(clearOfEnds);
 }
 
 /**

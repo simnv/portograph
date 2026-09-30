@@ -201,7 +201,7 @@ describe('overlay paths', () => {
     // plus a stub lands on every one of them, and the ends-only fall-back used to take the level
     // "single turn" that is one straight anchor-to-anchor line through the body. Two level ports with
     // a body between them are the case ticket 86 names. The orthogonal branch now also tries runs
-    // outside every shape in the hull of the pair, and one of them clears the body.
+    // outside every shape they pass, and one of them clears the body: x -4: one clearance left of the pair's own end boxes (here the two node bodies at x 0), which the hull starts from, since a run outside the pair must clear them too.
     expect(path(facingColumn({ id: 'x', bounds: { x: 10, y: 70, width: 40, height: 20 } })))
       .toEqual([{ x: 30, y: 53 }, { x: 30, y: 57 }, { x: -4, y: 57 }, { x: -4, y: 103 },
         { x: 30, y: 103 }, { x: 30, y: 107 }]);
