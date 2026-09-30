@@ -118,19 +118,31 @@ describe('overlay window rule (ticket 143)', () => {
     });
   });
 
-  // Unit: the tier guard (ticket test 4). The windows hold where they leave more links straight than the means do.
+  // Unit: the tier guard (ticket test 4). The windows hold where they leave more links straight than the tier had, or as many with none bent.
   describe('windowsHold', () => {
     it('holds where the windows bend one straight link and straighten two', () => {
-      // Means: a, b straight. Windows: b, c, d straight (a bent, c and d straightened).
       expect(windowsHold(new Set(['b', 'c', 'd']), new Set(['a', 'b']))).toBe(true);
     });
     it('refuses where the windows bend two straight links and straighten one', () => {
       expect(windowsHold(new Set(['c', 'd']), new Set(['a', 'b', 'c']))).toBe(false);
     });
-    it('refuses a tie', () => {
-      expect(windowsHold(new Set(['a', 'b']), new Set(['a', 'b']))).toBe(false);
+    it('refuses a tie that bends a straight link, and holds a tie that bends none', () => {
+      expect(windowsHold(new Set(['a', 'c']), new Set(['a', 'b']))).toBe(false);
+      expect(windowsHold(new Set(['a', 'b']), new Set(['a', 'b']))).toBe(true);
     });
   });
+
+  // A window is placement's decision: a run without windows, which the early passes and the replays after 7f make, does not undo it.
+  it('a run without windows leaves a window-placed group where the windows put it', async () => {
+    for (const name of [CANTON, PLAIN]) {
+      const model = structuredClone(await run(name)) as LayoutModel;
+      const note = model.diagnostics.find(item => item.code === OVERLAY_WINDOW_TAKEN)!;
+      const first = bounds(model);
+      placeOverlayFree(model, undefined, false);
+      expect(bounds(model), name).toBe(first);
+      expect(model.diagnostics.some(item => item.code === OVERLAY_WINDOW_TAKEN && item.message === note.message), name).toBe(true);
+    }
+  }, 60000);
 
   // Unit: the choice of the candidate, on forged straight counts.
   describe('pickTarget', () => {

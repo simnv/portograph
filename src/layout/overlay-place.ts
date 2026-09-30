@@ -71,58 +71,38 @@ export const OVERLAY_WINDOW_TAKEN = 'OVERLAY_WINDOW_TAKEN';
  * and may move, so `centreDraft` runs the pass again after each pass of its steps: the free groups
  * end at the mean of partners that stand where centring left them.
  */
-/**
- * Test hooks (ticket 143 probe). All off by default, and then the pass is as documented. Each one turns one review fix back to the
- * behaviour of d686704 on its own: `baselineStart` (M3: both guards compare with the state the run began in, not with a run of the means),
- * `allGroups` (M2: the windows are chosen on every link that spans the tier, not on the placed groups), `keepWindow` (M2: a run without
- * windows does not place the means over a window). `log` collects the refusals when it is set.
- */
-export const overlayProbe: { baselineStart: boolean; allGroups: boolean; keepWindow: boolean; log?: string[] } = { baselineStart: false, allGroups: false, keepWindow: false };
-
 export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColumn[] = frameColumns(model), windows = true): void {
   if (!windows) { place(model, columns, false); return; }
-  // The windows are kept only where the whole sheet gains against the means: fewer bent overlay links than a run that places the means, and
-  // no more turns in all, read on every overlay link and not only on the chords the rule counted (ticket 143, three-continents).
-  // A run that fails goes back to the state it began in and places the means. The means are read on a run of their own, so the answer
-  // does not depend on the x the groups had when the run began.
+  // The windows are kept only where the whole sheet gains: fewer bent overlay links and no more turns in all, read on every overlay link and
+  // not only on the chords the rule counted (ticket 143, three-continents). A run that fails goes back to the state it began in and places
+  // the means alone.
   const groups = Object.values(model.groups), diagnostics = [...model.diagnostics];
   const undo = saveGroups(model, groups), start = new Map(groups.map(group => [group.id, JSON.stringify(group.bounds)]));
-  const revert = (): void => {
-    const moved = groups.filter(group => JSON.stringify(group.bounds) !== start.get(group.id));
-    // A run that moved nothing leaves the model as it was, and a model that is frozen is not written.
-    if (!moved.length && model.diagnostics.length === diagnostics.length) return;
+  const before = overlayTurns(model), state = { windowed: false };
+  place(model, columns, true, state);
+  if (!state.windowed) return;
+  if (sheetGains(overlayTurns(model), before)) return;
+  const moved = groups.filter(group => JSON.stringify(group.bounds) !== start.get(group.id));
+  // A run that moved nothing leaves the model as it was, and a model that is frozen is not written.
+  if (moved.length || model.diagnostics.length !== diagnostics.length) {
     undo();
     model.diagnostics = [...diagnostics];
     rebuildNodeGeometry(model, moved.flatMap(group => group.nodes), 'current');
-  };
-  let means: { bent: number; turns: number };
-  if (overlayProbe.baselineStart) means = overlayTurns(model);
-  else {
-    place(model, columns, false);
-    means = overlayTurns(model);
-    revert();
   }
-  const state = { windowed: false };
-  place(model, columns, true, state);
-  if (!state.windowed) return;
-  const after = overlayTurns(model);
-  if (sheetGains(after, means)) return;
-  overlayProbe.log?.push(`sheet: refused, windows bent ${after.bent} turns ${after.turns}, ${overlayProbe.baselineStart ? 'start' : 'means'} bent ${means.bent} turns ${means.turns}`);
-  revert();
   place(model, columns, false);
 }
 
-/** Whether a run with windows gains on the whole sheet against the means: fewer bent overlay links and no more turns in all. */
-export function sheetGains(windows: { bent: number; turns: number }, means: { bent: number; turns: number }): boolean {
-  return windows.bent < means.bent && windows.turns <= means.turns;
+/** Whether a run with windows gains on the whole sheet: fewer bent overlay links than before and no more turns in all. */
+export function sheetGains(windows: { bent: number; turns: number }, before: { bent: number; turns: number }): boolean {
+  return windows.bent < before.bent && windows.turns <= before.turns;
 }
 
 /**
- * Whether the windows of a tier are kept: they must leave more overlay links straight than the means do. The set of links is not
- * compared: a window that bends one straight chord and straightens two holds, and one that bends two and straightens one does not.
+ * Whether the windows of a tier are kept: they must leave more overlay links straight than the tier had, or as many with none of them bent.
+ * A window that bends one straight link and straightens two holds; one that bends two and straightens one does not.
  */
-export function windowsHold(windows: ReadonlySet<string>, means: ReadonlySet<string>): boolean {
-  return windows.size > means.size;
+export function windowsHold(windows: ReadonlySet<string>, before: ReadonlySet<string>): boolean {
+  return windows.size > before.size || (windows.size === before.size && [...before].every(id => windows.has(id)));
 }
 
 /** The bent overlay links and the turns of all of them, as the overlay rule draws them now. A mesh bus member is no chord. */
@@ -215,15 +195,6 @@ function place(model: LayoutModel, columns: readonly FrameColumn[], windows: boo
       const blockers = overlayBlockers(model);
       return new Set(spanning.filter(link => overlayPath(model, link, blockers).segments.length === 1).map(link => link.id));
     };
-    // The windows are judged against the means on the placed groups alone: the tier's own movers and the settled groups. A free group of a
-    // later tier stands where an earlier run left it, and reading it would make the choice depend on that run (ticket 143 review, M2). The
-    // guard against the state the tier began in keeps the whole view: it is what holds a repair of the 7f step that an earlier run kept.
-    const placed = new Set([...settled, ...movers.map(group => group.id)]);
-    const placedIds = (): Set<string> => {
-      const blockers = overlayBlockers(model, new Set(Object.values(model.groups).filter(group => !placed.has(group.id)).flatMap(group => group.nodes)));
-      return new Set(spanning.filter(link => placed.has(groupOf(link.attachments!.from.node)) && placed.has(groupOf(link.attachments!.to.node)))
-        .filter(link => overlayPath(model, link, blockers).segments.length === 1).map(link => link.id));
-    };
     const nodesOfTier = groups.flatMap(group => group.nodes);
     const signature = (): string => JSON.stringify(groups.map(group => [group.bounds, group.rowOrder, group.nodes.map(node => model.nodes[node]!.bounds)]));
     // Into the span (ticket 22): a group outside the x-span of its partners is first moved into it and
@@ -252,10 +223,8 @@ function place(model: LayoutModel, columns: readonly FrameColumn[], windows: boo
     const start = signature();
     const undo = saveGroups(model, groups);
     for (const group of movers) orderNodes(model, group, node => keyOf([node], group.id), routedAny);
-    const ordered = saveGroups(model, groups);
     const noted = (group: LayoutGroup) => (item: { code: string; owners?: readonly { kind: string; id?: string }[] }): boolean =>
       item.code === OVERLAY_WINDOW_TAKEN && item.owners?.[0]?.kind === 'group' && item.owners[0].id === group.id;
-    const prior = model.diagnostics.filter(item => movers.some(group => noted(group)(item)));
     const means = new Map<string, number>();
     for (const group of movers) {
       const target = keyOf(group.nodes, group.id);
@@ -284,40 +253,27 @@ function place(model: LayoutModel, columns: readonly FrameColumn[], windows: boo
     };
     apply(chosen);
     if (spanning.length && signature() !== start) {
-      // `centre` moves groups with `moveGroup`, which leaves the pills behind. The counts must read the same kind of geometry, so each state
-      // is set, its pills are refreshed and its links counted: the state the tier began in, the means, and the windows.
-      const redoChosen = saveGroups(model, groups);
+      // `centre` moves groups with `moveGroup`, which leaves the pills behind. The count before the move
+      // and the count after it must read the same kind of geometry, so the tier goes back, its pills
+      // are refreshed and counted, then the move is redone and counted the same way.
+      const redo = saveGroups(model, groups);
       undo();
       rebuildNodeGeometry(model, nodesOfTier, 'current');
       const before = straightIds();
-      let redoMeans: (() => void) | undefined, meansIds: Set<string> | undefined, meansAll: Set<string> | undefined;
-      if (taken.length) {
-        ordered();
-        apply(means);
-        rebuildNodeGeometry(model, nodesOfTier, 'current');
-        meansIds = placedIds();
-        meansAll = straightIds();
-        redoMeans = saveGroups(model, groups);
-      }
-      redoChosen();
+      redo();
       rebuildNodeGeometry(model, nodesOfTier, 'current');
       let after = straightIds(), windowed = taken.length > 0;
-      // The windows are kept only where they leave more links straight than the means do (`windowsHold`).
-      const heldAgainst = !windowed ? before : overlayProbe.baselineStart ? before : overlayProbe.allGroups ? meansAll! : meansIds!;
-      const heldWindows = !windowed || overlayProbe.baselineStart || overlayProbe.allGroups ? after : placedIds();
-      const held = overlayProbe.baselineStart ? after.size > before.size || (after.size === before.size && [...before].every(id => after.has(id))) : windowsHold(heldWindows, heldAgainst);
-      if (windowed && !held) {
-        overlayProbe.log?.push(`tier ${tier}: windows refused by the choice against ${overlayProbe.baselineStart ? 'the start' : 'the means'}: windows ${heldWindows.size} straight, ${overlayProbe.baselineStart ? 'start' : 'means'} ${heldAgainst.size}`);
-        redoMeans!();
+      // The windows are kept only where they straighten more links than they bend, or bend none that was straight (`windowsHold`).
+      if (windowed && !windowsHold(after, before)) {
+        undo();
         rebuildNodeGeometry(model, nodesOfTier, 'current');
-        after = meansAll!;
+        apply(means);
+        rebuildNodeGeometry(model, nodesOfTier, 'current');
+        after = straightIds();
         windowed = false;
       }
-      // A run that places the means and meets a window of an earlier run places them for real: the guard below would hold the window (hysteresis).
-      const leaving = !windows && prior.length > 0 && !overlayProbe.keepWindow;
       let restored = false;
-      if (windowed && after.size < before.size && !leaving) overlayProbe.log?.push(`tier ${tier}: windows refused by the guard against the tier's start: ${after.size} straight, start ${before.size}`);
-      if (after.size < before.size && !leaving) { undo(); rebuildNodeGeometry(model, nodesOfTier, 'current'); windowed = false; restored = true; }
+      if (after.size < before.size) { undo(); rebuildNodeGeometry(model, nodesOfTier, 'current'); windowed = false; restored = true; }
       if (!restored) {
         // The note follows the place the group stands at: it is dropped when the group moves to the mean and is stated again when a window holds.
         model.diagnostics = model.diagnostics.filter(item => !movers.some(group => noted(group)(item)));
