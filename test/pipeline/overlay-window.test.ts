@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { LayoutModel, Rect } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
 import { deriveFrames } from '../../src/layout/frames.js';
-import { OVERLAY_WINDOW_TAKEN, placeOverlayFree } from '../../src/layout/overlay-place.js';
+import { OVERLAY_WINDOW_TAKEN, placeOverlayFree, sheetGains, windowsHold } from '../../src/layout/overlay-place.js';
 import { overlayPath } from '../../src/layout/overlay-paths.js';
 import { CHORD_WINDOW_TRIALS, chordWindows, pickTarget } from '../../src/layout/overlay-window.js';
 import { PLACEMENT_EPS } from '../../src/layout/tolerance.js';
@@ -64,6 +64,8 @@ describe('overlay window rule (ticket 143)', () => {
   it('a second run of the pass moves nothing', async () => {
     for (const name of [CANTON, PLAIN]) {
       const model = structuredClone(await run(name)) as LayoutModel;
+      // The rule is on: the lower group does not stand at the mean, so the test reads the settled reading and not a model that never moved.
+      expect(model.diagnostics.some(item => item.code === OVERLAY_WINDOW_TAKEN), name).toBe(true);
       placeOverlayFree(model);
       const first = bounds(model);
       placeOverlayFree(model);
@@ -101,6 +103,32 @@ describe('overlay window rule (ticket 143)', () => {
     });
     it('a chord that only touches the body edge is not blocked', () => {
       expect(chordWindows({ x: 0, y: 40 }, { x: 100, y: 40 }, 'shape', body)).toEqual([]);
+    });
+  });
+
+  // Unit: the whole-sheet guard. Fewer bent links and no more turns; the case of three-continents (one link fewer bent, more turns) is refused.
+  describe('sheetGains', () => {
+    it('keeps the windows that bend fewer links and add no turn', () => {
+      expect(sheetGains({ bent: 7, turns: 30 }, { bent: 8, turns: 34 })).toBe(true);
+    });
+    it('refuses more bent links, or more turns, or no gain', () => {
+      expect(sheetGains({ bent: 9, turns: 38 }, { bent: 8, turns: 34 })).toBe(false);
+      expect(sheetGains({ bent: 7, turns: 36 }, { bent: 8, turns: 34 })).toBe(false);
+      expect(sheetGains({ bent: 8, turns: 30 }, { bent: 8, turns: 34 })).toBe(false);
+    });
+  });
+
+  // Unit: the tier guard (ticket test 4). The windows hold where they leave more links straight than the means do.
+  describe('windowsHold', () => {
+    it('holds where the windows bend one straight link and straighten two', () => {
+      // Means: a, b straight. Windows: b, c, d straight (a bent, c and d straightened).
+      expect(windowsHold(new Set(['b', 'c', 'd']), new Set(['a', 'b']))).toBe(true);
+    });
+    it('refuses where the windows bend two straight links and straighten one', () => {
+      expect(windowsHold(new Set(['c', 'd']), new Set(['a', 'b', 'c']))).toBe(false);
+    });
+    it('refuses a tie', () => {
+      expect(windowsHold(new Set(['a', 'b']), new Set(['a', 'b']))).toBe(false);
     });
   });
 
