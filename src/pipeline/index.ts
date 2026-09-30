@@ -91,6 +91,8 @@ export interface LayoutOptions {
   testNodeFloors?: ReadonlyMap<string, Size>;
   /** Test only. Replaces `MAX_RERUNS` for one command. */
   testMaxReruns?: number;
+  /** Test only: called once per side trial with the kept model, the trial, the offer and whether the round took it. */
+  testSideProbe?: (event: { kept: LayoutModel; trial: LayoutModel; offer: SideOffer; taken: boolean; failed: string[] }) => void;
   /** Test only. Called with the wall time of each placement run, measure, 7f, route and score-ready stage, and the budget left (ticket 115 timing). */
   testTiming?: (label: string, durationMs: number, remainingMs: number) => void;
 }
@@ -242,8 +244,10 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     const before = bendTotals(model), after = bendTotals(trial);
     // Fewer bends win even when crossings rise (Q109, decision 3): a crossing added at a moved port is reported, not a reason to refuse.
     const movedNodes = new Set([...offer.hints.keys()].map(key => (JSON.parse(key) as [string])[0]));
-    if (failed.length === 0 && (after.bent < before.bent || (after.bent === before.bent && after.total < before.total))
-      && straightChords(trial) >= straightChords(model)) {
+    const gain = failed.length === 0 && (after.bent < before.bent || (after.bent === before.bent && after.total < before.total))
+      && straightChords(trial) >= straightChords(model);
+    options.testSideProbe?.({ kept: model, trial, offer, taken: gain, failed });
+    if (gain) {
       const added = overlayCrossingsAt(trial, movedNodes) - overlayCrossingsAt(model, movedNodes);
       if (added > 0) for (const id of new Set([...offer.promised.values()].map(item => item.link))) {
         sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_HINT_ADDS_CROSSING',

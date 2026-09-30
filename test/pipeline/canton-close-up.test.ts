@@ -71,7 +71,9 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
   // The refused close-up moves the nodes and puts them back: labels in node order and the geometry exact, or publication throws.
   it('a refused close-up leaves the node labels and the geometry whole', async () => {
     // The refused close-up needs the routed links orthogonal; Q108 gives them a chord (ticket 100), so the subject is the orthogonal variant.
-    const model = await layout(parse(orthogonalLinks(readFileSync(new URL('../../goldens/synthetic/a-refused-close-up-keeps-the-node-labels-in-order.yaml', import.meta.url), 'utf8'))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const model = await layout(parse(orthogonalLinks(readFileSync(new URL('../../goldens/synthetic/a-refused-close-up-keeps-the-node-labels-in-order.yaml', import.meta.url), 'utf8'))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
+      // The subject is the refusal on straight overlay links; with the side round on, the L hints bend fewer links and the refusal has no subject (ticket 116).
+      testMaxReruns: 0 });
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
     expect(closeUps(model).length).toBeGreaterThan(0);
     expect(closeUps(model)[0]!.message).toContain('a straight overlay link would be bent');

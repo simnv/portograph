@@ -46,12 +46,22 @@ export function plannedBends(model: LayoutModel, link: LayoutLink, blockers?: Ov
   return drop ? 0 : 2 * gaps;
 }
 
-/** How many links are bent, and how many bends they have in all, on one model (the round's gain test). */
+/**
+ * The bends the round predicts for the published link: `plannedBends`, except that an overlay link whose natural straight segment is clear once
+ * every body is pulled in by `NATURAL_SLACK` counts as straight, because 7f closes that margin (ticket 116 review; the same predictor as the
+ * candidate test, so the kept model and the trial are read alike). Only the gain test reads this; `SIDE_SHAPE_LOST` reads `plannedBends`.
+ */
+export function predictedBends(model: LayoutModel, link: LayoutLink, blockers: OverlayBlockers): number {
+  if (isOverlay(link) && link.attachments !== undefined && naturalStraightNearlyClear(model, link, blockers)) return 0;
+  return plannedBends(model, link, blockers);
+}
+
+/** How many links are bent, and how many bends they have in all, on one model, by `predictedBends` over every link (the round's gain test). */
 export function bendTotals(model: LayoutModel): { bent: number; total: number } {
   const blockers = overlayBlockers(model);
   let bent = 0, total = 0;
   for (const link of model.links) {
-    const bends = plannedBends(model, link, blockers);
+    const bends = predictedBends(model, link, blockers);
     if (bends > 0) { bent++; total += bends; }
   }
   return { bent, total };
@@ -66,7 +76,7 @@ const shrink = (box: Rect, by: number): Rect => ({ x: box.x + by, y: box.y + by,
  * Whether the overlay link's straight segment between its natural faces is clear of every foreign body and pill once each is pulled in by
  * `NATURAL_SLACK`. Such a link is bent at 7e only by a margin 7f closes, and it publishes straight without a hint (ticket 115 review, M1).
  */
-function naturalStraightNearlyClear(model: LayoutModel, link: LayoutLink, blockers: OverlayBlockers): boolean {
+export function naturalStraightNearlyClear(model: LayoutModel, link: LayoutLink, blockers: OverlayBlockers, slack = NATURAL_SLACK): boolean {
   const chord = straightChord(model, link, blockers, true);
   if (chord === undefined) return false;
   const ends = [link.attachments!.from, link.attachments!.to].map(ref => model.nodes[ref.node]?.ports.find(port => portKey(port.ref) === portKey(ref)));
@@ -77,7 +87,7 @@ function naturalStraightNearlyClear(model: LayoutModel, link: LayoutLink, blocke
   const own = ends.flatMap(port => port?.pill && port.ref.anonymous !== true ? [port.pill.bounds] : []);
   const window: Rect = { x: Math.min(chord.from.x, chord.to.x), y: Math.min(chord.from.y, chord.to.y), width: Math.abs(dir.x), height: Math.abs(dir.y) };
   return !blockers.some(window, box => !own.some(pill => pill.x === box.x && pill.y === box.y && pill.width === box.width && pill.height === box.height)
-    && crosses(chord.from, chord.to, shrink(box, NATURAL_SLACK)));
+    && crosses(chord.from, chord.to, shrink(box, slack)));
 }
 
 const strictCrossing = (a: PathSegment, b: PathSegment): boolean => {

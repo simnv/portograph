@@ -9,10 +9,10 @@ import { createAvoidAttempt } from '../route/fixture.js';
 
 /** Ticket 115: the rules of the round loop, driven by a scripted measure (the real measure never offers these hints). */
 type Script = ((call: number, real: () => SideOffer) => SideOffer) | undefined;
-const state: { script: Script; calls: number } = { script: undefined, calls: 0 };
+const state: { script: Script; calls: number; totals?: { bent: number; total: number }[] } = { script: undefined, calls: 0 };
 vi.mock('../../src/layout/side-measure.js', async importOriginal => {
   const real = await importOriginal<typeof import('../../src/layout/side-measure.js')>();
-  return { ...real, measureSides: (...args: Parameters<typeof real.measureSides>): SideOffer => {
+  return { ...real, bendTotals: (...args: Parameters<typeof real.bendTotals>) => state.totals?.shift() ?? real.bendTotals(...args), measureSides: (...args: Parameters<typeof real.measureSides>): SideOffer => {
     const call = ++state.calls;
     return state.script ? state.script(call, () => real.measureSides(...args)) : real.measureSides(...args);
   } };
@@ -89,13 +89,25 @@ describe('the round loop (ticket 115, side-faces.md Section 7)', () => {
     // On this input 7f straightens link-6 by itself. A scripted hint on its probe end passes the shape test but makes it cross link-5.
     const plain = await run(TWO_TIERS, undefined, 0);
     const link = plain.links.find(item => item.id === 'link-6')!;
+    // The prediction says the natural clear link needs no hint, so the gain is scripted: the kept model has 5 bends and the trial 1.
+    state.totals = [{ bent: 1, total: 5 }, { bent: 1, total: 1 }];
     const model = await run(TWO_TIERS, (call, real) => call === 1 ? offerOf(portKey(link.attachments!.from), 'right', link.id) : real());
+    state.totals = undefined;
     expect(model.nodes['probe']!.ports.some(port => port.sideHint === true)).toBe(true);
     expect(model.diagnostics.map(item => item.code)).toContain('SIDE_HINT_TAKEN');
     const note = model.diagnostics.find(item => item.code === 'SIDE_HINT_ADDS_CROSSING')!;
     expect(note.severity).toBe('info');
     expect(note.owners).toEqual([{ kind: 'link', id: 'link-6' }]);
     expect(note.message).toMatch(/adds \d+ overlay crossing/);
+  }, 60000);
+
+  it('refuses a trial whose gain is only a link that 7f straightens by itself (predicted bends, both sides)', async () => {
+    const plain = await run(TWO_TIERS, undefined, 0);
+    const link = plain.links.find(item => item.id === 'link-6')!;
+    const model = await run(TWO_TIERS, (call, real) => call === 1 ? offerOf(portKey(link.attachments!.from), 'right', link.id) : real());
+    expect(model.nodes['probe']!.ports.some(port => port.sideHint === true)).toBe(false);
+    expect(model.diagnostics.map(item => item.code)).toContain('SIDE_HINT_REFUSED');
+    expect(withoutNotes(model)).toBe(withoutNotes(plain));
   }, 60000);
 
   it('lets a placement error that is no hint refusal surface', async () => {
