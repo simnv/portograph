@@ -924,6 +924,7 @@ band's ports, so `titleX` nudges the title clear of it and `growthPlan` widens t
 goes to the other edge (`titleMoves`, read by `bandSide` and `frameSide`; the bus reads ADR-0011's own edge through `rawBandSide` and
 `rawFrameSide`) and `MESH_BUS_TITLE_MOVED` (info) says so. The tier-gap plan reads an across-frames band as an O5 band (`tier-gap-rows.md`).
 Bus members are neither straight nor bent: both `straightOverlays` and `stepOverChords` leave them out.
+Ticket 96 (`mesh-bus.md`, section 11.5): stage 7a, after the lanes of every routed link, fixes the riser x of a joined pair and reserves one overlay-layer riser lane in each sub-tier between the two rows (`riser:<bus>:<sub-tier>`); both bars run to the riser x; two facing bus bands in one gap are added (`cantonGapNeeds`); the tier-gap plan reads the riser as a vertical that a middle drop keeps `k` from.
 
 **A tier gap grows to the height of its plan (ADR-0021).** 7f places its group labels, then reads
 the plan of each gap, then places its group labels again. The middle step is the reservation, and it
@@ -1158,6 +1159,7 @@ a member: its path is stub, bar run, stub, three orthogonal segments on the over
 same producer and compares, as for every overlay path, and G7 reads each end at the port face through `overlayEndpoint`. Members are neither
 straight nor bent and enter neither the bends nor the crossings metric (routed geometry only, as no overlay path does). The verticals that cross
 each bar in the published layout are counted (`busVerticals`) beside the stage-5 leg count (`busLegCounts`); no gate reads them.
+Ticket 97: a cross link of a joined pair takes the path stub, bar run, riser, bar run, stub (three to five orthogonal segments, `busMemberPath`); `route/validate` derives it again from the published stubs, bars and riser x, and G7 reads its ends at the port face.
 
 **Group boxes are obstacles for foreign links (ADR-0013).** Every group box, grown by the 10 px
 edge margin, obstructs each link that neither attaches inside it, nor owns a lane in its margin,
@@ -1438,6 +1440,7 @@ first, so no link label takes the room, and it is not subject to the overlay den
 absent) it is omitted with its text as tooltip, and `labelsOmitted` counts it. A bus member's authored label is not placed: it goes to the bus
 tooltip in stage 11 and leaves no omission record, and 7f reserves no room for it. G3 reads a `mesh-bus` label against routed geometry (it
 leaves out every other overlay-layer label).
+Ticket 97: a joined pair has one label, `<class> mesh (<n> nodes)` with `n` the nodes of both buses, on the bar with more members (the upper on a tie); the other bus has no label and no label room.
 
 **A drawn overlay run is an obstacle for a label.** G3 measures a label against routed geometry
 only, and the renderer masks the overlay layer out of every drawn label, so a label over an overlay
@@ -1570,6 +1573,7 @@ above the mask at the port face. The bus label is drawn on the label layer (`lin
 with its class. The draw.io export writes the bar as one `edgeStyle=none` edge with two free points, each stub as an
 `orthogonalEdgeStyle;jettySize=0` edge from its port's cell to a free point on the bar, a mark per stub on its pill, and the label as a text
 vertex on the `labels` layer; the drawn bar and stubs read back from the drawio CLI (`-x -f svg`) within 0.05 px.
+Ticket 97: the riser of a joined pair is one more `<path class="link-line overlay-line <class> riser">` in the upper bus's group, both groups carry `data-joined`, the tooltip names both buses, the members and the cross links, and a cross link draws no `<g class="link">`. draw.io: the riser is one `edgeStyle=none` edge with two free points on the overlay layer (`pg-busRiser~<bus>`).
 
 An inline `<style>` holds the profile theme, the generated geometry locks and the parser-filtered
 document `css:`, in that order. The theme is three paint-only sheets emitted from one data table

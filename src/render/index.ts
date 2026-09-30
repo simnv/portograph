@@ -332,16 +332,23 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     && bus.members.some(id => { const link = memberOf(id); return link !== undefined && visible(link); }));
   const busElements = buses.map(bus => {
     const first = memberOf(bus.members[0]!)!, authored = linkClassToken(layout, first);
-    const line = (from: Point, to: Point): string => element('path', { class: classes('link-line', 'overlay-line', authored, locks.stroke(linkStrokeWidth(first))),
+    const line = (from: Point, to: Point, extra?: string): string => element('path', { class: classes('link-line', 'overlay-line', authored, extra, locks.stroke(linkStrokeWidth(first))),
       d: pathData([{ from, to, owner: { ...bus.owner } }]) });
+    // The riser of a join is one more line in the upper bus's group (mesh-bus.md, section 11.7); it carries no mark.
+    const riser = bus.riser?.from !== undefined && bus.riser.to !== undefined ? line(bus.riser.from, bus.riser.to, 'riser') : '';
     const authoredLabels = bus.members.flatMap(id => {
       const link = memberOf(id), text = link === undefined ? undefined : layout.document.links[link.sourceIndex]?.label;
       return text ? [`${id}: ${text}`] : [];
     });
-    const lines = [`${bus.class ?? 'unclassed'} mesh: ${bus.nodes.join(', ')}`, `links: ${bus.members.join(', ')}`,
+    const partner = bus.joined === undefined ? undefined : (layout.meshBuses ?? []).find(item => item.id === bus.joined);
+    const upper = bus.cross !== undefined ? bus : partner;
+    const joinLines = partner === undefined ? [] : [`joined with: ${partner.id} (${bus.meshNodes ?? bus.nodes.length} nodes in all)`,
+      `mesh: ${[...bus.nodes, ...partner.nodes].join(', ')}`, `cross links: ${(upper?.cross ?? []).join(', ')}`];
+    const lines = [`${bus.class ?? 'unclassed'} mesh: ${bus.nodes.join(', ')}`, `links: ${bus.members.join(', ')}`, ...joinLines,
       ...(bus.dissolved.length ? [`group-links: ${bus.dissolved.join(', ')}`] : []), ...authoredLabels];
-    return element('g', { class: classes('mesh-bus', 'overlay', authored), 'data-id': bus.id, 'data-members': bus.members.join(' ') },
-      element('title', {}, escapeText(lines.join('\n'))) + line(bus.bar!.from, bus.bar!.to) + bus.stubs!.map(stub => line(stub.from, stub.to)).join(''));
+    return element('g', { class: classes('mesh-bus', 'overlay', authored), 'data-id': bus.id, 'data-members': bus.members.join(' '),
+      ...(bus.joined !== undefined ? { 'data-joined': bus.joined } : {}) },
+      element('title', {}, escapeText(lines.join('\n'))) + line(bus.bar!.from, bus.bar!.to) + bus.stubs!.map(stub => line(stub.from, stub.to)).join('') + riser);
   }).join('');
   const byId = new Map(layout.links.map(link => [link.id, link]));
   const bundleOf = new Map(layout.bundles.map(bundle => [bundle.id, bundle]));
