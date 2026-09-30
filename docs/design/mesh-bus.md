@@ -63,7 +63,7 @@ on every member is the opt-out.
 (Bron-Kerbosch with pivoting) and read them largest first. The degree limit does not bound the
 work: the number of maximal cliques grows exponentially (a row of 28 nodes can hold 16,384). The
 search stops at 4,096 maximal cliques per row and class; the class is then declined
-(`MESH_BUS_DECLINED`, `too-many-cliques`) and its links stay plain. Ties between cliques of equal size go to the ties between cliques of equal size go to the
+(`MESH_BUS_DECLINED`, `too-many-cliques`) and its links stay plain. Ties between cliques of equal size go to the
 clique whose sorted declaration indices come first, compared one by one. The first clique of three
 or more nodes that passes the checks below is the bus. The bus takes every candidate link among
 its nodes.
