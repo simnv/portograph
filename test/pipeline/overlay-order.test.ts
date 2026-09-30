@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
-import type { LayoutLink, LayoutModel, Point } from '../../src/index.js';
+import type { LayoutLink, LayoutModel, Point, Rect } from '../../src/index.js';
 import { orderByOverlay } from '../../src/layout/overlay-order.js';
 import { placeOverlayFree } from '../../src/layout/overlay-place.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
@@ -175,4 +175,43 @@ links:
       expect(settle(model)).toEqual(settle(reference));
     }
   });
+});
+
+describe('an overlay link between level side ports (ticket 86)', () => {
+  it('goes round a same-row body that ordering cannot move, and no segment enters a body', async () => {
+    const model = await run(fixture('a-straight-overlay-between-level-side-ports-goes-round-a-same-row-body'));
+    expect(errors(model)).toEqual([]);
+    const [a, m, c] = ['a', 'm', 'c'].map(id => model.nodes[id]!.bounds!) as [Rect, Rect, Rect];
+    expect(a.x).toBeLessThan(m.x);
+    expect(m.x).toBeLessThan(c.x);
+    const path = points(overlays(model)[0]!);
+    expect(path.length).toBeGreaterThan(2);
+    for (const [index, from] of path.slice(0, -1).entries()) {
+      const to = path[index + 1]!;
+      for (const body of Object.values(model.nodes).map(node => node.bounds!)) {
+        const inside = Math.max(from.x, to.x) > body.x + 1e-6 && Math.min(from.x, to.x) < body.x + body.width - 1e-6
+          && Math.max(from.y, to.y) > body.y + 1e-6 && Math.min(from.y, to.y) < body.y + body.height - 1e-6;
+        expect(inside).toBe(false);
+      }
+    }
+    expect(score(model).snapshot.passed).toBe(true);
+  }, 60000);
+
+  it('goes round the pills that hang off the body it passes, too', async () => {
+    const model = await run(fixture('an-overlay-between-level-side-ports-goes-round-the-pills-of-a-same-row-body'));
+    expect(errors(model)).toEqual([]);
+    const path = points(overlays(model)[0]!);
+    expect(path.length).toBeGreaterThan(2);
+    const shapes = [...Object.values(model.nodes).map(node => node.bounds!),
+      ...Object.values(model.nodes).flatMap(node => node.ports.flatMap(port => port.pill ? [port.pill.bounds] : []))];
+    const own = (box: Rect): boolean => ['a', 'c'].some(id => model.nodes[id]!.ports.some(port => port.pill?.bounds === box));
+    for (const [index, from] of path.slice(0, -1).entries()) {
+      const to = path[index + 1]!;
+      for (const body of shapes.filter(box => !own(box))) {
+        const inside = Math.max(from.x, to.x) > body.x + 1e-6 && Math.min(from.x, to.x) < body.x + body.width - 1e-6
+          && Math.max(from.y, to.y) > body.y + 1e-6 && Math.min(from.y, to.y) < body.y + body.height - 1e-6;
+        expect(inside).toBe(false);
+      }
+    }
+  }, 60000);
 });
