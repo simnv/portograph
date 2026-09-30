@@ -2,6 +2,7 @@ import type { Point } from '../model/geometry.js';
 import type { LayoutModel } from '../model/layout.js';
 import { tierGapPlans } from '../layout/gap-plan.js';
 import { unfitGaps, unfitMessage } from '../layout/gap-room.js';
+import { overlayBlockers, overlayOverBodies } from '../layout/overlay-paths.js';
 import { withLayoutMutation } from '../layout/mutation.js';
 import { completedRouteCovers, type RouteObstacle } from './obstacles.js';
 import { batchRequest, completedCrossingObstacles, pendingStemObstacles, planRoute, type RoutePlan } from './plan.js';
@@ -127,6 +128,16 @@ export async function route(model: LayoutModel, options: RouteOptions = {}): Pro
       const named = draft.diagnostics.some(entry => entry.code === 'TIER_GAP_PART_UNFIT' && entry.message.startsWith(`the tier gap above tier ${item.below} `));
       if (!named) draft.diagnostics.push({ stage: 'final-geometry', severity: 'warning', code: 'TIER_GAP_PART_UNFIT',
         message: unfitMessage(item.below, item.growth), owners: [] });
+    }
+    // Opt-in `layout.overlayOverBodies` (ticket 152): one info line per overlay link drawn straight over node bodies.
+    if (model.document.layout?.overlayOverBodies === true && plan.overlay.length) {
+      const blockers = overlayBlockers(model);
+      for (const id of plan.overlay) {
+        const link = model.links.find(item => item.id === id)!;
+        const bodies = overlayOverBodies(model, link, blockers);
+        if (bodies) draft.diagnostics.push({ stage: 'final-geometry', severity: 'info', code: 'OVERLAY_OVER_BODY',
+          message: `${id} is drawn as a straight chord over the body of ${bodies.join(', ')} (layout.overlayOverBodies).`, owners: [{ ...link.owner }] });
+      }
     }
     if (rejections.length) draft.removedLinks = draft.links.filter(link => link.removed === true).map(link => link.id);
     for (const link of draft.links) {

@@ -1,0 +1,21 @@
+# Expected: ranked-groups ticket 152. The same shape as the same-row-body fixture of ticket 86: `a.p` (right) and `c.p` (left) stand
+# level on one row and the body of `m` stands between them. As written (no `layout:` key), the straight chord would run through `m`,
+# so the link is orthogonal and goes over the top of the row. With `layout: { overlayOverBodies: true }` appended at the root, the
+# link is the one straight segment from face to face over `m`, and an info diagnostic `OVERLAY_OVER_BODY` names `m`. The tests
+# add the key; the default output is the one of ticket 86.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  row: { tier: 1, label: Row }
+nodes:
+  t1: { group: top, class: server, label: t1 }
+  t2: { group: top, class: server, label: t2 }
+  t3: { group: top, class: server, label: t3 }
+  a: { group: row, class: server, label: a, ports: [{ name: p, side: right }] }
+  m: { group: row, class: server, label: m }
+  c: { group: row, class: server, label: c, ports: [{ name: p, side: left }] }
+links:
+  - [t1, a]
+  - [t2, m]
+  - [t3, c]
+  - [a.p, c.p, { route: overlay }]

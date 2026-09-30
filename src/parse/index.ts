@@ -355,7 +355,7 @@ function limits(doc: NormalisedDocument, inputLinkCount: number, options: ParseO
 export function parseWithDiagnostics(text: string, options: ParseOptions = {}): ParseResult {
   const v = new Validation();
   const root = v.map(v.yaml(text), '$');
-  v.keys(root, ['portograph', 'profile', 'title', 'css', 'groups', 'nodes', 'links', 'overlays'], '$');
+  v.keys(root, ['portograph', 'profile', 'title', 'css', 'layout', 'groups', 'nodes', 'links', 'overlays'], '$');
   if (root.get('portograph') !== 2) v.report('VERSION', '$.portograph', 'portograph: 2 is required');
   if (root.has('profile')) {
     const profile = v.string(root.get('profile'), '$.profile');
@@ -371,6 +371,16 @@ export function parseWithDiagnostics(text: string, options: ParseOptions = {}): 
       const state = v.choice(value, ['hidden', 'visible'], `$.overlays.${key}`);
       if (state !== undefined) put(doc.overlays, key, state);
     }
+  }
+  if (root.has('layout')) {
+    // Document settings (ticket 152). Only written when the author states them, so a document without the key is unchanged.
+    const settings: NonNullable<NormalisedDocument['layout']> = {};
+    for (const [key, value] of v.map(root.get('layout'), '$.layout')) {
+      if (key !== 'overlayOverBodies') v.report('UNKNOWN_KEY', `$.layout.${key}`, `Unknown key ${key}`);
+      else if (typeof value !== 'boolean') v.report('INVALID_TYPE', `$.layout.${key}`, 'Expected a boolean');
+      else settings.overlayOverBodies = value;
+    }
+    doc.layout = settings;
   }
   const groupInput = v.map(root.get('groups'), '$.groups');
   const nodeInput = v.map(root.get('nodes'), '$.nodes');

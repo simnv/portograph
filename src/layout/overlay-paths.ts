@@ -371,6 +371,35 @@ export function chordPoints(one: OverlayEnd, two: OverlayEnd, blockers: ShapeQue
 }
 
 /**
+ * The node bodies a link's straight chord passes over, under the opt-in `layout.overlayOverBodies` (ticket 152); `undefined` when the
+ * link is drawn by the ordinary rule. The setting is off by default and then this is always `undefined`, so the default output is unchanged.
+ *
+ * It answers only for a link the ordinary rule bends, whose straight chord is blocked **by node bodies alone**: the chord must leave
+ * both ports outward, must meet no foreign pill, and must meet neither of its own two end bodies. Only bodies of other nodes are
+ * passed over. A title band and a frame edge are no overlay blocker at all (an overlay chord lies under a title), so they never
+ * make a link qualify or fail to.
+ */
+export function overlayOverBodies(model: LayoutModel, link: LayoutLink, blockers: OverlayBlockers,
+  ends?: { one: OverlayEnd; two: OverlayEnd }): string[] | undefined {
+  if (model.document.layout?.overlayOverBodies !== true || link.meshBus !== undefined || !link.attachments) return undefined;
+  const read = ends ? undefined : chordEnds(model, link);
+  const pair = ends ?? (read && { one: read.head, two: read.tail });
+  if (!pair) return undefined;
+  const { one, two } = pair;
+  // Already straight by the ordinary rule: nothing is passed over.
+  if (straightBetween(one, two, blockers) !== undefined) return undefined;
+  const own = [link.attachments.from.node, link.attachments.to.node];
+  const ownBodies = own.map(id => model.nodes[id]?.bounds);
+  const same = (a: Rect, b: Rect | undefined): boolean => b !== undefined && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+  // The ordinary test, minus every body that is not one of the link's own two.
+  const pillsAndOwn: ShapeQuery = { some: (window, test) => blockers.some(window, box => (box.pill === true || ownBodies.some(body => same(box, body))) && test(box)) };
+  if (straightBetween(one, two, pillsAndOwn) === undefined) return undefined;
+  const passed = Object.entries(model.nodes).filter(([id, node]) => !own.includes(id) && node.bounds !== undefined
+    && crosses(one.face, two.face, node.bounds)).map(([id]) => id);
+  return passed.length ? passed : undefined;
+}
+
+/**
  * The polyline an overlay link draws: **one straight segment from one pill face to the other**, at
  * whatever angle that is — unless a node body or a pill stands on it, and then the orthogonal
  * derivation of `between` answers instead, leaving each face outward by `OVERLAY_PILL_CLEARANCE`
@@ -420,7 +449,8 @@ export function overlayPath(model: LayoutModel, link: LayoutLink, blockers?: Ove
   // and `route/validate` read `overlayEndpoint`, which is this same pair.
   const ends = [{ end: one, port: from! }, { end: two, port: to! }]
     .map(({ end, port }) => end ? { ...end.face } : { ...port.anchor! });
-  const built = one && two && shapes ? chordPoints(one, two, shapes) : ends;
+  const over = one && two && shapes && overlayOverBodies(model, link, shapes, { one, two }) !== undefined;
+  const built = one && two && shapes ? (over ? [{ ...one.face }, { ...two.face }] : chordPoints(one, two, shapes)) : ends;
   // Two pill faces that meet exactly leave the tooClose branch nothing between them and `compact`
   // drops the repeat, so the one point is restated as the degenerate segment it is: a published
   // path is never empty, and both ends of this one are still the face the gate names.
