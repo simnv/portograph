@@ -19,7 +19,7 @@ over hiding the non-adjacent pairs.
 it failed: the 12-node mesh is spread over six location frames of two nodes each, one row of
 frames on one sub-tier, and the 3-node mesh over three one-node groups. Also 60 of the 69 overlay
 links at those two rows are members of group-links (one complete group-level mesh: 15 group-links
-among the six groups, three to five members each), which aggregation had taken out of the
+among the six groups, four members each, two nodes a side), which aggregation had taken out of the
 candidates. With a bus confined to one group the sheet got no bus, and its sync links stayed as
 long horizontal lines above and below the servers, each with its own "sync" label. The maintainer
 chose **a bus across frames** (2026-09-30, Q106): one bar in the sub-tier gap beside the row of
@@ -77,8 +77,11 @@ bus, and the rest stays plain overlay links, drawn by the overlay rule from thei
 
 **Group-links.** A group-link is one line that stands for the complete bipartite set of same-class
 links between two groups. When the bus takes every member of a group-link, the group-link is
-**dissolved**: it leaves `groupLinks`, its members lose `groupLink`, and no group-link line and no
-count label is drawn; the bus draws them. When the bus takes only some of its members, the
+**dissolved**: it leaves `groupLinks`, its members lose `groupLink`, and the bus draws them. The M1
+render draws no group-link line today: it draws the members one by one and names the group-link in
+each member's tooltip (`render/index.ts`); after the dissolution the bus tooltip names it. The
+score counter `groupLinks` falls by the dissolved count, and the `ROUTE_UNSUPPORTED` warning that
+`recordAggregations` gives an inferred group-link (its members as owners) is removed with it. When the bus takes only some of its members, the
 group-link is dissolved too, because its set is no longer complete and a near-complete set is
 drawn as its members (CONTEXT.md, *group-link*): the members the bus did not take become plain
 overlay links from their own ports. `MESH_BUS` names every dissolved group-link; `MESH_BUS_PARTIAL`
@@ -149,16 +152,23 @@ the title, and the span itself is quieter on the other edge. The bus side of a c
 of a frame is a rank gap. That is accepted: the bar lies in the gap and the routed parts of that
 gap cross it as verticals.
 
-**Bus port side and order.** Stage 2 gives a bus port a provisional bus side for sizing: the
-leg counts read from the stage-2 sides, over every node of the row, because the row's order and
-so the span are not known before the skeleton. Stage 3 counts it as one port on that side. Stage
-5 reads the counts again after the routed sides are settled (a shared port recomputes its
-majority, which can change a side and the title edge), now within the span read off the skeleton
-order, and moves the bus port if the side changed. Term 1 is exact at that read (port sides and
-row order). Terms 2 and 3 are read on the skeleton x of the ports and the lanes of the tier across
-the gap, which the later stages move; the count is provisional in them and is still fixed at the
-freeze. That is accepted: a leg that moves into the span after the freeze crosses the bar as one
-vertical, as term 1's legs do, and nothing is discovered in routing. The read comes before stage
+**Bus port side and order.** Stage 2 gives a bus port a provisional bus side for sizing: term 1
+read from the stage-2 sides, over every node of the row, because the row's order and so the span
+are not known before the skeleton. Stage 3 counts it as one port on that side. Stage 5 reads the
+counts again after the routed sides are settled (a shared port recomputes its majority, which can
+change a side and the title edge), now within the span read off the skeleton order, and moves the
+bus port if the side changed. Term 1 is exact at that read (port sides and row order). Term 2 has
+no plan yet at stage 5 (the ADR-0021 plan is made in 7a): stage 5 reads it as the routed ports of
+the tier across the gap on the side that faces the gap, and the routed ports of the row's nodes
+outside the span whose other end stands over it, each at its skeleton x. Term 3 is not read at
+stage 5: lanes are reserved in 7a, and a lane counts the same on both edges. All inputs are
+deterministic (sides, skeleton order and x), so the read is. Term 2 is provisional, because 7a to
+7f move x, and the side is still fixed at the freeze. That is accepted: a leg that moves into the
+span after the freeze crosses the bar as one vertical, as term 1's legs do, and nothing is
+discovered in routing. No gate sees such a crossing (the bar is overlay, and every gate and the
+crossings metric read routed geometry), so the differential report of ticket 84 counts, for each
+bus, the verticals that cross the bar in the published layout on each edge against the stage-5
+count. The read comes before stage
 5 resizes the nodes and repacks the rows, so the move is one more side change of that one resize,
 and no group, tier band or frame has been measured from the old side. That stage-5 read is the one
 that stands: the side is fixed at the freeze and 7f never moves the bus, whatever verticals its
@@ -176,14 +186,18 @@ is at least 15 px long. The bar and the stubs take the class's overlay stroke an
 
 **Where the bar stands, across-frames.** The bar runs in the sub-tier gap on the bus side, at one
 y over the whole span, outside every member frame. Let `L` be the outermost frame edge on the bus
-side among the member frames (the frame box, with its padding and its label band), or, for a
-member whose row is a middle cell of its frame, that cell's body extent. The bar runs at
+side among the frames of the row that stand in the span, member frames and foreign frames alike
+(the frame box, with its padding and its label band), or, for a row that is a middle cell of its
+frame, that cell's body extent. A foreign frame under the bar is read so that the bar clears it. The bar runs at
 `L + BUS_STUB`, which is more than the group edge clearance `e` (`GROUP_EDGE_LINK_CLEARANCE`,
 10 px) plus half the stroke, so the bar keeps from every member frame edge the distance G6
 `segment-group-edge` asks of a routed segment that runs along an edge. G6 does not read the bus
 (it is overlay), and the design keeps the distance for the reader's eye. Between two member
-frames the bar crosses the column slack and any lane that stands there. A foreign node body never
-stands in the gap (G9), so nothing but verticals crosses the bar.
+frames the bar crosses the column slack and any lane that stands there. No node body stands in a
+tier gap (every body stands in its sub-tier band), so nothing but verticals crosses the bar. The
+one exception is a foreign multi-rank frame in the span whose rank gap is this gap: the bar would
+run through a foreign frame. The order of ticket 84 keeps member frames contiguous, so the case
+needs a foreign frame between two member frames; it is open (Section 10).
 
 Where a member frame spans the gap on the bus side, the bar runs inside that frame and crosses its
 side edges perpendicular: the row is a middle cell of a multi-rank frame, so the gap is its rank
@@ -244,8 +258,12 @@ tooltip and `labelsOmitted` counts it.
    its label band still needs. For an in-frame bus it counts the bus band the same way on the bus
    side (`groupInsets` gains it), so the group grows and the tiers below move before the tier-gap
    growth. For an across-frames bus the band has no host: the shift loop of `reserveInitialSpace`
-   requires the gap on the bus side to hold the member frames' margin plus the band, and moves the
-   lower tiers by the shortfall, as it does for a canton title band. The skeleton (stage 4)
+   requires the gap on the bus side to hold 20 + band + 20 (the frame margins on both sides and
+   the band), and moves the lower tiers by the shortfall, as it does for a canton title band. Where
+   a canton title band stands on the same edge, the need is 20 + bus band + canton band + 20.
+   `cantonGapNeeds` takes the larger of the needs of one tier edge, and the loop the larger of the
+   two edges of a gap; a bus band adds to a band on its own edge and never takes the maximum with
+   it. The skeleton (stage 4)
    reserves no band, for a title or for a bus.
 2. Stage 7f `produceBusBands` runs beside `produceGroupLabelBands`, before the tier-gap growth and
    again after it. It publishes the `BusBand` with its bounds and the bar and stub geometry read
@@ -304,10 +322,13 @@ re-derives it and compares, as for an overlay path. G7 reads each end at the por
 **Score.** `segments(layout)` collects routed geometry only, so member paths enter neither the
 bends nor the crossings metric, as no overlay path does. Counters gain `meshBuses`. The overlay
 report the tickets use (straight, bent) counts a member as `bus`, in a third column, so the
-private sheet's same-row bent count is read as 0 and not as 56 hidden links. Gates: G3 reads the
-bus label as a label against routed geometry; G7 reads member endpoints; G9 is not changed (the
-bar is not a body, and it stands in no foreign frame: a member frame or a canton that holds a
-member is not foreign to the bus); the bus band is overlay and no gate treats it as an obstacle.
+private sheet's same-row bent count is read as 0 and not as 56 hidden links. Gates: G3 leaves
+out every label on the overlay layer (`gates.ts`), as it does for an overlay link label, so the
+bus label, owned by an overlay bus, is read by G3 only if ticket 84 adds the role `mesh-bus` to
+what G3 reads; ticket 84 does so, against routed geometry. G7 reads member endpoints; G9 is not
+changed (it reads frames against frames and bodies, and the bar is neither); the bus band is
+overlay and no gate treats it as an obstacle. No gate reads a vertical that crosses the bar
+(Section 4, *Bus port side and order*).
 `document.overlays` hides a bus with its class.
 
 ## 6. Render and draw.io
@@ -315,8 +336,8 @@ member is not foreign to the bus); the bus band is overlay and no gate treats it
 **SVG.** The bus is one `<g class="mesh-bus overlay <class>" data-id="mesh-bus-1"
 data-members="...">` in the masked overlay layer: one `<path>` for the bar and one per stub, each
 `link-line overlay-line <class>`, so the theme's class stroke and dash apply (`signal` is
-dashed). The member links' own `<g class="link">` elements are not emitted, and neither is the
-line of a dissolved group-link. One endpoint mark per stub, at the port face, drawn above the mask
+dashed). The member links' own `<g class="link">` elements are not emitted; a dissolved group-link has
+no line today (M1 draws its members), and the bus tooltip names it. One endpoint mark per stub, at the port face, drawn above the mask
 as every mark is. The label is a model-owned label (`role: 'mesh-bus'`), text
 `<class> mesh (<n> nodes)`, `FONT_FAMILY` 9 px, drawn on the label layer. It is not subject to the
 overlay density suppression, which reads overlay link labels. The legend lists the class as it does
@@ -418,3 +439,8 @@ one bar in the gap beside the row of frames (maintainer, 2026-09-30, Q106).
 3. **The nudged title of a one-node frame** stands beside its stub, off-centre. The first render
    of `a-mesh-of-one-node-groups-draws-one-bus` shows whether that reads well; the alternative is
    the bus port at the body's outer x instead of the engine's centre.
+4. **A foreign frame in the span that spans the gap** (a multi-rank frame whose rank gap is the
+   bus gap, between two member frames): the bar would run through it. The bus is decided at stage
+   1 and the order at stage 4, so a decline would have to come after the freeze. Until the
+   maintainer decides, the bar crosses that frame's side edges perpendicular, as it crosses a
+   canton. No input of the corpus is known to reach the case; ticket 83 reports any that does.
