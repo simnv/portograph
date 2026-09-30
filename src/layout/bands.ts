@@ -1390,10 +1390,17 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
       if (run !== undefined && overlayPath(model, link).segments.length === 2 && Math.abs(run.to.y - run.from.y) <= PLACEMENT_EPS) {
         const deficit = required - Math.abs(run.to.x - run.from.x);
         if (deficit <= PLACEMENT_EPS) continue;
-        const split = (run.from.x + run.to.x) / 2;
+        // The split lies in the gap between the node that holds the vertical run (with its pill) and the lateral face, as in the same-tier branch: a
+        // split at the middle of the run can fall inside a wide peer, which then moves with the lateral node and the run does not grow (review H2).
+        const lateralIsFrom = from.sideHint === true, lateralNode = lateralIsFrom ? fromNode : toNode, lateralPort = lateralIsFrom ? from : to;
+        const verticalNode = lateralIsFrom ? toNode : fromNode, verticalPort = lateralIsFrom ? to : from;
+        const lateralEast = lateralPort.anchor!.x > verticalPort.anchor!.x;
+        const gapFrom = lateralEast ? Math.max(right(verticalNode.bounds!), right(outer(verticalPort, verticalNode))) : Math.max(right(lateralNode.bounds!), right(outer(lateralPort, lateralNode)));
+        const gapTo = lateralEast ? Math.min(lateralNode.bounds!.x, outer(lateralPort, lateralNode).x) : Math.min(verticalNode.bounds!.x, outer(verticalPort, verticalNode).x);
+        if (gapTo - gapFrom <= PLACEMENT_EPS) { unreserved('has no gap between the vertical run and the lateral face to insert its label room in'); continue; }
+        const split = (gapFrom + gapTo) / 2;
         if (model.lanes.some(lane => lane.x >= split - PLACEMENT_EPS)) { unreserved('needs room beyond a reserved lane'); continue; }
         // The lateral end's tier is the link's own tier for the move: its body stays by the run's end.
-        const lateralNode = from.sideHint === true ? fromNode : toNode;
         const moved = insertRoomAt(model, split, deficit, model.groups[model.document.nodes[lateralNode.id]!.group]!.tier!);
         settle(moved);
         record(link, 'row', required, required - deficit);
@@ -1404,7 +1411,8 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
       const mid = centre;
       // A side lane (side-faces.md, Section 10): the label rides the vertical run, the drop and the lane, so the run ends at the lateral port's y,
       // not at the node's face. The move in y below moves the lateral node with its tier, and the lane's extent follows the port.
-      const laned = model.lanes.some(lane => isSideLane(lane) && lane.owner.kind === 'link' && lane.owner.id === link.id);
+      const laned = model.lanes.some(lane => isSideLane(lane) && lane.owner.kind === 'link' && lane.owner.id === link.id)
+        || (overlay && (from.sideHint === true || to.sideHint === true)); // an overlay L's vertical run ends at the lateral anchor too (review L1)
       const upperEdge = laned && upperPort.side !== 'bottom' ? upperPort.anchor!.y : Math.max(bottom(upper.bounds!), bottom(outer(upperPort, upper)));
       const lowerEdge = laned && lowerPort.side !== 'top' ? lowerPort.anchor!.y : Math.min(lower.bounds!.y, outer(lowerPort, lower).y);
       const room = 2 * Math.min(mid - upperEdge, lowerEdge - mid);

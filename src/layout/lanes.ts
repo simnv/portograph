@@ -6,7 +6,6 @@ import type { PortRef } from '../model/document.js';
 import { DEFAULT_STROKE_WIDTHS as stroke, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth, routedStrokeWidth } from '../theme/geometry.js';
 import { segmentRectDistance } from '../score/geometry.js';
 import { findPort } from './row-paths.js';
-import { crosses, overlayBlockers, overlayPath, type OverlayBlockers } from './overlay-paths.js';
 import { groupShape } from './grid.js';
 import { portId } from './skeleton-graph.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -246,57 +245,9 @@ function placementInfo(model: LayoutModel, code: string, message: string, link: 
   if (model.diagnostics.some(item => item.code === code && item.message === message)) return;
   model.diagnostics.push({ stage: 'placement', severity: 'info', code, message, owners: [{ kind: 'link', id: link }] });
 }
-/**
- * A promised overlay L keeps its one turn (side-faces.md, Sections 11 and 19.6, ticket 134): an optional x move that would give an overlay link with
- * a hinted end more than two segments is refused (`SIDE_L_HELD`, info). The derived path is read on the moved nodes, so the two runs and their
- * end ports are read as the move leaves them, and a body or a foreign pill that would stand on either run is caught by the same derivation the
- * published path comes from. A link that is not an L now (a straight segment, or a path already bent) is not held. It reads only links with a
- * hinted end, so a model with no side hint pays nothing and every decision on it is as before.
- */
-const hintedOverlayLinks = new WeakMap<LayoutModel, LayoutLink[]>();
-export function overlayLsHold(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[], report = true): boolean {
-  let held = hintedOverlayLinks.get(model);
-  if (held === undefined) {
-    held = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && link.attachments !== undefined
-      && [link.attachments.from, link.attachments.to].some(ref => findPort(model, ref)?.sideHint === true));
-    hintedOverlayLinks.set(model, held);
-  }
-  if (held.length === 0) return true;
-  const shifts = new Map<string, number>();
-  for (const { group, bounds } of proposed) {
-    const dx = bounds.x - group.bounds!.x;
-    if (Math.abs(dx) <= PLACEMENT_EPS) continue;
-    for (const id of group.nodes) shifts.set(id, (shifts.get(id) ?? 0) + dx);
-  }
-  if (shifts.size === 0) return true;
-  const nodes = { ...model.nodes };
-  for (const [id, dx] of shifts) {
-    const node = model.nodes[id]!;
-    if (node.bounds === undefined) continue;
-    nodes[id] = { ...node, bounds: { ...node.bounds, x: node.bounds.x + dx },
-      ports: node.ports.map(port => ({ ...port, ...(port.anchor === undefined ? {} : { anchor: { x: port.anchor.x + dx, y: port.anchor.y } }),
-        ...(port.pill === undefined ? {} : { pill: { ...port.pill, bounds: { ...port.pill.bounds, x: port.pill.bounds.x + dx } } }) })) };
-  }
-  const moved: LayoutModel = { ...model, nodes };
-  const before = overlayBlockers(model), after = overlayBlockers(moved);
-  // The derivation falls back to a path that ignores bodies when every way round is blocked, and that path can still have two segments: so the
-  // moved path must also stay clear of every body and every foreign pill.
-  const clear = (link: LayoutLink, segments: PathSegment[], blockers: OverlayBlockers): boolean => {
-    const own = [link.attachments!.from, link.attachments!.to].flatMap(ref => { const pill = findPort(moved, ref)?.pill; return pill === undefined ? [] : [pill.bounds]; });
-    return segments.every(({ from, to }) => !blockers.some({ x: Math.min(from.x, to.x), y: Math.min(from.y, to.y), width: Math.abs(to.x - from.x), height: Math.abs(to.y - from.y) },
-      box => !own.some(pill => pill.x === box.x && pill.y === box.y && pill.width === box.width && pill.height === box.height) && crosses(from, to, box)));
-  };
-  return held.every(link => {
-    if (overlayPath(model, link, before).segments.length !== 2) return true;
-    const path = overlayPath(moved, link, after).segments;
-    if (path.length <= 2 && clear(link, path, after)) return true;
-    if (report) placementInfo(model, 'SIDE_L_HELD', `A move would bend the overlay L of ${link.id} again; the move is refused.`, link.id);
-    return false;
-  });
-}
 /** `laneSidesHold`, the side lanes' far ports and the riser keep-out: what a move that can be declined must pass. */
 export function optionalMoveHolds(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[], report = true): boolean {
-  return riserKeepOutHolds(model, proposed) && laneSidesHold(model, proposed, report) && sideLanesHold(model, proposed, report) && overlayLsHold(model, proposed, report);
+  return riserKeepOutHolds(model, proposed) && laneSidesHold(model, proposed, report) && sideLanesHold(model, proposed, report);
 }
 /**
  * The end of 7c: a side lane whose far port centring has put on the lane x (and that 7a did not seat there) is recorded once (`SIDE_LANE_SEATED`,

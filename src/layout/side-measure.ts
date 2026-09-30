@@ -6,7 +6,7 @@ import { measurePortPill } from '../text/index.js';
 import { EPS } from '../score/geometry.js';
 import { isRoutedChord } from './frame-paths.js';
 import { transitTiers } from './lanes.js';
-import { overlayBlockers, overlayPath, straightChord, type OverlayBlockers } from './overlay-paths.js';
+import { crosses, overlayBlockers, overlayPath, straightChord, type OverlayBlockers } from './overlay-paths.js';
 import { facingSide, hintRefusal } from './side-hints.js';
 import { portKey } from './sides-one.js';
 
@@ -102,7 +102,13 @@ function lShapes(model: LayoutModel, kept7e: LayoutModel, nodes: LayoutModel['no
     if (result === undefined) continue;
     const draft = { ...nodes, [lateral.ref.node]: result.node };
     const probe: LayoutModel = { ...model, nodes: draft };
-    if (overlayPath(probe, link, overlayBlockers(probe)).segments.length !== 2) continue;
+    const blockers = overlayBlockers(probe), segments = overlayPath(probe, link, blockers).segments;
+    // `between()` falls back to paths that ignore pills and then bodies when every way round is blocked, and such a path can still have two
+    // segments: an L is offered only when both runs are clear of every body and every foreign pill (ticket 116 review, H1).
+    const own = ends.flatMap(ref => { const pill = probe.nodes[ref.node]?.ports.find(port => portKey(port.ref) === portKey(ref))?.pill; return pill === undefined ? [] : [pill.bounds]; });
+    const clear = segments.every(({ from, to }) => !blockers.some({ x: Math.min(from.x, to.x), y: Math.min(from.y, to.y), width: Math.abs(to.x - from.x), height: Math.abs(to.y - from.y) },
+      box => !own.some(pill => pill.x === box.x && pill.y === box.y && pill.width === box.width && pill.height === box.height) && crosses(from, to, box)));
+    if (segments.length !== 2 || !clear) continue;
     const node7e = nodes7e[lateral.ref.node], peer7e = kept7e.nodes[peer.node]?.bounds;
     const result7e = node7e?.bounds !== undefined && peer7e !== undefined ? moved(node7e, lateral, centreOf(peer7e).y) : undefined;
     found.push({ laterals: [lateral], grows: result.grows, nodes: draft, nodes7e: result7e !== undefined ? { ...nodes7e, [lateral.ref.node]: result7e.node } : nodes7e, shape: 'L' });
