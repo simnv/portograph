@@ -5,6 +5,7 @@ import { occupiedOverhang, selectAnchorTier } from './lanes.js';
 import { crosses, overlayBlockers, overlayPath, straightChord } from './overlay-paths.js';
 import { saveGroups } from './overlay-order.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
+import { orderedNodeIds } from '../model/model.js';
 import { deriveFrames } from './frames.js';
 import { GROUP_PADDING, groupInsets, placementWarning } from './regions.js';
 import { rowGap } from './sides-two.js';
@@ -58,7 +59,8 @@ import { PLACEMENT_EPS } from './tolerance.js';
  */
 export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColumn[] = frameColumns(model)): void {
   const anchor = selectAnchorTier(model);
-  if (anchor === undefined || !model.links.some(link => link.layer === 'overlay')) return;
+  if (anchor === undefined) return;
+  if (!model.links.some(link => link.layer === 'overlay')) { standLinklessBeside(model, model.tierBands.map(band => band.tier), overlayFreeGroups(model, anchor), columns); return; }
   const groupOf = (node: string): string => model.document.nodes[node]!.group;
   const routedAny = new Set<string>();
   for (const link of model.links) {
@@ -180,6 +182,7 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
     }
     for (const group of movers) settled.add(group.id);
   }
+  standLinklessBeside(model, tiers, free, columns);
   stepOutOfChords(model, tiers, free, columns);
 }
 
@@ -188,8 +191,77 @@ export function stepLinklessOutOfChords(model: LayoutModel, columns: readonly Fr
   const anchor = selectAnchorTier(model);
   if (anchor === undefined) return false;
   const before = JSON.stringify(Object.values(model.groups).map(group => group.bounds));
-  stepOutOfChords(model, model.tierBands.map(band => band.tier), overlayFreeGroups(model, anchor), columns);
-  return JSON.stringify(Object.values(model.groups).map(group => group.bounds)) !== before;
+  const tiers = model.tierBands.map(band => band.tier), free = overlayFreeGroups(model, anchor);
+  const stood = standLinklessBeside(model, tiers, free, columns);
+  stepOutOfChords(model, tiers, free, columns);
+  const moved = JSON.stringify(Object.values(model.groups).map(group => group.bounds)) !== before;
+  // The steps rebuild the nodes of one group at a time, which moves their labels to the end of the list: the replays keep that order. A step that moves a group and a step that moves it back leave the bounds as they were and the labels not.
+  if (stood) rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');
+  return moved;
+}
+
+/**
+ * A group with no link of any member stands beside the connected diagram of its tier (ticket 92). ELK puts it where the skeleton
+ * has room, and the rules that shift the connected part later (centring, the 7f replays) leave it behind: a gap as wide as the
+ * shift. Placement reserves its place instead. After every partner is settled, a linkless group that stands outside the x-extent
+ * of the other groups of its tier, and further than one band gap from the nearest of them, moves to one band gap from the extent
+ * on the side it stood on. If that side has no room (a column of a frame, a lane), it tries the other side; if neither has, it stays.
+ * A group inside the extent stays. The step after this one (`stepOutOfChords`) moves it again where a straight chord crosses it.
+ */
+export function standLinklessBeside(model: LayoutModel, tiers: readonly number[], free: ReadonlySet<string>, columns: readonly FrameColumn[]): boolean {
+  const linked = new Set<string>();
+  for (const link of model.links) {
+    if (!link.attachments) continue;
+    for (const end of [link.attachments.from.node, link.attachments.to.node]) linked.add(model.document.nodes[end]!.group);
+  }
+  const gap = bandGap(model);
+  let moved = false;
+  for (const tier of tiers) {
+    const groups = Object.values(model.groups).filter(group => group.tier === tier && group.bounds);
+    const pending = groups.filter(group => free.has(group.id) && !linked.has(group.id) && group.frame === undefined && group.nodes.length > 0);
+    if (!pending.length) continue;
+    const span = (group: LayoutGroup): { low: number; high: number } => {
+      const reach = occupiedOverhang(model, group);
+      return { low: group.bounds!.x - reach.left, high: group.bounds!.x + group.bounds!.width + reach.right };
+    };
+    // The connected part of the tier; a tier with none has the extent of the whole connected diagram.
+    const onTier = groups.filter(group => !pending.includes(group));
+    const standing = onTier.length ? [...onTier] : Object.values(model.groups).filter(group => group.bounds && linked.has(group.id));
+    if (!standing.length) continue;
+    const walls = (other: readonly LayoutGroup[]) => [
+      ...other.map(item => ({ ...span(item), gap })),
+      ...columns.filter(column => column.from <= tier && tier <= column.to).map(column => ({ low: column.x, high: column.x + column.width, gap })),
+      ...model.lanes.filter(lane => lane.tier === tier).map(lane => ({ low: lane.bounds.x, high: lane.bounds.x + lane.bounds.width, gap: 0 })),
+    ];
+    const rest = [...pending];
+    while (rest.length) {
+      const extent = { low: Math.min(...standing.map(group => span(group).low)), high: Math.max(...standing.map(group => span(group).high)) };
+      // The pending group nearest the extent goes first, so a second one stands beside the first.
+      const distance = (group: LayoutGroup): number => {
+        const one = span(group);
+        return Math.max(extent.low - one.high, one.low - extent.high);
+      };
+      rest.sort((a, b) => distance(a) - distance(b) || compareId(a.id, b.id));
+      const group = rest.shift()!, one = span(group), reach = occupiedOverhang(model, group);
+      standing.push(group);
+      const away = distance(group);
+      if (away <= gap + PLACEMENT_EPS) continue;
+      const width = one.high - one.low, wall = walls(groups.filter(item => item !== group));
+      // A lane of the tier stays on the side of the group it stands on: the lanes are not moved with the group (`lanes.ts` checks the side).
+      const lanes = model.lanes.filter(lane => lane.tier === tier).map(lane => ({ x: lane.x, was: lane.x >= one.high }));
+      const keepsLanes = (x: number): boolean => lanes.every(lane => lane.was ? lane.x >= x - reach.left + width : lane.x <= x - reach.left);
+      const fits = (x: number): boolean => keepsLanes(x) && !wall.some(item => x - reach.left < item.high + item.gap - PLACEMENT_EPS && x - reach.left + width > item.low - item.gap + PLACEMENT_EPS);
+      const left = extent.low - gap - width + reach.left, right = extent.high + gap + reach.left;
+      const box = group.bounds!, wasLeft = one.high <= extent.low;
+      const target = [wasLeft ? left : right, wasLeft ? right : left].find(fits);
+      if (target === undefined || Math.abs(target - box.x) < PLACEMENT_EPS) continue;
+      moveGroup(model, group, target - box.x, 0);
+      moved = true;
+      // Every node, in document order: a rebuild of one group's nodes alone moves their labels to the end of the list.
+      rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');
+    }
+  }
+  return moved;
 }
 
 /**
