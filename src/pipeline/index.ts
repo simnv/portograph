@@ -24,7 +24,7 @@ import { elkDeadlineMs, type CreateElkAttempt, type ElkClock } from '../layout/e
 import { route, ROUTE_BUDGET_MS, type CreateRouteAttempt } from '../route/index.js';
 import { CommandDeadlineError, POST_PLACEMENT_RESERVE_MS, UNBOUNDED_BUDGET, type Budget } from './budget.js';
 // After the stages: the modules below reach the centring module, whose import order the tests that mock it depend on.
-import { declinedFanDiagnostics, fanRoundHolds, measureFans, type FanMeasure } from '../layout/fan-spread.js';
+import { declinedFanDiagnostics, fanRoundDropped, fanRoundHolds, measureFans, type FanMeasure } from '../layout/fan-spread.js';
 import { chordClearances } from '../layout/frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
 
@@ -142,7 +142,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     if ((trial.fallbackUsed && !model.fallbackUsed) || (trial.deadlineHit && !model.deadlineHit)) {
       cut('ELK fell back or met its time limit during it, and the re-run was dropped'); break;
     }
-    if (!fanRoundHolds(model, trial)) break;
+    if (!fanRoundHolds(model, trial)) { cuts.push(fanRoundDropped(model, trial)); break; }
     model = trial; floors = next;
   }
   const declined = declinedFanDiagnostics(measureFans(model).declined);

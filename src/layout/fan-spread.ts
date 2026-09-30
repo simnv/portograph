@@ -90,19 +90,27 @@ export function declinedFanDiagnostics(declined: FanMeasure['declined']): Diagno
     owners: item.links.map(id => ({ kind: 'link' as const, id })) }));
 }
 
+/** The held chords of a model by link id, with their kind. */
+function heldChords(model: LayoutModel): Map<string, ReturnType<typeof chordKind>> {
+  return new Map(model.links.filter(link => isRoutedChord(model, link)).map(link => [link.id, chordKind(model, link)]));
+}
+
+/** What a fan re-run did to the held chords: the ids it lost and the ids it gained. */
+export function fanRoundChords(before: LayoutModel, after: LayoutModel): { lost: string[]; gained: string[] } {
+  const was = heldChords(before), now = heldChords(after);
+  return { lost: [...was.keys()].filter(id => !now.has(id)), gained: [...now.keys()].filter(id => !was.has(id)) };
+}
+
 /**
- * Whether a fan re-run may replace the placement it was measured on. It must keep every held chord of either kind, compared by link id (a swap does not
- * pass): a frame chord holds the pitch floors of ticket 89, and a cross-frame chord lost to a spread leaves an orthogonal route that costs Q (measured on
- * `detoured-stem-checkpoint`, 0.8140 to 0.7645). One exception: the kept placement has a chord pair under the parallel clearance that the re-run clears,
- * and the re-run loses no frame chord; a cross-frame chord may then be given up for the gate (ticket 102 review).
+ * Whether a fan re-run may replace the placement it was measured on. It is dropped when the number of held chords of both kinds falls (main's rule, tickets 89
+ * and 102: a swap that keeps the count is kept, because the re-run may straighten far more links than it swaps). One exception: the kept placement has a chord
+ * pair under the parallel clearance that the re-run clears, and the re-run loses no frame chord; a cross-frame chord may then be given up for the gate.
  */
 export function fanRoundHolds(before: LayoutModel, after: LayoutModel): boolean {
-  const held = (model: LayoutModel): Map<string, ReturnType<typeof chordKind>> =>
-    new Map(model.links.filter(link => isRoutedChord(model, link)).map(link => [link.id, chordKind(model, link)]));
-  const was = held(before), now = held(after);
-  const lost = [...was].filter(([id]) => !now.has(id));
-  if (lost.length === 0) return true;
-  if (lost.some(([, kind]) => kind === 'frame')) return false;
+  const was = heldChords(before), now = heldChords(after);
+  if (now.size >= was.size) return true;
+  const frames = (chords: typeof was): number => [...chords.values()].filter(kind => kind === 'frame').length;
+  if (frames(now) < frames(was)) return false;
   const clearance = STRAIGHT_PATH_CLEARANCE.path - 1e-6, then = chordClearances(after);
   for (const [pair, gap] of chordClearances(before)) {
     if (gap >= clearance) continue;
@@ -110,4 +118,11 @@ export function fanRoundHolds(before: LayoutModel, after: LayoutModel): boolean 
     if (pair.split('|').every(id => now.has(id)) && (cleared === undefined || cleared >= clearance)) return true;
   }
   return false;
+}
+
+/** The info note for a dropped fan re-run, so that a dropped round is never silent. */
+export function fanRoundDropped(before: LayoutModel, after: LayoutModel): Diagnostic {
+  const { lost, gained } = fanRoundChords(before, after);
+  return { stage: 'placement', severity: 'info', code: 'FAN_ROUND_DROPPED',
+    message: `A fan re-run was dropped: it lost ${lost.length} held chord${lost.length === 1 ? '' : 's'} (${lost.join(', ') || 'none'}) and gained ${gained.length} (${gained.join(', ') || 'none'}). The fans keep the pitch of the last kept placement.` };
 }

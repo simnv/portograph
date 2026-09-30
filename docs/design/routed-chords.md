@@ -172,7 +172,7 @@ The fan rule (ticket 89) reads the cross-frame candidates too: `measureFans` off
 spread pitch (up to 60 px) when two chords at that face stand closer than the chord clearance. A
 provider node that takes chords from three locations on one top face needs this.
 
-*As built (ticket 102).* Nothing beyond ticket 99: `measureFans` reads `routedChordCandidate`, `fanRoundHolds` drops a fan re-run that loses a held chord of either kind (by link id), unless the kept placement has a chord pair under the 10 px clearance that the re-run clears and no frame chord is lost. A face is measured with `FAN_SLACK` (4 px) of drift room, so three
+*As built (ticket 102).* Nothing beyond ticket 99: `measureFans` reads `routedChordCandidate`, `fanRoundHolds` drops a fan re-run when the number of held chords of both kinds falls (`FAN_ROUND_DROPPED`, info, names the lost and gained chords), unless the kept placement has a chord pair under the 10 px clearance that the re-run clears and no frame chord is lost. A face is measured with `FAN_SLACK` (4 px) of drift room, so three
 cross-frame chords that hold at the 12 px base pitch can still put a 16 px floor on their face; the fixture `a-provider-face-spreads-for-three-routed-chords` shows that. A face whose neighbouring chords
 need more than 60 px is declined (`FAN_SPREAD_DECLINED`); the unit test forges the shallow geometry, and no layout input reaches it.
 

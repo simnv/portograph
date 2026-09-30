@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
 import { bands, bars, bundles, centre, flanks, lanes, layout, parse, rows, score } from '../../src/index.js';
-import { declinedFanDiagnostics, FAN_PITCH_CAP, fanRoundHolds, measureFans } from '../../src/layout/fan-spread.js';
+import { declinedFanDiagnostics, FAN_PITCH_CAP, fanRoundChords, fanRoundHolds, measureFans } from '../../src/layout/fan-spread.js';
 import { chordClearances, chordKind, isRoutedChord } from '../../src/layout/frame-paths.js';
 import { deriveFrames } from '../../src/layout/frames.js';
 import { moveGroup } from '../../src/layout/skeleton-geometry.js';
@@ -97,13 +97,14 @@ describe('a face that takes cross-frame chords spreads its ports', () => {
     return copy;
   };
 
-  it('drops a fan re-run that loses a chord of either kind, compared by link id', async () => {
+  it('drops a fan re-run that lowers the number of held chords of either kind, and keeps a swap', async () => {
     const before = await run();
     const [first, second] = crossChords(before);
     expect(fanRoundHolds(before, before)).toBe(true);
     expect(fanRoundHolds(before, lose(before, first!.id))).toBe(false);
-    // A swap keeps the count and still loses a chord.
-    expect(fanRoundHolds(lose(before, first!.id), lose(before, second!.id))).toBe(false);
+    // A swap that keeps the count is kept: the re-run may straighten far more links than it swaps.
+    expect(fanRoundHolds(lose(before, first!.id), lose(before, second!.id))).toBe(true);
+    expect(fanRoundChords(lose(before, first!.id), lose(before, second!.id))).toEqual({ lost: [second!.id], gained: [first!.id] });
   }, 60000);
 
   it('keeps a re-run that gives up a cross-frame chord only to clear a pair the kept placement holds under the clearance', async () => {
@@ -131,5 +132,10 @@ describe('a face that takes cross-frame chords spreads its ports', () => {
     const straight = model.links.filter(link => link.technique === 'straight' && link.path?.segments.length === 1);
     expect(straight.map(link => link.id).sort()).toEqual(model.links.map(link => link.id).sort());
     expect(score(model).snapshot.Q).toBeGreaterThan(0.8);
+    // The dropped re-run is named, never silent: it lost one chord and gained none.
+    const note = model.diagnostics.filter(item => item.code === 'FAN_ROUND_DROPPED');
+    expect(note).toHaveLength(1);
+    expect(note[0]!.severity).toBe('info');
+    expect(note[0]!.message).toMatch(/lost 1 held chord .*and gained 0/);
   }, 120000);
 });
