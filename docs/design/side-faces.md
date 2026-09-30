@@ -219,14 +219,19 @@ therefore use the count-based gates of ticket 112 and add no clock read:
 
 - `gate()` is ticket 112's gate: a re-run starts only with `POST_PLACEMENT_RESERVE_MS +
   FAN_RERUN_MS` (16 s) or more left before the hard command deadline.
-- `MAX_RERUNS = 3` caps fan and side re-runs together, by count.
-- Measured on the private sheet on a quiet machine: the first placement takes about 2 s and 7f
-  6.6 s, with a 30 s deadline. On a machine 2 times slower, a re-run takes about 4 s, so the gate
-  is read at about 26, 22 and 18 s left: three re-runs pass the 16 s gate, and no cut fires. This
-  holds only when `measureFans` plus `measureSides` stay under 0.5 s (quiet machine) per round.
-  Ticket 115 measures `measureSides` time and the ms left at each gate on the private sheet. If the
-  projection for a 2 times slower machine falls under 16 s plus 1 s of margin at the third gate,
-  `MAX_RERUNS` becomes 2 by rule (a constant), not by the clock.
+- `MAX_RERUNS` caps fan and side re-runs together. It is a **fixed constant**, never set by the
+  clock. The gate alone is not enough: it is read at the start of a re-run, and a re-run that
+  passes it can still leave too little time for 7f, routing, link labels and scoring, so the
+  command meets the 30 s deadline and publishes nothing.
+- **The rule for the constant:** `MAX_RERUNS` is the largest count for which the private sheet's
+  **whole command** (first placement, every re-run with its measures, 7f, stage 8, stage 9,
+  validation and scoring) finishes before the 30 s deadline on a machine 2 times slower, with 2 s of
+  margin. Known numbers on a quiet machine: the first placement takes about 2 s and 7f 6.6 s. The
+  rest is not measured yet. Ticket 115 measures each stage time on the sheet on a quiet machine
+  (the coordinator renders it for the implementer), multiplies the total by 2 for each candidate
+  count (0 to 3), and sets the constant to the largest count that fits. When 0 fits, no side round
+  runs, and the ticket says so.
+- `measureFans` and `measureSides` are part of the measured total, per round.
 - The probe has a cap: at most `PROBE_CAP = 256` probes per `measureSides` call, in link order.
   The candidates after the cap are not probed that round (`SIDE_PROBE_CAPPED`, info). The cap is a
   count.
@@ -243,7 +248,7 @@ side it reads.
 | ADR-0011 title edge (`frameSide`) | natural | A hint never moves a title. |
 | Stage 5 engine order, `rowGap`, content insets, `groupPadding` | hinted | These are the geometry of the port as drawn. |
 | 7a to 7e (lanes, row paths, chords, bundles) | hinted | They reserve the drawn shape. |
-| 7c feeds (the axis on the mean x of routed feeds) | hinted | **Decided:** a feed reads the port's real anchor. A natural-side anchor does not exist on the drawn node. The axis moves by at most half the node width, and the trial measures the result. |
+| 7c feeds (the axis on the mean x of routed feeds) | hinted | **Decided:** the hinted side, because a natural-side anchor does not exist on the drawn node. `feeds()` keeps a link only when the parent port is on the facing horizontal side and the child port on the other (`bottom` over `top`), so it **drops a hinted link completely**: the centring axis loses that link's whole pull, not half a node width. The axis can move far, the node can leave the x the round measured, and more trials can fail. The round drops those trials; ticket 115 counts them. A side lane adds its own feed (Section 10, *The far port*). |
 
 **What a named lateral port changes** (it has a pill; an anonymous port has none):
 
@@ -362,11 +367,29 @@ and `laneSource` aligns to the end nearer the anchor tier. The side lane is its 
   `sideLaneExtent(model, lane)` gives it.
 - **Replay.** `rebuildLaneExtents` recomputes a side lane from `sideLaneExtent` with the port's
   current anchor y, so a 7d or 7f move in y (a band that grows, a node that moves down) moves the
-  end of the lane with the port. The lane's x, owner and id never change after 7a (ADR-0010).
+  end of the lane with the port. It rebuilds the lane's pair of fixed segments with
+  `sideReservation`, not with `reservation()`, and it reads the lane kind explicitly. The lane's x,
+  owner and id never change after 7a (ADR-0010).
+- **Kind checks.** Every lane function that reads or moves lanes reads `kind` explicitly:
+  `reseatLanes`, `rebuildLaneExtents`, `validateLanes`, `laneSidesHold` and the riser reads. A
+  function that serves one kind only says so and skips the other.
 - **Alignment end.** `sideLaneSource(link)` is the far end (the port that is not lateral), not the
-  end nearer the anchor tier. 7c holds that end's anchor x fixed, as it holds a transit source
-  (ADR-0010, 7a: "transit source anchors remain fixed"). The lateral end is not moved under the
-  lane: the side run joins them at any x.
+  end nearer the anchor tier. The lateral end is not moved under the lane: the side run joins them
+  at any x.
+- **The far port** (the review re-check). The part is a drop only while the far port stands on the
+  lane's x. Neither 7c nor 7f holds a port by name today: 7c aligns a child under a feed, and a 7f
+  column move checks only the lanes of its own tier (`laneSidesHold`). So:
+  - **7c.** `feeds()` adds one feed per side lane: the far port is the child, and the lane's x is
+    the x it must sit under (`transit: true`, as a transit lane's feed is). When the far end's tier
+    is centred, centring brings the far port under the lane like any child. When the far end is in
+    the authority tier, 7c does not move it, and 7a put the lane on its x. When centring declines
+    the feed, the far port stays off the lane, the part is stepped, the planned bends rise, and the
+    round drops the trial.
+  - **7f.** A new guard, `sideLanesHold`, joins `optionalMoveHolds`: a move that changes the x of
+    a side lane's far port while the lane stays is refused (`SIDE_LANE_HELD`, info). This covers
+    column moves, the canton close-up and the chord-clear steps, in every tier, not only the lane's
+    tier. A move 7f cannot refuse (a forced widening) keeps the move: the tier-gap plan then
+    plans a stepped part to the mouth, and `SIDE_SHAPE_LOST` names the link (Section 11).
 - **Reservation.** `sideReservation(model, link, lane)` writes two fixed segments, in path order:
   the vertical run at the lane x over the extent, then the **side run** from the lane x to the
   port's face at the port's y. Both carry `lane: <id>`. The side run is at least one stem (15 px)
@@ -399,11 +422,22 @@ tip to the side lane's mouth (ADR-0021). A source-aligned side lane makes it a d
 peer is on another sub-tier. That port is residual today (`lateral-port`). The corpus differential
 of ticket 118 lists each such link.
 
-**Link-label room** (review M1). `reserveLinkLabelRoom` measures the face-to-face gap, and
-`overlayRunMid(..., 'y')` has no answer for an L whose longest run is horizontal. For a link with a
-lateral end, the room is reserved in placement on the longest run of the planned shape: the side
-run or the lane vertical for a side lane, and the horizontal or vertical run of an overlay L, read
-on the axis of that run. Tickets 116, 118 and 119 each add their case.
+**Link-label room** (review M1, re-check point 5). `reserveLinkLabelRoom` measures the
+face-to-face gap, and `overlayRunMid(..., 'y')` has no answer for an L whose longest run is
+horizontal. It has two moves: in y, the groups of the tiers below move down by the deficit; in x,
+**insert at the split**: everything at or right of the split between the two ends moves right, in
+every tier, and it refuses when a reserved lane stands at or beyond the split
+(`LINK_LABEL_ROOM_UNRESERVED`, and the stage-9 ladder places the label). The spec takes:
+
+- **Side lane:** the label room is reserved on the **vertical** run (the drop and the lane), by the
+  move in y. The side run is never the label's run: its own lane stands beyond its split, so
+  insert at the split would always refuse.
+- **Overlay L:** the room is reserved on the longest run. On a vertical run, the move in y. On a
+  horizontal run, insert at the split. Where a lane stands beyond the split, the spec accepts the
+  refusal: `LINK_LABEL_ROOM_UNRESERVED` (warning) names the link and the stage-9 ladder places the
+  label, as it does today for any link in that case.
+
+Tickets 116, 118 and 119 each add their case.
 
 **Transit lanes (ticket 120).** A link that already owns a transit lane toward its lower end (the
 long vertical of the maintainer's example) can run that lane on through the lower end's band to
@@ -422,8 +456,13 @@ No new path rule. `overlay-paths.ts` derives the path from the frozen ports as t
 **Shape held after 7f** (review M2). An overlay path is not a claim, and 7f can move a body onto it
 after the round judged it at 7e. At the end of 7f, `SIDE_SHAPE_LOST` (warning, placement) names each
 hinted link whose derived path has more bends than the round promised. The acceptance (Section 15)
-counts it and must find 0 on the corpus. A routed chord is held by `freezeChords` and a side lane by
-its reservation, so neither needs the check; `SIDE_SHAPE_LOST` reads them too, as a guard.
+counts it and must find 0 on the corpus. `SIDE_SHAPE_LOST` reads every hinted shape:
+
+- a **routed chord** is held by `freezeChords`; the check is a guard for a move 7f cannot refuse;
+- a **side lane does need the check**: its reservation holds the lane and the side run, but not the
+  far port's x, and a forced 7f move turns the drop into a stepped part (Section 10, *The far
+  port*);
+- an **overlay** path is held by nothing, so the check is its only witness.
 
 An overlay lateral port puts a pill on the lateral face. Stage 5's row gap already reserves room for
 facing named pills. The overlay endpoint mark stands on the port's own outward face, as today. The
@@ -528,6 +567,15 @@ count a lateral chord as any straight overlay chord.
 - A shape with two or more bends offered as an improvement (for example, a side lane that is not
   source-aligned). Only straight and L are offered, and a transit lane that loses its mouth part
   (ticket 120).
+
+**Open follow-ups (no ticket yet).**
+
+- **`FAN_RERUN_MS` is too small** (ticket 112). It is 8 s, and it stands for "one re-run to 7e and
+  7f without the chord step". On the private sheet one re-run plus 7f is about 2 + 6.6 s on a quiet
+  machine, so the gate `POST_PLACEMENT_RESERVE_MS + FAN_RERUN_MS` (16 s) can admit a re-run that
+  leaves too little for the rest of the command. The side round does not depend on this number for
+  safety: `MAX_RERUNS` is set from the whole-command projection (Section 7, *Budget*). A follow-up
+  sets `FAN_RERUN_MS` from a measurement.
 
 ## 17. Decisions (2026-09-30)
 
