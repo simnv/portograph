@@ -72,16 +72,18 @@ export function overlayCrossings(paths: readonly Trace[]): number {
 }
 
 /** A move of a lower rank, as the choice reads it (ticket 146). */
-export interface RankMove { dx: number; crossings: number; straight: number }
+export interface RankMove { dx: number; crossings: number; straight: number; /** The straight overlay links the move bends: 0 when absent. */ bent?: number }
 
 /**
  * The move of a lower rank that stays (ticket 146, user decision): a move that adds an overlay crossing, or does not leave more
  * straight overlay links than `base`, is never taken. Of the rest the most straight links win (user decision, 2026-09-30: client
- * overlay links are direct lines), then the fewest crossings, then the nearest move, then the smaller dx.
+ * overlay links are direct lines; `straight` is the net count, so a move that bends one link and straightens three is taken), then, on
+ * a tie in that count, the move that bends no straight link (a crossing gain alone never pays for a bent link), then the fewest
+ * crossings, then the nearest move, then the smaller dx.
  */
 export function pickRankMove<T extends RankMove>(moves: readonly T[], base: { crossings: number; straight: number }): T | undefined {
   return moves.filter(move => move.crossings <= base.crossings && move.straight > base.straight)
-    .sort((a, b) => b.straight - a.straight || a.crossings - b.crossings || Math.abs(a.dx) - Math.abs(b.dx) || a.dx - b.dx)[0];
+    .sort((a, b) => b.straight - a.straight || (a.bent ?? 0) - (b.bent ?? 0) || a.crossings - b.crossings || Math.abs(a.dx) - Math.abs(b.dx) || a.dx - b.dx)[0];
 }
 
 /** A reading of a model that has settled: the two above, and the findings the gates and the tier-gap plan would make. */
@@ -96,7 +98,7 @@ interface Verdict extends Reading {
 }
 
 /** What a candidate leaves, and what the model had without it: the straight overlay count, the overlay crossings. */
-interface Judged { count: number; crossings: number; base: { crossings: number; straight: number }; verdict?: Verdict | undefined }
+interface Judged { bent: number; count: number; crossings: number; base: { crossings: number; straight: number }; verdict?: Verdict | undefined }
 
 const copy = (model: LayoutModel): LayoutModel => JSON.parse(JSON.stringify(model)) as LayoutModel;
 
@@ -254,12 +256,12 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
     }
     return after !== undefined && baseline !== undefined && after.overlay.size > baseline.overlay.size
       // A lower rank bends no straight link, and adds no crossing (ticket 146, user decisions).
-      && (!ranked || ([...baseline.overlay].every(id => after.overlay.has(id)) && after.crossings() <= baseline.crossings()))
+      && (!ranked || after.crossings() <= baseline.crossings())
       && [...baseline.routed].every(id => after.routed.has(id))
       && after.drift <= Math.max(baseline.drift, REST) + PLACEMENT_EPS
       && after.width <= Math.max(baseline.width, edge().base + (ranked ? rankShare(edge()) : CANVAS_GROWTH_SHARE * edge().base)) + PLACEMENT_EPS
       && nothingNew(baseline.crowded, after.crowded) && nothingNew(baseline.disordered, after.disordered) && nothingNew(baseline.residuals, after.residuals)
-      ? { count: after.overlay.size, crossings: ranked ? after.crossings() : 0, base: { crossings: ranked ? baseline.crossings() : 0, straight: baseline.overlay.size }, verdict: after } : undefined;
+      ? { bent: [...baseline.overlay].filter(id => !after.overlay.has(id)).length, count: after.overlay.size, crossings: ranked ? after.crossings() : 0, base: { crossings: ranked ? baseline.crossings() : 0, straight: baseline.overlay.size }, verdict: after } : undefined;
   };
 
   /** The moves `dx` of a set of shapes that put one of them on a chord: open intervals. */
@@ -312,9 +314,9 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
       rebuildNodeGeometry(model, nodes, 'current');
       const after = read(model, overlays);
       let ok = extra() && after.overlay.size > before.overlay.size && [...before.routed].every(id => after.routed.has(id)) && blockedChords(model).every(id => blocked.has(id));
-      // Cheap refusals of a lower rank, before a settled copy is paid for (ticket 146): a straight link bent, a crossing added, a drift the column rules would undo.
+      // Cheap refusals of a lower rank, before a settled copy is paid for (ticket 146): a crossing added, a drift the column rules would undo.
       if (ok && rank !== undefined) {
-        ok = [...before.overlay].every(id => after.overlay.has(id)) && after.crossings() <= before.crossings();
+        ok = after.crossings() <= before.crossings();
         if (ok && follow !== undefined) {
           if (driftBefore === undefined) {
             const redo = saveGroupsOf(nodes);
@@ -328,9 +330,9 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
         }
       }
       if (ok && (rank === undefined ? settledTrials++ < SETTLED_TRIALS : spend(rank))) {
-        const judged = holdsSettled(saveGroupsOf(nodes), undo, nodes, { count: after.overlay.size, crossings: rank !== undefined ? after.crossings() : 0,
+        const judged = holdsSettled(saveGroupsOf(nodes), undo, nodes, { bent: 0, count: after.overlay.size, crossings: rank !== undefined ? after.crossings() : 0,
           base: { crossings: rank !== undefined ? before.crossings() : 0, straight: before.overlay.size } }, rank !== undefined);
-        if (judged !== undefined && rank !== undefined) passed.push({ target, dx: target - at, crossings: judged.crossings, straight: judged.count, base: judged.base, verdict: judged.verdict });
+        if (judged !== undefined && rank !== undefined) passed.push({ target, dx: target - at, crossings: judged.crossings, straight: judged.count, bent: judged.bent, base: judged.base, verdict: judged.verdict });
         else if (judged !== undefined && (best === undefined || judged.count > best.count)) best = { target, count: judged.count, verdict: judged.verdict };
       }
       undo();

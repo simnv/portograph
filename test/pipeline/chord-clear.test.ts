@@ -374,6 +374,32 @@ describe('a lower rank steps off the chords of the ranks above (ticket 146)', ()
     expect(moved(refused)).toBe(false);
   }, 60000);
 
+  it('a move that straightens three links and bends one (+3 / -1, no crossing added) is taken', async () => {
+    const model = copy(await run(fixture(NAME)));
+    restore(model);
+    // Two more sync links that end like link-7, and client 1 far to the left: link-6 is straight, the other three bend.
+    const seven = model.links.find(link => link.id === 'link-7')!;
+    for (const id of ['link-7b', 'link-7c']) model.links.push({ ...JSON.parse(JSON.stringify(seven)) as typeof seven, id });
+    const client = model.nodes['c-1']!;
+    client.bounds!.x -= 200;
+    for (const port of client.ports) if (port.anchor) port.anchor.x -= 200;
+    rebuildNodeGeometry(model, ['c-1'], 'current');
+    const straight = (probe: LayoutModel): string[] => overlays(probe).filter(link => overlayPath(probe, link).segments.length === 1).map(link => link.id);
+    expect(straight(model)).toEqual(['link-6']);
+    const at = x(model, 'low-a');
+    // On the settled copy of a move a body stands on the chord of link-6 (core-1 is no end of a sync link): the move bends it.
+    const bend = (probe: LayoutModel): void => {
+      if (Math.abs(x(probe, 'low-a') - at) < 1) return;
+      const chord = straightChord(probe, probe.links.find(link => link.id === 'link-6')!, undefined, true)!, body = probe.nodes['core-1']!.bounds!;
+      body.x = (chord.from.x + chord.to.x) / 2 - body.width / 2;
+      body.y = (chord.from.y + chord.to.y) / 2 - body.height / 2;
+    };
+    const control = copy(model);
+    expect(stepOverChords(model, bend)).toBe(true);
+    expect(Math.abs(x(model, 'low-a') - at)).toBeGreaterThan(1);
+    expect(stepOverChords(control, () => undefined)).toBe(true);
+  }, 60000);
+
   it('a node of a lower rank does not stand on the bodies of a child frame beside it (same tier)', async () => {
     const yaml = `portograph: 2
 groups:
@@ -475,6 +501,15 @@ describe('pickRankMove and overlayCrossings (ticket 146)', () => {
   it('more straight links beat fewer crossings (client links are direct lines)', () => {
     const fewer = { dx: 30, crossings: 1, straight: 6 }, more = { dx: 5, crossings: 2, straight: 9 };
     expect(pickRankMove([fewer, more], base)).toBe(more);
+  });
+  it('the net count of straight links decides: a move that bends one and straightens three is taken', () => {
+    const bends = { dx: 5, crossings: 3, straight: 6, bent: 1 };
+    expect(pickRankMove([bends], base)).toBe(bends);
+    expect(pickRankMove([bends, { dx: 1, crossings: 0, straight: 5, bent: 0 }], base)).toBe(bends);
+  });
+  it('on a tie in the net count the move that bends no straight link wins, before the fewest crossings', () => {
+    const bends = { dx: 5, crossings: 0, straight: 7, bent: 1 }, keeps = { dx: 9, crossings: 2, straight: 7, bent: 0 };
+    expect(pickRankMove([bends, keeps], base)).toBe(keeps);
   });
   it('equal straight links: fewer crossings win, then the nearest move, then the smaller dx', () => {
     const a = { dx: 10, crossings: 2, straight: 6 }, b = { dx: 40, crossings: 1, straight: 6 }, c = { dx: -10, crossings: 2, straight: 6 };
