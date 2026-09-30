@@ -1,6 +1,6 @@
 import type { LayoutModel } from '../model/layout.js';
 import { EPS } from '../score/geometry.js';
-import { alignLinkedGroupGrid, cantonTiers, replanGroupLabels } from './bands.js';
+import { alignLinkedGroupGridAndPack, cantonTiers, replanGroupLabels } from './bands.js';
 import { chordGapNotes, tierGapPlans, type GapPlan, type ResidualReason } from './gap-plan.js';
 import type { TierGap } from './gap-runs.js';
 import { rebuildLaneExtents } from './lanes.js';
@@ -125,7 +125,7 @@ function settled(model: LayoutModel, extra: ReadonlyMap<number, number>): Layout
   if (!extra.size) return trial;
   moveBands(trial, extra);
   rebuildRegionGeometry(trial, undefined, undefined, true);
-  alignLinkedGroupGrid(trial);
+  alignLinkedGroupGridAndPack(trial);
   replanGroupLabels(trial);
   return trial;
 }

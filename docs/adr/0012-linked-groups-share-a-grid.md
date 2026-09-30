@@ -23,3 +23,7 @@ Consequences: the rule runs in stage 7f before labels are planned, so titles cen
 box; `fitRegionGroup` retains granted extents on both axes; publication and restore re-run the pass
 on a copy and reject a model it would still change, unless that replay itself exhausts the cap. The golden's providers, Datacenter and
 Backbone share one x-extent, and both TBR flanks share the Datacenter's y-extent.
+
+## Amendment (2026-09-30, ticket 136): the grid gives way to the pack
+
+The grid widens a box in place, and the derived frame widens with it. A beside row (`packBesideRows`) stood packed against the narrower frame. On a hinted run the pack moved the row and the grid put the moved box back onto the extent of its partner, so the two rules stepped against each other and no round bound could end it. The published layout must be at the fixed point of the pack, so the grid gives way: it refuses a widening that changes which groups the pack would move (judged row by row, on a copy), and the pair keeps its own extents. `GROUP_GRID_YIELDS_TO_PACK` (info) names the pair. A row that stood open before the grid is packed once after it, and the pair of rules ends by a round bound of 2; a grid that still widens after that leaves the grid aligned and raises `GROUP_GRID_NON_CONVERGENCE`, which the next call that settles withdraws. Publication and restore read the same refusal, because they re-run the grid function itself. See Q110 in `docs/design/decisions-log.md`.

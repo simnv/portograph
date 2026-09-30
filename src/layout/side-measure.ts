@@ -1,12 +1,12 @@
 import type { PortRef } from '../model/document.js';
 import type { Point, Rect } from '../model/geometry.js';
-import type { LayoutLink, LayoutModel, LayoutNode, LayoutPort, PathSegment } from '../model/layout.js';
+import type { LayoutLink, LayoutModel, LayoutNode, LayoutPort } from '../model/layout.js';
 import { placePortPill } from '../geometry/index.js';
 import { measurePortPill } from '../text/index.js';
-import { EPS, intersection, samePoint } from '../score/geometry.js';
+import { EPS } from '../score/geometry.js';
 import { isRoutedChord } from './frame-paths.js';
 import { transitTiers } from './lanes.js';
-import { crosses, overlayBlockers, overlayPath, straightChord, type OverlayBlockers } from './overlay-paths.js';
+import { overlayBlockers, overlayPath, straightChord, type OverlayBlockers } from './overlay-paths.js';
 import { facingSide, hintRefusal } from './side-hints.js';
 import { portKey } from './sides-one.js';
 
@@ -46,81 +46,6 @@ export function plannedBends(model: LayoutModel, link: LayoutLink, blockers?: Ov
   return drop ? 0 : 2 * gaps;
 }
 
-/**
- * The bends the round predicts for the published link: `plannedBends`, except that an overlay link whose natural straight segment is clear once
- * every body is pulled in by `NATURAL_SLACK` counts as straight, because 7f closes that margin (ticket 116 review; the same predictor as the
- * candidate test, so the kept model and the trial are read alike). Only the gain test reads this; `SIDE_SHAPE_LOST` reads `plannedBends`.
- */
-export function predictedBends(model: LayoutModel, link: LayoutLink, blockers: OverlayBlockers): number {
-  if (isOverlay(link) && link.attachments !== undefined && naturalStraightNearlyClear(model, link, blockers)) return 0;
-  return plannedBends(model, link, blockers);
-}
-
-/** How many links are bent, and how many bends they have in all, on one model, by `predictedBends` over every link (the round's gain test). */
-export function bendTotals(model: LayoutModel): { bent: number; total: number } {
-  const blockers = overlayBlockers(model);
-  let bent = 0, total = 0;
-  for (const link of model.links) {
-    const bends = predictedBends(model, link, blockers);
-    if (bends > 0) { bent++; total += bends; }
-  }
-  return { bent, total };
-}
-
-/** Extra room 7f may take: it grows tier gaps after 7e, so a segment that misses every body by less than this at 7e can still publish straight (as `FAN_SLACK`). */
-export const NATURAL_SLACK = 4;
-const NORMAL_OF: Readonly<Record<string, Point>> = { top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } };
-const shrink = (box: Rect, by: number): Rect => ({ x: box.x + by, y: box.y + by, width: Math.max(0, box.width - 2 * by), height: Math.max(0, box.height - 2 * by) });
-
-/**
- * Whether the overlay link's straight segment between its natural faces is clear of every foreign body and pill once each is pulled in by
- * `NATURAL_SLACK`. Such a link is bent at 7e only by a margin 7f closes, and it publishes straight without a hint (ticket 115 review, M1).
- */
-export function naturalStraightNearlyClear(model: LayoutModel, link: LayoutLink, blockers: OverlayBlockers, slack = NATURAL_SLACK): boolean {
-  const chord = straightChord(model, link, blockers, true);
-  if (chord === undefined) return false;
-  const ends = [link.attachments!.from, link.attachments!.to].map(ref => model.nodes[ref.node]?.ports.find(port => portKey(port.ref) === portKey(ref)));
-  const dir = { x: chord.to.x - chord.from.x, y: chord.to.y - chord.from.y };
-  const leaves = (port: LayoutPort | undefined, sign: number): boolean => port?.side !== undefined
-    && sign * (dir.x * NORMAL_OF[port.side]!.x + dir.y * NORMAL_OF[port.side]!.y) >= -EPS;
-  if (!leaves(ends[0], 1) || !leaves(ends[1], -1)) return false;
-  const own = ends.flatMap(port => port?.pill && port.ref.anonymous !== true ? [port.pill.bounds] : []);
-  const window: Rect = { x: Math.min(chord.from.x, chord.to.x), y: Math.min(chord.from.y, chord.to.y), width: Math.abs(dir.x), height: Math.abs(dir.y) };
-  return !blockers.some(window, box => !own.some(pill => pill.x === box.x && pill.y === box.y && pill.width === box.width && pill.height === box.height)
-    && crosses(chord.from, chord.to, shrink(box, slack)));
-}
-
-const strictCrossing = (a: PathSegment, b: PathSegment): boolean => {
-  const point = intersection(a, b);
-  return point !== undefined && ![a.from, a.to, b.from, b.to].some(end => samePoint(end, point));
-};
-
-/**
- * How many pairs of links cross where one of the pair is an overlay link ending on one of `nodes` (spec Section 15 reports crossings; the round
- * must not add one at a moved port). It reads the segments known at 7e with no router: the derived path of an overlay link, the pinned path of
- * a chord or a level path. A pair counts once.
- */
-export function overlayCrossingsAt(model: LayoutModel, nodes: ReadonlySet<string>): number {
-  const blockers = overlayBlockers(model), cache = new Map<string, PathSegment[]>();
-  const segments = (link: LayoutLink): PathSegment[] => {
-    if (cache.has(link.id)) return cache.get(link.id)!;
-    // A link 7f will straighten by itself is read as its natural chord, the shape it publishes, not as the bent path it has at 7e.
-    const chord = isOverlay(link) && naturalStraightNearlyClear(model, link, blockers) ? straightChord(model, link, blockers, true) : undefined;
-    cache.set(link.id, chord !== undefined ? [{ from: chord.from, to: chord.to, owner: link.owner }]
-      : isOverlay(link) ? overlayPath(model, link, blockers).segments : link.path?.segments ?? []);
-    return cache.get(link.id)!;
-  };
-  const near = model.links.filter(link => isOverlay(link) && (nodes.has(link.attachments!.from.node) || nodes.has(link.attachments!.to.node)));
-  const pairs = new Set<string>();
-  for (const one of near) for (const other of model.links) {
-    if (other.id === one.id || other.attachments === undefined) continue;
-    const key = one.id < other.id ? `${one.id}|${other.id}` : `${other.id}|${one.id}`;
-    if (pairs.has(key)) continue;
-    if (segments(one).some(a => segments(other).some(b => strictCrossing(a, b)))) pairs.add(key);
-  }
-  return pairs.size;
-}
-
 export interface SideOffer {
   /** New hints: `portKey` to the lateral side. Never an old hint, never a refused key. */
   hints: Map<string, 'left' | 'right'>;
@@ -128,10 +53,15 @@ export interface SideOffer {
   promised: Map<string, { link: string; bends: number; shape: 'straight' | 'L' }>;
   /** True when the probe cap left candidates unprobed. */
   capped: boolean;
+  /**
+   * The two probe clones after every accepted hint (Section 19.2, rule 2): the overlay probe on the baseline and the routed probe on the
+   * kept 7e model, each hint in its own coordinates. The routed shapes (tickets 117, 119) read the second; the overlay shape reads the first.
+   */
+  probes?: { base: LayoutModel['nodes']; kept7e: LayoutModel['nodes'] };
 }
 
 interface Lateral { ref: PortRef; key: string; side: 'left' | 'right' }
-interface Config { laterals: Lateral[]; grows: boolean; nodes: LayoutModel['nodes']; shape?: 'L' }
+interface Config { laterals: Lateral[]; grows: boolean; nodes: LayoutModel['nodes']; nodes7e: LayoutModel['nodes']; shape?: 'L' }
 
 /** The node with the port moved to the lateral face: a copy, the placed node is not touched. Undefined when no slot fits the box. */
 function moved(node: LayoutNode, lateral: Lateral, peerY: number): { node: LayoutNode; grows: boolean } | undefined {
@@ -156,12 +86,14 @@ function moved(node: LayoutNode, lateral: Lateral, peerY: number): { node: Layou
   return { node: { ...node, ports }, grows: others.length > 0 };
 }
 
+const centreOf = (box: Rect): { x: number; y: number } => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
+
 /**
- * The L shape (spec Sections 5 and 11, ticket 116): one lateral end, and the overlay derivation on the probe gives exactly one turn (two
- * segments). Offered only when the link now has two bends or more, so an L is a gain; the caller asks for it once no straight shape fits.
- * A lateral port at both ends is not an L. No angle rule: both runs are axis-aligned.
+ * The L shape (spec Sections 5 and 11, ticket 116): one lateral end, and the overlay derivation on the baseline probe gives exactly one turn
+ * (two segments). The caller asks for it once no straight shape fits; it is a gain only when the link has two bends or more now. A lateral
+ * port at both ends is not an L, and no angle rule applies: both runs are axis-aligned. The same hint goes on the kept 7e clone (`attempt`).
  */
-function lShapes(model: LayoutModel, nodes: LayoutModel['nodes'], link: LayoutLink, ends: PortRef[], laterals: Lateral[]): Config[] {
+function lShapes(model: LayoutModel, kept7e: LayoutModel, nodes: LayoutModel['nodes'], nodes7e: LayoutModel['nodes'], link: LayoutLink, ends: PortRef[], laterals: Lateral[]): Config[] {
   if (plannedBends(model, link) < 2) return [];
   const found: Config[] = [];
   for (const lateral of laterals) {
@@ -171,19 +103,23 @@ function lShapes(model: LayoutModel, nodes: LayoutModel['nodes'], link: LayoutLi
     const draft = { ...nodes, [lateral.ref.node]: result.node };
     const probe: LayoutModel = { ...model, nodes: draft };
     if (overlayPath(probe, link, overlayBlockers(probe)).segments.length !== 2) continue;
-    found.push({ laterals: [lateral], grows: result.grows, nodes: draft, shape: 'L' });
+    const node7e = nodes7e[lateral.ref.node], peer7e = kept7e.nodes[peer.node]?.bounds;
+    const result7e = node7e?.bounds !== undefined && peer7e !== undefined ? moved(node7e, lateral, centreOf(peer7e).y) : undefined;
+    found.push({ laterals: [lateral], grows: result.grows, nodes: draft, nodes7e: result7e !== undefined ? { ...nodes7e, [lateral.ref.node]: result7e.node } : nodes7e, shape: 'L' });
   }
   return found;
 }
-
-const centreOf = (box: Rect): { x: number; y: number } => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
 
 /**
  * The lateral sides to try in the next placement run (spec Sections 4, 5 and 7). Candidates are overlay links that are bent now and whose
  * ends are hint candidates (`hintRefusal`, natural side `top` or `bottom`, peers on different tiers). In link order, each candidate is probed
  * with the lateral side at the upper end, at the lower end, and at both; the probe reads `straightChord` on the moved ends and the minimum
  * outward angle. The configuration with fewer lateral ports wins, then the one that needs no node growth, then the lower end, then the end
- * that comes first in document order. An accepted hint is applied to the probe model before the next link is read.
+ * that comes first in document order. An accepted hint is applied to both probe clones before the next link is read.
+ *
+ * `base` is the baseline, the model 7f publishes when no trial is kept (side-faces.md, Section 19.2): "bent now" and the overlay probe are read on
+ * it, so a link that publishes straight is never a candidate. `kept7e` is the kept 7e model, where the routed probes read; a hint is applied
+ * to its clone in its own coordinates. Neither model is touched.
  *
  * The probe model shares every node the probe does not move with the placed model and holds a copy of each node it moves, so the placed
  * model is never touched and no reset is needed (the spec's one clone, by structural sharing).
@@ -191,14 +127,14 @@ const centreOf = (box: Rect): { x: number; y: number } => ({ x: box.x + box.widt
  * Known limit: `refused` is greedy and keyed by (port, side). A hint refused in a trial with another hint is not offered again, even when it
  * would give its shape alone, and a key refused for one geometry stays refused after the geometry changes. Nothing searches subsets.
  */
-export function measureSides(model: LayoutModel, refused: ReadonlySet<string>, probeCap = PROBE_CAP): SideOffer {
+export function measureSides(model: LayoutModel, kept7e: LayoutModel, refused: ReadonlySet<string>, probeCap = PROBE_CAP): SideOffer {
   const offer: SideOffer = { hints: new Map(), promised: new Map(), capped: false };
   const blockers = overlayBlockers(model);
   const order = new Map(Object.keys(model.document.nodes).map((id, index) => [id, index]));
   const tierOf = (ref: PortRef): number => model.groups[model.document.nodes[ref.node]!.group]!.tier!;
-  let nodes: LayoutModel['nodes'] = model.nodes;
+  let nodes: LayoutModel['nodes'] = model.nodes, nodes7e: LayoutModel['nodes'] = kept7e.nodes;
   let probes = 0;
-  for (const link of model.links.filter(item => isOverlay(item) && plannedBends(model, item, blockers) > 0 && !naturalStraightNearlyClear(model, item, blockers))) {
+  for (const link of model.links.filter(item => isOverlay(item) && plannedBends(model, item, blockers) > 0)) {
     const ends = [link.attachments!.from, link.attachments!.to];
     if (ends[0]!.node === ends[1]!.node || tierOf(ends[0]!) === tierOf(ends[1]!)) continue;
     const laterals: Lateral[] = [];
@@ -216,13 +152,17 @@ export function measureSides(model: LayoutModel, refused: ReadonlySet<string>, p
     probes++;
     const configs: Config[] = [];
     const attempt = (chosen: Lateral[]): void => {
-      let draft = nodes, grows = false;
+      let draft = nodes, draft7e = nodes7e, grows = false;
       for (const lateral of chosen) {
         const peer = ends.find(ref => portKey(ref) !== lateral.key)!;
         const result = moved(draft[lateral.ref.node]!, lateral, centreOf(draft[peer.node]!.bounds!).y);
         if (result === undefined) return;
         draft = { ...draft, [lateral.ref.node]: result.node };
         grows ||= result.grows;
+        // The same hint on the kept 7e clone, in its own coordinates; a node that has no box or no slot there keeps its 7e ports.
+        const node7e = draft7e[lateral.ref.node], peer7e = kept7e.nodes[peer.node]?.bounds;
+        const result7e = node7e?.bounds !== undefined && peer7e !== undefined ? moved(node7e, lateral, centreOf(peer7e).y) : undefined;
+        if (result7e !== undefined) draft7e = { ...draft7e, [lateral.ref.node]: result7e.node };
       }
       const probe: LayoutModel = { ...model, nodes: draft };
       const chord = straightChord(probe, link, overlayBlockers(probe));
@@ -233,21 +173,22 @@ export function measureSides(model: LayoutModel, refused: ReadonlySet<string>, p
         const dx = portKey(ends[0]!) === lateral.key ? chord.to.x - chord.from.x : chord.from.x - chord.to.x;
         if (dx * (lateral.side === 'right' ? 1 : -1) / length < MIN_OUTWARD - EPS) return;
       }
-      configs.push({ laterals: chosen, grows, nodes: draft });
+      configs.push({ laterals: chosen, grows, nodes: draft, nodes7e: draft7e });
     };
     for (const lateral of laterals) attempt([lateral]);
     if (laterals.length === 2) attempt(laterals);
-    if (configs.length === 0) configs.push(...lShapes(model, nodes, link, ends, laterals));
+    if (configs.length === 0) configs.push(...lShapes(model, kept7e, nodes, nodes7e, link, ends, laterals));
     if (configs.length === 0) continue;
     // Fewer lateral ports, then no growth, then the lower end (the deeper tier), then document order.
     const key = (config: Config): number[] => [config.laterals.length, Number(config.grows), -tierOf(config.laterals[0]!.ref), order.get(config.laterals[0]!.ref.node)!];
     configs.sort((a, b) => { const x = key(a), y = key(b), at = x.findIndex((value, index) => value !== y[index]); return at < 0 ? 0 : x[at]! - y[at]!; });
     const best = configs[0]!;
-    nodes = best.nodes;
+    nodes = best.nodes; nodes7e = best.nodes7e;
     for (const lateral of best.laterals) {
       offer.hints.set(lateral.key, lateral.side);
       offer.promised.set(lateral.key, best.shape === 'L' ? { link: link.id, bends: 1, shape: 'L' } : { link: link.id, bends: 0, shape: 'straight' });
     }
   }
+  offer.probes = { base: nodes, kept7e: nodes7e };
   return offer;
 }

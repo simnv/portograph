@@ -22,29 +22,25 @@ import { bundles } from '../layout/bundles.js';
 import { bands } from '../layout/bands.js';
 import { linkLabels } from '../layout/link-labels.js';
 import { elkDeadlineMs, type CreateElkAttempt, type ElkClock } from '../layout/elk-worker.js';
-import { route, ROUTE_BUDGET_MS, type CreateRouteAttempt } from '../route/index.js';
-import { CommandDeadlineError, POST_PLACEMENT_RESERVE_MS, UNBOUNDED_BUDGET, type Budget } from './budget.js';
+import { route, RouteDeadlineError, ROUTE_BUDGET_MS, type CreateRouteAttempt } from '../route/index.js';
+import { CommandDeadlineError, POST_PLACEMENT_RESERVE_MS, RERUN_GATE_MS, UNBOUNDED_BUDGET, type Budget } from './budget.js';
 // After the stages: the modules below reach the centring module, whose import order the tests that mock it depend on.
 import { declinedFanDiagnostics, fanRoundDropped, fanRoundHolds, measureFans, type FanMeasure } from '../layout/fan-spread.js';
-import { chordClearances, isRoutedChord } from '../layout/frame-paths.js';
+import { chordClearances } from '../layout/frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
-import { hintsFacingAway, SideHintRefusal, sideHintDiagnostics, type SideHints } from '../layout/side-hints.js';
-import { bendTotals, measureSides, overlayCrossingsAt, plannedBends, refusedKey, type SideOffer } from '../layout/side-measure.js';
-import { overlayBlockers } from '../layout/overlay-paths.js';
+import { SideHintRefusal, sideHintDiagnostics, type SideHints } from '../layout/side-hints.js';
+import { measureSides, refusedKey, type SideOffer } from '../layout/side-measure.js';
+import { judgeTrial, predictedWorse, predictPublished, routedBends, trialNotes } from '../layout/side-judge.js';
 
 
 /** Most runs of placement a fan's pitch may cost after the first (ticket 89). */
 const FAN_ROUNDS = 2;
-/** What one fan re-run costs to 7e and 7f, without the chord step. A re-run starts only with this plus the post-placement reserve left
- * before the hard command deadline; the number never scales with the first run's time, so the layout does not depend on machine speed (ticket 112). */
-const FAN_RERUN_MS = 8000;
-const fanGateMs = POST_PLACEMENT_RESERVE_MS + FAN_RERUN_MS;
 /** Most side rounds after the fan rounds: one offer, one retry (side-faces.md, Section 7). */
 const SIDE_ROUNDS = 2;
 /**
  * Most placement re-runs of one command, fan and side together (side-faces.md, Section 7, *Budget*). A count, never set by the clock.
- * PROVISIONAL (ticket 115): 3 = the two fan rounds and one side trial. The value is to be the largest count whose whole command, projected
- * on a machine 2 times slower, finishes 2 s or more before the 30 s deadline; the coordinator's timing run on the private sheet sets it.
+ * 3 = the two fan rounds and one side trial: the largest count with no gate cut on the private sheet at 2 times slower, whose whole
+ * command ends 2 s or more before the 60 s deadline (side-faces.md, Section 19.5). A fourth re-run would read under RERUN_GATE_MS at 2x.
  */
 export const MAX_RERUNS = 3;
 /** `node.name#ordinal`, or `node.#ordinal` for an anonymous port, from a port key. */
@@ -52,13 +48,14 @@ const portName = (key: string): string => {
   const [node, anonymous, name, ordinal] = JSON.parse(key) as [string, boolean, string | null, number];
   return `${node}.${anonymous ? '' : name}#${ordinal}`;
 };
-const straightChords = (model: LayoutModel): number => model.links.filter(link => isRoutedChord(model, link)).length;
 
 export { CommandDeadlineError, createBudget, UNBOUNDED_BUDGET } from './budget.js';
 export type { Budget } from './budget.js';
 
 export interface LayoutProgress {
   stage: LayoutStage;
+  /** True for the stage of a side trial (its 7f and its route), which the command reports a second time. */
+  trial?: true;
   /** Wall time this stage took, measured by the caller's clock. */
   durationMs: number;
   /** What the shared budget had left when the stage finished; `Infinity` when unbounded. */
@@ -87,12 +84,12 @@ export interface LayoutOptions {
   onProgress?: (progress: LayoutProgress) => void;
   /** Test only. Side hints for every placement run (port key to `left` or `right`); no measure offers one yet (ticket 115). */
   testSideHints?: SideHints;
+  /** Test only: called after the side trial is judged, with the offer, the two routed models and the verdict. */
+  testSideProbe?: (event: { offer: SideOffer; routedBase: LayoutModel; routedTrial: LayoutModel; verdict: ReturnType<typeof judgeTrial> }) => void;
   /** Test only. Stage-3 node size floors for every placement run: the sizes a measured run built its skeleton graph from (side-faces.md, Section 8). */
   testNodeFloors?: ReadonlyMap<string, Size>;
   /** Test only. Replaces `MAX_RERUNS` for one command. */
   testMaxReruns?: number;
-  /** Test only: called once per side trial with the kept model, the trial, the offer and whether the round took it. */
-  testSideProbe?: (event: { kept: LayoutModel; trial: LayoutModel; offer: SideOffer; taken: boolean; failed: string[] }) => void;
   /** Test only. Called with the wall time of each placement run, measure, 7f, route and score-ready stage, and the budget left (ticket 115 timing). */
   testTiming?: (label: string, durationMs: number, remainingMs: number) => void;
 }
@@ -104,12 +101,12 @@ export interface LayoutOptions {
 export async function layout(document: NormalisedDocument, options: LayoutOptions = {}): Promise<LayoutModel> {
   const clock = options.clock, now = (): number => clock ? clock.now() : Date.now();
   const budget = options.budget ?? UNBOUNDED_BUDGET;
-  const report = (stage: LayoutStage, started: number): void =>
-    options.onProgress?.({ stage, durationMs: now() - started, remainingMs: budget.remainingMs() });
-  const step = <T>(stage: LayoutStage, run: () => T): T => {
+  const report = (stage: LayoutStage, started: number, trial?: true): void =>
+    options.onProgress?.({ stage, ...(trial === undefined ? {} : { trial }), durationMs: now() - started, remainingMs: budget.remainingMs() });
+  const step = <T>(stage: LayoutStage, run: () => T, trial?: true): T => {
     if (budget.remainingMs() <= 0) throw new CommandDeadlineError(0, stage);
     const started = now(), result = run();
-    report(stage, started);
+    report(stage, started, trial);
     return result;
   };
 
@@ -122,15 +119,17 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
 
   /** Stages 1 to 7e, the placement the chords are decided on before 7f grows a gap, and so the placement a fan is measured on. `floors` are port pitches a fan of chords needs on a face (ticket 89); the first run has none. */
   const stage3Sizes = new WeakMap<LayoutModel, Map<string, Size>>();
-  const place = async (floors: FanMeasure['floors'], hints = options.testSideHints, nodeFloors = options.testNodeFloors): Promise<LayoutModel> => {
-    const resolved = step('resolve', () => resolve(document, options.diagnostics ? { diagnostics: options.diagnostics } : {}));
-    step('sides-one', () => sidesOne(resolved, hints));
+  const place = async (floors: FanMeasure['floors'], hints = options.testSideHints, nodeFloors = options.testNodeFloors, abort?: (stage: string) => void): Promise<LayoutModel> => {
+    const stepIn = <T>(stage: LayoutStage, run: () => T): T => { abort?.(stage); return step(stage, run); };
+    const resolved = stepIn('resolve', () => resolve(document, options.diagnostics ? { diagnostics: options.diagnostics } : {}));
+    stepIn('sides-one', () => sidesOne(resolved, hints));
     for (const [id, pitch] of floors) resolved.nodes[id]!.sidePitch = { ...resolved.nodes[id]!.sidePitch, ...pitch };
     // A hinted node keeps the size the measured run gave it, so the skeleton input is the same (a floor on `size`, not on `sizeFloor`, which alignment reads).
     for (const [id, size] of nodeFloors ?? []) resolved.nodes[id]!.size = { ...size };
-    step('size', () => sizeNodes(resolved));
+    stepIn('size', () => sizeNodes(resolved));
     const sizes = new Map(Object.entries(resolved.nodes).map(([id, node]) => [id, { ...node.size! }] as const));
 
+    abort?.('skeleton');
     if (budget.remainingMs() <= 0) throw new CommandDeadlineError(0, 'skeleton');
     const skeletonStarted = now();
     await skeleton(resolved, {
@@ -143,13 +142,13 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
 
     // sidesTwo freezes port topology and publishes the first protected snapshot; every region rule
     // below returns a new one, and the previous value must not be used again.
-    let model = step('sides-two', () => sidesTwo(resolved, nodeFloors));
-    model = step('rows', () => rows(model));
-    model = step('lanes', () => lanes(model));
-    model = step('flanks', () => flanks(model));
-    model = step('centre', () => centre(model));
-    model = step('bars', () => bars(model));
-    model = step('bundles', () => bundles(model));
+    let model = stepIn('sides-two', () => sidesTwo(resolved, nodeFloors));
+    model = stepIn('rows', () => rows(model));
+    model = stepIn('lanes', () => lanes(model));
+    model = stepIn('flanks', () => flanks(model));
+    model = stepIn('centre', () => centre(model));
+    model = stepIn('bars', () => bars(model));
+    model = stepIn('bundles', () => bundles(model));
     stage3Sizes.set(model, sizes);
     return model;
   };
@@ -167,7 +166,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   };
   const cutSide = (why: string): void => {
     cuts.push({ stage: 'placement', severity: 'warning', code: 'SIDE_ROUND_CUT',
-      message: `A side round was cut: ${why}. The hints of the last kept placement stand, and this layout may differ from one made with more time.` });
+      message: `A side round was cut: ${why}. The baseline (stage 7f of the last kept placement) stands, and this layout may differ from one made with more time.` });
   };
   let floors: FanMeasure['floors'] = new Map();
   for (let round = 0; round < FAN_ROUNDS; round++) {
@@ -179,7 +178,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     }
     if (!grew) break;
     options.testTiming?.('gate-fan', 0, budget.remainingMs());
-    if (budget.remainingMs() < fanGateMs) { cut('the command deadline leaves less than the reserve for one re-run, 7f, routing and scoring'); break; }
+    if (budget.remainingMs() < RERUN_GATE_MS) { cut('the command deadline leaves less than the reserve for one re-run, 7f, routing and scoring'); break; }
     let trial: LayoutModel;
     reruns++;
     try { trial = await timed('rerun-fan', () => place(next)); } catch (error) {
@@ -192,10 +191,14 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     if (!fanRoundHolds(model, trial)) { cuts.push(fanRoundDropped(model, trial)); break; }
     model = trial; floors = next;
   }
-  // Side rounds (side-faces.md, Section 7, part 2): only when a measure offers a hint. A dropped trial leaves the model, the floors and the old
-  // hints as they were. Every bound is a count (SIDE_ROUNDS, MAX_RERUNS); the clock is read only against the hard-deadline gate.
+  // Side rounds (side-faces.md, Section 19). 7f runs on the kept model first: its output is the baseline, the model the command publishes when no
+  // trial is kept. A measure reads the baseline. One batched trial reaches 7f per command; it is kept only on its routed result. Every bound is a
+  // count (SIDE_ROUNDS, MAX_RERUNS); the clock is read only against the hard-deadline gates.
+  let kept7e = model;
+  let base = await timed('bands', () => step('bands', () => bands(kept7e, budget)));
   let hints = new Map<string, 'left' | 'right'>(options.testSideHints ?? []);
   const promised: SideOffer['promised'] = new Map(), refused = new Set<string>(), sideNotes: Diagnostic[] = [];
+  const trialLinks = new Map<string, string>();
   const refuse = (keys: Iterable<string>, side: ReadonlyMap<string, 'left' | 'right'>, reason: string): void => {
     for (const key of keys) {
       refused.add(refusedKey(key, side.get(key)!));
@@ -204,62 +207,84 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
         message: `The side hint ${side.get(key)} on ${portName(key)} was refused: ${reason}.`, ...(link === undefined ? {} : { owners: [{ kind: 'link' as const, id: link }] }) });
     }
   };
-  const trialLinks = new Map<string, string>();
+  const routeModel = async (m: LayoutModel, trial?: true): Promise<LayoutModel> => {
+    if (budget.remainingMs() <= 0) throw new CommandDeadlineError(0, 'route');
+    const started = now();
+    const routed = await timed(trial === undefined ? 'route' : 'route-trial', () => route(m, {
+      ...(options.createRouteAttempt ? { createAttempt: options.createRouteAttempt } : {}),
+      ...(clock ? { clock } : {}),
+      ...(options.strictCheckpoints ? { strictCheckpoints: true } : {}),
+      // The router's own timer must be positive; the remainder was checked above, and a 1 ms floor keeps the session honest rather than letting
+      // it fall back to a fresh full policy.
+      routeBudgetMs: Math.max(1, budget.share(options.routeBudgetMs ?? ROUTE_BUDGET_MS)),
+    }));
+    report('route', started, trial);
+    return routed;
+  };
+  // The guard of a trial: its own deadline, the command's remainder less the post-placement reserve (Section 19.5). The baseline passes none.
+  const trialAbort = (stage: string): void => { if (budget.remainingMs() <= POST_PLACEMENT_RESERVE_MS) throw new CommandDeadlineError(0, stage); };
+  const maxReruns = options.testMaxReruns ?? MAX_RERUNS;
+  let routedBase: LayoutModel | undefined, routedFinal: LayoutModel | undefined;
+  const keptNotes: Diagnostic[] = [];
   for (let round = 0; round < SIDE_ROUNDS; round++) {
-    const offer = await timed('measureSides', () => measureSides(model, refused));
+    const offer = await timed('measureSides', () => measureSides(base, kept7e, refused));
     if (offer.capped) sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_PROBE_CAPPED', message: 'The side measure stopped at its probe cap; the links after it were not probed.' });
     if (offer.hints.size === 0) break;
-    if (reruns >= (options.testMaxReruns ?? MAX_RERUNS)) {
-      sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_ROUND_SKIPPED', message: `A side round was skipped: the command has made its ${options.testMaxReruns ?? MAX_RERUNS} placement re-runs.` });
+    if (reruns >= maxReruns) {
+      sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_ROUND_SKIPPED', message: `A side round was skipped: the command has made its ${maxReruns} placement re-runs.` });
       break;
     }
     options.testTiming?.('gate-side', 0, budget.remainingMs());
-    if (budget.remainingMs() < fanGateMs) { cutSide('the command deadline leaves less than the reserve for one re-run, 7f, routing and scoring'); break; }
+    if (budget.remainingMs() < RERUN_GATE_MS) { cutSide('the command deadline leaves less than the reserve for one re-run, 7f, routing and scoring'); break; }
     const all = new Map([...hints, ...offer.hints]);
     for (const [key, item] of offer.promised) trialLinks.set(key, item.link);
     const nodeFloors = new Map(options.testNodeFloors ?? []);
     for (const key of all.keys()) {
       const [node] = JSON.parse(key) as [string];
-      const size = stage3Sizes.get(model)?.get(node);
+      // The 7e model keys the size cache, never the baseline (a new object: the lookup would give undefined with no error).
+      const size = stage3Sizes.get(kept7e)?.get(node);
       if (size !== undefined) nodeFloors.set(node, { ...size });
     }
-    let trial: LayoutModel;
+    let trial7e: LayoutModel;
     reruns++;
-    try { trial = await timed('rerun-side', () => place(floors, all, nodeFloors)); } catch (error) {
+    try { trial7e = await timed('rerun-side', () => place(floors, all, nodeFloors, trialAbort)); } catch (error) {
       if (error instanceof CommandDeadlineError) { cutSide('the command deadline was reached during it'); break; }
       // Only the layout's own refusals drop the offer; anything else (a TypeError) is a bug and must surface.
       if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError)) throw error;
       refuse(offer.hints.keys(), offer.hints, `the placement run rejected it (${error.message})`);
       continue;
     }
-    if ((trial.fallbackUsed && !model.fallbackUsed) || (trial.deadlineHit && !model.deadlineHit)) {
+    if ((trial7e.fallbackUsed && !kept7e.fallbackUsed) || (trial7e.deadlineHit && !kept7e.deadlineHit)) {
       cutSide('ELK fell back or met its time limit during it, and the re-run was dropped'); break;
     }
-    const blockers = overlayBlockers(trial), awayBefore = new Set(hintsFacingAway(model).map(item => item.key));
-    // A hint that already faced away on the kept model is not this trial's failure.
-    const away = new Set(hintsFacingAway(trial).map(item => item.key).filter(key => !awayBefore.has(key)));
-    const promisedAll = new Map([...promised, ...offer.promised]);
-    const failed = [...all.keys()].filter(key => away.has(key) || (promisedAll.has(key)
-      && plannedBends(trial, trial.links.find(link => link.id === promisedAll.get(key)!.link)!, blockers) > promisedAll.get(key)!.bends));
-    const before = bendTotals(model), after = bendTotals(trial);
-    // Fewer bends win even when crossings rise (Q109, decision 3): a crossing added at a moved port is reported, not a reason to refuse.
-    const movedNodes = new Set([...offer.hints.keys()].map(key => (JSON.parse(key) as [string])[0]));
-    const gain = failed.length === 0 && (after.bent < before.bent || (after.bent === before.bent && after.total < before.total))
-      && straightChords(trial) >= straightChords(model);
-    options.testSideProbe?.({ kept: model, trial, offer, taken: gain, failed });
-    if (gain) {
-      const added = overlayCrossingsAt(trial, movedNodes) - overlayCrossingsAt(model, movedNodes);
-      if (added > 0) for (const id of new Set([...offer.promised.values()].map(item => item.link))) {
-        sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_HINT_ADDS_CROSSING',
-          message: `The side hint for ${id} adds ${added} overlay crossing${added === 1 ? '' : 's'} at the moved ports; fewer bends win (Q109).`, owners: [{ kind: 'link', id }] });
-      }
-      model = trial; hints = all;
-      for (const [key, item] of offer.promised) promised.set(key, item);
-      continue;
+    const hintedLinks = new Map([...offer.promised.values()].map(item => [item.link, item.bends] as const));
+    // The predictor prunes only when another round and another re-run remain, and only the hints it calls worse (Section 19.3).
+    if (round + 1 < SIDE_ROUNDS && reruns < maxReruns) {
+      const worse = predictedWorse(predictPublished(trial7e, kept7e, base), base, hintedLinks.keys());
+      const pruned = [...offer.hints.keys()].filter(key => worse.away.includes(key) || worse.links.includes(offer.promised.get(key)?.link ?? ''));
+      if (pruned.length > 0) { refuse(pruned, all, 'the prediction from the moves of stage 7f gives it more bends than the baseline'); continue; }
     }
-    if (failed.some(key => hints.has(key))) refuse(offer.hints.keys(), all, 'a new hint broke an old one');
-    else if (failed.length > 0) refuse(failed.filter(key => offer.hints.has(key)), all, 'its shape was lost in the next placement run');
-    else refuse(offer.hints.keys(), all, 'every shape held, but the next placement run gave no gain');
+    let trial: LayoutModel, routedTrial: LayoutModel;
+    try {
+      trial = await timed('bands-trial', () => step('bands', () => bands(trial7e, budget, () => trialAbort('bands')), true));
+      routedBase ??= await routeModel(base);
+      // The trial's route starts only with time left after the reserve: the baseline is routed, so a cut here publishes it.
+      trialAbort('route');
+      routedTrial = await routeModel(trial, true);
+    } catch (error) {
+      if (error instanceof CommandDeadlineError || error instanceof RouteDeadlineError) { cutSide('the command deadline was reached during its stage 7f or its route'); break; }
+      if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError)) throw error;
+      refuse(offer.hints.keys(), offer.hints, `its stage 7f rejected it (${error.message})`);
+      break;
+    }
+    const verdict = judgeTrial({ routedBase, routedTrial, kept7e, trial7e, hinted: hintedLinks });
+    options.testSideProbe?.({ offer, routedBase, routedTrial, verdict });
+    if (!verdict.kept) { refuse(offer.hints.keys(), all, verdict.reason); break; }
+    // Kept: the trial is the baseline now. The notes name what the net count accepted.
+    keptNotes.push(...trialNotes(routedBase, routedTrial, verdict, hintedLinks.keys()));
+    base = trial; kept7e = trial7e; hints = all; routedFinal = routedTrial;
+    for (const [key, item] of offer.promised) promised.set(key, item);
+    break; // one trial reaches 7f per command
   }
   for (const [key, item] of promised) {
     const side = hints.get(key);
@@ -267,21 +292,14 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_HINT_TAKEN',
       message: `The port ${portName(key)} takes the side ${side}: the ${item.shape} shape of ${item.link} (${item.bends} bends).`, owners: [{ kind: 'link', id: item.link }] });
   }
-  const declined = declinedFanDiagnostics(measureFans(model).declined);
-  const atFreeze = chordClearances(model);
-  model = await timed('bands', () => step('bands', () => bands(model, budget)));
+  sideNotes.push(...keptNotes);
+  // Read on the 7e model that publishes: the kept one, or the kept trial's.
+  const declined = declinedFanDiagnostics(measureFans(kept7e).declined);
+  const atFreeze = chordClearances(kept7e);
+  model = base;
   // 7f moves columns in x after the chords are decided, and no rule bounds it: a pair it closes under the clearance is named here, with the
   // clearance it had at the freeze, so that a G6 failure can be traced to the move (ticket 89 review). Nothing is changed.
   const lost: Diagnostic[] = [...sideHintDiagnostics(model)];
-  // The round judged a hinted shape at 7e; 7f can move a body onto it. Name every hinted link that now has more bends than the round promised.
-  const lostBlockers = promised.size > 0 ? overlayBlockers(model) : undefined;
-  for (const [key, item] of promised) {
-    const link = model.links.find(candidate => candidate.id === item.link);
-    if (link !== undefined && plannedBends(model, link, lostBlockers) > item.bends) {
-      lost.push({ stage: 'placement', severity: 'warning', code: 'SIDE_SHAPE_LOST',
-        message: `The hinted link ${item.link} (port ${portName(key)}) has more bends after stage 7f than the side round promised (${item.bends}).`, owners: [{ kind: 'link', id: item.link }] });
-    }
-  }
   for (const [pair, now] of chordClearances(model)) {
     const before = atFreeze.get(pair);
     if (now < STRAIGHT_PATH_CLEARANCE.path - 1e-6 && before !== undefined) {
@@ -290,17 +308,15 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
         owners: pair.split('|').map(id => ({ kind: 'link' as const, id })) });
     }
   }
-  if (budget.remainingMs() <= 0) throw new CommandDeadlineError(0, 'route');
-  const routeStarted = now();
-  model = await timed('route', () => route(model, {
-    ...(options.createRouteAttempt ? { createAttempt: options.createRouteAttempt } : {}),
-    ...(clock ? { clock } : {}),
-    ...(options.strictCheckpoints ? { strictCheckpoints: true } : {}),
-    // The router's own timer must be positive; the remainder was checked one line above, and a
-    // 1 ms floor keeps the session honest rather than letting it fall back to a fresh 30 s.
-    routeBudgetMs: Math.max(1, budget.share(options.routeBudgetMs ?? ROUTE_BUDGET_MS)),
-  }));
-  report('route', routeStarted);
+  const published = routedFinal ?? routedBase ?? await routeModel(model);
+  // A hinted link of a kept trial has no more bends than on the baseline (the judgment tested it); this names a break of that rule.
+  if (routedFinal !== undefined && routedBase !== undefined) {
+    const before = routedBends(routedBase), after = routedBends(routedFinal);
+    for (const [key, item] of promised) {
+      if ((after.get(item.link) ?? Infinity) > (before.get(item.link) ?? Infinity)) lost.push({ stage: 'placement', severity: 'warning', code: 'SIDE_SHAPE_LOST',
+        message: `The hinted link ${item.link} (port ${portName(key)}) has more bends than on the baseline (${before.get(item.link)}).`, owners: [{ kind: 'link', id: item.link }] });
+    }
+  }
 
-  return timed('link-labels', () => step('link-labels', () => linkLabels(model, [...cuts, ...sideNotes, ...declined, ...lost])));
+  return timed('link-labels', () => step('link-labels', () => linkLabels(published, [...cuts, ...sideNotes, ...declined, ...lost])));
 }

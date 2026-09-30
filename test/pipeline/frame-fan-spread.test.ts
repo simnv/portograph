@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { Budget, LayoutLink, LayoutModel } from '../../src/index.js';
 import { layout, parse } from '../../src/index.js';
 import { ElkDeadlineError, systemElkClock } from '../../src/layout/elk-worker.js';
-import { POST_PLACEMENT_RESERVE_MS } from '../../src/pipeline/budget.js';
+import { RERUN_GATE_MS } from '../../src/pipeline/budget.js';
 import { measureFans } from '../../src/layout/fan-spread.js';
 import { standaloneChord, isRoutedChord } from '../../src/layout/frame-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -72,11 +72,11 @@ describe('a fan spreads its ports so its diagonals hold clearance', () => {
     expect(model.diagnostics.filter(item => item.code === 'FAN_SPREAD_CUT')).toHaveLength(1);
   });
 
-  // Ticket 112 review, finding 2: a re-run starts only with the post-placement reserve plus about 8 s for one re-run and 7f left.
-  it('starts a re-run only when the post-placement reserve and one re-run remain', async () => {
+  // Ticket 112 review, finding 2: a re-run starts only with the post-placement reserve plus one re-run and 7f left (RERUN_GATE_MS).
+  it('starts a re-run only when the post-placement reserve, one re-run and 7f remain', async () => {
     const at = (ms: number): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
       budget: { remainingMs: () => ms, share: stageMs => Math.min(stageMs, ms) } });
-    const under = await at(POST_PLACEMENT_RESERVE_MS + 7000), over = await at(POST_PLACEMENT_RESERVE_MS + 9000);
+    const under = await at(RERUN_GATE_MS - 1000), over = await at(RERUN_GATE_MS + 1000);
     expect(under.diagnostics.filter(item => item.code === 'FAN_SPREAD_CUT')).toHaveLength(1);
     expect(under.nodes['core-1']!.sidePitch!.bottom).toBe(12);
     expect(over.diagnostics.filter(item => item.code === 'FAN_SPREAD_CUT')).toEqual([]);

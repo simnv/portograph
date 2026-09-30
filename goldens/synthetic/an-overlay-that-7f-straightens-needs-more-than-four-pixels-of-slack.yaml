@@ -1,0 +1,18 @@
+# Expected: the side round reads the baseline (Q109a, ticket 133). Same input as `an-overlay-leaves-a-lateral-side-past-a-sibling-body`, with a wider
+# `client` (260). At 7e the `sync` overlay link goes round `sibling` (2 bends), and its natural straight segment needs 8 px of slack
+# to be clear: no slack of 4 px sees it. Stage 7f grows the tier gap, and the link publishes straight on the baseline. It is therefore no candidate: no
+# hint, no trial, one placement run. A round that reads 7e offers `right` for `server` here.
+# Test-only input owned by ticket 133; test/pipeline/side-baseline.test.ts reads the layout.
+portograph: 2
+groups:
+  core: { tier: 0, label: Core }
+  edge: { tier: 1, label: Edge }
+nodes:
+  server: { group: core, class: server, label: Server, size: { width: 240, height: 60 } }
+  sibling: { group: core, class: server, label: Sibling, size: { width: 190, height: 35 } }
+  under: { group: edge, class: server, label: Under, size: { width: 160, height: 35 } }
+  client: { group: edge, class: server, label: Client, size: { width: 260, height: 35 } }
+links:
+  - [server, sibling]
+  - [sibling, under]
+  - { from: server, to: client, class: sync }

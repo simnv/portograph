@@ -78,7 +78,7 @@ describe('the side round offers the L shape for an overlay link', () => {
     const target = { x: lb.ports[0]!.anchor!.x + 40, y: (lb.bounds!.y + lb.bounds!.height + outlet.bounds!.y) / 2 };
     moveNode(model, 'cache', target.x - cache.bounds!.x, target.y - cache.bounds!.y - cache.bounds!.height / 2);
     cache.bounds!.width = 200;
-    const offer = measureSides(model, new Set());
+    const offer = measureSides(model, model, new Set());
     expect(offer.hints.size).toBe(1);
     const [key, side] = [...offer.hints][0]!;
     expect(JSON.parse(key)[0]).toBe('outlet');
