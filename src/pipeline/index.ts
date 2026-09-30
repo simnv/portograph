@@ -141,7 +141,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   }
   const declined = declinedFanDiagnostics(measureFans(model).declined);
   const atFreeze = chordClearances(model);
-  model = step('bands', () => bands(model));
+  model = step('bands', () => bands(model, budget));
   // 7f moves columns in x after the chords are decided, and no rule bounds it: a pair it closes under the clearance is named here, with the
   // clearance it had at the freeze, so that a G6 failure can be traced to the move (ticket 89 review). Nothing is changed.
   const lost: Diagnostic[] = [];
