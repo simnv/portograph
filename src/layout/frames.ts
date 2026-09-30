@@ -96,6 +96,16 @@ function transitLanes(model: LayoutModel, id: string): Rect[] {
   const cells = new Set(frameCells(model, id)), inside = new Set(frameNodes(model, id));
   const boxes: Rect[] = [];
   for (const lane of model.lanes) {
+    // A riser lane stands inside the frames that hold a member of either bus; the frame grows to hold it (mesh-bus.md, section 11.5).
+    if (lane.owner.kind === 'mesh-bus' && cells.has(lane.group)) {
+      const ownerId = lane.owner.id, bus = model.meshBuses?.find(item => item.id === ownerId);
+      const other = model.meshBuses?.find(item => item.id === bus?.joined);
+      if (bus && [...bus.nodes, ...(other?.nodes ?? [])].some(node => inside.has(node))) {
+        const box = model.groups[lane.group]!.bounds!;
+        boxes.push({ x: lane.bounds.x, y: box.y, width: lane.bounds.width, height: box.height });
+      }
+      continue;
+    }
     if (!cells.has(lane.group) || lane.owner.kind !== 'link') continue;
     const owner = lane.owner.id;
     const link = model.links.find(item => item.id === owner);
@@ -147,16 +157,28 @@ export function foreignReach(model: LayoutModel, cell: string, link: LayoutLink)
  * above the cell's own frame. Undefined for a group that is no cell, or a link with no foreign frame.
  */
 function foreignFrame(model: LayoutModel, cell: string, link: LayoutLink): { frame: string; outer: number } | undefined {
+  if (!link.attachments) return undefined;
+  return foreignFrameOf(model, cell, [link.attachments.from.node, link.attachments.to.node]);
+}
+/** The same for any set of nodes: a frame is foreign to a set that has no node inside it (the riser's ends are the members of both buses). */
+function foreignFrameOf(model: LayoutModel, cell: string, ends: string[]): { frame: string; outer: number } | undefined {
   const frames = model.document.frames;
   const first = model.document.groups[cell]?.frame;
-  if (!frames || first === undefined || !link.attachments) return undefined;
-  const ends = [link.attachments.from.node, link.attachments.to.node];
+  if (!frames || first === undefined) return undefined;
   const chain: string[] = [];
   for (let id: string | undefined = first; id !== undefined; id = frames[id]?.parent) chain.push(id);
   // A parent holds every node of its child, so a link foreign to a parent is foreign to the child too.
   let outer = -1;
   chain.forEach((id, index) => { if (!ends.some(node => frameNodes(model, id).includes(node))) outer = index; });
   return outer < 0 ? undefined : { frame: chain[outer]!, outer };
+}
+
+/** `foreignReach` for a mesh bus riser: the frames that hold no member of either bus are foreign to it (mesh-bus.md, section 11.5). */
+export function riserForeignReach(model: LayoutModel, cell: string, members: string[]): Rect | undefined {
+  const found = foreignFrameOf(model, cell, members);
+  if (!found) return undefined;
+  const own = cellReach(model, cell);
+  return { ...own, x: own.x - found.outer * GROUP_PADDING, width: own.width + 2 * found.outer * GROUP_PADDING };
 }
 
 /**

@@ -667,6 +667,8 @@ this order:
 2. the **fewest groups moved aside** to open the slot, then the least total distance moved;
 3. the **least bar extension**: the length by which the two bars must grow beyond their spans to
    reach the riser (zero for an x inside both spans);
+   (built in ticket 96: between the extension and the tie, the slot that makes a frame holding a member grow least, zero inside such a frame, so a lane
+   is not put in empty space between two cantons and the frame stretched to it);
 4. **tie**: the x nearest the midpoint of the shorter bar's span (the upper bar where the two
    spans are equal); then the smaller x.
 

@@ -1,6 +1,6 @@
 import { equal } from '../model/json-equality.js';
 import type { Rect } from '../model/geometry.js';
-import type { LayoutModel, LayoutStage, PlacementSnapshot } from '../model/layout.js';
+import type { LayoutModel, LayoutStage, MeshBus, PlacementSnapshot } from '../model/layout.js';
 import { orderedNodeIds, orderedGroupIds } from '../model/model.js';
 import { resolve } from '../resolve/index.js';
 import { filterCss } from '../parse/css.js';
@@ -83,7 +83,7 @@ function semantics(model: LayoutModel) {
     links: model.links.map(link => pick(link, ['id', 'sourceIndex', 'owner', 'from', 'to', 'attachments', 'family', 'layer', 'bundle', 'groupLink', 'meshBus', 'strokeWidth'])),
     bundles: model.bundles.map(bundle => pick(bundle, ['id', 'owner', 'layer', 'nodes', 'members'])),
     groupLinks: model.groupLinks.map(group => pick(group, ['id', 'owner', 'layer', 'groups', 'members'])),
-    meshBuses: (model.meshBuses ?? []).map(bus => pick(bus, ['id', 'owner', 'layer', 'class', 'row', 'placement', 'frames', 'nodes', 'ports', 'members', 'dissolved', 'joined', 'cross'])),
+    meshBuses: (model.meshBuses ?? []).map(bus => pick(bus, ['id', 'owner', 'layer', 'class', 'row', 'placement', 'frames', 'nodes', 'ports', 'members', 'dissolved', 'joined', 'cross', 'meshNodes'])),
   };
 }
 function topology(model: LayoutModel) {
@@ -557,8 +557,10 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
   if (returned !== undefined) throw new Error('Mutation callback must be synchronous and return void');
   jsonValue(draft);
   validateRect(draft.canvas, 'canvas');
-  same(omit(draft, ['nodes', 'groups', 'tierBands', 'labels', 'canvas', 'diagnostics', 'runtime', 'links', 'lanes', 'bundles', 'junctions', 'labelBands', 'barDrops', 'obstacles', 'regions', 'anchorTier', 'frames', 'removedLinks']),
-    omit(model, ['nodes', 'groups', 'tierBands', 'labels', 'canvas', 'diagnostics', 'runtime', 'links', 'lanes', 'bundles', 'junctions', 'labelBands', 'barDrops', 'obstacles', 'regions', 'anchorTier', 'frames', 'removedLinks']), 'Undeclared model field changed');
+  // The lanes rule alone fixes the riser of a joined pair (mesh-bus.md, section 11.5); nothing else of a bus changes in it.
+  const unriser = (value: LayoutModel): LayoutModel => rule === 'lanes' && value.meshBuses ? { ...value, meshBuses: value.meshBuses.map(bus => omit(bus, ['riser']) as MeshBus) } : value;
+  const declared = ['nodes', 'groups', 'tierBands', 'labels', 'canvas', 'diagnostics', 'runtime', 'links', 'lanes', 'bundles', 'junctions', 'labelBands', 'barDrops', 'obstacles', 'regions', 'anchorTier', 'frames', 'removedLinks'];
+  same(omit(unriser(draft), declared), omit(unriser(model), declared), 'Undeclared model field changed');
   // Stage 8 alone removes links (`ROUTE_CHECKPOINT_SKIPPED`, `ROUTE_GAP_REJECTED`); every later stage keeps the list.
   if (rule !== 'route') same(draft.removedLinks, model.removedLinks, 'Only the route rule may remove a link');
   same(draft.stage, model.stage, 'Transaction owns the stage marker');

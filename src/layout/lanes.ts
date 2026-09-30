@@ -12,7 +12,8 @@ import { moveGroup, union } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { withLayoutMutation } from './mutation.js';
 import { chordsHold } from './frame-paths.js';
-import { foreignReach, foreignRoot, heldLaneReach, ownFrameCells } from './frames.js';
+import { foreignReach, foreignRoot, heldLaneReach, ownFrameCells, riserForeignReach, frameNodes } from './frames.js';
+import { BUS_RUN_CLEARANCE } from './bus-room.js';
 import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 
 /** A corridor `reseatLanes` moved, and the child port it moved it onto. */
@@ -58,8 +59,8 @@ export function transitTiers(model: LayoutModel, link: LayoutLink): number[] {
   return model.tierBands.map(band => band.tier).filter(tier => tier > Math.min(a, b) && tier < Math.max(a, b)).sort((u, v) => a < b ? u - v : v - u);
 }
 /** Measured normal pill extent plus 10 px gap, or the stroke-aware node clearance diameter. */
-export function laneWidth(model: LayoutModel, link: LayoutLink): number {
-  const pills = link.attachments ? [findPort(model, link.attachments.from), findPort(model, link.attachments.to)] : [];
+export function laneWidth(model: LayoutModel, link?: LayoutLink): number {
+  const pills = link?.attachments ? [findPort(model, link.attachments.from), findPort(model, link.attachments.to)] : [];
   const maxNodeStroke = Math.max(stroke.node, ...Object.values(model.nodes).map(node => node.strokeWidth ?? stroke.node));
   return Math.max(24 + 10, ...pills.map(port => (port?.ref.name !== undefined ? measurePortPill(port.ref.name).width : 0) + 10), 20 + routedStrokeWidth(model) + maxNodeStroke);
 }
@@ -354,6 +355,114 @@ function marginTranslations(read: (group: LayoutGroup) => Rect, groups: LayoutGr
   }
   return shifts;
 }
+/** The id of the riser lane of `bus` in a crossed sub-tier. */
+const riserLaneId = (bus: string, tier: number): string => `riser:${bus}:${tier}`;
+/** The sub-tiers strictly between the two rows of a join: where its riser holds a lane. */
+function crossedTiers(model: LayoutModel, upper: { row: number }, lower: { row: number }): number[] {
+  return model.tierBands.map(band => band.tier).filter(tier => tier > upper.row && tier < lower.row).sort((a, b) => a - b);
+}
+
+/**
+ * Stage 7a, after the lanes of every routed link: the riser of each joined pair (mesh-bus.md, section 11.5). One x for the whole riser is chosen
+ * among the slots that stay clear of every body, foreign frame and lane in the crossed sub-tiers, and of every routed port x on the facing edges of
+ * the two rows and every lane box in the gaps it crosses (the riser keep-out); then a lane is reserved in each crossed sub-tier. Among the
+ * slots: the fewest frame edges crossed by the riser and the bar extensions, the fewest groups moved (none: a slot that needs a group moved
+ * aside is not taken), the least bar extension, the x nearest the midpoint of the shorter bar's span, the smaller x.
+ * Lane x is immutable afterwards, like any lane.
+ */
+function reserveRisers(model: LayoutModel, pending: Lane[], occ: (group: LayoutGroup, link?: LayoutLink) => Rect): void {
+  for (const upper of (model.meshBuses ?? []).filter(bus => bus.cross !== undefined)) {
+    const lower = model.meshBuses!.find(bus => bus.id === upper.joined);
+    if (lower === undefined) continue;
+    const members = [...upper.nodes, ...lower.nodes], crossed = crossedTiers(model, upper, lower);
+    const width = laneWidth(model), half = width / 2, keepOut = BUS_RUN_CLEARANCE + routedStrokeWidth(model) / 2;
+    const spanOf = (bus: { ports: PortRef[] }): { lo: number; hi: number } => {
+      const xs = bus.ports.map(ref => findPort(model, ref)!.anchor!.x);
+      return { lo: Math.min(...xs), hi: Math.max(...xs) };
+    };
+    const spans = [spanOf(upper), spanOf(lower)];
+    const shorter = spans[1]!.hi - spans[1]!.lo < spans[0]!.hi - spans[0]!.lo ? spans[1]! : spans[0]!;
+    const middle = (shorter.lo + shorter.hi) / 2;
+    // The x-intervals the riser centre may not stand in.
+    const blocked: [number, number][] = [];
+    for (const tier of crossed) {
+      for (const group of Object.values(model.groups).filter(item => item.tier === tier && item.bounds !== undefined && item.nodes.length)) {
+        const box = occ(group), reach = riserForeignReach(model, group.id, members);
+        const low = Math.min(box.x, reach?.x ?? Infinity), high = Math.max(right(box), reach === undefined ? -Infinity : right(reach));
+        blocked.push([low - half, high + half]);
+      }
+      for (const lane of pending.filter(item => item.tier === tier)) blocked.push([lane.bounds.x - half, right(lane.bounds) + half]);
+    }
+    const routedUsed = new Set(model.links.filter(link => link.layer === 'routed' && link.technique !== 'stub' && link.attachments)
+      .flatMap(link => [portId(link.attachments!.from), portId(link.attachments!.to)]));
+    for (const [bus, side] of [[upper, 'bottom'], [lower, 'top']] as const) {
+      for (const group of Object.values(model.groups).filter(item => item.tier === bus.row)) for (const id of group.nodes) {
+        for (const port of model.nodes[id]!.ports) if (port.side === side && routedUsed.has(portId(port.ref)) && port.anchor) blocked.push([port.anchor.x - keepOut, port.anchor.x + keepOut]);
+      }
+    }
+    for (const lane of pending.filter(item => item.tier >= upper.row && item.tier <= lower.row)) blocked.push([lane.bounds.x - keepOut - half, right(lane.bounds) + keepOut + half]);
+    blocked.sort((a, b) => a[0] - b[0]);
+    const merged: [number, number][] = [];
+    for (const item of blocked) {
+      const last = merged.at(-1);
+      if (last !== undefined && item[0] <= last[1] + 1e-6) last[1] = Math.max(last[1], item[1]); else merged.push([...item]);
+    }
+    const free = (x: number): boolean => merged.every(([low, high]) => x <= low + 1e-6 || x >= high - 1e-6);
+    const candidates = new Set<number>();
+    for (const [low, high] of merged) { candidates.add(low); candidates.add(high); }
+    if (free(middle)) candidates.add(middle);
+    for (const span of spans) { const centre = (span.lo + span.hi) / 2; if (free(centre)) candidates.add(centre); }
+    if (!merged.length) candidates.add(middle);
+    const frames = model.frames ?? [];
+    const holding = frames.filter(frame => frameNodes(model, frame.id).some(node => members.includes(node))).map(frame => frame.box);
+    const band = (tier: number) => model.tierBands.find(item => item.tier === tier)!.bounds!;
+    const y0 = bottom(band(upper.row)), y1 = band(lower.row).y;
+    const score = (x: number) => {
+      let edges = 0;
+      for (const frame of frames) {
+        const box = frame.box;
+        if (x > box.x + 1e-6 && x < right(box) - 1e-6) for (const y of [box.y, bottom(box)]) if (y > y0 && y < y1) edges++;
+      }
+      let extension = 0;
+      for (const [bus, span, y] of [[upper, spans[0]!, y0 + 15], [lower, spans[1]!, y1 - 15]] as const) {
+        void bus;
+        const from = x < span.lo ? x : x > span.hi ? span.hi : undefined, to = x < span.lo ? span.lo : x > span.hi ? x : undefined;
+        if (from === undefined || to === undefined) continue;
+        extension += to - from;
+        for (const frame of frames) {
+          const box = frame.box;
+          if (y <= box.y || y >= bottom(box)) continue;
+          for (const edge of [box.x, right(box)]) if (edge > from + 1e-6 && edge < to - 1e-6) edges++;
+        }
+      }
+      // The room a frame that holds a member must grow by to hold the lane: a slot inside a member frame costs none.
+      const growth = holding.length ? Math.min(...holding.map(box => Math.max(0, box.x - x, x - right(box)))) : 0;
+      return { x, edges, extension, growth, distance: Math.abs(x - middle) };
+    };
+    const ranked = [...candidates].filter(x => Number.isFinite(x) && free(x)).map(score)
+      .sort((a, b) => a.edges - b.edges || a.extension - b.extension || a.growth - b.growth || a.distance - b.distance || a.x - b.x);
+    const chosen = ranked[0];
+    // No slot: stand beyond every body, frame and lane of the crossed sub-tiers (the fallback of the corridor rule).
+    const x = chosen?.x ?? (merged.length ? merged.at(-1)![1] : middle);
+    const ids: string[] = [];
+    for (const tier of crossed) {
+      const groups = Object.values(model.groups).filter(item => item.tier === tier && item.bounds !== undefined);
+      const outside = groups.filter(item => x < item.bounds!.x || x > right(item.bounds!));
+      const near = (item: LayoutGroup): number => Math.abs(x - (item.bounds!.x + item.bounds!.width / 2));
+      const host = [...(outside.length ? outside : groups)].sort((a, b) => near(a) - near(b))[0];
+      if (host === undefined) continue;
+      const id = riserLaneId(upper.id, tier);
+      ids.push(id);
+      pending.push({ id, owner: { kind: 'mesh-bus', id: upper.id }, layer: 'overlay', group: host.id, tier, side: x < host.bounds!.x ? 'left' : 'right',
+        x, bounds: { x: x - half, width, ...laneExtent(model, tier) } });
+    }
+    upper.riser = { x, lanes: ids };
+    model.diagnostics.push({ stage: 'placement', severity: 'info', code: 'MESH_BUS_RISER', owners: [{ kind: 'mesh-bus', id: upper.id }],
+      message: `The riser of ${upper.id} and ${lower.id} stands at x ${Math.round(x * 100) / 100}, crossing ${crossed.length} sub-tiers and ${chosen?.edges ?? 0} frame edges`
+        + `; 0 groups moved; bar extension ${Math.round((chosen?.extension ?? 0) * 100) / 100} px${chosen === undefined ? '; no free slot, beyond every body' : ''}` });
+  }
+}
+
 /** Allocate all corridors before publishing x. Intermediate occupied margins may translate horizontally. */
 export function allocateLanes(model: LayoutModel): void {
   if (model.lanes.length || model.links.some(link => link.fixedSegments)) throw new Error('Lanes can be allocated only once');
@@ -649,16 +758,40 @@ export function allocateLanes(model: LayoutModel): void {
       commit(link, tier, groups, nearest, x, shifts);
     }
   }
+  reserveRisers(model, pending, occ);
   model.lanes = pending;
   rebuildNodeGeometry(model, Object.keys(model.nodes), 'current');
   rebuildRegions(model);
   rebuildLaneExtents(model);
 }
+/** A riser lane: owned by the upper bus of a join, at the one immutable riser x, in a crossed sub-tier, clear of every body and lane. */
+function validateRiserLane(model: LayoutModel, lane: Lane): void {
+  const bus = model.meshBuses?.find(item => item.id === (lane.owner as { id: string }).id);
+  if (bus?.riser === undefined || bus.cross === undefined || lane.layer !== 'overlay' || lane.id !== riserLaneId(bus.id, lane.tier)
+    || !bus.riser.lanes.includes(lane.id) || lane.x !== bus.riser.x || lane.bounds.width < laneWidth(model)
+    || lane.bounds.x !== lane.x - lane.bounds.width / 2 || !Object.values(lane.bounds).every(Number.isFinite)
+    || model.groups[lane.group]?.tier !== lane.tier || !['left', 'right'].includes(lane.side)) throw new Error(`Invalid riser lane ${lane.id}`);
+  const extent = laneExtent(model, lane.tier);
+  if (lane.bounds.y !== extent.y || lane.bounds.height !== extent.height) throw new Error('Lane extent contradicts tier band');
+  const group = model.groups[lane.group]!;
+  if (lane.side === 'left' ? lane.x >= group.bounds!.x : lane.x <= right(group.bounds!)) throw new Error(`Lane side contradicts its group: ${lane.id} / ${group.id}`);
+  for (const other of Object.values(model.groups).filter(item => item.tier === lane.tier)) {
+    const box = occupied(model, other);
+    if (box.x < right(lane.bounds) - 1e-6 && right(box) > lane.bounds.x + 1e-6) throw new Error(`Lane ${lane.id} crosses occupied group ${other.id}`);
+  }
+  for (const other of model.lanes) if (other !== lane && other.tier === lane.tier
+    && Math.abs(other.x - lane.x) < (other.bounds.width + lane.bounds.width) / 2 - 1e-6) throw new Error('Owned lanes overlap');
+}
 /** Validate reservations independently of allocation history, including restored JSON. */
 export function validateLanes(model: LayoutModel): void {
-  const expected = model.links.flatMap(link => transitTiers(model, link).map(tier => laneId(link, tier))).sort();
+  const risers = (model.meshBuses ?? []).filter(bus => bus.cross !== undefined).flatMap(bus => {
+    const lower = model.meshBuses!.find(item => item.id === bus.joined);
+    return lower === undefined || bus.riser === undefined ? [] : crossedTiers(model, bus, lower).map(tier => riserLaneId(bus.id, tier));
+  });
+  const expected = [...model.links.flatMap(link => transitTiers(model, link).map(tier => laneId(link, tier))), ...risers].sort();
   if (JSON.stringify(model.lanes.map(lane => lane.id).sort()) !== JSON.stringify(expected)) throw new Error('Lane reservations omit, repeat or invent a transit');
   for (const lane of model.lanes) {
+    if (lane.owner.kind === 'mesh-bus') { validateRiserLane(model, lane); continue; }
     const ownerId = lane.owner.kind === 'link' ? lane.owner.id : undefined;
     const link = model.links.find(link => link.id === ownerId);
     if (!link || lane.layer !== 'routed' || !transitTiers(model, link).includes(lane.tier) || lane.id !== laneId(link, lane.tier)

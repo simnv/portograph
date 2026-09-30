@@ -1,6 +1,7 @@
 import type { Point, Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
 import { groupShape } from './grid.js';
+import { isCrossLink } from './bus-room.js';
 import { selectAnchorTier } from './lanes.js';
 import { crosses } from './overlay-paths.js';
 import { placementWarning } from './regions.js';
@@ -35,12 +36,14 @@ function readDraft(model: LayoutModel) {
   const routed = pairs(model.links.filter(link => link.layer === 'routed' && link.attachments && link.technique !== 'stub'
     && link.attachments.from.node !== link.attachments.to.node));
   const drawn = pairs(overlay), busDrawn = pairs(members);
+  // A cross link of a join is drawn along the bars, but it still pulls its two rows together, as the plain overlay link it replaces did.
+  const crossDrawn = pairs(members.filter(link => isCrossLink(model, link)));
 
   // Who pulls whom: routed partners in the adjacent tiers, overlay partners in any other tier.
   const partners = new Map<string, string[]>();
   const pull = (one: string, other: string): void => { partners.set(one, [...(partners.get(one) ?? []), other]); };
   for (const { from, to } of routed) if (Math.abs(tierOf(from) - tierOf(to)) === 1) { pull(from, to); pull(to, from); }
-  for (const { from, to } of drawn) if (tierOf(from) !== tierOf(to)) { pull(from, to); pull(to, from); }
+  for (const { from, to } of [...drawn, ...crossDrawn]) if (tierOf(from) !== tierOf(to)) { pull(from, to); pull(to, from); }
   const touched = new Set([...drawn, ...busDrawn].flatMap(pair => [tierOf(pair.from), tierOf(pair.to)]));
 
   const mean = (values: number[]): number | undefined => values.length ? values.reduce((sum, x) => sum + x, 0) / values.length : undefined;

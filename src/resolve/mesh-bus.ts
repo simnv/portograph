@@ -415,6 +415,7 @@ function joinBuses(model: LayoutModel, buses: MeshBus[], candidates: LayoutLink[
     upper.joined = lower.id;
     lower.joined = upper.id;
     upper.cross = pair.cross.map(link => link.id);
+    upper.meshNodes = lower.meshNodes = upper.nodes.length + lower.nodes.length;
     upper.dissolved.push(...dissolved.map(item => item.id));
     const named = dissolved.length ? `; dissolved ${dissolved.map(item => item.id).join(', ')}` : '';
     for (const item of dissolved) if (item.left.length) {

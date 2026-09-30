@@ -1,0 +1,119 @@
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+import { layout, parse, score } from '../../src/index.js';
+import type { LayoutModel } from '../../src/index.js';
+import { restoreLayoutModel } from '../../src/layout/mutation.js';
+import { BUS_RUN_CLEARANCE } from '../../src/layout/bus-room.js';
+import { createAttempt } from '../layout/phase-two-fixture.js';
+import { createAvoidAttempt } from '../route/fixture.js';
+
+const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const gates = (model: LayoutModel): string[] => Object.entries(score(model).snapshot.gates).filter(([, gate]) => !gate.passed).map(([id]) => id);
+const riserLanes = (model: LayoutModel) => model.lanes.filter(lane => lane.owner.kind === 'mesh-bus');
+const bottom = (box: { y: number; height: number }) => box.y + box.height;
+
+describe('the riser in placement (ticket 96)', () => {
+  it('reserves one riser lane in the sub-tier between the rows, outside every body, and both bars reach the riser', async () => {
+    const model = await run(fixture('a-mesh-over-two-rows-joins-its-bars-with-one-riser'));
+    const [upper, lower] = model.meshBuses!;
+    expect(upper!.riser!.lanes).toEqual(['riser:mesh-bus-1:2']);
+    const lanes = riserLanes(model);
+    expect(lanes).toHaveLength(1);
+    expect(lanes[0]).toMatchObject({ id: 'riser:mesh-bus-1:2', layer: 'overlay', tier: 2, x: upper!.riser!.x, owner: { kind: 'mesh-bus', id: 'mesh-bus-1' } });
+    // The lane keeps out of every body of its sub-tier.
+    for (const node of Object.values(model.nodes)) {
+      const box = node.bounds!;
+      if (box.y >= lanes[0]!.bounds.y + lanes[0]!.bounds.height || bottom(box) <= lanes[0]!.bounds.y) continue;
+      expect(box.x + box.width <= lanes[0]!.bounds.x + 1e-6 || box.x >= lanes[0]!.bounds.x + lanes[0]!.bounds.width - 1e-6).toBe(true);
+    }
+    for (const bus of [upper!, lower!]) {
+      expect(Math.min(bus.bar!.from.x, bus.bar!.to.x)).toBeLessThanOrEqual(upper!.riser!.x + 1e-6);
+      expect(Math.max(bus.bar!.from.x, bus.bar!.to.x)).toBeGreaterThanOrEqual(upper!.riser!.x - 1e-6);
+    }
+    expect(upper!.riser!.from).toEqual({ x: upper!.riser!.x, y: upper!.bar!.from.y });
+    expect(upper!.riser!.to).toEqual({ x: upper!.riser!.x, y: lower!.bar!.from.y });
+    expect(upper!.side).toBe('bottom');
+    expect(lower!.side).toBe('top');
+    expect(model.diagnostics.filter(d => d.code === 'MESH_BUS_RISER')).toHaveLength(1);
+    expect(gates(model)).toEqual([]);
+  });
+
+  it('keeps the riser clear of every routed port on the facing edges (the keep-out)', async () => {
+    const model = await run(fixture('a-mesh-over-two-rows-joins-its-bars-with-one-riser'));
+    const upper = model.meshBuses![0]!, lower = model.meshBuses![1]!, x = upper.riser!.x;
+    const used = new Set(model.links.filter(link => link.layer === 'routed' && link.technique !== 'stub' && link.attachments)
+      .flatMap(link => [link.attachments!.from, link.attachments!.to]).map(ref => `${ref.node}:${ref.ordinal}`));
+    for (const [bus, side] of [[upper, 'bottom'], [lower, 'top']] as const) {
+      for (const node of Object.values(model.nodes).filter(item => model.groups[model.document.nodes[item.id]!.group]!.tier === bus.row)) {
+        for (const port of node.ports) if (port.side === side && used.has(`${node.id}:${port.ref.ordinal}`)) {
+          expect(Math.abs(port.anchor!.x - x)).toBeGreaterThanOrEqual(BUS_RUN_CLEARANCE);
+        }
+      }
+    }
+  });
+
+  it('puts the one label on the bar with more members, and none on the other bar', async () => {
+    const model = await run(fixture('a-mesh-over-two-rows-joins-its-bars-with-one-riser'));
+    const [upper, lower] = model.meshBuses!;
+    expect(upper!.label).toBeUndefined();
+    expect(upper!.labelRoom).toBeUndefined();
+    expect(lower!.label).toBe('label:bus:mesh-bus-2');
+    const label = model.labels.find(item => item.id === 'label:bus:mesh-bus-2')!;
+    expect(label.text).toBe('sync mesh (8 nodes)');
+    expect(model.labels.filter(item => item.role === 'mesh-bus')).toHaveLength(1);
+    // The riser stands outside the label room.
+    const room = lower!.labelRoom!;
+    expect(upper!.riser!.x <= room.from || upper!.riser!.x >= room.to).toBe(true);
+  });
+
+  it('reserves no lane between adjacent rows, holds both bands in the one gap and still fixes the riser x', async () => {
+    const model = await run(fixture('a-riser-joins-two-bars-in-one-gap'));
+    const [upper, lower] = model.meshBuses!;
+    expect(upper!.riser!.lanes).toEqual([]);
+    expect(riserLanes(model)).toHaveLength(0);
+    expect(Number.isFinite(upper!.riser!.x)).toBe(true);
+    expect(upper!.bar!.from.y).toBeLessThan(lower!.bar!.from.y);
+    // The lower bus stands in one group, so its band is inside the group box; the gap holds the frame margins and the upper band.
+    const upperBand = model.busBands!.find(band => band.bus === upper!.id)!;
+    const gap = model.tierBands.find(band => band.tier === 2)!.bounds!.y - bottom(model.tierBands.find(band => band.tier === 1)!.bounds!);
+    expect(gap).toBeGreaterThanOrEqual(20 + upperBand.bounds.height - 1e-6);
+    expect(gates(model)).toEqual([]);
+  });
+
+  it('adds the two bands of facing across-frames bars in one gap: 20 + upper band + lower band + 20', async () => {
+    const yaml = fixture('a-riser-joins-two-bars-in-one-gap').replace('  low: { tier: 2, label: Low }\n', ['b1', 'b2', 'b3', 'b4'].map(id => `  ${id}g: { tier: 2 }\n`).join(''))
+      .replace(/group: low/g, 'group: LOWG');
+    const model = await run(yaml.replace(/ {2}(b\d): \{ group: LOWG/g, '  $1: { group: $1g'));
+    const [upper, lower] = model.meshBuses!;
+    expect(upper!.riser!.lanes).toEqual([]);
+    const upperBand = model.busBands!.find(band => band.bus === upper!.id)!, lowerBand = model.busBands!.find(band => band.bus === lower!.id)!;
+    const gap = model.tierBands.find(band => band.tier === 2)!.bounds!.y - bottom(model.tierBands.find(band => band.tier === 1)!.bounds!);
+    expect(gap).toBeGreaterThanOrEqual(20 + upperBand.bounds.height + lowerBand.bounds.height + 20 - 1e-6);
+    expect(upperBand.bounds.y + upperBand.bounds.height).toBeLessThanOrEqual(lowerBand.bounds.y + 1e-6);
+  });
+
+  it('joins two cantons with one riser, finds no gate finding and restores as a fixed point', async () => {
+    const model = await run(fixture('a-riser-between-cantons-crosses-no-canton-edge'));
+    expect(model.meshBuses).toHaveLength(2);
+    const upper = model.meshBuses![0]!;
+    expect(upper.cross).toHaveLength(16);
+    expect(upper.riser!.lanes).toHaveLength(1);
+    expect(gates(model)).toEqual([]);
+    const restored = restoreLayoutModel(JSON.stringify(model));
+    expect(JSON.stringify(restored)).toBe(JSON.stringify(model));
+  });
+
+  it('restores the three fixtures as fixed points', async () => {
+    for (const name of ['a-mesh-over-two-rows-joins-its-bars-with-one-riser', 'a-riser-joins-two-bars-in-one-gap']) {
+      const model = await run(fixture(name));
+      expect(JSON.stringify(restoreLayoutModel(JSON.stringify(model)))).toBe(JSON.stringify(model));
+    }
+  });
+
+  it('refuses a restored riser moved off its x', async () => {
+    const model = JSON.parse(JSON.stringify(await run(fixture('a-mesh-over-two-rows-joins-its-bars-with-one-riser')))) as LayoutModel;
+    model.meshBuses![0]!.riser!.x += 5;
+    expect(() => restoreLayoutModel(JSON.stringify(model))).toThrow();
+  });
+});

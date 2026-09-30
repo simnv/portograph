@@ -324,6 +324,13 @@ export interface MeshBus extends OwnedElement {
   joined?: string;
   /** On the upper bus of a join only: the cross link ids (links with `meshBus` equal to this bus, not members). */
   cross?: string[];
+  /** On both buses of a join: the node count of the whole mesh (both buses), which the one label names. */
+  meshNodes?: number;
+  /**
+   * On the upper bus of a join, from stage 7a (mesh-bus.md, section 11.5): the riser, a vertical at one immutable `x` that joins the two bars;
+   * `lanes` are the riser lane ids in crossed sub-tier order (empty for adjacent rows); `from` and `to` are its ends on the upper and the lower bar, from 7f.
+   */
+  riser?: { x: number; lanes: string[]; from?: Point; to?: Point };
   /** The horizontal edge of the row the bar stands on; fixed by stage 5 (docs/design/mesh-bus.md, section 4). */
   side?: 'top' | 'bottom';
   /** From 7f on: the bar, from the first bus port's x to the last. */
