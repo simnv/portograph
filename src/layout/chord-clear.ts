@@ -43,8 +43,8 @@ interface Reading {
   overlay: Set<string>;
   /** The routed links that run on one axis, or hold a straight chord: a drop that stays vertical stays straight. */
   routed: Set<string>;
-  /** The pairs of overlay links whose paths cross (ticket 146); counted only where a caller asks, else 0. */
-  crossings: number;
+  /** The pairs of overlay links whose paths cross (ticket 146): counted on the first ask only, and once. */
+  crossings: () => number;
 }
 
 /** A path as the crossing count reads it: its segments. */
@@ -76,12 +76,12 @@ export interface RankMove { dx: number; crossings: number; straight: number }
 
 /**
  * The move of a lower rank that stays (ticket 146, user decision): a move that adds an overlay crossing, or does not leave more
- * straight overlay links than `base`, is never taken. Of the rest the fewest crossings win, then the most straight links, then the
- * nearest move, then the smaller dx.
+ * straight overlay links than `base`, is never taken. Of the rest the most straight links win (user decision, 2026-09-30: client
+ * overlay links are direct lines), then the fewest crossings, then the nearest move, then the smaller dx.
  */
 export function pickRankMove<T extends RankMove>(moves: readonly T[], base: { crossings: number; straight: number }): T | undefined {
   return moves.filter(move => move.crossings <= base.crossings && move.straight > base.straight)
-    .sort((a, b) => a.crossings - b.crossings || b.straight - a.straight || Math.abs(a.dx) - Math.abs(b.dx) || a.dx - b.dx)[0];
+    .sort((a, b) => b.straight - a.straight || a.crossings - b.crossings || Math.abs(a.dx) - Math.abs(b.dx) || a.dx - b.dx)[0];
 }
 
 /** A reading of a model that has settled: the two above, and the findings the gates and the tier-gap plan would make. */
@@ -96,18 +96,19 @@ interface Verdict extends Reading {
 }
 
 /** What a candidate leaves, and what the model had without it: the straight overlay count, the overlay crossings. */
-interface Judged { count: number; crossings: number; base: { crossings: number; straight: number } }
+interface Judged { count: number; crossings: number; base: { crossings: number; straight: number }; verdict?: Verdict | undefined }
 
 const copy = (model: LayoutModel): LayoutModel => JSON.parse(JSON.stringify(model)) as LayoutModel;
 
 const routedLinks = (model: LayoutModel): LayoutLink[] =>
   model.links.filter(link => link.layer === 'routed' && link.attachments && link.removed !== true && link.technique !== 'stub');
 
-function read(model: LayoutModel, overlays: readonly LayoutLink[], withCrossings = false): Reading {
+function read(model: LayoutModel, overlays: readonly LayoutLink[]): Reading {
   const blockers = overlayBlockers(model);
   const paths = overlays.map(link => ({ id: link.id, segments: overlayPath(model, link, blockers).segments }));
   const overlay = new Set(paths.filter(path => path.segments.length === 1).map(path => path.id));
-  const crossings = withCrossings ? overlayCrossings(paths.map(path => path.segments)) : 0;
+  let counted: number | undefined;
+  const crossings = (): number => (counted ??= overlayCrossings(paths.map(path => path.segments)));
   const routed = new Set(routedLinks(model).filter(link => {
     if (isRoutedChord(model, link)) return true;
     const from = findPort(model, link.attachments!.from)?.anchor, to = findPort(model, link.attachments!.to)?.anchor;
@@ -168,7 +169,7 @@ function drift(model: LayoutModel): number {
 }
 
 const verdict = (model: LayoutModel, overlays: readonly LayoutLink[]): Verdict =>
-  ({ ...read(model, overlays, true), crowded: crowded(model), disordered: disordered(model), residuals: residuals(model), drift: drift(model), width: model.canvas?.width ?? 0 });
+  ({ ...read(model, overlays), crowded: crowded(model), disordered: disordered(model), residuals: residuals(model), drift: drift(model), width: model.canvas?.width ?? 0 });
 
 /** Whether every finding `after` states was stated by `before`. */
 const nothingNew = (before: ReadonlySet<string>, after: ReadonlySet<string>): boolean => [...after].every(item => before.has(item));
@@ -204,15 +205,15 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
   const overlays = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && link.attachments);
   if (anchor === undefined || !overlays.length) return false;
   const columns = frameColumns(model), movable = overlayFreeGroups(model, anchor, true), free = overlayFreeGroups(model, anchor);
-  /** The settled copies a lower rank cell has spent: one budget for its whole row and its nodes together (ticket 146). */
-  const rankTrials = new Map<string, number>();
-  /** What the last lower-rank move that stayed did: for the diagnostic. */
+    /** What the last lower-rank move that stayed did: for the diagnostic. */
   let picked: { dx: number; crossings: number; straight: number; gain: number; after: number } | undefined;
   /** Takes one settled copy of a lower rank cell's budget; false when the budget is spent. */
   const spend = (cell: string): boolean => {
-    const used = rankTrials.get(cell) ?? 0;
+    // Held in `history`, so the budget lasts over the rounds and the runs of 7f that share it (Q114).
+    let used = 0;
+    while (history.has(`rank-spent:${cell}:${used}`)) used++;
     if (used >= SETTLED_TRIALS) return false;
-    rankTrials.set(cell, used + 1);
+    history.add(`rank-spent:${cell}:${used}`);
     return true;
   };
   const tierOf = (node: string): number => model.groups[model.document.nodes[node]!.group]!.tier!;
@@ -252,12 +253,13 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
       rebuildNodeGeometry(model, nodes, 'current');
     }
     return after !== undefined && baseline !== undefined && after.overlay.size > baseline.overlay.size
-      && (!ranked || after.crossings <= baseline.crossings)
+      // A lower rank bends no straight link, and adds no crossing (ticket 146, user decisions).
+      && (!ranked || ([...baseline.overlay].every(id => after.overlay.has(id)) && after.crossings() <= baseline.crossings()))
       && [...baseline.routed].every(id => after.routed.has(id))
       && after.drift <= Math.max(baseline.drift, REST) + PLACEMENT_EPS
       && after.width <= Math.max(baseline.width, edge().base + (ranked ? rankShare(edge()) : CANVAS_GROWTH_SHARE * edge().base)) + PLACEMENT_EPS
       && nothingNew(baseline.crowded, after.crowded) && nothingNew(baseline.disordered, after.disordered) && nothingNew(baseline.residuals, after.residuals)
-      ? { count: after.overlay.size, crossings: after.crossings, base: { crossings: baseline.crossings, straight: baseline.overlay.size } } : undefined;
+      ? { count: after.overlay.size, crossings: ranked ? after.crossings() : 0, base: { crossings: ranked ? baseline.crossings() : 0, straight: baseline.overlay.size }, verdict: after } : undefined;
   };
 
   /** The moves `dx` of a set of shapes that put one of them on a chord: open intervals. */
@@ -299,33 +301,50 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
    */
   const attempt = (key: string, candidates: readonly number[], at: number, place: (dx: number) => void, undo: () => void, nodes: readonly string[],
     holds: (x: number) => boolean, extra: () => boolean = () => true, rank?: string): boolean => {
-    const before = read(model, overlays, rank !== undefined), blocked = new Set(blockedChords(model));
-    let best: { target: number; count: number } | undefined, settledTrials = 0;
-    // A lower rank (ticket 146) keeps every candidate that passes, and `pickRankMove` chooses: the fewest crossings, then the most straight links.
-    const passed: (RankMove & { target: number; base: { crossings: number; straight: number } })[] = [];
+    const before = read(model, overlays), blocked = new Set(blockedChords(model));
+    let best: { target: number; count: number; verdict?: Verdict | undefined } | undefined, settledTrials = 0, driftBefore: number | undefined;
+    // A lower rank (ticket 146) keeps every candidate that passes, and `pickRankMove` chooses: the most straight links, then the fewest crossings.
+    const passed: (RankMove & { target: number; base: { crossings: number; straight: number }; verdict?: Verdict | undefined })[] = [];
     for (const target of candidates.slice(0, CHORD_TRIALS)) {
       if (!holds(target)) continue;
       tried = true;
       place(target - at);
       rebuildNodeGeometry(model, nodes, 'current');
-      const after = read(model, overlays, rank !== undefined);
-      if (extra() && after.overlay.size > before.overlay.size && [...before.routed].every(id => after.routed.has(id)) && blockedChords(model).every(id => blocked.has(id))
-        && (rank === undefined ? settledTrials++ < SETTLED_TRIALS : spend(rank))) {
-        const judged = holdsSettled(saveGroupsOf(nodes), undo, nodes, { count: after.overlay.size, crossings: after.crossings, base: { crossings: before.crossings, straight: before.overlay.size } }, rank !== undefined);
-        if (judged !== undefined && rank !== undefined) passed.push({ target, dx: target - at, crossings: judged.crossings, straight: judged.count, base: judged.base });
-        else if (judged !== undefined && (best === undefined || judged.count > best.count)) best = { target, count: judged.count };
+      const after = read(model, overlays);
+      let ok = extra() && after.overlay.size > before.overlay.size && [...before.routed].every(id => after.routed.has(id)) && blockedChords(model).every(id => blocked.has(id));
+      // Cheap refusals of a lower rank, before a settled copy is paid for (ticket 146): a straight link bent, a crossing added, a drift the column rules would undo.
+      if (ok && rank !== undefined) {
+        ok = [...before.overlay].every(id => after.overlay.has(id)) && after.crossings() <= before.crossings();
+        if (ok && follow !== undefined) {
+          if (driftBefore === undefined) {
+            const redo = saveGroupsOf(nodes);
+            undo();
+            rebuildNodeGeometry(model, nodes, 'current');
+            driftBefore = drift(model);
+            redo();
+            rebuildNodeGeometry(model, nodes, 'current');
+          }
+          ok = drift(model) <= Math.max(driftBefore, REST) + PLACEMENT_EPS;
+        }
+      }
+      if (ok && (rank === undefined ? settledTrials++ < SETTLED_TRIALS : spend(rank))) {
+        const judged = holdsSettled(saveGroupsOf(nodes), undo, nodes, { count: after.overlay.size, crossings: rank !== undefined ? after.crossings() : 0,
+          base: { crossings: rank !== undefined ? before.crossings() : 0, straight: before.overlay.size } }, rank !== undefined);
+        if (judged !== undefined && rank !== undefined) passed.push({ target, dx: target - at, crossings: judged.crossings, straight: judged.count, base: judged.base, verdict: judged.verdict });
+        else if (judged !== undefined && (best === undefined || judged.count > best.count)) best = { target, count: judged.count, verdict: judged.verdict };
       }
       undo();
       rebuildNodeGeometry(model, nodes, 'current');
     }
     if (rank !== undefined && passed.length) {
       const pick = pickRankMove(passed, passed[0]!.base);
-      if (pick !== undefined) { best = { target: pick.target, count: pick.straight }; picked = { dx: pick.dx, ...pick.base, gain: pick.straight - pick.base.straight, after: pick.crossings }; }
+      if (pick !== undefined) { best = { target: pick.target, count: pick.straight, verdict: pick.verdict }; picked = { dx: pick.dx, ...pick.base, gain: pick.straight - pick.base.straight, after: pick.crossings }; }
     }
     if (best === undefined) return false;
     place(best.target - at);
     rebuildNodeGeometry(model, nodes, 'current');
-    baseline = undefined;
+    // The settled copy that judged the move is the state that stands now: it is the baseline of the next one.
+    baseline = best.verdict;
     history.add(key);
     return true;
   };
@@ -474,7 +493,12 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
       room: (current: { low: number; high: number }): { low: number; high: number } => {
         const others = cellsOf(group.frame!).filter(id => id !== group.id).flatMap(id => model.groups[id]!.nodes.map(node => model.nodes[node]!.bounds!));
         const budget = edge(), more = canton ? Math.max(0, Math.min(SLIDE_GROWTH, rankShare(budget) - budget.grown)) : 0;
-        return { low: Math.min(current.low, ...others.map(body => body.x)) - more, high: Math.max(current.high, ...others.map(body => body.x + body.width)) + more };
+        // A cell of a child frame can stand on the same tier, beside this one: its bodies are walls, with the band gap.
+        const beside = cellsOf(group.frame!).filter(id => id !== group.id && model.groups[id]!.tier === group.tier).flatMap(id => model.groups[id]!.nodes.map(node => model.nodes[node]!.bounds!));
+        const middle = (current.low + current.high) / 2;
+        const leftWall = Math.max(-Infinity, ...beside.filter(body => body.x + body.width / 2 < middle).map(body => body.x + body.width + gap));
+        const rightWall = Math.min(Infinity, ...beside.filter(body => body.x + body.width / 2 >= middle).map(body => body.x - gap));
+        return { low: Math.max(leftWall, Math.min(current.low, ...others.map(body => body.x)) - more), high: Math.min(rightWall, Math.max(current.high, ...others.map(body => body.x + body.width)) + more) };
       },
     };
   };
@@ -502,8 +526,9 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
       const routedGroup = !free.has(group.id);
       let placed = false;
       const lower = lowerRank(group), keep = lower ? `rank:${group.id}` : group.id;
-      const rankGuard = lower ? rankFrames(group) : undefined;
-      if (!history.has(keep) && banned.some(({ low, high }) => low < -PLACEMENT_EPS && high > PLACEMENT_EPS)) {
+      const stands = !history.has(keep) && banned.some(({ low, high }) => low < -PLACEMENT_EPS && high > PLACEMENT_EPS);
+      const rankGuard = lower && stands ? rankFrames(group) : undefined;
+      if (stands) {
         // The walls, as moves of the group: the run of x a move may not put the group's occupied extent into.
         const walls: { low: number; high: number }[] = [];
         // A cell of a frame is bound by its frames' boxes (`sameFrames`), which the canvas holds, not by the box of the groups.
@@ -593,6 +618,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
             }
           };
           const framed = (): boolean => mayGrow(group, before, cellReach(model, group.id));
+          // The ticket-80 slide stays as it was for a lower rank too: it is not under the rank rule, since the rule would refuse moves main makes.
           if (candidates.length && attempt(`row:${group.id}`, candidates, 0, slide, undo, ids, () => true, framed)) {
             moved = true;
             edge().grown += outward(before, cellReach(model, group.id));
@@ -604,6 +630,8 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
       for (const [index, id] of order.entries()) {
         if (history.has(`node:${id}`)) continue;
         const node = model.nodes[id]!, body = { ...node.bounds! };
+        const own = bannedFor(chordsOver(tier, new Set([id])), shapesOf([id]));
+        if (!own.some(({ low, high }) => low < -PLACEMENT_EPS && high > PLACEMENT_EPS)) continue;
         // The room of a lower rank is the frame span, and what the budget allows past it (ticket 146): the row ends are not the cell box.
         const rankGuard = lowerCell ? rankFrames(group) : undefined;
         const room = rankGuard?.room({ low: group.bounds!.x + inset.left, high: group.bounds!.x + group.bounds!.width - inset.right });
@@ -611,8 +639,6 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
         const highest = index === order.length - 1 ? (room?.high ?? group.bounds!.x + group.bounds!.width - inset.right) - body.width
           : model.nodes[order[index + 1]!]!.bounds!.x - rowGap(model, id, order[index + 1]!) - body.width;
         if (highest - lowest < PLACEMENT_EPS) continue;
-        const own = bannedFor(chordsOver(tier, new Set([id])), shapesOf([id]));
-        if (!own.some(({ low, high }) => low < -PLACEMENT_EPS && high > PLACEMENT_EPS)) continue;
         const pad = lowerCell ? PLACEMENT_EPS : 0;
         const candidates = nearest(own.flatMap(({ low, high }) => [body.x + low - pad, body.x + high + pad]), body.x, x => x >= lowest - PLACEMENT_EPS && x <= highest + PLACEMENT_EPS);
         const undo = saveGroups(model, [group]);

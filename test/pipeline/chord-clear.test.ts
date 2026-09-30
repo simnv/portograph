@@ -344,11 +344,85 @@ describe('a lower rank steps off the chords of the ranks above (ticket 146)', ()
   it('a move that needs more growth than the budget holds is refused', async () => {
     const model = copy(await run(fixture(NAME)));
     restore(model);
+    // Control: with the budget unspent the same state moves.
+    const control = copy(model);
+    spent.set(control, { base: control.canvas!.width, grown: 0 });
+    expect(stepOverChords(control, undefined)).toBe(true);
     // 20 px of the 40 are spent: the row needs 32.8 and each node 23.4.
     spent.set(model, { base: model.canvas!.width, grown: 20 });
     const row = JSON.stringify(model.groups['zone#2']!.bounds);
     const history = new Set<string>();
     expect(stepOverChords(model, undefined, history), [...history].join()).toBe(false);
+    expect(JSON.stringify(model.groups['zone#2']!.bounds)).toBe(row);
+  }, 60000);
+
+  it('a candidate that adds a crossing on the settled copy is refused (and taken when it adds none)', async () => {
+    const model = copy(await run(fixture(NAME)));
+    restore(model);
+    const at = { a: x(model, 'low-a'), b: x(model, 'low-b') };
+    const moved = (probe: LayoutModel): boolean => Math.abs(x(probe, 'low-a') - at.a) > 1 || Math.abs(x(probe, 'low-b') - at.b) > 1;
+    // The settled copy of a move puts client 1 beyond client 2, so the two sync chords cross: the move adds a crossing.
+    const crossed = (probe: LayoutModel): void => {
+      if (!moved(probe)) return;
+      const node = probe.nodes['c-1']!, shift = x(probe, 'c-2') + 5 - node.bounds!.x;
+      node.bounds!.x += shift;
+      for (const port of node.ports) if (port.anchor) port.anchor.x += shift;
+    };
+    const control = copy(model), refused = copy(model);
+    expect(stepOverChords(control, () => undefined)).toBe(true);
+    expect(stepOverChords(refused, crossed)).toBe(false);
+    expect(moved(refused)).toBe(false);
+  }, 60000);
+
+  it('a node of a lower rank does not stand on the bodies of a child frame beside it (same tier)', async () => {
+    const yaml = `portograph: 2
+groups:
+  core: { tier: 0, label: Core }
+  west: { label: West }
+  site: { tier: 1, canton: west, label: Site }
+  zone: { parent: site, label: Zone }
+  clients: { tier: 3, canton: west, label: Clients }
+nodes:
+  core-1: { group: core, class: router, label: Core 1 }
+  gw: { group: site, class: router, label: Gateway }
+  sw: { group: site, class: switch, label: Switch }
+  sx: { group: site, class: switch, label: Switch X }
+  up-a: { group: zone, class: switch, label: Upper A }
+  up-b: { group: zone, class: switch, label: Upper B }
+  c-1: { group: clients, class: server, label: Client 1 }
+  c-2: { group: clients, class: server, label: Client 2 }
+links:
+  - [core-1, gw]
+  - [gw, sw]
+  - [gw, sx]
+  - [gw, up-a]
+  - [gw, up-b]
+  - [gw, c-1, { class: sync }]
+  - [gw, c-2, { class: sync }]
+`;
+    const model = copy(await run(yaml));
+    // site#1 (sw, sx) and zone#1 (up-a, up-b) stand beside each other on one tier; the chords of gw pass over both.
+    expect(model.groups['site#1']!.tier).toBe(model.groups['zone#1']!.tier);
+    // Stand sx on the chord of the first sync link, as an earlier pass could leave it; the row mover is spent, so a node moves alone.
+    const chord = straightChord(model, model.links.find(link => link.layer === 'overlay')!, undefined, true)!, sx = model.nodes['sx']!;
+    const y = sx.bounds!.y + sx.bounds!.height / 2, on = chord.from.x + (chord.to.x - chord.from.x) * (y - chord.from.y) / (chord.to.y - chord.from.y);
+    const shift = on - (sx.bounds!.x + sx.bounds!.width / 2);
+    sx.bounds!.x += shift;
+    for (const port of sx.ports) if (port.anchor) port.anchor.x += shift;
+    rebuildNodeGeometry(model, ['sx'], 'current');
+    expect(crosses(chord.from, chord.to, sx.bounds!)).toBe(true);
+    stepOverChords(model, undefined, new Set(['rank:site#1', 'row:site#1']));
+    const mine = ['sw', 'sx'].map(id => model.nodes[id]!.bounds!), theirs = ['up-a', 'up-b'].map(id => model.nodes[id]!.bounds!);
+    for (const a of mine) for (const b of theirs) expect(a.x + a.width <= b.x || b.x + b.width <= a.x, `${a.x} ${b.x}`).toBe(true);
+  }, 60000);
+
+  it('the settled copies of a cell are counted over the calls of the step, not in each call', async () => {
+    const model = copy(await run(fixture(NAME)));
+    restore(model);
+    // Six copies are already spent for the cell: nothing is judged, nothing moves.
+    const history = new Set(Array.from({ length: 6 }, (_, n) => `rank-spent:zone#2:${n}`));
+    const row = JSON.stringify(model.groups['zone#2']!.bounds);
+    expect(stepOverChords(model, () => undefined, history)).toBe(false);
     expect(JSON.stringify(model.groups['zone#2']!.bounds)).toBe(row);
   }, 60000);
 
@@ -398,12 +472,12 @@ links:
 
 describe('pickRankMove and overlayCrossings (ticket 146)', () => {
   const base = { crossings: 3, straight: 5 };
-  it('fewer crossings beat more straight links', () => {
+  it('more straight links beat fewer crossings (client links are direct lines)', () => {
     const fewer = { dx: 30, crossings: 1, straight: 6 }, more = { dx: 5, crossings: 2, straight: 9 };
-    expect(pickRankMove([more, fewer], base)).toBe(fewer);
+    expect(pickRankMove([fewer, more], base)).toBe(more);
   });
-  it('equal crossings: more straight links win, then the nearest move, then the smaller dx', () => {
-    const a = { dx: 10, crossings: 2, straight: 6 }, b = { dx: 40, crossings: 2, straight: 7 }, c = { dx: -10, crossings: 2, straight: 6 };
+  it('equal straight links: fewer crossings win, then the nearest move, then the smaller dx', () => {
+    const a = { dx: 10, crossings: 2, straight: 6 }, b = { dx: 40, crossings: 1, straight: 6 }, c = { dx: -10, crossings: 2, straight: 6 };
     expect(pickRankMove([a, b], base)).toBe(b);
     expect(pickRankMove([a, c], base)).toBe(c);
     expect(pickRankMove([{ ...a, dx: 20 }, a], base)).toBe(a);
