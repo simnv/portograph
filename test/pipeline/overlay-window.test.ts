@@ -71,6 +71,17 @@ describe('overlay window rule (ticket 143)', () => {
     }
   }, 60000);
 
+  // Ticket 143, coordinator measure: a window that straightens the chords it counts and bends one it does not count must be refused.
+  // On `three-continents` the first build moved `cl-a4` (one chord gained) and `loc-a1-sw` to `cl-a3-1` bent at 4 turns: 8 bent links and 34 turns
+  // on main, 9 and 38 then.
+  it('three-continents: the windows never add a bent overlay link or a turn (the whole-sheet guard)', async () => {
+    const model = await run('three-continents');
+    const overlays = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined);
+    const turns = overlays.map(link => overlayPath(model, link).segments.length - 1);
+    expect(turns.filter(count => count > 0).length).toBeLessThanOrEqual(8);
+    expect(turns.reduce((sum, count) => sum + count, 0)).toBeLessThanOrEqual(34);
+  }, 120000);
+
   // Unit: the blocked shifts of one chord and one body, to the epsilon.
   describe('chordWindows', () => {
     const body: Rect = { x: 40, y: 40, width: 20, height: 20 };

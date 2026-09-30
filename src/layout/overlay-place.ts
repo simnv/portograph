@@ -57,8 +57,9 @@ export const OVERLAY_WINDOW_TAKEN = 'OVERLAY_WINDOW_TAKEN';
  * enters a shape, at most `CHORD_WINDOW_TRIALS` of them, taken nearest the mean first. A plain group stays between its walls and inside the
  * x-extent of the settled groups, a member inside its canton wall, and both inside the x-span of the settled partners. The tier guard below
  * stays; a tier whose windows bend a link that was straight and straighten no more links than they bend goes back to the means. The
- * first run of `centreDraft` passes `windows = false`: the partners then stand where the skeleton left them, and a window read there
- * changes what the order rules of the later passes see.
+ * windows are read once, at the end of `centreDraft`, where centring has left the partners (the passes call this with `windows = false`: a
+ * window read earlier changes what the order rules of the later passes see). A run with windows is kept only where the whole sheet
+ * gains, read on every overlay link: fewer bent links and no more turns in all; otherwise it goes back and places the means.
  *
  * A partner counts only when it is *settled*: a group that is not free, or a free group of a tier
  * nearer the anchor tier that this pass has already placed. Tiers are taken from the anchor tier
@@ -71,6 +72,38 @@ export const OVERLAY_WINDOW_TAKEN = 'OVERLAY_WINDOW_TAKEN';
  * end at the mean of partners that stand where centring left them.
  */
 export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColumn[] = frameColumns(model), windows = true): void {
+  if (!windows) { place(model, columns, false); return; }
+  // The windows are kept only where the whole sheet gains: fewer bent overlay links and no more turns in all, read on every overlay link and
+  // not only on the chords the rule counted (ticket 143, three-continents). A run that fails goes back to the state it began in and places
+  // the means alone.
+  const groups = Object.values(model.groups), diagnostics = [...model.diagnostics];
+  const undo = saveGroups(model, groups), start = JSON.stringify(groups.map(group => group.bounds));
+  const before = overlayTurns(model), state = { windowed: false };
+  place(model, columns, true, state);
+  if (!state.windowed) return;
+  const after = overlayTurns(model);
+  if (after.bent < before.bent && after.turns <= before.turns) return;
+  const moved = groups.filter((group, index) => JSON.stringify(group.bounds) !== (JSON.parse(start) as unknown[]).map(item => JSON.stringify(item))[index]);
+  undo();
+  model.diagnostics = diagnostics;
+  rebuildNodeGeometry(model, moved.flatMap(group => group.nodes), 'current');
+  place(model, columns, false);
+}
+
+/** The bent overlay links and the turns of all of them, as the overlay rule draws them now. A mesh bus member is no chord. */
+function overlayTurns(model: LayoutModel): { bent: number; turns: number } {
+  const blockers = overlayBlockers(model);
+  let bent = 0, turns = 0;
+  for (const link of model.links) {
+    if (link.layer !== 'overlay' || link.meshBus !== undefined || !link.attachments) continue;
+    const count = overlayPath(model, link, blockers).segments.length - 1;
+    if (count > 0) bent++;
+    turns += count;
+  }
+  return { bent, turns };
+}
+
+function place(model: LayoutModel, columns: readonly FrameColumn[], windows: boolean, state?: { windowed: boolean }): void {
   const anchor = selectAnchorTier(model);
   if (anchor === undefined) return;
   if (!model.links.some(link => link.layer === 'overlay')) {
@@ -225,11 +258,13 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
       if (after.size < before.size) { undo(); rebuildNodeGeometry(model, nodesOfTier, 'current'); windowed = false; }
       // A later pass reads a moved neighbour and may state another x: the note of the last pass that kept a window is the one that stays.
       for (const group of movers) model.diagnostics = model.diagnostics.filter(item => !(item.code === OVERLAY_WINDOW_TAKEN && item.owners?.[0]?.kind === 'group' && item.owners[0].id === group.id));
+      if (windowed && state) state.windowed = true;
       if (windowed) for (const { group, mean, target, gained } of taken) {
         const message = `Group ${group.id} stands at x ${target.toFixed(1)} and not at x ${mean.toFixed(1)}, the mean of its partners: ${gained} more overlay ${gained === 1 ? 'chord is' : 'chords are'} straight.`;
         model.diagnostics.push({ stage: 'placement', severity: 'info', code: OVERLAY_WINDOW_TAKEN, message, owners: [{ kind: 'group', id: group.id }] });
       }
     }
+    if (state && taken.length && !(spanning.length && signature() !== start) && signature() !== start) state.windowed = true;
     for (const group of movers) settled.add(group.id);
   }
   const stood = standLinklessBeside(model, tiers, free, columns);
