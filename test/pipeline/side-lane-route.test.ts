@@ -205,3 +205,17 @@ links:
     expect(sideLaneFindings(model).map(item => item.code)).toEqual(['SIDE_LANE_NOT_OUTERMOST']);
   }, 120000);
 });
+
+describe('the corridor candidates of 7a (review fix 5 of ticket 118)', () => {
+  it('a lane takes the gap between the frame and a wide group beyond it when the far port stands over that group', async () => {
+    const yaml = source(NEW).replace('  bank: { tier: 1, label: Bank }\n', '  bank: { tier: 1, label: Bank }\n  wing: { tier: 1, label: Wing }\n')
+      .replace('  tail: {', '  wing-a: { group: wing, class: server, label: Wing of the building with a very long name for a wide body }\n  tail: {')
+      .replace('  fe4:', '  fe5: { group: front, class: router, label: FE5 }\n  fe4:').replace('links:\n', 'links:\n  - [lb, wing-a]\n  - [fe5, spare]\n');
+    const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const lane = sideLane(model), frame = model.frames![0]!, wing = model.nodes['wing-a']!.bounds!;
+    expect(model.diagnostics.filter(item => item.code === 'SIDE_LANE_REFUSED')).toEqual([]);
+    expect(lane.bounds.x).toBeGreaterThanOrEqual(frame.box.x + frame.box.width - 1e-6);
+    expect(lane.bounds.x + lane.bounds.width).toBeLessThanOrEqual(wing.x + 1e-6);
+    expect(ownerOf(model, lane).removed).toBeUndefined();
+  }, 120000);
+});
