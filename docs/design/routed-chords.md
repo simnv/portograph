@@ -156,7 +156,7 @@ stub does the same, Q106):
 *As built (ticket 100).* The crossing rectangle is wider in x on a slanted chord: the half stroke and the 8 px margin are taken along the normal of the
 chord, so the x growth is (half stroke + 8) / cos of the angle to the vertical (a vertical chord gives 8 px). Measured: a title 8 px from the bounding box stood
 7.8 px from a 52 degree chord, and G3 failed. The margin is in the rectangle; the planner adds no clearance to it. A held chord's child port owes it no place under
-its feed, so `centreViolations` excuses it.
+its feed, so `centreViolations` excuses it (a cross-frame chord only; ADR-0010 amendment, ticket 130).
 
 A foreign title band stands inside its foreign frame box, so the foreign-frame wall covers it.
 
@@ -172,7 +172,7 @@ The fan rule (ticket 89) reads the cross-frame candidates too: `measureFans` off
 spread pitch (up to 60 px) when two chords at that face stand closer than the chord clearance. A
 provider node that takes chords from three locations on one top face needs this.
 
-*As built (ticket 102).* Nothing beyond ticket 99: `measureFans` reads `routedChordCandidate`, `straightChords` counts `isRoutedChord`. A face is measured with `FAN_SLACK` (4 px) of drift room, so three
+*As built (ticket 102).* Nothing beyond ticket 99: `measureFans` reads `routedChordCandidate`, `fanRoundHolds` drops a fan re-run that loses a held chord of either kind (by link id), unless the kept placement has a chord pair under the 10 px clearance that the re-run clears and no frame chord is lost. A face is measured with `FAN_SLACK` (4 px) of drift room, so three
 cross-frame chords that hold at the 12 px base pitch can still put a 16 px floor on their face; the fixture `a-provider-face-spreads-for-three-routed-chords` shows that. A face whose neighbouring chords
 need more than 60 px is declined (`FAN_SPREAD_DECLINED`); the unit test forges the shallow geometry, and no layout input reaches it.
 
