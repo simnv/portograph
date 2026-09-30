@@ -875,8 +875,8 @@ function pushFollowingGroups(model: LayoutModel, grown: LayoutGroup, width: numb
  * whole growth of a cell that widened for its title, the frame grows by less, and the gap of 40 px would stay open. Flanks keep
  * their place; the anchor tier does not, unlike in centring.
  */
-function holdColumnsAfterPush(model: LayoutModel): void {
-  if (model.document.frames === undefined) return;
+function holdColumnsAfterPush(model: LayoutModel): boolean {
+  if (model.document.frames === undefined) return false;
   const before = new Map(Object.values(model.groups).map(group => [group, group.bounds!.x]));
   // The push above moves the cells after a widened cell by its whole growth, and a frame is derived off the bodies, so a title that
   // widens a member inside its frame grows the frame by less (ticket 61). The beside rows are packed against the frames again, the way
@@ -884,8 +884,41 @@ function holdColumnsAfterPush(model: LayoutModel): void {
   packBesideRows(model, cell => !model.groups[cell]!.flank);
   holdColumnAxes(model, 0);
   // `moveGroup` leaves pill bounds behind, and the next reservation measures them.
-  rebuildNodeGeometry(model, [...before].filter(([group, x]) => group.bounds!.x !== x).flatMap(([group]) => group.nodes), 'current');
+  const moved = [...before].filter(([group, x]) => group.bounds!.x !== x);
+  rebuildNodeGeometry(model, moved.flatMap(([group]) => group.nodes), 'current');
+  return moved.length > 0;
 }
+
+/** The beside rows are packed against the frames the grid widened; true when a group moved. The columns are not pulled here: the pull answers a push, and this move is the pack's alone. */
+function packRowsAfterGrid(model: LayoutModel): boolean {
+  if (model.document.frames === undefined) return false;
+  const before = new Map(Object.values(model.groups).map(group => [group, group.bounds!.x]));
+  packBesideRows(model, cell => !model.groups[cell]!.flank);
+  const moved = [...before].filter(([group, x]) => group.bounds!.x !== x);
+  rebuildNodeGeometry(model, moved.flatMap(([group]) => group.nodes), 'current');
+  return moved.length > 0;
+}
+
+/**
+ * The linked-group grid, then the rows and the columns it disturbed (ticket 136). The grid widens a box in place, which widens the derived frame, and a beside
+ * row stood packed against the narrower one; so after a widening the rows are packed and the columns held again, and a move of groups replays the region
+ * producers (labels, row paths, regions) as any movement does. A move can change what the grid merges, so the pair runs until the grid widens nothing or the
+ * pack moves nothing. Returns whether the grid widened a box. With a shared `budget` the replay spends a pass of it.
+ */
+export function alignLinkedGroupGridAndPack(model: LayoutModel, budget?: CentreBudget): boolean {
+  let widened = false;
+  for (let round = 0; round < GRID_PACK_ROUNDS; round++) {
+    if (!alignLinkedGroupGrid(model)) break;
+    widened = true;
+    if (!packRowsAfterGrid(model)) break;
+    const passes = budget?.passes ?? 0;
+    rebuildRegionGeometry(model, budget, undefined, true);
+    if (budget !== undefined) consumeGrowthPass(budget, passes);
+  }
+  return widened;
+}
+/** A guard: the grid and the pack settle in two rounds on the corpus. */
+const GRID_PACK_ROUNDS = 4;
 
 /**
  * The frames whose edge a foreign drop would run along move right by the smallest amount that leaves the band, and the frames after them
@@ -1159,10 +1192,6 @@ export function alignLinkedGroupGrid(model: LayoutModel): boolean {
       moved = changed = true;
     }
     if (!moved) break;
-    // A widened box is a wider frame, and a frame stands in a row a pack laid out against the narrower one: the beside rows are packed against it
-    // and the columns held again, so the model leaves the grid at the fixed point of those rules too (ticket 136). A move of a whole child frame
-    // can change which pairs merge, and the next pass reads that.
-    holdColumnsAfterPush(model);
   }
   if (pass >= bound) placementWarning(model, 'GROUP_GRID_NON_CONVERGENCE', 'Linked-group grid did not settle within its pass bound; final gates decide the retained boxes.', [], 'group');
   if (changed) { rebuildBands(model); rebuildRegions(model); }
@@ -1393,7 +1422,7 @@ function produceGroupLabelBandsRaw(model: LayoutModel): void {
     // Linked groups share a grid before labels are planned inside their (possibly wider) boxes, and
     // every described link keeps the run its label needs after whatever the replay moved. Either
     // movement, like a changed reservation, must replay the region producers (bars, paths) first.
-    alignLinkedGroupGrid(model);
+    alignLinkedGroupGridAndPack(model, budget);
     const roomChanged = reserveLinkLabelRoom(model);
     // A replay that changes reserved outward geometry changes the reservation; refit before placing.
     const bandsChanged = syncBands(model);
