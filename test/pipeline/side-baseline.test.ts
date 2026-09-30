@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import type { LayoutLink, LayoutModel } from '../../src/index.js';
-import { layout, parse } from '../../src/index.js';
+import { CommandDeadlineError, layout, parse } from '../../src/index.js';
 import type { SideOffer } from '../../src/layout/side-measure.js';
 import { holdColumnAxes, holdMemberWalls, packBesideRows } from '../../src/layout/columns.js';
 import { judgeTrial, predictedWorse, predictPublished, trialNotes } from '../../src/layout/side-judge.js';
@@ -125,28 +125,20 @@ describe('the trial is kept only on its routed result (Section 19.4)', () => {
   }, 60000);
 });
 
-describe('the trial deadline (Section 19.5)', () => {
-  it('a trial 7f that meets its own deadline is cut: SIDE_ROUND_CUT, the baseline publishes, and the budget is not spent', async () => {
-    const plain = await run(PAST_SIBLING, { testMaxReruns: 0 });
-    // The command has time for the gate; when the trial placement ends the clock reads less than the post-placement reserve.
+describe('the trial deadline (Section 19.5, ticket 141)', () => {
+  it('a deadline met in the trial\'s placement ends the whole command with CommandDeadlineError', async () => {
     let remaining = 600_000, placements = 0;
     const budget = { remainingMs: () => remaining, share: (stageMs: number) => Math.min(stageMs, remaining) };
-    const onProgress = (progress: { stage: string }): void => { if (progress.stage === 'resolve') placements++; if (progress.stage === 'bundles' && placements === 2) remaining = 3000; };
-    const { model, labels } = await run(PAST_SIBLING, { budget, onProgress });
-    expect(codes(model)).toContain('SIDE_ROUND_CUT');
-    expect(labels).not.toContain('bands-trial');
-    expect(model.nodes['server']!.ports.some(port => port.sideHint === true)).toBe(false);
-    expect(withoutNotes(model)).toBe(withoutNotes(plain.model));
-    // The command ended with its baseline routed and inside the budget it had left (the fake budget never reached 0).
-    expect(labels).toContain('route');
-    expect(remaining).toBe(3000);
+    const onProgress = (progress: { stage: string }): void => { if (progress.stage === 'resolve') placements++; if (progress.stage === 'bundles' && placements === 2) remaining = 0; };
+    await expect(run(PAST_SIBLING, { budget, onProgress })).rejects.toBeInstanceOf(CommandDeadlineError);
   }, 60000);
 
-  it('the baseline 7f has no deadline of its own: with less than the reserve left, it runs and publishes', async () => {
+  it('little time left (a fixed 3 s) is not a reason to cut: the layout has the same bytes as with time to spare', async () => {
     const budget = { remainingMs: () => 3000, share: (stageMs: number) => Math.min(stageMs, 3000) };
-    const { model } = await run(PAST_SIBLING, { budget });
-    expect(codes(model)).toContain('SIDE_ROUND_CUT');
-    expect(model.links.find(item => item.layer === 'overlay')!.path).toBeDefined();
+    const { model } = await run(PAST_SIBLING, { budget }), far = await run(PAST_SIBLING);
+    expect(codes(model)).not.toContain('SIDE_ROUND_CUT');
+    expect(model.nodes['server']!.ports.some(port => port.sideHint === true)).toBe(true);
+    expect(withoutNotes(model)).toBe(withoutNotes(far.model));
   }, 60000);
 });
 
@@ -183,7 +175,7 @@ describe('the predictor prunes only what it can place again (Section 19.3)', () 
 
   it('moves each trial node by the move 7f gave it, and calls a hint worse only when its planned bends rise over the baseline', async () => {
     const { model: hinted } = await run(PAST_SIBLING);
-    const cut = await run(PAST_SIBLING, { budget: { remainingMs: () => 1000, share: (stageMs: number) => stageMs } });
+    const cut = await run(PAST_SIBLING, { testMaxReruns: 0 });
     const { base, kept7e } = state.measured[0] ?? { base: cut.model, kept7e: cut.model };
     const bent = cut.model, straight = hinted;
     const link = overlayOf(bent).id;
@@ -273,24 +265,16 @@ describe('the judgment reads more than the counts', () => {
   }, 60000);
 });
 
-describe('the trial route is cut too (Section 19.5)', () => {
-  it('a route deadline in the trial\'s route cuts the round and the baseline publishes', async () => {
-    const plain = await run(PAST_SIBLING, { testMaxReruns: 0 });
-    const { model } = await run(PAST_SIBLING, {}, undefined, (routed, call) => { if (call === 2) throw new RouteDeadlineError(1); return routed; });
-    expect(codes(model)).toContain('SIDE_ROUND_CUT');
-    expect(model.nodes['server']!.ports.some(port => port.sideHint === true)).toBe(false);
-    expect(withoutNotes(model)).toBe(withoutNotes(plain.model));
+describe('the trial route and the deadline (Section 19.5, ticket 141)', () => {
+  it('a route deadline in the trial\'s route ends the whole command with RouteDeadlineError', async () => {
+    await expect(run(PAST_SIBLING, {}, undefined, (routed, call) => { if (call === 2) throw new RouteDeadlineError(1); return routed; })).rejects.toBeInstanceOf(RouteDeadlineError);
   }, 60000);
 
-  it('a budget under the reserve after the baseline route cuts the trial before its route starts', async () => {
-    const plain = await run(PAST_SIBLING, { testMaxReruns: 0 });
+  it('a budget spent after the baseline route ends the command before the trial\'s route starts', async () => {
     let remaining = 600_000;
     const budget = { remainingMs: () => remaining, share: (stageMs: number) => Math.min(stageMs, remaining) };
-    const { model, labels } = await run(PAST_SIBLING, { budget }, undefined, (routed, call) => { if (call === 1) remaining = 3000; return routed; });
-    expect(codes(model)).toContain('SIDE_ROUND_CUT');
+    const labels: string[] = [];
+    await expect(run(PAST_SIBLING, { budget, testTiming: label => { labels.push(label); } }, undefined, (routed, call) => { if (call === 1) remaining = 0; return routed; })).rejects.toBeInstanceOf(CommandDeadlineError);
     expect(labels).not.toContain('route-trial');
-    expect(remaining).toBeGreaterThan(0);
-    expect(withoutNotes(model)).toBe(withoutNotes(plain.model));
   }, 60000);
 });
-
