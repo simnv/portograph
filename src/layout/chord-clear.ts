@@ -255,7 +255,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
       rebuildNodeGeometry(model, nodes, 'current');
     }
     return after !== undefined && baseline !== undefined && after.overlay.size > baseline.overlay.size
-      // A lower rank bends no straight link, and adds no crossing (ticket 146, user decisions).
+      // A lower rank adds no crossing (ticket 146, user decision). A bent straight link is no veto: the net straight count above decides.
       && (!ranked || after.crossings() <= baseline.crossings())
       && [...baseline.routed].every(id => after.routed.has(id))
       && after.drift <= Math.max(baseline.drift, REST) + PLACEMENT_EPS
