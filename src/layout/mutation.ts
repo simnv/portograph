@@ -41,6 +41,15 @@ const stages: LayoutStage[] = ['normalised', 'resolve', 'sides-one', 'size', 'sk
   'rows', 'lanes', 'flanks', 'centre', 'bars', 'bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'];
 const protectedModels = new WeakSet<LayoutModel>();
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+/**
+ * While one publication is validated its model does not change, and each validator clones it. The model is serialized once and every
+ * clone parses that text. The one write validation makes to the model (a diagnostic) drops the text.
+ */
+let publishing: { model: LayoutModel; text?: string | undefined } | undefined;
+function cloneModel(model: LayoutModel): LayoutModel {
+  if (publishing?.model !== model) return clone(model);
+  return JSON.parse(publishing.text ??= JSON.stringify(model)) as LayoutModel;
+}
 function jsonValue(value: unknown): void {
   if (typeof value === 'number' && !Number.isFinite(value)) throw new Error('Layout requires finite numbers');
   if (value === undefined || typeof value === 'function' || typeof value === 'symbol' || typeof value === 'bigint') throw new Error('Layout must contain JSON values');
@@ -73,8 +82,13 @@ function omit(value: object, keys: readonly string[]): object {
   return Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)));
 }
 function protect(model: LayoutModel, baseline: LayoutModel): LayoutModel {
-  validatePublication(model, baseline);
-  const result = clone(model);
+  const outer = publishing;
+  let result: LayoutModel;
+  publishing = { model };
+  try {
+    validatePublication(model, baseline);
+    result = cloneModel(model);
+  } finally { publishing = outer; }
   const freeze = (value: unknown): void => {
     if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value); }
   };
@@ -290,7 +304,7 @@ function validatePublication(model: LayoutModel, baseline: LayoutModel): void {
 }
 /** The same ordered producers validate every publication, including restored JSON. */
 function validateRegionClaims(model: LayoutModel): void {
-  const expected = clone(model);
+  const expected = cloneModel(model);
   const barStage = stages.indexOf(model.stage) >= stages.indexOf('bars');
   const bundleStage = stages.indexOf(model.stage) >= stages.indexOf('bundles');
   if (barStage) {
@@ -316,6 +330,7 @@ function validateRegionClaims(model: LayoutModel): void {
       const message = `Centring invariant unverified after a spent budget: ${centring.join('; ')}`;
       if (!model.diagnostics.some(d => d.code === 'CENTRE_INVARIANT_UNVERIFIED' && d.message === message)) {
         model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'CENTRE_INVARIANT_UNVERIFIED', message });
+        if (publishing?.model === model) publishing.text = undefined;
       }
     }
   }
@@ -333,7 +348,7 @@ function validateRegionClaims(model: LayoutModel): void {
   const flankStage = stages.indexOf(model.stage) >= stages.indexOf('flanks');
   if (flankStage) {
     if (!bundleStage) {
-      const ordered = clone(model); normalizePrimaryBundlePorts(ordered);
+      const ordered = cloneModel(model); normalizePrimaryBundlePorts(ordered);
       for (const id of Object.keys(model.nodes)) same(model.nodes[id]!.ports.map(port => port.engineOrder), ordered.nodes[id]!.ports.map(port => port.engineOrder), 'Primary bundle facing order contradicts normalization');
     }
     rebuildFlankPaths(expected);
@@ -384,7 +399,7 @@ function validateGeometry(model: LayoutModel, allowNonConvergence = false): void
   validatePlacementStructure(model);
   if (model.runtime.stages.some(entry => !stages.includes(entry.stage) || entry.durationMs < 0)
     || (model.runtime.totalMs !== undefined && model.runtime.totalMs < 0)) throw new Error('Invalid runtime measurement');
-  const expected = clone(model);
+  const expected = cloneModel(model);
   // Fresh measurement cannot inherit a forged floor, inset, content size or pitch.
   for (const node of Object.values(expected.nodes)) {
     delete node.sizeFloor; delete node.size; delete node.contentSize; delete node.contentInsets; delete node.sidePitch;
