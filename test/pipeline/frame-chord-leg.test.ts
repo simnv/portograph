@@ -31,12 +31,12 @@ async function crowded(slant: number): Promise<{ model: LayoutModel; chord: stri
 }
 
 describe('a frame chord holds its clearance along a neighbour\'s whole leg', () => {
-  it('reads a transit leg as the whole tier gap it faces, not the 15 px stem', async () => {
+  it("reads a lane link's leg to its lane mouth, not the 15 px stem", async () => {
     const { model } = await crowded(0);
     const transit = model.links.find(link => link.attachments!.to.node === 'deep' && link.attachments!.from.node === 'core')!;
     const leg = orthogonalLeg(model, transit, 'from')!;
-    const edge = model.tierBands.filter(band => band.bounds!.y > leg.from.y + 1e-6).map(band => band.bounds!.y).sort((a, b) => a - b)[0]!;
-    expect(leg.to.y).toBeCloseTo(edge, 6);
+    // The transit leaves by a lane, so its part ends at the lane mouth, a stem short of the lane top (330 - 10.75 - 15).
+    expect(leg.to.y).toBeCloseTo(304.25, 6);
     expect(leg.to.x).toBe(leg.from.x);
   });
 
@@ -76,7 +76,8 @@ describe('a frame chord holds its clearance along a neighbour\'s whole leg', () 
             if (Math.abs(segment.from.x - port.anchor.x) > 1e-6 || Math.abs(segment.to.x - port.anchor.x) > 1e-6 || Math.abs(segment.from.y - y) > 1e-6) break;
             y = segment.to.y;
           }
-          // The chord stands in the gap the port faces: a run that goes on through a band by a lane is measured to the band edge.
+          // Runs inside the gap the port faces only: a run that goes on through a band (a lane run, a straight drop) is clipped at the band edge. A chord
+          // of a canton frame can cross that band; its clearance to those runs is not checked here (a separate ticket).
           const sign = port.side === 'bottom' ? 1 : -1;
           const edges = model.tierBands.map(band => (sign > 0 ? band.bounds!.y : band.bounds!.y + band.bounds!.height) - port.anchor!.y).filter(d => d * sign > 1e-6).map(Math.abs);
           const published = Math.min(Math.abs(y - port.anchor.y), edges.length ? Math.min(...edges) : Infinity);

@@ -3,7 +3,8 @@ import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { effectiveLayer } from '../score/model.js';
 import { overlayBlockers, straightChord } from './overlay-paths.js';
 import { groupShape } from './grid.js';
-import { bandSide, frameSide, GROUP_LABEL_GEOMETRY } from './bands.js';
+import { bandSide, frameSide, GROUP_LABEL_GEOMETRY, nudgingDistance } from './bands.js';
+import { stopsOf } from './gap-runs.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE, straightCorridorClear } from './row-paths.js';
 
 const OUTWARD = { top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } } as const;
@@ -154,7 +155,19 @@ export function orthogonalLeg(model: LayoutModel, link: LayoutLink, end: 'from' 
       // link runs on through the gap by a lane and the leg is the whole gap (ticket 91).
       const meets = far?.anchor !== undefined && far.side === (out.y > 0 ? 'top' : 'bottom')
         && far.anchor.y >= across.y - EPS && far.anchor.y <= across.y + across.height + EPS;
-      const reach = meets ? far!.anchor!.y - out.y * GROUP_LABEL_GEOMETRY.routerStem : edge;
+      let reach = meets ? far!.anchor!.y - out.y * GROUP_LABEL_GEOMETRY.routerStem : edge;
+      if (!meets) {
+        // The gap the plan sees is the band gap clipped to the lanes that face it (`tierGaps`); values are compared here, not through `edgeOf`,
+        // which reads an unset epsilon through the import cycle. A link whose next stop is a lane on that far boundary ends its part at the
+        // lane mouth, a stem short of the boundary, and its row stands a clearance above the mouth: the leg stops there. A lane within a
+        // clearance of the port's x is a drop into the lane, and keeps the edge.
+        const lanes = model.lanes.filter(lane => lane.layer !== 'overlay' && (lane.bounds.y - y) * out.y > EPS && (lane.bounds.y - edge) * out.y < -EPS);
+        const boundary = out.y > 0 ? Math.min(edge, ...lanes.map(lane => lane.bounds.y)) : Math.max(edge, ...lanes.map(lane => lane.bounds.y + lane.bounds.height));
+        const stops = stopsOf(model, link), stop = end === 'from' ? stops[1] : stops.at(-2);
+        if (stop?.kind === 'lane' && Math.abs(stop.point.y - boundary) < EPS && Math.abs(stop.point.x - port.anchor.x) >= nudgingDistance(model) - EPS) {
+          reach = boundary - out.y * GROUP_LABEL_GEOMETRY.routerStem;
+        }
+      }
       length = Math.max(length, Math.abs(reach - y));
     }
   }
