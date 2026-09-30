@@ -17,7 +17,7 @@ export function rankInputOf(model: LayoutModel, group: string, childGroups: stri
   const linksAbove = new Set<string>(), linksBelow = new Set<string>();
   const overlayPartners = new Map<string, string[]>();
   const sideOf = (ref: NonNullable<LayoutModel['links'][number]['attachments']>['from']) =>
-    model.nodes[ref.node]!.ports.find(port => JSON.stringify(port.ref) === JSON.stringify(ref))?.side;
+    { const port = model.nodes[ref.node]!.ports.find(item => JSON.stringify(item.ref) === JSON.stringify(ref)); return port === undefined ? undefined : port.naturalSide ?? port.side; };
   for (const link of model.links) {
     const { from, to } = link.attachments!;
     const ends = [from.node, to.node];

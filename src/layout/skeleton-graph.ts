@@ -2,6 +2,7 @@ import type { ElkNode } from 'elkjs/lib/elk-api.js';
 import type { PortRef } from '../model/document.js';
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { orderedGroupIds } from '../model/model.js';
+import { naturalSideOf } from './port-side.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 
 export const SKELETON_SPACING = { padding: 12, tierGap: 60, nodeClearance: 20 } as const;
@@ -94,7 +95,7 @@ export function buildSkeletonGraph(model: LayoutModel, tier?: number): ElkNode {
               'elk.spacing.portPort': String(Math.max(12, ...Object.values(node.sidePitch ?? {}))),
             },
             ports: node.ports.map(port => ({ id: portId(port.ref), width: 0, height: 0,
-              layoutOptions: { 'elk.port.side': sideNames[port.side ?? port.sizingSide!] } })),
+              layoutOptions: { 'elk.port.side': sideNames[naturalSideOf(port)!] } })),
           };
         }),
       };

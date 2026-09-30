@@ -43,7 +43,7 @@ export function groupShape(model: LayoutModel, id: string): GroupShape {
 }
 
 /** The side the author fixed on the port `ref` names, read from the document so no stage can move it. */
-function authoredSide(model: LayoutModel, ref: PortRef): Side | undefined {
+export function authoredSide(model: LayoutModel, ref: PortRef): Side | undefined {
   return model.document.nodes[ref.node]?.ports.find(port => port.ordinal === ref.ordinal
     && (port.name ?? undefined) === (ref.name ?? undefined)
     && (port.anonymous ?? false) === (ref.anonymous ?? false))?.side;

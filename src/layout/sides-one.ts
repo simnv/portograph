@@ -3,6 +3,7 @@ import type { Side } from '../model/geometry.js';
 import type { LayoutGroup, LayoutModel, LayoutPort } from '../model/layout.js';
 import { orderedGroupIds, orderedNodeIds } from '../model/model.js';
 import { busSide, meshBuses } from './bus.js';
+import { checkSideHints, NO_SIDE_HINTS, type SideHints } from './side-hints.js';
 
 /** Complete tie priority for direction votes and unused-port allocation. */
 export const SIDE_TIE_ORDER: readonly Side[] = ['bottom', 'right', 'top', 'left'];
@@ -49,9 +50,15 @@ export function tiedPortComponents(model: LayoutModel): Map<string, string> {
   return roots;
 }
 
-/** Assign semantic sides in place. Same-tier estimates affect capacity, never final topology. */
-export function sidesOne(model: LayoutModel): LayoutModel {
+/**
+ * Assign semantic sides in place. Same-tier estimates affect capacity, never final topology.
+ * A side hint (docs/design/side-faces.md, Section 7) ranks below an author `side:` and above this rule: the port takes the hinted lateral
+ * side and records the side the rule gives as `naturalSide`. For a port the rule leaves undecided that is the capacity estimate, kept in
+ * `sizingSide` for stage 5, which replaces it with the side its vote gives.
+ */
+export function sidesOne(model: LayoutModel, hints: SideHints = NO_SIDE_HINTS): LayoutModel {
   if (model.stage !== 'resolve') throw new Error('Phase-one sides require the resolve stage');
+  if (hints.size) checkSideHints(model, hints);
   const components = tiedPortComponents(model);
   const ports = new Map<string, { port: LayoutPort; known: Votes; predicted: Votes; unresolved: number; links: number }>();
   const rank = new Map<string, number>();
@@ -122,9 +129,18 @@ export function sidesOne(model: LayoutModel): LayoutModel {
         // A known winner is safe only if either possible lateral total cannot displace it.
         const safe = entry.known[selected] > 0 && (['left', 'right'] as const).every(side =>
           winner({ ...entry.known, [side]: entry.known[side] + entry.unresolved }) === selected);
-        if (safe) port.side = selected;
-        else port.sizingSide = winner(entry.predicted);
-        capacity[port.side ?? port.sizingSide!]++;
+        const hint = hints.get(portKey(port.ref));
+        if (hint !== undefined) {
+          const natural = safe ? selected : winner(entry.predicted);
+          if (safe && natural !== 'top' && natural !== 'bottom') throw new Error(`Side hint on ${port.ref.node}.${port.ref.name ?? '#'}${port.ref.ordinal} refused: its natural side is ${natural}`);
+          port.sideHint = true; port.naturalSide = natural; port.side = hint;
+          if (!safe) port.sizingSide = natural;
+          capacity[hint]++;
+        } else {
+          if (safe) port.side = selected;
+          else port.sizingSide = winner(entry.predicted);
+          capacity[port.side ?? port.sizingSide!]++;
+        }
       }
     }
     for (const port of unused) {

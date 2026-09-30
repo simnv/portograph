@@ -1,5 +1,5 @@
 import { equal } from '../model/json-equality.js';
-import type { Rect } from '../model/geometry.js';
+import type { Rect, Size } from '../model/geometry.js';
 import type { LayoutModel, LayoutStage, MeshBus, PlacementSnapshot } from '../model/layout.js';
 import { orderedNodeIds, orderedGroupIds } from '../model/model.js';
 import { resolve } from '../resolve/index.js';
@@ -12,6 +12,7 @@ import { measureText } from '../text/index.js';
 import { NODE_CONTENT_GEOMETRY } from '../theme/content.js';
 import { nodeGap } from './skeleton-graph.js';
 import { groupShape } from './grid.js';
+import { facingSide, hintRefusal } from './side-hints.js';
 import { rebuildBands, span, union, validateSkeletonBands } from './skeleton-geometry.js';
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { blockedChords, edgeLeavers, freezeChords } from './frame-paths.js';
@@ -90,7 +91,7 @@ function semantics(model: LayoutModel) {
 function topology(model: LayoutModel) {
   return orderedNodeIds(model.document).map(id => ({ node: id, ports: model.nodes[id]!.ports.map(port => {
     if (!port.side) throw new Error(`Missing final side on ${id}`);
-    return { ref: port.ref, side: port.side, ...pick(port, ['authorOrder']) };
+    return { ref: port.ref, side: port.side, ...pick(port, ['authorOrder', 'sideHint', 'naturalSide']) };
   }) }));
 }
 /**
@@ -102,7 +103,7 @@ function structure(model: LayoutModel, ordered = false) {
   return {
     nodes: Object.fromEntries(Object.entries(model.nodes).map(([id, node]) => [id, {
       ...pick(node, ['id', 'owner', 'layer', 'strokeWidth']),
-      ports: node.ports.map(port => pick(port, ['ref', 'class', 'side', 'authorOrder', 'owner', 'layer', 'unused', 'sizingSide'])),
+      ports: node.ports.map(port => pick(port, ['ref', 'class', 'side', 'authorOrder', 'owner', 'layer', 'unused', 'sizingSide', 'sideHint', 'naturalSide'])),
     }])),
     groups: Object.fromEntries(Object.entries(model.groups).map(([id, group]) => [id, pick(group, ordered ? ['id', 'owner', 'layer', 'nodes', 'tier', 'frame', 'flank'] : ['id', 'owner', 'layer', 'nodes', 'tier', 'frame', 'flank', 'rowOrder'])])),
     ...pick(model, ['fallbackUsed', 'deadlineHit']),
@@ -154,19 +155,24 @@ function validateDocumentCss(model: LayoutModel): void {
   throw new Error(`Document css is not normalised: ${codes}`);
 }
 
-function validateDocument(model: LayoutModel): LayoutModel {
+function validateDocument(model: LayoutModel, restoring = false): LayoutModel {
   validateDocumentCss(model);
   const resolved = resolve(model.document);
   same(semantics(model), semantics(resolved), 'Resolved semantics differ from document');
   same(Object.keys(model.nodes).sort(), Object.keys(resolved.nodes).sort(), 'Node membership differs from document');
   same(Object.keys(model.groups).sort(), Object.keys(resolved.groups).sort(), 'Group membership differs from document');
   const predicted = sidesOne(resolved);
+  validateSideHints(model, resolved, restoring);
   for (const id of orderedNodeIds(model.document)) {
     const node = model.nodes[id]!, original = predicted.nodes[id]!;
     same(pick(node, ['id', 'owner', 'layer']), pick(original, ['id', 'owner', 'layer']), 'Node identity differs from document');
     same(node.ports.map(port => pick(port, ['ref', 'class', 'authorOrder', 'owner', 'layer', 'unused'])),
       original.ports.map(port => pick(port, ['ref', 'class', 'authorOrder', 'owner', 'layer', 'unused'])), 'Port identity differs from document');
-    original.ports.forEach((port, index) => { if (port.side) same(node.ports[index]!.side, port.side, 'Semantic or authored side differs from document'); });
+    // A hinted port stands on the hinted side; the side the document gives is its natural side (ADR-0022).
+    original.ports.forEach((port, index) => {
+      const stored = node.ports[index]!;
+      if (port.side) same(stored.sideHint === true ? stored.naturalSide : stored.side, port.side, 'Semantic or authored side differs from document');
+    });
   }
   for (const id of orderedGroupIds(model.document)) {
     const group = model.groups[id]!, original = predicted.groups[id]!;
@@ -205,6 +211,27 @@ function validatePlacementStructure(model: LayoutModel): void {
         if (group.flank.align === 'left' ? centre >= peerCentre : centre <= peerCentre) throw new Error('Flank placement contradicts its authored side');
       }
     }
+  }
+}
+/**
+ * A side hint is an input of placement, so restore checks what it stored, not the round that chose it (side-faces.md, Section 13, review L2):
+ * `sideHint` and `naturalSide` come together; the natural side is `top` or `bottom` and is not the port's side; the port is a candidate
+ * under Section 4, items 2 to 6, read from the document; and, on a restored layout, the hinted side is the one that faces the peer.
+ */
+function validateSideHints(model: LayoutModel, resolved: LayoutModel, restoring: boolean): void {
+  for (const id of orderedNodeIds(model.document)) for (const port of model.nodes[id]!.ports) {
+    const name = `${id}.${port.ref.name ?? '#'}${port.ref.ordinal}`;
+    if ((port.sideHint === true) !== (port.naturalSide !== undefined) || (port.sideHint !== undefined && port.sideHint !== true)) throw new Error(`Side hint on ${name} is not recorded with its natural side`);
+    if (port.sideHint !== true) continue;
+    if (port.side !== 'left' && port.side !== 'right') throw new Error(`Side hint on ${name} is not a lateral side`);
+    if (port.naturalSide !== 'top' && port.naturalSide !== 'bottom') throw new Error(`Side hint on ${name} has a lateral natural side`);
+    const why = hintRefusal(resolved, port.ref);
+    if (why !== undefined) throw new Error(`Side hint on ${name} is not allowed: ${why}`);
+    if (!restoring) continue;
+    const link = model.links.find(item => [item.attachments!.from, item.attachments!.to].some(end => end.node === id && end.ordinal === port.ref.ordinal && end.name === port.ref.name && (end.anonymous ?? false) === (port.ref.anonymous ?? false)))!;
+    const peer = link.attachments!.from.node === id && link.attachments!.to.node !== id ? link.attachments!.to.node : link.attachments!.from.node;
+    const a = model.nodes[id]!.bounds, b = model.nodes[peer]!.bounds;
+    if (a !== undefined && b !== undefined && facingSide(a.x + a.width / 2, b.x + b.width / 2) !== port.side) throw new Error(`Side hint on ${name} faces away from its peer`);
   }
 }
 function validateTechniques(model: LayoutModel, baseline: LayoutModel): void {
@@ -374,6 +401,11 @@ function validateGeometry(model: LayoutModel, allowNonConvergence = false): void
     same(node.contentInsets, measured.contentInsets, `Content insets differ on ${id}`);
     same(node.contentSize, measured.contentSize, `Content measurement differs on ${id}`);
     const saved = model.freeze?.floors.find(floor => floor.node === id)?.size;
+    const hinted = model.freeze?.nodeFloors?.find(floor => floor.node === id)?.size;
+    if (hinted !== undefined) for (const dim of ['width', 'height'] as const) {
+      if (hinted[dim] < measured.sizeFloor![dim] - 1e-6) throw new Error(`Node floor of ${id} is below its content: ${dim} ${hinted[dim]} < ${measured.sizeFloor![dim]}`);
+      if (node.size[dim] < hinted[dim] - 1e-6) throw new Error(`Node ${id} is smaller than its node floor: ${dim} ${node.size[dim]} < ${hinted[dim]}`);
+    }
     for (const dim of ['width', 'height'] as const) {
       if ((saved !== undefined && saved[dim] < measured.sizeFloor![dim]) || node.sizeFloor[dim] < measured.sizeFloor![dim] || node.sizeFloor[dim] < (saved?.[dim] ?? 0)
         || node.size[dim] < node.sizeFloor[dim]) throw new Error(`Node ${id} violates ${dim} floor: size ${node.size[dim]}, floor ${node.sizeFloor[dim]}, measured ${measured.sizeFloor![dim]}, frozen ${saved?.[dim] ?? 'none'}`);
@@ -438,6 +470,14 @@ function validateFreeze(model: LayoutModel): void {
   same(topology(model), freeze.topology, 'Frozen port topology changed');
   same(freeze.floors.map(floor => floor.node), orderedNodeIds(model.document), 'Frozen floors omit or repeat nodes');
   for (const floor of freeze.floors) if (floor.size.width <= 0 || floor.size.height <= 0) throw new Error('Invalid frozen floor');
+  if (freeze.nodeFloors !== undefined) {
+    const ids = orderedNodeIds(model.document).filter(id => freeze.nodeFloors!.some(floor => floor.node === id));
+    same(freeze.nodeFloors.map(floor => floor.node), ids, 'Node floors name a node twice, out of order, or not at all');
+    for (const floor of freeze.nodeFloors) {
+      if (!(floor.size.width > 0) || !(floor.size.height > 0)) throw new Error(`Invalid node floor on ${floor.node}`);
+      if (!model.nodes[floor.node]!.ports.some(port => port.sideHint === true)) throw new Error(`Node floor on ${floor.node}, which has no hinted port`);
+    }
+  }
   if (stages.indexOf(model.stage) >= stages.indexOf('bands')) {
     if (!freeze.placement) throw new Error('Missing final placement freeze');
     same(placement(model), freeze.placement, 'Final placement changed');
@@ -445,13 +485,15 @@ function validateFreeze(model: LayoutModel): void {
 }
 
 /** Publish a clone. The caller must retain this immutable return value. */
-export function freezePortTopology(model: LayoutModel): LayoutModel {
+export function freezePortTopology(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Size>): LayoutModel {
   if (model.stage !== 'sides-two' || model.freeze) throw new Error('Topology can freeze only once at sides-two');
   jsonValue(model);
   const baseline = validateDocument(model);
   const result = clone(model);
   result.freeze = { version: 1, topology: clone(topology(model)),
     floors: orderedNodeIds(model.document).map(id => ({ node: id, size: { ...model.nodes[id]!.sizeFloor! } })) };
+  const floored = orderedNodeIds(model.document).filter(id => nodeFloors?.has(id));
+  if (floored.length) result.freeze.nodeFloors = floored.map(id => ({ node: id, size: { ...nodeFloors!.get(id)! } }));
   return protect(result, baseline);
 }
 
@@ -466,7 +508,7 @@ export function restoreLayoutModel(json: string): LayoutModel {
     resolve(model.document);
     return model;
   }
-  const baseline = validateDocument(model);
+  const baseline = validateDocument(model, true);
   return protect(model, baseline);
 }
 

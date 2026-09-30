@@ -108,7 +108,7 @@ function crossingSide(model: LayoutModel, frame: string): 'top' | 'bottom' {
     if (members.has(ends[0]!.node) === members.has(ends[1]!.node)) continue;
     for (const ref of ends) {
       if (!members.has(ref.node)) continue;
-      const side = findPort(model, ref)?.side;
+      const found = findPort(model, ref), side = found === undefined ? undefined : found.naturalSide ?? found.side;
       if (side === 'top' || side === 'bottom') counts[side]++;
     }
   }
@@ -302,7 +302,7 @@ export function rawBandSide(model: LayoutModel, group: LayoutGroup): 'top' | 'bo
     if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
     for (const ref of [link.attachments.from, link.attachments.to]) {
       if (!members.has(ref.node)) continue;
-      const side = findPort(model, ref)?.side;
+      const found = findPort(model, ref), side = found === undefined ? undefined : found.naturalSide ?? found.side;
       if (side === 'top' || side === 'bottom') counts[side]++;
     }
   }
