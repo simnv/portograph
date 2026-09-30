@@ -23,7 +23,7 @@ import { bands } from '../layout/bands.js';
 import { linkLabels } from '../layout/link-labels.js';
 import { elkDeadlineMs, type CreateElkAttempt, type ElkClock } from '../layout/elk-worker.js';
 import { route, ROUTE_BUDGET_MS, type CreateRouteAttempt } from '../route/index.js';
-import { CommandDeadlineError, POST_PLACEMENT_RESERVE_MS, UNBOUNDED_BUDGET, type Budget } from './budget.js';
+import { CommandDeadlineError, RERUN_GATE_MS, UNBOUNDED_BUDGET, type Budget } from './budget.js';
 // After the stages: the modules below reach the centring module, whose import order the tests that mock it depend on.
 import { declinedFanDiagnostics, fanRoundDropped, fanRoundHolds, measureFans, type FanMeasure } from '../layout/fan-spread.js';
 import { chordClearances, isRoutedChord } from '../layout/frame-paths.js';
@@ -35,16 +35,12 @@ import { overlayBlockers } from '../layout/overlay-paths.js';
 
 /** Most runs of placement a fan's pitch may cost after the first (ticket 89). */
 const FAN_ROUNDS = 2;
-/** What one fan re-run costs to 7e and 7f, without the chord step. A re-run starts only with this plus the post-placement reserve left
- * before the hard command deadline; the number never scales with the first run's time, so the layout does not depend on machine speed (ticket 112). */
-const FAN_RERUN_MS = 8000;
-const fanGateMs = POST_PLACEMENT_RESERVE_MS + FAN_RERUN_MS;
 /** Most side rounds after the fan rounds: one offer, one retry (side-faces.md, Section 7). */
 const SIDE_ROUNDS = 2;
 /**
  * Most placement re-runs of one command, fan and side together (side-faces.md, Section 7, *Budget*). A count, never set by the clock.
- * PROVISIONAL (ticket 115): 3 = the two fan rounds and one side trial. The value is to be the largest count whose whole command, projected
- * on a machine 2 times slower, finishes 2 s or more before the 30 s deadline; the coordinator's timing run on the private sheet sets it.
+ * 3 = the two fan rounds and one side trial: the largest count with no gate cut on the private sheet at 2 times slower, whose whole
+ * command ends 2 s or more before the 60 s deadline (side-faces.md, Section 19.5). A fourth re-run would read under RERUN_GATE_MS at 2x.
  */
 export const MAX_RERUNS = 3;
 /** `node.name#ordinal`, or `node.#ordinal` for an anonymous port, from a port key. */
@@ -177,7 +173,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     }
     if (!grew) break;
     options.testTiming?.('gate-fan', 0, budget.remainingMs());
-    if (budget.remainingMs() < fanGateMs) { cut('the command deadline leaves less than the reserve for one re-run, 7f, routing and scoring'); break; }
+    if (budget.remainingMs() < RERUN_GATE_MS) { cut('the command deadline leaves less than the reserve for one re-run, 7f, routing and scoring'); break; }
     let trial: LayoutModel;
     reruns++;
     try { trial = await timed('rerun-fan', () => place(next)); } catch (error) {
@@ -212,7 +208,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       break;
     }
     options.testTiming?.('gate-side', 0, budget.remainingMs());
-    if (budget.remainingMs() < fanGateMs) { cutSide('the command deadline leaves less than the reserve for one re-run, 7f, routing and scoring'); break; }
+    if (budget.remainingMs() < RERUN_GATE_MS) { cutSide('the command deadline leaves less than the reserve for one re-run, 7f, routing and scoring'); break; }
     const all = new Map([...hints, ...offer.hints]);
     for (const [key, item] of offer.promised) trialLinks.set(key, item.link);
     const nodeFloors = new Map(options.testNodeFloors ?? []);
@@ -289,7 +285,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     ...(clock ? { clock } : {}),
     ...(options.strictCheckpoints ? { strictCheckpoints: true } : {}),
     // The router's own timer must be positive; the remainder was checked one line above, and a
-    // 1 ms floor keeps the session honest rather than letting it fall back to a fresh 30 s.
+    // 1 ms floor keeps the session honest rather than letting it fall back to a fresh full policy.
     routeBudgetMs: Math.max(1, budget.share(options.routeBudgetMs ?? ROUTE_BUDGET_MS)),
   }));
   report('route', routeStarted);

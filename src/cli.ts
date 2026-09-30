@@ -35,7 +35,7 @@ export const EXIT = {
 } as const;
 
 /** Wall milliseconds a whole command may take before its compute boundary is terminated. */
-export const COMMAND_DEADLINE_MS = 30000;
+export const COMMAND_DEADLINE_MS = 60000;
 
 export function isVerb(value: string): value is Verb {
   return VERBS.some((verb) => verb.name === value);
