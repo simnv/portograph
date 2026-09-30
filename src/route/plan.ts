@@ -243,7 +243,11 @@ export function planRoute(model: LayoutModel, plans?: Parameters<typeof allocate
     for (let index = 0; index * 2 < stops.length - 1; index++) {
       const start = stops[index * 2]!, end = stops[index * 2 + 1]!;
       const first = index === 0, last = index * 2 + 2 === stops.length;
-      if (!(start.endpoint.kind === 'point' && end.endpoint.kind === 'point' && samePoint(start.point, end.point))) {
+      // A side run is the lateral port's own stem (side-faces.md, Section 10): it ends on the port's anchor, so the piece between that
+      // end and the port is empty and asks for no approach and no stem checkpoint.
+      const isSideRun = (segment: PathSegment | undefined): boolean => segment?.lane?.startsWith('side-lane:') === true;
+      const onSideRun = samePoint(start.point, end.point) && (isSideRun(fixed[index - 1]) || isSideRun(fixed[index]));
+      if (!onSideRun && !(start.endpoint.kind === 'point' && end.endpoint.kind === 'point' && samePoint(start.point, end.point))) {
         const id = `${link.id}#${index}`;
         // A reserved corridor admits only its owner's collinear run, so the gap beside it joins
         // head-on: one approach checkpoint the standard stem away, outside the reservation. Each

@@ -1,7 +1,7 @@
 import type { LayoutGroup, LayoutModel, LayoutNode, LayoutPort } from '../model/layout.js';
 import type { Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
-import { laneSidesHold, optionalMoveHolds, nodeTier, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
+import { isSideLane, laneSidesHold, recordSeatedSideLanes, optionalMoveHolds, sideLaneSource, nodeTier, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
 import { cellReach } from './frames.js';
 import { besideWalls, frameColumns, keepOutShifts, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
 import { findPort } from './row-paths.js';
@@ -50,6 +50,15 @@ function feeds(model: LayoutModel, tier: number, authority: number): Feed[] {
       if (parentTier !== authority && (!lane || link.bundle)) continue;
       result.push({ parent, child, link: link.id, x: lane ? lane.x : parent.anchor!.x,
         key: portId(parent.ref), transit: Boolean(lane) });
+    }
+    // A side lane is one feed of its link: the far port is the child and sits under the lane's x (side-faces.md, Section 10, *The far port*).
+    const side = model.lanes.find(lane => isSideLane(lane) && lane.owner.kind === 'link' && lane.owner.id === link.id);
+    if (side) {
+      const farRef = sideLaneSource(link, side), lateralRef = side.port!;
+      const farTier = nodeTier(model, farRef.node);
+      if (farTier === tier && ![farRef.node, lateralRef.node].some(id => model.groups[model.document.nodes[id]!.group]!.flank)) {
+        result.push({ parent: findPort(model, lateralRef)!, child: findPort(model, farRef)!, link: link.id, x: side.x, key: portId(lateralRef), transit: true });
+      }
     }
   }
   return result;
@@ -392,7 +401,8 @@ function packClear(model: LayoutModel, context: CentreContext, tier: number, gro
   const low = Math.max(window.low, right(previous.bounds!) + bandGap(model));
   if (group.bounds!.x >= low - EPS) return;
   const bounds = { ...group.bounds!, x: low };
-  if (low + group.bounds!.width > window.high + EPS || !laneSidesHold(model, [{ group, bounds }])) {
+  // A forced move: it passes the lane sides but not the side-lane frame guard (the riser keep-out is exempt the same way).
+  if (low + group.bounds!.width > window.high + EPS || !laneSidesHold(model, [{ group, bounds }], true, false)) {
     placementWarning(model, 'CENTRE_TIER_PACK_INFEASIBLE',
       `${group.id} cannot clear ${previous.id} inside its reserved lane and flank window; the final gates judge the result.`,
       [group.id], 'group');
@@ -756,4 +766,6 @@ export function centreViolations(model: LayoutModel, ahead = false): string[] {
   }
   return result;
 }
-export function centre(model: LayoutModel): LayoutModel { return withLayoutMutation(model, 'centre', draft => centreDraft(draft, createCentreBudget())); }
+export function centre(model: LayoutModel): LayoutModel {
+  return withLayoutMutation(model, 'centre', draft => { centreDraft(draft, createCentreBudget()); recordSeatedSideLanes(draft); });
+}

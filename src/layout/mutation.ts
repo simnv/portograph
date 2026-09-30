@@ -17,7 +17,7 @@ import { rebuildBands, span, union, validateSkeletonBands } from './skeleton-geo
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { blockedChords, edgeLeavers, freezeChords } from './frame-paths.js';
 import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, flankPair } from './flanks.js';
-import { type LaneFollow, lanesHoldTheirChild, rebuildLaneExtents, reseatLanes, validateLanes, transitTiers } from './lanes.js';
+import { type LaneFollow, lanesHoldTheirChild, sideLaneFindings, rebuildLaneExtents, reseatLanes, validateLanes, transitTiers } from './lanes.js';
 import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
 import { centreViolations, selectAnchorTier } from './centre.js';
@@ -950,6 +950,11 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
   if (rule === 'bands') for (const id of blockedChords(draft)) {
     draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'STRAIGHT_LINK_BLOCKED',
       message: `A body stands on the straight link ${id} that 7f could not move.`, owners: [{ kind: 'link', id }] });
+  }
+  // The side lanes' findings are read once, after the 7f settle loop, on the final geometry (side-faces.md, Sections 10 and 11).
+  if (rule === 'bands') {
+    draft.diagnostics = draft.diagnostics.filter(item => !['SIDE_SHAPE_LOST', 'SIDE_LANE_INSIDE_FRAME', 'SIDE_LANE_NOT_OUTERMOST'].includes(item.code));
+    draft.diagnostics.push(...sideLaneFindings(draft));
   }
   // 7f may turn a held cross-frame chord shallow (a title widening pushes a column). The move is not refused, so the chord that now leaves its
   // frame by a side edge, or inside the 10 px corner margin, is named (reason `edge`); the gates judge it.

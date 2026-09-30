@@ -1,0 +1,27 @@
+# Expected: a side lane (side-faces.md, Section 10; Q109 ticket 118). The load balancer `lb` stands at the right of tier 0. The frame `bank`
+# stands at the left of tier 1 and holds two ranks: `spare` and `outlet` in rank 0 (the outlet last in its row) and `tail` in rank 1.
+# One routed, described link runs from `lb` to the port `feed` of `outlet`, which the author puts on the right side. The port is lateral and
+# its peer is on another sub-tier, so 7a reserves a side lane beside the frame at the x of the load balancer's port: one vertical run down
+# beside the frame to the port's y, then the side run to the face. The label room is reserved on the vertical run.
+# Test-only input owned by ticket 118; test/pipeline/side-lane.test.ts reads the placed model.
+portograph: 2
+groups:
+  front: { tier: 0, label: Front }
+  bank: { tier: 1, label: Bank }
+nodes:
+  fe: { group: front, class: router, label: FE }
+  fe2: { group: front, class: router, label: FE2 }
+  fe3: { group: front, class: router, label: FE3 }
+  fe4: { group: front, class: router, label: FE4 }
+  lb: { group: front, class: router, label: LB }
+  spare: { group: bank, class: server, label: Spare }
+  outlet: { group: bank, class: server, label: Outlet, ports: [{ name: feed, side: right }] }
+  tail: { group: bank, class: server, label: Tail }
+links:
+  - [fe, spare]
+  - [fe2, spare]
+  - [fe3, spare]
+  - [fe4, spare]
+  - [spare, tail]
+  - [outlet, tail]
+  - [lb, outlet.feed, { label: Health checks of the load balancer reach the outlet through the side of the bank }]
