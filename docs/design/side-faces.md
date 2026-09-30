@@ -23,9 +23,14 @@ A lateral side has two uses:
    through a side edge, can be one straight segment from a lateral face. On the private sheet:
    - an overlay link from a server in a two-rank group to a client on the tier below goes round the
      sibling body that stands under the server;
-   - 9 of 13 cross-frame chord candidates (Q108) are refused with reason `edge`. Their provider
-     nodes stand in a small frame and the far ends stand far to the side, so a shallow chord meets
-     the provider frame's horizontal edge within 10 px of a corner, or leaves it by a side edge.
+   - 9 of 13 cross-frame chord candidates (Q108) are refused with reason `edge`. The providers
+     stand in a small frame and the location routers stand far to the side, so the chord is
+     shallow. Measured on a small synthetic (2026-09-30): every refused chord leaves the far
+     **location** frame, not the provider frame, and it leaves through a **side edge** of that
+     frame. The misses past the 10 px corner margin are 7.4, 7.6, 14.5, 24.5 and 30.3 px; on the
+     private sheet they are 40 to 80 px. A shift of the port along its bottom face does not
+     answer it: three of five need 28 to 99 px of shift, and the router's face is about 30 px
+     wide.
 2. **Cut bends.** A link that must bend takes the faces that give the fewest bends: an L (one
    bend, a bottom face to a lateral face), not a route of 3 to 5 segments.
 
@@ -211,15 +216,43 @@ Candidate item 4 of `routed-chords.md` (Section 3) changes: the upper port is on
 lateral side, and the lower port is on `top` or on a lateral side. Items 1 to 3 do not change. A
 frame chord (one frame) takes a lateral end with no other change.
 
-The **facing-edge rule** keeps its words: the chord leaves each box that holds one end only
-through the edge its port faces. For a lateral port that edge is the frame's side edge, at least
-the group edge link-margin from each corner. Then the chord crosses the column slack beside the
-frame. There, the foreign frame and canton boxes are walls (unchanged), and lane boxes are walls
-(unchanged). The chord leaves the frame by its side edge, so it crosses no title band at that end.
+**The facing-edge rule is read per port face, not per tier direction.** Q108 wrote it as "the
+chord leaves each end frame through the edge its port faces", and ticket 99 built it for the two
+faces it allowed: the upper end leaves by the bottom edge, the lower end by the top edge. With a
+lateral port the words stay and the reading changes:
+
+- At each end, the **exit edge** of every box that holds that end only (the end frame or free
+  group, its parent frame, its canton frame) is the edge on the side the port faces: the bottom
+  edge for `bottom`, the top edge for `top`, the right edge for `right`, the left edge for `left`.
+- The chord meets that edge at least the group edge link-margin (10 px plus half the stroke) from
+  each corner. For a side edge, that is the edge's y-range less the margin at the top and at the
+  bottom.
+- A chord that leaves by any other edge is refused (`edge`), as today. For a lateral port, a
+  horizontal edge is now the wrong edge: a chord steep enough to reach the frame's bottom edge
+  before its side edge keeps the bottom face. So the two faces split the work: a steep chord takes
+  the bottom (or top) face, and a shallow chord takes the lateral face. This is the case the
+  measure above found: the shallow chord already leaves the location frame by its side edge, and
+  only the port's face is wrong.
+
+**The measured case.** The location router's port takes the lateral side that faces the provider
+(tie-break 4 does not apply: the upper end is the one that can straighten; the probe reads both
+ends, and the configuration with a clear chord wins by rule 1). The chord leaves the router's
+lateral face, crosses the frame's side padding, and leaves the location frame through the side
+edge that faces the provider. The router must be the outermost body on that side at the chord's
+height, or the chord meets its row neighbour (`body`). The provider end keeps its natural face
+when its own exit is clear; when the provider frame is also small, the provider's port may take
+its lateral side too ("lateral at both ends", Section 5).
+
+**Beyond the exit edge.** The chord crosses the column slack beside the location frame. There,
+the foreign frame and canton boxes are walls (unchanged), and lane boxes are walls (unchanged). Q108
+kept a chord out of the slack because centring spends it and lanes stand in it. Both still hold:
+lanes are reserved in 7a and read as walls; centring (7c) ends before the fixed point stops at 7e;
+a 7f move that puts a foreign frame on the held chord is refused by `chordsHold`
+(`STRAIGHT_LINK_HELD`), as for any cross-frame chord. The chord leaves the frame by a side edge, so
+it crosses no title band at that end.
 
 After the freeze, `edgeLeavers` (`STRAIGHT_LINK_EDGE`) names a frozen cross-frame chord that leaves
-by an edge other than the one its port faces. For a lateral port, the horizontal edges are then
-the wrong edges.
+by an edge other than its exit edge, read per port face as above.
 
 ## 10. The side lane (routed, one bend)
 
@@ -373,7 +406,7 @@ count a lateral chord as any straight overlay chord.
    the command deadline still bounds it.
 2. **Height growth.** A lateral face may grow its node with no cap (Section 8), or the offer can
    stop at the height the node already has. *Recommendation:* no cap, reserved at size time, and
-   the corpus differential reports canvas growth. The providers of the private sheet need growth.
+   the corpus differential reports canvas growth. A router or a provider that takes several lateral chords on one face needs growth.
 3. **Crossings for an L.** Q108 takes a clear chord even when it adds a crossing. The same rule for
    an L? *Recommendation:* yes; fewer bends win, and crossings are reported.
 4. **Author lateral ports and the side lane** (Section 10). *Recommendation:* yes; it replaces a
