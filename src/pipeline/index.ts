@@ -160,7 +160,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   let reruns = 0;
   // The re-runs are bounded by FAN_ROUNDS alone, and no re-run reads the clock (ticket 141): the same input gives the same layout at any speed.
   // The command deadline ends the whole command with an error (`step`, `route`, `trialAbort`) and never picks a layout. A re-run that makes ELK
-  // fall back is dropped: the placement already made stands (ticket 89 review).
+  // fall back (an ELK error, never a timeout: a timeout ends the command) is dropped: the placement already made stands (ticket 89 review).
   const cuts: Diagnostic[] = [];
   const cut = (why: string): void => {
     cuts.push({ stage: 'placement', severity: 'warning', code: 'FAN_SPREAD_CUT',
@@ -181,8 +181,8 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     if (!grew) break;
     reruns++;
     const trial = await timed('rerun-fan', () => place(next));
-    if ((trial.fallbackUsed && !model.fallbackUsed) || (trial.deadlineHit && !model.deadlineHit)) {
-      cut('ELK fell back or met its time limit during it, and the re-run was dropped'); break;
+    if (trial.fallbackUsed && !model.fallbackUsed) {
+      cut('ELK fell back during it, and the re-run was dropped'); break;
     }
     if (!fanRoundHolds(model, trial)) { cuts.push(fanRoundDropped(model, trial)); break; }
     model = trial; floors = next;
@@ -190,8 +190,10 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   // Side rounds (side-faces.md, Section 19). 7f runs on the kept model first: its output is the baseline, the model the command publishes when no
   // trial is kept. A measure reads the baseline. One batched trial reaches 7f per command; it is kept only on its routed result. Every bound is a
   // count (SIDE_ROUNDS, MAX_RERUNS); the clock only ends the whole command at its deadline (ticket 141).
+  // The abort check of 7f, the baseline's and the trial's: the command deadline, checked between the passes. It ends the whole command, so it never picks a layout (ticket 141).
+  const trialAbort = (stage: string): void => { if (budget.remainingMs() <= 0) throw new CommandDeadlineError(0, stage); };
   let kept7e = model;
-  let base = await timed('bands', () => step('bands', () => bands(kept7e)));
+  let base = await timed('bands', () => step('bands', () => bands(kept7e, () => trialAbort('bands'))));
   let hints = new Map<string, 'left' | 'right'>(options.testSideHints ?? []);
   const promised: SideOffer['promised'] = new Map(), refused = new Set<string>(), sideNotes: Diagnostic[] = [];
   const trialLinks = new Map<string, string>();
@@ -217,8 +219,6 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     report('route', started, trial);
     return routed;
   };
-  // The guard of a trial: the command deadline, checked between the passes of the trial's 7f. It ends the whole command, so it never picks a layout (ticket 141).
-  const trialAbort = (stage: string): void => { if (budget.remainingMs() <= 0) throw new CommandDeadlineError(0, stage); };
   const maxReruns = options.testMaxReruns ?? MAX_RERUNS;
   let routedBase: LayoutModel | undefined, routedFinal: LayoutModel | undefined;
   const keptNotes: Diagnostic[] = [];
@@ -248,8 +248,8 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       refuse(offer.hints.keys(), offer.hints, `the placement run rejected it (${error.message})`);
       continue;
     }
-    if ((trial7e.fallbackUsed && !kept7e.fallbackUsed) || (trial7e.deadlineHit && !kept7e.deadlineHit)) {
-      cutSide('ELK fell back or met its time limit during it, and the re-run was dropped'); break;
+    if (trial7e.fallbackUsed && !kept7e.fallbackUsed) {
+      cutSide('ELK fell back during it, and the re-run was dropped'); break;
     }
     // A port hinted for the straight shape of a routed link (this round's, or kept) must hold its chord at the trial's 7e. Otherwise it would be routed with
     // no lane (`sideLaneCandidate`) and no chord, and the router would find its route (review M1, ticket 117).

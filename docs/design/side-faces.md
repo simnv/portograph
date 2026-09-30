@@ -182,9 +182,8 @@ reruns = 0                                     // every place() after the first
 for round in 0 ..< FAN_ROUNDS:
   next = floors ∪max measureFans(model).floors
   if next == floors: break
-  if not gate(): cut(FAN_SPREAD_CUT); break
   trial = place(next, hints); reruns += 1
-  if elkCut(trial): cut(FAN_SPREAD_CUT); break
+  if elkFellBack(trial): cut(FAN_SPREAD_CUT); break             // an ELK timeout ends the command (ticket 141)
   if straightChords(trial) < straightChords(model): break     // drop the trial, keep floors
   model = trial; floors = next
 
@@ -193,9 +192,8 @@ for round in 0 ..< SIDE_ROUNDS:                // SIDE_ROUNDS = 2: one offer, on
   offer = measureSides(model, refused)          // new hints only; never an old or refused key
   if offer is empty: break
   if reruns >= MAX_RERUNS: note(SIDE_ROUND_SKIPPED); break      // a count, not the clock
-  if not gate(): cut(SIDE_ROUND_CUT); break
   trial = place(floors, hints ∪ offer); reruns += 1
-  if elkCut(trial): cut(SIDE_ROUND_CUT); break
+  if elkFellBack(trial): cut(SIDE_ROUND_CUT); break
   failed = { h in hints ∪ offer : plannedBends(trial, link(h)) > promised(h) }
   if failed is empty
      and (bent(trial) < bent(model)
@@ -222,14 +220,12 @@ for round in 0 ..< SIDE_ROUNDS:                // SIDE_ROUNDS = 2: one offer, on
   were not refused; nothing searches subsets.
 
 **Budget** (review M4). The layout must not depend on machine speed (ticket 112). The side rounds
-therefore use the count-based gates of ticket 112 and add no clock read:
+use counts and add no clock read:
 
 - There is no time gate (ticket 141, Section 19.5). A re-run starts when the counts allow it. The clock only ends the whole command at
   the hard deadline, with an error; it never picks a layout. (Ticket 137's `RERUN_GATE_MS` is deleted.)
 - `MAX_RERUNS` caps fan and side re-runs together. It is a **fixed constant**, never set by the
-  clock. The gate alone is not enough: it is read at the start of a re-run, and a re-run that
-  passes it can still leave too little time for 7f, routing, link labels and scoring, so the
-  command meets the 60 s deadline and publishes nothing.
+  clock. A command that meets the 60 s deadline ends with an error and publishes nothing (Section 19.5).
 - **The rule for the constant:** `MAX_RERUNS` is the largest count for which the private sheet's
   **whole command** (first placement, every re-run with its measures, 7f, stage 8, stage 9,
   validation and scoring) finishes before the 60 s deadline on a machine 2 times slower, with 2 s of
@@ -714,19 +710,19 @@ link by link.
 model  = place(floors = {}, hints = {}); fan rounds as Section 7, part 1   // unchanged
 kept7e = model
 declined = measureFans(kept7e); atFreeze = chordClearances(kept7e)        // unchanged, read at 7e
-base   = bands(kept7e)                     // the baseline: the same 7f that main runs, no abort parameter
+base   = bands(kept7e, abortAt = commandDeadline)   // the baseline: the same 7f that main runs; the check only ends the command
 refused = {}
 for round in 0 ..< SIDE_ROUNDS:            // SIDE_ROUNDS = 2 (a count)
   offer = measureSides(base, kept7e, refused)   // overlay probes on base, routed on kept7e; each hint on both clones
   if offer is empty: break
   if reruns >= MAX_RERUNS: note(SIDE_ROUND_SKIPPED); break
   floorsOf = stage3Sizes.get(kept7e)                             // the 7e model keys the size cache, never base
-  trial7e = place(floors, hints ∪ offer, floorsOf, abortAt = trialDeadline); reruns += 1
-  if elkCut(trial7e): cut(SIDE_ROUND_CUT); break              // a deadline ends the command (ticket 141)
+  trial7e = place(floors, hints ∪ offer, floorsOf, abortAt = commandDeadline); reruns += 1
+  if elkFellBack(trial7e): cut(SIDE_ROUND_CUT); break         // an ELK error, not a timeout: a timeout ends the command (ticket 141)
   if round + 1 < SIDE_ROUNDS and reruns < MAX_RERUNS:           // the predictor prunes only when it can place again
     worse = hinted links predicted worse than on base, or newly facing away, on predictPublished(trial7e, kept7e, base)
     if worse ∩ offer is not empty: refuse(worse ∩ offer); continue
-  trial = bands(trial7e, abortAt = trialDeadline)
+  trial = bands(trial7e, abortAt = commandDeadline)
   routedBase = route(base); routedTrial = route(trial)
   if holds(routedTrial, routedBase, offer) and gains(routedTrial, routedBase, trial7e, kept7e):
     base = trial; kept7e = trial7e; hints = hints ∪ offer        // publish the trial
@@ -752,10 +748,10 @@ publish route(base) (reuse routedBase or routedTrial; link labels, score)
   read on the two routed models with no slack (it must not call `naturalStraightNearlyClear`,
   which goes).
 - `MAX_SIDE_VERIFY` = 1 is the `break` at the end of the loop body, not a separate check.
-- **The abort parameter.** `place` and `bands` take an optional `abortAt` of their own, apart from
-  the command budget that 7f's chord-clear step reads. `bands` is synchronous inside
-  `withLayoutMutation`, so the check throws from the edit callback between 7f passes. The baseline
-  call passes none, so the baseline 7f never throws for a side reason. On a trial that reaches 7f,
+- **The abort parameter.** `place` and `bands` take an optional `abortAt`: the command deadline
+  (`remainingMs() <= 0`). `bands` is synchronous inside `withLayoutMutation`, so the check throws
+  between 7f passes. The baseline 7f and the trial's pass the same check (ticket 141). It only ends
+  the command and never changes a layout. On a trial that reaches 7f,
   `onProgress` reports `bands` and `route` twice; the reporter labels the trial's stages.
 - A kept trial names, as info `SIDE_HINT_BENDS_NEIGHBOUR`, each link without a hint whose bends
   rose: the collateral that the net count accepted.
@@ -778,14 +774,18 @@ read the time left, so on a slow machine the same input could publish another la
   only that ELK fell back in a re-run.
 - The chord-clear step of 7f lost its clock guard and its `CHORD_CLEAR_BUDGET` warning. It is already bounded by counts (`CHORD_TRIALS`,
   `SETTLED_TRIALS`, one move per mover, `CANTON_ROUNDS`). `bands` and `withLayoutMutation` take no budget any more, only `abortAt`.
-- Why these counts: on the private sheet the worst path (4.0 s first placement, two fan re-runs and one side trial of 2.7 s each, three 7f of
-  6.5 s at most, two routes) is about 23 s quiet and about 46 s at 2x, which leaves 14 s before 60 s. A fourth re-run adds 2.7 + 6.5 s quiet,
+- Why these counts: on the private sheet the worst path (4.0 s first placement, two fan re-runs and one side trial of 2.7 s each, two 7f of
+  6.5 s at most (the baseline and the trial), two routes; the fans run no 7f) is about 23 s quiet and about 46 s at 2x, which leaves 14 s before 60 s. A fourth re-run adds 2.7 + 6.5 s quiet,
   or 18.4 s at 2x: 64 s, over the deadline. So 3 is the largest count that fits at 2x.
-- Time-dependent places left, by design: the ELK per-attempt limit (ADR-0006: 10 s, 20 s above 300 nodes) and the router's `ROUTE_BUDGET_MS`
-  are stage policies, and they can still fall back on a very slow machine (diagnosed as before). They bound one attempt, not the choice
-  between two layouts. `runtime.stages` durations are reports and are outside the layout snapshot.
+- **An ELK timeout is not a fallback trigger** (ticket 141; amends ADR-0006). `skeleton` rethrows `ElkDeadlineError`: at the partitioned
+  attempt (no per-tier fallback), and unwrapped from the per-tier attempt. An ELK error that is no timeout keeps the deterministic per-tier
+  fallback, and a re-run that fell back is dropped (`FAN_SPREAD_CUT`, `SIDE_ROUND_CUT`). The `deadlineHit` tests in the loops are gone.
+  `bin/compute.mjs` reports `ElkDeadlineError`, `RouteDeadlineError` and `CommandDeadlineError` all as `COMMAND_DEADLINE`.
+- The router's `ROUTE_BUDGET_MS` (30 s, or what is left) only ends the command with `RouteDeadlineError`; no code catches it. Nothing that
+  reads the clock picks a layout. `runtime.stages` durations are reports and are outside the layout snapshot.
 - Test: `test/pipeline/deadline-gates.test.ts` runs `layout()` on a fake clock at speeds 0, 1 and 2 and asserts byte-identical layout JSON,
-  and that a clock past the deadline rejects with `CommandDeadlineError`.
+  and that a clock past the deadline rejects with `CommandDeadlineError`. Other tests: an ELK timeout in a fan re-run, in the side trial and in
+  the first placement ends the command.
 
 **The text below is ticket 137's derivation, kept for the measured times; its gates and constants no longer exist.**
 

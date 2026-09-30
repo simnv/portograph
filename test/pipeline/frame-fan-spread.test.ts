@@ -86,13 +86,24 @@ describe('a fan spreads its ports so its diagonals hold clearance', () => {
     expect(slow.diagnostics.filter(item => item.code === 'FAN_SPREAD_CUT')).toEqual([]);
   });
 
-  // Ticket 112 review, finding 1: a re-run dropped because ELK met its limit is reported, not silent.
-  it('reports a cut when the ELK attempt of a re-run meets its limit', async () => {
+  // Ticket 141: an ELK timeout in a re-run ends the command; it never drops the re-run.
+  it('ends the command when the ELK attempt of a re-run meets its limit', async () => {
     let calls = 0;
     const createElkAttempt: typeof createAttempt = () => {
       const real = createAttempt();
       if (++calls !== 2) return real;
       return { layout: async () => { real.terminateWorker(); throw new ElkDeadlineError(1); }, terminateWorker: () => real.terminateWorker() };
+    };
+    await expect(layout(parse(yaml), { createElkAttempt, createRouteAttempt: createAvoidAttempt })).rejects.toBeInstanceOf(ElkDeadlineError);
+  });
+
+  // An ELK error that is no timeout keeps the deterministic per-tier fallback, and the re-run is reported as cut (ticket 112, finding 1).
+  it('reports a cut when the ELK attempt of a re-run fails and falls back', async () => {
+    let calls = 0;
+    const createElkAttempt: typeof createAttempt = () => {
+      const real = createAttempt();
+      if (++calls !== 2) return real;
+      return { layout: async () => { real.terminateWorker(); throw new Error('injected'); }, terminateWorker: () => real.terminateWorker() };
     };
     const model = await layout(parse(yaml), { createElkAttempt, createRouteAttempt: createAvoidAttempt });
     expect(calls).toBeGreaterThan(1);

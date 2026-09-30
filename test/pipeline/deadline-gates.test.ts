@@ -40,6 +40,13 @@ describe('the command deadline and the layout', () => {
     expect(cuts(slow)).toEqual([]);
   }, 60000);
 
+  // The old fan gate cut a re-run when the first placement took 37 s; now the re-run runs and the bytes are the same.
+  it('a slow first placement that still fits the deadline does not cut a fan re-run', async () => {
+    const slow = await at(FAN, { place: 37000 }, 1), free = await at(FAN, {}, 0);
+    expect(cuts(slow)).toEqual([]);
+    expect(bytes(slow)).toBe(bytes(free));
+  }, 60000);
+
   // A time that used to close the old gate (a first placement of 37 s) no longer picks another layout: the trial still runs and is kept.
   it('a slow first placement that still fits the deadline does not cut a side round', async () => {
     const slow = await at(PAST_SIBLING, { place: 37000 }, 1), free = await at(PAST_SIBLING, {}, 0);

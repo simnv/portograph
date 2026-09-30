@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import type { LayoutLink, LayoutModel } from '../../src/index.js';
-import { CommandDeadlineError, layout, parse } from '../../src/index.js';
+import { CommandDeadlineError, ElkDeadlineError, layout, parse } from '../../src/index.js';
 import type { SideOffer } from '../../src/layout/side-measure.js';
 import { holdColumnAxes, holdMemberWalls, packBesideRows } from '../../src/layout/columns.js';
 import { judgeTrial, predictedWorse, predictPublished, trialNotes } from '../../src/layout/side-judge.js';
@@ -131,6 +131,17 @@ describe('the trial deadline (Section 19.5, ticket 141)', () => {
     const budget = { remainingMs: () => remaining, share: (stageMs: number) => Math.min(stageMs, remaining) };
     const onProgress = (progress: { stage: string }): void => { if (progress.stage === 'resolve') placements++; if (progress.stage === 'bundles' && placements === 2) remaining = 0; };
     await expect(run(PAST_SIBLING, { budget, onProgress })).rejects.toBeInstanceOf(CommandDeadlineError);
+  }, 60000);
+
+  it('an ELK timeout in the side trial\'s placement ends the command: the hints are not refused and no baseline is published', async () => {
+    let places = 0;
+    const createElkAttempt = () => {
+      const real = createAttempt();
+      if (++places !== 2) return real;
+      return { layout: async () => { real.terminateWorker(); throw new ElkDeadlineError(1); }, terminateWorker: () => real.terminateWorker() };
+    };
+    await expect(layout(parse(fixture(PAST_SIBLING)), { createElkAttempt, createRouteAttempt: createAvoidAttempt })).rejects.toBeInstanceOf(ElkDeadlineError);
+    expect(places).toBe(2);
   }, 60000);
 
   it('little time left (a fixed 3 s) is not a reason to cut: the layout has the same bytes as with time to spare', async () => {
