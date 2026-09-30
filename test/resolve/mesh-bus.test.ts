@@ -149,4 +149,72 @@ describe('mesh bus detection (stage 1)', () => {
     expect(model.meshBuses).toBeUndefined();
     expect(model.links[0]!.technique).toBe('overlay');
   });
+
+  it('reads every maximal clique of the whole graph: a declined clique hides no other', () => {
+    const model = resolve(parse(doc('  row: { tier: 0 }',
+      '  a: { group: row, ports: [{ name: p }, { name: q }] }\n  b: { group: row }\n  c: { group: row }\n  d: { group: row }\n  e: { group: row }',
+      ['{ from: a.p, to: b, class: sync }', '{ from: a.q, to: c, class: sync }', '{ from: a.p, to: d, class: sync }',
+        '{ from: b, to: c, class: sync }', '{ from: b, to: d, class: sync }', '{ from: c, to: d, class: sync }',
+        '{ from: b, to: e, class: sync }', '{ from: c, to: e, class: sync }'])));
+    expect(codes(model, 'MESH_BUS_DECLINED').map(d => d.message).join()).toContain('named-ports');
+    expect(model.meshBuses).toHaveLength(1);
+    expect(model.meshBuses![0]!.nodes).toEqual(['b', 'c', 'e']);
+  });
+
+  it('does not call the plain links of a partial mesh a second mesh', () => {
+    const ids = ['n1', 'n2', 'n3', 'n4', 'n5', 'n6'];
+    const links = pairs(ids).filter(link => !/from: n1, to: n2,|from: n3, to: n4,/.test(link));
+    const model = resolve(parse(oneRow(ids, links)));
+    expect(model.meshBuses).toHaveLength(1);
+    expect(model.meshBuses![0]!.nodes).toHaveLength(4);
+    expect(codes(model, 'MESH_BUS_DECLINED')).toHaveLength(0);
+    expect(codes(model, 'MESH_BUS_PARTIAL')).toHaveLength(1);
+  });
+
+  it('splits a mesh on two sub-tiers by sub-tier and leaves the cross links plain', () => {
+    const upper = ['a1', 'a2', 'a3'], lower = ['b1', 'b2', 'b3'];
+    const links = [...pairs(upper), ...pairs(lower), ...upper.flatMap(a => lower.map(b => `{ from: ${a}, to: ${b}, class: sync }`))];
+    const nodes = [...upper.map(id => `  ${id}: { group: west }`), ...lower.map(id => `  ${id}: { group: east }`)].join('\n');
+    const model = resolve(parse(doc('  west: { tier: 0 }\n  east: { tier: 1 }', nodes, links)));
+    expect(model.meshBuses!.map(bus => [bus.row, bus.nodes.length, bus.members.length])).toEqual([[0, 3, 3], [1, 3, 3]]);
+    const cross = model.links.filter(link => link.meshBus === undefined);
+    expect(cross).toHaveLength(9);
+    // The cross set is a group-link, and the bus takes none of its members.
+    expect(model.groupLinks).toHaveLength(1);
+    expect(cross.every(link => link.groupLink === 'group-link-1')).toBe(true);
+  });
+
+  it('leaves a routed group-link alone', () => {
+    const nodes = ['a1', 'a2', 'b1', 'b2'].map((id, i) => `  ${id}: { group: ${i < 2 ? 'west' : 'east'} }`).join('\n');
+    const links = ['a1', 'a2'].flatMap(a => ['b1', 'b2'].map(b => `[${a}, ${b}]`)).concat(['[a1, a2]', '[b1, b2]']);
+    const model = resolve(parse(doc('  west: { tier: 0 }\n  east: { tier: 0 }', nodes, links)));
+    expect(model.meshBuses).toBeUndefined();
+    expect(model.groupLinks).toHaveLength(1);
+    expect(model.groupLinks[0]!.layer).toBe('routed');
+  });
+
+  it('keys the row of a ranked group by the sub-tier of its cells', () => {
+    const ids = ['r1', 'r2', 'r3', 's1', 's2', 's3'];
+    const nodes = ['  isp: { group: up }', ...ids.map(id => `  ${id}: { group: g }`)].join('\n');
+    const links = ['[isp, r1]', '[isp, r2]', '[isp, r3]', '[r1, s1]', '[r2, s2]', '[r3, s3]', ...pairs(ids.slice(0, 3)), ...pairs(ids.slice(3))];
+    const model = resolve(parse(doc('  up: { tier: 0 }\n  g: { tier: 1 }', nodes, links)));
+    expect(Object.keys(model.document.frames ?? {})).toEqual(['g']);
+    expect(model.meshBuses).toHaveLength(2);
+    const [first, second] = model.meshBuses!;
+    expect(first!.row).not.toBe(second!.row);
+    expect([first!.nodes, second!.nodes]).toEqual([ids.slice(0, 3), ids.slice(3)]);
+    expect(first!.placement).toBe('in-frame');
+    expect(first!.frames).toHaveLength(1);
+  });
+
+  it('names the frames of the fixtures, and resolves each one again to the same model', () => {
+    const names = ['a-mesh-across-frames-draws-one-bus', 'a-mesh-of-one-node-groups-draws-one-bus', 'a-bus-across-cantons-crosses-the-canton-edges',
+      'a-partial-mesh-keeps-its-largest-complete-part', 'a-full-mesh-on-one-row-draws-as-one-bus'];
+    const frames = names.map(name => resolve(parse(fixture(name))).meshBuses![0]!.frames);
+    expect(frames).toEqual([['west', 'middle', 'east'], ['west', 'middle', 'east'], ['west-servers', 'east-servers'], ['row'], ['row']]);
+    for (const name of names) {
+      const first = resolve(parse(fixture(name)));
+      expect(JSON.stringify(resolve(first.document))).toBe(JSON.stringify(first));
+    }
+  });
 });

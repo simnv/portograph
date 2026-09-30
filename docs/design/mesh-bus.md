@@ -98,8 +98,8 @@ anonymous port, so a member of a 12-node mesh carries 11 anonymous ports today a
 sized for them (invariant 3). Stage 1 collapses them: the **bus port** of a member is the
 lowest-ordinal anonymous port among its member-link ends, every member link's end at that node is
 re-attached to it, and the other anonymous ports of those ends are removed, unless another link
-uses them. When every member-link end at a node names the same authored port, that port is the bus
-port and keeps its pill. When the member links at one node name two or more different authored
+uses them. When the member-link ends at a node name one authored port (some ends may be bare), that port is
+the bus port and keeps its pill, and the bare ends move onto it. When the member links at one node name two or more different authored
 ports, the bus is declined (`MESH_BUS_DECLINED`, `named-ports`): a named port is a drawn pill with
 a meaning of its own, and the design does not merge two of them. `SHARED_PORT` does not warn on a
 bus port.

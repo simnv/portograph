@@ -48,23 +48,6 @@ function compareIndices(a: number[], b: number[]): number {
   return a.length - b.length;
 }
 
-function largestClique(adjacency: Map<number, Set<number>>): number[] | undefined {
-  const cliques = maximalCliques(adjacency).filter(clique => clique.length >= 3);
-  cliques.sort((a, b) => b.length - a.length || compareIndices(a, b));
-  return cliques[0];
-}
-
-/** The graph without the edges among `clique`: what a second mesh may still use. */
-function withoutClique(adjacency: Map<number, Set<number>>, clique: number[]): Map<number, Set<number>> {
-  const inside = new Set(clique);
-  const result = new Map<number, Set<number>>();
-  for (const [node, near] of adjacency) {
-    const kept = new Set([...near].filter(other => !(inside.has(node) && inside.has(other))));
-    if (kept.size) result.set(node, kept);
-  }
-  return result;
-}
-
 const sameRef = (a: PortRef, b: PortRef): boolean => a.node === b.node && a.ordinal === b.ordinal
   && (a.name ?? undefined) === (b.name ?? undefined) && (a.anonymous ?? false) === (b.anonymous ?? false);
 
@@ -130,7 +113,7 @@ export function detectMeshBuses(model: LayoutModel): void {
   function partial(mesh: Mesh, clique: number[], names: string[], members: LayoutLink[], row: number): void {
     const inside = new Set(clique);
     // A node the bus left out but that joins two or more members is part of the mesh the author drew.
-    const left = mesh.nodes.filter(node => !inside.has(node)
+    const left = [...mesh.nodes].sort((x, y) => x - y).filter(node => !inside.has(node)
       && [...mesh.adjacency.get(node)!].filter(other => inside.has(other)).length >= 2);
     if (!left.length) return;
     const considered = [...clique, ...left].sort((x, y) => x - y);
@@ -148,28 +131,31 @@ export function detectMeshBuses(model: LayoutModel): void {
 
   for (const row of [...rows.keys()].sort((a, b) => a - b)) {
     const classes = rows.get(row)!;
-    // Every clique of three or more, per class: the largest first, then the largest of the edges it leaves.
+    // Every maximal clique of three or more, per class, of the whole graph: the checks read them all,
+    // and only the clique taken as the bus removes edges, so a declined clique hides no other one.
     const found: { mesh: Mesh; clique: number[] }[] = [];
-    for (const mesh of classes.values()) {
-      let adjacency = mesh.adjacency;
-      for (let clique = largestClique(adjacency); clique !== undefined; clique = largestClique(adjacency)) {
-        found.push({ mesh, clique });
-        adjacency = withoutClique(adjacency, clique);
-      }
-    }
+    for (const mesh of classes.values()) for (const clique of maximalCliques(mesh.adjacency)) if (clique.length >= 3) found.push({ mesh, clique });
     found.sort((a, b) => b.clique.length - a.clique.length || compareIndices(a.clique, b.clique) || a.mesh.classIndex - b.mesh.classIndex);
-    let taken = false;
+    let bus: Set<number> | undefined;
+    const reported: number[][] = [];
     for (const { mesh, clique } of found) {
       const members = linksAmong(mesh, clique);
       const names = clique.map(index => nodeIds[index]!);
       const decline = (reason: string, detail: string): void => report('MESH_BUS_DECLINED', 'warning',
         `Mesh of ${names.join(', ')} (${label(mesh)}) in ${row} draws as plain overlay links, ${reason}: ${detail}`, members);
-      if (taken) { decline('second-mesh', 'a row holds one bus in this version'); continue; }
+      if (bus !== undefined) {
+        // A clique through a bus node is a part of the mesh the bus left plain, not a second mesh; one that
+        // shares an edge with a mesh already reported is the same mesh.
+        if (clique.some(node => bus!.has(node)) || reported.some(other => clique.filter(node => other.includes(node)).length >= 2)) continue;
+        reported.push(clique);
+        decline('second-mesh', 'a row holds one bus in this version');
+        continue;
+      }
       const off = names.map(name => ({ name, kind: offRow(name) })).find(item => item.kind !== undefined);
       if (off !== undefined) { decline('shape', `${off.name} stands in a ${off.kind}, which is on no row`); continue; }
       const chosen = busPorts(names, members);
       if (typeof chosen === 'string') { decline('named-ports', `${chosen} has two or more authored ports on the member links`); continue; }
-      taken = true;
+      bus = new Set(clique);
       const id = `mesh-bus-${buses.length + 1}`;
       attach(model, id, chosen, members);
       const frames = [...new Set(names.map(frameOf))];
@@ -234,14 +220,15 @@ function attach(model: LayoutModel, id: string, ports: Map<string, PortRef>, mem
 function dropBusSharedPortWarnings(model: LayoutModel): void {
   if (!model.meshBuses?.length) return;
   const members = new Set(model.links.filter(link => link.meshBus !== undefined).map(link => link.id));
-  const bySource = new Map<number, LayoutLink[]>();
-  for (const link of model.links) bySource.set(link.sourceIndex, [...(bySource.get(link.sourceIndex) ?? []), link]);
   model.diagnostics = model.diagnostics.filter(diagnostic => {
     if (diagnostic.code !== 'SHARED_PORT') return true;
     if ('path' in diagnostic && typeof diagnostic.path === 'string') {
-      const match = /^\$\.links\[(\d+)\]\./.exec(diagnostic.path);
-      const links = match ? bySource.get(Number(match[1])) : undefined;
-      return !(links?.length && links.every(link => link.meshBus !== undefined));
+      const match = /^\$\.links\[(\d+)\]\.(from|to)$/.exec(diagnostic.path);
+      const end = match ? model.document.links[Number(match[1])]?.[match[2] as 'from' | 'to'] : undefined;
+      if (end?.node === undefined) return true;
+      // Keep the warning when any link that is not a member uses the port.
+      const users = model.links.filter(link => [link.attachments!.from, link.attachments!.to].some(ref => ref.node === end.node && ref.name === end.name));
+      return !(users.length && users.every(link => link.meshBus !== undefined));
     }
     const owners = diagnostic.owners ?? [];
     return !(owners.length && owners.every(owner => owner.kind === 'link' && members.has(owner.id)));

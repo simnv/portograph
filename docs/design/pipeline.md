@@ -53,16 +53,24 @@ For every link, in this fixed order, from the document only:
    decides **how many lines stand for the set, never on which layer they are drawn**: the
    group-link takes its members' family layer, and each member keeps its own. An authored
    `route: group-link` names the aggregation and leaves the family's layer alone.
-3a. **Mesh bus** — overlay links of one class, with no authored `route:`, whose ends lie in one row
-   (a rank cell, a one-rank group or a `row` group) form a graph per row and class. Its maximum
-   clique of ≥ 3 nodes (Bron-Kerbosch with pivoting; ties by declaration order) is a bus: the
-   member links get `meshBus` and `technique: 'mesh-bus'`, and each member node keeps one port for
-   the bus (the lowest-ordinal anonymous port of the member ends, or the one shared authored port;
-   two authored ports decline with `named-ports`). One bus per row (`second-mesh` otherwise); a
-   `grid` or `bar` group declines (`shape`). `MESH_BUS`, `MESH_BUS_PARTIAL` and `MESH_BUS_DECLINED`
-   report it. The step runs on the final model, after the ranked groups are cells, and reads the
-   document only, so resolving `model.document` reproduces it. No geometry until tickets 83 and 84
-   (`docs/design/mesh-bus.md`, Q105).
+3a. **Mesh bus** — overlay links of one class, with no authored `route:`, whose two ends stand on one
+   sub-tier (the `tier` of the layout group that holds each end: a rank cell, a one-rank group or a
+   `row` group, in any frame or canton) form a graph per row and class. A member of an overlay
+   group-link is a candidate; a routed group-link is not. The maximal cliques of ≥ 3 nodes
+   (Bron-Kerbosch with pivoting) are read largest first, ties by declaration order, and the first
+   one that passes the checks is the bus. A clique with a node of a `grid` or `bar` group or a flank
+   is declined (`shape`); one where a member holds two authored ports is declined (`named-ports`).
+   Only the clique taken removes edges, so a declined clique hides no other. The member links get
+   `meshBus` and `technique: 'mesh-bus'`, and each member node keeps one port for the bus (the
+   lowest-ordinal anonymous port of the member ends, or the one authored port, onto which bare ends
+   move). One bus per row; a clique with no node in the bus is declined as `second-mesh`. A
+   group-link that lost a member to the bus is dissolved, whole or in part: it leaves `groupLinks`,
+   its members lose `groupLink`, its inferred `ROUTE_UNSUPPORTED` warning goes, and the bus keeps its
+   ids in `dissolved`. The bus records `placement` (`in-frame` or `across-frames`) and `frames`.
+   `MESH_BUS`, `MESH_BUS_PARTIAL` and `MESH_BUS_DECLINED` report it. The step runs on the final
+   model, after the ranked groups are cells, and reads the document only, so resolving
+   `model.document` reproduces it. No geometry until tickets 83 and 84 (`docs/design/mesh-bus.md`,
+   Q105, Q106).
 4. **Bundle membership** — ≥ 2 routed links between the same node pair (ports may differ) that
    leave each shared node on one authored side; links whose authored sides differ at a shared node
    form separate cohorts, and a cohort of one stays routed with a `BUNDLE_MIXED_SIDES` warning
