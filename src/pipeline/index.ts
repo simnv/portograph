@@ -206,10 +206,13 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
         message: `The side hint ${side.get(key)} on ${portName(key)} was refused: ${reason}.`, ...(link === undefined ? {} : { owners: [{ kind: 'link' as const, id: link }] }) });
     }
   };
-  const routeModel = async (m: LayoutModel, trial?: true): Promise<LayoutModel> => {
+  // `publish` routes the model the command publishes. Every other route is a judged model, and keeps the ordinary overlay rule, so the
+  // opt-in `layout.overlayOverBodies` (ticket 152) changes no side-round decision.
+  const routeModel = async (m: LayoutModel, trial?: true, publish?: true): Promise<LayoutModel> => {
     if (budget.remainingMs() <= 0) throw new CommandDeadlineError(0, 'route');
     const started = now();
     const routed = await timed(trial === undefined ? 'route' : 'route-trial', () => route(m, {
+      ...(publish === undefined ? { ordinaryOverlay: true } : {}),
       ...(options.createRouteAttempt ? { createAttempt: options.createRouteAttempt } : {}),
       ...(clock ? { clock } : {}),
       ...(options.strictCheckpoints ? { strictCheckpoints: true } : {}),
@@ -324,7 +327,8 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
         owners: pair.split('|').map(id => ({ kind: 'link' as const, id })) });
     }
   }
-  const published = routedFinal ?? routedBase ?? await routeModel(model);
+  // With the setting on, the kept model is routed once more to publish: a judged route carries the ordinary overlay paths.
+  const published = model.document.layout?.overlayOverBodies === true ? await routeModel(model, undefined, true) : routedFinal ?? routedBase ?? await routeModel(model);
   // A hinted link of a kept trial has no more bends than on the baseline (the judgment tested it); this names a break of that rule.
   if (routedFinal !== undefined && routedBase !== undefined) {
     const before = routedBends(routedBase), after = routedBends(routedFinal);

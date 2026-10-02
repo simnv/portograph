@@ -371,6 +371,64 @@ export function chordPoints(one: OverlayEnd, two: OverlayEnd, blockers: ShapeQue
 }
 
 /**
+ * The node bodies a link's straight chord passes over, under the opt-in `layout.overlayOverBodies` (ticket 152); `undefined` when the
+ * link is drawn by the ordinary rule. The setting is off by default and then this is always `undefined`, so the default output is unchanged.
+ *
+ * It answers only for a link the ordinary rule bends, whose straight chord is blocked **by node bodies alone**: the chord must leave
+ * both ports outward, must meet no foreign pill, and must meet neither of its own two end bodies. Only bodies of other nodes are
+ * passed over. A title band and a frame edge are no overlay blocker at all (an overlay chord lies under a title), so they never
+ * make a link qualify or fail to.
+ *
+ * Only stage 8 reads this (through `publishedOverlayPath`). Placement and every other reader of `overlayPath` keep the ordinary rule.
+ */
+export function overlayOverBodies(model: LayoutModel, link: LayoutLink, blockers: OverlayBlockers): string[] | undefined {
+  if (model.document.layout?.overlayOverBodies !== true || link.meshBus !== undefined || !link.attachments) return undefined;
+  const read = chordEnds(model, link);
+  if (!read) return undefined;
+  const one = read.head, two = read.tail;
+  // Already straight by the ordinary rule: nothing is passed over.
+  if (straightBetween(one, two, blockers) !== undefined) return undefined;
+  const own = [link.attachments.from.node, link.attachments.to.node];
+  const ownBodies = own.map(id => model.nodes[id]?.bounds);
+  const same = (a: Rect, b: Rect | undefined): boolean => b !== undefined && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+  // The ordinary test, minus every body that is not one of the link's own two.
+  const pillsAndOwn: ShapeQuery = { some: (window, test) => blockers.some(window, box => (box.pill === true || ownBodies.some(body => same(box, body))) && test(box)) };
+  if (straightBetween(one, two, pillsAndOwn) === undefined) return undefined;
+  const passed = bodiesUnder(model, link, [one.face, two.face]);
+  return passed.length ? passed : undefined;
+}
+
+/** The bodies of other nodes that the straight segment between two points crosses. */
+function bodiesUnder(model: LayoutModel, link: LayoutLink, [from, to]: [Point, Point]): string[] {
+  const own = [link.attachments!.from.node, link.attachments!.to.node];
+  return Object.entries(model.nodes).filter(([id, node]) => !own.includes(id) && node.bounds !== undefined
+    && crosses(from, to, node.bounds)).map(([id]) => id);
+}
+
+/**
+ * The bodies a **published** overlay path was drawn over (ticket 152): a one-segment path that crosses the body of a node that is not
+ * one of the link's ends. Read from the path itself, so the diagnostic restates the decision of `publishedOverlayPath` rather than making it again.
+ */
+export function bodiesPassedOver(model: LayoutModel, link: LayoutLink, path: LayoutPath): string[] {
+  if (path.segments.length !== 1 || !link.attachments) return [];
+  const { from, to } = path.segments[0]!;
+  return bodiesUnder(model, link, [from, to]);
+}
+
+/**
+ * The overlay path stage 8 publishes: `overlayPath`, except that under `layout.overlayOverBodies` a link blocked by node bodies alone is
+ * the one straight segment from face to face. Placement never calls this; it reads `overlayPath`.
+ */
+export function publishedOverlayPath(model: LayoutModel, link: LayoutLink, blockers?: OverlayBlockers): LayoutPath {
+  const ordinary = overlayPath(model, link, blockers);
+  if (model.document.layout?.overlayOverBodies !== true) return ordinary;
+  if (overlayOverBodies(model, link, blockers ?? overlayBlockers(model)) === undefined) return ordinary;
+  const read = chordEnds(model, link)!;
+  const segment = { from: { ...read.head.face }, to: { ...read.tail.face }, owner: { ...link.owner } };
+  return { ...ordinary, segments: [segment] };
+}
+
+/**
  * The polyline an overlay link draws: **one straight segment from one pill face to the other**, at
  * whatever angle that is — unless a node body or a pill stands on it, and then the orthogonal
  * derivation of `between` answers instead, leaving each face outward by `OVERLAY_PILL_CLEARANCE`

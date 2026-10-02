@@ -8,7 +8,7 @@ import { EPS, horizontal, length, retracingRuns, samePoint, segmentRect, vertica
 import { outward } from '../score/model.js';
 import { effectiveLayer, reversedRuns } from './plan.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
-import { overlayBlockers, overlayEndpoint, overlayPath, type OverlayBlockers } from '../layout/overlay-paths.js';
+import { overlayBlockers, overlayEndpoint, overlayPath, publishedOverlayPath, type OverlayBlockers } from '../layout/overlay-paths.js';
 import { ownedLanes, stubCandidate } from './paths.js';
 import { MIN_STEM, reservations, TOLERANCE, shrink } from './reservations.js';
 
@@ -135,7 +135,8 @@ export function validateRoutedPaths(model: LayoutModel, requireComplete = false)
       // Ownership, the absence of a lane or `barCross` claim, and the orthogonal shape all follow
       // from the comparison, and a hand-written layout JSON cannot state a line of its own.
       blockers ??= overlayBlockers(model);
-      if (!equal(path.segments, overlayPath(model, link, blockers).segments)) {
+      // Either the ordinary path or, under `layout.overlayOverBodies`, the one stage 8 publishes (a judged trial route keeps the ordinary one).
+      if (!equal(path.segments, overlayPath(model, link, blockers).segments) && !equal(path.segments, publishedOverlayPath(model, link, blockers).segments)) {
         throw new Error(`Overlay path on ${link.id} is not the one its ports and their boxes state`);
       }
       // The same rule every other path answers to: a route that walks back along a run it already

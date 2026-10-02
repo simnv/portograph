@@ -242,6 +242,9 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
     const a = bands[i - 1]!, b = bands[i]!;
     if (a.tier === b.tier || bottom(a.bounds!) > b.bounds!.y + EPS) fail('G8', 'tier-order', [String(a.tier), String(b.tier)], 'Tier bands must be ordered and non-overlapping');
   }
+  // G2 `through-node` and G6 `segment-node-clearance` read `routed` only. An overlay path is exempt from them by design, so an
+  // overlay link drawn straight over a node body under the opt-in `layout.overlayOverBodies` (ticket 152, `OVERLAY_OVER_BODY`)
+  // fails no gate: no gate forbids an overlay line through a body, and none needs an exception for it.
   const crossedBars = new Set<string>();
   for (const [index, s] of routed.entries()) {
     const box = segmentSpans[index]!, reach = 10 + (s.stroke + widestNodeStroke) / 2 + 1;
