@@ -1,0 +1,38 @@
+# Expected: A hub face with four ports orders them by where their links go, and its runs nest (ranked-groups ticket 153). Two hubs stand
+# on tier 1; four locations stand on tier 2, two to each side of the hubs, each a pair of routers. Each hub links to one router of every
+# location, so four routed links leave the bottom face of a hub, two turning left and two turning right. On each face the link that turns
+# furthest leaves from the port nearest to that side and takes the run nearest to the face: no link of a hub crosses another link of the
+# same hub, and no stub of the face crosses a run of the same face.
+# Test-only input owned by ranked-groups ticket 153; test/pipeline/hub-face-order.test.ts reads the layout.
+portograph: 2
+profile: network
+groups:
+  hubs: { tier: 1, label: Hubs }
+  west-far: { tier: 2, label: West far }
+  west-near: { tier: 2, label: West near }
+  east-near: { tier: 2, label: East near }
+  east-far: { tier: 2, label: East far }
+nodes:
+  hub-a: { group: hubs, class: provider, label: Hub A }
+  hub-b: { group: hubs, class: provider, label: Hub B }
+  wf-1: { group: west-far, class: router, label: WF 1 }
+  wf-2: { group: west-far, class: router, label: WF 2 }
+  wn-1: { group: west-near, class: router, label: WN 1 }
+  wn-2: { group: west-near, class: router, label: WN 2 }
+  en-1: { group: east-near, class: router, label: EN 1 }
+  en-2: { group: east-near, class: router, label: EN 2 }
+  ef-1: { group: east-far, class: router, label: EF 1 }
+  ef-2: { group: east-far, class: router, label: EF 2 }
+links:
+  - [wf-1, wf-2]
+  - [wn-1, wn-2]
+  - [en-1, en-2]
+  - [ef-1, ef-2]
+  - [wf-1, hub-a, { class: dashed }]
+  - [wn-1, hub-a, { class: dashed }]
+  - [en-1, hub-a, { class: dashed }]
+  - [ef-1, hub-a, { class: dashed }]
+  - [wf-2, hub-b, { class: dashed }]
+  - [wn-2, hub-b, { class: dashed }]
+  - [en-2, hub-b, { class: dashed }]
+  - [ef-2, hub-b, { class: dashed }]
