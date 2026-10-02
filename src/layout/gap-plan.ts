@@ -539,9 +539,14 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
   const rows = new Map<string, number>(), order: Unit[] = [];
   const need = new Map(units.map(unit => [unit.id, staticNeed(unit)])), lbs = new Map(units.map(unit => [unit.id, lbOf(unit)]));
   const rank = (unit: Unit): number => unit.part.order * 4 + unit.half;
+  // Two whole parts of two ports of different nodes that run the same way and interleave nest their spans and cross once in either order. Of equal need the one that ends
+  // further out goes first, so it takes the row nearer the face: its run crosses the stubs next to the hubs, not the drop of the part it spans (ticket 153).
+  const furtherEnd = (a: Unit, b: Unit): number => a.half === 0 && b.half === 0 && a.part.upper.kind === 'tip' && b.part.upper.kind === 'tip'
+    && a.part.upper.source.split('|')[0] !== b.part.upper.source.split('|')[0] && Math.sign(a.xl - a.xu) === Math.sign(b.xl - b.xu) && interleave(a, b)
+    ? Math.sign((b.xl - a.xl) * Math.sign(a.xl - a.xu)) : 0;
   const spread = (a: Unit, b: Unit): number => Math.max(a.lo, b.lo) - Math.min(a.hi, b.hi);
   while (ready.length) {
-    ready.sort((a, b) => need.get(b.id)! - need.get(a.id)! || lbs.get(a.id)! - lbs.get(b.id)! || rank(a) - rank(b));
+    ready.sort((a, b) => need.get(b.id)! - need.get(a.id)! || furtherEnd(a, b) || lbs.get(a.id)! - lbs.get(b.id)! || rank(a) - rank(b));
     const unit = ready.shift()!;
     let y = lbs.get(unit.id)!;
     for (const earlier of order) {

@@ -199,6 +199,8 @@ need*(part) = max( own lower term  (Section 3),
                    k + depth(d)   for every drop d inside its span, 2k where d has a jog )
 ```
 
+Of equal need, a part that interleaves another, from a port of a different node, and ends further out goes first (ticket 153): the pair crosses once in either order, and the run that ends further out takes the row nearer the face, so the crossing lies on the stubs next to the hubs and not on a drop at the far ends.
+
 Taking the most demanding part first is earliest-deadline-first. It is a **heuristic**: it keeps
 the gap short on the shapes below, optimality is not claimed, and `H` (Section 3) can depend on
 the tie-breaks. `H` itself is computed afterwards from the crossings the packed order really has,

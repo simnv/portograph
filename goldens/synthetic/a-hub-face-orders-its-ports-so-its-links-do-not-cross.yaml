@@ -1,38 +1,32 @@
-# Expected: A hub face with four ports orders them by where their links go, and its runs nest (ranked-groups ticket 153). Two hubs stand
-# on tier 1; four locations stand on tier 2, two to each side of the hubs, each a pair of routers. Each hub links to one router of every
-# location, so four routed links leave the bottom face of a hub, two turning left and two turning right. On each face the link that turns
-# furthest leaves from the port nearest to that side and takes the run nearest to the face: no link of a hub crosses another link of the
-# same hub, and no stub of the face crosses a run of the same face.
+# Expected: The runs of two hubs side by side share one tier gap and nest by their far ends (ranked-groups ticket 153). Two hubs stand on
+# tier 1, each linked to one router of each of three locations on tier 2 (the first hub to the first routers, the second hub to the
+# second). Of two runs that go the same way and interleave, the one that ends further out takes the row nearer the hubs, so no drop at
+# a far end crosses a run that goes the same way. The plan itself is pinned on hand-built parts in test/layout/gap-plan.test.ts; the engine
+# does not always place a pair of hubs so that their runs interleave, so this layout is a guard against a regression of the nesting.
 # Test-only input owned by ranked-groups ticket 153; test/pipeline/hub-face-order.test.ts reads the layout.
 portograph: 2
 profile: network
 groups:
   hubs: { tier: 1, label: Hubs }
-  west-far: { tier: 2, label: West far }
-  west-near: { tier: 2, label: West near }
-  east-near: { tier: 2, label: East near }
-  east-far: { tier: 2, label: East far }
+  site-a: { tier: 2, label: Site A }
+  site-b: { tier: 2, label: Site B }
+  site-c: { tier: 2, label: Site C }
 nodes:
   hub-a: { group: hubs, class: provider, label: Hub A }
   hub-b: { group: hubs, class: provider, label: Hub B }
-  wf-1: { group: west-far, class: router, label: WF 1 }
-  wf-2: { group: west-far, class: router, label: WF 2 }
-  wn-1: { group: west-near, class: router, label: WN 1 }
-  wn-2: { group: west-near, class: router, label: WN 2 }
-  en-1: { group: east-near, class: router, label: EN 1 }
-  en-2: { group: east-near, class: router, label: EN 2 }
-  ef-1: { group: east-far, class: router, label: EF 1 }
-  ef-2: { group: east-far, class: router, label: EF 2 }
+  a-1: { group: site-a, class: router, label: A 1 }
+  a-2: { group: site-a, class: router, label: A 2 }
+  b-1: { group: site-b, class: router, label: B 1 }
+  b-2: { group: site-b, class: router, label: B 2 }
+  c-1: { group: site-c, class: router, label: C 1 }
+  c-2: { group: site-c, class: router, label: C 2 }
 links:
-  - [wf-1, wf-2]
-  - [wn-1, wn-2]
-  - [en-1, en-2]
-  - [ef-1, ef-2]
-  - [wf-1, hub-a, { class: dashed }]
-  - [wn-1, hub-a, { class: dashed }]
-  - [en-1, hub-a, { class: dashed }]
-  - [ef-1, hub-a, { class: dashed }]
-  - [wf-2, hub-b, { class: dashed }]
-  - [wn-2, hub-b, { class: dashed }]
-  - [en-2, hub-b, { class: dashed }]
-  - [ef-2, hub-b, { class: dashed }]
+  - [a-1, a-2]
+  - [b-1, b-2]
+  - [c-1, c-2]
+  - [a-2, hub-a, { class: dashed }]
+  - [b-2, hub-a, { class: dashed }]
+  - [c-2, hub-a, { class: dashed }]
+  - [a-1, hub-b, { class: dashed }]
+  - [b-1, hub-b, { class: dashed }]
+  - [c-1, hub-b, { class: dashed }]
