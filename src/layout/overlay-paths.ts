@@ -378,14 +378,14 @@ export function chordPoints(one: OverlayEnd, two: OverlayEnd, blockers: ShapeQue
  * both ports outward, must meet no foreign pill, and must meet neither of its own two end bodies. Only bodies of other nodes are
  * passed over. A title band and a frame edge are no overlay blocker at all (an overlay chord lies under a title), so they never
  * make a link qualify or fail to.
+ *
+ * Only stage 8 reads this (through `publishedOverlayPath`). Placement and every other reader of `overlayPath` keep the ordinary rule.
  */
-export function overlayOverBodies(model: LayoutModel, link: LayoutLink, blockers: OverlayBlockers,
-  ends?: { one: OverlayEnd; two: OverlayEnd }): string[] | undefined {
+export function overlayOverBodies(model: LayoutModel, link: LayoutLink, blockers: OverlayBlockers): string[] | undefined {
   if (model.document.layout?.overlayOverBodies !== true || link.meshBus !== undefined || !link.attachments) return undefined;
-  const read = ends ? undefined : chordEnds(model, link);
-  const pair = ends ?? (read && { one: read.head, two: read.tail });
-  if (!pair) return undefined;
-  const { one, two } = pair;
+  const read = chordEnds(model, link);
+  if (!read) return undefined;
+  const one = read.head, two = read.tail;
   // Already straight by the ordinary rule: nothing is passed over.
   if (straightBetween(one, two, blockers) !== undefined) return undefined;
   const own = [link.attachments.from.node, link.attachments.to.node];
@@ -394,9 +394,38 @@ export function overlayOverBodies(model: LayoutModel, link: LayoutLink, blockers
   // The ordinary test, minus every body that is not one of the link's own two.
   const pillsAndOwn: ShapeQuery = { some: (window, test) => blockers.some(window, box => (box.pill === true || ownBodies.some(body => same(box, body))) && test(box)) };
   if (straightBetween(one, two, pillsAndOwn) === undefined) return undefined;
-  const passed = Object.entries(model.nodes).filter(([id, node]) => !own.includes(id) && node.bounds !== undefined
-    && crosses(one.face, two.face, node.bounds)).map(([id]) => id);
+  const passed = bodiesUnder(model, link, [one.face, two.face]);
   return passed.length ? passed : undefined;
+}
+
+/** The bodies of other nodes that the straight segment between two points crosses. */
+function bodiesUnder(model: LayoutModel, link: LayoutLink, [from, to]: [Point, Point]): string[] {
+  const own = [link.attachments!.from.node, link.attachments!.to.node];
+  return Object.entries(model.nodes).filter(([id, node]) => !own.includes(id) && node.bounds !== undefined
+    && crosses(from, to, node.bounds)).map(([id]) => id);
+}
+
+/**
+ * The bodies a **published** overlay path was drawn over (ticket 152): a one-segment path that crosses the body of a node that is not
+ * one of the link's ends. Read from the path itself, so the diagnostic restates the decision of `publishedOverlayPath` rather than making it again.
+ */
+export function bodiesPassedOver(model: LayoutModel, link: LayoutLink, path: LayoutPath): string[] {
+  if (path.segments.length !== 1 || !link.attachments) return [];
+  const { from, to } = path.segments[0]!;
+  return bodiesUnder(model, link, [from, to]);
+}
+
+/**
+ * The overlay path stage 8 publishes: `overlayPath`, except that under `layout.overlayOverBodies` a link blocked by node bodies alone is
+ * the one straight segment from face to face. Placement never calls this; it reads `overlayPath`.
+ */
+export function publishedOverlayPath(model: LayoutModel, link: LayoutLink, blockers?: OverlayBlockers): LayoutPath {
+  const ordinary = overlayPath(model, link, blockers);
+  if (model.document.layout?.overlayOverBodies !== true) return ordinary;
+  if (overlayOverBodies(model, link, blockers ?? overlayBlockers(model)) === undefined) return ordinary;
+  const read = chordEnds(model, link)!;
+  const segment = { from: { ...read.head.face }, to: { ...read.tail.face }, owner: { ...link.owner } };
+  return { ...ordinary, segments: [segment] };
 }
 
 /**
@@ -449,8 +478,7 @@ export function overlayPath(model: LayoutModel, link: LayoutLink, blockers?: Ove
   // and `route/validate` read `overlayEndpoint`, which is this same pair.
   const ends = [{ end: one, port: from! }, { end: two, port: to! }]
     .map(({ end, port }) => end ? { ...end.face } : { ...port.anchor! });
-  const over = one && two && shapes && overlayOverBodies(model, link, shapes, { one, two }) !== undefined;
-  const built = one && two && shapes ? (over ? [{ ...one.face }, { ...two.face }] : chordPoints(one, two, shapes)) : ends;
+  const built = one && two && shapes ? chordPoints(one, two, shapes) : ends;
   // Two pill faces that meet exactly leave the tooClose branch nothing between them and `compact`
   // drops the repeat, so the one point is restated as the degenerate segment it is: a published
   // path is never empty, and both ends of this one are still the face the gate names.

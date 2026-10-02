@@ -2,7 +2,7 @@ import type { Point } from '../model/geometry.js';
 import type { Lane, LayoutLink, LayoutModel, LayoutPath, PathSegment } from '../model/layout.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { findPort } from '../layout/row-paths.js';
-import { overlayBlockers, overlayPath } from '../layout/overlay-paths.js';
+import { overlayBlockers, overlayPath, publishedOverlayPath } from '../layout/overlay-paths.js';
 import { stemReach } from '../layout/bands.js';
 import { equal } from '../model/json-equality.js';
 import { outward } from '../score/model.js';
@@ -283,7 +283,7 @@ export function tryStitch(model: LayoutModel, plan: LinkPlan, routes: Map<string
  * already judged after their batch, and any other link is judged here.
  */
 export function stitchPaths(model: LayoutModel, plan: RoutePlan, routes: Map<string, Point[]>,
-  stitched?: ReadonlyMap<string, Stitched>): { paths: RoutedLinkPath[]; rejections: RouteRejection[] } {
+  stitched?: ReadonlyMap<string, Stitched>, ordinaryOverlay = false): { paths: RoutedLinkPath[]; rejections: RouteRejection[] } {
   const rejections: RouteRejection[] = [];
   const result: RoutedLinkPath[] = [];
   for (const item of plan.links) {
@@ -295,7 +295,7 @@ export function stitchPaths(model: LayoutModel, plan: RoutePlan, routes: Map<str
   // so stage 8 only publishes what `src/layout/overlay-paths.ts` states. One index serves them all.
   const blockers = plan.overlay.length ? overlayBlockers(model) : undefined;
   for (const id of plan.overlay) {
-    result.push({ link: id, path: overlayPath(model, model.links.find(link => link.id === id)!, blockers) });
+    result.push({ link: id, path: (ordinaryOverlay ? overlayPath : publishedOverlayPath)(model, model.links.find(link => link.id === id)!, blockers) });
   }
   return { paths: result, rejections };
 }

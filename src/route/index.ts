@@ -2,7 +2,7 @@ import type { Point } from '../model/geometry.js';
 import type { LayoutModel } from '../model/layout.js';
 import { tierGapPlans } from '../layout/gap-plan.js';
 import { unfitGaps, unfitMessage } from '../layout/gap-room.js';
-import { overlayBlockers, overlayOverBodies } from '../layout/overlay-paths.js';
+import { bodiesPassedOver } from '../layout/overlay-paths.js';
 import { withLayoutMutation } from '../layout/mutation.js';
 import { completedRouteCovers, type RouteObstacle } from './obstacles.js';
 import { batchRequest, completedCrossingObstacles, pendingStemObstacles, planRoute, type RoutePlan } from './plan.js';
@@ -37,6 +37,12 @@ export interface RouteOptions {
    * link (ticket 24). Tests that assert the router's reservations set it; a pipeline run does not.
    */
   strictCheckpoints?: boolean;
+  /**
+   * Publish every overlay path by the ordinary rule even when `layout.overlayOverBodies` is on, and state no `OVERLAY_OVER_BODY` (ticket 152).
+   * The pipeline routes its judged models this way, so the side rounds decide exactly as they do with the setting off; only the model it
+   * publishes is routed without this.
+   */
+  ordinaryOverlay?: boolean;
 }
 
 /**
@@ -112,7 +118,7 @@ export async function route(model: LayoutModel, options: RouteOptions = {}): Pro
   // so a diagram with no batch never initializes it.
   const answer: RouterAnswer = plan.batches.length ? await runRouter(model, plan, options)
     : { routes: new Map<string, Point[]>(), ...(options.strictCheckpoints ? {} : { stitched: new Map<string, Stitched>() }) };
-  const { paths, rejections } = stitchPaths(model, plan, answer.routes, answer.stitched);
+  const { paths, rejections } = stitchPaths(model, plan, answer.routes, answer.stitched, options.ordinaryOverlay === true);
   return withLayoutMutation(model, 'route', draft => {
     for (const { link, path } of paths) draft.links.find(item => item.id === link)!.path = path;
     // A removed link keeps no path and is listed; one warning names the link and why its route was unusable.
@@ -129,13 +135,12 @@ export async function route(model: LayoutModel, options: RouteOptions = {}): Pro
       if (!named) draft.diagnostics.push({ stage: 'final-geometry', severity: 'warning', code: 'TIER_GAP_PART_UNFIT',
         message: unfitMessage(item.below, item.growth), owners: [] });
     }
-    // Opt-in `layout.overlayOverBodies` (ticket 152): one info line per overlay link drawn straight over node bodies.
-    if (model.document.layout?.overlayOverBodies === true && plan.overlay.length) {
-      const blockers = overlayBlockers(model);
+    // Opt-in `layout.overlayOverBodies` (ticket 152): one info line per overlay link whose published path passes over node bodies.
+    if (model.document.layout?.overlayOverBodies === true && options.ordinaryOverlay !== true) {
       for (const id of plan.overlay) {
-        const link = model.links.find(item => item.id === id)!;
-        const bodies = overlayOverBodies(model, link, blockers);
-        if (bodies) draft.diagnostics.push({ stage: 'final-geometry', severity: 'info', code: 'OVERLAY_OVER_BODY',
+        const link = draft.links.find(item => item.id === id)!;
+        const bodies = link.path ? bodiesPassedOver(draft, link, link.path) : [];
+        if (bodies.length) draft.diagnostics.push({ stage: 'final-geometry', severity: 'info', code: 'OVERLAY_OVER_BODY',
           message: `${id} is drawn as a straight chord over the body of ${bodies.join(', ')} (layout.overlayOverBodies).`, owners: [{ ...link.owner }] });
       }
     }

@@ -380,7 +380,7 @@ export function parseWithDiagnostics(text: string, options: ParseOptions = {}): 
       else if (typeof value !== 'boolean') v.report('INVALID_TYPE', `$.layout.${key}`, 'Expected a boolean');
       else settings.overlayOverBodies = value;
     }
-    doc.layout = settings;
+    if (Object.keys(settings).length) doc.layout = settings;
   }
   const groupInput = v.map(root.get('groups'), '$.groups');
   const nodeInput = v.map(root.get('nodes'), '$.nodes');

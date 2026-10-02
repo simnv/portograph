@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { layout, parse, score } from '../../src/index.js';
+import { drawio, layout, parse, score } from '../../src/index.js';
 import type { LayoutModel, Point } from '../../src/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -40,12 +40,65 @@ describe('layout.overlayOverBodies (ticket 152)', () => {
     expect(Math.min(from.x, to.x)).toBeLessThan(body.x);
     expect(Math.max(from.x, to.x)).toBeGreaterThan(body.x + body.width);
     expect(inside(from) || inside(to)).toBe(false);
+    // The segment crosses the middle body in y and starts and ends on the port faces (a right and a left face).
+    expect(from.y).toBeGreaterThan(body.y);
+    expect(from.y).toBeLessThan(body.y + body.height);
+    expect(to.y).toBeGreaterThan(body.y);
+    expect(to.y).toBeLessThan(body.y + body.height);
+    const a = model.nodes.a!.bounds!, c = model.nodes.c!.bounds!;
+    const [left, right] = from.x < to.x ? [from, to] : [to, from];
+    // The faces stand just outside the two end bodies (the pill sticks out of the body), and not past the middle one.
+    expect(left.x).toBeGreaterThanOrEqual(a.x + a.width);
+    expect(left.x).toBeLessThan(body.x);
+    expect(right.x).toBeLessThanOrEqual(c.x);
+    expect(right.x).toBeGreaterThan(body.x + body.width);
     const found = model.diagnostics.filter(item => item.code === 'OVERLAY_OVER_BODY');
     expect(found).toHaveLength(1);
     expect(found[0]!.severity).toBe('info');
     expect(found[0]!.message).toContain(overlay(model).id);
     expect(found[0]!.message).toContain(' m ');
     expect(score(model).snapshot.passed).toBe(true);
+  }, 60000);
+
+  const BASE = read(MIDDLE);
+  const withMiddlePort = BASE.replace('  m: { group: row, class: server, label: m }', '  m: { group: row, class: server, label: m, ports: [{ name: q, side: left }] }');
+  const awayFromEachOther = BASE.replace('{ name: p, side: right }', '{ name: p, side: left }');
+
+  it.each([
+    ['a foreign pill stands on the chord', withMiddlePort],
+    ['an own port faces away, so its own end body stands on the chord', awayFromEachOther],
+  ])('keeps the link bent and says nothing when %s', async (_name, yaml) => {
+    expect(yaml).not.toBe(BASE);
+    const model = await run(yaml + ON);
+    expect(segments(model)).toBeGreaterThan(1);
+    expect(model.diagnostics.some(item => item.code === 'OVERLAY_OVER_BODY')).toBe(false);
+  }, 60000);
+
+  it('does not publish an empty layout object', () => {
+    expect(parse(`${read(MIDDLE)}\nlayout: {}\n`).layout).toBeUndefined();
+  });
+
+  it.each([
+    'an-overlay-turns-once-into-a-lateral-side',
+    'overlay-links-reorder-an-indifferent-tier',
+    'an-overlay-reorder-is-refused-when-a-link-would-bend',
+    MIDDLE.slice('synthetic/'.length),
+  ])('places %s alike with the setting on and off (placement does not know it)', async name => {
+    const path = `synthetic/${name}`;
+    const off = await run(read(path)), on = await run(read(path) + ON);
+    expect(on.nodes).toEqual(off.nodes);
+    expect(on.groups).toEqual(off.groups);
+  }, 120000);
+
+  it('pins the draw.io export of an over-body link: one straight edge, drawn over the body (draw.io has no mask)', async () => {
+    const model = await run(read(MIDDLE) + ON);
+    const xml = drawio(model);
+    const id = overlay(model).id;
+    const cell = xml.split('<mxCell').find(part => part.includes(`pg-link~${id}"`));
+    expect(cell).toBeDefined();
+    expect(cell).toContain('edge="1"');
+    expect(cell).not.toContain('<mxPoint as="points"');
+    expect(cell).not.toMatch(/as="points"/);
   }, 60000);
 
   it('refuses a value that is not a boolean', () => {
