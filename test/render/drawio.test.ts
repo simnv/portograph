@@ -1312,9 +1312,9 @@ links:
     expect(cell.style['jettySize']).toBe('0');
     expect(cell.points).toEqual(points.slice(1, -1)
       .map(point => ({ x: point.x - canvas.x, y: point.y - canvas.y })));
-    // A port with no pill has no shape to hang its mark on, so that one mark stays on the layer.
+    // A port with no pill hangs its mark on its node (issue 03), so the node carries it.
     const marks = cells(drawio(model));
-    expect(marks.get(id('overlayMark', link.id, 'from'))!.parent).toBe(id('layer', 'overlay'));
+    expect(marks.get(id('overlayMark', link.id, 'from'))!.parent).toBe(id('node', 'b'));
     expect(marks.get(id('overlayMark', link.id, 'to'))!.parent)
       .toBe(id('port', 'c', 'lo', '1'));
   }, 60000);
@@ -1637,6 +1637,61 @@ describe('signal links', () => {
       expect(style['strokeColor']).toContain(signal.strokes.light);
       expect(style['strokeColor']).not.toContain(NETWORK_THEME.light.overlay.stroke);
       expect(style['opacity']).toBeDefined();
+    }
+  }, 60000);
+});
+
+describe('link ends and nested groups move with their owner (issue 03)', () => {
+  const absolute = (all: Map<string, Cell>, cellId: string): { x: number; y: number } => {
+    const cell = all.get(cellId)!, at = box(cell);
+    if (cell.parent === undefined || !all.get(cell.parent)?.vertex) return { x: at.x, y: at.y };
+    const parent = absolute(all, cell.parent);
+    return { x: at.x + parent.x, y: at.y + parent.y };
+  };
+  const ancestors = (all: Map<string, Cell>, cellId: string): string[] => {
+    const found: string[] = [];
+    for (let at = all.get(cellId)?.parent; at !== undefined && all.get(at)?.vertex; at = all.get(at)!.parent) found.push(at);
+    return found;
+  };
+
+  it('hangs each frame cell on its parent frame cell, in the parent\'s terms', async () => {
+    const model = await pipeline(fixture('drawio-nested-groups'));
+    const all = cells(drawio(model)), canvas = model.canvas!;
+    const nested = model.frames!.filter(frame => frame.parent !== undefined);
+    expect(nested.length).toBeGreaterThanOrEqual(2);
+    for (const frame of model.frames!) {
+      const cell = all.get(id('group', frame.id))!;
+      expect(cell.parent).toBe(frame.parent === undefined ? id('layer', 'diagram') : id('group', frame.parent));
+      // Whatever the parent, the cell stands where the model put it.
+      const at = absolute(all, cell.id);
+      expect(at.x).toBeCloseTo(frame.box.x - canvas.x, 6);
+      expect(at.y).toBeCloseTo(frame.box.y - canvas.y, 6);
+    }
+    // Every ancestor chain is the model's: moving a parent moves everything below it.
+    for (const frame of nested) expect(ancestors(all, id('group', frame.id))).toContain(id('group', frame.parent!));
+  }, 60000);
+
+  it('hangs a mark on a port that draws no pill on its node, and ends the connector on that node', async () => {
+    const model = await pipeline(fixture('drawio-nested-groups'));
+    const all = cells(drawio(model)), canvas = model.canvas!;
+    const overlays = model.links.filter(item => effectiveLayer(item) === 'overlay');
+    expect(overlays).toHaveLength(2);
+    for (const link of overlays) {
+      const edge = all.get(id('link', link.id))!;
+      const ends = [['from', edge.source, link.path!.segments[0]!.from], ['to', edge.target, link.path!.segments.at(-1)!.to]] as const;
+      for (const [end, terminal, point] of ends) {
+        const mark = all.get(id('overlayMark', link.id, end))!;
+        expect(terminal).toMatch(/^pg-node~/);
+        expect(mark.parent).toBe(terminal);
+        // Relative to the node, and on the point the model gave: the shape carries it.
+        const at = absolute(all, mark.id);
+        expect(at.x + OVERLAY_ENDPOINT_RADIUS).toBeCloseTo(point.x - canvas.x, 6);
+        expect(at.y + OVERLAY_ENDPOINT_RADIUS).toBeCloseTo(point.y - canvas.y, 6);
+      }
+    }
+    // No mark of any kind is left loose on a layer where the model holds its node.
+    for (const cell of all.values()) {
+      if (cell.id.startsWith('pg-overlayMark~') || cell.id.startsWith('pg-busMark~')) expect(all.get(cell.parent!)!.vertex).toBe(true);
     }
   }, 60000);
 });

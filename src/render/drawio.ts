@@ -645,6 +645,12 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     ...[...(layout.frames ?? [])].sort((a, b) => frameDepth(a) - frameDepth(b))
       .map(frame => ({ id: frame.id, bounds: frame.box, frame: true })),
   ];
+  // A frame nests as the model nests it: a zone in a location, a location in a continent. Its cell is a
+  // child of its parent frame's cell, stated from that cell's top-left, so a parent moved by hand carries
+  // its children; a group that no frame holds stays on the diagram layer. `startSize` shifts nothing here.
+  const frameBox = new Map((layout.frames ?? []).map(frame => [frame.id, shiftRect(frame.box)]));
+  const frameParent = new Map((layout.frames ?? []).filter(frame => frame.parent !== undefined && frameBox.has(frame.parent))
+    .map(frame => [frame.id, frame.parent!]));
   const groupTitle = (owner: string): LayoutLabel | undefined =>
     layout.labels.find(label => label.role === 'group' && !label.omitted
       && label.owner.kind === 'group' && label.owner.id === owner);
@@ -688,7 +694,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         fillOpacity: Math.round(paint.group.fillOpacity * 100),
         verticalAlign: 'top', align: 'center',
       });
-    vertex(cellId('group', id), layerId('diagram'), style, box, swimlane ? htmlText(title!.lines ?? [title!.text]) : undefined);
+    const holder = frame ? frameParent.get(id) : undefined;
+    vertex(cellId('group', id), holder === undefined ? layerId('diagram') : cellId('group', holder), style,
+      holder === undefined ? box : relative(box, frameBox.get(holder)!), swimlane ? htmlText(title!.lines ?? [title!.text]) : undefined);
     if (title && !swimlane) {
       textCell(cellId('groupTitle', id), cellId('group', id), title,
         relative(shiftRect(title.bounds!), box), paint.group.text);
@@ -953,6 +961,19 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     };
   };
 
+  /**
+   * The shape a link-end mark belongs to: the port's pill, at its outward point, or for a port that
+   * draws no pill the port's node, with the mark staying where the model put it. Either way the mark is a
+   * child of that shape and stated from its top-left, so the shape carries it. Only a port whose node
+   * the model does not hold leaves the mark on the overlay layer.
+   */
+  const markHost = (ref: { node: string; name?: string; ordinal: number }): { cell: string; box: Rect; at?: Point } | undefined => {
+    const pill = pillEnd(ref);
+    if (pill) return pill;
+    const bounds = layout.nodes[ref.node]?.bounds;
+    return bounds ? { cell: cellId('node', ref.node), box: shiftRect(bounds) } : undefined;
+  };
+
   const edgeCell = (id: string, layer: string, style: string, points: readonly Point[],
     ends: { source?: string | undefined; target?: string | undefined;
       sourcePoint?: Point | undefined; targetPoint?: Point | undefined },
@@ -1102,8 +1123,8 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     const from = link.attachments?.from, to = link.attachments?.to;
     const head = from ? terminal('exit', from) : undefined;
     const tail = to ? terminal('entry', to) : undefined;
-    const headPill = overlay && from ? pillEnd(from) : undefined;
-    const tailPill = overlay && to ? pillEnd(to) : undefined;
+    const headHost = overlay && from ? markHost(from) : undefined;
+    const tailHost = overlay && to ? markHost(to) : undefined;
     // What draw.io draws is not what the model holds: a pinned end sits on the pill's outward edge,
     // not on the port anchor the waypoints start from. An edge label's coordinates are fractions of
     // that drawn polyline, so it is resolved here — the waypoints themselves are untouched.
@@ -1171,18 +1192,18 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     if (overlay) {
       // A mark that belongs to a shape is a child of that shape. The mark names the port the overlay
       // link ends on, so it is a child of that port's pill, stated from the pill's own top-left: a
-      // pill moved by hand carries its mark with it, where an absolute mark stayed behind. It keeps
-      // the overlay layer's paint; what it no longer keeps is the overlay layer's parent. A port
-      // that draws no pill has no shape to belong to, so its mark stays on the layer, at the anchor.
+      // pill moved by hand carries its mark with it, where an absolute mark stayed behind. A port
+      // that draws no pill is a child of its node, stated from the node's top-left (issue 03), at the
+      // point the model gives. It paints with its host now, not with the overlay layer.
       // On a pill the mark sits on the pill's outward point, where the connector really ends: the
       // anchor is the pill's centre, and a mark there covers the port's name (maintainer, 2026-09-15).
       const ends = link.path!.segments;
       const marks = [
-        { end: 'from', at: ends[0]!.from, host: headPill },
-        { end: 'to', at: ends[ends.length - 1]!.to, host: tailPill },
+        { end: 'from', at: ends[0]!.from, host: headHost },
+        { end: 'to', at: ends[ends.length - 1]!.to, host: tailHost },
       ] as const;
       for (const mark of marks) {
-        const at = mark.host ? mark.host.at : shift(mark.at);
+        const at = mark.host?.at ?? shift(mark.at);
         const box = { x: at.x - OVERLAY_ENDPOINT_RADIUS, y: at.y - OVERLAY_ENDPOINT_RADIUS,
           width: 2 * OVERLAY_ENDPOINT_RADIUS, height: 2 * OVERLAY_ENDPOINT_RADIUS };
         vertex(cellId('overlayMark', link.id, mark.end), mark.host?.cell ?? layerId('overlay'),
@@ -1221,11 +1242,11 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     }
     for (const stub of bus.stubs) {
       const ref = bus.ports.find(port => port.node === stub.node)!;
-      const head = terminal('exit', ref), pill = pillEnd(ref);
+      const head = terminal('exit', ref), pill = markHost(ref);
       const points = [head?.at ?? shift(stub.from), shift(stub.to)];
       edgeCell(cellId('busStub', bus.id, stub.node), layerId('overlay'), stroke(true, head?.style ?? {}), points,
         { source: head?.cell, sourcePoint: head ? undefined : points[0], targetPoint: points[1] });
-      const at = pill ? pill.at : shift(stub.from);
+      const at = pill?.at ?? shift(stub.from);
       const box = { x: at.x - OVERLAY_ENDPOINT_RADIUS, y: at.y - OVERLAY_ENDPOINT_RADIUS,
         width: 2 * OVERLAY_ENDPOINT_RADIUS, height: 2 * OVERLAY_ENDPOINT_RADIUS };
       vertex(cellId('busMark', bus.id, stub.node), pill?.cell ?? layerId('overlay'),

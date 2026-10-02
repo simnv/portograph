@@ -1,0 +1,23 @@
+# Expected: A draw.io export in which a canton holds a location, a location holds a zone, and an overlay link
+# joins two nodes written bare (anonymous ports, so no pill). The exporter states each frame cell as a child of
+# its parent frame cell, from the parent's top-left, and each overlay mark as a child of its node, from the
+# node's top-left; moving a canton, a location or a node in draw.io then carries everything inside it.
+# Test-only input owned by drawio-export ticket 03; test/render/drawio.test.ts reads it through the whole pipeline.
+portograph: 2
+groups:
+  west: { label: West }
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, canton: west, label: Site }
+  site-zone: { parent: site, label: Zone }
+  clients: { tier: 2, canton: west, label: Clients }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  gw: { group: site, class: router, label: Gateway }
+  srv: { group: site-zone, class: server, label: Server }
+  cl: { group: clients, class: server, label: Client }
+links:
+  - [isp, gw]
+  - [gw, srv]
+  - [srv, cl]
+  - [gw, cl, { route: overlay }]
+  - [isp, srv, { route: overlay }]
