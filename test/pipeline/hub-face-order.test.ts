@@ -5,7 +5,10 @@ import { layout, parse } from '../../src/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
-/** Ranked-groups ticket 153: the runs of a tier gap nest by their far ends across the hubs (the plan itself is pinned in test/layout/gap-plan.test.ts). */
+/**
+ * Ranked-groups ticket 153. This fixture is a regression guard only: the engine places these hubs so that no two runs interleave, so it passes
+ * without the rule too. The plan tests in test/layout/gap-plan.test.ts carry the rule (nesting by far ends across the hubs of a gap).
+ */
 const FIXTURE = 'a-hub-face-orders-its-ports-so-its-links-do-not-cross';
 const text = readFileSync(new URL(`../../goldens/synthetic/${FIXTURE}.yaml`, import.meta.url), 'utf8');
 
@@ -16,9 +19,9 @@ const crosses = (a: Segment, b: Segment): boolean => side(a.from, a.to, b.from) 
   && side(b.from, b.to, a.from) * side(b.from, b.to, a.to) < -1e-9;
 const isHub = (node: string | undefined): boolean => node?.startsWith('hub-') === true;
 const hubLinks = (model: LayoutModel) => model.links.filter(link => isHub(link.from.node) || isHub(link.to.node));
-/** Each pair where the vertical at the router end of a link that has a run (the drop at the far end) crosses a run of another link that goes the same way (links that go opposite ways cross in either order). */
 /** The way a link with a run goes from its router: right, left or none. */
 const way = (link: LayoutModel['links'][number]): number => Math.sign(link.path!.segments[2]?.from.x === undefined ? 0 : link.path!.segments[1]!.to.x - link.path!.segments[0]!.from.x);
+/** Each pair where the drop at the router end of a link that has a run crosses a run of another link that goes the same way (links that go opposite ways cross in either order). */
 const dropCrossings = (model: LayoutModel): string[] => {
   const links = hubLinks(model), found: string[] = [];
   for (const link of links) {

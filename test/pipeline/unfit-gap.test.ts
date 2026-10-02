@@ -61,9 +61,7 @@ describe('a gap the plan does not fit is left to the router with a diagnostic (t
     growth.tiers = new Map([[3, 23]]);
     const published = await layout(parse(orthogonalLinks(fixture('a-band-holds-the-group-that-set-its-edge'))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     expect(published.diagnostics.filter(item => item.code === 'TIER_GAP_PART_UNFIT').map(item => item.message))
-      // The gap above tier 1 asks 7.50 px since ticket 153 (a part that ends further out takes the nearer row); 7f's growth, switched off here, settles it.
-      .toEqual(['the tier gap above tier 1 asks 7.50 px more than it has; its parts are left to the router.',
-        'the tier gap above tier 3 asks 164.00 px more than it has; its parts are left to the router.']);
+      .toEqual(['the tier gap above tier 3 asks 164.00 px more than it has; its parts are left to the router.']);
     expect(removalsAreNamed(published)).toBe(true);
     expect(published.links.filter(item => item.removed !== true).every(item => item.path !== undefined)).toBe(true);
   }, 120000);
