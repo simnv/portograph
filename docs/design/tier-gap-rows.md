@@ -199,6 +199,8 @@ need*(part) = max( own lower term  (Section 3),
                    k + depth(d)   for every drop d inside its span, 2k where d has a jog )
 ```
 
+Of equal need, two parts of the same way that interleave get a soft O1 edge when the hub end is the upper face (ticket 153). The pair crosses once in either order. The hub end is the end whose nodes carry more ports in the gap. With the hub on the upper face, the part that ends further out is above, so the crossing lies on the stubs next to the hubs and not on a drop at the far ends. A hub on the lower face keeps the plain order. The edge is dropped when it would close a cycle.
+
 Taking the most demanding part first is earliest-deadline-first. It is a **heuristic**: it keeps
 the gap short on the shapes below, optimality is not claimed, and `H` (Section 3) can depend on
 the tie-breaks. `H` itself is computed afterwards from the crossings the packed order really has,

@@ -394,6 +394,39 @@ function solve(parts: readonly Part[], frame: PlanFrame): Solved | { reject: Par
 }
 
 /**
+ * Ticket 153: the soft O1 edges. Two whole parts that run the same way and interleave nest their spans and cross once in either order. Where
+ * the hub end of the nearer part is its upper end (its upper node carries more ports in the gap than its lower node; a tie keeps the plain order),
+ * the part that ends further out is above: its run crosses the stubs next to the hubs, not the drop of the part it spans. A hub below the gap keeps the plain order. Only
+ * pairs of equal need get an edge, and none that would close a cycle.
+ */
+function nestingEdges(parts: readonly Part[], units: readonly Unit[], edges: readonly PlanEdge[], need: ReadonlyMap<string, number>): PlanEdge[] {
+  const nodeOf = (end: PlanEnd): string => end.kind === 'tip' ? end.source.split('|')[0]! : '';
+  const count = (end: 'upper' | 'lower'): Map<string, number> => {
+    const found = new Map<string, number>();
+    for (const part of parts) if (!part.drop && part[end].kind === 'tip') found.set(nodeOf(part[end]), (found.get(nodeOf(part[end])) ?? 0) + 1);
+    return found;
+  };
+  const up = count('upper'), low = count('lower');
+  const added: PlanEdge[] = [];
+  for (const [index, a] of units.entries()) {
+    for (const b of units.slice(index + 1)) {
+      if (a.half !== 0 || b.half !== 0 || Math.sign(a.xl - a.xu) !== Math.sign(b.xl - b.xu) || !interleave(a, b) || !overlaps(a, b)) continue;
+      if (Math.abs(need.get(a.id)! - need.get(b.id)!) > EPS) continue;
+      const way = Math.sign(a.xl - a.xu);
+      const farther = (a.xl - b.xl) * way > 0 ? a : b, nearer = farther === a ? b : a;
+      // Both crossings fall on the nearer part: on its upper leg (the edge) or on its lower leg (the plain order). The edge is added only when
+      // the nearer part's own upper node carries more ports in the gap than its own lower node; on a tie the plain order stays.
+      if ((up.get(nodeOf(nearer.part.upper)) ?? 0) <= (low.get(nodeOf(nearer.part.lower)) ?? 0)) continue;
+      const [above, below] = [farther, nearer];
+      const all = [...edges, ...added];
+      if (all.some(edge => edge.above === above.id && edge.below === below.id) || reaches(all, below.id, above.id)) continue;
+      added.push({ above: above.id, below: below.id, kind: 'O1' });
+    }
+  }
+  return added;
+}
+
+/**
  * The plan of one tier gap.
  *
  * The rows come from a topological order of O1 ∪ O2 ∪ Z (2.3): among the ready units the largest static need
@@ -463,7 +496,8 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
     live = live.filter(other => other !== part);
     solved = solve(live, frame);
   }
-  const { units, edges, split } = solved;
+  const { units, split } = solved;
+  let edges = solved.edges;
 
   // Every tip a run must keep off: the upper ends of all parts (and of the residual ones that have tips), and the ports outside the plan.
   const upperTips = [...live.map(part => part.upper), ...residual.flatMap(item => item.upper ? [item.upper] : []), ...frame.tips];
@@ -534,10 +568,11 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
 
   // Topological order (2.3).
   const byId = new Map(units.map(unit => [unit.id, unit]));
+  const need = new Map(units.map(unit => [unit.id, staticNeed(unit)])), lbs = new Map(units.map(unit => [unit.id, lbOf(unit)]));
+  edges = [...edges, ...nestingEdges(live, units, edges, need)];
   const waiting = new Map(units.map(unit => [unit.id, edges.filter(item => item.below === unit.id).length]));
   const ready = units.filter(unit => waiting.get(unit.id) === 0);
   const rows = new Map<string, number>(), order: Unit[] = [];
-  const need = new Map(units.map(unit => [unit.id, staticNeed(unit)])), lbs = new Map(units.map(unit => [unit.id, lbOf(unit)]));
   const rank = (unit: Unit): number => unit.part.order * 4 + unit.half;
   const spread = (a: Unit, b: Unit): number => Math.max(a.lo, b.lo) - Math.min(a.hi, b.hi);
   while (ready.length) {

@@ -1,0 +1,32 @@
+# Expected: The runs of two hubs side by side share one tier gap and nest by their far ends (ranked-groups ticket 153). Two hubs stand on
+# tier 1, each linked to one router of each of three locations on tier 2 (the first hub to the first routers, the second hub to the
+# second). Of two runs that go the same way and interleave, the one that ends further out takes the row nearer the hubs, so no drop at
+# a far end crosses a run that goes the same way. The plan itself is pinned on hand-built parts in test/layout/gap-plan.test.ts; the engine
+# does not always place a pair of hubs so that their runs interleave, so this layout is a guard against a regression of the nesting.
+# Test-only input owned by ranked-groups ticket 153; test/pipeline/hub-face-order.test.ts reads the layout.
+portograph: 2
+profile: network
+groups:
+  hubs: { tier: 1, label: Hubs }
+  site-a: { tier: 2, label: Site A }
+  site-b: { tier: 2, label: Site B }
+  site-c: { tier: 2, label: Site C }
+nodes:
+  hub-a: { group: hubs, class: provider, label: Hub A }
+  hub-b: { group: hubs, class: provider, label: Hub B }
+  a-1: { group: site-a, class: router, label: A 1 }
+  a-2: { group: site-a, class: router, label: A 2 }
+  b-1: { group: site-b, class: router, label: B 1 }
+  b-2: { group: site-b, class: router, label: B 2 }
+  c-1: { group: site-c, class: router, label: C 1 }
+  c-2: { group: site-c, class: router, label: C 2 }
+links:
+  - [a-1, a-2]
+  - [b-1, b-2]
+  - [c-1, c-2]
+  - [a-2, hub-a, { class: dashed }]
+  - [b-2, hub-a, { class: dashed }]
+  - [c-2, hub-a, { class: dashed }]
+  - [a-1, hub-b, { class: dashed }]
+  - [b-1, hub-b, { class: dashed }]
+  - [c-1, hub-b, { class: dashed }]

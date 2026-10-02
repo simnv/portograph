@@ -145,6 +145,66 @@ const part = (id: string, order: number, from: number, to: number): PlanInput =>
   upper: { x: from, y: 263, kind: 'tip', source: `up${from}` }, lower: { x: to, y: 293, kind: 'tip', source: `low${to}` } });
 
 describe('the tier-gap plan on hand-built parts', () => {
+  describe('nests the runs of two nodes by their far ends (ticket 153)', () => {
+    // P and Q interleave (P starts left of Q and ends right of it) and cross once in either order. Of equal need (an obstacle below the gap over
+    // both spans) the hub end decides which order puts the crossing on the stubs next to the hub. A third part, R, is unrelated; the plan must
+    // not depend on the order of the inputs.
+    // The floor leaves room: the nesting never makes the gap taller than the plain order, and a gap in the sheet has slack.
+    const obstacles: PlanFrame['obstacles'] = [{ x0: 90, x1: 620, anchor: 'below', bound: 30.75 }];
+    const permutations = <T,>(items: T[]): T[][] => items.length < 2 ? [items] : items.flatMap((item, at) => permutations([...items.slice(0, at), ...items.slice(at + 1)]).map(rest => [item, ...rest]));
+    const upper = (from: number, node: string): PlanInput['upper'] => ({ x: from, y: 263, kind: 'tip', source: `${node}|bottom|${from}` });
+    const lower = (to: number, node: string): PlanInput['lower'] => ({ x: to, y: 293, kind: 'tip', source: `${node}|top|${to}` });
+    const rowOf = (plan: GapPlan, id: string): number => plan.parts.find(item => item.id === id)!.rows[0]!;
+
+    it('puts the run that ends further out on the nearer row when the hubs stand above the gap, whatever the order of the inputs', () => {
+      // Q's port stands within P's span and its stem is long (a tip at 275), so P's lb is the lower and the plain sort puts Q first. R (500 to 600)
+      // has the lb between them in the reviewer's case; the tips below make lb(Q) < lb(R) < lb(P).
+      const p = { ...part('P', 0, 100, 400), upper: upper(100, 'hub-a'), lower: lower(400, 'r-p') };
+      const q = { ...part('Q', 1, 130, 300), upper: upper(130, 'hub-b'), lower: lower(300, 'r-q') };
+      const r = { ...part('R', 2, 500, 600), upper: upper(500, 'hub-c'), lower: lower(600, 'r-r') };
+      // Each hub carries a second port in the gap, so the upper end is the hub end.
+      const s1 = { ...part('S', 3, 700, 760), upper: upper(700, 'hub-a'), lower: lower(760, 'r-s') };
+      const s2 = { ...part('T', 4, 720, 780), upper: upper(720, 'hub-b'), lower: lower(780, 'r-t') };
+      const tips = [{ x: 120, y: 275 }, { x: 450, y: 266 }];
+      for (const inputs of permutations([p, q, r, s1, s2])) {
+        const plan = planGap(inputs, { ...frame(), floor: 100, tips, obstacles });
+        expect(plan.residual, inputs.map(item => item.id).join()).toEqual([]);
+        expect(rowOf(plan, 'P'), inputs.map(item => item.id).join()).toBeLessThan(rowOf(plan, 'Q'));
+        expect(plan.crossings.filter(item => item.run === 'P' && item.vertical === 'Q').map(item => item.kind)).toEqual(['upper-leg']);
+        expect(plan.crossings.filter(item => item.run === 'Q' && item.vertical === 'P')).toEqual([]);
+      }
+    });
+
+    it('keeps the crossing on the lower leg of the nearer part when its own hub stands below, whatever the hubs of the farther part', () => {
+      // P leaves hub-a (five ports in the gap) for a router; Q leaves a router for hub-c (three ports). The upper nodes weigh 5 + 1 against 1 + 3
+      // below, but the crossing falls on Q alone, and Q's own hub is its lower node: the plain order stays, the crossing stays at hub-c.
+      const p = { ...part('P', 0, 100, 400), upper: upper(100, 'hub-a'), lower: lower(400, 'r-p') };
+      const q = { ...part('Q', 1, 130, 300), upper: upper(130, 'r-q'), lower: lower(300, 'hub-c') };
+      const extras = [0, 1, 2, 3].map(i => ({ ...part(`A${i}`, 2 + i, 700 + 20 * i, 760 + 20 * i), upper: upper(700 + 20 * i, 'hub-a'), lower: lower(760 + 20 * i, `r-a${i}`) }))
+        .concat([0, 1].map(i => ({ ...part(`C${i}`, 6 + i, 1000 + 20 * i, 1060 + 20 * i), upper: upper(1000 + 20 * i, `r-c${i}`), lower: lower(1060 + 20 * i, 'hub-c') })));
+      const all = [p, q, ...extras];
+      for (const inputs of [all, [...all].reverse(), [...all.slice(3), ...all.slice(0, 3)], [q, ...extras, p]]) {
+        const plan = planGap(inputs, { ...frame(), floor: 100, obstacles });
+        expect(plan.residual).toEqual([]);
+        expect(rowOf(plan, 'Q'), inputs.map(item => item.id).join()).toBeLessThan(rowOf(plan, 'P'));
+        expect(plan.crossings.filter(item => item.run === 'P' && item.vertical === 'Q').map(item => item.kind)).toEqual(['lower-leg']);
+      }
+    });
+
+    it('keeps the plain order when the hub stands below the gap (the mirror case): the crossing stays on the hub stubs', () => {
+      // The far ends are above (two routers), both lower ends are ports of one hub: the rule does not apply, and the crossing lies on the hub's stubs,
+      // the lower legs, as it does without the rule.
+      const p = { ...part('P', 0, 100, 400), upper: upper(100, 'r-p'), lower: lower(400, 'hub-a') };
+      const q = { ...part('Q', 1, 130, 300), upper: upper(130, 'r-q'), lower: lower(300, 'hub-a') };
+      for (const inputs of permutations([p, q])) {
+        const plan = planGap(inputs, { ...frame(), floor: 100, obstacles });
+        expect(plan.residual).toEqual([]);
+        expect(rowOf(plan, 'Q'), inputs.map(item => item.id).join()).toBeLessThan(rowOf(plan, 'P'));
+        expect(plan.crossings.map(item => `${item.run}x${item.vertical}:${item.kind}`)).toEqual(['PxQ:lower-leg'].map(() => 'PxQ:lower-leg'));
+      }
+    });
+  });
+
   it('splits C of A 0 to 100, B 100 to 200, C 200 to 0 with D 188 to 12: D above the first half of C, five crossings, H 99', () => {
     const plan = planGap([part('A', 0, 0, 100), part('B', 1, 100, 200), part('C', 2, 200, 0), part('D', 3, 188, 12)], frame());
     expect(plan.residual).toEqual([]);
