@@ -395,8 +395,8 @@ function solve(parts: readonly Part[], frame: PlanFrame): Solved | { reject: Par
 
 /**
  * Ticket 153: the soft O1 edges. Two whole parts that run the same way and interleave nest their spans and cross once in either order. Where
- * the hub end of the pair is the upper end (its nodes carry more ports in the gap than the nodes at the lower end), the part that ends further
- * out is above: its run crosses the stubs next to the hubs, not the drop of the part it spans. A hub below the gap keeps the plain order. Only
+ * the hub end of the nearer part is its upper end (its upper node carries more ports in the gap than its lower node; a tie keeps the plain order),
+ * the part that ends further out is above: its run crosses the stubs next to the hubs, not the drop of the part it spans. A hub below the gap keeps the plain order. Only
  * pairs of equal need get an edge, and none that would close a cycle.
  */
 function nestingEdges(parts: readonly Part[], units: readonly Unit[], edges: readonly PlanEdge[], need: ReadonlyMap<string, number>): PlanEdge[] {
@@ -414,9 +414,9 @@ function nestingEdges(parts: readonly Part[], units: readonly Unit[], edges: rea
       if (Math.abs(need.get(a.id)! - need.get(b.id)!) > EPS) continue;
       const way = Math.sign(a.xl - a.xu);
       const farther = (a.xl - b.xl) * way > 0 ? a : b, nearer = farther === a ? b : a;
-      const hubUp = (up.get(nodeOf(a.part.upper)) ?? 0) + (up.get(nodeOf(b.part.upper)) ?? 0);
-      const hubDown = (low.get(nodeOf(a.part.lower)) ?? 0) + (low.get(nodeOf(b.part.lower)) ?? 0);
-      if (hubUp <= hubDown) continue;
+      // Both crossings fall on the nearer part: on its upper leg (the edge) or on its lower leg (the plain order). The edge is added only when
+      // the nearer part's own upper node carries more ports in the gap than its own lower node; on a tie the plain order stays.
+      if ((up.get(nodeOf(nearer.part.upper)) ?? 0) <= (low.get(nodeOf(nearer.part.lower)) ?? 0)) continue;
       const [above, below] = [farther, nearer];
       const all = [...edges, ...added];
       if (all.some(edge => edge.above === above.id && edge.below === below.id) || reaches(all, below.id, above.id)) continue;

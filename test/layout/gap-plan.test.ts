@@ -175,6 +175,22 @@ describe('the tier-gap plan on hand-built parts', () => {
       }
     });
 
+    it('keeps the crossing on the lower leg of the nearer part when its own hub stands below, whatever the hubs of the farther part', () => {
+      // P leaves hub-a (five ports in the gap) for a router; Q leaves a router for hub-c (three ports). The upper nodes weigh 5 + 1 against 1 + 3
+      // below, but the crossing falls on Q alone, and Q's own hub is its lower node: the plain order stays, the crossing stays at hub-c.
+      const p = { ...part('P', 0, 100, 400), upper: upper(100, 'hub-a'), lower: lower(400, 'r-p') };
+      const q = { ...part('Q', 1, 130, 300), upper: upper(130, 'r-q'), lower: lower(300, 'hub-c') };
+      const extras = [0, 1, 2, 3].map(i => ({ ...part(`A${i}`, 2 + i, 700 + 20 * i, 760 + 20 * i), upper: upper(700 + 20 * i, 'hub-a'), lower: lower(760 + 20 * i, `r-a${i}`) }))
+        .concat([0, 1].map(i => ({ ...part(`C${i}`, 6 + i, 1000 + 20 * i, 1060 + 20 * i), upper: upper(1000 + 20 * i, `r-c${i}`), lower: lower(1060 + 20 * i, 'hub-c') })));
+      const all = [p, q, ...extras];
+      for (const inputs of [all, [...all].reverse(), [...all.slice(3), ...all.slice(0, 3)], [q, ...extras, p]]) {
+        const plan = planGap(inputs, { ...frame(), floor: 100, obstacles });
+        expect(plan.residual).toEqual([]);
+        expect(rowOf(plan, 'Q'), inputs.map(item => item.id).join()).toBeLessThan(rowOf(plan, 'P'));
+        expect(plan.crossings.filter(item => item.run === 'P' && item.vertical === 'Q').map(item => item.kind)).toEqual(['lower-leg']);
+      }
+    });
+
     it('keeps the plain order when the hub stands below the gap (the mirror case): the crossing stays on the hub stubs', () => {
       // The far ends are above (two routers), both lower ends are ports of one hub: the rule does not apply, and the crossing lies on the hub's stubs,
       // the lower legs, as it does without the rule.
