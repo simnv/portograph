@@ -15,6 +15,7 @@ import { moveGroup } from './skeleton-geometry.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { windowTarget, type Window } from './overlay-window.js';
 import { attemptCounters } from './attempt-counters.js';
+import { chooseStep } from './decide.js';
 import { drawnOverlays, gains, holds, lazyCount, profiles, read, reading, straightOf, tapVerdict, type Reading } from './objective.js';
 
 /** A free group stands where its overlay chords are straight and not at the mean of its partners (ticket 143, info). */
@@ -461,18 +462,10 @@ export function stepOutOfChords(model: LayoutModel, tiers: readonly number[], fr
       const inside = candidates.filter(x => !others.length || (x - reach.left >= spanLow - PLACEMENT_EPS && x - reach.left + width <= spanHigh + PLACEMENT_EPS));
       const pool = inside.length ? inside : candidates;
       const target = pool.reduce((best, x) => Math.abs(x - box.x) < Math.abs(best - box.x) - PLACEMENT_EPS ? x : best);
-      const straight = (): Reading => read(model, { overlays });
       // A step out of a chord is optional: it is not made into the riser keep-out (mesh-bus.md, section 11.5).
       if (!optionalMoveHolds(model, [{ group, bounds: { ...box, x: target } }], false)) continue;
-      const before = straight(), undo = saveGroups(model, [group]);
-      moveGroup(model, group, target - box.x, 0);
-      rebuildNodeGeometry(model, group.nodes, 'current');
-      const after = straight();
-      const bent = !holds(after, before, profiles.keepSet);
-      tapVerdict('stepOutOfChords', () => `${bent} ${before.overlay.straight}/${after.overlay.straight}`);
-      if (bent) {
-        undo();
-        rebuildNodeGeometry(model, group.nodes, 'current');
+      // The candidate is made and judged by the decision loop (`decide.ts`, kind `linkless`); a refusal is named here.
+      if (!chooseStep(model, overlays, group, target - box.x)) {
         placementWarning(model, 'LINKLESS_GROUP_MOVE_REFUSED',
           `Group ${group.id} has no link and stands in the path of a straight overlay chord, but a step out of it would bend another straight overlay link.`, [group.id], 'group');
       }

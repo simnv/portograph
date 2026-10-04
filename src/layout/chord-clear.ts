@@ -1,14 +1,11 @@
 import type { Rect } from '../model/geometry.js';
-import type { Diagnostic, LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
+import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { orderedNodeIds } from '../model/model.js';
 import { EPS } from '../geometry/planar.js';
-import { parallelClearance, portOrder } from '../score/gates.js';
-import { linkStrokeWidth } from '../theme/geometry.js';
-import type { Segment } from '../score/model.js';
-import { columnShifts, frameColumns, holdColumnAxes, holdMemberWalls, overlayFreeGroups, packBesideRows } from './columns.js';
+import { frameColumns, overlayFreeGroups } from './columns.js';
 import { groupShape } from './grid.js';
 import { cellReach, deriveFrames, FRAME_TO_FRAME_GAP } from './frames.js';
-import { blockedChords, chordsHold } from './frame-paths.js';
+import { chordsHold } from './frame-paths.js';
 import { optionalMoveHolds, occupiedOverhang, selectAnchorTier } from './lanes.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { saveGroups } from './overlay-order.js';
@@ -18,137 +15,13 @@ import { rowGap } from './sides-two.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { bandGap } from './skeleton-graph.js';
 import { PLACEMENT_EPS } from './tolerance.js';
-import { attemptCounters } from './attempt-counters.js';
-import { compare, gains, holds as readingHolds, lazyCount, lostStraight, profiles, read, reading, refusal, tapVerdict, widthWithin, type Reading } from './objective.js';
+import { chordDecision, CANVAS_GROWTH_SHARE, edge, rankShare, SLIDE_GROWTH, type AdoptedCopy } from './decide.js';
 import { nodeTier } from './read/tier.js';
-import { overlayCrossingPairs } from './read/crossings.js';
 import { standsInRootCanton } from './read/canton.js';
 
-/** How many candidate x a group or a node tries, nearest first, before it stays (ticket 77). */
-const CHORD_TRIALS = 24;
+/** The decision loop lives in `decide.ts`; these are re-exported for the callers and the tests that name them here. */
+export { overlayCrossings, pickRankMove, spent, type AdoptedCopy, type RankMove } from './decide.js';
 
-/** How many candidates that pass the cheap checks are judged on a settled copy, nearest first: each one costs a round of the pipeline (ticket 110). */
-const SETTLED_TRIALS = 6;
-
-/** The most a slide may grow a canton (and the canvas) beyond its wall, and the share of the canvas width all slides together may add (ticket 80). */
-const SLIDE_GROWTH = 40, CANVAS_GROWTH_SHARE = 0.05;
-/**
- * The share of the canvas that the growth of all moves together may take, for a lower rank (ticket 146): at least one move's worth, SLIDE_GROWTH. A
- * canvas of a few hundred pixels would otherwise allow less than one move (5 % of 277 px is 14 px), and a small sheet could never step a rank.
- */
-const rankShare = (budget: { base: number }): number => Math.max(SLIDE_GROWTH, CANVAS_GROWTH_SHARE * budget.base);
-
-/** The growth the slides of a model have spent, against the canvas width when the first slide was asked. */
-export const spent = new WeakMap<LayoutModel, { base: number; grown: number }>();
-
-export { overlayCrossingPairs as overlayCrossings };
-
-/** A move of a lower rank, as the choice reads it (ticket 146). */
-export interface RankMove { dx: number; crossings: number; straight: number; /** The straight overlay links the move bends: 0 when absent. */ bent?: number }
-
-/**
- * The move of a lower rank that stays (ticket 146, user decision): a move that adds an overlay crossing, or does not leave more
- * straight overlay links than `base`, is never taken. Of the rest the most straight links win (user decision, 2026-09-30: client
- * overlay links are direct lines; `straight` is the net count, so a move that bends one link and straightens three is taken), then, on
- * a tie in that count, the move that bends no straight link (a crossing gain alone never pays for a bent link), then the fewest
- * crossings, then the nearest move, then the smaller dx.
- */
-export function pickRankMove<T extends RankMove>(moves: readonly T[], base: { crossings: number; straight: number }): T | undefined {
-  const by = profiles.rankMove;
-  const against = reading({ overlay: { straight: base.straight, bent: 0, turns: 0 }, crossings: lazyCount(() => base.crossings), crossingMode: 'pairs' });
-  const readMove = (move: T): Reading => reading({ overlay: { straight: move.straight, bent: move.bent ?? 0, turns: 0 }, crossings: lazyCount(() => move.crossings), crossingMode: 'pairs', tie: [Math.abs(move.dx), move.dx] });
-  const pick = moves.map(move => ({ move, now: readMove(move) })).filter(({ now }) => refusal(now, against, by.gates) === undefined)
-    .sort((a, b) => compare(a.now, b.now, by))[0]?.move;
-  tapVerdict('pickRankMove', () => `${moves.length} ${base.crossings}/${base.straight} ${pick === undefined ? '-' : `${pick.dx} ${pick.straight} ${pick.crossings}`}`);
-  return pick;
-}
-
-/** A reading of a model that has settled (what a move must not lose or add, read off the geometry as it stands), and the findings the gates and the tier-gap plan would make. */
-interface Verdict extends Reading {
-  crowded: Set<string>;
-  disordered: Set<string>;
-  residuals: Set<string>;
-  /** The farthest a group moves when the column rules are asked of the settled model: 0 at their fixed point (ticket 67). */
-  drift: number;
-}
-
-/** What a candidate leaves, and what the model had without it: the straight overlay count, the overlay crossings. */
-interface Judged { bent: number; count: number; crossings: number; base: { crossings: number; straight: number }; verdict?: Verdict | undefined }
-
-const copy = (model: LayoutModel): LayoutModel => { attemptCounters.candidateCopies++; return JSON.parse(JSON.stringify(model)) as LayoutModel; };
-
-const routedLinks = (model: LayoutModel): LayoutLink[] =>
-  model.links.filter(link => link.layer === 'routed' && link.attachments && link.removed !== true && link.technique !== 'stub');
-
-/**
- * What a move must not lose or add: the overlay links drawn as one segment, the routed links that run on one axis or hold a straight chord (a
- * drop that stays vertical stays straight), and the pairs of overlay links whose paths cross (ticket 146), counted on the first ask only.
- */
-const readOverlays = (model: LayoutModel, overlays: readonly LayoutLink[]): Reading => read(model, { overlays, routed: { straight: 'aligned' }, crossings: 'pairs' });
-
-/**
- * The pairs of routed links that stand closer than G6 allows, on the paths a placement model states. It is the gate's own predicate
- * (`parallelClearance`), asked of the links that already have a path: the rest are routed later and are no pair yet.
- */
-function crowded(model: LayoutModel): Set<string> {
-  const found = new Set<string>();
-  const routed: Segment[] = routedLinks(model).filter(link => link.path !== undefined)
-    .flatMap(link => link.path!.segments.map((segment, index) => ({ segment, link, index, stroke: linkStrokeWidth(link) })));
-  parallelClearance(model, routed, (_gate, _code, elements) => { found.add([...elements].sort().join('|')); });
-  return found;
-}
-
-/** The nodes whose ports stand out of the order of their far ends (G5), on the anchors a placement model states. */
-function disordered(model: LayoutModel): Set<string> {
-  const found = new Set<string>();
-  portOrder(model, Object.values(model.nodes), new Set(routedLinks(model)), (_gate, code, elements) => { found.add(`${code}:${elements.join('|')}`); });
-  return found;
-}
-
-/** The tier-gap parts the plan declines: the placement proxy for a routed crossing the router would have to make. */
-const residuals = (model: LayoutModel): Set<string> => new Set(model.diagnostics
-  .filter(item => item.code === 'TIER_GAP_PART_RESIDUAL' || item.code === 'TIER_GAP_ROW_CYCLE')
-  .map(item => `${item.code}:${JSON.stringify(item.owners ?? [])}`));
-
-/**
- * The creep the rounds of 7f end under (`CANTON_CREEP` of the mutation step): a settled model that drifts less than this is at rest.
- * A slide is judged against the larger of this and the drift the model had before it, so a creep of a fraction of a pixel does not
- * turn the guard off.
- */
-const REST = 0.5;
-
-/**
- * How far the column rules move a group, asked of a copy of a settled model (ticket 67's fixed point: 0 when they move nothing). The
- * pipeline does not ask them again after 7f, so a slide they would undo is a position they do not accept. `Infinity` when they fail.
- */
-function drift(model: LayoutModel): number {
-  try {
-    const clone = copy(model), before = new Map(Object.values(clone.groups).map(group => [group.id, { ...group.bounds! }]));
-    columnShifts(clone, 0);
-    packBesideRows(clone);
-    holdMemberWalls(clone);
-    holdColumnAxes(clone, 0);
-    return Math.max(0, ...Object.values(clone.groups).map(group => {
-      const was = before.get(group.id)!;
-      return Math.max(Math.abs(group.bounds!.x - was.x), Math.abs(group.bounds!.y - was.y));
-    }));
-  } catch {
-    return Infinity;
-  }
-}
-
-/**
- * The settled copy that judged the last move the step kept (architecture ticket 13, phase 2): the copy of the model with every move so far made,
- * after `follow` ran on it. `baseDiagnostics` is how many diagnostics the model held when the copy was taken, and `original` the copy's own
- * diagnostic objects at that moment (a replay filters the list and appends to it, so what stands in the copy's list afterwards is told by identity); `result` is what `follow` returned.
- */
-export interface AdoptedCopy { copy: LayoutModel; baseDiagnostics: number; original: ReadonlySet<Diagnostic>; result: unknown }
-
-const verdict = (model: LayoutModel, overlays: readonly LayoutLink[]): Verdict =>
-  ({ ...read(model, { overlays, routed: { straight: 'aligned' }, crossings: 'pairs', growth: true }), crowded: crowded(model), disordered: disordered(model), residuals: residuals(model), drift: drift(model) });
-
-/** Whether every finding `after` states was stated by `before`. */
-const nothingNew = (before: ReadonlySet<string>, after: ReadonlySet<string>): boolean => [...after].every(item => before.has(item));
 
 /**
  * A straight overlay chord between two tiers is a reservation for the tiers between them (ticket 77, Q64). Run in 7f, after the
@@ -181,17 +54,6 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
   const overlays = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && link.attachments);
   if (anchor === undefined || !overlays.length) return false;
   const columns = frameColumns(model), movable = overlayFreeGroups(model, anchor, true), free = overlayFreeGroups(model, anchor);
-    /** What the last lower-rank move that stayed did: for the diagnostic. */
-  let picked: { dx: number; crossings: number; straight: number; gain: number; after: number } | undefined;
-  /** Takes one settled copy of a lower rank cell's budget; false when the budget is spent. */
-  const spend = (cell: string): boolean => {
-    // Held in `history`, so the budget lasts over the rounds and the runs of 7f that share it (Q114).
-    let used = 0;
-    while (history.has(`rank-spent:${cell}:${used}`)) used++;
-    if (used >= SETTLED_TRIALS) return false;
-    history.add(`rank-spent:${cell}:${used}`);
-    return true;
-  };
   const tierOf = (node: string): number => nodeTier(model, node);
   const linked = new Set<string>();
   for (const link of model.links) if (link.attachments) for (const end of [link.attachments.from.node, link.attachments.to.node]) linked.add(model.document.nodes[end]!.group);
@@ -199,50 +61,9 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
   const all = Object.values(model.groups).filter(group => group.bounds);
   const world = { low: Math.min(...all.map(group => group.bounds!.x)), high: Math.max(...all.map(group => group.bounds!.x + group.bounds!.width)) };
   const tiers = [...new Set(all.map(group => group.tier!))].sort((a, b) => a - b);
-  /** Whether any trial ran: each one rebuilds labels a group at a time and so moves them to the end of the list. */
-  let tried = false, moved = false;
-  /** The verdict on the settled copy of the model as it stands, without a move. It holds until a move stays. */
-  let baseline: Verdict | undefined;
-  /** The settled copy each verdict was read on, and the verdict of the last move that stayed: the step hands that copy back (`out.adopted`). */
-  const copies = new WeakMap<Verdict, AdoptedCopy>();
-  let lastKept: Verdict | undefined;
-
-  /** The verdict on a settled copy of the model as it stands now, or `undefined` when the copy cannot be settled. */
-  const settled = (): Verdict | undefined => {
-    try {
-      const probe = copy(model), baseDiagnostics = model.diagnostics.length, original = new Set(probe.diagnostics);
-      attemptCounters.settledTrials++;
-      const result = follow!(probe);
-      const read = verdict(probe, overlays);
-      copies.set(read, { copy: probe, baseDiagnostics, original, result });
-      return read;
-    } catch {
-      return undefined;
-    }
-  };
-  /**
-   * The straight overlay count of the settled copy of the model with the move made, when it stands better than the settled copy
-   * without the move; `undefined` when it does not. Without a `follow` there is no settled copy, and the count is the caller's own.
-   */
-  const holdsSettled = (redo: () => void, undo: () => void, nodes: readonly string[], fallback: Judged, ranked: boolean): Judged | undefined => {
-    if (follow === undefined) return fallback;
-    const after = settled();
-    if (baseline === undefined) {
-      undo();
-      rebuildNodeGeometry(model, nodes, 'current');
-      baseline = settled();
-      redo();
-      rebuildNodeGeometry(model, nodes, 'current');
-    }
-    // The straight count rises; a lower rank adds no crossing (ticket 146, user decision); no straight routed link is lost. A bent straight link is no veto: the net straight count decides.
-    const settledHolds = after !== undefined && baseline !== undefined && gains(after, baseline, ranked ? profiles.settledRanked : profiles.settled)
-      && after.drift <= Math.max(baseline.drift, REST) + PLACEMENT_EPS
-      && widthWithin(after, baseline, edge().base + (ranked ? rankShare(edge()) : CANVAS_GROWTH_SHARE * edge().base))
-      && nothingNew(baseline.crowded, after.crowded) && nothingNew(baseline.disordered, after.disordered) && nothingNew(baseline.residuals, after.residuals);
-    tapVerdict('holdsSettled', () => `${settledHolds} ${after?.overlay.straight}/${baseline?.overlay.straight} ${after?.growth.width}/${baseline?.growth.width}`);
-    return settledHolds
-      ? { bent: lostStraight(after!, baseline!, 'overlay'), count: after!.overlay.straight, crossings: ranked ? after!.crossings() : 0, base: { crossings: ranked ? baseline!.crossings() : 0, straight: baseline!.overlay.straight }, verdict: after } : undefined;
-  };
+  let moved = false;
+  // The one decision loop of 7f (ticket 13, phase 3): the generators below name the candidates, `decision.choose` tries and keeps them.
+  const decision = chordDecision(model, follow, overlays, history);
 
   /** The moves `dx` of a set of shapes that put one of them on a chord: open intervals. */
   const bannedFor = (chords: readonly { from: { x: number; y: number }; to: { x: number; y: number } }[], shapes: readonly Rect[]): { low: number; high: number }[] =>
@@ -272,85 +93,14 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
       return chord ? [chord] : [];
     });
   };
-  const groupOfNodes = (nodes: readonly string[]): LayoutGroup[] => [...new Set(nodes.map(id => model.groups[model.document.nodes[id]!.group]!))];
-  const saveGroupsOf = (nodes: readonly string[]): (() => void) => saveGroups(model, groupOfNodes(nodes));
-
-  /**
-   * Try the candidates nearest first, and keep the one that leaves the most straight overlays on the settled copy (the nearest of
-   * equals): the nearest move can clear one chord and leave a wider one, and a mover that has moved is not moved again. At most
-   * SETTLED_TRIALS candidates are judged on a settled copy. `place(dx)` moves the mover by dx, `undo` takes it back. Returns whether one stayed.
-   * A frozen chord a candidate would put a body on is a wall (`holds` for a group, the check below for a node).
-   */
-  const attempt = (key: string, candidates: readonly number[], at: number, place: (dx: number) => void, undo: () => void, nodes: readonly string[],
-    holds: (x: number) => boolean, extra: () => boolean = () => true, rank?: string): boolean => {
-    const before = readOverlays(model, overlays), blocked = new Set(blockedChords(model));
-    let best: { target: number; count: number; verdict?: Verdict | undefined } | undefined, settledTrials = 0, driftBefore: number | undefined;
-    // A lower rank (ticket 146) keeps every candidate that passes, and `pickRankMove` chooses: the most straight links, then the fewest crossings.
-    const passed: (RankMove & { target: number; base: { crossings: number; straight: number }; verdict?: Verdict | undefined })[] = [];
-    for (const target of candidates.slice(0, CHORD_TRIALS)) {
-      if (!holds(target)) continue;
-      tried = true;
-      place(target - at);
-      rebuildNodeGeometry(model, nodes, 'current');
-      const after = readOverlays(model, overlays);
-      let ok = extra() && gains(after, before, profiles.settled) && blockedChords(model).every(id => blocked.has(id));
-      attemptCounters.cheapTrials++;
-      tapVerdict('attemptCheap', () => `${ok} ${after.overlay.straight}/${before.overlay.straight}`);
-      // Cheap refusals of a lower rank, before a settled copy is paid for (ticket 146): a crossing added, a drift the column rules would undo.
-      if (ok && rank !== undefined) {
-        ok = readingHolds(after, before, profiles.cheapCrossings);
-        tapVerdict('attemptCrossings', () => `${ok}`);
-        if (ok && follow !== undefined) {
-          if (driftBefore === undefined) {
-            const redo = saveGroupsOf(nodes);
-            undo();
-            rebuildNodeGeometry(model, nodes, 'current');
-            driftBefore = drift(model);
-            redo();
-            rebuildNodeGeometry(model, nodes, 'current');
-          }
-          ok = drift(model) <= Math.max(driftBefore, REST) + PLACEMENT_EPS;
-        }
-      }
-      if (ok && (rank === undefined ? settledTrials++ < SETTLED_TRIALS : spend(rank))) {
-        const judged = holdsSettled(saveGroupsOf(nodes), undo, nodes, { bent: 0, count: after.overlay.straight, crossings: rank !== undefined ? after.crossings() : 0,
-          base: { crossings: rank !== undefined ? before.crossings() : 0, straight: before.overlay.straight } }, rank !== undefined);
-        if (judged !== undefined && rank !== undefined) passed.push({ target, dx: target - at, crossings: judged.crossings, straight: judged.count, bent: judged.bent, base: judged.base, verdict: judged.verdict });
-        else if (judged !== undefined && (best === undefined || judged.count > best.count)) best = { target, count: judged.count, verdict: judged.verdict };
-      }
-      undo();
-      rebuildNodeGeometry(model, nodes, 'current');
-    }
-    if (rank !== undefined && passed.length) {
-      const pick = pickRankMove(passed, passed[0]!.base);
-      if (pick !== undefined) { best = { target: pick.target, count: pick.straight, verdict: pick.verdict }; picked = { dx: pick.dx, ...pick.base, gain: pick.straight - pick.base.straight, after: pick.crossings }; }
-    }
-    if (best === undefined) return false;
-    place(best.target - at);
-    rebuildNodeGeometry(model, nodes, 'current');
-    // The settled copy that judged the move is the state that stands now: it is the baseline of the next one.
-    baseline = best.verdict;
-    lastKept = best.verdict;
-    history.add(key);
-    return true;
-  };
   const nearest = (edges: readonly number[], at: number, ok: (x: number) => boolean): number[] => edges
     .filter((x, index, list) => ok(x) && Math.abs(x - at) > PLACEMENT_EPS && list.findIndex(other => Math.abs(other - x) <= PLACEMENT_EPS) === index)
     .sort((a, b) => Math.abs(a - at) - Math.abs(b - at) || a - b);
 
-  /**
-   * The growth a cell's frame edge may take when its bodies move (ticket 80): the frame stands off the outermost body, so the frame, the
-   * canton derived from it and the canvas widen by what the edge moves out. Capped for one move and for all of them together.
-   */
-  const edge = (): { base: number; grown: number } => {
-    const found = spent.get(model) ?? { base: model.canvas?.width ?? 0, grown: 0 };
-    spent.set(model, found);
-    return found;
-  };
   const outward = (before: Rect, now: Rect): number => Math.max(0, before.x - now.x) + Math.max(0, now.x + now.width - (before.x + before.width));
   /** Whether a cell stands in a frame of a canton: only there may its frame edge move out (the decision covers member frames and cantons). */
   const mayGrow = (group: LayoutGroup, before: Rect, now: Rect): boolean => {
-    const budget = edge(), by = outward(before, now);
+    const budget = edge(model), by = outward(before, now);
     if (!standsInRootCanton(model, group)) return Math.abs(now.x - before.x) <= PLACEMENT_EPS && Math.abs(now.width - before.width) <= PLACEMENT_EPS;
     return by <= Math.min(SLIDE_GROWTH, CANVAS_GROWTH_SHARE * budget.base - budget.grown) + PLACEMENT_EPS;
   };
@@ -384,7 +134,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
     const roomLow = wall === undefined ? column.x : wall.x + GROUP_PADDING, roomHigh = wall === undefined ? column.x + column.width : wall.x + wall.width - GROUP_PADDING;
     // A slide of a canton member may pass the wall: the canton is derived from its members and grows with it, and the close-up packs its
     // neighbours again. The growth is capped for one slide and for all of them together.
-    const budget = edge();
+    const budget = edge(model);
     const grow = member ? Math.max(0, Math.min(SLIDE_GROWTH, CANVAS_GROWTH_SHARE * budget.base - budget.grown)) : 0;
     let low = Math.max(roomLow - grow - box.x, world.low - grow - Math.min(...reaches.map(({ cell, reach }) => cell.bounds!.x - reach.left)));
     let high = Math.min(roomHigh + grow - box.x - box.width, world.high + grow - Math.max(...reaches.map(({ cell, reach }) => cell.bounds!.x + cell.bounds!.width + reach.right)));
@@ -414,7 +164,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
     const undo = saveGroups(model, cells);
     let refusal: { group: LayoutGroup; bounds: Rect }[] | undefined;
     const at = cells[0]!.bounds!.x;
-    const placed = attempt(key, candidates, 0, dx => { for (const cell of cells) moveGroup(model, cell, dx, 0); }, undo, nodes, dx => {
+    const placed = decision.choose(key, candidates, 0, dx => { for (const cell of cells) moveGroup(model, cell, dx, 0); }, undo, nodes, dx => {
       const proposed = cells.map(group => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } }));
       if (optionalMoveHolds(model, proposed, false)) return true;
       if (refusal === undefined && !chordsHold(model, proposed, false)) refusal = proposed;
@@ -463,7 +213,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
         const now = boxes();
         if (!canton) return [...before].every(([id, box]) => same(box, now.get(id)));
         if (!before.has(root) || !now.has(root)) return false;
-        const budget = edge();
+        const budget = edge(model);
         if (grown(now) > Math.min(SLIDE_GROWTH, rankShare(budget) - budget.grown) + PLACEMENT_EPS) return false;
         return unit === undefined || walls.every(wall => hits(before.get(unit)!, wall) || !hits(now.get(unit)!, wall));
       },
@@ -472,7 +222,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
       /** The room a body may take: the x-extent of the bodies of the frame's other cells, child frames included, and what the budget allows past it. */
       room: (current: { low: number; high: number }): { low: number; high: number } => {
         const others = cellsOf(group.frame!).filter(id => id !== group.id).flatMap(id => model.groups[id]!.nodes.map(node => model.nodes[node]!.bounds!));
-        const budget = edge(), more = canton ? Math.max(0, Math.min(SLIDE_GROWTH, rankShare(budget) - budget.grown)) : 0;
+        const budget = edge(model), more = canton ? Math.max(0, Math.min(SLIDE_GROWTH, rankShare(budget) - budget.grown)) : 0;
         // A cell of a child frame can stand on the same tier, beside this one: its bodies are walls, with the band gap.
         const beside = cellsOf(group.frame!).filter(id => id !== group.id && model.groups[id]!.tier === group.tier).flatMap(id => model.groups[id]!.nodes.map(node => model.nodes[node]!.bounds!));
         const middle = (current.low + current.high) / 2;
@@ -484,12 +234,12 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
   };
   /** Says that a lower rank moved. */
   const noteRank = (id: string): void => {
+    const picked = decision.takePicked();
     if (picked === undefined) return;
     model.diagnostics.push({
       stage: 'placement', severity: 'info', code: 'RANK_STEPPED_OFF_CHORD', owners: [{ kind: 'group', id }],
       message: `The lower rank ${id} moved ${Math.round(picked.dx * 10) / 10} px off the overlay chords of the ranks above: ${picked.gain} more straight overlay links, overlay crossings ${picked.crossings} to ${picked.after}.`,
     });
-    picked = undefined;
   };
   for (const tier of tiers) {
     const groups = all.filter(group => group.tier === tier);
@@ -565,13 +315,13 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
           };
           // The candidates ask without a report; a frozen chord is named once, for the nearest candidate it refused, when no candidate stays.
           let refusal: { group: LayoutGroup; bounds: Rect }[] | undefined;
-          placed = attempt(keep, candidates, box.x, dx => moveGroup(model, group, dx, 0), undo, group.nodes, x => {
+          placed = decision.choose(keep, candidates, box.x, dx => moveGroup(model, group, dx, 0), undo, group.nodes, x => {
             const proposed = [{ group, bounds: { ...box, x } }];
             if (optionalMoveHolds(model, proposed, false)) return true;
             if (refusal === undefined && !chordsHold(model, proposed, false)) refusal = proposed;
             return false;
           }, () => rankGuard === undefined ? sameFrames() : rankGuard.holds(), lower ? group.id : undefined);
-          if (placed && rankGuard !== undefined) { edge().grown += rankGuard.grown(); noteRank(group.id); }
+          if (placed && rankGuard !== undefined) { edge(model).grown += rankGuard.grown(); noteRank(group.id); }
           if (placed) moved = true;
           else if (refusal !== undefined) chordsHold(model, refusal, true);
         }
@@ -599,9 +349,9 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
           };
           const framed = (): boolean => mayGrow(group, before, cellReach(model, group.id));
           // The ticket-80 slide stays as it was for a lower rank too: it is not under the rank rule, since the rule would refuse moves main makes.
-          if (candidates.length && attempt(`row:${group.id}`, candidates, 0, slide, undo, ids, () => true, framed)) {
+          if (candidates.length && decision.choose(`row:${group.id}`, candidates, 0, slide, undo, ids, () => true, framed)) {
             moved = true;
-            edge().grown += outward(before, cellReach(model, group.id));
+            edge(model).grown += outward(before, cellReach(model, group.id));
             continue;
           }
         }
@@ -636,16 +386,16 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
         // A node of a cell moves only where the frame stays as it is: the frame edge stands off the outermost body (`cellReach`).
         const reach = cellOfFrame(group) ? cellReach(model, group.id) : undefined;
         const framed = (): boolean => rankGuard !== undefined ? rankGuard.holds() : reach === undefined || mayGrow(group, reach, cellReach(model, group.id));
-        if (attempt(`node:${id}`, candidates, body.x, shift, undo, [id], () => true, framed, lowerCell ? group.id : undefined)) {
+        if (decision.choose(`node:${id}`, candidates, body.x, shift, undo, [id], () => true, framed, lowerCell ? group.id : undefined)) {
           moved = true;
-          if (rankGuard !== undefined) { edge().grown += rankGuard.grown(); noteRank(id); }
-          else if (reach !== undefined) edge().grown += outward(reach, cellReach(model, group.id));
+          if (rankGuard !== undefined) { edge(model).grown += rankGuard.grown(); noteRank(id); }
+          else if (reach !== undefined) edge(model).grown += outward(reach, cellReach(model, group.id));
         }
       }
     }
   }
-  if (tried) rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');
-  const adopted = moved && out !== undefined && lastKept !== undefined ? copies.get(lastKept) : undefined;
+  if (decision.tried()) rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');
+  const adopted = moved && out !== undefined ? decision.adopted() : undefined;
   if (adopted !== undefined) out!.adopted = adopted;
   return moved;
 }

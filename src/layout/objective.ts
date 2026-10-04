@@ -76,6 +76,10 @@ export interface Reading {
   growth: { width: number; height: number };
   /** A candidate whose chords bend one that is straight at the mean (the overlay window). */
   bendsMean?: boolean;
+  /** Named finding sets that a gate compares, candidate against incumbent (the lane reseat: centring, short gaps, link label room). Absent reads as empty. */
+  sets?: Readonly<Record<string, ReadonlySet<string>>>;
+  /** Named facts of the candidate alone that a gate asks (the lane reseat: the corridors stand at their child, no body on a frozen chord). Absent reads as false. */
+  facts?: Readonly<Record<string, boolean>>;
   /** The last key of every order: a candidate's own position (its distance, then its x), compared as numbers in turn. Absent reads as equal. */
   tie?: readonly number[];
 }
@@ -296,6 +300,16 @@ export const crossingsNotUp: Gate = (a, b) => (fewerCrossings(a, b) <= 0 ? undef
 /** A gate: every straight routed link of `b` stays straight. */
 export const routedSetKept: Gate = (a, b) => (missing(b.routed.straightIds, a.routed.straightIds) === 0 ? undefined : 'a straight routed link is lost');
 
+/** A gate: the candidate names no finding in the set `name` that the incumbent does not. A trade of one item for another is not "no worse". */
+export const noNewFindings = (name: string): Gate => (a, b) => {
+  const held = b.sets?.[name];
+  for (const item of a.sets?.[name] ?? []) if (held?.has(item) !== true) return `${name} names ${item}`;
+  return undefined;
+};
+
+/** A gate: the candidate has the fact `name`. */
+export const factHolds = (name: string): Gate => a => (a.facts?.[name] === true ? undefined : `${name} does not hold`);
+
 /** How many straight links of `b` in `family` `a` does not hold. */
 export const lostStraight = (a: Reading, b: Reading, family: 'overlay' | 'routed'): number => missing(b[family].straightIds, a[family].straightIds);
 
@@ -318,6 +332,7 @@ export const widthWithin = (a: Reading, b: Reading, cap: number): boolean => a.g
  * | `fanRoundHolds` (fan-spread) | `fanRound` | | more routed straight (held chords); holds |
  * | `closeUp`, `pullTier` (by count), `settleKeepOut`, `centreGroupStep` | `keepCount` | | more overlay straight; holds |
  * | `pullTier` (by link), the held-column probe, `stepOutOfChords` | `keepSet` | | fewer of the before-set lost; holds |
+ * | the lane reseat (`chooseReseat` in decide.ts) | `laneReseat` | no new centring finding, no new short gap, no new link label shortfall, the corridors stand at their child, no body on a frozen chord | none; holds |
  * | none yet | `unified` | | fewer bent over both layers, fewer turns over both, fewer crossings, tie |
  */
 export const profiles = {
@@ -332,8 +347,29 @@ export const profiles = {
   fanRound: orderProfile('fanRound', [keys.moreStraight('routed')]),
   keepCount: orderProfile('keepCount', [keys.moreStraight('overlay')]),
   keepSet: gateProfile('keepSet', [keys.keepsStraightSet('overlay')]),
+  /** The lane reseat (ticket 13, phase 3): the four criteria of the post-hoc trial, as gates on a settled model. No key: the reseat is judged by what it must not spoil. */
+  laneReseat: gateProfile('laneReseat', [], [noNewFindings('centring'), noNewFindings('gaps'), noNewFindings('room'), factHolds('lanesHold'), factHolds('chordsClear')]),
   /** The order the user approved on 2026-10-04: fewer bent links over both layers, then fewer turns, then fewer crossings. Not switched on anywhere. */
   unified: orderProfile('unified', [keys.fewerBent('both'), keys.fewerTurns('both'), keys.fewerCrossings], [], [], true),
+} satisfies Record<string, Profile>;
+
+/**
+ * The judge of each kind, by the profile of `objective.ts` that gives today's verdict. This is the one place that names them: phase 4 replaces
+ * these by `profiles.unified` behind the hard gates of the design.
+ */
+export const judges = {
+  /** A chord-clear candidate on the geometry after the move, against the geometry before it. */
+  chordCheap: profiles.settled,
+  /** A lower rank candidate: the crossings the move adds, before a settled copy is paid for. */
+  rankCheap: profiles.cheapCrossings,
+  /** A chord-clear candidate on its settled copy, against the settled copy without it. */
+  chordSettled: profiles.settled,
+  /** The same for a lower rank cell (no crossing is added). */
+  rankSettled: profiles.settledRanked,
+  /** A group with no link steps out of a chord: the straight overlay links it began with must stand. */
+  linkless: profiles.keepSet,
+  /** The lane reseat on its settled copy, against the incumbent with its lanes held. */
+  laneReseat: profiles.laneReseat,
 } satisfies Record<string, Profile>;
 
 /**
