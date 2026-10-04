@@ -1,0 +1,26 @@
+# Expected: a skirt listed from its lateral end takes the same column-gap course as the one listed from the flank (architecture ticket 15, phase 5). The link runs from the core's left face by a side run into the free column beside the core, down the column, along a U part of the tier gap below the row, and into the bottom face of the flank, in 3 turns; every gate holds.
+# Source: architecture ticket 15, phase 5 (hand-solve 09 with the link listed from the core).
+portograph: 2
+profile: network
+groups:
+  town: { label: Town }
+  upper: { tier: 0, label: Upper }
+  core: { tier: 1, label: Core }
+  east: { tier: 1, canton: town, label: East }
+  south: { tier: 2, canton: town, label: South }
+  neighbour: { tier: 1, label: Neighbour }
+  flank: { align: left, of: core, label: Flank }
+nodes:
+  up-1: { group: upper, class: router, ports: [100G, 100G, 100G, 100G, 100G, 100G] }
+  core-1: { group: core, class: router, ports: [100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G] }
+  east-1: { group: east, class: router, ports: [100G, 100G, 100G, 100G] }
+  south-1: { group: south, class: router, ports: [100G, 100G] }
+  nb-1: { group: neighbour, class: router, ports: [100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G] }
+  fl-1: { group: flank, class: router, ports: [100G, 100G] }
+links:
+  - [up-1.100G, core-1.*]
+  - [up-1.100G, nb-1.*]
+  - [up-1.100G, east-1.*]
+  - [east-1.100G, south-1.*]
+  - [fl-1.100G, east-1.*]
+  - [core-1.*, fl-1.100G]

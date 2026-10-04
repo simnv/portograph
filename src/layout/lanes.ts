@@ -1196,6 +1196,8 @@ function reserveGapLanes(model: LayoutModel, pending: Lane[], occ: (group: Layou
     if (!isGapCourse(course)) continue;
     const link = model.links.find(item => item.id === course.link), ends = gapEnds(course);
     if (link?.attachments === undefined || ends === undefined) throw new CourseRefusal(`Course on ${course.link} cannot reserve a column-gap lane`);
+    // A gap course joins two ends of one band; a link across bands has its own lanes (transit, side, perimeter).
+    if (nodeTier(model, link.attachments[ends.lateral].node) !== nodeTier(model, link.attachments[ends.u].node)) throw new CourseRefusal(`The ends of ${link.id} stand in two bands, and a column-gap course joins the ends of one`);
     const port = link.attachments[ends.lateral], lateral = findPort(model, port);
     if (lateral?.anchor === undefined || (lateral.side !== 'left' && lateral.side !== 'right') || !outermostOfRow(model, port)) throw new CourseRefusal(`The lateral end of ${link.id} does not face a free column`);
     const dir = lateral.side === 'right' ? 1 : -1, width = laneWidth(model, link), half = width / 2;
