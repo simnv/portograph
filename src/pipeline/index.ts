@@ -209,14 +209,17 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   const trialAbort = (stage: string): void => { if (budget.remainingMs() <= 0) throw new CommandDeadlineError(0, stage); };
   let kept7e = model;
   let base = await timed('bands', () => step('bands', () => bands(kept7e, () => trialAbort('bands'), options.attemptTrace)));
-  const baseMoved = lastAttempt.moved;
+  const baseMoved = lastAttempt.moved, baseUnmoved = lastAttempt.unmoved;
   let hints = new Map<string, 'left' | 'right'>(options.testSideHints ?? []);
   let laneKeys = new Set<string>();
   const promised: SideOffer['promised'] = new Map(), refused = new Set<string>(), sideNotes: Diagnostic[] = [];
   const trialLinks = new Map<string, string>();
+  // The extra trial of the unmoved baseline's offer (phase 3b) publishes no refusal note: its kept result never offered the hint.
+  let silent = false;
   const refuse = (keys: Iterable<string>, side: ReadonlyMap<string, 'left' | 'right'>, reason: string): void => {
     for (const key of keys) {
       refused.add(refusedKey(key, side.get(key)!));
+      if (silent) continue;
       const link = promised.get(key)?.link ?? trialLinks.get(key);
       sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_HINT_REFUSED',
         message: `The side hint ${side.get(key)} on ${portName(key)} was refused: ${reason}.`, ...(link === undefined ? {} : { owners: [{ kind: 'link' as const, id: link }] }) });
@@ -246,13 +249,17 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     let offer = await timed('measureSides', () => measureSides(base, kept7e, refused));
     // No offer on the kept 7f result. If a 7f move changed the placement, the unmoved baseline may have had one that the move removed: it runs as one
     // extra side trial, judged on routed results like any other, so the kept result stands unless a real trial beats it (architecture ticket 15, phase 3b).
-    let unmovedOffer = false;
-    if (round === 0 && offer.hints.size === 0 && baseMoved) {
-      const unmoved = await timed('bands-unmoved', () => step('bands', () => bands(kept7e, () => trialAbort('bands'), options.attemptTrace, false)));
+    // The unmoved state is the settled copy 7f judged its first move against, when it kept one; otherwise it is rebuilt (silently: no progress event, no
+    // attempt trace, since this run is never published). Nothing is built when the command has no re-run left for the trial.
+    let unmovedOffer = false, reused = false;
+    if (round === 0 && offer.hints.size === 0 && baseMoved && reruns < maxReruns) {
+      reused = baseUnmoved !== undefined;
+      const unmoved = baseUnmoved ?? await timed('bands-unmoved', () => bands(kept7e, () => trialAbort('bands'), undefined, false));
       offer = await timed('measureSides', () => measureSides(unmoved, kept7e, refused));
       unmovedOffer = offer.hints.size > 0;
+      silent = unmovedOffer;
     }
-    options.testSideTrace?.({ ev: 'offer', round, offer, base, kept7e });
+    options.testSideTrace?.({ ev: 'offer', round, offer, base, kept7e, unmoved: unmovedOffer, reused });
     if (offer.capped) sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_PROBE_CAPPED', message: 'The side measure stopped at its probe cap; the links after it were not probed.' });
     if (offer.hints.size === 0) break;
     if (reruns >= maxReruns) {

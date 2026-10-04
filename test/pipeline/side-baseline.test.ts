@@ -75,7 +75,7 @@ describe('the side round reads the baseline (Section 19.2)', () => {
     // judge refuses it, the kept result stands, and the published link is the same single segment.
     expect(places).toBe(2);
     expect(labels).toContain('rerun-side');
-    expect(codes(model).filter(code => code.startsWith('SIDE_'))).toEqual(['SIDE_HINT_REFUSED']);
+    expect(codes(model).filter(code => code.startsWith('SIDE_'))).toEqual([]);
     // The measure read the baseline. The 7e reading of the same input (what main reads) offers a hint for that link: the slack rule cannot separate them.
     const { base, kept7e } = state.measured[0]!;
     const real = await vi.importActual<typeof import('../../src/layout/side-measure.js')>('../../src/layout/side-measure.js');

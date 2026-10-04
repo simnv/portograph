@@ -176,7 +176,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
   // The cantons close up when a round's close-up has nothing to move. The step over a chord (ticket 77) has its own convergence: a round
   // that moved something runs one more, so the growth and the close-up are measured on the geometry that stands, and the last round runs
   // no step, since its move could not be measured again. A mover moves in one round only, so the rounds end.
-  lastAttempt.moved = false;
+  lastAttempt.moved = false; lastAttempt.unmoved = undefined;
   let closed = false, again = false;
   const movers = new Set<string>();
   /** The settled copy of the last move of the chord step, once the draft has taken it: the next round reads its settling and does not settle again. */
