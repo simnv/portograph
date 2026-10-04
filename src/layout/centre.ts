@@ -754,7 +754,7 @@ export function centreViolations(model: LayoutModel, ahead = false): string[] {
       const owned = groupFeeds(model, context, tier, list, id, false);
       if (model.document.groups[id]!.shape === 'bar' || !owned.own.length) { previous = group; continue; }
       const trial = JSON.parse(replayedText ??= JSON.stringify(replayed)) as LayoutModel;
-      const step = centreGroupStep(trial, centreContext(trial, anchor), tier, feeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, tail);
+      const step = centreGroupStep(trial, context, tier, feeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, tail);
       previous = group;
       // Both lookups below read one key per wanted child; keying them once keeps the scan of the
       // group's own feeds and ports out of the loop. First entry wins, as `find` did.

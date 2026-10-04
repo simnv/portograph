@@ -65,6 +65,26 @@ function documentTier(model: LayoutModel, id: string): number | undefined {
  * (docs/design/routed-chords.md, Section 3).
  */
 export function chordKind(model: LayoutModel, link: LayoutLink): ChordKind | undefined {
+  const scope = linkFactsScope;
+  if (scope?.model !== model) return chordKindOf(model, link);
+  if (!scope.kinds.has(link)) scope.kinds.set(link, chordKindOf(model, link));
+  return scope.kinds.get(link);
+}
+
+/**
+ * What the link facts below read: ports, lanes, tier bands and the link's own shared runs. A caller that changes none of them for the
+ * span of `run` (a row-path rebuild only sets paths and techniques, and the facts read a technique for `stub` alone) may have each
+ * fact computed once per link. The scope holds one model; a query on any other model is never cached, and a scope never nests.
+ */
+interface LinkFactsScope { model: LayoutModel; kinds: Map<LayoutLink, ChordKind | undefined>; legs: Map<LayoutLink, Map<'from' | 'to', PathSegment | undefined>> }
+let linkFactsScope: LinkFactsScope | undefined;
+export function withLinkFacts<T>(model: LayoutModel, run: () => T): T {
+  if (linkFactsScope) return run();
+  linkFactsScope = { model, kinds: new Map(), legs: new Map() };
+  try { return run(); } finally { linkFactsScope = undefined; }
+}
+
+function chordKindOf(model: LayoutModel, link: LayoutLink): ChordKind | undefined {
   if (link.layer !== 'routed' || !link.attachments || link.bundle !== undefined) return undefined;
   if (link.technique === 'stub' || effectiveLayer(link) !== 'routed') return undefined;
   const route = model.document.links[link.sourceIndex]?.route;
@@ -387,6 +407,15 @@ export function standaloneChord(model: LayoutModel, link: LayoutLink): PathSegme
  * that port stands in the band across the gap. A side port or a port with no tier gap beyond it keeps the stem alone (ticket 91).
  */
 export function orthogonalLeg(model: LayoutModel, link: LayoutLink, end: 'from' | 'to'): PathSegment | undefined {
+  const scope = linkFactsScope;
+  if (scope?.model !== model) return orthogonalLegOf(model, link, end);
+  let ends = scope.legs.get(link);
+  if (!ends) scope.legs.set(link, ends = new Map());
+  if (!ends.has(end)) ends.set(end, orthogonalLegOf(model, link, end));
+  return ends.get(end);
+}
+
+function orthogonalLegOf(model: LayoutModel, link: LayoutLink, end: 'from' | 'to'): PathSegment | undefined {
   const port = findPort(model, link.attachments![end]), out = port?.side === undefined ? undefined : OUTWARD[port.side];
   if (!port?.anchor || !out) return undefined;
   let length: number = GROUP_LABEL_GEOMETRY.routerStem;

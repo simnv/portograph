@@ -7,7 +7,7 @@ import { groupConsumers } from '../score/model.js';
 import { portId } from './skeleton-graph.js';
 import { groupShape } from './grid.js';
 import { joinFanTrees } from './bundle-geometry.js';
-import { expectedFramePath, isRoutedChord, routedChordCandidate, standaloneChord } from './frame-paths.js';
+import { expectedFramePath, isRoutedChord, routedChordCandidate, standaloneChord, withLinkFacts } from './frame-paths.js';
 
 /**
  * Coordinate magnitude beyond which an obstacle is measured instead of rejected.
@@ -234,22 +234,24 @@ export function rebuildRowPaths(draft: LayoutModel): void {
     if (automatic(draft, link)) link.technique = path ? 'straight' : 'orthogonal';
     return path !== undefined;
   };
-  let open = candidates.filter(link => !decide(link) && routedChordCandidate(draft, link));
-  // Two passes, repeated until neither changes anything (ticket 89). The add-only pass above holds a chord only once every stem that blocks
-  // it has gone, so two chords that each wait for the other's stem never start. The batch pass offers the candidates left together: each is
-  // taken as straight, and a chord that fails against the others leaves and puts its stem back. Only a link that can hold alone (no tier
-  // transit, title strip, corridor or body refuses it whatever the others do) is offered, so a chord that never could hold cannot
-  // take a neighbour down with it; and the reverted links go back to the add-only pass, where they may hold alone.
-  while (draft.frozenChords === undefined) {
-    while (open.length) {
-      const next = open.filter(link => !decide(link));
-      if (next.length === open.length) break;
-      open = next;
+  withLinkFacts(draft, () => {
+    let open = candidates.filter(link => !decide(link) && routedChordCandidate(draft, link));
+    // Two passes, repeated until neither changes anything (ticket 89). The add-only pass above holds a chord only once every stem that blocks
+    // it has gone, so two chords that each wait for the other's stem never start. The batch pass offers the candidates left together: each is
+    // taken as straight, and a chord that fails against the others leaves and puts its stem back. Only a link that can hold alone (no tier
+    // transit, title strip, corridor or body refuses it whatever the others do) is offered, so a chord that never could hold cannot
+    // take a neighbour down with it; and the reverted links go back to the add-only pass, where they may hold alone.
+    while (draft.frozenChords === undefined) {
+      while (open.length) {
+        const next = open.filter(link => !decide(link));
+        if (next.length === open.length) break;
+        open = next;
+      }
+      const held = open.length ? batchChords(draft, open, automatic) : [];
+      if (!held.length) break;
+      open = open.filter(link => !held.includes(link));
     }
-    const held = open.length ? batchChords(draft, open, automatic) : [];
-    if (!held.length) break;
-    open = open.filter(link => !held.includes(link));
-  }
+  });
   // A straight link inside one frame is one chord between two faces, never a leaf of a fan tree.
   joinFanTrees(draft, candidates.filter(link => !isRoutedChord(draft, link)));
 }
