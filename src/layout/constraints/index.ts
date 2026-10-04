@@ -1,4 +1,4 @@
-export { xCatalogue } from './catalogue.js';
+export { xCatalogue, groupOwner, frameOwner } from './catalogue.js';
 export type { CatalogueOptions } from './catalogue.js';
 export { classify, evaluate, summarise, termValue, RESIDUAL_TOLERANCE } from './evaluate.js';
 export type { Summary } from './evaluate.js';

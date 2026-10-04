@@ -1,4 +1,4 @@
-import type { LayoutModel } from '../../model/layout.js';
+import type { LayoutModel, Owner } from '../../model/layout.js';
 import { ownerId, type Constraint, type FindingClass, type Residual, type Term } from './types.js';
 
 /** Residuals under this size (px) are float noise of the placement stages, as `PLACEMENT_EPS` is. */
@@ -23,7 +23,9 @@ export function termValue(model: LayoutModel, term: Term): number | undefined {
 function declared(model: LayoutModel, constraint: Constraint): string | undefined {
   const owners = new Set(constraint.owners);
   for (const item of model.diagnostics) {
-    if (item.severity === 'info' || !item.owners?.some(owner => owners.has(ownerId(owner) ?? ''))) continue;
+    // A diagnostic owner of kind `group` names a document group: a cell (`group:`) or, for a ranked group, its frame (`frame:`).
+    const names = (owner: Owner): boolean => { const id = ownerId(owner); return id !== undefined && (owners.has(`${owner.kind}:${id}`) || (owner.kind === 'group' && owners.has(`frame:${id}`))); };
+    if (item.severity === 'info' || !item.owners?.some(names)) continue;
     if (item.code.startsWith('COLUMN_AXIS') || item.code.startsWith('STRAIGHT_LINK') || item.code.startsWith('GROUP_GRID')) return item.code;
   }
   return undefined;
@@ -64,7 +66,7 @@ export function summarise(residuals: readonly Residual[]): Summary {
   const byKind: Summary['byKind'] = {}, soft: Summary['soft'] = {};
   for (const item of residuals) {
     const row = (byKind[item.constraint.kind] ??= {});
-    const label = item.class ?? (item.constraint.strength === 'soft' ? 'soft' : item.violated ? 'violated' : 'ok');
+    const label = item.constraint.role === 'hull' ? (item.violated ? 'hull-violated' : 'hull-ok') : item.class ?? (item.constraint.strength === 'soft' ? 'soft' : item.violated ? 'violated' : 'ok');
     row[label] = (row[label] ?? 0) + 1;
     if (item.constraint.strength === 'soft' && item.residual !== undefined) {
       const bucket = (soft[item.constraint.kind] ??= { entries: 0, total: 0, straight: 0 });

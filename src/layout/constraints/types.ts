@@ -34,12 +34,21 @@ export type Contract = 'known' | 'translation';
 export type Support = 'difference' | 'fixed-endpoints' | 'unsupported';
 
 export interface Constraint {
+  /** Kind plus sorted owners (and `/n` for a second entry of the same pair): stable across runs. */
   id: string;
   kind: ConstraintKind;
   strength: 'hard' | 'soft';
+  /** `kind:id` keys (`group:east#1`, `frame:east`, `lane:..`, `link:..`): a frame and a cell that share an id stay two owners. */
   owners: string[];
   /** ADR, Q number, ticket or constant name. */
   source: string;
+  /** The named constant or input the bound comes from (`bandGap`, `FRAME_TO_FRAME_GAP`, `reference layout`, `lane bounds`, ...). */
+  basis: string;
+  /**
+   * `evidence`: a violation says something about the layout. `hull`: valid for a solve, but the pipeline builds the checked box from the
+   * same terms (frames.ts `deriveFrames`), so it holds by construction and a pass proves nothing.
+   */
+  role: 'evidence' | 'hull';
   anchor: Anchor;
   /** The discrete choice the entry holds fixed (a published order, a lane side), when it holds one. */
   branch?: string | undefined;
