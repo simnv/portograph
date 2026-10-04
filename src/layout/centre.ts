@@ -670,6 +670,11 @@ export function flagUnverifiedCentring(model: LayoutModel): void {
   }
 }
 /**
+ * The parts of the model that a replayed centring step only reads. The check runs one step per group, each on its own copy; these parts are copied once, frozen
+ * and shared by all the copies (a write to one throws), so a copy parses only the groups, the nodes and the diagnostics (architecture ticket 14).
+ */
+const TRIAL_SHARED = ['document', 'links', 'groupLinks', 'meshBuses', 'lanes', 'bundles', 'obstacles', 'frames', 'labels', 'regions', 'tierBands'];
+/**
  * The stage 7c invariant, readable at any later stage (ADR-0010): for every centred group, replaying
  * its own centring step on a copy either leaves each owning alignment where the model has it, or ends
  * unresolved by the producer's own rules for that port (infeasible alignment, conflicting feeds, a
@@ -697,7 +702,7 @@ export function centreViolations(model: LayoutModel, ahead = false, shared?: Cen
   const { freeze: _frozen, ...replayed } = model;
   void _frozen;
   // Every trial starts from the same model, so it is serialized once, on the first trial, and each trial parses that text.
-  let replayedText: string | undefined;
+  let replayedText: string | undefined, sharedParts: Record<string, unknown> | undefined;
   for (const { tier, authority } of context.steps) {
     const list = centringFeeds(model, tier, authority), order = context.groupOrder.get(tier)!;
     const tail = tailReservation(model, context, tier, order);
@@ -706,7 +711,15 @@ export function centreViolations(model: LayoutModel, ahead = false, shared?: Cen
       const group = model.groups[id]!;
       const owned = groupFeeds(model, context, tier, list, id, false);
       if (model.document.groups[id]!.shape === 'bar' || !owned.own.length) { previous = group; continue; }
-      const trial = JSON.parse(replayedText ??= JSON.stringify(replayed)) as LayoutModel;
+      if (replayedText === undefined) {
+        const own: Record<string, unknown> = {}, still: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(replayed)) (TRIAL_SHARED.includes(key) ? still : own)[key] = value;
+        replayedText = JSON.stringify(own);
+        sharedParts = JSON.parse(JSON.stringify(still)) as Record<string, unknown>;
+        const freezeDeep = (value: unknown): void => { if (value && typeof value === 'object') { Object.values(value).forEach(freezeDeep); Object.freeze(value); } };
+        freezeDeep(sharedParts);
+      }
+      const trial = Object.assign(JSON.parse(replayedText) as object, sharedParts) as unknown as LayoutModel;
       const step = centreGroupStep(trial, context, tier, centringFeeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, tail);
       previous = group;
       // Both lookups below read one key per wanted child; keying them once keeps the scan of the
