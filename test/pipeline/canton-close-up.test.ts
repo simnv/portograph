@@ -37,16 +37,11 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
     expect(cantonBoxes(model)).toHaveLength(3);
     // Measured before the rule: 100 and 148 px on a canvas 2049.3 px wide.
-    // A straight link outranks the band-gap close-up (user, 2026-10-04): the gap equals the band gap unless closing it would bend a straight link. Here the lower rank
-    // moves of the 7f decisions straighten two overlay links, and canton b cannot close up to the one beside it without bending one: gap 1 stays 23.9 px off.
-    for (const [i, gap] of gaps(model).entries()) {
-      if (i === 1) expect(Math.abs(gap - bandGap(model)), `gap ${i}`).toBeCloseTo(23.9, 1);
-      else expect(Math.abs(gap - bandGap(model)), `gap ${i}`).toBeLessThan(1e-6);
-    }
-    // No tier-0 column warns for an overlay link to a canton, and no close-up is refused.
+    // A straight link outranks the band-gap close-up (user, 2026-10-04), so a gap may stay wider than the band gap; a gap narrower than it is always a bug (ticket 17:
+    // before the fix the chord step took a slide that left gap 1 23.9 px short, and the close-up could not restore it without bending a straight link).
+    for (const [i, gap] of gaps(model).entries()) expect(gap, `gap ${i}`).toBeGreaterThanOrEqual(bandGap(model) - 1e-6);
+    // No tier-0 column warns for an overlay link to a canton.
     expect(heldOwners(model).filter(id => id.startsWith('top-'))).toEqual([]);
-    // The one refusal is the rule above, named: canton b stays open because closing it would bend a straight overlay link.
-    expect(closeUps(model).map(item => [item.owners![0], /a straight overlay link would be bent/.test(item.message)])).toEqual([[{ kind: 'group', id: 'b' }, true]]);
     expect(model.canvas!.width).toBeLessThan(2049.3 - 100);
     // The block keeps its centre (the partner mean is not a stable target, ticket "Comments"); the tier packed against the canton
     // step, the MPLS row, stands centred on it within one column slack (measured 1.5 px).

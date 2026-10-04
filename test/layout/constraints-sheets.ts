@@ -21,5 +21,6 @@ export const CONSTRAINT_SHEETS: readonly string[] = [
   'four-locations-each-with-a-zone',
   'overlay-links-reorder-two-locations',
   'sibling-frames-align-their-ranks',
+  'three-canton-groups-close-up-to-a-band-gap',
   'transit-fan',
 ];

@@ -373,7 +373,7 @@ export const profiles = {
  * no gate any more: a net gain may bend one. A crossing added is no veto.
  */
 /** The findings a settled chord-clear candidate must not add (G6 crowded pairs, G5 disordered ports, tier-gap parts the plan declines). */
-const noNewPlacementFindings = [noNewFindings('crowded'), noNewFindings('disordered'), noNewFindings('residuals')];
+const noNewPlacementFindings = [noNewFindings('crowded'), noNewFindings('disordered'), noNewFindings('residuals'), noNewFindings('separation')];
 
 export const judges = {
   /** A chord-clear candidate on the geometry after the move, against the geometry before it: fewer bent links over both layers, no new body on a frozen chord. */
@@ -389,7 +389,7 @@ export const judges = {
   /** The same for a lower rank cell. */
   rankSettled: orderProfile('rankSettled', unifiedOrder, [], [driftHeld, widthBound, ...noNewPlacementFindings], true),
   /** A group with no link steps out of a chord: the picture is no worse by the order, and G6 and G5 name nothing new. */
-  linkless: orderProfile('linkless', unifiedOrder, [], noNewPlacementFindings.slice(0, 2), true),
+  linkless: orderProfile('linkless', unifiedOrder, [], [noNewFindings('crowded'), noNewFindings('disordered'), noNewFindings('separation')], true),
   /** The lane reseat on its settled copy, against the incumbent with its lanes held. */
   laneReseat: orderProfile('laneReseat', unifiedOrder, [], [noNewFindings('centring'), noNewFindings('gaps'), noNewFindings('room'), noNewFindings('crowded'), noNewFindings('disordered'), factHolds('lanesHold'), factHolds('chordsClear')], true),
 } satisfies Record<string, Profile>;

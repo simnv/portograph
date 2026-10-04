@@ -10,6 +10,7 @@ import { saveGroups } from './overlay-order.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { tierGapPlans } from './gap-plan.js';
+import { evaluate, xCatalogue } from './constraints/index.js';
 import { centreViolations } from './centre.js';
 import { reserveLinkLabelRoom, type LinkLabelShortfall } from './bands.js';
 import { attemptCounters, lastAttempt } from './attempt-counters.js';
@@ -113,6 +114,18 @@ const residuals = (model: LayoutModel): Set<string> => new Set(model.diagnostics
   .map(item => `${item.code}:${JSON.stringify(item.owners ?? [])}`));
 
 /**
+ * The hard minimum separations the model breaks (the band gap between root groups or frames, and the rest of the x catalogue's hard `separation` entries). A move that adds
+ * one is no move: a gap under the minimum is a bug, where a gap wider than the band gap is the accepted price of a straight link (ticket 17).
+ */
+export function separationBreaks(model: LayoutModel): Set<string> {
+  const found = new Set<string>();
+  for (const item of evaluate(model, xCatalogue(model))) {
+    if (item.violated && item.constraint.strength === 'hard' && item.constraint.kind.startsWith('separation') && item.class === 'invariant-violation') found.add(item.constraint.id);
+  }
+  return found;
+}
+
+/**
  * How far the column rules move a group, asked of a copy of a settled model (ticket 67's fixed point: 0 when they move nothing). The
  * pipeline does not ask them again after 7f, so a slide they would undo is a position they do not accept. `Infinity` when they fail.
  */
@@ -140,7 +153,7 @@ function drift(model: LayoutModel): number {
 export interface AdoptedCopy { copy: LayoutModel; baseDiagnostics: number; original: ReadonlySet<Diagnostic>; result: unknown }
 
 const verdict = (model: LayoutModel, overlays: readonly LayoutLink[]): Verdict =>
-  ({ ...read(model, { overlays, routed: { straight: 'aligned' }, crossings: 'pairs', growth: true }), sets: { crowded: crowded(model), disordered: disordered(model), residuals: residuals(model) }, drift: drift(model) });
+  ({ ...read(model, { overlays, routed: { straight: 'aligned' }, crossings: 'pairs', growth: true }), sets: { crowded: crowded(model), disordered: disordered(model), residuals: residuals(model), separation: separationBreaks(model) }, drift: drift(model) });
 
 /**
  * The growth a cell's frame edge may take when its bodies move (ticket 80): the frame stands off the outermost body, so the frame, the
@@ -307,7 +320,7 @@ export function shortGaps(model: LayoutModel): string[] {
  */
 export function chooseStep(model: LayoutModel, overlays: readonly LayoutLink[], group: LayoutGroup, dx: number): boolean {
   // One candidate, so the position that breaks a tie is the same for both: the step stays when it is no worse (a swap of one chord for another is a net gain or a net loss, by the order).
-  const straight = (): Reading => ({ ...read(model, { overlays, routed: { straight: 'aligned' }, crossings: 'pairs' }), sets: { crowded: crowded(model), disordered: disordered(model) }, tie: [0] });
+  const straight = (): Reading => ({ ...read(model, { overlays, routed: { straight: 'aligned' }, crossings: 'pairs' }), sets: { crowded: crowded(model), disordered: disordered(model), separation: separationBreaks(model) }, tie: [0] });
   const before = straight(), undo = saveGroups(model, [group]);
   moveGroup(model, group, dx, 0);
   rebuildNodeGeometry(model, group.nodes, 'current');
