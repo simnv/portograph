@@ -1,15 +1,13 @@
 import type { Diagnostic, LayoutModel } from '../model/layout.js';
 import { blockedChords, edgeLeavers, freezeChords } from './frame-paths.js';
-import { type LaneFollow, lanesHoldTheirChild, sideLaneFindings, rebuildLaneExtents, reseatLanes } from './lanes.js';
-import { centreViolations } from './centre.js';
+import { type LaneFollow, sideLaneFindings, rebuildLaneExtents, reseatLanes } from './lanes.js';
 import { stepLinklessOutOfChords } from './overlay-place.js';
 import { type AdoptedCopy, stepOverChords } from './chord-clear.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
-import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, type LinkLabelShortfall, produceGroupLabelBands, replanGroupLabels, reserveLinkLabelRoom } from './bands.js';
+import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, produceGroupLabelBands, replanGroupLabels } from './bands.js';
 import { holdColumnAxes, refreshHeldWarnings } from './columns.js';
 import { growTierGaps } from './gap-room.js';
-import { PLACEMENT_EPS } from './tolerance.js';
-import { tierGapPlans } from './gap-plan.js';
+import { candidateCopy, chooseReseat, shortGaps } from './decide.js';
 import { attemptCounters } from './attempt-counters.js';
 import { countStep, ledgerOn, ledgerSnapshot, startAttemptEntry, type LedgerSnapshot } from './attempt-ledger.js';
 
@@ -22,10 +20,11 @@ import { countStep, ledgerOn, ledgerSnapshot, startAttemptEntry, type LedgerSnap
  * The passes, in order, on the draft:
  *   1. `freezeChords`, then `produceGroupLabelBands`: the last confirmation of a chord becomes a wall, then the reservation of the label bands.
  *   2. Up to `CANTON_ROUNDS` rounds of `settleRound`, `stepLinklessOutOfChords` and the step over a chord (`stepOverChords`, which judges
- *      each move on a copy that `trialSettle` has run); a round that moved anything is followed by `replayRegions`, or, when the step kept
+ *      each move on a copy that `trialSettle` has run). The choices of the linkless step, the chord step and the lane reseat are all made by the
+ *      decision loop of decide.ts, each judged by the profile `judges` names for its kind; a round that moved anything is followed by `replayRegions`, or, when the step kept
  *      a move, by taking the settled copy of the last kept move (the replay and the next round's settling are then done).
  *   3. The held-axis probe (`holdColumnAxes` on a copy), and the non-convergence warning for the cantons.
- *   4. `reseatLanes`, adopted only when the settled trial is no worse in four named respects.
+ *   4. `reseatLanes`, adopted only when its settled trial is no worse in the named respects (`chooseReseat`, decide.ts).
  *   5. The diagnostics read once on the final geometry: blocked chords, side lanes, chords that leave a frame by a side edge.
  */
 
@@ -35,12 +34,6 @@ const CANTON_ROUNDS = 4;
 const CANTON_CREEP = 0.5;
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
-/** A copy of the model to try something on. Counted, so a test can read how much trying one attempt does. */
-function candidateCopy(model: LayoutModel): LayoutModel {
-  attemptCounters.candidateCopies++;
-  return clone(model);
-}
-
 /** One line of the opt-in trace: a pass, a short hash of the model after it, and what the pass decided. */
 export interface AttemptTraceEvent { pass: string; revision: string; verdict: string }
 export interface AttemptOptions {
@@ -55,21 +48,6 @@ function revisionOf(model: LayoutModel): string {
   let hash = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193) >>> 0;
   return hash.toString(16).padStart(8, '0');
-}
-
-/**
- * The tier gaps whose plan asks for more height than they have. 7f has already reserved the room every gap asks
- * for, so a later reservation change that makes one of these owe more room owes it room nothing
- * will reserve.
- */
-function shortGaps(model: LayoutModel): string[] {
-  // A gap is short where the plan asks for more height than the gap has. A residual part is the router's and is planned no seat.
-  return tierGapPlans(model).filter(({ plan }) => plan.growth > PLACEMENT_EPS).map(({ gap }) => `gap:${gap.above}:${gap.below}`);
-}
-/** Whether `after` names nothing `before` does not. A trade of one item for another is not "no worse". */
-function noNewItems(after: readonly string[], before: readonly string[]): boolean {
-  const held = new Set(before);
-  return after.every(item => held.has(item));
 }
 
 /** The grid and the labels, settled again: the part of a replay that does not rebuild the regions. */
@@ -311,20 +289,8 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
     // `straightCorridorClear` iterates the group boxes the grid widens and the labels the replan
     // places, and on `a-corridor-moves-after-the-grid-settles` the grid really does widen a box by
     // 29.03 px here. The accepted model is the trial itself, so nothing is re-derived twice.
-    const settled = candidateCopy(draft);
-    replayGridAndLabels(settled);
-    const afterRoom: LinkLabelShortfall[] = [], heldRoom: LinkLabelShortfall[] = [];
-    reserveLinkLabelRoom(candidateCopy(settled), afterRoom);
-    const after = { centring: centreViolations(settled), gaps: shortGaps(settled) };
-    draft.lanes = heldLanes; rebuildLaneExtents(draft);
-    reserveLinkLabelRoom(candidateCopy(draft), heldRoom);
-    const held = { centring: centreViolations(draft), gaps: shortGaps(draft) };
-    if (noNewItems(after.centring, held.centring) && noNewItems(after.gaps, held.gaps)
-      && noNewItems(afterRoom.map(item => item.link), heldRoom.map(item => item.link))
-      && lanesHoldTheirChild(settled, followedLanes) && blockedChords(settled).length === 0) {
-      // Adopt the trial whole: `draft` is the object this transaction validates and returns, so it
-      // takes the settled state rather than repeating the two producers on itself.
-      Object.assign(draft, settled);
+    // The candidate is derived once, on a copy that has the grid and the labels replayed, and judged there by `judges.laneReseat` (decide.ts, kind `lane-reseat`).
+    if (chooseReseat(draft, heldLanes, followedLanes, replayGridAndLabels)) {
       attemptCounters.reseat.adopted++;
       note('reseat-lanes', 'adopted');
     } else {
