@@ -1,13 +1,14 @@
 import type { PortRef } from '../model/document.js';
 import type { LayoutLink, LayoutModel, LayoutNode, PathSegment } from '../model/layout.js';
 import { linkStrokeWidth } from '../theme/geometry.js';
-import { EPS, intersection, samePoint, segmentDistance } from '../score/geometry.js';
+import { EPS, intersection, samePoint, segmentDistance } from '../geometry/planar.js';
 import { chordKind, chordVerdict, edgeMisses, fixedPointRefusal, isRoutedChord, SIDE_EDGE_SLACK } from './frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { straightChord } from './overlay-paths.js';
 import { findPort } from './row-paths.js';
 import { facingSide, hintRefusal } from './side-hints.js';
 import { portKey } from './sides-one.js';
+import { nodeTier } from './read/tier.js';
 
 /**
  * The routed chord shape of the side measure (docs/design/side-faces.md, Sections 5 and 9): a routed link that is no chord now, and would be
@@ -63,7 +64,7 @@ export function measureChordSides(model: LayoutModel, nodes: LayoutModel['nodes'
   refusedKey: (key: string, side: string) => string, bends: (link: LayoutLink) => number, probes: number, probeCap: number): ChordPass {
   const pass: ChordPass = { nodes, base, hints: new Map(), promised: new Map(), probes, capped: false };
   const order = new Map(Object.keys(model.document.nodes).map((id, index) => [id, index]));
-  const tierOf = (ref: PortRef): number => model.groups[model.document.nodes[ref.node]!.group]!.tier!;
+  const tierOf = (ref: PortRef): number => nodeTier(model, ref.node);
   const centreOf = (node: LayoutNode): { x: number; y: number } => ({ x: node.bounds!.x + node.bounds!.width / 2, y: node.bounds!.y + node.bounds!.height / 2 });
   const accepted: Accepted[] = [];
   for (const link of model.links) {

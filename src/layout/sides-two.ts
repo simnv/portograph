@@ -4,7 +4,7 @@ import type { LayoutLink, LayoutModel, LayoutPort, PathSegment } from '../model/
 import { orderedNodeIds, orderedGroupIds } from '../model/model.js';
 import { SIDE_TIE_ORDER, portKey, tiedPortComponents } from './sides-one.js';
 import { measurePortPill } from '../text/index.js';
-import { EPS } from '../score/geometry.js';
+import { EPS } from '../geometry/planar.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { sizeNodes } from './size.js';
 import { bandGap, nodeGap, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';

@@ -1,7 +1,7 @@
 import type { PortRef } from '../model/document.js';
 import type { Point, Rect, Side } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel, LayoutNode, LayoutPath, LayoutPort, PathSegment } from '../model/layout.js';
-import { bottom, EPS, retracingRuns, right, samePoint } from '../score/geometry.js';
+import { bottom, EPS, retracingRuns, right, samePoint } from '../geometry/planar.js';
 import { OVERLAY_ENDPOINT_RADIUS, pathStrokeWidth } from '../theme/geometry.js';
 import { RectangleIndex } from './rectangle-index.js';
 import { findPort } from './row-paths.js';

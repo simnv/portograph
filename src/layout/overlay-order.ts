@@ -11,6 +11,7 @@ import { frameSubtreeCells } from '../model/model.js';
 import { frameTiers, packTier, unitOrder, type Column } from './columns.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
+import { isCantonUnit } from './read/canton.js';
 
 function readDraft(model: LayoutModel) {
   const anchor = selectAnchorTier(model);
@@ -460,7 +461,7 @@ export function orderFramesByOverlay(model: LayoutModel, columns: Map<string, Co
   };
 
   const frames = model.document.frames ?? {};
-  const isCanton = (unit: { id: string; frame: boolean }): boolean => unit.frame && frames[unit.id]?.kind === 'canton';
+  const isCanton = (unit: { id: string; frame: boolean }): boolean => isCantonUnit(model, unit);
   const centreOf = (node: string): number => model.nodes[node]!.bounds!.x + model.nodes[node]!.bounds!.width / 2;
   const all = frameTiers(model).filter(tier => tier.every(unit => unit.groups.every(group => group.bounds !== undefined)));
   type Tier = typeof all[number];

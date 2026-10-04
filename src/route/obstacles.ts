@@ -6,8 +6,9 @@ import { groupBoxes, groupConsumers } from '../score/model.js';
 import { GROUP_LABEL_GEOMETRY, routedStroke } from '../layout/bands.js';
 import { portId } from '../layout/skeleton-graph.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
-import { bottom, right } from '../score/geometry.js';
+import { bottom, right } from '../geometry/planar.js';
 import type { RoutePin } from './types.js';
+import { PLACEMENT_EPS } from '../layout/tolerance.js';
 
 /** Arc length removed from each end of a reserved chain that starts at its own port anchor. */
 export const TERMINAL_TRIM = 18;
@@ -69,7 +70,7 @@ const anchorsOf = (model: LayoutModel, link: LayoutLink): Point[] => {
   });
 };
 
-const samePlace = (a: Point, b: Point): boolean => Math.abs(a.x - b.x) <= 1e-6 && Math.abs(a.y - b.y) <= 1e-6;
+const samePlace = (a: Point, b: Point): boolean => Math.abs(a.x - b.x) <= PLACEMENT_EPS && Math.abs(a.y - b.y) <= PLACEMENT_EPS;
 
 /**
  * Trim `distance` of arc length from one end of a polyline, once per whole chain. A chain shorter
@@ -78,13 +79,13 @@ const samePlace = (a: Point, b: Point): boolean => Math.abs(a.x - b.x) <= 1e-6 &
  */
 export function trimChain(points: Point[], start: number, end: number): Point[] {
   const total = points.slice(1).reduce((sum, point, index) => sum + Math.hypot(point.x - points[index]!.x, point.y - points[index]!.y), 0);
-  if (total <= start + end + 1e-6) return [];
+  if (total <= start + end + PLACEMENT_EPS) return [];
   const walk = (list: Point[], distance: number): Point[] => {
     let remaining = distance;
     const result = [...list];
-    while (remaining > 1e-6 && result.length >= 2) {
+    while (remaining > PLACEMENT_EPS && result.length >= 2) {
       const a = result[0]!, b = result[1]!, span = Math.hypot(b.x - a.x, b.y - a.y);
-      if (span <= remaining + 1e-6) { result.shift(); remaining -= span; continue; }
+      if (span <= remaining + PLACEMENT_EPS) { result.shift(); remaining -= span; continue; }
       const ratio = remaining / span;
       result[0] = { x: a.x + (b.x - a.x) * ratio, y: a.y + (b.y - a.y) * ratio };
       remaining = 0;
@@ -248,6 +249,6 @@ export function completedRouteObstacles(model: LayoutModel, link: LayoutLink, co
   return completedRouteCovers(model, link, connector, points).map(item => item.obstacle);
 }
 
-export const rectContainsPoint = (bounds: Rect, point: Point, tolerance = 1e-6): boolean =>
+export const rectContainsPoint = (bounds: Rect, point: Point, tolerance = PLACEMENT_EPS): boolean =>
   point.x >= bounds.x + tolerance && point.x <= right(bounds) - tolerance
   && point.y >= bounds.y + tolerance && point.y <= bottom(bounds) - tolerance;

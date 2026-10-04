@@ -1,15 +1,19 @@
-import type { Point, Rect } from '../model/geometry.js';
+import type { Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { frameSubtreeCells } from '../model/model.js';
-import { cellReach, deriveFrames, frameNodes } from './frames.js';
+import { CELL_TO_CHILD_FRAME_GAP, cellReach, deriveFrames, frameNodes } from './frames.js';
 import { GROUP_PADDING } from './regions.js';
 import { optionalMoveHolds, selectAnchorTier } from './lanes.js';
 import { findPort } from './row-paths.js';
-import { bandGap, compareId, portId } from './skeleton-graph.js';
+import { cellTier } from './read/tier.js';
+import { isCantonUnit } from './read/canton.js';
+import { columnPullFeeds, type UnitFeeds } from './read/feeds.js';
+import { straightOverlaysAsDrawn as straightOverlays } from './read/overlay-straight.js';
+import { bandGap, compareId } from './skeleton-graph.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { groupShape } from './grid.js';
-import { crosses, overlayPath } from './overlay-paths.js';
+import { crosses } from './overlay-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 
@@ -156,7 +160,7 @@ function standOf(model: LayoutModel, id: string, memo: Map<string, Stand>): Stan
     const stand = standOf(model, child, memo), [low, high] = tierRange(model, child);
     return { child, low, high, left: stand.left + GROUP_PADDING, right: stand.right + GROUP_PADDING };
   });
-  const tierOf = (cell: string): number => model.groups[cell]!.tier!;
+  const tierOf = (cell: string): number => cellTier(model, cell);
   const { own: beside, rows: pure } = besideRows(frames[id]!.cells, tierOf, blocks, block => [block.low, block.high]);
   const apart = blocks.filter(block => !beside.includes(block) && !pure.some(row => row.includes(block)));
   const standing = frames[id]!.cells.filter(cell => beside.some(block => tierOf(cell) >= block.low && tierOf(cell) <= block.high));
@@ -269,14 +273,6 @@ export function packTier(model: LayoutModel, tier: Unit[], columns: Map<string, 
   if (step !== undefined) packStep(model, tiers, step.index, step.authority, columns, sequence);
 }
 
-/** The two ends of the routed feed links of one unit against the tier packed before it. */
-interface UnitFeeds {
-  /** The x of each distinct port of the tier before, by port id. */
-  parents: Map<string, number>;
-  /** The x of each distinct port of the unit, by port id, with the cell that holds it. */
-  children: Map<string, { x: number; cell: string }>;
-}
-
 /**
  * Reads, for a unit of `tiers[index]`, the routed, attached, non-stub links that leave it towards the tier
  * `authority` on the facing sides, with the current x of both ports (ranked-groups tickets 11 and 16).
@@ -284,44 +280,7 @@ interface UnitFeeds {
  */
 function feedReader(model: LayoutModel, tiers: Unit[][], index: number, authority: number | undefined): (unit: Unit) => UnitFeeds {
   if (authority === undefined) return () => ({ parents: new Map(), children: new Map() });
-  return feedsFrom(model, new Set(tiers[authority]!.flatMap(unit => unit.groups.map(group => group.id))), index > authority);
-}
-
-/**
- * The feeds of a unit towards `sources`, the groups of the tier that is packed before it. `below` says the unit stands
- * below them: its ports on the side that faces them are the top ones. The inner pass of a canton (ticket 56) reads the
- * sources off the tier of another member, or off the tier outside the canton for the member tier nearest the anchor.
- */
-function feedsFrom(model: LayoutModel, sources: ReadonlySet<string>, below: boolean): (unit: Unit) => UnitFeeds {
-  return unit => {
-    const parents = new Map<string, number>(), children = new Map<string, { x: number; cell: string }>();
-    const mine = new Set(unit.groups.map(group => group.id));
-    for (const link of model.links) {
-      if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
-      for (const [own, other] of [[link.attachments.from, link.attachments.to], [link.attachments.to, link.attachments.from]]) {
-        const ownGroup = model.document.nodes[own!.node]?.group, otherGroup = model.document.nodes[other!.node]?.group;
-        if (ownGroup === undefined || otherGroup === undefined || !mine.has(ownGroup)) continue;
-        const ownTier = model.groups[ownGroup]!.tier!, otherTier = model.groups[otherGroup]!.tier;
-        const near = below ? ownTier - 1 : ownTier + 1;
-        // A parent beyond the sources, on their side, is admitted when its link transits the sub-tier `near` through an owned lane: `feeds`
-        // in `centre.ts` admits every parent on the authority side, and the pull must read the same feeds (ticket 69). A bundle member has no lane.
-        const beyond = !sources.has(otherGroup) && otherTier !== undefined && !model.groups[otherGroup]!.flank && (below ? otherTier < near : otherTier > near);
-        if (!sources.has(otherGroup) && !beyond) continue;
-        const child = findPort(model, own!), parent = findPort(model, other!);
-        if (!child?.anchor || !parent?.anchor) continue;
-        if (child.side !== (below ? 'top' : 'bottom') || parent.side !== (below ? 'bottom' : 'top')) continue;
-        // A link that transits the sub-tier next to the sub-tier of the child (7a) reaches it through its owned lane, and centring (`feeds` in
-        // `centre.ts`) puts the child under that lane, not under the parent port. Both rules read one x, or the last to run
-        // wins and a second pass flips the child back (ranked-groups ticket 64). A bundle member carries no lane here.
-        const lane = otherTier === near || link.bundle ? undefined
-          : model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === link.id && item.tier === near);
-        if (beyond && lane === undefined) continue;
-        children.set(portId(child.ref), { x: child.anchor.x, cell: ownGroup });
-        parents.set(portId(parent.ref), lane?.x ?? parent.anchor.x);
-      }
-    }
-    return { parents, children };
-  };
+  return columnPullFeeds(model, new Set(tiers[authority]!.flatMap(unit => unit.groups.map(group => group.id))), index > authority);
 }
 
 /** Packs `tiers[index]`, reading the feeds of the tier `authority` (see `packFrameColumns`). */
@@ -563,8 +522,8 @@ export function closeCantons(model: LayoutModel): boolean {
  * Idempotent: a run whose gaps equal the spacing is not read again. Returns whether the run moved.
  */
 function closeUp(model: LayoutModel, tiers: Unit[][], index: number, slack: number): boolean {
-  const tier = tiers[index]!, frames = model.document.frames!;
-  const isCanton = (unit: Unit): boolean => unit.frame && frames[unit.id]?.kind === 'canton';
+  const tier = tiers[index]!;
+  const isCanton = (unit: Unit): boolean => isCantonUnit(model, unit);
   if (!tier.some(isCanton) || tier.some(unit => !unit.frame && groupShape(model, unit.id) !== 'row')) return false;
   const derived = deriveFrames(model);
   if (derived === undefined) return false;
@@ -735,7 +694,7 @@ function pullMembers(model: LayoutModel, canton: string, outer: Unit[][]): boole
   for (const { index, sources, below } of order) {
     const units = new Set(tiers[index]!.filter(unit => alone.has(unit)));
     if (sources === undefined || !units.size) continue;
-    moved = pullTier(model, tiers, index, feedsFrom(model, sources, below), 0, { units, wall: { x: box.x, width: box.width }, canton }) || moved;
+    moved = pullTier(model, tiers, index, columnPullFeeds(model, sources, below), 0, { units, wall: { x: box.x, width: box.width }, canton }) || moved;
   }
   return moved;
 }
@@ -925,7 +884,7 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
     const reaching = new Set(standing.filter(item => wanting.has(item.unit) && item.from <= item.x + PLACEMENT_EPS && item.to >= item.x - PLACEMENT_EPS).map(item => item.unit));
     lefts = plan(pinned, reaching);
   }
-  const isCanton = (unit: Unit): boolean => unit.frame && model.document.frames?.[unit.id]?.kind === 'canton';
+  const isCanton = (unit: Unit): boolean => isCantonUnit(model, unit);
   /**
    * The close-up of the run (ranked-groups ticket 65), part of this plan: the plan's own lefts with the run packed at the spacing of
    * `runSpacing`. A pinned unit stays where it stands, so it fixes the base of the run; a unit that reaches its feed is not pushed off
@@ -1041,18 +1000,6 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
     warnCloseUp(model, cantons, named, cause);
   }
   return allowed && !blocked;
-}
-
-/** The attached overlay links that stand as one straight segment now, with the groups at their ends. */
-export function straightOverlays(model: LayoutModel, only?: ReadonlySet<string>): { id: string; ends: Set<string>; from: Point; to: Point }[] {
-  const found: { id: string; ends: Set<string>; from: Point; to: Point }[] = [];
-  for (const link of model.links) {
-    if (link.layer !== 'overlay' || link.meshBus !== undefined || !link.attachments || (only && !only.has(link.id))) continue;
-    const { segments } = overlayPath(model, link);
-    if (segments.length !== 1) continue;
-    found.push({ id: link.id, ends: new Set([link.attachments.from.node, link.attachments.to.node].map(node => model.document.nodes[node]!.group)), from: segments[0]!.from, to: segments[0]!.to });
-  }
-  return found;
 }
 
 /**
@@ -1208,7 +1155,7 @@ export function packBesideRows(model: LayoutModel, movable: (cell: string) => bo
   const box = new Map(derived.map(frame => [frame.id, frame.box]));
   const childrenOf = (id: string): string[] => Object.keys(frames).filter(child => frames[child]!.parent === id);
   const cellsOf = (id: string): string[] => [...frames[id]!.cells, ...childrenOf(id).flatMap(cellsOf)];
-  const tierOf = (cell: string): number => model.groups[cell]!.tier!;
+  const tierOf = (cell: string): number => cellTier(model, cell);
   let moved = false;
   for (const parent of Object.keys(frames)) {
     const children = childrenOf(parent).map(child => ({ child, box: box.get(child)!, range: tierRange(model, child) }));
@@ -1224,6 +1171,8 @@ export function packBesideRows(model: LayoutModel, movable: (cell: string) => bo
       item.box = { ...item.box, x };
       moved = true;
     };
+    // `GROUP_PADDING` below is `CELL_TO_CHILD_FRAME_GAP` from the reach of a parent cell (the first child of a side) and the margin of the frame
+    // before it (every next child), so two children end `FRAME_TO_FRAME_GAP` apart. The sums stay as they were written: the order of the additions is the output.
     const closeUp = (row: typeof children): void => {
       const sorted = [...row].sort((a, b) => centre(a) - centre(b));
       let edge = sorted[0]!.box.x + sorted[0]!.box.width + GROUP_PADDING;
@@ -1263,7 +1212,7 @@ export function besideWalls(model: LayoutModel): Map<string, CellWindow> {
   const box = new Map(derived.map(frame => [frame.id, frame.box]));
   const childrenOf = (id: string): string[] => Object.keys(frames).filter(child => frames[child]!.parent === id);
   const cellsOf = (id: string): string[] => [...frames[id]!.cells, ...childrenOf(id).flatMap(cellsOf)];
-  const tierOf = (cell: string): number => model.groups[cell]!.tier!;
+  const tierOf = (cell: string): number => cellTier(model, cell);
   const narrow = (cell: string, wall: Partial<CellWindow>): void => {
     const known = walls.get(cell) ?? { low: -Infinity, high: Infinity };
     walls.set(cell, { low: Math.max(known.low, wall.low ?? -Infinity), high: Math.min(known.high, wall.high ?? Infinity) });
@@ -1284,7 +1233,7 @@ export function besideWalls(model: LayoutModel): Map<string, CellWindow> {
         if (others.some(left) && reach.x <= wall.x + PLACEMENT_EPS) narrow(cell, { high: wall.x + (at.x - reach.x) });
         if (others.some(cell => !left(cell)) && reach.x + reach.width >= wall.x + wall.width - PLACEMENT_EPS) narrow(cell, { low: wall.x + wall.width - reach.width + (at.x - reach.x) });
       }
-      const edge = GROUP_PADDING, own = new Set(frames[parent]!.cells);
+      const edge = CELL_TO_CHILD_FRAME_GAP, own = new Set(frames[parent]!.cells);
       // The widest cell of the parent on each side: it stands `edge` from the child, so a narrower cell may stand
       // as much further as it is narrower, which is how far the row centres it on one axis.
       const widest = (side: boolean): number => Math.max(0, ...others.filter(cell => own.has(cell) && left(cell) === side).map(cell => cellReach(model, cell).width));

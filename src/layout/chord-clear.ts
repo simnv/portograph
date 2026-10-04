@@ -1,13 +1,13 @@
 import type { Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
 import { orderedNodeIds } from '../model/model.js';
-import { EPS } from '../score/geometry.js';
+import { EPS } from '../geometry/planar.js';
 import { parallelClearance, portOrder } from '../score/gates.js';
 import { linkStrokeWidth } from '../theme/geometry.js';
 import type { Segment } from '../score/model.js';
 import { columnShifts, frameColumns, holdColumnAxes, holdMemberWalls, overlayFreeGroups, packBesideRows } from './columns.js';
 import { groupShape } from './grid.js';
-import { cellReach, deriveFrames } from './frames.js';
+import { cellReach, deriveFrames, FRAME_TO_FRAME_GAP } from './frames.js';
 import { blockedChords, chordsHold, isRoutedChord } from './frame-paths.js';
 import { optionalMoveHolds, occupiedOverhang, selectAnchorTier } from './lanes.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
@@ -20,6 +20,10 @@ import { moveGroup } from './skeleton-geometry.js';
 import { bandGap } from './skeleton-graph.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { attemptCounters } from './attempt-counters.js';
+import { nodeTier } from './read/tier.js';
+import { isOneSegment } from './read/overlay-straight.js';
+import { overlayCrossingPairs } from './read/crossings.js';
+import { standsInRootCanton } from './read/canton.js';
 
 /** How many candidate x a group or a node tries, nearest first, before it stays (ticket 77). */
 const CHORD_TRIALS = 24;
@@ -48,29 +52,7 @@ interface Reading {
   crossings: () => number;
 }
 
-/** A path as the crossing count reads it: its segments. */
-type Trace = readonly { from: { x: number; y: number }; to: { x: number; y: number } }[];
-
-/**
- * The pairs of paths that cross: one segment of one meets one segment of the other in a point that is inside both (at least EPS from
- * each end). A touch at an end, and parallel segments, are no crossing. A pair counts once.
- */
-export function overlayCrossings(paths: readonly Trace[]): number {
-  let found = 0;
-  for (let i = 0; i < paths.length; i++) for (let j = i + 1; j < paths.length; j++) {
-    const meets = paths[i]!.some(a => paths[j]!.some(b => {
-      const ax = a.to.x - a.from.x, ay = a.to.y - a.from.y, bx = b.to.x - b.from.x, by = b.to.y - b.from.y;
-      const d = ax * by - ay * bx;
-      if (Math.abs(d) < 1e-9) return false;
-      const cx = b.from.x - a.from.x, cy = b.from.y - a.from.y;
-      const t = (cx * by - cy * bx) / d, u = (cx * ay - cy * ax) / d;
-      const la = Math.hypot(ax, ay), lb = Math.hypot(bx, by);
-      return t * la > EPS && (1 - t) * la > EPS && u * lb > EPS && (1 - u) * lb > EPS;
-    }));
-    if (meets) found++;
-  }
-  return found;
-}
+export { overlayCrossingPairs as overlayCrossings };
 
 /** A move of a lower rank, as the choice reads it (ticket 146). */
 export interface RankMove { dx: number; crossings: number; straight: number; /** The straight overlay links the move bends: 0 when absent. */ bent?: number }
@@ -109,9 +91,9 @@ const routedLinks = (model: LayoutModel): LayoutLink[] =>
 function read(model: LayoutModel, overlays: readonly LayoutLink[]): Reading {
   const blockers = overlayBlockers(model);
   const paths = overlays.map(link => ({ id: link.id, segments: overlayPath(model, link, blockers).segments }));
-  const overlay = new Set(paths.filter(path => path.segments.length === 1).map(path => path.id));
+  const overlay = new Set(paths.filter(path => isOneSegment(path.segments)).map(path => path.id));
   let counted: number | undefined;
-  const crossings = (): number => (counted ??= overlayCrossings(paths.map(path => path.segments)));
+  const crossings = (): number => (counted ??= overlayCrossingPairs(paths.map(path => path.segments)));
   const routed = new Set(routedLinks(model).filter(link => {
     if (isRoutedChord(model, link)) return true;
     const from = findPort(model, link.attachments!.from)?.anchor, to = findPort(model, link.attachments!.to)?.anchor;
@@ -219,7 +201,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
     history.add(`rank-spent:${cell}:${used}`);
     return true;
   };
-  const tierOf = (node: string): number => model.groups[model.document.nodes[node]!.group]!.tier!;
+  const tierOf = (node: string): number => nodeTier(model, node);
   const linked = new Set<string>();
   for (const link of model.links) if (link.attachments) for (const end of [link.attachments.from.node, link.attachments.to.node]) linked.add(model.document.nodes[end]!.group);
   const gap = bandGap(model);
@@ -366,15 +348,9 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
   };
   const outward = (before: Rect, now: Rect): number => Math.max(0, before.x - now.x) + Math.max(0, now.x + now.width - (before.x + before.width));
   /** Whether a cell stands in a frame of a canton: only there may its frame edge move out (the decision covers member frames and cantons). */
-  const inCanton = (group: LayoutGroup): boolean => {
-    const all = model.document.frames ?? {};
-    let at = group.frame;
-    while (at !== undefined && all[at]?.parent !== undefined) at = all[at]!.parent;
-    return at !== undefined && all[at]?.kind === 'canton';
-  };
   const mayGrow = (group: LayoutGroup, before: Rect, now: Rect): boolean => {
     const budget = edge(), by = outward(before, now);
-    if (!inCanton(group)) return Math.abs(now.x - before.x) <= PLACEMENT_EPS && Math.abs(now.width - before.width) <= PLACEMENT_EPS;
+    if (!standsInRootCanton(model, group)) return Math.abs(now.x - before.x) <= PLACEMENT_EPS && Math.abs(now.width - before.width) <= PLACEMENT_EPS;
     return by <= Math.min(SLIDE_GROWTH, CANVAS_GROWTH_SHARE * budget.base - budget.grown) + PLACEMENT_EPS;
   };
   // A frame of several cells slides whole inside its column slack (ticket 80): every cell takes the same dx, so the frame box, the
@@ -425,7 +401,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
       const mine = new Set(cells.map(cell => cell.tier));
       for (const other of derived) {
         if (other.id === id || frames[other.id]!.parent !== column.id || !cellsOf(other.id).some(cell => mine.has(model.groups[cell]!.tier))) continue;
-        walls.push({ low: other.box.x - 2 * GROUP_PADDING - (box.x + box.width), high: other.box.x + other.box.width + 2 * GROUP_PADDING - box.x });
+        walls.push({ low: other.box.x - FRAME_TO_FRAME_GAP - (box.x + box.width), high: other.box.x + other.box.width + FRAME_TO_FRAME_GAP - box.x });
       }
     }
     // A wall that already holds the frame's place pins it; a frame keeps its place in the order of the tiers it spans.
@@ -470,7 +446,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
     const tiersOf = new Set(unit === undefined ? [] : cellsOf(unit).map(id => model.groups[id]!.tier!));
     const walls: { low: number; high: number }[] = [];
     if (unit !== undefined) {
-      for (const [id, box] of before) if (id !== unit && frames[id]!.parent === root && cellsOf(id).some(cell => tiersOf.has(model.groups[cell]!.tier!))) walls.push({ low: box.x - 2 * GROUP_PADDING, high: box.x + box.width + 2 * GROUP_PADDING });
+      for (const [id, box] of before) if (id !== unit && frames[id]!.parent === root && cellsOf(id).some(cell => tiersOf.has(model.groups[cell]!.tier!))) walls.push({ low: box.x - FRAME_TO_FRAME_GAP, high: box.x + box.width + FRAME_TO_FRAME_GAP });
       for (const item of all) {
         if (item.frame !== undefined || !tiersOf.has(item.tier!)) continue;
         const one = occupiedOverhang(model, item);
@@ -549,7 +525,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
             inside = { low: Math.max(world.low, cell.wall.x + GROUP_PADDING + lead), high: Math.min(world.high - box.width, cell.wall.x + cell.wall.width - GROUP_PADDING - span + lead) };
             for (const other of derived!) {
               if (other.id === group.frame || frames[other.id]!.parent !== cell.id || !cellsOf(other.id).some(id => model.groups[id]!.tier === tier)) continue;
-              walls.push({ low: other.box.x - 2 * GROUP_PADDING - span + lead, high: other.box.x + other.box.width + 2 * GROUP_PADDING + lead });
+              walls.push({ low: other.box.x - FRAME_TO_FRAME_GAP - span + lead, high: other.box.x + other.box.width + FRAME_TO_FRAME_GAP + lead });
             }
             for (const lane of model.lanes.filter(item => item.tier === tier)) walls.push({ low: lane.bounds.x - span + lead, high: lane.bounds.x + lane.bounds.width + lead });
           }

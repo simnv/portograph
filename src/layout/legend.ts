@@ -4,7 +4,7 @@ import { orderedNodeIds } from '../model/model.js';
 import { LEGEND_DEFAULT_CLASS, NETWORK_PORT_STATUS, classDisplayLabel, classOrder } from '../profiles/network/theme.js';
 import { resolveNodeIcon } from '../profiles/network/icons.js';
 import { authorClass } from '../model/classes.js';
-import { bottom, boundingBox } from '../score/geometry.js';
+import { bottom, boundingBox } from '../geometry/planar.js';
 import { measureText } from '../text/index.js';
 import { DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, linkStrokeWidth } from '../theme/geometry.js';
 import { LEGEND_GEOMETRY as theme } from '../theme/legend.js';

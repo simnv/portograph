@@ -7,9 +7,10 @@ import { stemReach } from '../layout/bands.js';
 import { equal } from '../model/json-equality.js';
 import { outward } from '../score/model.js';
 import { MIN_STEM, reservations, shrink, TOLERANCE } from './reservations.js';
-import { bottom, EPS, horizontal, length, retracingRuns, samePoint, segmentRect, vertical } from '../score/geometry.js';
+import { bottom, EPS, horizontal, length, retracingRuns, samePoint, segmentRect, vertical } from '../geometry/planar.js';
 import { effectiveLayer, type LinkPlan, type RoutePlan } from './plan.js';
 import type { RouteCheckpoint } from './types.js';
+import { nodeTierIfAny } from '../layout/read/tier.js';
 
 export interface RoutedLinkPath { link: string; path: LayoutPath }
 
@@ -306,8 +307,7 @@ export function stitchPaths(model: LayoutModel, plan: RoutePlan, routes: Map<str
  * sits in the margin beside its tier, so the route crosses that tier without entering its box.
  */
 export function crossedTiers(model: LayoutModel, link: LayoutLink): number {
-  const tierOf = (node: string): number | undefined => model.groups[model.document.nodes[node]!.group]?.tier;
-  const ends = [tierOf(link.attachments!.from.node), tierOf(link.attachments!.to.node)];
+  const ends = [nodeTierIfAny(model, link.attachments!.from.node), nodeTierIfAny(model, link.attachments!.to.node)];
   const crossed = new Set<number>();
   for (const band of model.tierBands) {
     if (!band.bounds || ends.includes(band.tier)) continue;

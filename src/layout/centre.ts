@@ -1,13 +1,16 @@
 import type { LayoutGroup, LayoutModel, LayoutNode, LayoutPort } from '../model/layout.js';
 import type { Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
-import { isSideLane, laneSidesHold, recordSeatedSideLanes, optionalMoveHolds, sideLaneSource, nodeTier, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
+import { laneSidesHold, recordSeatedSideLanes, optionalMoveHolds, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
 import { cellReach } from './frames.js';
+import { standsInCanton } from './read/canton.js';
+import { centringFeeds, type Feed } from './read/feeds.js';
+import { straightChordIds } from './read/overlay-straight.js';
 import { besideWalls, frameColumns, keepOutShifts, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
 import { findPort } from './row-paths.js';
 import { attemptCounters } from './attempt-counters.js';
 import { portId, bandGap, SKELETON_SPACING } from './skeleton-graph.js';
-import { crosses, overlayBlockers, straightChord } from './overlay-paths.js';
+import { crosses } from './overlay-paths.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { packRowsOf } from './grid.js';
@@ -17,53 +20,13 @@ import { alignmentAllowance, ownSideWidth } from './size.js';
 import { withLayoutMutation } from './mutation.js';
 import { placeOverlayFree } from './overlay-place.js';
 import { fitRegionGroup, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
-import { EPS, segmentRectDistance } from '../score/geometry.js';
+import { EPS, segmentRectDistance } from '../geometry/planar.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { chordKind, isRoutedChord } from './frame-paths.js';
 
 export interface CentreBudget { remaining: number; passes: number }
 export function createCentreBudget(): CentreBudget { return { remaining: 8, passes: 0 }; }
 export { selectAnchorTier };
-/**
- * `x` is the authoritative feed x: the parent anchor, or the owned lane x in the adjacent tier for a
- * transit. `key` is the parent port either way: a parent port feeding several children is vertical
- * to one of them (the first by x), and the rest fan — lanes packed at lane width cannot seat two
- * default-width children side by side, so a per-lane winner would only manufacture infeasible pins.
- */
-interface Feed { parent: LayoutPort; child: LayoutPort; link: string; x: number; key: string; transit: boolean }
-function feeds(model: LayoutModel, tier: number, authority: number): Feed[] {
-  const result: Feed[] = [];
-  for (const link of model.links) {
-    if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
-    for (const [parentRef, childRef] of [[link.attachments.from, link.attachments.to], [link.attachments.to, link.attachments.from]]) {
-      if (!parentRef || !childRef || nodeTier(model, childRef.node) !== tier) continue;
-      // The parent is in the adjacent authority tier, or beyond it for a link that transits the
-      // adjacent tier through an owned lane (7a). Both fix the x the child must sit under.
-      const parentTier = nodeTier(model, parentRef.node);
-      if (parentTier === undefined || (tier > authority ? parentTier > authority : parentTier < authority)) continue;
-      if ([parentRef.node, childRef.node].some(id => model.groups[model.document.nodes[id]!.group]!.flank)) continue;
-      const parent = findPort(model, parentRef)!, child = findPort(model, childRef)!;
-      if (parent.side !== (tier > authority ? 'bottom' : 'top') || child.side !== (tier > authority ? 'top' : 'bottom')) continue;
-      // A bundle member carries its lane only until 7e, which owns member geometry; only a
-      // non-bundle transit with an owned lane in the authority tier fixes its child's x here.
-      const lane = parentTier === authority ? undefined
-        : model.lanes.find(lane => lane.owner.kind === 'link' && lane.owner.id === link.id && lane.tier === authority);
-      if (parentTier !== authority && (!lane || link.bundle)) continue;
-      result.push({ parent, child, link: link.id, x: lane ? lane.x : parent.anchor!.x,
-        key: portId(parent.ref), transit: Boolean(lane) });
-    }
-    // A side lane is one feed of its link: the far port is the child and sits under the lane's x (side-faces.md, Section 10, *The far port*).
-    const side = model.lanes.find(lane => isSideLane(lane) && lane.owner.kind === 'link' && lane.owner.id === link.id);
-    if (side) {
-      const farRef = sideLaneSource(link, side), lateralRef = side.port!;
-      const farTier = nodeTier(model, farRef.node);
-      if (farTier === tier && ![farRef.node, lateralRef.node].some(id => model.groups[model.document.nodes[id]!.group]!.flank)) {
-        result.push({ parent: findPort(model, lateralRef)!, child: findPort(model, farRef)!, link: link.id, x: side.x, key: portId(lateralRef), transit: true });
-      }
-    }
-  }
-  return result;
-}
 function shiftNode(node: LayoutNode, dx: number): void {
   node.bounds!.x += dx;
   for (const port of node.ports) port.anchor!.x += dx;
@@ -295,7 +258,7 @@ export function centreContext(model: LayoutModel, anchor: number, columns: reado
   const steps = [...tiers.slice(index + 1).map((tier, i) => ({ tier, authority: tiers[index + i]! })),
     ...tiers.slice(0, index).reverse().map((tier, i) => ({ tier, authority: tiers[index - i]! }))];
   const winners = new Map<string, string>();
-  for (const step of steps) for (const feed of [...feeds(model, step.tier, step.authority)].sort((a, b) => model.nodes[a.child.ref.node]!.bounds!.x - model.nodes[b.child.ref.node]!.bounds!.x || portId(a.child.ref).localeCompare(portId(b.child.ref)))) {
+  for (const step of steps) for (const feed of [...centringFeeds(model, step.tier, step.authority)].sort((a, b) => model.nodes[a.child.ref.node]!.bounds!.x - model.nodes[b.child.ref.node]!.bounds!.x || portId(a.child.ref).localeCompare(portId(b.child.ref)))) {
     const key = `${step.tier}:${feed.key}`;
     if (!winners.has(key)) winners.set(key, portId(feed.child.ref));
   }
@@ -412,15 +375,6 @@ function packClear(model: LayoutModel, context: CentreContext, tier: number, gro
   moveGroup(model, group, low - group.bounds!.x, 0);
 }
 
-/** The column pull's inner pass (`pullMembers`) reads only the members of a canton. */
-function inCanton(model: LayoutModel, group: LayoutGroup): boolean {
-  const frames = model.document.frames;
-  for (let id = group.frame; id !== undefined && frames?.[id] !== undefined; id = frames[id]!.parent) {
-    if (frames[id]!.kind === 'canton') return true;
-  }
-  return false;
-}
-
 /**
  * A declined group stands where the feeds want it inside its wall, not where the pack left it (ranked-groups ticket 70). The column pull
  * (`slideRange`) reads the room up to the far wall and takes it toward the feed; a decline that only packed the group clear at the near wall
@@ -432,7 +386,7 @@ function standNearFeed(model: LayoutModel, context: CentreContext, tier: number,
   const box = group.bounds!;
   // The bounds were computed on the widened group; the restored group stands in a fresh window.
   const window = reservedWindow(model, context, tier, id), low = Math.max(wideLow, window.low), high = Math.min(wideHigh, window.high);
-  if (!inCanton(model, group) || !Number.isFinite(target) || box.width > high - low + EPS) return;
+  if (!standsInCanton(model, group) || !Number.isFinite(target) || box.width > high - low + EPS) return;
   const dx = Math.max(low, Math.min(target, high - box.width)) - box.x;
   if (Math.abs(dx) <= EPS || !optionalMoveHolds(model, [{ group, bounds: { ...box, x: box.x + dx } }])) return;
   moveGroup(model, group, dx, 0);
@@ -468,11 +422,6 @@ function groupFeeds(model: LayoutModel, context: CentreContext, tier: number, li
  * by the publication/restore check, so both read one definition.
  */
 const CHORD_STAGES = ['bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'];
-/** The overlay links that draw one straight segment in the model as it stands. */
-function straightOverlays(model: LayoutModel): Set<string> {
-  const blockers = overlayBlockers(model);
-  return new Set(model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && straightChord(model, link, blockers) !== undefined).map(link => link.id));
-}
 function centreGroupStep(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>): { unresolved: Set<string>; group: LayoutGroup } {
   // From 7e on, an overlay link that draws one straight segment keeps the space placement reserved for it. A step that leaves fewer
   // of them straight (a body or a pill now stands on a chord) is declined as a whole, like a step that solves nothing: the group stays
@@ -481,11 +430,11 @@ function centreGroupStep(model: LayoutModel, context: CentreContext, tier: numbe
   const group = model.groups[id]!;
   // `moveGroup` leaves pill bounds behind, and the chord reads them: both readings are taken on rebuilt nodes.
   rebuildNodeGeometry(model, group.nodes, 'current');
-  const held = straightOverlays(model), breached = new Set([...keepOutShifts(model).keys()].map(item => item.id));
+  const held = straightChordIds(model), breached = new Set([...keepOutShifts(model).keys()].map(item => item.id));
   const snapshot = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
   const result = centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail);
   rebuildNodeGeometry(model, model.groups[id]!.nodes, 'current');
-  const now = straightOverlays(model);
+  const now = straightChordIds(model);
   // A frame edge that a foreign drop would run along is a spacing routing can only discover; a step may not make one (ticket 75).
   if (now.size >= held.size && [...keepOutShifts(model).keys()].every(item => breached.has(item.id))) return result;
   model.groups[id] = snapshot.group;
@@ -660,7 +609,7 @@ function centrePasses(model: LayoutModel, budget: CentreBudget): void {
     // fixed point: the net change is nil, the work is not. Every step is measured on its own.
     let stepped = false;
     for (const { tier, authority } of context.steps) {
-      const list = feeds(model, tier, authority), order = context.groupOrder.get(tier)!;
+      const list = centringFeeds(model, tier, authority), order = context.groupOrder.get(tier)!;
       const tail = tailReservation(model, context, tier, order);
       let previous: LayoutGroup | undefined;
       for (const id of order) {
@@ -747,7 +696,7 @@ export function centreViolations(model: LayoutModel, ahead = false, shared?: Cen
   // Every trial starts from the same model, so it is serialized once, on the first trial, and each trial parses that text.
   let replayedText: string | undefined;
   for (const { tier, authority } of context.steps) {
-    const list = feeds(model, tier, authority), order = context.groupOrder.get(tier)!;
+    const list = centringFeeds(model, tier, authority), order = context.groupOrder.get(tier)!;
     const tail = tailReservation(model, context, tier, order);
     let previous: LayoutGroup | undefined;
     for (const id of order) {
@@ -755,7 +704,7 @@ export function centreViolations(model: LayoutModel, ahead = false, shared?: Cen
       const owned = groupFeeds(model, context, tier, list, id, false);
       if (model.document.groups[id]!.shape === 'bar' || !owned.own.length) { previous = group; continue; }
       const trial = JSON.parse(replayedText ??= JSON.stringify(replayed)) as LayoutModel;
-      const step = centreGroupStep(trial, context, tier, feeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, tail);
+      const step = centreGroupStep(trial, context, tier, centringFeeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, tail);
       previous = group;
       // Both lookups below read one key per wanted child; keying them once keeps the scan of the
       // group's own feeds and ports out of the loop. First entry wins, as `find` did.

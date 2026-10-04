@@ -1,5 +1,5 @@
 import type { LayoutModel } from '../model/layout.js';
-import { EPS } from '../score/geometry.js';
+import { EPS } from '../geometry/planar.js';
 import { alignLinkedGroupGridAndPack, cantonTiers, replanGroupLabels } from './bands.js';
 import { chordGapNotes, tierGapPlans, type GapPlan, type ResidualReason } from './gap-plan.js';
 import type { TierGap } from './gap-runs.js';

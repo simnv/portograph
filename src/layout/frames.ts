@@ -5,6 +5,24 @@ import { GROUP_PADDING, groupPadding } from './regions.js';
 import { union } from './skeleton-geometry.js';
 
 /**
+ * The gap between a child frame and a cell that stands beside it on a row, a cell of its parent or of a sibling child frame
+ * (`besideWalls` reads both): the child's box ends `GROUP_PADDING` from the cell's `cellReach` (`packBesideRows`), not from the cell box. `cellReach` already grows the bodies by the cell's own
+ * padding and `GROUP_PADDING` on each side, so the gap from the cell *box* to the child frame is 40 px where the cell box stands
+ * tight to its bodies (`four-locations-each-with-a-zone`) and 20 px where a grid or a label made the box wider than its bodies
+ * (loc4 and loc5 of the NTP sheet). One value, two measured gaps: the shadow-solver probe found neither in the code, and read
+ * 20 and 40 off the published model.
+ */
+export const CELL_TO_CHILD_FRAME_GAP = GROUP_PADDING;
+
+/**
+ * The gap between two frame boxes side by side inside one parent, a canton included: each box keeps `GROUP_PADDING` of margin, and
+ * the margins do not overlap, so the boxes end `2 * GROUP_PADDING` apart. `packBesideRows` packs two children by it, and the member
+ * walls of a canton (`memberSpace`, the 7f slide guard) keep it from the member frames of their sub-tier. A frame beside a plain
+ * group keeps a band gap instead (`runSpacing` in `columns.ts`).
+ */
+export const FRAME_TO_FRAME_GAP = 2 * GROUP_PADDING;
+
+/**
  * A cell as its frame sees it: its nodes grown by the ordinary margin (and any pill reach) on the two
  * sides, and its own vertical extent, because the top and bottom margins are held inside the cell box.
  * A cell box that is wider than that (the linked-group grid, ADR-0012, widens cells) widens the frame

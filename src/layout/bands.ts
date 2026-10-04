@@ -14,8 +14,8 @@ import { rebuildRegionGeometry } from './region-rebuild.js';
 import { findPort, straightCorridorClear } from './row-paths.js';
 import { bandGap, portId } from './skeleton-graph.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
-import { closeCantons, columnShifts, keepOutShifts, holdColumnAxes, packBesideRows, straightOverlays, sweptUnits } from './columns.js';
-import { deriveFrames, frameNodes } from './frames.js';
+import { closeCantons, columnShifts, keepOutShifts, holdColumnAxes, packBesideRows, sweptUnits } from './columns.js';
+import { deriveFrames } from './frames.js';
 import { bandHeldBy, bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placementWarning, rebuildRegions, right } from './regions.js';
 import { withLayoutMutation } from './mutation.js';
 import { effectiveLayer } from '../score/model.js';
@@ -27,6 +27,9 @@ import { busBandHeight, busRoom } from './bus-room.js';
 import { busGeometry, expectedBusBands, riserEnds, syncBusGeometry } from './bus.js';
 import { attemptCounters } from './attempt-counters.js';
 import type { AttemptTraceEvent } from './placement-attempt.js';
+import { isCantonFrame } from './read/canton.js';
+import { frameTitleEdge, groupTitleEdge } from './read/title-edge.js';
+import { straightOverlaysAsDrawn as straightOverlays } from './read/overlay-straight.js';
 
 export const GROUP_LABEL_GEOMETRY = {
   fontFamily: FONT_FAMILY,
@@ -71,7 +74,6 @@ function measurement(label: string) {
 interface Title { id: string; host: string; frame?: string; label: string; side: 'top' | 'bottom' }
 /** A canton's title: held by the sub-tier, so it names no host cell (canton-groups spec, section 3). */
 interface CantonTitle { id: string; label: string; side: 'top' | 'bottom' }
-const isCanton = (model: LayoutModel, id: string): boolean => model.document.frames?.[id]?.kind === 'canton';
 
 /**
  * The title edge of a frame (ADR-0011, read across all its cells): the horizontal edge with fewer
@@ -96,24 +98,9 @@ const titleMoved = (model: LayoutModel, id: string): boolean => model.titleMoves
 export function rawFrameSide(model: LayoutModel, frame: string): 'top' | 'bottom' | undefined {
   // A canton frame has no own cell to host a title: its band is held by the sub-tier (`cantonTitles`), not by
   // a cell, so `frameHost` is never asked and it has no cell-hosted edge.
-  if (isCanton(model, frame)) return undefined;
-  const side = crossingSide(model, frame), other = side === 'top' ? 'bottom' : 'top';
+  if (isCantonFrame(model, frame)) return undefined;
+  const side = frameTitleEdge(model, frame), other = side === 'top' ? 'bottom' : 'top';
   return frameHost(model, frame, side) !== undefined ? side : frameHost(model, frame, other) !== undefined ? other : undefined;
-}
-
-function crossingSide(model: LayoutModel, frame: string): 'top' | 'bottom' {
-  const members = new Set(frameNodes(model, frame)), counts = { top: 0, bottom: 0 };
-  for (const link of model.links) {
-    if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
-    const ends = [link.attachments.from, link.attachments.to];
-    if (members.has(ends[0]!.node) === members.has(ends[1]!.node)) continue;
-    for (const ref of ends) {
-      if (!members.has(ref.node)) continue;
-      const found = findPort(model, ref), side = found === undefined ? undefined : found.naturalSide ?? found.side;
-      if (side === 'top' || side === 'bottom') counts[side]++;
-    }
-  }
-  return counts.top > counts.bottom ? 'bottom' : 'top';
 }
 
 /**
@@ -141,12 +128,12 @@ export function carriesTitle(model: LayoutModel, group: LayoutGroup, side: 'top'
 }
 
 /**
- * The canton titles, one per canton frame, on the edge ADR-0011 picks for the whole canton (`crossingSide`
+ * The canton titles, one per canton frame, on the edge ADR-0011 picks for the whole canton (`frameTitleEdge`
  * reads every node of the members). Empty while a cell has no box: the band is measured from the members.
  */
 function cantonTitles(model: LayoutModel): CantonTitle[] {
   const frames = model.document.frames ?? {};
-  return Object.keys(frames).filter(id => isCanton(model, id)).map(id => ({ id, label: frames[id]!.label, side: crossingSide(model, id) }));
+  return Object.keys(frames).filter(id => isCantonFrame(model, id)).map(id => ({ id, label: frames[id]!.label, side: frameTitleEdge(model, id) }));
 }
 
 /** The canton frames as their members stand, before the title band is added to them. */
@@ -298,16 +285,7 @@ export function bandSide(model: LayoutModel, group: LayoutGroup): 'top' | 'botto
 
 /** ADR-0011's edge, before any title is moved. */
 export function rawBandSide(model: LayoutModel, group: LayoutGroup): 'top' | 'bottom' {
-  const members = new Set(group.nodes), counts = { top: 0, bottom: 0 };
-  for (const link of model.links) {
-    if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
-    for (const ref of [link.attachments.from, link.attachments.to]) {
-      if (!members.has(ref.node)) continue;
-      const found = findPort(model, ref), side = found === undefined ? undefined : found.naturalSide ?? found.side;
-      if (side === 'top' || side === 'bottom') counts[side]++;
-    }
-  }
-  return counts.top > counts.bottom ? 'bottom' : 'top';
+  return groupTitleEdge(model, group);
 }
 
 /** Reserved gap beside the band; entry points of this group's own ports on that side must clear it. */
@@ -537,7 +515,7 @@ function legRects(model: LayoutModel): ForbiddenRect[] {
   const frames = model.document.frames ?? {};
   // A canton band stands under its last sub-tier (over its first): only the members of that edge tier draw a leg through it.
   const membersOf = (band: LabelBand): Set<string> => {
-    if (!isCanton(model, band.group)) return new Set(model.groups[band.host ?? band.group]?.nodes ?? []);
+    if (!isCantonFrame(model, band.group)) return new Set(model.groups[band.host ?? band.group]?.nodes ?? []);
     const tiers = cantonTiers(model, band.group), edge = band.side === 'top' ? tiers.first : tiers.last;
     return new Set(frameSubtreeCells(frames, band.group).filter(cell => model.groups[cell]?.tier === edge).flatMap(cell => model.groups[cell]!.nodes));
   };
@@ -807,7 +785,7 @@ function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: Readon
       bounds: { x: x <= limit + PLACEMENT_EPS ? x : group.bounds!.x + GROUP_LABEL_GEOMETRY.horizontalInset,
         y, width: measured.width, height: measured.height } });
   }
-  for (const band of model.labelBands.filter(item => isCanton(model, item.group))) {
+  for (const band of model.labelBands.filter(item => isCantonFrame(model, item.group))) {
     const title = model.document.frames![band.group]!.label, measured = measurement(title);
     const y = band.bounds.y + GROUP_LABEL_GEOMETRY.verticalInset, box = band.bounds;
     const start = box.x + GROUP_LABEL_GEOMETRY.horizontalInset, limit = right(box) - GROUP_LABEL_GEOMETRY.horizontalInset - measured.width;
@@ -1019,7 +997,7 @@ function cantonGapNeeds(model: LayoutModel): { below: Map<number, number>; above
   const below = new Map<number, number>(), above = new Map<number, number>();
   const busBelow = new Set<number>(), busAbove = new Set<number>();
   for (const band of model.labelBands) {
-    if (!isCanton(model, band.group)) continue;
+    if (!isCantonFrame(model, band.group)) continue;
     const tiers = cantonTiers(model, band.group), need = GROUP_PADDING + band.bounds.height + GROUP_PADDING;
     const map = band.side === 'top' ? above : below, tier = band.side === 'top' ? tiers.first : tiers.last;
     map.set(tier, Math.max(map.get(tier) ?? 0, need));
@@ -1480,7 +1458,7 @@ function produceGroupLabelBandsRaw(model: LayoutModel): void {
   // title. It draws none, and says so.
   for (const id of Object.keys(model.document.frames ?? {})) {
     // A canton's title is held by the sub-tier, not by a cell, so it is never unhosted.
-    if (isCanton(model, id)) continue;
+    if (isCantonFrame(model, id)) continue;
     if (frameSide(model, id) === undefined) {
       placementWarning(model, 'FRAME_TITLE_UNHOSTED', `Frame ${id} has no own cell on its top or bottom edge; its title is not drawn.`, [id], 'group');
     }
@@ -1676,7 +1654,7 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   for (const band of model.labelBands) {
     if (!Number.isFinite(band.clearance) || band.clearance < GROUP_PADDING - PLACEMENT_EPS) throw new Error(`Group ${band.group} reserves less than the ordinary padding below its label band`);
     // A canton band stands outside its member frames, which hold the margin; the frame check (G9) reads them.
-    for (const nodeId of isCanton(model, band.group) ? [] : model.groups[band.host ?? band.group]!.nodes) {
+    for (const nodeId of isCantonFrame(model, band.group) ? [] : model.groups[band.host ?? band.group]!.nodes) {
       const box = model.nodes[nodeId]!.bounds!;
       const clear = band.side === 'top' ? box.y >= bottom(band.bounds) + band.clearance - PLACEMENT_EPS : bottom(box) <= band.bounds.y - band.clearance + PLACEMENT_EPS;
       if (!clear) throw new Error(`Group ${band.group} does not retain its reserved clearance beside its label band`);

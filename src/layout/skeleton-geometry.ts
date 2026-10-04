@@ -7,7 +7,7 @@ import { isGridGroup, packGrid } from './grid.js';
 import { rebuildFrames } from './frames.js';
 import { packFrameColumns, type Column } from './columns.js';
 import { GROUP_PADDING } from './regions.js';
-import { bottom, contains as rectContains, EPS, rectOverlap, right } from '../score/geometry.js';
+import { bottom, contains as rectContains, EPS, rectOverlap, right } from '../geometry/planar.js';
 
 /**
  * The same comparators the published gates use, at the same tolerance. `gates.ts:107` has always
@@ -29,7 +29,7 @@ import { bottom, contains as rectContains, EPS, rectOverlap, right } from '../sc
  * smallest distance any placement rule names (1 px, `goldens/synthetic/one-px-sources.yaml`). A node
  * ELK really placed outside its group, or two groups that really overlap, do so by a placement
  * distance, so neither guard can now pass what it used to refuse — only residues no rule could have
- * produced. (`mutation.ts:368` is a weaker precedent than the gates: it allows 1e-6 on the right and
+ * produced. (`validateGeometry` in `mutation.ts` is a weaker precedent than the gates: it allows 1e-6 on the right and
  * bottom edges only and still compares left and top exactly.)
  */
 const contains = rectContains, overlaps = rectOverlap;

@@ -1,12 +1,13 @@
 import type { Rect } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel } from '../model/layout.js';
 import { routedStroke } from '../layout/bands.js';
+import { PLACEMENT_EPS } from '../layout/tolerance.js';
 import { GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
 import { groupConsumers } from '../score/model.js';
 
 /** Minimum port stem, the same number G5 enforces on final geometry. */
 export const MIN_STEM = 15;
-export const TOLERANCE = 1e-6;
+export const TOLERANCE = PLACEMENT_EPS;
 
 export const shrink = (bounds: Rect, by: number): Rect => ({
   x: bounds.x + by, y: bounds.y + by, width: bounds.width - 2 * by, height: bounds.height - 2 * by,

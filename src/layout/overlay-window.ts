@@ -1,8 +1,9 @@
 import type { Point, Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
-import { EPS, intersection } from '../score/geometry.js';
+import { EPS } from '../geometry/planar.js';
 import { chordEnds, chordPoints, overlayBlockers, straightBetween, type OverlayEnd, type OverlayShape, type ShapeQuery } from './overlay-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { drawn, drawnCrossings, overlayCrossingPoints, portKey, type Drawn } from './read/crossings.js';
 
 /**
  * The window rule of the overlay barycentre (ranked-groups ticket 143, decisions-log Q112).
@@ -98,51 +99,7 @@ export function pickTarget(mean: number, candidates: readonly number[], score: (
   return { target, gained: best.straight - base.straight, saved: base.crossings - best.crossings };
 }
 
-/** The port a link end attaches to, as one string: two links that share it meet at its face and do not cross there. */
-export const portKey = (end: { node: string; name?: string; ordinal?: number }): string => `${end.node}/${end.name ?? `#${end.ordinal}`}`;
-
-/** An overlay link drawn as a polyline, with its bounding box and its two port keys read once. */
-export interface Drawn { points: readonly Point[]; minX: number; maxX: number; minY: number; maxY: number; ports: readonly [string, string] }
-
-export function drawn(points: readonly Point[], ports: readonly [string, string]): Drawn {
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  for (const point of points) {
-    if (point.x < minX) minX = point.x;
-    if (point.x > maxX) maxX = point.x;
-    if (point.y < minY) minY = point.y;
-    if (point.y > maxY) maxY = point.y;
-  }
-  return { points, minX, maxX, minY, maxY, ports };
-}
-
-const OWNER = { kind: 'link', id: '' } as const;
-
-/**
- * The crossings of two drawn links: the points where their segments meet, each counted once (a line through a bend point meets two
- * segments there). Links that share a port meet at its face and do not cross.
- */
-export function drawnCrossings(one: Drawn, two: Drawn): number {
-  if (one.minX > two.maxX + EPS || two.minX > one.maxX + EPS || one.minY > two.maxY + EPS || two.minY > one.maxY + EPS) return 0;
-  if (one.ports[0] === two.ports[0] || one.ports[0] === two.ports[1] || one.ports[1] === two.ports[0] || one.ports[1] === two.ports[1]) return 0;
-  const a = { from: one.points[0]!, to: one.points[0]!, owner: OWNER }, b = { from: two.points[0]!, to: two.points[0]!, owner: OWNER };
-  let found: Point[] | undefined;
-  for (let i = 1; i < one.points.length; i++) {
-    a.from = one.points[i - 1]!; a.to = one.points[i]!;
-    for (let j = 1; j < two.points.length; j++) {
-      b.from = two.points[j - 1]!; b.to = two.points[j]!;
-      const at = intersection(a, b);
-      if (at && !found?.some(point => Math.abs(point.x - at.x) <= 2 * EPS && Math.abs(point.y - at.y) <= 2 * EPS)) (found ??= []).push(at);
-    }
-  }
-  return found?.length ?? 0;
-}
-
-/** The crossings among drawn overlay links, each pair once. */
-export function overlayCrossings(paths: readonly Drawn[]): number {
-  let count = 0;
-  for (let i = 0; i < paths.length; i++) for (let j = i + 1; j < paths.length; j++) count += drawnCrossings(paths[i]!, paths[j]!);
-  return count;
-}
+export { portKey, drawn, drawnCrossings, overlayCrossingPoints as overlayCrossings, type Drawn };
 
 interface Counted { link: LayoutLink; head: OverlayEnd; tail: OverlayEnd; moves: 'head' | 'tail' | undefined }
 
@@ -238,7 +195,7 @@ export function windowTarget(model: LayoutModel, group: LayoutGroup, input: Wind
       const [head, tail] = endsAt(item, dx);
       paths.push(drawn(flags[index]! ? [head.face, tail.face] : chordPoints(head, tail, blockers), keys(item.link)));
     });
-    let crossings = overlayCrossings(paths);
+    let crossings = overlayCrossingPoints(paths);
     // A link between two settled nodes that passes the group's rows may bend round a shifted shape of the group: it is read at `x`, the rest as they stand.
     for (const item of fixed) {
       const other = item.rows ? drawn(chordPoints(item.head, item.tail, blockers), item.drawn.ports) : item.drawn;

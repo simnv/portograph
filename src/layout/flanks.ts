@@ -9,6 +9,7 @@ import { withLayoutMutation } from './mutation.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { joinFanTrees } from './bundle-geometry.js';
 import { fitRegionGroup, placementWarning, rebuildRegions } from './regions.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 
 export interface FlankPair { link: LayoutLink; group: LayoutGroup; own: LayoutPort; peer: LayoutPort }
 /** Consume the stored primary only; geometry never reselects it. */
@@ -30,7 +31,7 @@ export function expectedFlankPath(model: LayoutModel, link: LayoutLink): LayoutP
   if (!flankPathCandidate(model, link)) return undefined;
   const pair = flankPair(model, link)!, from = findPort(model, link.attachments!.from)!, to = findPort(model, link.attachments!.to)!;
   const dx = pair.peer.anchor!.x - pair.own.anchor!.x;
-  if ((pair.own.side === 'right' ? dx : -dx) < 15 || Math.abs(from.anchor!.y - to.anchor!.y) > 1e-6) return undefined;
+  if ((pair.own.side === 'right' ? dx : -dx) < 15 || Math.abs(from.anchor!.y - to.anchor!.y) > PLACEMENT_EPS) return undefined;
   const segment = { from: { ...from.anchor! }, to: { ...to.anchor! }, owner: { ...link.owner } };
   if (!straightCorridorClear(model, link, segment)) return undefined;
   return { owner: { ...link.owner }, layer: 'routed', fixed: true, ...pathStrokeWidth(link), segments: [segment] };
@@ -91,7 +92,7 @@ export function normalizePrimaryBundlePorts(model: LayoutModel): void {
       // Only unauthored ports answer the far-end question; G5 judges no other kind, and an authored
       // sentinel with no routed peer reads as `Infinity`, which would otherwise decide the place.
       const free = others.filter(port => port.authorOrder === undefined);
-      const target = free.find(port => farCoordinate(model, port) >= low - 1e-6);
+      const target = free.find(port => farCoordinate(model, port) >= low - PLACEMENT_EPS);
       const found = target ? others.indexOf(target) : -1;
       // An authored port is a wall. G5 judges only unauthored ports, and ADR-0010 keeps every
       // authored key in place, so the block may not cross one however its far ends read: it stays

@@ -4,6 +4,7 @@ import { FONT_FAMILY, measurePortPill } from '../text/index.js';
 import { NODE_CONTENT_GEOMETRY as theme } from '../theme/content.js';
 import { measureNodeContent } from './size.js';
 import { SIDE_TIE_ORDER } from './sides-one.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 
 /** Replace final content and pill geometry. Current anchors remain authoritative for region rules. */
 export function rebuildNodeGeometry(draft: LayoutModel, nodeIds: readonly string[], anchors: 'from-slots' | 'current'): void {
@@ -15,7 +16,7 @@ export function rebuildNodeGeometry(draft: LayoutModel, nodeIds: readonly string
     if (!box || !insets) throw new Error(`Missing node geometry for ${id}`);
     const owner = { kind: 'node', id } as const;
     const content = measureNodeContent(draft.document.nodes[id]!, insets);
-    if (content.width > box.width + 1e-6 || content.height > box.height + 1e-6) throw new Error(`Content exceeds node ${id}`);
+    if (content.width > box.width + PLACEMENT_EPS || content.height > box.height + PLACEMENT_EPS) throw new Error(`Content exceeds node ${id}`);
     const centreX = box.x + insets.left + (box.width - insets.left - insets.right) / 2;
     let y = box.y + insets.top + (box.height - content.height) / 2;
     delete node.icon;
@@ -50,7 +51,7 @@ export function rebuildNodeGeometry(draft: LayoutModel, nodeIds: readonly string
             + `along a ${length} px side; a rule moved it off its node ${JSON.stringify(box)}`);
         }
         const expected = portAnchor(box, side, offset);
-        if (Math.abs(point.x - expected.x) > 1e-6 || Math.abs(point.y - expected.y) > 1e-6) throw new Error(`Anchor is off ${id}.${side}`);
+        if (Math.abs(point.x - expected.x) > PLACEMENT_EPS || Math.abs(point.y - expected.y) > PLACEMENT_EPS) throw new Error(`Anchor is off ${id}.${side}`);
         delete port.pill;
         if (port.ref.anonymous === true) continue;
         const measured = measurePortPill(port.ref.name);

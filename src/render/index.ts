@@ -6,7 +6,7 @@ import { frameNodes } from '../layout/frames.js';
 import { orderedGroupIds, orderedNodeIds } from '../model/model.js';
 import { iconKey, iconPath } from '../profiles/network/icons.js';
 import { LEGEND_DEFAULT_CLASS } from '../profiles/network/theme.js';
-import { EPS, right } from '../score/geometry.js';
+import { EPS, right } from '../geometry/planar.js';
 import { effectiveLayer, validate } from '../score/model.js';
 import { measureText } from '../text/index.js';
 import { CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, linkStrokeWidth } from '../theme/geometry.js';

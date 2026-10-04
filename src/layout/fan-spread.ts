@@ -1,10 +1,12 @@
 import type { Side } from '../model/geometry.js';
 import type { Diagnostic, LayoutLink, LayoutModel, LayoutPort, PathSegment } from '../model/layout.js';
-import { EPS, intersection, samePoint, segmentDistance } from '../score/geometry.js';
+import { EPS, segmentDistance } from '../geometry/planar.js';
 import { linkStrokeWidth } from '../theme/geometry.js';
 import { chordClearances, chordKind, isRoutedChord, routedChordCandidate, standaloneChord } from './frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
+import { strictCrossing } from './read/crossings.js';
 import { portId } from './skeleton-graph.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 
 /**
  * The widest port pitch a fan may be given (ticket 89): five times the 12 px base pitch. A face that would need more is
@@ -20,12 +22,6 @@ export const FAN_SLACK = 4;
 export interface FanMeasure {
   floors: Map<string, Partial<Record<Side, number>>>;
   declined: { node: string; side: Side; links: string[] }[];
-}
-
-/** Whether two chords cross strictly: crossing is allowed, closeness is not (G6). */
-function strictCrossing(a: PathSegment, b: PathSegment): boolean {
-  const point = intersection(a, b);
-  return point !== undefined && ![a.from, a.to, b.from, b.to].some(end => samePoint(end, point));
 }
 
 /**
@@ -111,7 +107,7 @@ export function fanRoundHolds(before: LayoutModel, after: LayoutModel): boolean 
   if (now.size >= was.size) return true;
   const frames = (chords: typeof was): number => [...chords.values()].filter(kind => kind === 'frame').length;
   if (frames(now) < frames(was)) return false;
-  const clearance = STRAIGHT_PATH_CLEARANCE.path - 1e-6, then = chordClearances(after);
+  const clearance = STRAIGHT_PATH_CLEARANCE.path - PLACEMENT_EPS, then = chordClearances(after);
   for (const [pair, gap] of chordClearances(before)) {
     if (gap >= clearance) continue;
     const cleared = then.get(pair);

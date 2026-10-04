@@ -4,7 +4,7 @@ import { equal } from '../model/json-equality.js';
 import { stemReach } from '../layout/bands.js';
 import { findPort } from '../layout/row-paths.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
-import { EPS, horizontal, length, retracingRuns, samePoint, segmentRect, vertical } from '../score/geometry.js';
+import { EPS, horizontal, length, retracingRuns, samePoint, segmentRect, vertical } from '../geometry/planar.js';
 import { outward } from '../score/model.js';
 import { effectiveLayer, reversedRuns } from './plan.js';
 import { isRoutedChord } from '../layout/frame-paths.js';

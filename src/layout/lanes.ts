@@ -4,7 +4,7 @@ import type { Rect } from '../model/geometry.js';
 import type { Diagnostic, Lane, LayoutGroup, LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import type { PortRef } from '../model/document.js';
 import { DEFAULT_STROKE_WIDTHS as stroke, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth, routedStrokeWidth } from '../theme/geometry.js';
-import { segmentRectDistance } from '../score/geometry.js';
+import { segmentRectDistance } from '../geometry/planar.js';
 import { findPort } from './row-paths.js';
 import { groupShape } from './grid.js';
 import { portId } from './skeleton-graph.js';
@@ -16,6 +16,7 @@ import { chordKind, chordsHold } from './frame-paths.js';
 import { deriveFrames, foreignReach, foreignRoot, heldLaneReach, ownFrameCells, riserForeignReach, frameNodes } from './frames.js';
 import { BUS_RUN_CLEARANCE } from './bus-room.js';
 import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
+import { nodeTier } from './read/tier.js';
 
 /** A corridor `reseatLanes` moved, and the child port it moved it onto. */
 export interface LaneFollow { lane: string; child: PortRef }
@@ -33,9 +34,7 @@ export function lanesHoldTheirChild(model: LayoutModel, followed: LaneFollow[]):
   });
 }
 
-export function nodeTier(model: LayoutModel, id: string): number {
-  return model.groups[model.document.nodes[id]!.group]!.tier!;
-}
+export { nodeTier };
 /** Anchor tier = most main-tier nodes, bars included, flanks excluded; ties: lowest tier (7c). */
 export function selectAnchorTier(model: LayoutModel): number | undefined {
   const counts = new Map<number, number>();
@@ -124,7 +123,7 @@ export function laneSidesHold(model: LayoutModel, proposed: { group: LayoutGroup
     // A lane of either kind keeps the side of every group of its own sub-tier.
     const sameTier = model.lanes.filter(lane => lane.tier === group.tier).every(lane => {
       const box = occupiedAt(model, group, bounds, laneLink(model, lane));
-      return group.bounds!.x >= lane.x ? box.x >= right(lane.bounds) - 1e-6 : right(box) <= lane.bounds.x + 1e-6;
+      return group.bounds!.x >= lane.x ? box.x >= right(lane.bounds) - PLACEMENT_EPS : right(box) <= lane.bounds.x + PLACEMENT_EPS;
     });
     return sameTier;
   }) && (!frames || sideLaneFramesHold(model, proposed));
@@ -154,7 +153,7 @@ function sideLaneFramesHold(model: LayoutModel, proposed: { group: LayoutGroup; 
   return sides.every(lane => model.frames!.filter(frame => frameNodes(model, frame.id).includes(lane.port!.node)).every(frame => {
     const reach = (box: Rect): number => lane.side === 'right' ? right(box) - lane.bounds.x : right(lane.bounds) - box.x;
     const next = after.get(frame.id);
-    return next === undefined || reach(next) <= Math.max(0, reach(frame.box)) + 1e-6;
+    return next === undefined || reach(next) <= Math.max(0, reach(frame.box)) + PLACEMENT_EPS;
   }));
 }
 /** The x distance the riser keeps from a routed port on the facing edge of a member row: `k` plus half a stroke (mesh-bus.md, section 11.5). */
@@ -183,7 +182,7 @@ export function riserAvoidance(model: LayoutModel, tier: number, side: 'top' | '
   // The routed ports are read only where a riser stands on this side, so no riser means no scan of the links.
   const routed = new Set<string>(xs.length === 0 ? [] : model.links.filter(link => link.layer === 'routed' && link.technique !== 'stub' && link.attachments)
     .flatMap(link => [portId(link.attachments!.from), portId(link.attachments!.to)]));
-  return { xs, keep: riserKeepOut(model) - 1e-6, routed };
+  return { xs, keep: riserKeepOut(model) - PLACEMENT_EPS, routed };
 }
 /** Whether a move of `group` by `dx` keeps its facing routed ports out of the riser keep-out. */
 export function riserKeepOutAfterMove(model: LayoutModel, group: LayoutGroup, dx: number): boolean {
@@ -193,13 +192,13 @@ export function riserKeepOutAfterMove(model: LayoutModel, group: LayoutGroup, dx
 export function riserKeepOutBreaches(model: LayoutModel): { node: string; riser: number }[] {
   const breaches: { node: string; riser: number }[] = [];
   for (const group of Object.values(model.groups)) for (const item of facingRoutedPorts(model, group)) {
-    for (const port of item.ports) if (Math.abs(port.x - item.riser) < riserKeepOut(model) - 1e-6 && !breaches.some(b => b.node === port.node)) breaches.push({ node: port.node, riser: item.riser });
+    for (const port of item.ports) if (Math.abs(port.x - item.riser) < riserKeepOut(model) - PLACEMENT_EPS && !breaches.some(b => b.node === port.node)) breaches.push({ node: port.node, riser: item.riser });
   }
   return breaches;
 }
 /** How far each routed port of the facing edge of `group` stands inside the riser keep-out after a move by `dx` (a port outside it has no entry). */
 export function riserPenetrations(model: LayoutModel, group: LayoutGroup, dx = 0): Map<string, number> {
-  const keep = riserKeepOut(model) - 1e-6, result = new Map<string, number>();
+  const keep = riserKeepOut(model) - PLACEMENT_EPS, result = new Map<string, number>();
   for (const item of facingRoutedPorts(model, group)) for (const port of item.ports) {
     const depth = keep - Math.abs(port.x + dx - item.riser);
     if (depth > 1e-9) result.set(`${port.node}:${port.ordinal}`, Math.max(result.get(`${port.node}:${port.ordinal}`) ?? 0, depth));
@@ -282,7 +281,7 @@ export function sideLaneFindings(model: LayoutModel): Diagnostic[] {
         message: `A node stands beyond the port of ${link.id} in its row, between the port and its side lane; the side run crosses it.` });
     }
     const crossed = (model.frames ?? []).filter(frame => frameNodes(model, frame.id).includes(lane.port!.node)
-      && (lane.side === 'right' ? lane.bounds.x < right(frame.box) - 1e-6 : right(lane.bounds) > frame.box.x + 1e-6));
+      && (lane.side === 'right' ? lane.bounds.x < right(frame.box) - PLACEMENT_EPS : right(lane.bounds) > frame.box.x + PLACEMENT_EPS));
     for (const frame of crossed) {
       result.push({ stage: 'placement', severity: 'warning', code: 'SIDE_LANE_INSIDE_FRAME', owners,
         message: `The box of frame ${frame.id} crosses the side lane of ${link.id}; the side run ends inside the frame.` });
@@ -403,11 +402,11 @@ function shared(model: LayoutModel, ref: PortRef): boolean {
 /** Every box a corridor may not stand in, other than the geometry the moving link owns. */
 function corridorFree(model: LayoutModel, lane: Lane, link: LayoutLink, child: PortRef, x: number): boolean {
   const half = lane.bounds.width / 2, window = { x: x - half, width: lane.bounds.width };
-  const overlaps = (box: { x: number; width: number }) => box.x < window.x + window.width - 1e-6 && box.x + box.width > window.x + 1e-6;
+  const overlaps = (box: { x: number; width: number }) => box.x < window.x + window.width - PLACEMENT_EPS && box.x + box.width > window.x + PLACEMENT_EPS;
   // Inside the transited band the corridor is the reservation `validateLanes` measures.
   for (const group of Object.values(model.groups)) if (group.tier === lane.tier && overlaps(occupied(model, group, link))) return false;
   for (const other of model.lanes) if (other !== lane && other.tier === lane.tier
-    && Math.abs(other.x - x) < (other.bounds.width + lane.bounds.width) / 2 - 1e-6) return false;
+    && Math.abs(other.x - x) < (other.bounds.width + lane.bounds.width) / 2 - PLACEMENT_EPS) return false;
   // Beyond the band the corridor is the child's own descent. It may enter the child's group and
   // nothing else: a foreign node, a foreign group box or a reserved run of another link stops it.
   const anchor = findPort(model, child)!.anchor!;
@@ -417,12 +416,12 @@ function corridorFree(model: LayoutModel, lane: Lane, link: LayoutLink, child: P
   for (const node of Object.values(model.nodes)) {
     if (node.id === child.node) continue;
     const box = node.bounds!;
-    if (overlaps(box) && box.y < bottom(span) - 1e-6 && bottom(box) > span.y + 1e-6) return false;
+    if (overlaps(box) && box.y < bottom(span) - PLACEMENT_EPS && bottom(box) > span.y + PLACEMENT_EPS) return false;
   }
   for (const group of Object.values(model.groups)) {
     if (group.id === childGroup || group.tier === lane.tier) continue;
     const box = group.bounds!;
-    if (overlaps(box) && box.y < bottom(span) - 1e-6 && bottom(box) > span.y + 1e-6) return false;
+    if (overlaps(box) && box.y < bottom(span) - PLACEMENT_EPS && bottom(box) > span.y + PLACEMENT_EPS) return false;
   }
   // Every reserved run of another link, in the three forms placement writes: a pinned path, the
   // corridor runs of 7a, and the shared runs 7e cuts for a fan. The gap allocation counts all
@@ -431,7 +430,7 @@ function corridorFree(model: LayoutModel, lane: Lane, link: LayoutLink, child: P
     if (other.id === link.id) continue;
     const runs = [...other.path?.fixed ? other.path.segments : [], ...other.fixedSegments ?? [],
       ...other.sharedRuns?.from ?? [], ...other.sharedRuns?.to ?? []];
-    for (const segment of runs) if (segmentRectDistance(segment, span) < linkStrokeWidth(other) / 2 - 1e-6) return false;
+    for (const segment of runs) if (segmentRectDistance(segment, span) < linkStrokeWidth(other) / 2 - PLACEMENT_EPS) return false;
   }
   // A group title keeps its link-free margin from every link, this link included (ADR-0013).
   for (const label of model.labels) {
@@ -440,7 +439,7 @@ function corridorFree(model: LayoutModel, lane: Lane, link: LayoutLink, child: P
       x: label.bounds.x - GROUP_LABEL_LINK_CLEARANCE, y: label.bounds.y - GROUP_LABEL_LINK_CLEARANCE,
       width: label.bounds.width + 2 * GROUP_LABEL_LINK_CLEARANCE, height: label.bounds.height + 2 * GROUP_LABEL_LINK_CLEARANCE,
     };
-    if (overlaps(box) && box.y < bottom(span) - 1e-6 && bottom(box) > span.y + 1e-6) return false;
+    if (overlaps(box) && box.y < bottom(span) - PLACEMENT_EPS && bottom(box) > span.y + PLACEMENT_EPS) return false;
   }
   return true;
 }
@@ -520,7 +519,7 @@ function inSpanSlot(model: LayoutModel, link: LayoutLink, core: { x: number; wid
     ...Array.from({ length: count }, (_, index) => range.high - index * gap).filter(x => x >= range.low)]);
   const capacity = (x: number): number => intervals.reduce((sum, range) => {
     const low = Math.max(x, range.low);
-    return sum + (range.high < low ? 0 : Math.floor((range.high - low + 1e-6) / gap) + 1);
+    return sum + (range.high < low ? 0 : Math.floor((range.high - low + PLACEMENT_EPS) / gap) + 1);
   }, 0);
   const enough = candidates.filter(x => capacity(x) >= count);
   return (enough.length ? enough : candidates).sort((a, b) => Math.abs(a - sx) - Math.abs(b - sx) || a - b)[0];
@@ -532,7 +531,7 @@ function inSpanSlot(model: LayoutModel, link: LayoutLink, core: { x: number; wid
  */
 function marginTranslations(read: (group: LayoutGroup) => Rect, groups: LayoutGroup[], split: number, x: number, width: number,
   prior: Lane[], fixedSources: Set<string>, framed = false): number[] | undefined {
-  if (prior.some(lane => Math.abs(x - lane.x) < (width + lane.bounds.width) / 2 - 1e-6)) return undefined;
+  if (prior.some(lane => Math.abs(x - lane.x) < (width + lane.bounds.width) / 2 - PLACEMENT_EPS)) return undefined;
   const boxes = groups.map(read), shifts = groups.map(() => 0);
   let boundary = x - width / 2;
   for (let i = split - 1; i >= 0; i--) {
@@ -556,15 +555,15 @@ function marginTranslations(read: (group: LayoutGroup) => Rect, groups: LayoutGr
     for (const lane of prior) {
       // A lane of a link that ends in this cell's frame stands inside the box: the frame grows to hold it,
       // so the cell cannot move away from it (ticket 14).
-      if (group.frame !== undefined && lane.group === group.id && box.x <= lane.bounds.x + 1e-6 && right(box) >= right(lane.bounds) - 1e-6) {
+      if (group.frame !== undefined && lane.group === group.id && box.x <= lane.bounds.x + PLACEMENT_EPS && right(box) >= right(lane.bounds) - PLACEMENT_EPS) {
         if (dx) return undefined;
         continue;
       }
       // Existing corridors cannot be crossed or consumed by a later margin expansion.
-      if (right(box) <= lane.bounds.x + 1e-6) {
-        if (right(box) + dx > lane.bounds.x + 1e-6) return undefined;
-      } else if (box.x >= right(lane.bounds) - 1e-6) {
-        if (box.x + dx < right(lane.bounds) - 1e-6) return undefined;
+      if (right(box) <= lane.bounds.x + PLACEMENT_EPS) {
+        if (right(box) + dx > lane.bounds.x + PLACEMENT_EPS) return undefined;
+      } else if (box.x >= right(lane.bounds) - PLACEMENT_EPS) {
+        if (box.x + dx < right(lane.bounds) - PLACEMENT_EPS) return undefined;
       } else return undefined;
     }
   }
@@ -625,9 +624,9 @@ export function reserveRisers(model: LayoutModel, pending: Lane[], occ: (group: 
     const merged: [number, number][] = [];
     for (const item of blocked) {
       const last = merged.at(-1);
-      if (last !== undefined && item[0] <= last[1] + 1e-6) last[1] = Math.max(last[1], item[1]); else merged.push([...item]);
+      if (last !== undefined && item[0] <= last[1] + PLACEMENT_EPS) last[1] = Math.max(last[1], item[1]); else merged.push([...item]);
     }
-    const free = (x: number): boolean => merged.every(([low, high]) => x <= low + 1e-6 || x >= high - 1e-6);
+    const free = (x: number): boolean => merged.every(([low, high]) => x <= low + PLACEMENT_EPS || x >= high - PLACEMENT_EPS);
     const candidates = new Set<number>();
     for (const [low, high] of merged) { candidates.add(low); candidates.add(high); }
     if (free(middle)) candidates.add(middle);
@@ -641,7 +640,7 @@ export function reserveRisers(model: LayoutModel, pending: Lane[], occ: (group: 
       let edges = 0;
       for (const frame of frames) {
         const box = frame.box;
-        if (x > box.x + 1e-6 && x < right(box) - 1e-6) for (const y of [box.y, bottom(box)]) if (y > y0 && y < y1) edges++;
+        if (x > box.x + PLACEMENT_EPS && x < right(box) - PLACEMENT_EPS) for (const y of [box.y, bottom(box)]) if (y > y0 && y < y1) edges++;
       }
       let extension = 0;
       for (const [bus, span, y] of [[upper, spans[0]!, y0 + 15], [lower, spans[1]!, y1 - 15]] as const) {
@@ -652,7 +651,7 @@ export function reserveRisers(model: LayoutModel, pending: Lane[], occ: (group: 
         for (const frame of frames) {
           const box = frame.box;
           if (y <= box.y || y >= bottom(box)) continue;
-          for (const edge of [box.x, right(box)]) if (edge > from + 1e-6 && edge < to - 1e-6) edges++;
+          for (const edge of [box.x, right(box)]) if (edge > from + PLACEMENT_EPS && edge < to - PLACEMENT_EPS) edges++;
         }
       }
       // The room a frame that holds a member must grow by to hold the lane: a slot inside a member frame costs none.
@@ -1026,8 +1025,8 @@ export function outermostOfRow(model: LayoutModel, port: PortRef): boolean {
   const group = model.groups[model.document.nodes[port.node]!.group]!;
   return group.nodes.every(id => {
     const other = model.nodes[id]!.bounds!;
-    if (id === port.node || other.y >= bottom(box) - 1e-6 || bottom(other) <= box.y + 1e-6) return true;
-    return side === 'right' ? other.x < right(box) - 1e-6 : right(other) > box.x + 1e-6;
+    if (id === port.node || other.y >= bottom(box) - PLACEMENT_EPS || bottom(other) <= box.y + PLACEMENT_EPS) return true;
+    return side === 'right' ? other.x < right(box) - PLACEMENT_EPS : right(other) > box.x + PLACEMENT_EPS;
   });
 }
 /**
@@ -1040,11 +1039,11 @@ function sideLaneRefusal(model: LayoutModel, link: LayoutLink, port: PortRef, x:
   const width = laneWidth(model, link), half = width / 2, group = model.groups[model.document.nodes[port.node]!.group]!;
   const own = occ(group, link), holding = (model.frames ?? []).filter(frame => frameNodes(model, frame.id).includes(port.node));
   const inner = dir > 0 ? Math.max(right(own), ...holding.map(frame => right(frame.box))) : Math.min(own.x, ...holding.map(frame => frame.box.x));
-  if (dir > 0 ? x - half < inner - 1e-6 : x + half > inner + 1e-6) return 'corridor';
+  if (dir > 0 ? x - half < inner - PLACEMENT_EPS : x + half > inner + PLACEMENT_EPS) return 'corridor';
   if (Math.abs(x - anchor.x) < SIDE_RUN_STEM + routedStrokeWidth(model) / 2) return 'corridor';
   // The side run, from the face to the lane centre, at the port's y.
   const reach = routedStrokeWidth(model) / 2, span = { x: Math.min(anchor.x, x), width: Math.abs(x - anchor.x), y: anchor.y - reach, height: 2 * reach };
-  const across = (box: Rect): boolean => box.x < right(span) - 1e-6 && right(box) > span.x + 1e-6 && box.y < bottom(span) - 1e-6 && bottom(box) > span.y + 1e-6;
+  const across = (box: Rect): boolean => box.x < right(span) - PLACEMENT_EPS && right(box) > span.x + PLACEMENT_EPS && box.y < bottom(span) - PLACEMENT_EPS && bottom(box) > span.y + PLACEMENT_EPS;
   for (const node of Object.values(model.nodes)) {
     if (node.id === port.node) continue;
     if (across(node.bounds!) || node.ports.some(item => item.pill !== undefined && across(item.pill.bounds))) return 'body';
@@ -1059,9 +1058,9 @@ function sideLaneRefusal(model: LayoutModel, link: LayoutLink, port: PortRef, x:
   for (const other of Object.values(model.groups)) {
     if (other.tier !== group.tier || other.bounds === undefined) continue;
     const box = occ(other, link);
-    if (box.x < x + half - 1e-6 && right(box) > x - half + 1e-6) return 'corridor';
+    if (box.x < x + half - PLACEMENT_EPS && right(box) > x - half + PLACEMENT_EPS) return 'corridor';
   }
-  for (const lane of pending) if (lane.tier === group.tier && Math.abs(lane.x - x) < (lane.bounds.width + width) / 2 - 1e-6) return 'lane';
+  for (const lane of pending) if (lane.tier === group.tier && Math.abs(lane.x - x) < (lane.bounds.width + width) / 2 - PLACEMENT_EPS) return 'lane';
   return undefined;
 }
 function pickSideLane(model: LayoutModel, link: LayoutLink, port: PortRef, pending: readonly Lane[], occ: (group: LayoutGroup, link?: LayoutLink) => Rect, alignedOnly = false): { x: number } | { why: string } {
@@ -1080,9 +1079,9 @@ function pickSideLane(model: LayoutModel, link: LayoutLink, port: PortRef, pendi
   for (const lane of pending) if (lane.tier === group.tier) addBox(lane.bounds);
   const own = occ(group, link);
   const inner = dir > 0 ? right(own) : own.x;
-  const exterior = [...edges].filter(x => dir * (x - (inner + dir * half)) >= -1e-6).sort((a, b) => Math.abs(a - farX) - Math.abs(b - farX) || dir * (a - b));
-  const aligned = dir * (farX - inner) >= half - 1e-6;
-  const tries = alignedOnly ? (aligned ? [farX] : []) : aligned ? [farX, ...exterior.filter(x => Math.abs(x - farX) > 1e-6)] : exterior;
+  const exterior = [...edges].filter(x => dir * (x - (inner + dir * half)) >= -PLACEMENT_EPS).sort((a, b) => Math.abs(a - farX) - Math.abs(b - farX) || dir * (a - b));
+  const aligned = dir * (farX - inner) >= half - PLACEMENT_EPS;
+  const tries = alignedOnly ? (aligned ? [farX] : []) : aligned ? [farX, ...exterior.filter(x => Math.abs(x - farX) > PLACEMENT_EPS)] : exterior;
   let first: string | undefined;
   for (const x of tries) {
     const why = sideLaneRefusal(model, link, port, x, pending, occ);
@@ -1098,7 +1097,7 @@ function buildSideLane(model: LayoutModel, link: LayoutLink, port: PortRef, x: n
   const far = portId(link.attachments!.from) === portId(port) ? link.attachments!.to : link.attachments!.from;
   const farX = findPort(model, far)!.anchor!.x;
   const lane: Lane = { id: sideLaneId(link), owner: { kind: 'link', id: link.id }, layer: 'routed', group: group.id, tier: group.tier!,
-    side: lateral.side as 'left' | 'right', kind: 'side', port: { ...port }, ...(Math.abs(x - farX) <= 1e-6 ? { aligned: true as const } : {}), x, bounds: { x: x - half, width: 2 * half, y: 0, height: 0 } };
+    side: lateral.side as 'left' | 'right', kind: 'side', port: { ...port }, ...(Math.abs(x - farX) <= PLACEMENT_EPS ? { aligned: true as const } : {}), x, bounds: { x: x - half, width: 2 * half, y: 0, height: 0 } };
   Object.assign(lane.bounds, sideLaneExtent(model, lane, link));
   return lane;
 }
@@ -1143,10 +1142,10 @@ function validateRiserLane(model: LayoutModel, lane: Lane): void {
   if (lane.side === 'left' ? lane.x >= group.bounds!.x : lane.x <= right(group.bounds!)) throw new Error(`Lane side contradicts its group: ${lane.id} / ${group.id}`);
   for (const other of Object.values(model.groups).filter(item => item.tier === lane.tier)) {
     const box = occupied(model, other);
-    if (box.x < right(lane.bounds) - 1e-6 && right(box) > lane.bounds.x + 1e-6) throw new Error(`Lane ${lane.id} crosses occupied group ${other.id}`);
+    if (box.x < right(lane.bounds) - PLACEMENT_EPS && right(box) > lane.bounds.x + PLACEMENT_EPS) throw new Error(`Lane ${lane.id} crosses occupied group ${other.id}`);
   }
   for (const other of model.lanes) if (other !== lane && other.tier === lane.tier
-    && Math.abs(other.x - lane.x) < (other.bounds.width + lane.bounds.width) / 2 - 1e-6) throw new Error('Owned lanes overlap');
+    && Math.abs(other.x - lane.x) < (other.bounds.width + lane.bounds.width) / 2 - PLACEMENT_EPS) throw new Error('Owned lanes overlap');
 }
 /**
  * A side lane is valid only on a candidate for it: its id, port, tier, side and group are the lateral end's. That the node is the outermost of its row
@@ -1181,12 +1180,12 @@ export function validateLanes(model: LayoutModel): void {
     if (lane.side === 'left' ? lane.x >= group.bounds!.x : lane.x <= right(group.bounds!)) throw new Error(`Lane side contradicts its group: ${lane.id} / ${group.id}`);
     for (const other of Object.values(model.groups).filter(group => group.tier === lane.tier)) {
       const box = occupied(model, other, link);
-      if (box.x < right(lane.bounds) - 1e-6 && right(box) > lane.bounds.x + 1e-6) throw new Error(`Lane ${lane.id} crosses occupied group ${other.id}`);
+      if (box.x < right(lane.bounds) - PLACEMENT_EPS && right(box) > lane.bounds.x + PLACEMENT_EPS) throw new Error(`Lane ${lane.id} crosses occupied group ${other.id}`);
     }
     for (const other of model.lanes) if (other !== lane && other.tier === lane.tier
-      && Math.abs(other.x - lane.x) < (other.bounds.width + lane.bounds.width) / 2 - 1e-6) throw new Error('Owned lanes overlap');
+      && Math.abs(other.x - lane.x) < (other.bounds.width + lane.bounds.width) / 2 - PLACEMENT_EPS) throw new Error('Owned lanes overlap');
     for (const other of model.links) if (other.id !== link.id && other.path?.fixed) for (const segment of other.path.segments) {
-      if (segmentRectDistance(segment, lane.bounds) < linkStrokeWidth(other) / 2 - 1e-6) throw new Error('Fixed path crosses a foreign lane');
+      if (segmentRectDistance(segment, lane.bounds) < linkStrokeWidth(other) / 2 - PLACEMENT_EPS) throw new Error('Fixed path crosses a foreign lane');
     }
   }
   for (const link of model.links) {
