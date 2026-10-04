@@ -42,6 +42,8 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
     for (const [i, gap] of gaps(model).entries()) expect(gap, `gap ${i}`).toBeGreaterThanOrEqual(bandGap(model) - 1e-6);
     // No tier-0 column warns for an overlay link to a canton.
     expect(heldOwners(model).filter(id => id.startsWith('top-'))).toEqual([]);
+    // No close-up is refused: with the move that left a gap short refused, the cantons stand a band gap apart (60, 60) and nothing is held open.
+    expect(closeUps(model)).toEqual([]);
     expect(model.canvas!.width).toBeLessThan(2049.3 - 100);
     // The block keeps its centre (the partner mean is not a stable target, ticket "Comments"); the tier packed against the canton
     // step, the MPLS row, stands centred on it within one column slack (measured 1.5 px).

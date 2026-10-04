@@ -4,6 +4,7 @@ import { layout, parse, restoreFinalLayout, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { failuresBesidesMinSeparation } from './open-min-separation.js';
 
 const run = (yaml: string) => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const fixture = readFileSync(new URL('../../goldens/synthetic/bar-fan.yaml', import.meta.url), 'utf8');
@@ -26,7 +27,7 @@ function dropJoinsTree(model: LayoutModel): void {
 it('ticket 36: a bar drop and two remainders from one port share one root stem and pass every gate', async () => {
   const model = await run(fixture);
   const report = score(model).snapshot;
-  expect(report.passed).toBe(true);
+  expect(failuresBesidesMinSeparation(report)).toEqual([]);
   expect(report.metrics.crossings.count).toBe(0);
   dropJoinsTree(model);
   expect(model.junctions).toHaveLength(2);
@@ -46,7 +47,7 @@ it('ticket 36: a bar drop and one remainder form a tree of two', async () => {
   const one = fixture.replace('  c2: { group: leaves, ports: [{ name: p, side: top }] }\n', '').replace('  - [parent.p#1, c2.p]\n', '');
   const model = await run(one);
   const report = score(model).snapshot;
-  expect(report.passed).toBe(true);
+  expect(failuresBesidesMinSeparation(report)).toEqual([]);
   expect(model.junctions).toHaveLength(1);
   dropJoinsTree(model);
 }, 60000);

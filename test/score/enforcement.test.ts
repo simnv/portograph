@@ -4,9 +4,9 @@ import { empty, node } from './fixtures.js';
 
 function scale(count: number) {
   const model = empty();
-  for (let i = 0; i < count; i++) node(model, `n${i}`, { x: i * 80, y: 0, width: 40, height: 40 });
-  model.tierBands[0]!.bounds!.width = count * 80 + 20000;
-  model.canvas = { x: -20, y: -20, width: count * 80 + 40, height: 80 };
+  for (let i = 0; i < count; i++) node(model, `n${i}`, { x: i * 200, y: 0, width: 40, height: 40 });
+  model.tierBands[0]!.bounds!.width = count * 200 + 20000;
+  model.canvas = { x: -20, y: -20, width: count * 200 + 40, height: 80 };
   model.labels.push({ id: 'collision', text: 'collision', owner: { kind: 'group', id: 'g-n0' }, layer: 'routed', bounds: { x: 10, y: 10, width: 10, height: 10 } });
   return model;
 }

@@ -5,7 +5,7 @@ import { crossingsOf } from './read/crossings.js';
 import { hintsFacingAway } from './side-hints.js';
 import { overlayBlockers } from './overlay-paths.js';
 import { plannedBends } from './side-measure.js';
-import { added as namesAdded, constraintFindings } from './trial-findings.js';
+import { added as namesAdded, constraintFindings, separationWorse } from './trial-findings.js';
 import { compare, pathBends, reading, refusal, routedBends, routedFamily, sideTrialProfile, tapVerdict } from './objective.js';
 
 /**
@@ -68,6 +68,8 @@ export function judgeTrial(input: TrialInput): Verdict {
   // The hard entries of the x catalogue the baseline holds (a band gap between two root groups) stay held: the same check as the course judge's (ticket 17).
   const constraintNew = namesAdded(constraintFindings(input.routedTrial), constraintFindings(input.routedBase));
   if (constraintNew.length > 0) return verdict(false, `the routed trial breaks a hard constraint the baseline holds (${constraintNew.join('; ')})`);
+  const separationNew = separationWorse(input.routedTrial, input.routedBase);
+  if (separationNew.length > 0) return verdict(false, `the routed trial breaks or deepens a minimum separation (${separationNew.join('; ')})`);
   // A trial that holds a lane hint (ticket 119) is kept only when each lane link's own bends fall, the total bends of the sheet do not rise, and no link
   // without a hint gets worse: a rise in total bends is never a gain, and the count of bent links cannot see what a lane gives.
   // The chord counts of the two 7e models stand in `routed.straight`: the clause that reads them comes last, and a refused trial does not pay for them.

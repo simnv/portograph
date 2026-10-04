@@ -9,6 +9,7 @@ import { holdColumnAxes, refreshHeldWarnings } from './columns.js';
 import { growTierGaps } from './gap-room.js';
 import { candidateCopy, chooseReseat, shortGaps } from './decide.js';
 import { attemptCounters, lastAttempt } from './attempt-counters.js';
+import { separationShortfalls, worseSeparations } from './constraints/separation.js';
 import { countStep, ledgerOn, ledgerSnapshot, startAttemptEntry, type LedgerSnapshot } from './attempt-ledger.js';
 
 /**
@@ -137,6 +138,19 @@ export function trialSettle(probe: LayoutModel): SettleReading {
   const shift = settleRound(probe, (step, changed) => { steps.push([step, changed]); });
   return { shift, steps };
 }
+/**
+ * A round of `settleRound` on the draft that the rounds have no other judge for (the first round, and a round after a step that moved nothing the settled copy
+ * judged): it stays only when it breaks no minimum separation the draft held, nor deepens one (ticket 17; `separationHeld`, objective.ts). A round that does is
+ * taken back whole, and the draft stands as it did, with a shift of 0. The cost is one text of the model and two readings of the catalogue per round.
+ */
+function settleRoundHeld(draft: LayoutModel, tap: (step: 'grow' | 'close-up' | 'keep-out', changed: boolean) => void): number {
+  const before = separationShortfalls(draft), saved = JSON.stringify(draft);
+  const shift = settleRound(draft, tap);
+  if (worseSeparations(separationShortfalls(draft), before).length === 0) return shift;
+  Object.assign(draft, JSON.parse(saved) as LayoutModel);
+  return 0;
+}
+
 /** What a round of `settleRound` found, with the steps it took in order: a copy that adopted it hands this on instead of settling again. */
 export interface SettleReading { shift: number; steps: ['grow' | 'close-up' | 'keep-out', boolean][] }
 
@@ -195,7 +209,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
       for (const [step, changed] of taken.steps) tapped(step, changed);
       shift = taken.shift;
       taken = undefined;
-    } else shift = settleRound(draft, tapped);
+    } else shift = settleRoundHeld(draft, tapped);
     closed = shift < CANTON_CREEP;
     attemptCounters.rounds++; entry.rounds++;
     if (!closed) { attemptCounters.openRounds++; entry.openRounds++; if (afterChords) attemptCounters.invalidations.closeUpReopened++; }

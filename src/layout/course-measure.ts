@@ -8,7 +8,7 @@ import { linkFacts, type EndFacts } from './read/courses.js';
 import { profiles, drawnOverlays, read, pathBends, reading, routedFamily, routedBends, compare, lazyCount, type Reading } from './objective.js';
 import { findPort } from './row-paths.js';
 import { EDGE_MARGIN, RING_PITCH, paddingRows, rowsInset } from './course-rows.js';
-import { added as namesAdded, constraintFindings, gateFindings } from './trial-findings.js';
+import { added as namesAdded, constraintFindings, gateFindings, separationWorse } from './trial-findings.js';
 import { portKey } from './sides-one.js';
 import { portId } from './skeleton-graph.js';
 
@@ -205,6 +205,8 @@ export function judgeCourseTrial(routedBase: LayoutModel, routedTrial: LayoutMod
   if (gateNew.length > 0) return verdict(false, `the routed trial has gate findings the baseline does not have (${gateNew.join('; ')})`);
   const constraintNew = namesAdded(constraintFindings(routedTrial), constraintFindings(routedBase));
   if (constraintNew.length > 0) return verdict(false, `the routed trial breaks a hard constraint the baseline holds (${constraintNew.join('; ')})`);
+  const separationNew = separationWorse(routedTrial, routedBase);
+  if (separationNew.length > 0) return verdict(false, `the routed trial breaks or deepens a minimum separation (${separationNew.join('; ')})`);
   // Growth: optional growth stays within today's bound (5 %), and only the reserved width of a perimeter lane and the depth of a padding row may exceed it (Q2).
   const room = reservedGrowth(routedTrial), cap = (was: number | undefined, extra: number): number => (was ?? 0) * (1 + GROWTH_BOUND) + extra + 1e-6;
   if ((routedTrial.canvas?.width ?? 0) > cap(routedBase.canvas?.width, room.width) || (routedTrial.canvas?.height ?? 0) > cap(routedBase.canvas?.height, room.height)) {
