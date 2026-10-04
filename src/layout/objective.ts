@@ -6,6 +6,7 @@ import { drawn, overlayCrossingPairs, overlayCrossingPoints, portKey, type Drawn
 import { isOneSegment } from './read/overlay-straight.js';
 import { findPort } from './row-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { worseSeparations, type Shortfall } from './constraints/separation.js';
 
 /**
  * One reading of a candidate and one comparison of two readings (architecture ticket 04).
@@ -66,6 +67,13 @@ export function lazyCount(count: () => number): LazyCount {
 
 const NONE = lazyCount(() => 0);
 
+/** The minimum-separation shortfalls of a settled model (ticket 17), read once and only when a gate asks: the catalogue is built on the first ask. */
+export type LazySeparation = () => ReadonlyMap<string, Shortfall>;
+export function lazySeparation(read: () => ReadonlyMap<string, Shortfall>): LazySeparation {
+  let value: ReadonlyMap<string, Shortfall> | undefined;
+  return () => (value ??= read());
+}
+
 export interface Reading {
   overlay: Family;
   routed: Family;
@@ -80,6 +88,8 @@ export interface Reading {
   sets?: Readonly<Record<string, ReadonlySet<string>>>;
   /** Named facts of the candidate alone that a gate asks (the lane reseat: the corridors stand at their child, no body on a frozen chord). Absent reads as false. */
   facts?: Readonly<Record<string, boolean>>;
+  /** The minimum separations the candidate breaks, by catalogue id, read when a gate asks (`separationHeld`). Absent reads as none. */
+  separation?: LazySeparation;
   /** How far the column rules would move a group of the settled model: 0 at their fixed point (ticket 67). Absent reads as 0. */
   drift?: number;
   /** The widest canvas the candidate may have, when it is wider than the incumbent's: the growth bound of the move (ticket 80). Absent reads as no bound. */
@@ -317,6 +327,16 @@ export const noNewFindings = (name: string): Gate => (a, b) => {
   return undefined;
 };
 
+/**
+ * A gate: the candidate breaks no minimum separation that the incumbent held, and none deeper than the incumbent's own (ticket 17). It is the last gate of a
+ * profile, so the catalogue is built only for a candidate that every earlier gate and the order let through.
+ */
+export const separationHeld: Gate = (a, b) => {
+  if (a.separation === undefined) return undefined;
+  const worse = worseSeparations(a.separation(), b.separation?.() ?? new Map());
+  return worse.length === 0 ? undefined : `a minimum separation is broken or deepened (${worse.join(', ')})`;
+};
+
 /** A gate: the candidate has the fact `name`. */
 export const factHolds = (name: string): Gate => a => (a.facts?.[name] === true ? undefined : `${name} does not hold`);
 
@@ -385,13 +405,13 @@ export const judges = {
   /** The column rules (ticket 67) do not undo a lower rank move: the cheap test before a settled copy is paid for. */
   driftHeld: profiles.driftHeld,
   /** A chord-clear candidate on its settled copy, against the settled copy without it: the order gains, and the column rules, the width bound and the findings hold. */
-  chordSettled: orderProfile('chordSettled', unifiedOrder, [], [driftHeld, widthBound, ...noNewPlacementFindings], true),
+  chordSettled: orderProfile('chordSettled', unifiedOrder, [], [driftHeld, widthBound, ...noNewPlacementFindings, separationHeld], true),
   /** The same for a lower rank cell. */
-  rankSettled: orderProfile('rankSettled', unifiedOrder, [], [driftHeld, widthBound, ...noNewPlacementFindings], true),
+  rankSettled: orderProfile('rankSettled', unifiedOrder, [], [driftHeld, widthBound, ...noNewPlacementFindings, separationHeld], true),
   /** A group with no link steps out of a chord: the picture is no worse by the order, and G6 and G5 name nothing new. */
-  linkless: orderProfile('linkless', unifiedOrder, [], noNewPlacementFindings.slice(0, 2), true),
+  linkless: orderProfile('linkless', unifiedOrder, [], [noNewFindings('crowded'), noNewFindings('disordered'), separationHeld], true),
   /** The lane reseat on its settled copy, against the incumbent with its lanes held. */
-  laneReseat: orderProfile('laneReseat', unifiedOrder, [], [noNewFindings('centring'), noNewFindings('gaps'), noNewFindings('room'), noNewFindings('crowded'), noNewFindings('disordered'), factHolds('lanesHold'), factHolds('chordsClear')], true),
+  laneReseat: orderProfile('laneReseat', unifiedOrder, [], [noNewFindings('centring'), noNewFindings('gaps'), noNewFindings('room'), noNewFindings('crowded'), noNewFindings('disordered'), factHolds('lanesHold'), factHolds('chordsClear'), separationHeld], true),
 } satisfies Record<string, Profile>;
 
 /**

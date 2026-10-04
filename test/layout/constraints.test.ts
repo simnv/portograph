@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
-import { evaluate, termValue, xCatalogue } from '../../src/layout/constraints/index.js';
+import { evaluate, termValue, worseSeparations, xCatalogue } from '../../src/layout/constraints/index.js';
 import type { Constraint } from '../../src/layout/constraints/index.js';
 import { bandGap } from '../../src/layout/skeleton-graph.js';
 import { COLUMN_SLACK } from '../../src/layout/columns.js';
@@ -89,5 +89,16 @@ describe('the residual evaluator', () => {
     expect(termValue(m, { at: 'frame-right', owner: 'f', offset: -1 })).toBe(39);
     expect(termValue(m, { at: 'fixed', owner: '', offset: 7 })).toBe(7);
     expect(termValue(m, { at: 'group', owner: 'missing', offset: 0 })).toBeUndefined();
+  });
+});
+
+describe('the minimum-separation readings of the 7f judges (ticket 17)', () => {
+  const item = (short: number) => ({ owners: ['group:a', 'group:b'], short });
+  it('refuses a new break and a deeper one, and allows float noise, a repair and an equal break', () => {
+    expect(worseSeparations(new Map([['s', item(5)]]), new Map())).toEqual(['s']);
+    expect(worseSeparations(new Map([['s', item(5)]]), new Map([['s', item(3)]]))).toEqual(['s']);
+    expect(worseSeparations(new Map([['s', item(3.005)]]), new Map([['s', item(3)]]))).toEqual([]);
+    expect(worseSeparations(new Map([['s', item(2)]]), new Map([['s', item(3)]]))).toEqual([]);
+    expect(worseSeparations(new Map(), new Map([['s', item(3)]]))).toEqual([]);
   });
 });

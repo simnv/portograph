@@ -9,6 +9,7 @@ export const CONSTRAINT_SHEETS: readonly string[] = [
   'a-fan-spreads-its-ports-so-its-chords-hold-clearance',
   'a-frame-holds-its-lanes-beside-its-siblings',
   'a-grid-already-seats-a-like-side-pair',
+  'a-group-ranks-a-child-span-past-a-parent-member',
   'a-group-shift-leaves-a-chord-clear-of-a-lane',
   'a-held-lane-stays-on-its-frames-side-of-a-foreign-frame',
   'a-link-inside-one-frame-is-a-straight-segment',
@@ -21,5 +22,6 @@ export const CONSTRAINT_SHEETS: readonly string[] = [
   'four-locations-each-with-a-zone',
   'overlay-links-reorder-two-locations',
   'sibling-frames-align-their-ranks',
+  'three-canton-groups-close-up-to-a-band-gap',
   'transit-fan',
 ];
