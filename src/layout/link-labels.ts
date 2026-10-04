@@ -166,14 +166,14 @@ function buildObstacles(model: LayoutModel): ObstacleIndex {
  * fails at `- EPS`, so an accepted placement cannot become a label hit.
  */
 function collides(index: ObstacleIndex, box: Rect, support: LabelSupport | undefined,
-  overlayCounts = true): boolean {
+  overlayCounts = true, onLine = false): boolean {
   return index.some(box, item => {
     if (item.overlay && !overlayCounts) return false;
     if (!item.segment) return rectDistance(box, item.bounds) < item.clearance + EPS;
     const supporting = support?.kind === 'link-segment' && support.link === item.link
       && item.index !== undefined && item.index >= support.segment && item.index <= (support.through ?? support.segment);
     // A label on a direct line lies on the very line it names (ticket 16): that line is no obstacle.
-    if (supporting && isDirect(item.segment)) return false;
+    if (onLine && supporting && isDirect(item.segment)) return false;
     if (segmentRect(item.segment, box)) return true;
     return !supporting && segmentRectDistance(item.segment, box) < item.clearance + EPS;
   });
@@ -215,7 +215,7 @@ export function candidateBox(segment: PathSegment, half: number, size: { width: 
   return { bounds: { x: second ? midX - gap - rotated.width : midX + gap, y: midY - rotated.height / 2, ...rotated }, textRotation: LINK_LABEL_GEOMETRY.verticalRotation };
 }
 
-interface Placement { segment: number; bounds: Rect; textRotation: number; text: string; lines: string[]; lineHeight: number }
+interface Placement { onLine?: true; segment: number; bounds: Rect; textRotation: number; text: string; lines: string[]; lineHeight: number }
 interface Supported { segments: PathSegment[]; half: number; support: (index: number) => LabelSupport | undefined }
 
 /**
@@ -334,7 +334,7 @@ function placeLabel(index: ObstacleIndex, supported: Supported, text: string, sh
           && (shortened || !shortenable || measuredOn.width + 2 * LINK_LABEL_GEOMETRY.shortenMargin <= length + EPS);
         const found = fits ? alongLine(index, segment, length, measuredOn, supported.support(at), overlayCounts) : undefined;
         if (found && measuredOn) {
-          const placement = { segment: at, bounds: found.bounds, textRotation: found.textRotation, text: onLine!, lines: measuredOn.lines, lineHeight: measuredOn.lineHeight };
+          const placement: Placement = { onLine: true, segment: at, bounds: found.bounds, textRotation: found.textRotation, text: onLine!, lines: measuredOn.lines, lineHeight: measuredOn.lineHeight };
           if (!shortened) return placement;
           if (!best || onLine!.length > best.text.length) best = placement;
           continue;
@@ -372,7 +372,7 @@ function alongLine(index: ObstacleIndex, segment: PathSegment, length: number, m
     for (const sign of step === 0 ? [1] : [1, -1]) {
       const along = length / 2 + sign * step * LINK_LABEL_GEOMETRY.alongStep;
       const bounds = turnedBox({ x: segment.from.x + ux * along, y: segment.from.y + uy * along }, size, degrees);
-      if (!collides(index, bounds, support, overlayCounts)) return { bounds, textRotation: degrees };
+      if (!collides(index, bounds, support, overlayCounts, true)) return { bounds, textRotation: degrees };
     }
   }
   return undefined;
@@ -390,7 +390,7 @@ function omitted(label: LayoutLabel): LayoutLabel {
 
 function placedLabel(label: LayoutLabel, placement: Placement, support: LabelSupport | undefined): LayoutLabel {
   return { ...label, ...(support ? { support } : {}), text: placement.text, textRotation: placement.textRotation,
-    lines: placement.lines, lineHeight: placement.lineHeight, bounds: placement.bounds,
+    ...(placement.onLine ? { onLine: true as const } : {}), lines: placement.lines, lineHeight: placement.lineHeight, bounds: placement.bounds,
     ...(placement.text === label.text ? {} : { tooltip: label.text }) };
 }
 

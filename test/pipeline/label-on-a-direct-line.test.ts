@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { drawio, layout, parse, render, score } from '../../src/index.js';
 import type { LayoutLabel, LayoutModel, PathSegment } from '../../src/index.js';
-import { isDirect, lineAngle } from '../../src/layout/link-labels.js';
+import { isDirect, lineAngle, produceLinkLabels } from '../../src/layout/link-labels.js';
+import { segmentRect } from '../../src/score/geometry.js';
+import { bench } from '../layout/link-label-fixture.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -106,5 +108,19 @@ describe('a label on a direct line', () => {
       expect(rotation).toBeCloseTo(label.textRotation!, 6);
       expect(cell!).toMatch(/labelBackgroundColor=(?!none)/);
     }
+  });
+});
+
+describe('a direct line too short for its label', () => {
+  it('keeps the beside box, which is no on-line label, and never lets the text cross its line', () => {
+    // A 21 px stub at 30 degrees under a 40 px label: the text rises across the line, more than the gap.
+    const to = { x: 100 + 21 * Math.cos(Math.PI / 6), y: 100 + 21 * Math.sin(Math.PI / 6) };
+    const stub = bench(
+      [{ id: 'a', bounds: { x: 60, y: 60, width: 40, height: 40 } }, { id: 'b', bounds: { x: to.x, y: to.y, width: 40, height: 40 } }],
+      [{ id: 'link-1', from: 'a', to: 'b', points: [{ x: 100, y: 100 }, to], label: 'Heartbeat1', sides: ['right', 'left'] }]);
+    produceLinkLabels(stub);
+    const label = stub.labels.find(item => item.role === 'link')!;
+    expect(label.onLine).toBeUndefined();
+    if (!label.omitted) expect(segmentRect(stub.links[0]!.path!.segments[0]!, label.bounds!)).toBe(false);
   });
 });

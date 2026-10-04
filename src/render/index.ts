@@ -21,6 +21,16 @@ const ICON_INSET = 1.5;
 const MASK_ID = 'pg-overlay-mask';
 const ROUTED_MASK_ID = 'pg-routed-mask';
 
+/**
+ * A mask id that names its cutouts: the base id plus a hash of the mask body. Two SVGs inlined on
+ * one page then resolve each to its own mask, and the same sheet always renders the same id.
+ */
+function maskId(base: string, body: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < body.length; i++) hash = Math.imul(hash ^ body.charCodeAt(i), 0x01000193) >>> 0;
+  return `${base}-${hash.toString(16).padStart(8, '0')}`;
+}
+
 export interface RenderOptions {
   /**
    * Effective link families to draw, as a nonempty selection. Omitted, both families are drawn and
@@ -227,7 +237,7 @@ function maskRect(shown: boolean, box: Rect, turn?: number): string {
  * more. Undefined for every other label, which is cut out by its stored box.
  */
 function onLineCutout(model: LayoutModel, label: LayoutLabel): Cutout | undefined {
-  if (label.role !== 'link' || label.support?.kind !== 'link-segment' || !label.bounds || !label.lines?.length) return undefined;
+  if (label.role !== 'link' || label.onLine !== true || label.support?.kind !== 'link-segment' || !label.bounds || !label.lines?.length) return undefined;
   const support = label.support;
   const segment = model.links.find(link => link.id === support.link)?.path?.segments[support.segment];
   if (segment === undefined || !isDirect(segment)) return undefined;
@@ -504,17 +514,20 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     }).join('')) : '';
 
   const overlayVisible = drawn.some(link => effectiveLayer(link) === 'overlay') || buses.length > 0;
-  const mask = overlayVisible ? element('mask', { id: MASK_ID, maskUnits: 'userSpaceOnUse',
+  const maskElement = (id: string, inner: string): string => element('mask', { id, maskUnits: 'userSpaceOnUse',
     // The mask means luminance: white shows the overlay, black cuts it out. Said here, on the
     // element, so no rule can reinterpret the cutouts as opaque alpha.
     style: 'mask-type:luminance!important',
-    x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height },
-  maskRect(true, canvas) + maskedBoxes(layout, visible).map(cut => maskRect(false, cut.box, cut.turn)).join('')) : '';
+    x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height }, inner);
+  const overlayInner = overlayVisible
+    ? maskRect(true, canvas) + maskedBoxes(layout, visible).map(cut => maskRect(false, cut.box, cut.turn)).join('') : '';
+  const overlayMaskId = maskId(MASK_ID, overlayInner);
+  const mask = overlayVisible ? maskElement(overlayMaskId, overlayInner) : '';
   // The routed layer is masked only where a label lies on a direct routed line (ticket 16).
   const routedCuts = routedCutouts(layout, visible);
-  const routedMask = routedCuts.length ? element('mask', { id: ROUTED_MASK_ID, maskUnits: 'userSpaceOnUse',
-    style: 'mask-type:luminance!important', x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height },
-  maskRect(true, canvas) + routedCuts.map(cut => maskRect(false, cut.box, cut.turn)).join('')) : '';
+  const routedInner = routedCuts.length ? maskRect(true, canvas) + routedCuts.map(cut => maskRect(false, cut.box, cut.turn)).join('') : '';
+  const routedMaskId = maskId(ROUTED_MASK_ID, routedInner);
+  const routedMask = routedCuts.length ? maskElement(routedMaskId, routedInner) : '';
 
   const symbols = [...icons].sort().map(name => element('symbol',
     { id: `pg-icon-${name}`, viewBox: '0 0 24 24' }, element('path', { d: iconPath(name) }))).join('');
@@ -524,9 +537,9 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
 
   const body = element('rect', { class: 'pg-canvas', x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height })
     + element('g', { class: 'groups' }, groups)
-    + (overlayPaths ? element('g', { class: 'overlay-links', mask: `url(#${MASK_ID})` }, overlayPaths) : '')
+    + (overlayPaths ? element('g', { class: 'overlay-links', mask: `url(#${overlayMaskId})` }, overlayPaths) : '')
     + (crossedBodies.length ? element('g', { class: 'nodes crossed-bars' }, crossedBodies.join('')) : '')
-    + element('g', { class: 'links', ...(routedMask ? { mask: `url(#${ROUTED_MASK_ID})` } : {}) }, routedPaths + trunks)
+    + element('g', { class: 'links', ...(routedMask ? { mask: `url(#${routedMaskId})` } : {}) }, routedPaths + trunks)
     + element('g', { class: 'nodes' }, nodes)
     + element('g', { class: 'labels' }, groupLabels + linkLabels + busLabels.join(''))
     + (marks ? element('g', { class: 'overlay-marks' }, marks) : '')

@@ -1028,7 +1028,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   const labelStyle = (label: LayoutLabel, at: Point, carrier: 'edge' | 'child', link: LayoutLink): Readonly<Record<string, StyleValue>> => {
     // A label on a direct line (ticket 16) lies on it in either mode, so it always hides the line behind its glyphs.
     const segment = label.support?.kind === 'link-segment' ? link.path?.segments[label.support.segment] : undefined;
-    const on = label.support?.kind === 'link-segment' && (placement === 'on-run' || segment !== undefined && isDirect(segment));
+    const on = label.support?.kind === 'link-segment' && (placement === 'on-run' || label.onLine === true && segment !== undefined && isDirect(segment));
     const multiplicity = label.support?.kind === 'merge-run';
     const inside = [...Object.values(layout.groups).filter(group => group.frame === undefined && group.bounds).map(group => group.bounds!),
       ...(layout.frames ?? []).map(frame => frame.box)].some(bounds =>

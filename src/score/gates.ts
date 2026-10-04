@@ -317,7 +317,7 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
         && [endpoints(s.link).from, endpoints(s.link).to].some(ref => refEqual(ref, label.port!))) continue;
       // A label on a direct line (ticket 16) lies on the one segment it names, centred, and the
       // renderer cuts that line away under the text: that segment is the label's own line, no hit.
-      const own = label.support?.kind === 'link-segment' && label.owner.kind === 'link' && label.owner.id === label.support.link
+      const own = label.onLine === true && label.support?.kind === 'link-segment' && label.owner.kind === 'link' && label.owner.id === label.support.link
         && label.support.link === s.link.id && s.index >= label.support.segment && s.index <= (label.support.through ?? label.support.segment);
       if (own && !horizontal(s.segment) && !vertical(s.segment)) continue;
       // Text drawn across a routed segment is a hit whatever it claims to support.
