@@ -7,7 +7,7 @@ import { moveGroup } from '../../src/layout/skeleton-geometry.js';
 import { bandGap } from '../../src/layout/skeleton-graph.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
-import { failuresBesidesMinSeparation } from './open-min-separation.js';
+import { gateFailures } from './open-min-separation.js';
 
 // Architecture ticket 07 (ADR-0012 amendment): the linked grid widens a core and moves its flanks outward, so each keeps one band gap.
 it('a core the grid widens keeps one band gap to both flanks', async () => {
@@ -18,7 +18,7 @@ it('a core the grid widens keeps one band gap to both flanks', async () => {
   expect(core!.width).toBeCloseTo(upper!.width, 6);
   expect(core!.x - (left!.x + left!.width), 'left flank gap').toBeCloseTo(bandGap(model), 6);
   expect(right!.x - (core!.x + core!.width), 'right flank gap').toBeCloseTo(bandGap(model), 6);
-  expect(failuresBesidesMinSeparation(score(model).snapshot)).toEqual([]);
+  expect(gateFailures(score(model).snapshot)).toEqual([]);
 });
 
 it('a widening whose flank cannot move out is refused, and is made when the flank can', async () => {
@@ -54,7 +54,7 @@ it('a right flank stands a band gap clear of a canton column in its tier', async
   const east = model.groups['east#0']!.bounds!, flank = model.groups['side-right']!.bounds!;
   expect(flank.x - (east.x + east.width), 'flank gap to the canton member').toBeGreaterThanOrEqual(bandGap(model) - 1e-6);
   expect(model.groups['core']!.bounds!.x + model.groups['core']!.bounds!.width).toBeLessThan(east.x);
-  expect(failuresBesidesMinSeparation(score(model).snapshot)).toEqual([]);
+  expect(gateFailures(score(model).snapshot)).toEqual(['G9:min-separation:frame:town,group:side-right']);
 });
 
 it('the hold pass does not pull a canton column into a right flank', async () => {
@@ -99,5 +99,5 @@ it('a right flank beside a canton bundle lays out and passes every gate', async 
   const yaml = readFileSync(new URL('../../goldens/synthetic/a-right-flank-beside-a-bundle-into-a-canton.yaml', import.meta.url), 'utf8');
   const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   expect(model.links.filter(link => link.removed === true)).toEqual([]);
-  expect(failuresBesidesMinSeparation(score(model).snapshot)).toEqual([]);
+  expect(gateFailures(score(model).snapshot)).toEqual(['G9:min-separation:group:core,group:flank']);
 });
