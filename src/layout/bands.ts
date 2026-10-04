@@ -1153,6 +1153,13 @@ function widensIntoFrame(model: LayoutModel, proposed: { group: LayoutGroup; bou
   return [...after].some(key => !before.has(key));
 }
 
+
+/** TEMPORARY probe of architecture ticket 07 (env T07 = A | B): the flanks of a group and the room a flank gap leaves it. */
+function flanksOf(model: LayoutModel, group: LayoutGroup): LayoutGroup[] {
+  return Object.values(model.groups).filter(item => item.flank?.of === group.id && item.bounds !== undefined
+    && item.bounds.y < group.bounds!.y + group.bounds!.height && group.bounds!.y < item.bounds.y + item.bounds.height);
+}
+
 /**
  * Linked groups share a grid (ADR-0012): two groups joined by vertical links take one x-extent, two
  * joined by horizontal links take one y-extent, whenever neither box is smaller than that union by
@@ -1208,6 +1215,15 @@ export function alignLinkedGroupGrid(model: LayoutModel): boolean {
         }
       }
       for (const item of proposed) item.group.bounds = item.bounds;
+      if (axis === 'x' && process.env.T07 === 'A') {
+        // Variant A: a widened group pushes each flank outward to keep a bandGap.
+        const bg = bandGap(model);
+        for (const item of proposed) for (const flank of flanksOf(model, item.group)) {
+          const fb = flank.bounds!, g = item.group.bounds!;
+          if (flank.flank!.align === 'left') { const gap = g.x - (fb.x + fb.width); if (gap < bg - PLACEMENT_EPS) moveGroup(model, flank, gap - bg, 0); }
+          else { const gap = fb.x - (g.x + g.width); if (gap < bg - PLACEMENT_EPS) moveGroup(model, flank, bg - gap, 0); }
+        }
+      }
       moved = changed = true;
     }
     if (!moved) break;
