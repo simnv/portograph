@@ -7,7 +7,7 @@ import { crosses, overlayBlockers, overlayPath, straightChord } from './overlay-
 import { saveGroups } from './overlay-order.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { orderedNodeIds } from '../model/model.js';
-import { deriveFrames } from './frames.js';
+import { deriveFrames, FRAME_TO_FRAME_GAP } from './frames.js';
 import { GROUP_PADDING, groupInsets, placementWarning } from './regions.js';
 import { rowGap } from './sides-two.js';
 import { bandGap, compareId } from './skeleton-graph.js';
@@ -541,7 +541,7 @@ function tierWalls(model: LayoutModel, tier: number, groups: readonly LayoutGrou
 function memberSpace(model: LayoutModel, column: FrameColumn, tier: number, moverIds: readonly string[]) {
   const frames = model.document.frames!, derived = deriveFrames(model)!;
   const box = new Map(derived.map(frame => [frame.id, frame.box]));
-  const gap = 2 * GROUP_PADDING;
+  const gap = FRAME_TO_FRAME_GAP;
   const cellsOf = (id: string): string[] => [...frames[id]!.cells, ...Object.keys(frames).filter(child => frames[child]!.parent === id).flatMap(cellsOf)];
   const own = new Set(moverIds.filter(id => column.cells.has(id)).map(id => model.groups[id]!.frame!));
   const walls = [

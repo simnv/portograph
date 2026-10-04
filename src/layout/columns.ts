@@ -1,7 +1,7 @@
 import type { Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { frameSubtreeCells } from '../model/model.js';
-import { cellReach, deriveFrames, frameNodes } from './frames.js';
+import { CELL_TO_CHILD_FRAME_GAP, cellReach, deriveFrames, frameNodes } from './frames.js';
 import { GROUP_PADDING } from './regions.js';
 import { optionalMoveHolds, selectAnchorTier } from './lanes.js';
 import { findPort } from './row-paths.js';
@@ -1171,6 +1171,8 @@ export function packBesideRows(model: LayoutModel, movable: (cell: string) => bo
       item.box = { ...item.box, x };
       moved = true;
     };
+    // `GROUP_PADDING` below is `CELL_TO_CHILD_FRAME_GAP` from the reach of a parent cell (the first child of a side) and the margin of the frame
+    // before it (every next child), so two children end `FRAME_TO_FRAME_GAP` apart. The sums stay as they were written: the order of the additions is the output.
     const closeUp = (row: typeof children): void => {
       const sorted = [...row].sort((a, b) => centre(a) - centre(b));
       let edge = sorted[0]!.box.x + sorted[0]!.box.width + GROUP_PADDING;
@@ -1231,7 +1233,7 @@ export function besideWalls(model: LayoutModel): Map<string, CellWindow> {
         if (others.some(left) && reach.x <= wall.x + PLACEMENT_EPS) narrow(cell, { high: wall.x + (at.x - reach.x) });
         if (others.some(cell => !left(cell)) && reach.x + reach.width >= wall.x + wall.width - PLACEMENT_EPS) narrow(cell, { low: wall.x + wall.width - reach.width + (at.x - reach.x) });
       }
-      const edge = GROUP_PADDING, own = new Set(frames[parent]!.cells);
+      const edge = CELL_TO_CHILD_FRAME_GAP, own = new Set(frames[parent]!.cells);
       // The widest cell of the parent on each side: it stands `edge` from the child, so a narrower cell may stand
       // as much further as it is narrower, which is how far the row centres it on one axis.
       const widest = (side: boolean): number => Math.max(0, ...others.filter(cell => own.has(cell) && left(cell) === side).map(cell => cellReach(model, cell).width));

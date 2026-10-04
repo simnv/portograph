@@ -7,7 +7,7 @@ import { linkStrokeWidth } from '../theme/geometry.js';
 import type { Segment } from '../score/model.js';
 import { columnShifts, frameColumns, holdColumnAxes, holdMemberWalls, overlayFreeGroups, packBesideRows } from './columns.js';
 import { groupShape } from './grid.js';
-import { cellReach, deriveFrames } from './frames.js';
+import { cellReach, deriveFrames, FRAME_TO_FRAME_GAP } from './frames.js';
 import { blockedChords, chordsHold, isRoutedChord } from './frame-paths.js';
 import { optionalMoveHolds, occupiedOverhang, selectAnchorTier } from './lanes.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
@@ -401,7 +401,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
       const mine = new Set(cells.map(cell => cell.tier));
       for (const other of derived) {
         if (other.id === id || frames[other.id]!.parent !== column.id || !cellsOf(other.id).some(cell => mine.has(model.groups[cell]!.tier))) continue;
-        walls.push({ low: other.box.x - 2 * GROUP_PADDING - (box.x + box.width), high: other.box.x + other.box.width + 2 * GROUP_PADDING - box.x });
+        walls.push({ low: other.box.x - FRAME_TO_FRAME_GAP - (box.x + box.width), high: other.box.x + other.box.width + FRAME_TO_FRAME_GAP - box.x });
       }
     }
     // A wall that already holds the frame's place pins it; a frame keeps its place in the order of the tiers it spans.
@@ -446,7 +446,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
     const tiersOf = new Set(unit === undefined ? [] : cellsOf(unit).map(id => model.groups[id]!.tier!));
     const walls: { low: number; high: number }[] = [];
     if (unit !== undefined) {
-      for (const [id, box] of before) if (id !== unit && frames[id]!.parent === root && cellsOf(id).some(cell => tiersOf.has(model.groups[cell]!.tier!))) walls.push({ low: box.x - 2 * GROUP_PADDING, high: box.x + box.width + 2 * GROUP_PADDING });
+      for (const [id, box] of before) if (id !== unit && frames[id]!.parent === root && cellsOf(id).some(cell => tiersOf.has(model.groups[cell]!.tier!))) walls.push({ low: box.x - FRAME_TO_FRAME_GAP, high: box.x + box.width + FRAME_TO_FRAME_GAP });
       for (const item of all) {
         if (item.frame !== undefined || !tiersOf.has(item.tier!)) continue;
         const one = occupiedOverhang(model, item);
@@ -525,7 +525,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
             inside = { low: Math.max(world.low, cell.wall.x + GROUP_PADDING + lead), high: Math.min(world.high - box.width, cell.wall.x + cell.wall.width - GROUP_PADDING - span + lead) };
             for (const other of derived!) {
               if (other.id === group.frame || frames[other.id]!.parent !== cell.id || !cellsOf(other.id).some(id => model.groups[id]!.tier === tier)) continue;
-              walls.push({ low: other.box.x - 2 * GROUP_PADDING - span + lead, high: other.box.x + other.box.width + 2 * GROUP_PADDING + lead });
+              walls.push({ low: other.box.x - FRAME_TO_FRAME_GAP - span + lead, high: other.box.x + other.box.width + FRAME_TO_FRAME_GAP + lead });
             }
             for (const lane of model.lanes.filter(item => item.tier === tier)) walls.push({ low: lane.bounds.x - span + lead, high: lane.bounds.x + lane.bounds.width + lead });
           }
