@@ -15,7 +15,7 @@ import { findPort, straightCorridorClear } from './row-paths.js';
 import { bandGap, portId } from './skeleton-graph.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
 import { closeCantons, columnShifts, keepOutShifts, holdColumnAxes, packBesideRows, straightOverlays, sweptUnits } from './columns.js';
-import { deriveFrames, frameNodes } from './frames.js';
+import { deriveFrames } from './frames.js';
 import { bandHeldBy, bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placementWarning, rebuildRegions, right } from './regions.js';
 import { withLayoutMutation } from './mutation.js';
 import { effectiveLayer } from '../score/model.js';
@@ -28,6 +28,7 @@ import { busGeometry, expectedBusBands, riserEnds, syncBusGeometry } from './bus
 import { attemptCounters } from './attempt-counters.js';
 import type { AttemptTraceEvent } from './placement-attempt.js';
 import { isCantonFrame } from './read/canton.js';
+import { frameTitleEdge, groupTitleEdge } from './read/title-edge.js';
 
 export const GROUP_LABEL_GEOMETRY = {
   fontFamily: FONT_FAMILY,
@@ -97,23 +98,8 @@ export function rawFrameSide(model: LayoutModel, frame: string): 'top' | 'bottom
   // A canton frame has no own cell to host a title: its band is held by the sub-tier (`cantonTitles`), not by
   // a cell, so `frameHost` is never asked and it has no cell-hosted edge.
   if (isCantonFrame(model, frame)) return undefined;
-  const side = crossingSide(model, frame), other = side === 'top' ? 'bottom' : 'top';
+  const side = frameTitleEdge(model, frame), other = side === 'top' ? 'bottom' : 'top';
   return frameHost(model, frame, side) !== undefined ? side : frameHost(model, frame, other) !== undefined ? other : undefined;
-}
-
-function crossingSide(model: LayoutModel, frame: string): 'top' | 'bottom' {
-  const members = new Set(frameNodes(model, frame)), counts = { top: 0, bottom: 0 };
-  for (const link of model.links) {
-    if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
-    const ends = [link.attachments.from, link.attachments.to];
-    if (members.has(ends[0]!.node) === members.has(ends[1]!.node)) continue;
-    for (const ref of ends) {
-      if (!members.has(ref.node)) continue;
-      const found = findPort(model, ref), side = found === undefined ? undefined : found.naturalSide ?? found.side;
-      if (side === 'top' || side === 'bottom') counts[side]++;
-    }
-  }
-  return counts.top > counts.bottom ? 'bottom' : 'top';
 }
 
 /**
@@ -141,12 +127,12 @@ export function carriesTitle(model: LayoutModel, group: LayoutGroup, side: 'top'
 }
 
 /**
- * The canton titles, one per canton frame, on the edge ADR-0011 picks for the whole canton (`crossingSide`
+ * The canton titles, one per canton frame, on the edge ADR-0011 picks for the whole canton (`frameTitleEdge`
  * reads every node of the members). Empty while a cell has no box: the band is measured from the members.
  */
 function cantonTitles(model: LayoutModel): CantonTitle[] {
   const frames = model.document.frames ?? {};
-  return Object.keys(frames).filter(id => isCantonFrame(model, id)).map(id => ({ id, label: frames[id]!.label, side: crossingSide(model, id) }));
+  return Object.keys(frames).filter(id => isCantonFrame(model, id)).map(id => ({ id, label: frames[id]!.label, side: frameTitleEdge(model, id) }));
 }
 
 /** The canton frames as their members stand, before the title band is added to them. */
@@ -298,16 +284,7 @@ export function bandSide(model: LayoutModel, group: LayoutGroup): 'top' | 'botto
 
 /** ADR-0011's edge, before any title is moved. */
 export function rawBandSide(model: LayoutModel, group: LayoutGroup): 'top' | 'bottom' {
-  const members = new Set(group.nodes), counts = { top: 0, bottom: 0 };
-  for (const link of model.links) {
-    if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
-    for (const ref of [link.attachments.from, link.attachments.to]) {
-      if (!members.has(ref.node)) continue;
-      const found = findPort(model, ref), side = found === undefined ? undefined : found.naturalSide ?? found.side;
-      if (side === 'top' || side === 'bottom') counts[side]++;
-    }
-  }
-  return counts.top > counts.bottom ? 'bottom' : 'top';
+  return groupTitleEdge(model, group);
 }
 
 /** Reserved gap beside the band; entry points of this group's own ports on that side must clear it. */
