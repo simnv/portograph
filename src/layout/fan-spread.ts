@@ -7,7 +7,7 @@ import { STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { strictCrossing } from './read/crossings.js';
 import { portId } from './skeleton-graph.js';
 import { PLACEMENT_EPS } from './tolerance.js';
-import { tapVerdict } from './objective.js';
+import { holds, profiles, reading, straightOf, tapVerdict } from './objective.js';
 
 /**
  * The widest port pitch a fan may be given (ticket 89): five times the 12 px base pitch. A face that would need more is
@@ -110,7 +110,7 @@ export function fanRoundHolds(before: LayoutModel, after: LayoutModel): boolean 
 }
 function fanRoundHoldsRaw(before: LayoutModel, after: LayoutModel): boolean {
   const was = heldChords(before), now = heldChords(after);
-  if (now.size >= was.size) return true;
+  if (holds(reading({ routed: straightOf(new Set(now.keys())) }), reading({ routed: straightOf(new Set(was.keys())) }), profiles.fanRound)) return true;
   const frames = (chords: typeof was): number => [...chords.values()].filter(kind => kind === 'frame').length;
   if (frames(now) < frames(was)) return false;
   const clearance = STRAIGHT_PATH_CLEARANCE.path - PLACEMENT_EPS, then = chordClearances(after);

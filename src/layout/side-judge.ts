@@ -1,37 +1,18 @@
-import type { Diagnostic, LayoutLink, LayoutModel, LayoutNode, LayoutPort } from '../model/layout.js';
+import type { Diagnostic, LayoutModel, LayoutNode, LayoutPort } from '../model/layout.js';
 import type { Point, Rect } from '../model/geometry.js';
-import { EPS, near } from '../geometry/planar.js';
 import { isRoutedChord } from './frame-paths.js';
 import { crossingsOf } from './read/crossings.js';
 import { hintsFacingAway } from './side-hints.js';
 import { overlayBlockers } from './overlay-paths.js';
 import { plannedBends } from './side-measure.js';
-import { tapVerdict } from './objective.js';
+import { compare, pathBends, reading, refusal, routedBends, routedFamily, sideTrialProfile, tapVerdict } from './objective.js';
 
 /**
  * The judgment of the side round (docs/design/side-faces.md, Sections 19.3 and 19.4). Both the predictor and the verdict compare two finished
  * placements and feed nothing back into placement: routing here only counts.
  */
 
-/** The bends of one routed path: each change of direction, and each reversal. Undefined when the route removed the link. */
-export function pathBends(link: LayoutLink): number | undefined {
-  if (link.removed === true || link.path === undefined) return undefined;
-  const path = link.path.segments;
-  let turns = 0;
-  for (let i = 1; i < path.length; i++) {
-    const a = path[i - 1]!, b = path[i]!;
-    const ax = a.to.x - a.from.x, ay = a.to.y - a.from.y, bx = b.to.x - b.from.x, by = b.to.y - b.from.y;
-    if (!near(ax * by - ay * bx, 0) || ax * bx + ay * by < -EPS) turns++;
-  }
-  return turns;
-}
-
-/** The bends of every link that a routed model keeps, by link id. */
-export const routedBends = (model: LayoutModel): Map<string, number> => {
-  const bends = new Map<string, number>();
-  for (const link of model.links) { const count = pathBends(link); if (count !== undefined) bends.set(link.id, count); }
-  return bends;
-};
+export { pathBends, routedBends };
 
 export { crossingsOf };
 
@@ -79,30 +60,22 @@ export function judgeTrial(input: TrialInput): Verdict {
     const bends = trial.get(link), before = base.get(link);
     if (bends !== undefined && before !== undefined && bends > promised && bends <= before) short.push({ link, bends, base: before, promised });
   }
-  const totals = (bends: ReadonlyMap<string, number>): { bent: number; total: number } => {
-    let bent = 0, total = 0;
-    for (const count of bends.values()) if (count > 0) { bent++; total += count; }
-    return { bent, total };
-  };
-  const after = totals(trial), before = totals(base);
+  // The chord counts of the two 7e models stand in `routed.straight`: the clause that reads them comes last.
+  const now = reading({ routed: routedFamily(trial, straightChords(input.trial7e)) }), then = reading({ routed: routedFamily(base, straightChords(input.kept7e)) });
+  const by = sideTrialProfile(new Set(input.hinted.keys()), [...(input.lanes ?? [])]);
   const verdict = (kept: boolean, reason: string): Verdict => { tapVerdict('judgeTrial', () => `${kept} ${reason}`); return { kept, reason, worse, removed, away, short }; };
   if (worse.length > 0) return verdict(false, `a hinted link has more bends than on the baseline (${worse.join(', ')})`);
   if (removed.length > 0) return verdict(false, `the trial's route removes ${removed.join(', ')}, which the baseline's route keeps`);
   if (away.length > 0) return verdict(false, 'a hinted port faces away from its peer');
   // A trial that holds a lane hint (ticket 119) is kept only when each lane link's own bends fall, the total bends of the sheet do not rise, and no link
   // without a hint gets worse: a rise in total bends is never a gain, and the count of bent links cannot see what a lane gives.
-  const laneLinks = [...(input.lanes ?? [])];
-  if (laneLinks.length > 0) {
-    const notFewer = laneLinks.filter(id => !(trial.has(id) && base.has(id) && trial.get(id)! < base.get(id)!));
-    if (notFewer.length > 0) return verdict(false, `a lane link has no fewer bends than on the baseline (${notFewer.join(', ')})`);
-    if (after.total > before.total) return verdict(false, `the trial with a lane raises the total bends (${after.total} against ${before.total})`);
-    const neighbours = [...trial].filter(([id, count]) => !input.hinted.has(id) && count > (base.get(id) ?? count)).map(([id]) => id);
-    if (neighbours.length > 0) return verdict(false, `the trial with a lane makes a neighbour worse (${neighbours.join(', ')})`);
+  const refused = refusal(now, then, by.gates);
+  if (refused !== undefined) return verdict(false, refused);
+  if (!(compare(now, then, by) < 0)) {
+    return verdict(false, `the routed trial gives no gain (${now.routed.bent} bent links and ${now.routed.turns} bends, against ${then.routed.bent} and ${then.routed.turns})`);
   }
-  if (!(after.bent < before.bent || (after.bent === before.bent && after.total < before.total))) {
-    return verdict(false, `the routed trial gives no gain (${after.bent} bent links and ${after.total} bends, against ${before.bent} and ${before.total})`);
-  }
-  if (straightChords(input.trial7e) < straightChords(input.kept7e)) return verdict(false, 'the trial loses a straight chord');
+  const lost = refusal(now, then, by.after);
+  if (lost !== undefined) return verdict(false, lost);
   return verdict(true, '');
 }
 
