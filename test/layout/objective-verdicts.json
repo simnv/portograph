@@ -9,10 +9,10 @@
   "a-lower-rank-steps-off-the-chords-of-rank-0": {
     "attemptCheap": "8 d700632eef126e2a",
     "attemptCrossings": "4 6aab4f9ccff9eb5f",
-    "centreGroupStep": "75 8178c435104336c0",
+    "centreGroupStep": "66 c890e68c026a7e8e",
     "holdsSettled": "4 c42dda64b543ae83",
     "pickRankMove": "1 179cf15d4cb7b521",
-    "pickTarget": "9 1e3b01ade2e8b60f",
+    "pickTarget": "8 c4af1c283e7cccb6",
     "pullTier": "24 8dfd57517d5d3dc4"
   },
   "a-mover-takes-the-position-that-clears-most-chords": {
@@ -42,31 +42,31 @@
   "three-canton-groups-close-up-to-a-band-gap": {
     "attemptCheap": "117 7f0c79efe106fff2",
     "attemptCrossings": "21 2f761f524c9fb3df",
-    "centreGroupStep": "1386 e7b8ab7d21aafa40",
+    "centreGroupStep": "1302 e83d98e1db026b9c",
     "closeUp": "14 d01e3fb2c51cfe92",
     "holdsSettled": "15 82178be5418525b8",
     "judgeTrial": "1 cbf69f5f691d95cd",
     "pickRankMove": "1 993c8724d00378d5",
-    "pickTarget": "198 271c353d90c923a8",
+    "pickTarget": "186 b1267fa74beca60f",
     "pullTier": "348 8cd82130183836c1",
     "settleKeepOut": "2 cb41c19c0d037e0e",
     "sheetGains": "18 1e9d85787d073806",
     "windowsHold": "61 2003dd03fdb5de0a"
   },
   "a-canton-member-frame-slides-off-a-straight-chord": {
-    "centreGroupStep": "60 0c089f9e2a3e9147",
+    "centreGroupStep": "51 2d749b745e2deda5",
     "fanRoundHolds": "1 0a22f04442a90cca",
     "pullTier": "16 299c30ead527ebd0"
   },
   "three-continents": {
     "attemptCheap": "69 408dbeccc3f03cbf",
-    "centreGroupStep": "793 7a256432a44ba509",
+    "centreGroupStep": "754 b6a2c08b49822849",
     "holdsSettled": "6 634de7b3181ef413",
     "judgeTrial": "1 20a15d44ec06ecfc",
-    "pickTarget": "120 4257ede6468d9c30",
-    "pullTier": "265 72dde7f5be2e261f",
-    "sheetGains": "17 c8c84293bbc32581",
-    "windowsHold": "32 bf6a5f771b943a93"
+    "pickTarget": "114 c6a0c683d54f7f23",
+    "pullTier": "263 861528e8d0b7aacf",
+    "sheetGains": "16 76056c2ad105efb1",
+    "windowsHold": "30 cddf761eb20dfefb"
   },
   "a-group-with-routed-links-steps-off-a-straight-chord": {
     "centreGroupStep": "16 d17575727f9edf5b",
@@ -74,9 +74,9 @@
   },
   "a-linked-node-steps-out-of-a-straight-chord": {
     "attemptCheap": "2 4c9158be6e09263a",
-    "centreGroupStep": "19 c8b0bf4386e10d22",
+    "centreGroupStep": "16 2f569bd09d021e25",
     "holdsSettled": "2 3072158bc9120386",
-    "pickTarget": "14 93ff5eaf1a3c62f8"
+    "pickTarget": "12 727812f2808992bc"
   },
   "overlay-links-reorder-two-locations": {
     "centreGroupStep": "160 1c99ecf629486fbc",
@@ -88,7 +88,7 @@
   "an-overlay-that-7f-straightens-needs-more-than-four-pixels-of-slack": {
     "attemptCheap": "2 0d5ac49bf18f7073",
     "attemptCrossings": "1 2626acb7b565f2f7",
-    "centreGroupStep": "32 6930ffe909bec8d7",
+    "centreGroupStep": "26 b70d5a924aee2fd1",
     "holdsSettled": "1 b0e37b1079e63c37",
     "pickRankMove": "1 66eec4d604677902",
     "pullTier": "8 d37f7e7ab77a6015"
