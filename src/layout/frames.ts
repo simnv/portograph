@@ -5,8 +5,8 @@ import { GROUP_PADDING, groupPadding } from './regions.js';
 import { union } from './skeleton-geometry.js';
 
 /**
- * The gap between a child frame and the cell of its parent that stands beside it on a row: the child's box ends `GROUP_PADDING`
- * from the cell's `cellReach` (`packBesideRows`), not from the cell box. `cellReach` already grows the bodies by the cell's own
+ * The gap between a child frame and a cell that stands beside it on a row, a cell of its parent or of a sibling child frame
+ * (`besideWalls` reads both): the child's box ends `GROUP_PADDING` from the cell's `cellReach` (`packBesideRows`), not from the cell box. `cellReach` already grows the bodies by the cell's own
  * padding and `GROUP_PADDING` on each side, so the gap from the cell *box* to the child frame is 40 px where the cell box stands
  * tight to its bodies (`four-locations-each-with-a-zone`) and 20 px where a grid or a label made the box wider than its bodies
  * (loc4 and loc5 of the NTP sheet). One value, two measured gaps: the shadow-solver probe found neither in the code, and read

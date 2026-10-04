@@ -10,7 +10,7 @@ import { stemCache, stemPlan } from './sides-two.js';
 import { groupBoxes, groupConsumers } from '../score/model.js';
 import { segmentRectDistance } from '../geometry/planar.js';
 import { GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
-import { PLACEMENT_EPS } from './tolerance.js';
+import { PLACEMENT_EPS, SIGN_EPS } from './tolerance.js';
 
 export interface BundleFans {
   members: Member[];
@@ -344,7 +344,7 @@ export function crossBundleFans(model: LayoutModel): void {
       // against their endpoints, which is the topology change rule 2 exists to prevent. Where the
       // corridor leaves no slot on the near side of that row, the fan keeps the track rule 2 gave
       // it and the gates report the node it meets.
-      if (occupied.some(row => (row.at - base) * (row.at - slot) < -PLACEMENT_EPS)) slot = base;
+      if (occupied.some(row => (row.at - base) * (row.at - slot) < -SIGN_EPS)) slot = base;
       target.set(item.link.id, slot); prior = slot;
     }
     const isFixed = (id: string): boolean => links.find(link => link.id === id)?.path?.fixed === true;

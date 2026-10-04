@@ -68,7 +68,6 @@ export interface UnitFeeds {
   children: Map<string, { x: number; cell: string }>;
 }
 
-
 /**
  * The feeds of a unit towards `sources`, the groups of the tier that is packed before it. `below` says the unit stands
  * below them: its ports on the side that faces them are the top ones. The inner pass of a canton (ticket 56) reads the
@@ -85,15 +84,15 @@ export function columnPullFeeds(model: LayoutModel, sources: ReadonlySet<string>
         if (ownGroup === undefined || otherGroup === undefined || !mine.has(ownGroup)) continue;
         const ownTier = model.groups[ownGroup]!.tier!, otherTier = model.groups[otherGroup]!.tier;
         const near = below ? ownTier - 1 : ownTier + 1;
-        // A parent beyond the sources, on their side, is admitted when its link transits the sub-tier `near` through an owned lane: `feeds`
-        // in `centre.ts` admits every parent on the authority side, and the pull must read the same feeds (ticket 69). A bundle member has no lane.
+        // A parent beyond the sources, on their side, is admitted when its link transits the sub-tier `near` through an owned lane: `centringFeeds`
+        // admits every parent on the authority side, and the pull must read the same feeds (ticket 69). A bundle member has no lane.
         const beyond = !sources.has(otherGroup) && otherTier !== undefined && !model.groups[otherGroup]!.flank && (below ? otherTier < near : otherTier > near);
         if (!sources.has(otherGroup) && !beyond) continue;
         const child = findPort(model, own!), parent = findPort(model, other!);
         if (!child?.anchor || !parent?.anchor) continue;
         if (child.side !== (below ? 'top' : 'bottom') || parent.side !== (below ? 'bottom' : 'top')) continue;
-        // A link that transits the sub-tier next to the sub-tier of the child (7a) reaches it through its owned lane, and centring (`feeds` in
-        // `centre.ts`) puts the child under that lane, not under the parent port. Both rules read one x, or the last to run
+        // A link that transits the sub-tier next to the sub-tier of the child (7a) reaches it through its owned lane, and centring (`centringFeeds`)
+        // puts the child under that lane, not under the parent port. Both rules read one x, or the last to run
         // wins and a second pass flips the child back (ranked-groups ticket 64). A bundle member carries no lane here.
         const lane = otherTier === near || link.bundle ? undefined
           : model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === link.id && item.tier === near);

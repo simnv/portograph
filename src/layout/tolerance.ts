@@ -14,3 +14,10 @@
  * 1e-7 above, a different question. A new comparison of "the arithmetic of a reservation" reads this name and not a literal.
  */
 export const PLACEMENT_EPS = 1e-6;
+
+/**
+ * The sign tolerance of a product of two differences, in px squared: a pair of coordinates is "inverted" when
+ * `(a1 - b1) * (a2 - b2) < -SIGN_EPS`, so a tie or a rounding residue is no inversion. Same number as `PLACEMENT_EPS` and not the same
+ * unit: it is no distance. Kept apart so a change of one cannot move the other.
+ */
+export const SIGN_EPS = 1e-6;

@@ -8,7 +8,7 @@ import { portId } from './skeleton-graph.js';
 import { fitRegionGroup, bottom, right } from './regions.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
 import { rowGap } from './sides-two.js';
-import { PLACEMENT_EPS } from './tolerance.js';
+import { PLACEMENT_EPS, SIGN_EPS } from './tolerance.js';
 
 export const MEMBER_GAP = 16;
 export const MIN_STEM = 15;
@@ -66,7 +66,7 @@ export function inversionPairs(list: Member[]): [string, string][] {
   const pairs: [string, string][] = [];
   for (let i = 0; i < list.length; i++) for (const b of list.slice(i + 1)) {
     const a = list[i]!;
-    if ((coordinate(a.a) - coordinate(b.a)) * (coordinate(a.b) - coordinate(b.b)) < -PLACEMENT_EPS) pairs.push([a.link.id, b.link.id]);
+    if ((coordinate(a.a) - coordinate(b.a)) * (coordinate(a.b) - coordinate(b.b)) < -SIGN_EPS) pairs.push([a.link.id, b.link.id]);
   }
   return pairs;
 }
