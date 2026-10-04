@@ -8,7 +8,7 @@ import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, prod
 import { holdColumnAxes, refreshHeldWarnings } from './columns.js';
 import { growTierGaps } from './gap-room.js';
 import { candidateCopy, chooseReseat, shortGaps } from './decide.js';
-import { attemptCounters } from './attempt-counters.js';
+import { attemptCounters, lastAttempt } from './attempt-counters.js';
 import { countStep, ledgerOn, ledgerSnapshot, startAttemptEntry, type LedgerSnapshot } from './attempt-ledger.js';
 
 /**
@@ -41,6 +41,8 @@ export interface AttemptOptions {
   abortAt?: (() => void) | undefined;
   /** Opt-in per-pass trace. Off when absent; the events are handed to the caller and never written into the layout. */
   trace?: ((event: AttemptTraceEvent) => void) | undefined;
+  /** False runs 7f without its optional moves (the linkless step and the chord step): the unmoved baseline of the side round (architecture ticket 15, phase 3b). Default true. */
+  moves?: boolean | undefined;
 }
 /** An FNV-1a hash of the model text, eight hex digits. Read only when a trace was asked for. */
 function revisionOf(model: LayoutModel): string {
@@ -148,7 +150,7 @@ export function placementAttempt(draft: LayoutModel, options: AttemptOptions = {
 }
 
 function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
-  const { abortAt, trace } = options;
+  const { abortAt, trace } = options, moves = options.moves !== false;
   const note = (pass: string, verdict: string): void => { if (trace) trace({ pass, revision: revisionOf(draft), verdict }); };
   // The ledger (architecture ticket 13, phase 1): what each step loses and gains, read only when a test or the trace asks for it.
   const ledger = ledgerOn(trace !== undefined), entry = startAttemptEntry(ledger);
@@ -174,6 +176,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
   // The cantons close up when a round's close-up has nothing to move. The step over a chord (ticket 77) has its own convergence: a round
   // that moved something runs one more, so the growth and the close-up are measured on the geometry that stands, and the last round runs
   // no step, since its move could not be measured again. A mover moves in one round only, so the rounds end.
+  lastAttempt.moved = false;
   let closed = false, again = false;
   const movers = new Set<string>();
   /** The settled copy of the last move of the chord step, once the draft has taken it: the next round reads its settling and does not settle again. */
@@ -199,13 +202,15 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
     note(`round-${round}:settle`, closed ? 'closed' : 'open');
     // The growth and the close-up change the slope of a chord that spans a gap and the x of a column: a group with no links
     // steps out of a chord again, after the replays (ticket 76 review). Cheap and idempotent.
-    const linkless = stepLinklessOutOfChords(draft);
+    const linkless = moves && stepLinklessOutOfChords(draft);
+    if (linkless) lastAttempt.moved = true;
     note(`round-${round}:linkless`, linkless ? 'moved' : 'unchanged');
     account(`round-${round}:linkless`);
     // A chord between two tiers keeps the tiers between it free of nodes. A move is judged on a copy that the replays and a round of
     // `settle` have run, which is what the next round does.
     const kept: { adopted?: AdoptedCopy } = {};
-    const cleared = round < CANTON_ROUNDS - 1 && stepOverChords(draft, trialSettle, movers, kept);
+    const cleared = moves && round < CANTON_ROUNDS - 1 && stepOverChords(draft, trialSettle, movers, kept);
+    if (cleared) lastAttempt.moved = true;
     note(`round-${round}:chords`, cleared ? 'moved' : 'unchanged');
     if (cleared) { attemptCounters.chordRoundsMoved++; entry.chordRoundsMoved++; }
     account(`round-${round}:chords`);

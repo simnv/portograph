@@ -129,7 +129,7 @@ describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
     expect(model.diagnostics.some(item => item.code === 'SHARED_PORT')).toBe(true);
   }, 60000);
 
-  it.fails('ticket 14 note, phase 3b: a-cross-link-with-another-label-keeps-two-buses publishes 5 bent overlays with the side hint on b2', async () => {
+  it('ticket 14 note, phase 3b: a-cross-link-with-another-label-keeps-two-buses publishes 5 bent overlays with the side hint on b2', async () => {
     const model = await run(SHEETS.buses);
     expect(counts(model).overlay.bent).toBe(5);
     expect(model.diagnostics.some(item => item.code === 'SIDE_HINT_TAKEN')).toBe(true);

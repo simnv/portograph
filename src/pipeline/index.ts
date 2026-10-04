@@ -33,7 +33,7 @@ import { measureSides, refusedKey, type SideOffer } from '../layout/side-measure
 import { judgeTrial, predictedWorse, predictPublished, routedBends, trialNotes } from '../layout/side-judge.js';
 import type { AttemptTraceEvent } from '../layout/placement-attempt.js';
 import { PLACEMENT_EPS } from '../layout/tolerance.js';
-import { attemptCounters } from '../layout/attempt-counters.js';
+import { attemptCounters, lastAttempt } from '../layout/attempt-counters.js';
 import { shadowCourses } from '../layout/course-shadow.js';
 import { countStage, ledgerOn, ledgerSnapshot, startPlacementEntry, type LedgerSnapshot } from '../layout/attempt-ledger.js';
 
@@ -209,6 +209,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   const trialAbort = (stage: string): void => { if (budget.remainingMs() <= 0) throw new CommandDeadlineError(0, stage); };
   let kept7e = model;
   let base = await timed('bands', () => step('bands', () => bands(kept7e, () => trialAbort('bands'), options.attemptTrace)));
+  const baseMoved = lastAttempt.moved;
   let hints = new Map<string, 'left' | 'right'>(options.testSideHints ?? []);
   let laneKeys = new Set<string>();
   const promised: SideOffer['promised'] = new Map(), refused = new Set<string>(), sideNotes: Diagnostic[] = [];
@@ -242,7 +243,15 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   let routedBase: LayoutModel | undefined, routedFinal: LayoutModel | undefined;
   const keptNotes: Diagnostic[] = [];
   for (let round = 0; round < SIDE_ROUNDS; round++) {
-    const offer = await timed('measureSides', () => measureSides(base, kept7e, refused));
+    let offer = await timed('measureSides', () => measureSides(base, kept7e, refused));
+    // No offer on the kept 7f result. If a 7f move changed the placement, the unmoved baseline may have had one that the move removed: it runs as one
+    // extra side trial, judged on routed results like any other, so the kept result stands unless a real trial beats it (architecture ticket 15, phase 3b).
+    let unmovedOffer = false;
+    if (round === 0 && offer.hints.size === 0 && baseMoved) {
+      const unmoved = await timed('bands-unmoved', () => step('bands', () => bands(kept7e, () => trialAbort('bands'), options.attemptTrace, false)));
+      offer = await timed('measureSides', () => measureSides(unmoved, kept7e, refused));
+      unmovedOffer = offer.hints.size > 0;
+    }
     options.testSideTrace?.({ ev: 'offer', round, offer, base, kept7e });
     if (offer.capped) sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_PROBE_CAPPED', message: 'The side measure stopped at its probe cap; the links after it were not probed.' });
     if (offer.hints.size === 0) break;
@@ -295,7 +304,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     }
     const hintedLinks = new Map([...offer.promised.values()].map(item => [item.link, item.bends] as const));
     // The predictor prunes only when another round and another re-run remain, and only the hints it calls worse (Section 19.3).
-    if (round + 1 < SIDE_ROUNDS && reruns < maxReruns) {
+    if (!unmovedOffer && round + 1 < SIDE_ROUNDS && reruns < maxReruns) {
       const worse = predictedWorse(predictPublished(trial7e, kept7e, base), base, hintedLinks.keys());
       const pruned = [...offer.hints.keys()].filter(key => worse.away.includes(key) || worse.links.includes(offer.promised.get(key)?.link ?? ''));
       if (pruned.length > 0) { refuse(pruned, all, 'the prediction from the moves of stage 7f gives it more bends than the baseline'); continue; }
