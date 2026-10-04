@@ -6,6 +6,7 @@ import type { PortRef } from '../model/document.js';
 import { DEFAULT_STROKE_WIDTHS as stroke, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth, routedStrokeWidth } from '../theme/geometry.js';
 import { segmentRectDistance } from '../geometry/planar.js';
 import { findPort } from './row-paths.js';
+import { isCourseLane, validateCourseLane } from './courses.js';
 import { groupShape } from './grid.js';
 import { portId } from './skeleton-graph.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -353,6 +354,7 @@ function laneReservation(model: LayoutModel, link: LayoutLink): PathSegment[] | 
 /** Extent-only replay. Never allocates, moves, renames, or changes the owner of a lane. */
 export function rebuildLaneExtents(model: LayoutModel): void {
   for (const lane of model.lanes) {
+    if (isCourseLane(lane)) continue;
     if (!isSideLane(lane)) { Object.assign(lane.bounds, laneExtent(model, lane.tier)); continue; }
     // A side lane is replayed from its lateral port's current y, not from the band.
     const link = laneLink(model, lane);
@@ -1162,10 +1164,14 @@ export function validateLanes(model: LayoutModel): void {
     const lower = model.meshBuses!.find(item => item.id === bus.joined);
     return lower === undefined || bus.riser === undefined ? [] : crossedTiers(model, bus, lower).map(tier => riserLaneId(bus.id, tier));
   });
+  // A perimeter or column-gap lane belongs to a course (ticket 15); its shape is checked here, its geometry once a phase reserves it.
+  const owned = model.lanes.filter(isCourseLane);
+  for (const lane of owned) validateCourseLane(model, lane);
   const sides = [...new Set(model.lanes.filter(isSideLane).map(lane => `side-lane:${lane.owner.kind === 'link' ? lane.owner.id : ''}`))];
   const expected = [...model.links.flatMap(link => transitTiers(model, link).map(tier => laneId(link, tier))), ...risers, ...sides].sort();
-  if (JSON.stringify(model.lanes.map(lane => lane.id).sort()) !== JSON.stringify(expected)) throw new Error('Lane reservations omit, repeat or invent a transit');
+  if (JSON.stringify(model.lanes.filter(lane => !isCourseLane(lane)).map(lane => lane.id).sort()) !== JSON.stringify(expected)) throw new Error('Lane reservations omit, repeat or invent a transit');
   for (const lane of model.lanes) {
+    if (isCourseLane(lane)) continue;
     if (lane.owner.kind === 'mesh-bus') { validateRiserLane(model, lane); continue; }
     const ownerId = lane.owner.kind === 'link' ? lane.owner.id : undefined;
     const link = model.links.find(link => link.id === ownerId);

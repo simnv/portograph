@@ -1,0 +1,27 @@
+# Expected: S1-T1 leave and enter left faces, S2-T2 right faces, the brackets stand in the margins: overlay 2 bent
+# with 4 turns, 0 crossings (ticket 15 phase 7).
+# Two chains source -> gateway -> target on three tiers, and a sync link from
+# each source to its target. Centring puts each gateway on the line between its source and its
+# target, so the straight overlay chord enters the gateway body. The chord step and centring both
+# write the x of the middle tier.
+# Source: 02-chord-through-the-middle-tier.yaml. Test-only input owned by architecture ticket 15; test/pipeline/outside-lanes.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  top: { tier: 0, label: Sources }
+  middle: { tier: 1, label: Gateways }
+  bottom: { tier: 2, label: Targets }
+nodes:
+  s1: { group: top, class: server, label: S1 }
+  s2: { group: top, class: server, label: S2 }
+  g1: { group: middle, class: router, label: G1 }
+  g2: { group: middle, class: router, label: G2 }
+  t1: { group: bottom, class: server, label: T1 }
+  t2: { group: bottom, class: server, label: T2 }
+links:
+  - [s1, g1]
+  - [s2, g2]
+  - [g1, t1]
+  - [g2, t2]
+  - [s1, t1, { class: sync }]
+  - [s2, t2, { class: sync }]

@@ -195,7 +195,25 @@ export interface LayoutLink {
    * (`ROUTE_CHECKPOINT_SKIPPED`). A removed link has no path and is not drawn; `LayoutModel.removedLinks` lists it.
    */
   removed?: true;
+  /**
+   * The face of the named pill that one end of this link meets, when it differs from the port's side (architecture ticket 15,
+   * Section 1). Present only on a shared named port and only on a tangential face: a lateral port takes `top` or `bottom`, a top or
+   * bottom port takes `left` or `right`. Stage 5 decides it with the link's course; `LayoutModel.courses` records the same fact.
+   */
+  approach?: { from?: Side; to?: Side };
 }
+
+/** What a course is for: the detour of its natural route (ticket 15, Section 1, T1 to T5). */
+export type CourseKind = 'transit' | 'u-turn' | 'skirt' | 'shared-port' | 'overlay';
+/** One run of a course, in order from the source: the kind of lane or row it stands on. */
+export type CourseRun = 'padding' | 'transit' | 'gap' | 'perimeter' | 'tier-gap';
+/** One end of a course. `face` is the side of the port (stage 5 sets it from the course); `approach` is the pill edge a stem meets when it differs. */
+export interface CourseEnd { face: Side; approach?: Side }
+/**
+ * The planned route of one link, face to face (CONTEXT, course). Stage 5 plans it, `freeze.courses` records it, and the
+ * later stages only read it. Absent `LayoutModel.courses` reads as no course: every link keeps its natural course.
+ */
+export interface Course { link: string; kind: CourseKind; from: CourseEnd; to: CourseEnd; runs: CourseRun[] }
 
 export interface Lane extends OwnedElement {
   id: string;
@@ -204,8 +222,12 @@ export interface Lane extends OwnedElement {
    * `side`: the run beside the lateral end's node from the band edge facing the far end to the lateral port's y, with the side run
    * to the port's face (docs/design/side-faces.md, Section 10). Its id is `side-lane:<link id>`.
    */
-  kind?: 'transit' | 'side';
-  /** A side lane only: the lateral port the lane serves. `tier` is that end's sub-tier, `side` the port's side, `group` its group. */
+  kind?: 'transit' | 'side' | 'gap' | 'perimeter';
+  /** A gap or perimeter lane only (ticket 15, Section 2): the sub-tiers the lane runs through, `top <= bottom`. */
+  span?: { top: number; bottom: number };
+  /** A perimeter lane only: the ring index, 0 nearest the drawing. The id, owner, side and ring are immutable; `x` is derived from the outermost box on the span. */
+  ring?: number;
+  /** A side or gap lane: the lateral port the lane serves. `tier` is that end's sub-tier, `side` the port's side, `group` its group. */
   port?: PortRef;
   /** A side lane only: 7a seated the lane on the far port's x (`chosen === farX`), so its part is a drop. A lane that centring (7c) seated is recorded by `SIDE_LANE_SEATED`. `SIDE_SHAPE_LOST` reads both. */
   aligned?: true;
@@ -391,6 +413,8 @@ export interface LayoutRuntime {
 /** Geometry remains optional until the stage that produces it has completed. */
 export interface LayoutModel {
   freeze?: LayoutFreeze;
+  /** The planned course of each link that has one (ticket 15); absent until stage 5 plans them, and still absent when no link has a detour. */
+  courses?: Course[];
   document: NormalisedDocument;
   stage: LayoutStage;
   groups: Record<string, LayoutGroup>;
@@ -456,5 +480,7 @@ export interface LayoutFreeze {
   floors: { node: string; size: Size }[];
   /** Present only when a run was given size floors for its hinted nodes (side-faces.md, Section 8): the stage-3 floor of each such node. */
   nodeFloors?: { node: string; size: Size }[];
+  /** Present only when stage 5 planned a course: `LayoutModel.courses` as frozen. A restore checks it against the model. */
+  courses?: Course[];
   placement?: PlacementSnapshot;
 }

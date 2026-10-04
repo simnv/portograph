@@ -1,0 +1,24 @@
+# Expected: The flank stands beside the frame on the row of its peer, with two parallel horizontal links (not reached
+# by ticket 15; a render ticket).
+# A site group of two ranks (gateway above, two switches below) and a right
+# flank with two parallel links to one lower-rank switch. No group holds both ends of that bundle,
+# so the row refusal does not apply, and the bundle channel assumes tier-gap geometry.
+# Source: 06-flank-bundle-into-a-ranked-group.yaml. Test-only input owned by architecture ticket 15; test/pipeline/outside-lanes.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  top: { tier: 0, label: Uplink }
+  site: { tier: 1, label: Site }
+  side: { align: right, of: site, label: Firewall }
+nodes:
+  up: { group: top, class: router, label: Up }
+  gw: { group: site, class: router, label: GW }
+  sw1: { group: site, class: switch, label: SW1 }
+  sw2: { group: site, class: switch, label: SW2 }
+  fw: { group: side, class: router, label: FW }
+links:
+  - [up, gw]
+  - [gw, sw1]
+  - [gw, sw2]
+  - [fw, sw2]
+  - [fw, sw2]

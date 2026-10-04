@@ -1,0 +1,61 @@
+# Expected: One trunk in the left margin joins the three row buses (not reached by ticket 15; the mesh-bus chain after
+# phase 4).
+# Nine nodes on three tiers, three per tier, in one full sync mesh of 36
+# overlay links, with a routed spine a1 -> b1 -> c1. A mesh bus spans one row, and a join takes
+# two rows at most, so each row gets its own bus and the 27 cross links stay plain overlay lines.
+# Source: 11-sync-mesh-on-three-rows.yaml. Test-only input owned by architecture ticket 15; test/pipeline/outside-lanes.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  top: { tier: 0, label: Top }
+  mid: { tier: 1, label: Middle }
+  low: { tier: 2, label: Low }
+nodes:
+  a1: { group: top, class: server, label: A1 }
+  a2: { group: top, class: server, label: A2 }
+  a3: { group: top, class: server, label: A3 }
+  b1: { group: mid, class: server, label: B1 }
+  b2: { group: mid, class: server, label: B2 }
+  b3: { group: mid, class: server, label: B3 }
+  c1: { group: low, class: server, label: C1 }
+  c2: { group: low, class: server, label: C2 }
+  c3: { group: low, class: server, label: C3 }
+links:
+  - [a1, b1]
+  - [b1, c1]
+  - { from: a1, to: a2, class: sync }
+  - { from: a1, to: a3, class: sync }
+  - { from: a1, to: b1, class: sync }
+  - { from: a1, to: b2, class: sync }
+  - { from: a1, to: b3, class: sync }
+  - { from: a1, to: c1, class: sync }
+  - { from: a1, to: c2, class: sync }
+  - { from: a1, to: c3, class: sync }
+  - { from: a2, to: a3, class: sync }
+  - { from: a2, to: b1, class: sync }
+  - { from: a2, to: b2, class: sync }
+  - { from: a2, to: b3, class: sync }
+  - { from: a2, to: c1, class: sync }
+  - { from: a2, to: c2, class: sync }
+  - { from: a2, to: c3, class: sync }
+  - { from: a3, to: b1, class: sync }
+  - { from: a3, to: b2, class: sync }
+  - { from: a3, to: b3, class: sync }
+  - { from: a3, to: c1, class: sync }
+  - { from: a3, to: c2, class: sync }
+  - { from: a3, to: c3, class: sync }
+  - { from: b1, to: b2, class: sync }
+  - { from: b1, to: b3, class: sync }
+  - { from: b1, to: c1, class: sync }
+  - { from: b1, to: c2, class: sync }
+  - { from: b1, to: c3, class: sync }
+  - { from: b2, to: b3, class: sync }
+  - { from: b2, to: c1, class: sync }
+  - { from: b2, to: c2, class: sync }
+  - { from: b2, to: c3, class: sync }
+  - { from: b3, to: c1, class: sync }
+  - { from: b3, to: c2, class: sync }
+  - { from: b3, to: c3, class: sync }
+  - { from: c1, to: c2, class: sync }
+  - { from: c1, to: c3, class: sync }
+  - { from: c2, to: c3, class: sync }

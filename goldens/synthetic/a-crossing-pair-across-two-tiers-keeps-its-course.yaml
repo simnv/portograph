@@ -1,0 +1,26 @@
+# Expected: No change: hand solve 03 is the case the course plan must leave alone, so the sheet keeps its sides and
+# its one crossing (ticket 15 phases 4 to 6).
+# Two routers on tier 0 and two switches on tier 1, each router linked to both
+# switches (K2,2), each switch with a host below. In two tier rows the four links cross once in
+# every order. Only a link that leaves its tier band (round the outside of the row) avoids it.
+# Source: 03-k22-across-two-tiers.yaml. Test-only input owned by architecture ticket 15; test/pipeline/outside-lanes.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  upper: { tier: 0, label: Upper }
+  lower: { tier: 1, label: Lower }
+  hosts: { tier: 2, label: Hosts }
+nodes:
+  a: { group: upper, class: router, label: A }
+  b: { group: upper, class: router, label: B }
+  c: { group: lower, class: switch, label: C }
+  d: { group: lower, class: switch, label: D }
+  e: { group: hosts, class: server, label: E }
+  f: { group: hosts, class: server, label: F }
+links:
+  - [a, c]
+  - [b, d]
+  - [a, d]
+  - [b, c]
+  - [c, e]
+  - [d, f]
