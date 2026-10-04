@@ -106,9 +106,11 @@ describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
     expect([sideOf(model, 7, 'from'), sideOf(model, 7, 'to')]).toEqual(['right', 'top']);
   }, 60000);
 
-  // The solve drops the link straight into SRV 2 (1 turn); the lane stands 300 px from SRV 2 and the round does not seat a node that far (P9): 3 turns.
-  it.fails('08 (phase 4, not reached): OOB right -> drop -> SRV 2 top (1 turn)', async () => {
-    expect(turns(await run(SHEETS.canton), 7)).toBe(1);
+  // The solve drops the link straight into SRV 2 (1 turn). The aligned perimeter lane is a feed of 7c (`centringFeeds`), so SRV 2 is seated under it.
+  it('08 (phase 4): OOB right -> drop -> SRV 2 top (1 turn), and no course loses its shape', async () => {
+    const model = await run(SHEETS.canton);
+    expect(turns(model, 7)).toBe(1);
+    expect(model.diagnostics.filter(item => item.code === 'COURSE_SHAPE_LOST')).toEqual([]);
   }, 60000);
 
   it.fails('09 / 12 C (phase 5): Mgmt-Core leaves the bottom face and enters Core left in 3 turns; Mgmt-Dist runs the Core-Campus gap in 4; G6 holds', async () => {
