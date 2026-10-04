@@ -84,6 +84,12 @@ export interface Reading {
   drift?: number;
   /** The widest canvas the candidate may have, when it is wider than the incumbent's: the growth bound of the move (ticket 80). Absent reads as no bound. */
   widthCap?: number;
+  /**
+   * What the side round promises on this model (architecture ticket 15, phase 3b): the change in bent links and in turns of its offer, read by a probe
+   * (`measureSides`), both at most 0. The `unified` keys add it to the counts over both layers, so a 7f move that gains turns cannot hide a better offer.
+   * Absent reads as no offer.
+   */
+  offer?: { bent: number; turns: number };
   /** The last key of every order: a candidate's own position (its distance, then its x), compared as numbers in turn. Absent reads as equal. */
   tie?: readonly number[];
 }
@@ -230,10 +236,10 @@ export const keys = {
   moreStraight: (family: 'overlay' | 'routed'): Key => (a, b) => cmp(b[family].straight, a[family].straight),
   /** Fewer links bent. */
   fewerBent: (family: 'overlay' | 'routed' | 'both'): Key => (a, b) => family === 'both'
-    ? cmp(a.overlay.bent + a.routed.bent, b.overlay.bent + b.routed.bent) : cmp(a[family].bent, b[family].bent),
+    ? cmp(a.overlay.bent + a.routed.bent + (a.offer?.bent ?? 0), b.overlay.bent + b.routed.bent + (b.offer?.bent ?? 0)) : cmp(a[family].bent, b[family].bent),
   /** Fewer turns in all. */
   fewerTurns: (family: 'overlay' | 'routed' | 'both'): Key => (a, b) => family === 'both'
-    ? cmp(a.overlay.turns + a.routed.turns, b.overlay.turns + b.routed.turns) : cmp(a[family].turns, b[family].turns),
+    ? cmp(a.overlay.turns + a.routed.turns + (a.offer?.turns ?? 0), b.overlay.turns + b.routed.turns + (b.offer?.turns ?? 0)) : cmp(a[family].turns, b[family].turns),
   /** Fewer crossings, in the one mode both readings name. */
   fewerCrossings,
   /** Fewer crossings, but only where the candidate bends no chord that is straight at the mean: a candidate that does gets no say. */
