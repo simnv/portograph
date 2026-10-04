@@ -18,6 +18,13 @@ describe('score contract', () => {
     expect(result.metrics.crossings.count).toBe(0);
     expect(result.metrics.crossings.routedLinks).toBe(1);
   });
+  it('reports raw counts per link family beside Q', () => {
+    const model = simple();
+    const { counts, Q } = score(model).snapshot;
+    expect(counts.routed).toEqual({ links: 1, bent: 0, turns: 0, crossings: 0 });
+    expect(counts.overlay).toEqual({ links: 0, bent: 0, turns: 0, crossings: { pairs: 0, points: 0 }, meshBusLinks: 0 });
+    expect(Q).toBeGreaterThan(0);
+  });
   it('retains node-aware metrics without routed links', () => {
     const model = empty();
     node(model, 'a', { x: 0, y: 0, width: 100, height: 20 });
