@@ -700,10 +700,13 @@ export function rowGap(model: LayoutModel, a: string, b: string): number {
  * A flank is seated by the sweeps below, in x order, and is never moved again: the rows rule that follows may move a frame
  * column (`separateFrameColumns`: a band gap and a column slack from the column before it) but never a flank. A tier that holds
  * a flank therefore has its frame columns apart first, so the sweep seats the flank beside the columns where they will stand and
- * the rows rule finds nothing to move into it. A sheet with no flank is not read: its frames are still separated by the rows rule.
+ * the rows rule finds nothing to move into it. A sheet where no flank shares a tier with a frame is not read: its frames are still separated by the rows rule.
  */
 function separateFramedTiersBesideFlanks(model: LayoutModel): void {
-  if (Object.values(model.groups).some(group => group.flank)) separateFrameColumns(model);
+  // The condition is only there to keep a sheet with no flank byte-identical: the general fix (always separate here) changes 6 sheets that
+  // have no flank. It reads "a flank and a frame share a tier".
+  const groups = Object.values(model.groups);
+  if (groups.some(flank => flank.flank && groups.some(group => group.frame !== undefined && group.tier === flank.tier))) separateFrameColumns(model);
 }
 
 /** Resolve all direction votes, resize and repack in skeleton order; retain the returned snapshot. */
