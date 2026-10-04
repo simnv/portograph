@@ -74,12 +74,12 @@ export function chordKind(model: LayoutModel, link: LayoutLink): ChordKind | und
 /**
  * What the link facts below read: ports, lanes, tier bands and the link's own shared runs. A caller that changes none of them for the
  * span of `run` (a row-path rebuild only sets paths and techniques, and the facts read a technique for `stub` alone) may have each
- * fact computed once per link. The scope holds one model; a query on any other model is never cached, and a scope never nests.
+ * fact computed once per link. The scope holds one model; a query on any other model is never cached, and a scope never nests (a second one throws).
  */
 interface LinkFactsScope { model: LayoutModel; kinds: Map<LayoutLink, ChordKind | undefined>; legs: Map<LayoutLink, Map<'from' | 'to', PathSegment | undefined>> }
 let linkFactsScope: LinkFactsScope | undefined;
 export function withLinkFacts<T>(model: LayoutModel, run: () => T): T {
-  if (linkFactsScope) return run();
+  if (linkFactsScope) throw new Error('A link-facts scope cannot nest: the outer cache would answer for the inner call');
   linkFactsScope = { model, kinds: new Map(), legs: new Map() };
   try { return run(); } finally { linkFactsScope = undefined; }
 }
@@ -412,7 +412,9 @@ export function orthogonalLeg(model: LayoutModel, link: LayoutLink, end: 'from' 
   let ends = scope.legs.get(link);
   if (!ends) scope.legs.set(link, ends = new Map());
   if (!ends.has(end)) ends.set(end, orthogonalLegOf(model, link, end));
-  return ends.get(end);
+  // Each caller gets its own segment object, so a caller that sets a field on it cannot change the cache (`from` is the port anchor, as uncached).
+  const leg = ends.get(end);
+  return leg && { ...leg };
 }
 
 function orthogonalLegOf(model: LayoutModel, link: LayoutLink, end: 'from' | 'to'): PathSegment | undefined {
