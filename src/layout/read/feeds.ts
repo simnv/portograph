@@ -1,4 +1,6 @@
 import type { LayoutGroup, LayoutModel, LayoutPort } from '../../model/layout.js';
+import { courseOf } from '../course-lanes.js';
+import { endMode } from '../course-rows.js';
 import { isSideLane, sideLaneSource } from '../lanes.js';
 import { findPort } from '../row-paths.js';
 import { portId } from '../skeleton-graph.js';
@@ -54,6 +56,19 @@ export function centringFeeds(model: LayoutModel, tier: number, authority: numbe
       const farTier = nodeTier(model, farRef.node);
       if (farTier === tier && ![farRef.node, lateralRef.node].some(id => model.groups[model.document.nodes[id]!.group]!.flank)) {
         result.push({ parent: findPort(model, lateralRef)!, child: findPort(model, farRef)!, link: link.id, x: side.x, key: portId(lateralRef), transit: true });
+      }
+    }
+    // An aligned perimeter lane is one feed of its link as well: the natural end of the course is the child and sits under the lane's x, so the drop into
+    // its face has no turn (architecture ticket 15, phase 4). A course that promises the drop reserves this feed with its lane.
+    const course = courseOf(model, link.id), perimeter = model.lanes.find(lane => lane.kind === 'perimeter' && lane.aligned === true && lane.owner.kind === 'link' && lane.owner.id === link.id);
+    if (course !== undefined && perimeter !== undefined) {
+      for (const [which, other] of [['from', 'to'], ['to', 'from']] as const) {
+        if (endMode(course, which) !== 'natural' || nodeTier(model, link.attachments[which].node) !== tier) continue;
+        const childRef = link.attachments[which], parentRef = link.attachments[other];
+        if ([childRef.node, parentRef.node].some(id => model.groups[model.document.nodes[id]!.group]!.flank)) continue;
+        const child = findPort(model, childRef)!, parent = findPort(model, parentRef)!;
+        if (child.side !== (nodeTier(model, parentRef.node)! < tier ? 'top' : 'bottom')) continue;
+        result.push({ parent, child, link: link.id, x: perimeter.x, key: portId(parentRef), transit: true });
       }
     }
   }

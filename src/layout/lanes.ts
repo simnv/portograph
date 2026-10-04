@@ -1,12 +1,14 @@
 import { measurePortPill } from '../text/index.js';
 import { equal } from '../model/json-equality.js';
 import type { Rect } from '../model/geometry.js';
-import type { Diagnostic, Lane, LayoutGroup, LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
+import type { Course, Diagnostic, Lane, LayoutGroup, LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import type { PortRef } from '../model/document.js';
 import { DEFAULT_STROKE_WIDTHS as stroke, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth, routedStrokeWidth } from '../theme/geometry.js';
 import { segmentRectDistance } from '../geometry/planar.js';
 import { findPort } from './row-paths.js';
-import { isCourseLane, validateCourseLane } from './courses.js';
+import { CourseRefusal, isCourseLane, validateCourseLane } from './courses.js';
+import { courseGeometry, courseOf, perimeterLaneId, ringsOf, type LaneDraft } from './course-lanes.js';
+import { RING_PITCH, endMode } from './course-rows.js';
 import { groupShape } from './grid.js';
 import { portId } from './skeleton-graph.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -345,6 +347,9 @@ export function sideReservation(model: LayoutModel, link: LayoutLink, lane: Lane
 /** The fixed segments a link's lanes reserve, in path order: its transit lanes in tier order, or its one side lane. */
 function laneReservation(model: LayoutModel, link: LayoutLink): PathSegment[] | undefined {
   const owned = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === link.id);
+  // A course lane reserves the runs of its course (ticket 15): the side runs and padding rows of its ends, and the vertical run beyond every box.
+  const perimeter = owned.find(isCourseLane), course = perimeter === undefined ? undefined : courseOf(model, link.id);
+  if (perimeter !== undefined && course !== undefined) return courseGeometry(model, link, course, perimeter, (group, item) => occupied(model, group, item), ringsOf(model.lanes))?.segments;
   const side = owned.find(isSideLane);
   if (side) return sideReservation(model, link, side);
   const order = transitTiers(model, link);
@@ -359,6 +364,17 @@ export function rebuildLaneExtents(model: LayoutModel): void {
     // A side lane is replayed from its lateral port's current y, not from the band.
     const link = laneLink(model, lane);
     if (link?.attachments && findPort(model, lane.port!)?.anchor) Object.assign(lane.bounds, sideLaneExtent(model, lane, link));
+  }
+  // A course lane stands beyond every box on its extent, so it is replayed after the other lanes, which it reads; its x is derived (ticket 15, Section 2).
+  const rings = ringsOf(model.lanes), stacked: Lane[] = [];
+  for (const lane of model.lanes.filter(isCourseLane).sort((a, b) => (a.ring ?? 0) - (b.ring ?? 0))) {
+    const link = laneLink(model, lane), course = link === undefined ? undefined : courseOf(model, link.id);
+    if (link === undefined || course === undefined) throw new Error(`Lane ${lane.id} has no course`);
+    const geometry = courseGeometry(model, link, course, lane, (group, item) => occupied(model, group, item), rings, stacked);
+    if (geometry === undefined) throw new CourseRefusal(`The course of ${link.id} cannot join one lane`);
+    lane.x = geometry.x;
+    Object.assign(lane.bounds, geometry.bounds);
+    stacked.push(lane);
   }
   for (const link of model.links) {
     delete link.fixedSegments;
@@ -745,7 +761,8 @@ export function allocateLanes(model: LayoutModel): void {
     return isBar(far) || (portLoad.get(portId(far)) ?? 0) > 1 || peerTiers.get(far.node)!.has(tier)
       ? undefined : findPort(model, far)!.anchor!.x;
   };
-  const links = model.links.filter(link => transitTiers(model, link).length).sort((a, b) =>
+  // A link with a course owns no transit lane: its perimeter lane stands in the crossed sub-tiers (ticket 15, Section 2).
+  const links = model.links.filter(link => transitTiers(model, link).length && courseOf(model, link.id) === undefined).sort((a, b) =>
     findPort(model, laneSource(model, a))!.anchor!.x - findPort(model, laneSource(model, b))!.anchor!.x || farX(a) - farX(b) || a.sourceIndex - b.sourceIndex);
   const fixedSources = new Set(links.map(link => model.document.nodes[laneSource(model, link).node]!.group));
   /**
@@ -981,12 +998,13 @@ export function allocateLanes(model: LayoutModel): void {
   }
   // The side lanes are placed against the frames as the transit lanes leave them: `commit` moved groups and `transitLanes` grows a frame for a
   // held lane, so the boxes read at this point are rebuilt from the published lanes first (a document with no candidate keeps its old order).
-  if (model.links.some(link => sideLaneCandidate(model, link) !== undefined)) {
+  if (model.links.some(link => sideLaneCandidate(model, link) !== undefined) || (model.courses?.length ?? 0) > 0) {
     model.lanes = pending;
     rebuildNodeGeometry(model, Object.keys(model.nodes), 'current');
     rebuildRegions(model);
   }
   reserveSideLanes(model, pending, occ);
+  reserveCourseLanes(model, pending, occ);
   reserveRisers(model, pending, occ);
   model.lanes = pending;
   rebuildNodeGeometry(model, Object.keys(model.nodes), 'current');
@@ -1004,7 +1022,7 @@ const onMeshBus = (model: LayoutModel, ref: PortRef): boolean => (model.meshBuse
  */
 export function sideLaneCandidate(model: LayoutModel, link: LayoutLink): PortRef | undefined {
   if (link.layer !== 'routed' || link.technique === 'stub' || link.bundle !== undefined || link.meshBus !== undefined
-    || link.groupLink !== undefined || !link.attachments || transitTiers(model, link).length) return undefined;
+    || link.groupLink !== undefined || !link.attachments || transitTiers(model, link).length || courseOf(model, link.id) !== undefined) return undefined;
   const ends = [link.attachments.from, link.attachments.to] as const;
   if (ends[0].node === ends[1].node) return undefined;
   const lateral = ends.filter(end => { const side = findPort(model, end)?.side; return side === 'left' || side === 'right'; });
@@ -1131,6 +1149,29 @@ function reserveSideLanes(model: LayoutModel, pending: Lane[], occ: (group: Layo
     pending.push(buildSideLane(model, link, port, picked.x));
   }
 }
+/**
+ * Stage 7a, after the side lanes: the perimeter lane of each course (ticket 15). The id, owner, side, ring and span are fixed here; the x is derived at the
+ * replay that follows (`rebuildLaneExtents`). Rings are taken in course order: a lane stands outside every earlier lane of its side whose extent it meets.
+ */
+function reserveCourseLanes(model: LayoutModel, pending: Lane[], occ: (group: LayoutGroup, link?: LayoutLink) => Rect): void {
+  const placed: Lane[] = [];
+  for (const course of model.courses ?? []) {
+    const link = model.links.find(item => item.id === course.link);
+    if (link?.attachments === undefined || course.side === undefined) throw new Error(`Course on ${course.link} cannot reserve a perimeter lane`);
+    const draft: LaneDraft = { id: perimeterLaneId(link.id), side: course.side, ring: 0, ...(endHasNaturalFace(course) ? { aligned: true as const } : {}) };
+    const geometry = (ring: number) => courseGeometry(model, link, course, { ...draft, ring }, (group, item) => occ(group, item), ringsOf(placed), placed);
+    const first = geometry(0);
+    if (first === undefined) throw new CourseRefusal(`The course of ${link.id} cannot join one lane`);
+    const ring = placed.filter(lane => lane.side === course.side && lane.bounds.y < bottom(first.bounds) - PLACEMENT_EPS && bottom(lane.bounds) > first.bounds.y + PLACEMENT_EPS).length;
+    const used = ring === 0 ? first : geometry(ring)!;
+    const host = model.groups[model.document.nodes[used.upper.ref.node]!.group]!;
+    const lane: Lane = { id: draft.id, kind: 'perimeter', owner: { kind: 'link', id: link.id }, layer: 'routed', group: host.id, tier: host.tier!, side: course.side,
+      span: used.span, ring, ...(draft.aligned === true ? { aligned: true as const } : {}), x: used.x, bounds: { ...used.bounds } };
+    placed.push(lane);
+    pending.push(lane);
+  }
+}
+const endHasNaturalFace = (course: Course): boolean => endMode(course, 'from') === 'natural' || endMode(course, 'to') === 'natural';
 /** A riser lane: owned by the upper bus of a join, at the one immutable riser x, in a crossed sub-tier, clear of every body and lane. */
 function validateRiserLane(model: LayoutModel, lane: Lane): void {
   const bus = model.meshBuses?.find(item => item.id === (lane.owner as { id: string }).id);
@@ -1167,8 +1208,21 @@ export function validateLanes(model: LayoutModel): void {
   // A perimeter or column-gap lane belongs to a course (ticket 15); its shape is checked here, its geometry once a phase reserves it.
   const owned = model.lanes.filter(isCourseLane);
   for (const lane of owned) validateCourseLane(model, lane);
+  // Perimeter lanes of one side keep a pitch between them where their extents meet, and none stands across the box of a group on its extent.
+  for (const lane of owned) {
+    if (lane.kind !== 'perimeter') continue;
+    for (const other of owned) if (other !== lane && other.kind === 'perimeter' && other.side === lane.side && lane.bounds.y < bottom(other.bounds) - PLACEMENT_EPS && bottom(lane.bounds) > other.bounds.y + PLACEMENT_EPS
+      && Math.abs(other.x - lane.x) < RING_PITCH - PLACEMENT_EPS) throw new Error(`Perimeter lanes ${lane.id} and ${other.id} overlap`);
+    const link = model.links.find(item => lane.owner.kind === 'link' && item.id === lane.owner.id);
+    if (link === undefined) continue;
+    for (const group of Object.values(model.groups)) {
+      if (group.bounds === undefined || group.nodes.length === 0) continue;
+      const box = occupied(model, group, link);
+      if (box.y < bottom(lane.bounds) - PLACEMENT_EPS && bottom(box) > lane.bounds.y + PLACEMENT_EPS && box.x < right(lane.bounds) - PLACEMENT_EPS && right(box) > lane.bounds.x + PLACEMENT_EPS) throw new Error(`Lane ${lane.id} crosses occupied group ${group.id}`);
+    }
+  }
   const sides = [...new Set(model.lanes.filter(isSideLane).map(lane => `side-lane:${lane.owner.kind === 'link' ? lane.owner.id : ''}`))];
-  const expected = [...model.links.flatMap(link => transitTiers(model, link).map(tier => laneId(link, tier))), ...risers, ...sides].sort();
+  const expected = [...model.links.flatMap(link => courseOf(model, link.id) === undefined ? transitTiers(model, link).map(tier => laneId(link, tier)) : []), ...risers, ...sides].sort();
   if (JSON.stringify(model.lanes.filter(lane => !isCourseLane(lane)).map(lane => lane.id).sort()) !== JSON.stringify(expected)) throw new Error('Lane reservations omit, repeat or invent a transit');
   for (const lane of model.lanes) {
     if (isCourseLane(lane)) continue;
@@ -1188,7 +1242,7 @@ export function validateLanes(model: LayoutModel): void {
       const box = occupied(model, other, link);
       if (box.x < right(lane.bounds) - PLACEMENT_EPS && right(box) > lane.bounds.x + PLACEMENT_EPS) throw new Error(`Lane ${lane.id} crosses occupied group ${other.id}`);
     }
-    for (const other of model.lanes) if (other !== lane && other.tier === lane.tier
+    for (const other of model.lanes) if (other !== lane && other.tier === lane.tier && !isCourseLane(other)
       && Math.abs(other.x - lane.x) < (other.bounds.width + lane.bounds.width) / 2 - PLACEMENT_EPS) throw new Error('Owned lanes overlap');
     for (const other of model.links) if (other.id !== link.id && other.path?.fixed) for (const segment of other.path.segments) {
       if (segmentRectDistance(segment, lane.bounds) < linkStrokeWidth(other) / 2 - PLACEMENT_EPS) throw new Error('Fixed path crosses a foreign lane');

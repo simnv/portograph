@@ -67,8 +67,10 @@ export interface LayoutPort extends OwnedElement {
   sideHint?: true;
   /** With `sideHint`: the hint is for the routed L through a side lane (ticket 119), so the link never takes a chord and 7a reserves the lane. */
   laneHint?: true;
-  /** With `sideHint`: the side stages 2 and 5 give this port without the hint. Bus edges and title edges read it. */
+  /** With `sideHint` or `courseHint`: the side stages 2 and 5 give this port without the hint. Bus edges and title edges read it. */
   naturalSide?: Side;
+  /** Set only on a port a course moved (architecture ticket 15, phase 4): `side` is the course's face and `naturalSide` the side the rule gives. `LayoutModel.courses` records the same face. */
+  courseHint?: true;
   /** Stage 5 orders unused ports after linked ports unless authorOrder takes precedence. */
   unused?: boolean;
   authorOrder?: number;
@@ -215,7 +217,11 @@ export interface CourseEnd { face: Side; approach?: Side }
  * The planned route of one link, face to face (CONTEXT, course). Stage 5 plans it, `freeze.courses` records it, and the
  * later stages only read it. Absent `LayoutModel.courses` reads as no course: every link keeps its natural course.
  */
-export interface Course { link: string; kind: CourseKind; from: CourseEnd; to: CourseEnd; runs: CourseRun[] }
+export interface Course {
+  link: string; kind: CourseKind; from: CourseEnd; to: CourseEnd; runs: CourseRun[];
+  /** The margin the course's perimeter lane stands in. Present when `runs` has a `perimeter` run; the lane keeps it for good. */
+  side?: 'left' | 'right';
+}
 
 export interface Lane extends OwnedElement {
   id: string;
@@ -463,6 +469,7 @@ export interface FrozenPort {
   authorOrder?: number;
   sideHint?: true;
   laneHint?: true;
+  courseHint?: true;
   naturalSide?: Side;
 }
 export interface PlacementSnapshot {

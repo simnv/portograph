@@ -24,6 +24,8 @@ const describe = (ref: PortRef): string => `${ref.node}.${ref.anonymous === true
  */
 export function hintRefusal(model: LayoutModel, ref: PortRef): string | undefined {
   const key = portKey(ref);
+  // A course owns the face of its ports (ticket 15): the side round offers no hint on one, as on an author side.
+  if (model.nodes[ref.node]?.ports.some(port => portKey(port.ref) === key && port.courseHint === true)) return 'the port is owned by a course';
   const ends = (link: LayoutModel['links'][number]): PortRef[] => [link.attachments?.from ?? link.from, link.attachments?.to ?? link.to]
     .filter((end): end is PortRef => end.node !== undefined && 'ordinal' in end);
   const links = model.links.filter(link => ends(link).some(end => portKey(end) === key));

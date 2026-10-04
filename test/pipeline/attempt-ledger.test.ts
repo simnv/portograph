@@ -59,7 +59,7 @@ interface Reading { counters: string; runs: number; attempts: number; rounds: nu
 async function ledger(text: string, on = true): Promise<Reading> {
   resetAttemptCounters(); attemptCounters.ledger = on;
   const events: AttemptTraceEvent[] = [];
-  await layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, ...(on ? { attemptTrace: event => events.push(event) } : {}) });
+  await layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [], ...(on ? { attemptTrace: event => events.push(event) } : {}) });
   const c = attemptCounters, i = c.invalidations, placed = c.placements.slice(0, 1 + i.fanReruns), base = c.attemptLog[0]!;
   return { counters: [c.settleCalls, c.centringPasses, c.candidateCopies, c.validationReplays].join('/'),
     runs: c.placeRuns, attempts: c.attempts, rounds: c.rounds, open: c.openRounds, chord: c.chordRoundsMoved, baseChord: base.chordRoundsMoved,
@@ -99,7 +99,7 @@ describe('the ledger of the 7f placement attempt reads the counts of the ticket 
     ['a-tier-gap-grows-to-its-rows', 0, 0, 2], ['a-canton-member-frame-slides-off-a-straight-chord', 0, 0, 2], ['a-chord-step-moves-a-group-off-a-straight-chord', 11, 11, 14],
   ] as const)('derives once: %s replays %i, settled copies %i, gap rounds %i', async (name, replays, trials, gapRounds) => {
     resetAttemptCounters();
-    await layout(parse(golden(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    await layout(parse(golden(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [] });
     expect([attemptCounters.replays, attemptCounters.settledTrials, attemptCounters.gapRounds]).toEqual([replays, trials, gapRounds]);
   }, 60000);
 

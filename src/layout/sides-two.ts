@@ -774,9 +774,10 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   }
   // A hinted port whose natural side stage 2 could only estimate takes the side its vote gives now, before the bus edge reads it (side-faces.md, Section 7).
   for (const id of orderedNodeIds(model.document)) for (const port of model.nodes[id]!.ports) {
-    if (port.sideHint !== true || port.sizingSide === undefined) continue;
+    if ((port.sideHint !== true && port.courseHint !== true) || port.sizingSide === undefined) continue;
     const votes = voteFor(id, port);
     const natural = SIDE_TIE_ORDER.reduce((best, side) => votes[side] > votes[best] ? side : best, 'bottom' as Side);
+    if (port.courseHint === true) { if (natural === port.side) throw new SideHintRefusal(`Course face on ${id}.${port.ref.name ?? '#'}${port.ref.ordinal} refused: it is the natural side ${natural}`); port.naturalSide = natural; continue; }
     if (natural !== 'top' && natural !== 'bottom') throw new SideHintRefusal(`Side hint on ${id}.${port.ref.name ?? '#'}${port.ref.ordinal} refused: its natural side is ${natural}`);
     port.naturalSide = natural;
   }

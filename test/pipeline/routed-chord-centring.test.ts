@@ -16,7 +16,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
 describe('a face that aligns one port leaves the port of a held chord in place', () => {
   const yaml = readFileSync(new URL('../../goldens/synthetic/a-face-aligns-one-port-and-leaves-a-chord-port-in-place.yaml', import.meta.url), 'utf8');
   it('lays out, and the chord stays straight', async () => {
-    const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [] });
     // The chord of src1 to acc3 stays a chord, vertical at the x it was decided at.
     const chord = model.links.find(link => link.attachments!.from.node === 'src1' && link.attachments!.to.node === 'acc3')!;
     expect(chord.path?.fixed).toBe(true);

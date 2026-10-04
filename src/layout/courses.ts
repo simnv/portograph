@@ -2,6 +2,10 @@ import type { Side } from '../model/geometry.js';
 import type { Course, CourseEnd, CourseKind, CourseRun, Lane, LayoutLink, LayoutModel } from '../model/layout.js';
 import type { PortRef } from '../model/document.js';
 import { findPort } from './row-paths.js';
+import { SideHintRefusal } from './side-hints.js';
+
+/** A placement run cannot reserve a course (its faces cannot join one lane). The course round drops the offer; every other error is a bug. */
+export class CourseRefusal extends SideHintRefusal {}
 
 /**
  * The data shapes of architecture ticket 15, phase 1. A course is the planned route of one link, face to face (CONTEXT, course);
@@ -59,6 +63,7 @@ export function validateCourses(model: LayoutModel): void {
     if (!KINDS.includes(course.kind)) throw new Error(`Course on ${course.link} has an unknown kind`);
     if ((course.kind === 'overlay') !== (link.layer === 'overlay')) throw new Error(`Course kind on ${course.link} contradicts its layer`);
     if (course.runs.length === 0 || !course.runs.every(run => RUNS.includes(run))) throw new Error(`Course on ${course.link} has invalid runs`);
+    if (course.runs.includes('perimeter') !== (course.side !== undefined) || (course.side !== undefined && course.side !== 'left' && course.side !== 'right')) throw new Error(`Course on ${course.link} must name the margin of its perimeter lane, and only then`);
     validateEnd(model, link, 'from', course.from);
     validateEnd(model, link, 'to', course.to);
   }
@@ -73,7 +78,7 @@ export function sameCourses(a: readonly Course[] | undefined, b: readonly Course
   const end = (p: CourseEnd, q: CourseEnd): boolean => p.face === q.face && p.approach === q.approach;
   return x.every((course, i) => {
     const other = y[i]!;
-    return course.link === other.link && course.kind === other.kind && end(course.from, other.from) && end(course.to, other.to)
+    return course.link === other.link && course.kind === other.kind && course.side === other.side && end(course.from, other.from) && end(course.to, other.to)
       && course.runs.length === other.runs.length && course.runs.every((run, j) => run === other.runs[j]);
   });
 }

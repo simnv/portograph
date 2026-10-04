@@ -12,6 +12,8 @@ import { union } from './skeleton-geometry.js';
  * (loc4 and loc5 of the NTP sheet). One value, two measured gaps: the shadow-solver probe found neither in the code, and read
  * 20 and 40 off the published model.
  */
+/** A lane with no `kind` is a transit lane (a riser lane too, read by its owner). Side, gap and perimeter lanes grow no frame. */
+export const isTransitKind = (lane: Lane): boolean => lane.kind === undefined || lane.kind === 'transit';
 export const CELL_TO_CHILD_FRAME_GAP = GROUP_PADDING;
 
 /**
@@ -124,8 +126,8 @@ function transitLanes(model: LayoutModel, id: string): Rect[] {
       }
       continue;
     }
-    // A side lane stands outside the frame of its lateral end and never grows it (side-faces.md, Section 10): this reader serves transit lanes only.
-    if (!cells.has(lane.group) || lane.owner.kind !== 'link' || lane.kind === 'side') continue;
+    // A side, column-gap or perimeter lane stands outside the frame of its end and never grows it (side-faces.md, Section 10; ticket 15): this reader serves transit lanes only.
+    if (!cells.has(lane.group) || lane.owner.kind !== 'link' || !isTransitKind(lane)) continue;
     const owner = lane.owner.id;
     const link = model.links.find(item => item.id === owner);
     if (!link?.attachments || ![link.attachments.from.node, link.attachments.to.node].some(node => inside.has(node))) continue;
@@ -218,8 +220,8 @@ export function foreignRoot(model: LayoutModel, cell: string, link: LayoutLink):
  */
 export function heldLaneReach(model: LayoutModel, cell: string, link: LayoutLink, lane: Lane, laneOwner: LayoutLink | undefined): Rect | undefined {
   const frames = model.document.frames, first = model.document.groups[cell]?.frame;
-  // A side lane grows no frame, so no foreign lane keeps a frame's room for it.
-  if (!frames || first === undefined || lane.group !== cell || lane.kind === 'side' || !laneOwner?.attachments || laneOwner.id === link.id) return undefined;
+  // A side, column-gap or perimeter lane grows no frame, so no foreign lane keeps a frame's room for it.
+  if (!frames || first === undefined || lane.group !== cell || !isTransitKind(lane) || !laneOwner?.attachments || laneOwner.id === link.id) return undefined;
   const found = foreignFrame(model, cell, link);
   if (!found) return undefined;
   const ends = [laneOwner.attachments.from.node, laneOwner.attachments.to.node], chain: string[] = [];

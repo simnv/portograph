@@ -27,7 +27,7 @@ const golden = (name: string): string => readFileSync(new URL(`../../goldens/syn
 async function record(source: string): Promise<string[]> {
   const lines: string[] = [];
   verdictTap.sink = (name, value) => { lines.push(`${name} ${value}`); };
-  try { await layout(parse(source), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt }); } finally { delete verdictTap.sink; }
+  try { await layout(parse(source), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [] }); } finally { delete verdictTap.sink; }
   return lines;
 }
 

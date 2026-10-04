@@ -246,7 +246,7 @@ export function planRoute(model: LayoutModel, plans?: Parameters<typeof allocate
       const first = index === 0, last = index * 2 + 2 === stops.length;
       // A side run is the lateral port's own stem (side-faces.md, Section 10): it ends on the port's anchor, so the piece between that
       // end and the port is empty and asks for no approach and no stem checkpoint.
-      const isSideRun = (segment: PathSegment | undefined): boolean => segment?.lane?.startsWith('side-lane:') === true;
+      const isSideRun = (segment: PathSegment | undefined): boolean => segment?.lane?.startsWith('side-lane:') === true || segment?.lane?.startsWith('perimeter:') === true || segment?.lane?.startsWith('gap-lane:') === true;
       const onSideRun = samePoint(start.point, end.point) && (isSideRun(fixed[index - 1]) || isSideRun(fixed[index]));
       if (!onSideRun && !(start.endpoint.kind === 'point' && end.endpoint.kind === 'point' && samePoint(start.point, end.point))) {
         const id = `${link.id}#${index}`;

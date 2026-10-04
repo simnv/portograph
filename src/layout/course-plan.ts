@@ -1,15 +1,9 @@
 import type { Point, Side } from '../model/geometry.js';
-import type { LayoutModel } from '../model/layout.js';
-import { flankPair } from './flanks.js';
-import { chordKind } from './frame-paths.js';
-import { laneSource, selectAnchorTier } from './lanes.js';
-import { bandUnits, linkFacts, type EndFacts, type LinkFacts, type Unit } from './read/courses.js';
 
 /**
- * The candidate builder, the planned polyline, the turn estimate and the crossing estimate of the course plan (architecture ticket 15, phases 2 and 3).
- * Everything here reads the model as stage 5 leaves it: boxes, anchors, port sides and unit orders. It reads no lane and no route, and it writes nothing.
- * The turns of a polyline are exact by construction (a corner is a corner); the turns of a link's natural course are an estimate, because 7a to 7f can
- * still align two ports (7c, 7e), seat a lane under its source, or admit a chord. The crossings are an estimate against the other links' natural polylines.
+ * The polyline readers of the course plan (architecture ticket 15, phases 2 to 4): the corners and the proper crossings of orthogonal polylines, and the
+ * fewest-corner route between two stems. The turns of a polyline are exact by construction (a corner is a corner). The decision itself is in
+ * `course-measure.ts`, which reads the 7f baseline and its routed result; the estimate of the natural course from stage 5 was dropped (the redesign of 2026-10-05).
  */
 
 /** The stem a port leaves along its face before it turns (CONTEXT, stem); the perimeter offset `e` of the design, Section 1. */
@@ -111,129 +105,4 @@ export function polylineCrossings(a: readonly Point[], b: readonly Point[]): num
     if (t > 1e-3 && t < 1 - 1e-3 && u > 1e-3 && u < 1 - 1e-3) count++;
   }
   return count;
-}
-
-// ---- the natural course -------------------------------------------------------------------------------------------------------------
-
-/** What the plan knows of the whole drawing: the facts of every covered link, the units, and the tier that 7c aligns the others to. */
-export interface PlanContext {
-  model: LayoutModel;
-  facts: Map<string, LinkFacts>;
-  units: Map<number, Unit[]>;
-  anchorTier: number | undefined;
-  /** The number of link ends at each port, by port key. */
-  load: Map<string, number>;
-}
-
-const portKey = (ref: { node: string; ordinal: number; name?: string; anonymous?: boolean }): string => `${ref.node}|${ref.ordinal}|${ref.name ?? ''}|${ref.anonymous === true ? 'a' : 'n'}`;
-
-export function planContext(model: LayoutModel): PlanContext {
-  const load = new Map<string, number>();
-  for (const link of model.links) if (link.layer === 'routed' && link.attachments) for (const end of [link.attachments.from, link.attachments.to]) load.set(portKey(end), (load.get(portKey(end)) ?? 0) + 1);
-  return { model, facts: linkFacts(model), units: bandUnits(model), anchorTier: selectAnchorTier(model), load };
-}
-
-/**
- * Whether 7c or 7e is expected to put the two ports of a link on one x: they already are, or the link is a centring feed (the sides face, the far end stands
- * farther from the anchor tier, neither end is in a flank), the far port has no other link, and the link is the first child of its parent port by x.
- */
-function expectsAlignment(context: PlanContext, facts: LinkFacts): boolean {
-  const { from, to } = facts;
-  if (Math.abs(from.anchor.x - to.anchor.x) <= 0.5) return true;
-  if (context.anchorTier === undefined || from.tier === to.tier) return false;
-  const model = context.model, link = facts.link;
-  const parentRef = laneSource(model, link), parent = parentRef === link.attachments!.from ? from : to, child = parent === from ? to : from;
-  const below = child.tier > parent.tier;
-  if (parent.side !== (below ? 'bottom' : 'top') || child.side !== (below ? 'top' : 'bottom')) return false;
-  if ([parent.group, child.group].some(group => model.groups[group]?.flank !== undefined)) return false;
-  if ((context.load.get(portKey(child.ref)) ?? 0) > 1) return false;
-  // A node stands under one parent only: when several of its ports on the facing side carry a link, 7c seats it under one feed and the others jog.
-  const linked = model.nodes[child.node]!.ports.filter(port => port.side === child.side && (context.load.get(portKey(port.ref)) ?? 0) > 0);
-  if (linked.length > 1) return false;
-  // A parent port with several children lets the first by x stand under it; the others fan.
-  const siblings = [...context.facts.values()].filter(other => other.link.attachments && [other.from, other.to].some(end => portKey(end.ref) === portKey(parent.ref)))
-    .map(other => (portKey(other.from.ref) === portKey(parent.ref) ? other.to : other.from).anchor.x);
-  return siblings.length <= 1 || Math.min(...siblings) === child.anchor.x;
-}
-
-/** The natural course of one link: its polyline, its turns, and what the estimate assumed. */
-export interface NaturalCourse { points: Point[]; turns: number; chord: boolean; aligned: boolean; lane: boolean }
-
-export function naturalCourse(context: PlanContext, facts: LinkFacts): NaturalCourse {
-  const { from, to } = facts;
-  const model = context.model;
-  // A flank link to its stored primary is levelled by 7b (`alignFlanks`) and drawn as one run. Any other chord is read from orders alone: stage 5 has no final y, and a chord is refused by bodies, titles and corridors that 7f settles. A link takes the
-  // straight technique when it is a chord candidate (`chordKind`: one frame, or two frames on consecutive document tiers with facing sides), crosses no
-  // sub-tier it does not end in, and has no node or unit between its ends in their row or band.
-  const chord = flankPair(model, facts.link) !== undefined
-    || chordKind(model, facts.link) !== undefined && facts.crossed.length === 0 && facts.between.length === 0 && !facts.rowBetween;
-  if (chord) return { points: [from.anchor, to.anchor], turns: 0, chord: true, aligned: false, lane: false };
-  const aligned = expectsAlignment(context, facts);
-  // Seat the far end under the near one where centring is expected to, as 7c does.
-  const parentRef = laneSource(model, facts.link), parentIsFrom = parentRef === facts.link.attachments!.from;
-  const target = aligned && Math.abs(from.anchor.x - to.anchor.x) > 0.5
-    ? (parentIsFrom ? { from: from.anchor, to: { x: from.anchor.x, y: to.anchor.y } } : { from: { x: to.anchor.x, y: from.anchor.y }, to: to.anchor }) : { from: from.anchor, to: to.anchor };
-  const points = naturalPolyline(target.from, from.side, target.to, to.side);
-  // A transit lane that cannot stand under its source costs two more corners (design, Section 1: the natural course).
-  const lane = facts.crossed.length > 0 && facts.sourceCovered;
-  // A link that passes a node of its own row, or a unit of its band, leaves the band and comes back: two more corners.
-  const skirt = facts.rowBetween || (facts.from.tier === facts.to.tier && facts.between.length > 0);
-  return { points, turns: polylineTurns(points) + (lane ? 2 : 0) + (skirt ? 2 : 0), chord: false, aligned, lane };
-}
-
-// ---- the candidates -----------------------------------------------------------------------------------------------------------------
-
-export type CandidateKind = 'natural' | 'perimeter-left' | 'perimeter-right';
-export interface Candidate { kind: CandidateKind; points: Point[]; turns: number; from: Side; to: Side; padding: number; lateral: number }
-
-/**
- * How one end joins a perimeter lane on side `s`: by a lateral face `s` when the node stands at the edge of its row and its unit at the edge of its band
- * (a side run), else by its own top or bottom face with a padding row when its group is the outer rank of its frame. Nothing else is offered.
- */
-function endOption(end: EndFacts, s: 'left' | 'right'): { face: Side; at: Point; padding: boolean } | undefined {
-  if (end.edge[s] && end.unitEdge[s]) {
-    const x = s === 'left' ? end.box.x : end.box.x + end.box.width;
-    return { face: s, at: { x, y: end.side === s ? end.anchor.y : end.box.y + end.box.height / 2 }, padding: false };
-  }
-  if (end.side === 'top' && end.firstRank) return { face: 'top', at: end.anchor, padding: true };
-  if (end.side === 'bottom' && end.lastRank) return { face: 'bottom', at: end.anchor, padding: true };
-  return undefined;
-}
-
-/** The perimeter x on side `s`: beyond every unit of the sub-tiers from one end to the other, by the offset `e`. */
-export function perimeterX(context: PlanContext, facts: LinkFacts, s: 'left' | 'right'): number {
-  const lo = Math.min(facts.from.tier, facts.to.tier), hi = Math.max(facts.from.tier, facts.to.tier);
-  const boxes = [...context.units.entries()].filter(([tier]) => tier >= lo && tier <= hi).flatMap(([, list]) => list.map(unit => unit.box));
-  return s === 'left' ? Math.min(...boxes.map(box => box.x)) - PERIMETER_OFFSET : Math.max(...boxes.map(box => box.x + box.width)) + PERIMETER_OFFSET;
-}
-
-export function perimeterCandidate(context: PlanContext, facts: LinkFacts, s: 'left' | 'right'): Candidate | undefined {
-  const a = endOption(facts.from, s), b = endOption(facts.to, s);
-  if (a === undefined || b === undefined) return undefined;
-  const x = perimeterX(context, facts, s);
-  const leg = (end: { face: Side; at: Point; padding: boolean }, outward: boolean): Point[] => {
-    // From the end to the lane (outward), or the other way; the lane is a vertical line at `x`.
-    if (end.padding) {
-      const stem = step(end.at, end.face, STEM), q = { x, y: stem.y };
-      const run = orthogonalRoute(stem, end.face, q, s);
-      return outward ? [end.at, ...run] : [...orthogonalRoute(q, OPPOSITE[s], stem, OPPOSITE[end.face]), end.at];
-    }
-    const q = { x, y: end.at.y };
-    return outward ? [end.at, q] : [q, end.at];
-  };
-  const first = leg(a, true), second = leg(b, false);
-  const points = simplify([...first, ...second]);
-  const lateral = [a, b].filter(item => !item.padding).length, padding = [a, b].filter(item => item.padding).length;
-  return { kind: s === 'left' ? 'perimeter-left' : 'perimeter-right', points, turns: polylineTurns(points), from: a.face, to: b.face, padding, lateral };
-}
-
-/** The candidates of a link: its natural course first, then the perimeter courses its ends admit. A link with no trigger has the natural course alone. */
-export function candidatesFor(context: PlanContext, facts: LinkFacts, natural: NaturalCourse): Candidate[] {
-  const list: Candidate[] = [{ kind: 'natural', points: natural.points, turns: natural.turns, from: facts.from.side, to: facts.to.side, padding: 0, lateral: 0 }];
-  if (facts.triggers.length === 0) return list;
-  for (const s of ['left', 'right'] as const) {
-    const candidate = perimeterCandidate(context, facts, s);
-    if (candidate !== undefined) list.push(candidate);
-  }
-  return list;
 }

@@ -21,7 +21,7 @@ const failing = (model: LayoutModel): string[] => Object.entries(score(model).sn
   .flatMap(([id, gate]) => gate.violations.map(item => `${id}:${item.code}`));
 
 async function whole(name: string): Promise<{ placed: LayoutModel; routed: LayoutModel }> {
-  return { placed: await place(name), routed: await layout(parse(read(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt }) };
+  return { placed: await place(name), routed: await layout(parse(read(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [] }) };
 }
 
 describe('7f grows the gaps by the plan and stage 8 reserves what it planned (ranked-groups ticket 50)', () => {
@@ -60,6 +60,16 @@ describe('7f grows the gaps by the plan and stage 8 reserves what it planned (ra
     expect(routed.removedLinks ?? []).toEqual([]);
     // Placement's own finding, also on main: the port order of `isp0`. The two G6 findings of the residual link-3 are gone with it.
     expect(failing(routed)).toEqual(['G5:port-order', 'G5:port-order']);
+  }, 120000);
+
+  // The same shape with the course round on (the published path): the round may take a course here, and the result must not be worse than the shape without it.
+  it('the v5-4-0 shape with the course round on removes nothing and has no gate finding the plain run does not have', async () => {
+    const name = 'a-tier-gap-plan-orders-every-part';
+    const plain = failing(await layout(parse(read(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [] }));
+    const model = await layout(parse(read(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    expect(model.removedLinks ?? []).toEqual([]);
+    expect(failing(model).filter(item => !plain.includes(item))).toEqual([]);
+    expect(score(model).snapshot.counts.routed.crossings).toBeLessThanOrEqual(13);
   }, 120000);
 
   it('asks for nothing on a second measure of any of the four shapes, and a second bands pass grows nothing', async () => {
