@@ -33,6 +33,8 @@ import { measureSides, refusedKey, type SideOffer } from '../layout/side-measure
 import { judgeTrial, predictedWorse, predictPublished, routedBends, trialNotes } from '../layout/side-judge.js';
 import type { AttemptTraceEvent } from '../layout/placement-attempt.js';
 import { PLACEMENT_EPS } from '../layout/tolerance.js';
+import { attemptCounters } from '../layout/attempt-counters.js';
+import { countStage, ledgerOn, ledgerSnapshot, startPlacementEntry, type LedgerSnapshot } from '../layout/attempt-ledger.js';
 
 
 /** Most runs of placement a fan's pitch may cost after the first (ticket 89). */
@@ -148,13 +150,19 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
 
     // sidesTwo freezes port topology and publishes the first protected snapshot; every region rule
     // below returns a new one, and the previous value must not be used again.
+    attemptCounters.placeRuns++;
+    // The ledger reads the routed chords and the straight overlay links after each stage, only when a test or the trace asked for it.
+    const ledger = ledgerOn(options.attemptTrace !== undefined);
     let model = stepIn('sides-two', () => sidesTwo(resolved, nodeFloors));
-    model = stepIn('rows', () => rows(model));
-    model = stepIn('lanes', () => lanes(model));
-    model = stepIn('flanks', () => flanks(model));
-    model = stepIn('centre', () => centre(model));
-    model = stepIn('bars', () => bars(model));
-    model = stepIn('bundles', () => bundles(model));
+    let seen: LedgerSnapshot | undefined = ledger ? ledgerSnapshot(model) : undefined;
+    const entry = ledger ? startPlacementEntry() : undefined;
+    const account = (stage: string): void => { if (seen === undefined || entry === undefined) return; const now = ledgerSnapshot(model); countStage(stage, seen, now, entry); seen = now; };
+    model = stepIn('rows', () => rows(model)); account('rows');
+    model = stepIn('lanes', () => lanes(model)); account('lanes');
+    model = stepIn('flanks', () => flanks(model)); account('flanks');
+    model = stepIn('centre', () => centre(model)); account('centre');
+    model = stepIn('bars', () => bars(model)); account('bars');
+    model = stepIn('bundles', () => bundles(model)); account('bundles');
     stage3Sizes.set(model, sizes);
     return model;
   };
@@ -183,7 +191,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       if (value > (next.get(id)?.[side] ?? 0)) { next.set(id, { ...next.get(id), [side]: value }); grew = true; }
     }
     if (!grew) break;
-    reruns++;
+    reruns++; attemptCounters.invalidations.fanReruns++;
     const trial = await timed('rerun-fan', () => place(next));
     if (trial.fallbackUsed && !model.fallbackUsed) {
       cut('ELK fell back during it, and the re-run was dropped'); break;
@@ -250,7 +258,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     }
     const allLanes = new Set([...laneKeys, ...[...offer.promised].filter(([, item]) => item.shape === 'lane').map(([key]) => key)]);
     let trial7e: LayoutModel;
-    reruns++;
+    reruns++; attemptCounters.invalidations.sideReruns++;
     try { trial7e = await timed('rerun-side', () => place(floors, all, nodeFloors, trialAbort, allLanes)); } catch (error) {
       // Only the layout's own refusals drop the offer; anything else (a TypeError) is a bug and must surface.
       if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError)) throw error;

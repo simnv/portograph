@@ -14,6 +14,7 @@ import { bandGap, compareId } from './skeleton-graph.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { windowTarget, type Window } from './overlay-window.js';
+import { attemptCounters } from './attempt-counters.js';
 import { drawnOverlays, gains, holds, lazyCount, profiles, read, reading, straightOf, tapVerdict, type Reading } from './objective.js';
 
 /** A free group stands where its overlay chords are straight and not at the mean of its partners (ticket 143, info). */
@@ -82,7 +83,7 @@ export function placeOverlayFree(model: LayoutModel, columns: readonly FrameColu
   const before = overlayTurns(model), state = { windowed: false };
   place(model, columns, true, state);
   if (!state.windowed) return;
-  if (sheetGains(overlayTurns(model), before)) return;
+  if (sheetGains(overlayTurns(model), before)) { if (attemptCounters.in7f > 0) attemptCounters.invalidations.overlayWindowsKept++; return; }
   const moved = groups.filter(group => JSON.stringify(group.bounds) !== start.get(group.id));
   // A run that moved no group and added no note has nothing to put back: the restore would only write the saved values over the same ones.
   if (moved.length || model.diagnostics.length !== diagnostics.length) {
