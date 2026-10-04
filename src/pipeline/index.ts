@@ -248,6 +248,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   let routedBase: LayoutModel | undefined, routedFinal: LayoutModel | undefined;
   const keptNotes: Diagnostic[] = [];
   for (let round = 0; round < SIDE_ROUNDS; round++) {
+    silent = false; // only the round-0 extra trial is silent; a later round publishes its refusals
     let offer = await timed('measureSides', () => measureSides(base, kept7e, refused));
     // No offer on the kept 7f result. If a 7f move changed the placement, the unmoved baseline may have had one that the move removed: it runs as one
     // extra side trial, judged on routed results like any other, so the kept result stands unless a real trial beats it (architecture ticket 15, phase 3b).
