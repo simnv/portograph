@@ -45,10 +45,11 @@ export function countStep(before: LedgerSnapshot, after: LedgerSnapshot, entry: 
   return `overlay -${step.overlayLost.length}/+${step.overlayGained.length} aligned -${step.alignedLost.length} blocked +${step.newlyBlocked.length}`;
 }
 
-/** A new entry of the attempt log, for the run that starts now. */
-export function startAttemptEntry(): AttemptEntry {
+/** A new entry for the run that starts now; it joins the attempt log only when `logged`. */
+export function startAttemptEntry(logged: boolean): AttemptEntry {
   const entry: AttemptEntry = { rounds: 0, openRounds: 0, chordRoundsMoved: 0, overlayLost: 0, overlayGained: 0, alignedLost: 0, bodiesOnFrozenChord: 0 };
-  attemptCounters.attemptLog.push(entry);
+  // Logged only with the ledger on: production never resets the counters, so an unguarded log would grow with every 7f run.
+  if (logged) attemptCounters.attemptLog.push(entry);
   return entry;
 }
 /** A new entry of the placement log, for the run that starts now. */

@@ -1,7 +1,7 @@
 # Expected: In the base 7f run (no side trial), the step over a chord moves a free group off the chords of its tier (architecture ticket 13, phase 1).
 # The canton `west` holds the ranked members `left` and `right` (a router row and a zone rank of two servers each, fed from the core row on
-# tier 0), and below them the free members `upper` (tier 3) and `lower` (tier 4). Neither free member has a routed link. Every server of the
-# two zone ranks syncs with every client of both. On the mean of the partners both free members stand on the canton axis, so the chords to
+# tier 0), and below them the free members `upper` (tier 3) and `lower` (tier 4). Neither free member has a routed link. Each server of the
+# two zone ranks syncs with one client of each free member. On the mean of the partners both free members stand on the canton axis, so the chords to
 # `lower` cross the row of `upper`. The step moves `upper` to the nearest x where the chords stand clear (one mover, one round that moved).
 # Test-only input owned by architecture ticket 13; test/pipeline/attempt-ledger.test.ts reads the counters of the layout.
 portograph: 2

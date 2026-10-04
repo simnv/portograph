@@ -132,7 +132,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
   const { abortAt, trace } = options;
   const note = (pass: string, verdict: string): void => { if (trace) trace({ pass, revision: revisionOf(draft), verdict }); };
   // The ledger (architecture ticket 13, phase 1): what each step loses and gains, read only when a test or the trace asks for it.
-  const ledger = ledgerOn(trace !== undefined), entry = startAttemptEntry();
+  const ledger = ledgerOn(trace !== undefined), entry = startAttemptEntry(ledger);
   let seen: LedgerSnapshot | undefined = ledger ? ledgerSnapshot(draft) : undefined;
   const account = (pass: string): void => {
     if (seen === undefined) return;
