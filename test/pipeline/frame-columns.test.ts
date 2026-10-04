@@ -112,7 +112,7 @@ describe('frame columns', () => {
 
   it('a widening that a lane forbids is refused: the title keeps its box and the layout reports it', async () => {
     const yaml = fixture('an-own-frame-lane-stands-beside-a-neighbour-frame').replace('label: East }', 'label: East frame with a long title }');
-    const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [] });
     expect(model.diagnostics.filter(diagnostic => diagnostic.severity === 'error')).toEqual([]);
     expect(model.diagnostics.map(diagnostic => diagnostic.code)).toContain('GROUP_LABEL_GAP_INFEASIBLE');
   }, 60000);

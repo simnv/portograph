@@ -2,7 +2,7 @@ import type { PortRef } from '../../model/document.js';
 import type { Point, Rect, Side } from '../../model/geometry.js';
 import type { LayoutLink, LayoutModel, LayoutPort } from '../../model/layout.js';
 import { groupShape } from '../grid.js';
-import { transitTiers } from '../lanes.js';
+import { laneSource, transitTiers } from '../lanes.js';
 import { findPort } from '../row-paths.js';
 import { nodeTier } from './tier.js';
 
@@ -137,9 +137,11 @@ export function linkFacts(model: LayoutModel): Map<string, LinkFacts> {
     const crossed = transitTiers(model, link);
     const between: Unit[] = [];
     let sourceCovered = false;
+    // The lane end is `laneSource` (the end nearer the anchor tier), which can be `to`: a unit over the lane end's x is what stops 7a seating the lane under it.
+    const laneEnd = laneSource(model, link) === toRef ? to : from, laneX = laneEnd.anchor.x;
     for (const tier of crossed) for (const unit of units.get(tier) ?? []) {
-      if (overlaps(unit.box, lo, hi) || overlaps(unit.box, from.anchor.x, from.anchor.x + 1e-6)) between.push(unit);
-      if (overlaps(unit.box, from.anchor.x - 1e-6, from.anchor.x + 1e-6)) sourceCovered = true;
+      if (overlaps(unit.box, lo, hi) || overlaps(unit.box, laneX, laneX + 1e-6)) between.push(unit);
+      if (overlaps(unit.box, laneX - 1e-6, laneX + 1e-6)) sourceCovered = true;
     }
     if (from.tier === to.tier) for (const unit of units.get(from.tier) ?? []) {
       if (unit.id !== from.group && unit.id !== to.group && unit.box.x >= lo - 1e-6 && unit.box.x + unit.box.width <= hi + 1e-6) between.push(unit);

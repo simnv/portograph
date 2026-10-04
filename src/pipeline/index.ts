@@ -6,9 +6,10 @@
  * the previous stage published. What this file does own is the *budget*: one remainder shared by
  * the ELK attempts and the router, so a command cannot spend a fresh stage policy per attempt.
  */
-import type { Diagnostic, LayoutModel, LayoutStage, NormalisedDocument, Side, Size } from '../model/index.js';
+import type { Course, Diagnostic, LayoutModel, LayoutStage, NormalisedDocument, Side, Size } from '../model/index.js';
 import { resolve } from '../resolve/index.js';
-import { sidesOne } from '../layout/sides-one.js';
+import { portKey, sidesOne } from '../layout/sides-one.js';
+import { endMode } from '../layout/course-rows.js';
 import { sizeNodes } from '../layout/size.js';
 import { skeleton, SkeletonError } from '../layout/skeleton.js';
 import { BundleFeasibilityError } from '../layout/bundle-paths.js';
@@ -34,7 +35,8 @@ import { judgeTrial, predictedWorse, predictPublished, routedBends, trialNotes }
 import type { AttemptTraceEvent } from '../layout/placement-attempt.js';
 import { PLACEMENT_EPS } from '../layout/tolerance.js';
 import { attemptCounters } from '../layout/attempt-counters.js';
-import { shadowCourses } from '../layout/course-shadow.js';
+import { judgeCourseTrial, measureCourses } from '../layout/course-measure.js';
+import { pathBends } from '../layout/objective.js';
 import { countStage, ledgerOn, ledgerSnapshot, startPlacementEntry, type LedgerSnapshot } from '../layout/attempt-ledger.js';
 
 
@@ -95,6 +97,8 @@ export interface LayoutOptions {
   testSideProbe?: (event: { offer: SideOffer; routedBase: LayoutModel; routedTrial: LayoutModel; verdict: ReturnType<typeof judgeTrial> }) => void;
   /** Test only. Stage-3 node size floors for every placement run: the sizes a measured run built its skeleton graph from (side-faces.md, Section 8). */
   testNodeFloors?: ReadonlyMap<string, Size>;
+  /** Test only. Courses (ticket 15) for every placement run, before the course round has any say. */
+  testCourses?: readonly Course[];
   /** Test only. Replaces `MAX_RERUNS` for one command. */
   testMaxReruns?: number;
   /** Test only. Called with the wall time of each placement run, measure, 7f, route and score-ready stage, and the budget left (ticket 115 timing). */
@@ -127,11 +131,23 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   };
 
   /** Stages 1 to 7e, the placement the chords are decided on before 7f grows a gap, and so the placement a fan is measured on. `floors` are port pitches a fan of chords needs on a face (ticket 89); the first run has none. */
+  // The courses every placement run reserves (ticket 15): the test's, or the ones the course round keeps.
+  let activeCourses: readonly Course[] = options.testCourses ?? [];
   const stage3Sizes = new WeakMap<LayoutModel, Map<string, Size>>();
-  const place = async (floors: FanMeasure['floors'], hints = options.testSideHints, nodeFloors = options.testNodeFloors, abort?: (stage: string) => void, laneKeys: ReadonlySet<string> = new Set()): Promise<LayoutModel> => {
+  const place = async (floors: FanMeasure['floors'], hints = options.testSideHints, nodeFloors = options.testNodeFloors, abort?: (stage: string) => void, laneKeys: ReadonlySet<string> = new Set(), courses: readonly Course[] = activeCourses): Promise<LayoutModel> => {
     const stepIn = <T>(stage: LayoutStage, run: () => T): T => { abort?.(stage); return step(stage, run); };
     const resolved = stepIn('resolve', () => resolve(document, options.diagnostics ? { diagnostics: options.diagnostics } : {}));
-    stepIn('sides-one', () => sidesOne(resolved, hints, laneKeys));
+    // A course face ranks above a hint (ticket 15): each end that does not keep its natural face names the port and the face.
+    const courseFaces = new Map<string, Side>();
+    for (const course of courses) {
+      const link = resolved.links.find(item => item.id === course.link);
+      for (const which of ['from', 'to'] as const) {
+        const ref = link?.attachments?.[which] ?? link?.[which];
+        if (ref !== undefined && 'ordinal' in ref && endMode(course, which) !== 'natural') courseFaces.set(portKey(ref), course[which].face);
+      }
+    }
+    stepIn('sides-one', () => sidesOne(resolved, hints, laneKeys, courseFaces));
+    if (courses.length) resolved.courses = JSON.parse(JSON.stringify(courses)) as Course[];
     for (const [id, pitch] of floors) resolved.nodes[id]!.sidePitch = { ...resolved.nodes[id]!.sidePitch, ...pitch };
     // A hinted node keeps the size the measured run gave it, so the skeleton input is the same (a floor on `size`, not on `sizeFloor`, which alignment reads).
     for (const [id, size] of nodeFloors ?? []) resolved.nodes[id]!.size = { ...size };
@@ -155,8 +171,6 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     // The ledger reads the routed chords and the straight overlay links after each stage, only when a test or the trace asked for it.
     const ledger = ledgerOn(options.attemptTrace !== undefined);
     let model = stepIn('sides-two', () => sidesTwo(resolved, nodeFloors));
-    // The shadow course plan reports and applies nothing (ticket 15, phase 3); it reads the model once and only with the ledger on.
-    if (ledger) attemptCounters.shadows.push(shadowCourses(model));
     let seen: LedgerSnapshot | undefined = ledger ? ledgerSnapshot(model) : undefined;
     const entry = ledger ? startPlacementEntry() : undefined;
     const account = (stage: string): void => { if (seen === undefined || entry === undefined) return; const now = ledgerSnapshot(model); countStage(stage, seen, now, entry); seen = now; };
@@ -241,6 +255,65 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   const maxReruns = options.testMaxReruns ?? MAX_RERUNS;
   let routedBase: LayoutModel | undefined, routedFinal: LayoutModel | undefined;
   const keptNotes: Diagnostic[] = [];
+  // The course round (ticket 15, phase 4) runs before the side round and shares its re-runs. It reads the baseline's routed result, offers perimeter courses
+  // for the links whose route is a poor one, places again with the courses reserved in stage 5, and keeps the trial only on its routed result.
+  const keptPromises = new Map<string, number>();
+  if (options.testCourses === undefined) {
+    routedBase = await routeModel(base);
+    const offer = measureCourses(base, routedBase);
+    options.testSideTrace?.({ ev: 'courses', offer, base, routedBase });
+    // The two rounds share the re-runs. The course round leaves the last one to a side offer that stands: a refused course trial would have taken it, and the
+    // side round, which only reads the baseline, has no say once the count is spent.
+    const lastRerun = offer.courses.length > 0 && reruns + 1 >= maxReruns;
+    const skipped = lastRerun && (reruns >= maxReruns || measureSides(base, kept7e, refused).hints.size > 0);
+    if (skipped) options.testSideTrace?.({ ev: 'course-skipped', offer, reruns });
+    else if (offer.courses.length > 0) {
+      const nodeFloors = new Map(options.testNodeFloors ?? []);
+      for (const course of offer.courses) {
+        const link = kept7e.links.find(item => item.id === course.link)!;
+        for (const which of ['from', 'to'] as const) {
+          const size = stage3Sizes.get(kept7e)?.get(link.attachments![which].node);
+          if (size !== undefined && course[which].face !== (kept7e.nodes[link.attachments![which].node]!.ports.find(port => portKey(port.ref) === portKey(link.attachments![which]))?.side)) nodeFloors.set(link.attachments![which].node, { ...size });
+        }
+      }
+      reruns++;
+      const names = offer.courses.map(course => course.link);
+      // A refused course round leaves the layout as the baseline made it, with no note (the trace names the reason), so a sheet it does not change is byte for byte as it was.
+      const courseRefusal = (why: string): void => { options.testSideTrace?.({ ev: 'course-refused', links: names, why }); };
+      let trial7e: LayoutModel | undefined;
+      try { trial7e = await timed('rerun-course', () => place(floors, hints, nodeFloors, trialAbort, laneKeys, offer.courses)); } catch (error) {
+        // A course moves columns the baseline never moved. A centring that cannot hold its feeds there is the course's refusal, not a bug of the baseline.
+        if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError
+          || (error instanceof Error && error.message.startsWith('Centring invariant violated')))) throw error;
+        courseRefusal(`the placement run rejected them (${error.message})`);
+      }
+      if (trial7e !== undefined && trial7e.fallbackUsed && !kept7e.fallbackUsed) {
+        cutSide('ELK fell back during the course trial, and the re-run was dropped'); trial7e = undefined;
+      }
+      if (trial7e !== undefined) {
+        try {
+          const trial = await timed('bands-trial', () => step('bands', () => bands(trial7e!, () => trialAbort('bands'), options.attemptTrace), true));
+          const routedTrial = await routeModel(trial, true);
+          const verdict = judgeCourseTrial(routedBase, routedTrial, names);
+          options.testSideTrace?.({ ev: 'course-trial', verdict, trial, routedTrial, routedBase });
+          if (verdict.kept) {
+            for (const [id, promised] of offer.promised) keptPromises.set(id, promised.turns);
+            base = trial; kept7e = trial7e; activeCourses = offer.courses; routedBase = routedTrial; routedFinal = routedTrial;
+            for (const course of offer.courses) {
+              const was = offer.promised.get(course.link)!;
+              sideNotes.push({ stage: 'placement', severity: 'info', code: 'COURSE_TAKEN', owners: [{ kind: 'link', id: course.link }],
+                message: `The link ${course.link} takes a course round the outside: ${was.turns} turns promised, ${was.base.turns === Infinity ? 'removed' : was.base.turns} on the baseline.` });
+            }
+          } else {
+            courseRefusal(`${verdict.reason}`);
+          }
+        } catch (error) {
+          if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError)) throw error;
+          courseRefusal(`stage 7f rejected them (${error.message})`);
+        }
+      }
+    }
+  }
   for (let round = 0; round < SIDE_ROUNDS; round++) {
     const offer = await timed('measureSides', () => measureSides(base, kept7e, refused));
     options.testSideTrace?.({ ev: 'offer', round, offer, base, kept7e });
@@ -344,6 +417,12 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   }
   // With the setting on, the kept model is routed once more to publish: a judged route carries the ordinary overlay paths.
   const published = model.document.layout?.overlayOverBodies === true ? await routeModel(model, undefined, true) : routedFinal ?? routedBase ?? await routeModel(model);
+  // A course that publishes more turns than its candidate promised is named; the promise is the polyline its own lane geometry reserved.
+  for (const [id, turns] of keptPromises) {
+    const link = published.links.find(item => item.id === id), got = link === undefined ? undefined : pathBends(link);
+    if (got === undefined || got > turns) lost.push({ stage: 'placement', severity: 'warning', code: 'COURSE_SHAPE_LOST', owners: [{ kind: 'link', id }],
+      message: `The link ${id} has ${got === undefined ? 'no route' : `${got} turns`} on its course, ${turns} were promised.` });
+  }
   // A hinted link of a kept trial has no more bends than on the baseline (the judgment tested it); this names a break of that rule.
   if (routedFinal !== undefined && routedBase !== undefined) {
     const before = routedBends(routedBase), after = routedBends(routedFinal);

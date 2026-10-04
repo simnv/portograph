@@ -37,7 +37,7 @@ vi.mock('../../src/layout/region-rebuild.js', async importOriginal => {
 });
 
 const run = (name = 'a-one-node-title-over-a-skewed-leg-widens-the-group'): Promise<LayoutModel> => layout(parse(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8')),
-  { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [] });
 
 describe('a title past its allowance keeps the soft rule and says so (ticket 66)', () => {
   beforeEach(() => { forge.done = false; forge.shared = undefined; forge.entry = undefined; forge.replays = 0; });

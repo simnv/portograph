@@ -1,0 +1,148 @@
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+import { layout, parse, restoreLayoutModel, score } from '../../src/index.js';
+import type { Course, LayoutLink, LayoutModel } from '../../src/index.js';
+import type { Side } from '../../src/model/geometry.js';
+import { naturalPolyline, polylineCrossings, polylineTurns, simplify } from '../../src/layout/course-plan.js';
+import { poorRoute } from '../../src/layout/course-measure.js';
+import { findPort } from '../../src/layout/row-paths.js';
+import { pathBends } from '../../src/layout/objective.js';
+import { createAttempt } from '../layout/phase-two-fixture.js';
+import { createAvoidAttempt } from '../route/fixture.js';
+
+/**
+ * Architecture ticket 15, phase 4: the course round (`measureCourses`, the stage-5 course input, the trial judge) and the perimeter lane. The stop rule of
+ * the redesign of 2026-10-05: (a) the in-scope links match the faces and the turns of the `solve` page, (b) every kept course publishes the turns it
+ * promised (`COURSE_SHAPE_LOST` is 0), (c) nothing else gets worse.
+ */
+const source = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
+const link = (model: LayoutModel, n: number): LayoutLink => model.links.find(item => item.id === `link-${n}`)!;
+const side = (model: LayoutModel, n: number, end: 'from' | 'to'): Side => findPort(model, link(model, n).attachments![end])!.side!;
+const turns = (model: LayoutModel, n: number): number | undefined => pathBends(link(model, n));
+const codes = (model: LayoutModel): string[] => model.diagnostics.map(item => item.code);
+
+const MESH = 'a-mesh-across-a-tier-goes-round-the-outside';
+const ACROSS = 'a-flank-link-across-a-neighbour-enters-a-bundle-envelope';
+const CANTON = 'a-link-past-a-canton-runs-in-the-margin';
+const AROUND = 'a-flank-link-around-a-neighbour-runs-along-the-core-edge';
+
+describe('the polyline readers', () => {
+  it('simplify drops repeated points and collinear middles, and keeps a reversal', () => {
+    expect(simplify([{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 5 }, { x: 0, y: 9 }])).toEqual([{ x: 0, y: 0 }, { x: 0, y: 9 }]);
+    expect(polylineTurns([{ x: 0, y: 0 }, { x: 0, y: 5 }, { x: 4, y: 5 }, { x: 4, y: 0 }])).toBe(2);
+    expect(polylineTurns([{ x: 0, y: 0 }, { x: 0, y: 5 }, { x: 0, y: 2 }])).toBe(1);
+  });
+
+  it.each<[string, { x: number; y: number }, Side, { x: number; y: number }, Side, number]>([
+    ['a straight drop', { x: 0, y: 0 }, 'bottom', { x: 0, y: 100 }, 'top', 0],
+    ['a step in a gap', { x: 0, y: 0 }, 'bottom', { x: 40, y: 100 }, 'top', 2],
+    ['an L into a lateral face', { x: 0, y: 0 }, 'bottom', { x: 60, y: 100 }, 'left', 1],
+    ['a U under two nodes', { x: 0, y: 0 }, 'bottom', { x: 80, y: 0 }, 'bottom', 2],
+  ])('naturalPolyline: %s', (_name, a, from, b, into, expected) => {
+    const points = naturalPolyline(a, from, b, into);
+    expect(polylineTurns(points)).toBe(expected);
+    expect(points[0]).toEqual(a);
+    expect(points.at(-1)).toEqual(b);
+  });
+
+  it('counts proper crossings only', () => {
+    const across = [{ x: 0, y: 5 }, { x: 10, y: 5 }];
+    expect(polylineCrossings(across, [{ x: 5, y: 0 }, { x: 5, y: 10 }])).toBe(1);
+    expect(polylineCrossings(across, [{ x: 10, y: 0 }, { x: 10, y: 10 }])).toBe(0);
+    expect(polylineCrossings(across, [{ x: 0, y: 5 }, { x: 0, y: 10 }])).toBe(0);
+  });
+});
+
+describe('which routes the round looks at', () => {
+  it.each<[number | undefined, number, boolean]>([
+    [undefined, 0, true], [4, 0, true], [2, 3, true], [2, 2, false], [1, 9, false], [0, 9, false],
+  ])('a route of %s turns and %s crossings: %s', (bends, crossings, poor) => {
+    expect(poorRoute(bends, crossings)).toBe(poor);
+  });
+});
+
+describe('the course round on the hand-solve sheets (ticket 15, phase 4)', () => {
+  // Case 05 and the 12 D fixture: the removed flank link is drawn into the right face of the canton member, one turn.
+  it('05 / 12 D: the removed flank link takes a course into the right face, with the turns it promised', async () => {
+    const model = await layout(parse(source(ACROSS)), options);
+    expect(model.links.filter(item => item.removed === true)).toEqual([]);
+    expect(side(model, 6, 'to')).toBe('right');
+    expect(side(model, 6, 'from')).toBe('bottom');
+    expect(turns(model, 6)).toBe(1);
+    expect(codes(model)).toContain('COURSE_TAKEN');
+    expect(codes(model)).not.toContain('COURSE_SHAPE_LOST');
+    expect(model.courses!.map(course => course.link)).toEqual(['link-6']);
+    expect(model.lanes.some(lane => lane.kind === 'perimeter' && lane.owner.kind === 'link' && lane.owner.id === 'link-6')).toBe(true);
+    // The kept layout restores: the course, its port faces and its lane are invariants of the published model.
+    const restored = restoreLayoutModel(JSON.stringify(model));
+    expect(restored.courses).toEqual(model.courses);
+  }, 60000);
+
+  // Case 08: OOB leaves its top face, runs under the title of WAN into the left margin and enters SRV 1 from the left in 3 turns.
+  it('08: OOB to SRV 1 leaves the top face, runs in the left margin and enters the left face in 3 turns', async () => {
+    const model = await layout(parse(source(CANTON)), options);
+    expect([side(model, 6, 'from'), side(model, 6, 'to'), turns(model, 6)]).toEqual(['top', 'left', 3]);
+    expect(side(model, 7, 'from')).toBe('right');
+    expect(side(model, 7, 'to')).toBe('top');
+    // The promise of link 7 (a straight drop, read on the baseline) is lost: the courses remove the canton lanes, the servers move with them, and the drop becomes a step.
+    // Link 6 publishes the 3 turns it promised.
+    const lost = model.diagnostics.filter(item => item.code === 'COURSE_SHAPE_LOST').flatMap(item => (item.owners ?? []).map(owner => 'id' in owner ? owner.id : ''));
+    expect(lost).toEqual(['link-7']);
+    expect(Object.values(score(model).snapshot.gates).every(gate => gate.passed)).toBe(true);
+    // No link goes round the canton and comes back under it: both OOB links and the Core jogs are shorter than the 18 turns of the baseline.
+    expect(score(model).snapshot.counts.routed.turns).toBeLessThanOrEqual(14);
+    expect(model.canvas!.x).toBeLessThan(0);
+  }, 60000);
+
+  // The solve draws the drop of OOB to SRV 2 straight into the top of SRV 2 (1 turn). The lane stands beyond the canton, 300 px from SRV 2, and the round
+  // promises no seat for a node that far (P9), so the drop is a step: 3 turns.
+  it.fails('08: OOB to SRV 2 drops straight into the top face (1 turn)', async () => {
+    expect(turns(await layout(parse(source(CANTON)), options), 7)).toBe(1);
+  }, 60000);
+
+  // Case 04: the two courses of the solve are reserved when forced, and publish what the lane geometry reserved. The round itself refuses them, because
+  // the other mesh links gain two turns (one bottom port fewer on N2 re-spaces the rest): 16 turns become 18 against 19 crossings becoming 9.
+  it('04: forced, N2-C1 leaves N2 by the top face and C1-S2 enters S2 from the bottom, 2 turns each', async () => {
+    const courses: Course[] = [
+      { link: 'link-1', kind: 'skirt', side: 'right', from: { face: 'top' }, to: { face: 'top' }, runs: ['padding', 'perimeter', 'tier-gap'] },
+      { link: 'link-2', kind: 'skirt', side: 'right', from: { face: 'bottom' }, to: { face: 'bottom' }, runs: ['tier-gap', 'perimeter', 'padding'] },
+    ];
+    const model = await layout(parse(source(MESH)), { ...options, testCourses: courses });
+    expect([side(model, 1, 'from'), side(model, 1, 'to'), turns(model, 1)]).toEqual(['top', 'top', 2]);
+    expect([side(model, 2, 'from'), side(model, 2, 'to'), turns(model, 2)]).toEqual(['bottom', 'bottom', 2]);
+    expect(score(model).snapshot.counts.routed.crossings).toBeLessThanOrEqual(9);
+    expect(Object.values(score(model).snapshot.gates).filter(gate => !gate.passed).length).toBeLessThanOrEqual(1);
+  }, 60000);
+
+  it('04: the round refuses the courses and the sheet is as it was', async () => {
+    const model = await layout(parse(source(MESH)), options);
+    expect(model.courses).toBeUndefined();
+    expect(model.lanes.some(lane => lane.kind === 'perimeter')).toBe(false);
+    expect(side(model, 1, 'from')).toBe('bottom');
+  }, 60000);
+
+  it('a sheet with no poor route keeps its layout and takes no course', async () => {
+    const model = await layout(parse(source('a-crossing-pair-across-two-tiers-keeps-its-course')), options);
+    expect(model.courses).toBeUndefined();
+    expect(codes(model).filter(code => code.startsWith('COURSE'))).toEqual([]);
+  }, 60000);
+
+  it('the round shares the re-runs of the side round: with none left it takes no course', async () => {
+    const model = await layout(parse(source(ACROSS)), { ...options, testMaxReruns: 0 });
+    expect(model.courses).toBeUndefined();
+    expect(model.links.filter(item => item.removed === true).map(item => item.id)).toEqual(['link-6']);
+  }, 60000);
+
+  it('a link around a neighbour that no perimeter course beats keeps its route', async () => {
+    const model = await layout(parse(source(AROUND)), options);
+    expect(model.courses).toBeUndefined();
+  }, 60000);
+});
+
+describe('the courses a placement run reserves', () => {
+  it('refuses a course whose faces cannot join one lane', async () => {
+    const bad: Course[] = [{ link: 'link-6', kind: 'skirt', side: 'right', from: { face: 'left' }, to: { face: 'top' }, runs: ['perimeter', 'tier-gap'] }];
+    await expect(layout(parse(source(ACROSS)), { ...options, testCourses: bad })).rejects.toThrow();
+  }, 60000);
+});

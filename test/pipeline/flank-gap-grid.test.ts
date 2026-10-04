@@ -79,17 +79,19 @@ it('bundle rows turn toward the near end when the far end enters a member frame'
   expect(model.diagnostics.map(d => d.code)).not.toContain('BUNDLE_ROWS_ALONG_FRAME_EDGE');
 });
 
-// Pinned failures of architecture ticket 12 (causes C and D, not fixed): a change to either is noticed here and the ticket is updated.
+// Pinned failures of architecture ticket 12 (cause C, not fixed): a change to either is noticed here and the ticket is updated.
 it('pinned: a flank link around a neighbour runs along the core edge (ticket 12, cause C)', async () => {
   const yaml = readFileSync(new URL('../../goldens/synthetic/a-flank-link-around-a-neighbour-runs-along-the-core-edge.yaml', import.meta.url), 'utf8');
   const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   expect(score(model).snapshot.gates['G6']!.violations.map(v => [v.code, ...v.elements])).toEqual([['segment-group-edge', 'link-6', 'core']]);
 });
 
-it('pinned: a flank link across a neighbour is removed beside a bundle (ticket 12, cause D)', async () => {
+// Cause D is fixed by the course round (architecture ticket 15, phase 4): the link takes a perimeter course into the right face of the canton member.
+it('a flank link across a neighbour beside a bundle takes a course and is not removed (ticket 12, cause D)', async () => {
   const yaml = readFileSync(new URL('../../goldens/synthetic/a-flank-link-across-a-neighbour-enters-a-bundle-envelope.yaml', import.meta.url), 'utf8');
   const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
-  expect(model.links.filter(link => link.removed === true).map(link => link.id)).toEqual(['link-6']);
+  expect(model.links.filter(link => link.removed === true)).toEqual([]);
+  expect(model.courses?.map(course => course.link)).toEqual(['link-6']);
 });
 
 it('a right flank beside a canton bundle lays out and passes every gate', async () => {

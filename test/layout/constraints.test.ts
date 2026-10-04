@@ -27,7 +27,7 @@ describe('the x constraint catalogue on published layouts', () => {
   for (const sheet of sheets) {
     it(`${sheet.split('/').pop()}: no known hard separation or containment is violated`, async () => {
       const model = await layout(parse(readFileSync(new URL(`../../${sheet}.yaml`, import.meta.url), 'utf8')), {
-        createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
+        createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [],
       });
       const residuals = evaluate(model, xCatalogue(model));
       const name = sheet.split('/').pop()!;

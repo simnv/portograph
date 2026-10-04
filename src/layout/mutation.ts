@@ -1,6 +1,6 @@
 import { equal } from '../model/json-equality.js';
 import type { Rect, Size } from '../model/geometry.js';
-import type { LayoutModel, LayoutStage, MeshBus, PlacementSnapshot } from '../model/layout.js';
+import type { Lane, LayoutModel, LayoutStage, MeshBus, PlacementSnapshot } from '../model/layout.js';
 import { orderedNodeIds, orderedGroupIds } from '../model/model.js';
 import { resolve } from '../resolve/index.js';
 import { filterCss } from '../parse/css.js';
@@ -17,7 +17,7 @@ import { rebuildBands, span, union, validateSkeletonBands } from './skeleton-geo
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, flankPair } from './flanks.js';
 import { rebuildLaneExtents, validateLanes, transitTiers } from './lanes.js';
-import { sameCourses, validateCourses } from './courses.js';
+import { isCourseLane, sameCourses, validateCourses } from './courses.js';
 import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
 import { centreViolations, selectAnchorTier } from './centre.js';
@@ -86,7 +86,7 @@ function semantics(model: LayoutModel) {
 function topology(model: LayoutModel) {
   return orderedNodeIds(model.document).map(id => ({ node: id, ports: model.nodes[id]!.ports.map(port => {
     if (!port.side) throw new Error(`Missing final side on ${id}`);
-    return { ref: port.ref, side: port.side, ...pick(port, ['authorOrder', 'sideHint', 'laneHint', 'naturalSide']) };
+    return { ref: port.ref, side: port.side, ...pick(port, ['authorOrder', 'sideHint', 'laneHint', 'courseHint', 'naturalSide']) };
   }) }));
 }
 /**
@@ -98,7 +98,7 @@ function structure(model: LayoutModel, ordered = false) {
   return {
     nodes: Object.fromEntries(Object.entries(model.nodes).map(([id, node]) => [id, {
       ...pick(node, ['id', 'owner', 'layer', 'strokeWidth']),
-      ports: node.ports.map(port => pick(port, ['ref', 'class', 'side', 'authorOrder', 'owner', 'layer', 'unused', 'sizingSide', 'sideHint', 'laneHint', 'naturalSide'])),
+      ports: node.ports.map(port => pick(port, ['ref', 'class', 'side', 'authorOrder', 'owner', 'layer', 'unused', 'sizingSide', 'sideHint', 'laneHint', 'courseHint', 'naturalSide'])),
     }])),
     groups: Object.fromEntries(Object.entries(model.groups).map(([id, group]) => [id, pick(group, ordered ? ['id', 'owner', 'layer', 'nodes', 'tier', 'frame', 'flank'] : ['id', 'owner', 'layer', 'nodes', 'tier', 'frame', 'flank', 'rowOrder'])])),
     ...pick(model, ['fallbackUsed', 'deadlineHit']),
@@ -166,7 +166,7 @@ function validateDocument(model: LayoutModel): LayoutModel {
     // A hinted port stands on the hinted side; the side the document gives is its natural side (ADR-0022).
     original.ports.forEach((port, index) => {
       const stored = node.ports[index]!;
-      if (port.side) same(stored.sideHint === true ? stored.naturalSide : stored.side, port.side, 'Semantic or authored side differs from document');
+      if (port.side) same(stored.sideHint === true || stored.courseHint === true ? stored.naturalSide : stored.side, port.side, 'Semantic or authored side differs from document');
     });
   }
   for (const id of orderedGroupIds(model.document)) {
@@ -217,6 +217,8 @@ function validatePlacementStructure(model: LayoutModel): void {
 function validateSideHints(model: LayoutModel, resolved: LayoutModel): void {
   for (const id of orderedNodeIds(model.document)) for (const port of model.nodes[id]!.ports) {
     const name = `${id}.${port.ref.name ?? '#'}${port.ref.ordinal}`;
+    if (port.courseHint !== undefined && (port.courseHint !== true || port.sideHint === true || port.naturalSide === undefined || port.naturalSide === port.side)) throw new SideHintRefusal(`Course face on ${name} is not recorded with its natural side`);
+    if (port.courseHint === true) continue;
     if ((port.sideHint === true) !== (port.naturalSide !== undefined) || (port.sideHint !== undefined && port.sideHint !== true)) throw new SideHintRefusal(`Side hint on ${name} is not recorded with its natural side`);
     if (port.laneHint !== undefined && (port.laneHint !== true || port.sideHint !== true)) throw new SideHintRefusal(`Lane hint on ${name} is not a side hint`);
     if (port.sideHint !== true) continue;
@@ -472,7 +474,7 @@ function validateFreeze(model: LayoutModel): void {
     same(freeze.nodeFloors.map(floor => floor.node), ids, 'Node floors name a node twice, out of order, or not at all');
     for (const floor of freeze.nodeFloors) {
       if (!(floor.size.width > 0) || !(floor.size.height > 0)) throw new SideHintRefusal(`Invalid node floor on ${floor.node}`);
-      if (!model.nodes[floor.node]!.ports.some(port => port.sideHint === true)) throw new SideHintRefusal(`Node floor on ${floor.node}, which has no hinted port`);
+      if (!model.nodes[floor.node]!.ports.some(port => port.sideHint === true || port.courseHint === true)) throw new SideHintRefusal(`Node floor on ${floor.node}, which has no hinted port`);
     }
   }
   if (stages.indexOf(model.stage) >= stages.indexOf('bands')) {
@@ -642,8 +644,9 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     }
   }
   if (rule !== 'lanes') {
-    same(draft.lanes.map(lane => ({ ...lane, bounds: pick(lane.bounds, ['x', 'width']) })),
-      model.lanes.map(lane => ({ ...lane, bounds: pick(lane.bounds, ['x', 'width']) })), 'Established lane identity, owner, x and width cannot change');
+    // A course lane's x is derived from the boxes at each replay (ticket 15, Section 2); its id, owner, side, ring, span and width are fixed.
+    const identity = (lane: Lane) => isCourseLane(lane) ? { ...lane, x: 0, bounds: pick(lane.bounds, ['width']) } : { ...lane, bounds: pick(lane.bounds, ['x', 'width']) };
+    same(draft.lanes.map(identity), model.lanes.map(identity), 'Established lane identity, owner, x and width cannot change');
   } else if (model.lanes.length) throw new Error('Lanes cannot be reallocated');
   const supplied = clone(draft);
   rebuildRegions(supplied); rebuildLaneExtents(supplied);

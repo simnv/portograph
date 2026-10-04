@@ -1,4 +1,3 @@
-import type { ShadowPlan } from './course-shadow.js';
 
 /**
  * Counters of the repeated work inside the stage-7f placement attempt. They exist for tests and measurements only: nothing reads them to
@@ -45,8 +44,6 @@ export interface AttemptCounters {
   placements: PlacementEntry[];
   /** One entry for each run of the 7f attempt, in order (the baseline, then the side trial). Filled only with the ledger on, except the round counts. */
   attemptLog: AttemptEntry[];
-  /** One shadow course plan (ticket 15, phase 3) for each run of the stages 1 to 7e, in order. Filled only with the ledger on; nothing reads it to decide anything. */
-  shadows: ShadowPlan[];
 }
 
 /** What the stages 1 to 7e of one placement run lost: routed chords, and straight overlay links over all stages and at `centre` alone. */
@@ -92,7 +89,7 @@ const zeroInvalidations = (): Invalidations => ({ closeUpReopened: 0, gapRegrown
 
 export const attemptCounters: AttemptCounters = { settleCalls: 0, centringPasses: 0, candidateCopies: 0, validationReplays: 0, replays: 0, settledTrials: 0,
   cheapTrials: 0, gapRounds: 0, placeRuns: 0, attempts: 0, rounds: 0, openRounds: 0, chordRoundsMoved: 0, reseat: { adopted: 0, refused: 0, none: 0 },
-  ledger: false, in7f: 0, invalidations: zeroInvalidations(), placements: [], attemptLog: [], shadows: [] };
+  ledger: false, in7f: 0, invalidations: zeroInvalidations(), placements: [], attemptLog: [] };
 
 /** Zeroes every count. The `ledger` switch stays as the caller set it. */
 export function resetAttemptCounters(): void {
@@ -101,5 +98,5 @@ export function resetAttemptCounters(): void {
   c.replays = 0; c.settledTrials = 0; c.cheapTrials = 0; c.gapRounds = 0; c.placeRuns = 0;
   c.attempts = 0; c.rounds = 0; c.openRounds = 0; c.chordRoundsMoved = 0;
   c.reseat = { adopted: 0, refused: 0, none: 0 }; c.in7f = 0; c.invalidations = zeroInvalidations();
-  c.placements = []; c.attemptLog = []; c.shadows = [];
+  c.placements = []; c.attemptLog = [];
 }

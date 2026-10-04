@@ -72,7 +72,8 @@ describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
     expect(counts(model).overlay.turns).toBe(4);
   }, 60000);
 
-  it.fails('04 (phase 4): N2-C1 leaves N2 by the top face, C1-S2 enters S2 from the bottom, N1-S2 keeps its lane; crossings 19 -> 9 at most', async () => {
+  // The round refuses the two courses (the other mesh links gain two turns): test/pipeline/course-round.test.ts pins the forced shape.
+  it.fails('04 (phase 4, refused by the judge): N2-C1 leaves N2 by the top face, C1-S2 enters S2 from the bottom, N1-S2 keeps its lane; crossings 19 -> 9 at most', async () => {
     const model = await run(SHEETS.mesh);
     expect(sideOf(model, 1, 'from')).toBe('top');
     expect(sideOf(model, 2, 'to')).toBe('bottom');
@@ -81,7 +82,7 @@ describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
     expect(counts(model).routed.turns).toBe(16);
   }, 60000);
 
-  it.fails('05 / 12 D (phase 4): the flank link into the canton member is drawn, into its right face, with 1 turn', async () => {
+  it('05 / 12 D (phase 4): the flank link into the canton member is drawn, into its right face, with 1 turn', async () => {
     const model = await run(SHEETS.across);
     expect(model.links.filter(item => item.removed === true).map(item => item.id)).toEqual([]);
     expect(sideOf(model, 6, 'to')).toBe('right');
@@ -99,10 +100,15 @@ describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
     expect([sideOf(model, 10, 'from'), sideOf(model, 10, 'to')]).toEqual(['right', 'top']);
   }, 60000);
 
-  it.fails('08 (phase 4): OOB top -> left margin -> SRV 1 left (3 turns); OOB right -> drop -> SRV 2 top (1 turn)', async () => {
+  it('08 (phase 4): OOB top -> left margin -> SRV 1 left (3 turns)', async () => {
     const model = await run(SHEETS.canton);
     expect([sideOf(model, 6, 'from'), sideOf(model, 6, 'to'), turns(model, 6)]).toEqual(['top', 'left', 3]);
-    expect([sideOf(model, 7, 'from'), sideOf(model, 7, 'to'), turns(model, 7)]).toEqual(['right', 'top', 1]);
+    expect([sideOf(model, 7, 'from'), sideOf(model, 7, 'to')]).toEqual(['right', 'top']);
+  }, 60000);
+
+  // The solve drops the link straight into SRV 2 (1 turn); the lane stands 300 px from SRV 2 and the round does not seat a node that far (P9): 3 turns.
+  it.fails('08 (phase 4, not reached): OOB right -> drop -> SRV 2 top (1 turn)', async () => {
+    expect(turns(await run(SHEETS.canton), 7)).toBe(1);
   }, 60000);
 
   it.fails('09 / 12 C (phase 5): Mgmt-Core leaves the bottom face and enters Core left in 3 turns; Mgmt-Dist runs the Core-Campus gap in 4; G6 holds', async () => {

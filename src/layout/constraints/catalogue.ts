@@ -1,6 +1,6 @@
 import type { LayoutModel } from '../../model/layout.js';
 import { COLUMN_SLACK } from '../columns.js';
-import { CELL_TO_CHILD_FRAME_GAP, FRAME_TO_FRAME_GAP, cellReach } from '../frames.js';
+import { CELL_TO_CHILD_FRAME_GAP, FRAME_TO_FRAME_GAP, cellReach, isTransitKind } from '../frames.js';
 import { GROUP_PADDING } from '../regions.js';
 import { bandGap } from '../skeleton-graph.js';
 import { ownerId, type Constraint, type ConstraintKind, type Term } from './types.js';
@@ -107,7 +107,7 @@ export function xCatalogue(model: LayoutModel, options: CatalogueOptions = {}): 
     // Held lanes: a transit or riser lane of a link that touches the frame stays inside it.
     const cells = new Set(cellsDeep(frame.id)), inside = nodesOf(frame.id);
     for (const lane of model.lanes) {
-      if (!cells.has(lane.group) || lane.kind === 'side') continue;
+      if (!cells.has(lane.group) || !isTransitKind(lane)) continue;
       if (lane.owner.kind === 'mesh-bus') {
         const bus = model.meshBuses?.find(item => item.id === ownerId(lane.owner)), other = model.meshBuses?.find(item => item.id === bus?.joined);
         if (!bus || ![...bus.nodes, ...(other?.nodes ?? [])].some(node => inside.has(node))) continue;

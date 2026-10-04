@@ -21,7 +21,7 @@ const failing = (model: LayoutModel): string[] => Object.entries(score(model).sn
   .flatMap(([id, gate]) => gate.violations.map(item => `${id}:${item.code}`));
 
 async function whole(name: string): Promise<{ placed: LayoutModel; routed: LayoutModel }> {
-  return { placed: await place(name), routed: await layout(parse(read(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt }) };
+  return { placed: await place(name), routed: await layout(parse(read(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [] }) };
 }
 
 describe('7f grows the gaps by the plan and stage 8 reserves what it planned (ranked-groups ticket 50)', () => {

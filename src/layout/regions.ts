@@ -4,6 +4,7 @@ import { measurePortPill } from '../text/index.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { rebuildBands, union } from './skeleton-geometry.js';
 import { heldBusRoom } from './bus-room.js';
+import { paddingRows, rowsInset, rowsInsetUnderTitle } from './course-rows.js';
 
 export const right = (box: Rect): number => box.x + box.width;
 export const bottom = (box: Rect): number => box.y + box.height;
@@ -20,6 +21,8 @@ export function groupPadding(model: LayoutModel, group: LayoutGroup): { top: num
     padding[port.side] = Math.max(padding[port.side], GROUP_PADDING
       + measurePortPill(port.ref.name).width / 2 + DEFAULT_STROKE_WIDTHS.pill / 2);
   }
+  // The padding rows of the courses that end in this group (ticket 15): the edge holds the stem, the rows and the edge margin.
+  for (const [side, rows] of Object.entries(paddingRows(model, group)) as ['top' | 'bottom', NonNullable<ReturnType<typeof paddingRows>['top']>][]) padding[side] = Math.max(padding[side], rowsInset(rows));
   return group.frame === undefined ? padding : cellPadding(model, group, padding);
 }
 /**
@@ -46,6 +49,8 @@ export const bandHeldBy = (model: LayoutModel, groupId: string): LayoutModel['la
 export function groupInsets(model: LayoutModel, group: LayoutGroup): { top: number; right: number; bottom: number; left: number } {
   const padding = groupPadding(model, group), band = bandHeldBy(model, group.id);
   const inset = band ? { ...padding, [band.side]: band.bounds.height + band.clearance } : padding;
+  const rows = band === undefined || (band.side !== 'top' && band.side !== 'bottom') ? undefined : paddingRows(model, group)[band.side];
+  if (band !== undefined && rows !== undefined) inset[band.side] = Math.max(inset[band.side], rowsInsetUnderTitle(rows, band.bounds.height));
   // An in-frame bus band lies against the padding on its edge (mesh-bus.md, section 4). On the title edge it is
   // already in the band's clearance.
   const bus = heldBusRoom(model, group);

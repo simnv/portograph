@@ -55,8 +55,10 @@ export function tiedPortComponents(model: LayoutModel): Map<string, string> {
  * A side hint (docs/design/side-faces.md, Section 7) ranks below an author `side:` and above this rule: the port takes the hinted lateral
  * side and records the side the rule gives as `naturalSide`. For a port the rule leaves undecided that is the capacity estimate, kept in
  * `sizingSide` for stage 5, which replaces it with the side its vote gives.
+ * A course face (architecture ticket 15, Section 1) ranks above a hint: the port takes the face and records the side the rule gives as `naturalSide`, with `courseHint`.
+ * The face may be any side but the natural one (it may point away from the peer); an author `side:` still wins, and the plan never offers a face on such a port.
  */
-export function sidesOne(model: LayoutModel, hints: SideHints = NO_SIDE_HINTS, laneHints: ReadonlySet<string> = new Set()): LayoutModel {
+export function sidesOne(model: LayoutModel, hints: SideHints = NO_SIDE_HINTS, laneHints: ReadonlySet<string> = new Set(), courseFaces: ReadonlyMap<string, Side> = new Map()): LayoutModel {
   if (model.stage !== 'resolve') throw new Error('Phase-one sides require the resolve stage');
   if (hints.size) checkSideHints(model, hints);
   const components = tiedPortComponents(model);
@@ -129,8 +131,14 @@ export function sidesOne(model: LayoutModel, hints: SideHints = NO_SIDE_HINTS, l
         // A known winner is safe only if either possible lateral total cannot displace it.
         const safe = entry.known[selected] > 0 && (['left', 'right'] as const).every(side =>
           winner({ ...entry.known, [side]: entry.known[side] + entry.unresolved }) === selected);
-        const hint = hints.get(portKey(port.ref));
-        if (hint !== undefined) {
+        const hint = hints.get(portKey(port.ref)), face = courseFaces.get(portKey(port.ref));
+        if (face !== undefined) {
+          const natural = safe ? selected : winner(entry.predicted);
+          if (face === natural) throw new SideHintRefusal(`Course face on ${port.ref.node}.${port.ref.name ?? '#'}${port.ref.ordinal} refused: it is the natural side ${natural}`);
+          port.courseHint = true; port.naturalSide = natural; port.side = face;
+          if (!safe) port.sizingSide = natural;
+          capacity[natural]++;
+        } else if (hint !== undefined) {
           const natural = safe ? selected : winner(entry.predicted);
           if (safe && natural !== 'top' && natural !== 'bottom') throw new SideHintRefusal(`Side hint on ${port.ref.node}.${port.ref.name ?? '#'}${port.ref.ordinal} refused: its natural side is ${natural}`);
           port.sideHint = true; port.naturalSide = natural; port.side = hint;

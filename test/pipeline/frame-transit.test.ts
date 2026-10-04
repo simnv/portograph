@@ -8,7 +8,7 @@ import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
-const run = (name: string) => layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const run = (name: string) => layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [] });
 const right = (box: Rect): number => box.x + box.width;
 const bottom = (box: Rect): number => box.y + box.height;
 const holds = (outer: Rect, inner: Rect): boolean => outer.x <= inner.x + 1e-6 && outer.y <= inner.y + 1e-6
