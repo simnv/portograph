@@ -72,6 +72,26 @@ it('a bundle of parallel links turns clear of a canton frame edge', async () => 
   expect(Object.values(gates).every(gate => gate.passed)).toBe(true);
 });
 
+it('bundle rows turn toward the near end when the far end enters a member frame', async () => {
+  const yaml = readFileSync(new URL('../../goldens/synthetic/a-bundle-rows-turn-near-when-the-far-end-enters-a-frame.yaml', import.meta.url), 'utf8');
+  const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  expect(score(model).snapshot.gates['G6']!.violations).toEqual([]);
+  expect(model.diagnostics.map(d => d.code)).not.toContain('BUNDLE_ROWS_ALONG_FRAME_EDGE');
+});
+
+// Pinned failures of architecture ticket 12 (causes C and D, not fixed): a change to either is noticed here and the ticket is updated.
+it('pinned: a flank link around a neighbour runs along the core edge (ticket 12, cause C)', async () => {
+  const yaml = readFileSync(new URL('../../goldens/synthetic/a-flank-link-around-a-neighbour-runs-along-the-core-edge.yaml', import.meta.url), 'utf8');
+  const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  expect(score(model).snapshot.gates['G6']!.violations.map(v => [v.code, ...v.elements])).toEqual([['segment-group-edge', 'link-6', 'core']]);
+});
+
+it('pinned: a flank link across a neighbour is removed beside a bundle (ticket 12, cause D)', async () => {
+  const yaml = readFileSync(new URL('../../goldens/synthetic/a-flank-link-across-a-neighbour-enters-a-bundle-envelope.yaml', import.meta.url), 'utf8');
+  const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  expect(model.links.filter(link => link.removed === true).map(link => link.id)).toEqual(['link-6']);
+});
+
 it('a right flank beside a canton bundle lays out and passes every gate', async () => {
   const yaml = readFileSync(new URL('../../goldens/synthetic/a-right-flank-beside-a-bundle-into-a-canton.yaml', import.meta.url), 'utf8');
   const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });

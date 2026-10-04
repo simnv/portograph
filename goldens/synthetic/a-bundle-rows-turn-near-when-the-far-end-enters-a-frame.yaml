@@ -1,4 +1,4 @@
-# Pinned failure (architecture ticket 12, cause B): an upper feed puts the canton member left of its core, and the bundle's first stem stands 2.4 px from the member frame's side edge, so G6 segment-group-edge fails on 'east'. No flank is needed. Placement keeps no margin between a core port column and a frame side.
+# Expected: two parallel links from a core on tier 1 to a canton member on tier 2, with an upper feed that puts the member left of the core (architecture ticket 12). The centred row stands on the canton frame edge. Moving it toward the far end puts it past the canton frame and into the member frame, so its stem runs along the member frame side; the rows move toward the near end instead (402.25 and 384.75), clear of both frames. G6 passes.
 # Source: architecture ticket 12 matrix.
 portograph: 2
 profile: network
