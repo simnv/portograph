@@ -11,6 +11,7 @@ import { growTierGaps } from './gap-room.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { tierGapPlans } from './gap-plan.js';
 import { attemptCounters } from './attempt-counters.js';
+import { countStep, ledgerOn, ledgerSnapshot, startAttemptEntry, type LedgerSnapshot } from './attempt-ledger.js';
 
 /**
  * The stage-7f placement attempt: the producer of the `bands` rule (ADR-0010, ADR-0015). `withLayoutMutation` invokes it on its own draft,
@@ -80,6 +81,7 @@ export function replayGridAndLabels(model: LayoutModel): void {
  * the rounds below and the chord trials all call it.
  */
 export function replayRegions(model: LayoutModel): void {
+  attemptCounters.replays++;
   rebuildRegionGeometry(model, undefined, undefined, true);
   replayGridAndLabels(model);
 }
@@ -91,9 +93,10 @@ export function replayRegions(model: LayoutModel): void {
  * One round of the growth and the close-up, on any model: the loop runs it on the draft, and the step over a chord (ticket 77)
  * runs it on a copy to see what a move settles into. It returns the shift of the close-up.
  */
-export function settleRound(model: LayoutModel): number {
+export function settleRound(model: LayoutModel, tap?: (step: 'grow' | 'close-up' | 'keep-out', changed: boolean) => void): number {
   attemptCounters.settleCalls++;
-  if (growTierGaps(model)) {
+  const grew = growTierGaps(model);
+  if (grew) {
     // The replay refits every group box to its content, so a linked pair the first step gave one
     // x-extent (ADR-0012) holds two again and the published model would not be the grid's fixed
     // point — which is what `validateGroupLabelBands` demands. The grid is settled here, before
@@ -102,10 +105,14 @@ export function settleRound(model: LayoutModel): number {
     // before it (once, then the replay; ticket 136), and a label planned in the narrower box would be centred on the box the grid then widens.
     replayRegions(model);
   }
+  tap?.('grow', grew);
   const shift = closeCantonsAndSettle(model);
   if (shift > 0) replayRegions(model);
+  tap?.('close-up', shift > 0);
   // A frame edge a foreign drop would run along is moved off it before anything is planned in the geometry (ticket 75).
-  if (settleKeepOut(model)) replayRegions(model);
+  const kept = settleKeepOut(model);
+  if (kept) replayRegions(model);
+  tap?.('keep-out', kept);
   return shift;
 }
 
@@ -117,8 +124,22 @@ export function trialSettle(probe: LayoutModel): void { replayRegions(probe); se
  * the caller validates and freezes it after this returns.
  */
 export function placementAttempt(draft: LayoutModel, options: AttemptOptions = {}): void {
+  attemptCounters.attempts++; attemptCounters.in7f++;
+  try { attemptBody(draft, options); } finally { attemptCounters.in7f--; }
+}
+
+function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
   const { abortAt, trace } = options;
   const note = (pass: string, verdict: string): void => { if (trace) trace({ pass, revision: revisionOf(draft), verdict }); };
+  // The ledger (architecture ticket 13, phase 1): what each step loses and gains, read only when a test or the trace asks for it.
+  const ledger = ledgerOn(trace !== undefined), entry = startAttemptEntry(ledger);
+  let seen: LedgerSnapshot | undefined = ledger ? ledgerSnapshot(draft) : undefined;
+  const account = (pass: string): void => {
+    if (seen === undefined) return;
+    const now = ledgerSnapshot(draft);
+    note(`ledger:${pass}`, countStep(seen, now, entry));
+    seen = now;
+  };
   // 7f reserves two things. A tier gap grows to the rows the plan must seat in it
   // (ADR-0015 rule 1) before any label is placed, because the growth moves whole bands down and
   // a label placed first would stay behind. The replay then rebuilds every claim the movement
@@ -129,6 +150,7 @@ export function placementAttempt(draft: LayoutModel, options: AttemptOptions = {
   note('freeze-chords', 'done');
   produceGroupLabelBands(draft);
   note('group-label-bands', 'done');
+  account('freeze');
   abortAt?.();
   // The cantons close up when a round's close-up has nothing to move. The step over a chord (ticket 77) has its own convergence: a round
   // that moved something runs one more, so the growth and the close-up are measured on the geometry that stands, and the last round runs
@@ -138,19 +160,34 @@ export function placementAttempt(draft: LayoutModel, options: AttemptOptions = {
   for (let round = 0; round < CANTON_ROUNDS && (!closed || again); round++) {
     abortAt?.();
     // A creep under half a pixel, left by the centring replay, counts as settled; the replay still follows any move.
-    const shift = settleRound(draft);
+    const afterChords = again;
+    const shift = settleRound(draft, (step, changed) => {
+      if (step === 'grow' && changed && round > 0) attemptCounters.invalidations.gapRegrown++;
+      account(`round-${round}:${step}`);
+    });
     closed = shift < CANTON_CREEP;
+    attemptCounters.rounds++; entry.rounds++;
+    if (!closed) { attemptCounters.openRounds++; entry.openRounds++; if (afterChords) attemptCounters.invalidations.closeUpReopened++; }
     note(`round-${round}:settle`, closed ? 'closed' : 'open');
     // The growth and the close-up change the slope of a chord that spans a gap and the x of a column: a group with no links
     // steps out of a chord again, after the replays (ticket 76 review). Cheap and idempotent.
     const linkless = stepLinklessOutOfChords(draft);
     note(`round-${round}:linkless`, linkless ? 'moved' : 'unchanged');
+    account(`round-${round}:linkless`);
     // A chord between two tiers keeps the tiers between it free of nodes. A move is judged on a copy that the replays and a round of
     // `settle` have run, which is what the next round does.
     const cleared = round < CANTON_ROUNDS - 1 && stepOverChords(draft, trialSettle, movers);
     note(`round-${round}:chords`, cleared ? 'moved' : 'unchanged');
+    if (cleared) { attemptCounters.chordRoundsMoved++; entry.chordRoundsMoved++; }
+    account(`round-${round}:chords`);
     if (linkless || cleared) replayRegions(draft);
+    account(`round-${round}:replay`);
     again = cleared;
+  }
+  if (ledger) {
+    const short = shortGaps(draft).length;
+    attemptCounters.invalidations.shortGapsAfterRounds += short;
+    note('ledger:short-gaps', String(short));
   }
   // The held-axis warnings say where a column stood when they were raised; the replays above move columns after that (a centring replay
   // that has budget again, ticket 75). A probe pass over a copy says what they say now. When it moves nothing its warnings replace ours,
@@ -162,9 +199,11 @@ export function placementAttempt(draft: LayoutModel, options: AttemptOptions = {
     draft.diagnostics = [...draft.diagnostics.filter(item => item.code !== 'COLUMN_AXIS_HELD'), ...probe.diagnostics.filter(item => item.code === 'COLUMN_AXIS_HELD')];
     note('held-axes', 'replaced');
   } else {
+    attemptCounters.invalidations.heldProbeMoved++;
     refreshHeldWarnings(draft);
     note('held-axes', 'refreshed');
   }
+  if (!closed) attemptCounters.invalidations.cantonNonConvergence++;
   if (!closed && !draft.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE' && item.message.startsWith('The cantons'))) draft.diagnostics.push({
     stage: 'placement', severity: 'warning', code: 'PLACEMENT_NON_CONVERGENCE',
     message: `The cantons did not settle a band gap apart in ${CANTON_ROUNDS} rounds of the close-up and the replay; final gates decide the retained geometry.`,
@@ -232,12 +271,14 @@ export function placementAttempt(draft: LayoutModel, options: AttemptOptions = {
       // Adopt the trial whole: `draft` is the object this transaction validates and returns, so it
       // takes the settled state rather than repeating the two producers on itself.
       Object.assign(draft, settled);
+      attemptCounters.reseat.adopted++;
       note('reseat-lanes', 'adopted');
     } else {
       draft.diagnostics = draft.diagnostics.filter(item => item.code !== 'LANE_FOLLOWS_ITS_CHILD');
+      attemptCounters.reseat.refused++;
       note('reseat-lanes', 'refused');
     }
-  } else note('reseat-lanes', 'none');
+  } else { attemptCounters.reseat.none++; note('reseat-lanes', 'none'); }
   // A move 7f cannot refuse (a title band's room, a tier gap's rows) may still leave a body on a held chord.
   // The chord is kept, its link is named, and the final gates judge it; it never falls back (ticket 34).
   for (const id of blockedChords(draft)) {

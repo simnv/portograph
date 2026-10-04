@@ -201,6 +201,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
   const settled = (): Verdict | undefined => {
     try {
       const probe = copy(model);
+      attemptCounters.settledTrials++;
       follow!(probe);
       return verdict(probe, overlays);
     } catch {
@@ -281,6 +282,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
       rebuildNodeGeometry(model, nodes, 'current');
       const after = readOverlays(model, overlays);
       let ok = extra() && gains(after, before, profiles.settled) && blockedChords(model).every(id => blocked.has(id));
+      attemptCounters.cheapTrials++;
       tapVerdict('attemptCheap', () => `${ok} ${after.overlay.straight}/${before.overlay.straight}`);
       // Cheap refusals of a lower rank, before a settled copy is paid for (ticket 146): a crossing added, a drift the column rules would undo.
       if (ok && rank !== undefined) {
