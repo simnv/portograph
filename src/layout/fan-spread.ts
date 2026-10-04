@@ -1,9 +1,10 @@
 import type { Side } from '../model/geometry.js';
 import type { Diagnostic, LayoutLink, LayoutModel, LayoutPort, PathSegment } from '../model/layout.js';
-import { EPS, intersection, samePoint, segmentDistance } from '../score/geometry.js';
+import { EPS, segmentDistance } from '../score/geometry.js';
 import { linkStrokeWidth } from '../theme/geometry.js';
 import { chordClearances, chordKind, isRoutedChord, routedChordCandidate, standaloneChord } from './frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
+import { strictCrossing } from './read/crossings.js';
 import { portId } from './skeleton-graph.js';
 
 /**
@@ -20,12 +21,6 @@ export const FAN_SLACK = 4;
 export interface FanMeasure {
   floors: Map<string, Partial<Record<Side, number>>>;
   declined: { node: string; side: Side; links: string[] }[];
-}
-
-/** Whether two chords cross strictly: crossing is allowed, closeness is not (G6). */
-function strictCrossing(a: PathSegment, b: PathSegment): boolean {
-  const point = intersection(a, b);
-  return point !== undefined && ![a.from, a.to, b.from, b.to].some(end => samePoint(end, point));
 }
 
 /**

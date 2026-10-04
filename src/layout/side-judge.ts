@@ -1,7 +1,8 @@
-import type { Diagnostic, LayoutLink, LayoutModel, LayoutNode, LayoutPort, PathSegment } from '../model/layout.js';
+import type { Diagnostic, LayoutLink, LayoutModel, LayoutNode, LayoutPort } from '../model/layout.js';
 import type { Point, Rect } from '../model/geometry.js';
-import { EPS, intersection, near, samePoint } from '../score/geometry.js';
+import { EPS, near } from '../score/geometry.js';
 import { isRoutedChord } from './frame-paths.js';
+import { crossingsOf } from './read/crossings.js';
 import { hintsFacingAway } from './side-hints.js';
 import { overlayBlockers } from './overlay-paths.js';
 import { plannedBends } from './side-measure.js';
@@ -31,18 +32,7 @@ export const routedBends = (model: LayoutModel): Map<string, number> => {
   return bends;
 };
 
-const strictCrossing = (a: PathSegment, b: PathSegment): boolean => {
-  const point = intersection(a, b);
-  return point !== undefined && ![a.from, a.to, b.from, b.to].some(end => samePoint(end, point));
-};
-
-/** How many other links a routed link crosses (no slack, both paths as published). */
-export function crossingsOf(model: LayoutModel, id: string): number {
-  const one = model.links.find(link => link.id === id)?.path?.segments;
-  if (one === undefined) return 0;
-  return model.links.filter(other => other.id !== id && other.path !== undefined && other.removed !== true
-    && one.some(a => other.path!.segments.some(b => strictCrossing(a, b)))).length;
-}
+export { crossingsOf };
 
 export const straightChords = (model: LayoutModel): number => model.links.filter(link => isRoutedChord(model, link)).length;
 

@@ -21,6 +21,7 @@ import { bandGap } from './skeleton-graph.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { attemptCounters } from './attempt-counters.js';
 import { nodeTier } from './read/tier.js';
+import { overlayCrossingPairs } from './read/crossings.js';
 import { standsInRootCanton } from './read/canton.js';
 
 /** How many candidate x a group or a node tries, nearest first, before it stays (ticket 77). */
@@ -50,29 +51,7 @@ interface Reading {
   crossings: () => number;
 }
 
-/** A path as the crossing count reads it: its segments. */
-type Trace = readonly { from: { x: number; y: number }; to: { x: number; y: number } }[];
-
-/**
- * The pairs of paths that cross: one segment of one meets one segment of the other in a point that is inside both (at least EPS from
- * each end). A touch at an end, and parallel segments, are no crossing. A pair counts once.
- */
-export function overlayCrossings(paths: readonly Trace[]): number {
-  let found = 0;
-  for (let i = 0; i < paths.length; i++) for (let j = i + 1; j < paths.length; j++) {
-    const meets = paths[i]!.some(a => paths[j]!.some(b => {
-      const ax = a.to.x - a.from.x, ay = a.to.y - a.from.y, bx = b.to.x - b.from.x, by = b.to.y - b.from.y;
-      const d = ax * by - ay * bx;
-      if (Math.abs(d) < 1e-9) return false;
-      const cx = b.from.x - a.from.x, cy = b.from.y - a.from.y;
-      const t = (cx * by - cy * bx) / d, u = (cx * ay - cy * ax) / d;
-      const la = Math.hypot(ax, ay), lb = Math.hypot(bx, by);
-      return t * la > EPS && (1 - t) * la > EPS && u * lb > EPS && (1 - u) * lb > EPS;
-    }));
-    if (meets) found++;
-  }
-  return found;
-}
+export { overlayCrossingPairs as overlayCrossings };
 
 /** A move of a lower rank, as the choice reads it (ticket 146). */
 export interface RankMove { dx: number; crossings: number; straight: number; /** The straight overlay links the move bends: 0 when absent. */ bent?: number }
@@ -113,7 +92,7 @@ function read(model: LayoutModel, overlays: readonly LayoutLink[]): Reading {
   const paths = overlays.map(link => ({ id: link.id, segments: overlayPath(model, link, blockers).segments }));
   const overlay = new Set(paths.filter(path => path.segments.length === 1).map(path => path.id));
   let counted: number | undefined;
-  const crossings = (): number => (counted ??= overlayCrossings(paths.map(path => path.segments)));
+  const crossings = (): number => (counted ??= overlayCrossingPairs(paths.map(path => path.segments)));
   const routed = new Set(routedLinks(model).filter(link => {
     if (isRoutedChord(model, link)) return true;
     const from = findPort(model, link.attachments!.from)?.anchor, to = findPort(model, link.attachments!.to)?.anchor;
