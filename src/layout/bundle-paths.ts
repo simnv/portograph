@@ -5,7 +5,7 @@ import { bundleFans, crossBundleFans } from './bundle-junctions.js';
 import { junctionChain, junctionFan, mergedRun, sharedStem } from '../score/model.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { EPS, intersection, overlapSegment, samePoint, segmentDistance } from '../geometry/planar.js';
-import { MEMBER_GAP, MIN_STEM, clone, coordinate, facing, inversionPairs, members, normal, outward, pitch, type Member } from './bundle-geometry.js';
+import { MEMBER_GAP, MIN_STEM, clearOfGroupEdges, clone, coordinate, edgeMargin, facing, inversionPairs, members, normal, outward, pitch, type DepthPair, type Member } from './bundle-geometry.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 
 export class BundleFeasibilityError extends Error {
@@ -301,11 +301,18 @@ function straightPaths(bundle: Bundle, list: Member[]): Map<string, PathSegment[
 }
 
 /** Non-inverted members turn in distinct rows, including when their endpoint pitches differ. */
-function parallelPaths(bundle: Bundle, list: Member[], q: number): Map<string, PathSegment[]> {
+function parallelPaths(model: LayoutModel, bundle: Bundle, list: Member[], q: number): Map<string, PathSegment[]> {
   const n = normal(list[0]!.a.side!), horizontal = n.x !== 0;
   const depth = (p: Point): number => n.x * p.x + n.y * p.y;
   const start = Math.max(...list.map(item => depth(item.a.anchor!))) + 15;
   const end = Math.min(...list.map(item => depth(item.b.anchor!))) - 15;
+  // A canton frame is a group edge too (ADR-0013), but it is no entry of `model.groups`: its cells are. A row that stands on a frame edge
+  // moves one edge margin beyond it, toward the far end of the channel, when the rows still fit before `end`.
+  const margin = edgeMargin(Math.max(...list.map(item => linkStrokeWidth(item.link))));
+  const frames: DepthPair[] = (model.frames ?? []).map(({ box }) => {
+    const values = [depth({ x: box.x, y: box.y }), depth({ x: box.x + box.width, y: box.y + box.height })];
+    return [Math.min(...values), Math.max(...values)] as DepthPair;
+  });
   const result = new Map<string, PathSegment[]>();
   for (const direction of [-1, 1]) {
     const turning = list.filter(item => Math.sign(coordinate(item.b) - coordinate(item.a)) === direction)
@@ -314,8 +321,12 @@ function parallelPaths(bundle: Bundle, list: Member[], q: number): Map<string, P
     if (turning.length && end - start < span - PLACEMENT_EPS) {
       throw new BundleFeasibilityError('BUNDLE_CHANNEL_CAPACITY', bundle.id, `Need ${span} px for distinct member turns, have ${end - start}.`);
     }
+    const first = (start + end - span) / 2, rows: number[] = [];
+    for (let i = 0; i < turning.length; i++) rows.push(clearOfGroupEdges(Math.max(first + i * q, (rows[i - 1] ?? -Infinity) + q), frames, 1, margin));
+    // Cleared rows that no longer fit stay where the channel centres them; a gate reports what is left.
+    const placed = rows.length && rows[rows.length - 1]! > end + PLACEMENT_EPS ? turning.map((_, i) => first + i * q) : rows;
     for (const [index, item] of turning.entries()) {
-      const a = item.a.anchor!, b = item.b.anchor!, row = (start + end - span) / 2 + index * q;
+      const a = item.a.anchor!, b = item.b.anchor!, row = placed[index]!;
       result.set(item.link.id, polyline(horizontal
         ? [a, { x: n.x * row, y: a.y }, { x: n.x * row, y: b.y }, b]
         : [a, { x: a.x, y: n.y * row }, { x: b.x, y: n.y * row }, b], bundle.owner));
@@ -338,7 +349,7 @@ export function rebuildBundlePaths(model: LayoutModel): void {
     const straight = straightMembers(model, bundle, channel, q);
     const crossing = inversions && facing(list) && !model.lanes.some(l => l.owner.kind === 'link' && bundle.members.includes(l.owner.id))
       ? straight ? straightPaths(bundle, channel) : crossedPaths(bundle, channel, q) : undefined;
-    const parallel = !inversions && facing(list) ? parallelPaths(bundle, channel, q) : undefined;
+    const parallel = !inversions && facing(list) ? parallelPaths(model, bundle, channel, q) : undefined;
     for (const item of list) {
       const routed = channel.find(m => m.link.id === item.link.id)!;
       const reserved = reservedPath(model, bundle, item, routed);

@@ -682,9 +682,13 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
       && group.nodes.some(node => model.links.some(link => link.layer === 'routed' && link.attachments
         && (link.attachments.from.node === node || link.attachments.to.node === node)))) throw new Error(`Centring cannot reorder ${id}: a node of it has a routed link`);
     // Rows may re-seat a whole band (ranked-groups ticket 18), so a flank or a non-row group may translate vertically with it.
-    if (rule === 'rows' && group.flank) same(verticalOnly(group.bounds!), verticalOnly(model.groups[id]!.bounds!), 'Rows cannot move flank groups');
+    // `rebuildBoxes` re-derives the box from its nodes, which leaves float residue (1e-14) on a flank no rule moved: compare within the placement tolerance.
+    if (rule === 'rows' && group.flank) {
+      const now = verticalOnly(group.bounds!), was = verticalOnly(model.groups[id]!.bounds!);
+      if (!(['x', 'width', 'height'] as const).every(key => Math.abs(now[key] - was[key]) <= PLACEMENT_EPS)) throw new Error('Rows cannot move flank groups');
+    }
     if (rule === 'rows' && !group.flank && groupShape(draft, id) !== 'row') same(verticalOnly(group.bounds!), verticalOnly(model.groups[id]!.bounds!), 'Rows cannot change non-row groups');
-    if (rule === 'flanks' && group.flank) same(group.bounds!.x, model.groups[id]!.bounds!.x, 'Flanks cannot translate groups horizontally');
+    if (rule === 'flanks' && group.flank && Math.abs(group.bounds!.x - model.groups[id]!.bounds!.x) > PLACEMENT_EPS) throw new Error('Flanks cannot translate groups horizontally');
     if (rule === 'bars' && draft.document.groups[id]!.shape !== 'bar') same(group, model.groups[id], 'Bars cannot move another group');
     if (rule === 'flanks' && !group.flank && !Object.values(model.groups).some(g => g.flank?.of === id)) same(group, model.groups[id], 'Flanks cannot move another group');
   }

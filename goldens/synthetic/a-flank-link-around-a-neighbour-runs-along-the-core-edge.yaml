@@ -1,0 +1,26 @@
+# Pinned failure (architecture ticket 12, cause C): a left flank links to a core and to a canton member with a plain neighbour between them. The link to the core runs under the neighbour and along the core's bottom edge, 9.75 px from it, so G6 segment-group-edge fails. The sheet passes without the flank. Placement reserves no row under the tier for this link.
+# Source: architecture ticket 12 matrix.
+portograph: 2
+profile: network
+groups:
+  town: { label: Town }
+  upper: { tier: 0, label: Upper }
+  core: { tier: 1, label: Core }
+  east: { tier: 1, canton: town, label: East }
+  south: { tier: 2, canton: town, label: South }
+  neighbour: { tier: 1, label: Neighbour }
+  flank: { align: left, of: core, label: Flank }
+nodes:
+  up-1: { group: upper, class: router, ports: [100G, 100G, 100G, 100G, 100G, 100G] }
+  core-1: { group: core, class: router, ports: [100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G] }
+  east-1: { group: east, class: router, ports: [100G, 100G, 100G, 100G] }
+  south-1: { group: south, class: router, ports: [100G, 100G] }
+  nb-1: { group: neighbour, class: router, ports: [100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G] }
+  fl-1: { group: flank, class: router, ports: [100G, 100G] }
+links:
+  - [up-1.100G, core-1.*]
+  - [up-1.100G, nb-1.*]
+  - [up-1.100G, east-1.*]
+  - [east-1.100G, south-1.*]
+  - [fl-1.100G, east-1.*]
+  - [fl-1.100G, core-1.*]

@@ -1,0 +1,27 @@
+# Pinned failure (architecture ticket 12, cause D): a right flank links to a canton member on tier 2 across a neighbour, beside a bundle of two parallel core links to the same member. Stage 8 removes the flank link (its route enters the reserved bundle envelope). The sheet passes without the flank.
+# Source: architecture ticket 12 matrix.
+portograph: 2
+profile: network
+groups:
+  town: { label: Town }
+  upper: { tier: 0, label: Upper }
+  core: { tier: 1, label: Core }
+  east: { tier: 2, canton: town, label: East }
+  south: { tier: 3, canton: town, label: South }
+  neighbour: { tier: 1, label: Neighbour }
+  flank: { align: right, of: core, label: Flank }
+nodes:
+  up-1: { group: upper, class: router, ports: [100G, 100G, 100G, 100G, 100G, 100G] }
+  core-1: { group: core, class: router, ports: [100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G] }
+  east-1: { group: east, class: router, ports: [100G, 100G, 100G, 100G] }
+  south-1: { group: south, class: router, ports: [100G, 100G] }
+  nb-1: { group: neighbour, class: router, ports: [100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G] }
+  fl-1: { group: flank, class: router, ports: [100G, 100G] }
+links:
+  - [up-1.100G, core-1.*]
+  - [up-1.100G, nb-1.*]
+  - [core-1.100G, east-1.*]
+  - [core-1.100G, east-1.*]
+  - [east-1.100G, south-1.*]
+  - [fl-1.100G, east-1.*]
+  - [fl-1.100G, core-1.*]

@@ -62,3 +62,19 @@ it('the hold pass does not pull a canton column into a right flank', async () =>
   const east = model.groups['east#0']!.bounds!, flank = model.groups['side-right']!.bounds!;
   expect(flank.x - (east.x + east.width), 'the column stands clear of the flank').toBeGreaterThan(0);
 });
+
+// Architecture ticket 12: a bundle row stands off a canton frame edge, and a flank box with float residue is not a moved flank.
+it('a bundle of parallel links turns clear of a canton frame edge', async () => {
+  const yaml = readFileSync(new URL('../../goldens/synthetic/a-parallel-links-turn-clear-of-a-canton-frame-edge.yaml', import.meta.url), 'utf8');
+  const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const gates = score(model).snapshot.gates;
+  expect(gates['G6']!.violations).toEqual([]);
+  expect(Object.values(gates).every(gate => gate.passed)).toBe(true);
+});
+
+it('a right flank beside a canton bundle lays out and passes every gate', async () => {
+  const yaml = readFileSync(new URL('../../goldens/synthetic/a-right-flank-beside-a-bundle-into-a-canton.yaml', import.meta.url), 'utf8');
+  const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  expect(model.links.filter(link => link.removed === true)).toEqual([]);
+  expect(Object.values(score(model).snapshot.gates).every(gate => gate.passed)).toBe(true);
+});
