@@ -1194,6 +1194,16 @@ export function alignLinkedGroupGrid(model: LayoutModel): boolean {
       if ((extent - size(a)) / extent > GROUP_GRID_MAX_GROWTH + PLACEMENT_EPS
         || (extent - size(b)) / extent > GROUP_GRID_MAX_GROWTH + PLACEMENT_EPS) continue;
       const proposed = members.map(group => ({ group, bounds: { ...group.bounds!, [pos]: low, [len]: extent } as Rect }));
+      if (axis === 'x' && probeVariant() === 'B') {
+        // Variant B: a widening keeps a bandGap to every flank of the widened group; it stops short of the flank.
+        const bg = bandGap(model);
+        for (const item of proposed) for (const flank of flanksOf(model, item.group)) {
+          const fb = flank.bounds!;
+          if (flank.flank!.align === 'left') { const limit = fb.x + fb.width + bg; if (item.bounds.x < limit) { const high = item.bounds.x + item.bounds.width; item.bounds.x = Math.min(Math.max(limit, item.bounds.x), item.group.bounds!.x); item.bounds.width = high - item.bounds.x; } }
+          else { const limit = fb.x - bg; if (item.bounds.x + item.bounds.width > limit) item.bounds.width = Math.max(limit, item.group.bounds!.x + item.group.bounds!.width) - item.bounds.x; }
+        }
+        if (proposed.every(item => equal(item.bounds, item.group.bounds!))) continue;
+      }
       const others = Object.values(model.groups).filter(group => !members.includes(group));
       if (proposed.some(item => others.some(other => rectOverlap(item.bounds, other.bounds!)))) continue;
       if (axis === 'x' && !optionalMoveHolds(model, proposed)) continue;
