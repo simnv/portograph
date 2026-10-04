@@ -268,7 +268,7 @@ describe('with no hint the layout is byte-identical to main (ticket 114)', () =>
   const main: Record<string, string> = {
     'a-group-holds-both-ends-of-a-bundle': 'b11defc7dffb0055',
     'a-bus-in-a-rank-gap-grows-the-gap': '2bf7ca0b64536533',
-    'a-linked-node-steps-out-of-a-straight-chord': '36092f8a7ee662fb',
+    'a-linked-node-steps-out-of-a-straight-chord': '80bfea4e49b45779',
     'a-bar-end-keeps-its-corridor': '94c507c2774f69cf',
   };
   it.each(Object.entries(main))('%s', async (name, hash) => {

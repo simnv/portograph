@@ -467,7 +467,7 @@ export function stepOutOfChords(model: LayoutModel, tiers: readonly number[], fr
       // The candidate is made and judged by the decision loop (`decide.ts`, kind `linkless`); a refusal is named here.
       if (!chooseStep(model, overlays, group, target - box.x)) {
         placementWarning(model, 'LINKLESS_GROUP_MOVE_REFUSED',
-          `Group ${group.id} has no link and stands in the path of a straight overlay chord, but a step out of it would bend another straight overlay link.`, [group.id], 'group');
+          `Group ${group.id} has no link and stands in the path of a straight overlay chord, but a step out of it would leave the links worse: more bent links, or turns or crossings, or a new crowded pair or disordered port.`, [group.id], 'group');
       }
     }
   }
