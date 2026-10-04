@@ -3,7 +3,7 @@ import { blockedChords, edgeLeavers, freezeChords } from './frame-paths.js';
 import { type LaneFollow, lanesHoldTheirChild, sideLaneFindings, rebuildLaneExtents, reseatLanes } from './lanes.js';
 import { centreViolations } from './centre.js';
 import { stepLinklessOutOfChords } from './overlay-place.js';
-import { stepOverChords } from './chord-clear.js';
+import { type AdoptedCopy, stepOverChords } from './chord-clear.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, type LinkLabelShortfall, produceGroupLabelBands, replanGroupLabels, reserveLinkLabelRoom } from './bands.js';
 import { holdColumnAxes, refreshHeldWarnings } from './columns.js';
@@ -22,7 +22,8 @@ import { countStep, ledgerOn, ledgerSnapshot, startAttemptEntry, type LedgerSnap
  * The passes, in order, on the draft:
  *   1. `freezeChords`, then `produceGroupLabelBands`: the last confirmation of a chord becomes a wall, then the reservation of the label bands.
  *   2. Up to `CANTON_ROUNDS` rounds of `settleRound`, `stepLinklessOutOfChords` and the step over a chord (`stepOverChords`, which judges
- *      each move on a copy that `trialSettle` has run); a round that moved anything is followed by `replayRegions`.
+ *      each move on a copy that `trialSettle` has run); a round that moved anything is followed by `replayRegions`, or, when the step kept
+ *      a move, by taking the settled copy of the last kept move (the replay and the next round's settling are then done).
  *   3. The held-axis probe (`holdColumnAxes` on a copy), and the non-convergence warning for the cantons.
  *   4. `reseatLanes`, adopted only when the settled trial is no worse in four named respects.
  *   5. The diagnostics read once on the final geometry: blocked chords, side lanes, chords that leave a frame by a side edge.
@@ -87,6 +88,16 @@ export function replayRegions(model: LayoutModel): void {
 }
 
 /**
+ * Take a settled copy as the state of `model`, which the caller still holds: the copy's fields replace the model's, and the diagnostics are the
+ * model's own (it may have gained some since the copy was taken) followed by the ones the copy gained after `baseDiagnostics`.
+ */
+function adoptSettled(model: LayoutModel, copy: LayoutModel, baseDiagnostics: number): void {
+  const kept = model.diagnostics;
+  Object.assign(model, copy);
+  model.diagnostics = [...kept, ...copy.diagnostics.slice(baseDiagnostics)];
+}
+
+/**
  * The growth of the tier gaps is measured on the columns as they stand, and the close-up of the cantons (ranked-groups ticket 65)
  * moves them in x after centring widened one in place: so the growth is measured again after every move, and the rounds end when
  * the close-up has nothing to move. A round that moves groups replays the region producers, and the grid and the labels after it.
@@ -95,8 +106,12 @@ export function replayRegions(model: LayoutModel): void {
  */
 export function settleRound(model: LayoutModel, tap?: (step: 'grow' | 'close-up' | 'keep-out', changed: boolean) => void): number {
   attemptCounters.settleCalls++;
-  const grew = growTierGaps(model);
-  if (grew) {
+  const trial: { trial?: LayoutModel; baseDiagnostics?: number } = {};
+  const grew = growTierGaps(model, trial);
+  if (grew && trial.trial !== undefined) {
+    // The growth stopped on "no change": its last trial is the grown model after the replay below, so it is taken instead of replaying (ticket 13, phase 2).
+    adoptSettled(model, trial.trial, trial.baseDiagnostics!);
+  } else if (grew) {
     // The replay refits every group box to its content, so a linked pair the first step gave one
     // x-extent (ADR-0012) holds two again and the published model would not be the grid's fixed
     // point — which is what `validateGroupLabelBands` demands. The grid is settled here, before
@@ -117,7 +132,14 @@ export function settleRound(model: LayoutModel, tap?: (step: 'grow' | 'close-up'
 }
 
 /** What the step over a chord judges a move by: the replays and a round of `settleRound`, which is what the next round does. */
-export function trialSettle(probe: LayoutModel): void { replayRegions(probe); settleRound(probe); }
+export function trialSettle(probe: LayoutModel): SettleReading {
+  replayRegions(probe);
+  const steps: SettleReading['steps'] = [];
+  const shift = settleRound(probe, (step, changed) => { steps.push([step, changed]); });
+  return { shift, steps };
+}
+/** What a round of `settleRound` found, with the steps it took in order: a copy that adopted it hands this on instead of settling again. */
+export interface SettleReading { shift: number; steps: ['grow' | 'close-up' | 'keep-out', boolean][] }
 
 /**
  * Run the 7f producer on the transaction's draft. The draft already stands on the stage before `bands` and has passed the callback checks;
@@ -157,14 +179,23 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
   // no step, since its move could not be measured again. A mover moves in one round only, so the rounds end.
   let closed = false, again = false;
   const movers = new Set<string>();
+  /** The settled copy of the last move of the chord step, once the draft has taken it: the next round reads its settling and does not settle again. */
+  let taken: SettleReading | undefined;
   for (let round = 0; round < CANTON_ROUNDS && (!closed || again); round++) {
     abortAt?.();
     // A creep under half a pixel, left by the centring replay, counts as settled; the replay still follows any move.
     const afterChords = again;
-    const shift = settleRound(draft, (step, changed) => {
+    const tapped = (step: 'grow' | 'close-up' | 'keep-out', changed: boolean): void => {
       if (step === 'grow' && changed && round > 0) attemptCounters.invalidations.gapRegrown++;
       account(`round-${round}:${step}`);
-    });
+    };
+    let shift: number;
+    if (taken !== undefined) {
+      // The draft stands on the settled copy that judged the last chord move; that copy has run this round already.
+      for (const [step, changed] of taken.steps) tapped(step, changed);
+      shift = taken.shift;
+      taken = undefined;
+    } else shift = settleRound(draft, tapped);
     closed = shift < CANTON_CREEP;
     attemptCounters.rounds++; entry.rounds++;
     if (!closed) { attemptCounters.openRounds++; entry.openRounds++; if (afterChords) attemptCounters.invalidations.closeUpReopened++; }
@@ -176,11 +207,16 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
     account(`round-${round}:linkless`);
     // A chord between two tiers keeps the tiers between it free of nodes. A move is judged on a copy that the replays and a round of
     // `settle` have run, which is what the next round does.
-    const cleared = round < CANTON_ROUNDS - 1 && stepOverChords(draft, trialSettle, movers);
+    const kept: { adopted?: AdoptedCopy } = {};
+    const cleared = round < CANTON_ROUNDS - 1 && stepOverChords(draft, trialSettle, movers, kept);
     note(`round-${round}:chords`, cleared ? 'moved' : 'unchanged');
     if (cleared) { attemptCounters.chordRoundsMoved++; entry.chordRoundsMoved++; }
     account(`round-${round}:chords`);
-    if (linkless || cleared) replayRegions(draft);
+    if (cleared && kept.adopted !== undefined) {
+      // The copy that judged the last kept move has the replay and the next round's settling done: the draft takes it (ticket 13, phase 2).
+      adoptSettled(draft, kept.adopted.copy, kept.adopted.baseDiagnostics);
+      taken = kept.adopted.result as SettleReading;
+    } else if (linkless || cleared) replayRegions(draft);
     account(`round-${round}:replay`);
     again = cleared;
   }

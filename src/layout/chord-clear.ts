@@ -137,6 +137,13 @@ function drift(model: LayoutModel): number {
   }
 }
 
+/**
+ * The settled copy that judged the last move the step kept (architecture ticket 13, phase 2): the copy of the model with every move so far made,
+ * after `follow` ran on it. `baseDiagnostics` is how many diagnostics the model held when the copy was taken, so the caller can add the ones
+ * the copy gained to the ones the model gained since; `result` is what `follow` returned.
+ */
+export interface AdoptedCopy { copy: LayoutModel; baseDiagnostics: number; result: unknown }
+
 const verdict = (model: LayoutModel, overlays: readonly LayoutLink[]): Verdict =>
   ({ ...read(model, { overlays, routed: { straight: 'aligned' }, crossings: 'pairs', growth: true }), crowded: crowded(model), disordered: disordered(model), residuals: residuals(model), drift: drift(model) });
 
@@ -168,7 +175,7 @@ const nothingNew = (before: ReadonlySet<string>, after: ReadonlySet<string>): bo
  * where it stands, so the rounds converge. Returns whether anything stayed moved.
  * The step never reads the clock (ticket 141): its work is bounded by counts (CHORD_TRIALS, SETTLED_TRIALS, one move per mover, CANTON_ROUNDS rounds).
  */
-export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel) => unknown) | undefined, history: Set<string> = new Set()): boolean {
+export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel) => unknown) | undefined, history: Set<string> = new Set(), out?: { adopted?: AdoptedCopy }): boolean {
   const anchor = selectAnchorTier(model);
   // A member of a mesh bus is not a chord: it is neither straight nor bent, and the step does not read it (mesh-bus.md, section 4).
   const overlays = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && link.attachments);
@@ -196,14 +203,19 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
   let tried = false, moved = false;
   /** The verdict on the settled copy of the model as it stands, without a move. It holds until a move stays. */
   let baseline: Verdict | undefined;
+  /** The settled copy each verdict was read on, and the verdict of the last move that stayed: the step hands that copy back (`out.adopted`). */
+  const copies = new WeakMap<Verdict, AdoptedCopy>();
+  let lastKept: Verdict | undefined;
 
   /** The verdict on a settled copy of the model as it stands now, or `undefined` when the copy cannot be settled. */
   const settled = (): Verdict | undefined => {
     try {
-      const probe = copy(model);
+      const probe = copy(model), baseDiagnostics = model.diagnostics.length;
       attemptCounters.settledTrials++;
-      follow!(probe);
-      return verdict(probe, overlays);
+      const result = follow!(probe);
+      const read = verdict(probe, overlays);
+      copies.set(read, { copy: probe, baseDiagnostics, result });
+      return read;
     } catch {
       return undefined;
     }
@@ -318,6 +330,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
     rebuildNodeGeometry(model, nodes, 'current');
     // The settled copy that judged the move is the state that stands now: it is the baseline of the next one.
     baseline = best.verdict;
+    lastKept = best.verdict;
     history.add(key);
     return true;
   };
@@ -632,5 +645,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
     }
   }
   if (tried) rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');
+  const adopted = moved && out !== undefined && lastKept !== undefined ? copies.get(lastKept) : undefined;
+  if (adopted !== undefined) out!.adopted = adopted;
   return moved;
 }

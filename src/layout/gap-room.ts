@@ -40,7 +40,9 @@ import { attemptCounters } from './attempt-counters.js';
  * the M1 golden, its one populated tier gap owes four rows after 7a and none after 7d, so a count
  * taken any earlier grows a gap the finished diagram does not need and the golden moves.
  */
-export function growTierGaps(model: LayoutModel): boolean {
+export function growTierGaps(model: LayoutModel, out?: { trial?: LayoutModel; baseDiagnostics?: number }): boolean {
+  const baseDiagnostics = model.diagnostics.length;
+  let stopped = false;
   // The plan is read on the model as 7f will publish it (`settled`), and a stem nests only where the gap has the room
   // (`sidePlan` declines a nested turn that would stand in frozen geometry), so the tips the plan reads depend on how far the
   // gap has opened. The growth is therefore taken to a fixed point of `extra = H(grown by extra) − room`: each round reads the plan
@@ -70,7 +72,7 @@ export function growTierGaps(model: LayoutModel): boolean {
       moving.push({ above: gap.above, below: gap.below, ask: after - before });
       if (after <= EPS) grown.delete(gap.below); else grown.set(gap.below, { extra: after, setBy: plan.setBy });
     }
-    if (!moving.length) break;
+    if (!moving.length) { stopped = true; break; }
     if (round === MAX_ROUNDS - 1) unfit = moving.filter(item => item.ask > EPS);
   }
   // The gap that settled is named by the plan of the round that settled it.
@@ -95,6 +97,10 @@ export function growTierGaps(model: LayoutModel): boolean {
   for (const note of chordGapNotes(trial, plans)) {
     if (!model.diagnostics.some(item => item.code === note.code && item.message === note.message)) model.diagnostics.push(note);
   }
+  // The loop stopped on "no change", so the last trial is the model grown by `grown` and replayed: the state `grow` and the replay after it
+  // make on the model itself (architecture ticket 13, phase 2). A caller that asks takes it in place of the replay. A loop that ran out of rounds
+  // read its last trial before the last correction, so it hands nothing back.
+  if (stopped && out !== undefined && grown.size) { out.trial = trial; out.baseDiagnostics = baseDiagnostics; }
   return grow(model, grown);
 }
 

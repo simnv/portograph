@@ -15,6 +15,10 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * which the chord step moved a mover, over all 7f runs and in the base run alone; the held-axis probe that would move a column; before 7f, the routed chords lost and the straight overlay links the
  * windows lost at `centre` (first run and fan re-runs only, as the designer's replica read them); and in the loop of the base 7f run, the overlay links lost,
  * the routed aligned links lost and the bodies that came to stand on a frozen chord.
+ *
+ * Phase 2 (derive once) lowered the settle, centring, replay and gap-round counts of the fixtures that grow a gap or move a chord, and changed nothing else:
+ * the chord step hands back the settled copy of its last kept move and the draft takes it (no replay, no settle in the next round), and the growth of the
+ * tier gaps hands back its last trial when it stopped on "no change" and the round takes it in place of the replay. The layout is byte-identical.
  */
 const golden = (name: string): string =>
   readFileSync(new URL(`../../goldens/${name === 'm1-sip-edge' ? '' : 'synthetic/'}${name}.yaml`, import.meta.url), 'utf8');
@@ -28,17 +32,17 @@ const row = (name: string, counters: string, runs: number, attempts: number, rou
   ({ name, counters, runs, attempts, rounds, open, chord, baseChord: 0, reseat: 'none', probe: 0, preChords: 0, preCentre: 0, base7f: '0/0/0', ...rest });
 
 const ROWS: Row[] = [
-  row('three-continents', '10/33/26/5', 2, 2, 3, 0, 1, { preCentre: 2 }),
-  row('a-tier-gap-plan-orders-every-part', '1/48/10/3', 1, 1, 1, 0, 0, { reseat: 'refused', preChords: 1 }),
-  row('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', '1/8/7/3', 1, 1, 1, 0, 0),
-  row('a-tier-gap-grows-to-its-rows', '1/6/7/3', 1, 1, 1, 0, 0),
+  row('three-continents', '9/32/26/5', 2, 2, 3, 0, 1, { preCentre: 2 }),
+  row('a-tier-gap-plan-orders-every-part', '1/40/10/3', 1, 1, 1, 0, 0, { reseat: 'refused', preChords: 1 }),
+  row('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', '1/7/7/3', 1, 1, 1, 0, 0),
+  row('a-tier-gap-grows-to-its-rows', '1/5/7/3', 1, 1, 1, 0, 0),
   row('a-re-seated-band-carries-its-bar-and-flank', '1/5/7/3', 1, 1, 1, 0, 0),
   row('sync-links-do-not-stack-a-tier', '1/4/7/3', 1, 1, 1, 0, 0),
   row('an-overlay-leaves-a-lateral-side-past-a-sibling-body', '2/7/12/5', 2, 2, 2, 0, 0),
   row('a-chord-hint-and-a-lane-hint-never-share-a-batch', '2/16/12/5', 4, 2, 2, 0, 0, { probe: 2 }),
   row('a-fan-spreads-its-ports-so-its-chords-hold-clearance', '1/7/7/3', 2, 1, 1, 0, 0),
   row('transit-fan', '1/4/7/3', 1, 1, 1, 0, 0),
-  row('a-canton-member-frame-slides-off-a-straight-chord', '1/11/7/3', 2, 1, 1, 0, 0),
+  row('a-canton-member-frame-slides-off-a-straight-chord', '1/10/7/3', 2, 1, 1, 0, 0),
   row('columns-hold-their-axis-after-7f', '1/19/7/3', 3, 1, 1, 0, 0),
   row('a-canton-band-holds-the-rows-off', '1/7/7/3', 2, 1, 1, 0, 0),
   row('a-member-title-widens-a-beside-row', '1/7/7/3', 1, 1, 1, 0, 0, { base7f: '0/1/0' }),
@@ -46,7 +50,7 @@ const ROWS: Row[] = [
   row('a-flank-link-around-a-neighbour-runs-along-the-core-edge', '1/4/7/3', 1, 1, 1, 0, 0),
   row('m1-sip-edge', '1/5/7/3', 1, 1, 1, 0, 0),
   // The phase-1 fixture: the base 7f chord step moves a group (before this, only NTP among the named sheets did).
-  row('a-chord-step-moves-a-group-off-a-straight-chord', '6/12/15/3', 1, 1, 2, 0, 1, { baseChord: 1 }),
+  row('a-chord-step-moves-a-group-off-a-straight-chord', '5/11/15/3', 1, 1, 2, 0, 1, { baseChord: 1 }),
 ];
 
 interface Reading { counters: string; runs: number; attempts: number; rounds: number; open: number; chord: number; baseChord: number; reseat: string; probe: number; preChords: number; preCentre: number; base7f: string; events: AttemptTraceEvent[] }
@@ -85,6 +89,17 @@ describe('the ledger of the 7f placement attempt reads the counts of the ticket 
     expect(found.events.find(event => event.pass === 'ledger:round-0:chords')?.verdict).toMatch(/^overlay -\d+\/\+\d+ aligned -\d+ blocked \+\d+$/);
   }, 60000);
 
+  // Phase 2: the replays, the settled copies the chord step judged on, and the rounds of the gap fixed point, where they dropped. Before the phase:
+  // three-continents 8/7/10, a-tier-gap-plan 1/0/3, two-interleaved 1/0/2, a-tier-gap-grows 1/0/2, canton-member-frame 1/0/2, chord-step fixture 5/4/6.
+  it.each([
+    ['three-continents', 7, 7, 9], ['a-tier-gap-plan-orders-every-part', 0, 0, 3], ['two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', 0, 0, 2],
+    ['a-tier-gap-grows-to-its-rows', 0, 0, 2], ['a-canton-member-frame-slides-off-a-straight-chord', 0, 0, 2], ['a-chord-step-moves-a-group-off-a-straight-chord', 4, 4, 5],
+  ] as const)('derives once: %s replays %i, settled copies %i, gap rounds %i', async (name, replays, trials, gapRounds) => {
+    resetAttemptCounters();
+    await layout(parse(golden(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    expect([attemptCounters.replays, attemptCounters.settledTrials, attemptCounters.gapRounds]).toEqual([replays, trials, gapRounds]);
+  }, 60000);
+
   it('reads nothing of the model when the ledger and the trace are off', async () => {
     resetAttemptCounters(); attemptCounters.ledger = false;
     await layout(parse(golden('a-member-title-widens-a-beside-row')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
@@ -102,9 +117,11 @@ describe('the ledger of the 7f placement attempt reads the counts of the ticket 
     const i = attemptCounters.invalidations;
     expect({ counters: found.counters, runs: found.runs, attempts: found.attempts, rounds: found.rounds, open: found.open, chord: found.chord, baseChord: found.baseChord, reseat: found.reseat,
       probe: found.probe, preChords: found.preChords, preCentre: found.preCentre, base7f: found.base7f })
-      .toEqual({ counters: '18/91/54/5', runs: 4, attempts: 2, rounds: 6, open: 2, chord: 4, baseChord: 2, reseat: 'none', probe: 0, preChords: 2, preCentre: 9, base7f: '2/1/0' });
+      .toEqual({ counters: '14/79/54/5', runs: 4, attempts: 2, rounds: 6, open: 2, chord: 4, baseChord: 2, reseat: 'none', probe: 0, preChords: 2, preCentre: 9, base7f: '2/1/0' });
     expect([i.gapRegrown, i.shortGapsAfterRounds, i.bodyOnFrozenChord, i.cantonNonConvergence]).toEqual([0, 0, 0, 0]);
     // The close-up opened again after a chord move, in the base run and in the side trial (section 2: 0.87 px in r1).
     expect(i.closeUpReopened).toBe(2);
+    // Phase 2: 16 replays, not 24, and 16 rounds of the gap fixed point, not 20; the settled copies the chord step judges on are still 12.
+    expect([attemptCounters.replays, attemptCounters.settledTrials, attemptCounters.gapRounds]).toEqual([16, 12, 16]);
   }, 120000);
 });
