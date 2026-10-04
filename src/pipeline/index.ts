@@ -100,6 +100,8 @@ export interface LayoutOptions {
   /** Test only. Called with the wall time of each placement run, measure, 7f, route and score-ready stage, and the budget left (ticket 115 timing). */
   testTiming?: (label: string, durationMs: number, remainingMs: number) => void;
   /** Test only (the side probe of ticket 117). Called with the offer, and with the trial and its verdict; it changes nothing. */
+  /** Test only: rebuild the unmoved baseline even when the filter finds no offer (counts the filter's misses). */
+  testRebuildAlways?: boolean;
   testSideTrace?: (event: Record<string, unknown>) => void;
 }
 
@@ -249,17 +251,20 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     let offer = await timed('measureSides', () => measureSides(base, kept7e, refused));
     // No offer on the kept 7f result. If a 7f move changed the placement, the unmoved baseline may have had one that the move removed: it runs as one
     // extra side trial, judged on routed results like any other, so the kept result stands unless a real trial beats it (architecture ticket 15, phase 3b).
-    // The unmoved state is the settled copy 7f judged its first move against, when it kept one; otherwise it is rebuilt (silently: no progress event, no
-    // attempt trace, since this run is never published). Nothing is built when the command has no re-run left for the trial.
-    let unmovedOffer = false, reused = false;
+    // The settled copy 7f judged its first move against is only a filter: it is the round-0 state plus one settle, not the state 7f would publish without
+    // moves. When its offer is empty the trial is skipped; otherwise the true unmoved baseline is rebuilt (silently: no progress event, no attempt trace, since
+    // this run is never published) and the trial starts from the rebuilt offer. With no copy, the rebuild runs. Nothing is built when no re-run is left.
+    let unmovedOffer = false, filtered: boolean | undefined;
     if (round === 0 && offer.hints.size === 0 && baseMoved && reruns < maxReruns) {
-      reused = baseUnmoved !== undefined;
-      const unmoved = baseUnmoved ?? await timed('bands-unmoved', () => bands(kept7e, () => trialAbort('bands'), undefined, false));
-      offer = await timed('measureSides', () => measureSides(unmoved, kept7e, refused));
-      unmovedOffer = offer.hints.size > 0;
-      silent = unmovedOffer;
+      if (baseUnmoved !== undefined) filtered = measureSides(baseUnmoved, kept7e, refused).hints.size > 0;
+      if (filtered !== false || options.testRebuildAlways === true) {
+        const unmoved = await timed('bands-unmoved', () => bands(kept7e, () => trialAbort('bands'), undefined, false));
+        offer = await timed('measureSides', () => measureSides(unmoved, kept7e, refused));
+        unmovedOffer = offer.hints.size > 0;
+        silent = unmovedOffer;
+      }
     }
-    options.testSideTrace?.({ ev: 'offer', round, offer, base, kept7e, unmoved: unmovedOffer, reused });
+    options.testSideTrace?.({ ev: 'offer', round, offer, base, kept7e, unmoved: unmovedOffer, filtered });
     if (offer.capped) sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_PROBE_CAPPED', message: 'The side measure stopped at its probe cap; the links after it were not probed.' });
     if (offer.hints.size === 0) break;
     if (reruns >= maxReruns) {
