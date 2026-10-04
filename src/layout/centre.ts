@@ -277,7 +277,7 @@ function settleRows(model: LayoutModel): boolean {
   return packBesideRows(model, cell => model.groups[cell]!.tier !== model.anchorTier && !model.groups[cell]!.flank);
 }
 /** Reusable bounded producer. The caller shares one budget across all ordered placement replay. */
-interface CentreContext {
+export interface CentreContext {
   steps: { tier: number; authority: number }[];
   winners: Map<string, string>;
   groupOrder: Map<number, string[]>;
@@ -290,7 +290,7 @@ interface CentreContext {
   walls: ReadonlyMap<string, CellWindow>;
 }
 /** Everything one centring pass reads but never writes: step order, winners, group order, lane windows. */
-function centreContext(model: LayoutModel, anchor: number, columns: readonly FrameColumn[] = frameColumns(model)): CentreContext {
+export function centreContext(model: LayoutModel, anchor: number, columns: readonly FrameColumn[] = frameColumns(model)): CentreContext {
   const tiers = model.tierBands.map(band => band.tier), index = tiers.indexOf(anchor);
   const steps = [...tiers.slice(index + 1).map((tier, i) => ({ tier, authority: tiers[index + i]! })),
     ...tiers.slice(0, index).reverse().map((tier, i) => ({ tier, authority: tiers[index - i]! }))];
@@ -725,10 +725,10 @@ export function flagUnverifiedCentring(model: LayoutModel): void {
  * diagnostic proves nothing, and one port's genuine blockage excuses no other port. Ports that later rules own — bar
  * drops and endpoints (7d), ports any bundle member uses (7e) — are not compared.
  */
-export function centreViolations(model: LayoutModel, ahead = false): string[] {
+export function centreViolations(model: LayoutModel, ahead = false, shared?: CentreContext): string[] {
   const anchor = model.anchorTier;
   if (anchor === undefined || !model.tierBands.some(band => band.tier === anchor)) return [];
-  const context = centreContext(model, anchor);
+  const context = shared ?? centreContext(model, anchor);
   // Stage 7e re-anchors every port a bundle member uses. A child port it moved stays where 7e put it
   // from then on; a parent port it moved is a new feed x that 7f re-centres under, so a feed on such
   // a parent is excused only while the model sits exactly at the bundles stage.
@@ -755,7 +755,7 @@ export function centreViolations(model: LayoutModel, ahead = false): string[] {
       const owned = groupFeeds(model, context, tier, list, id, false);
       if (model.document.groups[id]!.shape === 'bar' || !owned.own.length) { previous = group; continue; }
       const trial = JSON.parse(replayedText ??= JSON.stringify(replayed)) as LayoutModel;
-      const step = centreGroupStep(trial, centreContext(trial, anchor), tier, feeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, tail);
+      const step = centreGroupStep(trial, context, tier, feeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, tail);
       previous = group;
       // Both lookups below read one key per wanted child; keying them once keeps the scan of the
       // group's own feeds and ports out of the loop. First entry wins, as `find` did.
