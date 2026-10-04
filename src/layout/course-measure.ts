@@ -7,6 +7,7 @@ import { crossingsOf, strictCrossing } from './read/crossings.js';
 import { linkFacts, type EndFacts } from './read/courses.js';
 import { profiles, drawnOverlays, read, pathBends, reading, routedFamily, routedBends, compare, lazyCount, type Reading } from './objective.js';
 import { findPort } from './row-paths.js';
+import { EDGE_MARGIN, RING_PITCH, paddingRows, rowsInset } from './course-rows.js';
 import { added as namesAdded, constraintFindings, gateFindings } from './trial-findings.js';
 import { portKey } from './sides-one.js';
 import { portId } from './skeleton-graph.js';
@@ -166,6 +167,18 @@ const courseProfile = profiles.unified;
 
 export interface CourseVerdict { kept: boolean; reason: string; removed: string[]; worse: string[] }
 
+/** The optional growth of the canvas (Q2: a perimeter lane's reserved width is not optional). */
+const GROWTH_BOUND = 0.05;
+
+/** The width and height a model's courses reserve: the outermost lane of each side with its margin, and each padding row with its depth. An upper bound. */
+function reservedGrowth(model: LayoutModel): { width: number; height: number } {
+  const side = { left: 0, right: 0 };
+  for (const lane of model.lanes) if (lane.kind === 'perimeter' && (lane.side === 'left' || lane.side === 'right')) side[lane.side] = Math.max(side[lane.side], EDGE_MARGIN + ((lane.ring ?? 0) + 1) * RING_PITCH);
+  let height = 0;
+  for (const group of Object.values(model.groups)) for (const rows of Object.values(paddingRows(model, group))) height += rowsInset(rows);
+  return { width: side.left + side.right, height };
+}
+
 const routedReading = (model: LayoutModel): Reading => reading({ routed: routedFamily(routedBends(model)), overlay: read(model, { overlays: drawnOverlays(model) }).overlay,
   crossings: lazyCount(() => routedCrossingPairs(model)), crossingMode: 'pairs', tie: [] });
 
@@ -192,9 +205,11 @@ export function judgeCourseTrial(routedBase: LayoutModel, routedTrial: LayoutMod
   if (gateNew.length > 0) return verdict(false, `the routed trial has gate findings the baseline does not have (${gateNew.join('; ')})`);
   const constraintNew = namesAdded(constraintFindings(routedTrial), constraintFindings(routedBase));
   if (constraintNew.length > 0) return verdict(false, `the routed trial breaks a hard constraint the baseline holds (${constraintNew.join('; ')})`);
-  // The published result must not be worse than the baseline's by the quality the user reads: a turn bought with a canvas 21 % wider is no gain. The order below
-  // decides only among trials that hold Q.
-  if (gatesThen !== undefined && gatesNow.Q < gatesThen.Q - 1e-9) return verdict(false, `the routed trial lowers the quality Q (${gatesNow.Q.toFixed(4)} against ${gatesThen.Q.toFixed(4)})`);
+  // Growth: optional growth stays within today's bound (5 %), and only the reserved width of a perimeter lane and the depth of a padding row may exceed it (Q2).
+  const room = reservedGrowth(routedTrial), cap = (was: number | undefined, extra: number): number => (was ?? 0) * (1 + GROWTH_BOUND) + extra + 1e-6;
+  if ((routedTrial.canvas?.width ?? 0) > cap(routedBase.canvas?.width, room.width) || (routedTrial.canvas?.height ?? 0) > cap(routedBase.canvas?.height, room.height)) {
+    return verdict(false, `the routed trial grows the canvas past ${GROWTH_BOUND * 100} % and the width its lanes reserve`);
+  }
   const now = routedReading(routedTrial), then = routedReading(routedBase);
   if (!(compare(now, then, courseProfile) < 0)) return verdict(false, `the routed trial gives no gain (${now.routed.bent + now.overlay.bent} bent links, ${now.routed.turns + now.overlay.turns} turns, ${now.crossings()} crossings, against ${then.routed.bent + then.overlay.bent}, ${then.routed.turns + then.overlay.turns} and ${then.crossings()})`);
   return verdict(true, '');

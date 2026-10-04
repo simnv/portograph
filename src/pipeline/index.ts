@@ -267,66 +267,92 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   // The course round (ticket 15, phase 4) runs before the side round and shares its re-runs. It reads the baseline's routed result, offers perimeter courses
   // for the links whose route is a poor one, places again with the courses reserved in stage 5, and keeps the trial only on its routed result.
   const keptPromises = new Map<string, number>();
+  // The unified gain a course offer promises and a side offer promises, as (bent links, turns) saved: the order of the user.
+  const gainOf = (pairs: Iterable<[number, number]>): [number, number] => {
+    let bent = 0, turns = 0;
+    for (const [was, will] of pairs) { bent += (was > 0 ? 1 : 0) - (will > 0 ? 1 : 0); turns += was - will; }
+    return [bent, turns];
+  };
+  // Phase 3b's unmoved offer is a side trial too: when 7f moved the placement and the base has no offer, an offer of the unmoved copy may stand (the filter reads it).
+  const unmovedMayStand = (): boolean => baseMoved && (baseUnmoved === undefined || measureSides(baseUnmoved, kept7e, refused).hints.size > 0);
+  const courseRound = async (given?: ReturnType<typeof measureCourses>): Promise<void> => {
+    routedBase = given === undefined ? routedFinal ?? routedBase ?? await routeModel(base) : routedBase;
+    const offer = given ?? measureCourses(base, routedBase!);
+    options.testSideTrace?.({ ev: 'courses', offer, base, routedBase });
+    if (offer.courses.length === 0) return;
+    if (reruns >= maxReruns) { options.testSideTrace?.({ ev: 'course-skipped', offer, reruns }); return; }
+    // The floors of a kept side trial and of the course trial stay under this one.
+    const nodeFloors = new Map([...courseFloors, ...(options.testNodeFloors ?? [])]);
+    for (const key of hints.keys()) {
+      const [node] = JSON.parse(key) as [string];
+      const size = stage3Sizes.get(kept7e)?.get(node);
+      if (size !== undefined) nodeFloors.set(node, { ...size });
+    }
+    for (const course of offer.courses) {
+      const link = kept7e.links.find(item => item.id === course.link)!;
+      for (const which of ['from', 'to'] as const) {
+        const size = stage3Sizes.get(kept7e)?.get(link.attachments![which].node);
+        if (size !== undefined && course[which].face !== (kept7e.nodes[link.attachments![which].node]!.ports.find(port => portKey(port.ref) === portKey(link.attachments![which]))?.side)) nodeFloors.set(link.attachments![which].node, { ...size });
+      }
+    }
+    reruns++;
+    const names = offer.courses.map(course => course.link);
+    // A refused course round leaves the layout as the baseline made it, with no note (the trace names the reason), so a sheet it does not change is byte for byte as it was.
+    const courseRefusal = (why: string): void => { options.testSideTrace?.({ ev: 'course-refused', links: names, why }); };
+    let trial7e: LayoutModel | undefined;
+    try { trial7e = await timed('rerun-course', () => place(floors, hints, nodeFloors, trialAbort, laneKeys, offer.courses)); } catch (error) {
+      // A course moves columns the baseline never moved. A centring that cannot hold its feeds there is the course's refusal, not a bug of the baseline.
+      if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError
+        || (error instanceof Error && error.message.startsWith('Centring invariant violated')))) throw error;
+      courseRefusal(`the placement run rejected them (${error.message})`);
+    }
+    if (trial7e !== undefined && trial7e.fallbackUsed && !kept7e.fallbackUsed) {
+      courseRefusal('ELK fell back during the course trial'); trial7e = undefined;
+    }
+    if (trial7e !== undefined) {
+      try {
+        const trial = await timed('bands-trial', () => step('bands', () => bands(trial7e!, () => trialAbort('bands'), options.attemptTrace), true));
+        const trialMoved = lastAttempt.moved, trialUnmoved = lastAttempt.unmoved;
+        const routedTrial = await routeModel(trial, true);
+        const verdict = judgeCourseTrial(routedBase!, routedTrial, new Map([...offer.promised].map(([id, item]) => [id, item.turns] as const)));
+        options.testSideTrace?.({ ev: 'course-trial', verdict, trial, routedTrial, routedBase });
+        if (verdict.kept) {
+          for (const [id, promised] of offer.promised) keptPromises.set(id, promised.turns);
+          if (routedFinal === undefined) routedBase = routedTrial;
+        base = trial; kept7e = trial7e; activeCourses = offer.courses; routedFinal = routedTrial;
+          baseMoved = trialMoved; baseUnmoved = trialUnmoved; courseFloors = new Map(nodeFloors);
+          for (const course of offer.courses) {
+            const was = offer.promised.get(course.link)!;
+            sideNotes.push({ stage: 'placement', severity: 'info', code: 'COURSE_TAKEN', owners: [{ kind: 'link', id: course.link }],
+              message: `The link ${course.link} takes a course round the outside: ${was.turns} turns promised, ${was.base.turns === Infinity ? 'removed' : was.base.turns} on the baseline.` });
+          }
+        } else {
+          courseRefusal(`${verdict.reason}`);
+        }
+      } catch (error) {
+        if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError)) throw error;
+        courseRefusal(`stage 7f rejected them (${error.message})`);
+      }
+    }
+  };
+  // The two rounds share the re-runs, and both are judged by the user's order on what they publish. A course kept first would take away the offer a side round
+  // reads on the baseline (the 3b pattern), so where the budget allows both, the side round goes first and the course round reads its result. Where it allows one,
+  // the offer whose promise gains more takes it (a side offer that only the unmoved copy has promises nothing and wins).
+  let courseDeferred = false;
   if (options.testCourses === undefined) {
     routedBase = await routeModel(base);
     const offer = measureCourses(base, routedBase);
     options.testSideTrace?.({ ev: 'courses', offer, base, routedBase });
-    // The two rounds share the re-runs. The course round leaves the last one to a side offer that stands: a refused course trial would have taken it, and the
-    // side round, which only reads the baseline, has no say once the count is spent.
-    const lastRerun = offer.courses.length > 0 && reruns + 1 >= maxReruns;
-    // Phase 3b's unmoved offer is a side trial too: when 7f moved the placement and the base has no offer, an offer of the unmoved copy may stand (the filter reads it).
-    const unmovedMayStand = (): boolean => baseMoved && (baseUnmoved === undefined || measureSides(baseUnmoved, kept7e, refused).hints.size > 0);
-    // The course round gives way to a side round that has an offer on the baseline: a course kept first would take the offer away (the 3b pattern), and the side round
-    // is judged on the same order. It also gives way when it would take the last re-run from a side offer that may stand.
-    const sideOffers = offer.courses.length > 0 && measureSides(base, kept7e, refused).hints.size > 0;
-    const skipped = sideOffers || (lastRerun && (reruns >= maxReruns || unmovedMayStand()));
-    if (skipped) options.testSideTrace?.({ ev: 'course-skipped', offer, reruns });
-    else if (offer.courses.length > 0) {
-      const nodeFloors = new Map(options.testNodeFloors ?? []);
-      for (const course of offer.courses) {
-        const link = kept7e.links.find(item => item.id === course.link)!;
-        for (const which of ['from', 'to'] as const) {
-          const size = stage3Sizes.get(kept7e)?.get(link.attachments![which].node);
-          if (size !== undefined && course[which].face !== (kept7e.nodes[link.attachments![which].node]!.ports.find(port => portKey(port.ref) === portKey(link.attachments![which]))?.side)) nodeFloors.set(link.attachments![which].node, { ...size });
-        }
-      }
-      reruns++;
-      const names = offer.courses.map(course => course.link);
-      // A refused course round leaves the layout as the baseline made it, with no note (the trace names the reason), so a sheet it does not change is byte for byte as it was.
-      const courseRefusal = (why: string): void => { options.testSideTrace?.({ ev: 'course-refused', links: names, why }); };
-      let trial7e: LayoutModel | undefined;
-      try { trial7e = await timed('rerun-course', () => place(floors, hints, nodeFloors, trialAbort, laneKeys, offer.courses)); } catch (error) {
-        // A course moves columns the baseline never moved. A centring that cannot hold its feeds there is the course's refusal, not a bug of the baseline.
-        if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError
-          || (error instanceof Error && error.message.startsWith('Centring invariant violated')))) throw error;
-        courseRefusal(`the placement run rejected them (${error.message})`);
-      }
-      if (trial7e !== undefined && trial7e.fallbackUsed && !kept7e.fallbackUsed) {
-        courseRefusal('ELK fell back during the course trial'); trial7e = undefined;
-      }
-      if (trial7e !== undefined) {
-        try {
-          const trial = await timed('bands-trial', () => step('bands', () => bands(trial7e!, () => trialAbort('bands'), options.attemptTrace), true));
-          const trialMoved = lastAttempt.moved, trialUnmoved = lastAttempt.unmoved;
-          const routedTrial = await routeModel(trial, true);
-          const verdict = judgeCourseTrial(routedBase, routedTrial, new Map([...offer.promised].map(([id, item]) => [id, item.turns] as const)));
-          options.testSideTrace?.({ ev: 'course-trial', verdict, trial, routedTrial, routedBase });
-          if (verdict.kept) {
-            for (const [id, promised] of offer.promised) keptPromises.set(id, promised.turns);
-            base = trial; kept7e = trial7e; activeCourses = offer.courses; routedBase = routedTrial; routedFinal = routedTrial;
-            baseMoved = trialMoved; baseUnmoved = trialUnmoved; courseFloors = new Map(nodeFloors);
-            for (const course of offer.courses) {
-              const was = offer.promised.get(course.link)!;
-              sideNotes.push({ stage: 'placement', severity: 'info', code: 'COURSE_TAKEN', owners: [{ kind: 'link', id: course.link }],
-                message: `The link ${course.link} takes a course round the outside: ${was.turns} turns promised, ${was.base.turns === Infinity ? 'removed' : was.base.turns} on the baseline.` });
-            }
-          } else {
-            courseRefusal(`${verdict.reason}`);
-          }
-        } catch (error) {
-          if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError)) throw error;
-          courseRefusal(`stage 7f rejected them (${error.message})`);
-        }
+    if (offer.courses.length > 0) {
+      const sideOffer = measureSides(base, kept7e, refused), bends = routedBends(routedBase);
+      const sideStands = sideOffer.hints.size > 0 || unmovedMayStand();
+      if (!sideStands) await courseRound(offer);
+      else if (reruns + 2 <= maxReruns) courseDeferred = true;
+      else {
+        const [courseBent, courseTurns] = gainOf([...offer.promised].map(([, item]) => [item.base.turns === Infinity ? 99 : item.base.turns, item.turns] as [number, number]));
+        const [sideBent, sideTurns] = gainOf([...sideOffer.promised.values()].map(item => [bends.get(item.link) ?? 0, item.bends] as [number, number]));
+        if (sideOffer.hints.size > 0 && (courseBent > sideBent || (courseBent === sideBent && courseTurns > sideTurns))) await courseRound(offer);
+        else options.testSideTrace?.({ ev: 'course-skipped', offer, reruns });
       }
     }
   }
@@ -428,6 +454,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     for (const [key, item] of offer.promised) promised.set(key, item);
     break; // one trial reaches 7f per command
   }
+  if (courseDeferred) await courseRound();
   for (const [key, item] of promised) {
     const side = hints.get(key);
     if (side === undefined) continue;

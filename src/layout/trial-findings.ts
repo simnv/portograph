@@ -14,12 +14,12 @@ export function constraintFindings(model: LayoutModel): Set<string> {
   return result;
 }
 
-/** The gate violations of the routed model, by gate, code and elements, and its quality Q; undefined when the model does not score. */
-export function gateFindings(model: LayoutModel): { findings: Set<string>; Q: number } | undefined {
+/** The gate violations of the routed model, by gate, code and elements,; undefined when the model does not score. */
+export function gateFindings(model: LayoutModel): { findings: Set<string> } | undefined {
   try {
     const findings = new Set<string>(), snapshot = score(model, { force: true }).snapshot;
     for (const [id, gate] of Object.entries(snapshot.gates)) if (!gate.passed) for (const violation of gate.violations) findings.add(`${id}|${violation.code}|${violation.elements.join(',')}`);
-    return { findings, Q: snapshot.Q };
+    return { findings };
   } catch { return undefined; }
 }
 
