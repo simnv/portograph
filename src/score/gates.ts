@@ -21,6 +21,7 @@ const measurable = (x: number, y: number, right: number, bottom: number): boolea
 import { anchorOnBoundary, barContact, bundlePair, effectiveLayer, endpoints, groupBoxes, groupConsumers, incident, junctionFan, mergedRun, outward, port, refEqual, refKey, sharedStem } from './model.js';
 import { overlayEndpoint } from '../layout/overlay-paths.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
+import { separationShortfalls } from '../layout/constraints/separation.js';
 import type { Segment } from './model.js';
 import type { GateId, GateResult, ScoreCounters } from './types.js';
 
@@ -86,6 +87,16 @@ function frameGate(model: LayoutModel, fail: (id: GateId, code: string, elements
       if (rectOverlap(frame.box, node.bounds)) fail('G9', 'frame-foreign-node', [frame.id, node.id], 'A node outside the frame lies inside it');
     }
   }
+}
+
+/**
+ * G9 `min-separation` (architecture ticket 17). The last check of placement, read on the published model: every hard minimum separation of the x constraint
+ * catalogue (the band gap between root groups and frames, the frame gap, the cell gap) that the layout stands under, whatever its classification. It reports and
+ * repairs nothing. A gap wider than the minimum is no finding.
+ */
+function separationGate(model: LayoutModel, fail: (id: GateId, code: string, elements: string[], message: string) => void): void {
+  if (Object.values(model.groups).some(group => group.bounds === undefined)) return;
+  for (const [id, item] of separationShortfalls(model)) fail('G9', 'min-separation', item.owners, `Minimum separation ${id} is short by ${item.short.toFixed(1)} px`);
 }
 
 /**
@@ -237,6 +248,7 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
     }
   }
   frameGate(model, fail);
+  separationGate(model, fail);
   const bands = [...model.tierBands].sort((a, b) => a.tier - b.tier);
   for (let i = 1; i < bands.length; i++) {
     const a = bands[i - 1]!, b = bands[i]!;

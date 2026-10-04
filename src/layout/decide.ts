@@ -10,10 +10,11 @@ import { saveGroups } from './overlay-order.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { tierGapPlans } from './gap-plan.js';
+import { separationShortfalls } from './constraints/separation.js';
 import { centreViolations } from './centre.js';
 import { reserveLinkLabelRoom, type LinkLabelShortfall } from './bands.js';
 import { attemptCounters, lastAttempt } from './attempt-counters.js';
-import { drawnOverlays, judges, compare, gains, holds as readingHolds, read, reading, tapVerdict, type Reading } from './objective.js';
+import { drawnOverlays, judges, lazySeparation, compare, gains, holds as readingHolds, read, reading, tapVerdict, type Reading } from './objective.js';
 
 /**
  * The decision loop of stage 7f (architecture ticket 13, phase 3). Three kinds of optional discrete choice are made here, and nowhere else:
@@ -140,7 +141,7 @@ function drift(model: LayoutModel): number {
 export interface AdoptedCopy { copy: LayoutModel; baseDiagnostics: number; original: ReadonlySet<Diagnostic>; result: unknown }
 
 const verdict = (model: LayoutModel, overlays: readonly LayoutLink[]): Verdict =>
-  ({ ...read(model, { overlays, routed: { straight: 'aligned' }, crossings: 'pairs', growth: true }), sets: { crowded: crowded(model), disordered: disordered(model), residuals: residuals(model) }, drift: drift(model) });
+  ({ ...read(model, { overlays, routed: { straight: 'aligned' }, crossings: 'pairs', growth: true }), sets: { crowded: crowded(model), disordered: disordered(model), residuals: residuals(model) }, drift: drift(model), separation: lazySeparation(() => separationShortfalls(model)) });
 
 /**
  * The growth a cell's frame edge may take when its bodies move (ticket 80): the frame stands off the outermost body, so the frame, the
@@ -307,8 +308,10 @@ export function shortGaps(model: LayoutModel): string[] {
  */
 export function chooseStep(model: LayoutModel, overlays: readonly LayoutLink[], group: LayoutGroup, dx: number): boolean {
   // One candidate, so the position that breaks a tie is the same for both: the step stays when it is no worse (a swap of one chord for another is a net gain or a net loss, by the order).
-  const straight = (): Reading => ({ ...read(model, { overlays, routed: { straight: 'aligned' }, crossings: 'pairs' }), sets: { crowded: crowded(model), disordered: disordered(model) }, tie: [0] });
+  const straight = (): Reading => ({ ...read(model, { overlays, routed: { straight: 'aligned' }, crossings: 'pairs' }), sets: { crowded: crowded(model), disordered: disordered(model) }, separation: lazySeparation(() => separationShortfalls(model)), tie: [0] });
+  // The reading before the move is read now, before the model changes: the move is judged against the shortfalls it began with.
   const before = straight(), undo = saveGroups(model, [group]);
+  before.separation!();
   moveGroup(model, group, dx, 0);
   rebuildNodeGeometry(model, group.nodes, 'current');
   const after = straight();
@@ -339,11 +342,13 @@ export function chooseReseat(draft: LayoutModel, heldLanes: LayoutModel['lanes']
   reserveLinkLabelRoom(candidateCopy(settled), afterRoom);
   const after: Reading = { ...picture(settled), sets: { centring: new Set(centreViolations(settled)), gaps: new Set(shortGaps(settled)), room: new Set(afterRoom.map(item => item.link)),
     crowded: crowded(settled), disordered: disordered(settled) },
+    separation: lazySeparation(() => separationShortfalls(settled)),
     facts: { lanesHold: lanesHoldTheirChild(settled, followed), chordsClear: blockedChords(settled).length === 0 } };
   draft.lanes = heldLanes; rebuildLaneExtents(draft);
   reserveLinkLabelRoom(candidateCopy(draft), heldRoom);
   const held: Reading = { ...picture(draft), sets: { centring: new Set(centreViolations(draft)), gaps: new Set(shortGaps(draft)), room: new Set(heldRoom.map(item => item.link)),
-    crowded: crowded(draft), disordered: disordered(draft) } };
+    crowded: crowded(draft), disordered: disordered(draft) },
+    separation: lazySeparation(() => separationShortfalls(draft)) };
   if (!readingHolds(after, held, judges.laneReseat)) return false;
   // Adopt the trial whole: `draft` is the object this transaction validates and returns, so it takes the settled state rather than repeating the two producers on itself.
   Object.assign(draft, settled);

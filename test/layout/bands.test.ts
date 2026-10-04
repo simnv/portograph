@@ -842,7 +842,9 @@ it('stress ticket 19: a grown group label lands inside the inset the growth aske
   expect(label.x).toBeGreaterThan(group.x + GROUP_LABEL_GEOMETRY.horizontalInset);
 }, 120000);
 
-it('stress ticket 37: a corridor that follows its child leaves the grid settled against the corridors it replaced', async () => {
+// Skipped by ticket 17, replaced by ticket 18 (a fixture where a corridor follows its child): the lane reseat is now refused on this sheet, because its settled model closes `row-12` and `zone-7` under the band gap (`separationHeld`), so the
+// corridor does not follow its child and the grid does not merge.
+it.skip('stress ticket 37: a corridor that follows its child leaves the grid settled against the corridors it replaced', async () => {
   // `reseatLanes` is 7f's last step, and `laneSidesHold` — which decides whether a linked pair may
   // share an x-extent — reads lane geometry. Here the corridor of `lab4crt001` → `transit-a001`
   // stands 0.2815 px inside the extent `row-12` and `row-13` would share, so the grid declines the

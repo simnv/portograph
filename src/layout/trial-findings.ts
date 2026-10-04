@@ -1,6 +1,6 @@
 import type { LayoutModel } from '../model/layout.js';
 import { score } from '../score/index.js';
-import { evaluate, xCatalogue } from './constraints/index.js';
+import { evaluate, separationShortfalls, worseSeparations, xCatalogue } from './constraints/index.js';
 
 /**
  * What a trial publishes that is broken, as a set of names. A round that places again judges its trial on these sets as well as on its counts: a trial
@@ -12,6 +12,14 @@ export function constraintFindings(model: LayoutModel): Set<string> {
   const result = new Set<string>();
   for (const item of evaluate(model, xCatalogue(model))) if (item.violated && item.constraint.strength === 'hard' && item.class === 'invariant-violation') result.add(`x|${item.constraint.id}`);
   return result;
+}
+
+/**
+ * The minimum separations a trial breaks or deepens against its baseline (ticket 17), by catalogue id, whatever the class of the entry: a warning the baseline
+ * already carries does not excuse a break the trial adds, and a baseline that is short already is not licence to be shorter.
+ */
+export function separationWorse(trial: LayoutModel, base: LayoutModel): string[] {
+  return worseSeparations(separationShortfalls(trial), separationShortfalls(base));
 }
 
 /** The gate violations of the routed model, by gate, code and elements,; undefined when the model does not score. */
