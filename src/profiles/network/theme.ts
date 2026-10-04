@@ -81,6 +81,26 @@ export function nodeClassPaint(style: NodeClassStyle, mode: ThemeMode):
   };
 }
 
+/** Linear mix of two `#rrggbb` colours: `amount` of `over` on top of `base`. */
+export function mixHex(base: string, over: string, amount: number): string {
+  const channel = (hex: string, at: number): number => parseInt(hex.slice(1 + at * 2, 3 + at * 2), 16);
+  return '#' + [0, 1, 2].map(at => Math.round(channel(base, at) * (1 - amount) + channel(over, at) * amount)
+    .toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * The body fill of a node of one class in one mode: a faint wash of the class hue (paint only; the
+ * icon tile keeps the full role colour). Light mixes the hue's 200 step into white, dark mixes the
+ * 800 step into the dark body, print a light grey of the class's greyscale tile. A class the profile
+ * does not know keeps the plain body. Labels keep at least 4.5:1 on every wash (a test checks it).
+ */
+export function nodeBodyFill(style: NodeClassStyle | undefined, mode: ThemeMode): string {
+  const plain = NETWORK_THEME[mode].node.fill;
+  if (!style) return plain;
+  if (mode === 'print') return mixHex(plain, style.print.fill, 0.18);
+  return mode === 'light' ? mixHex(plain, style.hue[200], 0.75) : mixHex(plain, style.hue[800], 0.45);
+}
+
 export interface LinkClassStyle {
   /** Stroke colour (light). */
   stroke: string;
@@ -197,7 +217,7 @@ export const NETWORK_THEME: Modal<ThemePaint> = {
     pill: { fill: STEEL[200], stroke: STEEL[500], text: STEEL[800] },
     link: { stroke: STEEL[800], label: NEUTRAL[700], multiplicity: STEEL[700] },
     legend: { text: NEUTRAL[800] },
-    overlay: { stroke: INDIGO[500], opacity: 0.6, mark: INDIGO[500] },
+    overlay: { stroke: INDIGO[400], opacity: 0.5, mark: INDIGO[400] },
   },
   dark: {
     background: STEEL[900],
@@ -208,7 +228,7 @@ export const NETWORK_THEME: Modal<ThemePaint> = {
     pill: { fill: STEEL[800], stroke: STEEL[400], text: STEEL[200] },
     link: { stroke: STEEL[300], label: STEEL[300], multiplicity: STEEL[200] },
     legend: { text: STEEL[200] },
-    overlay: { stroke: INDIGO[400], opacity: 0.6, mark: INDIGO[400] },
+    overlay: { stroke: INDIGO[500], opacity: 0.5, mark: INDIGO[500] },
   },
   print: {
     background: WHITE,
@@ -219,7 +239,7 @@ export const NETWORK_THEME: Modal<ThemePaint> = {
     pill: { fill: NEUTRAL[100], stroke: NEUTRAL[600], text: BLACK },
     link: { stroke: BLACK, label: NEUTRAL[700], multiplicity: BLACK },
     legend: { text: BLACK },
-    overlay: { stroke: NEUTRAL[600], opacity: 0.7, mark: NEUTRAL[600] },
+    overlay: { stroke: NEUTRAL[500], opacity: 0.55, mark: NEUTRAL[500] },
   },
 };
 

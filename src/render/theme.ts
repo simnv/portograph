@@ -1,5 +1,5 @@
 import { LEGEND_DEFAULT_CLASS, NETWORK_LINK_CLASSES, NETWORK_NODE_CLASSES, NETWORK_PORT_ROLES, NETWORK_PORT_STATUS, NETWORK_THEME,
-  nodeClassPaint, portRolePaint } from '../profiles/network/theme.js';
+  nodeBodyFill, nodeClassPaint, portRolePaint } from '../profiles/network/theme.js';
 import type { ThemeMode } from '../profiles/network/theme.js';
 
 /**
@@ -79,9 +79,10 @@ export function themeRules(mode: ThemeMode): string[] {
     `.overlay-line{stroke:${paint.overlay.stroke};stroke-opacity:${paint.overlay.opacity}}`,
     `.overlay-endpoint{fill:${paint.overlay.mark};stroke:none}`,
   ];
-  // The role colour lives on the icon tile; the pill takes the class hue. No class fills a body.
+  // The role colour lives on the icon tile; the pill takes the class hue. The body takes a faint wash of the class hue.
   for (const [name, style] of NETWORK_NODE_CLASSES) {
     const { tile, glyph, pill } = nodeClassPaint(style, mode);
+    rules.push(`.node-body.${name}{fill:${nodeBodyFill(style, mode)}}`);
     rules.push(`.icon-tile.${name}{fill:${tile.fill};stroke:${tile.stroke}}`);
     rules.push(`.node-icon.${name}{stroke:${glyph}}`);
     rules.push(`.pill.${name}{fill:${pill.fill};stroke:${pill.stroke}}`);

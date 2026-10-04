@@ -10,7 +10,7 @@ import { flanks } from '../../src/layout/flanks.js';
 import { lanes } from '../../src/layout/lanes.js';
 import { linkLabels } from '../../src/layout/link-labels.js';
 import { rows } from '../../src/layout/rows.js';
-import { NETWORK_THEME, linkClassStyle, portRolePaint, portRoleStyle } from '../../src/profiles/network/theme.js';
+import { NETWORK_THEME, linkClassStyle, nodeBodyFill, nodeClassStyle, portRolePaint, portRoleStyle } from '../../src/profiles/network/theme.js';
 import { route } from '../../src/route/index.js';
 import { effectiveLayer } from '../../src/score/model.js';
 import { OVERLAY_ENDPOINT_RADIUS } from '../../src/theme/geometry.js';
@@ -1431,7 +1431,8 @@ links:
         const cell = all.get(id('port', key, port.ref.name!, String(port.ref.ordinal)))!;
         expect(cell.style['fillColor']).not.toBe('none');
         if (!(port.class ?? '').split(/\s+/).includes('loopback')) continue;
-        expect(cell.style['fillColor']).toBe(body);
+        const known = nodeClassStyle(model.document.nodes[key]!.class);
+        expect(cell.style['fillColor']).toBe(`light-dark(${nodeBodyFill(known, 'light')},${nodeBodyFill(known, 'dark')})`);
         expect(cell.style['strokeColor']).toBe(`light-dark(${portRolePaint(loopback, 'light').stroke!},`
           + `${portRolePaint(loopback, 'dark').stroke!})`);
         outlined += 1;
@@ -1635,7 +1636,7 @@ describe('signal links', () => {
       expect([style['dashed'], style['dashPattern']]).toEqual(['1', signal.dash]);
       expect(style['dashPattern']).toBe('4 4');
       expect(style['strokeColor']).toContain(signal.strokes.light);
-      expect(style['strokeColor']).not.toContain(NETWORK_THEME.light.overlay.stroke);
+      expect(style['strokeColor']).not.toBe(`light-dark(${NETWORK_THEME.light.overlay.stroke},${NETWORK_THEME.dark.overlay.stroke})`);
       expect(style['opacity']).toBeDefined();
     }
   }, 60000);
