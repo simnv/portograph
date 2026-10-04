@@ -1,0 +1,32 @@
+# Expected: N2-C1 leaves the top face and drops into C1, C1-S2 enters S2 from the bottom, N1-S2 keeps its lane: fewer
+# bent links, fewer turns and fewer crossings (ticket 15 phase 4).
+# Three nodes on tier 0 and three on tier 2 form a full mesh of nine routed
+# links. One core node stands on tier 1 between them. Each mesh link transits tier 1 through its
+# own lane beside the core frame, so nine lanes stand beside one body.
+# Source: 04-mesh-across-a-tier.yaml. Test-only input owned by architecture ticket 15; test/pipeline/outside-lanes.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  north: { tier: 0, label: North }
+  core: { tier: 1, label: Core }
+  south: { tier: 2, label: South }
+nodes:
+  n1: { group: north, class: router, label: N1 }
+  n2: { group: north, class: router, label: N2 }
+  n3: { group: north, class: router, label: N3 }
+  c1: { group: core, class: router, label: C1 }
+  s1: { group: south, class: switch, label: S1 }
+  s2: { group: south, class: switch, label: S2 }
+  s3: { group: south, class: switch, label: S3 }
+links:
+  - [n2, c1]
+  - [c1, s2]
+  - [n1, s1]
+  - [n1, s2]
+  - [n1, s3]
+  - [n2, s1]
+  - [n2, s2]
+  - [n2, s3]
+  - [n3, s1]
+  - [n3, s2]
+  - [n3, s3]

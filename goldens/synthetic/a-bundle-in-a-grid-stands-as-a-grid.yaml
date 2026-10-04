@@ -1,0 +1,25 @@
+# Expected: The farm stands as a 3 x 2 grid with the bundle inside it (not reached by ticket 15; the grid and bundle
+# ticket).
+# A farm of six servers with shape grid, fed by one core. Two of the servers
+# share a bundle of two links. A group that holds both ends of a bundle declines any shape that
+# stacks its nodes, because rows are stacked before the rules that grow a body run. The farm
+# becomes one row of six.
+# Source: 10-bundle-in-a-grid.yaml. Test-only input owned by architecture ticket 15; test/pipeline/outside-lanes.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  top: { tier: 0, label: Core }
+  farm: { tier: 1, shape: grid, label: Farm }
+nodes:
+  core: { group: top, class: router, label: Core }
+  s1: { group: farm, class: server, label: S1 }
+  s2: { group: farm, class: server, label: S2 }
+  s3: { group: farm, class: server, label: S3 }
+  s4: { group: farm, class: server, label: S4 }
+  s5: { group: farm, class: server, label: S5 }
+  s6: { group: farm, class: server, label: S6 }
+links:
+  - [core, s1]
+  - [core, s4]
+  - [s2, s3]
+  - [s2, s3]

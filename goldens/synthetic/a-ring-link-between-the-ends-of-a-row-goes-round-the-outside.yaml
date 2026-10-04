@@ -1,0 +1,30 @@
+# Expected: The closing ring link R4-R1 leaves the top tier band from the outside faces of R4 and R1 and runs round
+# the outside of the drawing: one closed loop, no crossing (hand solve 01 needs a node-gap lane and a padding row, so
+# ticket 15 phase 4 does not reach it).
+# Four routers in a ring, each with a host below. All four stand on one tier,
+# so the closing link R4-R1 is a peer link along the row. Stage 5 gives its ports lateral sides
+# from the row order, and the path must leave the tier band to pass R2 and R3.
+# Source: 01-ring-in-a-row.yaml. Test-only input owned by architecture ticket 15; test/pipeline/outside-lanes.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  ring: { tier: 0, label: Ring }
+  hosts: { tier: 1, label: Hosts }
+nodes:
+  r1: { group: ring, class: router, label: R1 }
+  r2: { group: ring, class: router, label: R2 }
+  r3: { group: ring, class: router, label: R3 }
+  r4: { group: ring, class: router, label: R4 }
+  h1: { group: hosts, class: server, label: H1 }
+  h2: { group: hosts, class: server, label: H2 }
+  h3: { group: hosts, class: server, label: H3 }
+  h4: { group: hosts, class: server, label: H4 }
+links:
+  - [r1, r2]
+  - [r2, r3]
+  - [r3, r4]
+  - [r4, r1]
+  - [r1, h1]
+  - [r2, h2]
+  - [r3, h3]
+  - [r4, h4]

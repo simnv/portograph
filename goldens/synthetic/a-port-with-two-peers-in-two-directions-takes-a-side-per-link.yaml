@@ -1,0 +1,25 @@
+# Expected: The uplink meets the trunk pill from above and the firewall link leaves it to the right: 2 turns instead
+# of 3, and SHARED_PORT stays a warning (ticket 15 phase 6).
+# One switch port (trunk) carries a link up to the WAN router and a link to a
+# firewall on a right flank. Stage 2 reads the side of a port from the document: the two peers
+# tie, the tie goes to right, and the uplink leaves through the right face. The side a port
+# needs is known only when its paths are drawn (ADR-0009: port topology freezes before geometry).
+# Source: 12-one-port-two-directions.yaml. Test-only input owned by architecture ticket 15; test/pipeline/outside-lanes.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  wan: { tier: 0, label: WAN }
+  site: { tier: 1, label: Site }
+  dmz: { align: right, of: site, label: DMZ }
+  hosts: { tier: 2, label: Hosts }
+nodes:
+  r1: { group: wan, class: router, label: R1 }
+  sw: { group: site, class: switch, label: SW, ports: [trunk] }
+  fw: { group: dmz, class: router, label: FW }
+  h1: { group: hosts, class: server, label: H1 }
+  h2: { group: hosts, class: server, label: H2 }
+links:
+  - [r1, sw.trunk]
+  - [fw, sw.trunk]
+  - [sw, h1]
+  - [sw, h2]

@@ -1,0 +1,33 @@
+# Expected: TS1-C1 left/left, TS1-C2 left/bottom, TS2-C3 right/top: four overlay links with 7 turns in all (ticket 15
+# phase 7).
+# A zone of two ranks: two time servers above two load balancers, joined by
+# an X of four routed links, so rank 1 stands column for column under rank 0. Each time server
+# syncs client nodes on the tier below the zone. The straight overlay chord from a time server
+# leaves its bottom face and enters the load balancer under it (ranked-groups ticket 150).
+# Source: 07-lower-rank-under-the-chord.yaml. Test-only input owned by architecture ticket 15; test/pipeline/outside-lanes.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  hub: { tier: 0, label: Hub }
+  zone: { tier: 1, label: Zone }
+  clients: { tier: 2, label: Clients }
+nodes:
+  h: { group: hub, class: router, label: Hub }
+  ts1: { group: zone, class: server, label: TS1 }
+  ts2: { group: zone, class: server, label: TS2 }
+  lb1: { group: zone, class: switch, label: LB1 }
+  lb2: { group: zone, class: switch, label: LB2 }
+  c1: { group: clients, class: server, label: C1 }
+  c2: { group: clients, class: server, label: C2 }
+  c3: { group: clients, class: server, label: C3 }
+links:
+  - [h, ts1]
+  - [h, ts2]
+  - [ts1, lb1]
+  - [ts1, lb2]
+  - [ts2, lb1]
+  - [ts2, lb2]
+  - [ts1, c1, { class: sync }]
+  - [ts1, c2, { class: sync }]
+  - [ts2, c2, { class: sync }]
+  - [ts2, c3, { class: sync }]

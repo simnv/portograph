@@ -1,0 +1,30 @@
+# Expected: OOB leaves its top face and runs down the left margin into SRV 1 left (3 turns); OOB right face drops into
+# SRV 2 top (1 turn); no link goes round the canton and back under it (ticket 15 phase 4).
+# A canton holds the core (tier 1) and the distribution (tier 2). An
+# out-of-band node on tier 0 links straight to two servers on tier 3. A foreign link's lane stands
+# outside the canton frame, so both links go round the whole canton and come back under it.
+# Source: 08-transit-past-a-canton.yaml. Test-only input owned by architecture ticket 15; test/pipeline/outside-lanes.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  site: { label: Site }
+  wan: { tier: 0, label: WAN }
+  core: { tier: 1, canton: site, label: Core }
+  dist: { tier: 2, canton: site, label: Distribution }
+  servers: { tier: 3, label: Servers }
+nodes:
+  wan-1: { group: wan, class: router, label: WAN 1 }
+  oob: { group: wan, class: router, label: OOB }
+  core-1: { group: core, class: router, label: Core 1 }
+  dist-1: { group: dist, class: switch, label: Dist 1 }
+  dist-2: { group: dist, class: switch, label: Dist 2 }
+  srv-1: { group: servers, class: server, label: SRV 1 }
+  srv-2: { group: servers, class: server, label: SRV 2 }
+links:
+  - [wan-1, core-1]
+  - [core-1, dist-1]
+  - [core-1, dist-2]
+  - [dist-1, srv-1]
+  - [dist-2, srv-2]
+  - [oob, srv-1]
+  - [oob, srv-2]
