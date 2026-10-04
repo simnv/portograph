@@ -6,6 +6,7 @@ import { cellReach } from './frames.js';
 import { standsInCanton } from './read/canton.js';
 import { centringFeeds, type Feed } from './read/feeds.js';
 import { straightChordIds } from './read/overlay-straight.js';
+import { holds, profiles, reading, straightOf, tapVerdict } from './objective.js';
 import { besideWalls, frameColumns, keepOutShifts, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
 import { findPort } from './row-paths.js';
 import { attemptCounters } from './attempt-counters.js';
@@ -436,7 +437,9 @@ function centreGroupStep(model: LayoutModel, context: CentreContext, tier: numbe
   rebuildNodeGeometry(model, model.groups[id]!.nodes, 'current');
   const now = straightChordIds(model);
   // A frame edge that a foreign drop would run along is a spacing routing can only discover; a step may not make one (ticket 75).
-  if (now.size >= held.size && [...keepOutShifts(model).keys()].every(item => breached.has(item.id))) return result;
+  const stands = holds(reading({ overlay: straightOf(now) }), reading({ overlay: straightOf(held) }), profiles.keepCount) && [...keepOutShifts(model).keys()].every(item => breached.has(item.id));
+  tapVerdict('centreGroupStep', () => `${stands} ${now.size}/${held.size}`);
+  if (stands) return result;
   model.groups[id] = snapshot.group;
   for (const node of snapshot.nodes) model.nodes[node.id] = node;
   packClear(model, context, tier, snapshot.group, previous);

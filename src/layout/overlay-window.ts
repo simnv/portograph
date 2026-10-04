@@ -3,6 +3,7 @@ import type { LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
 import { EPS } from '../geometry/planar.js';
 import { chordEnds, chordPoints, overlayBlockers, straightBetween, type OverlayEnd, type OverlayShape, type ShapeQuery } from './overlay-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { gains, lazyCount, profiles, reading, tapVerdict, type Reading } from './objective.js';
 import { drawn, drawnCrossings, overlayCrossingPoints, portKey, type Drawn } from './read/crossings.js';
 
 /**
@@ -90,12 +91,17 @@ export function pickTarget(mean: number, candidates: readonly number[], score: (
     .sort((a, b) => Math.abs(a - mean) - Math.abs(b - mean) || a - b).slice(0, count);
   const sorted = [...new Set([...nearest(candidates, CHORD_WINDOW_TRIALS), ...nearest(events, EVENT_TRIALS)])]
     .sort((a, b) => Math.abs(a - mean) - Math.abs(b - mean) || a - b);
+  // A candidate takes over when it is better by the profile: more straight chords, then fewer crossings unless it bends a chord that is straight at the mean,
+  // then (never better) a position no nearer. The candidates come nearest first, so the nearest of equals stays.
+  const asReading = (x: number, value: Score): Reading => reading({ overlay: { straight: value.straight, bent: 0, turns: 0 }, crossings: lazyCount(() => value.crossings),
+    crossingMode: 'points', bendsMean: value.bendsMean, tie: [Math.abs(x - mean), x] });
   const base = score(mean, 0);
-  let target = mean, best = base;
+  let target = mean, best = base, incumbent = asReading(mean, base);
   for (const x of sorted) {
-    const value = score(x, best.straight);
-    if (value.straight > best.straight || (value.straight === best.straight && !value.bendsMean && value.crossings < best.crossings)) { best = value; target = x; }
+    const value = score(x, best.straight), now = asReading(x, value);
+    if (gains(now, incumbent, profiles.windowTarget)) { best = value; target = x; incumbent = now; }
   }
+  tapVerdict('pickTarget', () => `${sorted.length} ${target} ${best.straight - base.straight} ${base.crossings - best.crossings}`);
   return { target, gained: best.straight - base.straight, saved: base.crossings - best.crossings };
 }
 

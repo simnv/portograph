@@ -13,7 +13,8 @@ import { rowGap } from './sides-two.js';
 import { bandGap, compareId } from './skeleton-graph.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { PLACEMENT_EPS } from './tolerance.js';
-import { drawn, overlayCrossings, portKey, windowTarget, type Drawn, type Window } from './overlay-window.js';
+import { windowTarget, type Window } from './overlay-window.js';
+import { drawnOverlays, gains, holds, lazyCount, profiles, read, reading, straightOf, tapVerdict, type Reading } from './objective.js';
 
 /** A free group stands where its overlay chords are straight and not at the mean of its partners (ticket 143, info). */
 export const OVERLAY_WINDOW_TAKEN = 'OVERLAY_WINDOW_TAKEN';
@@ -102,7 +103,10 @@ export interface OverlayState { bent: number; turns: number; crossings: number }
  * the straight links come first.
  */
 export function sheetGains(windows: OverlayState, before: OverlayState): boolean {
-  return windows.turns <= before.turns && (windows.bent < before.bent || (windows.bent === before.bent && windows.crossings < before.crossings));
+  const state = (one: OverlayState): Reading => reading({ overlay: { straight: 0, bent: one.bent, turns: one.turns }, crossings: lazyCount(() => one.crossings), crossingMode: 'points' });
+  const result = gains(state(windows), state(before), profiles.sheetGains);
+  tapVerdict('sheetGains', () => `${result} ${windows.turns}/${before.turns} ${windows.bent}/${before.bent} ${windows.crossings}/${before.crossings}`);
+  return result;
 }
 
 /**
@@ -111,23 +115,16 @@ export function sheetGains(windows: OverlayState, before: OverlayState): boolean
  * are read only where the straight sets tie. A window of an earlier run gives way to the means by the same test.
  */
 export function windowsHold(after: ReadonlySet<string>, before: ReadonlySet<string>, crossingsAfter: () => number, crossingsBefore: number): boolean {
-  if (after.size > before.size) return true;
-  return after.size === before.size && [...before].every(id => after.has(id)) && crossingsAfter() <= crossingsBefore;
+  const now = reading({ overlay: straightOf(after), crossings: lazyCount(crossingsAfter), crossingMode: 'points' });
+  const result = holds(now, reading({ overlay: straightOf(before), crossings: lazyCount(() => crossingsBefore), crossingMode: 'points' }), profiles.windowsHold);
+  tapVerdict('windowsHold', () => `${result} ${after.size}/${before.size} ${now.crossings.value ?? '-'}/${crossingsBefore}`);
+  return result;
 }
 
 /** The bent overlay links, the turns of all, and the crossings among the drawn overlay paths, as the overlay rule draws them now. A mesh bus member is no chord. */
 function overlayTurns(model: LayoutModel): OverlayState {
-  const blockers = overlayBlockers(model);
-  let bent = 0, turns = 0;
-  const paths: Drawn[] = [];
-  for (const link of model.links) {
-    if (link.layer !== 'overlay' || link.meshBus !== undefined || !link.attachments) continue;
-    const { segments } = overlayPath(model, link, blockers);
-    if (segments.length > 1) bent++;
-    turns += segments.length - 1;
-    paths.push(drawn([segments[0]!.from, ...segments.map(segment => segment.to)], [portKey(link.attachments.from), portKey(link.attachments.to)]));
-  }
-  return { bent, turns, crossings: overlayCrossings(paths) };
+  const state = read(model, { overlays: drawnOverlays(model), crossings: 'points' });
+  return { bent: state.overlay.bent, turns: state.overlay.turns, crossings: state.crossings() };
 }
 
 function place(model: LayoutModel, columns: readonly FrameColumn[], windows: boolean, state?: { windowed: boolean }): void {
@@ -463,17 +460,16 @@ export function stepOutOfChords(model: LayoutModel, tiers: readonly number[], fr
       const inside = candidates.filter(x => !others.length || (x - reach.left >= spanLow - PLACEMENT_EPS && x - reach.left + width <= spanHigh + PLACEMENT_EPS));
       const pool = inside.length ? inside : candidates;
       const target = pool.reduce((best, x) => Math.abs(x - box.x) < Math.abs(best - box.x) - PLACEMENT_EPS ? x : best);
-      const straight = (): Set<string> => {
-        const blockers = overlayBlockers(model);
-        return new Set(overlays.filter(link => overlayPath(model, link, blockers).segments.length === 1).map(link => link.id));
-      };
+      const straight = (): Reading => read(model, { overlays });
       // A step out of a chord is optional: it is not made into the riser keep-out (mesh-bus.md, section 11.5).
       if (!optionalMoveHolds(model, [{ group, bounds: { ...box, x: target } }], false)) continue;
       const before = straight(), undo = saveGroups(model, [group]);
       moveGroup(model, group, target - box.x, 0);
       rebuildNodeGeometry(model, group.nodes, 'current');
       const after = straight();
-      if ([...before].some(id => !after.has(id))) {
+      const bent = !holds(after, before, profiles.keepSet);
+      tapVerdict('stepOutOfChords', () => `${bent} ${before.overlay.straight}/${after.overlay.straight}`);
+      if (bent) {
         undo();
         rebuildNodeGeometry(model, group.nodes, 'current');
         placementWarning(model, 'LINKLESS_GROUP_MOVE_REFUSED',
