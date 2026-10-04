@@ -209,8 +209,8 @@ export interface LayoutLink {
 
 /** What a course is for: the detour of its natural route (ticket 15, Section 1, T1 to T5). */
 export type CourseKind = 'transit' | 'u-turn' | 'skirt' | 'shared-port' | 'overlay';
-/** One run of a course, in order from the source: the kind of lane or row it stands on. */
-export type CourseRun = 'padding' | 'transit' | 'gap' | 'perimeter' | 'tier-gap';
+/** One run of a course, in order from the source: the kind of lane or row it stands on. `u` is a U part of the tier gap: both its legs stand on one boundary of the gap (phase 5). */
+export type CourseRun = 'padding' | 'transit' | 'gap' | 'perimeter' | 'tier-gap' | 'u';
 /** One end of a course. `face` is the side of the port (stage 5 sets it from the course); `approach` is the pill edge a stem meets when it differs. */
 export interface CourseEnd { face: Side; approach?: Side }
 /**

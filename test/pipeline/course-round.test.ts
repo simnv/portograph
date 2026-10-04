@@ -128,9 +128,14 @@ describe('the course round on the hand-solve sheets (ticket 15, phase 4)', () =>
     expect(model.links.filter(item => item.removed === true).map(item => item.id)).toEqual(['link-6']);
   }, 60000);
 
-  it('a link around a neighbour that no perimeter course beats keeps its route', async () => {
+  // Phase 5: every eligible skirt is offered a column-gap course and the judge keeps what wins by the unified order. Both flank links take one here (6 turns, 1
+  // crossing against the solve's 7 and 2): the library beats the hand solve on this sheet.
+  it('both flank links take a column-gap course', async () => {
     const model = await layout(parse(source(AROUND)), options);
-    expect(model.courses).toBeUndefined();
+    expect(model.courses?.map(course => [course.link, course.runs])).toEqual([['link-5', ['u', 'gap']], ['link-6', ['u', 'gap']]]);
+    expect(model.lanes.filter(lane => lane.kind === 'gap').map(lane => lane.id)).toEqual(['gap-lane:link-5:0', 'gap-lane:link-6:0']);
+    expect(codes(model)).toContain('COURSE_TAKEN');
+    expect(codes(model)).not.toContain('COURSE_SHAPE_LOST');
   }, 60000);
 });
 

@@ -1,10 +1,12 @@
 import type { Point, Rect, Side } from '../model/geometry.js';
-import type { Course, LayoutGroup, LayoutLink, LayoutModel, LayoutPort } from '../model/layout.js';
+import type { Course, Lane, LayoutGroup, LayoutLink, LayoutModel, LayoutPort } from '../model/layout.js';
 import { courseGeometry, ringsOf } from './course-lanes.js';
+import { probeGapLane } from './lanes.js';
+import { gapGeometry, gapPolyline } from './course-gap.js';
 import { polylineCrossings, polylineTurns } from './course-plan.js';
 import { authoredSide, groupShape } from './grid.js';
 import { crossingsOf, strictCrossing } from './read/crossings.js';
-import { linkFacts, type EndFacts } from './read/courses.js';
+import { linkFacts, type EndFacts, type LinkFacts } from './read/courses.js';
 import { profiles, drawnOverlays, read, pathBends, reading, routedFamily, routedBends, compare, lazyCount, type Reading } from './objective.js';
 import { findPort } from './row-paths.js';
 import { EDGE_MARGIN, RING_PITCH, paddingRows, rowsInset } from './course-rows.js';
@@ -78,6 +80,8 @@ const added = (modesUsed: Mode[]): number => modesUsed.filter(mode => mode !== '
 
 export function measureCourses(base: LayoutModel, routedBase: LayoutModel, refusedLinks: ReadonlySet<string> = new Set()): CourseOffer {
   const offer: CourseOffer = { courses: [], promised: new Map() };
+  // The gap lanes of the offers made so far: a later skirt's column is read with them standing.
+  const gapLanes: Lane[] = [];
   const facts = linkFacts(base);
   const paths = new Map<string, Point[]>();
   for (const link of routedBase.links) if (link.layer === 'routed' && link.removed !== true) paths.set(link.id, pointsOf(link));
@@ -95,7 +99,18 @@ export function measureCourses(base: LayoutModel, routedBase: LayoutModel, refus
     const crossings0 = routed === undefined || turns0 === undefined ? 0 : crossingsOf(routedBase, link.id);
     if (!poorRoute(turns0, crossings0)) continue;
     const [upper, lower] = found.from.tier < found.to.tier ? [found.from, found.to] : [found.to, found.from];
-    if (upper.tier === lower.tier) continue;
+    if (upper.tier === lower.tier) {
+      // A skirt: both ends in one band with a unit between them. It reads its cost from the baseline's route (turns0, crossings0), and every eligible skirt is
+      // offered a column-gap course; the judge keeps the trial only if the published result wins by the unified order.
+      const gap = gapCourse(base, found, usage, crossedBy, turns0, crossings0, gapLanes);
+      if (gap !== undefined) {
+        offer.courses.push(gap.course);
+        offer.promised.set(link.id, { turns: gap.turns, crossings: gap.crossings, base: { turns: turns0 ?? Infinity, crossings: crossings0 } });
+        paths.set(link.id, gap.points);
+        gapLanes.push(gap.lane);
+      }
+      continue;
+    }
     const best = { turns: Infinity, crossings: Infinity, added: Infinity, distance: Infinity, course: undefined as Course | undefined, points: [] as Point[] };
     for (const s of ['left', 'right'] as const) {
       const upperModes = modes(upper, true, s, usage(base, portKey(upper.ref)) === 1 && base.groups[upper.group]?.flank === undefined);
@@ -148,6 +163,54 @@ export function measureCourses(base: LayoutModel, routedBase: LayoutModel, refus
     paths.set(link.id, best.points);
   }
   return offer;
+}
+
+/** The column-gap course of a skirt, or `undefined`: which end keeps its lateral face, which leaves by the bottom face and a U part. */
+function gapCourse(base: LayoutModel, found: LinkFacts, usageOf: (model: LayoutModel, key: string) => number,
+  crossedBy: (id: string, points: readonly Point[]) => number, turns0: number | undefined, crossings0: number, extra: readonly Lane[]):
+  { course: Course; turns: number; crossings: number; points: Point[]; lane: Lane } | undefined {
+  if (found.between.length === 0) return undefined;
+  const best = { turns: Infinity, crossings: Infinity, course: undefined as Course | undefined, points: [] as Point[], lane: undefined as Lane | undefined };
+  for (const lateralIsFrom of [true, false]) {
+    const lateral = lateralIsFrom ? found.from : found.to, other = lateralIsFrom ? found.to : found.from;
+    const side = lateral.side;
+    if ((side !== 'left' && side !== 'right') || !lateral.edge[side] || base.groups[lateral.group]?.flank !== undefined) continue;
+    // The other end stands on the lane's side of the lateral end, and the tier gap below it is where its U part goes.
+    if (side === 'left' ? other.anchor.x >= lateral.anchor.x : other.anchor.x <= lateral.anchor.x) continue;
+    if (usageOf(base, portKey(lateral.ref)) !== 1 || usageOf(base, portKey(other.ref)) !== 1) continue;
+    const course: Course = { link: found.link.id, kind: 'skirt', from: { face: lateralIsFrom ? side : 'bottom' }, to: { face: lateralIsFrom ? 'bottom' : side },
+      runs: lateralIsFrom ? ['gap', 'u'] : ['u', 'gap'] };
+    // The admission test of 7a, on the baseline: the column must hold the lane (frames, lanes, the side run, the row's edge). It is a filter; 7a can still refuse in the trial.
+    const admitted = probeGapLane(base, found.link, course, extra);
+    if ('why' in admitted) continue;
+    const x = admitted.lane.x;
+    const geometry = gapGeometry({ ...base, courses: [course] }, found.link, course);
+    if (geometry === undefined) continue;
+    const points = gapPolyline(geometry, x, geometry.extent);
+    const turns = polylineTurns(points), crossings = crossedBy(found.link.id, points);
+    if (turns < best.turns || (turns === best.turns && crossings < best.crossings)) Object.assign(best, { turns, crossings, course, points, lane: admitted.lane });
+  }
+  if (best.course === undefined) return undefined;
+  const gain = turns0 === undefined ? true : best.turns < turns0 || (best.turns === turns0 && best.crossings < crossings0);
+  return gain && best.lane !== undefined ? { course: best.course, turns: best.turns, crossings: best.crossings, points: best.points, lane: best.lane } : undefined;
+}
+
+/**
+ * The unified gain an offer promises, as (links restored, bent links saved, turns saved), compared in that order: the order of the user reads removed links
+ * first. A removed link (`was` undefined) that the offer draws counts in the first entry and in no other, so it outranks any bend or turn gain with no magic number.
+ */
+export function gainOf(pairs: Iterable<[number | undefined, number]>): [number, number, number] {
+  let restored = 0, bent = 0, turns = 0;
+  for (const [was, will] of pairs) {
+    if (was === undefined) { restored++; continue; }
+    bent += (was > 0 ? 1 : 0) - (will > 0 ? 1 : 0); turns += was - will;
+  }
+  return [restored, bent, turns];
+}
+/** Whether gain `a` beats gain `b`, entry by entry. */
+export function beats(a: readonly number[], b: readonly number[]): boolean {
+  for (const [i, value] of a.entries()) if (value !== b[i]) return value > b[i]!;
+  return false;
 }
 
 // ---- the judge ------------------------------------------------------------------------------------------------------------------------
