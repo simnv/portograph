@@ -1,10 +1,11 @@
 import type { Point, Rect, Side } from '../model/geometry.js';
 import type { Course, LayoutGroup, LayoutLink, LayoutModel, LayoutPort } from '../model/layout.js';
 import { courseGeometry, ringsOf } from './course-lanes.js';
+import { gapGeometry, gapPolyline } from './course-gap.js';
 import { polylineCrossings, polylineTurns } from './course-plan.js';
 import { authoredSide, groupShape } from './grid.js';
 import { crossingsOf, strictCrossing } from './read/crossings.js';
-import { linkFacts, type EndFacts } from './read/courses.js';
+import { linkFacts, type EndFacts, type LinkFacts } from './read/courses.js';
 import { profiles, drawnOverlays, read, pathBends, reading, routedFamily, routedBends, compare, lazyCount, type Reading } from './objective.js';
 import { findPort } from './row-paths.js';
 import { EDGE_MARGIN, RING_PITCH, paddingRows, rowsInset } from './course-rows.js';
@@ -87,6 +88,12 @@ export function measureCourses(base: LayoutModel, routedBase: LayoutModel, refus
     return count;
   };
   const nodes = { ...base.nodes };
+  // A gate finding of the baseline's route that names the link, read once and only when a skirt asks.
+  let findings: Set<string> | undefined;
+  const namesLink = (id: string): boolean => {
+    findings ??= gateFindings(routedBase)?.findings ?? new Set<string>();
+    return [...findings].some(item => item.split('|')[2]?.split(',').includes(id) === true);
+  };
   for (const link of base.links) {
     const found = facts.get(link.id);
     if (found === undefined || refusedLinks.has(link.id) || refused(base, link)) continue;
@@ -95,7 +102,17 @@ export function measureCourses(base: LayoutModel, routedBase: LayoutModel, refus
     const crossings0 = routed === undefined || turns0 === undefined ? 0 : crossingsOf(routedBase, link.id);
     if (!poorRoute(turns0, crossings0)) continue;
     const [upper, lower] = found.from.tier < found.to.tier ? [found.from, found.to] : [found.to, found.from];
-    if (upper.tier === lower.tier) continue;
+    if (upper.tier === lower.tier) {
+      // A skirt: both ends in one band with a unit between them. It reads its cost from the baseline's route: a skirt whose route the router found and
+      // the gates pass keeps it; a removed one, or one with a gate finding, is offered a column-gap course.
+      const gap = turns0 === undefined || namesLink(link.id) ? gapCourse(base, found, usage, crossedBy, turns0, crossings0) : undefined;
+      if (gap !== undefined) {
+        offer.courses.push(gap.course);
+        offer.promised.set(link.id, { turns: gap.turns, crossings: gap.crossings, base: { turns: turns0 ?? Infinity, crossings: crossings0 } });
+        paths.set(link.id, gap.points);
+      }
+      continue;
+    }
     const best = { turns: Infinity, crossings: Infinity, added: Infinity, distance: Infinity, course: undefined as Course | undefined, points: [] as Point[] };
     for (const s of ['left', 'right'] as const) {
       const upperModes = modes(upper, true, s, usage(base, portKey(upper.ref)) === 1 && base.groups[upper.group]?.flank === undefined);
@@ -148,6 +165,40 @@ export function measureCourses(base: LayoutModel, routedBase: LayoutModel, refus
     paths.set(link.id, best.points);
   }
   return offer;
+}
+
+/** The column-gap course of a skirt, or `undefined`: which end keeps its lateral face, which leaves by the bottom face and a U part. */
+function gapCourse(base: LayoutModel, found: LinkFacts, usageOf: (model: LayoutModel, key: string) => number,
+  crossedBy: (id: string, points: readonly Point[]) => number, turns0: number | undefined, crossings0: number):
+  { course: Course; turns: number; crossings: number; points: Point[] } | undefined {
+  if (found.between.length === 0) return undefined;
+  const best = { turns: Infinity, crossings: Infinity, course: undefined as Course | undefined, points: [] as Point[] };
+  for (const lateralIsFrom of [true, false]) {
+    const lateral = lateralIsFrom ? found.from : found.to, other = lateralIsFrom ? found.to : found.from;
+    const side = lateral.side;
+    if ((side !== 'left' && side !== 'right') || !lateral.edge[side] || base.groups[lateral.group]?.flank !== undefined) continue;
+    // The other end stands on the lane's side of the lateral end, and the tier gap below it is where its U part goes.
+    if (side === 'left' ? other.anchor.x >= lateral.anchor.x : other.anchor.x <= lateral.anchor.x) continue;
+    if (usageOf(base, portKey(lateral.ref)) !== 1 || usageOf(base, portKey(other.ref)) !== 1) continue;
+    const course: Course = { link: found.link.id, kind: 'skirt', from: { face: lateralIsFrom ? side : 'bottom' }, to: { face: lateralIsFrom ? 'bottom' : side },
+      runs: lateralIsFrom ? ['gap', 'u'] : ['u', 'gap'] };
+    // The column beside the lateral end's unit: from its box to the nearest unit of the band on that side. The centre is the lane's x.
+    const own = base.groups[lateral.group]?.bounds;
+    if (own === undefined) continue;
+    const beyond = Object.values(base.groups).filter(group => group.id !== lateral.group && group.tier === lateral.tier && group.bounds !== undefined && group.nodes.length > 0
+      && (side === 'left' ? group.bounds.x + group.bounds.width <= own.x + 1e-6 : group.bounds.x >= own.x + own.width - 1e-6)).map(group => group.bounds!);
+    if (beyond.length === 0) continue;
+    const limit = side === 'left' ? Math.max(...beyond.map(box => box.x + box.width)) : Math.min(...beyond.map(box => box.x));
+    const x = (limit + (side === 'left' ? own.x : own.x + own.width)) / 2;
+    const geometry = gapGeometry({ ...base, courses: [course] }, found.link, course);
+    if (geometry === undefined) continue;
+    const points = gapPolyline(geometry, x, geometry.extent);
+    const turns = polylineTurns(points), crossings = crossedBy(found.link.id, points);
+    if (turns < best.turns || (turns === best.turns && crossings < best.crossings)) Object.assign(best, { turns, crossings, course, points });
+  }
+  if (best.course === undefined) return undefined;
+  const gain = turns0 === undefined ? true : best.turns < turns0 || (best.turns === turns0 && best.crossings < crossings0);
+  return gain ? { course: best.course, turns: best.turns, crossings: best.crossings, points: best.points } : undefined;
 }
 
 // ---- the judge ------------------------------------------------------------------------------------------------------------------------

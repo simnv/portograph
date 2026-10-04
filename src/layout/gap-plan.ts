@@ -8,6 +8,8 @@ import { drawn, edgeOf, nestedTips, stopsOf, tierGaps, type NestedTip, type Tier
 import { LINK_LABEL_GEOMETRY } from './link-labels.js';
 import { isRoutedChord } from './frame-paths.js';
 import { findPort } from './row-paths.js';
+import { courseOf } from './course-lanes.js';
+import { gapEnds, isGapCourse } from './course-gap.js';
 import { bandGap } from './skeleton-graph.js';
 import { stemCache, stemPlan, type StemCache } from './sides-two.js';
 
@@ -47,6 +49,11 @@ export interface PlanInput {
   lower: PlanEnd;
   /** Room a described part keeps below its row before the next row: `label height + 2 × 4 + stroke`. */
   labelRoom?: number;
+  /**
+   * A U part (ticket 15, phase 5): both ends stand on the one boundary of the gap, so the part is two legs and one row. `upper` is the end the link visits first
+   * and `lower` the other; neither is the end nearer the far boundary, and the part has no lower leg.
+   */
+  u?: true;
 }
 
 /** An obstacle, as a y band over an x range (O5). It is anchored to one band, never to a bounding box. */
@@ -112,7 +119,7 @@ export interface PlanFrame {
   chords?: readonly { low: number; high: number }[];
 }
 
-export type PartShape = 'drop' | 'stepped' | 'z';
+export type PartShape = 'drop' | 'stepped' | 'z' | 'u';
 
 export interface PlannedPart {
   id: string;
@@ -125,7 +132,7 @@ export interface PlannedPart {
   lower: PlanEnd;
   /** `bandTop − lower.y`. */
   depth: number;
-  /** One y per row: none for a drop, one for a stepped part, two for a Z part. */
+  /** One y per row: none for a drop, one for a stepped or a U part, two for a Z part. */
   rows: number[];
   /** The x of a Z part's middle drop. */
   middle?: number;
@@ -225,7 +232,7 @@ function unitsOf(parts: readonly Part[], split: ReadonlyMap<string, number>): Un
 interface BaseEdge { above: Part; below: Part; kind: 'O2' }
 
 function baseEdges(parts: readonly Part[], keep: number): BaseEdge[] {
-  const stepped = parts.filter(part => !part.drop);
+  const stepped = parts.filter(part => !part.drop && part.u !== true);
   const result: BaseEdge[] = [];
   // O2. The upper end of `above` stands within `keep` of the lower end of `below`: the leg from the low boundary turns first.
   for (const p of stepped) for (const q of stepped) if (q !== p && Math.abs(p.upper.x - q.lower.x) < keep - EPS) result.push({ above: p, below: q, kind: 'O2' });
@@ -250,7 +257,7 @@ function expand(base: readonly BaseEdge[], split: ReadonlyMap<string, number>, u
   const whole = (part: Part): { xu: number; xl: number } => ({ xu: part.upper.x, xl: part.lower.x });
   for (const [index, a] of units.entries()) {
     for (const b of units.slice(index + 1)) {
-      if (a.part === b.part) continue;
+      if (a.part === b.part || a.part.u === true || b.part.u === true) continue;
       if ((split.has(a.part.id) || split.has(b.part.id)) && interleave(whole(a.part), whole(b.part))) continue;
       const way = Math.sign(a.xl - a.xu);
       if (way !== Math.sign(b.xl - b.xu) || interleave(a, b) || !overlaps(a, b)) continue;
@@ -381,7 +388,7 @@ function solve(parts: readonly Part[], frame: PlanFrame): Solved | { reject: Par
     const whole = parts.find(part => part.id === id)!;
     const zed = { xu: whole.upper.x, xl: whole.lower.x };
     for (const other of parts) {
-      if (other.drop || other === whole || split.has(other.id)) continue;
+      if (other.drop || other.u === true || other === whole || split.has(other.id)) continue;
       if (!interleave(zed, { xu: other.upper.x, xl: other.lower.x })) continue;
       const first = `${id}a`, second = `${id}b`;
       if (reaches(edges, first, other.id) && reaches(edges, other.id, second)) continue;
@@ -403,14 +410,14 @@ function nestingEdges(parts: readonly Part[], units: readonly Unit[], edges: rea
   const nodeOf = (end: PlanEnd): string => end.kind === 'tip' ? end.source.split('|')[0]! : '';
   const count = (end: 'upper' | 'lower'): Map<string, number> => {
     const found = new Map<string, number>();
-    for (const part of parts) if (!part.drop && part[end].kind === 'tip') found.set(nodeOf(part[end]), (found.get(nodeOf(part[end])) ?? 0) + 1);
+    for (const part of parts) if (!part.drop && part.u !== true && part[end].kind === 'tip') found.set(nodeOf(part[end]), (found.get(nodeOf(part[end])) ?? 0) + 1);
     return found;
   };
   const up = count('upper'), low = count('lower');
   const added: PlanEdge[] = [];
   for (const [index, a] of units.entries()) {
     for (const b of units.slice(index + 1)) {
-      if (a.half !== 0 || b.half !== 0 || Math.sign(a.xl - a.xu) !== Math.sign(b.xl - b.xu) || !interleave(a, b) || !overlaps(a, b)) continue;
+      if (a.part.u === true || b.part.u === true || a.half !== 0 || b.half !== 0 || Math.sign(a.xl - a.xu) !== Math.sign(b.xl - b.xu) || !interleave(a, b) || !overlaps(a, b)) continue;
       if (Math.abs(need.get(a.id)! - need.get(b.id)!) > EPS) continue;
       const way = Math.sign(a.xl - a.xu);
       const farther = (a.xl - b.xl) * way > 0 ? a : b, nearer = farther === a ? b : a;
@@ -427,6 +434,30 @@ function nestingEdges(parts: readonly Part[], units: readonly Unit[], edges: rea
 }
 
 /**
+ * The edges of the U parts (ticket 15, phase 5). A U part has two legs and one row on one boundary of the gap. A U part nested inside another stands above it
+ * (its row would run through the legs of the outer one otherwise); a part whose upper or lower end stands between the legs of a U part stands below it,
+ * where that costs no crossing. Each edge is added only where it closes no cycle.
+ */
+function uEdges(units: readonly Unit[], edges: readonly PlanEdge[]): PlanEdge[] {
+  const added: PlanEdge[] = [];
+  const all = (): PlanEdge[] => [...edges, ...added];
+  const add = (above: Unit, below: Unit): void => {
+    if (above.part === below.part || all().some(edge => edge.above === above.id && edge.below === below.id) || reaches(all(), below.id, above.id)) return;
+    added.push({ above: above.id, below: below.id, kind: 'O2' });
+  };
+  for (const u of units.filter(unit => unit.part.u === true)) for (const other of units) {
+    if (other.part === u.part) continue;
+    if (other.part.u === true) {
+      // Two U parts: the nested one is above.
+      if (other.lo > u.lo + EPS && other.hi < u.hi - EPS) add(other, u);
+      continue;
+    }
+    if (other.half === 2 ? inside(other.xl, u) : inside(other.xu, u) || inside(other.xl, u)) add(u, other);
+  }
+  return added;
+}
+
+/**
  * The plan of one tier gap.
  *
  * The rows come from a topological order of O1 ∪ O2 ∪ Z (2.3): among the ready units the largest static need
@@ -437,6 +468,7 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
   const { keep, pitch, edge: margin, low, bandTop } = frame;
   const residual: ResidualPart[] = [...frame.residual];
   const asPart = (input: PlanInput): Part => {
+    if (input.u === true) return { ...input, drop: false, jogged: false, stand: 'upper', depth: keep, after: Math.max(pitch, input.labelRoom ?? 0) };
     const drop = Math.abs(input.lower.x - input.upper.x) < keep - EPS;
     const jogged = drop && !same(input.lower.x, input.upper.x);
     return { ...input, drop, jogged, stand: jogged && upperStandBlocked(input) ? 'lower' : 'upper', depth: frame.bandTop - input.lower.y,
@@ -450,6 +482,8 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
   // obstacle anchored to the band above, a lower leg up from its tip past the top of one anchored to the band below.
   const blocked = (input: PlanInput): boolean => (frame.blocks ?? []).some(block => {
     if (block.owner === input.link) return false;
+    // Both legs of a U part reach down from its ends past the bottom of an obstacle anchored to the band above.
+    if (input.u === true) return block.anchor === 'above' && [input.upper, input.lower].some(end => end.x > block.x0 + EPS && end.x < block.x1 - EPS && end.y < block.bound - EPS);
     if (block.anchor === 'above') return input.upper.x > block.x0 + EPS && input.upper.x < block.x1 - EPS && input.upper.y < block.bound - EPS;
     return input.lower.x > block.x0 + EPS && input.lower.x < block.x1 - EPS && bandTop - input.lower.y < block.bound - EPS;
   });
@@ -463,7 +497,8 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
   let live: Part[] = [];
   const crowded: { id: string; link: string; with: string }[] = [];
   // A jogged drop has a long vertical on its `stand` end and a short stub on the other, so each end's x is a leg of both kinds.
-  const legsOf = (item: Part, end: 'upper' | 'lower'): PlanEnd[] => item.drop && item.jogged
+  const legsOf = (item: Part, end: 'upper' | 'lower'): PlanEnd[] => item.u === true ? (end === 'upper' ? [item.upper, item.lower] : [])
+    : item.drop && item.jogged
     ? [item[end], item.stand === 'upper' ? item.upper : item.lower] : item.drop ? [item.upper, item.lower] : [item[end]];
   const near = (a: PlanEnd, b: PlanEnd): boolean => a.source !== b.source && Math.abs(a.x - b.x) < keep - EPS;
   const anyNear = (a: readonly PlanEnd[], b: readonly PlanEnd[]): boolean => a.some(one => b.some(other => near(one, other)));
@@ -500,7 +535,7 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
   let edges = solved.edges;
 
   // Every tip a run must keep off: the upper ends of all parts (and of the residual ones that have tips), and the ports outside the plan.
-  const upperTips = [...live.map(part => part.upper), ...residual.flatMap(item => item.upper ? [item.upper] : []), ...frame.tips];
+  const upperTips = [...live.flatMap(part => part.u === true ? [part.upper, part.lower] : [part.upper]), ...residual.flatMap(item => item.upper ? [item.upper] : []), ...frame.tips];
   const lowerTips = [...frame.lowerTips, ...residual.flatMap(item => item.lower ? [item.lower] : [])];
   const drops = live.filter(part => part.drop);
   const applies = (obstacle: PlanObstacle, unit: Unit): boolean =>
@@ -526,8 +561,8 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
   };
   const ownLb = (unit: Unit): number => {
     if (unit.half === 2) return -Infinity;
-    const end = unit.part.upper;
-    return end.kind === 'mouth' ? end.y : end.y < low - EPS ? low + margin : end.y;
+    const lbOfEnd = (end: PlanEnd): number => end.kind === 'mouth' ? end.y : end.y < low - EPS ? low + margin : end.y;
+    return unit.part.u === true ? Math.max(lbOfEnd(unit.part.upper), lbOfEnd(unit.part.lower)) : lbOfEnd(unit.part.upper);
   };
   const lbOf = (unit: Unit): number => {
     let lb = ownLb(unit);
@@ -560,7 +595,7 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
   const staticNeed = (unit: Unit): number => {
     let need = fixedNeed(unit);
     for (const other of units) {
-      if (other.part === unit.part || other.half === 1) continue;
+      if (other.part === unit.part || other.half === 1 || other.part.u === true || unit.part.u === true) continue;
       if (interleave(unit, other) && inside(other.xl, unit)) need = Math.max(need, keep + other.part.depth);
     }
     return need;
@@ -569,7 +604,7 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
   // Topological order (2.3).
   const byId = new Map(units.map(unit => [unit.id, unit]));
   const need = new Map(units.map(unit => [unit.id, staticNeed(unit)])), lbs = new Map(units.map(unit => [unit.id, lbOf(unit)]));
-  edges = [...edges, ...nestingEdges(live, units, edges, need)];
+  edges = [...edges, ...nestingEdges(live, units, edges, need), ...uEdges(units, edges)];
   const waiting = new Map(units.map(unit => [unit.id, edges.filter(item => item.below === unit.id).length]));
   const ready = units.filter(unit => waiting.get(unit.id) === 0);
   const rows = new Map<string, number>(), order: Unit[] = [];
@@ -602,6 +637,13 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
   for (const part of live) {
     const base = { id: part.id, link: part.link, order: part.order, upper: part.upper, lower: part.lower, depth: part.depth,
       ...(part.index !== undefined ? { index: part.index } : {}), ...(part.upperFirst !== undefined ? { upperFirst: part.upperFirst } : {}) };
+    if (part.u === true) {
+      const y = rows.get(part.id)!;
+      verticals.push({ part, kind: 'upper-leg', x: part.upper.x, y0: part.upper.y, y1: y }, { part, kind: 'upper-leg', x: part.lower.x, y0: part.lower.y, y1: y });
+      horizontals.push({ unit: part.id, part, y, x0: part.upper.x, x1: part.lower.x });
+      planned.push({ ...base, shape: 'u', rows: [y] });
+      continue;
+    }
     if (part.drop) {
       const jog = part.jogged ? (part.stand === 'lower' ? jogOf(part) : bandTop - jogDepth(part)) : undefined;
       verticals.push({ part, kind: 'drop', x: part.stand === 'lower' ? part.lower.x : part.upper.x, y0: part.stand === 'lower' ? jog! : part.upper.y, y1: Infinity });
@@ -702,6 +744,24 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
             : port.side === 'top' && port.anchor.y >= bandTop - EPS && port.anchor.y <= bottom(bandOf(gap.below)) + EPS);
         if (from?.side === to?.side && faces(from) && faces(to)) fail('u-turn');
         continue;
+      }
+      // A U part (ticket 15, phase 5): a gap course leaves a bottom port by this gap and comes back up the mouth of its column-gap lane, both on the gap's
+      // low boundary. No gap stands between the two stops, so the span test below never sees it.
+      if (!found.length && ((a.kind === 'port' && b.kind === 'lane') || (a.kind === 'lane' && b.kind === 'port')) && courseOf(model, link.id) !== undefined
+        && isGapCourse(courseOf(model, link.id)!)) {
+        const portStop = a.kind === 'port' ? a : b, laneStop = a.kind === 'lane' ? a : b;
+        const portEnd = findPort(model, link.attachments![gapEnds(courseOf(model, link.id)!)?.u ?? 'from']);
+        if (edgeOf(gap, laneStop.point) === 'low' && portEnd?.anchor !== undefined && portEnd.side === 'bottom' && same(portEnd.anchor.x, portStop.point.x) && same(portEnd.anchor.y, portStop.point.y)
+          && portEnd.anchor.y <= gap.low + EPS && portEnd.anchor.y >= above.y - EPS) {
+          const depth = stemPlan(model, portEnd, cache).depth;
+          const tip: PlanEnd = { x: portEnd.anchor.x, y: portEnd.anchor.y + depth, kind: 'tip', source: `${portEnd.ref.node}|${portEnd.side}|${portEnd.anchor.x}` };
+          const mouth: PlanEnd = { x: laneStop.point.x, y: gap.low + stem, kind: 'mouth', source: `lane|${laneStop.point.x}|low` };
+          if (Math.abs(tip.x - mouth.x) < keep - EPS) { fail('u-turn'); continue; }
+          const [first, second] = a.kind === 'port' ? [tip, mouth] : [mouth, tip];
+          const room = labelRoom(model, link);
+          inputs.push({ id, link: link.id, order, index, upperFirst: true, upper: first, lower: second, u: true, ...(room ? { labelRoom: room } : {}) });
+          continue;
+        }
       }
       if (!found.some(other => same(other.low, gap.low) && same(other.high, gap.high))) continue;
       if (a.kind === 'shared' || b.kind === 'shared') continue;
@@ -928,6 +988,12 @@ export function plannedSegments(part: PlannedPart, gap: { low: number; high: num
   const at = (x: number, y: number): Point => ({ x, y });
   const { x: xu } = part.upper, { x: xl } = part.lower;
   const points: Point[] = [at(xu, part.upper.kind === 'mouth' ? gap.low : part.upper.y)];
+  if (part.shape === 'u') {
+    // Both ends stand on the low boundary of the gap (the edge the part hangs from); the row lies below them. The link visits `upper` first.
+    points.push(at(xu, part.rows[0]!), at(xl, part.rows[0]!), at(xl, part.lower.kind === 'mouth' ? gap.low : part.lower.y));
+    const chainU = points.filter((point, index) => index === 0 || !same(point.x, points[index - 1]!.x) || !same(point.y, points[index - 1]!.y));
+    return chainU.slice(1).map((to, index) => ({ from: { ...chainU[index]! }, to: { ...to }, owner: { kind: 'link' as const, id: part.link } }));
+  }
   if (part.shape === 'drop') {
     if (part.jog !== undefined) points.push(at(xu, part.jog), at(xl, part.jog));
   } else if (part.shape === 'stepped') points.push(at(xu, part.rows[0]!), at(xl, part.rows[0]!));

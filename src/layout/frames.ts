@@ -3,6 +3,7 @@ import type { Rect } from '../model/geometry.js';
 import type { Frame, Lane, LayoutLink, LayoutModel } from '../model/layout.js';
 import { GROUP_PADDING, groupPadding } from './regions.js';
 import { union } from './skeleton-geometry.js';
+import { laneRunKind } from './lane-kind.js';
 
 /**
  * The gap between a child frame and a cell that stands beside it on a row, a cell of its parent or of a sibling child frame
@@ -13,7 +14,7 @@ import { union } from './skeleton-geometry.js';
  * 20 and 40 off the published model.
  */
 /** A lane with no `kind` is a transit lane (a riser lane too, read by its owner). Side, gap and perimeter lanes grow no frame. */
-export const isTransitKind = (lane: Lane): boolean => lane.kind === undefined || lane.kind === 'transit';
+export const isTransitKind = (lane: Lane): boolean => laneRunKind(lane) === 'transit';
 export const CELL_TO_CHILD_FRAME_GAP = GROUP_PADDING;
 
 /**

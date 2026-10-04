@@ -3,6 +3,7 @@ import type { Course, CourseEnd, CourseKind, CourseRun, Lane, LayoutLink, Layout
 import type { PortRef } from '../model/document.js';
 import { findPort } from './row-paths.js';
 import { SideHintRefusal } from './side-hints.js';
+export { isGapRun, laneRunKind } from './lane-kind.js';
 
 /** A placement run cannot reserve a course (its faces cannot join one lane). The course round drops the offer; every other error is a bug. */
 export class CourseRefusal extends SideHintRefusal {}
@@ -14,7 +15,7 @@ export class CourseRefusal extends SideHintRefusal {}
  */
 
 const KINDS: readonly CourseKind[] = ['transit', 'u-turn', 'skirt', 'shared-port', 'overlay'];
-const RUNS: readonly CourseRun[] = ['padding', 'transit', 'gap', 'perimeter', 'tier-gap'];
+const RUNS: readonly CourseRun[] = ['padding', 'transit', 'gap', 'perimeter', 'tier-gap', 'u'];
 const SIDES: readonly Side[] = ['top', 'right', 'bottom', 'left'];
 
 /** A lane that a course owns: its id is `gap-lane:<link>:<n>` or `perimeter:<link>`. */

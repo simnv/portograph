@@ -79,11 +79,13 @@ it('bundle rows turn toward the near end when the far end enters a member frame'
   expect(model.diagnostics.map(d => d.code)).not.toContain('BUNDLE_ROWS_ALONG_FRAME_EDGE');
 });
 
-// Pinned failures of architecture ticket 12 (cause C, not fixed): a change to either is noticed here and the ticket is updated.
-it('pinned: a flank link around a neighbour runs along the core edge (ticket 12, cause C)', async () => {
+// Cause C is fixed by the course round (architecture ticket 15, phase 5): the link takes a column-gap course, and its row stands in the tier gap, planned.
+it('a flank link around a neighbour takes a column-gap course and passes every gate (ticket 12, cause C)', async () => {
   const yaml = readFileSync(new URL('../../goldens/synthetic/a-flank-link-around-a-neighbour-runs-along-the-core-edge.yaml', import.meta.url), 'utf8');
   const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
-  expect(score(model).snapshot.gates['G6']!.violations.map(v => [v.code, ...v.elements])).toEqual([['segment-group-edge', 'link-6', 'core']]);
+  expect(score(model).snapshot.gates['G6']!.violations).toEqual([]);
+  expect(Object.values(score(model).snapshot.gates).every(gate => gate.passed)).toBe(true);
+  expect(model.courses?.map(course => course.link)).toEqual(['link-6']);
 });
 
 // Cause D is fixed by the course round (architecture ticket 15, phase 4): the link takes a perimeter course into the right face of the canton member.

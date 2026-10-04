@@ -9,7 +9,7 @@
 import type { Course, Diagnostic, LayoutModel, LayoutStage, NormalisedDocument, Side, Size } from '../model/index.js';
 import { resolve } from '../resolve/index.js';
 import { portKey, sidesOne } from '../layout/sides-one.js';
-import { endMode } from '../layout/course-rows.js';
+import { endMode, movesPort } from '../layout/course-rows.js';
 import { sizeNodes } from '../layout/size.js';
 import { skeleton, SkeletonError } from '../layout/skeleton.js';
 import { BundleFeasibilityError } from '../layout/bundle-paths.js';
@@ -145,7 +145,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       const link = resolved.links.find(item => item.id === course.link);
       for (const which of ['from', 'to'] as const) {
         const ref = link?.attachments?.[which] ?? link?.[which];
-        if (ref !== undefined && 'ordinal' in ref && endMode(course, which) !== 'natural') courseFaces.set(portKey(ref), course[which].face);
+        if (ref !== undefined && 'ordinal' in ref && movesPort(course, which)) courseFaces.set(portKey(ref), course[which].face);
       }
     }
     stepIn('sides-one', () => sidesOne(resolved, hints, laneKeys, courseFaces));
@@ -292,7 +292,8 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       const link = kept7e.links.find(item => item.id === course.link)!;
       for (const which of ['from', 'to'] as const) {
         const size = stage3Sizes.get(kept7e)?.get(link.attachments![which].node);
-        if (size !== undefined && course[which].face !== (kept7e.nodes[link.attachments![which].node]!.ports.find(port => portKey(port.ref) === portKey(link.attachments![which]))?.side)) nodeFloors.set(link.attachments![which].node, { ...size });
+        // A node whose end leaves by a U part is not pinned: its face moves from a lateral side to the bottom, and its content grows with it (P9 asks for few moves, not for none).
+        if (size !== undefined && endMode(course, which) !== 'u' && course[which].face !== (kept7e.nodes[link.attachments![which].node]!.ports.find(port => portKey(port.ref) === portKey(link.attachments![which]))?.side)) nodeFloors.set(link.attachments![which].node, { ...size });
       }
     }
     reruns++;
@@ -324,7 +325,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
           for (const course of offer.courses) {
             const was = offer.promised.get(course.link)!;
             sideNotes.push({ stage: 'placement', severity: 'info', code: 'COURSE_TAKEN', owners: [{ kind: 'link', id: course.link }],
-              message: `The link ${course.link} takes a course round the outside: ${was.turns} turns promised, ${was.base.turns === Infinity ? 'removed' : was.base.turns} on the baseline.` });
+              message: `The link ${course.link} takes a course ${course.runs.includes('gap') ? 'through a column gap' : 'round the outside'}: ${was.turns} turns promised, ${was.base.turns === Infinity ? 'removed' : was.base.turns} on the baseline.` });
           }
         } else {
           courseRefusal(`${verdict.reason}`);

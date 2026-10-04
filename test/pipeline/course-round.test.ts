@@ -128,9 +128,14 @@ describe('the course round on the hand-solve sheets (ticket 15, phase 4)', () =>
     expect(model.links.filter(item => item.removed === true).map(item => item.id)).toEqual(['link-6']);
   }, 60000);
 
-  it('a link around a neighbour that no perimeter course beats keeps its route', async () => {
+  // Phase 5: the skirt reads its cost from the baseline. Link 6 has a gate finding (G6 along the core edge) and takes a column-gap course; link 5 has four turns
+  // and no finding, and keeps its route (the solve of case 09 keeps it too).
+  it('a link around a neighbour takes a column-gap course, and the skirt whose route holds keeps it', async () => {
     const model = await layout(parse(source(AROUND)), options);
-    expect(model.courses).toBeUndefined();
+    expect(model.courses).toEqual([{ link: 'link-6', kind: 'skirt', from: { face: 'bottom' }, to: { face: 'left' }, runs: ['u', 'gap'] }]);
+    expect(model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === 'link-6').map(lane => [lane.id, lane.kind])).toEqual([['gap-lane:link-6:0', 'gap']]);
+    expect(codes(model)).toContain('COURSE_TAKEN');
+    expect(codes(model)).not.toContain('COURSE_SHAPE_LOST');
   }, 60000);
 });
 

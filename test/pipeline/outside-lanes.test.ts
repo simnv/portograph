@@ -113,7 +113,7 @@ describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
     expect(model.diagnostics.filter(item => item.code === 'COURSE_SHAPE_LOST')).toEqual([]);
   }, 60000);
 
-  it.fails('09 / 12 C (phase 5): Mgmt-Core leaves the bottom face and enters Core left in 3 turns; Mgmt-Dist runs the Core-Campus gap in 4; G6 holds', async () => {
+  it('09 / 12 C (phase 5): Mgmt-Core leaves the bottom face and enters Core left in 3 turns; Mgmt-Dist runs the Core-Campus gap in 4; G6 holds', async () => {
     const model = await run(SHEETS.around);
     expect([sideOf(model, 6, 'from'), sideOf(model, 6, 'to'), turns(model, 6)]).toEqual(['bottom', 'left', 3]);
     expect([sideOf(model, 5, 'from'), sideOf(model, 5, 'to'), turns(model, 5)]).toEqual(['right', 'left', 4]);

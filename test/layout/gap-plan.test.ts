@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { bands, bars, bundles, centre, flanks, lanes, rows } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
-import { facingTips, planGap, tierGapPlan, tierGapPlans, type GapPlan, type PlanFrame, type PlanInput } from '../../src/layout/gap-plan.js';
+import { facingTips, plannedSegments, planGap, tierGapPlan, tierGapPlans, type GapPlan, type PlanFrame, type PlanInput } from '../../src/layout/gap-plan.js';
 import { tierGaps } from '../../src/layout/gap-runs.js';
 import { placed } from './phase-two-fixture.js';
 import { orthogonalLinks } from '../orthogonal-links.js';
@@ -471,5 +471,57 @@ describe('a held routed chord in the gap (routed-chords.md, section 8)', () => {
 
   it('with no chord the plan is the one it was', () => {
     expect(planGap(inputs, { ...frame(), chords: [] })).toEqual(planGap(inputs, frame()));
+  });
+});
+
+describe('the U part (ticket 15, phase 5)', () => {
+  // Both ends of a U part stand on the gap's low boundary (a bottom port's tip and the mouth of a column-gap lane). The plan gives it one row below both
+  // ends and two legs that run down to it; it has no lower leg, so it asks for `keep` above the band below and nothing more.
+  const tip = (x: number): PlanInput['upper'] => ({ x, y: 250, kind: 'tip', source: `t${x}` });
+  const mouth = (x: number): PlanInput['upper'] => ({ x, y: 248 + 15, kind: 'mouth', source: `lane|${x}|low` });
+  const u = (id: string, order: number, from: PlanInput['upper'], to: PlanInput['upper']): PlanInput => ({ id, link: id, order, index: 0, upperFirst: true, upper: from, lower: to, u: true });
+
+  it('plans one row below both ends and no lower leg', () => {
+    const plan = planGap([u('U', 0, tip(60), mouth(200))], frame());
+    const only = plan.parts[0]!;
+    expect(only.shape).toBe('u');
+    expect(only.rows).toHaveLength(1);
+    expect(only.rows[0]!).toBeGreaterThanOrEqual(263);
+    expect(plan.crossings).toEqual([]);
+    expect(plan.residual).toEqual([]);
+    // The row is the only demand: it lies `row - low` into the gap, and the band below keeps `keep` of it.
+    expect(plan.height).toBeCloseTo(Math.max(frame().floor, only.rows[0]! - frame().low + frame().keep), 6);
+    // The reserved geometry runs from the first end down, along the row and back up to the second end.
+    const segments = plannedSegments(only, { low: 248, high: 308 });
+    expect(segments.map(item => [item.from.x, item.from.y, item.to.x, item.to.y])).toEqual([
+      [60, 250, 60, only.rows[0]!], [60, only.rows[0]!, 200, only.rows[0]!], [200, only.rows[0]!, 200, 248]]);
+  });
+
+  it('reads the ends in the order the link visits them', () => {
+    const plan = planGap([u('U', 0, mouth(200), tip(60))], frame());
+    const segments = plannedSegments(plan.parts[0]!, { low: 248, high: 308 });
+    expect(segments[0]!.from).toEqual({ x: 200, y: 248 });
+    expect(segments.at(-1)!.to).toEqual({ x: 60, y: 250 });
+  });
+
+  it('puts a U part nested inside another above it, so no row runs through a leg', () => {
+    const plan = planGap([u('outer', 0, tip(20), mouth(220)), u('inner', 1, tip(100), mouth(160))], frame());
+    const row = (id: string): number => plan.parts.find(item => item.id === id)!.rows[0]!;
+    expect(row('inner')).toBeLessThan(row('outer'));
+    expect(plan.crossings).toEqual([]);
+  });
+
+  it('puts a U part above a stepped part whose lower end stands between its legs', () => {
+    // The stepped part runs from x 20 (outside) to x 120 (inside the U's span 60 to 200): its lower leg would cross the U's row if the U stood below.
+    const plan = planGap([part('P', 0, 20, 120), u('U', 1, tip(60), mouth(200))], frame());
+    const row = (id: string): number => plan.parts.find(item => item.id === id)!.rows[0]!;
+    expect(row('U')).toBeLessThan(row('P'));
+    expect(plan.crossings.filter(item => item.run === 'U')).toEqual([]);
+  });
+
+  it('keeps two U parts that do not overlap on one row', () => {
+    const plan = planGap([u('A', 0, tip(20), mouth(80)), u('B', 1, tip(200), mouth(260))], frame());
+    const rows = plan.parts.map(item => item.rows[0]!);
+    expect(rows[0]).toBeCloseTo(rows[1]!, 6);
   });
 });
