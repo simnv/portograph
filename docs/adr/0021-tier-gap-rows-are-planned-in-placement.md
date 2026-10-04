@@ -69,3 +69,5 @@ neighbour's leg (tickets 45, 46). That is the pipeline's one rule broken, in one
   for them, and it was 810 lines of `gap-runs.ts` (1058 became 245) that the plan's nine reasons no longer reach.
 - Amend ADR-0015 in place. Rejected: six of its amendments describe the allocation and the height
   rule as one story, and a rewrite would lose the measured history. ADR-0015 carries a pointer.
+
+Amendment (2026-10-05, architecture ticket 15, phase 4): a course may leave its tier band through a perimeter lane or a padding row. A padding row is a run inside the padding of the end group, between the node faces and the title band; its depth grows `groupPadding`, and on the title edge `groupInsets`. A natural end of a course leaves only its mouth to the tier-gap plan and the router. `u-turn` and `lateral-port` stay residual only for a link with no course. The course round keeps a trial only on the routed result: no gate worse, then fewer bent links, fewer turns and fewer crossings.

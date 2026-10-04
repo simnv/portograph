@@ -54,3 +54,5 @@ That list is the whole of placement.
 ## Note (2026-09-30, ticket 119): the lane hint
 
 A hint may carry one more bit: `laneHint`, for the routed L through a side lane. The round passes the keys of such hints to the placement run next to the hint map; `sidesOne` records `laneHint: true` on the port (with `sideHint`), `freeze.topology` stores it, and restore checks that it comes only with `sideHint`. `chordKind` gives no chord to a link with a `laneHint` port, so 7a reserves the lane and the fixed point never claims the link. The hint is still an input of placement and is never written in the YAML.
+
+Amendment (2026-10-05, architecture ticket 15, phase 4): a port whose side a course sets is not a hint candidate (`hintRefusal`: "the port is owned by a course"). A course side may face away from the peer; a hint still faces its peer. The title edge, the bus edge, the ELK input and the rank input read the natural side, as for a hint. A course moves no title: its padding row stands inside the clearance edge of the label band.

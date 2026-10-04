@@ -24,3 +24,5 @@ Bundle placement now grows endpoint side pitch and node capacity, re-levels faci
 repacks affected rows and reserves horizontal or vertical crossing space before paths. The
 16 px member gap remains visible clearance. These movements retain topology, unequal authored
 precedence, unrelated relative order, content floors and fixed lane identity/x/owners.
+
+Amendment (2026-10-05, architecture ticket 15, phase 4): the side of a port comes from, in order, the author `side:`, a course, a side hint, the stage-2 table and the stage-5 vote. A course is an input of the placement run, as a hint is: the course round measures it on the 7f baseline and passes it to a placement re-run, and `sidesOne` fixes its faces. The sides still freeze at the end of stage 5. The `courseHint` flag marks the port, and `naturalSide` keeps the side the table gave. A course end may be a natural end (no face change), a side end or a padding end (see `course-rows.ts`). No link end records an approach in this phase.
