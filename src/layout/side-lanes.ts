@@ -4,6 +4,7 @@ import { facingSide, hintRefusal } from './side-hints.js';
 import { portKey } from './sides-one.js';
 import { probeSideLane, sideLaneCandidate } from './lanes.js';
 import type { ChordLateral, MovePort } from './side-chords.js';
+import { nodeTier } from './read/tier.js';
 
 /**
  * The routed L of the side measure (docs/design/side-faces.md, Sections 5, 6 and 10; ticket 119): a routed link that is stepped now (two bends or
@@ -30,7 +31,7 @@ export function measureLaneSides(model: LayoutModel, nodes: LayoutModel['nodes']
   moved: MovePort, refusedKey: (key: string, side: string) => string, bends: (link: LayoutLink) => number, probes: number, probeCap: number): LanePass {
   const pass: LanePass = { nodes, base, hints: new Map(), promised: new Map(), probes, capped: false };
   const order = new Map(Object.keys(model.document.nodes).map((id, index) => [id, index]));
-  const tierOf = (ref: PortRef): number => model.groups[model.document.nodes[ref.node]!.group]!.tier!;
+  const tierOf = (ref: PortRef): number => nodeTier(model, ref.node);
   const centreOf = (node: LayoutNode): { x: number; y: number } => ({ x: node.bounds!.x + node.bounds!.width / 2, y: node.bounds!.y + node.bounds!.height / 2 });
   const lanes: Lane[] = [];
   for (const link of model.links) {

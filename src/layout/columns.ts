@@ -5,6 +5,8 @@ import { cellReach, deriveFrames, frameNodes } from './frames.js';
 import { GROUP_PADDING } from './regions.js';
 import { optionalMoveHolds, selectAnchorTier } from './lanes.js';
 import { findPort } from './row-paths.js';
+import { cellTier } from './read/tier.js';
+import { isCantonUnit } from './read/canton.js';
 import { bandGap, compareId, portId } from './skeleton-graph.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
@@ -156,7 +158,7 @@ function standOf(model: LayoutModel, id: string, memo: Map<string, Stand>): Stan
     const stand = standOf(model, child, memo), [low, high] = tierRange(model, child);
     return { child, low, high, left: stand.left + GROUP_PADDING, right: stand.right + GROUP_PADDING };
   });
-  const tierOf = (cell: string): number => model.groups[cell]!.tier!;
+  const tierOf = (cell: string): number => cellTier(model, cell);
   const { own: beside, rows: pure } = besideRows(frames[id]!.cells, tierOf, blocks, block => [block.low, block.high]);
   const apart = blocks.filter(block => !beside.includes(block) && !pure.some(row => row.includes(block)));
   const standing = frames[id]!.cells.filter(cell => beside.some(block => tierOf(cell) >= block.low && tierOf(cell) <= block.high));
@@ -563,8 +565,8 @@ export function closeCantons(model: LayoutModel): boolean {
  * Idempotent: a run whose gaps equal the spacing is not read again. Returns whether the run moved.
  */
 function closeUp(model: LayoutModel, tiers: Unit[][], index: number, slack: number): boolean {
-  const tier = tiers[index]!, frames = model.document.frames!;
-  const isCanton = (unit: Unit): boolean => unit.frame && frames[unit.id]?.kind === 'canton';
+  const tier = tiers[index]!;
+  const isCanton = (unit: Unit): boolean => isCantonUnit(model, unit);
   if (!tier.some(isCanton) || tier.some(unit => !unit.frame && groupShape(model, unit.id) !== 'row')) return false;
   const derived = deriveFrames(model);
   if (derived === undefined) return false;
@@ -925,7 +927,7 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
     const reaching = new Set(standing.filter(item => wanting.has(item.unit) && item.from <= item.x + PLACEMENT_EPS && item.to >= item.x - PLACEMENT_EPS).map(item => item.unit));
     lefts = plan(pinned, reaching);
   }
-  const isCanton = (unit: Unit): boolean => unit.frame && model.document.frames?.[unit.id]?.kind === 'canton';
+  const isCanton = (unit: Unit): boolean => isCantonUnit(model, unit);
   /**
    * The close-up of the run (ranked-groups ticket 65), part of this plan: the plan's own lefts with the run packed at the spacing of
    * `runSpacing`. A pinned unit stays where it stands, so it fixes the base of the run; a unit that reaches its feed is not pushed off
@@ -1208,7 +1210,7 @@ export function packBesideRows(model: LayoutModel, movable: (cell: string) => bo
   const box = new Map(derived.map(frame => [frame.id, frame.box]));
   const childrenOf = (id: string): string[] => Object.keys(frames).filter(child => frames[child]!.parent === id);
   const cellsOf = (id: string): string[] => [...frames[id]!.cells, ...childrenOf(id).flatMap(cellsOf)];
-  const tierOf = (cell: string): number => model.groups[cell]!.tier!;
+  const tierOf = (cell: string): number => cellTier(model, cell);
   let moved = false;
   for (const parent of Object.keys(frames)) {
     const children = childrenOf(parent).map(child => ({ child, box: box.get(child)!, range: tierRange(model, child) }));
@@ -1263,7 +1265,7 @@ export function besideWalls(model: LayoutModel): Map<string, CellWindow> {
   const box = new Map(derived.map(frame => [frame.id, frame.box]));
   const childrenOf = (id: string): string[] => Object.keys(frames).filter(child => frames[child]!.parent === id);
   const cellsOf = (id: string): string[] => [...frames[id]!.cells, ...childrenOf(id).flatMap(cellsOf)];
-  const tierOf = (cell: string): number => model.groups[cell]!.tier!;
+  const tierOf = (cell: string): number => cellTier(model, cell);
   const narrow = (cell: string, wall: Partial<CellWindow>): void => {
     const known = walls.get(cell) ?? { low: -Infinity, high: Infinity };
     walls.set(cell, { low: Math.max(known.low, wall.low ?? -Infinity), high: Math.min(known.high, wall.high ?? Infinity) });

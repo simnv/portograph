@@ -11,6 +11,7 @@ import { facingSide, hintRefusal } from './side-hints.js';
 import { portKey } from './sides-one.js';
 import { measureChordSides } from './side-chords.js';
 import { measureLaneSides } from './side-lanes.js';
+import { nodeTier } from './read/tier.js';
 
 /**
  * The side measure (docs/design/side-faces.md, Sections 4 to 7): on a placed model (stages 1 to 7e) it names the lateral sides that would
@@ -142,7 +143,7 @@ export function measureSides(model: LayoutModel, kept7e: LayoutModel, refused: R
   const offer: SideOffer = { hints: new Map(), promised: new Map(), capped: false };
   const blockers = overlayBlockers(model);
   const order = new Map(Object.keys(model.document.nodes).map((id, index) => [id, index]));
-  const tierOf = (ref: PortRef): number => model.groups[model.document.nodes[ref.node]!.group]!.tier!;
+  const tierOf = (ref: PortRef): number => nodeTier(model, ref.node);
   let nodes: LayoutModel['nodes'] = model.nodes, nodes7e: LayoutModel['nodes'] = kept7e.nodes;
   let probes = 0;
   for (const link of model.links.filter(item => isOverlay(item) && plannedBends(model, item, blockers) > 0)) {

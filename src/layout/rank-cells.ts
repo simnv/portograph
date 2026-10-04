@@ -2,6 +2,7 @@ import type { LayoutModel, NormalisedDocument, NormalisedFrame, NormalisedGroup 
 import { orderedGroupIds, orderedNodeIds } from '../model/index.js';
 import { rankInputOf } from './rank-input.js';
 import { deriveRanks } from './ranks.js';
+import { isCantonSource } from './read/canton.js';
 
 /** How one document tier group is laid out: one row, or a frame of `k` rank cells. */
 interface Plan {
@@ -45,7 +46,7 @@ export function expandRankedGroups(model: LayoutModel): NormalisedDocument | und
   // have, so ranks are read once, from the authored document, and never from the result.
   if (source.frames !== undefined) return undefined;
   const ids = orderedGroupIds(source);
-  const isCanton = (id: string): boolean => source.groups[id]!.members !== undefined;
+  const isCanton = (id: string): boolean => isCantonSource(source, id);
   const cantonOf = (id: string): string | undefined => source.groups[id]!.canton;
   if (!ids.some(id => source.groups[id]!.shape === 'ranked' || cantonOf(id) !== undefined)) return undefined;
   const nodes = orderedNodeIds(source);

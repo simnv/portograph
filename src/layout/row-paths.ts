@@ -8,6 +8,7 @@ import { portId } from './skeleton-graph.js';
 import { groupShape } from './grid.js';
 import { joinFanTrees } from './bundle-geometry.js';
 import { expectedFramePath, isRoutedChord, routedChordCandidate, standaloneChord, withLinkFacts } from './frame-paths.js';
+import { nodeTierIfAny } from './read/tier.js';
 
 /**
  * Coordinate magnitude beyond which an obstacle is measured instead of rejected.
@@ -46,13 +47,10 @@ function rowNode(model: LayoutModel, id: string): boolean {
   const group = document === undefined ? undefined : model.groups[document.group];
   return group !== undefined && group.flank === undefined && groupShape(model, group.id) === 'row';
 }
-function tierOf(model: LayoutModel, id: string): number | undefined {
-  return model.groups[model.document.nodes[id]!.group]?.tier;
-}
 function lateral(model: LayoutModel, link: LayoutLink): { from: LayoutPort; to: LayoutPort } | undefined {
   if (link.layer !== 'routed' || !link.attachments) return undefined;
   const a = link.attachments.from.node, b = link.attachments.to.node;
-  if (a === b || !rowNode(model, a) || !rowNode(model, b) || tierOf(model, a) !== tierOf(model, b)) return undefined;
+  if (a === b || !rowNode(model, a) || !rowNode(model, b) || nodeTierIfAny(model, a) !== nodeTierIfAny(model, b)) return undefined;
   const from = findPort(model, link.attachments.from), to = findPort(model, link.attachments.to);
   if (!from || !to) return undefined;
   const opposite = (from.side === 'right' && to.side === 'left') || (from.side === 'left' && to.side === 'right');

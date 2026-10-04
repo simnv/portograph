@@ -20,6 +20,8 @@ import { moveGroup } from './skeleton-geometry.js';
 import { bandGap } from './skeleton-graph.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { attemptCounters } from './attempt-counters.js';
+import { nodeTier } from './read/tier.js';
+import { standsInRootCanton } from './read/canton.js';
 
 /** How many candidate x a group or a node tries, nearest first, before it stays (ticket 77). */
 const CHORD_TRIALS = 24;
@@ -219,7 +221,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
     history.add(`rank-spent:${cell}:${used}`);
     return true;
   };
-  const tierOf = (node: string): number => model.groups[model.document.nodes[node]!.group]!.tier!;
+  const tierOf = (node: string): number => nodeTier(model, node);
   const linked = new Set<string>();
   for (const link of model.links) if (link.attachments) for (const end of [link.attachments.from.node, link.attachments.to.node]) linked.add(model.document.nodes[end]!.group);
   const gap = bandGap(model);
@@ -366,15 +368,9 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
   };
   const outward = (before: Rect, now: Rect): number => Math.max(0, before.x - now.x) + Math.max(0, now.x + now.width - (before.x + before.width));
   /** Whether a cell stands in a frame of a canton: only there may its frame edge move out (the decision covers member frames and cantons). */
-  const inCanton = (group: LayoutGroup): boolean => {
-    const all = model.document.frames ?? {};
-    let at = group.frame;
-    while (at !== undefined && all[at]?.parent !== undefined) at = all[at]!.parent;
-    return at !== undefined && all[at]?.kind === 'canton';
-  };
   const mayGrow = (group: LayoutGroup, before: Rect, now: Rect): boolean => {
     const budget = edge(), by = outward(before, now);
-    if (!inCanton(group)) return Math.abs(now.x - before.x) <= PLACEMENT_EPS && Math.abs(now.width - before.width) <= PLACEMENT_EPS;
+    if (!standsInRootCanton(model, group)) return Math.abs(now.x - before.x) <= PLACEMENT_EPS && Math.abs(now.width - before.width) <= PLACEMENT_EPS;
     return by <= Math.min(SLIDE_GROWTH, CANVAS_GROWTH_SHARE * budget.base - budget.grown) + PLACEMENT_EPS;
   };
   // A frame of several cells slides whole inside its column slack (ticket 80): every cell takes the same dx, so the frame box, the

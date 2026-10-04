@@ -16,6 +16,7 @@ import { chordKind, chordsHold } from './frame-paths.js';
 import { deriveFrames, foreignReach, foreignRoot, heldLaneReach, ownFrameCells, riserForeignReach, frameNodes } from './frames.js';
 import { BUS_RUN_CLEARANCE } from './bus-room.js';
 import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
+import { nodeTier } from './read/tier.js';
 
 /** A corridor `reseatLanes` moved, and the child port it moved it onto. */
 export interface LaneFollow { lane: string; child: PortRef }
@@ -33,9 +34,7 @@ export function lanesHoldTheirChild(model: LayoutModel, followed: LaneFollow[]):
   });
 }
 
-export function nodeTier(model: LayoutModel, id: string): number {
-  return model.groups[model.document.nodes[id]!.group]!.tier!;
-}
+export { nodeTier };
 /** Anchor tier = most main-tier nodes, bars included, flanks excluded; ties: lowest tier (7c). */
 export function selectAnchorTier(model: LayoutModel): number | undefined {
   const counts = new Map<number, number>();

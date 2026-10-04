@@ -1,8 +1,10 @@
 import type { LayoutGroup, LayoutModel, LayoutNode, LayoutPort } from '../model/layout.js';
 import type { Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
-import { isSideLane, laneSidesHold, recordSeatedSideLanes, optionalMoveHolds, sideLaneSource, nodeTier, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
+import { isSideLane, laneSidesHold, recordSeatedSideLanes, optionalMoveHolds, sideLaneSource, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
 import { cellReach } from './frames.js';
+import { standsInCanton } from './read/canton.js';
+import { nodeTier } from './read/tier.js';
 import { besideWalls, frameColumns, keepOutShifts, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
 import { findPort } from './row-paths.js';
 import { attemptCounters } from './attempt-counters.js';
@@ -412,15 +414,6 @@ function packClear(model: LayoutModel, context: CentreContext, tier: number, gro
   moveGroup(model, group, low - group.bounds!.x, 0);
 }
 
-/** The column pull's inner pass (`pullMembers`) reads only the members of a canton. */
-function inCanton(model: LayoutModel, group: LayoutGroup): boolean {
-  const frames = model.document.frames;
-  for (let id = group.frame; id !== undefined && frames?.[id] !== undefined; id = frames[id]!.parent) {
-    if (frames[id]!.kind === 'canton') return true;
-  }
-  return false;
-}
-
 /**
  * A declined group stands where the feeds want it inside its wall, not where the pack left it (ranked-groups ticket 70). The column pull
  * (`slideRange`) reads the room up to the far wall and takes it toward the feed; a decline that only packed the group clear at the near wall
@@ -432,7 +425,7 @@ function standNearFeed(model: LayoutModel, context: CentreContext, tier: number,
   const box = group.bounds!;
   // The bounds were computed on the widened group; the restored group stands in a fresh window.
   const window = reservedWindow(model, context, tier, id), low = Math.max(wideLow, window.low), high = Math.min(wideHigh, window.high);
-  if (!inCanton(model, group) || !Number.isFinite(target) || box.width > high - low + EPS) return;
+  if (!standsInCanton(model, group) || !Number.isFinite(target) || box.width > high - low + EPS) return;
   const dx = Math.max(low, Math.min(target, high - box.width)) - box.x;
   if (Math.abs(dx) <= EPS || !optionalMoveHolds(model, [{ group, bounds: { ...box, x: box.x + dx } }])) return;
   moveGroup(model, group, dx, 0);
