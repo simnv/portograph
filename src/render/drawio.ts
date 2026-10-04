@@ -47,6 +47,7 @@ import type {
   Frame, Layer, LayoutLabel, LayoutLink, LayoutModel, LayoutPort, PathSegment,
 } from '../model/layout.js';
 import { orderedGroupIds, orderedNodeIds } from '../model/model.js';
+import { isDirect } from '../layout/link-labels.js';
 import { iconKey, iconPath } from '../profiles/network/icons.js';
 import type { ThemeMode } from '../profiles/network/theme.js';
 import {
@@ -1024,8 +1025,10 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
    * further −90 on top of it rather than replacing it, so a child states its angle once, in
    * `rotation=`, and never sets `horizontal`.
    */
-  const labelStyle = (label: LayoutLabel, at: Point, carrier: 'edge' | 'child'): Readonly<Record<string, StyleValue>> => {
-    const on = placement === 'on-run' && label.support?.kind === 'link-segment';
+  const labelStyle = (label: LayoutLabel, at: Point, carrier: 'edge' | 'child', link: LayoutLink): Readonly<Record<string, StyleValue>> => {
+    // A label on a direct line (ticket 16) lies on it in either mode, so it always hides the line behind its glyphs.
+    const segment = label.support?.kind === 'link-segment' ? link.path?.segments[label.support.segment] : undefined;
+    const on = label.support?.kind === 'link-segment' && (placement === 'on-run' || segment !== undefined && isDirect(segment));
     const multiplicity = label.support?.kind === 'merge-run';
     const inside = [...Object.values(layout.groups).filter(group => group.frame === undefined && group.bounds).map(group => group.bounds!),
       ...(layout.frames ?? []).map(frame => frame.box)].some(bounds =>
@@ -1176,7 +1179,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         ...dashEntries(klass.dash),
         ...(source?.style ?? {}),
         ...(target?.style ?? {}),
-        ...(carried ? labelStyle(carried.label, labelPoint(carried.label, link), 'edge') : {}),
+        ...(carried ? labelStyle(carried.label, labelPoint(carried.label, link), 'edge', link) : {}),
       });
       edgeCell(id, layer, style, points, {
         source: source?.cell,
@@ -1293,7 +1296,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         // `labelBackgroundColor=default` with it — the white box the SVG does not draw.
         html: 1, resizable: 0, points: '[]',
         // A child cell states its whole turn in `rotation=`, at any angle. `labelStyle` carries it.
-        ...labelStyle(label, at, 'child'),
+        ...labelStyle(label, at, 'child', link),
       }),
       vertex: 1, connectable: 0, parent: run.id,
     }, element('mxGeometry', { x: relativeAt.x, y: relativeAt.y, relative: 1, as: 'geometry' },

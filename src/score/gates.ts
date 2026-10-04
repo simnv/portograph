@@ -315,6 +315,11 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       // A pill's own incident stem runs behind the pill text by construction.
       if (containedOwnPill && label.port && incident(model, s, label.port.node)
         && [endpoints(s.link).from, endpoints(s.link).to].some(ref => refEqual(ref, label.port!))) continue;
+      // A label on a direct line (ticket 16) lies on the one segment it names, centred, and the
+      // renderer cuts that line away under the text: that segment is the label's own line, no hit.
+      const own = label.support?.kind === 'link-segment' && label.owner.kind === 'link' && label.owner.id === label.support.link
+        && label.support.link === s.link.id && s.index >= label.support.segment && s.index <= (label.support.through ?? label.support.segment);
+      if (own && !horizontal(s.segment) && !vertical(s.segment)) continue;
       // Text drawn across a routed segment is a hit whatever it claims to support.
       if (segmentRect(s.segment, label.bounds!)) { hit(s.link.id); continue; }
       // Only the clearance zone of the one segment a link label was measured against is exempt.
