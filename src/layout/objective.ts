@@ -13,7 +13,10 @@ import { PLACEMENT_EPS } from './tolerance.js';
  * Every optional move in placement asks one question: is this candidate better than the model as it stands? The answer used to be
  * spelled out at each of a dozen sites, each with its own order of criteria. Here a `Reading` holds the raw discrete counts a judge
  * can ask for, per link family (routed and overlay), and a `Profile` is a named order over two readings: hard gates first, then the
- * lexicographic keys of one `byKeys` comparator, which ends in a deterministic key and so is a total order. Each current judge is a
+ * lexicographic keys of one `byKeys` comparator. A profile is of one of two kinds. An `order` profile has only antisymmetric keys and ends in a
+ * deterministic key, so it is a total preorder and may sort (`compare`). A `gate` profile has a key that is not antisymmetric (a key that is never
+ * negative, or a candidate that has no say): it answers "is `a` better than `b`" or "no worse" through `gains` and `holds`, a candidate against an
+ * incumbent, and the type refuses it to `compare`. Each current judge is a
  * profile that gives exactly the verdict the judge gave (the differential test `test/layout/objective-differential.test.ts` records
  * them); the `unified` profile is the order the user approved (2026-10-04) and nothing calls it yet.
  *
@@ -31,7 +34,11 @@ export function tapVerdict(name: string, value: () => string): void {
 
 /** What one link family (routed, or overlay) shows. A judge fills what it reads; a field it does not read is 0 or absent. */
 export interface Family {
-  /** How many links stand straight, by the predicate of the reader that built the family. */
+  /**
+   * How many links stand straight, by the predicate of the reader that built the family. It is not one count: overlay `as drawn`, overlay
+   * `chord`, routed chords, routed on one axis and the held chords of a fan are different quantities. Read only what the profile of the judge
+   * that built the readings reads, and never compare readings that two judges built.
+   */
   straight: number;
   /** Which ones. Needed by the keys that ask for a set. */
   straightIds?: ReadonlySet<string>;
@@ -225,12 +232,13 @@ export const keys = {
  * The comparator of an ordered list of keys: the first key that tells the two apart decides, and the end is a deterministic key (`tie`,
  * number by number, then equal). A list ending this way is a total preorder; two readings with equal `tie` are equal.
  */
-export function byKeys(...order: readonly Key[]): Key {
+export function byKeys(order: readonly Key[], requireTie = false): Key {
   return (a, b) => {
     for (const key of order) {
       const result = key(a, b);
       if (result !== 0) return result;
     }
+    if (requireTie && (a.tie === undefined || b.tie === undefined)) throw new Error('this order ends in the position of the candidates: both readings need a `tie`');
     const x = a.tie ?? [], y = b.tie ?? [];
     for (let i = 0; i < Math.max(x.length, y.length); i++) {
       const result = cmp(x[i] ?? 0, y[i] ?? 0);
@@ -240,20 +248,29 @@ export function byKeys(...order: readonly Key[]): Key {
   };
 }
 
-/** A named order over two readings: gates, then `order`, then `after` gates (a refusal that the order check shadows keeps its place). */
+/** A named order over two readings: gates, then `order`, then `late` gates (a refusal that the order check shadows keeps its place). */
 export interface Profile {
   readonly name: string;
+  readonly kind: 'order' | 'gate';
   readonly gates: readonly Gate[];
   readonly order: Key;
-  readonly after: readonly Gate[];
+  readonly late: readonly Gate[];
 }
 
-export function profile(name: string, order: readonly Key[], gates: readonly Gate[] = [], after: readonly Gate[] = []): Profile {
-  return { name, gates, order: byKeys(...order), after };
+/** A profile whose keys are all antisymmetric: it may sort. `requireTie` makes a missing `tie` an error and not an accidental equality. */
+export interface OrderProfile extends Profile { readonly kind: 'order' }
+
+export function orderProfile(name: string, order: readonly Key[], gates: readonly Gate[] = [], late: readonly Gate[] = [], requireTie = false): OrderProfile {
+  return { name, kind: 'order', gates, order: byKeys(order, requireTie), late };
+}
+
+/** A profile with a key that is not antisymmetric: for `gains` and `holds` only, never for sorting. */
+export function gateProfile(name: string, order: readonly Key[], gates: readonly Gate[] = [], late: readonly Gate[] = []): Profile {
+  return { name, kind: 'gate', gates, order: byKeys(order), late };
 }
 
 /** `a` against `b` under a profile: negative when `a` is better. The gates are not asked. */
-export const compare = (a: Reading, b: Reading, by: Profile): number => by.order(a, b);
+export const compare = (a: Reading, b: Reading, by: OrderProfile): number => by.order(a, b);
 
 /** The first gate that refuses, or `undefined`. */
 export function refusal(a: Reading, b: Reading, gates: readonly Gate[]): string | undefined {
@@ -265,10 +282,10 @@ export function refusal(a: Reading, b: Reading, gates: readonly Gate[]): string 
 }
 
 /** Whether `a` is strictly better than `b` and no gate refuses it. */
-export const gains = (a: Reading, b: Reading, by: Profile): boolean => refusal(a, b, by.gates) === undefined && by.order(a, b) < 0 && refusal(a, b, by.after) === undefined;
+export const gains = (a: Reading, b: Reading, by: Profile): boolean => refusal(a, b, by.gates) === undefined && by.order(a, b) < 0 && refusal(a, b, by.late) === undefined;
 
 /** Whether `a` is no worse than `b` and no gate refuses it. */
-export const holds = (a: Reading, b: Reading, by: Profile): boolean => refusal(a, b, by.gates) === undefined && by.order(a, b) <= 0 && refusal(a, b, by.after) === undefined;
+export const holds = (a: Reading, b: Reading, by: Profile): boolean => refusal(a, b, by.gates) === undefined && by.order(a, b) <= 0 && refusal(a, b, by.late) === undefined;
 
 /** A gate: the turns of a family do not rise. */
 export const turnsNotUp = (family: 'overlay' | 'routed'): Gate => (a, b) => (a[family].turns <= b[family].turns ? undefined : `the ${family} turns rise`);
@@ -297,26 +314,26 @@ export const widthWithin = (a: Reading, b: Reading, cap: number): boolean => a.g
  * | `pickRankMove` (chord-clear) | `rankMove` | crossings not up, straight above base | more overlay straight, fewer overlay bent, fewer crossings (pairs), tie (|dx|, dx) |
  * | `pickTarget`, `windowTarget` (overlay-window) | `windowTarget` | | more overlay straight, fewer crossings unless it bends the mean, tie (distance to the mean, x); candidate against incumbent |
  * | `holdsSettled`, `attempt` (chord-clear) | `settled`, `settledRanked` | routed straight set kept, (ranked) crossings not up | more overlay straight |
- * | `judgeTrial` (side-judge) | `sideTrial` | lane links, total turns, neighbours; after: straight chords of 7e do not fall | fewer routed bent, fewer routed turns |
+ * | `judgeTrial` (side-judge) | `sideTrial` | lane links, total turns, neighbours; late: straight chords of 7e do not fall | fewer routed bent, fewer routed turns |
  * | `fanRoundHolds` (fan-spread) | `fanRound` | | more routed straight (held chords); holds |
  * | `closeUp`, `pullTier` (by count), `settleKeepOut`, `centreGroupStep` | `keepCount` | | more overlay straight; holds |
  * | `pullTier` (by link), the held-column probe, `stepOutOfChords` | `keepSet` | | fewer of the before-set lost; holds |
  * | none yet | `unified` | | fewer bent over both layers, fewer turns over both, fewer crossings, tie |
  */
 export const profiles = {
-  sheetGains: profile('sheetGains', [keys.fewerBent('overlay'), keys.fewerCrossings], [turnsNotUp('overlay')]),
-  windowsHold: profile('windowsHold', [keys.moreStraight('overlay'), keys.keepsStraightSet('overlay'), keys.fewerCrossings]),
-  rankMove: profile('rankMove', [keys.moreStraight('overlay'), keys.fewerBent('overlay'), keys.fewerCrossings], [crossingsNotUp, (a, b) => (a.overlay.straight > b.overlay.straight ? undefined : 'no straight link gained')]),
-  windowTarget: profile('windowTarget', [keys.moreStraight('overlay'), keys.fewerCrossingsUnlessBendsMean]),
+  sheetGains: orderProfile('sheetGains', [keys.fewerBent('overlay'), keys.fewerCrossings], [turnsNotUp('overlay')]),
+  windowsHold: gateProfile('windowsHold', [keys.moreStraight('overlay'), keys.keepsStraightSet('overlay'), keys.fewerCrossings]),
+  rankMove: orderProfile('rankMove', [keys.moreStraight('overlay'), keys.fewerBent('overlay'), keys.fewerCrossings], [crossingsNotUp, (a, b) => (a.overlay.straight > b.overlay.straight ? undefined : 'no straight link gained')]),
+  windowTarget: gateProfile('windowTarget', [keys.moreStraight('overlay'), keys.fewerCrossingsUnlessBendsMean]),
   // The count first, and the crossings only where the count rises: the crossings are read once and only when asked.
-  settled: profile('settled', [keys.moreStraight('overlay')], [], [routedSetKept]),
-  settledRanked: profile('settledRanked', [keys.moreStraight('overlay')], [], [crossingsNotUp, routedSetKept]),
-  cheapCrossings: profile('cheapCrossings', [keys.fewerCrossings]),
-  fanRound: profile('fanRound', [keys.moreStraight('routed')]),
-  keepCount: profile('keepCount', [keys.moreStraight('overlay')]),
-  keepSet: profile('keepSet', [keys.keepsStraightSet('overlay')]),
+  settled: orderProfile('settled', [keys.moreStraight('overlay')], [], [routedSetKept]),
+  settledRanked: orderProfile('settledRanked', [keys.moreStraight('overlay')], [], [crossingsNotUp, routedSetKept]),
+  cheapCrossings: orderProfile('cheapCrossings', [keys.fewerCrossings]),
+  fanRound: orderProfile('fanRound', [keys.moreStraight('routed')]),
+  keepCount: orderProfile('keepCount', [keys.moreStraight('overlay')]),
+  keepSet: gateProfile('keepSet', [keys.keepsStraightSet('overlay')]),
   /** The order the user approved on 2026-10-04: fewer bent links over both layers, then fewer turns, then fewer crossings. Not switched on anywhere. */
-  unified: profile('unified', [keys.fewerBent('both'), keys.fewerTurns('both'), keys.fewerCrossings]),
+  unified: orderProfile('unified', [keys.fewerBent('both'), keys.fewerTurns('both'), keys.fewerCrossings], [], [], true),
 } satisfies Record<string, Profile>;
 
 /**
@@ -325,7 +342,7 @@ export const profiles = {
  * (ticket 119): each lane link's own bends fall, the total does not rise, no link without a hint gets worse. `a` is the routed trial and `b`
  * the routed baseline; `routed.straight` of each is the chord count of its 7e model.
  */
-export function sideTrialProfile(hinted: ReadonlySet<string>, lanes: readonly string[]): Profile {
+export function sideTrialProfile(hinted: ReadonlySet<string>, lanes: readonly string[]): OrderProfile {
   const laneGates: Gate[] = lanes.length === 0 ? [] : [
     (a, b) => {
       const notFewer = lanes.filter(id => !(a.routed.bends!.has(id) && b.routed.bends!.has(id) && a.routed.bends!.get(id)! < b.routed.bends!.get(id)!));
@@ -337,6 +354,6 @@ export function sideTrialProfile(hinted: ReadonlySet<string>, lanes: readonly st
       return neighbours.length > 0 ? `the trial with a lane makes a neighbour worse (${neighbours.join(', ')})` : undefined;
     },
   ];
-  return profile('sideTrial', [keys.fewerBent('routed'), keys.fewerTurns('routed')], laneGates,
+  return orderProfile('sideTrial', [keys.fewerBent('routed'), keys.fewerTurns('routed')], laneGates,
     [(a, b) => (a.routed.straight < b.routed.straight ? 'the trial loses a straight chord' : undefined)]);
 }

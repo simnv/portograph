@@ -6,11 +6,11 @@ import { pickTarget } from '../../src/layout/overlay-window.js';
 
 /** Architecture ticket 04: one Reading, one compare. The profiles of the judges that stand, and the unified order that nothing calls yet. */
 const family = (bent: number, turns: number, extra: Partial<Family> = {}): Family => ({ straight: 0, bent, turns, ...extra });
-const mk = (overlay: Family, routed: Family, crossings: number, tie?: readonly number[]): Reading =>
-  reading({ overlay, routed, crossings: lazyCount(() => crossings), crossingMode: 'points', ...(tie ? { tie } : {}) });
+const mk = (overlay: Family, routed: Family, crossings: number, tie: readonly number[] = [0]): Reading =>
+  reading({ overlay, routed, crossings: lazyCount(() => crossings), crossingMode: 'points', tie });
 
 describe('byKeys', () => {
-  const byCrossings = byKeys(keys.fewerCrossings);
+  const byCrossings = byKeys([keys.fewerCrossings]);
   it('ends in a deterministic key, so equal readings of different candidates are ordered', () => {
     const near = mk(family(0, 0), family(0, 0), 3, [1, 5]), far = mk(family(0, 0), family(0, 0), 3, [2, 1]);
     expect(byCrossings(near, far)).toBeLessThan(0);
@@ -19,10 +19,19 @@ describe('byKeys', () => {
   });
 
   it('compares the tie numbers in turn, and a missing tie reads as equal', () => {
-    const a = mk(family(0, 0), family(0, 0), 1, [1, 2]), b = mk(family(0, 0), family(0, 0), 1, [1, 3]), none = mk(family(0, 0), family(0, 0), 1);
+    const a = mk(family(0, 0), family(0, 0), 1, [1, 2]), b = mk(family(0, 0), family(0, 0), 1, [1, 3]), none = reading({ overlay: family(0, 0), crossings: lazyCount(() => 1), crossingMode: 'points' });
     expect(byCrossings(a, b)).toBeLessThan(0);
     expect(byCrossings(a, none)).toBeGreaterThan(0);
     expect(byCrossings(none, none)).toBe(0);
+  });
+
+  it('refuses a gate profile to the sort, and an equal unified reading without a tie is an error and no accident', () => {
+    const one = reading({ crossings: lazyCount(() => 1), crossingMode: 'points' });
+    // @ts-expect-error a gate profile has a key that is not antisymmetric: it may not sort
+    expect(compare(one, one, profiles.windowsHold)).toBe(0);
+    expect(() => compare(one, one, profiles.unified)).toThrow(/tie/);
+    expect(profiles.windowsHold.kind).toBe('gate');
+    expect(profiles.unified.kind).toBe('order');
   });
 
   it('refuses to compare crossing counts of two modes', () => {
@@ -128,6 +137,16 @@ describe('the profiles of the judges that stand give their old verdicts', () => 
     expect(pick([12, 8])).toEqual({ target: 8, gained: 0, saved: 1 });
     expect(pick([20, 21, 30])).toEqual({ target: 21, gained: 1, saved: 4 });
     expect(pick([30, 21]).target).toBe(21);
+  });
+
+  it('pickTarget: a candidate that bends the mean has no say on crossings, even against an incumbent that bends it too', () => {
+    const table = new Map<number, { crossings: number; straight: number; bendsMean: boolean }>([
+      [14, { crossings: 5, straight: 3, bendsMean: true }], [15, { crossings: 1, straight: 3, bendsMean: true }], [16, { crossings: 2, straight: 3, bendsMean: false }],
+      [10, { crossings: 4, straight: 2, bendsMean: false }],
+    ]);
+    const pick = (list: number[]) => pickTarget(10, list, x => table.get(x)!);
+    expect(pick([14, 15]).target).toBe(14);
+    expect(pick([14, 15, 16]).target).toBe(16);
   });
 
   it('straightFell: by count a swap is no loss, by link it is', () => {

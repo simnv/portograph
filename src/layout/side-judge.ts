@@ -60,21 +60,21 @@ export function judgeTrial(input: TrialInput): Verdict {
     const bends = trial.get(link), before = base.get(link);
     if (bends !== undefined && before !== undefined && bends > promised && bends <= before) short.push({ link, bends, base: before, promised });
   }
-  // The chord counts of the two 7e models stand in `routed.straight`: the clause that reads them comes last.
-  const now = reading({ routed: routedFamily(trial, straightChords(input.trial7e)) }), then = reading({ routed: routedFamily(base, straightChords(input.kept7e)) });
-  const by = sideTrialProfile(new Set(input.hinted.keys()), [...(input.lanes ?? [])]);
   const verdict = (kept: boolean, reason: string): Verdict => { tapVerdict('judgeTrial', () => `${kept} ${reason}`); return { kept, reason, worse, removed, away, short }; };
   if (worse.length > 0) return verdict(false, `a hinted link has more bends than on the baseline (${worse.join(', ')})`);
   if (removed.length > 0) return verdict(false, `the trial's route removes ${removed.join(', ')}, which the baseline's route keeps`);
   if (away.length > 0) return verdict(false, 'a hinted port faces away from its peer');
   // A trial that holds a lane hint (ticket 119) is kept only when each lane link's own bends fall, the total bends of the sheet do not rise, and no link
   // without a hint gets worse: a rise in total bends is never a gain, and the count of bent links cannot see what a lane gives.
+  // The chord counts of the two 7e models stand in `routed.straight`: the clause that reads them comes last, and a refused trial does not pay for them.
+  const now = reading({ routed: routedFamily(trial, straightChords(input.trial7e)) }), then = reading({ routed: routedFamily(base, straightChords(input.kept7e)) });
+  const by = sideTrialProfile(new Set(input.hinted.keys()), [...(input.lanes ?? [])]);
   const refused = refusal(now, then, by.gates);
   if (refused !== undefined) return verdict(false, refused);
   if (!(compare(now, then, by) < 0)) {
     return verdict(false, `the routed trial gives no gain (${now.routed.bent} bent links and ${now.routed.turns} bends, against ${then.routed.bent} and ${then.routed.turns})`);
   }
-  const lost = refusal(now, then, by.after);
+  const lost = refusal(now, then, by.late);
   if (lost !== undefined) return verdict(false, lost);
   return verdict(true, '');
 }

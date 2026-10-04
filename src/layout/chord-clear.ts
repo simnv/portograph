@@ -19,7 +19,7 @@ import { moveGroup } from './skeleton-geometry.js';
 import { bandGap } from './skeleton-graph.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { attemptCounters } from './attempt-counters.js';
-import { compare, gains, holds as noWorse, lazyCount, lostStraight, profiles, read, reading, refusal, tapVerdict, widthWithin, type Reading } from './objective.js';
+import { compare, gains, holds as readingHolds, lazyCount, lostStraight, profiles, read, reading, refusal, tapVerdict, widthWithin, type Reading } from './objective.js';
 import { nodeTier } from './read/tier.js';
 import { overlayCrossingPairs } from './read/crossings.js';
 import { standsInRootCanton } from './read/canton.js';
@@ -56,8 +56,8 @@ export interface RankMove { dx: number; crossings: number; straight: number; /**
 export function pickRankMove<T extends RankMove>(moves: readonly T[], base: { crossings: number; straight: number }): T | undefined {
   const by = profiles.rankMove;
   const against = reading({ overlay: { straight: base.straight, bent: 0, turns: 0 }, crossings: lazyCount(() => base.crossings), crossingMode: 'pairs' });
-  const read = (move: T): Reading => reading({ overlay: { straight: move.straight, bent: move.bent ?? 0, turns: 0 }, crossings: lazyCount(() => move.crossings), crossingMode: 'pairs', tie: [Math.abs(move.dx), move.dx] });
-  const pick = moves.map(move => ({ move, now: read(move) })).filter(({ now }) => refusal(now, against, by.gates) === undefined)
+  const readMove = (move: T): Reading => reading({ overlay: { straight: move.straight, bent: move.bent ?? 0, turns: 0 }, crossings: lazyCount(() => move.crossings), crossingMode: 'pairs', tie: [Math.abs(move.dx), move.dx] });
+  const pick = moves.map(move => ({ move, now: readMove(move) })).filter(({ now }) => refusal(now, against, by.gates) === undefined)
     .sort((a, b) => compare(a.now, b.now, by))[0]?.move;
   tapVerdict('pickRankMove', () => `${moves.length} ${base.crossings}/${base.straight} ${pick === undefined ? '-' : `${pick.dx} ${pick.straight} ${pick.crossings}`}`);
   return pick;
@@ -284,7 +284,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
       tapVerdict('attemptCheap', () => `${ok} ${after.overlay.straight}/${before.overlay.straight}`);
       // Cheap refusals of a lower rank, before a settled copy is paid for (ticket 146): a crossing added, a drift the column rules would undo.
       if (ok && rank !== undefined) {
-        ok = noWorse(after, before, profiles.cheapCrossings);
+        ok = readingHolds(after, before, profiles.cheapCrossings);
         tapVerdict('attemptCrossings', () => `${ok}`);
         if (ok && follow !== undefined) {
           if (driftBefore === undefined) {
