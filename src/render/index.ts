@@ -10,6 +10,7 @@ import { EPS, right } from '../geometry/planar.js';
 import { effectiveLayer, validate } from '../score/model.js';
 import { measureText } from '../text/index.js';
 import { CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, linkStrokeWidth } from '../theme/geometry.js';
+import { washAssignment, washClass } from '../profiles/network/theme.js';
 import { GeometryLocks, sheetClassWashCss, themeCss } from './theme.js';
 import { authorClass, classes, element, escapeStyle, escapeText, num } from './svg.js';
 
@@ -370,10 +371,13 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
 
   // Bodies detached to the layer beneath the links, in node order; see `crossedBars`.
   const crossedBodies: string[] = [];
+  // The sheet's own node classes take wash hues in document order; one structural class per body carries the hue.
+  const nodeClassAttrs = orderedNodeIds(layout.document).map(id => authorClass(layout.document.nodes[id]!.class));
+  const washes = washAssignment(nodeClassAttrs);
   const nodes = orderedNodeIds(layout.document).map(id => {
     const node = layout.nodes[id]!, authored = authorClass(layout.document.nodes[id]!.class);
     const crossed = crossedBars.has(id);
-    const body = element('rect', { class: classes('node-body', authored, locks.stroke(nodeStroke(node))),
+    const body = element('rect', { class: classes('node-body', authored, washClass(authored, washes), locks.stroke(nodeStroke(node))),
       x: node.bounds!.x, y: node.bounds!.y, width: node.bounds!.width, height: node.bounds!.height, rx: CORNER_RADII.node, ry: CORNER_RADII.node });
     // The detached body is the same rectangle, in a container of the same kind, inside a second
     // node layer, so what a document styles by name still reaches it: the theme, the geometry locks
@@ -452,7 +456,11 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     }
     if (!entry.icon) return '';
     icons.add(iconKey(entry.icon));
-    return iconElement({ icon: entry.icon, bounds: entry.swatch }, locks, authorClass(entry.key));
+    // The key shows the class's body wash behind its tile, as a node of the class shows it.
+    const at = entry.swatch, grow = 2;
+    const wash = element('rect', { class: classes('node-body', authorClass(entry.key), washClass(authorClass(entry.key), washes), locks.stroke(DEFAULT_STROKE_WIDTHS.pill)),
+      x: at.x - grow, y: at.y - grow, width: at.width + 2 * grow, height: at.height + 2 * grow, rx: CORNER_RADII.node, ry: CORNER_RADII.node });
+    return wash + iconElement({ icon: entry.icon, bounds: entry.swatch }, locks, authorClass(entry.key));
   };
   const legend = layout.legend ? element('g', { class: 'legend', 'data-id': layout.legend.id },
     layout.legend.entries.map(entry => {
@@ -473,7 +481,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     { id: `pg-icon-${name}`, viewBox: '0 0 24 24' }, element('path', { d: iconPath(name) }))).join('');
   const documentCss = layout.document.css ?? '';
   const style = element('style', { type: 'text/css' },
-    escapeStyle([themeCss(), sheetClassWashCss(Object.values(layout.document.nodes).map(node => node.class)), locks.css(), documentCss].filter(part => part.trim()).join('\n')));
+    escapeStyle([themeCss(), sheetClassWashCss(nodeClassAttrs), locks.css(), documentCss].filter(part => part.trim()).join('\n')));
 
   const body = element('rect', { class: 'pg-canvas', x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height })
     + element('g', { class: 'groups' }, groups)

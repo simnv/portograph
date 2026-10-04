@@ -523,7 +523,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   /** One resolution of something the palette decides, adapted to both appearances when asked. */
   const dual = <T,>(pick: (of: ThemeMode) => T): T => adaptive ? adapt(pick('light'), pick('dark')) : pick(mode);
   const paint = dual(of => NETWORK_THEME[of]);
-  const washes = washAssignment(Object.values(layout.document.nodes).map(node => node.class));
+  const washes = washAssignment(orderedNodeIds(layout.document).map(id => authorClass(layout.document.nodes[id]!.class)));
   const document = layout.document;
   const visible = (link: LayoutLink): boolean =>
     linkVisible(layout, link, options.layers ? { layers: options.layers } : {});
@@ -1351,6 +1351,13 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           strokeWidth: DEFAULT_STROKE_WIDTHS.pill, points: '[]',
         }), swatch);
       } else if (entry.icon) {
+        // The key shows the class's body wash behind its tile, as a node of the class shows it.
+        const body = swatch, grow = 2;
+        vertex(cellId('legendBody', entry.id), cellId('legendRow', entry.id), styleString([], {
+          html: 1, rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.node * 2,
+          fillColor: dual(of => washFill(washToken(authorClass(entry.key)), of, washes)), strokeColor: paint.node.stroke,
+          strokeWidth: DEFAULT_STROKE_WIDTHS.pill, points: '[]',
+        }), { x: body.x - grow, y: body.y - grow, width: body.width + 2 * grow, height: body.height + 2 * grow });
         const pick = (of: ThemeMode): { tile: { fill: string; stroke: string }; glyph: string } => {
           const known = nodeClassStyle(entry.key);
           return known ? nodeClassPaint(known, of) : { tile: NETWORK_THEME[of].tile, glyph: NETWORK_THEME[of].glyph };

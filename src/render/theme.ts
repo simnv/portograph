@@ -1,5 +1,5 @@
 import { LEGEND_DEFAULT_CLASS, NETWORK_LINK_CLASSES, NETWORK_NODE_CLASSES, NETWORK_PORT_ROLES, NETWORK_PORT_STATUS, NETWORK_THEME,
-  nodeBodyFill, nodeClassPaint, washAssignment, washFill, portRolePaint } from '../profiles/network/theme.js';
+  nodeBodyFill, nodeClassPaint, washAssignment, washFillAt, washToken, portRolePaint } from '../profiles/network/theme.js';
 import type { ThemeMode } from '../profiles/network/theme.js';
 
 /**
@@ -82,7 +82,8 @@ export function themeRules(mode: ThemeMode): string[] {
   // The role colour lives on the icon tile; the pill takes the class hue. The body takes a faint wash of the class hue.
   for (const [name, style] of NETWORK_NODE_CLASSES) {
     const { tile, glyph, pill } = nodeClassPaint(style, mode);
-    rules.push(`.node-body.${name}{fill:${nodeBodyFill(style, mode)}}`);
+    // `:where()` keeps the wash at the specificity of `.node-body`, so a document `css:` rule on the body wins.
+    rules.push(`.node-body:where(.${name}){fill:${nodeBodyFill(style, mode)}}`);
     rules.push(`.icon-tile.${name}{fill:${tile.fill};stroke:${tile.stroke}}`);
     rules.push(`.node-icon.${name}{stroke:${glyph}}`);
     rules.push(`.pill.${name}{fill:${pill.fill};stroke:${pill.stroke}}`);
@@ -127,15 +128,18 @@ export function themeCss(): string {
 }
 
 /**
- * Wash rules for the node classes a sheet defines and the profile does not know, one per plain
- * class token a node's wash resolves to. Emitted ahead of the document's own `css:`, so an author
- * rule still wins. Same three modes as the theme.
+ * Wash rules for the node classes a sheet defines and the profile does not know. A body carries one
+ * `pg-wash-<n>` class (`washClass`), so a node with several class tokens takes the one hue the draw.io
+ * export takes. `:where()` keeps the rule at the specificity of `.node-body`, and the rules come ahead
+ * of the document's own `css:`, so an author rule on the body wins. Same three modes as the theme.
  */
 export function sheetClassWashCss(classAttrs: readonly (string | undefined)[]): string {
   const assignment = washAssignment(classAttrs);
-  const tokens = [...assignment.keys()];
-  if (!tokens.length) return '';
-  const rules = (mode: ThemeMode): string[] => tokens.map(token => `.node-body.${token}{fill:${washFill(token, mode, assignment)}}`);
+  const used = [...new Set(classAttrs.map(attr => washToken(attr)).filter((token): token is string => token !== undefined)
+    .map(token => assignment.get(token)).filter((at): at is number => at !== undefined))].sort((a, b) => a - b);
+  if (!used.length) return '';
+  const rules = (mode: ThemeMode): string[] => used.map(at =>
+    `.node-body:where(.pg-wash-${at}){fill:${washFillAt(at, mode)}}`);
   return [...rules('light'),
     '@media (prefers-color-scheme: dark){', ...rules('dark').map(rule => `  ${rule}`), '}',
     '@media print{', ...rules('print').map(rule => `  ${rule}`), '}'].join('\n');

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel, Point } from '../../src/index.js';
-import { drawio } from '../../src/index.js';
+import { drawio, render } from '../../src/index.js';
 import { bands } from '../../src/layout/bands.js';
 import { bars } from '../../src/layout/bars.js';
 import { bundles } from '../../src/layout/bundles.js';
@@ -1695,5 +1695,40 @@ describe('link ends and nested groups move with their owner (issue 03)', () => {
     for (const cell of all.values()) {
       if (cell.id.startsWith('pg-overlayMark~') || cell.id.startsWith('pg-busMark~')) expect(all.get(cell.parent!)!.vertex).toBe(true);
     }
+  }, 60000);
+});
+
+describe('a sheet class wash reads the same in the SVG and in draw.io (ticket 09)', () => {
+  const sheet = [
+    'portograph: 2', 'groups:', '  top: { tier: 0, label: Top }', '  low: { tier: 1, label: Low }', 'nodes:',
+    '  a: { group: top, class: switch router, icon: server, label: A }', '  b: { group: top, class: switch, label: B }',
+    '  c: { group: low, class: router tbr, icon: server, label: C }', '  d: { group: low, class: tbr router, label: D }',
+    '  e: { group: low, class: lb switch, icon: server, label: E }', 'links:', '  - [a, c]', '  - [b, d]', '  - [a, e]', '',
+  ].join('\n');
+
+  it('gives a multi-token node the one hue in both exports, and the key shows the wash', async () => {
+    const model = await pipeline(sheet);
+    const svg = render(model);
+    const light = svg.slice(svg.indexOf('<style'));
+    const rulesInOrder = [...light.matchAll(/^\.node-body:where\(\.([\w-]+)\)\{fill:(#[0-9a-f]{6})\}/gm)].map(match => [match[1]!, match[2]!] as const);
+    const all = cells(drawio(model, { theme: 'light' }));
+    const fills: Record<string, string> = {};
+    for (const key of ['a', 'b', 'c', 'd', 'e']) {
+      const classAttr = model.document.nodes[key]!.class!;
+      const body = new RegExp(`<rect class="node-body ${classAttr}( pg-[^"]*)?"`).exec(svg);
+      expect(body, key).not.toBeNull();
+      const tokens = new Set(`node-body ${classAttr}${body![1] ?? ''}`.split(' '));
+      // The cascade: the last rule whose token the body carries (`:where()` keeps all at one specificity).
+      const fill = [...rulesInOrder].reverse().find(([token]) => tokens.has(token))?.[1];
+      expect(fill, key).toBeDefined();
+      expect(all.get(id('node', key))!.style['fillColor'], key).toBe(fill);
+      fills[key] = fill!;
+    }
+    expect(fills['a']).not.toBe(fills['b']);
+    expect(fills['b']).not.toBe(fills['e']);
+    expect(fills['c']).toBe(fills['d']);
+    // The key paints the wash behind a class's tile, in both.
+    expect(svg).toMatch(/<rect class="node-body switch pg-wash-\d+/);
+    expect([...all.values()].filter(cell => cell.id.startsWith('pg-legendBody~')).length).toBeGreaterThan(0);
   }, 60000);
 });

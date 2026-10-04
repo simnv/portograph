@@ -39,15 +39,15 @@ describe('the default theme is the designed sheet', () => {
    */
   function amendedHandoff(): Rule[] {
     const replaced: Record<string, Record<string, string>> = {
-      '': { '.overlay-line': 'stroke:#a2a5d9;stroke-opacity:0.5', '.overlay-endpoint': 'fill:#a2a5d9;stroke:none', '.pill-label.admin-down': 'fill:#5d5d60', '.pill.degraded': 'stroke:#1d1f20;stroke-dasharray:none' },
+      '': { '.overlay-line': 'stroke:#7b7fc4;stroke-opacity:0.7', '.overlay-endpoint': 'fill:#7b7fc4;stroke:none', '.pill-label.admin-down': 'fill:#5d5d60', '.pill.degraded': 'stroke:#1d1f20;stroke-dasharray:none' },
       [DARK]: {
-        '.overlay-line': 'stroke:#7b7fc4;stroke-opacity:0.5', '.overlay-endpoint': 'fill:#7b7fc4;stroke:none',
+        '.overlay-line': 'stroke:#7b7fc4;stroke-opacity:0.6', '.overlay-endpoint': 'fill:#7b7fc4;stroke:none',
         '.pill.uplink': 'fill:#597ea3', '.pill.downlink': 'fill:#2c455d', '.pill.peer': 'fill:#363966',
         '.pill-label.peer': 'fill:#e0e1f6', '.pill.mgmt': 'fill:#46413a', '.pill-label.mgmt': 'fill:#e8e4dc',
         '.pill.lag': 'fill:#20484f', '.pill-label.lag': 'fill:#cfe9ec', '.pill.degraded': 'stroke:#ffffff;stroke-dasharray:none',
       },
       [PRINT]: {
-        '.overlay-line': 'stroke:#98989b;stroke-opacity:0.55', '.overlay-endpoint': 'fill:#98989b;stroke:none',
+        '.overlay-line': 'stroke:#7a7a7d;stroke-opacity:0.55', '.overlay-endpoint': 'fill:#7a7a7d;stroke:none',
         '.pill.downlink': 'fill:#f5f5f8', '.pill.mgmt': 'fill:#e7e7ea', '.pill.lag': 'fill:#98989b',
         '.pill.degraded': 'stroke:#000000;stroke-dasharray:3 1',
       },
@@ -56,7 +56,7 @@ describe('the default theme is the designed sheet', () => {
     for (const [at, selector, declarations] of rules(handoff)) {
       // Amendment 7 (architecture 09): a class body takes a wash of the class hue, ahead of its tile rule.
       const tile = /^\.icon-tile\.([a-z]+)$/.exec(selector);
-      if (tile) out.push(rule(at, `.node-body.${tile[1]}`, `fill:${BODY[at]![tile[1]!]}`));
+      if (tile) out.push(rule(at, `.node-body:where(.${tile[1]})`, `fill:${BODY[at]![tile[1]!]}`));
       const swap = replaced[at]?.[selector];
       out.push(swap === undefined ? [at, selector, declarations] : rule(at, selector, swap));
       // Amendment 6 (ticket 73, Q104): the `signal` link class states the `dashed` paint, in every mode.
@@ -78,7 +78,7 @@ describe('the default theme is the designed sheet', () => {
     // The amendments are the whole difference: 21 rules replaced and 28 added against the delivered file.
     const delivered = rules(handoff);
     const same = actual.filter(item => delivered.some(other => other[0] === item[0] && other[1] === item[1] && other[2].join(';') === item[2].join(';')));
-    expect(actual.length - same.length).toBe(49);
+    expect(actual.length - same.length).toBe(47);
     expect(actual.length - delivered.length).toBe(28);
   });
 
@@ -91,7 +91,7 @@ describe('the default theme is the designed sheet', () => {
 
   it('washes a node body by class and no group box or label', () => {
     expect(themeCss()).not.toMatch(/\.(group-box|node-label|group-label)\.[a-z]/);
-    expect(themeCss()).toMatch(/\.node-body\.router\{fill:#dbeff1\}/);
+    expect(themeCss()).toMatch(/\.node-body:where\(\.router\)\{fill:#dbeff1\}/);
   });
 
   it('keeps node text at 4.5:1 or better on every class wash, in every mode', () => {
@@ -118,13 +118,15 @@ describe('the default theme is the designed sheet', () => {
     };
     const ratio = (a: string, b: string): number => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
     expect(washToken('x-y router')).toBe('router');
+    expect(washToken('router tbr')).toBe('tbr');
+    expect(washToken('tbr router')).toBe('tbr');
     expect(washToken('a{b} ok')).toBe('ok');
-    // Declaration order, skipping the hue a profile class uses, wrapping when the hues run out.
-    const names = Array.from({ length: WASH_PALETTE.length + 3 }, (_, at) => `c${at}`);
+    // Declaration order; the profile's own hues are never given to a sheet class; wrap when they run out.
+    const own = WASH_PALETTE.map((_, at) => at).filter(at => at >= NETWORK_NODE_CLASSES.length);
+    const names = Array.from({ length: own.length + 3 }, (_, at) => `c${at}`);
     const washes = washAssignment(['router', ...names]);
-    expect([...washes.values()].slice(0, WASH_PALETTE.length - 1)).toEqual(
-      WASH_PALETTE.map((_, at) => at).filter(at => at !== 1));
-    expect(washes.get(names[WASH_PALETTE.length - 1]!)).toBe(washes.get(names[0]!));
+    expect([...washes.values()]).toEqual(names.map((_, at) => own[at % own.length]));
+    expect(washAssignment(['a', 'b']).get('a')).toBe(own[0]);
     expect(new Set(washAssignment(['a', 'b', 'c', 'd', 'e', 'f', 'g']).values()).size).toBe(7);
     for (const name of names) {
       for (const mode of ['light', 'dark', 'print'] as const) {
@@ -134,7 +136,7 @@ describe('the default theme is the designed sheet', () => {
       }
     }
     expect(sheetClassWashCss(['router', 'switch', undefined, 'switch', 'bad{x}']))
-      .toMatch(/^\.node-body\.switch\{fill:#[0-9a-f]{6}\}[\s\S]*prefers-color-scheme: dark[\s\S]*@media print/);
+      .toMatch(/^\.node-body:where\(\.pg-wash-4\)\{fill:#[0-9a-f]{6}\}[\s\S]*prefers-color-scheme: dark[\s\S]*@media print/);
     expect(sheetClassWashCss(['router'])).toBe('');
   });
 });

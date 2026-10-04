@@ -130,28 +130,43 @@ export type WashAssignment = ReadonlyMap<string, number>;
 const SAFE_TOKEN = /^[A-Za-z_][\w-]*$/;
 
 /**
- * The one token of a node's `class` attribute that washes its body: the first the profile knows, else
- * the first plain identifier (a token that needs escaping in a selector washes nothing).
+ * The one token of a node's `class` attribute that washes its body: the profile class declared last
+ * (the one a later `.node-body.<class>` rule would win with), else the first plain identifier (a token that needs escaping in a selector washes nothing).
  */
 export function washToken(classAttr: string | undefined): string | undefined {
   const tokens = (classAttr ?? '').split(/\s+/).filter(Boolean);
-  return tokens.find(token => nodeClassStyle(token) !== undefined) ?? tokens.find(token => SAFE_TOKEN.test(token));
+  const known = tokens.filter(token => nodeClassStyle(token) !== undefined)
+    .sort((a, b) => NETWORK_NODE_CLASSES.findIndex(([name]) => name === b) - NETWORK_NODE_CLASSES.findIndex(([name]) => name === a));
+  return known[0] ?? tokens.find(token => SAFE_TOKEN.test(token));
 }
 
-/** The palette entry of each sheet-defined class, from the node classes in document order. */
+/**
+ * The palette entry of each sheet-defined class, from the node classes in document order. The
+ * profile's own hues (the first `NETWORK_NODE_CLASSES.length` entries) are never given to a sheet
+ * class, present on the sheet or not, so a sheet class never looks like a role it is not.
+ */
 export function washAssignment(classAttrs: readonly (string | undefined)[]): WashAssignment {
   const tokens = [...new Set(classAttrs.map(washToken).filter((token): token is string => token !== undefined))];
-  const used = new Set(tokens.map(token => NETWORK_NODE_CLASSES.findIndex(([name]) => name === token)).filter(at => at >= 0));
-  const free = WASH_PALETTE.map((_, at) => at).filter(at => !used.has(at));
+  const free = WASH_PALETTE.map((_, at) => at).filter(at => at >= NETWORK_NODE_CLASSES.length);
   const own = tokens.filter(token => nodeClassStyle(token) === undefined);
   return new Map(own.map((token, at) => [token, free[at % free.length]!]));
 }
+
+/** The structural class that carries a sheet class's wash on a node body; the one resolution both exports share. */
+export const washClass = (classAttr: string | undefined, assignment: WashAssignment): string | undefined => {
+  const token = washToken(classAttr), at = token === undefined ? undefined : assignment.get(token);
+  return at === undefined ? undefined : `pg-wash-${at}`;
+};
 
 /** Body fill for one class token in one mode; no token, the plain body. */
 export function washFill(token: string | undefined, mode: ThemeMode, assignment: WashAssignment): string {
   const known = nodeClassStyle(token);
   const at = token === undefined ? undefined : assignment.get(token);
-  if (known || at === undefined) return nodeBodyFill(known, mode);
+  return known || at === undefined ? nodeBodyFill(known, mode) : washFillAt(at, mode);
+}
+
+/** Body fill of one palette entry in one mode. */
+export function washFillAt(at: number, mode: ThemeMode): string {
   const plain = NETWORK_THEME[mode].node.fill, entry = WASH_PALETTE[at]!;
   if (mode === 'print') return mixHex(plain, entry.print, 0.18);
   return mode === 'light' ? mixHex(plain, entry.light, 0.75) : mixHex(plain, entry.dark, 0.45);
@@ -273,7 +288,7 @@ export const NETWORK_THEME: Modal<ThemePaint> = {
     pill: { fill: STEEL[200], stroke: STEEL[500], text: STEEL[800] },
     link: { stroke: STEEL[800], label: NEUTRAL[700], multiplicity: STEEL[700] },
     legend: { text: NEUTRAL[800] },
-    overlay: { stroke: INDIGO[400], opacity: 0.5, mark: INDIGO[400] },
+    overlay: { stroke: INDIGO[500], opacity: 0.7, mark: INDIGO[500] },
   },
   dark: {
     background: STEEL[900],
@@ -284,7 +299,7 @@ export const NETWORK_THEME: Modal<ThemePaint> = {
     pill: { fill: STEEL[800], stroke: STEEL[400], text: STEEL[200] },
     link: { stroke: STEEL[300], label: STEEL[300], multiplicity: STEEL[200] },
     legend: { text: STEEL[200] },
-    overlay: { stroke: INDIGO[500], opacity: 0.5, mark: INDIGO[500] },
+    overlay: { stroke: INDIGO[500], opacity: 0.6, mark: INDIGO[500] },
   },
   print: {
     background: WHITE,
@@ -295,7 +310,7 @@ export const NETWORK_THEME: Modal<ThemePaint> = {
     pill: { fill: NEUTRAL[100], stroke: NEUTRAL[600], text: BLACK },
     link: { stroke: BLACK, label: NEUTRAL[700], multiplicity: BLACK },
     legend: { text: BLACK },
-    overlay: { stroke: NEUTRAL[500], opacity: 0.55, mark: NEUTRAL[500] },
+    overlay: { stroke: NEUTRAL[600], opacity: 0.55, mark: NEUTRAL[600] },
   },
 };
 
