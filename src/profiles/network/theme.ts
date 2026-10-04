@@ -81,6 +81,97 @@ export function nodeClassPaint(style: NodeClassStyle, mode: ThemeMode):
   };
 }
 
+/** Linear mix of two `#rrggbb` colours: `amount` of `over` on top of `base`. */
+export function mixHex(base: string, over: string, amount: number): string {
+  const channel = (hex: string, at: number): number => parseInt(hex.slice(1 + at * 2, 3 + at * 2), 16);
+  return '#' + [0, 1, 2].map(at => Math.round(channel(base, at) * (1 - amount) + channel(over, at) * amount)
+    .toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * The body fill of a node of one class in one mode: a faint wash of the class hue (paint only; the
+ * icon tile keeps the full role colour). Light mixes the hue's 200 step into white, dark mixes the
+ * 800 step into the dark body, print a light grey of the class's greyscale tile. A class the profile
+ * does not know keeps the plain body. Labels keep at least 4.5:1 on every wash (a test checks it).
+ */
+export function nodeBodyFill(style: NodeClassStyle | undefined, mode: ThemeMode): string {
+  const plain = NETWORK_THEME[mode].node.fill;
+  if (!style) return plain;
+  if (mode === 'print') return mixHex(plain, style.print.fill, 0.18);
+  return mode === 'light' ? mixHex(plain, style.hue[200], 0.75) : mixHex(plain, style.hue[800], 0.45);
+}
+
+/**
+ * The wash of a node class the profile does not know (a class the sheet defines). The sheet states
+ * no colour for such a class, so the sheet's classes take the palette hues in the order they first
+ * appear in the document, skipping the hues the profile's own classes use on that sheet and
+ * wrapping round when the hues run out. The first four hues are the profile classes' (in
+ * `NETWORK_NODE_CLASSES` order). Only the steps a wash needs are held: the light 200, the dark 800
+ * and a grey for print.
+ */
+export const WASH_PALETTE: readonly { light: string; dark: string; print: string }[] = [
+  { light: SLATE[200], dark: SLATE[800], print: NEUTRAL[300] },
+  { light: TEAL[200], dark: TEAL[800], print: NEUTRAL[700] },
+  { light: INDIGO[200], dark: INDIGO[800], print: NEUTRAL[500] },
+  { light: WARM[200], dark: WARM[800], print: NEUTRAL[900] },
+  { light: '#d9ecd6', dark: '#2c4a2b', print: NEUTRAL[400] },
+  { light: '#f3dce0', dark: '#5a2c36', print: NEUTRAL[600] },
+  { light: '#f1e6cc', dark: '#563f12', print: NEUTRAL[800] },
+  { light: STEEL[200], dark: STEEL[800], print: NEUTRAL[200] },
+  { light: '#e6dcf0', dark: '#432c5a', print: NEUTRAL[300] },
+  { light: '#f6dcd0', dark: '#5a2f1f', print: NEUTRAL[600] },
+  { light: '#e4eccc', dark: '#3b4a1a', print: NEUTRAL[400] },
+  { light: '#d2eee3', dark: '#1f4a3a', print: NEUTRAL[700] },
+];
+
+/** A sheet-defined class token and the palette entry it takes. */
+export type WashAssignment = ReadonlyMap<string, number>;
+
+const SAFE_TOKEN = /^[A-Za-z_][\w-]*$/;
+
+/**
+ * The one token of a node's `class` attribute that washes its body: the profile class declared last
+ * (the one a later `.node-body.<class>` rule would win with), else the first plain identifier (a token that needs escaping in a selector washes nothing).
+ */
+export function washToken(classAttr: string | undefined): string | undefined {
+  const tokens = (classAttr ?? '').split(/\s+/).filter(Boolean);
+  const known = tokens.filter(token => nodeClassStyle(token) !== undefined)
+    .sort((a, b) => NETWORK_NODE_CLASSES.findIndex(([name]) => name === b) - NETWORK_NODE_CLASSES.findIndex(([name]) => name === a));
+  return known[0] ?? tokens.find(token => SAFE_TOKEN.test(token));
+}
+
+/**
+ * The palette entry of each sheet-defined class, from the node classes in document order. The
+ * profile's own hues (the first `NETWORK_NODE_CLASSES.length` entries) are never given to a sheet
+ * class, present on the sheet or not, so a sheet class never looks like a role it is not.
+ */
+export function washAssignment(classAttrs: readonly (string | undefined)[]): WashAssignment {
+  const tokens = [...new Set(classAttrs.map(washToken).filter((token): token is string => token !== undefined))];
+  const free = WASH_PALETTE.map((_, at) => at).filter(at => at >= NETWORK_NODE_CLASSES.length);
+  const own = tokens.filter(token => nodeClassStyle(token) === undefined);
+  return new Map(own.map((token, at) => [token, free[at % free.length]!]));
+}
+
+/** The structural class that carries a sheet class's wash on a node body; the one resolution both exports share. */
+export const washClass = (classAttr: string | undefined, assignment: WashAssignment): string | undefined => {
+  const token = washToken(classAttr), at = token === undefined ? undefined : assignment.get(token);
+  return at === undefined ? undefined : `pg-wash-${at}`;
+};
+
+/** Body fill for one class token in one mode; no token, the plain body. */
+export function washFill(token: string | undefined, mode: ThemeMode, assignment: WashAssignment): string {
+  const known = nodeClassStyle(token);
+  const at = token === undefined ? undefined : assignment.get(token);
+  return known || at === undefined ? nodeBodyFill(known, mode) : washFillAt(at, mode);
+}
+
+/** Body fill of one palette entry in one mode. */
+export function washFillAt(at: number, mode: ThemeMode): string {
+  const plain = NETWORK_THEME[mode].node.fill, entry = WASH_PALETTE[at]!;
+  if (mode === 'print') return mixHex(plain, entry.print, 0.18);
+  return mode === 'light' ? mixHex(plain, entry.light, 0.75) : mixHex(plain, entry.dark, 0.45);
+}
+
 export interface LinkClassStyle {
   /** Stroke colour (light). */
   stroke: string;
@@ -197,7 +288,7 @@ export const NETWORK_THEME: Modal<ThemePaint> = {
     pill: { fill: STEEL[200], stroke: STEEL[500], text: STEEL[800] },
     link: { stroke: STEEL[800], label: NEUTRAL[700], multiplicity: STEEL[700] },
     legend: { text: NEUTRAL[800] },
-    overlay: { stroke: INDIGO[500], opacity: 0.6, mark: INDIGO[500] },
+    overlay: { stroke: INDIGO[500], opacity: 0.7, mark: INDIGO[500] },
   },
   dark: {
     background: STEEL[900],
@@ -208,7 +299,7 @@ export const NETWORK_THEME: Modal<ThemePaint> = {
     pill: { fill: STEEL[800], stroke: STEEL[400], text: STEEL[200] },
     link: { stroke: STEEL[300], label: STEEL[300], multiplicity: STEEL[200] },
     legend: { text: STEEL[200] },
-    overlay: { stroke: INDIGO[400], opacity: 0.6, mark: INDIGO[400] },
+    overlay: { stroke: INDIGO[500], opacity: 0.6, mark: INDIGO[500] },
   },
   print: {
     background: WHITE,
@@ -219,7 +310,7 @@ export const NETWORK_THEME: Modal<ThemePaint> = {
     pill: { fill: NEUTRAL[100], stroke: NEUTRAL[600], text: BLACK },
     link: { stroke: BLACK, label: NEUTRAL[700], multiplicity: BLACK },
     legend: { text: BLACK },
-    overlay: { stroke: NEUTRAL[600], opacity: 0.7, mark: NEUTRAL[600] },
+    overlay: { stroke: NEUTRAL[600], opacity: 0.55, mark: NEUTRAL[600] },
   },
 };
 
