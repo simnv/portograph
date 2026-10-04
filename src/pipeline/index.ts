@@ -31,6 +31,7 @@ import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
 import { SideHintRefusal, sideHintDiagnostics, type SideHints } from '../layout/side-hints.js';
 import { measureSides, refusedKey, type SideOffer } from '../layout/side-measure.js';
 import { judgeTrial, predictedWorse, predictPublished, routedBends, trialNotes } from '../layout/side-judge.js';
+import type { AttemptTraceEvent } from '../layout/placement-attempt.js';
 
 
 /** Most runs of placement a fan's pitch may cost after the first (ticket 89). */
@@ -82,6 +83,8 @@ export interface LayoutOptions {
   strictCheckpoints?: boolean;
   clock?: ElkClock;
   onProgress?: (progress: LayoutProgress) => void;
+  /** Opt-in per-pass trace of the 7f placement attempt (pass, short model hash, verdict). Off by default; never written into the layout. */
+  attemptTrace?: (event: AttemptTraceEvent) => void;
   /** Test only. Side hints for every placement run (port key to `left` or `right`); no measure offers one yet (ticket 115). */
   testSideHints?: SideHints;
   /** Test only: called after the side trial is judged, with the offer, the two routed models and the verdict. */
@@ -193,7 +196,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   // The abort check of 7f, the baseline's and the trial's: the command deadline, checked between the passes. It ends the whole command, so it never picks a layout (ticket 141).
   const trialAbort = (stage: string): void => { if (budget.remainingMs() <= 0) throw new CommandDeadlineError(0, stage); };
   let kept7e = model;
-  let base = await timed('bands', () => step('bands', () => bands(kept7e, () => trialAbort('bands'))));
+  let base = await timed('bands', () => step('bands', () => bands(kept7e, () => trialAbort('bands'), options.attemptTrace)));
   let hints = new Map<string, 'left' | 'right'>(options.testSideHints ?? []);
   let laneKeys = new Set<string>();
   const promised: SideOffer['promised'] = new Map(), refused = new Set<string>(), sideNotes: Diagnostic[] = [];
@@ -287,7 +290,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     }
     let trial: LayoutModel, routedTrial: LayoutModel;
     try {
-      trial = await timed('bands-trial', () => step('bands', () => bands(trial7e, () => trialAbort('bands')), true));
+      trial = await timed('bands-trial', () => step('bands', () => bands(trial7e, () => trialAbort('bands'), options.attemptTrace), true));
       routedBase ??= await routeModel(base);
       routedTrial = await routeModel(trial, true);
     } catch (error) {
