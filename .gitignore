@@ -4,3 +4,5 @@ dist/
 *.log
 __pycache__/
 examples/
+.$*.bkp
+*.drawio.bkp
