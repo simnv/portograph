@@ -47,6 +47,9 @@ export function overlayCrossingPairs(paths: readonly Trace[]): number {
   let found = 0;
   for (let i = 0; i < paths.length; i++) for (let j = i + 1; j < paths.length; j++) {
     const meets = paths[i]!.some(a => paths[j]!.some(b => {
+      // A crossing lies inside both segments, so boxes that do not meet hold none.
+      if (Math.max(a.from.x, a.to.x) < Math.min(b.from.x, b.to.x) || Math.max(b.from.x, b.to.x) < Math.min(a.from.x, a.to.x)
+        || Math.max(a.from.y, a.to.y) < Math.min(b.from.y, b.to.y) || Math.max(b.from.y, b.to.y) < Math.min(a.from.y, a.to.y)) return false;
       const ax = a.to.x - a.from.x, ay = a.to.y - a.from.y, bx = b.to.x - b.from.x, by = b.to.y - b.from.y;
       const d = ax * by - ay * bx;
       if (Math.abs(d) < 1e-9) return false;

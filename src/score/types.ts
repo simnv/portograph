@@ -36,7 +36,7 @@ export interface ScoreCounts {
     meshBusLinks: number;
   };
 }
-export interface ScoreAdvisory{ metric: string; actual: number; target: number; relation: '<=' | '>=' }
+export interface ScoreAdvisory { metric: string; actual: number; target: number; relation: '<=' | '>=' }
 export interface ScoreAssertion { code: 'golden-crossings' | 'baseline'; passed: boolean; actual: number; expected: number; tolerance: number }
 export interface ScoreOptions { force?: boolean; golden?: boolean; baseline?: number }
 export interface ScoreSnapshot {
