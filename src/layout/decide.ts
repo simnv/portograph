@@ -12,7 +12,7 @@ import { PLACEMENT_EPS } from './tolerance.js';
 import { tierGapPlans } from './gap-plan.js';
 import { centreViolations } from './centre.js';
 import { reserveLinkLabelRoom, type LinkLabelShortfall } from './bands.js';
-import { attemptCounters } from './attempt-counters.js';
+import { attemptCounters, lastAttempt } from './attempt-counters.js';
 import { drawnOverlays, judges, compare, gains, holds as readingHolds, read, reading, tapVerdict, type Reading } from './objective.js';
 
 /**
@@ -212,6 +212,8 @@ export function chordDecision(model: LayoutModel, follow: ((probe: LayoutModel) 
       undo();
       rebuildNodeGeometry(model, nodes, 'current');
       baseline = settled();
+      // The state before any kept move of this attempt, for the side round (architecture ticket 15, phase 3b): not rebuilt by the pipeline.
+      if (baseline !== undefined && !lastAttempt.moved && lastAttempt.unmoved === undefined) lastAttempt.unmoved = copies.get(baseline)?.copy;
       redo();
       rebuildNodeGeometry(model, nodes, 'current');
     }

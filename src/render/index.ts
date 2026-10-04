@@ -3,6 +3,7 @@ import type {
   Bundle, Frame, Layer, LayoutLabel, LayoutLink, LayoutModel, LayoutNode, PathSegment,
 } from '../model/layout.js';
 import { frameNodes } from '../layout/frames.js';
+import { haloSize, isDirect } from '../layout/link-labels.js';
 import { orderedGroupIds, orderedNodeIds } from '../model/model.js';
 import { iconKey, iconPath } from '../profiles/network/icons.js';
 import { LEGEND_DEFAULT_CLASS } from '../profiles/network/theme.js';
@@ -18,6 +19,17 @@ export { OVERLAY_ENDPOINT_RADIUS };
 /** Inset of a scaled icon glyph inside its measured tile, so the tile keeps a visible border. */
 const ICON_INSET = 1.5;
 const MASK_ID = 'pg-overlay-mask';
+const ROUTED_MASK_ID = 'pg-routed-mask';
+
+/**
+ * A mask id that names its cutouts: the base id plus a hash of the mask body. Two SVGs inlined on
+ * one page then resolve each to its own mask, and the same sheet always renders the same id.
+ */
+function maskId(base: string, body: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < body.length; i++) hash = Math.imul(hash ^ body.charCodeAt(i), 0x01000193) >>> 0;
+  return `${base}-${hash.toString(16).padStart(8, '0')}`;
+}
 
 export interface RenderOptions {
   /**
@@ -208,29 +220,61 @@ const MASK_PAINT = 'fill-opacity:1!important;opacity:1!important;stroke:none!imp
  * is a presentation attribute as well, so a renderer that reads no style at all still draws the mask
  * the layout intends rather than the initial fill.
  */
-function maskRect(shown: boolean, box: Rect): string {
+interface Cutout { box: Rect; turn?: number }
+
+function maskRect(shown: boolean, box: Rect, turn?: number): string {
   const colour = shown ? '#ffffff' : '#000000';
+  const middle = centre(box);
   return element('rect', { class: shown ? 'pg-mask-show' : 'pg-mask-hide', fill: colour,
     style: `fill:${colour}!important;${MASK_PAINT}`,
-    x: box.x, y: box.y, width: box.width, height: box.height });
+    x: box.x, y: box.y, width: box.width, height: box.height,
+    ...(turn ? { transform: `rotate(${num(turn)} ${num(middle.x)} ${num(middle.y)})` } : {}) });
+}
+
+/**
+ * The cutout of a label that lies on a direct line (ticket 16): the rectangle of its text plus the
+ * halo, turned to the line's angle about its centre, so the line is cut away under the glyphs and no
+ * more. Undefined for every other label, which is cut out by its stored box.
+ */
+function onLineCutout(model: LayoutModel, label: LayoutLabel): Cutout | undefined {
+  if (label.role !== 'link' || label.onLine !== true || label.support?.kind !== 'link-segment' || !label.bounds || !label.lines?.length) return undefined;
+  const support = label.support;
+  const segment = model.links.find(link => link.id === support.link)?.path?.segments[support.segment];
+  if (segment === undefined || !isDirect(segment)) return undefined;
+  const text = measureText(label.lines.join('\n'), { fontSize: label.fontSize ?? 9, weight: label.fontWeight ?? 400 });
+  const size = haloSize({ width: text.width, height: (label.lineHeight ?? text.lineHeight) * label.lines.length });
+  const middle = centre(label.bounds);
+  return { box: { x: middle.x - size.width / 2, y: middle.y - size.height / 2, ...size }, turn: label.textRotation ?? 0 };
+}
+
+/**
+ * The cutouts of the routed layer: only the labels that lie on a direct routed line (ticket 16).
+ * Every other routed link is kept clear of its labels by placement and is not masked.
+ */
+function routedCutouts(model: LayoutModel, visible: (link: LayoutLink) => boolean): Cutout[] {
+  return model.labels.flatMap(label => {
+    if (label.omitted || label.role !== 'link' || label.layer === 'overlay' || !labelDrawn(model, label, visible)) return [];
+    const cut = onLineCutout(model, label);
+    return cut ? [cut] : [];
+  });
 }
 
 /** Every rectangle the overlay layer is masked out of, per `pipeline.md` stage 11. */
-function maskedBoxes(model: LayoutModel, visible: (link: LayoutLink) => boolean): Rect[] {
-  const boxes: Rect[] = [];
+function maskedBoxes(model: LayoutModel, visible: (link: LayoutLink) => boolean): Cutout[] {
+  const boxes: Cutout[] = [];
   for (const node of Object.values(model.nodes)) {
-    if (node.bounds) boxes.push(node.bounds);
-    for (const port of node.ports) if (port.pill) boxes.push(port.pill.bounds);
+    if (node.bounds) boxes.push({ box: node.bounds });
+    for (const port of node.ports) if (port.pill) boxes.push({ box: port.pill.bounds });
   }
   for (const label of model.labels) {
     if (label.omitted || !label.bounds) continue;
-    if (label.role === 'group') boxes.push(label.bounds);
+    if (label.role === 'group') boxes.push({ box: label.bounds });
     // A hidden link's label is not drawn, so masking it would leave an unexplained gap.
-    if (label.role === 'link' && labelDrawn(model, label, visible)) boxes.push(label.bounds);
+    if (label.role === 'link' && labelDrawn(model, label, visible)) boxes.push(onLineCutout(model, label) ?? { box: label.bounds });
     // The bus label is cut out of the overlay layer as a link label is: the bar and stubs are overlay strokes.
     if (label.role === 'mesh-bus') {
       const bus = model.meshBuses?.find(item => item.label === label.id);
-      if (bus?.members.some(id => { const link = model.links.find(item => item.id === id); return link !== undefined && visible(link); })) boxes.push(label.bounds);
+      if (bus?.members.some(id => { const link = model.links.find(item => item.id === id); return link !== undefined && visible(link); })) boxes.push({ box: label.bounds });
     }
   }
   return boxes;
@@ -470,12 +514,20 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     }).join('')) : '';
 
   const overlayVisible = drawn.some(link => effectiveLayer(link) === 'overlay') || buses.length > 0;
-  const mask = overlayVisible ? element('mask', { id: MASK_ID, maskUnits: 'userSpaceOnUse',
+  const maskElement = (id: string, inner: string): string => element('mask', { id, maskUnits: 'userSpaceOnUse',
     // The mask means luminance: white shows the overlay, black cuts it out. Said here, on the
     // element, so no rule can reinterpret the cutouts as opaque alpha.
     style: 'mask-type:luminance!important',
-    x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height },
-  maskRect(true, canvas) + maskedBoxes(layout, visible).map(box => maskRect(false, box)).join('')) : '';
+    x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height }, inner);
+  const overlayInner = overlayVisible
+    ? maskRect(true, canvas) + maskedBoxes(layout, visible).map(cut => maskRect(false, cut.box, cut.turn)).join('') : '';
+  const overlayMaskId = maskId(MASK_ID, overlayInner);
+  const mask = overlayVisible ? maskElement(overlayMaskId, overlayInner) : '';
+  // The routed layer is masked only where a label lies on a direct routed line (ticket 16).
+  const routedCuts = routedCutouts(layout, visible);
+  const routedInner = routedCuts.length ? maskRect(true, canvas) + routedCuts.map(cut => maskRect(false, cut.box, cut.turn)).join('') : '';
+  const routedMaskId = maskId(ROUTED_MASK_ID, routedInner);
+  const routedMask = routedCuts.length ? maskElement(routedMaskId, routedInner) : '';
 
   const symbols = [...icons].sort().map(name => element('symbol',
     { id: `pg-icon-${name}`, viewBox: '0 0 24 24' }, element('path', { d: iconPath(name) }))).join('');
@@ -485,9 +537,9 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
 
   const body = element('rect', { class: 'pg-canvas', x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height })
     + element('g', { class: 'groups' }, groups)
-    + (overlayPaths ? element('g', { class: 'overlay-links', mask: `url(#${MASK_ID})` }, overlayPaths) : '')
+    + (overlayPaths ? element('g', { class: 'overlay-links', mask: `url(#${overlayMaskId})` }, overlayPaths) : '')
     + (crossedBodies.length ? element('g', { class: 'nodes crossed-bars' }, crossedBodies.join('')) : '')
-    + element('g', { class: 'links' }, routedPaths + trunks)
+    + element('g', { class: 'links', ...(routedMask ? { mask: `url(#${routedMaskId})` } : {}) }, routedPaths + trunks)
     + element('g', { class: 'nodes' }, nodes)
     + element('g', { class: 'labels' }, groupLabels + linkLabels + busLabels.join(''))
     + (marks ? element('g', { class: 'overlay-marks' }, marks) : '')
@@ -499,5 +551,5 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     class: classes('portograph', authorClass(layout.document.profile)),
     viewBox: `${num(canvas.x)} ${num(canvas.y)} ${num(canvas.width)} ${num(canvas.height)}`,
     width: canvas.width, height: canvas.height,
-  }, title + element('defs', {}, style + symbols + mask) + body) + '\n';
+  }, title + element('defs', {}, style + symbols + mask + routedMask) + body) + '\n';
 }

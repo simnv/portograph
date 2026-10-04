@@ -34,7 +34,7 @@ import { measureSides, refusedKey, type SideOffer } from '../layout/side-measure
 import { judgeTrial, predictedWorse, predictPublished, routedBends, trialNotes } from '../layout/side-judge.js';
 import type { AttemptTraceEvent } from '../layout/placement-attempt.js';
 import { PLACEMENT_EPS } from '../layout/tolerance.js';
-import { attemptCounters } from '../layout/attempt-counters.js';
+import { attemptCounters, lastAttempt } from '../layout/attempt-counters.js';
 import { judgeCourseTrial, measureCourses } from '../layout/course-measure.js';
 import { pathBends } from '../layout/objective.js';
 import { countStage, ledgerOn, ledgerSnapshot, startPlacementEntry, type LedgerSnapshot } from '../layout/attempt-ledger.js';
@@ -104,6 +104,8 @@ export interface LayoutOptions {
   /** Test only. Called with the wall time of each placement run, measure, 7f, route and score-ready stage, and the budget left (ticket 115 timing). */
   testTiming?: (label: string, durationMs: number, remainingMs: number) => void;
   /** Test only (the side probe of ticket 117). Called with the offer, and with the trial and its verdict; it changes nothing. */
+  /** Test only: rebuild the unmoved baseline even when the filter finds no offer (counts the filter's misses). */
+  testRebuildAlways?: boolean;
   testSideTrace?: (event: Record<string, unknown>) => void;
 }
 
@@ -223,13 +225,17 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   const trialAbort = (stage: string): void => { if (budget.remainingMs() <= 0) throw new CommandDeadlineError(0, stage); };
   let kept7e = model;
   let base = await timed('bands', () => step('bands', () => bands(kept7e, () => trialAbort('bands'), options.attemptTrace)));
+  const baseMoved = lastAttempt.moved, baseUnmoved = lastAttempt.unmoved;
   let hints = new Map<string, 'left' | 'right'>(options.testSideHints ?? []);
   let laneKeys = new Set<string>();
   const promised: SideOffer['promised'] = new Map(), refused = new Set<string>(), sideNotes: Diagnostic[] = [];
   const trialLinks = new Map<string, string>();
+  // The extra trial of the unmoved baseline's offer (phase 3b) publishes no refusal note: its kept result never offered the hint.
+  let silent = false;
   const refuse = (keys: Iterable<string>, side: ReadonlyMap<string, 'left' | 'right'>, reason: string): void => {
     for (const key of keys) {
       refused.add(refusedKey(key, side.get(key)!));
+      if (silent) continue;
       const link = promised.get(key)?.link ?? trialLinks.get(key);
       sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_HINT_REFUSED',
         message: `The side hint ${side.get(key)} on ${portName(key)} was refused: ${reason}.`, ...(link === undefined ? {} : { owners: [{ kind: 'link' as const, id: link }] }) });
@@ -315,8 +321,25 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     }
   }
   for (let round = 0; round < SIDE_ROUNDS; round++) {
-    const offer = await timed('measureSides', () => measureSides(base, kept7e, refused));
-    options.testSideTrace?.({ ev: 'offer', round, offer, base, kept7e });
+    silent = false; // only the round-0 extra trial is silent; a later round publishes its refusals
+    let offer = await timed('measureSides', () => measureSides(base, kept7e, refused));
+    // No offer on the kept 7f result. If a 7f move changed the placement, the unmoved baseline may have had one that the move removed: it runs as one
+    // extra side trial, judged on routed results like any other, so the kept result stands unless a real trial beats it (architecture ticket 15, phase 3b).
+    // The settled copy 7f judged its first move against is only a filter: it is the round-0 state plus one settle, not the state 7f would publish without
+    // moves. When its offer is empty the trial is skipped; otherwise the true unmoved baseline is rebuilt (silently: no progress event, no attempt trace, since
+    // this run is never published) and the trial starts from the rebuilt offer. With no copy, the rebuild runs. Nothing is built when no re-run is left.
+    let unmovedOffer = false, filtered: boolean | undefined;
+    if (round === 0 && offer.hints.size === 0 && baseMoved && reruns < maxReruns) {
+      // The settled copy is the placement before a kept course: a course changes the layout, so it filters nothing then and the rebuild decides.
+      if (baseUnmoved !== undefined && activeCourses.length === 0) filtered = measureSides(baseUnmoved, kept7e, refused).hints.size > 0;
+      if (filtered !== false || options.testRebuildAlways === true) {
+        const unmoved = await timed('bands-unmoved', () => bands(kept7e, () => trialAbort('bands'), undefined, false));
+        offer = await timed('measureSides', () => measureSides(unmoved, kept7e, refused));
+        unmovedOffer = offer.hints.size > 0;
+        silent = unmovedOffer;
+      }
+    }
+    options.testSideTrace?.({ ev: 'offer', round, offer, base, kept7e, unmoved: unmovedOffer, filtered });
     if (offer.capped) sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_PROBE_CAPPED', message: 'The side measure stopped at its probe cap; the links after it were not probed.' });
     if (offer.hints.size === 0) break;
     if (reruns >= maxReruns) {
@@ -368,7 +391,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     }
     const hintedLinks = new Map([...offer.promised.values()].map(item => [item.link, item.bends] as const));
     // The predictor prunes only when another round and another re-run remain, and only the hints it calls worse (Section 19.3).
-    if (round + 1 < SIDE_ROUNDS && reruns < maxReruns) {
+    if (!unmovedOffer && round + 1 < SIDE_ROUNDS && reruns < maxReruns) {
       const worse = predictedWorse(predictPublished(trial7e, kept7e, base), base, hintedLinks.keys());
       const pruned = [...offer.hints.keys()].filter(key => worse.away.includes(key) || worse.links.includes(offer.promised.get(key)?.link ?? ''));
       if (pruned.length > 0) { refuse(pruned, all, 'the prediction from the moves of stage 7f gives it more bends than the baseline'); continue; }

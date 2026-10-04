@@ -423,7 +423,7 @@ describe('overlay layer', () => {
     const model = overlaid();
     const svg = render(model);
     expect(svg.indexOf('class="overlay-links"')).toBeLessThan(svg.indexOf('class="links"'));
-    expect(elements(svg, 'g').find(item => item['class'] === 'overlay-links')!['mask']).toBe('url(#pg-overlay-mask)');
+    expect(elements(svg, 'g').find(item => item['class'] === 'overlay-links')!['mask']).toMatch(/^url\(#pg-overlay-mask-[0-9a-f]{8}\)$/);
     const mask = svg.slice(svg.indexOf('<mask'), svg.indexOf('</mask>'));
     const hidden = elements(mask, 'rect').filter(item => item['class'] === 'pg-mask-hide').map(rect);
     for (const box of [model.nodes['a']!.bounds!, model.nodes['b']!.bounds!,
@@ -749,7 +749,7 @@ describe('declared bar crossings', () => {
 
   it('keeps the overlay masked, beneath the crossed body, and cut out of it', () => {
     const svg = render(crossing());
-    expect(elements(svg, 'g').find(item => item['class'] === 'overlay-links')!['mask']).toBe('url(#pg-overlay-mask)');
+    expect(elements(svg, 'g').find(item => item['class'] === 'overlay-links')!['mask']).toMatch(/^url\(#pg-overlay-mask-[0-9a-f]{8}\)$/);
     for (const [above, below] of [['overlay-links', 'nodes crossed-bars'],
       ['nodes crossed-bars', 'links'], ['links', 'nodes']]) {
       expect([above, svg.indexOf(`class="${above}"`) < svg.indexOf(`class="${below}"`)]).toEqual([above, true]);

@@ -1735,6 +1735,6 @@ export function validateGroupLabelBands(model: LayoutModel): void {
  * side-faces.md Section 19.5): it throws between the passes of 7f and so ends the whole command. It never changes the layout (ticket 141).
  * A call with no `abortAt` never throws for that reason.
  */
-export function bands(model: LayoutModel, abortAt?: () => void, trace?: (event: AttemptTraceEvent) => void): LayoutModel {
-  return withLayoutMutation(model, 'bands', () => {}, abortAt, trace);
+export function bands(model: LayoutModel, abortAt?: () => void, trace?: (event: AttemptTraceEvent) => void, moves?: boolean): LayoutModel {
+  return withLayoutMutation(model, 'bands', () => {}, abortAt, trace, moves);
 }

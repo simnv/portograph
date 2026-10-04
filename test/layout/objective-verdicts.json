@@ -85,10 +85,11 @@
   },
   "an-overlay-that-7f-straightens-needs-more-than-four-pixels-of-slack": {
     "attemptCheap": "2 0d5ac49bf18f7073",
-    "centreGroupStep": "26 b70d5a924aee2fd1",
+    "centreGroupStep": "46 39893f351c49c8be",
     "holdsSettled": "1 b0e37b1079e63c37",
+    "judgeTrial": "1 91bcbb903350cca7",
     "pickRankMove": "1 66eec4d604677902",
-    "pullTier": "8 d37f7e7ab77a6015"
+    "pullTier": "14 2001b63e774ad155"
   },
   "a-declined-grown-member-stops-at-an-overlay-chord": {
     "centreGroupStep": "9 7831835520a204ed",

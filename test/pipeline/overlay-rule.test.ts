@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { drawio, layout, parse, render, score } from '../../src/index.js';
 import type { LayoutLink, LayoutModel, Point, Rect } from '../../src/index.js';
-import { LINK_LABEL_GEOMETRY } from '../../src/layout/link-labels.js';
+import { LINK_LABEL_GEOMETRY, lineAngle } from '../../src/layout/link-labels.js';
+import { measureText } from '../../src/text/index.js';
 import { OVERLAY_PILL_CLEARANCE } from '../../src/layout/overlay-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -210,23 +211,25 @@ describe('an overlay link is straight, or orthogonal round a node', () => {
     const label = model.labels.find(item => item.role === 'link' && item.owner.kind === 'link' && item.owner.id === link.id)!;
     expect(label.omitted).toBeUndefined();
     expect(label.text).toBe('time synchronisation from the site clock');
-    expect(label.textRotation ?? 0).toBe(0);
+    // Architecture ticket 16: the label lies on the diagonal, its text at the diagonal's own angle.
+    expect(label.textRotation).toBeCloseTo(lineAngle(link.path!.segments[0]!), 9);
+    expect(label.textRotation).not.toBe(0);
     expect(model.diagnostics.map(item => item.code)).toEqual([]);
     // 7f grows one axis, so the room it reserved is the diagonal's reach on x, not its length.
+    const textWidth = measureText(label.text, { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight }).width;
     expect(Math.abs(points[1]!.x - points[0]!.x))
-      .toBeCloseTo(label.bounds!.width + 2 * LINK_LABEL_GEOMETRY.shortenMargin, 6);
-    // The link is one run, it is the diagonal, and the label box is centred on it, one normal gap
-    // above.
+      .toBeCloseTo(textWidth + 2 * LINK_LABEL_GEOMETRY.shortenMargin, 6);
+    // The link is one run, it is the diagonal, and the label box is centred on its midpoint.
     expect(link.path!.segments).toHaveLength(1);
     const longest = link.path!.segments[0]!;
     expect(axisAligned(longest.from, longest.to)).toBe(false);
     expect(label.bounds!.x + label.bounds!.width / 2).toBeCloseTo((longest.from.x + longest.to.x) / 2, 9);
-    expect(label.bounds!.y + label.bounds!.height).toBeCloseTo(
-      (longest.from.y + longest.to.y) / 2 - LINK_LABEL_GEOMETRY.normalGap - 0.75, 9);
-    // And exactly one shortening margin clear of the source pill it used to overhang, which is what
-    // a reservation measured face to face promises and no longer merely more than.
-    expect(label.bounds!.x - right(endBoxes(model, link)[0]!))
-      .toBeCloseTo(LINK_LABEL_GEOMETRY.shortenMargin, 9);
+    expect(label.bounds!.y + label.bounds!.height / 2).toBeCloseTo((longest.from.y + longest.to.y) / 2, 9);
+    // And one shortening margin clear of the source pill, less the halo (2 px) and the half-extent the
+    // slight turn adds to the stored box: the halo sits inside the margin 7f reserved.
+    const clear = label.bounds!.x - right(endBoxes(model, link)[0]!);
+    expect(clear).toBeLessThanOrEqual(LINK_LABEL_GEOMETRY.shortenMargin - LINK_LABEL_GEOMETRY.halo + 1e-9);
+    expect(clear).toBeGreaterThan(LINK_LABEL_GEOMETRY.shortenMargin - LINK_LABEL_GEOMETRY.halo - 1);
     expect(score(model).snapshot.Q).toBe(0.7913523029318137);
     expect(score(model).snapshot.passed).toBe(true);
   }, 60000);

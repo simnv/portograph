@@ -1,0 +1,29 @@
+# Expected: a link label on a direct (straight, not horizontal or vertical) line lies on the line, centred on it,
+# and its text runs at the line's angle, normalised to (-90, 90] so it never reads upside down (architecture
+# ticket 16). Two satellites on tier 0 feed WAN nodes in three location groups on tier 2 through labelled signal
+# links drawn straight on the overlay layer: the chords lean both ways, some shallow and some steep. The label
+# keeps clear of every node and of the other labels; the chord is cut away under the text. No link is removed.
+# Test-only input owned by architecture ticket 16; test/pipeline/label-on-a-direct-line.test.ts reads it.
+portograph: 2
+groups:
+  space: { tier: 0, label: Space }
+  north: { tier: 2, label: North }
+  south: { tier: 2, label: South }
+  east: { tier: 2, label: East }
+nodes:
+  sat-1: { group: space, class: server, label: Satellite 1 }
+  sat-2: { group: space, class: server, label: Satellite 2 }
+  wan-n: { group: north, class: router, label: WAN North }
+  wan-s: { group: south, class: router, label: WAN South }
+  wan-e: { group: east, class: router, label: WAN East }
+  sw-n: { group: north, class: switch, label: Switch North }
+  sw-s: { group: south, class: switch, label: Switch South }
+  sw-e: { group: east, class: switch, label: Switch East }
+links:
+  - [wan-n, sw-n]
+  - [wan-s, sw-s]
+  - [wan-e, sw-e]
+  - { from: sat-1, to: wan-n, class: signal, label: Uplink A }
+  - { from: sat-1, to: wan-s, class: signal, label: Uplink B }
+  - { from: sat-2, to: wan-s, class: signal, label: Uplink C }
+  - { from: sat-2, to: wan-e, class: signal, label: Uplink D }
