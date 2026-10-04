@@ -374,8 +374,6 @@ export const profiles = {
  */
 /** The findings a settled chord-clear candidate must not add (G6 crowded pairs, G5 disordered ports, tier-gap parts the plan declines). */
 const noNewPlacementFindings = [noNewFindings('crowded'), noNewFindings('disordered'), noNewFindings('residuals')];
-/** The settled-copy gates of a chord-clear candidate: the findings above, and no column or canton that the column rules newly hold (`COLUMN_AXIS_HELD`). */
-const settledFindings = [...noNewPlacementFindings, noNewFindings('held')];
 
 export const judges = {
   /** A chord-clear candidate on the geometry after the move, against the geometry before it: fewer bent links over both layers, no new body on a frozen chord. */
@@ -387,9 +385,9 @@ export const judges = {
   /** The column rules (ticket 67) do not undo a lower rank move: the cheap test before a settled copy is paid for. */
   driftHeld: profiles.driftHeld,
   /** A chord-clear candidate on its settled copy, against the settled copy without it: the order gains, and the column rules, the width bound and the findings hold. */
-  chordSettled: orderProfile('chordSettled', unifiedOrder, [], [driftHeld, widthBound, ...settledFindings], true),
+  chordSettled: orderProfile('chordSettled', unifiedOrder, [], [driftHeld, widthBound, ...noNewPlacementFindings], true),
   /** The same for a lower rank cell. */
-  rankSettled: orderProfile('rankSettled', unifiedOrder, [], [driftHeld, widthBound, ...settledFindings], true),
+  rankSettled: orderProfile('rankSettled', unifiedOrder, [], [driftHeld, widthBound, ...noNewPlacementFindings], true),
   /** A group with no link steps out of a chord: the picture is no worse by the order, and G6 and G5 name nothing new. */
   linkless: orderProfile('linkless', unifiedOrder, [], noNewPlacementFindings.slice(0, 2), true),
   /** The lane reseat on its settled copy, against the incumbent with its lanes held. */

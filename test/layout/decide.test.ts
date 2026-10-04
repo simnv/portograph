@@ -37,9 +37,6 @@ describe('the judges of the decision loop', () => {
     expect(gains({ ...fine, growth: { width: 120, height: 0 } }, base, judges.chordSettled)).toBe(false);
     expect(gains({ ...fine, sets: { ...findings, crowded: new Set(['a|b']) } }, base, judges.chordSettled)).toBe(false);
     expect(gains({ ...fine, sets: { ...findings, disordered: new Set(['G5:n']) } }, base, judges.rankSettled)).toBe(false);
-    // A column or canton that the column rules newly hold (COLUMN_AXIS_HELD) is a finding too, and a held one that stood before is not new.
-    expect(gains({ ...fine, sets: { ...findings, held: new Set(['Canton b cannot close up']) } }, base, judges.rankSettled)).toBe(false);
-    expect(gains({ ...fine, sets: { ...findings, held: new Set(['x']) } }, { ...base, sets: { ...findings, held: new Set(['x']) } }, judges.chordSettled)).toBe(true);
   });
 
   it('keeps a body off a frozen chord', () => {

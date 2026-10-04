@@ -107,9 +107,6 @@ function disordered(model: LayoutModel): Set<string> {
   return found;
 }
 
-/** The cantons and columns the column rules could not bring to rest (`COLUMN_AXIS_HELD`): a move must not hold one that stood free. */
-const held = (model: LayoutModel): Set<string> => new Set(model.diagnostics.filter(item => item.code === 'COLUMN_AXIS_HELD').map(item => item.message));
-
 /** The tier-gap parts the plan declines: the placement proxy for a routed crossing the router would have to make. */
 const residuals = (model: LayoutModel): Set<string> => new Set(model.diagnostics
   .filter(item => item.code === 'TIER_GAP_PART_RESIDUAL' || item.code === 'TIER_GAP_ROW_CYCLE')
@@ -143,7 +140,7 @@ function drift(model: LayoutModel): number {
 export interface AdoptedCopy { copy: LayoutModel; baseDiagnostics: number; original: ReadonlySet<Diagnostic>; result: unknown }
 
 const verdict = (model: LayoutModel, overlays: readonly LayoutLink[]): Verdict =>
-  ({ ...read(model, { overlays, routed: { straight: 'aligned' }, crossings: 'pairs', growth: true }), sets: { crowded: crowded(model), disordered: disordered(model), residuals: residuals(model), held: held(model) }, drift: drift(model) });
+  ({ ...read(model, { overlays, routed: { straight: 'aligned' }, crossings: 'pairs', growth: true }), sets: { crowded: crowded(model), disordered: disordered(model), residuals: residuals(model) }, drift: drift(model) });
 
 /**
  * The growth a cell's frame edge may take when its bodies move (ticket 80): the frame stands off the outermost body, so the frame, the
