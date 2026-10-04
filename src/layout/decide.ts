@@ -12,7 +12,6 @@ import { PLACEMENT_EPS } from './tolerance.js';
 import { tierGapPlans } from './gap-plan.js';
 import { centreViolations } from './centre.js';
 import { reserveLinkLabelRoom, type LinkLabelShortfall } from './bands.js';
-import { measureSides, plannedBends } from './side-measure.js';
 import { attemptCounters } from './attempt-counters.js';
 import { drawnOverlays, judges, compare, gains, holds as readingHolds, read, reading, tapVerdict, type Reading } from './objective.js';
 
@@ -140,26 +139,8 @@ function drift(model: LayoutModel): number {
  */
 export interface AdoptedCopy { copy: LayoutModel; baseDiagnostics: number; original: ReadonlySet<Diagnostic>; result: unknown }
 
-/**
- * The change in bent links and turns that the side round promises on a settled model (architecture ticket 15, phase 3b): `measureSides` run on the copy as a
- * probe (no placement run), each promised link counted once, against what the model draws now. The side round still verifies by its trial; this only stops a
- * 7f move from hiding the offer. The copy is its own 7e model: the chord and lane shapes read it as a prediction.
- */
-export function offerOf(model: LayoutModel): NonNullable<Reading['offer']> {
-  const offer = measureSides(model, model, new Set());
-  let bent = 0, turns = 0;
-  for (const link of new Set([...offer.promised.values()].map(item => item.link))) {
-    const item = [...offer.promised.values()].find(promise => promise.link === link)!;
-    const now = plannedBends(model, model.links.find(candidate => candidate.id === link)!);
-    if (item.bends >= now) continue;
-    turns -= now - item.bends;
-    if (item.bends === 0) bent--;
-  }
-  return { bent, turns };
-}
-
 const verdict = (model: LayoutModel, overlays: readonly LayoutLink[]): Verdict =>
-  ({ ...read(model, { overlays, routed: { straight: 'aligned' }, crossings: 'pairs', growth: true }), sets: { crowded: crowded(model), disordered: disordered(model), residuals: residuals(model) }, drift: drift(model), offer: offerOf(model) });
+  ({ ...read(model, { overlays, routed: { straight: 'aligned' }, crossings: 'pairs', growth: true }), sets: { crowded: crowded(model), disordered: disordered(model), residuals: residuals(model) }, drift: drift(model) });
 
 /**
  * The growth a cell's frame edge may take when its bodies move (ticket 80): the frame stands off the outermost body, so the frame, the
