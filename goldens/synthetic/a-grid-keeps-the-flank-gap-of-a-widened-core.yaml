@@ -1,0 +1,19 @@
+# Expected: the linked grid widens the core to the extent of the group above it, and the left flank moves out with it; the gap stays one band gap.
+# Source: architecture ticket 07, ADR-0012 amendment.
+portograph: 2
+profile: network
+groups:
+  upper: { tier: 0, label: Upper }
+  core: { tier: 1, label: Core }
+  side-left: { align: left, of: core, label: Side left }
+  side-right: { align: right, of: core, label: Side right }
+nodes:
+  up-1: { group: upper, class: router, ports: [100G] }
+  up-2: { group: upper, class: router, ports: [100G] }
+  core-1: { group: core, class: router, ports: [100G, 100G, 100G] }
+  side-l: { group: side-left, class: router, ports: [100G] }
+  side-r: { group: side-right, class: router, ports: [100G] }
+links:
+  - [up-1.100G, core-1.*]
+  - [side-l.100G, core-1.*]
+  - [side-r.100G, core-1.*]

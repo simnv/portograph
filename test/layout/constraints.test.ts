@@ -21,10 +21,7 @@ const owed = (item: Constraint): boolean => item.strength === 'hard' && item.con
 const BASES = new Set(['bandGap', 'bandGap + COLUMN_SLACK', 'FRAME_TO_FRAME_GAP', 'CELL_TO_CHILD_FRAME_GAP', 'zero (non-overlap)', 'cellReach', 'GROUP_PADDING',
   'lane bounds', 'reference layout', 'author preference', 'frozen chord']);
 /** Violations the pipeline publishes today and no ticket has fixed. The test pins them: a fix must delete the entry, a new one fails the run. */
-const KNOWN_OPEN: Record<string, string> = {
-  'm1-sip-edge|separation-flank:group:datacenter|group:tbr-left':
-    'ADR-0012 alignLinkedGroupGrid (bands.ts, 7f) widens datacenter 45.24 px leftward to the providers extent; it checks no flank gap, and 7c keeps the bandGap (centre.ts flank window) until then',
-};
+const KNOWN_OPEN: Record<string, string> = {};
 
 describe('the x constraint catalogue on published layouts', () => {
   for (const sheet of sheets) {

@@ -46,7 +46,7 @@ it('routes the measured JPEG golden remainder and scores the complete diagram', 
   expect(report.counters).toMatchObject({ overlaps: 0, labelHits: 0, barCross: 3, lanesUsed: 4, stubs: 0 });
   expect(report.assertions).toEqual([{ code: 'golden-crossings', passed: true, actual: 0, expected: 0, tolerance: 0 }]);
   // The Q of the golden before ticket 100 gave its two provider links their chord (the variant keeps them orthogonal).
-  expect(report.Q).toBeCloseTo(0.8986107135065587, 12);
+  expect(report.Q).toBeCloseTo(0.8993975066491852, 12);
 
   // Placement is frozen: stage 8 adds paths only, and the result restores byte-equal.
   expect(model.freeze!.placement).toEqual(before.freeze!.placement);
