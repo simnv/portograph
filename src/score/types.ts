@@ -25,7 +25,18 @@ export interface ScoreCounters {
   /** The joined pairs of mesh buses (one riser each); present only with a riser. */
   meshBusRisers?: number;
 }
-export interface ScoreAdvisory { metric: string; actual: number; target: number; relation: '<=' | '>=' }
+/** The raw counts of each link family, beside Q and never inside it. */
+export interface ScoreCounts {
+  routed: { links: number; bent: number; turns: number; crossings: number };
+  overlay: {
+    links: number; bent: number; turns: number;
+    /** The crossings among the overlay links, one count per named mode (`layout/read/crossings.ts`): `pairs` counts path pairs, `points` counts crossing points. */
+    crossings: { pairs: number; points: number };
+    /** Overlay links of a mesh bus: counted here and in no other overlay number. */
+    meshBusLinks: number;
+  };
+}
+export interface ScoreAdvisory{ metric: string; actual: number; target: number; relation: '<=' | '>=' }
 export interface ScoreAssertion { code: 'golden-crossings' | 'baseline'; passed: boolean; actual: number; expected: number; tolerance: number }
 export interface ScoreOptions { force?: boolean; golden?: boolean; baseline?: number }
 export interface ScoreSnapshot {
@@ -35,6 +46,7 @@ export interface ScoreSnapshot {
   gates: Record<GateId, GateResult>;
   metrics: ScoreMetrics;
   counters: ScoreCounters;
+  counts: ScoreCounts;
   canvas: Rect | null;
   advisories: ScoreAdvisory[];
   assertions: ScoreAssertion[];
