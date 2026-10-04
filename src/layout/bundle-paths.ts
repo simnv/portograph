@@ -1,3 +1,4 @@
+import { equal } from '../model/json-equality.js';
 import type { Bundle, LayoutModel, LayoutPath, Owner, PathSegment, Point, Rect } from '../model/index.js';
 import { clearBundleMembers, routeBundleChannel } from './bundle-channel.js';
 import { mergeMembers } from './bundle-merge.js';
@@ -5,7 +6,7 @@ import { bundleFans, crossBundleFans } from './bundle-junctions.js';
 import { junctionChain, junctionFan, mergedRun, sharedStem } from '../score/model.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { EPS, intersection, overlapSegment, samePoint, segmentDistance } from '../geometry/planar.js';
-import { MEMBER_GAP, MIN_STEM, clone, coordinate, facing, inversionPairs, members, normal, outward, pitch, type Member } from './bundle-geometry.js';
+import { MEMBER_GAP, MIN_STEM, clearOfGroupEdges, clone, coordinate, edgeMargin, facing, inversionPairs, members, normal, outward, pitch, type DepthPair, type Member } from './bundle-geometry.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 
 export class BundleFeasibilityError extends Error {
@@ -300,28 +301,80 @@ function straightPaths(bundle: Bundle, list: Member[]): Map<string, PathSegment[
   return result;
 }
 
+/**
+ * Whether a segment runs along an edge of a frame box closer than the margin, read as gate G6 `segment-group-edge` reads it: parallel to
+ * the edge, overlapping it along its length, on or outside the box (strictly inside a box a link turns in its padding).
+ */
+function alongFrame(segment: PathSegment, box: Rect, margin: number): boolean {
+  const { from, to } = segment;
+  const check = (edge: number, low: number, high: number, at: number, a: number, b: number, inner: [number, number]): boolean =>
+    !(at > inner[0] + EPS && at < inner[1] - EPS) && Math.abs(at - edge) < margin - EPS && Math.min(a, b) < high - EPS && Math.max(a, b) > low + EPS;
+  if (from.y === to.y) return [box.y, box.y + box.height].some(edge => check(edge, box.x, box.x + box.width, from.y, from.x, to.x, [box.y, box.y + box.height]));
+  if (from.x === to.x) return [box.x, box.x + box.width].some(edge => check(edge, box.y, box.y + box.height, from.x, from.y, to.y, [box.x, box.x + box.width]));
+  return false;
+}
+
 /** Non-inverted members turn in distinct rows, including when their endpoint pitches differ. */
-function parallelPaths(bundle: Bundle, list: Member[], q: number): Map<string, PathSegment[]> {
+function parallelPaths(model: LayoutModel, bundle: Bundle, list: Member[], q: number): Map<string, PathSegment[]> {
   const n = normal(list[0]!.a.side!), horizontal = n.x !== 0;
   const depth = (p: Point): number => n.x * p.x + n.y * p.y;
   const start = Math.max(...list.map(item => depth(item.a.anchor!))) + 15;
   const end = Math.min(...list.map(item => depth(item.b.anchor!))) - 15;
-  const result = new Map<string, PathSegment[]>();
-  for (const direction of [-1, 1]) {
+  // A canton frame is a group edge too (ADR-0013), but it is no entry of `model.groups`: its cells are. The rows are centred in the channel
+  // unless that leaves a segment of the bundle along a frame edge; then the rows move one edge margin off the edge toward the near end, or
+  // else toward the far end, whichever keeps every row and stem clear of every frame. Rows that fit no way stay centred and are named.
+  const margin = edgeMargin(Math.max(...list.map(item => linkStrokeWidth(item.link))));
+  const groups = [-1, 1].map(direction => {
     const turning = list.filter(item => Math.sign(coordinate(item.b) - coordinate(item.a)) === direction)
       .sort((a, b) => -direction * (coordinate(a.a) - coordinate(b.a)));
     const span = (turning.length - 1) * q;
     if (turning.length && end - start < span - PLACEMENT_EPS) {
       throw new BundleFeasibilityError('BUNDLE_CHANNEL_CAPACITY', bundle.id, `Need ${span} px for distinct member turns, have ${end - start}.`);
     }
-    for (const [index, item] of turning.entries()) {
-      const a = item.a.anchor!, b = item.b.anchor!, row = (start + end - span) / 2 + index * q;
-      result.set(item.link.id, polyline(horizontal
-        ? [a, { x: n.x * row, y: a.y }, { x: n.x * row, y: b.y }, b]
-        : [a, { x: a.x, y: n.y * row }, { x: b.x, y: n.y * row }, b], bundle.owner));
+    // Only a frame whose box overlaps the row along its length can hold the row; one elsewhere on the canvas cannot.
+    const lows = turning.map(item => Math.min(item.a.anchor![horizontal ? 'y' : 'x'], item.b.anchor![horizontal ? 'y' : 'x']));
+    const highs = turning.map(item => Math.max(item.a.anchor![horizontal ? 'y' : 'x'], item.b.anchor![horizontal ? 'y' : 'x']));
+    const [lo, hi] = [Math.min(...lows), Math.max(...highs)];
+    const pairs: DepthPair[] = (model.frames ?? []).filter(({ box }) => horizontal
+      ? box.y < hi && box.y + box.height > lo : box.x < hi && box.x + box.width > lo).map(({ box }) => {
+      const values = [depth({ x: box.x, y: box.y }), depth({ x: box.x + box.width, y: box.y + box.height })];
+      return [Math.min(...values), Math.max(...values)] as DepthPair;
+    });
+    return { turning, first: (start + end - span) / 2, pairs };
+  });
+  const build = (strategy: 'centre' | 'near' | 'far'): { paths: Map<string, PathSegment[]>; fits: boolean } => {
+    const paths = new Map<string, PathSegment[]>();
+    let fits = true;
+    for (const { turning, first, pairs } of groups) {
+      const rows: number[] = [];
+      if (strategy === 'near') {
+        for (let i = turning.length - 1; i >= 0; i--) rows[i] = clearOfGroupEdges(Math.min(first + i * q, (rows[i + 1] ?? Infinity) - q), pairs, -1, margin);
+      } else for (let i = 0; i < turning.length; i++) {
+        rows[i] = strategy === 'far' ? clearOfGroupEdges(Math.max(first + i * q, (rows[i - 1] ?? -Infinity) + q), pairs, 1, margin) : first + i * q;
+      }
+      if (rows.length && (rows[0]! < start - PLACEMENT_EPS || rows[rows.length - 1]! > end + PLACEMENT_EPS)) fits = false;
+      for (const [index, item] of turning.entries()) {
+        const a = item.a.anchor!, b = item.b.anchor!, row = rows[index]!;
+        paths.set(item.link.id, polyline(horizontal
+          ? [a, { x: n.x * row, y: a.y }, { x: n.x * row, y: b.y }, b]
+          : [a, { x: a.x, y: n.y * row }, { x: b.x, y: n.y * row }, b], bundle.owner));
+      }
     }
+    return { paths, fits };
+  };
+  const clear = (paths: Map<string, PathSegment[]>): boolean => ![...paths.values()].flat()
+    .some(segment => (model.frames ?? []).some(({ box }) => alongFrame(segment, box, margin)));
+  const centred = build('centre');
+  if (clear(centred.paths)) return centred.paths;
+  for (const strategy of ['near', 'far'] as const) {
+    const moved = build(strategy);
+    if (moved.fits && clear(moved.paths)) return moved.paths;
   }
-  return result;
+  if (!model.diagnostics.some(d => d.code === 'BUNDLE_ROWS_ALONG_FRAME_EDGE' && equal(d.owners, [bundle.owner]))) {
+    model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'BUNDLE_ROWS_ALONG_FRAME_EDGE', owners: [bundle.owner],
+      message: `The channel of ${bundle.id} has no rows that keep every member clear of a canton frame edge; the rows stay centred, and gate G6 reports what is left.` });
+  }
+  return centred.paths;
 }
 
 /** Replace complete bundle paths and swept reservations from the final coherent geometry. */
@@ -338,7 +391,7 @@ export function rebuildBundlePaths(model: LayoutModel): void {
     const straight = straightMembers(model, bundle, channel, q);
     const crossing = inversions && facing(list) && !model.lanes.some(l => l.owner.kind === 'link' && bundle.members.includes(l.owner.id))
       ? straight ? straightPaths(bundle, channel) : crossedPaths(bundle, channel, q) : undefined;
-    const parallel = !inversions && facing(list) ? parallelPaths(bundle, channel, q) : undefined;
+    const parallel = !inversions && facing(list) ? parallelPaths(model, bundle, channel, q) : undefined;
     for (const item of list) {
       const routed = channel.find(m => m.link.id === item.link.id)!;
       const reserved = reservedPath(model, bundle, item, routed);

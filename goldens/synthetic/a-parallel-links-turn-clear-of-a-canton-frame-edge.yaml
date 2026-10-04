@@ -1,0 +1,20 @@
+# Expected: two parallel links from a core on tier 1 to a canton member on tier 2 turn on a row that clears the canton frame edge and the member frame edge by the edge margin (architecture ticket 12). Before the fix the bundle centred its row in the channel, 10 px from the canton frame edge, and gate G6 segment-group-edge failed. No flank is needed.
+# Source: architecture ticket 12 matrix.
+portograph: 2
+profile: network
+groups:
+  town: { label: Town }
+  upper: { tier: 0, label: Upper }
+  core: { tier: 1, label: Core }
+  east: { tier: 2, canton: town, label: East }
+  south: { tier: 3, canton: town, label: South }
+nodes:
+  up-1: { group: upper, class: router, ports: [100G, 100G, 100G, 100G, 100G, 100G] }
+  core-1: { group: core, class: router, ports: [100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G] }
+  east-1: { group: east, class: router, ports: [100G, 100G, 100G, 100G] }
+  south-1: { group: south, class: router, ports: [100G, 100G] }
+links:
+  - [up-1.100G, core-1.*]
+  - [core-1.100G, east-1.*]
+  - [core-1.100G, east-1.*]
+  - [east-1.100G, south-1.*]

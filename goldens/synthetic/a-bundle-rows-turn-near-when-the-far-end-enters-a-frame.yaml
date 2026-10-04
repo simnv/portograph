@@ -1,0 +1,21 @@
+# Expected: two parallel links from a core on tier 1 to a canton member on tier 2, with an upper feed that puts the member left of the core (architecture ticket 12). The centred row stands on the canton frame edge. Moving it toward the far end puts it past the canton frame and into the member frame, so its stem runs along the member frame side; the rows move toward the near end instead (402.25 and 384.75), clear of both frames. G6 passes.
+# Source: architecture ticket 12 matrix.
+portograph: 2
+profile: network
+groups:
+  town: { label: Town }
+  upper: { tier: 0, label: Upper }
+  core: { tier: 1, label: Core }
+  east: { tier: 2, canton: town, label: East }
+  south: { tier: 3, canton: town, label: South }
+nodes:
+  up-1: { group: upper, class: router, ports: [100G, 100G, 100G, 100G, 100G, 100G] }
+  core-1: { group: core, class: router, ports: [100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G] }
+  east-1: { group: east, class: router, ports: [100G, 100G, 100G, 100G] }
+  south-1: { group: south, class: router, ports: [100G, 100G] }
+links:
+  - [up-1.100G, core-1.*]
+  - [up-1.100G, east-1.*]
+  - [core-1.100G, east-1.*]
+  - [core-1.100G, east-1.*]
+  - [east-1.100G, south-1.*]
