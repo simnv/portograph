@@ -25,6 +25,8 @@ import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { busBandHeight, busRoom } from './bus-room.js';
 import { busGeometry, expectedBusBands, riserEnds, syncBusGeometry } from './bus.js';
+import { attemptCounters } from './attempt-counters.js';
+import type { AttemptTraceEvent } from './placement-attempt.js';
 
 export const GROUP_LABEL_GEOMETRY = {
   fontFamily: FONT_FAMILY,
@@ -1636,6 +1638,7 @@ export function replanGroupLabels(model: LayoutModel): void {
  * or `GROUP_LABEL_LEG_ALLOWANCE_EXHAUSTED`) placed its titles without them, so the plan falls back to the stalled one when the first differs.
  */
 export function validateGroupLabelBands(model: LayoutModel): void {
+  attemptCounters.validationReplays++; attemptCounters.candidateCopies += 2;
   // Replay the grid on a copy: a settled model does not change; a genuinely unsettled chain exhausts
   // the pass bound again. A serialized diagnostic alone proves nothing.
   const shortfalls: LinkLabelShortfall[] = [];
@@ -1712,6 +1715,6 @@ export function validateGroupLabelBands(model: LayoutModel): void {
  * side-faces.md Section 19.5): it throws between the passes of 7f and so ends the whole command. It never changes the layout (ticket 141).
  * A call with no `abortAt` never throws for that reason.
  */
-export function bands(model: LayoutModel, abortAt?: () => void): LayoutModel {
-  return withLayoutMutation(model, 'bands', () => {}, abortAt);
+export function bands(model: LayoutModel, abortAt?: () => void, trace?: (event: AttemptTraceEvent) => void): LayoutModel {
+  return withLayoutMutation(model, 'bands', () => {}, abortAt, trace);
 }

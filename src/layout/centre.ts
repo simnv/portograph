@@ -5,6 +5,7 @@ import { isSideLane, laneSidesHold, recordSeatedSideLanes, optionalMoveHolds, si
 import { cellReach } from './frames.js';
 import { besideWalls, frameColumns, keepOutShifts, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
 import { findPort } from './row-paths.js';
+import { attemptCounters } from './attempt-counters.js';
 import { portId, bandGap, SKELETON_SPACING } from './skeleton-graph.js';
 import { crosses, overlayBlockers, straightChord } from './overlay-paths.js';
 import { moveGroup } from './skeleton-geometry.js';
@@ -653,7 +654,7 @@ function centrePasses(model: LayoutModel, budget: CentreBudget): void {
   let unresolved = new Set<string>(), ran = false;
   while (budget.remaining > 0) {
     ran = true;
-    budget.remaining--; budget.passes++;
+    budget.remaining--; budget.passes++; attemptCounters.centringPasses++;
     const before = geometry(model); unresolved = new Set();
     // A pass whose steps move geometry that a later stage of the same pass moves back is not at a
     // fixed point: the net change is nil, the work is not. Every step is measured on its own.

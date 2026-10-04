@@ -19,6 +19,7 @@ import { rowGap } from './sides-two.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { bandGap } from './skeleton-graph.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { attemptCounters } from './attempt-counters.js';
 
 /** How many candidate x a group or a node tries, nearest first, before it stays (ticket 77). */
 const CHORD_TRIALS = 24;
@@ -100,7 +101,7 @@ interface Verdict extends Reading {
 /** What a candidate leaves, and what the model had without it: the straight overlay count, the overlay crossings. */
 interface Judged { bent: number; count: number; crossings: number; base: { crossings: number; straight: number }; verdict?: Verdict | undefined }
 
-const copy = (model: LayoutModel): LayoutModel => JSON.parse(JSON.stringify(model)) as LayoutModel;
+const copy = (model: LayoutModel): LayoutModel => { attemptCounters.candidateCopies++; return JSON.parse(JSON.stringify(model)) as LayoutModel; };
 
 const routedLinks = (model: LayoutModel): LayoutLink[] =>
   model.links.filter(link => link.layer === 'routed' && link.attachments && link.removed !== true && link.technique !== 'stub');
