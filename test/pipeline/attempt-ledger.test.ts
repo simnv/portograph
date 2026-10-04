@@ -119,12 +119,12 @@ describe('the ledger of the 7f placement attempt reads the counts of the ticket 
     const i = attemptCounters.invalidations;
     expect({ counters: found.counters, runs: found.runs, attempts: found.attempts, rounds: found.rounds, open: found.open, chord: found.chord, baseChord: found.baseChord, reseat: found.reseat,
       probe: found.probe, preChords: found.preChords, preCentre: found.preCentre, base7f: found.base7f })
-      .toEqual({ counters: '14/79/54/5', runs: 4, attempts: 2, rounds: 6, open: 2, chord: 4, baseChord: 2, reseat: 'none', probe: 0, preChords: 2, preCentre: 9, base7f: '2/1/0' });
-    // Phase 4: the unified order takes a chord move on three-continents that a later round has to regrow a gap for (1); the others stay at 0.
-    expect([i.gapRegrown, i.shortGapsAfterRounds, i.bodyOnFrozenChord, i.cantonNonConvergence]).toEqual([expected.name === 'three-continents' ? 1 : 0, 0, 0, 0]);
+      .toEqual({ counters: '42/168/120/5', runs: 4, attempts: 2, rounds: 6, open: 0, chord: 4, baseChord: 2, reseat: 'none', probe: 0, preChords: 2, preCentre: 9, base7f: '7/0/0' });
+    // NTP regrows no gap.
+    expect([i.gapRegrown, i.shortGapsAfterRounds, i.bodyOnFrozenChord, i.cantonNonConvergence]).toEqual([0, 0, 0, 0]);
     // The close-up opened again after a chord move, in the base run and in the side trial (section 2: 0.87 px in r1).
-    expect(i.closeUpReopened).toBe(2);
-    // Phase 2: 16 replays, not 24, and 16 rounds of the gap fixed point, not 20; the settled copies the chord step judges on are still 12.
-    expect([attemptCounters.replays, attemptCounters.settledTrials, attemptCounters.gapRounds]).toEqual([16, 12, 16]);
+    expect(i.closeUpReopened).toBe(0);
+    // Phase 2: 16 replays, 12 settled copies, 16 gap rounds. Phase 4 (the unified order lets more candidates pass to a settled copy): 46, 40 and 44.
+    expect([attemptCounters.replays, attemptCounters.settledTrials, attemptCounters.gapRounds]).toEqual([46, 40, 44]);
   }, 120000);
 });
