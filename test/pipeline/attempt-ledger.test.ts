@@ -33,7 +33,7 @@ const row = (name: string, counters: string, runs: number, attempts: number, rou
 
 const ROWS: Row[] = [
   // Phase 4 (the unified order): the base 7f of three-continents now moves a chord (before 0 moves) and loses 2 overlay links in the loop, and the attempt costs more work.
-  row('three-continents', '20/71/48/5', 2, 2, 3, 0, 1, { preCentre: 2, baseChord: 1, base7f: '2/0/0' }),
+  row('three-continents', '23/74/54/5', 2, 2, 4, 0, 2, { preCentre: 2, baseChord: 1, base7f: '2/0/0' }),
   row('a-tier-gap-plan-orders-every-part', '1/40/10/3', 1, 1, 1, 0, 0, { reseat: 'refused', preChords: 1 }),
   row('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', '1/7/7/3', 1, 1, 1, 0, 0),
   row('a-tier-gap-grows-to-its-rows', '1/5/7/3', 1, 1, 1, 0, 0),
@@ -92,9 +92,9 @@ describe('the ledger of the 7f placement attempt reads the counts of the ticket 
   }, 60000);
 
   // Phase 2: the replays, the settled copies the chord step judged on, and the rounds of the gap fixed point, where they dropped. Before the phase:
-  // Phase 4 raised three-continents to 18/18/28 (more candidates pass the gate of the unified order, each one settled). Before it: three-continents 8/7/10, a-tier-gap-plan 1/0/3, two-interleaved 1/0/2, a-tier-gap-grows 1/0/2, canton-member-frame 1/0/2, chord-step fixture 5/4/6.
+  // Phase 4 raised three-continents to 21/21/31 (more candidates pass the gate of the unified order, each one settled). Before it: three-continents 8/7/10, a-tier-gap-plan 1/0/3, two-interleaved 1/0/2, a-tier-gap-grows 1/0/2, canton-member-frame 1/0/2, chord-step fixture 5/4/6.
   it.each([
-    ['three-continents', 18, 18, 28], ['a-tier-gap-plan-orders-every-part', 0, 0, 3], ['two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', 0, 0, 2],
+    ['three-continents', 21, 21, 31], ['a-tier-gap-plan-orders-every-part', 0, 0, 3], ['two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', 0, 0, 2],
     ['a-tier-gap-grows-to-its-rows', 0, 0, 2], ['a-canton-member-frame-slides-off-a-straight-chord', 0, 0, 2], ['a-chord-step-moves-a-group-off-a-straight-chord', 4, 4, 5],
   ] as const)('derives once: %s replays %i, settled copies %i, gap rounds %i', async (name, replays, trials, gapRounds) => {
     resetAttemptCounters();
