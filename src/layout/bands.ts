@@ -902,18 +902,23 @@ export function alignLinkedGroupGridAndPack(model: LayoutModel, budget?: CentreB
   model.diagnostics = model.diagnostics.filter(item => !(item.code === 'GROUP_GRID_NON_CONVERGENCE' && item.message.startsWith(GRID_PACK_WARNING)));
   let widened = false;
   for (let round = 0; round < GRID_PACK_ROUNDS; round++) {
-    if (!alignLinkedGroupGrid(model)) return widened;
+    const grid = alignGrid(model);
+    if (!grid.changed) return widened;
     widened = true;
-    // A flank the grid moved asks for the region replay even when no beside row needs packing.
-    if (gridMovedFlanks) { const passes = budget?.passes ?? 0; rebuildRegionGeometry(model, budget, undefined, true); if (budget !== undefined) consumeGrowthPass(budget, passes); }
     // A grid that refuses what the pack would undo widens onto a packed row and leaves it packed; a row that stood open before the grid is packed once.
-    if (!packRowsAfterGrid(model)) return widened;
+    // A flank the grid moved asks for the region replay even when no beside row needs packing; one replay serves both.
+    if (!packRowsAfterGrid(model) && !grid.flanksMoved) return widened;
     const passes = budget?.passes ?? 0;
     rebuildRegionGeometry(model, budget, undefined, true);
     if (budget !== undefined) consumeGrowthPass(budget, passes);
   }
   // The grid still widened after the last pack. The model is left with the grid aligned (`validateGroupLabelBands` reads the grid, and accepts it) and a row may stand open: say so.
-  if (alignLinkedGroupGrid(model)) placementWarning(model, 'GROUP_GRID_NON_CONVERGENCE', `${GRID_PACK_WARNING} ${GRID_PACK_ROUNDS} rounds; the grid is left aligned and a beside row may stand open.`, [], 'group');
+  const last = alignGrid(model);
+  if (last.changed) {
+    // A flank moved by this last reading stands off the regions reserved beside it.
+    if (last.flanksMoved) rebuildRegionGeometry(model, budget, undefined, true);
+    placementWarning(model, 'GROUP_GRID_NON_CONVERGENCE', `${GRID_PACK_WARNING} ${GRID_PACK_ROUNDS} rounds; the grid is left aligned and a beside row may stand open.`, [], 'group');
+  }
   return widened;
 }
 const GRID_PACK_WARNING = 'The linked-group grid and the pack of the beside rows did not settle in';
@@ -1156,23 +1161,23 @@ function widensIntoFrame(model: LayoutModel, proposed: { group: LayoutGroup; bou
 }
 
 
-/** Set when the last grid call moved a flank: the region producers must then be replayed (`alignLinkedGroupGridAndPack`). */
-let gridMovedFlanks = false;
 /**
- * A widened group keeps the band gap to its flanks (ticket 07): the grid widens a core in place and a flank stood a band gap from the old box, so each
- * flank on the same rows moves outward by what the widening took. Returns the nodes moved, for the refit of their geometry.
+ * The moves that keep the band gap to the flanks of a group the grid widens to `box` (ticket 07): the grid widens a core in place and a flank stood a band
+ * gap from the old box, so each flank on the same rows moves outward by what the widening took. Returned as boxes with their shift, so the grid judges
+ * them with the guards of the widening itself before anything moves.
  */
-function keepFlankGaps(model: LayoutModel, group: LayoutGroup): string[] {
-  const gap = bandGap(model), box = group.bounds!, moved: string[] = [];
+function flankShifts(model: LayoutModel, group: LayoutGroup, box: Rect): { group: LayoutGroup; bounds: Rect; dx: number }[] {
+  const gap = bandGap(model), shifts: { group: LayoutGroup; bounds: Rect; dx: number }[] = [];
   for (const flank of Object.values(model.groups)) {
     if (flank.flank?.of !== group.id || flank.bounds === undefined) continue;
     if (flank.bounds.y >= bottom(box) || box.y >= bottom(flank.bounds)) continue;
-    const shortfall = gap - (flank.flank.align === 'left' ? box.x - right(flank.bounds) : flank.bounds.x - right(box));
+    const left = flank.flank.align === 'left';
+    const shortfall = gap - (left ? box.x - right(flank.bounds) : flank.bounds.x - right(box));
     if (shortfall <= PLACEMENT_EPS) continue;
-    moveGroup(model, flank, flank.flank.align === 'left' ? -shortfall : shortfall, 0);
-    moved.push(...flank.nodes);
+    const dx = left ? -shortfall : shortfall;
+    shifts.push({ group: flank, bounds: { ...flank.bounds, x: flank.bounds.x + dx }, dx });
   }
-  return moved;
+  return shifts;
 }
 
 /**
@@ -1183,6 +1188,10 @@ function keepFlankGaps(model: LayoutModel, group: LayoutGroup): string[] {
  * a bounded number of passes because every pass only merges extents.
  */
 export function alignLinkedGroupGrid(model: LayoutModel): boolean {
+  return alignGrid(model).changed;
+}
+/** The grid, and whether it moved a flank: the caller then owes the regions a replay (`alignLinkedGroupGridAndPack`). */
+function alignGrid(model: LayoutModel): { changed: boolean; flanksMoved: boolean } {
   let changed = false, base: Set<string> | undefined;
   const flankMoved: string[] = [];
   const refused = new Set<string>();
@@ -1208,8 +1217,10 @@ export function alignLinkedGroupGrid(model: LayoutModel): boolean {
         - Math.min(...unit.map(group => group.bounds![pos]));
       if ((extent - size(a)) / extent > GROUP_GRID_MAX_GROWTH + PLACEMENT_EPS
         || (extent - size(b)) / extent > GROUP_GRID_MAX_GROWTH + PLACEMENT_EPS) continue;
-      const proposed = members.map(group => ({ group, bounds: { ...group.bounds!, [pos]: low, [len]: extent } as Rect }));
-      const others = Object.values(model.groups).filter(group => !members.includes(group));
+      const proposed = members.map(group => ({ group, bounds: { ...group.bounds!, [pos]: low, [len]: extent } as Rect, dx: 0 }));
+      // The flanks of a widened core move out with it, and are judged by the guards below as part of the widening: one that cannot move refuses it.
+      if (axis === 'x') for (const item of [...proposed]) proposed.push(...flankShifts(model, item.group, item.bounds));
+      const others = Object.values(model.groups).filter(group => !proposed.some(item => item.group === group));
       if (proposed.some(item => others.some(other => rectOverlap(item.bounds, other.bounds!)))) continue;
       if (axis === 'x' && !optionalMoveHolds(model, proposed)) continue;
       // The widening is stage 7 work: it never widens a frame into the box of another frame.
@@ -1230,18 +1241,19 @@ export function alignLinkedGroupGrid(model: LayoutModel): boolean {
           continue;
         }
       }
-      for (const item of proposed) item.group.bounds = item.bounds;
-      if (axis === 'x') for (const item of proposed) flankMoved.push(...keepFlankGaps(model, item.group));
+      for (const item of proposed) {
+        if (item.dx === 0) item.group.bounds = item.bounds;
+        else { moveGroup(model, item.group, item.dx, 0); flankMoved.push(...item.group.nodes); }
+      }
       moved = changed = true;
     }
     if (!moved) break;
   }
   if (pass >= bound) placementWarning(model, 'GROUP_GRID_NON_CONVERGENCE', 'Linked-group grid did not settle within its pass bound; the boxes it reached are kept.', [], 'group');
-  gridMovedFlanks = flankMoved.length > 0;
   // A moved flank carries its nodes' labels and pills with it only after a refit, and the bundle and row paths reserved beside it stand where it was.
   if (flankMoved.length) rebuildNodeGeometry(model, flankMoved, 'current');
   if (changed) { rebuildBands(model); rebuildRegions(model); }
-  return changed;
+  return { changed, flanksMoved: flankMoved.length > 0 };
 }
 
 
