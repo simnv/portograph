@@ -13,6 +13,7 @@ import { disjointShapes } from './containment.js';
 export { disjointShapes } from './containment.js';
 import { completedRouteObstacles, reservedRunObstacles, routeObstacles, type RouteObstacle } from './obstacles.js';
 import { ALL_DIRECTIONS, DIRECTION_BITS, type RouteBatch, type RouteCheckpoint, type RouteConnector, type RouteEndpoint, type RoutePin, type RouteShape } from './types.js';
+import { PLACEMENT_EPS } from '../layout/tolerance.js';
 
 /** Shape buffer stays at zero; every obstacle already carries its exact clearance. */
 export const SHAPE_BUFFER_DISTANCE = 0;
@@ -603,16 +604,16 @@ function reservedPasses(runs: PathSegment[] | undefined, checkpoint: RouteCheckp
   const horizontal = (pinned & (DIRECTION_BITS.left | DIRECTION_BITS.right)) !== 0
     && (pinned & (DIRECTION_BITS.top | DIRECTION_BITS.bottom)) === 0;
   return runs.some(segment => {
-    const alongY = Math.abs(segment.from.x - segment.to.x) < 1e-6, alongX = Math.abs(segment.from.y - segment.to.y) < 1e-6;
+    const alongY = Math.abs(segment.from.x - segment.to.x) < PLACEMENT_EPS, alongX = Math.abs(segment.from.y - segment.to.y) < PLACEMENT_EPS;
     if (alongY && !vertical) return false;
     if (alongX && !horizontal) return false;
     if (alongY) {
       const low = Math.min(segment.from.y, segment.to.y), high = Math.max(segment.from.y, segment.to.y);
-      return Math.abs(checkpoint.x - segment.from.x) < 1e-6 && checkpoint.y > low + 1e-6 && checkpoint.y < high - 1e-6;
+      return Math.abs(checkpoint.x - segment.from.x) < PLACEMENT_EPS && checkpoint.y > low + PLACEMENT_EPS && checkpoint.y < high - PLACEMENT_EPS;
     }
     if (alongX) {
       const low = Math.min(segment.from.x, segment.to.x), high = Math.max(segment.from.x, segment.to.x);
-      return Math.abs(checkpoint.y - segment.from.y) < 1e-6 && checkpoint.x > low + 1e-6 && checkpoint.x < high - 1e-6;
+      return Math.abs(checkpoint.y - segment.from.y) < PLACEMENT_EPS && checkpoint.x > low + PLACEMENT_EPS && checkpoint.x < high - PLACEMENT_EPS;
     }
     return false;
   });

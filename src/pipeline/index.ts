@@ -32,6 +32,7 @@ import { SideHintRefusal, sideHintDiagnostics, type SideHints } from '../layout/
 import { measureSides, refusedKey, type SideOffer } from '../layout/side-measure.js';
 import { judgeTrial, predictedWorse, predictPublished, routedBends, trialNotes } from '../layout/side-judge.js';
 import type { AttemptTraceEvent } from '../layout/placement-attempt.js';
+import { PLACEMENT_EPS } from '../layout/tolerance.js';
 
 
 /** Most runs of placement a fan's pitch may cost after the first (ticket 89). */
@@ -324,7 +325,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   const lost: Diagnostic[] = [...sideHintDiagnostics(model)];
   for (const [pair, now] of chordClearances(model)) {
     const before = atFreeze.get(pair);
-    if (now < STRAIGHT_PATH_CLEARANCE.path - 1e-6 && before !== undefined) {
+    if (now < STRAIGHT_PATH_CLEARANCE.path - PLACEMENT_EPS && before !== undefined) {
       lost.push({ stage: 'placement', severity: 'warning', code: 'CHORD_CLEARANCE_LOST',
         message: `Stage 7f moved the straight links ${pair.replace('|', ' and ')} from ${before.toFixed(1)} px apart to ${now.toFixed(1)} px, under the ${STRAIGHT_PATH_CLEARANCE.path} px chord clearance.`,
         owners: pair.split('|').map(id => ({ kind: 'link' as const, id })) });

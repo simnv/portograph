@@ -8,6 +8,7 @@ import { portId } from './skeleton-graph.js';
 import { fitRegionGroup, bottom, right } from './regions.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
 import { rowGap } from './sides-two.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 
 export const MEMBER_GAP = 16;
 export const MIN_STEM = 15;
@@ -65,7 +66,7 @@ export function inversionPairs(list: Member[]): [string, string][] {
   const pairs: [string, string][] = [];
   for (let i = 0; i < list.length; i++) for (const b of list.slice(i + 1)) {
     const a = list[i]!;
-    if ((coordinate(a.a) - coordinate(b.a)) * (coordinate(a.b) - coordinate(b.b)) < -1e-6) pairs.push([a.link.id, b.link.id]);
+    if ((coordinate(a.a) - coordinate(b.a)) * (coordinate(a.b) - coordinate(b.b)) < -PLACEMENT_EPS) pairs.push([a.link.id, b.link.id]);
   }
   return pairs;
 }
@@ -180,7 +181,7 @@ export function priorSideRows(model: LayoutModel, port: LayoutPort): number {
   let taken = 0;
   for (const other of node.ports) {
     if (other.side !== port.side || portId(other.ref) === at || !other.anchor) continue;
-    if (other.anchor[tangent] > port.anchor[tangent] + 1e-6) continue;
+    if (other.anchor[tangent] > port.anchor[tangent] + PLACEMENT_EPS) continue;
     const links = sideFanLinks(model, other);
     if (links >= 2) taken += links;
   }
@@ -239,8 +240,8 @@ export function alongNormal(port: LayoutPort, depth: number): Point {
 export function leadingRun(port: LayoutPort, segments: readonly PathSegment[]): number {
   const anchor = port.anchor!, n = normal(port.side!), tangent = axis(port.side!);
   const first = segments[0], last = segments.at(-1);
-  const forward = first && Math.abs(first.from.x - anchor.x) < 1e-6 && Math.abs(first.from.y - anchor.y) < 1e-6;
-  const backward = !forward && last && Math.abs(last.to.x - anchor.x) < 1e-6 && Math.abs(last.to.y - anchor.y) < 1e-6;
+  const forward = first && Math.abs(first.from.x - anchor.x) < PLACEMENT_EPS && Math.abs(first.from.y - anchor.y) < PLACEMENT_EPS;
+  const backward = !forward && last && Math.abs(last.to.x - anchor.x) < PLACEMENT_EPS && Math.abs(last.to.y - anchor.y) < PLACEMENT_EPS;
   if (!forward && !backward) return 0;
   const ordered = forward ? segments : [...segments].reverse().map(s => ({ ...s, from: s.to, to: s.from }));
   let depth = 0;
@@ -248,7 +249,7 @@ export function leadingRun(port: LayoutPort, segments: readonly PathSegment[]): 
     if (segment.lane !== undefined) break;
     const along = tangent === 'x' ? n.y * (segment.to.y - segment.from.y) : n.x * (segment.to.x - segment.from.x);
     const across = tangent === 'x' ? Math.abs(segment.to.x - segment.from.x) : Math.abs(segment.to.y - segment.from.y);
-    if (across > 1e-6 || along <= 1e-6) break;
+    if (across > PLACEMENT_EPS || along <= PLACEMENT_EPS) break;
     depth += along;
   }
   return depth;
@@ -257,8 +258,8 @@ export function leadingRun(port: LayoutPort, segments: readonly PathSegment[]): 
 /** A path already split under this port's tree: its segment at the port is owned by the root junction. */
 function carriesRoot(port: LayoutPort, segments: readonly PathSegment[]): boolean {
   const anchor = port.anchor!, first = segments[0], last = segments.at(-1);
-  const at = first && Math.abs(first.from.x - anchor.x) < 1e-6 && Math.abs(first.from.y - anchor.y) < 1e-6 ? first
-    : last && Math.abs(last.to.x - anchor.x) < 1e-6 && Math.abs(last.to.y - anchor.y) < 1e-6 ? last : undefined;
+  const at = first && Math.abs(first.from.x - anchor.x) < PLACEMENT_EPS && Math.abs(first.from.y - anchor.y) < PLACEMENT_EPS ? first
+    : last && Math.abs(last.to.x - anchor.x) < PLACEMENT_EPS && Math.abs(last.to.y - anchor.y) < PLACEMENT_EPS ? last : undefined;
   return at?.owner.kind === 'shared-stem' && at.owner.id === junctionId(port, 0);
 }
 
@@ -323,7 +324,7 @@ export function fanCohorts(model: LayoutModel, pending?: PendingFixed): { cohort
         if (!leaf) return true;
         const cohort = links.filter(link => fixedRun(link) === undefined || link === leaf);
         if (cohort.length < 2) return false;
-        return fixedRun(leaf)!.run >= fanRows(model, port, cohort)[cohort.length - 2]! + fanPitch(cohort) - 1e-6;
+        return fixedRun(leaf)!.run >= fanRows(model, port, cohort)[cohort.length - 2]! + fanPitch(cohort) - PLACEMENT_EPS;
       };
       const leaf = candidates.find(candidate => fits(candidate));
       active = links.filter(link => fixedRun(link) === undefined || link === leaf);
@@ -338,7 +339,7 @@ export function fanCohorts(model: LayoutModel, pending?: PendingFixed): { cohort
       for (;;) {
         if (active.length < 2) break;
         const rows = fanRows(model, port, active), last = rows[active.length - 2]! + fanPitch(active);
-        const out = active.filter(link => { const fit = fixedRun(link); return fit !== undefined && fit.run < last - 1e-6; });
+        const out = active.filter(link => { const fit = fixedRun(link); return fit !== undefined && fit.run < last - PLACEMENT_EPS; });
         if (!out.length) break;
         active = active.filter(link => !out.includes(link));
       }
@@ -366,7 +367,7 @@ export function fanEnd(model: LayoutModel, port: LayoutPort, links: readonly Lay
   // The continuation must clear the last peel row by a pitch: a fixed member that turns at the row
   // itself would touch the branch peeling there, which no junction exemption covers.
   const shortest = Math.min(end, ...runs);
-  return shortest >= last + fanPitch(links) - 1e-6 ? shortest : end;
+  return shortest >= last + fanPitch(links) - PLACEMENT_EPS ? shortest : end;
 }
 
 /**
@@ -403,7 +404,7 @@ export function joinFanTrees(model: LayoutModel, candidates: readonly LayoutLink
     // the deeper tree keeps the member and the other reports it with `FAN_MEMBER_UNRESERVED`, which
     // is the behaviour before this ticket.
     const room = link.path.segments.reduce((sum, item) => sum + Math.hypot(item.to.x - item.from.x, item.to.y - item.from.y), 0);
-    const joined = mine.length === 2 && mine[0]!.end + mine[1]!.end > room + 1e-6
+    const joined = mine.length === 2 && mine[0]!.end + mine[1]!.end > room + PLACEMENT_EPS
       ? [[...mine].sort((one, other) => other.end - one.end || (one.at < other.at ? -1 : 1))[0]!]
       : mine;
     let segments = [...link.path.segments];
@@ -419,9 +420,9 @@ export function joinFanTrees(model: LayoutModel, candidates: readonly LayoutLink
  */
 export function splitUnderJunctions(model: LayoutModel, port: LayoutPort, cohort: readonly LayoutLink[], link: LayoutLink, segments: PathSegment[], pending?: PendingFixed): PathSegment[] {
   const junctions = cohort.length - 1, rows = fanRows(model, port, cohort), end = fanEnd(model, port, cohort, pending);
-  if (junctions < 1 || leadingRun(port, segments) < end - 1e-6) return segments;
+  if (junctions < 1 || leadingRun(port, segments) < end - PLACEMENT_EPS) return segments;
   const anchor = port.anchor!;
-  const forward = Math.abs(segments[0]!.from.x - anchor.x) < 1e-6 && Math.abs(segments[0]!.from.y - anchor.y) < 1e-6;
+  const forward = Math.abs(segments[0]!.from.x - anchor.x) < PLACEMENT_EPS && Math.abs(segments[0]!.from.y - anchor.y) < PLACEMENT_EPS;
   const flip = (list: readonly PathSegment[]): PathSegment[] => [...list].reverse().map(s => ({ ...s, from: { ...s.to }, to: { ...s.from } }));
   const ordered = forward ? segments : flip(segments);
   const n = normal(port.side!), tangent = axis(port.side!);
@@ -429,7 +430,7 @@ export function splitUnderJunctions(model: LayoutModel, port: LayoutPort, cohort
   // The plain run up to `end` is one straight line; it becomes exactly one segment per junction stem
   // and one continuation, each owned by its junction. The input segment holding `end` keeps its
   // remainder with its own owner and annotations; every later segment is untouched.
-  const cuts = [...rows.slice(0, junctions), end].filter((value, index, all) => index === 0 || value > all[index - 1]! + 1e-6);
+  const cuts = [...rows.slice(0, junctions), end].filter((value, index, all) => index === 0 || value > all[index - 1]! + PLACEMENT_EPS);
   const template = ordered[0]!;
   const rebuilt: PathSegment[] = [];
   let from = 0;
@@ -444,10 +445,10 @@ export function splitUnderJunctions(model: LayoutModel, port: LayoutPort, cohort
   let depth = 0, index = 0;
   for (; index < ordered.length; index++) {
     const length = along(ordered[index]!);
-    if (length <= 1e-6 || depth + length > end + 1e-6) break;
+    if (length <= PLACEMENT_EPS || depth + length > end + PLACEMENT_EPS) break;
     depth += length;
   }
-  if (index < ordered.length && depth < end - 1e-6) {
+  if (index < ordered.length && depth < end - PLACEMENT_EPS) {
     // `end` falls inside this segment: keep what lies beyond it, under the link's own name.
     rebuilt.push({ ...ordered[index]!, from: alongNormal(port, end), owner: { ...link.owner } });
     index++;
@@ -555,13 +556,13 @@ export function prepareBundleGeometry(model: LayoutModel): void {
     // branch for want of that room is exactly the failure this fixes. Reserving the wider pitch is
     // its own work, recorded on the ticket.
     const band = model.tierBands.find(item => item.groups.includes(group.id));
-    const outside = flank.ports.some(port => port.side === facingSide && port.anchor!.y < top - 1e-6
+    const outside = flank.ports.some(port => port.side === facingSide && port.anchor!.y < top - PLACEMENT_EPS
       && model.links.some(link => link.layer === 'routed' && link.technique !== 'stub'
         && link.bundle === undefined && link.attachments
         && [link.attachments.from, link.attachments.to].some(ref => portId(ref) === portId(port.ref))))
       // Keeping the flank where 7b put it is only safe inside its own band: the box-based move also
       // repairs a flank lifted past the band above it, and nothing restacks the bands after this.
-      && (!band?.bounds || group.bounds!.y >= band.bounds.y - 1e-6);
+      && (!band?.bounds || group.bounds!.y >= band.bounds.y - PLACEMENT_EPS);
     const here = flankPort(paired);
     const there = paired.a.ref.node === own ? paired.b : paired.a;
     const dy = Math.max(0, outside ? there.anchor!.y - here.anchor!.y : primary.bounds!.y - flank.bounds!.y);

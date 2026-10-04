@@ -10,6 +10,7 @@ import { stemCache, stemPlan } from './sides-two.js';
 import { groupBoxes, groupConsumers } from '../score/model.js';
 import { segmentRectDistance } from '../score/geometry.js';
 import { GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 
 export interface BundleFans {
   members: Member[];
@@ -55,7 +56,7 @@ export function bundleFans(model: LayoutModel, bundle: Bundle, list: Member[], q
       const memberIds = new Set(own.map(m => m.link.id));
       const project = own.length === list.length && facing(list) && drops.length > 0 && drops.every(drop => !drop.barCross.length)
         && !model.lanes.some(lane => lane.owner.kind === 'link' && memberIds.has(lane.owner.id))
-        && peers.slice(1).every((value, index) => value - peers[index]! >= q - 1e-6);
+        && peers.slice(1).every((value, index) => value - peers[index]! >= q - PLACEMENT_EPS);
       const outputs = new Map(own.map(m => {
         const tier = model.groups[model.document.nodes[port.ref.node]!.group]!.tier!;
         const lane = tangent === 'x' ? model.lanes.filter(l => l.owner.kind === 'link' && l.owner.id === m.link.id)
@@ -122,7 +123,7 @@ function blockedTracks(model: LayoutModel, port: LayoutPort, band: { from: numbe
   const span = (box: { x: number; y: number; right: number; bottom: number }): void => {
     const depths = tangent === 'y' ? [n.x * (box.x - port.anchor!.x), n.x * (box.right - port.anchor!.x)]
       : [n.y * (box.y - port.anchor!.y), n.y * (box.bottom - port.anchor!.y)];
-    if (Math.max(...depths) <= low + 1e-6 || Math.min(...depths) >= high - 1e-6) return;
+    if (Math.max(...depths) <= low + PLACEMENT_EPS || Math.min(...depths) >= high - PLACEMENT_EPS) return;
     found.push(tangent === 'y' ? { lo: box.y, hi: box.bottom } : { lo: box.x, hi: box.right });
   };
   // Every routed attachment holds an outward stem, whether a rule has claimed its path or not
@@ -153,7 +154,7 @@ function blockedTracks(model: LayoutModel, port: LayoutPort, band: { from: numbe
   const result: { lo: number; hi: number }[] = [];
   for (const span of found.sort((a, b) => a.lo - b.lo || a.hi - b.hi)) {
     const last = result.at(-1);
-    if (last && span.lo <= last.hi + 1e-6) last.hi = Math.max(last.hi, span.hi);
+    if (last && span.lo <= last.hi + PLACEMENT_EPS) last.hi = Math.max(last.hi, span.hi);
     else result.push({ ...span });
   }
   return result;
@@ -223,8 +224,8 @@ export function crossBundleFans(model: LayoutModel): void {
         const margin = linkStrokeWidth(other) / 2 + half + STRAIGHT_PATH_CLEARANCE.path;
         return [...(other.path?.fixed === true ? other.path.segments : []), ...(other.fixedSegments ?? []),
           ...(other.sharedRuns?.from ?? []), ...(other.sharedRuns?.to ?? [])].some(run =>
-          at.x > Math.min(run.from.x, run.to.x) - margin - 1e-6 && at.x < Math.max(run.from.x, run.to.x) + margin + 1e-6
-          && at.y > Math.min(run.from.y, run.to.y) - margin - 1e-6 && at.y < Math.max(run.from.y, run.to.y) + margin + 1e-6);
+          at.x > Math.min(run.from.x, run.to.x) - margin - PLACEMENT_EPS && at.x < Math.max(run.from.x, run.to.x) + margin + PLACEMENT_EPS
+          && at.y > Math.min(run.from.y, run.to.y) - margin - PLACEMENT_EPS && at.y < Math.max(run.from.y, run.to.y) + margin + PLACEMENT_EPS);
       });
     };
     const blocked = new Set(items.filter(owed).map(item => item.link.id));
@@ -266,9 +267,9 @@ export function crossBundleFans(model: LayoutModel): void {
     const stop = (item: typeof items[number], row: number, track: number): number => {
       if (item.link.path?.fixed === true || blocked.has(item.link.id)) return end;
       const reach = reachOf(item);
-      if (reach > row + 1e-6) return Math.min(end, reach);
+      if (reach > row + PLACEMENT_EPS) return Math.min(end, reach);
       const onward = (track - coordinate(port)) * (item.far.anchor![tangent] - track);
-      return onward > 1e-6 ? row : end;
+      return onward > PLACEMENT_EPS ? row : end;
     };
     // A member whose path a rule fixed is the straight-through leaf (ADR-0016): its target is the
     // port's own coordinate, so it is peeled last and its stems are its path's leading segments.
@@ -314,11 +315,11 @@ export function crossBundleFans(model: LayoutModel): void {
       const clearOfRows = (start: number): number => {
         let slot = start;
         for (let guard = 0; guard < occupied.length + 1; guard++) {
-          const hit = occupied.find(row => Math.abs(slot - row.at) < MEMBER_GAP + (own + row.stroke) / 2 - 1e-6);
+          const hit = occupied.find(row => Math.abs(slot - row.at) < MEMBER_GAP + (own + row.stroke) / 2 - PLACEMENT_EPS);
           if (!hit) break;
           const clearance = MEMBER_GAP + (own + hit.stroke) / 2;
           const keep = wanted(item) <= hit.at ? hit.at - clearance : hit.at + clearance;
-          slot = keep >= prior + q - 1e-6 ? keep : hit.at + clearance;
+          slot = keep >= prior + q - PLACEMENT_EPS ? keep : hit.at + clearance;
         }
         return slot;
       };
@@ -332,18 +333,18 @@ export function crossBundleFans(model: LayoutModel): void {
       const base = clearOfRows(Math.max(wanted(item), prior + q));
       let slot = base;
       for (let guard = 0; guard < walls.length + 1; guard++) {
-        const wall = walls.find(span => slot > span.lo + 1e-6 && slot < span.hi - 1e-6);
+        const wall = walls.find(span => slot > span.lo + PLACEMENT_EPS && slot < span.hi - PLACEMENT_EPS);
         if (!wall) break;
         const keep = Math.abs(wanted(item) - wall.lo) <= Math.abs(wanted(item) - wall.hi) ? wall.lo : wall.hi;
-        const next = clearOfRows(keep >= prior + q - 1e-6 ? keep : wall.hi);
-        if (Math.abs(next - slot) < 1e-6) break;
+        const next = clearOfRows(keep >= prior + q - PLACEMENT_EPS ? keep : wall.hi);
+        if (Math.abs(next - slot) < PLACEMENT_EPS) break;
         slot = next;
       }
       // A step that carries the track past another port's row on this side reorders the members
       // against their endpoints, which is the topology change rule 2 exists to prevent. Where the
       // corridor leaves no slot on the near side of that row, the fan keeps the track rule 2 gave
       // it and the gates report the node it meets.
-      if (occupied.some(row => (row.at - base) * (row.at - slot) < -1e-6)) slot = base;
+      if (occupied.some(row => (row.at - base) * (row.at - slot) < -PLACEMENT_EPS)) slot = base;
       target.set(item.link.id, slot); prior = slot;
     }
     const isFixed = (id: string): boolean => links.find(link => link.id === id)?.path?.fixed === true;
@@ -362,8 +363,8 @@ export function crossBundleFans(model: LayoutModel): void {
       // With no outward run there is nothing for the route to come back along; and a far port
       // *behind* the fan is reached by leaving the corridor altogether, with the fan's own node in
       // the way of any line back. Only a far port standing in the corridor can be overshot.
-      if (depth <= row + 1e-6 || depthOf(item.far.anchor!) <= row + 1e-6) return false;
-      return depthOf(checkpoint(item.far)) < depth - 1e-6;
+      if (depth <= row + PLACEMENT_EPS || depthOf(item.far.anchor!) <= row + PLACEMENT_EPS) return false;
+      return depthOf(checkpoint(item.far)) < depth - PLACEMENT_EPS;
     };
     const release = (item: typeof items[number]): void => placementWarning(model, 'FAN_BRANCH_UNRESERVED',
       `${item.link.id} keeps only the shared stem at ${port.ref.node}.${port.ref.name ?? '*'}: a branch to `
@@ -430,7 +431,7 @@ function stemCount(port: LayoutPort, runs: readonly PathSegment[]): number {
   let count = 0;
   for (const run of runs) {
     const across = tangent === 'x' ? Math.abs(run.to.x - run.from.x) : Math.abs(run.to.y - run.from.y);
-    if (across > 1e-6 || run.owner.kind !== 'shared-stem') break;
+    if (across > PLACEMENT_EPS || run.owner.kind !== 'shared-stem') break;
     count++;
   }
   return count;
@@ -497,14 +498,14 @@ function releaseHemmedFans(model: LayoutModel): void {
   // and a chord that removed that stem exposed it. Follow-up: ticket 113 keeps the planner's branches clear of foreign groups.
   const boxes = groupBoxes(model);
   const failsGate = (run: PathSegment, box: Rect, stroke: number): boolean => {
-    if (segmentRectDistance(run, box) <= 1e-6 && Math.min(run.from.x, run.to.x) < box.x + box.width - 1e-6 && Math.max(run.from.x, run.to.x) > box.x + 1e-6
-      && Math.min(run.from.y, run.to.y) < box.y + box.height - 1e-6 && Math.max(run.from.y, run.to.y) > box.y + 1e-6) return true;
+    if (segmentRectDistance(run, box) <= PLACEMENT_EPS && Math.min(run.from.x, run.to.x) < box.x + box.width - PLACEMENT_EPS && Math.max(run.from.x, run.to.x) > box.x + PLACEMENT_EPS
+      && Math.min(run.from.y, run.to.y) < box.y + box.height - PLACEMENT_EPS && Math.max(run.from.y, run.to.y) > box.y + PLACEMENT_EPS) return true;
     const margin = GROUP_EDGE_LINK_CLEARANCE + stroke / 2;
     const bottomEdge = box.y + box.height, rightEdge = box.x + box.width;
     const along = (edge: number, low: number, high: number, at: number, from: number, to: number, inner: [number, number]): boolean =>
-      !(at > inner[0] + 1e-6 && at < inner[1] - 1e-6) && Math.abs(at - edge) < margin - 1e-6 && Math.min(from, to) < high - 1e-6 && Math.max(from, to) > low + 1e-6;
-    if (Math.abs(run.from.y - run.to.y) < 1e-6) return [box.y, bottomEdge].some(edge => along(edge, box.x, rightEdge, run.from.y, run.from.x, run.to.x, [box.y, bottomEdge]));
-    return Math.abs(run.from.x - run.to.x) < 1e-6 && [box.x, rightEdge].some(edge => along(edge, box.y, bottomEdge, run.from.x, run.from.y, run.to.y, [box.x, rightEdge]));
+      !(at > inner[0] + PLACEMENT_EPS && at < inner[1] - PLACEMENT_EPS) && Math.abs(at - edge) < margin - PLACEMENT_EPS && Math.min(from, to) < high - PLACEMENT_EPS && Math.max(from, to) > low + PLACEMENT_EPS;
+    if (Math.abs(run.from.y - run.to.y) < PLACEMENT_EPS) return [box.y, bottomEdge].some(edge => along(edge, box.x, rightEdge, run.from.y, run.from.x, run.to.x, [box.y, bottomEdge]));
+    return Math.abs(run.from.x - run.to.x) < PLACEMENT_EPS && [box.x, rightEdge].some(edge => along(edge, box.y, bottomEdge, run.from.x, run.from.y, run.to.y, [box.x, rightEdge]));
   };
   for (const item of branches) {
     const stroke = linkStrokeWidth(item.link);
@@ -537,10 +538,10 @@ function releaseHemmedFans(model: LayoutModel): void {
         if (branch.port.ref.node === port.ref.node && branch.port.side === port.side) continue;
         // The boundary counts: the router refuses a corridor exactly this wide, so a checkpoint at
         // the distance itself is closed, not clear.
-        if (!branch.runs.some(run => at.x > Math.min(run.from.x, run.to.x) - margin - 1e-6
-          && at.x < Math.max(run.from.x, run.to.x) + margin + 1e-6
-          && at.y > Math.min(run.from.y, run.to.y) - margin - 1e-6
-          && at.y < Math.max(run.from.y, run.to.y) + margin + 1e-6)) continue;
+        if (!branch.runs.some(run => at.x > Math.min(run.from.x, run.to.x) - margin - PLACEMENT_EPS
+          && at.x < Math.max(run.from.x, run.to.x) + margin + PLACEMENT_EPS
+          && at.y > Math.min(run.from.y, run.to.y) - margin - PLACEMENT_EPS
+          && at.y < Math.max(run.from.y, run.to.y) + margin + PLACEMENT_EPS)) continue;
         release.add(`${branch.link.id}:${branch.end}`);
         // The hemmed link gives way at whichever end its own fan reserved, which is never this one:
         // the end that was hemmed reserved nothing, or the pass would not have measured its port.

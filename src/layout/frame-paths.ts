@@ -17,6 +17,7 @@ import type { Rect } from '../model/geometry.js';
 import { groupBoxes, groupConsumers } from '../score/model.js';
 import { GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
 import { deriveFrames } from './frames.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 
 /**
  * The **straight** technique of a routed link inside one frame (ticket 34).
@@ -276,7 +277,7 @@ function titleRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment
 /** The bare chord of the link between its two faces, or undefined when its ends coincide. Nothing is checked. */
 export function chordSegment(model: LayoutModel, link: LayoutLink): PathSegment | undefined {
   const chord = straightChord(model, link);
-  if (!chord || Math.hypot(chord.to.x - chord.from.x, chord.to.y - chord.from.y) < 1e-6) return undefined;
+  if (!chord || Math.hypot(chord.to.x - chord.from.x, chord.to.y - chord.from.y) < PLACEMENT_EPS) return undefined;
   return { from: chord.from, to: chord.to, owner: { ...link.owner } };
 }
 
@@ -372,7 +373,7 @@ export function edgeMisses(model: LayoutModel, link: LayoutLink, segment: PathSe
 export function chordVerdict(model: LayoutModel, link: LayoutLink, sideSlack = 0): { segment: PathSegment } | { reason: ChordRefusal } {
   const kind = chordKind(model, link);
   const geometry = straightChord(model, link, undefined, true);
-  if (!geometry || Math.hypot(geometry.to.x - geometry.from.x, geometry.to.y - geometry.from.y) < 1e-6) return { reason: 'faces' };
+  if (!geometry || Math.hypot(geometry.to.x - geometry.from.x, geometry.to.y - geometry.from.y) < PLACEMENT_EPS) return { reason: 'faces' };
   // A link that crosses a tier it does not end in needs the lane lanes.ts reserves for it, and a lane
   // cannot be given back after 7c has aligned the ends under it. Such a link keeps the lane and the
   // orthogonal route, so that no move after stage 7a can leave a transit without its reservation.

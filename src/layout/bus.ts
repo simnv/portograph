@@ -13,6 +13,7 @@ import { portId } from './skeleton-graph.js';
  */
 
 import { BUS_STUB, busBandHeight, busCarriesLabel, busLabelSize } from './bus-room.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 export { isCrossLink, BUS_STUB, BUS_RUN_CLEARANCE, busCarriesLabel, BUS_LABEL_FONT, BUS_LABEL_GAP, busBandHeight, busLabelSize, busLabelText, busRoom, heldBusRoom, inFrameBusOf } from './bus-room.js';
 
 export type Edge = 'top' | 'bottom';
@@ -178,9 +179,9 @@ export function busVerticalCounts(model: LayoutModel, bus: MeshBus): { top: numb
     for (const link of model.links) {
       if (link.layer !== 'routed' || link.technique === 'stub' || link.path === undefined) continue;
       for (const segment of link.path.segments) {
-        if (!(Math.min(segment.from.y, segment.to.y) < y - 1e-6 && Math.max(segment.from.y, segment.to.y) > y + 1e-6)) continue;
+        if (!(Math.min(segment.from.y, segment.to.y) < y - PLACEMENT_EPS && Math.max(segment.from.y, segment.to.y) > y + PLACEMENT_EPS)) continue;
         const x = segment.from.x + (segment.to.x - segment.from.x) * (y - segment.from.y) / (segment.to.y - segment.from.y);
-        if (x >= lo - 1e-6 && x <= hi + 1e-6) counts[edge]++;
+        if (x >= lo - PLACEMENT_EPS && x <= hi + PLACEMENT_EPS) counts[edge]++;
       }
     }
   }
@@ -200,9 +201,9 @@ export function riserCrossings(model: LayoutModel, bus: MeshBus): number {
     if (link.layer !== 'routed' || link.technique === 'stub' || link.path === undefined) continue;
     for (const { from, to } of link.path.segments) {
       const lo = Math.min(from.x, to.x), hi = Math.max(from.x, to.x);
-      if (!(lo < riser.x - 1e-6 && hi > riser.x + 1e-6)) continue;
+      if (!(lo < riser.x - PLACEMENT_EPS && hi > riser.x + PLACEMENT_EPS)) continue;
       const y = hi - lo < 1e-9 ? from.y : from.y + (to.y - from.y) * (riser.x - from.x) / (to.x - from.x);
-      if (y > y0 + 1e-6 && y < y1 - 1e-6) count++;
+      if (y > y0 + PLACEMENT_EPS && y < y1 - PLACEMENT_EPS) count++;
     }
   }
   return count;
@@ -292,7 +293,7 @@ function bandVerticals(model: LayoutModel, bus: MeshBus, extent: BusExtent): num
   // The riser leaves the bar: one more vertical across the band of a bar that carries the label (and across the band of another bus it crosses).
   const riser = riserOf(model, bus);
   if (riser !== undefined) xs.push(riser.x);
-  return xs.filter(x => x >= extent.lo - 1e-6 && x <= extent.hi + 1e-6);
+  return xs.filter(x => x >= extent.lo - PLACEMENT_EPS && x <= extent.hi + PLACEMENT_EPS);
 }
 
 /**
@@ -307,7 +308,7 @@ function bandChordSpans(model: LayoutModel, bus: MeshBus, extent: BusExtent): [n
     if (link.layer !== 'routed' || link.technique === 'stub' || link.path === undefined) continue;
     for (const { from, to } of link.path.segments) {
       const dx = to.x - from.x, dy = to.y - from.y;
-      if (Math.abs(dx) < 1e-6 || Math.abs(dy) < 1e-6) continue;
+      if (Math.abs(dx) < PLACEMENT_EPS || Math.abs(dy) < PLACEMENT_EPS) continue;
       const low = Math.max(band.from, Math.min(from.y, to.y)), high = Math.min(band.to, Math.max(from.y, to.y));
       if (low >= high) continue;
       const a = from.x + dx * (low - from.y) / dy, b = from.x + dx * (high - from.y) / dy;

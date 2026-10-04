@@ -6,6 +6,7 @@ import { chordClearances, chordKind, isRoutedChord, routedChordCandidate, standa
 import { STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { strictCrossing } from './read/crossings.js';
 import { portId } from './skeleton-graph.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 
 /**
  * The widest port pitch a fan may be given (ticket 89): five times the 12 px base pitch. A face that would need more is
@@ -106,7 +107,7 @@ export function fanRoundHolds(before: LayoutModel, after: LayoutModel): boolean 
   if (now.size >= was.size) return true;
   const frames = (chords: typeof was): number => [...chords.values()].filter(kind => kind === 'frame').length;
   if (frames(now) < frames(was)) return false;
-  const clearance = STRAIGHT_PATH_CLEARANCE.path - 1e-6, then = chordClearances(after);
+  const clearance = STRAIGHT_PATH_CLEARANCE.path - PLACEMENT_EPS, then = chordClearances(after);
   for (const [pair, gap] of chordClearances(before)) {
     if (gap >= clearance) continue;
     const cleared = then.get(pair);

@@ -192,7 +192,7 @@ function validatePlacementStructure(model: LayoutModel): void {
     same([...(group.rowOrder ?? [])].sort(), [...group.nodes].sort(), 'Invalid row order');
     if (groupShape(model, group.id) === 'row') {
       for (let i = 1; i < group.rowOrder!.length; i++) {
-        if (model.nodes[group.rowOrder![i - 1]!]!.bounds!.x > model.nodes[group.rowOrder![i]!]!.bounds!.x + 1e-6) throw new Error('Physical row order contradicts rowOrder');
+        if (model.nodes[group.rowOrder![i - 1]!]!.bounds!.x > model.nodes[group.rowOrder![i]!]!.bounds!.x + PLACEMENT_EPS) throw new Error('Physical row order contradicts rowOrder');
       }
     }
     if (group.flank) {
@@ -389,7 +389,7 @@ function validateGeometry(model: LayoutModel, allowNonConvergence = false): void
       const group = model.document.groups[model.document.nodes[id]!.group]!;
       const text = node.ports.length ? model.document.nodes[id]!.label : group.label;
       const label = measureText(text, { fontSize: NODE_CONTENT_GEOMETRY.labelFontSize, weight: NODE_CONTENT_GEOMETRY.labelFontWeight });
-      if (box.width < label.width + 60 - 1e-6) throw new Error(`Bar ${id} violates label-plus-60 floor: width ${box.width} < ${label.width + 60}`);
+      if (box.width < label.width + 60 - PLACEMENT_EPS) throw new Error(`Bar ${id} violates label-plus-60 floor: width ${box.width} < ${label.width + 60}`);
     }
     same(node.size, { width: box.width, height: box.height }, `Size/bounds disagree on ${id}`);
     same(node.contentInsets, measured.contentInsets, `Content insets differ on ${id}`);
@@ -397,8 +397,8 @@ function validateGeometry(model: LayoutModel, allowNonConvergence = false): void
     const saved = model.freeze?.floors.find(floor => floor.node === id)?.size;
     const hinted = model.freeze?.nodeFloors?.find(floor => floor.node === id)?.size;
     if (hinted !== undefined) for (const dim of ['width', 'height'] as const) {
-      if (hinted[dim] < measured.sizeFloor![dim] - 1e-6) throw new SideHintRefusal(`Node floor of ${id} is below its content: ${dim} ${hinted[dim]} < ${measured.sizeFloor![dim]}`);
-      if (node.size[dim] < hinted[dim] - 1e-6) throw new SideHintRefusal(`Node ${id} is smaller than its node floor: ${dim} ${node.size[dim]} < ${hinted[dim]}`);
+      if (hinted[dim] < measured.sizeFloor![dim] - PLACEMENT_EPS) throw new SideHintRefusal(`Node floor of ${id} is below its content: ${dim} ${hinted[dim]} < ${measured.sizeFloor![dim]}`);
+      if (node.size[dim] < hinted[dim] - PLACEMENT_EPS) throw new SideHintRefusal(`Node ${id} is smaller than its node floor: ${dim} ${node.size[dim]} < ${hinted[dim]}`);
     }
     for (const dim of ['width', 'height'] as const) {
       if ((saved !== undefined && saved[dim] < measured.sizeFloor![dim]) || node.sizeFloor[dim] < measured.sizeFloor![dim] || node.sizeFloor[dim] < (saved?.[dim] ?? 0)
@@ -410,13 +410,13 @@ function validateGeometry(model: LayoutModel, allowNonConvergence = false): void
       if (pitch === undefined || pitch < measured.sidePitch![side]!) throw new Error(`Invalid measured pitch on ${id}.${side}`);
       const horizontal = side === 'top' || side === 'bottom';
       const length = horizontal ? box.width : box.height;
-      if (length + 1e-6 < ports.length * pitch + 20) throw new Error(`Port capacity exceeds ${id}.${side}`);
+      if (length + PLACEMENT_EPS < ports.length * pitch + 20) throw new Error(`Port capacity exceeds ${id}.${side}`);
       let prior = -Infinity, authored = -Infinity;
       for (const [index, port] of ports.entries()) {
         if (port.engineOrder !== index) throw new Error(`Invalid engine slots on ${id}.${side}`);
         if (!port.anchor) throw new Error(`Missing anchor on ${id}`);
         const coordinate = horizontal ? port.anchor.x : port.anchor.y;
-        if (coordinate - prior < pitch - 1e-6) throw new Error(`Port spacing/order violates pitch on ${id}.${side}`);
+        if (coordinate - prior < pitch - PLACEMENT_EPS) throw new Error(`Port spacing/order violates pitch on ${id}.${side}`);
         prior = coordinate;
         if (port.authorOrder !== undefined) {
           if (!Number.isSafeInteger(port.authorOrder) || port.authorOrder < authored) throw new Error(`Author order reversed on ${id}.${side}`);
@@ -439,11 +439,11 @@ function validateGeometry(model: LayoutModel, allowNonConvergence = false): void
         const a = model.nodes[id]!.bounds!, b = model.nodes[otherId]!.bounds!, gap = nodeGap(model, id, otherId);
         const dx = Math.max(a.x - b.x - b.width, b.x - a.x - a.width, 0);
         const dy = Math.max(a.y - b.y - b.height, b.y - a.y - a.height, 0);
-        if (Math.hypot(dx, dy) < gap - 1e-6) throw new Error(`Nodes ${id} and ${otherId} violate clearance`);
+        if (Math.hypot(dx, dy) < gap - PLACEMENT_EPS) throw new Error(`Nodes ${id} and ${otherId} violate clearance`);
       }
       const box = model.nodes[id]!.bounds!, outer = group.bounds;
-      if (!allowNonConvergence && (box.x < outer.x || box.y < outer.y || box.x + box.width > outer.x + outer.width + 1e-6
-        || box.y + box.height > outer.y + outer.height + 1e-6)) throw new Error(`Node ${id} is outside its group`);
+      if (!allowNonConvergence && (box.x < outer.x || box.y < outer.y || box.x + box.width > outer.x + outer.width + PLACEMENT_EPS
+        || box.y + box.height > outer.y + outer.height + PLACEMENT_EPS)) throw new Error(`Node ${id} is outside its group`);
     }
   }
   if (!allowNonConvergence && Object.keys(model.groups).length) {
@@ -695,7 +695,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
       const now = draft.tierBands.find(item => item.tier === band.tier)!;
       const shifts = band.groups.filter(id => model.groups[id]!.flank || groupShape(draft, id) !== 'row')
         .map(id => draft.groups[id]!.bounds!.y - model.groups[id]!.bounds!.y);
-      if (shifts.some(shift => Math.abs(shift - (now.bounds!.y - band.bounds!.y)) > 1e-6)) {
+      if (shifts.some(shift => Math.abs(shift - (now.bounds!.y - band.bounds!.y)) > PLACEMENT_EPS)) {
         throw new Error(`Rows must re-seat every flank and non-row group of tier band ${band.tier} by the band's own shift`);
       }
     }

@@ -3,6 +3,7 @@ import { segmentRect, segmentRectDistance } from '../score/geometry.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { clearOfGroupEdges, coordinate, edgeMargin, groupDepthPairs, normal, type Member } from './bundle-geometry.js';
 import { BundleFeasibilityError, pathBounds, polyline } from './bundle-paths.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 
 const inflate = (r: Rect, d: number): Rect => ({ x: r.x - d, y: r.y - d, width: r.width + 2 * d, height: r.height + 2 * d });
 const segment = (from: Point, to: Point, bundle: Bundle): PathSegment => ({ from, to, owner: bundle.owner });
@@ -72,7 +73,7 @@ export function routeBundleChannel(model: LayoutModel, bundle: Bundle, list: Mem
   const mean = (end: 'a' | 'b'): Point => ({ x: list.reduce((sum, item) => sum + item[end].anchor!.x, 0) / list.length,
     y: list.reduce((sum, item) => sum + item[end].anchor!.y, 0) / list.length });
   const a = mean('a'), b = mean('b'), tangent = n.x !== 0 ? 'y' : 'x';
-  if (list.some(item => Math.abs(item.a.anchor![tangent] - a[tangent] - item.b.anchor![tangent] + b[tangent]) > 1e-6)) return undefined;
+  if (list.some(item => Math.abs(item.a.anchor![tangent] - a[tangent] - item.b.anchor![tangent] + b[tangent]) > PLACEMENT_EPS)) return undefined;
   const halfWidth = Math.max(...list.map(item => Math.abs(item.a.anchor![tangent] - a[tangent])))
     + Math.max(...list.map(item => linkStrokeWidth(item.link))) / 2;
   const obstacles = rects(model, bundle, halfWidth), stem = halfWidth + 15;
@@ -94,12 +95,12 @@ export function clearBundleMembers(model: LayoutModel, bundle: Bundle, paths: Pa
   for (const segments of paths) for (const [index, segment] of segments.entries()) {
     for (const node of Object.values(model.nodes)) {
       if (index === 0 && bundle.nodes.includes(node.id) || index === segments.length - 1 && bundle.nodes.includes(node.id)) continue;
-      if (segmentRectDistance(segment, node.bounds!) < 10 + (stroke + (node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node)) / 2 - 1e-6) return false;
+      if (segmentRectDistance(segment, node.bounds!) < 10 + (stroke + (node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node)) / 2 - PLACEMENT_EPS) return false;
     }
     const own = new Set(bundle.nodes.map(id => model.document.nodes[id]!.group));
     for (const [id, group] of Object.entries(model.groups)) {
       if (own.has(id) || !group.bounds || !group.nodes.length) continue;
-      if (segmentRectDistance(segment, group.bounds) < GROUP_EDGE_LINK_CLEARANCE + stroke / 2 - 1e-6) return false;
+      if (segmentRectDistance(segment, group.bounds) < GROUP_EDGE_LINK_CLEARANCE + stroke / 2 - PLACEMENT_EPS) return false;
     }
   }
   return true;

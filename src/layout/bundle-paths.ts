@@ -6,6 +6,7 @@ import { junctionChain, junctionFan, mergedRun, sharedStem } from '../score/mode
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { EPS, intersection, overlapSegment, samePoint, segmentDistance } from '../score/geometry.js';
 import { MEMBER_GAP, MIN_STEM, clone, coordinate, facing, inversionPairs, members, normal, outward, pitch, type Member } from './bundle-geometry.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 
 export class BundleFeasibilityError extends Error {
   readonly code: string;
@@ -178,7 +179,7 @@ function crossedPaths(bundle: Bundle, list: Member[], q: number): Map<string, Pa
   const start = Math.max(...source.map(m => local(m.a.anchor!).y)) + 15 + q * (list.length + 1);
   const end = Math.min(...target.map(m => local(m.b.anchor!).y)) - 15 - q * (list.length + 1);
   const count = inversionPairs(list).length;
-  if (end - start < count * 4 * q - 1e-6) throw new BundleFeasibilityError('BUNDLE_CROSSOVER_CAPACITY', bundle.id, `Need ${count * 4 * q} px crossover length, have ${end - start}.`);
+  if (end - start < count * 4 * q - PLACEMENT_EPS) throw new BundleFeasibilityError('BUNDLE_CROSSOVER_CAPACITY', bundle.id, `Need ${count * 4 * q} px crossover length, have ${end - start}.`);
   const tracks = [...source], points = new Map(source.map((m, i) => [m.link.id, [local(m.a.anchor!), { x: coordinate(m.a), y: start - (i + 1) * q }, { x: x0 + i * d, y: start - (i + 1) * q }, { x: x0 + i * d, y: start }]]));
   let y = start;
   for (let targetIndex = 0; targetIndex < target.length; targetIndex++) {
@@ -310,7 +311,7 @@ function parallelPaths(bundle: Bundle, list: Member[], q: number): Map<string, P
     const turning = list.filter(item => Math.sign(coordinate(item.b) - coordinate(item.a)) === direction)
       .sort((a, b) => -direction * (coordinate(a.a) - coordinate(b.a)));
     const span = (turning.length - 1) * q;
-    if (turning.length && end - start < span - 1e-6) {
+    if (turning.length && end - start < span - PLACEMENT_EPS) {
       throw new BundleFeasibilityError('BUNDLE_CHANNEL_CAPACITY', bundle.id, `Need ${span} px for distinct member turns, have ${end - start}.`);
     }
     for (const [index, item] of turning.entries()) {
