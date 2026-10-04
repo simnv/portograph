@@ -73,6 +73,18 @@ Also reported: `overlaps`, `bundledLength`, `barCross`, `labelHits`, `labelsOmit
 `groupLinks`, `lanesUsed`, `inversions`, `fallbackUsed`, `deadlineHit`, canvas size, and (outside
 the snapshot block) layout time per stage.
 
+`counts` gives the raw counts of each link family, beside Q and outside it (Q reads only the routed
+layer). For `routed` and for `overlay`: `links`, `bent` (links with at least one bend) and `turns`
+(the bends of all links), and the `crossings`. A bend is a change of direction or a reversal between
+two segments (`pathBends`); a zero-length or collinear piece is no bend. Every count reads the
+published `path.segments`. Removed and pathless links are excluded, and so are stubs from the routed
+family. The routed `crossings` is the count that Q uses. The overlay `crossings` has one number per
+named mode of `src/layout/read/crossings.ts`, kept apart: `pairs` (path pairs that cross) and
+`points` (crossing points). Both families take the layer from the same rule (`effectiveLayer`). The
+overlay family is the attached overlay links that are no mesh-bus member. Mesh-bus overlay links that
+are attached, not removed and have a path are counted apart in `overlay.meshBusLinks` and in no other
+overlay number.
+
 `removedLinks` counts the links stage 8 removed because it could not use them
 (`ROUTE_CHECKPOINT_SKIPPED`, `ROUTE_GAP_REJECTED`). The layout JSON lists them in `removedLinks`. A
 removed link has no path, no label, and no place in the score or the gates. It is not a gate
