@@ -1,7 +1,7 @@
 # Expected: a canton gap stays open when closing it would bend a straight overlay link (user, 2026-10-04: a straight link outranks the band-gap close-up).
 # A wide anchor tier `core` (tier 0) stands above two cantons of two tiers each: `west` holds `w-site` (tier 1) and `w-lab` (tier 2), `east` holds
 # `e-site` (tier 1) and `e-lab` (tier 2). A sync link joins `core2` to `far1` (tier 3) and runs as one straight segment through the gap between the
-# cantons. Closing the cantons up to a band gap would put a body on that chord, so the run stays and `COLUMN_AXIS_HELD` names the canton.
+# cantons, 20 px from the east-most body of `west`. Closing the cantons up to a band gap would put that body on the chord, so the run stays and `COLUMN_AXIS_HELD` names the canton.
 # Test-only input owned by architecture ticket 13, phase 4; test/pipeline/canton-close-up.test.ts reads the layout.
 portograph: 2
 groups:
@@ -19,7 +19,7 @@ nodes:
   core3: { group: core, class: router, label: Core three }
   core4: { group: core, class: router, label: Core four }
   w-gw: { group: w-site, class: router, label: West gateway }
-  w-sw: { group: w-site, class: switch, label: West switch }
+  w-sw: { group: w-site, class: switch, label: West switch of the main site office }
   w-srv: { group: w-lab, class: server, label: West server }
   e-gw: { group: e-site, class: router, label: East gateway }
   e-sw: { group: e-site, class: switch, label: East switch }

@@ -1033,7 +1033,7 @@ function reportHeld(model: LayoutModel, tier: Unit[], feeds: (unit: Unit) => Uni
     const range = feedRange(model, unit, feeds, derived.find(item => item.id === unit.id)!.box, slack);
     // Standing where it stands, the column reaches its feed when 0 lies in the range of moves.
     const residual = range === undefined ? 0 : Math.max(0, range.low, -range.high);
-    if (residual > 0.5) model.diagnostics.push({ stage: 'placement', severity: heldBy.get(unit) === 'segment' ? 'info' : 'warning', code: COLUMN_AXIS_HELD,
+    if (residual > 0.5) model.diagnostics.push({ stage: 'placement', severity: 'warning', code: COLUMN_AXIS_HELD,
       owners: [{ kind: 'group', id: unit.id }, ...(scope ? [{ kind: 'group' as const, id: scope.canton }] : [])],
       message: `${scope ? `Member ${unit.id} of canton ${scope.canton}` : `Column ${unit.id}`} cannot reach its feed: ${HELD_TEXT[heldBy.get(unit) ?? 'siblings']}, so its feed links keep a jog of ${residual.toFixed(1)} px.` });
   }

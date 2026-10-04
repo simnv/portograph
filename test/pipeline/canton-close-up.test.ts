@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import type { LayoutModel, Rect } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
 import { COLUMN_AXIS_HELD, COLUMN_SLACK, closeCantons, holdColumnAxes } from '../../src/layout/columns.js';
+import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { overlayPath } from '../../src/layout/overlay-paths.js';
+import { moveGroup } from '../../src/layout/skeleton-geometry.js';
 import { bandGap } from '../../src/layout/skeleton-graph.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -128,13 +130,14 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
     const [gap] = gaps(model) as [number];
     expect(gap).toBeGreaterThan(bandGap(model) + 1);
     expect(closeUps(model).map(item => [item.owners![0], /a straight overlay link would be bent/.test(item.message)])).toEqual([[{ kind: 'group', id: 'west' }, true]]);
-    // Close the gap as the close-up does (the run keeps its centre): the west canton moves right and the east canton left, each by half the excess, and a canton
-    // frame then stands across the chord. The chord runs between the two frames, so the frame that reaches it bends the link (the rows rule keeps a frame box
-    // whole; the cells inside it cannot slide off the chord).
-    const [west, east] = cantonBoxes(model) as [Rect, Rect], excess = gap - bandGap(model), chord = overlayPath(model, link).segments[0]!;
-    const low = Math.min(chord.from.x, chord.to.x), high = Math.max(chord.from.x, chord.to.x);
-    expect(low).toBeGreaterThan(right(west));
-    expect(high).toBeLessThan(east.x);
-    expect(right(west) + excess / 2 > low || east.x - excess / 2 < high).toBe(true);
+    // Close the gap on a copy, as the close-up does (the run keeps its centre): the west canton moves right and the east canton left, each by half the excess.
+    // The real bend is read on the copy: overlay paths treat node bodies and pills as the obstacles, and the east-most body of the west canton now stands on the chord.
+    const closed = structuredClone(model) as LayoutModel, excess = gap - bandGap(closed);
+    for (const [id, dx] of [['w-site#0', excess / 2], ['w-lab#0', excess / 2], ['e-site#0', -excess / 2], ['e-lab#0', -excess / 2]] as const) {
+      const group = closed.groups[id]!;
+      moveGroup(closed, group, dx, 0);
+      rebuildNodeGeometry(closed, group.nodes, 'current');
+    }
+    expect(overlayPath(closed, closed.links.find(item => item.layer === 'overlay')!).segments.length).toBeGreaterThan(1);
   }, 120000);
 });
