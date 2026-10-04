@@ -85,7 +85,7 @@ it('a flank link around a neighbour takes a column-gap course and passes every g
   const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   expect(score(model).snapshot.gates['G6']!.violations).toEqual([]);
   expect(Object.values(score(model).snapshot.gates).every(gate => gate.passed)).toBe(true);
-  expect(model.courses?.map(course => course.link)).toEqual(['link-6']);
+  expect(model.courses?.map(course => course.link)).toEqual(['link-5', 'link-6']);
 });
 
 // Cause D is fixed by the course round (architecture ticket 15, phase 4): the link takes a perimeter course into the right face of the canton member.

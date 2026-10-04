@@ -113,10 +113,13 @@ describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
     expect(model.diagnostics.filter(item => item.code === 'COURSE_SHAPE_LOST')).toEqual([]);
   }, 60000);
 
-  it('09 / 12 C (phase 5): Mgmt-Core leaves the bottom face and enters Core left in 3 turns; Mgmt-Dist runs the Core-Campus gap in 4; G6 holds', async () => {
+  // The solve keeps Mgmt-Dist at 4 turns (right/left). The library takes a column-gap course for both links (6 turns, 1 crossing, against the solve's 7 and 2) and beats the solve.
+  it('09 / 12 C (phase 5): Mgmt-Core leaves the bottom face and enters Core left in 3 turns; Mgmt-Dist does the same in 3; G6 holds; the solve is beaten', async () => {
     const model = await run(SHEETS.around);
     expect([sideOf(model, 6, 'from'), sideOf(model, 6, 'to'), turns(model, 6)]).toEqual(['bottom', 'left', 3]);
-    expect([sideOf(model, 5, 'from'), sideOf(model, 5, 'to'), turns(model, 5)]).toEqual(['right', 'left', 4]);
+    expect([sideOf(model, 5, 'from'), sideOf(model, 5, 'to'), turns(model, 5)]).toEqual(['bottom', 'left', 3]);
+    expect(counts(model).routed.turns).toBe(6);
+    expect(counts(model).routed.crossings).toBe(1);
     expect(score(model).snapshot.gates['G6']!.violations).toEqual([]);
   }, 60000);
 

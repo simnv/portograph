@@ -1,6 +1,7 @@
 import type { Point, Rect, Side } from '../model/geometry.js';
 import type { Course, LayoutGroup, LayoutLink, LayoutModel, LayoutPort } from '../model/layout.js';
 import { courseGeometry, ringsOf } from './course-lanes.js';
+import { laneWidth, occupiedOverhang } from './lanes.js';
 import { gapGeometry, gapPolyline } from './course-gap.js';
 import { polylineCrossings, polylineTurns } from './course-plan.js';
 import { authoredSide, groupShape } from './grid.js';
@@ -88,12 +89,6 @@ export function measureCourses(base: LayoutModel, routedBase: LayoutModel, refus
     return count;
   };
   const nodes = { ...base.nodes };
-  // A gate finding of the baseline's route that names the link, read once and only when a skirt asks.
-  let findings: Set<string> | undefined;
-  const namesLink = (id: string): boolean => {
-    findings ??= gateFindings(routedBase)?.findings ?? new Set<string>();
-    return [...findings].some(item => item.split('|')[2]?.split(',').includes(id) === true);
-  };
   for (const link of base.links) {
     const found = facts.get(link.id);
     if (found === undefined || refusedLinks.has(link.id) || refused(base, link)) continue;
@@ -103,9 +98,9 @@ export function measureCourses(base: LayoutModel, routedBase: LayoutModel, refus
     if (!poorRoute(turns0, crossings0)) continue;
     const [upper, lower] = found.from.tier < found.to.tier ? [found.from, found.to] : [found.to, found.from];
     if (upper.tier === lower.tier) {
-      // A skirt: both ends in one band with a unit between them. It reads its cost from the baseline's route: a skirt whose route the router found and
-      // the gates pass keeps it; a removed one, or one with a gate finding, is offered a column-gap course.
-      const gap = turns0 === undefined || namesLink(link.id) ? gapCourse(base, found, usage, crossedBy, turns0, crossings0) : undefined;
+      // A skirt: both ends in one band with a unit between them. It reads its cost from the baseline's route (turns0, crossings0), and every eligible skirt is
+      // offered a column-gap course; the judge keeps the trial only if the published result wins by the unified order.
+      const gap = gapCourse(base, found, usage, crossedBy, turns0, crossings0);
       if (gap !== undefined) {
         offer.courses.push(gap.course);
         offer.promised.set(link.id, { turns: gap.turns, crossings: gap.crossings, base: { turns: turns0 ?? Infinity, crossings: crossings0 } });
@@ -183,13 +178,20 @@ function gapCourse(base: LayoutModel, found: LinkFacts, usageOf: (model: LayoutM
     const course: Course = { link: found.link.id, kind: 'skirt', from: { face: lateralIsFrom ? side : 'bottom' }, to: { face: lateralIsFrom ? 'bottom' : side },
       runs: lateralIsFrom ? ['gap', 'u'] : ['u', 'gap'] };
     // The column beside the lateral end's unit: from its box to the nearest unit of the band on that side. The centre is the lane's x.
-    const own = base.groups[lateral.group]?.bounds;
-    if (own === undefined) continue;
-    const beyond = Object.values(base.groups).filter(group => group.id !== lateral.group && group.tier === lateral.tier && group.bounds !== undefined && group.nodes.length > 0
-      && (side === 'left' ? group.bounds.x + group.bounds.width <= own.x + 1e-6 : group.bounds.x >= own.x + own.width - 1e-6)).map(group => group.bounds!);
+    const ownGroup = base.groups[lateral.group];
+    if (ownGroup?.bounds === undefined) continue;
+    // The column is read as 7a reads it: between the occupied boxes (bodies, pills and their clearance), and it must hold the lane. A column that cannot is no offer.
+    const occ = (group: LayoutGroup): { left: number; right: number } => {
+      const over = occupiedOverhang(base, group);
+      return { left: group.bounds!.x - over.left, right: group.bounds!.x + group.bounds!.width + over.right };
+    };
+    const ownBox = occ(ownGroup), inner = side === 'left' ? ownBox.left : ownBox.right;
+    const beyond = Object.values(base.groups).filter(group => group.id !== lateral.group && group.tier === lateral.tier && group.bounds !== undefined && group.nodes.length > 0)
+      .map(occ).filter(box => side === 'left' ? box.right <= inner + 1e-6 : box.left >= inner - 1e-6);
     if (beyond.length === 0) continue;
-    const limit = side === 'left' ? Math.max(...beyond.map(box => box.x + box.width)) : Math.min(...beyond.map(box => box.x));
-    const x = (limit + (side === 'left' ? own.x : own.x + own.width)) / 2;
+    const limit = side === 'left' ? Math.max(...beyond.map(box => box.right)) : Math.min(...beyond.map(box => box.left));
+    if (Math.abs(limit - inner) < laneWidth(base, found.link) - 1e-6) continue;
+    const x = (limit + inner) / 2;
     const geometry = gapGeometry({ ...base, courses: [course] }, found.link, course);
     if (geometry === undefined) continue;
     const points = gapPolyline(geometry, x, geometry.extent);

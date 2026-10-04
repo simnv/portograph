@@ -34,12 +34,13 @@ describe('the column-gap course on hand-solve 09 (ticket 15, phase 5)', () => {
     expect(sideOf(model, 6, lateral)).toBe('left');
     expect(pathBends(link(model, 6))).toBe(3);
     expect(gates(model)).toBe(true);
-    expect(model.courses).toEqual([{ link: 'link-6', kind: 'skirt', from: { face: uEnd === 'from' ? 'bottom' : 'left' }, to: { face: uEnd === 'from' ? 'left' : 'bottom' },
-      runs: uEnd === 'from' ? ['u', 'gap'] : ['gap', 'u'] }]);
+    expect(model.courses!.find(course => course.link === 'link-6')).toEqual({ link: 'link-6', kind: 'skirt', from: { face: uEnd === 'from' ? 'bottom' : 'left' }, to: { face: uEnd === 'from' ? 'left' : 'bottom' },
+      runs: uEnd === 'from' ? ['u', 'gap'] : ['gap', 'u'] });
     expect(codes(model)).toContain('COURSE_TAKEN');
     expect(codes(model)).not.toContain('COURSE_SHAPE_LOST');
-    // The skirt whose route holds (link 5: four turns, no finding) keeps it, as the solve keeps it.
-    expect([sideOf(model, 5, 'from'), sideOf(model, 5, 'to'), pathBends(link(model, 5))]).toEqual(['right', 'left', 4]);
+    // Link 5 takes a gap course as well: 6 turns and 1 crossing in all, against the hand solve's 7 and 2.
+    expect([sideOf(model, 5, 'from'), sideOf(model, 5, 'to'), pathBends(link(model, 5))]).toEqual(['bottom', 'left', 3]);
+    expect(score(model).snapshot.counts.routed.turns).toBe(6);
   }, 60000);
 
   it('owns one column-gap lane in the free column beside the core, and the path is the reserved geometry', async () => {
@@ -78,7 +79,7 @@ describe('the column-gap course on hand-solve 09 (ticket 15, phase 5)', () => {
     expect(() => restoreLayoutModel(JSON.stringify(inside))).toThrow();
   }, 60000);
 
-  it('takes no course for a skirt that the baseline routes without a finding', async () => {
+  it('takes no gap course where no skirt stands', async () => {
     // The 12 D sheet has no same-band skirt with a finding: its flank link is the perimeter course's (phase 4), and no gap course is taken anywhere in it.
     const model = await layout(parse(source(ACROSS)), options);
     expect((model.courses ?? []).filter(course => isGapCourse(course))).toEqual([]);

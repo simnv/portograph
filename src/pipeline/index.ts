@@ -268,9 +268,13 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   // for the links whose route is a poor one, places again with the courses reserved in stage 5, and keeps the trial only on its routed result.
   const keptPromises = new Map<string, number>();
   // The unified gain a course offer promises and a side offer promises, as (bent links, turns) saved: the order of the user.
-  const gainOf = (pairs: Iterable<[number, number]>): [number, number] => {
+  // A removed link (`was` undefined) is one more bent link on the baseline and has no turns to save: it ranks in the bent count, not as a number of turns.
+  const gainOf = (pairs: Iterable<[number | undefined, number]>): [number, number] => {
     let bent = 0, turns = 0;
-    for (const [was, will] of pairs) { bent += (was > 0 ? 1 : 0) - (will > 0 ? 1 : 0); turns += was - will; }
+    for (const [was, will] of pairs) {
+      if (was === undefined) { bent += 1 - (will > 0 ? 1 : 0); continue; }
+      bent += (was > 0 ? 1 : 0) - (will > 0 ? 1 : 0); turns += was - will;
+    }
     return [bent, turns];
   };
   // Phase 3b's unmoved offer is a side trial too: when 7f moved the placement and the base has no offer, an offer of the unmoved copy may stand (the filter reads it).
@@ -350,7 +354,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       if (!sideStands) await courseRound(offer);
       else if (reruns + 2 <= maxReruns) courseDeferred = true;
       else {
-        const [courseBent, courseTurns] = gainOf([...offer.promised].map(([, item]) => [item.base.turns === Infinity ? 99 : item.base.turns, item.turns] as [number, number]));
+        const [courseBent, courseTurns] = gainOf([...offer.promised].map(([, item]) => [item.base.turns === Infinity ? undefined : item.base.turns, item.turns] as [number | undefined, number]));
         const [sideBent, sideTurns] = gainOf([...sideOffer.promised.values()].map(item => [bends.get(item.link) ?? 0, item.bends] as [number, number]));
         if (sideOffer.hints.size > 0 && (courseBent > sideBent || (courseBent === sideBent && courseTurns > sideTurns))) await courseRound(offer);
         else options.testSideTrace?.({ ev: 'course-skipped', offer, reruns });

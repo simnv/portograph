@@ -7,7 +7,7 @@ import { DEFAULT_STROKE_WIDTHS as stroke, GROUP_LABEL_LINK_CLEARANCE, linkStroke
 import { segmentRectDistance } from '../geometry/planar.js';
 import { findPort } from './row-paths.js';
 import { CourseRefusal, isCourseLane, validateCourseLane } from './courses.js';
-import { laneRunKind } from './lane-kind.js';
+import { isGapRun, laneRunKind } from './lane-kind.js';
 import { courseGeometry, courseOf, perimeterLaneId, ringsOf, type LaneDraft } from './course-lanes.js';
 import { gapEnds, gapGeometry, gapLaneId, gapReservation, isGapCourse } from './course-gap.js';
 import { RING_PITCH, endMode } from './course-rows.js';
@@ -150,7 +150,8 @@ function framesAfter(model: LayoutModel, proposed: { group: LayoutGroup; bounds:
  * frame box stands now: a frame that already crosses the lane is not made to cross it more, so the guard never stalls a layout.
  */
 function sideLaneFramesHold(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[]): boolean {
-  const sides = model.lanes.filter(isSideLane);
+  // A side lane and a column-gap lane both serve a lateral port and stand beside the frames that hold its node (the alias: both are gap runs).
+  const sides = model.lanes.filter(lane => isGapRun(lane) && lane.port !== undefined);
   if (!sides.length || !model.frames?.length || proposed.every(({ group, bounds }) => Math.abs(bounds.x - group.bounds!.x) <= PLACEMENT_EPS
     && Math.abs(bounds.width - group.bounds!.width) <= PLACEMENT_EPS)) return true;
   const after = framesAfter(model, proposed);
