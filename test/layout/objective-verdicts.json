@@ -1,0 +1,107 @@
+{
+  "a-free-client-group-stands-where-its-overlay-links-cross-least": {
+    "attemptCheap": "20 f32b1d89feee5194",
+    "centreGroupStep": "7 505d7242e794a114",
+    "pickTarget": "6 4a1096de1fd3c802",
+    "sheetGains": "3 b9424f11f6b52537",
+    "windowsHold": "3 acefa63a7c5aadc3"
+  },
+  "a-lower-rank-steps-off-the-chords-of-rank-0": {
+    "attemptCheap": "8 d700632eef126e2a",
+    "attemptCrossings": "4 6aab4f9ccff9eb5f",
+    "centreGroupStep": "75 8178c435104336c0",
+    "holdsSettled": "4 c42dda64b543ae83",
+    "pickRankMove": "1 179cf15d4cb7b521",
+    "pickTarget": "9 1e3b01ade2e8b60f",
+    "pullTier": "24 8dfd57517d5d3dc4"
+  },
+  "a-mover-takes-the-position-that-clears-most-chords": {
+    "attemptCheap": "3 f26fec4a40bed0de",
+    "centreGroupStep": "13 51136782092e8d16",
+    "holdsSettled": "1 bec70fbae0fde7b0",
+    "pickTarget": "10 db65bbf8ed22600d"
+  },
+  "a-side-hint-moves-a-port-to-a-lateral-side": {
+    "centreGroupStep": "7 c5d487c40e5feed2"
+  },
+  "a-chord-hint-and-a-lane-hint-never-share-a-batch": {
+    "centreGroupStep": "94 ae63001dfa3e4c34",
+    "fanRoundHolds": "1 0a22f04442a90cca",
+    "judgeTrial": "1 cbf69f5f691d95cd",
+    "pullTier": "12 54cf982033f571d4",
+    "settleKeepOut": "2 3d075ae4342c7142"
+  },
+  "a-location-router-leaves-a-lateral-side-toward-a-far-provider": {
+    "centreGroupStep": "39 1473c0808d722e2d",
+    "judgeTrial": "1 cbf69f5f691d95cd"
+  },
+  "a-fan-spreads-its-ports-so-its-chords-hold-clearance": {
+    "centreGroupStep": "16 c9d6d88d4fd8c944",
+    "fanRoundHolds": "1 0a22f04442a90cca"
+  },
+  "three-canton-groups-close-up-to-a-band-gap": {
+    "attemptCheap": "117 7f0c79efe106fff2",
+    "attemptCrossings": "21 2f761f524c9fb3df",
+    "centreGroupStep": "1386 e7b8ab7d21aafa40",
+    "closeUp": "14 d01e3fb2c51cfe92",
+    "holdsSettled": "15 82178be5418525b8",
+    "judgeTrial": "1 cbf69f5f691d95cd",
+    "pickRankMove": "1 993c8724d00378d5",
+    "pickTarget": "198 271c353d90c923a8",
+    "pullTier": "348 8cd82130183836c1",
+    "settleKeepOut": "2 cb41c19c0d037e0e",
+    "sheetGains": "18 1e9d85787d073806",
+    "windowsHold": "61 2003dd03fdb5de0a"
+  },
+  "a-canton-member-frame-slides-off-a-straight-chord": {
+    "centreGroupStep": "60 0c089f9e2a3e9147",
+    "fanRoundHolds": "1 0a22f04442a90cca",
+    "pullTier": "16 299c30ead527ebd0"
+  },
+  "three-continents": {
+    "attemptCheap": "69 408dbeccc3f03cbf",
+    "centreGroupStep": "793 7a256432a44ba509",
+    "holdsSettled": "6 634de7b3181ef413",
+    "judgeTrial": "1 20a15d44ec06ecfc",
+    "pickTarget": "120 4257ede6468d9c30",
+    "pullTier": "265 72dde7f5be2e261f",
+    "sheetGains": "17 c8c84293bbc32581",
+    "windowsHold": "32 bf6a5f771b943a93"
+  },
+  "a-group-with-routed-links-steps-off-a-straight-chord": {
+    "centreGroupStep": "16 d17575727f9edf5b",
+    "fanRoundHolds": "1 0a22f04442a90cca"
+  },
+  "a-linked-node-steps-out-of-a-straight-chord": {
+    "attemptCheap": "2 4c9158be6e09263a",
+    "centreGroupStep": "19 c8b0bf4386e10d22",
+    "holdsSettled": "2 3072158bc9120386",
+    "pickTarget": "14 93ff5eaf1a3c62f8"
+  },
+  "overlay-links-reorder-two-locations": {
+    "centreGroupStep": "160 1c99ecf629486fbc",
+    "judgeTrial": "1 b9449d780e1a4d74",
+    "pullTier": "13 025c7ba8baa49833",
+    "pullTierHeld": "5 b6207d17ad1f803b",
+    "settleKeepOut": "1 0a5865ff037dbf1d"
+  },
+  "an-overlay-that-7f-straightens-needs-more-than-four-pixels-of-slack": {
+    "attemptCheap": "2 0d5ac49bf18f7073",
+    "attemptCrossings": "1 2626acb7b565f2f7",
+    "centreGroupStep": "32 6930ffe909bec8d7",
+    "holdsSettled": "1 b0e37b1079e63c37",
+    "pickRankMove": "1 66eec4d604677902",
+    "pullTier": "8 d37f7e7ab77a6015"
+  },
+  "a-declined-grown-member-stops-at-an-overlay-chord": {
+    "centreGroupStep": "9 7831835520a204ed",
+    "fanRoundHolds": "1 0a22f04442a90cca",
+    "pickTarget": "5 45b174ea736f8515",
+    "pullTier": "6 4aef7fb3deea9c91"
+  },
+  "a-held-lane-between-two-cantons-refuses-the-close-up": {
+    "centreGroupStep": "35 b22ce71849fd6282",
+    "pullTier": "22 45013d47f795b44c",
+    "pullTierHeld": "2 8441be4be830c9e3"
+  }
+}

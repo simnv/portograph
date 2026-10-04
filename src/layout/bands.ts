@@ -30,6 +30,7 @@ import type { AttemptTraceEvent } from './placement-attempt.js';
 import { isCantonFrame } from './read/canton.js';
 import { frameTitleEdge, groupTitleEdge } from './read/title-edge.js';
 import { straightOverlaysAsDrawn as straightOverlays } from './read/overlay-straight.js';
+import { tapVerdict } from './objective.js';
 
 export const GROUP_LABEL_GEOMETRY = {
   fontFamily: FONT_FAMILY,
@@ -936,7 +937,9 @@ export function settleKeepOut(model: LayoutModel): boolean {
     for (const [group, dx] of shifts) moveGroup(model, group, dx, 0);
     rebuildNodeGeometry(model, nodes, 'current');
     // A move that leaves fewer overlay links straight is not made.
-    if (straightOverlays(model).length < straight) {
+    const fewer = straightOverlays(model).length < straight;
+    tapVerdict('settleKeepOut', () => `${fewer} ${straight}`);
+    if (fewer) {
       for (const [group, dx] of shifts) moveGroup(model, group, -dx, 0);
       rebuildNodeGeometry(model, nodes, 'current');
       break;

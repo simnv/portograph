@@ -14,6 +14,7 @@ import { bandGap, compareId } from './skeleton-graph.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { drawn, overlayCrossings, portKey, windowTarget, type Drawn, type Window } from './overlay-window.js';
+import { tapVerdict } from './objective.js';
 
 /** A free group stands where its overlay chords are straight and not at the mean of its partners (ticket 143, info). */
 export const OVERLAY_WINDOW_TAKEN = 'OVERLAY_WINDOW_TAKEN';
@@ -102,7 +103,9 @@ export interface OverlayState { bent: number; turns: number; crossings: number }
  * the straight links come first.
  */
 export function sheetGains(windows: OverlayState, before: OverlayState): boolean {
-  return windows.turns <= before.turns && (windows.bent < before.bent || (windows.bent === before.bent && windows.crossings < before.crossings));
+  const result = windows.turns <= before.turns && (windows.bent < before.bent || (windows.bent === before.bent && windows.crossings < before.crossings));
+  tapVerdict('sheetGains', () => `${result} ${windows.turns}/${before.turns} ${windows.bent}/${before.bent} ${windows.crossings}/${before.crossings}`);
+  return result;
 }
 
 /**
@@ -111,8 +114,10 @@ export function sheetGains(windows: OverlayState, before: OverlayState): boolean
  * are read only where the straight sets tie. A window of an earlier run gives way to the means by the same test.
  */
 export function windowsHold(after: ReadonlySet<string>, before: ReadonlySet<string>, crossingsAfter: () => number, crossingsBefore: number): boolean {
-  if (after.size > before.size) return true;
-  return after.size === before.size && [...before].every(id => after.has(id)) && crossingsAfter() <= crossingsBefore;
+  let counted: number | undefined;
+  const result = after.size > before.size || (after.size === before.size && [...before].every(id => after.has(id)) && (counted = crossingsAfter()) <= crossingsBefore);
+  tapVerdict('windowsHold', () => `${result} ${after.size}/${before.size} ${counted ?? '-'}/${crossingsBefore}`);
+  return result;
 }
 
 /** The bent overlay links, the turns of all, and the crossings among the drawn overlay paths, as the overlay rule draws them now. A mesh bus member is no chord. */
@@ -473,6 +478,7 @@ export function stepOutOfChords(model: LayoutModel, tiers: readonly number[], fr
       moveGroup(model, group, target - box.x, 0);
       rebuildNodeGeometry(model, group.nodes, 'current');
       const after = straight();
+      tapVerdict('stepOutOfChords', () => `${[...before].some(id => !after.has(id))} ${before.size}/${after.size}`);
       if ([...before].some(id => !after.has(id))) {
         undo();
         rebuildNodeGeometry(model, group.nodes, 'current');

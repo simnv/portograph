@@ -9,6 +9,7 @@ import { cellTier } from './read/tier.js';
 import { isCantonUnit } from './read/canton.js';
 import { columnPullFeeds, type UnitFeeds } from './read/feeds.js';
 import { straightOverlaysAsDrawn as straightOverlays } from './read/overlay-straight.js';
+import { tapVerdict } from './objective.js';
 import { bandGap, compareId } from './skeleton-graph.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
@@ -561,6 +562,7 @@ function closeUp(model: LayoutModel, tiers: Unit[][], index: number, slack: numb
       return was !== undefined && now !== undefined && shifts.has(unit.groups[0]!) && !unit.groups.some(group => ends.has(group.id))
         && crosses(from, to, now) && !crosses(from, to, was);
     })));
+    tapVerdict('closeUp', () => `${bent} ${segments.length}/${straight.length}`);
     if (bent) { undo(); settle(); cause = 'a straight overlay link would be bent'; }
   }
   warnCloseUp(model, run.filter(isCanton).map(unit => unit.id), named.id, cause);
@@ -941,6 +943,7 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
     // A link that stood as one segment and is not one after the move has been bent by it: a node body or a pill
     // now stands in its way. `segments` lists only the links that are still straight, so the test is a count.
     const bent = segments.length < straight.length;
+    tapVerdict('pullTier', () => `${bent} ${byCount} ${segments.length}/${straight.length}`);
     const blocked = bent || (withBoxes && segments.some(({ ends, from, to }) => standing.some(item => {
       const was = item.unit.frame ? before.get(item.unit.id) : undefined, now = item.unit.frame ? after.get(item.unit.id) : undefined;
       return was !== undefined && now !== undefined && shifts.has(item.unit.groups[0]!) && !item.unit.groups.some(group => ends.has(group.id))
@@ -990,6 +993,7 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
     const nodes = [...moved.keys()].flatMap(group => group.nodes);
     rebuildNodeGeometry(model, nodes, 'current');
     const bent = straightOverlays(model, new Set(straight.map(({ id }) => id))).length < straight.length;
+    tapVerdict('pullTierHeld', () => `${bent}`);
     undo(); rebuildNodeGeometry(model, nodes, 'current');
     if (bent) held.set(item.unit, 'segment');
   }

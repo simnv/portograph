@@ -20,6 +20,7 @@ import { moveGroup } from './skeleton-geometry.js';
 import { bandGap } from './skeleton-graph.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { attemptCounters } from './attempt-counters.js';
+import { tapVerdict } from './objective.js';
 import { nodeTier } from './read/tier.js';
 import { isOneSegment } from './read/overlay-straight.js';
 import { overlayCrossingPairs } from './read/crossings.js';
@@ -65,8 +66,10 @@ export interface RankMove { dx: number; crossings: number; straight: number; /**
  * crossings, then the nearest move, then the smaller dx.
  */
 export function pickRankMove<T extends RankMove>(moves: readonly T[], base: { crossings: number; straight: number }): T | undefined {
-  return moves.filter(move => move.crossings <= base.crossings && move.straight > base.straight)
+  const pick = moves.filter(move => move.crossings <= base.crossings && move.straight > base.straight)
     .sort((a, b) => b.straight - a.straight || (a.bent ?? 0) - (b.bent ?? 0) || a.crossings - b.crossings || Math.abs(a.dx) - Math.abs(b.dx) || a.dx - b.dx)[0];
+  tapVerdict('pickRankMove', () => `${moves.length} ${base.crossings}/${base.straight} ${pick === undefined ? '-' : `${pick.dx} ${pick.straight} ${pick.crossings}`}`);
+  return pick;
 }
 
 /** A reading of a model that has settled: the two above, and the findings the gates and the tier-gap plan would make. */
@@ -237,14 +240,16 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
       redo();
       rebuildNodeGeometry(model, nodes, 'current');
     }
-    return after !== undefined && baseline !== undefined && after.overlay.size > baseline.overlay.size
+    const settledHolds = after !== undefined && baseline !== undefined && after.overlay.size > baseline.overlay.size
       // A lower rank adds no crossing (ticket 146, user decision). A bent straight link is no veto: the net straight count above decides.
       && (!ranked || after.crossings() <= baseline.crossings())
       && [...baseline.routed].every(id => after.routed.has(id))
       && after.drift <= Math.max(baseline.drift, REST) + PLACEMENT_EPS
       && after.width <= Math.max(baseline.width, edge().base + (ranked ? rankShare(edge()) : CANVAS_GROWTH_SHARE * edge().base)) + PLACEMENT_EPS
-      && nothingNew(baseline.crowded, after.crowded) && nothingNew(baseline.disordered, after.disordered) && nothingNew(baseline.residuals, after.residuals)
-      ? { bent: [...baseline.overlay].filter(id => !after.overlay.has(id)).length, count: after.overlay.size, crossings: ranked ? after.crossings() : 0, base: { crossings: ranked ? baseline.crossings() : 0, straight: baseline.overlay.size }, verdict: after } : undefined;
+      && nothingNew(baseline.crowded, after.crowded) && nothingNew(baseline.disordered, after.disordered) && nothingNew(baseline.residuals, after.residuals);
+    tapVerdict('holdsSettled', () => `${settledHolds} ${after?.overlay.size}/${baseline?.overlay.size} ${after?.width}/${baseline?.width}`);
+    return settledHolds
+      ? { bent: [...baseline!.overlay].filter(id => !after!.overlay.has(id)).length, count: after!.overlay.size, crossings: ranked ? after!.crossings() : 0, base: { crossings: ranked ? baseline!.crossings() : 0, straight: baseline!.overlay.size }, verdict: after } : undefined;
   };
 
   /** The moves `dx` of a set of shapes that put one of them on a chord: open intervals. */
@@ -297,9 +302,11 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
       rebuildNodeGeometry(model, nodes, 'current');
       const after = read(model, overlays);
       let ok = extra() && after.overlay.size > before.overlay.size && [...before.routed].every(id => after.routed.has(id)) && blockedChords(model).every(id => blocked.has(id));
+      tapVerdict('attemptCheap', () => `${ok} ${after.overlay.size}/${before.overlay.size}`);
       // Cheap refusals of a lower rank, before a settled copy is paid for (ticket 146): a crossing added, a drift the column rules would undo.
       if (ok && rank !== undefined) {
         ok = after.crossings() <= before.crossings();
+        tapVerdict('attemptCrossings', () => `${ok}`);
         if (ok && follow !== undefined) {
           if (driftBefore === undefined) {
             const redo = saveGroupsOf(nodes);

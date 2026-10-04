@@ -7,6 +7,7 @@ import { STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { strictCrossing } from './read/crossings.js';
 import { portId } from './skeleton-graph.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { tapVerdict } from './objective.js';
 
 /**
  * The widest port pitch a fan may be given (ticket 89): five times the 12 px base pitch. A face that would need more is
@@ -103,6 +104,11 @@ export function fanRoundChords(before: LayoutModel, after: LayoutModel): { lost:
  * pair under the parallel clearance that the re-run clears, and the re-run loses no frame chord; a cross-frame chord may then be given up for the gate.
  */
 export function fanRoundHolds(before: LayoutModel, after: LayoutModel): boolean {
+  const result = fanRoundHoldsRaw(before, after);
+  tapVerdict('fanRoundHolds', () => `${result}`);
+  return result;
+}
+function fanRoundHoldsRaw(before: LayoutModel, after: LayoutModel): boolean {
   const was = heldChords(before), now = heldChords(after);
   if (now.size >= was.size) return true;
   const frames = (chords: typeof was): number => [...chords.values()].filter(kind => kind === 'frame').length;

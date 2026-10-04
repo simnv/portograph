@@ -3,6 +3,7 @@ import type { LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
 import { EPS } from '../geometry/planar.js';
 import { chordEnds, chordPoints, overlayBlockers, straightBetween, type OverlayEnd, type OverlayShape, type ShapeQuery } from './overlay-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { tapVerdict } from './objective.js';
 import { drawn, drawnCrossings, overlayCrossingPoints, portKey, type Drawn } from './read/crossings.js';
 
 /**
@@ -96,6 +97,7 @@ export function pickTarget(mean: number, candidates: readonly number[], score: (
     const value = score(x, best.straight);
     if (value.straight > best.straight || (value.straight === best.straight && !value.bendsMean && value.crossings < best.crossings)) { best = value; target = x; }
   }
+  tapVerdict('pickTarget', () => `${sorted.length} ${target} ${best.straight - base.straight} ${base.crossings - best.crossings}`);
   return { target, gained: best.straight - base.straight, saved: base.crossings - best.crossings };
 }
 

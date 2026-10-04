@@ -6,6 +6,7 @@ import { crossingsOf } from './read/crossings.js';
 import { hintsFacingAway } from './side-hints.js';
 import { overlayBlockers } from './overlay-paths.js';
 import { plannedBends } from './side-measure.js';
+import { tapVerdict } from './objective.js';
 
 /**
  * The judgment of the side round (docs/design/side-faces.md, Sections 19.3 and 19.4). Both the predictor and the verdict compare two finished
@@ -84,7 +85,7 @@ export function judgeTrial(input: TrialInput): Verdict {
     return { bent, total };
   };
   const after = totals(trial), before = totals(base);
-  const verdict = (kept: boolean, reason: string): Verdict => ({ kept, reason, worse, removed, away, short });
+  const verdict = (kept: boolean, reason: string): Verdict => { tapVerdict('judgeTrial', () => `${kept} ${reason}`); return { kept, reason, worse, removed, away, short }; };
   if (worse.length > 0) return verdict(false, `a hinted link has more bends than on the baseline (${worse.join(', ')})`);
   if (removed.length > 0) return verdict(false, `the trial's route removes ${removed.join(', ')}, which the baseline's route keeps`);
   if (away.length > 0) return verdict(false, 'a hinted port faces away from its peer');
