@@ -34,6 +34,8 @@ export interface LayoutLabel extends OwnedElement {
   port?: PortRef;
   role?: 'node' | 'description' | 'group' | 'link' | 'pill' | 'legend' | 'mesh-bus';
   support?: LabelSupport;
+  /** Set when the label lies on its own direct line (architecture 16): the line is no obstacle and is cut away under the text. */
+  onLine?: true;
   fontFamily?: string;
   fontSize?: number;
   fontWeight?: 400 | 700;

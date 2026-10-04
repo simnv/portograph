@@ -29,7 +29,40 @@ export const LINK_LABEL_GEOMETRY = {
    * upside down and never reads top-to-bottom. Orthogonal paths need only these two headings.
    */
   verticalRotation: -90 as const,
+  /**
+   * Architecture ticket 16: a label on a direct (diagonal) line lies on it, centred, text at the
+   * line's angle. The line is cut away under the text with this much clear space round the glyphs,
+   * and the placed box reserves that space.
+   */
+  halo: 2,
+  /** Step of the scan along a direct line when the midpoint is taken. */
+  alongStep: 2,
 } as const;
+
+/** A direct line is a segment with no axis: its label lies on it (ticket 16). */
+export function isDirect(segment: PathSegment): boolean {
+  return Math.abs(segment.to.x - segment.from.x) > EPS && Math.abs(segment.to.y - segment.from.y) > EPS;
+}
+
+/** The heading of a direct line normalised to (-90, 90], so text never reads upside down. */
+export function lineAngle(segment: PathSegment): number {
+  let degrees = Math.atan2(segment.to.y - segment.from.y, segment.to.x - segment.from.x) * 180 / Math.PI;
+  if (degrees > 90) degrees -= 180;
+  if (degrees <= -90) degrees += 180;
+  return degrees;
+}
+
+/** The text box of a label, with its halo, before rotation. */
+export function haloSize(size: { width: number; height: number }): { width: number; height: number } {
+  return { width: size.width + 2 * LINK_LABEL_GEOMETRY.halo, height: size.height + 2 * LINK_LABEL_GEOMETRY.halo };
+}
+
+/** The axis-aligned box of a `size` rectangle turned by `degrees` about `centre`. */
+export function turnedBox(centre: { x: number; y: number }, size: { width: number; height: number }, degrees: number): Rect {
+  const radians = degrees * Math.PI / 180, cos = Math.abs(Math.cos(radians)), sin = Math.abs(Math.sin(radians));
+  const width = size.width * cos + size.height * sin, height = size.width * sin + size.height * cos;
+  return { x: centre.x - width / 2, y: centre.y - height / 2, width, height };
+}
 
 /** Overlay labels are suppressed strictly above this density (overlay links per node). */
 export const OVERLAY_LABEL_DENSITY = 3;
@@ -133,13 +166,15 @@ function buildObstacles(model: LayoutModel): ObstacleIndex {
  * fails at `- EPS`, so an accepted placement cannot become a label hit.
  */
 function collides(index: ObstacleIndex, box: Rect, support: LabelSupport | undefined,
-  overlayCounts = true): boolean {
+  overlayCounts = true, onLine = false): boolean {
   return index.some(box, item => {
     if (item.overlay && !overlayCounts) return false;
     if (!item.segment) return rectDistance(box, item.bounds) < item.clearance + EPS;
-    if (segmentRect(item.segment, box)) return true;
     const supporting = support?.kind === 'link-segment' && support.link === item.link
       && item.index !== undefined && item.index >= support.segment && item.index <= (support.through ?? support.segment);
+    // A label on a direct line lies on the very line it names (ticket 16): that line is no obstacle.
+    if (onLine && supporting && isDirect(item.segment)) return false;
+    if (segmentRect(item.segment, box)) return true;
     return !supporting && segmentRectDistance(item.segment, box) < item.clearance + EPS;
   });
 }
@@ -180,7 +215,7 @@ export function candidateBox(segment: PathSegment, half: number, size: { width: 
   return { bounds: { x: second ? midX - gap - rotated.width : midX + gap, y: midY - rotated.height / 2, ...rotated }, textRotation: LINK_LABEL_GEOMETRY.verticalRotation };
 }
 
-interface Placement { segment: number; bounds: Rect; textRotation: number; text: string; lines: string[]; lineHeight: number }
+interface Placement { onLine?: true; segment: number; bounds: Rect; textRotation: number; text: string; lines: string[]; lineHeight: number }
 interface Supported { segments: PathSegment[]; half: number; support: (index: number) => LabelSupport | undefined }
 
 /**
@@ -288,6 +323,23 @@ function placeLabel(index: ObstacleIndex, supported: Supported, text: string, sh
   let best: Placement | undefined;
   for (const second of [false, true]) {
     for (const { segment, at, length } of ordered) {
+      // A direct line carries its label on it (ticket 16), and has one place for it, so only the first
+      // side pass tries. A line too short for the text on it, or crowded along its whole length, falls
+      // back to the rule that held before: the box beside the line, at the line's angle when it is a
+      // declared straight member, on the dominant axis otherwise.
+      if (isDirect(segment) && !second) {
+        const onLine = shortened ? shorten(widths!, length - 2 * LINK_LABEL_GEOMETRY.shortenMargin) : text;
+        const measuredOn = onLine === undefined ? undefined : measure(onLine);
+        const fits = measuredOn !== undefined && measuredOn.lines.length > 0
+          && (shortened || !shortenable || measuredOn.width + 2 * LINK_LABEL_GEOMETRY.shortenMargin <= length + EPS);
+        const found = fits ? alongLine(index, segment, length, measuredOn, supported.support(at), overlayCounts) : undefined;
+        if (found && measuredOn) {
+          const placement: Placement = { onLine: true, segment: at, bounds: found.bounds, textRotation: found.textRotation, text: onLine!, lines: measuredOn.lines, lineHeight: measuredOn.lineHeight };
+          if (!shortened) return placement;
+          if (!best || onLine!.length > best.text.length) best = placement;
+          continue;
+        }
+      }
       const drawn = shortened ? shorten(widths!, length - LINK_LABEL_GEOMETRY.shortenMargin) : text;
       if (drawn === undefined) continue;
       const measured = measure(drawn);
@@ -303,6 +355,29 @@ function placeLabel(index: ObstacleIndex, supported: Supported, text: string, sh
   return best;
 }
 
+/**
+ * The place of a label on a direct line (ticket 16): its centre on the line, its text at the line's
+ * angle. The midpoint when it is free; otherwise the nearest free centre along the line, stepping
+ * `alongStep` px towards the target and then the source in turn, so the choice is deterministic. The
+ * centre keeps the text, the halo and the shorten margin inside the segment. The stored box is the
+ * axis-aligned box of the rotated text with its halo, which every gate measures.
+ */
+function alongLine(index: ObstacleIndex, segment: PathSegment, length: number, measured: { width: number; height: number },
+  support: LabelSupport | undefined, overlayCounts: boolean): { bounds: Rect; textRotation: number } | undefined {
+  const degrees = lineAngle(segment), size = haloSize(measured);
+  const ux = (segment.to.x - segment.from.x) / length, uy = (segment.to.y - segment.from.y) / length;
+  const reach = Math.min(length / 2, measured.width / 2 + LINK_LABEL_GEOMETRY.shortenMargin);
+  const room = length / 2 - reach, steps = Math.floor(room / LINK_LABEL_GEOMETRY.alongStep + EPS);
+  for (let step = 0; step <= steps; step++) {
+    for (const sign of step === 0 ? [1] : [1, -1]) {
+      const along = length / 2 + sign * step * LINK_LABEL_GEOMETRY.alongStep;
+      const bounds = turnedBox({ x: segment.from.x + ux * along, y: segment.from.y + uy * along }, size, degrees);
+      if (!collides(index, bounds, support, overlayCounts, true)) return { bounds, textRotation: degrees };
+    }
+  }
+  return undefined;
+}
+
 function baseLabel(id: string, owner: LayoutLabel['owner'], layer: LayoutLabel['layer'], text: string): LayoutLabel {
   return { id, owner: { ...owner }, layer, role: 'link', text,
     fontFamily: LINK_LABEL_GEOMETRY.fontFamily, fontSize: LINK_LABEL_GEOMETRY.fontSize,
@@ -315,7 +390,7 @@ function omitted(label: LayoutLabel): LayoutLabel {
 
 function placedLabel(label: LayoutLabel, placement: Placement, support: LabelSupport | undefined): LayoutLabel {
   return { ...label, ...(support ? { support } : {}), text: placement.text, textRotation: placement.textRotation,
-    lines: placement.lines, lineHeight: placement.lineHeight, bounds: placement.bounds,
+    ...(placement.onLine ? { onLine: true as const } : {}), lines: placement.lines, lineHeight: placement.lineHeight, bounds: placement.bounds,
     ...(placement.text === label.text ? {} : { tooltip: label.text }) };
 }
 
