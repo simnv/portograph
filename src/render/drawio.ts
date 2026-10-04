@@ -51,7 +51,7 @@ import { iconKey, iconPath } from '../profiles/network/icons.js';
 import type { ThemeMode } from '../profiles/network/theme.js';
 import {
   LEGEND_DEFAULT_CLASS, NETWORK_LINK_CLASSES, NETWORK_PORT_STATUS, NETWORK_THEME,
-  linkClassStyle, nodeClassPaint, nodeClassStyle, washFill, washToken, portRolePaint, portRoleStyle,
+  linkClassStyle, nodeClassPaint, nodeClassStyle, washAssignment, washFill, washToken, type WashAssignment, portRolePaint, portRoleStyle,
 } from '../profiles/network/theme.js';
 import { effectiveLayer, validate } from '../score/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
@@ -489,7 +489,7 @@ const svgImage = (svg: string): string => `data:image/svg+xml,${encodeURICompone
  * the colour the SVG reveals, the node body background of the same mode, and the two agree on what
  * a reader sees. Paired by `dual()` like every other colour, so both appearances stay exact.
  */
-const outlinedFill = (of: ThemeMode, nodeClass?: string): string => washFill(washToken(nodeClass), of);
+const outlinedFill = (of: ThemeMode, washes: WashAssignment, nodeClass?: string): string => washFill(washToken(nodeClass), of, washes);
 
 const centre = (box: Rect): Point => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
 const samePoint = (a: Point, b: Point): boolean => Math.abs(a.x - b.x) <= EPS && Math.abs(a.y - b.y) <= EPS;
@@ -523,6 +523,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   /** One resolution of something the palette decides, adapted to both appearances when asked. */
   const dual = <T,>(pick: (of: ThemeMode) => T): T => adaptive ? adapt(pick('light'), pick('dark')) : pick(mode);
   const paint = dual(of => NETWORK_THEME[of]);
+  const washes = washAssignment(Object.values(layout.document.nodes).map(node => node.class));
   const document = layout.document;
   const visible = (link: LayoutLink): boolean =>
     linkVisible(layout, link, options.layers ? { layers: options.layers } : {});
@@ -584,7 +585,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const rolePaint = portRolePaint(role, of);
       result = rolePaint.stroke === undefined
         ? { ...result, fill: rolePaint.fill, text: rolePaint.text }
-        : { ...result, fill: outlinedFill(of, nodeClass), stroke: rolePaint.stroke };
+        : { ...result, fill: outlinedFill(of, washes, nodeClass), stroke: rolePaint.stroke };
     }
     for (const token of portTokens(port)) {
       const status = NETWORK_PORT_STATUS.find(([name]) => name === token)?.[1];
@@ -768,7 +769,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       // copies and accepts a drop as one thing, which is what a node is.
       html: 1, container: 1, collapsible: 0, recursiveResize: 0,
       rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.node * 2,
-      whiteSpace: 'nowrap', fillColor: dual(of => washFill(washToken(authored), of)), strokeColor: paint.node.stroke,
+      whiteSpace: 'nowrap', fillColor: dual(of => washFill(washToken(authored), of, washes)), strokeColor: paint.node.stroke,
       strokeWidth: node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node,
       points: `[${[...anchors].join(',')}]`,
       ...(text === '' ? {} : {
@@ -1340,7 +1341,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         const resolved = role ? dual(of => {
           const rolePaint = portRolePaint(role, of);
           return rolePaint.stroke === undefined ? rolePaint
-            : { ...rolePaint, fill: outlinedFill(of) };
+            : { ...rolePaint, fill: outlinedFill(of, washes) };
         }) : undefined;
         vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
           html: 1, rounded: 1, absoluteArcSize: 1,

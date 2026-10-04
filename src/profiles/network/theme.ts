@@ -103,8 +103,11 @@ export function nodeBodyFill(style: NodeClassStyle | undefined, mode: ThemeMode)
 
 /**
  * The wash of a node class the profile does not know (a class the sheet defines). The sheet states
- * no colour for such a class, so a stable FNV-1a hash of its name picks one of eight hues. Only the
- * two steps a wash needs are held: the light 200 and the dark 800, plus a grey for print.
+ * no colour for such a class, so the sheet's classes take the palette hues in the order they first
+ * appear in the document, skipping the hues the profile's own classes use on that sheet and
+ * wrapping round when the hues run out. The first four hues are the profile classes' (in
+ * `NETWORK_NODE_CLASSES` order). Only the steps a wash needs are held: the light 200, the dark 800
+ * and a grey for print.
  */
 export const WASH_PALETTE: readonly { light: string; dark: string; print: string }[] = [
   { light: SLATE[200], dark: SLATE[800], print: NEUTRAL[300] },
@@ -114,14 +117,15 @@ export const WASH_PALETTE: readonly { light: string; dark: string; print: string
   { light: '#d9ecd6', dark: '#2c4a2b', print: NEUTRAL[400] },
   { light: '#f3dce0', dark: '#5a2c36', print: NEUTRAL[600] },
   { light: '#f1e6cc', dark: '#563f12', print: NEUTRAL[800] },
-  { light: STEEL[200], dark: STEEL[800], print: NEUTRAL[300] },
+  { light: STEEL[200], dark: STEEL[800], print: NEUTRAL[200] },
+  { light: '#e6dcf0', dark: '#432c5a', print: NEUTRAL[300] },
+  { light: '#f6dcd0', dark: '#5a2f1f', print: NEUTRAL[600] },
+  { light: '#e4eccc', dark: '#3b4a1a', print: NEUTRAL[400] },
+  { light: '#d2eee3', dark: '#1f4a3a', print: NEUTRAL[700] },
 ];
 
-export function classHash(name: string): number {
-  let hash = 0x811c9dc5;
-  for (let at = 0; at < name.length; at += 1) hash = Math.imul(hash ^ name.charCodeAt(at), 0x01000193) >>> 0;
-  return hash;
-}
+/** A sheet-defined class token and the palette entry it takes. */
+export type WashAssignment = ReadonlyMap<string, number>;
 
 const SAFE_TOKEN = /^[A-Za-z_][\w-]*$/;
 
@@ -134,11 +138,21 @@ export function washToken(classAttr: string | undefined): string | undefined {
   return tokens.find(token => nodeClassStyle(token) !== undefined) ?? tokens.find(token => SAFE_TOKEN.test(token));
 }
 
+/** The palette entry of each sheet-defined class, from the node classes in document order. */
+export function washAssignment(classAttrs: readonly (string | undefined)[]): WashAssignment {
+  const tokens = [...new Set(classAttrs.map(washToken).filter((token): token is string => token !== undefined))];
+  const used = new Set(tokens.map(token => NETWORK_NODE_CLASSES.findIndex(([name]) => name === token)).filter(at => at >= 0));
+  const free = WASH_PALETTE.map((_, at) => at).filter(at => !used.has(at));
+  const own = tokens.filter(token => nodeClassStyle(token) === undefined);
+  return new Map(own.map((token, at) => [token, free[at % free.length]!]));
+}
+
 /** Body fill for one class token in one mode; no token, the plain body. */
-export function washFill(token: string | undefined, mode: ThemeMode): string {
+export function washFill(token: string | undefined, mode: ThemeMode, assignment: WashAssignment): string {
   const known = nodeClassStyle(token);
-  if (known || token === undefined) return nodeBodyFill(known, mode);
-  const plain = NETWORK_THEME[mode].node.fill, entry = WASH_PALETTE[classHash(token) % WASH_PALETTE.length]!;
+  const at = token === undefined ? undefined : assignment.get(token);
+  if (known || at === undefined) return nodeBodyFill(known, mode);
+  const plain = NETWORK_THEME[mode].node.fill, entry = WASH_PALETTE[at]!;
   if (mode === 'print') return mixHex(plain, entry.print, 0.18);
   return mode === 'light' ? mixHex(plain, entry.light, 0.75) : mixHex(plain, entry.dark, 0.45);
 }

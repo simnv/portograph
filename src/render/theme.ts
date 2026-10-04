@@ -1,5 +1,5 @@
 import { LEGEND_DEFAULT_CLASS, NETWORK_LINK_CLASSES, NETWORK_NODE_CLASSES, NETWORK_PORT_ROLES, NETWORK_PORT_STATUS, NETWORK_THEME,
-  nodeBodyFill, nodeClassPaint, nodeClassStyle, washFill, washToken, portRolePaint } from '../profiles/network/theme.js';
+  nodeBodyFill, nodeClassPaint, washAssignment, washFill, portRolePaint } from '../profiles/network/theme.js';
 import type { ThemeMode } from '../profiles/network/theme.js';
 
 /**
@@ -132,10 +132,10 @@ export function themeCss(): string {
  * rule still wins. Same three modes as the theme.
  */
 export function sheetClassWashCss(classAttrs: readonly (string | undefined)[]): string {
-  const tokens = [...new Set(classAttrs.map(washToken).filter((token): token is string =>
-    token !== undefined && nodeClassStyle(token) === undefined))].sort();
+  const assignment = washAssignment(classAttrs);
+  const tokens = [...assignment.keys()];
   if (!tokens.length) return '';
-  const rules = (mode: ThemeMode): string[] => tokens.map(token => `.node-body.${token}{fill:${washFill(token, mode)}}`);
+  const rules = (mode: ThemeMode): string[] => tokens.map(token => `.node-body.${token}{fill:${washFill(token, mode, assignment)}}`);
   return [...rules('light'),
     '@media (prefers-color-scheme: dark){', ...rules('dark').map(rule => `  ${rule}`), '}',
     '@media print{', ...rules('print').map(rule => `  ${rule}`), '}'].join('\n');
