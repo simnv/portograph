@@ -1422,7 +1422,7 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
         // the split, so a left edge that overhangs the lateral face does not matter: the split need only stand left of the vertical port's x.
         if (gapTo - gapFrom <= PLACEMENT_EPS) { unreserved('has no gap between the vertical run and the lateral face to insert its label room in'); continue; }
         const split = (gapFrom + gapTo) / 2;
-        if (model.lanes.some(lane => lane.x >= split - PLACEMENT_EPS)) { unreserved('needs room beyond a reserved lane'); continue; }
+        if (model.lanes.some(lane => lane.kind !== 'perimeter' && lane.x >= split - PLACEMENT_EPS)) { unreserved('needs room beyond a reserved lane'); continue; }
         // The lateral end's tier is the link's own tier for the move: its body stays by the run's end.
         const moved = insertRoomAt(model, split, deficit, model.groups[model.document.nodes[lateralNode.id]!.group]!.tier!);
         settle(moved);
@@ -1474,7 +1474,7 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
     // nothing ever moves left into a preceding group. A reserved lane at or beyond the split cannot
     // move, so such a link is diagnosed instead.
     const split = (Math.max(right(leftNode.bounds!), right(outer(leftPort, leftNode))) + Math.min(rightNode.bounds!.x, outer(rightPort, rightNode).x)) / 2;
-    if (model.lanes.some(lane => lane.x >= split - PLACEMENT_EPS)) { unreserved('needs room beyond a reserved lane'); continue; }
+    if (model.lanes.some(lane => lane.kind !== 'perimeter' && lane.x >= split - PLACEMENT_EPS)) { unreserved('needs room beyond a reserved lane'); continue; }
     const moved = insertRoomAt(model, split, deficit, fromGroup.tier!);
     settle(moved);
     record(link, 'row', wanted, room);

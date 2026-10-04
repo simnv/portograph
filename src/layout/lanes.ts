@@ -8,7 +8,7 @@ import { segmentRectDistance } from '../geometry/planar.js';
 import { findPort } from './row-paths.js';
 import { CourseRefusal, isCourseLane, validateCourseLane } from './courses.js';
 import { courseGeometry, courseOf, perimeterLaneId, ringsOf, type LaneDraft } from './course-lanes.js';
-import { endMode } from './course-rows.js';
+import { RING_PITCH, endMode } from './course-rows.js';
 import { groupShape } from './grid.js';
 import { portId } from './skeleton-graph.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -366,15 +366,15 @@ export function rebuildLaneExtents(model: LayoutModel): void {
     if (link?.attachments && findPort(model, lane.port!)?.anchor) Object.assign(lane.bounds, sideLaneExtent(model, lane, link));
   }
   // A course lane stands beyond every box on its extent, so it is replayed after the other lanes, which it reads; its x is derived (ticket 15, Section 2).
-  const rings = ringsOf(model.lanes);
-  for (const lane of model.lanes) {
-    if (!isCourseLane(lane)) continue;
+  const rings = ringsOf(model.lanes), stacked: Lane[] = [];
+  for (const lane of model.lanes.filter(isCourseLane).sort((a, b) => (a.ring ?? 0) - (b.ring ?? 0))) {
     const link = laneLink(model, lane), course = link === undefined ? undefined : courseOf(model, link.id);
     if (link === undefined || course === undefined) throw new Error(`Lane ${lane.id} has no course`);
-    const geometry = courseGeometry(model, link, course, lane, (group, item) => occupied(model, group, item), rings);
+    const geometry = courseGeometry(model, link, course, lane, (group, item) => occupied(model, group, item), rings, stacked);
     if (geometry === undefined) throw new CourseRefusal(`The course of ${link.id} cannot join one lane`);
     lane.x = geometry.x;
     Object.assign(lane.bounds, geometry.bounds);
+    stacked.push(lane);
   }
   for (const link of model.links) {
     delete link.fixedSegments;
@@ -1159,7 +1159,7 @@ function reserveCourseLanes(model: LayoutModel, pending: Lane[], occ: (group: La
     const link = model.links.find(item => item.id === course.link);
     if (link?.attachments === undefined || course.side === undefined) throw new Error(`Course on ${course.link} cannot reserve a perimeter lane`);
     const draft: LaneDraft = { id: perimeterLaneId(link.id), side: course.side, ring: 0, ...(endHasNaturalFace(course) ? { aligned: true as const } : {}) };
-    const geometry = (ring: number) => courseGeometry(model, link, course, { ...draft, ring }, (group, item) => occ(group, item), ringsOf(placed));
+    const geometry = (ring: number) => courseGeometry(model, link, course, { ...draft, ring }, (group, item) => occ(group, item), ringsOf(placed), placed);
     const first = geometry(0);
     if (first === undefined) throw new CourseRefusal(`The course of ${link.id} cannot join one lane`);
     const ring = placed.filter(lane => lane.side === course.side && lane.bounds.y < bottom(first.bounds) - PLACEMENT_EPS && bottom(lane.bounds) > first.bounds.y + PLACEMENT_EPS).length;
@@ -1208,6 +1208,19 @@ export function validateLanes(model: LayoutModel): void {
   // A perimeter or column-gap lane belongs to a course (ticket 15); its shape is checked here, its geometry once a phase reserves it.
   const owned = model.lanes.filter(isCourseLane);
   for (const lane of owned) validateCourseLane(model, lane);
+  // Perimeter lanes of one side keep a pitch between them where their extents meet, and none stands across the box of a group on its extent.
+  for (const lane of owned) {
+    if (lane.kind !== 'perimeter') continue;
+    for (const other of owned) if (other !== lane && other.kind === 'perimeter' && other.side === lane.side && lane.bounds.y < bottom(other.bounds) - PLACEMENT_EPS && bottom(lane.bounds) > other.bounds.y + PLACEMENT_EPS
+      && Math.abs(other.x - lane.x) < RING_PITCH - PLACEMENT_EPS) throw new Error(`Perimeter lanes ${lane.id} and ${other.id} overlap`);
+    const link = model.links.find(item => lane.owner.kind === 'link' && item.id === lane.owner.id);
+    if (link === undefined) continue;
+    for (const group of Object.values(model.groups)) {
+      if (group.bounds === undefined || group.nodes.length === 0) continue;
+      const box = occupied(model, group, link);
+      if (box.y < bottom(lane.bounds) - PLACEMENT_EPS && bottom(box) > lane.bounds.y + PLACEMENT_EPS && box.x < right(lane.bounds) - PLACEMENT_EPS && right(box) > lane.bounds.x + PLACEMENT_EPS) throw new Error(`Lane ${lane.id} crosses occupied group ${group.id}`);
+    }
+  }
   const sides = [...new Set(model.lanes.filter(isSideLane).map(lane => `side-lane:${lane.owner.kind === 'link' ? lane.owner.id : ''}`))];
   const expected = [...model.links.flatMap(link => courseOf(model, link.id) === undefined ? transitTiers(model, link).map(tier => laneId(link, tier)) : []), ...risers, ...sides].sort();
   if (JSON.stringify(model.lanes.filter(lane => !isCourseLane(lane)).map(lane => lane.id).sort()) !== JSON.stringify(expected)) throw new Error('Lane reservations omit, repeat or invent a transit');

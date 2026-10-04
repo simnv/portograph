@@ -62,6 +62,16 @@ describe('7f grows the gaps by the plan and stage 8 reserves what it planned (ra
     expect(failing(routed)).toEqual(['G5:port-order', 'G5:port-order']);
   }, 120000);
 
+  // The same shape with the course round on (the published path): the round may take a course here, and the result must not be worse than the shape without it.
+  it('the v5-4-0 shape with the course round on removes nothing and has no gate finding the plain run does not have', async () => {
+    const name = 'a-tier-gap-plan-orders-every-part';
+    const plain = failing(await layout(parse(read(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [] }));
+    const model = await layout(parse(read(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    expect(model.removedLinks ?? []).toEqual([]);
+    expect(failing(model).filter(item => !plain.includes(item))).toEqual([]);
+    expect(score(model).snapshot.counts.routed.crossings).toBeLessThanOrEqual(13);
+  }, 120000);
+
   it('asks for nothing on a second measure of any of the four shapes, and a second bands pass grows nothing', async () => {
     for (const name of ['an-earlier-link-with-no-run-crosses-on-the-row-between-its-tips', 'a-plain-tip-in-the-group-padding-holds-its-row',
       'two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', 'a-tier-gap-plan-orders-every-part']) {

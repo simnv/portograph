@@ -304,6 +304,9 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
       note('reseat-lanes', 'refused');
     }
   } else { attemptCounters.reseat.none++; note('reseat-lanes', 'none'); }
+  // A perimeter lane's x is derived from the boxes over its span (ADR-0010, amendment of ticket 15, phase 4): the settling above can move a box after the last
+  // replay, so the lane is read once more on the geometry that publishes.
+  if (draft.lanes.some(lane => lane.kind === 'perimeter')) rebuildLaneExtents(draft);
   // A move 7f cannot refuse (a title band's room, a tier gap's rows) may still leave a body on a held chord.
   // The chord is kept, its link is named, and the final gates judge it; it never falls back (ticket 34).
   for (const id of blockedChords(draft)) {

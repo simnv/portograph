@@ -7,7 +7,7 @@ import { crossingsOf, strictCrossing } from './read/crossings.js';
 import { linkFacts, type EndFacts } from './read/courses.js';
 import { orderProfile, keys, pathBends, reading, routedFamily, routedBends, compare, lazyCount, type Reading } from './objective.js';
 import { findPort } from './row-paths.js';
-import { score } from '../score/index.js';
+import { added as namesAdded, constraintFindings, gateFindings } from './trial-findings.js';
 import { portKey } from './sides-one.js';
 import { portId } from './skeleton-graph.js';
 
@@ -168,24 +168,28 @@ export interface CourseVerdict { kept: boolean; reason: string; removed: string[
 const routedReading = (model: LayoutModel): Reading => reading({ routed: routedFamily(routedBends(model)), crossings: lazyCount(() => routedCrossingPairs(model)), crossingMode: 'pairs', tie: [] });
 
 /**
- * Whether the trial that reserves `courses` is kept: no link the baseline keeps is removed, no offered link has more turns than on the baseline, and the
+ * Whether the trial that reserves `courses` is kept: no link the baseline keeps is removed, no offered link has more turns than on the baseline or than it promised, and the
  * unified order on the routed result gains (fewer bent links, then fewer turns, then fewer crossings).
  */
-export function judgeCourseTrial(routedBase: LayoutModel, routedTrial: LayoutModel, offered: Iterable<string>): CourseVerdict {
+export function judgeCourseTrial(routedBase: LayoutModel, routedTrial: LayoutModel, promised: ReadonlyMap<string, number>): CourseVerdict {
   const base = routedBends(routedBase), trial = routedBends(routedTrial);
   const removed = [...base.keys()].filter(id => !trial.has(id));
-  const worse = [...offered].filter(id => !trial.has(id) || (base.has(id) && trial.get(id)! > base.get(id)!));
+  const worse = [...promised.keys()].filter(id => !trial.has(id) || (base.has(id) && trial.get(id)! > base.get(id)!));
   const verdict = (kept: boolean, reason: string): CourseVerdict => ({ kept, reason, removed, worse });
   if (removed.length > 0) return verdict(false, `the trial's route removes ${removed.join(', ')}, which the baseline's route keeps`);
   if (worse.length > 0) return verdict(false, `a link with a course has more turns than on the baseline (${worse.join(', ')})`);
-  // No gate gets worse: a course that buys a turn with a lane overlap or a clearance is no gain (the stop rule of ticket 15, phase 4).
-  const gateFailures = (model: LayoutModel): Map<string, number> | undefined => {
-    try { return new Map(Object.entries(score(model, { force: true }).snapshot.gates).map(([id, gate]) => [id, gate.passed ? 0 : gate.violations.length])); } catch { return undefined; }
-  };
-  const gatesNow = gateFailures(routedTrial), gatesThen = gateFailures(routedBase);
+  // The promise only proposes: the trial is judged on what it publishes. A course link that publishes more turns than its polyline promised is a trial that
+  // did not reserve what the promise needs, and it is not kept.
+  const lost = [...promised].filter(([id, turns]) => (trial.get(id) ?? Infinity) > turns).map(([id]) => id);
+  if (lost.length > 0) return verdict(false, `a link with a course publishes more turns than it promised (${lost.join(', ')})`);
+  // No finding is new, read as sets: a gate violation, or a hard entry of the x constraint catalogue (a band gap between two root groups), that the baseline
+  // did not have. A course that buys a turn with a lane overlap, a clearance or a gap is no gain (the stop rule of ticket 15, phase 4).
+  const gatesNow = gateFindings(routedTrial), gatesThen = gateFindings(routedBase);
   if (gatesNow === undefined) return verdict(false, 'the routed trial does not score');
-  const gateWorse = [...gatesNow].filter(([id, count]) => count > (gatesThen?.get(id) ?? 0)).map(([id]) => id);
-  if (gateWorse.length > 0) return verdict(false, `the routed trial fails the gates ${gateWorse.join(', ')} more than the baseline`);
+  const gateNew = namesAdded(gatesNow, gatesThen ?? new Set());
+  if (gateNew.length > 0) return verdict(false, `the routed trial has gate findings the baseline does not have (${gateNew.join('; ')})`);
+  const constraintNew = namesAdded(constraintFindings(routedTrial), constraintFindings(routedBase));
+  if (constraintNew.length > 0) return verdict(false, `the routed trial breaks a hard constraint the baseline holds (${constraintNew.join('; ')})`);
   const now = routedReading(routedTrial), then = routedReading(routedBase);
   if (!(compare(now, then, courseProfile) < 0)) return verdict(false, `the routed trial gives no gain (${now.routed.bent} bent links, ${now.routed.turns} turns, ${now.crossings()} crossings, against ${then.routed.bent}, ${then.routed.turns} and ${then.crossings()})`);
   return verdict(true, '');

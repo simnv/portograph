@@ -225,7 +225,10 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   const trialAbort = (stage: string): void => { if (budget.remainingMs() <= 0) throw new CommandDeadlineError(0, stage); };
   let kept7e = model;
   let base = await timed('bands', () => step('bands', () => bands(kept7e, () => trialAbort('bands'), options.attemptTrace)));
-  const baseMoved = lastAttempt.moved, baseUnmoved = lastAttempt.unmoved;
+  // What the 7f run of the baseline did, for phase 3b's trigger; a kept course trial replaces it with its own run's.
+  let baseMoved = lastAttempt.moved, baseUnmoved = lastAttempt.unmoved;
+  // The node floors a kept course trial placed with; a later side trial keeps them, or it would re-size the nodes the course moved.
+  let courseFloors = new Map<string, { width: number; height: number }>();
   let hints = new Map<string, 'left' | 'right'>(options.testSideHints ?? []);
   let laneKeys = new Set<string>();
   const promised: SideOffer['promised'] = new Map(), refused = new Set<string>(), sideNotes: Diagnostic[] = [];
@@ -271,7 +274,9 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     // The two rounds share the re-runs. The course round leaves the last one to a side offer that stands: a refused course trial would have taken it, and the
     // side round, which only reads the baseline, has no say once the count is spent.
     const lastRerun = offer.courses.length > 0 && reruns + 1 >= maxReruns;
-    const skipped = lastRerun && (reruns >= maxReruns || measureSides(base, kept7e, refused).hints.size > 0);
+    // Phase 3b's unmoved offer is a side trial too: when 7f moved the placement and the base has no offer, an offer of the unmoved copy may stand (the filter reads it).
+    const unmovedMayStand = (): boolean => baseMoved && (baseUnmoved === undefined || measureSides(baseUnmoved, kept7e, refused).hints.size > 0);
+    const skipped = lastRerun && (reruns >= maxReruns || measureSides(base, kept7e, refused).hints.size > 0 || unmovedMayStand());
     if (skipped) options.testSideTrace?.({ ev: 'course-skipped', offer, reruns });
     else if (offer.courses.length > 0) {
       const nodeFloors = new Map(options.testNodeFloors ?? []);
@@ -294,17 +299,19 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
         courseRefusal(`the placement run rejected them (${error.message})`);
       }
       if (trial7e !== undefined && trial7e.fallbackUsed && !kept7e.fallbackUsed) {
-        cutSide('ELK fell back during the course trial, and the re-run was dropped'); trial7e = undefined;
+        courseRefusal('ELK fell back during the course trial'); trial7e = undefined;
       }
       if (trial7e !== undefined) {
         try {
           const trial = await timed('bands-trial', () => step('bands', () => bands(trial7e!, () => trialAbort('bands'), options.attemptTrace), true));
+          const trialMoved = lastAttempt.moved, trialUnmoved = lastAttempt.unmoved;
           const routedTrial = await routeModel(trial, true);
-          const verdict = judgeCourseTrial(routedBase, routedTrial, names);
+          const verdict = judgeCourseTrial(routedBase, routedTrial, new Map([...offer.promised].map(([id, item]) => [id, item.turns] as const)));
           options.testSideTrace?.({ ev: 'course-trial', verdict, trial, routedTrial, routedBase });
           if (verdict.kept) {
             for (const [id, promised] of offer.promised) keptPromises.set(id, promised.turns);
             base = trial; kept7e = trial7e; activeCourses = offer.courses; routedBase = routedTrial; routedFinal = routedTrial;
+            baseMoved = trialMoved; baseUnmoved = trialUnmoved; courseFloors = new Map(nodeFloors);
             for (const course of offer.courses) {
               const was = offer.promised.get(course.link)!;
               sideNotes.push({ stage: 'placement', severity: 'info', code: 'COURSE_TAKEN', owners: [{ kind: 'link', id: course.link }],
@@ -330,8 +337,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     // this run is never published) and the trial starts from the rebuilt offer. With no copy, the rebuild runs. Nothing is built when no re-run is left.
     let unmovedOffer = false, filtered: boolean | undefined;
     if (round === 0 && offer.hints.size === 0 && baseMoved && reruns < maxReruns) {
-      // The settled copy is the placement before a kept course: a course changes the layout, so it filters nothing then and the rebuild decides.
-      if (baseUnmoved !== undefined && activeCourses.length === 0) filtered = measureSides(baseUnmoved, kept7e, refused).hints.size > 0;
+      if (baseUnmoved !== undefined) filtered = measureSides(baseUnmoved, kept7e, refused).hints.size > 0;
       if (filtered !== false || options.testRebuildAlways === true) {
         const unmoved = await timed('bands-unmoved', () => bands(kept7e, () => trialAbort('bands'), undefined, false));
         offer = await timed('measureSides', () => measureSides(unmoved, kept7e, refused));
@@ -348,7 +354,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     }
     const all = new Map([...hints, ...offer.hints]);
     for (const [key, item] of offer.promised) trialLinks.set(key, item.link);
-    const nodeFloors = new Map(options.testNodeFloors ?? []);
+    const nodeFloors = new Map([...courseFloors, ...(options.testNodeFloors ?? [])]);
     for (const key of all.keys()) {
       const [node] = JSON.parse(key) as [string];
       // The 7e model keys the size cache, never the baseline (a new object: the lookup would give undefined with no error).
@@ -409,6 +415,9 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     const verdict = judgeTrial({ routedBase, routedTrial, kept7e, trial7e, hinted: hintedLinks, lanes: new Set([...offer.promised.values()].filter(item => item.shape === 'lane').map(item => item.link)) });
     options.testSideTrace?.({ ev: 'trial', verdict, base, kept7e, trial7e, trial, routedBase, routedTrial, hinted: hintedLinks });
     options.testSideProbe?.({ offer, routedBase, routedTrial, verdict });
+    // A kept course keeps its promise through the side round as well: a side trial that makes a course link publish more turns than it promised is refused.
+    const brokenPromise = verdict.kept ? [...keptPromises].filter(([id, turns]) => (routedBends(routedTrial).get(id) ?? Infinity) > turns).map(([id]) => id) : [];
+    if (brokenPromise.length > 0) { refuse(offer.hints.keys(), all, `a course link publishes more turns than it promised (${brokenPromise.join(', ')})`); break; }
     if (!verdict.kept) { refuse(offer.hints.keys(), all, verdict.reason); break; }
     // Kept: the trial is the baseline now. The notes name what the net count accepted.
     keptNotes.push(...trialNotes(routedBase, routedTrial, verdict, hintedLinks.keys()));

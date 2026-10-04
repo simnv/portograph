@@ -5,6 +5,7 @@ import type { Course, LayoutLink, LayoutModel } from '../../src/index.js';
 import type { Side } from '../../src/model/geometry.js';
 import { naturalPolyline, polylineCrossings, polylineTurns, simplify } from '../../src/layout/course-plan.js';
 import { poorRoute } from '../../src/layout/course-measure.js';
+import { constraintFindings } from '../../src/layout/trial-findings.js';
 import { findPort } from '../../src/layout/row-paths.js';
 import { pathBends } from '../../src/layout/objective.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -85,20 +86,13 @@ describe('the course round on the hand-solve sheets (ticket 15, phase 4)', () =>
     expect([side(model, 6, 'from'), side(model, 6, 'to'), turns(model, 6)]).toEqual(['top', 'left', 3]);
     expect(side(model, 7, 'from')).toBe('right');
     expect(side(model, 7, 'to')).toBe('top');
-    // The promise of link 7 (a straight drop, read on the baseline) is lost: the courses remove the canton lanes, the servers move with them, and the drop becomes a step.
-    // Link 6 publishes the 3 turns it promised.
-    const lost = model.diagnostics.filter(item => item.code === 'COURSE_SHAPE_LOST').flatMap(item => (item.owners ?? []).map(owner => 'id' in owner ? owner.id : ''));
-    expect(lost).toEqual(['link-7']);
+    // Link 7 drops straight into SRV 2: the aligned lane is a feed of 7c, so the promise holds (1 turn) and nothing is lost.
+    expect(turns(model, 7)).toBe(1);
+    expect(codes(model)).not.toContain('COURSE_SHAPE_LOST');
     expect(Object.values(score(model).snapshot.gates).every(gate => gate.passed)).toBe(true);
     // No link goes round the canton and comes back under it: both OOB links and the Core jogs are shorter than the 18 turns of the baseline.
-    expect(score(model).snapshot.counts.routed.turns).toBeLessThanOrEqual(14);
+    expect(score(model).snapshot.counts.routed.turns).toBeLessThanOrEqual(8);
     expect(model.canvas!.x).toBeLessThan(0);
-  }, 60000);
-
-  // The solve draws the drop of OOB to SRV 2 straight into the top of SRV 2 (1 turn). The lane stands beyond the canton, 300 px from SRV 2, and the round
-  // promises no seat for a node that far (P9), so the drop is a step: 3 turns.
-  it.fails('08: OOB to SRV 2 drops straight into the top face (1 turn)', async () => {
-    expect(turns(await layout(parse(source(CANTON)), options), 7)).toBe(1);
   }, 60000);
 
   // Case 04: the two courses of the solve are reserved when forced, and publish what the lane geometry reserved. The round itself refuses them, because
@@ -138,6 +132,22 @@ describe('the course round on the hand-solve sheets (ticket 15, phase 4)', () =>
     const model = await layout(parse(source(AROUND)), options);
     expect(model.courses).toBeUndefined();
   }, 60000);
+});
+
+describe('the judge reads what the trial publishes (review of phase 4)', () => {
+  // The course of link-13 here left two root groups 58.9 px apart (the band gap is 60): no gate measures it, the hard entry of the x catalogue does.
+  it('refuses a course that breaks a hard separation the baseline holds', async () => {
+    const model = await layout(parse(source('a-group-shift-leaves-a-chord-clear-of-a-lane')), options);
+    expect(model.courses?.some(course => course.link === 'link-13') ?? false).toBe(false);
+    expect([...constraintFindings(model)]).toEqual([]);
+  }, 60000);
+
+  it('keeps no course that publishes more turns than it promised', async () => {
+    for (const name of [CANTON, ACROSS, MESH, AROUND]) {
+      const model = await layout(parse(source(name)), options);
+      expect(codes(model), name).not.toContain('COURSE_SHAPE_LOST');
+    }
+  }, 120000);
 });
 
 describe('the courses a placement run reserves', () => {
