@@ -704,7 +704,7 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
   // large model that block is more than a third of the JSON the per-group copy below would carry.
   const { freeze: _frozen, ...replayed } = model;
   void _frozen;
-  // Every trial starts from the same model. The parts a step only reads are copied once and frozen (`TRIAL_SHARED`), and so are the nodes and the diagnostics:
+  // Every trial starts from the same model. The parts a step only reads are copied once and frozen (`TRIAL_SHARED`), and so are the nodes (the diagnostics are not shared; each trial parses its own):
   // a trial takes a fresh copy of the nodes of its group and of the group before it (the ones a step writes), and shares the rest. A step that writes
   // to a shared part throws; that trial is then run again on a full copy, so the answer is the one a full copy gives (architecture ticket 14).
   let replayedText: string | undefined, sharedParts: Record<string, unknown> | undefined, sharedNodes: Record<string, LayoutNode> | undefined, nodeTexts: Map<string, string> | undefined, fullText: string | undefined;
@@ -734,7 +734,7 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
           trial = JSON.parse(fullText ??= JSON.stringify(replayed)) as LayoutModel;
         } else {
           const nodes: Record<string, LayoutNode> = { ...sharedNodes };
-          for (const nodeId of [...group.nodes, ...(previous?.nodes ?? [])]) nodes[nodeId] = JSON.parse(nodeTexts!.get(nodeId)!) as LayoutNode;
+          for (const nodeId of [...group.nodes, ...(previous?.nodes ?? [])]) { const text = nodeTexts!.get(nodeId); if (text !== undefined) nodes[nodeId] = JSON.parse(text) as LayoutNode; }
           const fresh = JSON.parse(replayedText!) as Record<string, unknown>;
           trial = Object.assign(fresh, sharedParts, { nodes }) as unknown as LayoutModel;
         }
