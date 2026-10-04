@@ -1,6 +1,6 @@
 import type { Side } from '../model/geometry.js';
 import type { Diagnostic, LayoutLink, LayoutModel, LayoutPort, PathSegment } from '../model/layout.js';
-import { EPS, segmentDistance } from '../score/geometry.js';
+import { EPS, segmentDistance } from '../geometry/planar.js';
 import { linkStrokeWidth } from '../theme/geometry.js';
 import { chordClearances, chordKind, isRoutedChord, routedChordCandidate, standaloneChord } from './frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from './row-paths.js';

@@ -3,7 +3,7 @@ import type {
   Bundle, Diagnostic, LabelSupport, LayoutLabel, LayoutLink, LayoutModel, LayoutPath, Owner, PathSegment,
 } from '../model/layout.js';
 import { equal } from '../model/json-equality.js';
-import { EPS, bottom, contains, rectDistance, right, segmentRect, segmentRectDistance } from '../score/geometry.js';
+import { EPS, bottom, contains, rectDistance, right, segmentRect, segmentRectDistance } from '../geometry/planar.js';
 import { effectiveLayer } from '../score/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
 import { CANVAS_MARGIN, DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';

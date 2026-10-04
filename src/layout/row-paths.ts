@@ -1,7 +1,7 @@
 import type { PortRef } from '../model/document.js';
 import type { LayoutLink, LayoutModel, LayoutNode, LayoutPath, LayoutPort, PathSegment } from '../model/layout.js';
 import type { Rect } from '../model/geometry.js';
-import { EPS, length, segmentDistance, segmentRectDistance } from '../score/geometry.js';
+import { EPS, length, segmentDistance, segmentRectDistance } from '../geometry/planar.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { groupConsumers } from '../score/model.js';
 import { portId } from './skeleton-graph.js';

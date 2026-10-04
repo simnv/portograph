@@ -4,7 +4,7 @@ import { mergeMembers } from './bundle-merge.js';
 import { bundleFans, crossBundleFans } from './bundle-junctions.js';
 import { junctionChain, junctionFan, mergedRun, sharedStem } from '../score/model.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
-import { EPS, intersection, overlapSegment, samePoint, segmentDistance } from '../score/geometry.js';
+import { EPS, intersection, overlapSegment, samePoint, segmentDistance } from '../geometry/planar.js';
 import { MEMBER_GAP, MIN_STEM, clone, coordinate, facing, inversionPairs, members, normal, outward, pitch, type Member } from './bundle-geometry.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 

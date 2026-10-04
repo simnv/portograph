@@ -1,4 +1,4 @@
-import { bottom, right } from '../score/geometry.js';
+import { bottom, right } from '../geometry/planar.js';
 import type { RouteShape } from './types.js';
 
 function bound(values: number[], value: number, inclusive = false): number {

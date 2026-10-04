@@ -7,7 +7,7 @@ import { stemReach } from '../layout/bands.js';
 import { equal } from '../model/json-equality.js';
 import { outward } from '../score/model.js';
 import { MIN_STEM, reservations, shrink, TOLERANCE } from './reservations.js';
-import { bottom, EPS, horizontal, length, retracingRuns, samePoint, segmentRect, vertical } from '../score/geometry.js';
+import { bottom, EPS, horizontal, length, retracingRuns, samePoint, segmentRect, vertical } from '../geometry/planar.js';
 import { effectiveLayer, type LinkPlan, type RoutePlan } from './plan.js';
 import type { RouteCheckpoint } from './types.js';
 import { nodeTierIfAny } from '../layout/read/tier.js';

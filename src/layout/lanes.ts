@@ -4,7 +4,7 @@ import type { Rect } from '../model/geometry.js';
 import type { Diagnostic, Lane, LayoutGroup, LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import type { PortRef } from '../model/document.js';
 import { DEFAULT_STROKE_WIDTHS as stroke, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth, routedStrokeWidth } from '../theme/geometry.js';
-import { segmentRectDistance } from '../score/geometry.js';
+import { segmentRectDistance } from '../geometry/planar.js';
 import { findPort } from './row-paths.js';
 import { groupShape } from './grid.js';
 import { portId } from './skeleton-graph.js';

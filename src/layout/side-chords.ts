@@ -1,7 +1,7 @@
 import type { PortRef } from '../model/document.js';
 import type { LayoutLink, LayoutModel, LayoutNode, PathSegment } from '../model/layout.js';
 import { linkStrokeWidth } from '../theme/geometry.js';
-import { EPS, intersection, samePoint, segmentDistance } from '../score/geometry.js';
+import { EPS, intersection, samePoint, segmentDistance } from '../geometry/planar.js';
 import { chordKind, chordVerdict, edgeMisses, fixedPointRefusal, isRoutedChord, SIDE_EDGE_SLACK } from './frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { straightChord } from './overlay-paths.js';

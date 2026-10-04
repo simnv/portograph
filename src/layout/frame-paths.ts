@@ -11,7 +11,7 @@ import { findPort, STRAIGHT_PATH_CLEARANCE, straightCorridorClear, type Corridor
 
 const OUTWARD = { top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } } as const;
 import { measureText } from '../text/index.js';
-import { EPS, intersection, samePoint, segmentDistance, segmentRectDistance } from '../score/geometry.js';
+import { EPS, intersection, samePoint, segmentDistance, segmentRectDistance } from '../geometry/planar.js';
 import { GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
 import type { Rect } from '../model/geometry.js';
 import { groupBoxes, groupConsumers } from '../score/model.js';

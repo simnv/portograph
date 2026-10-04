@@ -1,7 +1,7 @@
 import type { Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
 import { orderedNodeIds } from '../model/model.js';
-import { EPS } from '../score/geometry.js';
+import { EPS } from '../geometry/planar.js';
 import { parallelClearance, portOrder } from '../score/gates.js';
 import { linkStrokeWidth } from '../theme/geometry.js';
 import type { Segment } from '../score/model.js';

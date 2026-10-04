@@ -8,7 +8,7 @@ import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { GROUP_LABEL_GEOMETRY, nodeObstacleReach, nudgingDistance, routedStroke, stemReach } from './bands.js';
 import { stemCache, stemPlan } from './sides-two.js';
 import { groupBoxes, groupConsumers } from '../score/model.js';
-import { segmentRectDistance } from '../score/geometry.js';
+import { segmentRectDistance } from '../geometry/planar.js';
 import { GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 

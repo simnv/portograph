@@ -1,6 +1,6 @@
 import type { Point, Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
-import { EPS } from '../score/geometry.js';
+import { EPS } from '../geometry/planar.js';
 import { chordEnds, chordPoints, overlayBlockers, straightBetween, type OverlayEnd, type OverlayShape, type ShapeQuery } from './overlay-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { drawn, drawnCrossings, overlayCrossingPoints, portKey, type Drawn } from './read/crossings.js';

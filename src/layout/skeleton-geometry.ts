@@ -7,7 +7,7 @@ import { isGridGroup, packGrid } from './grid.js';
 import { rebuildFrames } from './frames.js';
 import { packFrameColumns, type Column } from './columns.js';
 import { GROUP_PADDING } from './regions.js';
-import { bottom, contains as rectContains, EPS, rectOverlap, right } from '../score/geometry.js';
+import { bottom, contains as rectContains, EPS, rectOverlap, right } from '../geometry/planar.js';
 
 /**
  * The same comparators the published gates use, at the same tolerance. `gates.ts:107` has always

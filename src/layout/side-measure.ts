@@ -3,7 +3,7 @@ import type { Point, Rect } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel, LayoutNode, LayoutPort } from '../model/layout.js';
 import { placePortPill } from '../geometry/index.js';
 import { measurePortPill } from '../text/index.js';
-import { EPS } from '../score/geometry.js';
+import { EPS } from '../geometry/planar.js';
 import { isRoutedChord } from './frame-paths.js';
 import { isSideLane, transitTiers } from './lanes.js';
 import { crosses, overlayBlockers, overlayPath, straightChord, type OverlayBlockers } from './overlay-paths.js';

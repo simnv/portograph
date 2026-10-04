@@ -7,7 +7,7 @@ import { edgeMargin } from '../layout/bundle-geometry.js';
 import { allocateGapRuns } from '../layout/gap-runs.js';
 import { findPort, straightCorridorClear } from '../layout/row-paths.js';
 import { portId } from '../layout/skeleton-graph.js';
-import { EPS, samePoint, segmentRect } from '../score/geometry.js';
+import { EPS, samePoint, segmentRect } from '../geometry/planar.js';
 import { groupBoxes, groupConsumers } from '../score/model.js';
 import { disjointShapes } from './containment.js';
 export { disjointShapes } from './containment.js';

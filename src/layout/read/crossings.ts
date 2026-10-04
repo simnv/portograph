@@ -1,10 +1,10 @@
 import type { Point } from '../../model/geometry.js';
 import type { LayoutModel, PathSegment } from '../../model/layout.js';
-import { EPS, intersection, samePoint } from '../../score/geometry.js';
+import { EPS, intersection, samePoint } from '../../geometry/planar.js';
 
 /**
  * Shared readers: how many crossings. "A crossing" is several quantities, and each is a named mode. They share
- * the geometric primitives (`intersection`, `samePoint` of `score/geometry.ts`) and nothing else; a count of one mode
+ * the geometric primitives (`intersection`, `samePoint` of `geometry/planar.ts`) and nothing else; a count of one mode
  * is no estimate of another's. The modes, with the readers that live elsewhere and keep their own meaning:
  *
  * | mode | counts | reader |

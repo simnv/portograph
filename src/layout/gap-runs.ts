@@ -1,6 +1,6 @@
 import type { Point, Side } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
-import { bottom, EPS } from '../score/geometry.js';
+import { bottom, EPS } from '../geometry/planar.js';
 import { nudgingDistance, stemReach } from './bands.js';
 import { plannedSegments, tierGapPlans, type GapPlan, type PlannedPart } from './gap-plan.js';
 import { findPort } from './row-paths.js';

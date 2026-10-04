@@ -20,7 +20,7 @@ import { alignmentAllowance, ownSideWidth } from './size.js';
 import { withLayoutMutation } from './mutation.js';
 import { placeOverlayFree } from './overlay-place.js';
 import { fitRegionGroup, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
-import { EPS, segmentRectDistance } from '../score/geometry.js';
+import { EPS, segmentRectDistance } from '../geometry/planar.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { chordKind, isRoutedChord } from './frame-paths.js';
 

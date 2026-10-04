@@ -1,5 +1,5 @@
 import type { Bundle, LayoutModel, PathSegment, Point, Rect } from '../model/index.js';
-import { segmentRect, segmentRectDistance } from '../score/geometry.js';
+import { segmentRect, segmentRectDistance } from '../geometry/planar.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { clearOfGroupEdges, coordinate, edgeMargin, groupDepthPairs, normal, type Member } from './bundle-geometry.js';
 import { BundleFeasibilityError, pathBounds, polyline } from './bundle-paths.js';

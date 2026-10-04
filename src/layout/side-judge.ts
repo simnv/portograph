@@ -1,6 +1,6 @@
 import type { Diagnostic, LayoutLink, LayoutModel, LayoutNode, LayoutPort } from '../model/layout.js';
 import type { Point, Rect } from '../model/geometry.js';
-import { EPS, near } from '../score/geometry.js';
+import { EPS, near } from '../geometry/planar.js';
 import { isRoutedChord } from './frame-paths.js';
 import { crossingsOf } from './read/crossings.js';
 import { hintsFacingAway } from './side-hints.js';

@@ -6,7 +6,7 @@ import { groupBoxes, groupConsumers } from '../score/model.js';
 import { GROUP_LABEL_GEOMETRY, routedStroke } from '../layout/bands.js';
 import { portId } from '../layout/skeleton-graph.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
-import { bottom, right } from '../score/geometry.js';
+import { bottom, right } from '../geometry/planar.js';
 import type { RoutePin } from './types.js';
 import { PLACEMENT_EPS } from '../layout/tolerance.js';
 

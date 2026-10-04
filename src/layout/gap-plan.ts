@@ -1,6 +1,6 @@
 import type { Point, Rect } from '../model/geometry.js';
 import type { Diagnostic, LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
-import { bottom, EPS, intersection, right, samePoint, segmentDistance } from '../score/geometry.js';
+import { bottom, EPS, intersection, right, samePoint, segmentDistance } from '../geometry/planar.js';
 import { measureText } from '../text/index.js';
 import { GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { cantonTiers, GROUP_LABEL_GEOMETRY, nodeObstacleReach, nudgingDistance, routedStroke } from './bands.js';
