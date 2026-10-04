@@ -1,0 +1,32 @@
+# Expected: a right flank beside a core whose tier also holds a canton member and a plain neighbour is seated beside the frame columns where
+# the rows rule will leave them, so no row is found standing in the flank (architecture ticket 11). Before the fix the sides-two sweep seated
+# the flank a band gap from the canton member's cell, and the rows rule then moved the canton column right by a band gap and a column slack,
+# into the flank, and threw "Row repack of ... collides with flank".
+# Source: architecture ticket 11.
+portograph: 2
+profile: network
+groups:
+  town: { label: Town }
+  upper: { tier: 0, label: Upper }
+  core: { tier: 1, label: Core }
+  neighbour: { tier: 1, label: Neighbour }
+  east: { tier: 1, canton: town, label: East }
+  south: { tier: 2, canton: town, label: South }
+  side-right: { align: right, of: core, label: Side right }
+nodes:
+  up-1: { group: upper, class: router, ports: [100G, 100G, 100G] }
+  core-1: { group: core, class: router, ports: [100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G] }
+  core-2: { group: core, class: router, ports: [100G, 100G, 100G, 100G, 100G, 100G] }
+  nb-1: { group: neighbour, class: router, ports: [100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G] }
+  nb-2: { group: neighbour, class: router, ports: [100G, 100G, 100G, 100G, 100G, 100G] }
+  east-1: { group: east, class: router, ports: [100G, 100G] }
+  south-1: { group: south, class: router, ports: [100G] }
+  side-r: { group: side-right, class: router, ports: [100G, 100G] }
+links:
+  - [up-1.100G, core-1.*]
+  - [up-1.100G, core-2.*]
+  - [up-1.100G, nb-1.*]
+  - [up-1.100G, nb-2.*]
+  - [up-1.100G, east-1.*]
+  - [east-1.100G, south-1.*]
+  - [side-r.100G, core-1.*]
