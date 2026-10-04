@@ -34,6 +34,7 @@ import { judgeTrial, predictedWorse, predictPublished, routedBends, trialNotes }
 import type { AttemptTraceEvent } from '../layout/placement-attempt.js';
 import { PLACEMENT_EPS } from '../layout/tolerance.js';
 import { attemptCounters } from '../layout/attempt-counters.js';
+import { shadowCourses } from '../layout/course-shadow.js';
 import { countStage, ledgerOn, ledgerSnapshot, startPlacementEntry, type LedgerSnapshot } from '../layout/attempt-ledger.js';
 
 
@@ -154,6 +155,8 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     // The ledger reads the routed chords and the straight overlay links after each stage, only when a test or the trace asked for it.
     const ledger = ledgerOn(options.attemptTrace !== undefined);
     let model = stepIn('sides-two', () => sidesTwo(resolved, nodeFloors));
+    // The shadow course plan reports and applies nothing (ticket 15, phase 3); it reads the model once and only with the ledger on.
+    if (ledger) attemptCounters.shadows.push(shadowCourses(model));
     let seen: LedgerSnapshot | undefined = ledger ? ledgerSnapshot(model) : undefined;
     const entry = ledger ? startPlacementEntry() : undefined;
     const account = (stage: string): void => { if (seen === undefined || entry === undefined) return; const now = ledgerSnapshot(model); countStage(stage, seen, now, entry); seen = now; };

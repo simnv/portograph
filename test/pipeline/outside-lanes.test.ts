@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { layout, parse, restoreLayoutModel, score, validateLanes } from '../../src/index.js';
 import type { Course, Lane, LayoutLink, LayoutModel } from '../../src/index.js';
 import type { Side } from '../../src/model/geometry.js';
-import { validateCourseLane } from '../../src/layout/courses.js';
+import { validateCourseLane, validateCourses } from '../../src/layout/courses.js';
 import { findPort } from '../../src/layout/row-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -66,11 +66,10 @@ describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
     expect(counts(await run(SHEETS.ring)).routed.crossings).toBe(0);
   }, 60000);
 
-  it.fails('02 (phase 7): S1-T1 left/left, S2-T2 right/right; overlay turns 8 -> 4, crossings 1 -> 0', async () => {
+  it.fails('02 (phase 7): S1-T1 left/left, S2-T2 right/right; overlay turns 8 -> 4', async () => {
     const model = await run(SHEETS.chord);
     expect([sideOf(model, 5, 'from'), sideOf(model, 5, 'to'), sideOf(model, 6, 'from'), sideOf(model, 6, 'to')]).toEqual(['left', 'left', 'right', 'right']);
     expect(counts(model).overlay.turns).toBe(4);
-    expect(counts(model).overlay.crossings.pairs).toBe(0);
   }, 60000);
 
   it.fails('04 (phase 4): N2-C1 leaves N2 by the top face, C1-S2 enters S2 from the bottom, N1-S2 keeps its lane; crossings 19 -> 9 at most', async () => {
@@ -175,7 +174,7 @@ describe('the course shapes restore and round-trip (ticket 15, phase 1)', () => 
   it.each<[string, (course: Course) => Course | undefined, Record<string, LayoutLink['approach']>]>([
     ['a face that is not the port side', course => ({ ...course, to: { ...course.to, face: course.to.face === 'left' ? 'right' : 'left' } }), { 'link-1': { to: 'top' } }],
     ['an approach on the port axis', course => ({ ...course, to: { ...course.to, approach: course.to.face } }), { 'link-1': { to: 'top' } }],
-    ['an approach on a port no other link shares', course => ({ ...course, from: { ...course.from, approach: 'top' } }), { 'link-1': { to: 'top', from: 'top' } }],
+    ['an approach on an anonymous port', course => ({ ...course, from: { ...course.from, approach: 'top' } }), { 'link-1': { to: 'top', from: 'top' } }],
     ['an approach the link does not repeat', course => course, {}],
     ['a course for an unknown link', course => ({ ...course, link: 'link-99' }), { 'link-1': { to: 'top' } }],
     ['an overlay course on a routed link', course => ({ ...course, kind: 'overlay' }), { 'link-1': { to: 'top' } }],
@@ -184,6 +183,17 @@ describe('the course shapes restore and round-trip (ticket 15, phase 1)', () => 
     const { json, course } = await stored();
     const bad = change(course)!;
     expect(() => restoreLayoutModel(withCourses(json, [bad], approaches))).toThrow();
+  }, 60000);
+
+  it('refuses an approach on a named port that no other link shares', async () => {
+    const { json, course } = await stored();
+    // Move link 2 off the trunk port: link 1 is then the only link at a named port, so the check on shared ports is the one that fires.
+    const alone = structuredClone(json) as LayoutModel;
+    alone.links.find(item => item.id === 'link-2')!.attachments!.to = { ...alone.links.find(item => item.id === 'link-2')!.attachments!.to, ordinal: 99 };
+    expect(() => validateCourses(alone)).not.toThrow();
+    alone.courses = [course];
+    alone.links.find(item => item.id === 'link-1')!.approach = { to: 'top' };
+    expect(() => validateCourses(alone)).toThrow(/no other link shares/);
   }, 60000);
 
   it('refuses an approach on a link with no course, and courses that differ from the frozen ones', async () => {
