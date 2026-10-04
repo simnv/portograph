@@ -1,10 +1,10 @@
 import type { LayoutGroup, LayoutModel, LayoutNode, LayoutPort } from '../model/layout.js';
 import type { Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
-import { isSideLane, laneSidesHold, recordSeatedSideLanes, optionalMoveHolds, sideLaneSource, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
+import { laneSidesHold, recordSeatedSideLanes, optionalMoveHolds, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
 import { cellReach } from './frames.js';
 import { standsInCanton } from './read/canton.js';
-import { nodeTier } from './read/tier.js';
+import { centringFeeds, type Feed } from './read/feeds.js';
 import { straightChordIds } from './read/overlay-straight.js';
 import { besideWalls, frameColumns, keepOutShifts, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
 import { findPort } from './row-paths.js';
@@ -27,46 +27,6 @@ import { chordKind, isRoutedChord } from './frame-paths.js';
 export interface CentreBudget { remaining: number; passes: number }
 export function createCentreBudget(): CentreBudget { return { remaining: 8, passes: 0 }; }
 export { selectAnchorTier };
-/**
- * `x` is the authoritative feed x: the parent anchor, or the owned lane x in the adjacent tier for a
- * transit. `key` is the parent port either way: a parent port feeding several children is vertical
- * to one of them (the first by x), and the rest fan — lanes packed at lane width cannot seat two
- * default-width children side by side, so a per-lane winner would only manufacture infeasible pins.
- */
-interface Feed { parent: LayoutPort; child: LayoutPort; link: string; x: number; key: string; transit: boolean }
-function feeds(model: LayoutModel, tier: number, authority: number): Feed[] {
-  const result: Feed[] = [];
-  for (const link of model.links) {
-    if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
-    for (const [parentRef, childRef] of [[link.attachments.from, link.attachments.to], [link.attachments.to, link.attachments.from]]) {
-      if (!parentRef || !childRef || nodeTier(model, childRef.node) !== tier) continue;
-      // The parent is in the adjacent authority tier, or beyond it for a link that transits the
-      // adjacent tier through an owned lane (7a). Both fix the x the child must sit under.
-      const parentTier = nodeTier(model, parentRef.node);
-      if (parentTier === undefined || (tier > authority ? parentTier > authority : parentTier < authority)) continue;
-      if ([parentRef.node, childRef.node].some(id => model.groups[model.document.nodes[id]!.group]!.flank)) continue;
-      const parent = findPort(model, parentRef)!, child = findPort(model, childRef)!;
-      if (parent.side !== (tier > authority ? 'bottom' : 'top') || child.side !== (tier > authority ? 'top' : 'bottom')) continue;
-      // A bundle member carries its lane only until 7e, which owns member geometry; only a
-      // non-bundle transit with an owned lane in the authority tier fixes its child's x here.
-      const lane = parentTier === authority ? undefined
-        : model.lanes.find(lane => lane.owner.kind === 'link' && lane.owner.id === link.id && lane.tier === authority);
-      if (parentTier !== authority && (!lane || link.bundle)) continue;
-      result.push({ parent, child, link: link.id, x: lane ? lane.x : parent.anchor!.x,
-        key: portId(parent.ref), transit: Boolean(lane) });
-    }
-    // A side lane is one feed of its link: the far port is the child and sits under the lane's x (side-faces.md, Section 10, *The far port*).
-    const side = model.lanes.find(lane => isSideLane(lane) && lane.owner.kind === 'link' && lane.owner.id === link.id);
-    if (side) {
-      const farRef = sideLaneSource(link, side), lateralRef = side.port!;
-      const farTier = nodeTier(model, farRef.node);
-      if (farTier === tier && ![farRef.node, lateralRef.node].some(id => model.groups[model.document.nodes[id]!.group]!.flank)) {
-        result.push({ parent: findPort(model, lateralRef)!, child: findPort(model, farRef)!, link: link.id, x: side.x, key: portId(lateralRef), transit: true });
-      }
-    }
-  }
-  return result;
-}
 function shiftNode(node: LayoutNode, dx: number): void {
   node.bounds!.x += dx;
   for (const port of node.ports) port.anchor!.x += dx;
@@ -298,7 +258,7 @@ export function centreContext(model: LayoutModel, anchor: number, columns: reado
   const steps = [...tiers.slice(index + 1).map((tier, i) => ({ tier, authority: tiers[index + i]! })),
     ...tiers.slice(0, index).reverse().map((tier, i) => ({ tier, authority: tiers[index - i]! }))];
   const winners = new Map<string, string>();
-  for (const step of steps) for (const feed of [...feeds(model, step.tier, step.authority)].sort((a, b) => model.nodes[a.child.ref.node]!.bounds!.x - model.nodes[b.child.ref.node]!.bounds!.x || portId(a.child.ref).localeCompare(portId(b.child.ref)))) {
+  for (const step of steps) for (const feed of [...centringFeeds(model, step.tier, step.authority)].sort((a, b) => model.nodes[a.child.ref.node]!.bounds!.x - model.nodes[b.child.ref.node]!.bounds!.x || portId(a.child.ref).localeCompare(portId(b.child.ref)))) {
     const key = `${step.tier}:${feed.key}`;
     if (!winners.has(key)) winners.set(key, portId(feed.child.ref));
   }
@@ -649,7 +609,7 @@ function centrePasses(model: LayoutModel, budget: CentreBudget): void {
     // fixed point: the net change is nil, the work is not. Every step is measured on its own.
     let stepped = false;
     for (const { tier, authority } of context.steps) {
-      const list = feeds(model, tier, authority), order = context.groupOrder.get(tier)!;
+      const list = centringFeeds(model, tier, authority), order = context.groupOrder.get(tier)!;
       const tail = tailReservation(model, context, tier, order);
       let previous: LayoutGroup | undefined;
       for (const id of order) {
@@ -736,7 +696,7 @@ export function centreViolations(model: LayoutModel, ahead = false, shared?: Cen
   // Every trial starts from the same model, so it is serialized once, on the first trial, and each trial parses that text.
   let replayedText: string | undefined;
   for (const { tier, authority } of context.steps) {
-    const list = feeds(model, tier, authority), order = context.groupOrder.get(tier)!;
+    const list = centringFeeds(model, tier, authority), order = context.groupOrder.get(tier)!;
     const tail = tailReservation(model, context, tier, order);
     let previous: LayoutGroup | undefined;
     for (const id of order) {
@@ -744,7 +704,7 @@ export function centreViolations(model: LayoutModel, ahead = false, shared?: Cen
       const owned = groupFeeds(model, context, tier, list, id, false);
       if (model.document.groups[id]!.shape === 'bar' || !owned.own.length) { previous = group; continue; }
       const trial = JSON.parse(replayedText ??= JSON.stringify(replayed)) as LayoutModel;
-      const step = centreGroupStep(trial, context, tier, feeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, tail);
+      const step = centreGroupStep(trial, context, tier, centringFeeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, tail);
       previous = group;
       // Both lookups below read one key per wanted child; keying them once keeps the scan of the
       // group's own feeds and ports out of the loop. First entry wins, as `find` did.

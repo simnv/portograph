@@ -7,8 +7,9 @@ import { optionalMoveHolds, selectAnchorTier } from './lanes.js';
 import { findPort } from './row-paths.js';
 import { cellTier } from './read/tier.js';
 import { isCantonUnit } from './read/canton.js';
+import { columnPullFeeds, type UnitFeeds } from './read/feeds.js';
 import { straightOverlaysAsDrawn as straightOverlays } from './read/overlay-straight.js';
-import { bandGap, compareId, portId } from './skeleton-graph.js';
+import { bandGap, compareId } from './skeleton-graph.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { groupShape } from './grid.js';
@@ -272,14 +273,6 @@ export function packTier(model: LayoutModel, tier: Unit[], columns: Map<string, 
   if (step !== undefined) packStep(model, tiers, step.index, step.authority, columns, sequence);
 }
 
-/** The two ends of the routed feed links of one unit against the tier packed before it. */
-interface UnitFeeds {
-  /** The x of each distinct port of the tier before, by port id. */
-  parents: Map<string, number>;
-  /** The x of each distinct port of the unit, by port id, with the cell that holds it. */
-  children: Map<string, { x: number; cell: string }>;
-}
-
 /**
  * Reads, for a unit of `tiers[index]`, the routed, attached, non-stub links that leave it towards the tier
  * `authority` on the facing sides, with the current x of both ports (ranked-groups tickets 11 and 16).
@@ -287,44 +280,7 @@ interface UnitFeeds {
  */
 function feedReader(model: LayoutModel, tiers: Unit[][], index: number, authority: number | undefined): (unit: Unit) => UnitFeeds {
   if (authority === undefined) return () => ({ parents: new Map(), children: new Map() });
-  return feedsFrom(model, new Set(tiers[authority]!.flatMap(unit => unit.groups.map(group => group.id))), index > authority);
-}
-
-/**
- * The feeds of a unit towards `sources`, the groups of the tier that is packed before it. `below` says the unit stands
- * below them: its ports on the side that faces them are the top ones. The inner pass of a canton (ticket 56) reads the
- * sources off the tier of another member, or off the tier outside the canton for the member tier nearest the anchor.
- */
-function feedsFrom(model: LayoutModel, sources: ReadonlySet<string>, below: boolean): (unit: Unit) => UnitFeeds {
-  return unit => {
-    const parents = new Map<string, number>(), children = new Map<string, { x: number; cell: string }>();
-    const mine = new Set(unit.groups.map(group => group.id));
-    for (const link of model.links) {
-      if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
-      for (const [own, other] of [[link.attachments.from, link.attachments.to], [link.attachments.to, link.attachments.from]]) {
-        const ownGroup = model.document.nodes[own!.node]?.group, otherGroup = model.document.nodes[other!.node]?.group;
-        if (ownGroup === undefined || otherGroup === undefined || !mine.has(ownGroup)) continue;
-        const ownTier = model.groups[ownGroup]!.tier!, otherTier = model.groups[otherGroup]!.tier;
-        const near = below ? ownTier - 1 : ownTier + 1;
-        // A parent beyond the sources, on their side, is admitted when its link transits the sub-tier `near` through an owned lane: `feeds`
-        // in `centre.ts` admits every parent on the authority side, and the pull must read the same feeds (ticket 69). A bundle member has no lane.
-        const beyond = !sources.has(otherGroup) && otherTier !== undefined && !model.groups[otherGroup]!.flank && (below ? otherTier < near : otherTier > near);
-        if (!sources.has(otherGroup) && !beyond) continue;
-        const child = findPort(model, own!), parent = findPort(model, other!);
-        if (!child?.anchor || !parent?.anchor) continue;
-        if (child.side !== (below ? 'top' : 'bottom') || parent.side !== (below ? 'bottom' : 'top')) continue;
-        // A link that transits the sub-tier next to the sub-tier of the child (7a) reaches it through its owned lane, and centring (`feeds` in
-        // `centre.ts`) puts the child under that lane, not under the parent port. Both rules read one x, or the last to run
-        // wins and a second pass flips the child back (ranked-groups ticket 64). A bundle member carries no lane here.
-        const lane = otherTier === near || link.bundle ? undefined
-          : model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === link.id && item.tier === near);
-        if (beyond && lane === undefined) continue;
-        children.set(portId(child.ref), { x: child.anchor.x, cell: ownGroup });
-        parents.set(portId(parent.ref), lane?.x ?? parent.anchor.x);
-      }
-    }
-    return { parents, children };
-  };
+  return columnPullFeeds(model, new Set(tiers[authority]!.flatMap(unit => unit.groups.map(group => group.id))), index > authority);
 }
 
 /** Packs `tiers[index]`, reading the feeds of the tier `authority` (see `packFrameColumns`). */
@@ -738,7 +694,7 @@ function pullMembers(model: LayoutModel, canton: string, outer: Unit[][]): boole
   for (const { index, sources, below } of order) {
     const units = new Set(tiers[index]!.filter(unit => alone.has(unit)));
     if (sources === undefined || !units.size) continue;
-    moved = pullTier(model, tiers, index, feedsFrom(model, sources, below), 0, { units, wall: { x: box.x, width: box.width }, canton }) || moved;
+    moved = pullTier(model, tiers, index, columnPullFeeds(model, sources, below), 0, { units, wall: { x: box.x, width: box.width }, canton }) || moved;
   }
   return moved;
 }
