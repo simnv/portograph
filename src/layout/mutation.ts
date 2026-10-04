@@ -17,6 +17,7 @@ import { rebuildBands, span, union, validateSkeletonBands } from './skeleton-geo
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, flankPair } from './flanks.js';
 import { rebuildLaneExtents, validateLanes, transitTiers } from './lanes.js';
+import { sameCourses, validateCourses } from './courses.js';
 import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
 import { centreViolations, selectAnchorTier } from './centre.js';
@@ -462,6 +463,8 @@ function validateFreeze(model: LayoutModel): void {
   const freeze = model.freeze;
   if (!freeze || freeze.version !== 1) throw new Error('Missing or unsupported topology freeze');
   same(topology(model), freeze.topology, 'Frozen port topology changed');
+  if (!sameCourses(model.courses, freeze.courses)) throw new Error('Frozen courses changed');
+  validateCourses(model);
   same(freeze.floors.map(floor => floor.node), orderedNodeIds(model.document), 'Frozen floors omit or repeat nodes');
   for (const floor of freeze.floors) if (floor.size.width <= 0 || floor.size.height <= 0) throw new Error('Invalid frozen floor');
   if (freeze.nodeFloors !== undefined) {
@@ -487,6 +490,7 @@ export function freezePortTopology(model: LayoutModel, nodeFloors?: ReadonlyMap<
   result.freeze = { version: 1, topology: clone(topology(model)),
     floors: orderedNodeIds(model.document).map(id => ({ node: id, size: { ...model.nodes[id]!.sizeFloor! } })) };
   const floored = orderedNodeIds(model.document).filter(id => nodeFloors?.has(id));
+  if (model.courses !== undefined) result.freeze.courses = clone(model.courses);
   if (floored.length) result.freeze.nodeFloors = floored.map(id => ({ node: id, size: { ...nodeFloors!.get(id)! } }));
   return protect(result, baseline);
 }
