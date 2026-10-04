@@ -904,6 +904,7 @@ export function alignLinkedGroupGridAndPack(model: LayoutModel, budget?: CentreB
   for (let round = 0; round < GRID_PACK_ROUNDS; round++) {
     if (!alignLinkedGroupGrid(model)) return widened;
     widened = true;
+    if (gridMovedFlanks) { const passes = budget?.passes ?? 0; rebuildRegionGeometry(model, budget, undefined, true); if (budget !== undefined) consumeGrowthPass(budget, passes); }
     // A grid that refuses what the pack would undo widens onto a packed row and leaves it packed; a row that stood open before the grid is packed once.
     if (!packRowsAfterGrid(model)) return widened;
     const passes = budget?.passes ?? 0;
@@ -1154,6 +1155,7 @@ function widensIntoFrame(model: LayoutModel, proposed: { group: LayoutGroup; bou
 }
 
 
+let gridMovedFlanks = false;
 function probeVariant(): string | undefined { return (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.T07; }
 /** TEMPORARY probe of architecture ticket 07 (env T07 = A | B): the flanks of a group and the room a flank gap leaves it. */
 function flanksOf(model: LayoutModel, group: LayoutGroup): LayoutGroup[] {
@@ -1170,6 +1172,7 @@ function flanksOf(model: LayoutModel, group: LayoutGroup): LayoutGroup[] {
  */
 export function alignLinkedGroupGrid(model: LayoutModel): boolean {
   let changed = false, base: Set<string> | undefined;
+  const flankMoved: string[] = [];
   const refused = new Set<string>();
   model.diagnostics = model.diagnostics.filter(item => item.code !== 'GROUP_GRID_YIELDS_TO_PACK');
   // Within one call extents only grow and only ever onto existing box edges, so the process terminates; the cap
@@ -1231,8 +1234,8 @@ export function alignLinkedGroupGrid(model: LayoutModel): boolean {
         const bg = bandGap(model);
         for (const item of proposed) for (const flank of flanksOf(model, item.group)) {
           const fb = flank.bounds!, g = item.group.bounds!;
-          if (flank.flank!.align === 'left') { const gap = g.x - (fb.x + fb.width); if (gap < bg - PLACEMENT_EPS) moveGroup(model, flank, gap - bg, 0); }
-          else { const gap = fb.x - (g.x + g.width); if (gap < bg - PLACEMENT_EPS) moveGroup(model, flank, bg - gap, 0); }
+          if (flank.flank!.align === 'left') { const gap = g.x - (fb.x + fb.width); if (gap < bg - PLACEMENT_EPS) { moveGroup(model, flank, gap - bg, 0); flankMoved.push(...flank.nodes); } }
+          else { const gap = fb.x - (g.x + g.width); if (gap < bg - PLACEMENT_EPS) { moveGroup(model, flank, bg - gap, 0); flankMoved.push(...flank.nodes); } }
         }
       }
       moved = changed = true;
@@ -1240,6 +1243,8 @@ export function alignLinkedGroupGrid(model: LayoutModel): boolean {
     if (!moved) break;
   }
   if (pass >= bound) placementWarning(model, 'GROUP_GRID_NON_CONVERGENCE', 'Linked-group grid did not settle within its pass bound; the boxes it reached are kept.', [], 'group');
+  gridMovedFlanks = flankMoved.length > 0;
+  if (flankMoved.length) rebuildNodeGeometry(model, flankMoved, 'current');
   if (changed) { rebuildBands(model); rebuildRegions(model); }
   return changed;
 }
