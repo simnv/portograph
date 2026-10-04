@@ -1,5 +1,5 @@
 import { LEGEND_DEFAULT_CLASS, NETWORK_LINK_CLASSES, NETWORK_NODE_CLASSES, NETWORK_PORT_ROLES, NETWORK_PORT_STATUS, NETWORK_THEME,
-  nodeBodyFill, nodeClassPaint, portRolePaint } from '../profiles/network/theme.js';
+  nodeBodyFill, nodeClassPaint, nodeClassStyle, washFill, washToken, portRolePaint } from '../profiles/network/theme.js';
 import type { ThemeMode } from '../profiles/network/theme.js';
 
 /**
@@ -124,4 +124,19 @@ export function themeCss(): string {
     '@media (prefers-color-scheme: dark){', ...themeRules('dark').map(rule => `  ${rule}`), '}',
     '@media print{', ...themeRules('print').map(rule => `  ${rule}`), '}',
   ].join('\n');
+}
+
+/**
+ * Wash rules for the node classes a sheet defines and the profile does not know, one per plain
+ * class token a node's wash resolves to. Emitted ahead of the document's own `css:`, so an author
+ * rule still wins. Same three modes as the theme.
+ */
+export function sheetClassWashCss(classAttrs: readonly (string | undefined)[]): string {
+  const tokens = [...new Set(classAttrs.map(washToken).filter((token): token is string =>
+    token !== undefined && nodeClassStyle(token) === undefined))].sort();
+  if (!tokens.length) return '';
+  const rules = (mode: ThemeMode): string[] => tokens.map(token => `.node-body.${token}{fill:${washFill(token, mode)}}`);
+  return [...rules('light'),
+    '@media (prefers-color-scheme: dark){', ...rules('dark').map(rule => `  ${rule}`), '}',
+    '@media print{', ...rules('print').map(rule => `  ${rule}`), '}'].join('\n');
 }

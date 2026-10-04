@@ -101,6 +101,48 @@ export function nodeBodyFill(style: NodeClassStyle | undefined, mode: ThemeMode)
   return mode === 'light' ? mixHex(plain, style.hue[200], 0.75) : mixHex(plain, style.hue[800], 0.45);
 }
 
+/**
+ * The wash of a node class the profile does not know (a class the sheet defines). The sheet states
+ * no colour for such a class, so a stable FNV-1a hash of its name picks one of eight hues. Only the
+ * two steps a wash needs are held: the light 200 and the dark 800, plus a grey for print.
+ */
+export const WASH_PALETTE: readonly { light: string; dark: string; print: string }[] = [
+  { light: SLATE[200], dark: SLATE[800], print: NEUTRAL[300] },
+  { light: TEAL[200], dark: TEAL[800], print: NEUTRAL[700] },
+  { light: INDIGO[200], dark: INDIGO[800], print: NEUTRAL[500] },
+  { light: WARM[200], dark: WARM[800], print: NEUTRAL[900] },
+  { light: '#d9ecd6', dark: '#2c4a2b', print: NEUTRAL[400] },
+  { light: '#f3dce0', dark: '#5a2c36', print: NEUTRAL[600] },
+  { light: '#f1e6cc', dark: '#563f12', print: NEUTRAL[800] },
+  { light: STEEL[200], dark: STEEL[800], print: NEUTRAL[300] },
+];
+
+export function classHash(name: string): number {
+  let hash = 0x811c9dc5;
+  for (let at = 0; at < name.length; at += 1) hash = Math.imul(hash ^ name.charCodeAt(at), 0x01000193) >>> 0;
+  return hash;
+}
+
+const SAFE_TOKEN = /^[A-Za-z_][\w-]*$/;
+
+/**
+ * The one token of a node's `class` attribute that washes its body: the first the profile knows, else
+ * the first plain identifier (a token that needs escaping in a selector washes nothing).
+ */
+export function washToken(classAttr: string | undefined): string | undefined {
+  const tokens = (classAttr ?? '').split(/\s+/).filter(Boolean);
+  return tokens.find(token => nodeClassStyle(token) !== undefined) ?? tokens.find(token => SAFE_TOKEN.test(token));
+}
+
+/** Body fill for one class token in one mode; no token, the plain body. */
+export function washFill(token: string | undefined, mode: ThemeMode): string {
+  const known = nodeClassStyle(token);
+  if (known || token === undefined) return nodeBodyFill(known, mode);
+  const plain = NETWORK_THEME[mode].node.fill, entry = WASH_PALETTE[classHash(token) % WASH_PALETTE.length]!;
+  if (mode === 'print') return mixHex(plain, entry.print, 0.18);
+  return mode === 'light' ? mixHex(plain, entry.light, 0.75) : mixHex(plain, entry.dark, 0.45);
+}
+
 export interface LinkClassStyle {
   /** Stroke colour (light). */
   stroke: string;

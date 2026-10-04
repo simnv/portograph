@@ -10,7 +10,7 @@ import { EPS, right } from '../geometry/planar.js';
 import { effectiveLayer, validate } from '../score/model.js';
 import { measureText } from '../text/index.js';
 import { CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, linkStrokeWidth } from '../theme/geometry.js';
-import { GeometryLocks, themeCss } from './theme.js';
+import { GeometryLocks, sheetClassWashCss, themeCss } from './theme.js';
 import { authorClass, classes, element, escapeStyle, escapeText, num } from './svg.js';
 
 export { OVERLAY_ENDPOINT_RADIUS };
@@ -473,7 +473,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     { id: `pg-icon-${name}`, viewBox: '0 0 24 24' }, element('path', { d: iconPath(name) }))).join('');
   const documentCss = layout.document.css ?? '';
   const style = element('style', { type: 'text/css' },
-    escapeStyle([themeCss(), locks.css(), documentCss].filter(part => part.trim()).join('\n')));
+    escapeStyle([themeCss(), sheetClassWashCss(Object.values(layout.document.nodes).map(node => node.class)), locks.css(), documentCss].filter(part => part.trim()).join('\n')));
 
   const body = element('rect', { class: 'pg-canvas', x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height })
     + element('g', { class: 'groups' }, groups)

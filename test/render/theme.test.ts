@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import postcss from 'postcss';
 import { describe, expect, it } from 'vitest';
-import { themeCss, themeRules } from '../../src/render/theme.js';
-import { NETWORK_NODE_CLASSES, NETWORK_THEME, nodeBodyFill } from '../../src/profiles/network/theme.js';
+import { sheetClassWashCss, themeCss, themeRules } from '../../src/render/theme.js';
+import { NETWORK_NODE_CLASSES, NETWORK_THEME, WASH_PALETTE, classHash, nodeBodyFill, washFill, washToken } from '../../src/profiles/network/theme.js';
 
 /** Every rule as `[at-rule, selector, declarations]`, in source order, comments and spacing aside. */
 function rules(css: string): [string, string, string[]][] {
@@ -108,5 +108,32 @@ describe('the default theme is the designed sheet', () => {
         expect(ratio(NETWORK_THEME[mode].node.description, fill), `${mode} ${name} description`).toBeGreaterThanOrEqual(4.5);
       }
     }
+  });
+
+  it('washes a sheet-defined class by a stable hash of its name, at 4.5:1 in every mode', () => {
+    const lum = (hex: string): number => {
+      const [r, g, b] = [1, 3, 5].map(at => parseInt(hex.slice(at, at + 2), 16) / 255)
+        .map(v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+      return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+    };
+    const ratio = (a: string, b: string): number => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+    expect(washFill('ntp-client', 'light')).toBe(washFill('ntp-client', 'light'));
+    expect(classHash('switch')).toBe(classHash('switch'));
+    expect(washToken('x-y router')).toBe('router');
+    expect(washToken('a{b} ok')).toBe('ok');
+    // Every palette entry, not only the ones a sheet happens to hash onto.
+    const seen = new Set<number>();
+    for (let at = 0; at < 400; at += 1) seen.add(classHash(`c${at}`) % WASH_PALETTE.length);
+    expect(seen.size).toBe(WASH_PALETTE.length);
+    for (let at = 0; at < 400; at += 1) {
+      for (const mode of ['light', 'dark', 'print'] as const) {
+        const fill = washFill(`c${at}`, mode);
+        expect(ratio(NETWORK_THEME[mode].node.text, fill), `${mode} c${at}`).toBeGreaterThanOrEqual(4.5);
+        expect(ratio(NETWORK_THEME[mode].node.description, fill), `${mode} c${at} description`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+    expect(sheetClassWashCss(['router', 'switch', undefined, 'switch', 'bad{x}']))
+      .toMatch(/^\.node-body\.switch\{fill:#[0-9a-f]{6}\}[\s\S]*prefers-color-scheme: dark[\s\S]*@media print/);
+    expect(sheetClassWashCss(['router'])).toBe('');
   });
 });
