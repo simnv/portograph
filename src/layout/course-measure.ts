@@ -5,7 +5,7 @@ import { polylineCrossings, polylineTurns } from './course-plan.js';
 import { authoredSide, groupShape } from './grid.js';
 import { crossingsOf, strictCrossing } from './read/crossings.js';
 import { linkFacts, type EndFacts } from './read/courses.js';
-import { orderProfile, keys, pathBends, reading, routedFamily, routedBends, compare, lazyCount, type Reading } from './objective.js';
+import { profiles, drawnOverlays, read, pathBends, reading, routedFamily, routedBends, compare, lazyCount, type Reading } from './objective.js';
 import { findPort } from './row-paths.js';
 import { added as namesAdded, constraintFindings, gateFindings } from './trial-findings.js';
 import { portKey } from './sides-one.js';
@@ -161,11 +161,13 @@ export function routedCrossingPairs(model: LayoutModel): number {
   return count;
 }
 
-const courseProfile = orderProfile('course', [keys.fewerBent('routed'), keys.fewerTurns('routed'), keys.fewerCrossings], [], [], true);
+/** The user's unified order over both layers: a course that bends an overlay link to unbend a routed one is no gain. */
+const courseProfile = profiles.unified;
 
 export interface CourseVerdict { kept: boolean; reason: string; removed: string[]; worse: string[] }
 
-const routedReading = (model: LayoutModel): Reading => reading({ routed: routedFamily(routedBends(model)), crossings: lazyCount(() => routedCrossingPairs(model)), crossingMode: 'pairs', tie: [] });
+const routedReading = (model: LayoutModel): Reading => reading({ routed: routedFamily(routedBends(model)), overlay: read(model, { overlays: drawnOverlays(model) }).overlay,
+  crossings: lazyCount(() => routedCrossingPairs(model)), crossingMode: 'pairs', tie: [] });
 
 /**
  * Whether the trial that reserves `courses` is kept: no link the baseline keeps is removed, no offered link has more turns than on the baseline or than it promised, and the
@@ -186,11 +188,14 @@ export function judgeCourseTrial(routedBase: LayoutModel, routedTrial: LayoutMod
   // did not have. A course that buys a turn with a lane overlap, a clearance or a gap is no gain (the stop rule of ticket 15, phase 4).
   const gatesNow = gateFindings(routedTrial), gatesThen = gateFindings(routedBase);
   if (gatesNow === undefined) return verdict(false, 'the routed trial does not score');
-  const gateNew = namesAdded(gatesNow, gatesThen ?? new Set());
+  const gateNew = namesAdded(gatesNow.findings, gatesThen?.findings ?? new Set());
   if (gateNew.length > 0) return verdict(false, `the routed trial has gate findings the baseline does not have (${gateNew.join('; ')})`);
   const constraintNew = namesAdded(constraintFindings(routedTrial), constraintFindings(routedBase));
   if (constraintNew.length > 0) return verdict(false, `the routed trial breaks a hard constraint the baseline holds (${constraintNew.join('; ')})`);
+  // The published result must not be worse than the baseline's by the quality the user reads: a turn bought with a canvas 21 % wider is no gain. The order below
+  // decides only among trials that hold Q.
+  if (gatesThen !== undefined && gatesNow.Q < gatesThen.Q - 1e-9) return verdict(false, `the routed trial lowers the quality Q (${gatesNow.Q.toFixed(4)} against ${gatesThen.Q.toFixed(4)})`);
   const now = routedReading(routedTrial), then = routedReading(routedBase);
-  if (!(compare(now, then, courseProfile) < 0)) return verdict(false, `the routed trial gives no gain (${now.routed.bent} bent links, ${now.routed.turns} turns, ${now.crossings()} crossings, against ${then.routed.bent}, ${then.routed.turns} and ${then.crossings()})`);
+  if (!(compare(now, then, courseProfile) < 0)) return verdict(false, `the routed trial gives no gain (${now.routed.bent + now.overlay.bent} bent links, ${now.routed.turns + now.overlay.turns} turns, ${now.crossings()} crossings, against ${then.routed.bent + then.overlay.bent}, ${then.routed.turns + then.overlay.turns} and ${then.crossings()})`);
   return verdict(true, '');
 }

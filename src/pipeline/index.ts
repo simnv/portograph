@@ -276,7 +276,10 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     const lastRerun = offer.courses.length > 0 && reruns + 1 >= maxReruns;
     // Phase 3b's unmoved offer is a side trial too: when 7f moved the placement and the base has no offer, an offer of the unmoved copy may stand (the filter reads it).
     const unmovedMayStand = (): boolean => baseMoved && (baseUnmoved === undefined || measureSides(baseUnmoved, kept7e, refused).hints.size > 0);
-    const skipped = lastRerun && (reruns >= maxReruns || measureSides(base, kept7e, refused).hints.size > 0 || unmovedMayStand());
+    // The course round gives way to a side round that has an offer on the baseline: a course kept first would take the offer away (the 3b pattern), and the side round
+    // is judged on the same order. It also gives way when it would take the last re-run from a side offer that may stand.
+    const sideOffers = offer.courses.length > 0 && measureSides(base, kept7e, refused).hints.size > 0;
+    const skipped = sideOffers || (lastRerun && (reruns >= maxReruns || unmovedMayStand()));
     if (skipped) options.testSideTrace?.({ ev: 'course-skipped', offer, reruns });
     else if (offer.courses.length > 0) {
       const nodeFloors = new Map(options.testNodeFloors ?? []);
