@@ -1154,6 +1154,7 @@ function widensIntoFrame(model: LayoutModel, proposed: { group: LayoutGroup; bou
 }
 
 
+function probeVariant(): string | undefined { return (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.T07; }
 /** TEMPORARY probe of architecture ticket 07 (env T07 = A | B): the flanks of a group and the room a flank gap leaves it. */
 function flanksOf(model: LayoutModel, group: LayoutGroup): LayoutGroup[] {
   return Object.values(model.groups).filter(item => item.flank?.of === group.id && item.bounds !== undefined
@@ -1215,7 +1216,7 @@ export function alignLinkedGroupGrid(model: LayoutModel): boolean {
         }
       }
       for (const item of proposed) item.group.bounds = item.bounds;
-      if (axis === 'x' && process.env.T07 === 'A') {
+      if (axis === 'x' && probeVariant() === 'A') {
         // Variant A: a widened group pushes each flank outward to keep a bandGap.
         const bg = bandGap(model);
         for (const item of proposed) for (const flank of flanksOf(model, item.group)) {
