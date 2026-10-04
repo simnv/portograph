@@ -14,7 +14,7 @@ import { rebuildRegionGeometry } from './region-rebuild.js';
 import { findPort, straightCorridorClear } from './row-paths.js';
 import { bandGap, portId } from './skeleton-graph.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
-import { closeCantons, columnShifts, keepOutShifts, holdColumnAxes, packBesideRows, straightOverlays, sweptUnits } from './columns.js';
+import { closeCantons, columnShifts, keepOutShifts, holdColumnAxes, packBesideRows, sweptUnits } from './columns.js';
 import { deriveFrames } from './frames.js';
 import { bandHeldBy, bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placementWarning, rebuildRegions, right } from './regions.js';
 import { withLayoutMutation } from './mutation.js';
@@ -29,6 +29,7 @@ import { attemptCounters } from './attempt-counters.js';
 import type { AttemptTraceEvent } from './placement-attempt.js';
 import { isCantonFrame } from './read/canton.js';
 import { frameTitleEdge, groupTitleEdge } from './read/title-edge.js';
+import { straightOverlaysAsDrawn as straightOverlays } from './read/overlay-straight.js';
 
 export const GROUP_LABEL_GEOMETRY = {
   fontFamily: FONT_FAMILY,

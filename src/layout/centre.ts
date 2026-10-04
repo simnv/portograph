@@ -5,11 +5,12 @@ import { isSideLane, laneSidesHold, recordSeatedSideLanes, optionalMoveHolds, si
 import { cellReach } from './frames.js';
 import { standsInCanton } from './read/canton.js';
 import { nodeTier } from './read/tier.js';
+import { straightChordIds } from './read/overlay-straight.js';
 import { besideWalls, frameColumns, keepOutShifts, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
 import { findPort } from './row-paths.js';
 import { attemptCounters } from './attempt-counters.js';
 import { portId, bandGap, SKELETON_SPACING } from './skeleton-graph.js';
-import { crosses, overlayBlockers, straightChord } from './overlay-paths.js';
+import { crosses } from './overlay-paths.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { packRowsOf } from './grid.js';
@@ -461,11 +462,6 @@ function groupFeeds(model: LayoutModel, context: CentreContext, tier: number, li
  * by the publication/restore check, so both read one definition.
  */
 const CHORD_STAGES = ['bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'];
-/** The overlay links that draw one straight segment in the model as it stands. */
-function straightOverlays(model: LayoutModel): Set<string> {
-  const blockers = overlayBlockers(model);
-  return new Set(model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && straightChord(model, link, blockers) !== undefined).map(link => link.id));
-}
 function centreGroupStep(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>): { unresolved: Set<string>; group: LayoutGroup } {
   // From 7e on, an overlay link that draws one straight segment keeps the space placement reserved for it. A step that leaves fewer
   // of them straight (a body or a pill now stands on a chord) is declined as a whole, like a step that solves nothing: the group stays
@@ -474,11 +470,11 @@ function centreGroupStep(model: LayoutModel, context: CentreContext, tier: numbe
   const group = model.groups[id]!;
   // `moveGroup` leaves pill bounds behind, and the chord reads them: both readings are taken on rebuilt nodes.
   rebuildNodeGeometry(model, group.nodes, 'current');
-  const held = straightOverlays(model), breached = new Set([...keepOutShifts(model).keys()].map(item => item.id));
+  const held = straightChordIds(model), breached = new Set([...keepOutShifts(model).keys()].map(item => item.id));
   const snapshot = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
   const result = centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail);
   rebuildNodeGeometry(model, model.groups[id]!.nodes, 'current');
-  const now = straightOverlays(model);
+  const now = straightChordIds(model);
   // A frame edge that a foreign drop would run along is a spacing routing can only discover; a step may not make one (ticket 75).
   if (now.size >= held.size && [...keepOutShifts(model).keys()].every(item => breached.has(item.id))) return result;
   model.groups[id] = snapshot.group;

@@ -21,6 +21,7 @@ import { bandGap } from './skeleton-graph.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { attemptCounters } from './attempt-counters.js';
 import { nodeTier } from './read/tier.js';
+import { isOneSegment } from './read/overlay-straight.js';
 import { overlayCrossingPairs } from './read/crossings.js';
 import { standsInRootCanton } from './read/canton.js';
 
@@ -90,7 +91,7 @@ const routedLinks = (model: LayoutModel): LayoutLink[] =>
 function read(model: LayoutModel, overlays: readonly LayoutLink[]): Reading {
   const blockers = overlayBlockers(model);
   const paths = overlays.map(link => ({ id: link.id, segments: overlayPath(model, link, blockers).segments }));
-  const overlay = new Set(paths.filter(path => path.segments.length === 1).map(path => path.id));
+  const overlay = new Set(paths.filter(path => isOneSegment(path.segments)).map(path => path.id));
   let counted: number | undefined;
   const crossings = (): number => (counted ??= overlayCrossingPairs(paths.map(path => path.segments)));
   const routed = new Set(routedLinks(model).filter(link => {

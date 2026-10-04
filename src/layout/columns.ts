@@ -1,4 +1,4 @@
-import type { Point, Rect } from '../model/geometry.js';
+import type { Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { frameSubtreeCells } from '../model/model.js';
 import { cellReach, deriveFrames, frameNodes } from './frames.js';
@@ -7,11 +7,12 @@ import { optionalMoveHolds, selectAnchorTier } from './lanes.js';
 import { findPort } from './row-paths.js';
 import { cellTier } from './read/tier.js';
 import { isCantonUnit } from './read/canton.js';
+import { straightOverlaysAsDrawn as straightOverlays } from './read/overlay-straight.js';
 import { bandGap, compareId, portId } from './skeleton-graph.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { groupShape } from './grid.js';
-import { crosses, overlayPath } from './overlay-paths.js';
+import { crosses } from './overlay-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 
@@ -1043,18 +1044,6 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
     warnCloseUp(model, cantons, named, cause);
   }
   return allowed && !blocked;
-}
-
-/** The attached overlay links that stand as one straight segment now, with the groups at their ends. */
-export function straightOverlays(model: LayoutModel, only?: ReadonlySet<string>): { id: string; ends: Set<string>; from: Point; to: Point }[] {
-  const found: { id: string; ends: Set<string>; from: Point; to: Point }[] = [];
-  for (const link of model.links) {
-    if (link.layer !== 'overlay' || link.meshBus !== undefined || !link.attachments || (only && !only.has(link.id))) continue;
-    const { segments } = overlayPath(model, link);
-    if (segments.length !== 1) continue;
-    found.push({ id: link.id, ends: new Set([link.attachments.from.node, link.attachments.to.node].map(node => model.document.nodes[node]!.group)), from: segments[0]!.from, to: segments[0]!.to });
-  }
-  return found;
 }
 
 /**
