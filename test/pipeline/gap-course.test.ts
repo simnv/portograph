@@ -4,6 +4,8 @@ import { layout, parse, restoreLayoutModel, score, validateLanes } from '../../s
 import type { Course, LayoutLink, LayoutModel } from '../../src/index.js';
 import type { Side } from '../../src/model/geometry.js';
 import { gapEnds, isGapCourse } from '../../src/layout/course-gap.js';
+import { beats, gainOf } from '../../src/layout/course-measure.js';
+import { probeGapLane } from '../../src/layout/lanes.js';
 import { endMode, movesPort } from '../../src/layout/course-rows.js';
 import { isGapRun, laneRunKind } from '../../src/layout/lane-kind.js';
 import { findPort } from '../../src/layout/row-paths.js';
@@ -84,6 +86,34 @@ describe('the column-gap course on hand-solve 09 (ticket 15, phase 5)', () => {
     const model = await layout(parse(source(ACROSS)), options);
     expect((model.courses ?? []).filter(course => isGapCourse(course))).toEqual([]);
   }, 60000);
+});
+
+describe('the offer and 7a share one admission test', () => {
+  it('admits the lane the published layout holds, at the same x, and refuses a column that a lane or a body closes', async () => {
+    const model = await layout(parse(source(AROUND)), options);
+    const lane = model.lanes.find(item => item.id === 'gap-lane:link-6:0')!, course = model.courses!.find(item => item.link === 'link-6')!;
+    const admitted = probeGapLane(model, link(model, 6), course);
+    expect('lane' in admitted && Math.abs(admitted.lane.x - lane.x) < 1e-6).toBe(true);
+    // A lane already reserved in the column leaves no room (reserved lanes count, as in 7a).
+    const blocker = { ...lane, id: 'gap-lane:other:0', owner: { kind: 'link' as const, id: 'other' }, bounds: { ...lane.bounds } };
+    const closed = probeGapLane(model, link(model, 6), course, [blocker]);
+    expect('why' in closed).toBe(true);
+    // A course whose ends stand in two bands is refused by the same test.
+    const across = probeGapLane(model, link(model, 1), { ...course, link: 'link-1' });
+    expect('why' in across && /two bands/.test(across.why)).toBe(true);
+  }, 60000);
+});
+
+describe('a restored link outranks any bend or turn gain (the budget tie-break)', () => {
+  it('ranks restored links first, then bent links, then turns', () => {
+    const restoring = gainOf([[undefined, 3]]), bending = gainOf([[9, 0], [8, 0]]);
+    expect(restoring).toEqual([1, 0, 0]);
+    expect(beats(restoring, bending)).toBe(true);
+    expect(beats(bending, restoring)).toBe(false);
+    expect(beats(gainOf([[4, 1]]), gainOf([[4, 3]]))).toBe(true);
+    expect(beats(gainOf([[4, 0]]), gainOf([[9, 3]]))).toBe(true);
+    expect(beats(gainOf([[4, 1]]), gainOf([[4, 1]]))).toBe(false);
+  });
 });
 
 describe('the end modes of a gap course', () => {

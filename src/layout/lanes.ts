@@ -1195,38 +1195,55 @@ function reserveCourseLanes(model: LayoutModel, pending: Lane[], occ: (group: La
 function reserveGapLanes(model: LayoutModel, pending: Lane[], occ: (group: LayoutGroup, link?: LayoutLink) => Rect): void {
   for (const course of model.courses ?? []) {
     if (!isGapCourse(course)) continue;
-    const link = model.links.find(item => item.id === course.link), ends = gapEnds(course);
-    if (link?.attachments === undefined || ends === undefined) throw new CourseRefusal(`Course on ${course.link} cannot reserve a column-gap lane`);
-    // A gap course joins two ends of one band; a link across bands has its own lanes (transit, side, perimeter).
-    if (nodeTier(model, link.attachments[ends.lateral].node) !== nodeTier(model, link.attachments[ends.u].node)) throw new CourseRefusal(`The ends of ${link.id} stand in two bands, and a column-gap course joins the ends of one`);
-    const port = link.attachments[ends.lateral], lateral = findPort(model, port);
-    if (lateral?.anchor === undefined || (lateral.side !== 'left' && lateral.side !== 'right') || !outermostOfRow(model, port)) throw new CourseRefusal(`The lateral end of ${link.id} does not face a free column`);
-    const dir = lateral.side === 'right' ? 1 : -1, width = laneWidth(model, link), half = width / 2;
-    const group = model.groups[model.document.nodes[port.node]!.group]!, own = occ(group, link);
-    const holding = (model.frames ?? []).filter(frame => frameNodes(model, frame.id).includes(port.node));
-    const inner = dir > 0 ? Math.max(right(own), ...holding.map(frame => right(frame.box))) : Math.min(own.x, ...holding.map(frame => frame.box.x));
-    const band = model.tierBands.find(item => item.tier === group.tier)?.bounds;
-    if (band === undefined) throw new CourseRefusal(`Tier ${group.tier} has no band`);
-    // The boxes of the band that stand on the lane's side of the unit: groups, the frames that hold none of its nodes, and the lanes already reserved.
-    const meets = (box: Rect): boolean => box.y < bottom(band) - PLACEMENT_EPS && bottom(box) > band.y + PLACEMENT_EPS;
-    const boxes: Rect[] = [];
-    for (const other of Object.values(model.groups)) if (other.id !== group.id && other.tier === group.tier && other.bounds !== undefined && other.nodes.length > 0) boxes.push(occ(other, link));
-    for (const frame of model.frames ?? []) if (!holding.includes(frame) && meets(frame.box)) boxes.push(frame.box);
-    for (const lane of pending) if (lane.tier === group.tier) boxes.push(lane.bounds);
-    const beyond = boxes.filter(box => dir > 0 ? box.x >= inner - PLACEMENT_EPS : right(box) <= inner + PLACEMENT_EPS);
-    if (beyond.length === 0) throw new CourseRefusal(`No unit stands beside the lateral end of ${link.id}: the column is the perimeter's`);
-    const limit = dir > 0 ? Math.min(...beyond.map(box => box.x)) : Math.max(...beyond.map(box => right(box)));
-    if (Math.abs(limit - inner) < width - PLACEMENT_EPS) throw new CourseRefusal(`The column beside the lateral end of ${link.id} is ${Math.abs(limit - inner).toFixed(1)} px wide, the lane needs ${width.toFixed(1)}`);
-    const x = (limit + inner) / 2;
-    const why = sideLaneRefusal(model, link, port, x, pending, occ);
-    if (why !== undefined) throw new CourseRefusal(`The lane of ${link.id} cannot stand in the column beside its lateral end (${why})`);
-    const lane: Lane = { id: gapLaneId(link.id), kind: 'gap', owner: { kind: 'link', id: link.id }, layer: 'routed', group: group.id, tier: group.tier!, side: lateral.side,
-      port: { ...port }, span: { top: group.tier!, bottom: group.tier! }, x, bounds: { x: x - half, width: width, y: 0, height: 0 } };
-    const geometry = gapGeometry(model, link, course);
-    if (geometry === undefined) throw new CourseRefusal(`The lane of ${link.id} has no extent`);
-    Object.assign(lane.bounds, geometry.extent);
-    pending.push(lane);
+    const link = model.links.find(item => item.id === course.link);
+    if (link === undefined) throw new CourseRefusal(`Course on ${course.link} cannot reserve a column-gap lane`);
+    const admitted = admitGapLane(model, link, course, pending, occ);
+    if ('why' in admitted) throw new CourseRefusal(admitted.why);
+    pending.push(admitted.lane);
   }
+}
+/**
+ * The admission test of a column-gap lane, the one 7a and the course offer both call: the lane of `course` for `link` on `model`, standing in the centre of
+ * the free column beside its lateral end (between the unit with the frames that hold it and the nearest box, frame or lane of the band), or the reason it
+ * cannot. `pending` is the lanes already reserved, `occ` the occupied box of a group for the link.
+ */
+export function admitGapLane(model: LayoutModel, link: LayoutLink, course: Course, pending: readonly Lane[], occ: (group: LayoutGroup, link?: LayoutLink) => Rect): { lane: Lane } | { why: string } {
+  const ends = gapEnds(course);
+  if (link.attachments === undefined || ends === undefined) return { why: `Course on ${course.link} cannot reserve a column-gap lane` };
+  // A gap course joins two ends of one band; a link across bands has its own lanes (transit, side, perimeter).
+  if (nodeTier(model, link.attachments[ends.lateral].node) !== nodeTier(model, link.attachments[ends.u].node)) return { why: `The ends of ${link.id} stand in two bands, and a column-gap course joins the ends of one` };
+  const port = link.attachments[ends.lateral], lateral = findPort(model, port);
+  if (lateral?.anchor === undefined || (lateral.side !== 'left' && lateral.side !== 'right') || !outermostOfRow(model, port)) return { why: `The lateral end of ${link.id} does not face a free column` };
+  const dir = lateral.side === 'right' ? 1 : -1, width = laneWidth(model, link), half = width / 2;
+  const group = model.groups[model.document.nodes[port.node]!.group]!, own = occ(group, link);
+  const holding = (model.frames ?? []).filter(frame => frameNodes(model, frame.id).includes(port.node));
+  const inner = dir > 0 ? Math.max(right(own), ...holding.map(frame => right(frame.box))) : Math.min(own.x, ...holding.map(frame => frame.box.x));
+  const band = model.tierBands.find(item => item.tier === group.tier)?.bounds;
+  if (band === undefined) return { why: `Tier ${group.tier} has no band` };
+  // The boxes of the band that stand on the lane's side of the unit: groups, the frames that hold none of its nodes, and the lanes already reserved.
+  const meets = (box: Rect): boolean => box.y < bottom(band) - PLACEMENT_EPS && bottom(box) > band.y + PLACEMENT_EPS;
+  const boxes: Rect[] = [];
+  for (const other of Object.values(model.groups)) if (other.id !== group.id && other.tier === group.tier && other.bounds !== undefined && other.nodes.length > 0) boxes.push(occ(other, link));
+  for (const frame of model.frames ?? []) if (!holding.includes(frame) && meets(frame.box)) boxes.push(frame.box);
+  for (const lane of pending) if (lane.tier === group.tier) boxes.push(lane.bounds);
+  const beyond = boxes.filter(box => dir > 0 ? box.x >= inner - PLACEMENT_EPS : right(box) <= inner + PLACEMENT_EPS);
+  if (beyond.length === 0) return { why: `No unit stands beside the lateral end of ${link.id}: the column is the perimeter's` };
+  const limit = dir > 0 ? Math.min(...beyond.map(box => box.x)) : Math.max(...beyond.map(box => right(box)));
+  if (Math.abs(limit - inner) < width - PLACEMENT_EPS) return { why: `The column beside the lateral end of ${link.id} is ${Math.abs(limit - inner).toFixed(1)} px wide, the lane needs ${width.toFixed(1)}` };
+  const x = (limit + inner) / 2;
+  const why = sideLaneRefusal(model, link, port, x, pending, occ);
+  if (why !== undefined) return { why: `The lane of ${link.id} cannot stand in the column beside its lateral end (${why})` };
+  const lane: Lane = { id: gapLaneId(link.id), kind: 'gap', owner: { kind: 'link', id: link.id }, layer: 'routed', group: group.id, tier: group.tier!, side: lateral.side,
+    port: { ...port }, span: { top: group.tier!, bottom: group.tier! }, x, bounds: { x: x - half, width, y: 0, height: 0 } };
+  const geometry = gapGeometry(model, link, course);
+  if (geometry === undefined) return { why: `The lane of ${link.id} has no extent` };
+  Object.assign(lane.bounds, geometry.extent);
+  return { lane };
+}
+/** The offer's filter: the same admission on a placed model (the baseline), with the lanes it holds but this link's own. The trial's 7a can still refuse. */
+export function probeGapLane(model: LayoutModel, link: LayoutLink, course: Course, extra: readonly Lane[] = []): { lane: Lane } | { why: string } {
+  const pending = [...model.lanes.filter(lane => !(lane.owner.kind === 'link' && lane.owner.id === link.id)), ...extra];
+  return admitGapLane({ ...model, courses: [course] }, link, course, pending, (group, item) => occupied(model, group, item, pending));
 }
 const endHasNaturalFace = (course: Course): boolean => endMode(course, 'from') === 'natural' || endMode(course, 'to') === 'natural';
 /** A riser lane: owned by the upper bus of a join, at the one immutable riser x, in a crossed sub-tier, clear of every body and lane. */
