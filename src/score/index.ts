@@ -1,4 +1,5 @@
 import type { LayoutModel } from '../model/index.js';
+import { counts } from './counts.js';
 import { gates } from './gates.js';
 import { EPS } from './geometry.js';
 import { advisories, metrics, weightedScore } from './metrics.js';
@@ -6,7 +7,7 @@ import { segments, validate } from './model.js';
 import type { ScoreAssertion, ScoreCounters, ScoreOptions, ScoreReport } from './types.js';
 import { riserCrossings } from '../layout/bus.js';
 
-export type { GateId, GateResult, GateViolation, ScoreAdvisory, ScoreAssertion, ScoreCounters, ScoreMetrics, ScoreOptions, ScoreReport, ScoreSnapshot } from './types.js';
+export type { GateId, GateResult, GateViolation, ScoreAdvisory, ScoreAssertion, ScoreCounters, ScoreCounts, ScoreMetrics, ScoreOptions, ScoreReport, ScoreSnapshot } from './types.js';
 
 /** Validate and score final model geometry. Timings never participate in the snapshot or Q. */
 export function score(layout: LayoutModel, options: ScoreOptions = {}): ScoreReport {
@@ -30,7 +31,7 @@ export function score(layout: LayoutModel, options: ScoreOptions = {}): ScoreRep
   if (options.golden) assertions.push({ code: 'golden-crossings', passed: values.crossings.count === 0, actual: values.crossings.count, expected: 0, tolerance: 0 });
   if (options.baseline !== undefined) assertions.push({ code: 'baseline', passed: Math.abs(Q - options.baseline) <= 0.05 + EPS, actual: Q, expected: options.baseline, tolerance: 0.05 });
   return {
-    snapshot: { Q, passed: Object.values(gateResults).every(g => g.passed || g.severity === 'warning') && assertions.every(a => a.passed), nodeCount, gates: gateResults, metrics: values, counters, canvas: layout.canvas ? { ...layout.canvas } : null, advisories: advisories(values, nodeCount), assertions },
+    snapshot: { Q, passed: Object.values(gateResults).every(g => g.passed || g.severity === 'warning') && assertions.every(a => a.passed), nodeCount, gates: gateResults, metrics: values, counters, counts: counts(layout, values.crossings.count), canvas: layout.canvas ? { ...layout.canvas } : null, advisories: advisories(values, nodeCount), assertions },
     runtime: { ...(layout.runtime.totalMs !== undefined ? { totalMs: layout.runtime.totalMs } : {}), stages: layout.runtime.stages.map(s => ({ ...s })) },
   };
 }
