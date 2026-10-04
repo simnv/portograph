@@ -7,6 +7,9 @@ import type { ShadowPlan } from './course-shadow.js';
  * Two kinds of counter. The cheap ones are plain increments and always run. The invalidation counters that need a read of the model
  * (`read`, `tierGapPlans`, `blockedChords`) run only when `ledger` is on or an `attemptTrace` was asked for; off, they cost one boolean test.
  */
+/** Whether the last 7f attempt kept an optional move (the linkless step or the chord step). The pipeline reads it right after the baseline run; it decides no layout. */
+export const lastAttempt: { moved: boolean; /** The first settled copy of the attempt's baseline, taken before any kept move: the unmoved state (undefined when a move came first or none was judged). */ unmoved: import('../model/layout.js').LayoutModel | undefined } = { moved: false, unmoved: undefined };
+
 export interface AttemptCounters {
   /** Calls of one round of the tier-gap growth and the canton close-up (`settleRound`). */
   settleCalls: number;

@@ -596,7 +596,7 @@ function rebuildBoxes(model: LayoutModel): void {
 }
 
 /** One synchronous checked commit per stage. Future producers extend the closed validators here. */
-export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutModel) => void, abortAt?: () => void, trace?: (event: AttemptTraceEvent) => void): LayoutModel {
+export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutModel) => void, abortAt?: () => void, trace?: (event: AttemptTraceEvent) => void, moves?: boolean): LayoutModel {
   if (!protectedModels.has(model)) throw new Error('Mutation requires a protected snapshot; use restoreLayoutModel');
   if (!Object.hasOwn(permissions, rule) || stages[stages.indexOf(model.stage) + 1] !== rule) throw new Error(`Incorrect predecessor stage for ${rule}`);
   const started = Date.now(), draft = clone(model), permission = permissions[rule];
@@ -798,7 +798,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     rebuildRegions(draft);
     if (rule !== 'lanes') rebuildLaneExtents(draft);
   }
-  if (rule === 'bands') placementAttempt(draft, { abortAt, trace });
+  if (rule === 'bands') placementAttempt(draft, { abortAt, trace, moves });
   else if (rule === 'link-labels') produceLinkLabels(draft);
   else if (changed || ['rows', 'lanes', 'flanks', 'centre', 'bundles'].includes(rule)) {
     if (stages.indexOf(rule) >= stages.indexOf('flanks')) {

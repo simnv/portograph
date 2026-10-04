@@ -71,8 +71,10 @@ describe('the side round reads the baseline (Section 19.2)', () => {
   it('a link that publishes straight on the baseline is no candidate, though it needs 8 px of slack at 7e: no trial runs', async () => {
     const { model, places, labels } = await run(SLACK);
     expect(overlayOf(model).path!.segments).toHaveLength(1);
-    expect(places).toBe(1);
-    expect(labels).not.toContain('rerun-side');
+    // Ticket 15, phase 3b: the kept 7f result has no offer and a 7f move was kept, so the unmoved baseline's offer runs as one extra trial; the routed
+    // judge refuses it, the kept result stands, and the published link is the same single segment.
+    expect(places).toBe(2);
+    expect(labels).toContain('rerun-side');
     expect(codes(model).filter(code => code.startsWith('SIDE_'))).toEqual([]);
     // The measure read the baseline. The 7e reading of the same input (what main reads) offers a hint for that link: the slack rule cannot separate them.
     const { base, kept7e } = state.measured[0]!;
