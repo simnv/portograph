@@ -1,4 +1,4 @@
-import type { LayoutModel } from '../model/layout.js';
+import type { Diagnostic, LayoutModel } from '../model/layout.js';
 import { EPS } from '../geometry/planar.js';
 import { alignLinkedGroupGridAndPack, cantonTiers, replanGroupLabels } from './bands.js';
 import { chordGapNotes, tierGapPlans, type GapPlan, type ResidualReason } from './gap-plan.js';
@@ -40,7 +40,7 @@ import { attemptCounters } from './attempt-counters.js';
  * the M1 golden, its one populated tier gap owes four rows after 7a and none after 7d, so a count
  * taken any earlier grows a gap the finished diagram does not need and the golden moves.
  */
-export function growTierGaps(model: LayoutModel, out?: { trial?: LayoutModel; baseDiagnostics?: number }): boolean {
+export function growTierGaps(model: LayoutModel, out?: { trial?: LayoutModel; baseDiagnostics?: number; original?: ReadonlySet<Diagnostic> | undefined }): boolean {
   const baseDiagnostics = model.diagnostics.length;
   let stopped = false;
   // The plan is read on the model as 7f will publish it (`settled`), and a stem nests only where the gap has the room
@@ -100,7 +100,7 @@ export function growTierGaps(model: LayoutModel, out?: { trial?: LayoutModel; ba
   // The loop stopped on "no change", so the last trial is the model grown by `grown` and replayed: the state `grow` and the replay after it
   // make on the model itself (architecture ticket 13, phase 2). A caller that asks takes it in place of the replay. A loop that ran out of rounds
   // read its last trial before the last correction, so it hands nothing back.
-  if (stopped && out !== undefined && grown.size) { out.trial = trial; out.baseDiagnostics = baseDiagnostics; }
+  if (stopped && out !== undefined && grown.size) { out.trial = trial; out.baseDiagnostics = baseDiagnostics; out.original = originals.get(trial); }
   return grow(model, grown);
 }
 
@@ -127,8 +127,11 @@ export const unfitMessage = (below: number, growth: number): string =>
  * replay, not on the model as it stands, or it plans the rows of an x nothing publishes. It is a trial: the model itself is
  * not touched.
  */
+/** The diagnostic objects each trial started with: the replay filters its list and appends to it, so what stands afterwards is told by identity. */
+const originals = new WeakMap<LayoutModel, ReadonlySet<Diagnostic>>();
 function settled(model: LayoutModel, extra: ReadonlyMap<number, number>): LayoutModel {
   const trial = JSON.parse(JSON.stringify(model)) as LayoutModel;
+  originals.set(trial, new Set(trial.diagnostics));
   // 7f replays only a model whose gaps grew (`mutation.ts`), so a trial of no growth is the model as it stands: the plan reads what is published.
   if (!extra.size) return trial;
   moveBands(trial, extra);

@@ -1,5 +1,5 @@
 import type { Rect } from '../model/geometry.js';
-import type { LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
+import type { Diagnostic, LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
 import { orderedNodeIds } from '../model/model.js';
 import { EPS } from '../geometry/planar.js';
 import { parallelClearance, portOrder } from '../score/gates.js';
@@ -139,10 +139,10 @@ function drift(model: LayoutModel): number {
 
 /**
  * The settled copy that judged the last move the step kept (architecture ticket 13, phase 2): the copy of the model with every move so far made,
- * after `follow` ran on it. `baseDiagnostics` is how many diagnostics the model held when the copy was taken, so the caller can add the ones
- * the copy gained to the ones the model gained since; `result` is what `follow` returned.
+ * after `follow` ran on it. `baseDiagnostics` is how many diagnostics the model held when the copy was taken, and `original` the copy's own
+ * diagnostic objects at that moment (a replay filters the list and appends to it, so what stands in the copy's list afterwards is told by identity); `result` is what `follow` returned.
  */
-export interface AdoptedCopy { copy: LayoutModel; baseDiagnostics: number; result: unknown }
+export interface AdoptedCopy { copy: LayoutModel; baseDiagnostics: number; original: ReadonlySet<Diagnostic>; result: unknown }
 
 const verdict = (model: LayoutModel, overlays: readonly LayoutLink[]): Verdict =>
   ({ ...read(model, { overlays, routed: { straight: 'aligned' }, crossings: 'pairs', growth: true }), crowded: crowded(model), disordered: disordered(model), residuals: residuals(model), drift: drift(model) });
@@ -210,11 +210,11 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
   /** The verdict on a settled copy of the model as it stands now, or `undefined` when the copy cannot be settled. */
   const settled = (): Verdict | undefined => {
     try {
-      const probe = copy(model), baseDiagnostics = model.diagnostics.length;
+      const probe = copy(model), baseDiagnostics = model.diagnostics.length, original = new Set(probe.diagnostics);
       attemptCounters.settledTrials++;
       const result = follow!(probe);
       const read = verdict(probe, overlays);
-      copies.set(read, { copy: probe, baseDiagnostics, result });
+      copies.set(read, { copy: probe, baseDiagnostics, original, result });
       return read;
     } catch {
       return undefined;

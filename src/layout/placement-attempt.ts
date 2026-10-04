@@ -1,4 +1,4 @@
-import type { LayoutModel } from '../model/layout.js';
+import type { Diagnostic, LayoutModel } from '../model/layout.js';
 import { blockedChords, edgeLeavers, freezeChords } from './frame-paths.js';
 import { type LaneFollow, lanesHoldTheirChild, sideLaneFindings, rebuildLaneExtents, reseatLanes } from './lanes.js';
 import { centreViolations } from './centre.js';
@@ -87,14 +87,34 @@ export function replayRegions(model: LayoutModel): void {
   replayGridAndLabels(model);
 }
 
+/** The codes a replay reads from the list or writes to it: a diagnostic of one of these, added after the copy was taken, could change what the replay does. */
+const REPLAY_CODES = /^(MESH_BUS|GROUP_GRID|GROUP_LABEL|COLUMN_AXIS|PLACEMENT_|ROUTED_CHORD_TITLE|LINK_LABEL)/;
+
 /**
- * Take a settled copy as the state of `model`, which the caller still holds: the copy's fields replace the model's, and the diagnostics are the
- * model's own (it may have gained some since the copy was taken) followed by the ones the copy gained after `baseDiagnostics`.
+ * Take a settled copy as the state of `model`, which the caller still holds, when that is exactly what replaying `model` would give; otherwise
+ * leave `model` alone and return false (the caller replays). The copy was taken at diagnostic count `baseDiagnostics`; `original` is its list then.
+ * A replay filters the list and appends to it, so the copy's list is the authority: an entry of it that is in `original` survived, any other is new.
+ * What `model` gained since the copy (`added`: the notes of the judge, the warnings of the gap growth) is where the replay would have found it:
+ * after the survivors, before the new entries. That holds when nothing of `original` was withdrawn (a withdrawn warning could have taken an added
+ * one of its code with it, and a re-raised one is placed by the replay), the new entries come last, and no added entry has a code the replay reads
+ * or writes. Then the result is the replay's, in its order. With nothing added the copy's list is the replay's result whatever the replay withdrew.
+ * Keys the copy no longer has (`delete model.busBands`) are deleted from `model`.
  */
-function adoptSettled(model: LayoutModel, copy: LayoutModel, baseDiagnostics: number): void {
-  const kept = model.diagnostics;
+export function adoptSettled(model: LayoutModel, copy: LayoutModel, baseDiagnostics: number, original: ReadonlySet<Diagnostic>): boolean {
+  const added = model.diagnostics.slice(baseDiagnostics);
+  const survivors = copy.diagnostics.filter(item => original.has(item)), fresh = copy.diagnostics.filter(item => !original.has(item));
+  if (added.length) {
+    const firstFresh = fresh.length ? copy.diagnostics.indexOf(fresh[0]!) : copy.diagnostics.length;
+    const held = new Set(copy.diagnostics.map(item => item.code));
+    const safe = survivors.length === original.size && survivors.every((_, i) => copy.diagnostics[i] === survivors[i]) && firstFresh >= survivors.length
+      && added.every(item => !REPLAY_CODES.test(item.code) && !held.has(item.code));
+    if (!safe) return false;
+  }
+  const diagnostics = [...survivors, ...added, ...fresh];
+  for (const key of Object.keys(model)) if (!(key in copy)) delete (model as unknown as Record<string, unknown>)[key];
   Object.assign(model, copy);
-  model.diagnostics = [...kept, ...copy.diagnostics.slice(baseDiagnostics)];
+  model.diagnostics = diagnostics;
+  return true;
 }
 
 /**
@@ -106,12 +126,11 @@ function adoptSettled(model: LayoutModel, copy: LayoutModel, baseDiagnostics: nu
  */
 export function settleRound(model: LayoutModel, tap?: (step: 'grow' | 'close-up' | 'keep-out', changed: boolean) => void): number {
   attemptCounters.settleCalls++;
-  const trial: { trial?: LayoutModel; baseDiagnostics?: number } = {};
+  const trial: { trial?: LayoutModel; baseDiagnostics?: number; original?: ReadonlySet<Diagnostic> } = {};
   const grew = growTierGaps(model, trial);
-  if (grew && trial.trial !== undefined) {
-    // The growth stopped on "no change": its last trial is the grown model after the replay below, so it is taken instead of replaying (ticket 13, phase 2).
-    adoptSettled(model, trial.trial, trial.baseDiagnostics!);
-  } else if (grew) {
+  // The growth stopped on "no change": its last trial is the grown model after the replay below, so it is taken instead of replaying (ticket 13, phase 2).
+  // `adoptSettled` declines when the diagnostics would differ from the replay's; the replay then runs.
+  if (grew && !(trial.trial !== undefined && trial.original !== undefined && adoptSettled(model, trial.trial, trial.baseDiagnostics!, trial.original))) {
     // The replay refits every group box to its content, so a linked pair the first step gave one
     // x-extent (ADR-0012) holds two again and the published model would not be the grid's fixed
     // point — which is what `validateGroupLabelBands` demands. The grid is settled here, before
@@ -212,9 +231,8 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
     note(`round-${round}:chords`, cleared ? 'moved' : 'unchanged');
     if (cleared) { attemptCounters.chordRoundsMoved++; entry.chordRoundsMoved++; }
     account(`round-${round}:chords`);
-    if (cleared && kept.adopted !== undefined) {
-      // The copy that judged the last kept move has the replay and the next round's settling done: the draft takes it (ticket 13, phase 2).
-      adoptSettled(draft, kept.adopted.copy, kept.adopted.baseDiagnostics);
+    // The copy that judged the last kept move has the replay and the next round's settling done: the draft takes it (ticket 13, phase 2).
+    if (cleared && kept.adopted !== undefined && adoptSettled(draft, kept.adopted.copy, kept.adopted.baseDiagnostics, kept.adopted.original)) {
       taken = kept.adopted.result as SettleReading;
     } else if (linkless || cleared) replayRegions(draft);
     account(`round-${round}:replay`);
