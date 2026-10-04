@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
-import { overlayCrossings, pickRankMove, spent, stepOverChords } from '../../src/layout/chord-clear.js';
+import { overlayCrossings, spent, stepOverChords } from '../../src/layout/chord-clear.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { deriveFrames } from '../../src/layout/frames.js';
 import { crosses, overlayBlockers, overlayPath, straightChord } from '../../src/layout/overlay-paths.js';
@@ -61,11 +61,16 @@ describe('the step over a chord, where the mover holds routed links or shares a 
 
   it('a node with slack in its group moves alone, inside the box the group has', async () => {
     const model = await run(fixture('a-node-steps-off-a-straight-chord-inside-its-group'));
-    const link = overlay(model), group = model.groups['middle']!;
+    const link = overlay(model);
     expect(link.path!.segments).toHaveLength(1);
     const copyOf = copy(model);
-    // The layout here already stepped `mb` off the chord: put it back where the row packs it and step again.
-    const mb = copyOf.nodes['mb']!, ma = copyOf.nodes['ma']!, box = copyOf.groups['middle']!.bounds!;
+    // Architecture ticket 13, phase 4: in a layout of the test harness the whole group may now step first, bending its link to `p` for a net gain by turns (the
+    // order of the user), and the mover that has moved is not moved again. So put the group back under its parent, as the real fonts lay it out, mark it as moved,
+    // and let the node step.
+    const p = copyOf.nodes['p']!, ma = copyOf.nodes['ma']!, mb = copyOf.nodes['mb']!, box = copyOf.groups['middle']!.bounds!;
+    moveGroup(copyOf, copyOf.groups['middle']!, p.bounds!.x + p.bounds!.width / 2 - (ma.bounds!.x + ma.bounds!.width / 2), 0);
+    rebuildNodeGeometry(copyOf, copyOf.groups['middle']!.nodes, 'current');
+    // Put `mb` where the row packs it and step again.
     const packed = ma.bounds!.x + ma.bounds!.width + 20;
     const shift = packed - mb.bounds!.x;
     mb.bounds!.x += shift;
@@ -73,12 +78,11 @@ describe('the step over a chord, where the mover holds routed links or shares a 
     rebuildNodeGeometry(copyOf, ['mb'], 'current');
     const before = { ma: ma.bounds!.x, box: { ...box }, mb: mb.bounds!.x };
     expect(overlayPath(copyOf, overlay(copyOf)).segments.length).toBeGreaterThan(1);
-    expect(stepOverChords(copyOf, undefined)).toBe(true);
+    expect(stepOverChords(copyOf, undefined, new Set(['middle']))).toBe(true);
     expect(overlayPath(copyOf, overlay(copyOf)).segments).toHaveLength(1);
     expect(copyOf.nodes['mb']!.bounds!.x).not.toBe(before.mb);
     expect(copyOf.nodes['ma']!.bounds!.x).toBe(before.ma);
     expect(copyOf.groups['middle']!.bounds).toEqual(before.box);
-    expect(group.bounds).toEqual(before.box);
   }, 60000);
   it('a move whose settled copy cannot be judged is refused', async () => {
     const model = copy(await run(fixture('a-group-with-routed-links-steps-off-a-straight-chord')));
@@ -356,7 +360,7 @@ describe('a lower rank steps off the chords of the ranks above (ticket 146)', ()
     expect(JSON.stringify(model.groups['zone#2']!.bounds)).toBe(row);
   }, 60000);
 
-  it('a candidate that adds a crossing on the settled copy is refused (and taken when it adds none)', async () => {
+  it('a candidate that adds a crossing on the settled copy is no longer refused for it (the crossings are the third key)', async () => {
     const model = copy(await run(fixture(NAME)));
     restore(model);
     const at = { a: x(model, 'low-a'), b: x(model, 'low-b') };
@@ -368,10 +372,12 @@ describe('a lower rank steps off the chords of the ranks above (ticket 146)', ()
       node.bounds!.x += shift;
       for (const port of node.ports) if (port.anchor) port.anchor.x += shift;
     };
-    const control = copy(model), refused = copy(model);
+    const control = copy(model), taken = copy(model);
     expect(stepOverChords(control, () => undefined)).toBe(true);
-    expect(stepOverChords(refused, crossed)).toBe(false);
-    expect(moved(refused)).toBe(false);
+    // Architecture ticket 13, phase 4: a crossing added is no veto (the order of the user: fewer bent links, then fewer turns, then fewer crossings), so the move
+    // that leaves fewer bent links stays although its settled copy crosses the two chords.
+    expect(stepOverChords(taken, crossed)).toBe(true);
+    expect(moved(taken)).toBe(true);
   }, 60000);
 
   it('a move that straightens three links and bends one (+3 / -1, no crossing added) is taken', async () => {
@@ -452,7 +458,7 @@ links:
     expect(JSON.stringify(model.groups['zone#2']!.bounds)).toBe(row);
   }, 60000);
 
-  it('the guard fixture (a fan over the row): no lower rank moves', async () => {
+  it('the guard fixture (a fan over the row): the lower rank moves, for fewer bent links, though it adds a crossing', async () => {
     const yaml = `portograph: 2
 groups:
   core: { tier: 0, label: Core }
@@ -486,7 +492,9 @@ links:
   - [up-b, c-3, { class: sync }]
 `;
     const model = await run(yaml);
-    expect(model.diagnostics.some(d => d.code === 'RANK_STEPPED_OFF_CHORD')).toBe(false);
+    // Architecture ticket 13, phase 4: a crossing added is no veto any more. The move straightens two links and adds one crossing: fewer bent links decide.
+    expect(model.diagnostics.filter(d => d.code === 'RANK_STEPPED_OFF_CHORD').map(d => d.message)).toEqual([
+      'The lower rank zone#3 moved -28.4 px off the overlay chords of the ranks above: 2 more straight overlay links, overlay crossings 0 to 1.']);
     expect(overlays(model).filter(link => link.path!.segments.length > 1)).toHaveLength(1);
   }, 60000);
 
@@ -496,31 +504,7 @@ links:
   }, 60000);
 });
 
-describe('pickRankMove and overlayCrossings (ticket 146)', () => {
-  const base = { crossings: 3, straight: 5 };
-  it('more straight links beat fewer crossings (client links are direct lines)', () => {
-    const fewer = { dx: 30, crossings: 1, straight: 6 }, more = { dx: 5, crossings: 2, straight: 9 };
-    expect(pickRankMove([fewer, more], base)).toBe(more);
-  });
-  it('the net count of straight links decides: a move that bends one and straightens three is taken', () => {
-    const bends = { dx: 5, crossings: 3, straight: 6, bent: 1 };
-    expect(pickRankMove([bends], base)).toBe(bends);
-    expect(pickRankMove([bends, { dx: 1, crossings: 0, straight: 5, bent: 0 }], base)).toBe(bends);
-  });
-  it('on a tie in the net count the move that bends no straight link wins, before the fewest crossings', () => {
-    const bends = { dx: 5, crossings: 0, straight: 7, bent: 1 }, keeps = { dx: 9, crossings: 2, straight: 7, bent: 0 };
-    expect(pickRankMove([bends, keeps], base)).toBe(keeps);
-  });
-  it('equal straight links: fewer crossings win, then the nearest move, then the smaller dx', () => {
-    const a = { dx: 10, crossings: 2, straight: 6 }, b = { dx: 40, crossings: 1, straight: 6 }, c = { dx: -10, crossings: 2, straight: 6 };
-    expect(pickRankMove([a, b], base)).toBe(b);
-    expect(pickRankMove([a, c], base)).toBe(c);
-    expect(pickRankMove([{ ...a, dx: 20 }, a], base)).toBe(a);
-  });
-  it('a move that adds a crossing, or gains no straight link, is never taken', () => {
-    expect(pickRankMove([{ dx: 1, crossings: 4, straight: 9 }], base)).toBeUndefined();
-    expect(pickRankMove([{ dx: 1, crossings: 3, straight: 5 }], base)).toBeUndefined();
-  });
+describe('overlayCrossings (ticket 146)', () => {
   it('counts a strict crossing once, and not a touch at an end or a parallel pair', () => {
     const seg = (a: [number, number], b: [number, number]) => [{ from: { x: a[0], y: a[1] }, to: { x: b[0], y: b[1] } }];
     expect(overlayCrossings([seg([0, 0], [10, 10]), seg([0, 10], [10, 0])])).toBe(1);

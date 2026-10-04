@@ -628,7 +628,8 @@ function exactUndo(model: LayoutModel, groups: Iterable<LayoutGroup>): () => voi
 function warnCloseUp(model: LayoutModel, cantons: readonly string[], named: string, cause: string | undefined): void {
   model.diagnostics = model.diagnostics.filter(item => !(item.code === COLUMN_AXIS_HELD && cantons.some(id => item.message.startsWith(`Canton ${id} cannot close up`))));
   if (cause === undefined) return;
-  model.diagnostics.push({ stage: 'placement', severity: 'warning', code: COLUMN_AXIS_HELD, owners: [{ kind: 'group', id: named }],
+  // A straight link outranks the close-up (user, 2026-10-04): that outcome is accepted, so it is information; any other cause stays a warning.
+  model.diagnostics.push({ stage: 'placement', severity: cause === 'a straight overlay link would be bent' ? 'info' : 'warning', code: COLUMN_AXIS_HELD, owners: [{ kind: 'group', id: named }],
     message: `Canton ${named} cannot close up to a band gap from its siblings: ${cause}, so the run of cantons stays where it stands.` });
 }
 

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { byKeys, compare, gains, holds, keys, lazyCount, profiles, reading, straightFell, straightOf, type Family, type Reading } from '../../src/layout/objective.js';
 import { sheetGains, windowsHold } from '../../src/layout/overlay-place.js';
-import { pickRankMove } from '../../src/layout/chord-clear.js';
 import { pickTarget } from '../../src/layout/overlay-window.js';
 
 /** Architecture ticket 04: one Reading, one compare. The profiles of the judges that stand, and the unified order that nothing calls yet. */
@@ -116,15 +115,6 @@ describe('the profiles of the judges that stand give their old verdicts', () => 
     expect(windowsHold(new Set(['a', 'b']), new Set(['a']), () => { asked++; return 0; }, 0)).toBe(true);
     expect(windowsHold(new Set(['b']), new Set(['a']), () => { asked++; return 0; }, 0)).toBe(false);
     expect(asked).toBe(0);
-  });
-
-  it('pickRankMove: no crossing added, more straight than base; most straight, fewest bent, fewest crossings, nearest, smaller dx', () => {
-    const base = { crossings: 2, straight: 3 };
-    expect(pickRankMove([{ dx: 1, crossings: 3, straight: 9 }, { dx: 2, crossings: 2, straight: 3 }], base)).toBeUndefined();
-    const moves = [{ dx: 5, crossings: 1, straight: 5, bent: 1 }, { dx: 9, crossings: 2, straight: 5, bent: 0 }, { dx: -4, crossings: 0, straight: 4, bent: 0 }];
-    expect(pickRankMove(moves, base)).toBe(moves[1]);
-    const tied = [{ dx: 3, crossings: 1, straight: 5 }, { dx: -3, crossings: 1, straight: 5 }, { dx: 4, crossings: 1, straight: 5 }];
-    expect(pickRankMove(tied, base)).toBe(tied[1]);
   });
 
   it('pickTarget: more straight, then fewer crossings unless the candidate bends a chord straight at the mean; the nearest of equals stays', () => {

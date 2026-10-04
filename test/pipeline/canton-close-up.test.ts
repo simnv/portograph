@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest';
 import type { LayoutModel, Rect } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
 import { COLUMN_AXIS_HELD, COLUMN_SLACK, closeCantons, holdColumnAxes } from '../../src/layout/columns.js';
+import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
+import { overlayPath } from '../../src/layout/overlay-paths.js';
+import { moveGroup } from '../../src/layout/skeleton-geometry.js';
 import { bandGap } from '../../src/layout/skeleton-graph.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -34,10 +37,16 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
     expect(cantonBoxes(model)).toHaveLength(3);
     // Measured before the rule: 100 and 148 px on a canvas 2049.3 px wide.
-    for (const [i, gap] of gaps(model).entries()) expect(Math.abs(gap - bandGap(model)), `gap ${i}`).toBeLessThan(1e-6);
+    // A straight link outranks the band-gap close-up (user, 2026-10-04): the gap equals the band gap unless closing it would bend a straight link. Here the lower rank
+    // moves of the 7f decisions straighten two overlay links, and canton b cannot close up to the one beside it without bending one: gap 1 stays 23.9 px off.
+    for (const [i, gap] of gaps(model).entries()) {
+      if (i === 1) expect(Math.abs(gap - bandGap(model)), `gap ${i}`).toBeCloseTo(23.9, 1);
+      else expect(Math.abs(gap - bandGap(model)), `gap ${i}`).toBeLessThan(1e-6);
+    }
     // No tier-0 column warns for an overlay link to a canton, and no close-up is refused.
     expect(heldOwners(model).filter(id => id.startsWith('top-'))).toEqual([]);
-    expect(closeUps(model)).toEqual([]);
+    // The one refusal is the rule above, named: canton b stays open because closing it would bend a straight overlay link.
+    expect(closeUps(model).map(item => [item.owners![0], /a straight overlay link would be bent/.test(item.message)])).toEqual([[{ kind: 'group', id: 'b' }, true]]);
     expect(model.canvas!.width).toBeLessThan(2049.3 - 100);
     // The block keeps its centre (the partner mean is not a stable target, ticket "Comments"); the tier packed against the canton
     // step, the MPLS row, stands centred on it within one column slack (measured 1.5 px).
@@ -112,5 +121,23 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
     expect(held[0]!.message).toContain('Canton west');
     expect(held[0]!.message).toContain('stands between two cantons');
     expectIdempotent(model);
+  }, 120000);
+  // A straight link outranks the band-gap close-up (user, 2026-10-04). Both halves are asserted: the gap stays open, and closing it would really bend the link.
+  it('a canton gap stays open when closing it would bend a straight overlay link', async () => {
+    const model = await run('a-canton-gap-stays-open-when-closing-it-would-bend-a-straight-link');
+    const link = model.links.find(item => item.layer === 'overlay')!;
+    expect(overlayPath(model, link).segments).toHaveLength(1);
+    const [gap] = gaps(model) as [number];
+    expect(gap).toBeGreaterThan(bandGap(model) + 1);
+    expect(closeUps(model).map(item => [item.owners![0], /a straight overlay link would be bent/.test(item.message)])).toEqual([[{ kind: 'group', id: 'west' }, true]]);
+    // Close the gap on a copy, as the close-up does (the run keeps its centre): the west canton moves right and the east canton left, each by half the excess.
+    // The real bend is read on the copy: overlay paths treat node bodies and pills as the obstacles, and the east-most body of the west canton now stands on the chord.
+    const closed = structuredClone(model) as LayoutModel, excess = gap - bandGap(closed);
+    for (const [id, dx] of [['w-site#0', excess / 2], ['w-lab#0', excess / 2], ['e-site#0', -excess / 2], ['e-lab#0', -excess / 2]] as const) {
+      const group = closed.groups[id]!;
+      moveGroup(closed, group, dx, 0);
+      rebuildNodeGeometry(closed, group.nodes, 'current');
+    }
+    expect(overlayPath(closed, closed.links.find(item => item.layer === 'overlay')!).segments.length).toBeGreaterThan(1);
   }, 120000);
 });

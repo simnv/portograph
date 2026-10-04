@@ -231,7 +231,10 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     const before = JSON.stringify(Object.values(clone.groups).map(group => [group.id, group.bounds]));
     // `separateFrameColumns` keeps the rows-time gap (a band gap and two slacks) and is not asked of a finished layout; `columnShifts` with the
     // slack of 7f is. The inner pass is the one of this ticket.
-    expect([columnShifts(clone, 0).size, packBesideRows(clone), holdMemberWalls(clone), holdColumnAxes(clone, 0)]).toEqual([0, false, false, false]);
+    // A straight link outranks the band-gap close-up (user, 2026-10-04): on three-canton-groups the column rules would move 4 units to close canton b up, and that would
+    // bend a straight link, so they stay held (COLUMN_AXIS_HELD) and the column pull still has 4 shifts to make. Every other sheet is at rest.
+    expect([columnShifts(clone, 0).size, packBesideRows(clone), holdMemberWalls(clone), holdColumnAxes(clone, 0)])
+      .toEqual([name === 'three-canton-groups-close-up-to-a-band-gap' ? 4 : 0, false, false, false]);
     // A second pull moves no unit, so none goes farther from its feed range either (ticket 67).
     const moved = Object.values(clone.groups).map(group => Math.abs(group.bounds!.x - (JSON.parse(before) as [string, Rect][]).find(([id]) => id === group.id)![1].x));
     expect(Math.max(0, ...moved)).toBe(0);

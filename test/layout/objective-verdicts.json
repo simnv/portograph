@@ -8,7 +8,6 @@
   },
   "a-lower-rank-steps-off-the-chords-of-rank-0": {
     "attemptCheap": "8 d700632eef126e2a",
-    "attemptCrossings": "4 6aab4f9ccff9eb5f",
     "centreGroupStep": "66 c890e68c026a7e8e",
     "holdsSettled": "4 c42dda64b543ae83",
     "pickRankMove": "1 179cf15d4cb7b521",
@@ -40,18 +39,17 @@
     "fanRoundHolds": "1 0a22f04442a90cca"
   },
   "three-canton-groups-close-up-to-a-band-gap": {
-    "attemptCheap": "117 7f0c79efe106fff2",
-    "attemptCrossings": "21 2f761f524c9fb3df",
-    "centreGroupStep": "1302 e83d98e1db026b9c",
-    "closeUp": "14 d01e3fb2c51cfe92",
-    "holdsSettled": "15 82178be5418525b8",
+    "attemptCheap": "118 d3cc3a8e3b24ceb3",
+    "centreGroupStep": "1428 9fb72d699a5fc3e7",
+    "closeUp": "24 1f6ece390251f956",
+    "holdsSettled": "17 8035e6834df7f7c1",
     "judgeTrial": "1 cbf69f5f691d95cd",
-    "pickRankMove": "1 993c8724d00378d5",
-    "pickTarget": "186 b1267fa74beca60f",
-    "pullTier": "348 8cd82130183836c1",
-    "settleKeepOut": "2 cb41c19c0d037e0e",
-    "sheetGains": "18 1e9d85787d073806",
-    "windowsHold": "61 2003dd03fdb5de0a"
+    "pickRankMove": "3 375aa481cc6cf032",
+    "pickTarget": "198 53aeee4b7b7c59dc",
+    "pullTier": "516 104b5b4b32da4b8e",
+    "settleKeepOut": "4 36a88b7f782c05e7",
+    "sheetGains": "20 177a286558ddbbb0",
+    "windowsHold": "64 16a6b9aa5f3f796d"
   },
   "a-canton-member-frame-slides-off-a-straight-chord": {
     "centreGroupStep": "51 2d749b745e2deda5",
@@ -59,14 +57,14 @@
     "pullTier": "16 299c30ead527ebd0"
   },
   "three-continents": {
-    "attemptCheap": "69 408dbeccc3f03cbf",
-    "centreGroupStep": "754 b6a2c08b49822849",
-    "holdsSettled": "6 634de7b3181ef413",
-    "judgeTrial": "1 20a15d44ec06ecfc",
-    "pickTarget": "114 c6a0c683d54f7f23",
-    "pullTier": "263 861528e8d0b7aacf",
-    "sheetGains": "16 76056c2ad105efb1",
-    "windowsHold": "30 cddf761eb20dfefb"
+    "attemptCheap": "78 e339c80595a7d32a",
+    "centreGroupStep": "1625 1125ddae5697c20b",
+    "holdsSettled": "17 e6f70c17a5b0c9ae",
+    "judgeTrial": "1 40c5e1b547e445dd",
+    "pickTarget": "234 8c88d88ecc24c00d",
+    "pullTier": "516 b41e9c4887112694",
+    "sheetGains": "36 01fc80170dbdc3e4",
+    "windowsHold": "55 f75ef8d5e496e9ec"
   },
   "a-group-with-routed-links-steps-off-a-straight-chord": {
     "centreGroupStep": "16 d17575727f9edf5b",
@@ -87,7 +85,6 @@
   },
   "an-overlay-that-7f-straightens-needs-more-than-four-pixels-of-slack": {
     "attemptCheap": "2 0d5ac49bf18f7073",
-    "attemptCrossings": "1 2626acb7b565f2f7",
     "centreGroupStep": "26 b70d5a924aee2fd1",
     "holdsSettled": "1 b0e37b1079e63c37",
     "pickRankMove": "1 66eec4d604677902",
