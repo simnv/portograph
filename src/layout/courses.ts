@@ -67,7 +67,15 @@ export function validateCourses(model: LayoutModel): void {
 
 /** Whether `a` and `b` list the same courses; the freeze stores `model.courses` and a restore compares the two. */
 export function sameCourses(a: readonly Course[] | undefined, b: readonly Course[] | undefined): boolean {
-  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  const x = a ?? [];
+  const y = b ?? [];
+  if (x.length !== y.length) return false;
+  const end = (p: CourseEnd, q: CourseEnd): boolean => p.face === q.face && p.approach === q.approach;
+  return x.every((course, i) => {
+    const other = y[i]!;
+    return course.link === other.link && course.kind === other.kind && end(course.from, other.from) && end(course.to, other.to)
+      && course.runs.length === other.runs.length && course.runs.every((run, j) => run === other.runs[j]);
+  });
 }
 
 /**
