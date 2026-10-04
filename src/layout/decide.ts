@@ -13,7 +13,7 @@ import { tierGapPlans } from './gap-plan.js';
 import { centreViolations } from './centre.js';
 import { reserveLinkLabelRoom, type LinkLabelShortfall } from './bands.js';
 import { attemptCounters } from './attempt-counters.js';
-import { judges, compare, gains, holds as readingHolds, lazyCount, lostStraight, profiles, read, reading, refusal, tapVerdict, widthWithin, type Reading } from './objective.js';
+import { judges, compare, gains, holds as readingHolds, lazyCount, lostStraight, read, reading, refusal, tapVerdict, type Reading } from './objective.js';
 
 /**
  * The decision loop of stage 7f (architecture ticket 13, phase 3). Three kinds of optional discrete choice are made here, and nowhere else:
@@ -61,7 +61,7 @@ export interface RankMove { dx: number; crossings: number; straight: number; /**
  * crossings, then the nearest move, then the smaller dx.
  */
 export function pickRankMove<T extends RankMove>(moves: readonly T[], base: { crossings: number; straight: number }): T | undefined {
-  const by = profiles.rankMove;
+  const by = judges.rankMove;
   const against = reading({ overlay: { straight: base.straight, bent: 0, turns: 0 }, crossings: lazyCount(() => base.crossings), crossingMode: 'pairs' });
   const readMove = (move: T): Reading => reading({ overlay: { straight: move.straight, bent: move.bent ?? 0, turns: 0 }, crossings: lazyCount(() => move.crossings), crossingMode: 'pairs', tie: [Math.abs(move.dx), move.dx] });
   const pick = moves.map(move => ({ move, now: readMove(move) })).filter(({ now }) => refusal(now, against, by.gates) === undefined)
@@ -70,17 +70,18 @@ export function pickRankMove<T extends RankMove>(moves: readonly T[], base: { cr
   return pick;
 }
 
-/** A reading of a model that has settled (what a move must not lose or add, read off the geometry as it stands), and the findings the gates and the tier-gap plan would make. */
-interface Verdict extends Reading {
-  crowded: Set<string>;
-  disordered: Set<string>;
-  residuals: Set<string>;
-  /** The farthest a group moves when the column rules are asked of the settled model: 0 at their fixed point (ticket 67). */
-  drift: number;
-}
+/**
+ * A reading of a model that has settled (what a move must not lose or add, read off the geometry as it stands). Its `sets` hold the findings the gates and the
+ * tier-gap plan would make (`crowded`, `disordered`, `residuals`) and its `drift` is the farthest a group moves when the column rules are asked of the settled
+ * model: 0 at their fixed point (ticket 67).
+ */
+type Verdict = Reading;
 
 /** What a candidate leaves, and what the model had without it: the straight overlay count, the overlay crossings. */
 interface Judged { bent: number; count: number; crossings: number; base: { crossings: number; straight: number }; verdict?: Verdict | undefined }
+
+/** The reading of a candidate that is known by its straight overlay count alone (the comparison of the candidates that passed, nearest first). */
+const byCount = (count: number): Reading => reading({ overlay: { straight: count, bent: 0, turns: 0 } });
 
 /** A copy of the model to try something on. Counted, so a test can read how much trying one attempt does. */
 export const candidateCopy = (model: LayoutModel): LayoutModel => { attemptCounters.candidateCopies++; return JSON.parse(JSON.stringify(model)) as LayoutModel; };
@@ -119,13 +120,6 @@ const residuals = (model: LayoutModel): Set<string> => new Set(model.diagnostics
   .map(item => `${item.code}:${JSON.stringify(item.owners ?? [])}`));
 
 /**
- * The creep the rounds of 7f end under (`CANTON_CREEP` of the mutation step): a settled model that drifts less than this is at rest.
- * A slide is judged against the larger of this and the drift the model had before it, so a creep of a fraction of a pixel does not
- * turn the guard off.
- */
-const REST = 0.5;
-
-/**
  * How far the column rules move a group, asked of a copy of a settled model (ticket 67's fixed point: 0 when they move nothing). The
  * pipeline does not ask them again after 7f, so a slide they would undo is a position they do not accept. `Infinity` when they fail.
  */
@@ -153,10 +147,7 @@ function drift(model: LayoutModel): number {
 export interface AdoptedCopy { copy: LayoutModel; baseDiagnostics: number; original: ReadonlySet<Diagnostic>; result: unknown }
 
 const verdict = (model: LayoutModel, overlays: readonly LayoutLink[]): Verdict =>
-  ({ ...read(model, { overlays, routed: { straight: 'aligned' }, crossings: 'pairs', growth: true }), crowded: crowded(model), disordered: disordered(model), residuals: residuals(model), drift: drift(model) });
-
-/** Whether every finding `after` states was stated by `before`. */
-const nothingNew = (before: ReadonlySet<string>, after: ReadonlySet<string>): boolean => [...after].every(item => before.has(item));
+  ({ ...read(model, { overlays, routed: { straight: 'aligned' }, crossings: 'pairs', growth: true }), sets: { crowded: crowded(model), disordered: disordered(model), residuals: residuals(model) }, drift: drift(model) });
 
 /**
  * The growth a cell's frame edge may take when its bodies move (ticket 80): the frame stands off the outermost body, so the frame, the
@@ -232,10 +223,8 @@ export function chordDecision(model: LayoutModel, follow: ((probe: LayoutModel) 
       rebuildNodeGeometry(model, nodes, 'current');
     }
     // The straight count rises; a lower rank adds no crossing (ticket 146, user decision); no straight routed link is lost. A bent straight link is no veto: the net straight count decides.
-    const settledHolds = after !== undefined && baseline !== undefined && gains(after, baseline, ranked ? judges.rankSettled : judges.chordSettled)
-      && after.drift <= Math.max(baseline.drift, REST) + PLACEMENT_EPS
-      && widthWithin(after, baseline, edge(model).base + (ranked ? rankShare(edge(model)) : CANVAS_GROWTH_SHARE * edge(model).base))
-      && nothingNew(baseline.crowded, after.crowded) && nothingNew(baseline.disordered, after.disordered) && nothingNew(baseline.residuals, after.residuals);
+    const settledHolds = after !== undefined && baseline !== undefined
+      && gains({ ...after, widthCap: edge(model).base + (ranked ? rankShare(edge(model)) : CANVAS_GROWTH_SHARE * edge(model).base) }, baseline, ranked ? judges.rankSettled : judges.chordSettled);
     tapVerdict('holdsSettled', () => `${settledHolds} ${after?.overlay.straight}/${baseline?.overlay.straight} ${after?.growth.width}/${baseline?.growth.width}`);
     return settledHolds
       ? { bent: lostStraight(after!, baseline!, 'overlay'), count: after!.overlay.straight, crossings: ranked ? after!.crossings() : 0, base: { crossings: ranked ? baseline!.crossings() : 0, straight: baseline!.overlay.straight }, verdict: after } : undefined;
@@ -251,7 +240,7 @@ export function chordDecision(model: LayoutModel, follow: ((probe: LayoutModel) 
    */
   const attempt = (key: string, candidates: readonly number[], at: number, place: (dx: number) => void, undo: () => void, nodes: readonly string[],
     holds: (x: number) => boolean, extra: () => boolean = () => true, rank?: string): boolean => {
-    const before = readOverlays(model, overlays), blocked = new Set(blockedChords(model));
+    const blocked = new Set(blockedChords(model)), before: Reading = { ...readOverlays(model, overlays), sets: { blocked } };
     let best: { target: number; count: number; verdict?: Verdict | undefined } | undefined, settledTrials = 0, driftBefore: number | undefined;
     // A lower rank (ticket 146) keeps every candidate that passes, and `pickRankMove` chooses: the most straight links, then the fewest crossings.
     const passed: (RankMove & { target: number; base: { crossings: number; straight: number }; verdict?: Verdict | undefined })[] = [];
@@ -260,8 +249,9 @@ export function chordDecision(model: LayoutModel, follow: ((probe: LayoutModel) 
       tried = true;
       place(target - at);
       rebuildNodeGeometry(model, nodes, 'current');
-      const after = readOverlays(model, overlays);
-      let ok = extra() && gains(after, before, judges.chordCheap) && blockedChords(model).every(id => blocked.has(id));
+      // The frozen chords the move would put a body on are read only when the straight count has risen (a getter), as the check always was.
+      const after: Reading = { ...readOverlays(model, overlays), sets: { get blocked() { return new Set(blockedChords(model)); } } };
+      let ok = extra() && gains(after, before, judges.chordCheap);
       attemptCounters.cheapTrials++;
       tapVerdict('attemptCheap', () => `${ok} ${after.overlay.straight}/${before.overlay.straight}`);
       // Cheap refusals of a lower rank, before a settled copy is paid for (ticket 146): a crossing added, a drift the column rules would undo.
@@ -277,14 +267,14 @@ export function chordDecision(model: LayoutModel, follow: ((probe: LayoutModel) 
             redo();
             rebuildNodeGeometry(model, nodes, 'current');
           }
-          ok = drift(model) <= Math.max(driftBefore, REST) + PLACEMENT_EPS;
+          ok = readingHolds(reading({ drift: drift(model) }), reading({ drift: driftBefore }), judges.driftHeld);
         }
       }
       if (ok && (rank === undefined ? settledTrials++ < SETTLED_TRIALS : spend(rank))) {
         const judged = holdsSettled(saveGroupsOf(nodes), undo, nodes, { bent: 0, count: after.overlay.straight, crossings: rank !== undefined ? after.crossings() : 0,
           base: { crossings: rank !== undefined ? before.crossings() : 0, straight: before.overlay.straight } }, rank !== undefined);
         if (judged !== undefined && rank !== undefined) passed.push({ target, dx: target - at, crossings: judged.crossings, straight: judged.count, bent: judged.bent, base: judged.base, verdict: judged.verdict });
-        else if (judged !== undefined && (best === undefined || judged.count > best.count)) best = { target, count: judged.count, verdict: judged.verdict };
+        else if (judged !== undefined && (best === undefined || compare(byCount(judged.count), byCount(best.count), judges.chordBest) < 0)) best = { target, count: judged.count, verdict: judged.verdict };
       }
       undo();
       rebuildNodeGeometry(model, nodes, 'current');

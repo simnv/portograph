@@ -80,6 +80,10 @@ export interface Reading {
   sets?: Readonly<Record<string, ReadonlySet<string>>>;
   /** Named facts of the candidate alone that a gate asks (the lane reseat: the corridors stand at their child, no body on a frozen chord). Absent reads as false. */
   facts?: Readonly<Record<string, boolean>>;
+  /** How far the column rules would move a group of the settled model: 0 at their fixed point (ticket 67). Absent reads as 0. */
+  drift?: number;
+  /** The widest canvas the candidate may have, when it is wider than the incumbent's: the growth bound of the move (ticket 80). Absent reads as no bound. */
+  widthCap?: number;
   /** The last key of every order: a candidate's own position (its distance, then its x), compared as numbers in turn. Absent reads as equal. */
   tie?: readonly number[];
 }
@@ -310,6 +314,15 @@ export const noNewFindings = (name: string): Gate => (a, b) => {
 /** A gate: the candidate has the fact `name`. */
 export const factHolds = (name: string): Gate => a => (a.facts?.[name] === true ? undefined : `${name} does not hold`);
 
+/** The creep the rounds of 7f end under (`CANTON_CREEP` of the mutation step): a settled model that drifts less than this is at rest. */
+export const REST = 0.5;
+
+/** A gate: the candidate drifts no more than the incumbent, or `REST` where the incumbent drifts less (a creep of a fraction of a pixel does not turn the guard off). */
+export const driftHeld: Gate = (a, b) => ((a.drift ?? 0) <= Math.max(b.drift ?? 0, REST) + PLACEMENT_EPS ? undefined : 'the column rules would undo the move');
+
+/** A gate: the canvas of the candidate stays within the width bound it names, or the width the incumbent had, the larger. */
+export const widthBound: Gate = (a, b) => (a.widthCap === undefined || widthWithin(a, b, a.widthCap) ? undefined : 'the canvas grows past its bound');
+
 /** How many straight links of `b` in `family` `a` does not hold. */
 export const lostStraight = (a: Reading, b: Reading, family: 'overlay' | 'routed'): number => missing(b[family].straightIds, a[family].straightIds);
 
@@ -347,6 +360,8 @@ export const profiles = {
   fanRound: orderProfile('fanRound', [keys.moreStraight('routed')]),
   keepCount: orderProfile('keepCount', [keys.moreStraight('overlay')]),
   keepSet: gateProfile('keepSet', [keys.keepsStraightSet('overlay')]),
+  /** A drift check alone: the column rules would not undo the move (the cheap test of a lower rank move). */
+  driftHeld: gateProfile('driftHeld', [], [driftHeld]),
   /** The lane reseat (ticket 13, phase 3): the four criteria of the post-hoc trial, as gates on a settled model. No key: the reseat is judged by what it must not spoil. */
   laneReseat: gateProfile('laneReseat', [], [noNewFindings('centring'), noNewFindings('gaps'), noNewFindings('room'), factHolds('lanesHold'), factHolds('chordsClear')]),
   /** The order the user approved on 2026-10-04: fewer bent links over both layers, then fewer turns, then fewer crossings. Not switched on anywhere. */
@@ -357,15 +372,24 @@ export const profiles = {
  * The judge of each kind, by the profile of `objective.ts` that gives today's verdict. This is the one place that names them: phase 4 replaces
  * these by `profiles.unified` behind the hard gates of the design.
  */
+/** The findings a settled chord-clear candidate must not add (G6 crowded pairs, G5 disordered ports, tier-gap parts the plan declines). */
+const noNewPlacementFindings = [noNewFindings('crowded'), noNewFindings('disordered'), noNewFindings('residuals')];
+
 export const judges = {
-  /** A chord-clear candidate on the geometry after the move, against the geometry before it. */
-  chordCheap: profiles.settled,
+  /** A chord-clear candidate on the geometry after the move, against the geometry before it: more straight overlay links, no routed link loses its line, no new body on a frozen chord. */
+  chordCheap: orderProfile('chordCheap', [keys.moreStraight('overlay')], [], [routedSetKept, noNewFindings('blocked')]),
+  /** The candidates that passed, against the best so far: the most straight overlay links (the nearest of equals stays, it came first). */
+  chordBest: orderProfile('chordBest', [keys.moreStraight('overlay')]),
+  /** The move of a lower rank that stays (ticket 146). */
+  rankMove: profiles.rankMove,
+  /** The column rules (ticket 67) do not undo a lower rank move: the cheap test before a settled copy is paid for. */
+  driftHeld: profiles.driftHeld,
   /** A lower rank candidate: the crossings the move adds, before a settled copy is paid for. */
   rankCheap: profiles.cheapCrossings,
-  /** A chord-clear candidate on its settled copy, against the settled copy without it. */
-  chordSettled: profiles.settled,
+  /** A chord-clear candidate on its settled copy, against the settled copy without it: the straight count rises, and the column rules, the width bound and the findings hold. */
+  chordSettled: orderProfile('chordSettled', [keys.moreStraight('overlay')], [], [routedSetKept, driftHeld, widthBound, ...noNewPlacementFindings]),
   /** The same for a lower rank cell (no crossing is added). */
-  rankSettled: profiles.settledRanked,
+  rankSettled: orderProfile('rankSettled', [keys.moreStraight('overlay')], [], [crossingsNotUp, routedSetKept, driftHeld, widthBound, ...noNewPlacementFindings]),
   /** A group with no link steps out of a chord: the straight overlay links it began with must stand. */
   linkless: profiles.keepSet,
   /** The lane reseat on its settled copy, against the incumbent with its lanes held. */
