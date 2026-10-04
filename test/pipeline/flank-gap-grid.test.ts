@@ -45,3 +45,20 @@ it('a widening whose flank cannot move out is refused, and is made when the flan
   expect(JSON.stringify(blocked.groups['core']!.bounds)).toBe(before);
   expect(blocked.groups['side-left']!.bounds!.x).toBeCloseTo(flank.x, 6);
 });
+
+// Architecture ticket 11: a frame column the rows rule moves right must not move into a right flank seated beside the tier.
+it('a right flank stands a band gap clear of a canton column in its tier', async () => {
+  const yaml = readFileSync(new URL('../../goldens/synthetic/a-canton-next-to-a-flank-keeps-the-flank-gap.yaml', import.meta.url), 'utf8');
+  const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const east = model.groups['east#0']!.bounds!, flank = model.groups['side-right']!.bounds!;
+  expect(flank.x - (east.x + east.width), 'flank gap to the canton member').toBeGreaterThanOrEqual(bandGap(model) - 1e-6);
+  expect(model.groups['core']!.bounds!.x + model.groups['core']!.bounds!.width).toBeLessThan(east.x);
+  expect(Object.values(score(model).snapshot.gates).every(gate => gate.passed)).toBe(true);
+});
+
+it('the hold pass does not pull a canton column into a right flank', async () => {
+  const yaml = readFileSync(new URL('../../goldens/synthetic/a-canton-column-is-not-pulled-into-a-flank.yaml', import.meta.url), 'utf8');
+  const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const east = model.groups['east#0']!.bounds!, flank = model.groups['side-right']!.bounds!;
+  expect(flank.x - (east.x + east.width), 'the column stands clear of the flank').toBeGreaterThan(0);
+});

@@ -788,6 +788,11 @@ const HELD_TEXT: Record<HeldBy, string> = {
   canton: 'the canton column holds it',
 };
 
+/** The flanks that stand in a tier of `unit`: the passes that move columns may not move a column into one (`rows.ts` throws if it stands there). */
+function flanksBesideUnit(model: LayoutModel, unit: Unit): LayoutGroup[] {
+  return Object.values(model.groups).filter(group => group.flank !== undefined && group.bounds !== undefined && group.tier !== undefined && group.tier >= unit.low && group.tier <= unit.high);
+}
+
 /** The members of one canton that the inner pass may move, and the canton frame box that walls them. */
 interface MemberScope { units: ReadonlySet<Unit>; wall: Column; canton: string }
 
@@ -825,6 +830,14 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
         else { from = Math.max(from, low); to = Math.min(to, high); }
       } else { from = to = at.x; flush.add(unit); }
     }
+    // A flank stands where it stands: its box is a wall the pull may not cross, a band gap from the cells (a frame box reaches
+    // GROUP_PADDING beyond its cells). A unit already past the wall stays where it is, and nothing here moves it back.
+    for (const flank of flanksBesideUnit(model, unit)) {
+      const reach = unit.frame ? GROUP_PADDING : 0;
+      if (flank.flank!.align === 'right') to = Math.max(Math.min(to, flank.bounds!.x - gap - at.width + reach), at.x);
+      else from = Math.min(Math.max(from, flank.bounds!.x + flank.bounds!.width + gap - reach), at.x);
+    }
+    from = Math.min(from, to); to = Math.max(from, to);
     if (range !== undefined) wanting.add(unit);
     return { unit, x: at.x, width: at.width, slack: unit.frame ? columnSlack : 0, from, to };
   }).sort((a, b) => a.x - b.x || compareId(a.unit.id, b.unit.id));

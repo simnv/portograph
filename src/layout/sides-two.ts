@@ -9,6 +9,7 @@ import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEA
 import { sizeNodes } from './size.js';
 import { bandGap, nodeGap, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { moveGroup, stackBands } from './skeleton-geometry.js';
+import { separateFrameColumns } from './columns.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { SideHintRefusal } from './side-hints.js';
 import { carriesTitle, nodeObstacleReach, nudgingDistance, routedStroke, stemReach } from './bands.js';
@@ -695,6 +696,19 @@ export function rowGap(model: LayoutModel, a: string, b: string): number {
     passByStem(b, 'left', a), passByStem(a, 'right', b), turning, fans);
 }
 
+/**
+ * A flank is seated by the sweeps below, in x order, and is never moved again: the rows rule that follows may move a frame
+ * column (`separateFrameColumns`: a band gap and a column slack from the column before it) but never a flank. A tier that holds
+ * a flank therefore has its frame columns apart first, so the sweep seats the flank beside the columns where they will stand and
+ * the rows rule finds nothing to move into it. A sheet where no flank shares a tier with a frame is not read: its frames are still separated by the rows rule.
+ */
+function separateFramedTiersBesideFlanks(model: LayoutModel): void {
+  // The condition is only there to keep a sheet with no flank byte-identical: the general fix (always separate here) changes 6 sheets that
+  // have no flank. It reads "a flank and a frame share a tier".
+  const groups = Object.values(model.groups);
+  if (groups.some(flank => flank.flank && groups.some(group => group.frame !== undefined && group.tier === flank.tier))) separateFrameColumns(model);
+}
+
 /** Resolve all direction votes, resize and repack in skeleton order; retain the returned snapshot. */
 export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Size>): LayoutModel {
   if (model.stage !== 'skeleton' || model.freeze) throw new Error('Phase-two sides require the skeleton stage');
@@ -826,6 +840,7 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
       width: Math.max(2 * spacing.padding, x - group.bounds!.x + spacing.padding),
       height: Math.max(group.bounds!.y + spacing.padding, ...order.map(id => model.nodes[id]!.bounds!.y + model.nodes[id]!.size!.height)) - group.bounds!.y + spacing.padding };
   }
+  separateFramedTiersBesideFlanks(model);
   for (const tier of model.tierBands) {
     const groups = tier.groups.map(id => model.groups[id]!).sort((a, b) => a.bounds!.x - b.bounds!.x);
     let end = -Infinity;
@@ -859,6 +874,7 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   }
   rebuildNodeGeometry(model, orderedNodeIds(model.document), 'from-slots');
   for (const group of Object.values(model.groups)) fitRegionGroup(model, group);
+  separateFramedTiersBesideFlanks(model);
   for (const tier of model.tierBands) {
     let end = -Infinity;
     for (const group of tier.groups.map(id => model.groups[id]!).sort((a, b) => a.bounds!.x - b.bounds!.x)) {
