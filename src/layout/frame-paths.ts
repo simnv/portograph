@@ -66,6 +66,11 @@ function documentTier(model: LayoutModel, id: string): number | undefined {
  * (docs/design/routed-chords.md, Section 3).
  */
 export function chordKind(model: LayoutModel, link: LayoutLink): ChordKind | undefined {
+  const shared = sharedKinds;
+  if (shared !== undefined && Object.isFrozen(link)) {
+    if (!shared.has(link)) shared.set(link, chordKindOf(model, link));
+    return shared.get(link);
+  }
   const scope = linkFactsScope;
   if (scope?.model !== model) return chordKindOf(model, link);
   if (!scope.kinds.has(link)) scope.kinds.set(link, chordKindOf(model, link));
@@ -79,6 +84,17 @@ export function chordKind(model: LayoutModel, link: LayoutLink): ChordKind | und
  */
 interface LinkFactsScope { model: LayoutModel; kinds: Map<LayoutLink, ChordKind | undefined>; legs: Map<LayoutLink, Map<'from' | 'to', PathSegment | undefined>> }
 let linkFactsScope: LinkFactsScope | undefined;
+let sharedKinds: Map<LayoutLink, ChordKind | undefined> | undefined;
+/**
+ * The replays of the centring check run a step on many copies of one model, and the copies share their links, frozen (`centreViolations`). A frozen link is the
+ * same object in every copy, and a centring step moves no port side, lane hint or group, which are all that its kind reads besides the link: so its kind is
+ * read once for all the copies. Only a frozen link is cached, and only while `run` is on the stack (architecture ticket 14).
+ */
+export function withSharedLinkKinds<T>(run: () => T): T {
+  if (sharedKinds !== undefined) return run();
+  sharedKinds = new Map();
+  try { return run(); } finally { sharedKinds = undefined; }
+}
 export function withLinkFacts<T>(model: LayoutModel, run: () => T): T {
   if (linkFactsScope) throw new Error('A link-facts scope cannot nest: the outer cache would answer for the inner call');
   linkFactsScope = { model, kinds: new Map(), legs: new Map() };

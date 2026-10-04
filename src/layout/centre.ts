@@ -23,7 +23,7 @@ import { placeOverlayFree } from './overlay-place.js';
 import { fitRegionGroup, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 import { EPS, segmentRectDistance } from '../geometry/planar.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
-import { chordKind, isRoutedChord } from './frame-paths.js';
+import { chordKind, isRoutedChord, withSharedLinkKinds } from './frame-paths.js';
 
 export interface CentreBudget { remaining: number; passes: number }
 export function createCentreBudget(): CentreBudget { return { remaining: 8, passes: 0 }; }
@@ -670,6 +670,11 @@ export function flagUnverifiedCentring(model: LayoutModel): void {
   }
 }
 /**
+ * The parts of the model that a replayed centring step only reads. The check runs one step per group, each on its own copy; these parts are copied once, frozen
+ * and shared by all the copies (a write to one throws), so a copy parses only the groups, the nodes and the diagnostics (architecture ticket 14).
+ */
+const TRIAL_SHARED = ['document', 'links', 'groupLinks', 'meshBuses', 'lanes', 'bundles', 'obstacles', 'frames', 'labels', 'regions', 'tierBands'];
+/**
  * The stage 7c invariant, readable at any later stage (ADR-0010): for every centred group, replaying
  * its own centring step on a copy either leaves each owning alignment where the model has it, or ends
  * unresolved by the producer's own rules for that port (infeasible alignment, conflicting feeds, a
@@ -678,6 +683,9 @@ export function flagUnverifiedCentring(model: LayoutModel): void {
  * drops and endpoints (7d), ports any bundle member uses (7e) — are not compared.
  */
 export function centreViolations(model: LayoutModel, ahead = false, shared?: CentreContext): string[] {
+  return withSharedLinkKinds(() => readCentreViolations(model, ahead, shared));
+}
+function readCentreViolations(model: LayoutModel, ahead: boolean, shared: CentreContext | undefined): string[] {
   const anchor = model.anchorTier;
   if (anchor === undefined || !model.tierBands.some(band => band.tier === anchor)) return [];
   const context = shared ?? centreContext(model, anchor);
@@ -696,8 +704,11 @@ export function centreViolations(model: LayoutModel, ahead = false, shared?: Cen
   // large model that block is more than a third of the JSON the per-group copy below would carry.
   const { freeze: _frozen, ...replayed } = model;
   void _frozen;
-  // Every trial starts from the same model, so it is serialized once, on the first trial, and each trial parses that text.
-  let replayedText: string | undefined;
+  // Every trial starts from the same model. The parts a step only reads are copied once and frozen (`TRIAL_SHARED`), and so are the nodes (the diagnostics are not shared; each trial parses its own):
+  // a trial takes a fresh copy of the nodes of its group and of the group before it (the ones a step writes), and shares the rest. A step that writes
+  // to a shared part throws; that trial is then run again on a full copy, so the answer is the one a full copy gives (architecture ticket 14).
+  let replayedText: string | undefined, sharedParts: Record<string, unknown> | undefined, sharedNodes: Record<string, LayoutNode> | undefined, nodeTexts: Map<string, string> | undefined, fullText: string | undefined;
+  const freezeDeep = (value: unknown): void => { if (value && typeof value === 'object') { Object.values(value).forEach(freezeDeep); Object.freeze(value); } };
   for (const { tier, authority } of context.steps) {
     const list = centringFeeds(model, tier, authority), order = context.groupOrder.get(tier)!;
     const tail = tailReservation(model, context, tier, order);
@@ -706,8 +717,34 @@ export function centreViolations(model: LayoutModel, ahead = false, shared?: Cen
       const group = model.groups[id]!;
       const owned = groupFeeds(model, context, tier, list, id, false);
       if (model.document.groups[id]!.shape === 'bar' || !owned.own.length) { previous = group; continue; }
-      const trial = JSON.parse(replayedText ??= JSON.stringify(replayed)) as LayoutModel;
-      const step = centreGroupStep(trial, context, tier, centringFeeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, tail);
+      if (replayedText === undefined) {
+        const own: Record<string, unknown> = {}, still: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(replayed)) (TRIAL_SHARED.includes(key) ? still : own)[key] = value;
+        nodeTexts = new Map(Object.entries(model.nodes).map(([key, node]) => [key, JSON.stringify(node)]));
+        sharedNodes = Object.fromEntries([...nodeTexts].map(([key, text]) => [key, JSON.parse(text) as LayoutNode]));
+        freezeDeep(sharedNodes);
+        delete own.nodes;
+        replayedText = JSON.stringify(own);
+        sharedParts = JSON.parse(JSON.stringify(still)) as Record<string, unknown>;
+        freezeDeep(sharedParts);
+      }
+      const attempt = (full: boolean): { trial: LayoutModel; step: ReturnType<typeof centreGroupStep> } => {
+        let trial: LayoutModel;
+        if (full) {
+          trial = JSON.parse(fullText ??= JSON.stringify(replayed)) as LayoutModel;
+        } else {
+          const nodes: Record<string, LayoutNode> = { ...sharedNodes };
+          for (const nodeId of [...group.nodes, ...(previous?.nodes ?? [])]) { const text = nodeTexts!.get(nodeId); if (text !== undefined) nodes[nodeId] = JSON.parse(text) as LayoutNode; }
+          const fresh = JSON.parse(replayedText!) as Record<string, unknown>;
+          trial = Object.assign(fresh, sharedParts, { nodes }) as unknown as LayoutModel;
+        }
+        return { trial, step: centreGroupStep(trial, context, tier, centringFeeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, tail) };
+      };
+      let step: ReturnType<typeof centreGroupStep>;
+      try { step = attempt(false).step; } catch (error) {
+        if (!(error instanceof TypeError)) throw error;
+        step = attempt(true).step;
+      }
       previous = group;
       // Both lookups below read one key per wanted child; keying them once keeps the scan of the
       // group's own feeds and ports out of the loop. First entry wins, as `find` did.
