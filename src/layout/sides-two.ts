@@ -16,7 +16,7 @@ import { SideHintRefusal } from './side-hints.js';
 import { carriesTitle, nodeObstacleReach, nudgingDistance, routedStroke, stemReach } from './bands.js';
 import { MEMBER_GAP, fanEnd } from './bundle-geometry.js';
 import { laneSource, laneWidth, transitTiers } from './lanes.js';
-import { fitRegionGroup } from './regions.js';
+import { fitRegionGroup, placementWarning } from './regions.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { gridCells, gridRowGap, groupShape, isGridGroup, packGridRows } from './grid.js';
 import { freezePortTopology } from './mutation.js';
@@ -750,6 +750,7 @@ export function sweepTiers(model: LayoutModel): void {
     // A frame moved whole stands in every band it occupies: the columns of the other bands keep their band gap and slack from its box (`columnShifts`), as the rows rule keeps them.
     if (anyMixed && separateFrameColumns(model)) moved = true;
   }
+  if (moved) placementWarning(model, 'PLACEMENT_NON_CONVERGENCE', 'The sweep that seats the groups of a tier beside the frames did not settle in 16 rounds; final gates decide the retained geometry.', [], 'group');
 }
 const PLACEMENT_EPS_SWEEP = 1e-6;
 

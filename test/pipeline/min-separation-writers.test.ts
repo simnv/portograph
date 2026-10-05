@@ -31,6 +31,14 @@ const SHEETS = [
   'a-grid-widening-in-a-framed-sheet-keeps-the-band-gap',
 ];
 
+// Open (architecture ticket 19): a bar whose leaves stand left of its own box takes its span to the left and 7d may move no other group, so the group before it stands
+// inside the band gap. Placement does not reserve this (nothing moves left); the final G9 finding reports it, naming the group and the bar.
+it('a bar that spans left into the gap of the group before it is reported by G9, not reserved', async () => {
+  const yaml = readFileSync(new URL('../../goldens/synthetic/a-bar-spans-left-into-the-gap-of-the-group-before-it.yaml', import.meta.url), 'utf8');
+  const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  expect(gateFailures(score(model).snapshot)).toEqual(['G9:min-separation:group:before,group:bar']);
+}, 120000);
+
 it.each(SHEETS)('%s publishes no minimum-separation finding', async name => {
   const yaml = readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
   const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });

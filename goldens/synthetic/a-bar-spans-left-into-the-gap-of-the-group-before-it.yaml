@@ -1,0 +1,22 @@
+# Expected: OPEN (architecture ticket 19). A bar whose drop leaves stand far left of the bar's own box takes its span to the left, and 7d may move no other group; the row
+# group before the bar then stands inside the band gap. Nothing in placement reserves this: no sweep moves a group left, and a left yield of the group before the bar
+# oscillated against the room a link label asks for. The final G9 `min-separation` finding reports it (test/pipeline/min-separation-writers.test.ts).
+# When a stage reserves it, the test pins the fix instead.
+# Source: architecture ticket 19 re-check.
+portograph: 2
+groups:
+  before: { tier: 0, label: Before }
+  bar: { tier: 0, shape: bar, label: Bar }
+  filler: { tier: 1, label: Filler }
+  leaf-a: { tier: 1, label: Leaf A }
+  leaf-b: { tier: 1, label: Leaf B }
+nodes:
+  anchor: { group: before, class: router, label: Anchor }
+  spine: { group: bar, label: Spine, ports: [{ name: p, side: bottom }, { name: q, side: bottom }] }
+  f1: { group: filler, class: router, label: Filler one }
+  a: { group: leaf-a, class: router, label: Leaf A, ports: [{ name: p, side: top }] }
+  b: { group: leaf-b, class: router, label: Leaf B, ports: [{ name: p, side: top }] }
+links:
+  - [spine.p, a.p]
+  - [spine.q, b.p]
+  - [anchor, f1]
