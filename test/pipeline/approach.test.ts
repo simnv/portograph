@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import type { LayoutLink, LayoutModel, LayoutPort } from '../../src/index.js';
 import { approachPoint, endPort } from '../../src/layout/approach.js';
+import { measureCourses } from '../../src/layout/course-measure.js';
 import { findPort } from '../../src/layout/row-paths.js';
 import { measurePortPill } from '../../src/text/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -70,7 +71,7 @@ describe('the uplink of the shared-port sheet meets the trunk pill from above (h
     const model = await run();
     expect(model.diagnostics.some(item => item.code === 'COURSE_SHAPE_LOST')).toBe(false);
     expect(model.diagnostics.find(item => item.code === 'SHARED_PORT')?.severity).toBe('warning');
-    expect(model.diagnostics.some(item => item.code === 'COURSE_TAKEN' && item.owners?.[0]?.id === 'link-1')).toBe(true);
+    expect(model.diagnostics.some(item => item.code === 'COURSE_TAKEN' && (item.owners?.[0] as { id?: string } | undefined)?.id === 'link-1')).toBe(true);
   }, 60000);
 
   it('without the course round the sheet is as before: the uplink enters the right face in three turns', async () => {
@@ -78,5 +79,33 @@ describe('the uplink of the shared-port sheet meets the trunk pill from above (h
     expect(link(model, 1).approach).toBeUndefined();
     expect(link(model, 1).path!.segments).toHaveLength(4);
     expect(model.junctions).toHaveLength(1);
+  }, 60000);
+});
+
+describe('the offer of an approach (ticket 15, phase 6 review)', () => {
+  const offered = (model: LayoutModel): string[] => measureCourses(model, model).courses.filter(course => course.kind === 'shared-port').map(course => course.link);
+  const plain = async (): Promise<LayoutModel> => structuredClone(await run({ testCourses: [] })) as LayoutModel;
+
+  it('the sheet as it stands offers the uplink an approach', async () => {
+    expect(offered(await plain())).toEqual(['link-1']);
+  }, 60000);
+
+  it('two uplinks from above at one pill are offered no approach: they would meet it at one point', async () => {
+    const model = await plain();
+    const second = structuredClone(link(model, 1));
+    second.id = 'link-9'; second.sourceIndex = 9;
+    model.links.push(second);
+    expect(offered(model)).toEqual([]);
+  }, 60000);
+
+  it('a port with another port nearer the approach side is offered none: only the end port of its face takes it', async () => {
+    const model = await plain();
+    const sw = model.nodes.sw!, trunk = sw.ports.find(port => port.ref.name === 'trunk')!;
+    sw.ports.push({ ...structuredClone(trunk), ref: { node: 'sw', name: 'mgmt', ordinal: 2 }, anchor: { x: trunk.anchor!.x, y: trunk.anchor!.y - 14 } });
+    expect(offered(model)).toEqual([]);
+    // A port on the far side of the trunk does not stand in the way.
+    sw.ports.pop();
+    sw.ports.push({ ...structuredClone(trunk), ref: { node: 'sw', name: 'mgmt', ordinal: 2 }, anchor: { x: trunk.anchor!.x, y: trunk.anchor!.y + 14 } });
+    expect(offered(model)).toEqual(['link-1']);
   }, 60000);
 });

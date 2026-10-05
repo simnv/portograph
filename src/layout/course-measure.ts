@@ -8,6 +8,7 @@ import { authoredSide, groupShape } from './grid.js';
 import { crossingsOf, strictCrossing } from './read/crossings.js';
 import { linkFacts, type EndFacts, type LinkFacts } from './read/courses.js';
 import { profiles, drawnOverlays, read, pathBends, reading, routedFamily, routedBends, compare, lazyCount, type Reading } from './objective.js';
+import { measurePortPill } from '../text/index.js';
 import { findPort } from './row-paths.js';
 import { EDGE_MARGIN, RING_PITCH, paddingRows, rowsInset } from './course-rows.js';
 import { added as namesAdded, constraintFindings, gateFindings, separationWorse } from './trial-findings.js';
@@ -195,7 +196,22 @@ function approachCourse(base: LayoutModel, facts: ReadonlyMap<string, LinkFacts>
     const own = Math.sign(far.tier - end.tier);
     const others = [...facts.values()].filter(item => item.link.id !== found.link.id && direction(item) !== undefined);
     if (!others.some(item => direction(item) !== own)) continue;
+    // One side per approach: another link at the port that comes from the same side would meet the pill at the same point, and nothing joins their stems.
+    if (others.some(item => direction(item) === own)) continue;
     const approach: Side = above ? 'top' : 'bottom';
+    // The port is the end port of its face toward the approach: a nearer port's stem or pill would stand in the way of the vertical stem.
+    const node = base.nodes[end.ref.node];
+    if (node === undefined || node.ports.some(item => item.side === end.side && portKey(item.ref) !== portKey(end.ref) && item.anchor !== undefined
+      && (above ? item.anchor.y < end.anchor.y : item.anchor.y > end.anchor.y))) continue;
+    // The stem's corridor is clear of every other node: the pill's outer half and the clearance either side, from the node's face on the approach side to the far end.
+    const pill = measurePortPill(end.ref.name), half = pill.width / 4 + APPROACH_CLEARANCE;
+    const x0 = end.anchor.x - half, x1 = end.anchor.x + (end.side === 'right' ? 1 : -1) * pill.width / 4 + half * (end.side === 'right' ? 1 : -1);
+    const lo = Math.min(x0, x1), hi = Math.max(x0, x1);
+    const yFar = far.anchor.y, yNear = end.anchor.y;
+    const blocked = Object.values(base.nodes).some(other => other.id !== end.ref.node && other.bounds !== undefined
+      && other.bounds.x < hi && other.bounds.x + other.bounds.width > lo && other.bounds.y < Math.max(yFar, yNear) && other.bounds.y + other.bounds.height > Math.min(yFar, yNear)
+      && other.id !== far.ref.node);
+    if (blocked) continue;
     const course: Course = { link: found.link.id, kind: 'shared-port', runs: ['tier-gap'],
       from: { face: found.from.side, ...(which === 'from' ? { approach } : {}) }, to: { face: found.to.side, ...(which === 'to' ? { approach } : {}) } };
     return { course, turns: APPROACH_TURNS };
@@ -205,6 +221,8 @@ function approachCourse(base: LayoutModel, facts: ReadonlyMap<string, LinkFacts>
 
 /** The turns of a drop onto a pill from a row of the tier gap: the stem turns into the row, and the row into the drop. */
 const APPROACH_TURNS = 2;
+/** The clearance either side of an approach stem that no other node may enter: the gate clearance plus half the routed stroke. */
+const APPROACH_CLEARANCE = 10.75;
 
 /** The column-gap course of a skirt, or `undefined`: which end keeps its lateral face, which leaves by the bottom face and a U part. */
 function gapCourse(base: LayoutModel, found: LinkFacts, usageOf: (model: LayoutModel, key: string) => number,
