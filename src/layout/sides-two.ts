@@ -29,6 +29,9 @@ const key = portId;
  * Visible wire between two facing named pills. Without it the two pills' outer edges meet and the
  * link between them is drawn entirely behind them, which is a connection a reader cannot see.
  */
+/** The one key a port sorts by on its face: the negated reach of an overlay course lane (the farther first), else its far coordinate (the nearer first). */
+export const portSlotKey = (reached: number | undefined, far: number): number => (reached !== undefined ? -reached : far);
+
 export const PILL_WIRE_GAP = 8;
 
 /**
@@ -927,9 +930,12 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
         const there = entry === undefined ? undefined : model.nodes[entry.far.node]?.ports.find(port => key(port.ref) === key(entry.far))?.anchor;
         return entry === undefined || here === undefined || there === undefined ? undefined : there.y + Math.sign(there.y - here.y) * entry.bias;
       };
+      // One key for every port, so that the order is total: a course port stands at the negated reach of its lane (the farther first), any other port at its far
+      // coordinate (the nearer first); a routed port among course ports keeps its far order, whatever its neighbours' reach.
+      const slot = (ref: PortRef): number => portSlotKey(side === 'left' || side === 'right' ? reach(ref) : undefined, far(ref));
       ports.sort((a, b) => {
-        const ra = side === 'left' || side === 'right' ? reach(a.ref) : undefined, rb = side === 'left' || side === 'right' ? reach(b.ref) : undefined;
-        return isBus(a.ref) - isBus(b.ref) || (ra !== undefined && rb !== undefined ? rb - ra : far(a.ref) === far(b.ref) ? 0 : far(a.ref) - far(b.ref));
+        const ka = slot(a.ref), kb = slot(b.ref);
+        return isBus(a.ref) - isBus(b.ref) || (ka === kb ? 0 : ka - kb);
       });
       const authored = ports.filter(port => port.authorOrder !== undefined).sort((a, b) => a.authorOrder! - b.authorOrder!);
       let next = 0;

@@ -95,6 +95,8 @@ export function validateCourseLane(model: LayoutModel, lane: Lane): void {
   const owner = lane.owner.kind === 'link' ? lane.owner.id : undefined;
   if (owner === undefined || !model.links.some(link => link.id === owner)) throw new Error(`Lane ${lane.id} has no link owner`);
   if (!(model.courses ?? []).some(course => course.link === owner)) throw new Error(`Lane ${lane.id} belongs to a link with no course`);
+  const ownerLink = model.links.find(link => link.id === owner)!;
+  if (lane.layer !== undefined && lane.layer !== (ownerLink.layer === 'overlay' ? 'overlay' : 'routed')) throw new Error(`Lane ${lane.id} is on the ${lane.layer} layer and its link on the ${ownerLink.layer} layer`);
   const prefix = lane.kind === 'perimeter' ? `perimeter:${owner}` : `gap-lane:${owner}:`;
   const idOk = lane.kind === 'perimeter' ? lane.id === prefix : lane.id.startsWith(prefix) && /^\d+$/.test(lane.id.slice(prefix.length));
   if (!idOk) throw new Error(`Lane id ${lane.id} contradicts its kind`);

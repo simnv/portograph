@@ -388,8 +388,6 @@ export function measureOverlayCourses(base: LayoutModel, routedBase: LayoutModel
     const found = facts.get(link.id);
     if (found !== undefined && found.from.tier !== found.to.tier && !overlayChordAdmitted(base, link)) planned.add(link.id);
   }
-  const fixedPaths = new Map<string, Point[]>();
-  for (const link of routedBase.links) if (link.removed !== true && !planned.has(link.id)) fixedPaths.set(link.id, pointsOf(link));
   const nodes = { ...base.nodes };
   const eligible = base.links.filter(link => {
     const found = facts.get(link.id);
@@ -400,6 +398,10 @@ export function measureOverlayCourses(base: LayoutModel, routedBase: LayoutModel
     const drawn = routedBase.links.find(item => item.id === link.id);
     return drawn !== undefined && pathBends(drawn) !== undefined;
   });
+  // Only a link that may take a course leaves the fixed paths: a planned overlay that is not eligible keeps the path it has, and a course crosses it like any other.
+  const fixedPaths = new Map<string, Point[]>();
+  const offered = new Set(eligible.map(link => link.id));
+  for (const link of routedBase.links) if (link.removed !== true && !offered.has(link.id)) fixedPaths.set(link.id, pointsOf(link));
   /** One pass over `order`: each link takes the best course its ends admit against the paths and lanes chosen before it. */
   const pass = (order: readonly LayoutLink[]): { link: LayoutLink; best: PerimeterBest; turns0: number }[] => {
     const paths = new Map(fixedPaths), stack: Lane[] = [...base.lanes.filter(lane => lane.kind === 'perimeter')];
@@ -456,15 +458,21 @@ export function judgeOverlayTrial(routedBase: LayoutModel, routedTrial: LayoutMo
   if (constraintNew.length > 0) return verdict(false, `the routed trial breaks a hard constraint the baseline holds (${constraintNew.join('; ')})`);
   const separationNew = separationWorse(routedTrial, routedBase);
   if (separationNew.length > 0) return verdict(false, `the routed trial breaks or deepens a minimum separation (${separationNew.join('; ')})`);
-  const room = reservedGrowth(routedTrial), cap = (was: number | undefined, extra: number): number => (was ?? 0) * (1 + GROWTH_BOUND) + extra + 1e-6;
+  // The growth a lane reserves counts only beyond what the baseline already reserves.
+  const was = reservedGrowth(routedBase), reserved = reservedGrowth(routedTrial);
+  const room = { width: Math.max(0, reserved.width - was.width), height: Math.max(0, reserved.height - was.height) }, cap = (before: number | undefined, extra: number): number => (before ?? 0) * (1 + GROWTH_BOUND) + extra + 1e-6;
   if ((routedTrial.canvas?.width ?? 0) > cap(routedBase.canvas?.width, room.width) || (routedTrial.canvas?.height ?? 0) > cap(routedBase.canvas?.height, room.height)) {
     return verdict(false, `the routed trial grows the canvas past ${GROWTH_BOUND * 100} % and the width its lanes reserve`);
   }
-  const readingOf = (model: LayoutModel): Reading => reading({ routed: routedFamily(routedBends(model)), overlay: read(model, { overlays: drawnOverlays(model) }).overlay,
-    crossings: lazyCount(() => routedCrossingPairs(model)), crossingMode: 'pairs', tie: [] });
+  // Each link is counted once: the routed family reads the routed links, the overlay family the drawn overlays; crossings are the pairs of both layers.
+  const routedLinks = (model: LayoutModel): Map<string, number> => new Map([...routedBends(model)].filter(([id]) => model.links.find(link => link.id === id)?.layer === 'routed'));
+  const readingOf = (model: LayoutModel): Reading => {
+    const overlay = read(model, { overlays: drawnOverlays(model), crossings: 'pairs' });
+    return reading({ routed: routedFamily(routedLinks(model)), overlay: overlay.overlay, crossings: lazyCount(() => routedCrossingPairs(model) + overlay.crossings()), crossingMode: 'pairs', tie: [] });
+  };
   // The routed layer first: an overlay course that costs a routed link a bend, a turn or a crossing (a column it moved, a row it grew) is no course, whatever the
   // overlay layer gains. The overlay bends of a link the rule took are the rule's; every other reading is the user's order.
-  const routedOnly = (model: LayoutModel): Reading => reading({ routed: routedFamily(new Map([...routedBends(model)].filter(([id]) => model.links.find(link => link.id === id)?.layer === 'routed'))),
+  const routedOnly = (model: LayoutModel): Reading => reading({ routed: routedFamily(routedLinks(model)),
     crossings: lazyCount(() => routedCrossingPairs(model)), crossingMode: 'pairs', tie: [] });
   const routedNow = routedOnly(routedTrial), routedThen = routedOnly(routedBase);
   if (compare(routedNow, routedThen, courseProfile) > 0) {

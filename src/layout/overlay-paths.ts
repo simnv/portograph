@@ -5,7 +5,7 @@ import { bottom, EPS, retracingRuns, right, samePoint } from '../geometry/planar
 import { OVERLAY_ENDPOINT_RADIUS, pathStrokeWidth } from '../theme/geometry.js';
 import { RectangleIndex } from './rectangle-index.js';
 import { findPort } from './row-paths.js';
-import { courseGeometry } from './course-lanes.js';
+import { courseGeometry, ringsOf } from './course-lanes.js';
 
 /**
  * How far past a port's own outward face an overlay link's **stub** reaches before the straight
@@ -505,7 +505,7 @@ export function overlayCoursePoints(model: LayoutModel, link: LayoutLink): Point
   const lane = course === undefined ? undefined : model.lanes.find(item => item.kind === 'perimeter' && item.owner.kind === 'link' && item.owner.id === link.id);
   if (course === undefined || lane === undefined || link.attachments === undefined) return undefined;
   const geometry = courseGeometry(model, link, course, { id: lane.id, side: lane.side, ring: lane.ring ?? 0, ...(lane.aligned === true ? { aligned: true as const } : {}), x: lane.x, keepX: true },
-    group => group.bounds!, new Map());
+    group => group.bounds!, ringsOf(model.lanes));
   if (geometry === undefined) return undefined;
   const faces = [link.attachments.from, link.attachments.to].map(ref => {
     const port = findPort(model, ref), node = model.nodes[ref.node];
