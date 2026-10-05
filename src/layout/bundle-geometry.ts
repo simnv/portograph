@@ -292,7 +292,10 @@ export function treeCohorts(model: LayoutModel, pending?: PendingFixed): { port:
  */
 export function fanCohorts(model: LayoutModel, pending?: PendingFixed): { cohorts: { port: LayoutPort; links: LayoutLink[] }[]; excluded: { port: LayoutPort; link: LayoutLink }[] } {
   const incidence = new Map<string, { port: LayoutPort; links: LayoutLink[] }>();
-  for (const link of model.links) if (link.layer === 'routed' && link.attachments && link.technique !== 'stub') for (const ref of [link.attachments.from, link.attachments.to]) {
+  // An end on an approach meets the pill on its own edge and shares no stem with the other links of the port (ticket 15, phase 6).
+  for (const link of model.links) if (link.layer === 'routed' && link.attachments && link.technique !== 'stub') for (const end of ['from', 'to'] as const) {
+    if (link.approach?.[end] !== undefined) continue;
+    const ref = link.attachments[end];
     const port = findPort(model, ref)!, key = portId(ref), entry = incidence.get(key) ?? { port, links: [] };
     entry.links.push(link); incidence.set(key, entry);
   }

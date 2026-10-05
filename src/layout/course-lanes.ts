@@ -16,7 +16,10 @@ import { findPort } from './row-paths.js';
  * the round promised is the polyline the lane reserves.
  */
 
-export const courseOf = (model: LayoutModel, link: string): Course | undefined => model.courses?.find(course => course.link === link);
+/** A course of kind `shared-port` owns no lane: it only names the approach of a link end at a shared pill (phase 6). */
+export const isApproachCourse = (course: Course): boolean => course.kind === 'shared-port';
+/** The lane course of a link: a perimeter or column-gap course. An approach course has no lane, so it is not read here. */
+export const courseOf = (model: LayoutModel, link: string): Course | undefined => model.courses?.find(course => course.link === link && !isApproachCourse(course));
 export const perimeterLaneId = (link: string): string => `perimeter:${link}`;
 /** The perimeter lane of a link, if its course owns one. */
 export const courseLaneOf = (model: LayoutModel, link: string): Lane | undefined => model.lanes.find(lane => lane.kind === 'perimeter' && lane.owner.kind === 'link' && lane.owner.id === link);
