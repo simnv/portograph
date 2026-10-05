@@ -54,7 +54,7 @@ it('a right flank stands a band gap clear of a canton column in its tier', async
   const east = model.groups['east#0']!.bounds!, flank = model.groups['side-right']!.bounds!;
   expect(flank.x - (east.x + east.width), 'flank gap to the canton member').toBeGreaterThanOrEqual(bandGap(model) - 1e-6);
   expect(model.groups['core']!.bounds!.x + model.groups['core']!.bounds!.width).toBeLessThan(east.x);
-  expect(gateFailures(score(model).snapshot)).toEqual(['G9:min-separation:frame:town,group:side-right']);
+  expect(gateFailures(score(model).snapshot)).toEqual([]);
 });
 
 it('the hold pass does not pull a canton column into a right flank', async () => {
@@ -101,5 +101,5 @@ it('a right flank beside a canton bundle lays out and passes every gate', async 
   const yaml = readFileSync(new URL('../../goldens/synthetic/a-right-flank-beside-a-bundle-into-a-canton.yaml', import.meta.url), 'utf8');
   const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   expect(model.links.filter(link => link.removed === true)).toEqual([]);
-  expect(gateFailures(score(model).snapshot)).toEqual(['G9:min-separation:group:core,group:flank']);
+  expect(gateFailures(score(model).snapshot)).toEqual([]);
 });

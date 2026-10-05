@@ -27,7 +27,7 @@ function dropJoinsTree(model: LayoutModel): void {
 it('ticket 36: a bar drop and two remainders from one port share one root stem and pass every gate', async () => {
   const model = await run(fixture);
   const report = score(model).snapshot;
-  expect(gateFailures(report)).toEqual(['G9:min-separation:group:bar,group:leaves']);
+  expect(gateFailures(report)).toEqual([]);
   expect(report.metrics.crossings.count).toBe(0);
   dropJoinsTree(model);
   expect(model.junctions).toHaveLength(2);
@@ -47,7 +47,7 @@ it('ticket 36: a bar drop and one remainder form a tree of two', async () => {
   const one = fixture.replace('  c2: { group: leaves, ports: [{ name: p, side: top }] }\n', '').replace('  - [parent.p#1, c2.p]\n', '');
   const model = await run(one);
   const report = score(model).snapshot;
-  expect(gateFailures(report)).toEqual(['G9:min-separation:group:bar,group:leaves']);
+  expect(gateFailures(report)).toEqual([]);
   expect(model.junctions).toHaveLength(1);
   dropJoinsTree(model);
 }, 60000);

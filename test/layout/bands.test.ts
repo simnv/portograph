@@ -658,8 +658,9 @@ links: [[a.p, b.p], [b.q, a.p]]`;
     expect(after.links.every(link => transitTiers(after, link).length === 0)).toBe(true);
     expect(after.lanes).toEqual([]);
     expect(after.links.every(link => link.fixedSegments === undefined)).toBe(true);
-    expect(Object.fromEntries(Object.entries(after.groups).map(([id, group]) => [id, group.bounds])))
-      .toEqual(Object.fromEntries(Object.entries(before.groups).map(([id, group]) => [id, group.bounds])));
+    // The lane stage refits a group from its bodies, and the rows rule fitted it by another sum: a box may differ by one unit of the last place (the fit does not
+    // keep a width a bar's own label floor made), which the placement tolerance (`PLACEMENT_EPS`) is for. Nothing may move by more.
+    for (const id of Object.keys(before.groups)) for (const key of ['x', 'y', 'width', 'height'] as const) expect(after.groups[id]!.bounds![key], `${id}.${key}`).toBeCloseTo(before.groups[id]!.bounds![key], 9);
     expect(Object.fromEntries(Object.entries(after.nodes).map(([id, node]) => [id, node.bounds])))
       .toEqual(Object.fromEntries(Object.entries(before.nodes).map(([id, node]) => [id, node.bounds])));
     expect(after.regions.map(region => region.id)).toContain('tiers:0:1');

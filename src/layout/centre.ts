@@ -19,6 +19,7 @@ import { rowGap } from './sides-two.js';
 import { linkLabelGap } from './bands.js';
 import { alignmentAllowance, ownSideWidth } from './size.js';
 import { withLayoutMutation } from './mutation.js';
+import { barReach } from './bars.js';
 import { placeOverlayFree } from './overlay-place.js';
 import { fitRegionGroup, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 import { EPS, segmentRectDistance } from '../geometry/planar.js';
@@ -621,7 +622,10 @@ function centrePasses(model: LayoutModel, budget: CentreBudget): void {
         // them. A group this step does not centre still yields the space a widened neighbour took.
         if (model.document.groups[id]!.shape === 'bar' || !list.some(feed => model.document.nodes[feed.child.ref.node]!.group === id)) {
           packClear(model, context, tier, group, previous);
-          previous = group; continue;
+          // A bar stands where 7d will shape it, which may move no other group: the groups after it clear the extent its span gives it, not the box it has now (ticket 19).
+          const reach = barReach(model, id);
+          previous = reach === undefined ? group : { ...group, bounds: { ...group.bounds!, x: Math.min(group.bounds!.x, reach.x), width: Math.max(right(group.bounds!), reach.x + reach.width) - Math.min(group.bounds!.x, reach.x) } };
+          continue;
         }
         const start = geometry(model);
         const result = centreGroupStep(model, context, tier, list, id, previous, true, tail);

@@ -4,8 +4,8 @@ import { repackOverlaps } from './rows.js';
 import { applyBundleOrder } from './bundle-order.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { findPort } from './row-paths.js';
-import { portId } from './skeleton-graph.js';
-import { fitRegionGroup, bottom, right } from './regions.js';
+import { bandGap, portId } from './skeleton-graph.js';
+import { fitRegionGroup, bottom, groupInsets, right } from './regions.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
 import { rowGap } from './sides-two.js';
 import { PLACEMENT_EPS, SIGN_EPS } from './tolerance.js';
@@ -509,6 +509,14 @@ export function prepareBundleGeometry(model: LayoutModel): void {
         }
         for (const lane of model.lanes) if (lane.tier === group.tier && lane.x > group.bounds!.x) {
           limit = Math.min(limit, lane.bounds.x - 12);
+        }
+        // A group beside this one keeps its band gap from the box this node grows (ticket 19): the node may reach no further than that gap leaves, the group's own padding
+        // standing beyond it. Reading the gap here is where the growth is first known; 7e discovers no room that was not left for it.
+        const gap = bandGap(model), pad = groupInsets(model, group).right;
+        for (const other of Object.values(model.groups)) {
+          if (other === group || other.bounds === undefined || other.bounds.x < right(group.bounds!) - PLACEMENT_EPS) continue;
+          if (Math.min(bottom(group.bounds!), bottom(other.bounds)) <= Math.max(group.bounds!.y, other.bounds.y)) continue;
+          limit = Math.min(limit, other.bounds.x - gap - pad);
         }
         // Alignment is optional; capacity and immutable lanes are not. Leave a bundle bent when
         // projecting a distant peer's x would grow this node across a sibling or reserved lane.

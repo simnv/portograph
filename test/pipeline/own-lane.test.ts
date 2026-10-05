@@ -117,7 +117,9 @@ it('leaves a corridor whose link has a bar end where 7a put it', async () => {
   const lane = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === 'link-1')!;
   expect(model.nodes.c1!.ports[0]!.anchor!.x).not.toBe(lane.x);
   expect(model.diagnostics.map(item => item.code)).not.toContain('LANE_FOLLOWS_ITS_CHILD');
-  expect(model.lanes.map(item => item.x)).toEqual([229, 263]);
+  // The corridors stay where 7a put them, which is where the bar takes its ports from (7d): each lane x is the x of a port of the spine, and no lane was moved by the bar's width.
+  const spine = model.nodes.spine!.ports.map(port => port.anchor!.x).sort((a, b) => a - b);
+  expect(model.lanes.map(item => item.x).sort((a, b) => a - b)).toEqual(spine);
 }, 60000);
 
 /**
