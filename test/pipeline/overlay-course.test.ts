@@ -115,9 +115,10 @@ describe('the course, reserved and drawn', () => {
 });
 
 describe('the round', () => {
-  it('takes its own re-run: with none left to the other rounds it still runs, and an admitted chord stays', async () => {
+  it('shares the re-runs: with none left it takes no course, and an admitted chord stays', async () => {
     const none = await run(SHEETS.chord, { testMaxReruns: 0 });
-    expect(turnsOf(link(none, 5))).toBe(2);
+    expect(turnsOf(link(none, 5))).toBe(4);
+    expect(turnsOf(link(await run(SHEETS.chord), 5))).toBe(2);
     const straight = await run(SHEETS.straight);
     expect(pure(straight)).toBe(pure(await before(SHEETS.straight)));
   }, 60000);
