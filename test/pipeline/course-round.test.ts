@@ -4,7 +4,7 @@ import { layout, parse, restoreLayoutModel, score } from '../../src/index.js';
 import type { Course, LayoutLink, LayoutModel } from '../../src/index.js';
 import type { Side } from '../../src/model/geometry.js';
 import { naturalPolyline, polylineCrossings, polylineTurns, simplify } from '../../src/layout/course-plan.js';
-import { poorRoute } from '../../src/layout/course-measure.js';
+import { judgeCourseTrial, poorRoute } from '../../src/layout/course-measure.js';
 import { constraintFindings } from '../../src/layout/trial-findings.js';
 import { findPort } from '../../src/layout/row-paths.js';
 import { pathBends } from '../../src/layout/objective.js';
@@ -140,6 +140,27 @@ describe('the course round on the hand-solve sheets (ticket 15, phase 4)', () =>
 });
 
 describe('the judge reads what the trial publishes (review of phase 4)', () => {
+  // A course that must shift a group toward its neighbour is refused when the two stand exactly a band gap apart: the hard separation of the baseline would break
+  // (architecture ticket 19). The trial is the routed baseline with one group moved 1.5 px toward the other, so every other reading of the judge is unchanged.
+  it('refuses a trial that shifts a root group toward a neighbour exactly a band gap away', async () => {
+    const base = await layout(parse(source('two-root-groups-stand-exactly-a-band-gap-apart')), options);
+    const left = base.groups['left']!.bounds!, right = base.groups['right']!.bounds!;
+    expect(right.x - (left.x + left.width), 'the sheet stands exactly a band gap apart').toBeCloseTo(60, 6);
+    const trial = structuredClone(base) as LayoutModel;
+    const shifted = trial.groups['right']!;
+    shifted.bounds = { ...shifted.bounds!, x: shifted.bounds!.x - 1.5 };
+    for (const id of shifted.nodes) {
+      const node = trial.nodes[id]!;
+      node.bounds = { ...node.bounds!, x: node.bounds!.x - 1.5 };
+      for (const port of node.ports) if (port.anchor) port.anchor = { ...port.anchor, x: port.anchor.x - 1.5 };
+    }
+    const verdict = judgeCourseTrial(base, trial, new Map());
+    expect(verdict.kept).toBe(false);
+    expect(verdict.reason).toMatch(/min-separation|minimum separation|hard constraint/);
+    // The same trial unshifted is not refused for a separation (it gives no gain, which is another reason).
+    expect(judgeCourseTrial(base, structuredClone(base) as LayoutModel, new Map()).reason).not.toMatch(/min-separation|minimum separation|hard constraint/);
+  }, 60000);
+
   // The course of link-13 here once left two root groups 58.9 px apart (the band gap is 60): no gate measured it, the hard entry of the x catalogue does. The linked-group
   // grid no longer widens a box into the band gap of its neighbour (architecture ticket 19), so the baseline holds the gap and the course is taken without breaking it.
   it('keeps every hard separation the baseline holds, the course of link-13 included', async () => {

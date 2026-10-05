@@ -1,0 +1,16 @@
+# Expected: two root row groups of one tier stand exactly a band gap (60 px) apart, in a sheet with no frame (architecture ticket 19 review). The course judge refuses
+# a trial that shifts one of them toward the other (test/pipeline/course-round.test.ts), because the hard separation the baseline holds would be broken.
+# Source: architecture ticket 19 review.
+portograph: 2
+groups:
+  feeds: { tier: 0 }
+  left: { tier: 1 }
+  right: { tier: 1 }
+nodes:
+  f1: { group: feeds, class: router }
+  f2: { group: feeds, class: router }
+  l1: { group: left, class: switch }
+  r1: { group: right, class: switch }
+links:
+  - [f1, l1]
+  - [f2, r1]

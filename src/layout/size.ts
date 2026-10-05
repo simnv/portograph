@@ -7,6 +7,7 @@ import { resolveNodeIcon } from '../profiles/network/icons.js';
 import { FONT_FAMILY, measurePortPill, measureText } from '../text/index.js';
 import { NODE_CONTENT_GEOMETRY as theme } from '../theme/content.js';
 import { SIDE_TIE_ORDER } from './sides-one.js';
+import { barLabelFloor, barPortsFloor } from './bar-width.js';
 
 export type NodeContentBlock =
   | (Size & { kind: 'icon'; icon: string })
@@ -107,13 +108,6 @@ export function alignmentAllowance(node: LayoutNode, side: Side): number {
   return Math.max(node.bounds?.width ?? 0, ALIGNMENT_MAX_GROWTH * ownSideWidth(node, side));
 }
 
-/**
- * Room a bar keeps either side of its text and of its outer ports (7d). The width its label and its ports need at least is known when phase two resizes the nodes
- * (the second call, once the sides are decided; stage 3's estimate does not carry it, so ELK's input stays as it was), so the sweeps that follow seat the neighbours
- * a band gap from the bar 7d will shape and no gap is found short later (ticket 19).
- */
-export const BAR_PADDING = 30;
-
 /** Measure stage-3 floors and capacity in place; later resize passes may only grow sizes. */
 export function sizeNodes(model: LayoutModel): LayoutModel {
   for (const id of orderedNodeIds(model.document)) {
@@ -146,11 +140,11 @@ export function sizeNodes(model: LayoutModel): LayoutModel {
       height: Math.max(theme.minHeight, node.contentSize.height, authored.size?.height ?? 0, node.sizeFloor?.height ?? 0),
     };
     const capacity = (side: Side): number => sides[side].count * pitch[side] + 2 * theme.padding;
-    // From phase two on, a bar is as wide as its text and padding, and as its ports at their pitch with the padding beyond the outer two (7d reads the same floors); a bar
-    // with no ports reads the group label.
+    // From phase two on, a bar is as wide as the one bar rule asks at least (`bar-width.ts`); a bar with no ports reads the group label. Stage 3's estimate does not
+    // carry it, so ELK's input stays as it was; centring reserves the span 7d will give the bar, where it first knows it.
     const bar = model.stage !== 'sides-one' && model.document.groups[authored.group]?.shape === 'bar'
-      ? Math.max(measureText(node.ports.length ? authored.label : model.document.groups[authored.group]!.label, { fontSize: theme.labelFontSize, weight: theme.labelFontWeight }).width,
-        ...(['top', 'bottom'] as const).map(side => Math.max(0, sides[side].count - 1) * pitch[side])) + 2 * BAR_PADDING : 0;
+      ? Math.max(barLabelFloor(node.ports.length ? authored.label : model.document.groups[authored.group]!.label),
+        ...(['top', 'bottom'] as const).map(side => barPortsFloor(sides[side].count, pitch[side]))) : 0;
     node.size = {
       width: Math.max(node.sizeFloor.width, node.size?.width ?? 0, capacity('top'), capacity('bottom'), bar),
       height: Math.max(node.sizeFloor.height, node.size?.height ?? 0, capacity('left'), capacity('right')),

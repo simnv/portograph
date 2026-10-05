@@ -2,7 +2,6 @@ import { GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
 import type { LayoutLink, LayoutModel, LayoutNode, LayoutPort, PathSegment, Point, Rect } from '../model/index.js';
 import { orderedGroupIds, orderedNodeIds } from '../model/model.js';
 import { equal } from '../model/json-equality.js';
-import { measureText } from '../text/index.js';
 import { NODE_CONTENT_GEOMETRY } from '../theme/content.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { nodeGap, portId } from './skeleton-graph.js';
@@ -11,7 +10,7 @@ import { bandHeldBy, groupInsets, placementWarning } from './regions.js';
 import { findPort } from './row-paths.js';
 import { withLayoutMutation } from './mutation.js';
 import { PLACEMENT_EPS } from './tolerance.js';
-import { BAR_PADDING } from './size.js';
+import { BAR_PADDING, barLabelFloor } from './bar-width.js';
 
 const MIN_STEM = 15;
 const FOREIGN_NODE_CLEARANCE = 10;
@@ -170,28 +169,52 @@ function barGap(model: LayoutModel, upper: LayoutNode, lower: LayoutNode, links:
   return gap;
 }
 
+/** The slots, merged spans and width floors of the bars of one group, from the source anchors as they stand. The one place a bar's span is decided (7d shapes with it, `barReach` reserves with it). */
+function barSpanPlan(model: LayoutModel, group: LayoutModel['groups'][string], allLinks: BarLink[]): { slots: Map<string, PortSlot[]>; spans: Map<string, { min: number; max: number }>; floors: Map<string, number> } {
+  const nodes = group.nodes.map(id => model.nodes[id]!);
+  const slots = new Map<string, PortSlot[]>(), spans = new Map<string, { min: number; max: number }>(), floors = new Map<string, number>();
+  for (const node of nodes) {
+    const nodeSlots = slotsForNode(model, node, allLinks.filter(item => item.bar.id === node.id));
+    slots.set(node.id, nodeSlots);
+    const xs = nodeSlots.map(item => item.slot);
+    const labelText = node.ports.length ? model.document.nodes[node.id]!.label : model.document.groups[group.id]!.label;
+    const capacity = horizontalCapacity(node);
+    const floor = Math.max(node.sizeFloor!.width, barLabelFloor(labelText), capacity);
+    const centre = xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : node.bounds!.x + node.bounds!.width / 2;
+    const width = Math.max(floor, xs.length ? Math.max(...xs) - Math.min(...xs) + 2 * BAR_PADDING : 0);
+    // Keep the exact floor: `max - min` of a centred span can lose a bit and fall under it.
+    floors.set(node.id, floor);
+    spans.set(node.id, { min: centre - width / 2, max: centre + width / 2 });
+  }
+  mergedSpans(spans);
+  return { slots, spans, floors };
+}
+
+/**
+ * The extent 7d will give a bar group, read without moving anything: its stacked bars at their spans, and the group's insets beyond. Centring seats the groups
+ * after the bar a band gap from it (`packClear`), so 7d, which may move no other group, finds the room held (ticket 19). `undefined` for a group with no node.
+ */
+export function barReach(model: LayoutModel, groupId: string): { x: number; width: number } | undefined {
+  const group = model.groups[groupId];
+  if (group === undefined || group.nodes.length === 0 || model.document.groups[groupId]?.shape !== 'bar') return undefined;
+  const allLinks = model.links.map(link => barLink(model, link)).filter((item): item is BarLink => item !== undefined);
+  const { spans, floors } = barSpanPlan(model, group, allLinks), inset = groupInsets(model, group);
+  const boxes = group.nodes.map(id => { const node = model.nodes[id]!, span = spans.get(id)!;
+    return { x: span.min, width: Math.max(node.sizeFloor!.width, horizontalCapacity(node), floors.get(id)!, span.max - span.min) }; });
+  const minX = Math.min(...boxes.map(box => box.x)), maxX = Math.max(...boxes.map(box => box.x + box.width));
+  const held = bandHeldBy(model, groupId) !== undefined, original = group.bounds!;
+  const x = held ? Math.min(original.x, minX - inset.left) : minX - inset.left;
+  const far = held ? Math.max(right(original), maxX + inset.right) : maxX + inset.right;
+  return { x, width: far - x };
+}
+
 /** Shape bar nodes from current source anchors. This producer changes geometry but creates no paths or claims. */
 export function shapeBars(model: LayoutModel): void {
   const allLinks = model.links.map(link => barLink(model, link)).filter((item): item is BarLink => item !== undefined);
   for (const groupId of orderedGroupIds(model.document)) {
     if (model.document.groups[groupId]!.shape !== 'bar') continue;
     const group = model.groups[groupId]!, nodes = group.nodes.map(id => model.nodes[id]!);
-    const slots = new Map<string, PortSlot[]>(), spans = new Map<string, { min: number; max: number }>(), floors = new Map<string, number>();
-    for (const node of nodes) {
-      const nodeSlots = slotsForNode(model, node, allLinks.filter(item => item.bar.id === node.id));
-      slots.set(node.id, nodeSlots);
-      const xs = nodeSlots.map(item => item.slot);
-      const labelText = node.ports.length ? model.document.nodes[node.id]!.label : model.document.groups[groupId]!.label;
-      const label = measureText(labelText, { fontSize: NODE_CONTENT_GEOMETRY.labelFontSize, weight: NODE_CONTENT_GEOMETRY.labelFontWeight });
-      const capacity = horizontalCapacity(node);
-      const floor = Math.max(node.sizeFloor!.width, label.width + 2 * BAR_PADDING, capacity);
-      const centre = xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : node.bounds!.x + node.bounds!.width / 2;
-      const width = Math.max(floor, xs.length ? Math.max(...xs) - Math.min(...xs) + 2 * BAR_PADDING : 0);
-      // Keep the exact floor: `max - min` of a centred span can lose a bit and fall under it.
-      floors.set(node.id, floor);
-      spans.set(node.id, { min: centre - width / 2, max: centre + width / 2 });
-    }
-    mergedSpans(spans);
+    const { slots, spans, floors } = barSpanPlan(model, group, allLinks);
     const gaps = nodes.slice(0, -1).map((node, index) => barGap(model, node, nodes[index + 1]!, allLinks));
     const originalGroup = { ...group.bounds! }, inset = groupInsets(model, group);
     let y = group.bounds!.y + inset.top;

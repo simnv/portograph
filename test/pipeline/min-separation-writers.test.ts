@@ -11,7 +11,9 @@ import { gateFailures } from './open-min-separation.js';
  * - columns pull: the wall a flank makes held a frame a band gap from it less the margin;
  * - sizeNodes (phase two): a bar's width floor (its label, its ports at their pitch, the padding) was left to 7d, which grew the bar into the gap;
  * - 7e bundle block: a node grown to reach a bundle peer was not held off the group beside it;
- * - the linked-group grid: a box widened in a document with no frames (nothing packs the rows after it) stood closer than the band gap to its neighbour.
+ * - 7d bar span: the bar's width follows its ports (the leaves of its drops), which no stage before it had read; centring now clears the groups beside the bar from the
+ *   extent 7d will give it (`barReach`), and one rule decides the width (`bar-width.ts`);
+ * - the linked-group grid: a box it widened stood closer than the band gap to its neighbour; it is refused when it would, in a sheet with frames too (the pack of the beside rows seats frame cells only).
  */
 const SHEETS = [
   'a-grid-group-stands-fixed-beside-frames',
@@ -24,6 +26,9 @@ const SHEETS = [
   'a-right-flank-beside-a-bundle-into-a-canton',
   'overlay-links-reorder-an-indifferent-tier',
   'two-titles-over-skewed-legs-each-widen-their-group',
+  // The review fixtures: a bar whose leaves are far apart (the span the bar reserves where centring first knows it), and a grid widening in a sheet that has a canton.
+  'a-bar-spans-leaves-far-apart-and-keeps-its-neighbour-gap',
+  'a-grid-widening-in-a-framed-sheet-keeps-the-band-gap',
 ];
 
 it.each(SHEETS)('%s publishes no minimum-separation finding', async name => {

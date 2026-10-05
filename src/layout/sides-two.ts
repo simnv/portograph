@@ -717,22 +717,29 @@ function separateFramedTiersBesideFlanks(model: LayoutModel): void {
  * cells alone stands inside that, and the minimum separation is found short later (ticket 19). So the fixed group stands past the boxes of the frames before it,
  * and a frame after it moves as a whole, every cell, until its box is that far. A band with no fixed group beside a frame cell is swept as before.
  */
-function sweepTiers(model: LayoutModel): void {
+export function sweepTiers(model: LayoutModel): void {
   const frames = model.document.frames, gap = bandGap(model);
   const fixed = (group: LayoutGroup): boolean => group.flank !== undefined || groupShape(model, group.id) !== 'row';
   const top = (id: string): string => { let at = id; while (frames![at]?.parent !== undefined) at = frames![at]!.parent!; return at; };
   const boxOf = (group: LayoutGroup): Rect | undefined => deriveFrames(model)?.find(frame => frame.id === top(group.frame!))?.box;
+  // A frame that spans bands is moved whole by the band that holds a fixed group beside it, so a band swept before it stands as that move left it: the bands are swept
+  // again until nothing moves. Every move is to the right and by a positive amount, so the rounds end; the bound is a guard.
+  let moved = true, anyMixed = false;
+  const shift = (group: LayoutGroup, dx: number): void => { if (dx > PLACEMENT_EPS_SWEEP) moved = true; moveGroup(model, group, dx, 0); };
+  for (let round = 0; moved && round < 16; round++) {
+    moved = false;
   for (const band of model.tierBands) {
     const sorted = band.groups.map(id => model.groups[id]!).sort((a, b) => a.bounds!.x - b.bounds!.x);
     const mixed = frames !== undefined && sorted.some(fixed) && sorted.some(group => group.frame !== undefined);
+    anyMixed ||= mixed;
     let end = -Infinity, frameEnd = -Infinity, fixedEnd = -Infinity;
     for (const group of sorted) {
       let need = end;
       if (mixed && fixed(group)) need = Math.max(need, frameEnd + gap + COLUMN_SLACK);
-      if (group.bounds!.x < need) moveGroup(model, group, need - group.bounds!.x, 0);
+      if (group.bounds!.x < need) shift(group, need - group.bounds!.x);
       if (mixed && group.frame !== undefined) {
         const box = boxOf(group);
-        if (box !== undefined && box.x < fixedEnd) for (const cell of frameSubtreeCells(frames!, top(group.frame))) moveGroup(model, model.groups[cell]!, fixedEnd - box.x, 0);
+        if (box !== undefined && box.x < fixedEnd) for (const cell of frameSubtreeCells(frames!, top(group.frame))) shift(model.groups[cell]!, fixedEnd - box.x);
         const moved = boxOf(group);
         if (moved !== undefined) frameEnd = Math.max(frameEnd, moved.x + moved.width);
       }
@@ -740,7 +747,11 @@ function sweepTiers(model: LayoutModel): void {
       if (mixed && fixed(group)) fixedEnd = end + COLUMN_SLACK;
     }
   }
+    // A frame moved whole stands in every band it occupies: the columns of the other bands keep their band gap and slack from its box (`columnShifts`), as the rows rule keeps them.
+    if (anyMixed && separateFrameColumns(model)) moved = true;
+  }
 }
+const PLACEMENT_EPS_SWEEP = 1e-6;
 
 /** Resolve all direction votes, resize and repack in skeleton order; retain the returned snapshot. */
 export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Size>): LayoutModel {

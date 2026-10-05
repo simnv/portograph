@@ -1,0 +1,24 @@
+# Expected: a bar whose two bottom ports drop to leaves far apart stands a band gap from the group beside it (architecture ticket 19). The leaves are
+# separated by a group of their own, so the span of the bar (the ports at their desired x, and the bar padding beyond the outer two) is far wider than the
+# bar's own label and port pitch. The room for that span is reserved where the span is first known; 7d finds no neighbour inside its gap.
+# Source: architecture ticket 19 review.
+portograph: 2
+groups:
+  bar: { tier: 0, shape: bar, label: Bar }
+  beside: { tier: 0, label: Beside }
+  left: { tier: 1, label: Left }
+  middle: { tier: 1, label: Middle }
+  right: { tier: 1, label: Right }
+nodes:
+  spine: { group: bar, label: Spine, ports: [{ name: p, side: bottom }, { name: q, side: bottom }] }
+  neighbour: { group: beside, class: router, label: Neighbour }
+  l: { group: left, class: router, label: Leaf left, ports: [{ name: p, side: top }] }
+  m1: { group: middle, class: router, label: Filler one }
+  m2: { group: middle, class: router, label: Filler two }
+  m3: { group: middle, class: router, label: Filler three }
+  m4: { group: middle, class: router, label: Filler four }
+  r: { group: right, class: router, label: Leaf right, ports: [{ name: p, side: top }] }
+links:
+  - [spine.p, l.p]
+  - [spine.q, r.p]
+  - [neighbour, l]
