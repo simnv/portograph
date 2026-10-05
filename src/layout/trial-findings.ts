@@ -1,5 +1,6 @@
 import type { LayoutModel } from '../model/layout.js';
 import { score } from '../score/index.js';
+import type { ScoreCounts } from '../score/types.js';
 import { evaluate, separationShortfalls, worseSeparations, xCatalogue } from './constraints/index.js';
 
 /**
@@ -23,11 +24,11 @@ export function separationWorse(trial: LayoutModel, base: LayoutModel): string[]
 }
 
 /** The gate violations of the routed model, by gate, code and elements,; undefined when the model does not score. */
-export function gateFindings(model: LayoutModel): { findings: Set<string> } | undefined {
+export function gateFindings(model: LayoutModel): { findings: Set<string>; counts: ScoreCounts } | undefined {
   try {
     const findings = new Set<string>(), snapshot = score(model, { force: true }).snapshot;
     for (const [id, gate] of Object.entries(snapshot.gates)) if (!gate.passed) for (const violation of gate.violations) findings.add(`${id}|${violation.code}|${violation.elements.join(',')}`);
-    return { findings };
+    return { findings, counts: snapshot.counts };
   } catch { return undefined; }
 }
 

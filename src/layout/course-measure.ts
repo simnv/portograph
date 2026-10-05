@@ -13,6 +13,7 @@ import { findPort } from './row-paths.js';
 import { EDGE_MARGIN, RING_PITCH, paddingRows, rowsInset } from './course-rows.js';
 import { added as namesAdded, constraintFindings, gateFindings, separationWorse } from './trial-findings.js';
 import { portKey } from './sides-one.js';
+import type { ScoreCounts } from '../score/types.js';
 import { portId } from './skeleton-graph.js';
 import { overlayChordAdmitted } from './frame-paths.js';
 
@@ -451,8 +452,8 @@ export function judgeOverlayTrial(routedBase: LayoutModel, routedTrial: LayoutMo
   }).map(([id]) => id);
   if (lost.length > 0) return verdict(false, `an overlay course publishes more turns than it promised (${lost.join(', ')})`);
   const gatesNow = gateFindings(routedTrial), gatesThen = gateFindings(routedBase);
-  if (gatesNow === undefined) return verdict(false, 'the routed trial does not score');
-  const gateNew = namesAdded(gatesNow.findings, gatesThen?.findings ?? new Set());
+  if (gatesNow === undefined || gatesThen === undefined) return verdict(false, 'the routed trial does not score');
+  const gateNew = namesAdded(gatesNow.findings, gatesThen.findings);
   if (gateNew.length > 0) return verdict(false, `the routed trial has gate findings the baseline does not have (${gateNew.join('; ')})`);
   const constraintNew = namesAdded(constraintFindings(routedTrial), constraintFindings(routedBase));
   if (constraintNew.length > 0) return verdict(false, `the routed trial breaks a hard constraint the baseline holds (${constraintNew.join('; ')})`);
@@ -464,21 +465,19 @@ export function judgeOverlayTrial(routedBase: LayoutModel, routedTrial: LayoutMo
   if ((routedTrial.canvas?.width ?? 0) > cap(routedBase.canvas?.width, room.width) || (routedTrial.canvas?.height ?? 0) > cap(routedBase.canvas?.height, room.height)) {
     return verdict(false, `the routed trial grows the canvas past ${GROWTH_BOUND * 100} % and the width its lanes reserve`);
   }
-  // Each link is counted once: the routed family reads the routed links, the overlay family the drawn overlays; crossings are the pairs of both layers.
-  const routedLinks = (model: LayoutModel): Map<string, number> => new Map([...routedBends(model)].filter(([id]) => model.links.find(link => link.id === id)?.layer === 'routed'));
-  const readingOf = (model: LayoutModel): Reading => {
-    const overlay = read(model, { overlays: drawnOverlays(model), crossings: 'pairs' });
-    return reading({ routed: routedFamily(routedLinks(model)), overlay: overlay.overlay, crossings: lazyCount(() => routedCrossingPairs(model) + overlay.crossings()), crossingMode: 'pairs', tie: [] });
-  };
+  // The counts are the score's own, read on the published result (published paths, the effective layer, the routed crossings Q counts plus the overlay crossing
+  // pairs): the family counts and the crossings of the two layers together.
+  const family = (bent: number, turns: number) => ({ straight: 0, bent, turns });
+  const readingOf = (counts: ScoreCounts): Reading => reading({ routed: family(counts.routed.bent, counts.routed.turns), overlay: family(counts.overlay.bent, counts.overlay.turns),
+    crossings: lazyCount(() => counts.routed.crossings + counts.overlay.crossings.pairs), crossingMode: 'pairs', tie: [] });
   // The routed layer first: an overlay course that costs a routed link a bend, a turn or a crossing (a column it moved, a row it grew) is no course, whatever the
   // overlay layer gains. The overlay bends of a link the rule took are the rule's; every other reading is the user's order.
-  const routedOnly = (model: LayoutModel): Reading => reading({ routed: routedFamily(routedLinks(model)),
-    crossings: lazyCount(() => routedCrossingPairs(model)), crossingMode: 'pairs', tie: [] });
-  const routedNow = routedOnly(routedTrial), routedThen = routedOnly(routedBase);
+  const routedOnly = (counts: ScoreCounts): Reading => reading({ routed: family(counts.routed.bent, counts.routed.turns), crossings: lazyCount(() => counts.routed.crossings), crossingMode: 'pairs', tie: [] });
+  const routedNow = routedOnly(gatesNow.counts), routedThen = routedOnly(gatesThen.counts);
   if (compare(routedNow, routedThen, courseProfile) > 0) {
     return verdict(false, `the routed layer is worse by the unified order (${routedNow.routed.bent} bent links, ${routedNow.routed.turns} turns, ${routedNow.crossings()} crossings, against ${routedThen.routed.bent}, ${routedThen.routed.turns} and ${routedThen.crossings()})`);
   }
-  const now = readingOf(routedTrial), then = readingOf(routedBase);
+  const now = readingOf(gatesNow.counts), then = readingOf(gatesThen.counts);
   if (compare(now, then, courseProfile) > 0) {
     return verdict(false, `the routed trial is worse by the unified order (${now.routed.bent + now.overlay.bent} bent links, ${now.routed.turns + now.overlay.turns} turns, ${now.crossings()} crossings, against ${then.routed.bent + then.overlay.bent}, ${then.routed.turns + then.overlay.turns} and ${then.crossings()})`);
   }

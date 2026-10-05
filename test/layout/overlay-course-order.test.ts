@@ -3,7 +3,7 @@ import type { LayoutModel } from '../../src/index.js';
 import { validateCourseLane } from '../../src/layout/courses.js';
 import type { Lane } from '../../src/index.js';
 import { rowIndex } from '../../src/layout/course-lanes.js';
-import { portSlotKey } from '../../src/layout/sides-two.js';
+import { slotOrder } from '../../src/layout/sides-two.js';
 
 /** Architecture ticket 15, phase 7 review: the padding rows of one group edge follow the rings, and the port order on a face is a total order. */
 describe('padding rows', () => {
@@ -23,13 +23,15 @@ describe('padding rows', () => {
 });
 
 describe('the port order of a face', () => {
-  it('is one numeric key: two course ports and a routed port sort the same from every start', () => {
-    const ports = [{ id: 'c1', key: portSlotKey(300, 10) }, { id: 'c2', key: portSlotKey(200, 500) }, { id: 'r', key: portSlotKey(undefined, 250) }];
-    const sorted = (list: typeof ports): string[] => [...list].sort((a, b) => a.key - b.key).map(item => item.id);
+  const ports = [{ id: 'c1', far: 10, reach: 300 }, { id: 'c2', far: 500, reach: 200 }, { id: 'above', far: 50 }, { id: 'below', far: 450 }, { id: 'none', far: Infinity }];
+  const sorted = (list: typeof ports): string[] => [...list].sort(slotOrder(list)).map(item => item.id);
+  it('is total: the same order from every start', () => {
     const expected = sorted(ports);
-    for (const order of [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]]) expect(sorted(order.map(i => ports[i]!))).toEqual(expected);
-    // The farther course first, then the routed port by its far coordinate, in one line.
-    expect(expected).toEqual(['c1', 'c2', 'r']);
+    for (let shift = 0; shift < ports.length; shift++) expect(sorted([...ports.slice(shift), ...ports.slice(0, shift)])).toEqual(expected);
+    expect(sorted([...ports].reverse())).toEqual(expected);
+  });
+  it('puts a routed port whose peer is above the brackets above them, and the others below', () => {
+    expect(sorted(ports)).toEqual(['above', 'c1', 'c2', 'below', 'none']);
   });
 });
 
