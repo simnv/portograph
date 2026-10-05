@@ -11,8 +11,8 @@ import { bandHeldBy, groupInsets, placementWarning } from './regions.js';
 import { findPort } from './row-paths.js';
 import { withLayoutMutation } from './mutation.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { BAR_PADDING } from './size.js';
 
-const BAR_PADDING = 30;
 const MIN_STEM = 15;
 const FOREIGN_NODE_CLEARANCE = 10;
 const right = (box: Rect): number => box.x + box.width;

@@ -47,7 +47,7 @@ const ROWS: Row[] = [
   row('columns-hold-their-axis-after-7f', '1/19/7/3', 3, 1, 1, 0, 0),
   row('a-canton-band-holds-the-rows-off', '1/7/7/3', 2, 1, 1, 0, 0),
   row('a-member-title-widens-a-beside-row', '1/7/7/3', 1, 1, 1, 0, 0, { base7f: '0/1/0' }),
-  row('a-canton-column-is-not-pulled-into-a-flank', '2/15/12/5', 4, 2, 2, 0, 0),
+  row('a-canton-column-is-not-pulled-into-a-flank', '2/13/12/5', 4, 2, 2, 0, 0),
   row('a-flank-link-around-a-neighbour-runs-along-the-core-edge', '1/4/7/3', 1, 1, 1, 0, 0),
   row('m1-sip-edge', '1/5/7/3', 1, 1, 1, 0, 0),
   // The phase-1 fixture: the base 7f chord step moves a group (before this, only NTP among the named sheets did).

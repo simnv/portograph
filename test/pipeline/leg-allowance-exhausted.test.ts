@@ -69,8 +69,8 @@ describe('a title past its allowance keeps the soft rule and says so (ticket 66)
     expect(model.diagnostics.filter(item => item.code === 'PLACEMENT_NON_CONVERGENCE' && (item.owners ?? []).some(owner => 'id' in owner && owner.id.startsWith('mid')))).toEqual([]);
     // `mid` spent its one pass (two replays). Its failed row puts the whole gap on the soft rule, so the growth `mid2` asks for is moot: no pass, no width.
     expect(forge.replays).toBe(2);
-    expect(model.groups.mid2!.bounds!.width).toBeCloseTo(315.171875, 3);
-    expect(model.canvas!.width).toBeCloseTo(1159.513673875, 3);
+    expect(model.groups.mid2!.bounds!.width).toBeCloseTo(234.671875, 3);
+    expect(model.canvas!.width).toBeCloseTo(1079.013673875, 3);
     expect(() => validateGroupLabelBands(structuredClone(model))).not.toThrow();
     expect(() => restoreFinalLayout(JSON.stringify(model))).not.toThrow();
   }, 120000);

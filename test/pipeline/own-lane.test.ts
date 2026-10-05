@@ -117,7 +117,7 @@ it('leaves a corridor whose link has a bar end where 7a put it', async () => {
   const lane = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === 'link-1')!;
   expect(model.nodes.c1!.ports[0]!.anchor!.x).not.toBe(lane.x);
   expect(model.diagnostics.map(item => item.code)).not.toContain('LANE_FOLLOWS_ITS_CHILD');
-  expect(model.lanes.map(item => item.x)).toEqual([229, 263]);
+  expect(model.lanes.map(item => item.x)).toEqual([232, 266]);
 }, 60000);
 
 /**

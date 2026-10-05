@@ -46,8 +46,9 @@ describe('the chord guards of the centring read the frozen chords and the lane b
   it('names a chord that crosses a foreign lane, and only once the chords are frozen', async () => {
     const { model, link, lane, src } = await setup();
     expect(chordLaneCrossings(model, src).size).toBe(0);
-    const from = model.nodes['src0']!.ports.map(port => port.anchor!).find(anchor => Math.abs(anchor.x - link.path!.segments[0]!.from.x) < 1e-6)!;
-    from.x = lane.x;
+    // The access end is forged into the lane column: the chord then runs from the source port down into the lane box.
+    const to = model.nodes['acc0']!.ports.map(port => port.anchor!).find(anchor => Math.abs(anchor.x - link.path!.segments[0]!.to.x) < 1e-6)!;
+    to.x = lane.x;
     const named = [...chordLaneCrossings(model, src)];
     expect(named.length).toBeGreaterThan(0);
     expect(named.every(pair => pair.startsWith(`${link.id}|`))).toBe(true);
@@ -56,7 +57,8 @@ describe('the chord guards of the centring read the frozen chords and the lane b
   });
   it('refuses a group move that lays a chord across a lane between its ends, and only once frozen', async () => {
     const { model, lane, access } = await setup();
-    const dx = lane.x - model.nodes['acc1']!.ports[0]!.anchor!.x;
+    // The access group moves left until the end of the chord of src0 to acc2 stands clear of the lane column, on its far side: the chord crosses the lane box between its ends.
+    const dx = lane.bounds.x - 16 - model.nodes['acc2']!.ports[0]!.anchor!.x;
     expect(chordsClearAfterMove(model, access, dx)).toBe(false);
     delete model.frozenChords;
     expect(chordsClearAfterMove(model, access, dx)).toBe(true);

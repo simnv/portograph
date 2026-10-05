@@ -140,10 +140,11 @@ describe('the course round on the hand-solve sheets (ticket 15, phase 4)', () =>
 });
 
 describe('the judge reads what the trial publishes (review of phase 4)', () => {
-  // The course of link-13 here left two root groups 58.9 px apart (the band gap is 60): no gate measures it, the hard entry of the x catalogue does.
-  it('refuses a course that breaks a hard separation the baseline holds', async () => {
+  // The course of link-13 here once left two root groups 58.9 px apart (the band gap is 60): no gate measured it, the hard entry of the x catalogue does. The linked-group
+  // grid no longer widens a box into the band gap of its neighbour (architecture ticket 19), so the baseline holds the gap and the course is taken without breaking it.
+  it('keeps every hard separation the baseline holds, the course of link-13 included', async () => {
     const model = await layout(parse(source('a-group-shift-leaves-a-chord-clear-of-a-lane')), options);
-    expect(model.courses?.some(course => course.link === 'link-13') ?? false).toBe(false);
+    expect(model.courses?.some(course => course.link === 'link-13') ?? false).toBe(true);
     expect([...constraintFindings(model)]).toEqual([]);
   }, 60000);
 

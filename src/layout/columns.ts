@@ -831,12 +831,12 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
         else { from = Math.max(from, low); to = Math.min(to, high); }
       } else { from = to = at.x; flush.add(unit); }
     }
-    // A flank stands where it stands: its box is a wall the pull may not cross, a band gap from the cells (a frame box reaches
-    // GROUP_PADDING beyond its cells). A unit already past the wall stays where it is, and nothing here moves it back.
+    // A flank stands where it stands: its box is a wall the pull may not cross. A frame column keeps a band gap and its slack from a plain group
+    // (`runSpacing`), boxes measured, so the flank is that wall too (ticket 19). A unit already past the wall stays where it is, and nothing here moves it back.
     for (const flank of flanksBesideUnit(model, unit)) {
-      const reach = unit.frame ? GROUP_PADDING : 0;
-      if (flank.flank!.align === 'right') to = Math.max(Math.min(to, flank.bounds!.x - gap - at.width + reach), at.x);
-      else from = Math.min(Math.max(from, flank.bounds!.x + flank.bounds!.width + gap - reach), at.x);
+      const wall = gap + (unit.frame ? COLUMN_SLACK : 0);
+      if (flank.flank!.align === 'right') to = Math.max(Math.min(to, flank.bounds!.x - wall - at.width), at.x);
+      else from = Math.min(Math.max(from, flank.bounds!.x + flank.bounds!.width + wall), at.x);
     }
     from = Math.min(from, to); to = Math.max(from, to);
     if (range !== undefined) wanting.add(unit);

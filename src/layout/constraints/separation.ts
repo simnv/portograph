@@ -1,4 +1,5 @@
-import type { LayoutModel } from '../../model/layout.js';
+import type { Rect } from '../../model/geometry.js';
+import type { LayoutGroup, LayoutModel } from '../../model/layout.js';
 import { xCatalogue } from './catalogue.js';
 import { RESIDUAL_TOLERANCE, termValue } from './evaluate.js';
 
@@ -34,4 +35,20 @@ export function separationShortfalls(model: LayoutModel): Map<string, Shortfall>
  */
 export function worseSeparations(now: ReadonlyMap<string, Shortfall>, then: ReadonlyMap<string, Shortfall>): string[] {
   return [...now].filter(([id, item]) => item.short > (then.get(id)?.short ?? 0) + RESIDUAL_TOLERANCE).map(([id]) => id);
+}
+
+/**
+ * The hard separations a proposed set of group boxes would break or deepen, read on the model with the boxes in place; the boxes are put back before this
+ * returns. A move that is a stage's own choice (the linked-group grid) asks this before it widens a box, so the gap is kept where the box is first sized
+ * and no later pass has to find it short (ticket 19). A frame box is read as published, so only entries of group boxes answer here.
+ */
+export function separationsBrokenBy(model: LayoutModel, proposed: readonly { group: LayoutGroup; bounds: Rect }[]): string[] {
+  const before = separationShortfalls(model);
+  const saved = proposed.map(item => item.group.bounds!);
+  for (const item of proposed) item.group.bounds = item.bounds;
+  try {
+    // A frame box is read as published (it is derived from the cells later), so an entry that names a frame would compare a moved cell with a stale box.
+    const now = separationShortfalls(model);
+    return worseSeparations(new Map([...now].filter(([, item]) => item.owners.every(owner => owner.startsWith('group:')))), before);
+  } finally { proposed.forEach((item, index) => { item.group.bounds = saved[index]!; }); }
 }

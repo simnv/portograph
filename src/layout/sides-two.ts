@@ -1,7 +1,7 @@
 import type { PortRef } from '../model/document.js';
 import type { Rect, Side, Size } from '../model/geometry.js';
-import type { LayoutLink, LayoutModel, LayoutPort, PathSegment } from '../model/layout.js';
-import { orderedNodeIds, orderedGroupIds } from '../model/model.js';
+import type { LayoutGroup, LayoutLink, LayoutModel, LayoutPort, PathSegment } from '../model/layout.js';
+import { frameSubtreeCells, orderedNodeIds, orderedGroupIds } from '../model/model.js';
 import { SIDE_TIE_ORDER, portKey, tiedPortComponents } from './sides-one.js';
 import { measurePortPill } from '../text/index.js';
 import { EPS } from '../geometry/planar.js';
@@ -9,7 +9,8 @@ import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEA
 import { sizeNodes } from './size.js';
 import { bandGap, nodeGap, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { moveGroup, stackBands } from './skeleton-geometry.js';
-import { separateFrameColumns } from './columns.js';
+import { COLUMN_SLACK, separateFrameColumns } from './columns.js';
+import { deriveFrames } from './frames.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { SideHintRefusal } from './side-hints.js';
 import { carriesTitle, nodeObstacleReach, nudgingDistance, routedStroke, stemReach } from './bands.js';
@@ -709,6 +710,38 @@ function separateFramedTiersBesideFlanks(model: LayoutModel): void {
   if (groups.some(flank => flank.flank && groups.some(group => group.frame !== undefined && group.tier === flank.tier))) separateFrameColumns(model);
 }
 
+/**
+ * The sweep that seats a band's groups a band gap apart, left to right, nothing moving left. A flank, a grid or a bar is a group no rule after this one moves
+ * sideways (the rows rule may not), and where it stands beside a frame column the frame box, which reaches past the cells by the margin (and by the margin of every
+ * canton around it), keeps a band gap and a `COLUMN_SLACK` from it: the spacing `columnShifts` keeps between a frame and a plain group. A fixed group seated from the
+ * cells alone stands inside that, and the minimum separation is found short later (ticket 19). So the fixed group stands past the boxes of the frames before it,
+ * and a frame after it moves as a whole, every cell, until its box is that far. A band with no fixed group beside a frame cell is swept as before.
+ */
+function sweepTiers(model: LayoutModel): void {
+  const frames = model.document.frames, gap = bandGap(model);
+  const fixed = (group: LayoutGroup): boolean => group.flank !== undefined || groupShape(model, group.id) !== 'row';
+  const top = (id: string): string => { let at = id; while (frames![at]?.parent !== undefined) at = frames![at]!.parent!; return at; };
+  const boxOf = (group: LayoutGroup): Rect | undefined => deriveFrames(model)?.find(frame => frame.id === top(group.frame!))?.box;
+  for (const band of model.tierBands) {
+    const sorted = band.groups.map(id => model.groups[id]!).sort((a, b) => a.bounds!.x - b.bounds!.x);
+    const mixed = frames !== undefined && sorted.some(fixed) && sorted.some(group => group.frame !== undefined);
+    let end = -Infinity, frameEnd = -Infinity, fixedEnd = -Infinity;
+    for (const group of sorted) {
+      let need = end;
+      if (mixed && fixed(group)) need = Math.max(need, frameEnd + gap + COLUMN_SLACK);
+      if (group.bounds!.x < need) moveGroup(model, group, need - group.bounds!.x, 0);
+      if (mixed && group.frame !== undefined) {
+        const box = boxOf(group);
+        if (box !== undefined && box.x < fixedEnd) for (const cell of frameSubtreeCells(frames!, top(group.frame))) moveGroup(model, model.groups[cell]!, fixedEnd - box.x, 0);
+        const moved = boxOf(group);
+        if (moved !== undefined) frameEnd = Math.max(frameEnd, moved.x + moved.width);
+      }
+      end = group.bounds!.x + group.bounds!.width + gap;
+      if (mixed && fixed(group)) fixedEnd = end + COLUMN_SLACK;
+    }
+  }
+}
+
 /** Resolve all direction votes, resize and repack in skeleton order; retain the returned snapshot. */
 export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Size>): LayoutModel {
   if (model.stage !== 'skeleton' || model.freeze) throw new Error('Phase-two sides require the skeleton stage');
@@ -842,14 +875,7 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
       height: Math.max(group.bounds!.y + spacing.padding, ...order.map(id => model.nodes[id]!.bounds!.y + model.nodes[id]!.size!.height)) - group.bounds!.y + spacing.padding };
   }
   separateFramedTiersBesideFlanks(model);
-  for (const tier of model.tierBands) {
-    const groups = tier.groups.map(id => model.groups[id]!).sort((a, b) => a.bounds!.x - b.bounds!.x);
-    let end = -Infinity;
-    for (const group of groups) {
-      if (group.bounds!.x < end) moveGroup(model, group, end - group.bounds!.x, 0);
-      end = group.bounds!.x + group.bounds!.width + bandGap(model);
-    }
-  }
+  sweepTiers(model);
   if (Object.keys(model.groups).length) stackBands(model, true);
   for (const id of orderedNodeIds(model.document)) {
     const node = model.nodes[id]!;
@@ -876,13 +902,7 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   rebuildNodeGeometry(model, orderedNodeIds(model.document), 'from-slots');
   for (const group of Object.values(model.groups)) fitRegionGroup(model, group);
   separateFramedTiersBesideFlanks(model);
-  for (const tier of model.tierBands) {
-    let end = -Infinity;
-    for (const group of tier.groups.map(id => model.groups[id]!).sort((a, b) => a.bounds!.x - b.bounds!.x)) {
-      if (group.bounds!.x < end) moveGroup(model, group, end - group.bounds!.x, 0);
-      end = group.bounds!.x + group.bounds!.width + bandGap(model);
-    }
-  }
+  sweepTiers(model);
   if (Object.keys(model.groups).length) stackBands(model, true);
   rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');
   model.stage = 'sides-two';
