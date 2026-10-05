@@ -1,5 +1,4 @@
-# Expected: TS1-C1 left/left, TS1-C2 left/bottom, TS2-C3 right/right (the solve drops it into the top of C3 off the node's centre): four
-# overlay links with 10 turns in all and no overlay crossing, none through the lower rank (ticket 15 phase 7).
+# Expected (the offer rule, ticket 15 phase 7): TS1-C1 takes left/left (2 turns); the three other chords stay straight; overlay bent 1, turns 2, no overlay crossing.
 # A zone of two ranks: two time servers above two load balancers, joined by
 # an X of four routed links, so rank 1 stands column for column under rank 0. Each time server
 # syncs client nodes on the tier below the zone. The straight overlay chord from a time server

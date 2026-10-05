@@ -360,8 +360,8 @@ export function judgeCourseTrial(routedBase: LayoutModel, routedTrial: LayoutMod
 
 export interface OverlayOffer {
   courses: Course[];
-  /** For each offered overlay link: the turns promised, the turns of the baseline path, and whether the baseline drew it straight (the rule, not a gain, takes its course). */
-  promised: Map<string, { turns: number; base: number; straight: boolean }>;
+  /** For each offered overlay link: the turns promised and the turns of the baseline path. */
+  promised: Map<string, { turns: number; base: number }>;
 }
 
 /** Whether an end of an overlay link is a port that a course may not move: an author side, or a port that a hint or a course already owns. */
@@ -371,10 +371,10 @@ function overlayEndFixed(model: LayoutModel, link: LayoutLink, which: 'from' | '
 }
 
 /**
- * The planned courses of the overlay links (the user's ruling Q1): an overlay stays a straight chord only where a routed chord would be
- * (`overlayChordAdmitted`, read on the 7f baseline); every other overlay between two sub-tiers is offered the perimeter course its ends admit, on side
- * faces, judged by turns, then crossings against the routed paths of the baseline. A link that the baseline already bent takes a course only when the
- * course has fewer turns (or as many with fewer crossings); a link that the baseline drew straight takes it by the rule, whatever its turns.
+ * The offered courses of the overlay links (the user's decision on Q1: an offer, not a rule): an overlay that a routed chord would not take
+ * (`overlayChordAdmitted`, read on the 7f baseline) is offered the perimeter course its ends admit, on side faces, judged by turns, then crossings against
+ * the routed paths of the baseline. Only a link the baseline already bent is offered one, and only when the course has fewer turns (or as many with fewer
+ * crossings): a straight link cannot gain by the unified order, which the trial is judged by, so no run is spent on it.
  * An overlay with no candidate (both ends in one sub-tier, no free face) keeps the path it has.
  */
 export function measureOverlayCourses(base: LayoutModel, routedBase: LayoutModel): OverlayOffer {
@@ -413,8 +413,8 @@ export function measureOverlayCourses(base: LayoutModel, routedBase: LayoutModel
       const found = facts.get(link.id)!, drawn = routedBase.links.find(item => item.id === link.id)!, turns0 = pathBends(drawn)!;
       const [upper, lower] = found.from.tier < found.to.tier ? [found.from, found.to] : [found.to, found.from];
       const best = perimeterBest(base, link, found, upper, lower, crossedBy, nodes, true, stack);
-      const crossings0 = turns0 === 0 ? 0 : crossedBy(link.id, pointsOf(drawn));
-      if (best.course === undefined || (turns0 !== 0 && !(best.turns < turns0 || (best.turns === turns0 && best.crossings < crossings0)))) { paths.set(link.id, pointsOf(drawn)); continue; }
+      const crossings0 = crossedBy(link.id, pointsOf(drawn));
+      if (best.course === undefined || turns0 === 0 || !(best.turns < turns0 || (best.turns === turns0 && best.crossings < crossings0))) { paths.set(link.id, pointsOf(drawn)); continue; }
       paths.set(link.id, best.points);
       if (best.lane !== undefined) stack.push(best.lane);
       chosen.push({ link, best, turns0 });
@@ -427,16 +427,16 @@ export function measureOverlayCourses(base: LayoutModel, routedBase: LayoutModel
   const ordered = [...eligible].sort((a, b) => (spans.get(a.id) ?? 0) - (spans.get(b.id) ?? 0));
   for (const { link, best, turns0 } of pass(ordered)) {
     offer.courses.push(best.course!);
-    offer.promised.set(link.id, { turns: best.turns, base: turns0, straight: turns0 === 0 });
+    offer.promised.set(link.id, { turns: best.turns, base: turns0 });
   }
   return offer;
 }
 
 /**
- * Whether the trial that reserves the overlay courses is kept. The rule of Q1 takes a straight overlay's course, so the overlay bend count of those links
- * is not weighed; every other reading is (the unified order over the routed links and the overlay links that the rule did not take: bent links, then
- * turns, then crossings, no worse), and so are the hard limits: no removed link, no finding the baseline lacks (as sets), no hard constraint or
- * minimum separation broken, growth within 5 % plus the reserved width, and every course published as promised (a lost promise refuses the trial).
+ * Whether the trial that reserves the overlay courses is kept: only when the published result is not worse by the unified order (bent links over both layers,
+ * then turns, then crossings, the overlay link's own bend counted like any other), and the hard limits hold: no removed link, no finding the baseline lacks
+ * (as sets), no hard constraint or minimum separation broken, growth within 5 % plus the reserved width, and every course published as promised (a lost promise
+ * refuses the trial). The routed layer is read alone first: a course that costs a routed link a bend, a turn or a crossing is no course.
  */
 export function judgeOverlayTrial(routedBase: LayoutModel, routedTrial: LayoutModel, offer: OverlayOffer): CourseVerdict {
   const base = routedBends(routedBase), trial = routedBends(routedTrial);
@@ -460,8 +460,7 @@ export function judgeOverlayTrial(routedBase: LayoutModel, routedTrial: LayoutMo
   if ((routedTrial.canvas?.width ?? 0) > cap(routedBase.canvas?.width, room.width) || (routedTrial.canvas?.height ?? 0) > cap(routedBase.canvas?.height, room.height)) {
     return verdict(false, `the routed trial grows the canvas past ${GROWTH_BOUND * 100} % and the width its lanes reserve`);
   }
-  const ruled = new Set([...offer.promised].filter(([, item]) => item.straight).map(([id]) => id));
-  const readingOf = (model: LayoutModel): Reading => reading({ routed: routedFamily(new Map([...routedBends(model)].filter(([id]) => !ruled.has(id)))), overlay: read(model, { overlays: drawnOverlays(model).filter(link => !ruled.has(link.id)) }).overlay,
+  const readingOf = (model: LayoutModel): Reading => reading({ routed: routedFamily(routedBends(model)), overlay: read(model, { overlays: drawnOverlays(model) }).overlay,
     crossings: lazyCount(() => routedCrossingPairs(model)), crossingMode: 'pairs', tie: [] });
   // The routed layer first: an overlay course that costs a routed link a bend, a turn or a crossing (a column it moved, a row it grew) is no course, whatever the
   // overlay layer gains. The overlay bends of a link the rule took are the rule's; every other reading is the user's order.

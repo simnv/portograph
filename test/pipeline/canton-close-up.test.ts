@@ -12,7 +12,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
 import { orthogonalLinks } from '../orthogonal-links.js';
 
 const run = (name: string): Promise<LayoutModel> => layout(parse(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8')),
-  { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false });
+  { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const right = (box: Rect): number => box.x + box.width;
 const cantonBoxes = (model: LayoutModel): Rect[] => model.frames!.filter(frame => frame.kind === 'canton').map(frame => frame.box).sort((a, b) => a.x - b.x);
 const gaps = (model: LayoutModel): number[] => cantonBoxes(model).slice(1).map((box, i) => box.x - right(cantonBoxes(model)[i]!));
@@ -50,7 +50,7 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
     // With the side round on, m1 (in mpls) takes a lateral side (ticket 117, link-4 freed) and 7c drops that link's pull (side-faces.md, Section 7), so the
     // centre is read on the layout with the round off; the gaps above are read on both.
     const plain = await layout(parse(readFileSync(new URL('../../goldens/synthetic/three-canton-groups-close-up-to-a-band-gap.yaml', import.meta.url), 'utf8')),
-      { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false, testMaxReruns: 0 });
+      { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 0 });
     const block = (cantonBoxes(plain)[0]!.x + right(cantonBoxes(plain)[2]!)) / 2, mpls = plain.groups['mpls']!.bounds!;
     expect(Math.abs(mpls.x + mpls.width / 2 - block)).toBeLessThan(COLUMN_SLACK);
     expectIdempotent(model);
@@ -81,7 +81,7 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
   // The refused close-up moves the nodes and puts them back: labels in node order and the geometry exact, or publication throws.
   it('a refused close-up leaves the node labels and the geometry whole', async () => {
     // The refused close-up needs the routed links orthogonal; Q108 gives them a chord (ticket 100), so the subject is the orthogonal variant.
-    const model = await layout(parse(orthogonalLinks(readFileSync(new URL('../../goldens/synthetic/a-refused-close-up-keeps-the-node-labels-in-order.yaml', import.meta.url), 'utf8'))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false });
+    const model = await layout(parse(orthogonalLinks(readFileSync(new URL('../../goldens/synthetic/a-refused-close-up-keeps-the-node-labels-in-order.yaml', import.meta.url), 'utf8'))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
     expect(closeUps(model).length).toBeGreaterThan(0);
     expect(closeUps(model)[0]!.message).toContain('a straight overlay link would be bent');

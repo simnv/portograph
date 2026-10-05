@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse, restoreLayoutModel, score } from '../../src/index.js';
-import type { LayoutLink, LayoutModel } from '../../src/index.js';
+import type { Course, LayoutLink, LayoutModel } from '../../src/index.js';
 import { overlayChordAdmitted } from '../../src/layout/frame-paths.js';
 import { judgeOverlayTrial, measureOverlayCourses } from '../../src/layout/course-measure.js';
 import { overlayEndpoint } from '../../src/layout/overlay-paths.js';
@@ -52,15 +52,14 @@ describe('the admission rule of Q1', () => {
 });
 
 describe('the offer', () => {
-  it('names a course for each refused overlay, and says which one the rule took (a straight link) and which one gained', async () => {
+  it('offers a course only to a refused overlay that the baseline bent and the course unbends', async () => {
     const base = await before(SHEETS.rank);
     const offer = measureOverlayCourses(base, base);
-    // Brackets nest by span: the shorter lane stands inside. Link 7 (4 turns on main) gains; links 8, 9 and 10 were straight, so the rule takes them.
-    expect([...offer.promised].map(([id, item]) => [id, item.turns, item.base, item.straight]).sort())
-      .toEqual([['link-10', 2, 0, true], ['link-7', 2, 4, false], ['link-8', 3, 0, true], ['link-9', 3, 0, true]]);
-    expect(offer.courses.every(course => course.kind === 'overlay' && course.runs.includes('perimeter'))).toBe(true);
-    const bottom = offer.courses.find(course => course.link === 'link-8')!;
-    expect(bottom).toMatchObject({ side: 'left', from: { face: 'left' }, to: { face: 'bottom' }, runs: ['perimeter', 'padding'] });
+    // 07: link 7 has 4 turns on main and gains; links 8, 9 and 10 are straight, so no course can gain by the unified order and none is offered.
+    expect([...offer.promised].map(([id, item]) => [id, item.turns, item.base])).toEqual([['link-7', 2, 4]]);
+    expect(offer.courses).toMatchObject([{ link: 'link-7', kind: 'overlay', side: 'left', from: { face: 'left' }, to: { face: 'left' }, runs: ['perimeter'] }]);
+    const chord = await before(SHEETS.chord);
+    expect([...measureOverlayCourses(chord, chord).promised.values()]).toEqual([{ turns: 2, base: 4 }, { turns: 2, base: 4 }]);
   }, 60000);
 
   it('offers nothing for an overlay that no routed chord would refuse', async () => {
@@ -90,10 +89,16 @@ describe('the course, reserved and drawn', () => {
     expect(model.removedLinks ?? []).toEqual([]);
   }, 60000);
 
-  it('07: the brackets of one margin nest, the outer one leaves the upper slot of the face, and no run crosses another', async () => {
-    const model = await run(SHEETS.rank);
+  // The user's decision keeps the three straight chords of 07, so the four brackets of the solve are forced here to test the nesting.
+  it('07, forced: the brackets of one margin nest, the outer one leaves the upper slot of the face, and no run crosses another', async () => {
+    const courses: Course[] = [
+      { link: 'link-9', kind: 'overlay', side: 'right', from: { face: 'right' }, to: { face: 'top' }, runs: ['perimeter', 'tier-gap'] },
+      { link: 'link-10', kind: 'overlay', side: 'right', from: { face: 'right' }, to: { face: 'right' }, runs: ['perimeter'] },
+      { link: 'link-7', kind: 'overlay', side: 'left', from: { face: 'left' }, to: { face: 'left' }, runs: ['perimeter'] },
+      { link: 'link-8', kind: 'overlay', side: 'left', from: { face: 'left' }, to: { face: 'bottom' }, runs: ['perimeter', 'padding'] },
+    ];
+    const model = await run(SHEETS.rank, { testCourses: courses });
     const ring = (id: string): number => model.lanes.find(lane => lane.id === `perimeter:${id}`)!.ring!;
-    // Link 8 reaches below the clients row; link 7 ends at C1. The longer one stands outside.
     expect(ring('link-8')).toBeGreaterThan(ring('link-7'));
     const y = (n: number): number => link(model, n).path!.segments[0]!.from.y;
     expect(y(8)).toBeLessThan(y(7));
@@ -110,16 +115,16 @@ describe('the course, reserved and drawn', () => {
 });
 
 describe('the round', () => {
-  it('shares the re-runs of the command: with none left the overlays keep the paths main gives them', async () => {
+  it('takes its own re-run: with none left to the other rounds it still runs, and an admitted chord stays', async () => {
     const none = await run(SHEETS.chord, { testMaxReruns: 0 });
-    expect(none.courses).toBeUndefined();
-    expect(turnsOf(link(none, 5))).toBe(4);
-    expect(pure(none)).toBe(pure(await before(SHEETS.chord)));
+    expect(turnsOf(link(none, 5))).toBe(2);
+    const straight = await run(SHEETS.straight);
+    expect(pure(straight)).toBe(pure(await before(SHEETS.straight)));
   }, 60000);
 
   it('names each course it takes, and loses no promise', async () => {
-    const model = await run(SHEETS.rank);
-    expect(model.diagnostics.filter(item => item.code === 'COURSE_TAKEN').map(item => (item.owners![0] as { id: string }).id).sort()).toEqual(['link-10', 'link-7', 'link-8', 'link-9']);
+    const model = await run(SHEETS.chord);
+    expect(model.diagnostics.filter(item => item.code === 'COURSE_TAKEN').map(item => (item.owners![0] as { id: string }).id).sort()).toEqual(['link-5', 'link-6']);
     expect(model.diagnostics.filter(item => item.code === 'COURSE_SHAPE_LOST')).toEqual([]);
   }, 60000);
 });

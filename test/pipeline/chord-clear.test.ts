@@ -12,7 +12,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
 
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (yaml: string): Promise<LayoutModel> =>
-  layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false });
+  layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 
 /**
  * Ticket 77. A straight overlay chord between two tiers is a reservation for the tiers between them: a node with an overlay link of
@@ -259,7 +259,7 @@ describe('the mover takes the position that clears the most chords (ticket 110)'
   const copy = (model: LayoutModel): LayoutModel => JSON.parse(JSON.stringify(model)) as LayoutModel;
 
   it('a group that stands on two close chords goes to the edge that clears both, not the nearest edge that clears one', async () => {
-    const model = copy(await run(fixture('a-mover-takes-the-position-that-clears-most-chords')));
+    const model = copy(await layout(parse(fixture("a-mover-takes-the-position-that-clears-most-chords")), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false }));
     const chords = model.links.filter(link => link.layer === 'overlay' && link.attachments!.from.node.startsWith('src-'));
     expect(chords).toHaveLength(2);
     const group = model.groups['middle']!, node = model.nodes['mid']!;

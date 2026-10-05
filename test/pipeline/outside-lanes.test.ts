@@ -102,21 +102,15 @@ describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
     expect(gatesHold(await run(SHEETS.rankedFlank))).toBe(true);
   }, 60000);
 
-  // The four overlays go round the frame on lateral faces and none passes between the ranks. The solve drops TS2-C3 into the top of C3 in 1 turn with its port
-  // off the node's centre; an anonymous port stands at the slot the face gives it and C3 stands in the anchor tier (7c holds it), so the library takes the side
-  // face of C3 (2 turns), and TS2-C2 takes a bracket and a drop (3 turns) where the solve drops through the zone in 1.
-  it('07 (phase 7): TS1-C1 left/left, TS1-C2 left/bottom, TS2-C3 right/right; no overlay passes between the ranks and the brackets cross no other link', async () => {
+  // The user's decision (Q1 is an offer): a course is kept only when the published result is not worse by `unified`. Link 7 (4 turns on main) takes the bracket on
+  // lateral faces (2 turns); the three straight chords cannot gain by bent links over both layers, so they stay straight, where the solve brackets all four (overlay
+  // bent 1 -> 4, turns 7). The library is better by `unified` than the solve (overlay bent 1, turns 2, crossings 0) and does not draw its faces for links 8 to 10.
+  it('07 (phase 7): TS1-C1 takes the left/left bracket (2 turns); the three straight chords stay; overlay bent 1, turns 2, no crossing', async () => {
     const model = await run(SHEETS.lowerRank);
     expect([sideOf(model, 7, 'from'), sideOf(model, 7, 'to'), turns(model, 7)]).toEqual(['left', 'left', 2]);
-    expect([sideOf(model, 8, 'from'), sideOf(model, 8, 'to'), turns(model, 8)]).toEqual(['left', 'bottom', 3]);
-    expect([sideOf(model, 10, 'from'), sideOf(model, 10, 'to'), turns(model, 10)]).toEqual(['right', 'right', 2]);
-    const rank = model.groups[model.document.nodes['lb1']!.group]!.bounds!;
-    for (const item of model.links.filter(entry => entry.layer === 'overlay')) {
-      for (const segment of item.path!.segments) {
-        const box = { x1: Math.min(segment.from.x, segment.to.x), x2: Math.max(segment.from.x, segment.to.x), y1: Math.min(segment.from.y, segment.to.y), y2: Math.max(segment.from.y, segment.to.y) };
-        expect(box.x2 <= rank.x || box.x1 >= rank.x + rank.width || box.y2 <= rank.y || box.y1 >= rank.y + rank.height).toBe(true);
-      }
-    }
+    for (const n of [8, 9, 10]) expect(turns(model, n)).toBe(0);
+    expect(counts(model).overlay.bent).toBe(1);
+    expect(counts(model).overlay.turns).toBe(2);
     expect(counts(model).overlay.crossings.pairs).toBe(0);
     expect(counts(model).routed.crossings).toBe(1);
     expect(model.diagnostics.filter(item => item.code === 'COURSE_SHAPE_LOST')).toEqual([]);

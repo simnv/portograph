@@ -102,8 +102,6 @@ export interface LayoutOptions {
   testCourses?: readonly Course[];
   /** Test only. `false` skips the overlay round (ticket 15, phase 7): the overlay links keep the chord or the derived path they had before the rule of Q1. */
   testOverlayCourses?: boolean;
-  /** Test only. Lets the overlay round take one re-run beyond `MAX_RERUNS`: the design's "one extra re-run", measured on the NTP sheet (ticket 15, phase 7). */
-  testExtraOverlayRerun?: boolean;
   /** Test only. Replaces `MAX_RERUNS` for one command. */
   testMaxReruns?: number;
   /** Test only. Called with the wall time of each placement run, measure, 7f, route and score-ready stage, and the budget left (ticket 115 timing). */
@@ -467,16 +465,14 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     break; // one trial reaches 7f per command
   }
   if (courseDeferred) await courseRound();
-  // The overlay round (ticket 15, phase 7; the user's ruling Q1). After the routed rounds, on their kept result: an overlay stays a straight chord only where a routed
-  // chord would be; every other overlay between two sub-tiers is offered a perimeter course on side faces. The course is reserved in stage 5 of one more placement
-  // run. It shares `MAX_RERUNS` with the other rounds and takes only a re-run they left: a fourth run costs the NTP sheet 57 % of its render time (measured at 35 s -> 55 s,
-  // with the 60 s command deadline in view), so a command that has spent its re-runs keeps its overlays as they are. A refused trial leaves the layout as it was.
+  // The overlay round (ticket 15, phase 7; the user's decision on Q1). After the routed rounds, on their kept result: an overlay that a routed chord would not take is
+  // offered a perimeter course on side faces, reserved in stage 5 of one more placement run and kept only when its published result is not worse by the unified order.
+  // The run is the round's own, one beyond `MAX_RERUNS` (the other rounds keep their budget); a refused trial leaves the layout as it was.
   if (options.testCourses === undefined && options.testOverlayCourses !== false) {
     const current = routedFinal ?? routedBase ?? await routeModel(base);
     const overlayOffer = measureOverlayCourses(base, current);
     options.testSideTrace?.({ ev: 'overlay-courses', offer: overlayOffer, base, routedBase: current });
-    if (overlayOffer.courses.length > 0 && reruns >= maxReruns + (options.testExtraOverlayRerun === true ? 1 : 0)) options.testSideTrace?.({ ev: 'overlay-skipped', offer: overlayOffer, reruns });
-    else if (overlayOffer.courses.length > 0) {
+    if (overlayOffer.courses.length > 0) {
       const nodeFloors = new Map([...courseFloors, ...(options.testNodeFloors ?? [])]);
       for (const key of hints.keys()) {
         const [node] = JSON.parse(key) as [string];
@@ -494,13 +490,10 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       const names = overlayOffer.courses.map(course => course.link);
       const refuseOverlays = (why: string): void => { options.testSideTrace?.({ ev: 'overlay-refused', links: names, why }); };
       let trial7e: LayoutModel | undefined;
-      reruns++;
       try { trial7e = await timed('rerun-overlay', () => place(floors, hints, nodeFloors, trialAbort, laneKeys, [...activeCourses, ...overlayOffer.courses])); } catch (error) {
         if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError
           || (error instanceof Error && error.message.startsWith('Centring invariant violated')))) throw error;
         refuseOverlays(`the placement run rejected them (${error.message})`);
-        // Stage 7a refused a lane: no trial exists, so the re-run is given back, as the course round does.
-        if (error instanceof CourseRefusal) reruns--;
       }
       if (trial7e !== undefined && trial7e.fallbackUsed && !kept7e.fallbackUsed) { refuseOverlays('ELK fell back during the overlay trial'); trial7e = undefined; }
       if (trial7e !== undefined) {
