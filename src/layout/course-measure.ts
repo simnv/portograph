@@ -97,6 +97,13 @@ export function measureCourses(base: LayoutModel, routedBase: LayoutModel, refus
     const routed = routedBase.links.find(item => item.id === link.id);
     const turns0 = routed === undefined ? undefined : pathBends(routed);
     const crossings0 = routed === undefined || turns0 === undefined ? 0 : crossingsOf(routedBase, link.id);
+    // A shared named port whose links come from two directions: this link meets the pill from its own side (phase 6). The port keeps its side.
+    const approach = approachCourse(base, facts, found, usage, turns0);
+    if (approach !== undefined) {
+      offer.courses.push(approach.course);
+      offer.promised.set(link.id, { turns: approach.turns, crossings: 0, base: { turns: turns0 ?? Infinity, crossings: crossings0 } });
+      continue;
+    }
     if (!poorRoute(turns0, crossings0)) continue;
     const [upper, lower] = found.from.tier < found.to.tier ? [found.from, found.to] : [found.to, found.from];
     if (upper.tier === lower.tier) {
@@ -164,6 +171,40 @@ export function measureCourses(base: LayoutModel, routedBase: LayoutModel, refus
   }
   return offer;
 }
+
+/**
+ * The approach course of a link end on a shared named port (ticket 15, phase 6; T4 of the design), or `undefined`. The end stands on a lateral face of a port that
+ * another link shares and that other link comes from another direction (its far end is in the same row or on the other side of the band). The far end is in the
+ * next tier, on the face that looks at this one. The link then meets the pill on its top (far end above) or bottom (far end below) edge: a drop from a row of the
+ * tier gap, two turns. It is offered only when the baseline route has more turns.
+ */
+function approachCourse(base: LayoutModel, facts: ReadonlyMap<string, LinkFacts>, found: LinkFacts, usageOf: (model: LayoutModel, key: string) => number, turns0: number | undefined):
+  { course: Course; turns: number } | undefined {
+  if (turns0 !== undefined && turns0 <= APPROACH_TURNS) return undefined;
+  for (const which of ['from', 'to'] as const) {
+    const end = which === 'from' ? found.from : found.to, far = which === 'from' ? found.to : found.from;
+    if (end.ref.anonymous === true || end.ref.name === undefined || (end.side !== 'left' && end.side !== 'right')) continue;
+    if (Math.abs(end.tier - far.tier) !== 1 || usageOf(base, portKey(end.ref)) < 2) continue;
+    const above = far.tier < end.tier;
+    if (far.side !== (above ? 'bottom' : 'top')) continue;
+    // Another link at the port comes from another direction: the far end of the port's other link is in the same row or on the other side of the band.
+    const direction = (item: LinkFacts): number | undefined => {
+      const mine = portKey(item.from.ref) === portKey(end.ref) ? item.to : portKey(item.to.ref) === portKey(end.ref) ? item.from : undefined;
+      return mine === undefined ? undefined : Math.sign(mine.tier - end.tier);
+    };
+    const own = Math.sign(far.tier - end.tier);
+    const others = [...facts.values()].filter(item => item.link.id !== found.link.id && direction(item) !== undefined);
+    if (!others.some(item => direction(item) !== own)) continue;
+    const approach: Side = above ? 'top' : 'bottom';
+    const course: Course = { link: found.link.id, kind: 'shared-port', runs: ['tier-gap'],
+      from: { face: found.from.side, ...(which === 'from' ? { approach } : {}) }, to: { face: found.to.side, ...(which === 'to' ? { approach } : {}) } };
+    return { course, turns: APPROACH_TURNS };
+  }
+  return undefined;
+}
+
+/** The turns of a drop onto a pill from a row of the tier gap: the stem turns into the row, and the row into the drop. */
+const APPROACH_TURNS = 2;
 
 /** The column-gap course of a skirt, or `undefined`: which end keeps its lateral face, which leaves by the bottom face and a U part. */
 function gapCourse(base: LayoutModel, found: LinkFacts, usageOf: (model: LayoutModel, key: string) => number,

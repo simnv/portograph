@@ -3,6 +3,7 @@ import type { LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import { bottom, EPS } from '../geometry/planar.js';
 import { nudgingDistance, stemReach } from './bands.js';
 import { plannedSegments, tierGapPlans, type GapPlan, type PlannedPart } from './gap-plan.js';
+import { endPort } from './approach.js';
 import { findPort } from './row-paths.js';
 import { stemPlan, type StemCache } from './sides-two.js';
 
@@ -91,7 +92,7 @@ export function stopsOf(model: LayoutModel, link: LayoutLink): { point: Point; k
   const ends = (['from', 'to'] as const).map(end => {
     const runs = link.sharedRuns?.[end];
     if (runs?.length) return { point: runs.at(-1)!.to, kind: 'shared' as const };
-    const anchor = findPort(model, link.attachments![end])?.anchor;
+    const anchor = endPort(model, link, end)?.anchor;
     return anchor ? { point: anchor, kind: 'port' as const } : undefined;
   });
   if (!ends[0] || !ends[1]) return [];
@@ -125,7 +126,7 @@ export function nestedTips(model: LayoutModel, cache: StemCache): NestedTip[] {
     if (link.layer === 'overlay' || !drawn(link)) continue;
     for (const end of ['from', 'to'] as const) {
       if (link.sharedRuns?.[end]?.length) continue;
-      const port = findPort(model, link.attachments![end]);
+      const port = endPort(model, link, end);
       if (!port?.anchor || (port.side !== 'top' && port.side !== 'bottom')) continue;
       const depth = stemPlan(model, port, cache).depth;
       const nested = depth > stemReach(model, model.nodes[link.attachments![end].node]!) + EPS;

@@ -8,7 +8,7 @@ import { segmentRectDistance } from '../geometry/planar.js';
 import { findPort } from './row-paths.js';
 import { CourseRefusal, isCourseLane, validateCourseLane } from './courses.js';
 import { isGapRun, laneRunKind } from './lane-kind.js';
-import { courseGeometry, courseOf, perimeterLaneId, ringsOf, type LaneDraft } from './course-lanes.js';
+import { courseGeometry, courseOf, isApproachCourse, perimeterLaneId, ringsOf, type LaneDraft } from './course-lanes.js';
 import { gapEnds, gapGeometry, gapLaneId, gapReservation, isGapCourse } from './course-gap.js';
 import { RING_PITCH, endMode } from './course-rows.js';
 import { groupShape } from './grid.js';
@@ -1011,7 +1011,7 @@ export function allocateLanes(model: LayoutModel): void {
   }
   // The side lanes are placed against the frames as the transit lanes leave them: `commit` moved groups and `transitLanes` grows a frame for a
   // held lane, so the boxes read at this point are rebuilt from the published lanes first (a document with no candidate keeps its old order).
-  if (model.links.some(link => sideLaneCandidate(model, link) !== undefined) || (model.courses?.length ?? 0) > 0) {
+  if (model.links.some(link => sideLaneCandidate(model, link) !== undefined) || (model.courses ?? []).some(course => !isApproachCourse(course))) {
     model.lanes = pending;
     rebuildNodeGeometry(model, Object.keys(model.nodes), 'current');
     rebuildRegions(model);
@@ -1170,7 +1170,7 @@ function reserveSideLanes(model: LayoutModel, pending: Lane[], occ: (group: Layo
 function reserveCourseLanes(model: LayoutModel, pending: Lane[], occ: (group: LayoutGroup, link?: LayoutLink) => Rect): void {
   const placed: Lane[] = [];
   for (const course of model.courses ?? []) {
-    if (isGapCourse(course)) continue;
+    if (isGapCourse(course) || isApproachCourse(course)) continue;
     const link = model.links.find(item => item.id === course.link);
     if (link?.attachments === undefined || course.side === undefined) throw new Error(`Course on ${course.link} cannot reserve a perimeter lane`);
     const draft: LaneDraft = { id: perimeterLaneId(link.id), side: course.side, ring: 0, ...(endHasNaturalFace(course) ? { aligned: true as const } : {}) };

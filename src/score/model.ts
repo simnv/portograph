@@ -2,6 +2,7 @@ import type { Junction, Layer, LayoutLink, LayoutModel, LayoutPort, PathSegment,
 import { frameSubtreeCells } from '../model/index.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
 import { overlayEndpoint } from '../layout/overlay-paths.js';
+import { endPort } from '../layout/approach.js';
 import { linkStrokeWidth } from '../theme/geometry.js';
 import { EPS, bottom, contains, horizontal, length, near, pointRect, right, samePoint, vertical } from './geometry.js';
 
@@ -54,6 +55,10 @@ export function groupConsumers(model: LayoutModel, groupId: string): string[] {
 }
 
 export function port(model: LayoutModel, ref: PortRef): LayoutPort | undefined { return model.nodes[ref.node]?.ports.find(candidate => refEqual(candidate.ref, ref)); }
+/** The port an end of `link` meets: the port, or its virtual port when the link ends on an approach (ticket 15, phase 6). */
+export function linkPort(model: LayoutModel, link: LayoutLink, end: 'from' | 'to'): LayoutPort | undefined {
+  return link.approach?.[end] === undefined ? port(model, endpoints(link)[end]) : endPort(model, link, end);
+}
 export function effectiveLayer(link: LayoutLink): Layer {
   return link.layer ?? (link.technique !== undefined ? link.technique === 'overlay' ? 'overlay' : 'routed' : link.family ?? link.path?.layer ?? 'routed');
 }
@@ -113,7 +118,7 @@ export function outward(p: LayoutPort, segment: PathSegment, first: boolean): bo
 export function incident(model: LayoutModel, s: Segment, node: string): boolean {
   const ends = endpoints(s.link);
   return ([['from', 0, true], ['to', s.link.path!.segments.length - 1, false]] as const).some(([end, index, first]) => {
-    const p = port(model, ends[end]);
+    const p = linkPort(model, s.link, end);
     if (p !== undefined && ends[end].node === node && s.index === index && isRoutedChord(model, s.link)) {
       // A straight link inside one frame leaves the port's own face at any angle (ticket 34).
       const face = overlayEndpoint(model.nodes[node], p) ?? p.anchor!;

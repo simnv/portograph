@@ -151,6 +151,15 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     }
     stepIn('sides-one', () => sidesOne(resolved, hints, laneKeys, courseFaces));
     if (courses.length) resolved.courses = JSON.parse(JSON.stringify(courses)) as Course[];
+    // An approach (ticket 15, phase 6) is stored on the link and in its course; the port keeps its side.
+    for (const course of courses) {
+      const link = resolved.links.find(item => item.id === course.link);
+      if (link === undefined) continue;
+      for (const which of ['from', 'to'] as const) {
+        const approach = course[which].approach;
+        if (approach !== undefined) link.approach = { ...link.approach, [which]: approach };
+      }
+    }
     for (const [id, pitch] of floors) resolved.nodes[id]!.sidePitch = { ...resolved.nodes[id]!.sidePitch, ...pitch };
     // A hinted node keeps the size the measured run gave it, so the skeleton input is the same (a floor on `size`, not on `sizeFloor`, which alignment reads).
     for (const [id, size] of nodeFloors ?? []) resolved.nodes[id]!.size = { ...size };
@@ -323,7 +332,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
           for (const course of offer.courses) {
             const was = offer.promised.get(course.link)!;
             sideNotes.push({ stage: 'placement', severity: 'info', code: 'COURSE_TAKEN', owners: [{ kind: 'link', id: course.link }],
-              message: `The link ${course.link} takes a course ${course.runs.includes('gap') ? 'through a column gap' : 'round the outside'}: ${was.turns} turns promised, ${was.base.turns === Infinity ? 'removed' : was.base.turns} on the baseline.` });
+              message: `The link ${course.link} takes a course ${course.kind === 'shared-port' ? 'onto the pill of its shared port' : course.runs.includes('gap') ? 'through a column gap' : 'round the outside'}: ${was.turns} turns promised, ${was.base.turns === Infinity ? 'removed' : was.base.turns} on the baseline.` });
           }
         } else {
           courseRefusal(`${verdict.reason}`);

@@ -1,6 +1,7 @@
 import type { Point } from '../model/geometry.js';
 import type { Lane, LayoutLink, LayoutModel, LayoutPath, PathSegment } from '../model/layout.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
+import { endPort } from '../layout/approach.js';
 import { findPort } from '../layout/row-paths.js';
 import { overlayBlockers, overlayPath, publishedOverlayPath } from '../layout/overlay-paths.js';
 import { stemReach } from '../layout/bands.js';
@@ -225,9 +226,8 @@ function foreignJudgement(model: LayoutModel, link: LayoutLink, segments: PathSe
     const box = boxes.find(item => segmentRect(segment, shrink(item.bounds, TOLERANCE)));
     if (box) throw new GapRejected(`Routed path on ${link.id} enters reserved ${box.id}`);
   }
-  const ends = link.attachments!;
-  for (const [ref, segment, first] of [[ends.from, segments[0]!, true], [ends.to, segments.at(-1)!, false]] as const) {
-    const port = findPort(model, ref);
+  for (const [end, segment, first] of [['from', segments[0]!, true], ['to', segments.at(-1)!, false]] as const) {
+    const port = endPort(model, link, end);
     if (!port?.anchor) continue;
     if (!outward(port, segment, first)) throw new GapRejected(`Port stem on ${link.id} does not leave its side perpendicular`);
     const required = isReserved(segment) ? MIN_STEM : Math.max(MIN_STEM, stemReach(model, model.nodes[port.ref.node]!));

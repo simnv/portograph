@@ -5,6 +5,7 @@ import { legReservation, sideNested, stemCache, stemPlan, type StemCache } from 
 import { linkStrokeWidth } from '../theme/geometry.js';
 import { edgeMargin } from '../layout/bundle-geometry.js';
 import { allocateGapRuns } from '../layout/gap-runs.js';
+import { endPort, hasApproach } from '../layout/approach.js';
 import { findPort, straightCorridorClear } from '../layout/row-paths.js';
 import { portId } from '../layout/skeleton-graph.js';
 import { EPS, samePoint, segmentRect } from '../geometry/planar.js';
@@ -116,6 +117,8 @@ function portUsage(model: LayoutModel): Map<string, number> {
   for (const link of model.links) {
     if (!drawn(link) || effectiveLayer(link) !== 'routed') continue;
     for (const end of ['from', 'to'] as const) {
+      // An end on an approach has a pin of its own on the pill's edge and shares the port with no one (ticket 15, phase 6).
+      if (hasApproach(link, end)) continue;
       const key = portId(link.attachments![end]);
       usage.set(key, (usage.get(key) ?? 0) + 1);
     }
@@ -141,9 +144,10 @@ function endpointFor(model: LayoutModel, link: LayoutLink, end: 'from' | 'to',
     const terminal = runs.at(-1)!.to;
     return { endpoint: { kind: 'point', x: terminal.x, y: terminal.y }, point: { ...terminal }, directions: ALL_DIRECTIONS };
   }
-  const ref = link.attachments![end], port = findPort(model, ref)!;
+  const ref = link.attachments![end], port = endPort(model, link, end)!;
   const node = model.nodes[ref.node]!;
-  const classId = node.ports.indexOf(port) + 1;
+  // An approach is a pin of its own on the pill's edge: its class stands beyond every port's.
+  const classId = hasApproach(link, end) ? node.ports.length + 1 + link.sourceIndex * 2 + (end === 'to' ? 1 : 0) : node.ports.indexOf(findPort(model, ref)!) + 1;
   const list = pins.get(ref.node) ?? [];
   if (!list.some(pin => pin.classId === classId)) {
     list.push({ classId, x: port.anchor!.x, y: port.anchor!.y,
@@ -321,7 +325,7 @@ export function planRoute(model: LayoutModel, plans?: Parameters<typeof allocate
       // Read from the link, not from the endpoints: an end that consumes a shared run reserves no
       // stem of its own, and its node side is still shared space its batch may use.
       sides: (['from', 'to'] as const).flatMap(end => {
-        const side = findPort(model, link.attachments![end])?.side;
+        const side = endPort(model, link, end)?.side;
         return side === undefined ? [] : [`${link.attachments![end].node}|${side}`];
       }),
       ports: (['from', 'to'] as const).map(end => portId(link.attachments![end])) });

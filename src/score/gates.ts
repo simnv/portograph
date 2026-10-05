@@ -18,7 +18,7 @@ interface Span { x: number; y: number; right: number; bottom: number; measurable
 const REJECT_LIMIT = 2 ** 26;
 const measurable = (x: number, y: number, right: number, bottom: number): boolean =>
   x > -REJECT_LIMIT && y > -REJECT_LIMIT && right < REJECT_LIMIT && bottom < REJECT_LIMIT;
-import { anchorOnBoundary, barContact, bundlePair, effectiveLayer, endpoints, groupBoxes, groupConsumers, incident, junctionFan, mergedRun, outward, port, refEqual, refKey, sharedStem } from './model.js';
+import { anchorOnBoundary, barContact, bundlePair, effectiveLayer, endpoints, groupBoxes, groupConsumers, incident, junctionFan, linkPort, mergedRun, outward, port, refEqual, refKey, sharedStem } from './model.js';
 import { overlayEndpoint } from '../layout/overlay-paths.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
 import { separationShortfalls } from '../layout/constraints/separation.js';
@@ -362,7 +362,7 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
   }
   counters.lanesUsed = lanesUsed.size;
   for (const link of model.links) {
-    const ends = endpoints(link), from = port(model, ends.from), to = port(model, ends.to), path = link.path?.segments;
+    const ends = endpoints(link), from = linkPort(model, link, 'from'), to = linkPort(model, link, 'to'), path = link.path?.segments;
     if (!from || !to) { fail('G7', 'missing-port', [link.id], 'Link attachment references a missing port'); continue; }
     if (path?.length) {
       // Where each family really meets its port. A routed path ends on the anchor, under its own
