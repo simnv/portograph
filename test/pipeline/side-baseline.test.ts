@@ -42,7 +42,7 @@ async function run(name: string, extra: Partial<Parameters<typeof layout>[1]> = 
   state.script = script; state.calls = 0; state.tamper = tamper; state.routes = 0; state.measured = [];
   let places = 0;
   const labels: string[] = [];
-  const model = await layout(parse(fixture(name)), { createElkAttempt: () => { places++; return createAttempt(); }, createRouteAttempt: createAvoidAttempt,
+  const model = await layout(parse(fixture(name)), { createElkAttempt: () => { places++; return createAttempt(); }, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false,
     testTiming: label => { labels.push(label); }, ...extra });
   return { model, places, labels };
 }
@@ -142,7 +142,7 @@ describe('the trial deadline (Section 19.5, ticket 141)', () => {
       if (++places !== 2) return real;
       return { layout: async () => { real.terminateWorker(); throw new ElkDeadlineError(1); }, terminateWorker: () => real.terminateWorker() };
     };
-    await expect(layout(parse(fixture(PAST_SIBLING)), { createElkAttempt, createRouteAttempt: createAvoidAttempt })).rejects.toBeInstanceOf(ElkDeadlineError);
+    await expect(layout(parse(fixture(PAST_SIBLING)), { createElkAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false })).rejects.toBeInstanceOf(ElkDeadlineError);
     expect(places).toBe(2);
   }, 60000);
 

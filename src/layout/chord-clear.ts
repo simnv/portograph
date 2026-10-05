@@ -18,6 +18,7 @@ import { PLACEMENT_EPS } from './tolerance.js';
 import { chordDecision, CANVAS_GROWTH_SHARE, edge, rankShare, SLIDE_GROWTH, type AdoptedCopy } from './decide.js';
 import { nodeTier } from './read/tier.js';
 import { standsInRootCanton } from './read/canton.js';
+import { overlayCourse } from './courses.js';
 
 /** The decision loop lives in `decide.ts`; these are re-exported for the callers and the tests that name them here. */
 export { overlayCrossings, pickRankMove, spent, type AdoptedCopy, type RankMove } from './decide.js';
@@ -51,7 +52,7 @@ export { overlayCrossings, pickRankMove, spent, type AdoptedCopy, type RankMove 
 export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel) => unknown) | undefined, history: Set<string> = new Set(), out?: { adopted?: AdoptedCopy }): boolean {
   const anchor = selectAnchorTier(model);
   // A member of a mesh bus is not a chord: it is neither straight nor bent, and the step does not read it (mesh-bus.md, section 4).
-  const overlays = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && link.attachments);
+  const overlays = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && link.attachments && !overlayCourse(model, link));
   if (anchor === undefined || !overlays.length) return false;
   const columns = frameColumns(model), movable = overlayFreeGroups(model, anchor, true), free = overlayFreeGroups(model, anchor);
   const tierOf = (node: string): number => nodeTier(model, node);

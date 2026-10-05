@@ -18,6 +18,7 @@ import { MEMBER_GAP, fanEnd } from './bundle-geometry.js';
 import { laneSource, laneWidth, transitTiers } from './lanes.js';
 import { fitRegionGroup, placementWarning } from './regions.js';
 import { approachReach, endPort } from './approach.js';
+import { COURSE_STEM, endMode } from './course-rows.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { gridCells, gridRowGap, groupShape, isGridGroup, packGridRows } from './grid.js';
 import { freezePortTopology } from './mutation.js';
@@ -28,6 +29,22 @@ const key = portId;
  * Visible wire between two facing named pills. Without it the two pills' outer edges meet and the
  * link between them is drawn entirely behind them, which is a connection a reader cannot see.
  */
+/** A port on a lateral face for the order: the y its run goes to (`far`), and the reach of its lane when an overlay course owns it. */
+export interface SlotPort { far: number; reach?: number | undefined }
+
+/**
+ * The order of the ports of one lateral face, as one comparator on one scale, the y each run goes to. The course ports stand together, the farther reach first (the
+ * outer bracket takes the outer slot, ticket 15 P2). A routed port whose peer lies above the least reach of the brackets stands above them, and any other routed port
+ * below them, each group in its far order: a routed run is never forced across a bracket by the brackets' own order. Total: rank, then one number.
+ */
+export function slotOrder(ports: readonly SlotPort[]): (a: SlotPort, b: SlotPort) => number {
+  const reaches = ports.flatMap(port => (port.reach === undefined ? [] : [port.reach]));
+  const edge = reaches.length === 0 ? Infinity : Math.min(...reaches);
+  const rank = (port: SlotPort): number => (port.reach !== undefined ? 1 : port.far < edge ? 0 : 2);
+  const key = (port: SlotPort): number => (port.reach !== undefined ? -port.reach : port.far);
+  return (a, b) => rank(a) - rank(b) || (key(a) === key(b) ? 0 : key(a) - key(b));
+}
+
 export const PILL_WIRE_GAP = 8;
 
 /**
@@ -893,6 +910,16 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   separateFramedTiersBesideFlanks(model);
   sweepTiers(model);
   if (Object.keys(model.groups).length) stackBands(model, true);
+  // The far end of each overlay course port, and how the course meets it: the lane of a course runs to its far end's row, beyond it by a padding row, short of it by a drop (ticket 15).
+  const overlayCourseFar = new Map<string, { far: PortRef; bias: number }>();
+  for (const course of model.courses ?? []) {
+    const link = course.kind === 'overlay' ? model.links.find(item => item.id === course.link) : undefined;
+    if (link?.attachments === undefined) continue;
+    for (const [mine, other, which] of [[link.attachments.from, link.attachments.to, 'to'], [link.attachments.to, link.attachments.from, 'from']] as const) {
+      const mode = endMode(course, which);
+      overlayCourseFar.set(key(mine), { far: other, bias: mode === 'padding' ? COURSE_STEM : mode === 'natural' ? -2 * COURSE_STEM : 0 });
+    }
+  }
   for (const id of orderedNodeIds(model.document)) {
     const node = model.nodes[id]!;
     for (const side of SIDE_TIE_ORDER) {
@@ -908,7 +935,19 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
       };
       // The bus port is the last port in engine order on its side, after a peerless port too (an authored `order:` still wins below).
       const isBus = (ref: PortRef): number => busOfPort(model, ref) !== undefined ? 1 : 0;
-      ports.sort((a, b) => isBus(a.ref) - isBus(b.ref) || (far(a.ref) === far(b.ref) ? 0 : far(a.ref) - far(b.ref)));
+      // Two overlay courses that leave one lateral face are brackets of one margin and nest (ticket 15, P2): the lane that runs farther along its margin stands outside
+      // the other, so its port stands where its run does not cross the other's. At the upper end that is the upper slot, at the lower end the lower one: in both the
+      // port whose lane reaches the lower row comes first by y descending. A far end that a padding row passes reaches beyond its row, one that a drop meets stops short of it.
+      const reach = (ref: PortRef): number | undefined => {
+        const entry = overlayCourseFar.get(key(ref)), here = model.nodes[ref.node]?.ports.find(port => key(port.ref) === key(ref))?.anchor;
+        const there = entry === undefined ? undefined : model.nodes[entry.far.node]?.ports.find(port => key(port.ref) === key(entry.far))?.anchor;
+        return entry === undefined || here === undefined || there === undefined ? undefined : there.y + Math.sign(there.y - here.y) * entry.bias;
+      };
+      // One comparator on one y scale (`slotOrder`): a routed port is not pushed past the brackets by their order.
+      const lateral = side === 'left' || side === 'right';
+      const slots = new Map(ports.map(port => [port, { far: far(port.ref), reach: lateral ? reach(port.ref) : undefined }] as const));
+      const byslot = slotOrder([...slots.values()]);
+      ports.sort((a, b) => isBus(a.ref) - isBus(b.ref) || byslot(slots.get(a)!, slots.get(b)!));
       const authored = ports.filter(port => port.authorOrder !== undefined).sort((a, b) => a.authorOrder! - b.authorOrder!);
       let next = 0;
       const ordered = ports.map(port => port.authorOrder === undefined ? port : authored[next++]!);

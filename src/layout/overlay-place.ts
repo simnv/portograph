@@ -17,6 +17,7 @@ import { windowTarget, type Window } from './overlay-window.js';
 import { attemptCounters } from './attempt-counters.js';
 import { chooseStep } from './decide.js';
 import { drawnOverlays, gains, holds, lazyCount, profiles, read, reading, straightOf, tapVerdict, type Reading } from './objective.js';
+import { overlayCourse } from './courses.js';
 
 /** A free group stands where its overlay chords are straight and not at the mean of its partners (ticket 143, info). */
 export const OVERLAY_WINDOW_TAKEN = 'OVERLAY_WINDOW_TAKEN';
@@ -188,7 +189,7 @@ function place(model: LayoutModel, columns: readonly FrameColumn[], windows: boo
     return total;
   };
 
-  const overlays = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && link.attachments);
+  const overlays = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && link.attachments && !overlayCourse(model, link));
   const tiers = model.tierBands.map(band => band.tier), at = tiers.indexOf(anchor);
   for (const tier of [...tiers.slice(at + 1), ...tiers.slice(0, at).reverse()]) {
     const groups = Object.values(model.groups).filter(group => group.tier === tier);
@@ -198,7 +199,7 @@ function place(model: LayoutModel, columns: readonly FrameColumn[], windows: boo
     // The straight overlay links that touch or pass over this tier: a move is kept only where their
     // count, read by the real overlay decision, holds or rises (spec section 5). The mean of partners
     // in two tiers can put a body of the tier between the two ends of a link that was straight.
-    const spanning = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && link.attachments).filter(link => {
+    const spanning = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && link.attachments && !overlayCourse(model, link)).filter(link => {
       const ends = [link.attachments!.from.node, link.attachments!.to.node].map(node => model.groups[groupOf(node)]!.tier!);
       return Math.min(...ends) <= tier && tier <= Math.max(...ends);
     });
@@ -379,7 +380,7 @@ export function standLinklessBeside(model: LayoutModel, tiers: readonly number[]
       ...columns.filter(column => column.from <= tier && tier <= column.to).map(column => ({ low: column.x, high: column.x + column.width, gap })),
       ...lanes.map(lane => ({ ...lane, gap: 0 })),
     ];
-    const overlays = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && link.attachments);
+    const overlays = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && link.attachments && !overlayCourse(model, link));
     const rest = [...pending];
     while (rest.length) {
       const parts = [...standing.map(span), ...frames, ...lanes];
@@ -434,7 +435,7 @@ export function stepOutOfChords(model: LayoutModel, tiers: readonly number[], fr
     for (const end of [link.attachments.from.node, link.attachments.to.node]) linked.add(model.document.nodes[end]!.group);
   }
   // A bus member is neither straight nor bent and is no chord to step out of (mesh-bus.md, section 4).
-  const overlays = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && link.attachments);
+  const overlays = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && link.attachments && !overlayCourse(model, link));
   if (!overlays.length) return;
   const gap = bandGap(model);
   for (const tier of tiers) {

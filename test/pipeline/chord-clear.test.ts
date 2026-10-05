@@ -248,7 +248,7 @@ describe('the slide paths of a frame, judged and capped (ticket 80)', () => {
   }, 60000);
 
   it('a slide the column rules would undo is refused in a real layout (three-canton-groups-close-up-to-a-band-gap)', async () => {
-    const model = await layout(parse(fixture('three-canton-groups-close-up-to-a-band-gap')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const model = await layout(parse(fixture('three-canton-groups-close-up-to-a-band-gap')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false });
     // A slide of a member frame by 63 px straightened two chords in an earlier build and left the finished layout off the fixed point of the
     // column rules: `packBesideRows` moved it back. The canvas is the one of main (1921.3), not the widened one (1984.5).
     expect(model.canvas!.width).toBeLessThan(1930);
@@ -259,7 +259,7 @@ describe('the mover takes the position that clears the most chords (ticket 110)'
   const copy = (model: LayoutModel): LayoutModel => JSON.parse(JSON.stringify(model)) as LayoutModel;
 
   it('a group that stands on two close chords goes to the edge that clears both, not the nearest edge that clears one', async () => {
-    const model = copy(await run(fixture('a-mover-takes-the-position-that-clears-most-chords')));
+    const model = copy(await layout(parse(fixture("a-mover-takes-the-position-that-clears-most-chords")), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false }));
     const chords = model.links.filter(link => link.layer === 'overlay' && link.attachments!.from.node.startsWith('src-'));
     expect(chords).toHaveLength(2);
     const group = model.groups['middle']!, node = model.nodes['mid']!;
