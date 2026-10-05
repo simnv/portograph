@@ -16,6 +16,9 @@ import { createAvoidAttempt } from '../route/fixture.js';
 const source = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (name: string): Promise<LayoutModel> => layout(parse(source(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 
+/** The same with no course round: the baseline that the phase-1 shape tests hand-build their courses on. */
+const runPlain = (name: string): Promise<LayoutModel> => layout(parse(source(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [] });
+
 /** `link-<n>` is the n-th link of the document. */
 const link = (model: LayoutModel, n: number): LayoutLink => model.links.find(item => item.id === `link-${n}`)!;
 const sideOf = (model: LayoutModel, n: number, end: 'from' | 'to'): Side => findPort(model, link(model, n).attachments![end])!.side!;
@@ -132,7 +135,7 @@ describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
 
   it.todo('11 (mesh-bus ticket, after phase 4): one trunk in the left margin joins the three row buses');
 
-  it.fails('12 (phase 6): the uplink meets the trunk pill from above; it has 2 turns, and the port keeps one side', async () => {
+  it('12 (phase 6): the uplink meets the trunk pill from above; it has 2 turns, and the port keeps one side', async () => {
     const model = await run(SHEETS.port);
     expect(link(model, 1).approach).toEqual({ to: 'top' });
     expect(turns(model, 1)).toBe(2);
@@ -150,7 +153,7 @@ describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
 describe('the course shapes restore and round-trip (ticket 15, phase 1)', () => {
   // The shared-port sheet: link 2 (fw -> sw.trunk) meets a port that link 1 also uses.
   const stored = async (): Promise<{ json: LayoutModel; course: Course; link: LayoutLink }> => {
-    const model = await run(SHEETS.port);
+    const model = await runPlain(SHEETS.port);
     const json = JSON.parse(JSON.stringify(model)) as LayoutModel;
     const side = sideOf(model, 1, 'from');
     const course: Course = { link: 'link-1', kind: 'shared-port', from: { face: side }, to: { face: sideOf(model, 1, 'to'), approach: 'top' }, runs: ['tier-gap'] };
@@ -173,13 +176,15 @@ describe('the course shapes restore and round-trip (ticket 15, phase 1)', () => 
   }, 60000);
 
   it('a course with an approach on a shared named port restores and survives a second round trip', async () => {
-    const { json, course } = await stored();
-    const text = withCourses(json, [course], { 'link-1': { to: 'top' } });
-    const restored = restoreLayoutModel(text);
-    expect(restored.courses).toEqual([course]);
-    expect(restored.freeze!.courses).toEqual([course]);
+    // The layout itself takes the course (phase 6), so its junctions, stems and path already agree with the approach.
+    const taken = JSON.parse(JSON.stringify(await run(SHEETS.port))) as LayoutModel;
+    const course = taken.courses!.find(item => item.link === 'link-1')!;
+    expect(course.to.approach).toBe('top');
+    const restored = restoreLayoutModel(JSON.stringify(taken));
+    expect(restored.courses).toEqual(taken.courses);
+    expect(restored.freeze!.courses).toEqual(taken.courses);
     expect(restored.links.find(item => item.id === 'link-1')!.approach).toEqual({ to: 'top' });
-    expect(restoreLayoutModel(JSON.stringify(restored)).courses).toEqual([course]);
+    expect(restoreLayoutModel(JSON.stringify(restored)).courses).toEqual(taken.courses);
   }, 60000);
 
   it.each<[string, (course: Course) => Course | undefined, Record<string, LayoutLink['approach']>]>([
@@ -230,7 +235,7 @@ describe('the lane shapes of a course (ticket 15, phase 1)', () => {
     span: { top: 0, bottom: 2 }, ring: 0, x: 0, bounds: { x: 0, y: 0, width: 11.5, height: 10 }, ...over,
   } as Lane);
   const planned = async (): Promise<LayoutModel> => {
-    const model = structuredClone(await run(SHEETS.port)) as LayoutModel;
+    const model = structuredClone(await runPlain(SHEETS.port)) as LayoutModel;
     model.courses = [{ link: 'link-1', kind: 'transit', from: { face: sideOf(model, 1, 'from') }, to: { face: sideOf(model, 1, 'to') }, runs: ['perimeter'] }];
     return model;
   };

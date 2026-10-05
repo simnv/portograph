@@ -7,6 +7,7 @@ import { cantonTiers, GROUP_LABEL_GEOMETRY, nodeObstacleReach, nudgingDistance, 
 import { drawn, edgeOf, nestedTips, stopsOf, tierGaps, type NestedTip, type TierGap } from './gap-runs.js';
 import { LINK_LABEL_GEOMETRY } from './link-labels.js';
 import { isRoutedChord } from './frame-paths.js';
+import { endPort } from './approach.js';
 import { findPort } from './row-paths.js';
 import { courseOf } from './course-lanes.js';
 import { gapEnds, isGapCourse } from './course-gap.js';
@@ -738,7 +739,7 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
       // A same-boundary U-turn (Section 1 item 6): both ports of a link with no lane face this gap from the same band, so the link
       // leaves one, turns inside the gap and enters the other. No gap stands between its stops, so the span test below never sees it.
       if (!found.length && stops.length === 2 && a.kind === 'port' && b.kind === 'port') {
-        const from = findPort(model, link.attachments!.from), to = findPort(model, link.attachments!.to);
+        const from = endPort(model, link, 'from'), to = endPort(model, link, 'to');
         const faces = (port: typeof from): boolean => port?.anchor !== undefined
           && (port.side === 'bottom' ? port.anchor.y <= gap.low + EPS && port.anchor.y >= above.y - EPS
             : port.side === 'top' && port.anchor.y >= bandTop - EPS && port.anchor.y <= bottom(bandOf(gap.below)) + EPS);
@@ -773,7 +774,7 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
           return { x: stop.point.x, y: edge === 'low' ? gap.low + stem : gap.high - stem, from: stop.point.y, kind: 'mouth',
             source: `lane|${stop.point.x}|${edge}`, faces: edge };
         }
-        const port = findPort(model, link.attachments![at === 0 ? 'from' : 'to']);
+        const port = endPort(model, link, at === 0 ? 'from' : 'to');
         if (!port?.anchor || (port.side !== 'top' && port.side !== 'bottom')) return 'lateral';
         const depth = stemPlan(model, port, cache).depth, sign = port.side === 'bottom' ? 1 : -1;
         return { x: port.anchor.x, y: port.anchor.y + sign * depth, from: port.anchor.y, kind: 'tip',

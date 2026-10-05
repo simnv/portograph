@@ -23,8 +23,9 @@ export type EndName = 'from' | 'to';
 /**
  * `hold`: the lateral face that the rule gives, joined to a column-gap lane by a side run (phase 5); the course does not move the port.
  * `u`: a top or bottom face that the course sets, joined to a U part of the tier gap (phase 5).
+ * `approach`: the port keeps its side and its pill; the link end meets the pill on a tangential edge (phase 6).
  */
-export type EndMode = 'natural' | 'side' | 'padding' | 'hold' | 'u';
+export type EndMode = 'natural' | 'side' | 'padding' | 'hold' | 'u' | 'approach';
 
 /**
  * How one end of a course meets its node. A lateral face is a side run (a perimeter lane's) or, on a course with a column-gap run, the held face of a gap lane;
@@ -32,6 +33,7 @@ export type EndMode = 'natural' | 'side' | 'padding' | 'hold' | 'u';
  * face with a drop or a tier-gap part otherwise.
  */
 export function endMode(course: Course, which: EndName): EndMode {
+  if (course[which].approach !== undefined) return 'approach';
   const face = course[which].face;
   if (face === 'left' || face === 'right') return course.runs.includes('gap') ? 'hold' : 'side';
   const run = which === 'from' ? course.runs[0] : course.runs[course.runs.length - 1];
@@ -39,7 +41,7 @@ export function endMode(course: Course, which: EndName): EndMode {
 }
 
 /** Whether the course sets the face of this end in stage 5: every mode but the natural face and the held lateral face. */
-export const movesPort = (course: Course, which: EndName): boolean => { const mode = endMode(course, which); return mode !== 'natural' && mode !== 'hold'; };
+export const movesPort = (course: Course, which: EndName): boolean => { const mode = endMode(course, which); return mode !== 'natural' && mode !== 'hold' && mode !== 'approach'; };
 
 /** How far a padding row stands from the face: the stem, or beyond the pill of a named port. */
 export function rowDepth(ref: PortRef): number {

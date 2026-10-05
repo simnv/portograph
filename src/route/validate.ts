@@ -2,7 +2,7 @@ import type { Point } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel, LayoutPort, PathSegment } from '../model/layout.js';
 import { equal } from '../model/json-equality.js';
 import { stemReach } from '../layout/bands.js';
-import { findPort } from '../layout/row-paths.js';
+import { endPort } from '../layout/approach.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { EPS, horizontal, length, retracingRuns, samePoint, segmentRect, vertical } from '../geometry/planar.js';
 import { outward } from '../score/model.js';
@@ -102,7 +102,7 @@ export function validateRoutedPaths(model: LayoutModel, requireComplete = false)
     if (!path || !path.segments.length) throw new Error(`Stage 8 left ${link.id} without a path`);
     if (path.layer !== effectiveLayer(link)) throw new Error(`Path layer on ${link.id} contradicts its effective layer`);
     const ends = link.attachments!;
-    const from = findPort(model, ends.from), to = findPort(model, ends.to);
+    const from = endPort(model, link, 'from'), to = endPort(model, link, 'to');
     if (!from?.anchor || !to?.anchor) throw new Error(`Link ${link.id} references a missing port`);
     // Where a path has to meet its two ports. A routed path ends on the anchor, and the pill is
     // painted over the inner half of its stem. An overlay path ends on the port's own outward

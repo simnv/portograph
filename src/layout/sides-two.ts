@@ -16,6 +16,7 @@ import { carriesTitle, nodeObstacleReach, nudgingDistance, routedStroke, stemRea
 import { MEMBER_GAP, fanEnd } from './bundle-geometry.js';
 import { laneSource, laneWidth, transitTiers } from './lanes.js';
 import { fitRegionGroup } from './regions.js';
+import { approachReach, endPort } from './approach.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { gridCells, gridRowGap, groupShape, isGridGroup, packGridRows } from './grid.js';
 import { freezePortTopology } from './mutation.js';
@@ -490,6 +491,9 @@ export function sideNested(model: LayoutModel, node: string, side: Side, cache?:
 
 export function stemPlan(model: LayoutModel, port: LayoutPort, cache?: StemCache): { depth: number; turn?: 'top' | 'bottom' } {
   const node = model.nodes[port.ref.node]!, base = stemReach(model, node);
+  // The virtual port of an approach (phase 6) reaches out of the node's face, from the pill's edge: its stem is the plain reach beyond that face.
+  const inside = approachReach.get(port);
+  if (inside !== undefined) return { depth: base + inside };
   const side = port.side;
   if ((side === 'top' || side === 'bottom') && node.bounds && port.anchor) {
     const reach = cachedSide(model, port.ref.node, side, cache)?.depth.get(key(port.ref));
@@ -525,7 +529,7 @@ interface LegGap { pair: [string, string]; at: number; run: number }
 function legGaps(model: LayoutModel, link: LayoutLink): (LegGap | undefined)[] {
   if (!link.attachments || link.layer !== 'routed' || link.technique === 'stub' || link.bundle !== undefined) return [];
   return (['from', 'to'] as const).map(end => {
-    const port = findPort(model, link.attachments![end]);
+    const port = endPort(model, link, end);
     const side = port?.side;
     if (!port?.anchor || side !== 'left' && side !== 'right') return undefined;
     const neighbour = rowNeighbour(model, port.ref.node, side);
