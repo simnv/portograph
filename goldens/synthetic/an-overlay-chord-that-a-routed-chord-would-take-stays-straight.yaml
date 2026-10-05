@@ -1,0 +1,17 @@
+# Expected: the sync link is one straight segment and takes no course (ticket 15 phase 7, the user's ruling Q1).
+# An overlay is a straight chord where a routed chord would be: no cell, group box or frame that holds neither end stands on the
+# chord, and it leaves each end's box through the edge its port faces. Here `a` stands over `b` on two adjacent tiers and nothing is
+# between them, so the chord is vertical and admitted. The routed link joins the same two groups.
+# Test-only input owned by architecture ticket 15; test/pipeline/overlay-course.test.ts reads it.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  bottom: { tier: 1, label: Bottom }
+nodes:
+  a: { group: top, class: server, label: A }
+  b: { group: bottom, class: server, label: B }
+  c: { group: top, class: server, label: C }
+  d: { group: bottom, class: server, label: D }
+links:
+  - [c, d]
+  - [a, b, { class: sync }]

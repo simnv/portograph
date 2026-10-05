@@ -25,7 +25,7 @@ const TWO_TIERS = 'members-of-two-tiers-stand-as-two-rows';
 const FAN = 'a-fan-spreads-its-ports-so-its-chords-hold-clearance';
 const run = async (name: string, script?: Script, testMaxReruns?: number): Promise<LayoutModel> => {
   state.script = script; state.calls = 0;
-  return layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, ...(testMaxReruns === undefined ? {} : { testMaxReruns }) });
+  return layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false, ...(testMaxReruns === undefined ? {} : { testMaxReruns }) });
 };
 const withoutNotes = (model: LayoutModel): string => JSON.stringify({ ...model, diagnostics: model.diagnostics.filter(item => !item.code.startsWith('SIDE_')) },
   (key, value: unknown) => key === 'runtime' ? undefined : value);

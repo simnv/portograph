@@ -463,6 +463,14 @@ export function judgeOverlayTrial(routedBase: LayoutModel, routedTrial: LayoutMo
   const ruled = new Set([...offer.promised].filter(([, item]) => item.straight).map(([id]) => id));
   const readingOf = (model: LayoutModel): Reading => reading({ routed: routedFamily(new Map([...routedBends(model)].filter(([id]) => !ruled.has(id)))), overlay: read(model, { overlays: drawnOverlays(model).filter(link => !ruled.has(link.id)) }).overlay,
     crossings: lazyCount(() => routedCrossingPairs(model)), crossingMode: 'pairs', tie: [] });
+  // The routed layer first: an overlay course that costs a routed link a bend, a turn or a crossing (a column it moved, a row it grew) is no course, whatever the
+  // overlay layer gains. The overlay bends of a link the rule took are the rule's; every other reading is the user's order.
+  const routedOnly = (model: LayoutModel): Reading => reading({ routed: routedFamily(new Map([...routedBends(model)].filter(([id]) => model.links.find(link => link.id === id)?.layer === 'routed'))),
+    crossings: lazyCount(() => routedCrossingPairs(model)), crossingMode: 'pairs', tie: [] });
+  const routedNow = routedOnly(routedTrial), routedThen = routedOnly(routedBase);
+  if (compare(routedNow, routedThen, courseProfile) > 0) {
+    return verdict(false, `the routed layer is worse by the unified order (${routedNow.routed.bent} bent links, ${routedNow.routed.turns} turns, ${routedNow.crossings()} crossings, against ${routedThen.routed.bent}, ${routedThen.routed.turns} and ${routedThen.crossings()})`);
+  }
   const now = readingOf(routedTrial), then = readingOf(routedBase);
   if (compare(now, then, courseProfile) > 0) {
     return verdict(false, `the routed trial is worse by the unified order (${now.routed.bent + now.overlay.bent} bent links, ${now.routed.turns + now.overlay.turns} turns, ${now.crossings()} crossings, against ${then.routed.bent + then.overlay.bent}, ${then.routed.turns + then.overlay.turns} and ${then.crossings()})`);
