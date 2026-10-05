@@ -1,0 +1,26 @@
+# Expected: a canton that spans two tiers keeps a band gap from the groups beside it in both (architecture ticket 19 review). Tier 0 holds a member of the canton
+# and a plain row group; tier 1 holds a grid group and the other member of the canton. The grid asks the canton to stand clear of it in tier 1, which moves
+# the canton as a whole, and the move must not leave the member of tier 0 inside the gap of the row group beside it: a frame that spans tiers is
+# seated against every tier it occupies, not against the band that moved it.
+# Source: architecture ticket 19 review.
+portograph: 2
+profile: network
+groups:
+  town: {}
+  upper-member: { tier: 0, canton: town }
+  upper-row: { tier: 0 }
+  spares: { tier: 1, shape: grid }
+  lower-member: { tier: 1, canton: town }
+nodes:
+  um-1: { group: upper-member, class: router }
+  ur-1: { group: upper-row, class: router }
+  ur-2: { group: upper-row, class: router }
+  sp-1: { group: spares, class: server }
+  sp-2: { group: spares, class: server }
+  sp-3: { group: spares, class: server }
+  sp-4: { group: spares, class: server }
+  lm-1: { group: lower-member, class: router }
+links:
+  - [ur-1, sp-1]
+  - [ur-2, sp-2]
+  - [um-1, lm-1]

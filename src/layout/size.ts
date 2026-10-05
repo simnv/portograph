@@ -7,6 +7,7 @@ import { resolveNodeIcon } from '../profiles/network/icons.js';
 import { FONT_FAMILY, measurePortPill, measureText } from '../text/index.js';
 import { NODE_CONTENT_GEOMETRY as theme } from '../theme/content.js';
 import { SIDE_TIE_ORDER } from './sides-one.js';
+import { barLabelFloor, barPortsFloor } from './bar-width.js';
 
 export type NodeContentBlock =
   | (Size & { kind: 'icon'; icon: string })
@@ -139,8 +140,13 @@ export function sizeNodes(model: LayoutModel): LayoutModel {
       height: Math.max(theme.minHeight, node.contentSize.height, authored.size?.height ?? 0, node.sizeFloor?.height ?? 0),
     };
     const capacity = (side: Side): number => sides[side].count * pitch[side] + 2 * theme.padding;
+    // From phase two on, a bar is as wide as the one bar rule asks at least (`bar-width.ts`); a bar with no ports reads the group label. Stage 3's estimate does not
+    // carry it, so ELK's input stays as it was; centring reserves the span 7d will give the bar, where it first knows it.
+    const bar = model.stage !== 'sides-one' && model.document.groups[authored.group]?.shape === 'bar'
+      ? Math.max(barLabelFloor(node.ports.length ? authored.label : model.document.groups[authored.group]!.label),
+        ...(['top', 'bottom'] as const).map(side => barPortsFloor(sides[side].count, pitch[side]))) : 0;
     node.size = {
-      width: Math.max(node.sizeFloor.width, node.size?.width ?? 0, capacity('top'), capacity('bottom')),
+      width: Math.max(node.sizeFloor.width, node.size?.width ?? 0, capacity('top'), capacity('bottom'), bar),
       height: Math.max(node.sizeFloor.height, node.size?.height ?? 0, capacity('left'), capacity('right')),
     };
   }

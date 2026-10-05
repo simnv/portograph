@@ -25,6 +25,7 @@ import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { busBandHeight, busRoom } from './bus-room.js';
 import { busGeometry, expectedBusBands, riserEnds, syncBusGeometry } from './bus.js';
+import { separationsBrokenBy } from './constraints/separation.js';
 import { attemptCounters } from './attempt-counters.js';
 import type { AttemptTraceEvent } from './placement-attempt.js';
 import { isCantonFrame } from './read/canton.js';
@@ -1223,6 +1224,10 @@ function alignGrid(model: LayoutModel): { changed: boolean; flanksMoved: boolean
       const others = Object.values(model.groups).filter(group => !proposed.some(item => item.group === group));
       if (proposed.some(item => others.some(other => rectOverlap(item.bounds, other.bounds!)))) continue;
       if (axis === 'x' && !optionalMoveHolds(model, proposed)) continue;
+      // A widening that would stand a box closer than the band gap to a group that is not part of it is refused: the gap is kept where the box is sized (ticket 19).
+      // The pack of the beside rows that follows the grid in a sheet with frames seats frame cells only, so a plain group beside the box is held by this guard too. Seating the
+      // neighbour by the push of a label's widening instead was measured and loses straight overlay links on two sheets (the ticket's review record).
+      if (axis === 'x' && separationsBrokenBy(model, proposed).length > 0) continue;
       // The widening is stage 7 work: it never widens a frame into the box of another frame.
       if (widensIntoFrame(model, proposed)) continue;
       // A widening the pack would undo is refused (ticket 136): the widened frame moves the beside row, the grid puts the moved box back onto the

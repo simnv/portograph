@@ -1,0 +1,30 @@
+# Expected: the linked-group grid widens `low` and `top` to the extent of `mid`, whose title is wider than its body, and `side` stands a band gap from `low`
+# after it, in a sheet that has a canton (architecture ticket 19 review). With a frame in the document the pack of the beside rows seats the rows again
+# after the grid (`packRowsAfterGrid`), so the grid is not refused here as it is in a sheet with no frame; the gap holds either way.
+# Source: architecture ticket 19 review.
+portograph: 2
+profile: network
+groups:
+  town: { label: Town }
+  top: { tier: 0, label: Top }
+  mid: { tier: 1, label: A rather long title for one router }
+  low: { tier: 2, label: Low }
+  side: { tier: 2, label: Side }
+  east: { tier: 3, canton: town, label: East }
+nodes:
+  a0: { group: top, class: router, label: A0 }
+  a1: { group: top, class: router, label: A1 }
+  a2: { group: top, class: router, label: A2 }
+  m0: { group: mid, class: router, label: M0 }
+  z0: { group: low, class: router, label: Z0 }
+  z1: { group: low, class: router, label: Z1 }
+  z2: { group: low, class: router, label: Z2 }
+  s0: { group: side, class: router, label: S0 }
+  s1: { group: side, class: router, label: S1 }
+  e0: { group: east, class: router, label: E0 }
+links:
+  - [a1, m0]
+  - [a2, m0]
+  - [m0, z1]
+  - [m0, z2]
+  - [s0, e0]
