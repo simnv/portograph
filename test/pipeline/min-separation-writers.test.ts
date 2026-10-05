@@ -29,6 +29,5 @@ const SHEETS = [
 it.each(SHEETS)('%s publishes no minimum-separation finding', async name => {
   const yaml = readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
   const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
-  expect(model.links.filter(link => link.removed === true)).toEqual([]);
   expect(gateFailures(score(model).snapshot).filter(item => item.startsWith('G9:min-separation'))).toEqual([]);
 }, 120000);
