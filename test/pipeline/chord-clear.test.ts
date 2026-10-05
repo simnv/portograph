@@ -12,7 +12,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
 
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (yaml: string): Promise<LayoutModel> =>
-  layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false });
 
 /**
  * Ticket 77. A straight overlay chord between two tiers is a reservation for the tiers between them: a node with an overlay link of
@@ -248,7 +248,7 @@ describe('the slide paths of a frame, judged and capped (ticket 80)', () => {
   }, 60000);
 
   it('a slide the column rules would undo is refused in a real layout (three-canton-groups-close-up-to-a-band-gap)', async () => {
-    const model = await layout(parse(fixture('three-canton-groups-close-up-to-a-band-gap')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const model = await layout(parse(fixture('three-canton-groups-close-up-to-a-band-gap')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false });
     // A slide of a member frame by 63 px straightened two chords in an earlier build and left the finished layout off the fixed point of the
     // column rules: `packBesideRows` moved it back. The canvas is the one of main (1921.3), not the widened one (1984.5).
     expect(model.canvas!.width).toBeLessThan(1930);

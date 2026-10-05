@@ -15,7 +15,7 @@ const segment = (fx: number, fy: number, tx: number, ty: number): PathSegment =>
 
 let model: LayoutModel;
 beforeAll(async () => {
-  model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false });
 }, 60000);
 
 const labelled = (): { label: LayoutLabel; line: PathSegment }[] => model.labels.filter(label => label.role === 'link').map(label => {

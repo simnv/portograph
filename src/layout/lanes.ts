@@ -349,6 +349,8 @@ export function sideReservation(model: LayoutModel, link: LayoutLink, lane: Lane
 }
 /** The fixed segments a link's lanes reserve, in path order: its transit lanes in tier order, or its one side lane. */
 function laneReservation(model: LayoutModel, link: LayoutLink): PathSegment[] | undefined {
+  // An overlay course reserves its lane and its padding rows, but no fixed segment: the router never sees an overlay, and `overlayPath` reads the lane (ticket 15, phase 7).
+  if (link.layer === 'overlay') return undefined;
   const owned = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === link.id);
   // A course lane reserves the runs of its course (ticket 15): the side runs and padding rows of its ends, and the vertical run beyond every box.
   const perimeter = owned.find(isCourseLane), course = perimeter === undefined ? undefined : courseOf(model, link.id);
@@ -1180,7 +1182,7 @@ function reserveCourseLanes(model: LayoutModel, pending: Lane[], occ: (group: La
     const ring = placed.filter(lane => lane.side === course.side && lane.bounds.y < bottom(first.bounds) - PLACEMENT_EPS && bottom(lane.bounds) > first.bounds.y + PLACEMENT_EPS).length;
     const used = ring === 0 ? first : geometry(ring)!;
     const host = model.groups[model.document.nodes[used.upper.ref.node]!.group]!;
-    const lane: Lane = { id: draft.id, kind: 'perimeter', owner: { kind: 'link', id: link.id }, layer: 'routed', group: host.id, tier: host.tier!, side: course.side,
+    const lane: Lane = { id: draft.id, kind: 'perimeter', owner: { kind: 'link', id: link.id }, layer: link.layer === 'overlay' ? 'overlay' : 'routed', group: host.id, tier: host.tier!, side: course.side,
       span: used.span, ring, ...(draft.aligned === true ? { aligned: true as const } : {}), x: used.x, bounds: { ...used.bounds } };
     placed.push(lane);
     pending.push(lane);

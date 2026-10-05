@@ -18,6 +18,9 @@ const KINDS: readonly CourseKind[] = ['transit', 'u-turn', 'skirt', 'shared-port
 const RUNS: readonly CourseRun[] = ['padding', 'transit', 'gap', 'perimeter', 'tier-gap', 'u'];
 const SIDES: readonly Side[] = ['top', 'right', 'bottom', 'left'];
 
+/** Whether an overlay link has a planned course (ticket 15, phase 7): the placement rules that keep a chord straight leave it alone. */
+export const overlayCourse = (model: LayoutModel, link: LayoutLink): boolean => link.layer === 'overlay' && (model.courses ?? []).some(course => course.link === link.id);
+
 /** A lane that a course owns: its id is `gap-lane:<link>:<n>` or `perimeter:<link>`. */
 export const isCourseLane = (lane: Lane): boolean => lane.kind === 'gap' || lane.kind === 'perimeter';
 

@@ -69,10 +69,16 @@ describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
     expect(counts(await run(SHEETS.ring)).routed.crossings).toBe(0);
   }, 60000);
 
-  it.fails('02 (phase 7): S1-T1 left/left, S2-T2 right/right; overlay turns 8 -> 4', async () => {
+  // Phase 7 (the user's ruling Q1): an overlay is a straight chord only where a routed chord would be. The chord of S1-T1 would cross the Gateways frame, so it
+  // takes a course: each sync link is a bracket in the outer margin, on lateral faces, with 2 turns and no crossing, as the solve.
+  it('02 (phase 7): S1-T1 left/left, S2-T2 right/right; overlay turns 8 -> 4', async () => {
     const model = await run(SHEETS.chord);
     expect([sideOf(model, 5, 'from'), sideOf(model, 5, 'to'), sideOf(model, 6, 'from'), sideOf(model, 6, 'to')]).toEqual(['left', 'left', 'right', 'right']);
+    expect([turns(model, 5), turns(model, 6)]).toEqual([2, 2]);
     expect(counts(model).overlay.turns).toBe(4);
+    expect(counts(model).overlay.crossings.pairs).toBe(0);
+    expect(counts(model).routed.crossings).toBe(0);
+    expect(model.diagnostics.filter(item => item.code === 'COURSE_SHAPE_LOST')).toEqual([]);
   }, 60000);
 
   // The round refuses the two courses (the other mesh links gain two turns): test/pipeline/course-round.test.ts pins the forced shape.
@@ -96,11 +102,24 @@ describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
     expect(gatesHold(await run(SHEETS.rankedFlank))).toBe(true);
   }, 60000);
 
-  it.fails('07 (phase 7): TS1-C1 left/left, TS1-C2 left/bottom, TS2-C3 right/top', async () => {
+  // The four overlays go round the frame on lateral faces and none passes between the ranks. The solve drops TS2-C3 into the top of C3 in 1 turn with its port
+  // off the node's centre; an anonymous port stands at the slot the face gives it and C3 stands in the anchor tier (7c holds it), so the library takes the side
+  // face of C3 (2 turns), and TS2-C2 takes a bracket and a drop (3 turns) where the solve drops through the zone in 1.
+  it('07 (phase 7): TS1-C1 left/left, TS1-C2 left/bottom, TS2-C3 right/right; no overlay passes between the ranks and the brackets cross no other link', async () => {
     const model = await run(SHEETS.lowerRank);
-    expect([sideOf(model, 7, 'from'), sideOf(model, 7, 'to')]).toEqual(['left', 'left']);
-    expect([sideOf(model, 8, 'from'), sideOf(model, 8, 'to')]).toEqual(['left', 'bottom']);
-    expect([sideOf(model, 10, 'from'), sideOf(model, 10, 'to')]).toEqual(['right', 'top']);
+    expect([sideOf(model, 7, 'from'), sideOf(model, 7, 'to'), turns(model, 7)]).toEqual(['left', 'left', 2]);
+    expect([sideOf(model, 8, 'from'), sideOf(model, 8, 'to'), turns(model, 8)]).toEqual(['left', 'bottom', 3]);
+    expect([sideOf(model, 10, 'from'), sideOf(model, 10, 'to'), turns(model, 10)]).toEqual(['right', 'right', 2]);
+    const rank = model.groups[model.document.nodes['lb1']!.group]!.bounds!;
+    for (const item of model.links.filter(entry => entry.layer === 'overlay')) {
+      for (const segment of item.path!.segments) {
+        const box = { x1: Math.min(segment.from.x, segment.to.x), x2: Math.max(segment.from.x, segment.to.x), y1: Math.min(segment.from.y, segment.to.y), y2: Math.max(segment.from.y, segment.to.y) };
+        expect(box.x2 <= rank.x || box.x1 >= rank.x + rank.width || box.y2 <= rank.y || box.y1 >= rank.y + rank.height).toBe(true);
+      }
+    }
+    expect(counts(model).overlay.crossings.pairs).toBe(0);
+    expect(counts(model).routed.crossings).toBe(1);
+    expect(model.diagnostics.filter(item => item.code === 'COURSE_SHAPE_LOST')).toEqual([]);
   }, 60000);
 
   it('08 (phase 4): OOB top -> left margin -> SRV 1 left (3 turns)', async () => {

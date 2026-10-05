@@ -7,7 +7,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
 
 /** Ranked-groups ticket 73 (Q104): a signal link (drawn dashed) joins the overlay family. */
 const yaml = readFileSync(new URL('../../goldens/synthetic/a-dashed-signal-feed-is-one-straight-segment.yaml', import.meta.url), 'utf8');
-const run = (): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const run = (): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false });
 
 describe('a signal feed', () => {
   it('draws every signal link as one straight overlay segment', async () => {

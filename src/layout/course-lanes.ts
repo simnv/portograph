@@ -93,7 +93,8 @@ export function ringsOf(lanes: readonly Lane[]): Map<string, { ring: number; sid
   return result;
 }
 
-export interface LaneDraft { id: string; side: 'left' | 'right'; ring?: number; aligned?: true }
+/** `keepX` with `x`: read the polyline of a lane that already stands (the overlay path of a course), not the x the boxes derive. */
+export interface LaneDraft { id: string; side: 'left' | 'right'; ring?: number; aligned?: true; x?: number; keepX?: true }
 
 /** The geometry of a course lane on the model as it stands, or `undefined` when the faces of the course cannot join one lane. */
 export function courseGeometry(model: LayoutModel, link: LayoutLink, course: Course, lane: LaneDraft, occ: Occupied, rings: ReadonlyMap<string, { ring: number; side: 'left' | 'right' }>, peers: readonly Lane[] = []): CourseGeometry | undefined {
@@ -125,16 +126,16 @@ export function courseGeometry(model: LayoutModel, link: LayoutLink, course: Cou
   for (const frame of model.frames ?? []) if (meets(frame.box)) boxes.push(frame.box);
   for (const other of model.lanes) if (other.kind !== 'perimeter' && other.kind !== 'gap' && !(other.owner.kind === 'link' && other.owner.id === link.id) && meets(other.bounds)) boxes.push(other.bounds);
   const outer = boxes.length === 0 ? upper.port.anchor.x : dir > 0 ? Math.max(...boxes.map(box => box.x + box.width)) : Math.min(...boxes.map(box => box.x));
-  let base = outer + dir * (EDGE_MARGIN + (lane.ring ?? 0) * RING_PITCH);
+  let base = lane.keepX === true && lane.x !== undefined ? lane.x : outer + dir * (EDGE_MARGIN + (lane.ring ?? 0) * RING_PITCH);
   // The lanes of one side stand as one stack: a lane stands a pitch beyond every inner lane of its side whose extent it meets, whatever boxes each one clears.
-  for (const other of peers) {
+  for (const other of lane.keepX === true ? [] : peers) {
     if (other.side !== lane.side || (other.ring ?? 0) >= (lane.ring ?? 0) || !(other.bounds.y < yBottom - EPS && bottomOf(other.bounds) > yTop + EPS)) continue;
     const wanted = other.x + dir * RING_PITCH;
     base = dir > 0 ? Math.max(base, wanted) : Math.min(base, wanted);
   }
   const far = ends.find(end => end?.mode === 'natural');
   let x = base, aligned = false;
-  if (lane.aligned === true && far !== undefined) {
+  if (lane.aligned === true && far !== undefined && lane.keepX !== true) {
     const fx = far.port.anchor.x;
     if (dir > 0 ? fx >= base - EPS : fx <= base + EPS) { x = fx; aligned = true; }
   }

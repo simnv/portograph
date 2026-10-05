@@ -12,13 +12,14 @@ import { frameTiers, packTier, unitOrder, type Column } from './columns.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { isCantonUnit } from './read/canton.js';
+import { overlayCourse } from './courses.js';
 
 function readDraft(model: LayoutModel) {
   const anchor = selectAnchorTier(model);
   if (anchor === undefined) return undefined;
   // A bus member is neither straight nor bent (mesh-bus.md, section 4): it is no straight overlay link to keep, and its pairs are
   // satisfied by contiguity, which `rowTools` reads from `busDrawn`.
-  const overlay = model.links.filter(link => link.layer === 'overlay' && link.attachments && link.meshBus === undefined);
+  const overlay = model.links.filter(link => link.layer === 'overlay' && link.attachments && link.meshBus === undefined && !overlayCourse(model, link));
   const members = model.links.filter(link => link.layer === 'overlay' && link.attachments && link.meshBus !== undefined);
   const groupOf = (node: string): LayoutGroup => model.groups[model.document.nodes[node]!.group]!;
   const placed = (node: string): boolean => model.nodes[node]?.bounds !== undefined && groupOf(node).bounds !== undefined && !groupOf(node).flank;

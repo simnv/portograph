@@ -13,7 +13,7 @@ import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
-const run = (name: string) => layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const run = (name: string) => layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false });
 const right = (box: Rect): number => box.x + box.width;
 const centreX = (box: Rect): number => box.x + box.width / 2;
 const frameOf = (model: LayoutModel, id: string) => model.frames!.find(frame => frame.id === id)!;
@@ -116,7 +116,7 @@ describe('canton member walls (canton-groups ticket 56)', () => {
   it('a clamped barycentre stops at the wall: the partner is beyond the column', async () => {
     // Move the two partners of the client to the right end of the hall, so the mean is right of the canton axis; the wall holds it.
     const source = fixture('a-one-cell-member-keeps-its-barycentre-inside-the-column').replace('{ from: h1,', '{ from: h6,').replace('{ from: h2,', '{ from: h5,');
-    const model = await layout(parse(source), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const model = await layout(parse(source), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false });
     const west = frameOf(model, 'west'), clients = frameOf(model, 'clients');
     expect(inside(inner(west.box), clients.box)).toBe(true);
     expect(centreX(clients.box)).toBeGreaterThan(centreX(west.box) + 100);
@@ -271,7 +271,7 @@ describe('canton member walls (canton-groups ticket 56)', () => {
   };
   it('three-canton-groups-close-up-to-a-band-gap with a side hint on m1: the finished layout is the fixed point of the pack (ticket 136)', async () => {
     // The hint frees link-4 to the left face of m1 (the port the side round offers); the wider node changes the grid of a linked pair after 7f packed the row.
-    const hinted = await layout(parse(fixture('three-canton-groups-close-up-to-a-band-gap')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
+    const hinted = await layout(parse(fixture('three-canton-groups-close-up-to-a-band-gap')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false,
       testSideHints: new Map([[portKey({ node: 'm1', anonymous: true, name: null, ordinal: 2 } as never), 'left' as const]]) });
     // The hint took: the port is a hinted lateral port (the fixture is not the plain layout by another name).
     const port = hinted.nodes['m1']!.ports.find(item => portKey(item.ref) === portKey({ node: 'm1', anonymous: true, name: null, ordinal: 2 } as never))!;

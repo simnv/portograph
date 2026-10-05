@@ -19,7 +19,7 @@ const hash = (model: LayoutModel): string => createHash('sha256').update(without
 interface Counted { model: LayoutModel; places: number }
 async function run(name: string, extra: Partial<Parameters<typeof layout>[1]> = {}): Promise<Counted> {
   let places = 0;
-  const model = await layout(parse(fixture(name)), { createElkAttempt: () => { places++; return createAttempt(); }, createRouteAttempt: createAvoidAttempt, ...extra });
+  const model = await layout(parse(fixture(name)), { createElkAttempt: () => { places++; return createAttempt(); }, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false, ...extra });
   return { model, places };
 }
 const codes = (model: LayoutModel): string[] => model.diagnostics.map(item => item.code);
@@ -108,7 +108,7 @@ describe('the probe', () => {
     // A narrow client stands near: the straight segment from the server's right face is clear but nearly parallel to that face (review L1).
     const yaml = fixture(PAST_SIBLING).replace('label: Client, size: { width: 170', 'label: Client, size: { width: 90');
     let places = 0;
-    const model = await layout(parse(yaml), { createElkAttempt: () => { places++; return createAttempt(); }, createRouteAttempt: createAvoidAttempt });
+    const model = await layout(parse(yaml), { createElkAttempt: () => { places++; return createAttempt(); }, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false });
     expect(model.links.find(item => item.layer === 'overlay')!.path!.segments.length).toBeGreaterThan(1);
     expect(places).toBe(1);
     expect(measureSides(model, model, new Set()).hints.size).toBe(0);

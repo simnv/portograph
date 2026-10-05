@@ -1,7 +1,7 @@
 import type { LayoutLink, LayoutModel, LayoutPath, LayoutPort, PathSegment } from '../model/layout.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { effectiveLayer } from '../score/model.js';
-import { overlayBlockers, straightChord } from './overlay-paths.js';
+import { crosses, overlayBlockers, straightChord } from './overlay-paths.js';
 import { groupShape } from './grid.js';
 import { bandSide, frameSide, GROUP_LABEL_GEOMETRY, legRectsFor, nudgingDistance } from './bands.js';
 import { frameSubtreeCells } from '../model/model.js';
@@ -655,4 +655,44 @@ export function chordClearances(model: LayoutModel, within = 30): Map<string, nu
     result.set(`${one.id}|${other.id}`, segmentDistance(a, b) - (linkStrokeWidth(one) + linkStrokeWidth(other)) / 2);
   }
   return result;
+}
+
+
+/**
+ * Whether an overlay link may stay one straight chord (architecture ticket 15, phase 7; the user's ruling Q1): only where a routed chord would be.
+ * The reading is the routed rule's, with no clearance (an overlay owns no clearance gate): no cell, group box or frame that holds neither end stands on the
+ * chord, and the chord leaves each box that holds one end only through the edge its port faces, inside the edge; no body or pill stands on it. It reads
+ * the placed model after 7f. An overlay that fails it is a candidate for a planned course on side faces; an overlay that cannot read its faces (no side,
+ * no anchor) is admitted, so that nothing is planned for it. The consecutive-tier clause of Q108 is not read: an overlay owns no transit lane, so a
+ * chord across a free band reserves nothing and the boxes decide.
+ */
+export function overlayChordAdmitted(model: LayoutModel, link: LayoutLink): boolean {
+  if (link.layer !== 'overlay' || !link.attachments || link.meshBus !== undefined) return true;
+  const geometry = straightChord(model, link, undefined, true);
+  if (geometry === undefined) return true;
+  const ends = link.attachments, from = holders(model, ends.from.node), to = holders(model, ends.to.node);
+  const sides = { from: findPort(model, ends.from)?.side, to: findPort(model, ends.to)?.side };
+  const dx = geometry.to.x - geometry.from.x, dy = geometry.to.y - geometry.from.y;
+  for (const { id, bounds } of groupBoxes(model)) {
+    const one = from.has(id), two = to.has(id);
+    if (one && two) continue;
+    if (!one && !two) { if (crosses(geometry.from, geometry.to, bounds)) return false; continue; }
+    // A box that holds one end: the chord leaves it through the edge the port faces, inside that edge.
+    const side = one ? sides.from : sides.to;
+    if (side === 'left' || side === 'right') {
+      const edge = side === 'right' ? bounds.x + bounds.width : bounds.x, t = Math.abs(dx) < EPS ? Infinity : (edge - geometry.from.x) / dx, y = geometry.from.y + t * dy;
+      if (!(t >= -EPS && t <= 1 + EPS) || y < bounds.y || y > bounds.y + bounds.height) return false;
+      continue;
+    }
+    if (side !== 'top' && side !== 'bottom') return false;
+    const edge = side === 'bottom' ? bounds.y + bounds.height : bounds.y, t = Math.abs(dy) < EPS ? Infinity : (edge - geometry.from.y) / dy, x = geometry.from.x + t * dx;
+    if (!(t >= -EPS && t <= 1 + EPS) || x < bounds.x || x > bounds.x + bounds.width) return false;
+  }
+  // A rank cell that holds neither end is no obstacle to a routed link (its frame is), but it is a box the overlay may not cross (07: the chord over the LB rank).
+  const nodes = [ends.from.node, ends.to.node];
+  for (const group of Object.values(model.groups)) {
+    if (group.frame === undefined || group.bounds === undefined || group.nodes.length === 0 || group.nodes.some(node => nodes.includes(node))) continue;
+    if (crosses(geometry.from, geometry.to, group.bounds)) return false;
+  }
+  return straightChord(model, link) !== undefined;
 }

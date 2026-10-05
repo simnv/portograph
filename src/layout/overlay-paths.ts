@@ -5,6 +5,7 @@ import { bottom, EPS, retracingRuns, right, samePoint } from '../geometry/planar
 import { OVERLAY_ENDPOINT_RADIUS, pathStrokeWidth } from '../theme/geometry.js';
 import { RectangleIndex } from './rectangle-index.js';
 import { findPort } from './row-paths.js';
+import { courseGeometry } from './course-lanes.js';
 
 /**
  * How far past a port's own outward face an overlay link's **stub** reaches before the straight
@@ -468,6 +469,11 @@ export function publishedOverlayPath(model: LayoutModel, link: LayoutLink, block
 export function overlayPath(model: LayoutModel, link: LayoutLink, blockers?: OverlayBlockers): LayoutPath {
   const along = link.meshBus === undefined ? undefined : busMemberPath(model, link);
   if (along !== undefined) return along;
+  const planned = overlayCoursePoints(model, link);
+  if (planned !== undefined) {
+    const segments: PathSegment[] = planned.slice(1).map((point, index) => ({ from: { ...planned[index]! }, to: { ...point }, owner: { ...link.owner } }));
+    return { owner: { ...link.owner }, layer: 'overlay', fixed: false, ...pathStrokeWidth(link), segments };
+  }
   const attachments = link.attachments!;
   const from = findPort(model, attachments.from), to = findPort(model, attachments.to);
   const one = from && overlayEnd(model.nodes[attachments.from.node]!, from);
@@ -486,6 +492,30 @@ export function overlayPath(model: LayoutModel, link: LayoutLink, blockers?: Ove
   const segments: PathSegment[] = points.slice(1).map((point, index) =>
     ({ from: { ...points[index]! }, to: { ...point }, owner: { ...link.owner } }));
   return { owner: { ...link.owner }, layer: 'overlay', fixed: false, ...pathStrokeWidth(link), segments };
+}
+
+/**
+ * The polyline of an overlay link that has a planned course (architecture ticket 15, phase 7), face to face, or `undefined` when it has none or its lane
+ * does not stand yet (a model before stage 7a derives the path as it always did). The course reserved a perimeter lane in the overlay layer: its x is the one
+ * the lane holds, and its side runs and padding rows are the geometry that stage 5 and 7a reserved (`courseGeometry`, the one reader). The two ends are
+ * the faces of the pills, which is where an overlay path begins and ends.
+ */
+export function overlayCoursePoints(model: LayoutModel, link: LayoutLink): Point[] | undefined {
+  const course = model.courses?.find(item => item.link === link.id && item.kind === 'overlay');
+  const lane = course === undefined ? undefined : model.lanes.find(item => item.kind === 'perimeter' && item.owner.kind === 'link' && item.owner.id === link.id);
+  if (course === undefined || lane === undefined || link.attachments === undefined) return undefined;
+  const geometry = courseGeometry(model, link, course, { id: lane.id, side: lane.side, ring: lane.ring ?? 0, ...(lane.aligned === true ? { aligned: true as const } : {}), x: lane.x, keepX: true },
+    group => group.bounds!, new Map());
+  if (geometry === undefined) return undefined;
+  const faces = [link.attachments.from, link.attachments.to].map(ref => {
+    const port = findPort(model, ref), node = model.nodes[ref.node];
+    return port && node ? overlayEnd(node, port)?.face : undefined;
+  });
+  if (faces[0] === undefined || faces[1] === undefined) return undefined;
+  const points = geometry.polyline.map(point => ({ ...point }));
+  points[0] = { ...faces[0] }; points[points.length - 1] = { ...faces[1] };
+  const path = straighten(compact(points));
+  return path.length > 1 ? path : undefined;
 }
 
 /**

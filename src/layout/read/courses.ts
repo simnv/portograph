@@ -160,3 +160,21 @@ export function linkFacts(model: LayoutModel): Map<string, LinkFacts> {
   }
   return facts;
 }
+
+/**
+ * The end facts of every attached overlay link that a planned course could concern (ticket 15, phase 7), by link id. A mesh-bus member and a link to
+ * itself have none. The detour triggers are the routed ones and say nothing here: an overlay has a course when its straight chord is not admitted.
+ */
+export function overlayFacts(model: LayoutModel): Map<string, LinkFacts> {
+  const units = bandUnits(model), facts = new Map<string, LinkFacts>();
+  for (const link of model.links) {
+    if (link.layer !== 'overlay' || !link.attachments || link.meshBus !== undefined || link.removed === true) continue;
+    const { from: fromRef, to: toRef } = link.attachments;
+    if (fromRef.node === toRef.node) continue;
+    const from = endFacts(model, fromRef, units), to = endFacts(model, toRef, units);
+    if (from === undefined || to === undefined) continue;
+    if ([from.group, to.group].some(group => groupShape(model, group) === 'bar')) continue;
+    facts.set(link.id, { link, from, to, crossed: [], between: [], sourceCovered: false, rowBetween: false, triggers: [] });
+  }
+  return facts;
+}

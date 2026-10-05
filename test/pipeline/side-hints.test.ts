@@ -27,7 +27,7 @@ async function run(yaml: string, hints?: Hints, floors?: ReadonlyMap<string, { w
     const attempt = createAttempt();
     return { layout: graph => { graphs.push(JSON.stringify(graph)); return attempt.layout(graph); }, terminateWorker: () => attempt.terminateWorker() };
   };
-  const model = await layout(parse(yaml), { createElkAttempt, createRouteAttempt: createAvoidAttempt,
+  const model = await layout(parse(yaml), { createElkAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false,
     ...(hints ? { testSideHints: hints } : {}), ...(floors ? { testNodeFloors: floors } : {}) });
   return { model, graph: JSON.parse(graphs[0]!) };
 }

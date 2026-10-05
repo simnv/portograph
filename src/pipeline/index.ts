@@ -36,7 +36,7 @@ import { judgeTrial, predictedWorse, predictPublished, routedBends, trialNotes }
 import type { AttemptTraceEvent } from '../layout/placement-attempt.js';
 import { PLACEMENT_EPS } from '../layout/tolerance.js';
 import { attemptCounters, lastAttempt } from '../layout/attempt-counters.js';
-import { beats, gainOf, judgeCourseTrial, measureCourses } from '../layout/course-measure.js';
+import { beats, gainOf, judgeCourseTrial, judgeOverlayTrial, measureCourses, measureOverlayCourses } from '../layout/course-measure.js';
 import { pathBends } from '../layout/objective.js';
 import { countStage, ledgerOn, ledgerSnapshot, startPlacementEntry, type LedgerSnapshot } from '../layout/attempt-ledger.js';
 
@@ -100,6 +100,8 @@ export interface LayoutOptions {
   testNodeFloors?: ReadonlyMap<string, Size>;
   /** Test only. Courses (ticket 15) for every placement run, before the course round has any say. */
   testCourses?: readonly Course[];
+  /** Test only. `false` skips the overlay round (ticket 15, phase 7): the overlay links keep the chord or the derived path they had before the rule of Q1. */
+  testOverlayCourses?: boolean;
   /** Test only. Replaces `MAX_RERUNS` for one command. */
   testMaxReruns?: number;
   /** Test only. Called with the wall time of each placement run, measure, 7f, route and score-ready stage, and the budget left (ticket 115 timing). */
@@ -463,6 +465,59 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     break; // one trial reaches 7f per command
   }
   if (courseDeferred) await courseRound();
+  // The overlay round (ticket 15, phase 7; the user's ruling Q1). After the routed rounds, on their kept result: an overlay stays a straight chord only where a routed
+  // chord would be; every other overlay between two sub-tiers is offered a perimeter course on side faces. The course is reserved in stage 5 of one more placement
+  // run (it is not counted in `MAX_RERUNS`: a command that has overlays to plan pays this one run, and a refused trial leaves the layout as it was).
+  if (options.testCourses === undefined && options.testOverlayCourses !== false) {
+    const current = routedFinal ?? routedBase ?? await routeModel(base);
+    const overlayOffer = measureOverlayCourses(base, current);
+    options.testSideTrace?.({ ev: 'overlay-courses', offer: overlayOffer, base, routedBase: current });
+    if (overlayOffer.courses.length > 0) {
+      const nodeFloors = new Map([...courseFloors, ...(options.testNodeFloors ?? [])]);
+      for (const key of hints.keys()) {
+        const [node] = JSON.parse(key) as [string];
+        const size = stage3Sizes.get(kept7e)?.get(node);
+        if (size !== undefined) nodeFloors.set(node, { ...size });
+      }
+      // A node whose overlay end changes face keeps its size (P9): the capacity estimate of the face it leaves must not re-size it.
+      for (const course of overlayOffer.courses) {
+        const link = kept7e.links.find(item => item.id === course.link)!;
+        for (const which of ['from', 'to'] as const) {
+          const size = stage3Sizes.get(kept7e)?.get(link.attachments![which].node);
+          if (size !== undefined && course[which].face !== kept7e.nodes[link.attachments![which].node]!.ports.find(port => portKey(port.ref) === portKey(link.attachments![which]))?.side) nodeFloors.set(link.attachments![which].node, { ...size });
+        }
+      }
+      const names = overlayOffer.courses.map(course => course.link);
+      const refuseOverlays = (why: string): void => { options.testSideTrace?.({ ev: 'overlay-refused', links: names, why }); };
+      let trial7e: LayoutModel | undefined;
+      try { trial7e = await timed('rerun-overlay', () => place(floors, hints, nodeFloors, trialAbort, laneKeys, [...activeCourses, ...overlayOffer.courses])); } catch (error) {
+        if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError
+          || (error instanceof Error && error.message.startsWith('Centring invariant violated')))) throw error;
+        refuseOverlays(`the placement run rejected them (${error.message})`);
+      }
+      if (trial7e !== undefined && trial7e.fallbackUsed && !kept7e.fallbackUsed) { refuseOverlays('ELK fell back during the overlay trial'); trial7e = undefined; }
+      if (trial7e !== undefined) {
+        try {
+          const trial = await timed('bands-trial', () => step('bands', () => bands(trial7e!, () => trialAbort('bands'), options.attemptTrace), true));
+          const routedTrial = await routeModel(trial, true);
+          const verdict = judgeOverlayTrial(current, routedTrial, overlayOffer);
+          options.testSideTrace?.({ ev: 'overlay-trial', verdict, trial, routedTrial, routedBase: current });
+          if (verdict.kept) {
+            for (const [id, item] of overlayOffer.promised) keptPromises.set(id, item.turns);
+            base = trial; kept7e = trial7e; activeCourses = [...activeCourses, ...overlayOffer.courses]; routedFinal = routedTrial; courseFloors = new Map(nodeFloors);
+            for (const course of overlayOffer.courses) {
+              const was = overlayOffer.promised.get(course.link)!;
+              sideNotes.push({ stage: 'placement', severity: 'info', code: 'COURSE_TAKEN', owners: [{ kind: 'link', id: course.link }],
+                message: `The overlay link ${course.link} takes a course round the outside: ${was.turns} turns promised, ${was.base} on the baseline.` });
+            }
+          } else refuseOverlays(verdict.reason);
+        } catch (error) {
+          if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError)) throw error;
+          refuseOverlays(`stage 7f rejected them (${error.message})`);
+        }
+      }
+    }
+  }
   for (const [key, item] of promised) {
     const side = hints.get(key);
     if (side === undefined) continue;
