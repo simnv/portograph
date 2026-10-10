@@ -1,0 +1,21 @@
+# Expected: The right flank's frame overlaps the corner of the ranked group's frame it flanks. The flank, the smaller
+# of the two boxes, is drawn in front: after the ranked frame in the SVG and in draw.io, so the ranked frame's fill and
+# border do not cover it.
+portograph: 2
+profile: network
+groups:
+  upper: { tier: 0, label: Upper }
+  main: { tier: 1, label: Main }
+  side: { align: right, of: main, label: Side }
+nodes:
+  top-a: { group: upper, class: router, label: Top }
+  hub: { group: main, class: router, label: Hub }
+  leaf-a: { group: main, class: switch, label: Leaf A }
+  leaf-b: { group: main, class: switch, label: Leaf B }
+  edge: { group: side, class: router, label: Edge }
+links:
+  - [top-a, hub]
+  - [hub, leaf-a]
+  - [hub, leaf-b]
+  - [edge, leaf-b]
+  - [edge, leaf-b]
