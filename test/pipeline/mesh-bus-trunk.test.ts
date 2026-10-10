@@ -204,13 +204,13 @@ describe('a mesh over three rows: fixtures and draw.io (architecture ticket 21, 
     expect(gates(model)).toEqual([]);
   });
 
-  it('sends the trunk to the side that a routed link past the member row does not pass', async () => {
-    const model = await run(fixture('a-routed-link-past-a-member-row-sends-the-trunk-to-the-other-side'));
-    const head = trunkOf(model), corridor = model.links.find(link => link.id === 'link-1')!.path!.segments[0]!.from.x;
-    const outer = Math.max(...model.groups['r1']!.nodes.map(id => model.nodes[id]!.bounds!.x + model.nodes[id]!.bounds!.width));
-    expect(corridor).toBeGreaterThan(outer);
+  it('sends the trunk to the side that fewer passing routed links cross', async () => {
+    const model = await run(fixture('a-routed-links-past-a-member-row-send-the-trunk-to-the-side-they-cross-less'));
+    const head = trunkOf(model);
+    // Without the passing links the right reads no leg and wins; with them it reads two, the left one.
     expect(head.trunk!.side).toBe('left');
-    expect(codes(model, 'MESH_BUS_TRUNK')[0]!.message).toContain('0 legs crossed');
+    expect(codes(model, 'MESH_BUS_TRUNK')[0]!.message).toContain('1 legs crossed');
+    expect(codes(model, 'MESH_BUS_TRUNK')[0]!.message).toContain('the other side crosses 2 legs');
     expect(score(model).snapshot.counters.trunkCrossings).toBe(0);
     expect(gates(model)).toEqual([]);
   });
@@ -246,6 +246,10 @@ describe('a mesh over three rows: the guards (architecture ticket 21, review fix
     expect(trunkHolds(model, [{ group: foreign, bounds: { ...across.bounds, y: y + 4000 } }])).toBe(true);
     const row = model.groups['r1']!;
     expect(trunkHolds(model, [{ group: row, bounds: { ...middle, x: middle.x + 30 } }])).toBe(true);
+    // A foreign group that moves past the old trunk x: the extension does not reach it now, but the trunk moves out with the group and its extension would run through it.
+    const past = lane.side === 'right' ? lane.x + 20 : lane.x - 60;
+    expect(trunkHolds(model, [{ group: foreign, bounds: { x: past, y: y - 10, width: 40, height: 20 } }])).toBe(false);
+    expect(foreignOverExtensions(model, head, [{ group: foreign, bounds: { x: past, y: y - 10, width: 40, height: 20 } }])).toEqual([]);
     // The trunk x is read after the move: a member row that moves outward carries it.
     expect(trunkXAfter(model, head, [{ group: row, bounds: { ...middle, x: middle.x + 30 } }])).toBeGreaterThan(lane.x);
   });
@@ -277,8 +281,12 @@ describe('a mesh over three rows: the guards (architecture ticket 21, review fix
     const rows = [['a1', 'a2', 'a3'], ['b1', 'b2', 'b3'], ['c1', 'c2', 'c3']];
     const yaml = mesh(rows, '  f: { tier: 1 }\n  g: { tier: 1 }\n', '  f1: { group: f }\n  g1: { group: g }\n', '  - [a1, f1]\n  - [a3, g1]\n');
     const labels: string[] = [];
-    const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, onProgress: progress => { labels.push(progress.stage); } });
+    const events: Record<string, unknown>[] = [];
+    const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 3,
+      testSideTrace: event => { if (event['ev'] === 'trunk-blocked') events.push(event); }, onProgress: progress => { labels.push(progress.stage); } });
     expect(model.declinedTrunks).toHaveLength(1);
     expect(labels.filter(label => label === 'resolve')).toHaveLength(2);
+    // The re-run is drawn from the shared MAX_RERUNS budget: one used, the rest left for the later rounds.
+    expect(events).toEqual([expect.objectContaining({ reruns: 1, left: 2 })]);
   });
 });

@@ -209,6 +209,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       if (!(error instanceof TrunkBlocked) || declinedTrunks.has(error.key)) throw error;
       declinedTrunks.set(error.key, error.why);
       reruns++;
+      options.testSideTrace?.({ ev: 'trunk-blocked', key: error.key, reruns, left: (options.testMaxReruns ?? MAX_RERUNS) - reruns });
     }
   }
   // The re-runs are bounded by FAN_ROUNDS alone, and no re-run reads the clock (ticket 141): the same input gives the same layout at any speed.
