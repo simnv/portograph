@@ -1237,25 +1237,84 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       ...dashEntries(klass.dash),
       ...extra,
     });
-    const bar = [shift(bus.bar.from), shift(bus.bar.to)];
-    edgeCell(cellId('bus', bus.id), layerId('overlay'), stroke(false), bar, { sourcePoint: bar[0], targetPoint: bar[1] });
-    // The riser of a join is one more free-point edge between the two bars, exported with the upper bus (mesh-bus.md, section 11.7).
-    if (bus.riser?.from !== undefined && bus.riser.to !== undefined) {
-      const riser = [shift(bus.riser.from), shift(bus.riser.to)];
-      edgeCell(cellId('busRiser', bus.id), layerId('overlay'), stroke(false), riser, { sourcePoint: riser[0], targetPoint: riser[1] });
+    // Every end of the bus geometry is a joint: a 2 px invisible, locked vertex, a child of a member's node or pill and
+    // stated from its top-left, so a node dragged by hand carries its stub's end and its piece of the bar with it. A free
+    // end (`sourcePoint`/`targetPoint`) stays behind, and draw.io shows it as a loose handle (issue 04).
+    // The bar is one edge per pair of neighbouring joints, so a move bends the bar beside the moved node only, and every
+    // stub stays on its own joint. Ids are `pg-busJoint~<bus>~<n>`, with `n` the joint's place along the bar: no author
+    // name enters them, so no node name can collide with one.
+    const JOINT = 2;
+    type PortKey = { node: string; name?: string; ordinal: number };
+    interface Spot { at: Point; ref: PortKey; id: string }
+    /** The joints of one bus, left to right: a stub's end, the bar's two ends, and where a riser meets the bar. */
+    const spots = (of: typeof bus): Spot[] => {
+      if (of.bar === undefined || of.stubs === undefined) return [];
+      const found: { at: Point; ref: PortKey }[] = [];
+      const add = (at: Point, ref?: PortKey): void => {
+        if (found.some(item => samePoint(item.at, at))) return;
+        let host = ref, gap = Infinity;
+        if (host === undefined) {
+          for (const candidate of of.ports) {
+            const bounds = layout.nodes[candidate.node]?.bounds;
+            const distance = bounds ? Math.abs(bounds.x + bounds.width / 2 - canvas.x - at.x) : Infinity;
+            if (distance < gap) { gap = distance; host = candidate; }
+          }
+        }
+        if (host !== undefined && markHost(host) !== undefined) found.push({ at, ref: host });
+      };
+      for (const stub of of.stubs) add(shift(stub.to), of.ports.find(port => port.node === stub.node));
+      add(shift(of.bar.from)); add(shift(of.bar.to));
+      if (of.riser?.from !== undefined) add(shift(of.riser.from));
+      const upper = layout.meshBuses?.find(other => other.joined === of.id && other.riser?.to !== undefined);
+      if (upper?.riser?.to !== undefined) add(shift(upper.riser.to));
+      found.sort((a, b) => a.at.x - b.at.x || a.at.y - b.at.y);
+      return found.map((item, index) => ({ ...item, id: cellId('busJoint', of.id, String(index)) }));
+    };
+    const mine = spots(bus);
+    const jointAt = (list: readonly Spot[], at: Point): string | undefined => list.find(item => samePoint(item.at, at))?.id;
+    for (const spot of mine) {
+      const host = markHost(spot.ref)!;
+      const box = { x: spot.at.x - JOINT / 2, y: spot.at.y - JOINT / 2, width: JOINT, height: JOINT };
+      vertex(spot.id, host.cell, styleString(['ellipse'], {
+        html: 1, fillColor: 'none', strokeColor: 'none', points: '[]',
+        movable: 0, resizable: 0, rotatable: 0, editable: 0, connectable: 0, deletable: 0, pointerEvents: 0,
+      }), relative(box, host.box));
     }
+    /** The style that pins an edge end to the centre of its joint. */
+    const centred = (end: 'exit' | 'entry'): Readonly<Record<string, StyleValue>> =>
+      ({ [`${end}X`]: 0.5, [`${end}Y`]: 0.5, [`${end}Dx`]: 0, [`${end}Dy`]: 0, [`${end}Perimeter`]: 0 });
+    const pinned = (from: string | undefined, to: string | undefined): Readonly<Record<string, StyleValue>> =>
+      ({ ...(from ? centred('exit') : {}), ...(to ? centred('entry') : {}) });
     for (const stub of bus.stubs) {
       const ref = bus.ports.find(port => port.node === stub.node)!;
       const head = terminal('exit', ref), pill = markHost(ref);
-      const points = [head?.at ?? shift(stub.from), shift(stub.to)];
-      edgeCell(cellId('busStub', bus.id, stub.node), layerId('overlay'), stroke(true, head?.style ?? {}), points,
-        { source: head?.cell, sourcePoint: head ? undefined : points[0], targetPoint: points[1] });
+      const to = shift(stub.to);
+      const points = [head?.at ?? shift(stub.from), to];
+      const end = jointAt(mine, to);
+      // A stub is one straight run (port face to bar) and both its ends move with one node, so `edgeStyle=none` keeps it straight.
+      edgeCell(cellId('busStub', bus.id, stub.node), layerId('overlay'), stroke(false, { ...(head?.style ?? {}), ...(end ? centred('entry') : {}) }), points,
+        { source: head?.cell, target: end, sourcePoint: head ? undefined : points[0], targetPoint: end ? undefined : points[1] });
       const at = pill?.at ?? shift(stub.from);
       const box = { x: at.x - OVERLAY_ENDPOINT_RADIUS, y: at.y - OVERLAY_ENDPOINT_RADIUS,
         width: 2 * OVERLAY_ENDPOINT_RADIUS, height: 2 * OVERLAY_ENDPOINT_RADIUS };
       vertex(cellId('busMark', bus.id, stub.node), pill?.cell ?? layerId('overlay'),
         styleString(['ellipse'], { html: 1, fillColor: paint.overlay.mark, strokeColor: 'none', points: '[]' }),
         pill ? relative(box, pill.box) : box);
+    }
+    // The bar, one piece between each two neighbouring joints.
+    for (let index = 0; index + 1 < mine.length; index++) {
+      const a = mine[index]!, b = mine[index + 1]!;
+      edgeCell(cellId('bus', bus.id, String(index)), layerId('overlay'), stroke(false, pinned(a.id, b.id)), [a.at, b.at],
+        { source: a.id, target: b.id });
+    }
+    // The riser of a join is one more edge between the two bars, exported with the upper bus (mesh-bus.md, section 11.7);
+    // each end is the joint the bar's own piece ends on.
+    if (bus.riser?.from !== undefined && bus.riser.to !== undefined) {
+      const riser = [shift(bus.riser.from), shift(bus.riser.to)];
+      const lower = layout.meshBuses?.find(other => other.id === bus.joined);
+      const riserFrom = jointAt(mine, riser[0]!), riserTo = lower ? jointAt(spots(lower), riser[1]!) : undefined;
+      edgeCell(cellId('busRiser', bus.id), layerId('overlay'), stroke(false, pinned(riserFrom, riserTo)), riser,
+        { source: riserFrom, target: riserTo, sourcePoint: riserFrom ? undefined : riser[0], targetPoint: riserTo ? undefined : riser[1] });
     }
     const label = layout.labels.find(item => item.id === bus.label);
     if (label !== undefined && !label.omitted && label.bounds !== undefined) {
