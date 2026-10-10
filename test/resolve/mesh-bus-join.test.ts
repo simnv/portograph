@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { busSide } from '../../src/layout/bus.js';
 import { parse } from '../../src/parse/index.js';
 import { resolve } from '../../src/resolve/index.js';
-import { trunkJoin } from '../../src/resolve/mesh-bus.js';
 
 const arrows = vi.hoisted(() => ({ classes: new Set<string>() }));
 vi.mock('../../src/model/classes.js', async importOriginal => ({
@@ -139,17 +138,6 @@ describe('two buses over two rows (stage 1, ticket 94)', () => {
     expect(declined(model)[0]!.message).toContain('a1.p');
   });
 
-  it('refuses three rows, each pair complete, with three reports', () => {
-    const mid = ['c1', 'c2', 'c3'];
-    const model = resolve(parse(rows([{ ids: UP }, { ids: mid }, { ids: LOW }],
-      [...within(UP), ...within(mid), ...within(LOW), ...across(UP, mid), ...across(mid, LOW), ...across(UP, LOW)])));
-    expect(model.meshBuses).toHaveLength(3);
-    expect(model.meshBuses!.every(bus => bus.joined === undefined)).toBe(true);
-    expect(codes(model, 'MESH_BUS_JOIN')).toHaveLength(0);
-    expect(declined(model)).toHaveLength(3);
-    expect(declined(model).every(d => d.message.includes('three-rows'))).toBe(true);
-  });
-
   it('reports a row of two nodes and a row of five that link completely, without a join', () => {
     const small = ['s1', 's2'], five = ['f1', 'f2', 'f3', 'f4', 'f5'];
     const model = resolve(parse(rows([{ ids: small }, { ids: five }], [...within(small), ...within(five), ...across(small, five)])));
@@ -167,14 +155,9 @@ describe('a trunk join: three buses or more (stage 1, architecture ticket 21)', 
   const three = (edit?: (a: string, b: string) => string, extra: string[] = [], nodes?: (id: string) => string) => resolve(parse(rows(
     [{ ids: UP, node: nodes }, { ids: MID, node: nodes }, { ids: LOW, node: nodes }],
     [...within(UP, edit), ...within(MID, edit), ...within(LOW, edit), ...across(UP, MID, edit), ...across(MID, LOW, edit), ...across(UP, LOW, edit), ...extra])));
-  const enabled = <T>(run: () => T): T => { trunkJoin.enabled = true; try { return run(); } finally { trunkJoin.enabled = false; } };
 
-  it('reads three complete rows as a trunk join candidate, and keeps the links plain while the switch is off', () => {
-    const off = three();
-    expect(off.meshBuses!.every(bus => bus.mesh === undefined && bus.trunk === undefined)).toBe(true);
-    expect(off.links.filter(l => l.technique === 'mesh-bus')).toHaveLength(12);
-    expect(declined(off)).toHaveLength(3);
-    const model = enabled(three);
+  it('joins three complete rows by one trunk, with the head bus on the uppermost row', () => {
+    const model = three();
     const [head, middle, low] = model.meshBuses!;
     expect([head!.mesh, middle!.mesh, low!.mesh]).toEqual([head!.id, head!.id, head!.id]);
     expect(head!.trunk).toEqual({ buses: [head!.id, middle!.id, low!.id], lane: `trunk:${head!.id}` });
@@ -190,12 +173,13 @@ describe('a trunk join: three buses or more (stage 1, architecture ticket 21)', 
       const bus = model.meshBuses!.find(item => item.nodes.includes(end.node))!;
       expect(end).toEqual(bus.ports[bus.nodes.indexOf(end.node)]);
     }
-    expect(JSON.stringify(resolve(model.document))).toBe(JSON.stringify(off));
+    expect(JSON.stringify(resolve(model.document))).toBe(JSON.stringify(model));
+    expect(model.meshBuses!.map(bus => bus.labelled)).toEqual([false, false, undefined]);
   });
 
   it('joins four rows by one trunk, the head the uppermost', () => {
-    const model = enabled(() => resolve(parse(rows([{ ids: UP }, { ids: MID }, { ids: FOUR }, { ids: LOW }],
-      [...within(UP), ...within(MID), ...within(FOUR), ...within(LOW), ...across(UP, MID), ...across(UP, FOUR), ...across(UP, LOW), ...across(MID, FOUR), ...across(MID, LOW), ...across(FOUR, LOW)]))));
+    const model = resolve(parse(rows([{ ids: UP }, { ids: MID }, { ids: FOUR }, { ids: LOW }],
+      [...within(UP), ...within(MID), ...within(FOUR), ...within(LOW), ...across(UP, MID), ...across(UP, FOUR), ...across(UP, LOW), ...across(MID, FOUR), ...across(MID, LOW), ...across(FOUR, LOW)])));
     const head = model.meshBuses![0]!;
     expect(head.trunk!.buses).toHaveLength(4);
     expect(head.cross).toHaveLength(63);
@@ -203,8 +187,8 @@ describe('a trunk join: three buses or more (stage 1, architecture ticket 21)', 
   });
 
   it('refuses a part that is not complete with partial-mesh, naming the pair that failed', () => {
-    const model = enabled(() => resolve(parse(rows([{ ids: UP }, { ids: MID }, { ids: LOW }],
-      [...within(UP), ...within(MID), ...within(LOW), ...across(UP, MID), ...across(MID, LOW), ...across(UP, LOW).slice(1)]))));
+    const model = resolve(parse(rows([{ ids: UP }, { ids: MID }, { ids: LOW }],
+      [...within(UP), ...within(MID), ...within(LOW), ...across(UP, MID), ...across(MID, LOW), ...across(UP, LOW).slice(1)])));
     expect(model.meshBuses).toHaveLength(3);
     expect(model.meshBuses!.every(bus => bus.mesh === undefined && bus.joined === undefined)).toBe(true);
     const found = declined(model);
@@ -214,7 +198,7 @@ describe('a trunk join: three buses or more (stage 1, architecture ticket 21)', 
   });
 
   it('reads the identity of the whole mesh: a label on a cross link between the outer rows refuses the join', () => {
-    const model = enabled(() => three((a, b) => a === 'a1' && b === 'b1' ? link(a, b, ', label: odd') : link(a, b)));
+    const model = three((a, b) => a === 'a1' && b === 'b1' ? link(a, b, ', label: odd') : link(a, b));
     expect(model.meshBuses!.every(bus => bus.mesh === undefined)).toBe(true);
     expect(declined(model).some(d => d.message.includes('label'))).toBe(true);
   });
@@ -222,15 +206,15 @@ describe('a trunk join: three buses or more (stage 1, architecture ticket 21)', 
   it('does not read an authored side on a bus port for a trunk join, and keeps the side for a riser join', () => {
     const node = (id: string) => id === 'a1' ? '  a1: { group: r0, ports: [{ name: p, side: top }] }' : `  ${id}: { group: r${id.startsWith('a') ? 0 : id.startsWith('c') ? 1 : 2} }`;
     const tag = (a: string, b: string) => link(a === 'a1' ? 'a1.p' : a, b === 'a1' ? 'a1.p' : b);
-    const model = enabled(() => three(tag, [], node));
+    const model = three(tag, [], node);
     expect(model.meshBuses![0]!.trunk).toBeDefined();
     expect(declined(model)).toHaveLength(0);
   });
 
   it('leaves a small row beside a three-row mesh alone', () => {
     const small = ['s1', 's2'];
-    const model = enabled(() => resolve(parse(rows([{ ids: UP }, { ids: MID }, { ids: LOW }, { ids: small }],
-      [...within(UP), ...within(MID), ...within(LOW), ...within(small), ...across(UP, MID), ...across(MID, LOW), ...across(UP, LOW), ...across(LOW, small)]))));
+    const model = resolve(parse(rows([{ ids: UP }, { ids: MID }, { ids: LOW }, { ids: small }],
+      [...within(UP), ...within(MID), ...within(LOW), ...within(small), ...across(UP, MID), ...across(MID, LOW), ...across(UP, LOW), ...across(LOW, small)])));
     expect(model.meshBuses![0]!.trunk!.buses).toHaveLength(3);
     expect(declined(model).every(d => d.message.includes('small-row'))).toBe(true);
   });

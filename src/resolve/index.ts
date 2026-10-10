@@ -11,6 +11,8 @@ import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 export interface ResolveOptions {
   /** Pass parseWithDiagnostics().diagnostics here at the orchestrator boundary. */
   diagnostics?: readonly Diagnostic[];
+  /** The trunk joins stage 5 found blocked, by `trunkKey`, with the reason; a join named here stays declined (mesh-bus.md, section 12.4). */
+  declinedTrunks?: ReadonlyMap<string, string>;
 }
 
 export class ResolveError extends Error {
@@ -377,6 +379,6 @@ export function resolve(input: NormalisedDocument, options: ResolveOptions = {})
   // The rank derivation reads the model before expansion and needs the ports as written, so only
   // the final model is searched for mesh buses: rows exist only once the groups are cells.
   const final = expanded === undefined ? model : resolveBeforeExpansion(expanded, options);
-  detectMeshBuses(final);
+  detectMeshBuses(final, options.declinedTrunks);
   return final;
 }

@@ -25,6 +25,7 @@ import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { busBandHeight, busRoom } from './bus-room.js';
 import { busGeometry, expectedBusBands, riserEnds, syncBusGeometry } from './bus.js';
+import { trunkCrossings, trunkHeads } from './trunk.js';
 import { separationsBrokenBy } from './constraints/separation.js';
 import { attemptCounters } from './attempt-counters.js';
 import type { AttemptTraceEvent } from './placement-attempt.js';
@@ -1498,6 +1499,12 @@ export function produceGroupLabelBands(model: LayoutModel): void {
   for (const breach of riserKeepOutBreaches(model)) {
     model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'MESH_BUS_RISER_KEEP_OUT', owners: [{ kind: 'node', id: breach.node }],
       message: `${breach.node} has a routed port on the facing edge within the riser keep-out of x ${Math.round(breach.riser * 100) / 100}; a leg there stands closer than the run clearance to the riser.` });
+  }
+  // A forced move that put a foreign unit across a bar extension of a trunk is a warning (mesh-bus.md, section 12.5): the guard refuses an optional move only.
+  model.diagnostics = model.diagnostics.filter(item => item.code !== 'MESH_BUS_TRUNK_CROSSED');
+  for (const head of trunkHeads(model)) for (const crossing of trunkCrossings(model, head)) {
+    model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'MESH_BUS_TRUNK_CROSSED', owners: [{ kind: 'mesh-bus', id: head.id }, { kind: 'group', id: crossing.group }],
+      message: `${crossing.group} stands across the extension of ${crossing.bus} to the trunk of ${head.id}.` });
   }
 }
 function produceGroupLabelBandsRaw(model: LayoutModel): void {

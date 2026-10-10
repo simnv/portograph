@@ -381,6 +381,8 @@ export interface MeshBus extends OwnedElement {
   riser?: { x: number; lanes: string[]; from?: Point; to?: Point };
   /** On every bus of a trunk join (mesh-bus.md, section 12; three buses or more): the id of the head bus, the one on the uppermost row. */
   mesh?: string;
+  /** `false` on the buses of a trunk join that carry no label: the bus with most members carries the one label (the uppermost on a tie). */
+  labelled?: false;
   /**
    * On the head bus of a trunk join only: the joined buses, top row first; `lane` is the perimeter lane id (`trunk:<head>`). `side` is fixed by stage 5,
    * `x` is derived from 7a on, and `joins` (where the trunk meets each bar, top first) from 7f. A trunk join has `cross` on the head bus and no `joined`.
@@ -446,6 +448,8 @@ export interface LayoutModel {
   groupLinks: GroupLink[];
   /** Absent when the document holds no mesh bus. */
   meshBuses?: MeshBus[];
+  /** The trunk joins that a placement run declined (`trunk-blocked`, mesh-bus.md section 12.4): `trunkKey` of each. Resolving the document with them reproduces the model. */
+  declinedTrunks?: string[];
   /** Absent when no bus has a band; 7f publishes them. */
   busBands?: BusBand[];
   /** The ids of the titles 7f moved to their other edge (`MESH_BUS_TITLE_MOVED`); absent when none. */

@@ -30,7 +30,7 @@ import { declinedFanDiagnostics, fanRoundDropped, fanRoundHolds, measureFans, ty
 import { chordClearances, isRoutedChord } from '../layout/frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
 import { CourseRefusal } from '../layout/courses.js';
-import { SideHintRefusal, sideHintDiagnostics, type SideHints } from '../layout/side-hints.js';
+import { SideHintRefusal, TrunkBlocked, sideHintDiagnostics, type SideHints } from '../layout/side-hints.js';
 import { measureSides, refusedKey, type SideOffer } from '../layout/side-measure.js';
 import { judgeTrial, predictedWorse, predictPublished, routedBends, trialNotes } from '../layout/side-judge.js';
 import type { AttemptTraceEvent } from '../layout/placement-attempt.js';
@@ -139,9 +139,11 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   // The courses every placement run reserves (ticket 15): the test's, or the ones the course round keeps.
   let activeCourses: readonly Course[] = options.testCourses ?? [];
   const stage3Sizes = new WeakMap<LayoutModel, Map<string, Size>>();
+  // The trunk joins a placement run found blocked (mesh-bus.md, section 12.4): the next run resolves with them declined.
+  const declinedTrunks = new Map<string, string>();
   const place = async (floors: FanMeasure['floors'], hints = options.testSideHints, nodeFloors = options.testNodeFloors, abort?: (stage: string) => void, laneKeys: ReadonlySet<string> = new Set(), courses: readonly Course[] = activeCourses): Promise<LayoutModel> => {
     const stepIn = <T>(stage: LayoutStage, run: () => T): T => { abort?.(stage); return step(stage, run); };
-    const resolved = stepIn('resolve', () => resolve(document, options.diagnostics ? { diagnostics: options.diagnostics } : {}));
+    const resolved = stepIn('resolve', () => resolve(document, { ...(options.diagnostics ? { diagnostics: options.diagnostics } : {}), ...(declinedTrunks.size ? { declinedTrunks } : {}) }));
     // A course face ranks above a hint (ticket 15): each end that does not keep its natural face names the port and the face.
     const courseFaces = new Map<string, Side>();
     for (const course of courses) {
@@ -199,8 +201,16 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   };
   // A fan of chords whose neighbours stand closer than the chord clearance is spread by placement, not found by routing (ticket 89):
   // the placed chords say the pitch each face needs, and placement runs again with those floors until no face needs more.
-  let model = await timed('place', () => place(new Map()));
+  let model!: LayoutModel;
   let reruns = 0;
+  // A trunk with no admissible side is declined by one placement re-run, which shares `MAX_RERUNS` (mesh-bus.md, section 12.4).
+  for (;;) {
+    try { model = await timed('place', () => place(new Map())); break; } catch (error) {
+      if (!(error instanceof TrunkBlocked) || declinedTrunks.has(error.key)) throw error;
+      declinedTrunks.set(error.key, error.why);
+      reruns++;
+    }
+  }
   // The re-runs are bounded by FAN_ROUNDS alone, and no re-run reads the clock (ticket 141): the same input gives the same layout at any speed.
   // The command deadline ends the whole command with an error (`step`, `route`, `trialAbort`) and never picks a layout. A re-run that makes ELK
   // fall back (an ELK error, never a timeout: a timeout ends the command) is dropped: the placement already made stands (ticket 89 review).

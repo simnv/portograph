@@ -1,7 +1,7 @@
 import { measurePortPill } from '../text/index.js';
 import { equal } from '../model/json-equality.js';
 import type { Rect } from '../model/geometry.js';
-import type { Course, Diagnostic, Lane, LayoutGroup, LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
+import type { Course, Diagnostic, Lane, LayoutGroup, LayoutLink, LayoutModel, MeshBus, PathSegment } from '../model/layout.js';
 import type { PortRef } from '../model/document.js';
 import { DEFAULT_STROKE_WIDTHS as stroke, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth, routedStrokeWidth } from '../theme/geometry.js';
 import { segmentRectDistance } from '../geometry/planar.js';
@@ -22,6 +22,7 @@ import { deriveFrames, foreignReach, foreignRoot, heldLaneReach, ownFrameCells, 
 import { BUS_RUN_CLEARANCE } from './bus-room.js';
 import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 import { nodeTier } from './read/tier.js';
+import { trunkBuses, trunkGeometry, trunkHeads, trunkHolds } from './trunk.js';
 
 /** A corridor `reseatLanes` moved, and the child port it moved it onto. */
 export interface LaneFollow { lane: string; child: PortRef }
@@ -252,7 +253,7 @@ function placementInfo(model: LayoutModel, code: string, message: string, link: 
 }
 /** `laneSidesHold`, the side lanes' far ports and the riser keep-out: what a move that can be declined must pass. */
 export function optionalMoveHolds(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[], report = true): boolean {
-  return riserKeepOutHolds(model, proposed) && laneSidesHold(model, proposed, report) && sideLanesHold(model, proposed, report);
+  return riserKeepOutHolds(model, proposed) && trunkHolds(model, proposed) && laneSidesHold(model, proposed, report) && sideLanesHold(model, proposed, report);
 }
 /**
  * The end of 7c: a side lane whose far port centring has put on the lane x (and that 7a did not seat there) is recorded once (`SIDE_LANE_SEATED`,
@@ -383,6 +384,17 @@ export function rebuildLaneExtents(model: LayoutModel): void {
   // A course lane stands beyond every box on its extent, so it is replayed after the other lanes, which it reads; its x is derived (ticket 15, Section 2).
   const rings = ringsOf(model.lanes), stacked: Lane[] = [];
   for (const lane of model.lanes.filter(item => item.kind === 'perimeter').sort((a, b) => (a.ring ?? 0) - (b.ring ?? 0))) {
+    if (lane.owner.kind === 'mesh-bus') {
+      // A trunk lane stands beyond every box on the extent between its uppermost bar and its lowermost, like a course lane (mesh-bus.md, section 12.5).
+      const head = model.meshBuses?.find(item => item.id === (lane.owner as { id: string }).id);
+      const geometry = head === undefined ? undefined : trunkGeometry(model, head, { side: lane.side, ring: lane.ring ?? 0 }, group => occupied(model, group), stacked);
+      if (head === undefined || geometry === undefined) throw new Error(`Lane ${lane.id} has no trunk`);
+      lane.x = geometry.x;
+      Object.assign(lane.bounds, geometry.bounds);
+      head.trunk!.x = geometry.x;
+      stacked.push(lane);
+      continue;
+    }
     const link = laneLink(model, lane), course = link === undefined ? undefined : courseOf(model, link.id);
     if (link === undefined || course === undefined) throw new Error(`Lane ${lane.id} has no course`);
     const geometry = courseGeometry(model, link, course, lane, (group, item) => occupied(model, group, item), rings, stacked);
@@ -715,6 +727,30 @@ export function reserveRisers(model: LayoutModel, pending: Lane[], occ: (group: 
   }
 }
 
+/**
+ * Stage 7a, after the risers: the perimeter lane of each trunk join (mesh-bus.md, section 12.5; architecture ticket 21). Owner the head bus, id `trunk:<head>`,
+ * side from stage 5, span the member rows. Its ring is one beyond every perimeter lane of its side whose extent it meets (it stands outside the course lanes it
+ * nests over); its x is derived, here and at every replay (`rebuildLaneExtents`), beyond every box on its extent.
+ */
+function reserveTrunks(model: LayoutModel, pending: Lane[], occ: (group: LayoutGroup, link?: LayoutLink) => Rect): void {
+  for (const head of trunkHeads(model)) {
+    const side = head.trunk!.side;
+    if (side === undefined) throw new Error(`Trunk ${head.id} has no side at stage 7a`);
+    const buses = trunkBuses(model, head), rows = buses.map(bus => bus.row);
+    const first = trunkGeometry(model, head, { side, ring: 0 }, group => occ(group), pending);
+    if (first === undefined) throw new Error(`Trunk ${head.id} has no geometry at stage 7a`);
+    const ring = pending.filter(lane => lane.kind === 'perimeter' && lane.side === side && lane.bounds.y < bottom(first.bounds) - PLACEMENT_EPS && bottom(lane.bounds) > first.bounds.y + PLACEMENT_EPS).length;
+    const used = ring === 0 ? first : trunkGeometry(model, head, { side, ring }, group => occ(group), pending)!;
+    const outer = (bus: MeshBus): LayoutGroup | undefined => Object.values(model.groups).find(group => group.nodes.includes(bus.nodes[0]!));
+    const host = outer(buses[0]!);
+    if (host === undefined) throw new Error(`Trunk ${head.id} has no host group`);
+    const id = head.trunk!.lane;
+    pending.push({ id, kind: 'perimeter', owner: { kind: 'mesh-bus', id: head.id }, layer: 'overlay', group: host.id, tier: host.tier!, side,
+      span: { top: Math.min(...rows), bottom: Math.max(...rows) }, ring, x: used.x, bounds: { ...used.bounds } });
+    head.trunk!.x = used.x;
+  }
+}
+
 /** Allocate all corridors before publishing x. Intermediate occupied margins may translate horizontally. */
 export function allocateLanes(model: LayoutModel): void {
   if (model.lanes.length || model.links.some(link => link.fixedSegments)) throw new Error('Lanes can be allocated only once');
@@ -1022,6 +1058,7 @@ export function allocateLanes(model: LayoutModel): void {
   reserveCourseLanes(model, pending, occ);
   reserveGapLanes(model, pending, occ);
   reserveRisers(model, pending, occ);
+  reserveTrunks(model, pending, occ);
   model.lanes = pending;
   rebuildNodeGeometry(model, Object.keys(model.nodes), 'current');
   rebuildRegions(model);
@@ -1289,6 +1326,14 @@ export function validateLanes(model: LayoutModel): void {
     if (lane.kind !== 'perimeter') continue;
     for (const other of owned) if (other !== lane && other.kind === 'perimeter' && other.side === lane.side && lane.bounds.y < bottom(other.bounds) - PLACEMENT_EPS && bottom(lane.bounds) > other.bounds.y + PLACEMENT_EPS
       && Math.abs(other.x - lane.x) < RING_PITCH - PLACEMENT_EPS) throw new Error(`Perimeter lanes ${lane.id} and ${other.id} overlap`);
+    if (lane.owner.kind === 'mesh-bus') {
+      // A trunk lane stands where its geometry derives: beyond every box between its uppermost bar and its lowermost (mesh-bus.md, section 12.5).
+      const head = model.meshBuses?.find(item => item.id === (lane.owner as { id: string }).id);
+      const geometry = head === undefined ? undefined : trunkGeometry(model, head, { side: lane.side, ring: lane.ring ?? 0 }, group => occupied(model, group), owned.filter(other => other.kind === 'perimeter'));
+      if (geometry === undefined || Math.abs(geometry.x - lane.x) > PLACEMENT_EPS || Math.abs(geometry.bounds.y - lane.bounds.y) > PLACEMENT_EPS
+        || Math.abs(geometry.bounds.height - lane.bounds.height) > PLACEMENT_EPS || head?.trunk?.x !== lane.x) throw new Error(`Trunk lane ${lane.id} contradicts the boxes on its extent`);
+      continue;
+    }
     const link = model.links.find(item => lane.owner.kind === 'link' && item.id === lane.owner.id);
     if (link === undefined) continue;
     for (const group of Object.values(model.groups)) {

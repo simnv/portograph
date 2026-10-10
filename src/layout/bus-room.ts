@@ -21,6 +21,9 @@ export function busLabelText(bus: MeshBus): string {
   return `${bus.class ?? 'unclassed'} mesh (${bus.meshNodes ?? bus.nodes.length} nodes)`;
 }
 
+/** The key of a trunk join: the members of its buses, top row first. Stage 5 names a blocked join by it, and a placement run declines it. */
+export const trunkKey = (buses: readonly MeshBus[]): string => buses.map(bus => bus.nodes.join(',')).join('|');
+
 /** The label's measured box. */
 export function busLabelSize(bus: MeshBus): { width: number; height: number } {
   return measureText(busLabelText(bus), { fontSize: BUS_LABEL_FONT.fontSize, weight: BUS_LABEL_FONT.fontWeight });
@@ -31,6 +34,7 @@ export function busLabelSize(bus: MeshBus): { width: number; height: number } {
  * tie); the other bar has the stub, the bar and the run clearance only (mesh-bus.md, section 11.5, *The label*).
  */
 export function busCarriesLabel(bus: MeshBus): boolean {
+  if (bus.labelled === false) return false;
   if (bus.joined === undefined || bus.meshNodes === undefined) return true;
   const other = bus.meshNodes - bus.nodes.length;
   return bus.nodes.length > other || (bus.nodes.length === other && bus.cross !== undefined);

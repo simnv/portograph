@@ -183,13 +183,22 @@ export function validateRoutedPaths(model: LayoutModel, requireComplete = false)
   }
   // The riser of a joined pair: present on the upper bus, both ends on its x, and one end on each bar (mesh-bus.md, section 11.6). The cross paths
   // are derived from it, so a stale x would leave the drawn riser and the paths disagreeing.
-  for (const bus of (model.meshBuses ?? []).filter(item => item.cross !== undefined)) {
+  for (const bus of (model.meshBuses ?? []).filter(item => item.cross !== undefined && item.trunk === undefined)) {
     const lower = model.meshBuses!.find(item => item.id === bus.joined), riser = bus.riser;
     if (lower === undefined || riser?.from === undefined || riser.to === undefined || riser.from.x !== riser.x || riser.to.x !== riser.x
       || bus.bar === undefined || lower.bar === undefined || riser.from.y !== bus.bar.from.y || riser.to.y !== lower.bar.from.y
       || riser.x < Math.min(bus.bar.from.x, bus.bar.to.x) - EPS || riser.x > Math.max(bus.bar.from.x, bus.bar.to.x) + EPS
       || riser.x < Math.min(lower.bar.from.x, lower.bar.to.x) - EPS || riser.x > Math.max(lower.bar.from.x, lower.bar.to.x) + EPS) {
       throw new Error(`The riser of ${bus.id} does not stand on the bars it joins`);
+    }
+  }
+  // A trunk join: every bar of it runs to the trunk x, which the lane of the head bus holds (mesh-bus.md, section 12.5).
+  for (const head of (model.meshBuses ?? []).filter(item => item.trunk !== undefined)) {
+    const lane = model.lanes.find(item => item.id === head.trunk!.lane);
+    if (lane === undefined || head.trunk!.x !== lane.x) throw new Error(`The trunk of ${head.id} contradicts its lane`);
+    for (const id of head.trunk!.buses) {
+      const bar = model.meshBuses!.find(item => item.id === id)?.bar;
+      if (bar === undefined || Math.min(bar.from.x, bar.to.x) > lane.x + EPS || Math.max(bar.from.x, bar.to.x) < lane.x - EPS) throw new Error(`The bar of ${id} does not reach the trunk of ${head.id}`);
     }
   }
   const conflicts = reservationConflicts(model);

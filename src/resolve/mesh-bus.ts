@@ -1,6 +1,7 @@
 import { orderedNodeIds, type Diagnostic, type LayoutLink, type LayoutModel, type MeshBus, type Owner, type PortRef } from '../model/index.js';
 import { groupShape } from '../layout/grid.js';
 import { trunkLaneId } from '../layout/courses.js';
+import { trunkKey } from '../layout/bus-room.js';
 import { classDrawsArrowhead } from '../model/classes.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 
@@ -16,12 +17,6 @@ import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
  */
 
 const MISSING_PAIR_LIMIT = 8;
-
-/**
- * Whether stage 1 makes a trunk join of three buses or more (mesh-bus.md, section 12; architecture ticket 21). Off until stages 5 to 9 draw the trunk:
- * the join is then detected and reported as `three-rows`, and the cross links stay plain. Tests turn it on to read the stage 1 result alone.
- */
-export const trunkJoin = { enabled: false };
 
 interface Edge { a: number; b: number; links: LayoutLink[] }
 interface Mesh { klass: string; classIndex: number; nodes: number[]; adjacency: Map<number, Set<number>>; edges: Map<string, Edge> }
@@ -71,7 +66,7 @@ function compareIndices(a: number[], b: number[]): number {
 const sameRef = (a: PortRef, b: PortRef): boolean => a.node === b.node && a.ordinal === b.ordinal
   && (a.name ?? undefined) === (b.name ?? undefined) && (a.anonymous ?? false) === (b.anonymous ?? false);
 
-export function detectMeshBuses(model: LayoutModel): void {
+export function detectMeshBuses(model: LayoutModel, declinedTrunks?: ReadonlyMap<string, string>): void {
   const nodeIds = orderedNodeIds(model.document);
   const order = new Map(nodeIds.map((id, index) => [id, index]));
   const linkIndex = new Map(model.links.map((link, index) => [link, index]));
@@ -241,7 +236,7 @@ export function detectMeshBuses(model: LayoutModel): void {
       partial(mesh, clique, names, members, row);
     }
   }
-  joinBuses(model, buses, model.links.filter(isCandidate), report, rowOf, linkIndex, nodeIds);
+  joinBuses(model, buses, model.links.filter(isCandidate), report, rowOf, linkIndex, nodeIds, declinedTrunks);
   if (buses.length) model.meshBuses = buses;
   dropBusSharedPortWarnings(model);
 }
@@ -343,7 +338,7 @@ function statedSide(model: LayoutModel, ref: PortRef): string | undefined {
  * a trunk join (`partial-mesh` when a pair of it did not pass); `small-row` for a row of one or two nodes.
  */
 function joinBuses(model: LayoutModel, buses: MeshBus[], candidates: LayoutLink[], report: (code: string, severity: Diagnostic['severity'], message: string, links: LayoutLink[]) => void,
-  rowOf: (node: string) => number | undefined, linkIndex: Map<LayoutLink, number>, nodeIds: string[]): void {
+  rowOf: (node: string) => number | undefined, linkIndex: Map<LayoutLink, number>, nodeIds: string[], declinedTrunks?: ReadonlyMap<string, string>): void {
   if (!buses.length) return;
   const klassOf = (link: LayoutLink): string => model.document.links[link.sourceIndex]!.class ?? '';
   const nameOf = (bus: MeshBus): string => bus.class === undefined ? 'unclassed' : bus.class;
@@ -430,10 +425,10 @@ function joinBuses(model: LayoutModel, buses: MeshBus[], candidates: LayoutLink[
         for (const item of inPart) report('MESH_BUS_JOIN_DECLINED', 'info', `${item.upper.id} (row ${item.upper.row}) and ${item.lower.id} (row ${item.lower.row}), class ${nameOf(item.upper)} stay two buses, ${different.reason}: ${different.detail}`, item.cross);
         continue;
       }
-      if (!trunkJoin.enabled) {
-        // The trunk is not drawn yet: the buses stay apart and the cross links stay plain.
-        for (const item of inPart) report('MESH_BUS_JOIN_DECLINED', 'info', `${item.upper.id} (row ${item.upper.row}) and ${item.lower.id} (row ${item.lower.row}), class ${nameOf(item.upper)} stay two buses, three-rows: `
-          + `${names} join three rows or more, and a riser joins two rows only`, item.cross);
+      const blocked = declinedTrunks?.get(trunkKey(buses3));
+      if (blocked !== undefined) {
+        model.declinedTrunks = [...(model.declinedTrunks ?? []), trunkKey(buses3)];
+        for (const item of inPart) report('MESH_BUS_JOIN_DECLINED', 'info', `${item.upper.id} (row ${item.upper.row}) and ${item.lower.id} (row ${item.lower.row}), class ${nameOf(item.upper)} stay two buses, trunk-blocked: ${blocked}`, item.cross);
         continue;
       }
       joinTrunk(model, buses3, cross, report);
@@ -499,7 +494,9 @@ function joinTrunk(model: LayoutModel, buses: MeshBus[], cross: LayoutLink[],
   attach(model, head.id, ports, cross);
   const dissolved = dissolve(model, new Set(cross.map(link => link.id)));
   const total = buses.reduce((sum, bus) => sum + bus.nodes.length, 0);
-  for (const bus of buses) { bus.mesh = head.id; bus.meshNodes = total; }
+  // The label stands on the bar with the most members; on a tie, the uppermost (section 12.6).
+  const carrier = buses.reduce((best, bus) => bus.nodes.length > best.nodes.length ? bus : best, buses[0]!);
+  for (const bus of buses) { bus.mesh = head.id; bus.meshNodes = total; if (bus !== carrier) bus.labelled = false; }
   head.cross = cross.map(link => link.id);
   head.trunk = { buses: buses.map(bus => bus.id), lane: trunkLaneId(head.id) };
   head.dissolved.push(...dissolved.map(item => item.id));
