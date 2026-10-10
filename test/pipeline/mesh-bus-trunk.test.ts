@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { layout, parse, render, score } from '../../src/index.js';
+import { drawio, layout, parse, render, score } from '../../src/index.js';
 import { validateRoutedPaths } from '../../src/route/validate.js';
 import type { LayoutModel } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
@@ -162,5 +162,66 @@ describe('a mesh over three rows: paths, score and SVG (architecture ticket 21, 
     expect(svg.match(/<g [^>]*data-mesh="mesh-bus-1"/g) ?? []).toHaveLength(3);
     const group = svg.split('<g ').find(chunk => chunk.includes(`data-id="${head.id}"`) && chunk.includes('mesh-bus'))!;
     expect(group.match(/class="[^"]*\btrunk\b[^"]*"/g) ?? []).toHaveLength(2);
+  });
+});
+
+describe('a mesh over three rows: fixtures and draw.io (architecture ticket 21, phase 4)', () => {
+  const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+
+  it('joins three rows of 3, 4 and 3 nodes by one trunk with one label, 45 mesh-bus links and every gate passing', async () => {
+    const model = await run(fixture('a-mesh-over-three-rows-joins-its-bars-with-one-trunk'));
+    expect(trunkOf(model).trunk!.buses).toHaveLength(3);
+    expect(model.links.filter(link => link.meshBus !== undefined && link.technique === 'mesh-bus')).toHaveLength(45);
+    expect(model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined)).toHaveLength(0);
+    expect(model.labels.filter(label => label.role === 'mesh-bus').map(label => label.text)).toEqual(['sync mesh (10 nodes)']);
+    expect(score(model).snapshot.counters.trunkCrossings).toBe(0);
+    expect(gates(model)).toEqual([]);
+  });
+
+  it('puts the trunk beside a tier without members, EDGE_MARGIN from its frame, spanning tiers 0 to 3', async () => {
+    const model = await run(fixture('a-trunk-passes-a-row-without-members'));
+    const lane = laneOf(model), edge = Math.max(...Object.values(model.groups).map(group => group.bounds!.x + group.bounds!.width));
+    expect(lane.span).toEqual({ top: 0, bottom: 3 });
+    expect(lane.x).toBeCloseTo(edge + EDGE_MARGIN, 6);
+    expect(gates(model)).toEqual([]);
+  });
+
+  it('keeps the trunk off the side where a foreign group stands', async () => {
+    const model = await run(fixture('a-trunk-takes-the-side-with-no-foreign-group'));
+    const foreign = model.groups['foreign']!.bounds!, middle = model.groups['r1']!.bounds!;
+    expect(trunkOf(model).trunk!.side).toBe(foreign.x > middle.x ? 'left' : 'right');
+    expect(gates(model)).toEqual([]);
+  });
+
+  it('keeps three buses and plain cross links when one pair of rows is not complete', async () => {
+    const model = await run(fixture('a-three-row-mesh-with-one-pair-missing-keeps-three-buses'));
+    expect(model.meshBuses).toHaveLength(3);
+    expect(model.meshBuses!.every(bus => bus.mesh === undefined && bus.trunk === undefined)).toBe(true);
+    const reasons = codes(model, 'MESH_BUS_JOIN_DECLINED').map(item => item.message);
+    expect(reasons.filter(message => message.includes('partial-mesh'))).toHaveLength(2);
+    expect(reasons.filter(message => message.includes('incomplete'))).toHaveLength(1);
+    expect(gates(model)).toEqual([]);
+  });
+
+  it('counts the routed link that passes a member row across a bar extension', async () => {
+    const model = await run(fixture('a-routed-link-past-a-member-row-crosses-a-bar-extension-and-is-counted'));
+    expect(trunkOf(model).trunk).toBeDefined();
+    expect(score(model).snapshot.counters.trunkCrossings).toBe(1);
+    expect(gates(model)).toEqual([]);
+  });
+
+  it('exports the trunk as N - 1 pieces pinned to the joints of the bars, at the published coordinates', async () => {
+    const model = await run(caseEleven());
+    const xml = drawio(model);
+    const head = trunkOf(model);
+    const pieces = [...xml.matchAll(/<mxCell id="pg-busTrunk~mesh-bus-1~(\d+)"[^>]*source="([^"]+)" target="([^"]+)"/g)];
+    expect(pieces).toHaveLength(head.trunk!.buses.length - 1);
+    expect(pieces[0]![3]).toBe(pieces[1]![2]);
+    for (const piece of pieces) {
+      expect(piece[2]).toMatch(/^pg-busJoint~mesh-bus-\d~\d+$/);
+      expect(xml).toContain(`id="${piece[2]}"`);
+      expect(xml).toContain(`id="${piece[3]}"`);
+    }
+    expect(xml).toMatch(/pg-busTrunk~mesh-bus-1~0"[^>]*style="[^"]*edgeStyle=none/);
   });
 });

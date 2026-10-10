@@ -1,0 +1,72 @@
+# Expected: One trunk in the margin joins the three row buses: one label "sync mesh (10 nodes)", 45 mesh-bus links, no plain overlay link, every gate passing.
+# A core node feeds the first node of each of three rows (3, 4 and 3 nodes). The ten nodes are one full sync mesh of 45 links.
+# Every pair of rows is joined completely, so the three buses are joined by one trunk in a perimeter lane.
+# Source: architecture ticket 21 (docs/design/mesh-bus.md, section 12). Test-only input; test/pipeline/mesh-bus-trunk.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  feed: { tier: 0, label: Feed }
+  r0: { tier: 1, label: R0 }
+  r1: { tier: 2, label: R1 }
+  r2: { tier: 3, label: R2 }
+nodes:
+  core: { group: feed, class: server, label: CORE }
+  a1: { group: r0, class: server, label: A1 }
+  a2: { group: r0, class: server, label: A2 }
+  a3: { group: r0, class: server, label: A3 }
+  b1: { group: r1, class: server, label: B1 }
+  b2: { group: r1, class: server, label: B2 }
+  b3: { group: r1, class: server, label: B3 }
+  b4: { group: r1, class: server, label: B4 }
+  c1: { group: r2, class: server, label: C1 }
+  c2: { group: r2, class: server, label: C2 }
+  c3: { group: r2, class: server, label: C3 }
+links:
+  - [core, a1]
+  - [core, b1]
+  - [core, c1]
+  - { from: a1, to: a2, class: sync }
+  - { from: a1, to: a3, class: sync }
+  - { from: a1, to: b1, class: sync }
+  - { from: a1, to: b2, class: sync }
+  - { from: a1, to: b3, class: sync }
+  - { from: a1, to: b4, class: sync }
+  - { from: a1, to: c1, class: sync }
+  - { from: a1, to: c2, class: sync }
+  - { from: a1, to: c3, class: sync }
+  - { from: a2, to: a3, class: sync }
+  - { from: a2, to: b1, class: sync }
+  - { from: a2, to: b2, class: sync }
+  - { from: a2, to: b3, class: sync }
+  - { from: a2, to: b4, class: sync }
+  - { from: a2, to: c1, class: sync }
+  - { from: a2, to: c2, class: sync }
+  - { from: a2, to: c3, class: sync }
+  - { from: a3, to: b1, class: sync }
+  - { from: a3, to: b2, class: sync }
+  - { from: a3, to: b3, class: sync }
+  - { from: a3, to: b4, class: sync }
+  - { from: a3, to: c1, class: sync }
+  - { from: a3, to: c2, class: sync }
+  - { from: a3, to: c3, class: sync }
+  - { from: b1, to: b2, class: sync }
+  - { from: b1, to: b3, class: sync }
+  - { from: b1, to: b4, class: sync }
+  - { from: b1, to: c1, class: sync }
+  - { from: b1, to: c2, class: sync }
+  - { from: b1, to: c3, class: sync }
+  - { from: b2, to: b3, class: sync }
+  - { from: b2, to: b4, class: sync }
+  - { from: b2, to: c1, class: sync }
+  - { from: b2, to: c2, class: sync }
+  - { from: b2, to: c3, class: sync }
+  - { from: b3, to: b4, class: sync }
+  - { from: b3, to: c1, class: sync }
+  - { from: b3, to: c2, class: sync }
+  - { from: b3, to: c3, class: sync }
+  - { from: b4, to: c1, class: sync }
+  - { from: b4, to: c2, class: sync }
+  - { from: b4, to: c3, class: sync }
+  - { from: c1, to: c2, class: sync }
+  - { from: c1, to: c3, class: sync }
+  - { from: c2, to: c3, class: sync }

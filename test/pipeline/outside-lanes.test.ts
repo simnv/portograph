@@ -146,7 +146,16 @@ describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
     expect(new Set(boxes.map(box => Math.round(box.y))).size).toBe(2);
   }, 60000);
 
-  it.todo('11 (mesh-bus ticket, after phase 4): one trunk in the left margin joins the three row buses');
+  it('11 (mesh-bus ticket 21): one trunk in the margin joins the three row buses; no plain overlay link, no crossing', async () => {
+    const model = await run('a-sync-mesh-on-three-rows-has-one-trunk-in-the-margin');
+    const head = model.meshBuses!.find(bus => bus.trunk !== undefined)!;
+    expect(head.trunk!.buses).toHaveLength(3);
+    expect(head.cross).toHaveLength(27);
+    expect(counts(model).overlay.links).toBe(0);
+    expect(counts(model).overlay.crossings).toEqual({ pairs: 0, points: 0 });
+    expect(counts(model).overlay.turns).toBe(0);
+    expect(gatesHold(model)).toBe(true);
+  }, 60000);
 
   it('12 (phase 6): the uplink meets the trunk pill from above; it has 2 turns, and the port keeps one side', async () => {
     const model = await run(SHEETS.port);

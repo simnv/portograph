@@ -1310,6 +1310,18 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       edgeCell(cellId('busRiser', bus.id), layerId('overlay'), stroke(false, pinned(riserFrom, riserTo)), riser,
         { source: riserFrom, target: riserTo, sourcePoint: riserFrom ? undefined : riser[0], targetPoint: riserTo ? undefined : riser[1] });
     }
+    // The trunk of a three-row join is `N - 1` pieces, one per pair of neighbouring bars, exported with the head bus (mesh-bus.md, section 12.7);
+    // each end is the joint where that bar ends at the trunk x, so a drag of a member node bends only the pieces that end on its joint.
+    const joins = bus.trunk?.joins;
+    if (bus.trunk !== undefined && joins !== undefined) {
+      const bars = bus.trunk.buses.map(id => layout.meshBuses?.find(other => other.id === id));
+      const ends = joins.map((at, index) => { const bar = bars[index]; return bar === undefined ? undefined : jointAt(spots(bar), shift(at)); });
+      for (let index = 0; index + 1 < joins.length; index++) {
+        const piece = [shift(joins[index]!), shift(joins[index + 1]!)], from = ends[index], to = ends[index + 1];
+        edgeCell(cellId('busTrunk', bus.id, String(index)), layerId('overlay'), stroke(false, pinned(from, to)), piece,
+          { source: from, target: to, sourcePoint: from ? undefined : piece[0], targetPoint: to ? undefined : piece[1] });
+      }
+    }
     const label = layout.labels.find(item => item.id === bus.label);
     if (label !== undefined && !label.omitted && label.bounds !== undefined) {
       textCell(cellId('busLabel', bus.id), layerId('labels'), label, shiftRect(label.bounds), paint.link.label);
