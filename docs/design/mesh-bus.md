@@ -3,7 +3,7 @@
 Status: design (ticket 81, 2026-09-30; amended the same day for a bus across frames, and by
 ticket 93 for a mesh over two rows, Section 11). Decisions Q105, Q106 and Q107. Implementation:
 tickets 82 to 85, and 94, 96 and 97 for Section 11, under `.scratch/ranked-groups/issues/`.
-Section 12 (a trunk across three rows or more) is a proposal of architecture ticket 21, not decided.
+Section 12 (a trunk across three rows or more): architecture ticket 21, decided 2026-10-10.
 
 ## 1. The problem
 
@@ -851,9 +851,9 @@ Open for later:
    middle bar to reach two risers from one edge. The design does not do it until an input asks for
    it. (Hand solve 11 asks for it. Proposed answer: Section 12, one trunk in the margin.)
 
-## 12. A mesh over three rows or more: one trunk in the margin (architecture ticket 21, proposed)
+## 12. A mesh over three rows or more: one trunk in the margin (architecture ticket 21)
 
-Status: proposed, not decided. The user decisions are listed in
+Status: decided by the user 2026-10-10 (all six recommendations). The decisions are recorded in
 `.scratch/architecture/issues/21-bus-trunk-across-rows.md`. This section amends Q107 (Section 11.3, check 4,
 `three-rows`) and answers Section 11.11, open item 2.
 
