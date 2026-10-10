@@ -3,6 +3,7 @@
 Status: design (ticket 81, 2026-09-30; amended the same day for a bus across frames, and by
 ticket 93 for a mesh over two rows, Section 11). Decisions Q105, Q106 and Q107. Implementation:
 tickets 82 to 85, and 94, 96 and 97 for Section 11, under `.scratch/ranked-groups/issues/`.
+Section 12 (a trunk across three rows or more) is a proposal of architecture ticket 21, not decided.
 
 ## 1. The problem
 
@@ -848,4 +849,190 @@ Open for later:
    reserved in 7a as any riser x).
 2. **Three rows and more.** A chain of risers, one between each two adjacent rows, needs the
    middle bar to reach two risers from one edge. The design does not do it until an input asks for
-   it.
+   it. (Hand solve 11 asks for it. Proposed answer: Section 12, one trunk in the margin.)
+
+## 12. A mesh over three rows or more: one trunk in the margin (architecture ticket 21, proposed)
+
+Status: proposed, not decided. The user decisions are listed in
+`.scratch/architecture/issues/21-bus-trunk-across-rows.md`. This section amends Q107 (Section 11.3, check 4,
+`three-rows`) and answers Section 11.11, open item 2.
+
+### 12.1 The problem
+
+Section 11 joins two rows only. A complete graph over three rows or more is refused (`three-rows`), so each row
+draws its own bus and every cross link stays a plain overlay line. Hand solve 11 (`ref/hand-solves/11-*`): nine
+nodes on three tiers, 36 `sync` links. Measured on main 08e9428: three buses of 3 links each, 27 plain overlay
+lines, 5 of them bent (16 turns), overlay crossings 83 pairs and 100 points, canvas 402.5 x 571.
+
+The user's solve deletes the 27 lines and draws one **trunk**: a vertical in the left margin (x about 6; the
+frames start at x 13). The Top and Low bars extend left to it, and the Middle bar extends left to it too. No node
+moves. Overlay crossings fall from about 100 to 1 (the Middle extension crosses the routed link A1-B1). Each bar
+keeps the edge that the leg rule gave it (Top and Middle on the top edge, Low on the bottom edge). The solve does
+not use facing edges.
+
+Why a column riser cannot do this: with three rows, a middle bar stands on one edge only, so a vertical from the
+upper rows to the lower rows must pass beside at least one member row. Beside a row it either goes through that
+row's band, between its nodes and frames, or it goes round the outside. Principle P3 says: round the outside.
+
+### 12.2 The rule in one paragraph
+
+Three buses or more of one class on as many rows, each two of them joined by a complete set of identical cross
+links (Section 11.3, checks 1 and 2), are **joined by one trunk**. Each bus keeps its bar, its stubs and its band,
+on the edge that its own leg rule gives (Section 4), read over its extended span. One **trunk**, a vertical in a
+**perimeter lane** (ticket 15) on the left or the right of the drawing, runs from the uppermost bar to the
+lowermost bar. Each bar extends from its outer stub to the trunk. One label names the whole mesh
+(`sync mesh (9 nodes)`). A cross link draws stub, bar run, trunk, bar run, stub. The join is decided at stage 1,
+the side at stage 5, and the lane is reserved at stage 7a. Nothing is found during routing. Two rows keep the
+riser of Section 11.
+
+### 12.3 Detection (stage 1)
+
+`joinBuses` keeps checks 1 (`incomplete`) and 2 (identity) per pair, in that order. The graph of the pairs that
+pass is read per connected part:
+
+- A part of two buses is a riser join (Section 11). Check 3 (`side`) is read for it, as today.
+- A part of three buses or more in which **every** pair passed is a **trunk join**. Check 3 is not read: no bar
+  needs a facing edge, so an authored `side:` on a bus port fixes that bar's edge and refuses nothing.
+- A part of three buses or more in which some pair did not pass (for example A-B and B-C pass, A-C is
+  incomplete) is refused. Each passing pair of it is reported with the new reason `partial-mesh`, which names the
+  failing pair. A trunk would show a link between two buses that the author did not draw. The failing pair keeps
+  its own reason.
+
+The identity check of a trunk join reads the whole mesh once: the members of every bus and every cross link of
+every pair, in document order. Pairwise checks already imply it (the member ends at each node carry the port
+rule), but one read gives one deterministic "first link that differs".
+
+A join made: every cross link of the part gets `meshBus` (the **head bus**: the bus on the uppermost row) and
+`technique: 'mesh-bus'`. Its ends move to the bus ports as in Section 11.3. `small-row` does not change: a row of
+one or two nodes has no bus and is not part of the graph.
+
+### 12.4 Side and bar edges (stage 5)
+
+The side is a fact of unit order, so stage 5 decides it, in `sidesTwo` after the bus edges of single buses and
+before the resize. It reads the facts that the course plan reads (`read/courses.ts`): the order of the units in
+each band, and the order of the ports on each face.
+
+**Admissible side.** A side `s` is admissible when, on every member row, no **foreign unit** (a group, frame or
+canton that holds no node of the mesh) stands between the bus's outer member and the end of the band on side `s`.
+The bar extension then crosses only frames that hold members, at a right angle.
+
+**Bar edges for side `s`.** Each bar takes the edge that the leg rule of Section 4 gives over its **extended
+span**: from its first bus port to its last, and on to the end of its row on side `s`. An authored side wins.
+
+**The order.** Among admissible sides:
+
+1. the fewest **legs** over the extended spans of all bars (Section 4, terms 1 and 2, as stage 5 reads them):
+   these are the routed links that the bars and their extensions cross;
+2. the fewest frame edges crossed by the extensions (cantons and member frames; nested frames add edges);
+3. the least total extension at skeleton x: the sum, over the bars, of the distance from the outer stub to the
+   outer box of the row on side `s`;
+4. left.
+
+No admissible side: the join is declined by one placement re-run (`trunk-blocked`), as the side round enacts a
+hint. The re-run shares `MAX_RERUNS`.
+
+Case 11, read by this order: both sides are admissible. Left: the extended span of the Middle bar holds the routed
+top port of B1 (x 54.7) and its routed bottom port (x 60.7), 1 leg on either edge; Top and Low 0; total 1. Right:
+no routed port stands beyond the outer stubs; total 0. So the trunk stands on the **right**, with 0 crossings: the
+mirror of the solve, which has 1. The extension on the right is also shorter (about 197 px against 241 px to the
+frame edges).
+
+The side and the bar edges freeze with the topology (`freeze.topology`), as the course faces do.
+
+### 12.5 The trunk in placement (stage 7a)
+
+**The lane.** One perimeter lane per trunk join: owner `{ kind: 'mesh-bus', id: <head bus> }`, layer `overlay`,
+id `trunk:<head bus>`, `kind: 'perimeter'`, `side` from Section 12.4, `span` the member rows from the uppermost to
+the lowermost. Its y-extent runs from the y of the uppermost bar to the y of the lowermost bar.
+
+**Its x is derived**, as for every perimeter lane (ticket 15, Section 2): the outermost box on side `s` among the
+groups, frames and non-perimeter lanes that meet its y-extent, plus `EDGE_MARGIN` (10.75 px), plus
+`ring * RING_PITCH` (11.5 px), and one pitch beyond every inner perimeter lane of its side that it meets.
+`rebuildLaneExtents` derives it again at each replay, so a unit that moves outward after 7a carries the trunk
+with it, and nothing is invalidated. The id, owner, side, span and ring are immutable.
+
+**Rings.** The trunk takes a ring in the one stack of its side, with the perimeter lanes of routed and overlay
+courses. The ring order does not change: a lane whose span holds another's stands outside it; equal spans order
+by the y of their end runs. 7a reserves course lanes first and trunks after them, so the ring pass must read all
+perimeter lanes of a side together (`ringsOf` reads link owners only today).
+
+**Keep-out.** `EDGE_MARGIN` from the outermost frame or box, as for every perimeter lane. The lane box is
+`RING_PITCH` wide.
+
+**Canvas.** `expandCanvas` already unions lane boxes and adds the 12 px margin. The growth is a reservation, not
+an optional move, so the 5 % share of 7f does not bound it (ticket 15, user decision Q2). Case 11: about 16 px
+wider on the trunk side (402.5 to about 418.5); the height does not change.
+
+**The bars reach the trunk.** From 7a on, each bar runs from its far stub to the trunk x. The bus band covers the
+extended interval, so the tier-gap plan reads it as an O5 band over the whole run (Section 11.5, *The bars reach
+the riser*). An in-frame bar leaves its frame through the side edge at a right angle, inside the frame padding.
+The leg reads, the label read and `L` read the extended interval.
+
+**Guard.** A 7f move that brings a foreign unit across a bar extension is refused (`trunkHolds`, one more entry
+in `optionalMoveHolds`). A forced move stays and reports `MESH_BUS_TRUNK_CROSSED` (warning). `validateLanes`
+checks the trunk lane: owner, id, side, span, ring, the derived x, and no foreign box across an extension.
+
+**What placement reserves, in order.** Stage 1: the join and the bus ports. Stage 5: the side and the bar edges.
+Stage 7a: the trunk lane, its ring and the extended bar intervals. Stage 7f: the bars, the bands, the titles
+clear of the stubs, the trunk ends and the label room. Routing reads all of it and finds nothing.
+
+### 12.6 The label
+
+One label, `<class> mesh (<n> nodes)`, with `n` the node count of all buses (`sync mesh (9 nodes)`). It stands on
+the bar with the most members; on a tie, the uppermost bar. Its box is centred on the member span of that bar
+(first stub to last stub), not on the extended interval, so the label stays over its nodes. Where a vertical
+crosses the centred box, the label takes the longest clear interval, as in Section 4. The other bars have no
+label room: their bands are stub, bar and the run clearance `k`.
+
+### 12.7 layout.json, score, render, draw.io
+
+```ts
+interface MeshBus {                              // added fields
+  mesh?: string;                                 // on every bus of a trunk join: the head bus id
+  trunk?: {                                      // on the head bus only
+    buses: string[];                             // the joined buses, top row first
+    side: 'left' | 'right';                      // from stage 5
+    lane: string;                                // the perimeter lane id, `trunk:<head>`
+    x: number;                                   // derived at each replay; the published value
+    joins?: Point[];                             // from 7f: where the trunk meets each bar, top first
+  };
+}
+```
+
+`cross` holds every cross link of the join, on the head bus. `joined` and `riser` stay for two-row joins only.
+
+**Cross link path.** Stage 8 publishes stub, bar run to the trunk, trunk run, bar run, stub: always five
+orthogonal segments (the trunk stands beyond every box, so no stub stands on it). `route/validate` derives it
+again.
+
+**Score.** Member and cross paths are overlay and enter neither bends nor crossings. New counters:
+`meshBusTrunks` and `trunkCrossings` (the routed segments that cross the trunk or a bar extension in the
+published layout). The overlay report counts a cross link in the `bus` column.
+
+**SVG.** The trunk is one `<path>` per trunk piece in the `<g class="mesh-bus ...">` of the head bus, class
+`link-line overlay-line <class> trunk`. Each `<g>` of the join carries `data-mesh` with the head bus id.
+
+**draw.io.** The trunk is one edge per pair of neighbouring bar joints along it (`N - 1` pieces), ids
+`pg-busTrunk~<head>~<n>`, `edgeStyle=none`, on the `overlay` layer, each end pinned to the joint where a bar ends
+at the trunk x. That joint exists today (the bar's end, draw.io issue 04) and is a child of the nearest member
+node, so a drag of that node moves the joint and bends only the trunk pieces that end on it. Verified with the
+drawio CLI (`-x -f svg`): the drawn trunk reads back within 0.05 px.
+
+### 12.8 Diagnostics
+
+| Code | Severity | Change |
+|---|---|---|
+| `MESH_BUS_JOIN` | info | Names all buses and rows of a trunk join, the class, the node count, the cross link count, the dissolved group-links. |
+| `MESH_BUS_JOIN_DECLINED` | info | `three-rows` goes. New reasons: `partial-mesh` (a part of three buses or more in which a named pair did not pass) and `trunk-blocked` (stage 5: a foreign unit stands beside a member row on both sides; names the row and the unit per side). |
+| `MESH_BUS_TRUNK` | info | Stage `placement`, owner the head bus: side, x, ring, span, legs crossed, frame edges crossed, total extension. |
+| `MESH_BUS_TRUNK_CROSSED` | warning | A forced 7f move put a foreign unit across a bar extension. |
+
+### 12.9 What does not change
+
+Two-row joins: the riser, the facing edges, the riser lanes and the riser keep-out (Section 11). The private NTP
+sheet has a two-row mesh only, so it must stay byte-identical. One-row buses. The overlay rule for plain links.
+
+### 12.10 Acceptance
+
+The ticket lists it: the generic fixtures, the inline tests, hand solve 11 as an acceptance sheet, NTP
+byte-identical, and the corpus sweep with no removed link and no new gate finding.
