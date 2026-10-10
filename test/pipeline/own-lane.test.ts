@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
+import { alignLinkedGroupGrid } from '../../src/layout/bands.js';
+import { separationShortfalls } from '../../src/layout/constraints/index.js';
 import { bands, bars, bundles, centre, flanks, lanes, linkLabels, planRoute, route, rows, score } from '../../src/index.js';
 import { ownedLanes } from '../../src/route/paths.js';
 import { tierGapPlans } from '../../src/layout/gap-plan.js';
@@ -88,6 +90,10 @@ it('moves a corridor to the child 7c could not seat under it', async () => {
   // The move turns the run in the gap above the corridor from a column into a row, and 7f measured
   // that gap before the move. No gap may end up owing more room than it has.
   for (const { gap, plan } of tierGapPlans(model)) expect([gap.below, plan.growth]).toEqual([gap.below, 0]);
+  // Guards, not evidence of the move (architecture ticket 18): with the reseat forced to refuse, the grid is still at its fixed point and no minimum separation is
+  // broken on this sheet, so these two lines pass either way. They keep a later change from publishing a model the grid replay would move or a gap under the band gap.
+  expect(alignLinkedGroupGrid(JSON.parse(JSON.stringify(model)) as typeof model)).toBe(false);
+  expect([...separationShortfalls(model).keys()]).toEqual([]);
 }, 60000);
 
 /**
