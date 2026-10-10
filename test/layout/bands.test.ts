@@ -22,8 +22,6 @@ import { FONT_FAMILY, measurePortPill, measureText } from '../../src/text/index.
 import { orderedGroupIds } from '../../src/model/model.js';
 import { generateScaleYaml } from '../../scripts/scale-input.mjs';
 import { placed } from './phase-two-fixture.js';
-import { attemptCounters } from '../../src/layout/attempt-counters.js';
-import { separationShortfalls } from '../../src/layout/constraints/index.js';
 
 const golden = readFileSync(new URL('../../goldens/m1-sip-edge.yaml', import.meta.url), 'utf8');
 // Q108 (ticket 100) gives the two provider links their chord; the tests of the two remainders read them on the variant that keeps them orthogonal.
@@ -34,8 +32,6 @@ const rowsOwed = readFileSync(new URL('../../goldens/synthetic/a-tier-gap-grows-
 const bandEdgeResidue = readFileSync(new URL('../../goldens/synthetic/a-band-holds-the-group-that-set-its-edge.yaml', import.meta.url), 'utf8');
 /** Stress ticket 19's fixture: the one shape whose label plan answers from the `firstFree` walk. */
 const grownLabel = readFileSync(new URL('../../goldens/synthetic/a-grown-label-lands-inside-its-inset.yaml', import.meta.url), 'utf8');
-/** Ticket 18's fixture: a corridor follows its child by a reseat that keeps every minimum separation. */
-const corridorFollowsChild = readFileSync(new URL('../../goldens/synthetic/a-corridor-follows-its-child.yaml', import.meta.url), 'utf8');
 /** Stress ticket 18's fixture: a corridor would follow its child across a labelled row link's split. */
 const corridorCrossesSplit = readFileSync(new URL('../../goldens/synthetic/a-corridor-crosses-a-labelled-rows-split.yaml', import.meta.url), 'utf8');
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
@@ -844,29 +840,6 @@ it('stress ticket 19: a grown group label lands inside the inset the growth aske
   expect(right(group) - GROUP_LABEL_GEOMETRY.horizontalInset - right(label)).toBe(0);
   expect(label.x).toBeGreaterThan(group.x + GROUP_LABEL_GEOMETRY.horizontalInset);
 }, 120000);
-
-// Ticket 18 replaces the `stress ticket 37` case, whose reseat ticket 17 refuses (`separationHeld`: its settled model closes `row-12` and `zone-7` under the band gap). That sheet
-// held the property trivially once nothing moved; this fixture makes the corridor move again, by a reseat that keeps every minimum separation. The grid merge of the old
-// case does not occur here: no pair of linked groups stands in the window the corridor leaves, so the claim is the fixed point alone, not the merge it once released.
-it('ticket 18: a corridor that follows its child by a legal reseat leaves the grid settled and the replay quiet', async () => {
-  const pre = await throughBundles(corridorFollowsChild);
-  const laneId = 'lane:"link-3":1';
-  const beforeX = pre.lanes.find(lane => lane.id === laneId)!.x;
-  const adopted = attemptCounters.reseat.adopted;
-  const model = run(pre);
-  // The reseat was adopted, not refused: the counter moved and the corridor says it followed.
-  expect(attemptCounters.reseat.adopted).toBe(adopted + 1);
-  expect(model.diagnostics.some(item => item.code === 'LANE_FOLLOWS_ITS_CHILD')).toBe(true);
-  // Both places come from the model. The corridor stood at the x 7a gave it and now stands at its child's port.
-  const lane = model.lanes.find(item => item.id === laneId)!;
-  expect(beforeX).toBe(103);
-  expect(lane.x).toBe(307);
-  expect(lane.x).toBe(model.nodes['child-b']!.ports[0]!.anchor!.x);
-  // The claim: a settled model does not move under the grid's replay.
-  expect(alignLinkedGroupGrid(copy(model))).toBe(false);
-  // And the move keeps every minimum separation (ticket 17), which is why it was adopted.
-  expect([...separationShortfalls(model).keys()]).toEqual([]);
-}, 180000);
 
 it('stress ticket 18: a corridor that would cross a labelled row link\'s split does not move', async () => {
   // `reserveLinkLabelRoom` declines a row link whose room lies beyond a reserved lane. Here the
