@@ -80,7 +80,7 @@ function semantics(model: LayoutModel) {
     links: model.links.map(link => pick(link, ['id', 'sourceIndex', 'owner', 'from', 'to', 'attachments', 'family', 'layer', 'bundle', 'groupLink', 'meshBus', 'strokeWidth'])),
     bundles: model.bundles.map(bundle => pick(bundle, ['id', 'owner', 'layer', 'nodes', 'members'])),
     groupLinks: model.groupLinks.map(group => pick(group, ['id', 'owner', 'layer', 'groups', 'members'])),
-    meshBuses: (model.meshBuses ?? []).map(bus => pick(bus, ['id', 'owner', 'layer', 'class', 'row', 'placement', 'frames', 'nodes', 'ports', 'members', 'dissolved', 'joined', 'cross', 'meshNodes'])),
+    meshBuses: (model.meshBuses ?? []).map(bus => pick(bus, ['id', 'owner', 'layer', 'class', 'row', 'placement', 'frames', 'nodes', 'ports', 'members', 'dissolved', 'joined', 'cross', 'meshNodes', 'mesh'])),
   };
 }
 function topology(model: LayoutModel) {
@@ -248,6 +248,20 @@ function validateTechniques(model: LayoutModel, baseline: LayoutModel): void {
     if (!geometrySelected) same(pick(link, ['technique']), pick(baseline.links[index]!, ['technique']), 'Link technique contradicts authored route, effective layer or M1 fallback');
   }
 }
+/** A trunk join (mesh-bus.md, section 12): three buses or more of one class on as many rows, named by the head bus, which lists the cross links. */
+function validateTrunkJoin(buses: readonly MeshBus[], bus: MeshBus): void {
+  const head = buses.find(item => item.id === bus.mesh);
+  if (head === undefined || head.trunk === undefined || head.mesh !== head.id || !head.trunk.buses.includes(bus.id)) throw new Error(`Mesh bus ${bus.id} names a trunk head that does not list it`);
+  if (bus.joined !== undefined || bus.riser !== undefined) throw new Error(`Mesh bus ${bus.id} is in a trunk join and in a riser join`);
+  if ((bus.trunk === undefined) !== (bus.id !== head.id) || (bus.cross === undefined) !== (bus.id !== head.id)) throw new Error(`Only the head bus ${head.id} of a trunk join holds the trunk and the cross links`);
+  if (bus.id !== head.id) return;
+  const members = head.trunk.buses.map(id => buses.find(item => item.id === id));
+  if (members.length < 3 || members.some(item => item === undefined || item.mesh !== head.id || (item.class ?? '') !== (head.class ?? ''))) throw new Error(`Trunk ${head.id} does not join three buses or more of one class`);
+  const rows = members.map(item => item!.row);
+  if (members[0] !== head || rows.some((row, index) => index > 0 && row <= rows[index - 1]!)) throw new Error(`Trunk ${head.id} does not list its buses top row first`);
+  const total = members.reduce((sum, item) => sum + item!.nodes.length, 0);
+  if (members.some(item => item!.meshNodes !== total)) throw new Error(`Trunk ${head.id} counts the nodes of its mesh wrongly`);
+}
 /** A join is two buses that name each other; the upper bus lists its cross links, which carry its id and are not members (mesh-bus.md, section 11.6). */
 function validateJoins(model: LayoutModel): void {
   const buses = model.meshBuses ?? [];
@@ -260,7 +274,13 @@ function validateJoins(model: LayoutModel): void {
       if ((bus.cross === undefined) === (partner.cross === undefined)) throw new Error(`Exactly one of the joined buses ${bus.id} and ${partner.id} lists the cross links`);
     }
     const listed = new Set(bus.cross ?? []);
-    if (bus.cross !== undefined) {
+    if (bus.mesh !== undefined || bus.trunk !== undefined) validateTrunkJoin(buses, bus);
+    if (bus.cross !== undefined && bus.trunk !== undefined) {
+      for (const id of bus.cross) {
+        const link = byId.get(id);
+        if (link?.meshBus !== bus.id || buses.some(item => item.members.includes(id))) throw new Error(`Cross link ${id} of ${bus.id} is not a link of the trunk join`);
+      }
+    } else if (bus.cross !== undefined) {
       if (partner === undefined || partner.row <= bus.row) throw new Error(`Mesh bus ${bus.id} lists cross links but is not the upper bus of a join`);
       for (const id of bus.cross) {
         const link = byId.get(id);

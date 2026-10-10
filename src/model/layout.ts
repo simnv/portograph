@@ -379,6 +379,13 @@ export interface MeshBus extends OwnedElement {
    * `lanes` are the riser lane ids in crossed sub-tier order (empty for adjacent rows); `from` and `to` are its ends on the upper and the lower bar, from 7f.
    */
   riser?: { x: number; lanes: string[]; from?: Point; to?: Point };
+  /** On every bus of a trunk join (mesh-bus.md, section 12; three buses or more): the id of the head bus, the one on the uppermost row. */
+  mesh?: string;
+  /**
+   * On the head bus of a trunk join only: the joined buses, top row first; `lane` is the perimeter lane id (`trunk:<head>`). `side` is fixed by stage 5,
+   * `x` is derived from 7a on, and `joins` (where the trunk meets each bar, top first) from 7f. A trunk join has `cross` on the head bus and no `joined`.
+   */
+  trunk?: { buses: string[]; lane: string; side?: 'left' | 'right'; x?: number; joins?: Point[] };
   /** The horizontal edge of the row the bar stands on; fixed by stage 5 (docs/design/mesh-bus.md, section 4). */
   side?: 'top' | 'bottom';
   /** From 7f on: the bar, from the first bus port's x to the last. */
