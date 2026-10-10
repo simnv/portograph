@@ -24,8 +24,8 @@ import { overlayPath } from './overlay-paths.js';
 import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { busBandHeight, busRoom } from './bus-room.js';
-import { busGeometry, expectedBusBands, riserEnds, syncBusGeometry } from './bus.js';
-import { trunkCrossings, trunkHeads } from './trunk.js';
+import { busGeometry, expectedBusBands, riserEnds, syncBusGeometry, trunkJoins } from './bus.js';
+import { foreignOverExtensions, trunkHeads } from './trunk.js';
 import { separationsBrokenBy } from './constraints/separation.js';
 import { attemptCounters } from './attempt-counters.js';
 import type { AttemptTraceEvent } from './placement-attempt.js';
@@ -1502,7 +1502,7 @@ export function produceGroupLabelBands(model: LayoutModel): void {
   }
   // A forced move that put a foreign unit across a bar extension of a trunk is a warning (mesh-bus.md, section 12.5): the guard refuses an optional move only.
   model.diagnostics = model.diagnostics.filter(item => item.code !== 'MESH_BUS_TRUNK_CROSSED');
-  for (const head of trunkHeads(model)) for (const crossing of trunkCrossings(model, head)) {
+  for (const head of trunkHeads(model)) for (const crossing of foreignOverExtensions(model, head)) {
     model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'MESH_BUS_TRUNK_CROSSED', owners: [{ kind: 'mesh-bus', id: head.id }, { kind: 'group', id: crossing.group }],
       message: `${crossing.group} stands across the extension of ${crossing.bus} to the trunk of ${head.id}.` });
   }
@@ -1695,6 +1695,14 @@ export function validateGroupLabelBands(model: LayoutModel): void {
     const geometry = busGeometry(model, bus);
     if (!equal({ bar: bus.bar, stubs: bus.stubs, labelRoom: bus.labelRoom }, { bar: geometry?.bar, stubs: geometry?.stubs, labelRoom: geometry?.labelRoom })) {
       throw new Error(`The bar and stubs of ${bus.id} contradict final group geometry`);
+    }
+    // The trunk x is derived in 7a and at every replay; 7f sets its joins on the bars, and every bar reaches it (mesh-bus.md, section 12.5).
+    if (bus.trunk !== undefined) {
+      if (!equal(bus.trunk.joins, trunkJoins(model, bus))) throw new Error(`The trunk of ${bus.id} contradicts the bars it joins`);
+      for (const id of bus.trunk.buses) {
+        const bar = model.meshBuses!.find(item => item.id === id)?.bar;
+        if (bar !== undefined && (Math.min(bar.from.x, bar.to.x) > bus.trunk.x! + PLACEMENT_EPS || Math.max(bar.from.x, bar.to.x) < bus.trunk.x! - PLACEMENT_EPS)) throw new Error(`The bar of ${id} does not reach the trunk of ${bus.id}`);
+      }
     }
     // The riser x is fixed in 7a and never moves; 7f sets its ends on the two bars, and both bars reach it.
     if (bus.riser !== undefined) {

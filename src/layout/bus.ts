@@ -385,11 +385,29 @@ export function syncBusGeometry(model: LayoutModel): void {
     const geometry = busGeometry(model, bus);
     if (geometry !== undefined) Object.assign(bus, geometry);
   }
+  for (const head of meshBuses(model)) if (head.trunk !== undefined) {
+    delete head.trunk.joins;
+    const joins = trunkJoins(model, head);
+    if (joins !== undefined) head.trunk.joins = joins;
+  }
   for (const bus of meshBuses(model)) if (bus.riser !== undefined) {
     const ends = riserEnds(model, bus);
     delete bus.riser.from; delete bus.riser.to;
     if (ends !== undefined) Object.assign(bus.riser, ends);
   }
+}
+
+/** The points where the trunk of a join meets each of its bars, top first, once every bar stands (7f): `undefined` before. */
+export function trunkJoins(model: LayoutModel, head: MeshBus): Point[] | undefined {
+  const x = head.trunk?.x;
+  if (x === undefined || head.trunk === undefined) return undefined;
+  const joins: Point[] = [];
+  for (const id of head.trunk.buses) {
+    const bus = meshBuses(model).find(item => item.id === id), geometry = bus === undefined ? undefined : busGeometry(model, bus);
+    if (geometry?.bar === undefined) return undefined;
+    joins.push({ x, y: geometry.bar.from.y });
+  }
+  return joins;
 }
 
 /** The ends of the riser on the two bars, once both bars stand (7f): `undefined` before. */

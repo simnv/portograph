@@ -196,6 +196,8 @@ export function validateRoutedPaths(model: LayoutModel, requireComplete = false)
   for (const head of (model.meshBuses ?? []).filter(item => item.trunk !== undefined)) {
     const lane = model.lanes.find(item => item.id === head.trunk!.lane);
     if (lane === undefined || head.trunk!.x !== lane.x) throw new Error(`The trunk of ${head.id} contradicts its lane`);
+    const joins = head.trunk!.joins, bars = head.trunk!.buses.map(id => model.meshBuses!.find(item => item.id === id)?.bar);
+    if (joins?.length !== bars.length || joins.some((point, index) => point.x !== lane.x || bars[index] === undefined || Math.abs(point.y - bars[index]!.from.y) > EPS)) throw new Error(`The trunk of ${head.id} does not stand on the bars it joins`);
     for (const id of head.trunk!.buses) {
       const bar = model.meshBuses!.find(item => item.id === id)?.bar;
       if (bar === undefined || Math.min(bar.from.x, bar.to.x) > lane.x + EPS || Math.max(bar.from.x, bar.to.x) < lane.x - EPS) throw new Error(`The bar of ${id} does not reach the trunk of ${head.id}`);

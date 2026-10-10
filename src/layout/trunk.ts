@@ -133,7 +133,7 @@ export function extensions(model: LayoutModel, head: MeshBus): { bus: MeshBus; y
 }
 
 /** The foreign units that stand across a bar extension now, as `[unit, bus]` pairs: what a forced move reports (`MESH_BUS_TRUNK_CROSSED`). */
-export function trunkCrossings(model: LayoutModel, head: MeshBus, groups: readonly { group: LayoutGroup; bounds: Rect }[] = Object.values(model.groups).filter(group => group.bounds !== undefined).map(group => ({ group, bounds: group.bounds! }))): { group: string; bus: string }[] {
+export function foreignOverExtensions(model: LayoutModel, head: MeshBus, groups: readonly { group: LayoutGroup; bounds: Rect }[] = Object.values(model.groups).filter(group => group.bounds !== undefined).map(group => ({ group, bounds: group.bounds! }))): { group: string; bus: string }[] {
   const found: { group: string; bus: string }[] = [];
   for (const { bus, y, from, to } of extensions(model, head)) {
     for (const { group, bounds } of groups) {
@@ -150,10 +150,33 @@ export function trunkHolds(model: LayoutModel, proposed: { group: LayoutGroup; b
   const heads = trunkHeads(model);
   if (heads.length === 0) return true;
   return heads.every(head => {
-    const now = new Set(trunkCrossings(model, head).map(item => `${item.group}|${item.bus}`));
-    return trunkCrossings(model, head, proposed).every(item => now.has(`${item.group}|${item.bus}`));
+    const now = new Set(foreignOverExtensions(model, head).map(item => `${item.group}|${item.bus}`));
+    return foreignOverExtensions(model, head, proposed).every(item => now.has(`${item.group}|${item.bus}`));
   });
 }
 
 /** The head bus of the trunk join a bus belongs to (re-exported for the readers of lanes). */
 export { trunkHead };
+
+/**
+ * The routed segments that cross the trunk or a bar extension of a join in the published layout (mesh-bus.md, section 12.7): no gate reads them (the trunk is
+ * overlay), so the report counts them. Zero before 7f has set the joins.
+ */
+export function routedTrunkCrossings(model: LayoutModel, head: MeshBus): number {
+  const joins = head.trunk?.joins;
+  if (joins === undefined || joins.length === 0) return 0;
+  const x = head.trunk!.x!, y0 = Math.min(...joins.map(point => point.y)), y1 = Math.max(...joins.map(point => point.y));
+  const bars = extensions(model, head);
+  let count = 0;
+  for (const link of model.links) {
+    if (link.layer !== 'routed' || link.technique === 'stub' || link.path === undefined) continue;
+    for (const { from, to } of link.path.segments) {
+      const lo = Math.min(from.x, to.x), hi = Math.max(from.x, to.x), top = Math.min(from.y, to.y), bottom = Math.max(from.y, to.y);
+      // A horizontal run of the link across the trunk, within its extent.
+      if (lo < x - PLACEMENT_EPS && hi > x + PLACEMENT_EPS && top >= y0 - PLACEMENT_EPS && top <= y1 + PLACEMENT_EPS && bottom - top < PLACEMENT_EPS) count++;
+      // A vertical run of the link across a bar extension.
+      else if (hi - lo < PLACEMENT_EPS) for (const bar of bars) if (lo > bar.from + PLACEMENT_EPS && lo < bar.to - PLACEMENT_EPS && top < bar.y - PLACEMENT_EPS && bottom > bar.y + PLACEMENT_EPS) count++;
+    }
+  }
+  return count;
+}

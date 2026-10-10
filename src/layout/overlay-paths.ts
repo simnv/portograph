@@ -529,6 +529,17 @@ export function busMemberPath(model: LayoutModel, link: LayoutLink): LayoutPath 
   if (bus?.bar === undefined || bus.stubs === undefined || link.attachments === undefined) return undefined;
   // A cross link of a join runs along both bars and the riser (mesh-bus.md, section 11.6): stub, bar run, riser, bar run, stub.
   const cross = bus.cross?.includes(link.id) === true;
+  // A cross link of a trunk join runs along both bars and the trunk: stub, bar run, trunk, bar run, stub, always five orthogonal segments (mesh-bus.md, section 12.7).
+  if (cross && bus.trunk !== undefined) {
+    const x = bus.trunk.x, buses = bus.trunk.buses.map(id => model.meshBuses?.find(item => item.id === id));
+    if (x === undefined || buses.some(item => item?.bar === undefined || item.stubs === undefined)) return undefined;
+    const stubs = buses.flatMap(item => item!.stubs!);
+    const one = stubs.find(stub => stub.node === link.attachments!.from.node), two = stubs.find(stub => stub.node === link.attachments!.to.node);
+    if (one === undefined || two === undefined) return undefined;
+    const path = straighten(compact([one.from, one.to, { x, y: one.to.y }, { x, y: two.to.y }, two.to, two.from]));
+    const segments: PathSegment[] = path.slice(1).map((point, index) => ({ from: { ...path[index]! }, to: { ...point }, owner: { ...link.owner } }));
+    return { owner: { ...link.owner }, layer: 'overlay', fixed: false, ...pathStrokeWidth(link), segments };
+  }
   const partner = cross ? model.meshBuses?.find(item => item.id === bus.joined) : undefined;
   const stubs = [...bus.stubs, ...(partner?.stubs ?? [])];
   if (cross && (partner?.bar === undefined || partner.stubs === undefined || bus.riser === undefined)) return undefined;

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { layout, parse, score } from '../../src/index.js';
+import { layout, parse, render, score } from '../../src/index.js';
+import { validateRoutedPaths } from '../../src/route/validate.js';
 import type { LayoutModel } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { EDGE_MARGIN, RING_PITCH } from '../../src/layout/course-rows.js';
@@ -105,5 +106,61 @@ describe('a mesh over three rows: the side of the trunk (stage 5)', () => {
     expect(model.declinedTrunks).toHaveLength(1);
     expect(() => restoreLayoutModel(JSON.stringify(model))).not.toThrow();
     expect(gates(model)).toEqual([]);
+  });
+});
+
+describe('a mesh over three rows: paths, score and SVG (architecture ticket 21, phase 3)', () => {
+  it('publishes each cross path as stub, bar run, trunk, bar run, stub, five orthogonal segments, and validates them again', async () => {
+    const model = await run(caseEleven());
+    const head = trunkOf(model), x = head.trunk!.x!;
+    expect(head.cross).toHaveLength(27);
+    for (const id of head.cross!) {
+      const link = model.links.find(item => item.id === id)!;
+      expect(link.technique).toBe('mesh-bus');
+      const segments = link.path!.segments;
+      expect(segments).toHaveLength(5);
+      for (const [index, segment] of segments.entries()) {
+        expect(segment.from.x === segment.to.x || segment.from.y === segment.to.y).toBe(true);
+        if (index > 0) expect(segment.from).toEqual(segments[index - 1]!.to);
+      }
+      // The three middle segments stand on the trunk: the run to it, the vertical on it, the run back.
+      expect(segments[1]!.to.x).toBeCloseTo(x, 6);
+      expect(segments[2]).toMatchObject({ from: { x }, to: { x } });
+    }
+    expect(() => validateRoutedPaths(model)).not.toThrow();
+  });
+
+  it('publishes the joins of the trunk on the bars, top first, and counts no routed crossing', async () => {
+    const model = await run(caseEleven());
+    const head = trunkOf(model);
+    expect(head.trunk!.joins).toHaveLength(3);
+    head.trunk!.buses.forEach((id, index) => {
+      const bar = model.meshBuses!.find(bus => bus.id === id)!.bar!;
+      expect(head.trunk!.joins![index]).toEqual({ x: head.trunk!.x, y: bar.from.y });
+    });
+    const report = score(model).snapshot;
+    expect(report.counters.meshBusTrunks).toBe(1);
+    expect(report.counters.trunkCrossings).toBe(0);
+    expect(report.counts.overlay.crossings).toEqual({ pairs: 0, points: 0 });
+    expect(report.counts.overlay.links).toBe(0);
+  });
+
+  it('keeps the one label of the mesh, centred on the member span of its bar', async () => {
+    const model = await run(caseEleven());
+    const labels = model.labels.filter(label => label.role === 'mesh-bus');
+    expect(labels).toHaveLength(1);
+    expect(labels[0]!.text).toBe('sync mesh (9 nodes)');
+    const bar = model.meshBuses!.find(bus => bus.id === (labels[0]!.owner as { id: string }).id)!;
+    const stubs = bar.stubs!.map(stub => stub.from.x), centre = (Math.min(...stubs) + Math.max(...stubs)) / 2;
+    expect(labels[0]!.bounds!.x + labels[0]!.bounds!.width / 2).toBeCloseTo(centre, 3);
+  });
+
+  it('draws the trunk as one path per pair of bars in the head group, and every group of the join names the head', async () => {
+    const model = await run(caseEleven());
+    const svg = render(model);
+    const head = trunkOf(model);
+    expect(svg.match(/<g [^>]*data-mesh="mesh-bus-1"/g) ?? []).toHaveLength(3);
+    const group = svg.split('<g ').find(chunk => chunk.includes(`data-id="${head.id}"`) && chunk.includes('mesh-bus'))!;
+    expect(group.match(/class="[^"]*\btrunk\b[^"]*"/g) ?? []).toHaveLength(2);
   });
 });
