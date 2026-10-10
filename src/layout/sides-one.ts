@@ -2,7 +2,7 @@ import type { PortRef } from '../model/document.js';
 import type { Side } from '../model/geometry.js';
 import type { LayoutGroup, LayoutModel, LayoutPort } from '../model/layout.js';
 import { orderedGroupIds, orderedNodeIds } from '../model/model.js';
-import { busSide, meshBuses } from './bus.js';
+import { busOfPort, busSide, meshBuses } from './bus.js';
 import { checkSideHints, NO_SIDE_HINTS, SideHintRefusal, type SideHints } from './side-hints.js';
 
 /** Complete tie priority for direction votes and unused-port allocation. */
@@ -124,6 +124,8 @@ export function sidesOne(model: LayoutModel, hints: SideHints = NO_SIDE_HINTS, l
       if (port.side === undefined && entry.authored !== undefined) port.side = entry.authored;
       if (port.side !== undefined) {
         capacity[port.side]++;
+      } else if (busOfPort(model, port.ref)?.mesh !== undefined) {
+        // A bar of a trunk join stands on the edge that stage 5 gives it (mesh-bus.md, section 12.4): the votes of its cross links, which reach rows above and below, decide nothing.
       } else if (entry.links === 0) {
         unused.push(port);
       } else {

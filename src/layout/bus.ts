@@ -29,6 +29,18 @@ export function joinUpper(model: LayoutModel, bus: MeshBus): MeshBus | undefined
 /** The riser of the join `bus` belongs to, once stage 7a has fixed it. */
 export const riserOf = (model: LayoutModel, bus: MeshBus): NonNullable<MeshBus['riser']> | undefined => joinUpper(model, bus)?.riser;
 
+/** The head bus of the trunk join `bus` belongs to (mesh-bus.md, section 12), or `undefined` when it is in none. */
+export function trunkHead(model: LayoutModel, bus: MeshBus): MeshBus | undefined {
+  return bus.mesh === undefined ? undefined : meshBuses(model).find(item => item.id === bus.mesh && item.trunk !== undefined);
+}
+
+/** The trunk a bar of a trunk join reaches, once stage 7a has reserved its lane: the lane x and the side it stands on. */
+export function trunkOf(model: LayoutModel, bus: MeshBus): { x: number; side: 'left' | 'right' } | undefined {
+  const trunk = trunkHead(model, bus)?.trunk;
+  const lane = trunk === undefined ? undefined : model.lanes.find(item => item.id === trunk.lane);
+  return trunk?.side === undefined || lane === undefined ? undefined : { x: lane.x, side: trunk.side };
+}
+
 /** The bus whose bus port `ref` is, if any. */
 export function busOfPort(model: LayoutModel, ref: PortRef): MeshBus | undefined {
   const id = portId(ref);
@@ -124,13 +136,17 @@ function edgeFacesGap(model: LayoutModel, bus: MeshBus, edge: Edge): boolean {
 }
 
 /** The legs each horizontal edge of the row carries within the bar's span (see `busSide`): what the choice of edge compares. */
-export function busLegCounts(model: LayoutModel, bus: MeshBus, provisional = false): { top: number; bottom: number } {
+export function busLegCounts(model: LayoutModel, bus: MeshBus, provisional = false, reach?: 'left' | 'right'): { top: number; bottom: number } {
   const row = busRowNodes(model, bus), used = routedPorts(model), members = new Set(bus.nodes);
   const counts = { top: 0, bottom: 0 };
   const xs = bus.nodes.map(id => centreX(model.nodes[id]!)).filter((x): x is number => x !== undefined);
   const spanned = !provisional && xs.length === bus.nodes.length;
-  const lo = Math.min(...xs), hi = Math.max(...xs);
-  const inSpan = (node: LayoutNode): boolean => !spanned || members.has(node.id) || (centreX(node)! >= lo && centreX(node)! <= hi);
+  // A bar of a trunk join runs on past its outer stub to the trunk (mesh-bus.md, section 12.4): the span reads to the end of the row on that side.
+  const lo = reach === 'left' ? -Infinity : Math.min(...xs), hi = reach === 'right' ? Infinity : Math.max(...xs);
+  // The routed ports of a member stand before its bus port, which is the last of its face (stage 5 orders it so): beyond the first stub on the side the bar
+  // runs to, so the first member's own routed ports lie outside a bar that extends away from them (mesh-bus.md, section 12.4).
+  const first = reach === 'right' ? bus.nodes.slice().sort((a, b) => centreX(model.nodes[a]!)! - centreX(model.nodes[b]!)!)[0] : undefined;
+  const inSpan = (node: LayoutNode): boolean => !spanned || (members.has(node.id) ? node.id !== first : (centreX(node)! >= lo && centreX(node)! <= hi));
   for (const node of row) {
     if (!inSpan(node)) continue;
     for (const port of node.ports) {
@@ -138,7 +154,8 @@ export function busLegCounts(model: LayoutModel, bus: MeshBus, provisional = fal
       if ((side === 'top' || side === 'bottom') && used.has(portId(port.ref))) counts[side]++;
     }
   }
-  if (spanned) {
+  // A bar of a trunk join reads term 2 in `planTrunks`, on both edges and over the extended span (mesh-bus.md, section 12.4).
+  if (spanned && reach === undefined) {
     // Term 2, physically read. A link between a row and the tier across the gap ends at the row in a port that term 1 counts, and its
     // run in the gap lies below the band (the plan seats no row inside it), so it crosses the bar nowhere else. What does stand over
     // the span is a link that passes the whole row: one end in a tier above, the other in a tier below, which runs through the gap at
@@ -218,7 +235,7 @@ const portOf = (model: LayoutModel, ref: PortRef): LayoutPort | undefined =>
   model.nodes[ref.node]?.ports.find(port => portId(port.ref) === portId(ref));
 
 /** The geometry a bus stands on: the x of its first and last bus port, and the line `edge` it is measured from. */
-export interface BusExtent { lo: number; hi: number; edge: number; side: Edge }
+export interface BusExtent { lo: number; hi: number; edge: number; side: Edge; members: { lo: number; hi: number } }
 
 /**
  * The line `L` the bus band is measured from and the span of its bar. In-frame, `L` is the outermost
@@ -234,7 +251,11 @@ export function busExtent(model: LayoutModel, bus: MeshBus): BusExtent | undefin
   if (xs.some(x => x === undefined)) return undefined;
   // A joined bar runs to the riser (mesh-bus.md, section 11.5): the riser x fixed in 7a is part of the interval.
   const riser = riserOf(model, bus);
-  const lo = Math.min(...(xs as number[]), ...(riser ? [riser.x] : [])), hi = Math.max(...(xs as number[]), ...(riser ? [riser.x] : []));
+  // A bar of a trunk join runs to the trunk (section 12.5); the groups it passes are read to the end of the row on that side, whether or not the lane stands yet.
+  const trunk = trunkOf(model, bus), reach = trunkHead(model, bus)?.trunk?.side;
+  const members = { lo: Math.min(...(xs as number[])), hi: Math.max(...(xs as number[])) };
+  const lo = Math.min(members.lo, ...(riser ? [riser.x] : []), ...(trunk?.side === 'left' ? [trunk.x] : [])), hi = Math.max(members.hi, ...(riser ? [riser.x] : []), ...(trunk?.side === 'right' ? [trunk.x] : []));
+  const pickLo = reach === 'left' ? -Infinity : lo, pickHi = reach === 'right' ? Infinity : hi;
   const pick = side === 'bottom' ? Math.max : Math.min;
   let edge: number;
   if (bus.placement === 'in-frame') {
@@ -250,11 +271,11 @@ export function busExtent(model: LayoutModel, bus: MeshBus): BusExtent | undefin
     edge = pick(...reach);
   } else {
     const boxes = Object.values(model.groups).filter(group => group.tier === bus.row && group.bounds !== undefined && group.nodes.length
-      && group.bounds.x < hi && group.bounds.x + group.bounds.width > lo).map(group => group.bounds!);
+      && group.bounds.x < pickHi && group.bounds.x + group.bounds.width > pickLo).map(group => group.bounds!);
     if (!boxes.length) return undefined;
     edge = pick(...boxes.map(box => side === 'bottom' ? box.y + box.height : box.y));
   }
-  return { lo, hi, edge, side };
+  return { lo, hi, edge, side, members };
 }
 
 /** The bus bands the current geometry calls for, one per bus whose side is fixed and whose members stand. */
@@ -336,19 +357,21 @@ export function busGeometry(model: LayoutModel, bus: MeshBus): Pick<MeshBus, 'ba
     stubs.push({ node: ref.node, from: { ...face }, to: { x: face.x, y } });
   }
   // A stub ends at the bar and the label stands beyond it, so a stub never touches the label; only a vertical that crosses the band does.
-  const width = busLabelSize(bus).width, centre = (extent.lo + extent.hi) / 2;
-  const blocked: [number, number][] = [...bandVerticals(model, bus, extent).map((x): [number, number] => [x, x]), ...bandChordSpans(model, bus, extent)]
+  // The label stands over the members of its bar: a trunk join's label is centred on the member span, not on the extension (section 12.6).
+  const span = trunkHead(model, bus) === undefined ? extent : { ...extent, ...extent.members };
+  const width = busLabelSize(bus).width, centre = (span.lo + span.hi) / 2;
+  const blocked: [number, number][] = [...bandVerticals(model, bus, span).map((x): [number, number] => [x, x]), ...bandChordSpans(model, bus, span)]
     .sort((a, b) => a[0] - b[0] || a[1] - b[1]);
   const gaps: { from: number; to: number }[] = [];
-  let cursor = extent.lo;
+  let cursor = span.lo;
   for (const [start, end] of blocked) {
     // Every blocker is clipped to the bar's span, so no gap reaches past the bar's ends.
-    if (end < extent.lo || start > extent.hi) continue;
-    const from = Math.min(start, extent.hi), to = Math.min(end, extent.hi);
+    if (end < span.lo || start > span.hi) continue;
+    const from = Math.min(start, span.hi), to = Math.min(end, span.hi);
     if (from - cursor >= width) gaps.push({ from: cursor, to: from });
     cursor = Math.max(cursor, to);
   }
-  if (extent.hi - cursor >= width) gaps.push({ from: cursor, to: extent.hi });
+  if (span.hi - cursor >= width) gaps.push({ from: cursor, to: span.hi });
   const around = !busCarriesLabel(bus) ? undefined : gaps.find(gap => gap.from <= centre - width / 2 && gap.to >= centre + width / 2);
   const longest = !busCarriesLabel(bus) ? undefined : [...gaps].sort((a, b) => (b.to - b.from) - (a.to - a.from) || a.from - b.from)[0];
   const room = around !== undefined ? { from: centre - width / 2, to: centre + width / 2 }
@@ -363,11 +386,29 @@ export function syncBusGeometry(model: LayoutModel): void {
     const geometry = busGeometry(model, bus);
     if (geometry !== undefined) Object.assign(bus, geometry);
   }
+  for (const head of meshBuses(model)) if (head.trunk !== undefined) {
+    delete head.trunk.joins;
+    const joins = trunkJoins(model, head);
+    if (joins !== undefined) head.trunk.joins = joins;
+  }
   for (const bus of meshBuses(model)) if (bus.riser !== undefined) {
     const ends = riserEnds(model, bus);
     delete bus.riser.from; delete bus.riser.to;
     if (ends !== undefined) Object.assign(bus.riser, ends);
   }
+}
+
+/** The points where the trunk of a join meets each of its bars, top first, once every bar stands (7f): `undefined` before. */
+export function trunkJoins(model: LayoutModel, head: MeshBus): Point[] | undefined {
+  const x = head.trunk?.x;
+  if (x === undefined || head.trunk === undefined) return undefined;
+  const joins: Point[] = [];
+  for (const id of head.trunk.buses) {
+    const bus = meshBuses(model).find(item => item.id === id), geometry = bus === undefined ? undefined : busGeometry(model, bus);
+    if (geometry?.bar === undefined) return undefined;
+    joins.push({ x, y: geometry.bar.from.y });
+  }
+  return joins;
 }
 
 /** The ends of the riser on the two bars, once both bars stand (7f): `undefined` before. */

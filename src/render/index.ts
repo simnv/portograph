@@ -375,6 +375,9 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
       d: pathData([{ from, to, owner: { ...bus.owner } }]) });
     // The riser of a join is one more line in the upper bus's group (mesh-bus.md, section 11.7); it carries no mark.
     const riser = bus.riser?.from !== undefined && bus.riser.to !== undefined ? line(bus.riser.from, bus.riser.to, 'riser') : '';
+    // The trunk of a three-row join is one line per pair of neighbouring bars, in the head bus's group (mesh-bus.md, section 12.7).
+    const joins = bus.trunk?.joins ?? [];
+    const trunk = joins.slice(1).map((point, index) => line(joins[index]!, point, 'trunk')).join('');
     const authoredLabels = [...bus.members, ...(bus.cross ?? [])].flatMap(id => {
       const link = memberOf(id), text = link === undefined ? undefined : layout.document.links[link.sourceIndex]?.label;
       return text ? [`${id}: ${text}`] : [];
@@ -383,11 +386,14 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     const upper = bus.cross !== undefined ? bus : partner;
     const joinLines = partner === undefined ? [] : [`joined with: ${partner.id} (${bus.meshNodes ?? bus.nodes.length} nodes in all)`,
       `mesh: ${[...bus.nodes, ...partner.nodes].join(', ')}`, `cross links: ${(upper?.cross ?? []).join(', ')}`];
-    const lines = [`${bus.class ?? 'unclassed'} mesh: ${bus.nodes.join(', ')}`, `links: ${bus.members.join(', ')}`, ...joinLines,
+    const meshBuses = bus.mesh === undefined ? [] : (layout.meshBuses ?? []).filter(item => item.mesh === bus.mesh);
+    const trunkLines = bus.mesh === undefined ? [] : [`joined by trunk: ${meshBuses.map(item => item.id).join(', ')} (${bus.meshNodes ?? bus.nodes.length} nodes in all)`,
+      ...(bus.trunk === undefined ? [] : [`mesh: ${meshBuses.flatMap(item => item.nodes).join(', ')}`, `cross links: ${(bus.cross ?? []).join(', ')}`])];
+    const lines = [`${bus.class ?? 'unclassed'} mesh: ${bus.nodes.join(', ')}`, `links: ${bus.members.join(', ')}`, ...joinLines, ...trunkLines,
       ...(bus.dissolved.length ? [`group-links: ${bus.dissolved.join(', ')}`] : []), ...authoredLabels];
     return element('g', { class: classes('mesh-bus', 'overlay', authored), 'data-id': bus.id, 'data-members': bus.members.join(' '),
-      ...(bus.joined !== undefined ? { 'data-joined': bus.joined } : {}) },
-      element('title', {}, escapeText(lines.join('\n'))) + line(bus.bar!.from, bus.bar!.to) + bus.stubs!.map(stub => line(stub.from, stub.to)).join('') + riser);
+      ...(bus.joined !== undefined ? { 'data-joined': bus.joined } : {}), ...(bus.mesh !== undefined ? { 'data-mesh': bus.mesh } : {}) },
+      element('title', {}, escapeText(lines.join('\n'))) + line(bus.bar!.from, bus.bar!.to) + bus.stubs!.map(stub => line(stub.from, stub.to)).join('') + riser + trunk);
   }).join('');
   const byId = new Map(layout.links.map(link => [link.id, link]));
   const bundleOf = new Map(layout.bundles.map(bundle => [bundle.id, bundle]));

@@ -118,6 +118,7 @@ function transitLanes(model: LayoutModel, id: string): Rect[] {
   const boxes: Rect[] = [];
   for (const lane of model.lanes) {
     // A riser lane stands inside the frames that hold a member of either bus; the frame grows to hold it (mesh-bus.md, section 11.5).
+    if (lane.kind === 'perimeter' || lane.kind === 'gap') continue;
     if (lane.owner.kind === 'mesh-bus' && cells.has(lane.group)) {
       const ownerId = lane.owner.id, bus = model.meshBuses?.find(item => item.id === ownerId);
       const other = model.meshBuses?.find(item => item.id === bus?.joined);

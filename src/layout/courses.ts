@@ -92,6 +92,7 @@ export function sameCourses(a: readonly Course[] | undefined, b: readonly Course
  * sub-tiers; only a perimeter lane has a ring. Geometry is checked with the other lanes once a phase reserves them.
  */
 export function validateCourseLane(model: LayoutModel, lane: Lane): void {
+  if (lane.owner.kind === 'mesh-bus') { validateTrunkLane(model, lane); return; }
   const owner = lane.owner.kind === 'link' ? lane.owner.id : undefined;
   if (owner === undefined || !model.links.some(link => link.id === owner)) throw new Error(`Lane ${lane.id} has no link owner`);
   if (!(model.courses ?? []).some(course => course.link === owner)) throw new Error(`Lane ${lane.id} belongs to a link with no course`);
@@ -107,4 +108,24 @@ export function validateCourseLane(model: LayoutModel, lane: Lane): void {
     if (lane.port !== undefined) throw new Error(`Perimeter lane ${lane.id} names a port`);
   } else if (lane.ring !== undefined) throw new Error(`Gap lane ${lane.id} has a ring`);
   if (!['left', 'right'].includes(lane.side)) throw new Error(`Lane ${lane.id} has an invalid side`);
+}
+
+/** The perimeter lane id of a trunk (mesh-bus.md, section 12.5). */
+export const trunkLaneId = (head: string): string => `trunk:${head}`;
+/**
+ * A trunk lane: a perimeter lane owned by the head bus of a trunk join (mesh-bus.md, section 12.5; architecture ticket 21). Its id, owner, side, span and
+ * ring are immutable; the x is derived like every perimeter lane's. Shape only here: the owner, the id, the side, the span over the member rows and the ring.
+ */
+export function validateTrunkLane(model: LayoutModel, lane: Lane): void {
+  const head = model.meshBuses?.find(bus => bus.id === (lane.owner as { id: string }).id);
+  const trunk = head?.trunk;
+  if (head === undefined || trunk === undefined || head.cross === undefined || head.mesh !== head.id) throw new Error(`Lane ${lane.id} has no trunk owner`);
+  if (lane.kind !== 'perimeter' || lane.layer !== 'overlay' || lane.id !== trunkLaneId(head.id) || trunk.lane !== lane.id) throw new Error(`Trunk lane ${lane.id} contradicts its trunk`);
+  if (lane.ring === undefined || !Number.isInteger(lane.ring) || lane.ring < 0 || lane.port !== undefined) throw new Error(`Trunk lane ${lane.id} has an invalid ring`);
+  if (trunk.side !== lane.side || !['left', 'right'].includes(lane.side)) throw new Error(`Trunk lane ${lane.id} has an invalid side`);
+  const rows = trunk.buses.map(id => model.meshBuses?.find(bus => bus.id === id)?.row);
+  if (rows.some(row => row === undefined)) throw new Error(`Trunk ${head.id} names an unknown bus`);
+  const span = lane.span;
+  if (span === undefined || !Number.isInteger(span.top) || !Number.isInteger(span.bottom) || span.top > Math.min(...rows as number[]) || span.bottom < Math.max(...rows as number[])) throw new Error(`Trunk lane ${lane.id} does not span its member rows`);
+  if (!Object.values(lane.bounds).every(Number.isFinite) || !Number.isFinite(lane.x) || lane.bounds.x !== lane.x - lane.bounds.width / 2) throw new Error(`Invalid trunk lane geometry ${lane.id}`);
 }

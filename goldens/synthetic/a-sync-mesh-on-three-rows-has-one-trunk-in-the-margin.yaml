@@ -1,9 +1,9 @@
-# Expected: One trunk in the left margin joins the three row buses (not reached by ticket 15; the mesh-bus chain after
-# phase 4).
-# Nine nodes on three tiers, three per tier, in one full sync mesh of 36
-# overlay links, with a routed spine a1 -> b1 -> c1. A mesh bus spans one row, and a join takes
-# two rows at most, so each row gets its own bus and the 27 cross links stay plain overlay lines.
-# Source: 11-sync-mesh-on-three-rows.yaml. Test-only input owned by architecture ticket 15; test/pipeline/outside-lanes.test.ts reads it.
+# Expected: One trunk in the right margin joins the three row buses (architecture ticket 21): the bars of the three rows run
+# to it, 36 links draw as mesh-bus links, no plain overlay link remains, and no routed leg is crossed. The left margin
+# would cross the routed link A1-B1 once, so the side order takes the right (the hand solve drew the left).
+# Nine nodes on three tiers, three per tier, in one full sync mesh of 36 links, with a routed spine a1 -> b1 -> c1.
+# The three buses of the rows are joined by one trunk in a perimeter lane owned by the uppermost bus.
+# Source: 11-sync-mesh-on-three-rows.yaml. Test-only input owned by architecture tickets 15 and 21; test/pipeline/outside-lanes.test.ts and mesh-bus-trunk.test.ts read it.
 portograph: 2
 profile: network
 groups:

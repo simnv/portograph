@@ -1,0 +1,66 @@
+# Expected: The trunk stands beside the wide tier-1 frame, EDGE_MARGIN from it, and spans tiers 0 to 3.
+# A sync mesh on tiers 0, 2 and 3. Tier 1 holds one wide group with no mesh node, so a column riser would have to cross it.
+# Source: architecture ticket 21 (docs/design/mesh-bus.md, section 12). Test-only input; test/pipeline/mesh-bus-trunk.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  m0: { tier: 0, label: Zero }
+  wide: { tier: 1, label: Wide }
+  m2: { tier: 2, label: Two }
+  m3: { tier: 3, label: Three }
+nodes:
+  a1: { group: m0, class: server, label: A1 }
+  a2: { group: m0, class: server, label: A2 }
+  a3: { group: m0, class: server, label: A3 }
+  c1: { group: m2, class: server, label: C1 }
+  c2: { group: m2, class: server, label: C2 }
+  c3: { group: m2, class: server, label: C3 }
+  d1: { group: m3, class: server, label: D1 }
+  d2: { group: m3, class: server, label: D2 }
+  d3: { group: m3, class: server, label: D3 }
+  w1: { group: wide, class: server, label: W1 }
+  w2: { group: wide, class: server, label: W2 }
+  w3: { group: wide, class: server, label: W3 }
+  w4: { group: wide, class: server, label: W4 }
+  w5: { group: wide, class: server, label: W5 }
+  w6: { group: wide, class: server, label: W6 }
+links:
+  - [a1, w1]
+  - [w1, c1]
+  - [c1, d1]
+  - { from: a1, to: a2, class: sync }
+  - { from: a1, to: a3, class: sync }
+  - { from: a1, to: c1, class: sync }
+  - { from: a1, to: c2, class: sync }
+  - { from: a1, to: c3, class: sync }
+  - { from: a1, to: d1, class: sync }
+  - { from: a1, to: d2, class: sync }
+  - { from: a1, to: d3, class: sync }
+  - { from: a2, to: a3, class: sync }
+  - { from: a2, to: c1, class: sync }
+  - { from: a2, to: c2, class: sync }
+  - { from: a2, to: c3, class: sync }
+  - { from: a2, to: d1, class: sync }
+  - { from: a2, to: d2, class: sync }
+  - { from: a2, to: d3, class: sync }
+  - { from: a3, to: c1, class: sync }
+  - { from: a3, to: c2, class: sync }
+  - { from: a3, to: c3, class: sync }
+  - { from: a3, to: d1, class: sync }
+  - { from: a3, to: d2, class: sync }
+  - { from: a3, to: d3, class: sync }
+  - { from: c1, to: c2, class: sync }
+  - { from: c1, to: c3, class: sync }
+  - { from: c1, to: d1, class: sync }
+  - { from: c1, to: d2, class: sync }
+  - { from: c1, to: d3, class: sync }
+  - { from: c2, to: c3, class: sync }
+  - { from: c2, to: d1, class: sync }
+  - { from: c2, to: d2, class: sync }
+  - { from: c2, to: d3, class: sync }
+  - { from: c3, to: d1, class: sync }
+  - { from: c3, to: d2, class: sync }
+  - { from: c3, to: d3, class: sync }
+  - { from: d1, to: d2, class: sync }
+  - { from: d1, to: d3, class: sync }
+  - { from: d2, to: d3, class: sync }

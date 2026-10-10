@@ -12,6 +12,11 @@ import { portKey, tiedPortComponents } from './sides-one.js';
  */
 /** A placement run refused a side hint (not a candidate, a lateral vote, a floor below the content). The side round drops the offer; every other error is a bug. */
 export class SideHintRefusal extends Error {}
+
+/** Stage 5 found a foreign unit beside a member row of a trunk join on both sides: the join is declined by one placement re-run (`trunk-blocked`, mesh-bus.md, section 12.4). */
+export class TrunkBlocked extends SideHintRefusal {
+  constructor(public readonly key: string, public readonly why: string) { super(`The trunk join ${key} is blocked: ${why}`); }
+}
 export type SideHints = ReadonlyMap<string, 'left' | 'right'>;
 export const NO_SIDE_HINTS: SideHints = new Map();
 

@@ -24,6 +24,10 @@ export interface ScoreCounters {
   riserCrossings?: number;
   /** The joined pairs of mesh buses (one riser each); present only with a riser. */
   meshBusRisers?: number;
+  /** The trunk joins of mesh buses (three buses or more, one trunk each); present only with a trunk. */
+  meshBusTrunks?: number;
+  /** The routed segments that cross a trunk or a bar extension (mesh-bus.md, section 12.7); no gate reads them. */
+  trunkCrossings?: number;
 }
 /** The raw counts of each link family, beside Q and never inside it. */
 export interface ScoreCounts {

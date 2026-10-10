@@ -23,6 +23,7 @@ import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { gridCells, gridRowGap, groupShape, isGridGroup, packGridRows } from './grid.js';
 import { freezePortTopology } from './mutation.js';
 import { busOfPort, busSide, meshBuses } from './bus.js';
+import { planTrunks } from './trunk.js';
 const key = portId;
 
 /**
@@ -849,11 +850,13 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   }
   // The bus edge is read after the routed sides are settled (a shared port recomputes its majority), within the span
   // the skeleton order gives, and before stage 5 resizes the nodes and repacks the rows.
+  // A trunk join reads the side of its trunk first: its bars take the edge that fewer legs cross over their extended spans (mesh-bus.md, section 12.4).
+  planTrunks(model);
   for (const bus of meshBuses(model)) {
-    bus.side = busSide(model, bus);
+    if (bus.mesh === undefined) bus.side = busSide(model, bus);
     for (const ref of bus.ports) {
       const port = model.nodes[ref.node]!.ports.find(item => key(item.ref) === key(ref))!;
-      if (port.side === undefined) port.side = bus.side;
+      if (port.side === undefined && bus.side !== undefined) port.side = bus.side;
     }
   }
   for (const id of orderedNodeIds(model.document)) for (const port of model.nodes[id]!.ports) delete port.sizingSide;
