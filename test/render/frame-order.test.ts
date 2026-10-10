@@ -75,4 +75,37 @@ describe('group draw order (architecture 20)', () => {
       }
     }
   });
+
+  type Box = [number, number, number, number];
+  /** A minimal layout: plain groups by id, frames by id; only what the order reads. */
+  const stub = (plain: Record<string, { box: Box; of?: string }>,
+    frames: { id: string; box: Box; parent?: string }[]): LayoutModel => {
+    const rect = ([x, y, width, height]: Box) => ({ x, y, width, height });
+    return {
+      document: { groups: Object.fromEntries(Object.entries(plain).map(([id, group]) => [id, group.of ? { of: group.of } : {}])) },
+      groups: Object.fromEntries(Object.entries(plain).map(([id, group]) => [id, { id, bounds: rect(group.box) }])),
+      frames: frames.map(frame => ({ id: frame.id, label: frame.id, cells: [], tier: 0, box: rect(frame.box),
+        ...(frame.parent ? { parent: frame.parent } : {}) })),
+    } as unknown as LayoutModel;
+  };
+
+  it('keeps a frame subtree in one block, as draw.io nests it (three boxes)', () => {
+    // A is smaller than B and overlaps it; C is B's child, smaller than A, and overlaps A.
+    const model = stub({ A: { box: [30, 30, 40, 40] } }, [
+      { id: 'B', box: [0, 0, 100, 100] }, { id: 'C', box: [10, 10, 30, 30], parent: 'B' }]);
+    // The old area rule gave B, A, C: the SVG painted C over A, and draw.io (C inside B) painted A over C.
+    expect(groupShapes(model).map(shape => shape.id)).toEqual(['B', 'C', 'A']);
+  });
+
+  it('draws a flank in front of the frame it flanks even when the flank is larger', () => {
+    const model = stub({ F: { box: [50, 0, 200, 200], of: 'B' } }, [{ id: 'B', box: [0, 0, 100, 100] }]);
+    // The area rule alone would put the smaller frame B in front of F.
+    expect(groupShapes(model).map(shape => shape.id)).toEqual(['B', 'F']);
+  });
+
+  it('stays total when the flank rule and the area rule disagree', () => {
+    const model = stub({ F: { box: [0, 0, 10, 10], of: 'B' } }, [
+      { id: 'B', box: [0, 0, 50, 50] }, { id: 'D', box: [5, 5, 20, 20] }]);
+    expect(groupShapes(model)).toHaveLength(3);
+  });
 });
