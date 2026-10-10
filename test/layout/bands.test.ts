@@ -22,6 +22,8 @@ import { FONT_FAMILY, measurePortPill, measureText } from '../../src/text/index.
 import { orderedGroupIds } from '../../src/model/model.js';
 import { generateScaleYaml } from '../../scripts/scale-input.mjs';
 import { placed } from './phase-two-fixture.js';
+import { attemptCounters } from '../../src/layout/attempt-counters.js';
+import { separationShortfalls } from '../../src/layout/constraints/index.js';
 
 const golden = readFileSync(new URL('../../goldens/m1-sip-edge.yaml', import.meta.url), 'utf8');
 // Q108 (ticket 100) gives the two provider links their chord; the tests of the two remainders read them on the variant that keeps them orthogonal.
@@ -32,8 +34,8 @@ const rowsOwed = readFileSync(new URL('../../goldens/synthetic/a-tier-gap-grows-
 const bandEdgeResidue = readFileSync(new URL('../../goldens/synthetic/a-band-holds-the-group-that-set-its-edge.yaml', import.meta.url), 'utf8');
 /** Stress ticket 19's fixture: the one shape whose label plan answers from the `firstFree` walk. */
 const grownLabel = readFileSync(new URL('../../goldens/synthetic/a-grown-label-lands-inside-its-inset.yaml', import.meta.url), 'utf8');
-/** Stress ticket 37's fixture: a corridor follows its child out of the window the grid was declined. */
-const corridorMoves = readFileSync(new URL('../../goldens/synthetic/a-corridor-moves-after-the-grid-settles.yaml', import.meta.url), 'utf8');
+/** Ticket 18's fixture: a corridor follows its child by a reseat that keeps every minimum separation. */
+const corridorFollowsChild = readFileSync(new URL('../../goldens/synthetic/a-corridor-follows-its-child.yaml', import.meta.url), 'utf8');
 /** Stress ticket 18's fixture: a corridor would follow its child across a labelled row link's split. */
 const corridorCrossesSplit = readFileSync(new URL('../../goldens/synthetic/a-corridor-crosses-a-labelled-rows-split.yaml', import.meta.url), 'utf8');
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
@@ -843,49 +845,27 @@ it('stress ticket 19: a grown group label lands inside the inset the growth aske
   expect(label.x).toBeGreaterThan(group.x + GROUP_LABEL_GEOMETRY.horizontalInset);
 }, 120000);
 
-// Skipped by ticket 17, replaced by ticket 18 (a fixture where a corridor follows its child): the lane reseat is now refused on this sheet, because its settled model closes `row-12` and `zone-7` under the band gap (`separationHeld`), so the
-// corridor does not follow its child and the grid does not merge.
-it.skip('stress ticket 37: a corridor that follows its child leaves the grid settled against the corridors it replaced', async () => {
-  // `reseatLanes` is 7f's last step, and `laneSidesHold` — which decides whether a linked pair may
-  // share an x-extent — reads lane geometry. Here the corridor of `lab4crt001` → `transit-a001`
-  // stands 0.2815 px inside the extent `row-12` and `row-13` would share, so the grid declines the
-  // merge; the corridor then follows its child 603 px to the right, and the window is free. The
-  // publication replay merged what the production pass could not, and threw. Both the grid and the
-  // label plan are settled again after the move.
-  const model = run(await throughBundles(corridorMoves));
-  const twelve = model.groups['row-12']!.bounds!, thirteen = model.groups['row-13']!.bounds!;
-  expect(twelve.x).toBe(thirteen.x);
-  expect(twelve.width).toBe(thirteen.width);
-  // The replay is the claim itself: a settled model does not move under it.
-  const trial = copy(model);
-  expect(alignLinkedGroupGrid(trial)).toBe(false);
-  // And the corridor really did move, which is what made the merge available.
+// Ticket 18 replaces the `stress ticket 37` case, whose reseat ticket 17 refuses (`separationHeld`: its settled model closes `row-12` and `zone-7` under the band gap). That sheet
+// held the property trivially once nothing moved; this fixture makes the corridor move again, by a reseat that keeps every minimum separation. The grid merge of the old
+// case does not occur here: no pair of linked groups stands in the window the corridor leaves, so the claim is the fixed point alone, not the merge it once released.
+it('ticket 18: a corridor that follows its child by a legal reseat leaves the grid settled and the replay quiet', async () => {
+  const pre = await throughBundles(corridorFollowsChild);
+  const laneId = 'lane:"link-3":1';
+  const beforeX = pre.lanes.find(lane => lane.id === laneId)!.x;
+  const adopted = attemptCounters.reseat.adopted;
+  const model = run(pre);
+  // The reseat was adopted, not refused: the counter moved and the corridor says it followed.
+  expect(attemptCounters.reseat.adopted).toBe(adopted + 1);
   expect(model.diagnostics.some(item => item.code === 'LANE_FOLLOWS_ITS_CHILD')).toBe(true);
-  // The fixture asserts the repaired state, so pin the condition it repairs as well: at the
-  // corridor's place before the move its rectangle overlaps the extent the two groups now share,
-  // and `laneSidesHold` refuses that merge. Without this line a change that moved the geometry
-  // 0.28 px would leave the three expectations above passing on a diagram that no longer reaches
-  // the defect.
-  const shared = [twelve, thirteen].map((bounds, index) => ({ group: model.groups[index ? 'row-13' : 'row-12']!, bounds }));
-  // Both probe places come from the model, and both are pinned. `link-59` keeps its allocated
-  // corridor in tier 5, which is where the tier-6 one stood before the move; the tier-6 one is the
-  // corridor that moved, and its published x is what the merge above is settled against. Frozen
-  // literals here would leave the lane side unpinned: a corridor that drifted 0.3 px left would stop
-  // the fixture reaching the defect while every expectation still passed.
-  const laneX = (id: string): number => model.lanes.find(lane => lane.id === id)!.x;
-  const beforeX = laneX('lane:"link-59":5'), afterX = laneX('lane:"link-59":6');
-  expect(beforeX).toBe(909.5692545572916);
-  expect(afterX).toBe(1513.365111273391); // 1513.4100192412575 before ticket 78 ordered the rows by their overlay partners
-  const probe = (x: number) => [{ ...model.lanes[0]!, id: 'lane:"probe":6', tier: 6, x,
-    bounds: { ...model.lanes[0]!.bounds, x: x - 17, width: 34 } }];
-  const before = copy(model);
-  before.lanes = probe(beforeX);
-  expect(laneSidesHold(before, shared)).toBe(false);
-  expect(twelve.x).toBeLessThan(beforeX + 17);
-  // And at the corridor's published place it holds, which is why the merge is the fixed point now.
-  const after = copy(model);
-  after.lanes = probe(afterX);
-  expect(laneSidesHold(after, shared)).toBe(true);
+  // Both places come from the model. The corridor stood at the x 7a gave it and now stands at its child's port.
+  const lane = model.lanes.find(item => item.id === laneId)!;
+  expect(beforeX).toBe(103);
+  expect(lane.x).toBe(307);
+  expect(lane.x).toBe(model.nodes['child-b']!.ports[0]!.anchor!.x);
+  // The claim: a settled model does not move under the grid's replay.
+  expect(alignLinkedGroupGrid(copy(model))).toBe(false);
+  // And the move keeps every minimum separation (ticket 17), which is why it was adopted.
+  expect([...separationShortfalls(model).keys()]).toEqual([]);
 }, 180000);
 
 it('stress ticket 18: a corridor that would cross a labelled row link\'s split does not move', async () => {
