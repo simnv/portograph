@@ -1237,33 +1237,60 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       ...dashEntries(klass.dash),
       ...extra,
     });
-    // Every end of the bus geometry is a joint: a 2 px invisible vertex, a child of a member's node or pill and stated
-    // from its top-left, so a node dragged by hand carries its stub's end and the bar's end with it. A free end
-    // (`sourcePoint`/`targetPoint`) stays behind, and draw.io shows it as a loose handle (issue 04).
+    // Every end of the bus geometry is a joint: a 2 px invisible, locked vertex, a child of a member's node or pill and
+    // stated from its top-left, so a node dragged by hand carries its stub's end and its piece of the bar with it. A free
+    // end (`sourcePoint`/`targetPoint`) stays behind, and draw.io shows it as a loose handle (issue 04).
+    // The bar is one edge per pair of neighbouring joints, so a move bends the bar beside the moved node only, and every
+    // stub stays on its own joint. Ids are `pg-busJoint~<bus>~<n>`, with `n` the joint's place along the bar: no author
+    // name enters them, so no node name can collide with one.
     const JOINT = 2;
-    const joints = new Set<string>();
     type PortKey = { node: string; name?: string; ordinal: number };
-    const joint = (id: string, ref: PortKey, at: Point): string | undefined => {
-      const host = markHost(ref);
-      if (host === undefined) return undefined;
-      const box = { x: at.x - JOINT / 2, y: at.y - JOINT / 2, width: JOINT, height: JOINT };
-      vertex(id, host.cell, styleString(['ellipse'], { html: 1, fillColor: 'none', strokeColor: 'none', points: '[]' }),
-        relative(box, host.box));
-      joints.add(id);
-      return id;
+    interface Spot { at: Point; ref: PortKey; id: string }
+    /** The joints of one bus, left to right: a stub's end, the bar's two ends, and where a riser meets the bar. */
+    const spots = (of: typeof bus): Spot[] => {
+      if (of.bar === undefined || of.stubs === undefined) return [];
+      const found: { at: Point; ref: PortKey }[] = [];
+      const add = (at: Point, ref?: PortKey): void => {
+        if (found.some(item => samePoint(item.at, at))) return;
+        let host = ref, gap = Infinity;
+        if (host === undefined) {
+          for (const candidate of of.ports) {
+            const bounds = layout.nodes[candidate.node]?.bounds;
+            const distance = bounds ? Math.abs(bounds.x + bounds.width / 2 - canvas.x - at.x) : Infinity;
+            if (distance < gap) { gap = distance; host = candidate; }
+          }
+        }
+        if (host !== undefined && markHost(host) !== undefined) found.push({ at, ref: host });
+      };
+      for (const stub of of.stubs) add(shift(stub.to), of.ports.find(port => port.node === stub.node));
+      add(shift(of.bar.from)); add(shift(of.bar.to));
+      if (of.riser?.from !== undefined) add(shift(of.riser.from));
+      const upper = layout.meshBuses?.find(other => other.joined === of.id && other.riser?.to !== undefined);
+      if (upper?.riser?.to !== undefined) add(shift(upper.riser.to));
+      found.sort((a, b) => a.at.x - b.at.x || a.at.y - b.at.y);
+      return found.map((item, index) => ({ ...item, id: cellId('busJoint', of.id, String(index)) }));
     };
+    const mine = spots(bus);
+    const jointAt = (list: readonly Spot[], at: Point): string | undefined => list.find(item => samePoint(item.at, at))?.id;
+    for (const spot of mine) {
+      const host = markHost(spot.ref)!;
+      const box = { x: spot.at.x - JOINT / 2, y: spot.at.y - JOINT / 2, width: JOINT, height: JOINT };
+      vertex(spot.id, host.cell, styleString(['ellipse'], {
+        html: 1, fillColor: 'none', strokeColor: 'none', points: '[]',
+        movable: 0, resizable: 0, rotatable: 0, editable: 0, connectable: 0, deletable: 0, pointerEvents: 0,
+      }), relative(box, host.box));
+    }
     /** The style that pins an edge end to the centre of its joint. */
     const centred = (end: 'exit' | 'entry'): Readonly<Record<string, StyleValue>> =>
       ({ [`${end}X`]: 0.5, [`${end}Y`]: 0.5, [`${end}Dx`]: 0, [`${end}Dy`]: 0, [`${end}Perimeter`]: 0 });
     const pinned = (from: string | undefined, to: string | undefined): Readonly<Record<string, StyleValue>> =>
       ({ ...(from ? centred('exit') : {}), ...(to ? centred('entry') : {}) });
-    const stubJoint = (node: string): string => cellId('busJoint', bus.id, node);
     for (const stub of bus.stubs) {
       const ref = bus.ports.find(port => port.node === stub.node)!;
       const head = terminal('exit', ref), pill = markHost(ref);
       const to = shift(stub.to);
       const points = [head?.at ?? shift(stub.from), to];
-      const end = joint(stubJoint(stub.node), ref, to);
+      const end = jointAt(mine, to);
       // A stub is one straight run (port face to bar) and both its ends move with one node, so `edgeStyle=none` keeps it straight.
       edgeCell(cellId('busStub', bus.id, stub.node), layerId('overlay'), stroke(false, { ...(head?.style ?? {}), ...(end ? centred('entry') : {}) }), points,
         { source: head?.cell, target: end, sourcePoint: head ? undefined : points[0], targetPoint: end ? undefined : points[1] });
@@ -1274,28 +1301,18 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         styleString(['ellipse'], { html: 1, fillColor: paint.overlay.mark, strokeColor: 'none', points: '[]' }),
         pill ? relative(box, pill.box) : box);
     }
-    /** The joint a bar or riser end stands on: the stub's own where one ends there, else a new one on the member nearest on x. */
-    const barEnd = (at: Point, ports: readonly PortKey[], role: string): string | undefined => {
-      const stub = bus.stubs!.find(item => samePoint(shift(item.to), at));
-      if (stub !== undefined && joints.has(stubJoint(stub.node))) return stubJoint(stub.node);
-      let best: PortKey | undefined, gap = Infinity;
-      for (const ref of ports) {
-        const box = layout.nodes[ref.node]?.bounds;
-        const distance = box ? Math.abs(box.x + box.width / 2 - canvas.x - at.x) : Infinity;
-        if (distance < gap) { gap = distance; best = ref; }
-      }
-      return best === undefined ? undefined : joint(cellId('busJoint', bus.id, role), best, at);
-    };
-    // The bar runs from the first stub's joint to the last (7f), and the riser of a join is one more edge between the two
-    // bars, exported with the upper bus (mesh-bus.md, section 11.7); its ends stand on the nearest member of each bus.
-    const bar = [shift(bus.bar.from), shift(bus.bar.to)];
-    const barFrom = barEnd(bar[0]!, bus.ports, 'bar-from'), barTo = barEnd(bar[1]!, bus.ports, 'bar-to');
-    edgeCell(cellId('bus', bus.id), layerId('overlay'), stroke(false, pinned(barFrom, barTo)), bar,
-      { source: barFrom, target: barTo, sourcePoint: barFrom ? undefined : bar[0], targetPoint: barTo ? undefined : bar[1] });
+    // The bar, one piece between each two neighbouring joints.
+    for (let index = 0; index + 1 < mine.length; index++) {
+      const a = mine[index]!, b = mine[index + 1]!;
+      edgeCell(cellId('bus', bus.id, String(index)), layerId('overlay'), stroke(false, pinned(a.id, b.id)), [a.at, b.at],
+        { source: a.id, target: b.id });
+    }
+    // The riser of a join is one more edge between the two bars, exported with the upper bus (mesh-bus.md, section 11.7);
+    // each end is the joint the bar's own piece ends on.
     if (bus.riser?.from !== undefined && bus.riser.to !== undefined) {
       const riser = [shift(bus.riser.from), shift(bus.riser.to)];
       const lower = layout.meshBuses?.find(other => other.id === bus.joined);
-      const riserFrom = barEnd(riser[0]!, bus.ports, 'riser-from'), riserTo = barEnd(riser[1]!, lower?.ports ?? bus.ports, 'riser-to');
+      const riserFrom = jointAt(mine, riser[0]!), riserTo = lower ? jointAt(spots(lower), riser[1]!) : undefined;
       edgeCell(cellId('busRiser', bus.id), layerId('overlay'), stroke(false, pinned(riserFrom, riserTo)), riser,
         { source: riserFrom, target: riserTo, sourcePoint: riserFrom ? undefined : riser[0], targetPoint: riserTo ? undefined : riser[1] });
     }

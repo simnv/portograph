@@ -1725,24 +1725,43 @@ describe('link ends follow a moved node (issue 04)', () => {
       }
     }, 60000);
 
-  it('carries the bus joints with the member node, and states them 2 px square at the bar', async () => {
+  it('carries the bus joints with the member node, locked, and cuts the bar at every joint', async () => {
     const model = await pipeline(fixture('a-full-mesh-on-one-row-draws-as-one-bus'));
-    const all = cells(drawio(model)), canvas = model.canvas!;
-    const joints = [...all.values()].filter(cell => cell.id.startsWith('pg-busJoint~'));
-    expect(joints.length).toBeGreaterThanOrEqual(model.meshBuses![0]!.stubs!.length);
+    const all = cells(drawio(model)), canvas = model.canvas!, bus = model.meshBuses![0]!;
     const absolute = (cell: Cell): { x: number; y: number } => {
       const at = box(cell), parent = cell.parent === undefined ? undefined : all.get(cell.parent);
       if (!parent?.vertex) return at;
       const base = absolute(parent);
       return { x: at.x + base.x, y: at.y + base.y };
     };
-    for (const stub of model.meshBuses![0]!.stubs!) {
-      const joint = all.get(id('busJoint', model.meshBuses![0]!.id, stub.node))!;
-      expect(owner(all, joint.id)).toBe(id('node', stub.node));
-      expect(absolute(joint).x + 1).toBeCloseTo(stub.to.x - canvas.x, 6);
-      expect(absolute(joint).y + 1).toBeCloseTo(stub.to.y - canvas.y, 6);
-      expect(all.get(id('busStub', model.meshBuses![0]!.id, stub.node))!.target).toBe(joint.id);
+    const joints = [...all.values()].filter(cell => cell.id.startsWith('pg-busJoint~'));
+    expect(joints.length).toBeGreaterThanOrEqual(bus.stubs!.length);
+    for (const joint of joints) {
+      expect(box(joint)).toMatchObject({ width: 2, height: 2 });
+      expect(owner(all, joint.id)).toBeDefined();
+      for (const key of ['movable', 'resizable', 'rotatable', 'editable', 'connectable', 'deletable']) expect(joint.style[key], key).toBe('0');
     }
+    for (const stub of bus.stubs!) {
+      const end = all.get(all.get(id('busStub', bus.id, stub.node))!.target!)!;
+      expect(owner(all, end.id)).toBe(id('node', stub.node));
+      expect(absolute(end).x + 1).toBeCloseTo(stub.to.x - canvas.x, 6);
+      expect(absolute(end).y + 1).toBeCloseTo(stub.to.y - canvas.y, 6);
+    }
+    // One piece of bar per pair of neighbouring joints, each bound to both; they chain from the first joint to the last.
+    const pieces = [...all.values()].filter(cell => cell.id.startsWith(`pg-bus~${bus.id}~`));
+    expect(pieces).toHaveLength(joints.length - 1);
+    for (const [index, piece] of pieces.entries()) {
+      expect(piece.source).toBeDefined();
+      if (index > 0) expect(piece.source).toBe(pieces[index - 1]!.target);
+    }
+  }, 60000);
+
+  it('keeps a joint id apart from a node named like a bar end', async () => {
+    const yaml = fixture('a-full-mesh-on-one-row-draws-as-one-bus')
+      .replace(/\bn1\b/g, 'bar-from').replace(/\bn5\b/g, 'riser-to').replace(/\bn2\b/g, 'bar-to');
+    const all = cells(drawio(await pipeline(yaml)));
+    expect([...all.keys()].some(key => key.startsWith('pg-busJoint~'))).toBe(true);
+    expect(all.has(id('node', 'bar-from'))).toBe(true);
   }, 60000);
 });
 
