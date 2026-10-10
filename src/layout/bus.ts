@@ -154,7 +154,8 @@ export function busLegCounts(model: LayoutModel, bus: MeshBus, provisional = fal
       if ((side === 'top' || side === 'bottom') && used.has(portId(port.ref))) counts[side]++;
     }
   }
-  if (spanned) {
+  // A bar of a trunk join reads term 2 in `planTrunks`, on both edges and over the extended span (mesh-bus.md, section 12.4).
+  if (spanned && reach === undefined) {
     // Term 2, physically read. A link between a row and the tier across the gap ends at the row in a port that term 1 counts, and its
     // run in the gap lies below the band (the plan seats no row inside it), so it crosses the bar nowhere else. What does stand over
     // the span is a link that passes the whole row: one end in a tier above, the other in a tier below, which runs through the gap at

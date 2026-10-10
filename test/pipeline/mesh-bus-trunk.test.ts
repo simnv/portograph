@@ -2,8 +2,9 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { drawio, layout, parse, render, score } from '../../src/index.js';
 import { validateRoutedPaths } from '../../src/route/validate.js';
-import type { LayoutModel } from '../../src/index.js';
+import type { Lane, LayoutModel } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
+import { foreignOverExtensions, reportTrunkCrossings, trunkHolds, trunkRing, trunkXAfter } from '../../src/layout/trunk.js';
 import { EDGE_MARGIN, RING_PITCH } from '../../src/layout/course-rows.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -203,10 +204,14 @@ describe('a mesh over three rows: fixtures and draw.io (architecture ticket 21, 
     expect(gates(model)).toEqual([]);
   });
 
-  it('counts the routed link that passes a member row across a bar extension', async () => {
-    const model = await run(fixture('a-routed-link-past-a-member-row-crosses-a-bar-extension-and-is-counted'));
-    expect(trunkOf(model).trunk).toBeDefined();
-    expect(score(model).snapshot.counters.trunkCrossings).toBe(1);
+  it('sends the trunk to the side that a routed link past the member row does not pass', async () => {
+    const model = await run(fixture('a-routed-link-past-a-member-row-sends-the-trunk-to-the-other-side'));
+    const head = trunkOf(model), corridor = model.links.find(link => link.id === 'link-1')!.path!.segments[0]!.from.x;
+    const outer = Math.max(...model.groups['r1']!.nodes.map(id => model.nodes[id]!.bounds!.x + model.nodes[id]!.bounds!.width));
+    expect(corridor).toBeGreaterThan(outer);
+    expect(head.trunk!.side).toBe('left');
+    expect(codes(model, 'MESH_BUS_TRUNK')[0]!.message).toContain('0 legs crossed');
+    expect(score(model).snapshot.counters.trunkCrossings).toBe(0);
     expect(gates(model)).toEqual([]);
   });
 
@@ -223,5 +228,57 @@ describe('a mesh over three rows: fixtures and draw.io (architecture ticket 21, 
       expect(xml).toContain(`id="${piece[3]}"`);
     }
     expect(xml).toMatch(/pg-busTrunk~mesh-bus-1~0"[^>]*style="[^"]*edgeStyle=none/);
+  });
+});
+
+describe('a mesh over three rows: the guards (architecture ticket 21, review fixes)', () => {
+  const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+  const box = (model: LayoutModel, id: string) => model.groups[id]!.bounds!;
+
+  it('refuses a move that puts a foreign unit across a bar extension, and lets a member row carry the trunk outward', async () => {
+    const model = await run(fixture('a-trunk-takes-the-side-with-no-foreign-group'));
+    const head = trunkOf(model), lane = laneOf(model), foreign = model.groups['foreign']!;
+    const y = head.bar!.from.y, middle = box(model, 'r1');
+    const across = { group: foreign, bounds: { x: lane.x - 60, y: y - 10, width: 40, height: 20 } };
+    expect(trunkHolds(model, [across])).toBe(false);
+    expect(foreignOverExtensions(model, head, [across])).toEqual([{ group: 'foreign', bus: head.id }]);
+    // The foreign group moved clear of every extension, and the member row moved outward: both hold.
+    expect(trunkHolds(model, [{ group: foreign, bounds: { ...across.bounds, y: y + 4000 } }])).toBe(true);
+    const row = model.groups['r1']!;
+    expect(trunkHolds(model, [{ group: row, bounds: { ...middle, x: middle.x + 30 } }])).toBe(true);
+    // The trunk x is read after the move: a member row that moves outward carries it.
+    expect(trunkXAfter(model, head, [{ group: row, bounds: { ...middle, x: middle.x + 30 } }])).toBeGreaterThan(lane.x);
+  });
+
+  it('reports MESH_BUS_TRUNK_CROSSED for a forced move that leaves a foreign unit across an extension', async () => {
+    const model = await run(fixture('a-trunk-takes-the-side-with-no-foreign-group'));
+    expect(codes(model, 'MESH_BUS_TRUNK_CROSSED')).toHaveLength(0);
+    const forced = JSON.parse(JSON.stringify(model)) as LayoutModel;
+    const head = trunkOf(forced), lane = forced.lanes.find(item => item.id === head.trunk!.lane)!;
+    forced.groups['foreign']!.bounds = { x: lane.x - 60, y: head.bar!.from.y - 10, width: 40, height: 20 };
+    reportTrunkCrossings(forced);
+    const found = codes(forced, 'MESH_BUS_TRUNK_CROSSED');
+    expect(found).toHaveLength(1);
+    expect(found[0]!.severity).toBe('warning');
+  });
+
+  it('puts a trunk one ring beyond the highest ring it meets, not a count of the lanes', () => {
+    const lane = (ring: number, y = 0, height = 100): Lane => ({ id: `lane-${ring}`, kind: 'perimeter', owner: { kind: 'link', id: `l${ring}` }, layer: 'overlay', group: 'g', tier: 0, side: 'right', ring, x: 0, bounds: { x: 0, y, width: 11.5, height } });
+    const span = { x: 0, y: 10, width: 11.5, height: 50 };
+    expect(trunkRing([], 'right', span)).toBe(0);
+    expect(trunkRing([lane(0)], 'right', span)).toBe(1);
+    // A course on ring 1 and none on ring 0 (the ring-0 lane stands apart): a count would give 1 and collide.
+    expect(trunkRing([lane(1), lane(0, 500, 20)], 'right', span)).toBe(2);
+    expect(trunkRing([lane(0), lane(1)], 'right', span)).toBe(2);
+    expect(trunkRing([lane(3)], 'left', span)).toBe(0);
+  });
+
+  it('declines a blocked join by one re-run: two placement runs', async () => {
+    const rows = [['a1', 'a2', 'a3'], ['b1', 'b2', 'b3'], ['c1', 'c2', 'c3']];
+    const yaml = mesh(rows, '  f: { tier: 1 }\n  g: { tier: 1 }\n', '  f1: { group: f }\n  g1: { group: g }\n', '  - [a1, f1]\n  - [a3, g1]\n');
+    const labels: string[] = [];
+    const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, onProgress: progress => { labels.push(progress.stage); } });
+    expect(model.declinedTrunks).toHaveLength(1);
+    expect(labels.filter(label => label === 'resolve')).toHaveLength(2);
   });
 });

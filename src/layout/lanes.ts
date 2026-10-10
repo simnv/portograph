@@ -22,7 +22,7 @@ import { deriveFrames, foreignReach, foreignRoot, heldLaneReach, ownFrameCells, 
 import { BUS_RUN_CLEARANCE } from './bus-room.js';
 import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 import { nodeTier } from './read/tier.js';
-import { trunkBuses, trunkGeometry, trunkHeads, trunkHolds } from './trunk.js';
+import { trunkBuses, trunkGeometry, trunkHeads, trunkHolds, trunkRing } from './trunk.js';
 
 /** A corridor `reseatLanes` moved, and the child port it moved it onto. */
 export interface LaneFollow { lane: string; child: PortRef }
@@ -739,7 +739,7 @@ function reserveTrunks(model: LayoutModel, pending: Lane[], occ: (group: LayoutG
     const buses = trunkBuses(model, head), rows = buses.map(bus => bus.row);
     const first = trunkGeometry(model, head, { side, ring: 0 }, group => occ(group), pending);
     if (first === undefined) throw new Error(`Trunk ${head.id} has no geometry at stage 7a`);
-    const ring = pending.filter(lane => lane.kind === 'perimeter' && lane.side === side && lane.bounds.y < bottom(first.bounds) - PLACEMENT_EPS && bottom(lane.bounds) > first.bounds.y + PLACEMENT_EPS).length;
+    const ring = trunkRing(pending, side, first.bounds);
     const used = ring === 0 ? first : trunkGeometry(model, head, { side, ring }, group => occ(group), pending)!;
     const outer = (bus: MeshBus): LayoutGroup | undefined => Object.values(model.groups).find(group => group.nodes.includes(bus.nodes[0]!));
     const host = outer(buses[0]!);

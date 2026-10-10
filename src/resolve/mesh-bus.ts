@@ -399,9 +399,35 @@ function joinBuses(model: LayoutModel, buses: MeshBus[], candidates: LayoutLink[
     const merged = new Set([...(part.get(upper) ?? [upper]), ...(part.get(lower) ?? [lower])]);
     for (const bus of merged) part.set(bus, merged);
   }
+  /** The reason a pair cannot take facing edges: a bus port that states the side that faces away (check 3, read for a riser join only). */
+  const sideRefusal = (pair: (typeof order)[number]): string | undefined => {
+    const top = pair.upper.ports.find(ref => statedSide(model, ref) === 'top');
+    const bottom = pair.lower.ports.find(ref => statedSide(model, ref) === 'bottom');
+    if (top === undefined && bottom === undefined) return undefined;
+    const ref = (top ?? bottom)!;
+    return `${ref.node}.${ref.name} states side ${top !== undefined ? 'top' : 'bottom'}, and a joined bar stands on the edge that faces the other row`;
+  };
+  /** Join a pair of buses by one riser (Section 11). */
+  const joinRiser = (pair: (typeof order)[number]): void => {
+    const { upper, lower } = pair;
+    const ports = new Map<string, PortRef>();
+    for (const bus of [upper, lower]) bus.nodes.forEach((node, index) => ports.set(node, bus.ports[index]!));
+    attach(model, upper.id, ports, pair.cross);
+    const dissolved = dissolve(model, new Set(pair.cross.map(link => link.id)));
+    upper.joined = lower.id;
+    lower.joined = upper.id;
+    upper.cross = pair.cross.map(link => link.id);
+    upper.meshNodes = lower.meshNodes = upper.nodes.length + lower.nodes.length;
+    upper.dissolved.push(...dissolved.map(item => item.id));
+    const named = dissolved.length ? `; dissolved ${dissolved.map(item => item.id).join(', ')}` : '';
+    for (const item of dissolved) if (item.left.length) {
+      report('MESH_BUS_PARTIAL', 'info', `${item.id} lost ${item.taken} of its ${item.taken + item.left.length} members to the join of ${upper.id} and ${lower.id}; ${item.left.length} stay plain overlay links`, item.left);
+    }
+    report('MESH_BUS_JOIN', 'info', `Mesh buses ${upper.id} (row ${upper.row}) and ${lower.id} (row ${lower.row}) joined: ${nameOf(upper)} mesh of ${upper.nodes.length + lower.nodes.length} nodes and ${pair.cross.length} cross links${named}`, pair.cross);
+  };
   const done = new Set<Set<MeshBus>>();
   for (const pair of passed) {
-    const { upper, lower } = pair;
+    const { upper } = pair;
     const members = part.get(upper)!;
     if (members.size > 2) {
       if (done.has(members)) continue;
@@ -414,8 +440,16 @@ function joinBuses(model: LayoutModel, buses: MeshBus[], candidates: LayoutLink[
       }
       const names = buses3.map(bus => bus.id).join(', ');
       if (failing.length) {
-        for (const item of inPart) report('MESH_BUS_JOIN_DECLINED', 'info', `${item.upper.id} (row ${item.upper.row}) and ${item.lower.id} (row ${item.lower.row}), class ${nameOf(item.upper)} stay two buses, partial-mesh: `
-          + `${names} are one mesh, but ${failing.join(', ')} did not pass, and a trunk would show a link that the author did not draw`, item.cross);
+        // The part is not complete, so no trunk: a pair that passes the facing-edge check too and shares no bus with another such pair stays a riser join, as a part of
+        // two buses always was (an authored side on a bus port refuses its pair only); every other pair is refused (`side`, or `partial-mesh` naming the failing pair).
+        const open = inPart.filter(item => sideRefusal(item) === undefined);
+        for (const item of inPart) {
+          const refusal = sideRefusal(item);
+          if (refusal !== undefined) { declines.get(item)!('side', refusal); continue; }
+          if (!open.some(other => other !== item && (other.upper === item.upper || other.upper === item.lower || other.lower === item.upper || other.lower === item.lower))) { joinRiser(item); continue; }
+          report('MESH_BUS_JOIN_DECLINED', 'info', `${item.upper.id} (row ${item.upper.row}) and ${item.lower.id} (row ${item.lower.row}), class ${nameOf(item.upper)} stay two buses, partial-mesh: `
+            + `${names} are one mesh, but ${failing.join(', ')} did not pass, and a trunk would show a link that the author did not draw`, item.cross);
+        }
         continue;
       }
       const cross = inPart.flatMap(item => item.cross).sort(byIndex);
@@ -435,27 +469,9 @@ function joinBuses(model: LayoutModel, buses: MeshBus[], candidates: LayoutLink[
       continue;
     }
     // A part of two buses is a riser join (Section 11): check 3, the facing edges, is read for it.
-    const top = upper.ports.find(ref => statedSide(model, ref) === 'top');
-    const bottom = lower.ports.find(ref => statedSide(model, ref) === 'bottom');
-    if (top !== undefined || bottom !== undefined) {
-      const ref = (top ?? bottom)!;
-      declines.get(pair)!('side', `${ref.node}.${ref.name} states side ${top !== undefined ? 'top' : 'bottom'}, and a joined bar stands on the edge that faces the other row`);
-      continue;
-    }
-    const ports = new Map<string, PortRef>();
-    for (const bus of [upper, lower]) bus.nodes.forEach((node, index) => ports.set(node, bus.ports[index]!));
-    attach(model, upper.id, ports, pair.cross);
-    const dissolved = dissolve(model, new Set(pair.cross.map(link => link.id)));
-    upper.joined = lower.id;
-    lower.joined = upper.id;
-    upper.cross = pair.cross.map(link => link.id);
-    upper.meshNodes = lower.meshNodes = upper.nodes.length + lower.nodes.length;
-    upper.dissolved.push(...dissolved.map(item => item.id));
-    const named = dissolved.length ? `; dissolved ${dissolved.map(item => item.id).join(', ')}` : '';
-    for (const item of dissolved) if (item.left.length) {
-      report('MESH_BUS_PARTIAL', 'info', `${item.id} lost ${item.taken} of its ${item.taken + item.left.length} members to the join of ${upper.id} and ${lower.id}; ${item.left.length} stay plain overlay links`, item.left);
-    }
-    report('MESH_BUS_JOIN', 'info', `Mesh buses ${upper.id} (row ${upper.row}) and ${lower.id} (row ${lower.row}) joined: ${nameOf(upper)} mesh of ${upper.nodes.length + lower.nodes.length} nodes and ${pair.cross.length} cross links${named}`, pair.cross);
+    const refusal = sideRefusal(pair);
+    if (refusal !== undefined) { declines.get(pair)!('side', refusal); continue; }
+    joinRiser(pair);
   }
 
   // A row of one or two nodes has no bus to join: report it where it links a bus completely.

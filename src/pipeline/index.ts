@@ -233,7 +233,13 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     }
     if (!grew) break;
     reruns++; attemptCounters.invalidations.fanReruns++;
-    const trial = await timed('rerun-fan', () => place(next));
+    // A fan floor can move the rows, and a trunk that the baseline placed may then have a foreign unit on both sides. The run that found it blocked is a
+    // trial, so the round is cut and the baseline stands (a test cannot reach this: it needs a floor that reorders a row of the mesh).
+    let trial: LayoutModel;
+    try { trial = await timed('rerun-fan', () => place(next)); } catch (error) {
+      if (!(error instanceof TrunkBlocked)) throw error;
+      cut('a trunk join was blocked by the moved rows, and the re-run was dropped'); break;
+    }
     if (trial.fallbackUsed && !model.fallbackUsed) {
       cut('ELK fell back during it, and the re-run was dropped'); break;
     }

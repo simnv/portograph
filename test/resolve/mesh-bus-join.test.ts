@@ -203,12 +203,28 @@ describe('a trunk join: three buses or more (stage 1, architecture ticket 21)', 
     expect(declined(model).some(d => d.message.includes('label'))).toBe(true);
   });
 
-  it('does not read an authored side on a bus port for a trunk join, and keeps the side for a riser join', () => {
+  it('does not read an authored side on a bus port for a trunk join', () => {
     const node = (id: string) => id === 'a1' ? '  a1: { group: r0, ports: [{ name: p, side: top }] }' : `  ${id}: { group: r${id.startsWith('a') ? 0 : id.startsWith('c') ? 1 : 2} }`;
     const tag = (a: string, b: string) => link(a === 'a1' ? 'a1.p' : a, b === 'a1' ? 'a1.p' : b);
     const model = three(tag, [], node);
     expect(model.meshBuses![0]!.trunk).toBeDefined();
     expect(declined(model)).toHaveLength(0);
+  });
+
+  it('keeps the riser of a pair that passes when the third pair is missing and another pair refuses the side', () => {
+    // A-B and B-C are complete, A-C is not, and B states side top: B-C is refused for the side (B is its upper bus), and A-B stays a riser join, as in a part of two buses.
+    const node = (id: string) => id === 'c1' ? '  c1: { group: r1, ports: [{ name: p, side: top }] }' : `  ${id}: { group: r${id.startsWith('a') ? 0 : id.startsWith('c') ? 1 : 2} }`;
+    const tag = (a: string, b: string) => link(a === 'c1' ? 'c1.p' : a, b === 'c1' ? 'c1.p' : b);
+    const model = resolve(parse(rows([{ ids: UP, node }, { ids: MID, node }, { ids: LOW, node }],
+      [...within(UP, tag), ...within(MID, tag), ...within(LOW, tag), ...across(UP, MID, tag), ...across(MID, LOW, tag), ...across(UP, LOW, tag).slice(1)])));
+    const [upper, middle] = model.meshBuses!;
+    expect(model.meshBuses!.every(bus => bus.mesh === undefined)).toBe(true);
+    expect([upper!.joined, middle!.joined]).toEqual([middle!.id, upper!.id]);
+    expect(model.meshBuses![2]!.joined).toBeUndefined();
+    const found = declined(model).map(d => d.message);
+    expect(found.some(message => message.includes('side'))).toBe(true);
+    expect(found.some(message => message.includes('incomplete'))).toBe(true);
+    expect(found.some(message => message.includes('partial-mesh'))).toBe(false);
   });
 
   it('leaves a small row beside a three-row mesh alone', () => {

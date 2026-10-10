@@ -3,6 +3,8 @@ import type { Lane, LayoutGroup, LayoutModel, MeshBus } from '../model/layout.js
 import { BUS_STUB, trunkKey } from './bus-room.js';
 import { authoredBusSide, busExtent, busLegCounts, busTitleEdge, meshBuses, trunkHead, type Edge } from './bus.js';
 import { EDGE_MARGIN, RING_PITCH } from './course-rows.js';
+import { laneSource } from './lanes.js';
+import { findPort } from './row-paths.js';
 import { TrunkBlocked } from './side-hints.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 
@@ -46,9 +48,31 @@ function extensionOf(model: LayoutModel, bus: MeshBus, side: 'left' | 'right'): 
   return side === 'right' ? Math.max(...boxes.map(box => box.x + box.width)) - Math.max(...xs) : Math.min(...xs) - Math.min(...boxes.map(box => box.x));
 }
 
+/**
+ * The routed links that pass the whole row of the bar (one end in a tier above, one below) with their corridor beyond the outer stub on `side`, or inside the span:
+ * the corridor stands at the x of its source port, which the direct plan of 7a keeps (mesh-bus.md, section 12.4). Such a link crosses the extended bar on either edge.
+ */
+function passing(model: LayoutModel, bus: MeshBus, side: 'left' | 'right'): number {
+  const xs = bus.nodes.map(node => centreX(model, node));
+  const lo = side === 'right' ? Math.min(...xs) : -Infinity, hi = side === 'left' ? Math.max(...xs) : Infinity;
+  let count = 0;
+  for (const link of model.links) {
+    if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
+    const tiers = [link.attachments.from, link.attachments.to].map(ref => model.groups[model.document.nodes[ref.node]?.group ?? '']?.tier);
+    if (tiers.some(tier => tier === undefined) || Math.min(...tiers as number[]) >= bus.row || Math.max(...tiers as number[]) <= bus.row) continue;
+    const source = laneSource(model, link), node = model.nodes[source.node]!;
+    const x = findPort(model, source)?.anchor?.x ?? (node.bounds!.x + node.bounds!.width / 2);
+    // Inside the member span the corridor crosses the bar whatever the side; beyond the outer member it crosses the extension on this side only.
+    if (x >= lo && x <= hi) count++;
+  }
+  return count;
+}
+
 /** The edge a bar of a trunk join takes for `side`: an authored side, else the edge fewer legs cross over the extended span, else the title edge. */
 function edgeFor(model: LayoutModel, bus: MeshBus, side: 'left' | 'right'): { edge: Edge; legs: number } {
   const counts = busLegCounts(model, bus, false, side), fixed = authoredBusSide(model, bus);
+  const through = passing(model, bus, side);
+  counts.top += through; counts.bottom += through;
   const edge: Edge = fixed ?? (counts.top !== counts.bottom ? (counts.top < counts.bottom ? 'top' : 'bottom') : busTitleEdge(model, bus));
   return { edge, legs: counts[edge] };
 }
@@ -119,23 +143,24 @@ export function trunkGeometry(model: LayoutModel, head: MeshBus, lane: { side: '
 }
 
 /** The extension of each bar of a trunk join from its outer stub to the trunk x, as a horizontal segment at the bar's y: what a foreign unit may not stand across. */
-export function extensions(model: LayoutModel, head: MeshBus): { bus: MeshBus; y: number; from: number; to: number }[] {
+export function extensions(model: LayoutModel, head: MeshBus, at?: number): { bus: MeshBus; y: number; from: number; to: number }[] {
   const trunk = head.trunk, lane = model.lanes.find(item => item.id === trunk?.lane);
   if (trunk?.side === undefined || lane === undefined) return [];
+  const trunkX = at ?? lane.x;
   const result: { bus: MeshBus; y: number; from: number; to: number }[] = [];
   for (const bus of trunkBuses(model, head)) {
     const y = barY(model, bus), xs = bus.nodes.map(node => centreX(model, node));
     if (y === undefined) continue;
     const outer = trunk.side === 'right' ? Math.max(...xs) : Math.min(...xs);
-    result.push({ bus, y, from: Math.min(outer, lane.x), to: Math.max(outer, lane.x) });
+    result.push({ bus, y, from: Math.min(outer, trunkX), to: Math.max(outer, trunkX) });
   }
   return result;
 }
 
 /** The foreign units that stand across a bar extension now, as `[unit, bus]` pairs: what a forced move reports (`MESH_BUS_TRUNK_CROSSED`). */
-export function foreignOverExtensions(model: LayoutModel, head: MeshBus, groups: readonly { group: LayoutGroup; bounds: Rect }[] = Object.values(model.groups).filter(group => group.bounds !== undefined).map(group => ({ group, bounds: group.bounds! }))): { group: string; bus: string }[] {
+export function foreignOverExtensions(model: LayoutModel, head: MeshBus, groups: readonly { group: LayoutGroup; bounds: Rect }[] = Object.values(model.groups).filter(group => group.bounds !== undefined).map(group => ({ group, bounds: group.bounds! })), trunkX?: number): { group: string; bus: string }[] {
   const found: { group: string; bus: string }[] = [];
-  for (const { bus, y, from, to } of extensions(model, head)) {
+  for (const { bus, y, from, to } of extensions(model, head, trunkX)) {
     for (const { group, bounds } of groups) {
       if (group.nodes.length === 0 || group.nodes.some(node => bus.nodes.includes(node))) continue;
       const crosses = bounds.y < y - PLACEMENT_EPS && bounds.y + bounds.height > y + PLACEMENT_EPS && bounds.x < to - PLACEMENT_EPS && bounds.x + bounds.width > from + PLACEMENT_EPS;
@@ -145,13 +170,30 @@ export function foreignOverExtensions(model: LayoutModel, head: MeshBus, groups:
   return found;
 }
 
+/**
+ * The x the trunk would stand at after a move that proposes these group boxes: it is derived beyond every box on its extent, so a unit that moves outward
+ * carries it (section 12.5). Read as `trunkGeometry` reads it for the boxes that meet the extent, plus the ring offset of the lane.
+ */
+export function trunkXAfter(model: LayoutModel, head: MeshBus, proposed: readonly { group: LayoutGroup; bounds: Rect }[]): number | undefined {
+  const lane = model.lanes.find(item => item.id === head.trunk?.lane);
+  if (lane === undefined) return undefined;
+  const dir = lane.side === 'right' ? 1 : -1, reach = (lane.ring ?? 0) * RING_PITCH + EDGE_MARGIN;
+  let x = lane.x;
+  for (const { group, bounds } of proposed) {
+    if (group.nodes.length === 0 || bounds.y >= lane.bounds.y + lane.bounds.height - PLACEMENT_EPS || bounds.y + bounds.height <= lane.bounds.y + PLACEMENT_EPS) continue;
+    const wanted = (dir > 0 ? bounds.x + bounds.width : bounds.x) + dir * reach;
+    x = dir > 0 ? Math.max(x, wanted) : Math.min(x, wanted);
+  }
+  return x;
+}
+
 /** Whether a move that proposes these group boxes keeps every bar extension clear of a foreign unit that is not across one now (section 12.5, `trunkHolds`). */
 export function trunkHolds(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[]): boolean {
   const heads = trunkHeads(model);
   if (heads.length === 0) return true;
   return heads.every(head => {
     const now = new Set(foreignOverExtensions(model, head).map(item => `${item.group}|${item.bus}`));
-    return foreignOverExtensions(model, head, proposed).every(item => now.has(`${item.group}|${item.bus}`));
+    return foreignOverExtensions(model, head, proposed, trunkXAfter(model, head, proposed)).every(item => now.has(`${item.group}|${item.bus}`));
   });
 }
 
@@ -179,4 +221,22 @@ export function routedTrunkCrossings(model: LayoutModel, head: MeshBus): number 
     }
   }
   return count;
+}
+
+/**
+ * The ring of a trunk: one beyond the highest ring of the perimeter lanes of its side whose extent it meets, so it stands outside every one of them. A count
+ * would collide with a lane on a higher ring when an inner ring is free (mesh-bus.md, section 12.5).
+ */
+export function trunkRing(lanes: readonly Lane[], side: 'left' | 'right', bounds: Rect): number {
+  const met = lanes.filter(lane => lane.kind === 'perimeter' && lane.side === side && lane.bounds.y < bounds.y + bounds.height - PLACEMENT_EPS && lane.bounds.y + lane.bounds.height > bounds.y + PLACEMENT_EPS);
+  return met.length === 0 ? 0 : Math.max(...met.map(lane => lane.ring ?? 0)) + 1;
+}
+
+/** Replace the `MESH_BUS_TRUNK_CROSSED` warnings with the ones the geometry now calls for: a forced move left a foreign unit across a bar extension (section 12.5). */
+export function reportTrunkCrossings(model: LayoutModel): void {
+  model.diagnostics = model.diagnostics.filter(item => item.code !== 'MESH_BUS_TRUNK_CROSSED');
+  for (const head of trunkHeads(model)) for (const crossing of foreignOverExtensions(model, head)) {
+    model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'MESH_BUS_TRUNK_CROSSED', owners: [{ kind: 'mesh-bus', id: head.id }, { kind: 'group', id: crossing.group }],
+      message: `${crossing.group} stands across the extension of ${crossing.bus} to the trunk of ${head.id}.` });
+  }
 }
