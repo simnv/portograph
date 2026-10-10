@@ -4,7 +4,7 @@ import type {
 } from '../model/layout.js';
 import { frameNodes } from '../layout/frames.js';
 import { haloSize, isDirect } from '../layout/link-labels.js';
-import { orderedGroupIds, orderedNodeIds } from '../model/model.js';
+import { orderedNodeIds } from '../model/model.js';
 import { iconKey, iconPath } from '../profiles/network/icons.js';
 import { LEGEND_DEFAULT_CLASS } from '../profiles/network/theme.js';
 import { EPS, right } from '../geometry/planar.js';
@@ -12,6 +12,7 @@ import { effectiveLayer, validate } from '../score/model.js';
 import { measureText } from '../text/index.js';
 import { CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, linkStrokeWidth } from '../theme/geometry.js';
 import { washAssignment, washClass } from '../profiles/network/theme.js';
+import { groupShapes } from './frame-order.js';
 import { GeometryLocks, sheetClassWashCss, themeCss } from './theme.js';
 import { authorClass, classes, element, escapeStyle, escapeText, num } from './svg.js';
 
@@ -280,12 +281,6 @@ function maskedBoxes(model: LayoutModel, visible: (link: LayoutLink) => boolean)
   return boxes;
 }
 
-/** Frames in paint order: a parent before its children. */
-function frameOrder(model: LayoutModel): Frame[] {
-  const depth = (frame: Frame): number => frame.parent === undefined ? 0 : 1 + depth(model.frames!.find(item => item.id === frame.parent)!);
-  return [...(model.frames ?? [])].sort((a, b) => depth(a) - depth(b));
-}
-
 /** The frame a group title belongs to: the frame whose label band sits in the title's owning cell. */
 function frameTitled(model: LayoutModel, label: LayoutLabel): Frame | undefined {
   const id = label.owner.kind === 'group' ? label.owner.id : undefined;
@@ -316,12 +311,11 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
   const icons = new Set<string>();
 
   // A frame is drawn in its cells' place: a cell never is (ranked-groups spec, section 2). A parent
-  // frame is painted before its children so the children stand on top of it.
-  const boxes = [
-    ...orderedGroupIds(layout.document).filter(id => layout.groups[id]!.frame === undefined).map(id => ({
-      id, bounds: layout.groups[id]!.bounds!, class: layout.document.groups[id]!.class, nodes: layout.groups[id]!.nodes })),
-    ...frameOrder(layout).map(frame => ({ id: frame.id, bounds: frame.box, class: frame.class, nodes: frameNodes(layout, frame.id) })),
-  ];
+  // frame is painted before its children, and a box that lies on another after it (frame-order.ts).
+  const boxes = groupShapes(layout).map(shape => shape.frame
+    ? { id: shape.id, bounds: shape.bounds, class: layout.frames!.find(frame => frame.id === shape.id)!.class,
+      nodes: frameNodes(layout, shape.id) }
+    : { id: shape.id, bounds: shape.bounds, class: layout.document.groups[shape.id]!.class, nodes: layout.groups[shape.id]!.nodes });
   const groups = boxes.map(box => {
     const authored = authorClass(box.class), uniform = uniformNodeClass(layout, box.nodes);
     return element('g', { class: classes('group', authored), 'data-id': box.id,

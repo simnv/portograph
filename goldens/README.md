@@ -107,6 +107,7 @@ is a standalone schema-v2 document. `stage-inputs.yaml` is separate test data.
 
 | Diagram | Stage | Expected behaviour |
 |---|---|---|
+| [a-flank-frame-stands-in-front-of-the-frame-it-flanks](synthetic/a-flank-frame-stands-in-front-of-the-frame-it-flanks.yaml) | render | A flank frame that overlaps the frame it flanks is drawn after it (smaller box in front), in the SVG and in draw.io. |
 | [flank-two-peers](synthetic/flank-two-peers.yaml) | 7b | Select the two-link primary peer; route the other peer's link. |
 | [unequal-pitch](synthetic/unequal-pitch.yaml) | 3, 7b | Respace both sides to the larger measured pitch before alignment. |
 | [shared-peer-port](synthetic/shared-peer-port.yaml) | 7b, 7e, 8 | Retain one shared peer anchor and stem; route incompatible pairs. |

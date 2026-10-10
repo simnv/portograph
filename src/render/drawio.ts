@@ -44,9 +44,9 @@
 
 import type { Point, Rect, Side } from '../model/geometry.js';
 import type {
-  Frame, Layer, LayoutLabel, LayoutLink, LayoutModel, LayoutPort, PathSegment,
+  Layer, LayoutLabel, LayoutLink, LayoutModel, LayoutPort, PathSegment,
 } from '../model/layout.js';
-import { orderedGroupIds, orderedNodeIds } from '../model/model.js';
+import { orderedNodeIds } from '../model/model.js';
 import { isDirect } from '../layout/link-labels.js';
 import { iconKey, iconPath } from '../profiles/network/icons.js';
 import type { ThemeMode } from '../profiles/network/theme.js';
@@ -57,6 +57,7 @@ import {
 import { effectiveLayer, validate } from '../score/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
 import { CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, linkStrokeWidth } from '../theme/geometry.js';
+import { groupShapes } from './frame-order.js';
 import { linkVisible } from './index.js';
 import { authorClass, element, num } from './svg.js';
 
@@ -638,15 +639,8 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
 
   // ---- groups and their nodes ---------------------------------------------------------------
   // A frame is drawn in its cells' place, and a cell never is (ranked-groups spec, section 2). A parent
-  // frame comes before its child, so the child stands on top of it.
-  const frameDepth = (frame: Frame): number =>
-    frame.parent === undefined ? 0 : 1 + frameDepth(layout.frames!.find(item => item.id === frame.parent)!);
-  const shapes = [
-    ...orderedGroupIds(document).filter(id => layout.groups[id]!.frame === undefined)
-      .map(id => ({ id, bounds: layout.groups[id]!.bounds!, frame: false })),
-    ...[...(layout.frames ?? [])].sort((a, b) => frameDepth(a) - frameDepth(b))
-      .map(frame => ({ id: frame.id, bounds: frame.box, frame: true })),
-  ];
+  // frame comes before its child, and a box that lies on another after it (frame-order.ts).
+  const shapes = groupShapes(layout);
   // A frame nests as the model nests it: a zone in a location, a location in a continent. Its cell is a
   // child of its parent frame's cell, stated from that cell's top-left, so a parent moved by hand carries
   // its children; a group that no frame holds stays on the diagram layer. `startSize` shifts nothing here.
