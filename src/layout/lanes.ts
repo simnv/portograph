@@ -4,7 +4,7 @@ import type { Rect } from '../model/geometry.js';
 import type { Course, Diagnostic, Lane, LayoutGroup, LayoutLink, LayoutModel, MeshBus, PathSegment } from '../model/layout.js';
 import type { PortRef } from '../model/document.js';
 import { DEFAULT_STROKE_WIDTHS as stroke, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth, routedStrokeWidth } from '../theme/geometry.js';
-import { segmentRectDistance } from '../geometry/planar.js';
+import { segmentRect, segmentRectDistance } from '../geometry/planar.js';
 import { findPort } from './row-paths.js';
 import { CourseRefusal, isCourseLane, validateCourseLane } from './courses.js';
 import { isGapRun, laneRunKind } from './lane-kind.js';
@@ -17,7 +17,7 @@ import { PLACEMENT_EPS } from './tolerance.js';
 import { moveGroup, union } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { withLayoutMutation } from './mutation.js';
-import { chordKind, chordsHold } from './frame-paths.js';
+import { chordKind, chordsHold, isRoutedChord } from './frame-paths.js';
 import { deriveFrames, foreignReach, foreignRoot, heldLaneReach, ownFrameCells, riserForeignReach, frameNodes } from './frames.js';
 import { BUS_RUN_CLEARANCE } from './bus-room.js';
 import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
@@ -309,6 +309,12 @@ export function spanBreaches(model: LayoutModel, proposed: { group: LayoutGroup;
       if (meets(spanWall(moved, group, link))) result.add(`${lane.id}|${group.id}`);
     }
     for (const other of model.lanes) if (other !== lane && other.tier === lane.tier && !isSpanLane(other) && meets(other.bounds)) result.add(`${lane.id}|${other.id}`);
+    // A chord that is no spanning chord and crosses the corridor box is a wall too (spanning chords cross each other by design). Legs and link labels are not
+    // placed yet when 7a to 7f read this (a leg is derived by the router, a label by stage 9), so they are no wall here; stage 9 reserves the label room (`spanLabelRooms`).
+    for (const other of moved.links) {
+      if (other.id === link.id || other.spanHint === true || !isRoutedChord(moved, other)) continue;
+      if (segmentRect(other.path!.segments[0]!, box)) result.add(`${lane.id}|${other.id}`);
+    }
   }
   return result;
 }

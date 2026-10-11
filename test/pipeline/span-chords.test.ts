@@ -183,12 +183,19 @@ describe('the span round on the sheets', () => {
     expect(model.lanes.filter(lane => (lane.kind ?? 'transit') === 'transit')).toHaveLength(1);
   }, 60000);
 
-  // The trial of this sheet loses its chord at the freeze (`leg`: the chord passes through the leg of a neighbour that leaves the same node), and the
-  // judge refuses the whole trial (`promise`), so the sheet is as before the round. The pending outcome (one chord, one lane) needs a fixture whose chord clears its neighbours.
-  it.fails('a chord and a lane share a middle tier: one chord, one lane outside the corridor', async () => {
-    const { model } = await run(SHEETS.share);
-    expect(model.diagnostics.filter(item => item.code === 'SPAN_CHORD_TAKEN')).toHaveLength(1);
-    expect(model.lanes.filter(lane => (lane.kind ?? 'transit') === 'transit')).toHaveLength(1);
+  // The trial of this sheet loses its chord at the freeze (`leg`: the chord passes through the leg of a neighbour that leaves the same node), and the judge refuses
+  // the whole trial (`promise`). The sheet is then as before the round, and the refused trial gives its re-run back, so that a course still has the one re-run.
+  // Follow-up: reserve the leg pitch in stage 5, so that the chord and the lane of this sheet are both taken.
+  it('a chord and a lane share a middle tier: a trial that loses its chord is refused and costs the rounds after it nothing', async () => {
+    const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 1 };
+    const refused: string[] = [];
+    const model = await layout(parse(source(SHEETS.share)), { ...options, testSideTrace: event => { if (event.ev === 'span-refused') refused.push(`${String(event.why)}`); } });
+    const plain = await layout(parse(source(SHEETS.share)), { ...options, testSpanHints: [] });
+    const count = (m: LayoutModel, code: string): number => m.diagnostics.filter(item => item.code === code).length;
+    expect(refused).toEqual(['promise']);
+    expect(count(model, 'SPAN_CHORD_TAKEN')).toBe(0);
+    expect(count(model, 'COURSE_TAKEN')).toBe(count(plain, 'COURSE_TAKEN'));
+    expect(model.lanes.filter(lane => (lane.kind ?? 'transit') === 'transit')).toHaveLength(plain.lanes.filter(lane => (lane.kind ?? 'transit') === 'transit').length);
   }, 60000);
 
   it('a labelled chord is taken and G3 passes', async () => {
@@ -253,7 +260,7 @@ describe('judgeSpanTrial', () => {
     const trial = JSON.parse(JSON.stringify(chords)) as LayoutModel;
     const victim = trial.links.find(item => item.id === 'link-3')!, other = trial.links.find(item => item.id === 'link-11')!;
     victim.path = JSON.parse(JSON.stringify(other.path));
-    expect(['gate', 'worse', 'promise']).toContain(judgeSpanTrial(base, trial, []).reason);
+    expect(judgeSpanTrial(base, trial, []).reason).toBe('gate');
     expect(judgeSpanTrial(base, trial, []).kept).toBe(false);
   }, 60000);
 
@@ -280,6 +287,17 @@ describe('judgeSpanTrial', () => {
     trial.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'SPAN_CHORD_BLOCKED', message: 'x', owners: [{ kind: 'link', id: 'link-4' }] });
     expect(spanBlockedNew(chords, trial)).toEqual(['link-4']);
     expect(spanBlockedNew(trial, chords)).toEqual([]);
+    expect(judgeCourseTrial(chords, trial, new Map()).kept).toBe(false);
+  }, 60000);
+
+  it('names a hinted link that ends orthogonal, whatever diagnostic says so (the freeze refuses it: ROUTED_CHORD_REFUSED)', async () => {
+    const trial = JSON.parse(JSON.stringify(chords)) as LayoutModel;
+    const victim = trial.links.find(item => item.id === 'link-4')!;
+    expect(victim.spanHint).toBe(true);
+    victim.technique = 'orthogonal';
+    victim.path = { ...victim.path!, fixed: false as never, segments: [victim.path!.segments[0]!, { ...victim.path!.segments[0]!, straight: false as never }] };
+    trial.diagnostics.push({ stage: 'placement', severity: 'info', code: 'ROUTED_CHORD_REFUSED', message: 'x', owners: [{ kind: 'link', id: 'link-4' }] });
+    expect(spanBlockedNew(chords, trial)).toEqual(['link-4']);
     expect(judgeCourseTrial(chords, trial, new Map()).kept).toBe(false);
   }, 60000);
 });

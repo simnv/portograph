@@ -420,7 +420,13 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       const routedTrial = await routeModel(trial, true);
       const verdict = judgeSpanTrial(routedBase!, routedTrial, offer.links);
       options.testSideTrace?.({ ev: 'span-trial', verdict, trial, routedTrial, routedBase, offer });
-      if (!verdict.kept) { spanRefusal(verdict.reason!, verdict.detail); return false; }
+      if (!verdict.kept) {
+        spanRefusal(verdict.reason!, verdict.detail);
+        // A trial that loses a promised chord at the freeze was offered a chord that the port pitch of the trial did not free: the offer was wrong, not the sheet, and the
+        // re-run is given back so that the rounds after it keep their budget (follow-up: reserve the leg pitch in stage 5).
+        if (verdict.reason === 'promise') reruns--;
+        return false;
+      }
       activeSpans = new Set([...activeSpans, ...offer.links]); floors = trialFloors;
       base = trial; kept7e = trial7e; routedFinal = routedTrial; routedBase = routedTrial;
       baseMoved = trialMoved; baseUnmoved = trialUnmoved;

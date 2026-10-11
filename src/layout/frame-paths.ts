@@ -439,18 +439,6 @@ export function chordVerdict(model: LayoutModel, link: LayoutLink, sideSlack = 0
   return { segment };
 }
 
-/**
- * The part of a leg that a spanning chord must clear at the decision (architecture ticket 22): the stem at the port end, `routerStem` long. The rest of a leg
- * only reaches for a row that the tier-gap plan seats in 7f, and the plan seats it across the chord strictly or the path clearance away from it (docs/design/routed-chords.md,
- * Section 14.5), so a chord near the far part of a leg is no refusal.
- */
-function legStem(leg: PathSegment): PathSegment {
-  const length = Math.hypot(leg.to.x - leg.from.x, leg.to.y - leg.from.y);
-  if (length <= GROUP_LABEL_GEOMETRY.routerStem) return leg;
-  const t = GROUP_LABEL_GEOMETRY.routerStem / length;
-  return { ...leg, to: { x: leg.from.x + (leg.to.x - leg.from.x) * t, y: leg.from.y + (leg.to.y - leg.from.y) * t } };
-}
-
 /** The chord of the link when nothing that no other link can change refuses it. The fan rules ask this first. */
 export function standaloneChord(model: LayoutModel, link: LayoutLink): PathSegment | undefined {
   const verdict = chordVerdict(model, link, SIDE_EDGE_SLACK);
@@ -534,8 +522,6 @@ function mouthLegs(model: LayoutModel, link: LayoutLink): { leg: PathSegment; ot
  * orthogonal, mouth legs of the gap's lanes included. The first that fails names the refusal.
  */
 export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment, undecided?: ReadonlySet<string>): 'chord' | 'leg' | 'title' | undefined {
-  // A spanning chord (ticket 22) clears the stem of a leg; the rest of the leg reaches for a row that the plan seats around the chord.
-  const span = link.spanHint === true;
   // Two chords are no obstacle to each other for the router, but G6 still measures their clearance:
   // only a strict crossing excuses a pair that stands closer than 10 px (a shared end does not).
   const stroke = linkStrokeWidth(link);
@@ -554,12 +540,12 @@ export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment:
     if (isRoutedChord(model, other) || undecided?.has(other.id)) continue;
     for (const end of ['from', 'to'] as const) {
       const leg = orthogonalLeg(model, other, end);
-      if (leg && segmentDistance(segment, span ? legStem(leg) : leg) - (stroke + linkStrokeWidth(other)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return 'leg';
+      if (leg && segmentDistance(segment, leg) - (stroke + linkStrokeWidth(other)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return 'leg';
     }
   }
   for (const { leg, other } of mouthLegs(model, link)) {
     if (other !== undefined && undecided?.has(other.id)) continue;
-    if (segmentDistance(segment, span ? legStem(leg) : leg) - (stroke + (other ? linkStrokeWidth(other) : stroke)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return 'leg';
+    if (segmentDistance(segment, leg) - (stroke + (other ? linkStrokeWidth(other) : stroke)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return 'leg';
   }
   // The title of an own end still fits beside this crossing, the held chords' crossings and the legs of the band's ports (ticket 100).
   if (chordKind(model, link) === 'cross' && titleRefusal(model, link, segment, true)) return 'title';
