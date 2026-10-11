@@ -1,7 +1,7 @@
-# Expected: N2-C1 leaves the top face and drops into C1, C1-S2 enters S2 from the bottom, N1-S2 keeps its lane: fewer
-# bent links, fewer turns and fewer crossings (ticket 15 phase 4).
+# Expected (architecture ticket 22): the nine mesh links draw as spanning chords beside the Core frame, with no transit lane; N2-C1 leaves
+# the top face and drops into C1, C1-S2 enters S2 from the bottom (ticket 15 phase 4): bent links 8 -> 2, turns 16 -> 4, crossings 19 -> 9.
 # Three nodes on tier 0 and three on tier 2 form a full mesh of nine routed
-# links. One core node stands on tier 1 between them. Each mesh link transits tier 1 through its
+# links. One core node stands on tier 1 between them. Before ticket 22 each mesh link transits tier 1 through its
 # own lane beside the core frame, so nine lanes stand beside one body.
 # Source: 04-mesh-across-a-tier.yaml. Test-only input owned by architecture ticket 15; test/pipeline/outside-lanes.test.ts reads it.
 portograph: 2

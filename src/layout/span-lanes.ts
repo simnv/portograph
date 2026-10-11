@@ -1,9 +1,11 @@
 import type { Rect } from '../model/geometry.js';
-import type { Lane, LayoutLink, LayoutModel } from '../model/layout.js';
+import type { Lane, LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { EPS } from '../geometry/planar.js';
 import { SideHintRefusal } from './side-hints.js';
 import { straightChord } from './overlay-paths.js';
+import { candidateBox, haloSize, isDirect, lineAngle, LINK_LABEL_GEOMETRY, turnedBox } from './link-labels.js';
+import { measureText } from '../text/index.js';
 
 /**
  * The span corridors of a spanning chord (architecture ticket 22, docs/design/routed-chords.md, Section 14.3). A spanning chord is a hinted routed link on two
@@ -28,12 +30,29 @@ function bandExtent(model: LayoutModel, tier: number): { y: number; height: numb
 }
 
 /**
+ * The room the label of a spanning chord needs (ticket 16; docs/design/routed-chords.md, Section 14.5), as the boxes stage 9 would put it: a label on a direct line lies on
+ * it, centred at the midpoint, turned to the line's angle, with its halo; a label on a line with an axis stands beside it, on either side. A line too short for the text carries
+ * the text shortened to its length less the two margins. Reserved here, in 7a, with the corridor, so that no unit stands where stage 9 puts the label.
+ */
+export function spanLabelRooms(model: LayoutModel, link: LayoutLink): Rect[] {
+  const text = model.document.links[link.sourceIndex]?.label, chord = straightChord(model, link, undefined, true);
+  if (text === undefined || text === '' || chord === undefined) return [];
+  const segment: PathSegment = { from: chord.from, to: chord.to, owner: { ...link.owner }, straight: true };
+  const length = Math.hypot(chord.to.x - chord.from.x, chord.to.y - chord.from.y);
+  const measured = measureText(text, { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight });
+  const size = { width: Math.min(measured.width, Math.max(0, length - 2 * LINK_LABEL_GEOMETRY.shortenMargin)), height: measured.height };
+  if (isDirect(segment)) return [turnedBox({ x: (chord.from.x + chord.to.x) / 2, y: (chord.from.y + chord.to.y) / 2 }, haloSize(size), lineAngle(segment))];
+  const half = linkStrokeWidth(link) / 2;
+  return [false, true].map(second => candidateBox(segment, half, size, second).bounds);
+}
+
+/**
  * The corridor of the link's chord in one transited band: the part of the segment between the band's top and bottom, grown in x by the group-edge link margin
  * and the half stroke, taken along the normal of the chord (the factor 1 / cos of the angle to the vertical, as `crossingRect`). The box is the extent of a lane:
- * its y and height are the band's. `extra` widens it on both sides (the half extent of a label whose midpoint falls in the band, phase 4).
+ * its y and height are the band's. Where the room of the chord's label (`spanLabelRooms`) meets the band, the corridor is widened to hold it with its halo.
  * Undefined where the chord does not reach the band, or when an end has no anchor.
  */
-export function spanCorridor(model: LayoutModel, link: LayoutLink, tier: number, extra = 0): Rect | undefined {
+export function spanCorridor(model: LayoutModel, link: LayoutLink, tier: number): Rect | undefined {
   const chord = straightChord(model, link, undefined, true), extent = bandExtent(model, tier);
   if (chord === undefined || extent === undefined) return undefined;
   const dy = chord.to.y - chord.from.y, dx = chord.to.x - chord.from.x;
@@ -44,9 +63,14 @@ export function spanCorridor(model: LayoutModel, link: LayoutLink, tier: number,
   if (low >= high - EPS) return undefined;
   const xs = [chord.from.x + low * dx, chord.from.x + high * dx];
   const slant = Math.min(50, Math.hypot(dx, dy) / Math.abs(dy));
-  const along = (GROUP_EDGE_LINK_CLEARANCE + linkStrokeWidth(link) / 2) * slant + extra;
-  const x = Math.min(...xs) - along;
-  return { x, y: extent.y, width: Math.max(...xs) + along - x, height: extent.height };
+  const along = (GROUP_EDGE_LINK_CLEARANCE + linkStrokeWidth(link) / 2) * slant;
+  let x0 = Math.min(...xs) - along, x1 = Math.max(...xs) + along;
+  for (const room of spanLabelRooms(model, link)) {
+    if (room.y >= floor - EPS || room.y + room.height <= top + EPS) continue;
+    x0 = Math.min(x0, room.x - LINK_LABEL_GEOMETRY.halo);
+    x1 = Math.max(x1, room.x + room.width + LINK_LABEL_GEOMETRY.halo);
+  }
+  return { x: x0, y: extent.y, width: x1 - x0, height: extent.height };
 }
 
 /** The hinted links of the model, in link order. */

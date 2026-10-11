@@ -197,10 +197,20 @@ describe('the span round on the sheets', () => {
     expect(score(model).snapshot.gates.G3!.passed).toBe(true);
   }, 60000);
 
-  it.fails('a labelled chord widens the corridor of the band that holds the middle of its label (phase 4)', async () => {
+  it('a labelled chord widens the corridor of every band its label meets, and the label lies inside it', async () => {
     const { model } = await run(SHEETS.label);
     const plainWidth = (await run(SHEETS.three)).model.lanes.filter(lane => lane.kind === 'span').map(lane => lane.bounds.width);
-    expect(model.lanes.filter(lane => lane.kind === 'span').some(lane => lane.bounds.width > Math.max(...plainWidth) + 20)).toBe(true);
+    const corridors = model.lanes.filter(lane => lane.kind === 'span');
+    expect(corridors.length).toBeGreaterThan(0);
+    expect(corridors.every(lane => lane.bounds.width > Math.max(...plainWidth) + 5)).toBe(true);
+    const label = model.labels.find(item => item.role === 'link' && item.owner.kind === 'link' && item.owner.id === 'link-4')!;
+    expect(label.omitted).not.toBe(true);
+    expect(label.onLine).toBe(true);
+    for (const lane of corridors) {
+      expect(label.bounds!.x).toBeGreaterThanOrEqual(lane.bounds.x - 1e-6);
+      expect(label.bounds!.x + label.bounds!.width).toBeLessThanOrEqual(lane.bounds.x + lane.bounds.width + 1e-6);
+    }
+    expect(score(model).snapshot.gates.G3!.passed).toBe(true);
   }, 60000);
 });
 
