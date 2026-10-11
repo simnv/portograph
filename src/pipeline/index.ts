@@ -27,7 +27,7 @@ import { route, ROUTE_BUDGET_MS, type CreateRouteAttempt } from '../route/index.
 import { CommandDeadlineError, UNBOUNDED_BUDGET, type Budget } from './budget.js';
 // After the stages: the modules below reach the centring module, whose import order the tests that mock it depend on.
 import { declinedFanDiagnostics, fanRoundDropped, fanRoundHolds, measureFans, type FanMeasure } from '../layout/fan-spread.js';
-import { chordClearances, isRoutedChord } from '../layout/frame-paths.js';
+import { chordClearances, freezeRefusal, isRoutedChord } from '../layout/frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
 import { CourseRefusal } from '../layout/courses.js';
 import { SpanRefusal } from '../layout/span-lanes.js';
@@ -55,6 +55,10 @@ const SIDE_ROUNDS = 2;
  * deadline at 2 times slower, and a fourth re-run (2.7 s + 6.5 s of 7f, quiet) would not fit. The clock never chooses between layouts (ticket 141).
  */
 export const MAX_RERUNS = 3;
+/** A round asked for a placement past the command's budget (`MAX_RERUNS` + 1). A round refuses its trial on it; the first run is never refused. */
+export class PlacementBudgetExceeded extends Error {
+  constructor(readonly placements: number) { super(`The command has placed ${placements} times, which is the most it may.`); }
+}
 /** `node.name#ordinal`, or `node.#ordinal` for an anonymous port, from a port key. */
 const portName = (key: string): string => {
   const [node, anonymous, name, ordinal] = JSON.parse(key) as [string, boolean, string | null, number];
@@ -149,7 +153,12 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   const stage3Sizes = new WeakMap<LayoutModel, Map<string, Size>>();
   // The trunk joins a placement run found blocked (mesh-bus.md, section 12.4): the next run resolves with them declined.
   const declinedTrunks = new Map<string, string>();
+  let placements = 0;
   const place = async (floors: FanMeasure['floors'], hints = options.testSideHints, nodeFloors = options.testNodeFloors, abort?: (stage: string) => void, laneKeys: ReadonlySet<string> = new Set(), courses: readonly Course[] = activeCourses, spans: ReadonlySet<string> = activeSpans): Promise<LayoutModel> => {
+    // The one assertion of the placement budget: a command places at most MAX_RERUNS + 1 times (the first run and the re-runs), whatever round asks. A run that stage 7a
+    // refuses before any work is given back by the round that asked (`placements--`, with its `reruns--`).
+    if (placements >= MAX_RERUNS + 1) throw new PlacementBudgetExceeded(placements);
+    placements++;
     const stepIn = <T>(stage: LayoutStage, run: () => T): T => { abort?.(stage); return step(stage, run); };
     const resolved = stepIn('resolve', () => resolve(document, { ...(options.diagnostics ? { diagnostics: options.diagnostics } : {}), ...(declinedTrunks.size ? { declinedTrunks } : {}) }));
     // A course face ranks above a hint (ticket 15): each end that does not keep its natural face names the port and the face.
@@ -340,7 +349,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       courseRefusal(`the placement run rejected them (${error.message})`);
       // Stage 7a refused a lane: no trial exists to route or judge, so the re-run is given back and the side offer keeps its place (one counter, no second run to
       // fall back to; a fallback would place twice in one re-run and split the budget the side round reads).
-      if (error instanceof CourseRefusal) reruns--;
+      if (error instanceof CourseRefusal) { reruns--; placements--; }
     }
     if (trial7e !== undefined && trial7e.fallbackUsed && !kept7e.fallbackUsed) {
       courseRefusal('ELK fell back during the course trial'); trial7e = undefined;
@@ -389,7 +398,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       if (!(error instanceof Error) || error instanceof CommandDeadlineError) throw error;
       spanRefusal(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError ? 'placement' : 'error', error.message);
       // Stage 7a refused a corridor: no trial exists to route or judge, so the re-run is given back, as for a course.
-      if (error instanceof SpanRefusal) reruns--;
+      if (error instanceof SpanRefusal) { reruns--; placements--; }
       return false;
     }
     if (trial7e.fallbackUsed && !kept7e.fallbackUsed) { spanRefusal('placement', 'ELK fell back during the span trial'); return false; }
@@ -414,19 +423,21 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       if (!fanRoundHolds(trial7e, again)) break;
       trial7e = again; trialFloors = next;
     }
+    // 7f freezes the chords that are straight now and no other (`freezeChords`), so a hinted link that is not straight here (the freeze refuses it, as `leg` when a neighbour's
+    // leg crowds it at the pitch the trial gave) is lost: the trial is refused here, before 7f and the route.
+    // The placement above is spent, so nothing is given back.
+    const lost = offer.links.filter(id => {
+      const item = trial7e!.links.find(other => other.id === id);
+      return item === undefined || !isRoutedChord(trial7e!, item);
+    });
+    if (lost.length > 0) { spanRefusal('promise', `the freeze would not hold ${lost.join(', ')}: ${lost.map(id => { const item = trial7e!.links.find(other => other.id === id); return item === undefined ? 'missing' : freezeRefusal(trial7e!, item) ?? 'not straight'; }).join(', ')} (before 7f)`); return false; }
     try {
       const trial = await timed('bands-trial', () => step('bands', () => bands(trial7e!, () => trialAbort('bands'), options.attemptTrace), true));
       const trialMoved = lastAttempt.moved, trialUnmoved = lastAttempt.unmoved;
       const routedTrial = await routeModel(trial, true);
       const verdict = judgeSpanTrial(routedBase!, routedTrial, offer.links);
       options.testSideTrace?.({ ev: 'span-trial', verdict, trial, routedTrial, routedBase, offer });
-      if (!verdict.kept) {
-        spanRefusal(verdict.reason!, verdict.detail);
-        // A trial that loses a promised chord at the freeze was offered a chord that the port pitch of the trial did not free: the offer was wrong, not the sheet, and the
-        // re-run is given back so that the rounds after it keep their budget (follow-up: reserve the leg pitch in stage 5).
-        if (verdict.reason === 'promise') reruns--;
-        return false;
-      }
+      if (!verdict.kept) { spanRefusal(verdict.reason!, verdict.detail); return false; }
       activeSpans = new Set([...activeSpans, ...offer.links]); floors = trialFloors;
       base = trial; kept7e = trial7e; routedFinal = routedTrial; routedBase = routedTrial;
       baseMoved = trialMoved; baseUnmoved = trialUnmoved;
@@ -598,7 +609,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
           || (error instanceof Error && error.message.startsWith('Centring invariant violated')))) throw error;
         refuseOverlays(`the placement run rejected them (${error.message})`);
         // Stage 7a refused a lane: no trial exists, so the re-run is given back, as the course round does.
-        if (error instanceof CourseRefusal) reruns--;
+        if (error instanceof CourseRefusal) { reruns--; placements--; }
       }
       if (trial7e !== undefined && trial7e.fallbackUsed && !kept7e.fallbackUsed) { refuseOverlays('ELK fell back during the overlay trial'); trial7e = undefined; }
       if (trial7e !== undefined) {

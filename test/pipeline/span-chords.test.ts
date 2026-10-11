@@ -183,19 +183,28 @@ describe('the span round on the sheets', () => {
     expect(model.lanes.filter(lane => (lane.kind ?? 'transit') === 'transit')).toHaveLength(1);
   }, 60000);
 
-  // The trial of this sheet loses its chord at the freeze (`leg`: the chord passes through the leg of a neighbour that leaves the same node), and the judge refuses
-  // the whole trial (`promise`). The sheet is then as before the round, and the refused trial gives its re-run back, so that a course still has the one re-run.
-  // Follow-up: reserve the leg pitch in stage 5, so that the chord and the lane of this sheet are both taken.
-  it('a chord and a lane share a middle tier: a trial that loses its chord is refused and costs the rounds after it nothing', async () => {
-    const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 1 };
+  // The trial of this sheet loses its chord at the freeze (`leg`: the chord passes through the leg of a neighbour that leaves the same node). The round refuses it
+  // before 7f and the route (`promise`), and the sheet is as before the round. The placement is spent and nothing is given back (Q111): with one re-run (`testMaxReruns: 1`)
+  // the course is lost, with the default budget it is kept. Follow-up: reserve the leg pitch in stage 5, so that the chord and the lane of this sheet are both taken.
+  it('a chord and a lane share a middle tier: a trial that loses its chord is refused before 7f', async () => {
     const refused: string[] = [];
-    const model = await layout(parse(source(SHEETS.share)), { ...options, testSideTrace: event => { if (event.ev === 'span-refused') refused.push(`${String(event.why)}`); } });
-    const plain = await layout(parse(source(SHEETS.share)), { ...options, testSpanHints: [] });
+    const model = await layout(parse(source(SHEETS.share)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
+      testSideTrace: event => { if (event.ev === 'span-refused') refused.push(`${String(event.why)}`); } });
+    const plain = await layout(parse(source(SHEETS.share)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testSpanHints: [] });
     const count = (m: LayoutModel, code: string): number => m.diagnostics.filter(item => item.code === code).length;
     expect(refused).toEqual(['promise']);
     expect(count(model, 'SPAN_CHORD_TAKEN')).toBe(0);
     expect(count(model, 'COURSE_TAKEN')).toBe(count(plain, 'COURSE_TAKEN'));
     expect(model.lanes.filter(lane => (lane.kind ?? 'transit') === 'transit')).toHaveLength(plain.lanes.filter(lane => (lane.kind ?? 'transit') === 'transit').length);
+  }, 60000);
+
+  it('a chord and a lane share a middle tier: with one re-run the refused trial spends it, and the course is lost (the measured cost)', async () => {
+    const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 1 };
+    const model = await layout(parse(source(SHEETS.share)), options);
+    const plain = await layout(parse(source(SHEETS.share)), { ...options, testSpanHints: [] });
+    const count = (m: LayoutModel, code: string): number => m.diagnostics.filter(item => item.code === code).length;
+    expect(count(plain, 'COURSE_TAKEN')).toBe(1);
+    expect(count(model, 'COURSE_TAKEN')).toBe(0);
   }, 60000);
 
   it('a labelled chord is taken and G3 passes', async () => {

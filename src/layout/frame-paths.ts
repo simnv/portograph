@@ -576,6 +576,12 @@ function frozenChordPath(model: LayoutModel, link: LayoutLink): LayoutPath | und
   return { owner: { ...link.owner }, layer: 'routed', fixed: true, ...pathStrokeWidth(link), segments: [segment] };
 }
 
+/** The first check that refuses a cross-frame candidate at the freeze (`freezeChords`); undefined when none does. */
+export function freezeRefusal(model: LayoutModel, link: LayoutLink): ChordRefusal | undefined {
+  const verdict = chordVerdict(model, link, SIDE_EDGE_SLACK);
+  return 'reason' in verdict ? verdict.reason : fixedPointRefusal(model, link, verdict.segment);
+}
+
 /**
  * The chords held at the start of 7f: the links that are straight now. Every cross-frame candidate that is not held is named once
  * (`ROUTED_CHORD_REFUSED`, info) with the first check that refuses it.
@@ -584,9 +590,8 @@ export function freezeChords(model: LayoutModel): void {
   const held = model.links.filter(link => isRoutedChord(model, link)).map(link => link.id);
   for (const link of model.links) {
     if (held.includes(link.id) || chordKind(model, link) !== 'cross') continue;
-    const verdict = chordVerdict(model, link, SIDE_EDGE_SLACK);
+    const reason = freezeRefusal(model, link);
     // A candidate no check refuses is not refused: it names nothing (it has no reason to give).
-    const reason: ChordRefusal | undefined = 'reason' in verdict ? verdict.reason : fixedPointRefusal(model, link, verdict.segment);
     if (reason === undefined) continue;
     model.diagnostics.push({ stage: 'placement', severity: 'info', code: 'ROUTED_CHORD_REFUSED',
       message: `The link ${link.id} keeps the orthogonal route between frames: ${reason}.`, owners: [{ kind: 'link', id: link.id }] });
