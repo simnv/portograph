@@ -1,0 +1,18 @@
+# Expected: The grid `farm` stands as a grid. The bundle is written from b to a (the `from` end is the lower one), but a
+# leaves the group upward, to the core, so the exits decide before the written direction: a stands over b, a's members on
+# bottom and b's on top, straight. `GRID_BUNDLE_STACKED` is reported once.
+portograph: 2
+profile: network
+groups:
+  top: { tier: 0, label: Core }
+  farm: { tier: 1, shape: grid, label: Farm }
+nodes:
+  core: { group: top, class: router, label: Core }
+  a: { group: farm, class: server, label: A }
+  b: { group: farm, class: server, label: B }
+  c: { group: farm, class: server, label: C }
+  d: { group: farm, class: server, label: D }
+links:
+  - [core, a]
+  - [b, a]
+  - [b, a]

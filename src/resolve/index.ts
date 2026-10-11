@@ -4,6 +4,7 @@ import {
   type NormalisedDocument, type Owner, type PortRef,
 } from '../model/index.js';
 import { enclosedBundle } from '../layout/grid.js';
+import { stackChains } from '../layout/grid-chains.js';
 import { expandRankedGroups } from '../layout/rank-cells.js';
 import { detectMeshBuses } from './mesh-bus.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
@@ -315,10 +316,12 @@ function groupBundles(model: LayoutModel): void {
 }
 
 /**
- * Say, once and in the model, where a group's authored shape is declined because the group holds
- * both ends of a bundle whose channel a stacked arrangement cannot promise (`enclosedBundle`). The
- * shape is read back through `groupShape`, which asks that same question of the same document, so
- * the diagnostic and the geometry cannot disagree — this reports the answer, it does not decide it.
+ * Say, once and in the model, what a grid group does with the bundles it holds both ends of
+ * (architecture ticket 23). Where `stackChains` gives chains, each chain stands vertically and
+ * `GRID_BUNDLE_STACKED` (info) names it; where it gives a reason, the shape is declined and
+ * `GROUP_SHAPE_DECLINED` (warning) names the bundle and the reason. The shape is read back through
+ * `groupShape`, which asks the same predicate of the same document, so the diagnostic and the
+ * geometry cannot disagree — this reports the answer, it does not decide it.
  *
  * Stage 1 reads a layout module here. That is the wrong way round for the layering, and it is
  * deliberate: the predicate has exactly one definition, and `grid.ts` is where the shape rules
@@ -330,8 +333,16 @@ function declineStackedShapes(model: LayoutModel): void {
     if (model.document.groups[id]!.shape !== 'grid') continue;
     const bundle = enclosedBundle(model, id);
     if (!bundle) continue;
-    report(model, 'GROUP_SHAPE_DECLINED', `${id} keeps the row shape instead of grid: it holds both ends of ${bundle.id}, between ${bundle.nodes[0]} and ${bundle.nodes[1]}, and a stacked arrangement gives that bundle's channel no room`,
-      [{ kind: 'group', id }, bundle.owner], 'warning');
+    const stack = stackChains(model, id);
+    if ('chains' in stack) {
+      for (const chain of stack.chains) {
+        report(model, 'GRID_BUNDLE_STACKED', `${id} stands ${chain.bundles.join(', ')} vertically: ${chain.nodes.join(' over ')} share one column`,
+          [{ kind: 'group', id }, ...chain.bundles.map(bundleId => model.bundles.find(item => item.id === bundleId)!.owner)], 'info');
+      }
+      continue;
+    }
+    report(model, 'GROUP_SHAPE_DECLINED', `${id} keeps the row shape instead of grid: it holds both ends of ${stack.bundle.id}, between ${stack.bundle.nodes[0]} and ${stack.bundle.nodes[1]}, and a stacked arrangement gives that bundle's channel no room (reason: ${stack.decline})`,
+      [{ kind: 'group', id }, stack.bundle.owner], 'warning');
   }
 }
 

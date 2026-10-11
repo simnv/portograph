@@ -1,0 +1,24 @@
+# Expected: The grid `farm` stands as a grid with a chain of three: bundles a-b and b-c make a, b and c one column in three
+# consecutive rows, a on top. The members of a-b leave a's bottom and enter b's top; the members of b-c leave b's bottom
+# and enter c's top. All four bundle links are straight (0 bent, 0 turns), and `GRID_BUNDLE_STACKED` is reported once.
+# The two nodes that leave upward (d and e) take columns of their own in the first row, and f fills the cell under d.
+portograph: 2
+profile: network
+groups:
+  top: { tier: 0, label: Core }
+  farm: { tier: 1, shape: grid, label: Farm }
+nodes:
+  core: { group: top, class: router, label: Core }
+  a: { group: farm, class: server, label: A }
+  b: { group: farm, class: server, label: B }
+  c: { group: farm, class: server, label: C }
+  d: { group: farm, class: server, label: D }
+  e: { group: farm, class: server, label: E }
+  f: { group: farm, class: server, label: F }
+links:
+  - [core, d]
+  - [core, e]
+  - [a, b]
+  - [a, b]
+  - [b, c]
+  - [b, c]

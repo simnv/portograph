@@ -20,7 +20,7 @@ import { fitRegionGroup, placementWarning } from './regions.js';
 import { approachReach, endPort } from './approach.js';
 import { COURSE_STEM, endMode } from './course-rows.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
-import { gridCells, gridRowGap, groupShape, isGridGroup, packGridRows } from './grid.js';
+import { gridCells, gridRowGaps, groupShape, isGridGroup, packGridRows } from './grid.js';
 import { freezePortTopology } from './mutation.js';
 import { busOfPort, busSide, meshBuses } from './bus.js';
 import { planTrunks } from './trunk.js';
@@ -895,7 +895,8 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
     // both the columns and the rows are laid out again from the new sizes at the gaps the rows rule
     // reserves — rather than pushed onto one line, which is what the loop below would do.
     if (isGridGroup(model, groupId) && group.nodes.length) {
-      packGridRows(model, group, gridCells(model, group), (a, b) => rowGap(model, a, b), gridRowGap(model));
+      const cells = gridCells(model, group);
+      packGridRows(model, group, cells, (a, b) => rowGap(model, a, b), gridRowGaps(model, group, cells));
       continue;
     }
     let x = group.bounds!.x + spacing.padding;

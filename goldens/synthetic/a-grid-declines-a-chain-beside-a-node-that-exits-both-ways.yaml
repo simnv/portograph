@@ -1,0 +1,20 @@
+# Expected: The grid `farm` keeps the row shape: node c leaves the group both ways, upward to the core and downward to the rail,
+# which needs the first row and the last at once, so the grid has one row (Q75) and the chain a-b has no second row to stand
+# in. Report `GROUP_SHAPE_DECLINED` with the reason `rows`, and lay the group out as one row.
+portograph: 2
+profile: network
+groups:
+  top: { tier: 0, label: Core }
+  farm: { tier: 1, shape: grid, label: Farm }
+  low: { tier: 2, label: Rail }
+nodes:
+  core: { group: top, class: router, label: Core }
+  a: { group: farm, class: server, label: A }
+  b: { group: farm, class: server, label: B }
+  c: { group: farm, class: server, label: C }
+  rail: { group: low, class: router, label: Rail }
+links:
+  - [core, c]
+  - [c, rail]
+  - [a, b]
+  - [a, b]

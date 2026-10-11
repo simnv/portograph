@@ -263,10 +263,10 @@ describe('restore checks the stored hint against the document and the geometry (
 describe('with no hint the layout is byte-identical to main (ticket 114)', () => {
   // Hashes of the layout JSON without `runtime`, measured on main at e30c100. `a-group-holds-both-ends-of-a-bundle` is re-baselined for ranked-groups tickets
   // 100-102: link-1 takes a routed chord across its own title band (technique straight, one segment, `frozenChords`; the `ROUTED_CHORD_REFUSED` note is gone),
-  // and nothing else in its layout differs (diffed against main's src at 964d77f). The other three fixtures are untouched by them. `a-bar-end-keeps-its-corridor` is re-baselined for architecture ticket 19 (the bar is seated at the width 7d gives it: the lanes stand 3 px further out). Each also compares a
+  // and nothing else in its layout differs (diffed against main's src at 964d77f). It is re-baselined again for architecture ticket 23, phase 1: the `GROUP_SHAPE_DECLINED` message gains `(reason: authored-side)`, and nothing else in its layout differs. The other three fixtures are untouched by them. `a-bar-end-keeps-its-corridor` is re-baselined for architecture ticket 19 (the bar is seated at the width 7d gives it: the lanes stand 3 px further out). Each also compares a
   // no-hint run with a run with empty hint and floor maps, which is the ticket 114 claim itself.
   const main: Record<string, string> = {
-    'a-group-holds-both-ends-of-a-bundle': 'b11defc7dffb0055',
+    'a-group-holds-both-ends-of-a-bundle': 'a6f8ce270b4cc466',
     'a-bus-in-a-rank-gap-grows-the-gap': '2bf7ca0b64536533',
     'a-linked-node-steps-out-of-a-straight-chord': '80bfea4e49b45779',
     'a-bar-end-keeps-its-corridor': 'c47be7d6b65f7515',

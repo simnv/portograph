@@ -7,6 +7,7 @@ import { junctionChain, junctionFan, mergedRun, sharedStem } from '../score/mode
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { EPS, intersection, overlapSegment, samePoint, segmentDistance } from '../geometry/planar.js';
 import { MEMBER_GAP, MIN_STEM, clearOfGroupEdges, clone, coordinate, edgeMargin, facing, inversionPairs, members, normal, outward, pitch, type DepthPair, type Member } from './bundle-geometry.js';
+import { bundleTurnSpan } from './bundle-need.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 
 export class BundleFeasibilityError extends Error {
@@ -327,7 +328,7 @@ function parallelPaths(model: LayoutModel, bundle: Bundle, list: Member[], q: nu
   const groups = [-1, 1].map(direction => {
     const turning = list.filter(item => Math.sign(coordinate(item.b) - coordinate(item.a)) === direction)
       .sort((a, b) => -direction * (coordinate(a.a) - coordinate(b.a)));
-    const span = (turning.length - 1) * q;
+    const span = bundleTurnSpan(turning.length, q);
     if (turning.length && end - start < span - PLACEMENT_EPS) {
       throw new BundleFeasibilityError('BUNDLE_CHANNEL_CAPACITY', bundle.id, `Need ${span} px for distinct member turns, have ${end - start}.`);
     }

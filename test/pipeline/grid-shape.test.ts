@@ -4,6 +4,7 @@ import { layout, parse, restoreLayoutModel, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { rebuildBarDrops } from '../../src/layout/bars.js';
 import { enclosedBundle, gridCells, gridChunks, gridColumnFloor, gridRows, groupShape, isGridGroup, likeSidePairs, packRowsOf } from '../../src/layout/grid.js';
+import { stackChains } from '../../src/layout/grid-chains.js';
 import { nodeGap } from '../../src/layout/skeleton-graph.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -219,6 +220,9 @@ it('a group that holds both ends of a bundle declines the grid and says which bu
   expect(declined.map(item => item.severity)).toEqual(['warning']);
   expect(declined[0]!.message).toContain('bundle-1');
   expect(declined[0]!.message).toContain('between a and d');
+  // The reason is the one `stackChains` gives: the member ports are authored `right`/`left`.
+  expect(declined[0]!.message).toContain('(reason: authored-side)');
+  expect(stackChains(model, 'place')).toMatchObject({ decline: 'authored-side' });
   // One line, which is what the channel needs: `a` leaves the group upward, `d` and `b` downward,
   // so the ranks would have put `a` in the first row and `d` in the last.
   expect(rows(model, 'place')).toHaveLength(1);

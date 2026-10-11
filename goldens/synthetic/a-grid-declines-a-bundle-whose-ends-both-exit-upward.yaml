@@ -1,0 +1,17 @@
+# Expected: The grid `farm` keeps the row shape: both ends of the bundle a-b leave the group upward, so neither can stand
+# under the other (a column is a corridor, and a node that exits upward stands in the first row). Report
+# `GROUP_SHAPE_DECLINED` with the reason `exits`, and lay the group out as one row.
+portograph: 2
+profile: network
+groups:
+  top: { tier: 0, label: Core }
+  farm: { tier: 1, shape: grid, label: Farm }
+nodes:
+  core: { group: top, class: router, label: Core }
+  a: { group: farm, class: server, label: A }
+  b: { group: farm, class: server, label: B }
+links:
+  - [core, a]
+  - [core, b]
+  - [a, b]
+  - [a, b]
