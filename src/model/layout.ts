@@ -214,7 +214,7 @@ export interface LayoutLink {
 }
 
 /** What a course is for: the detour of its natural route (ticket 15, Section 1, T1 to T5). */
-export type CourseKind = 'transit' | 'u-turn' | 'skirt' | 'shared-port' | 'overlay';
+export type CourseKind = 'transit' | 'u-turn' | 'skirt' | 'shared-port' | 'overlay' | 'bypass';
 /** One run of a course, in order from the source: the kind of lane or row it stands on. `u` is a U part of the tier gap: both its legs stand on one boundary of the gap (phase 5). */
 export type CourseRun = 'padding' | 'transit' | 'gap' | 'perimeter' | 'tier-gap' | 'u';
 /** One end of a course. `face` is the side of the port (stage 5 sets it from the course); `approach` is the pill edge a stem meets when it differs. */
@@ -225,6 +225,8 @@ export interface CourseEnd { face: Side; approach?: Side }
  */
 export interface Course {
   link: string; kind: CourseKind; from: CourseEnd; to: CourseEnd; runs: CourseRun[];
+  /** A `bypass` course only (architecture ticket 24, phase 5): the edge of the row (`top` or `bottom` of the group) that its padding row stands on. */
+  edge?: 'top' | 'bottom';
   /** The margin the course's perimeter lane stands in. Present when `runs` has a `perimeter` run; the lane keeps it for good. */
   side?: 'left' | 'right';
 }

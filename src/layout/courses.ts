@@ -14,7 +14,7 @@ export class CourseRefusal extends SideHintRefusal {}
  * what a course, an approach and those two lane kinds must satisfy, so that a layout which carries them restores or is refused.
  */
 
-const KINDS: readonly CourseKind[] = ['transit', 'u-turn', 'skirt', 'shared-port', 'overlay'];
+const KINDS: readonly CourseKind[] = ['transit', 'u-turn', 'skirt', 'shared-port', 'overlay', 'bypass'];
 const RUNS: readonly CourseRun[] = ['padding', 'transit', 'gap', 'perimeter', 'tier-gap', 'u'];
 const SIDES: readonly Side[] = ['top', 'right', 'bottom', 'left'];
 
@@ -68,6 +68,8 @@ export function validateCourses(model: LayoutModel): void {
     if ((course.kind === 'overlay') !== (link.layer === 'overlay')) throw new Error(`Course kind on ${course.link} contradicts its layer`);
     if (course.runs.length === 0 || !course.runs.every(run => RUNS.includes(run))) throw new Error(`Course on ${course.link} has invalid runs`);
     if (course.runs.includes('perimeter') !== (course.side !== undefined) || (course.side !== undefined && course.side !== 'left' && course.side !== 'right')) throw new Error(`Course on ${course.link} must name the margin of its perimeter lane, and only then`);
+    if ((course.kind === 'bypass') !== (course.edge !== undefined) || (course.edge !== undefined && course.edge !== 'top' && course.edge !== 'bottom')) throw new Error(`Course on ${course.link} must name the edge of its padding row, and only a bypass does`);
+    if (course.kind === 'bypass' && (course.from.face === 'top' || course.from.face === 'bottom' || course.to.face === 'top' || course.to.face === 'bottom')) throw new Error(`Bypass on ${course.link} must leave lateral faces`);
     validateEnd(model, link, 'from', course.from);
     validateEnd(model, link, 'to', course.to);
   }
@@ -82,7 +84,7 @@ export function sameCourses(a: readonly Course[] | undefined, b: readonly Course
   const end = (p: CourseEnd, q: CourseEnd): boolean => p.face === q.face && p.approach === q.approach;
   return x.every((course, i) => {
     const other = y[i]!;
-    return course.link === other.link && course.kind === other.kind && course.side === other.side && end(course.from, other.from) && end(course.to, other.to)
+    return course.link === other.link && course.kind === other.kind && course.side === other.side && course.edge === other.edge && end(course.from, other.from) && end(course.to, other.to)
       && course.runs.length === other.runs.length && course.runs.every((run, j) => run === other.runs[j]);
   });
 }

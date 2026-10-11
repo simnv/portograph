@@ -1,0 +1,27 @@
+# Expected (architecture ticket 24, phase 5; docs/design/turn-order.md, Section 6): four nodes in a row with a ring and one host each below (the shape of hand solve 01).
+# The closing link between the ends of the row has two nodes between them. Its route is planned: a stem in the gap beside each end, one padding row on the top edge of the
+# row (the edge with fewer legs), and the closing link in the upper slot of both faces, so that it crosses the straight link of the gap nowhere. 4 turns, 0 crossings.
+# Test-only input owned by ticket 24; test/pipeline/turn-order.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  row: { tier: 0, label: Row }
+  below: { tier: 1, label: Below }
+nodes:
+  r1: { group: row, class: router, label: R1 }
+  r2: { group: row, class: router, label: R2 }
+  r3: { group: row, class: router, label: R3 }
+  r4: { group: row, class: router, label: R4 }
+  h1: { group: below, class: server, label: H1 }
+  h2: { group: below, class: server, label: H2 }
+  h3: { group: below, class: server, label: H3 }
+  h4: { group: below, class: server, label: H4 }
+links:
+  - [r1, r2]
+  - [r2, r3]
+  - [r3, r4]
+  - [r4, r1]
+  - [r1, h1]
+  - [r2, h2]
+  - [r3, h3]
+  - [r4, h4]

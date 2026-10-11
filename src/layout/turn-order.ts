@@ -5,6 +5,7 @@ import { portId } from './skeleton-graph.js';
 import { COURSE_STEM, endMode } from './course-rows.js';
 import { laneSource } from './lanes.js';
 import { farCoordinate } from './peers.js';
+import { bypassRowY } from './course-bypass.js';
 import { busOfPort } from './bus.js';
 import { groupShape } from './grid.js';
 
@@ -87,6 +88,11 @@ function reservedTurn(model: LayoutModel, link: LayoutLink, which: 'from' | 'to'
   const own = findPort(model, mine), far = findPort(model, other), box = model.nodes[mine.node]?.bounds;
   if (own?.side === undefined || far?.anchor === undefined || box === undefined) return undefined;
   const course = (model.courses ?? []).find(item => item.link === link.id);
+  // A row bypass turns toward its padding row at both ends, and goes on along it (Section 6).
+  if (course?.kind === 'bypass') {
+    const row = bypassRowY(model, link, course);
+    return row === undefined ? undefined : { turn: course.edge === 'top' ? 'low' : 'high', shape: 'onward', reach: row };
+  }
   if (course === undefined && own.laneHint !== true) return transit ? transitTurn(model, link, mine, own) : undefined;
   const reserved = course !== undefined ? course.kind === 'skirt' : own.laneHint === true;
   if (!reserved) return undefined;

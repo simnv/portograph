@@ -86,3 +86,49 @@ describe('the turn round', () => {
     expect(turnRoundRuns(1, true, [0, -1, 0], beats)).toBe(true);
   });
 });
+
+/** Architecture ticket 24, phase 5: the row bypass (hand solve 01). */
+describe('the row bypass', () => {
+  const ring = 'a-ring-closes-above-its-row';
+  it('plans the closing link round the top edge of its row: four turns, no crossing, the route on the reserved row', async () => {
+    const off = await layout(parse(fixture(ring)), { ...options, testCourses: [] });
+    const model = await layout(parse(fixture(ring)), options);
+    expect(counts(off).crossings).toBe(1);
+    expect(counts(model).crossings).toBe(0);
+    expect(counts(model).turns).toBe(counts(off).turns);
+    expect(codes(model)).toContain('ROW_BYPASS_PLANNED');
+    expect(codes(model)).not.toContain('PORT_TURN_MISSED');
+    expect(Object.values(score(model).snapshot.gates).every(gate => gate.passed)).toBe(true);
+    const link = model.links.find(item => item.id === 'link-4')!;
+    expect(link.fixedSegments).toHaveLength(6);
+    expect(link.path!.segments.map(segment => [segment.from, segment.to])).toEqual(link.fixedSegments!.map(segment => [segment.from, segment.to]));
+    expect(model.courses).toMatchObject([{ link: 'link-4', kind: 'bypass', edge: 'top', runs: ['gap', 'padding', 'gap'] }]);
+    expect(model.lanes.map(lane => lane.id).sort()).toEqual(['gap-lane:link-4:0', 'gap-lane:link-4:1']);
+  });
+
+  it('puts the closing link in the upper slot of both faces', async () => {
+    const model = await layout(parse(fixture(ring)), options);
+    const link = model.links.find(item => item.id === 'link-4')!;
+    const slot = (node: string, side: 'left' | 'right'): number => {
+      const ref = link.attachments!.from.node === node ? link.attachments!.from : link.attachments!.to;
+      return model.nodes[node]!.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!).findIndex(port => port.ref.ordinal === ref.ordinal);
+    };
+    expect(slot('r4', 'left')).toBe(0);
+    expect(slot('r1', 'right')).toBe(0);
+  });
+
+  it('restores from JSON with its course and lanes', async () => {
+    const model = await layout(parse(fixture(ring)), options);
+    const restored = restoreLayoutModel(JSON.stringify(model));
+    expect(restored.courses).toEqual(model.courses);
+    expect(restored.lanes.map(lane => lane.id)).toEqual(model.lanes.map(lane => lane.id));
+  });
+
+  it('is byte for byte the baseline on a sheet with no blocked row link', async () => {
+    const name = 'turns-both-ways-from-one-bottom-face';
+    const on = await layout(parse(fixture(name)), options);
+    const off = await layout(parse(fixture(name)), { ...options, testCourses: [] });
+    expect(geometry(on)).toBe(geometry(off));
+    expect(on.courses).toBeUndefined();
+  });
+});

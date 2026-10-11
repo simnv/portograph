@@ -10,6 +10,7 @@ import { CourseRefusal, isCourseLane, validateCourseLane } from './courses.js';
 import { isGapRun, laneRunKind } from './lane-kind.js';
 import { courseGeometry, courseOf, isApproachCourse, perimeterLaneId, ringsOf, type LaneDraft } from './course-lanes.js';
 import { gapEnds, gapGeometry, gapLaneId, gapReservation, isGapCourse } from './course-gap.js';
+import { admitBypassLanes, bypassGeometry, bypassLaneExtent, bypassLaneId, isBypassCourse } from './course-bypass.js';
 import { RING_PITCH, endMode } from './course-rows.js';
 import { groupShape } from './grid.js';
 import { portId } from './skeleton-graph.js';
@@ -129,12 +130,16 @@ export function laneSidesHold(model: LayoutModel, proposed: { group: LayoutGroup
   if (!chordsHold(model, proposed, report)) return false;
   return proposed.every(({ group, bounds }) => {
     // A lane of either kind keeps the side of every group of its own sub-tier.
-    const sameTier = model.lanes.filter(lane => lane.tier === group.tier).every(lane => {
+    const sameTier = model.lanes.filter(lane => lane.tier === group.tier && !(lane.group === group.id && bypassLane(model, lane))).every(lane => {
       const box = occupiedAt(model, group, bounds, laneLink(model, lane));
       return group.bounds!.x >= lane.x ? box.x >= right(lane.bounds) - PLACEMENT_EPS : right(box) <= lane.bounds.x + PLACEMENT_EPS;
     });
     return sameTier;
   }) && (!frames || sideLaneFramesHold(model, proposed));
+}
+/** Whether a lane is a stem of a row bypass: it stands in the gaps of its own group and is derived from the node boxes. */
+function bypassLane(model: LayoutModel, lane: Lane): boolean {
+  return lane.kind === 'gap' && lane.owner.kind === 'link' && (model.courses ?? []).some(course => course.link === (lane.owner as { id: string }).id && isBypassCourse(course));
 }
 /** The frame boxes as they would stand with the proposed group boxes: `deriveFrames` on a trial that has the groups and their bodies moved. */
 function framesAfter(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[]): Map<string, Rect> | undefined {
@@ -438,6 +443,8 @@ function laneReservation(model: LayoutModel, link: LayoutLink): PathSegment[] | 
   // A course lane reserves the runs of its course (ticket 15): the side runs and padding rows of its ends, and the vertical run beyond every box.
   const perimeter = owned.find(isCourseLane), course = perimeter === undefined ? undefined : courseOf(model, link.id);
   if (perimeter !== undefined && course !== undefined) {
+    // A bypass reserves its whole route: both stems, the padding row and the side runs (ticket 24, phase 5).
+    if (isBypassCourse(course)) return bypassGeometry(model, link, course)?.segments;
     return perimeter.kind === 'gap' ? gapReservation(model, link, course, perimeter)
       : courseGeometry(model, link, course, perimeter, (group, item) => occupied(model, group, item), ringsOf(model.lanes))?.segments;
   }
@@ -459,6 +466,16 @@ export function rebuildLaneExtents(model: LayoutModel): void {
     if (lane.kind === 'gap') {
       // A column-gap lane keeps its x for good; its extent is replayed from the lateral port's y, as a side lane's is (ticket 15, phase 5).
       const link = laneLink(model, lane), course = link === undefined ? undefined : courseOf(model, link.id);
+      if (link !== undefined && course !== undefined && isBypassCourse(course)) {
+        // The stems of a bypass stand at the centre of their gaps and are derived from the node boxes, so a move of the group takes them along.
+        const geometry = bypassGeometry(model, link, course), index = lane.id === bypassLaneId(link.id, 1) ? 1 : 0;
+        if (geometry !== undefined) {
+          const extent = bypassLaneExtent(geometry, index);
+          lane.x = extent.x;
+          Object.assign(lane.bounds, { x: extent.x - lane.bounds.width / 2, y: extent.y, height: extent.height });
+        }
+        continue;
+      }
       const geometry = link === undefined || course === undefined ? undefined : gapGeometry(model, link, course);
       if (geometry !== undefined) Object.assign(lane.bounds, geometry.extent);
       continue;
@@ -1349,7 +1366,7 @@ function reserveSideLanes(model: LayoutModel, pending: Lane[], occ: (group: Layo
 function reserveCourseLanes(model: LayoutModel, pending: Lane[], occ: (group: LayoutGroup, link?: LayoutLink) => Rect): void {
   const placed: Lane[] = [];
   for (const course of model.courses ?? []) {
-    if (isGapCourse(course) || isApproachCourse(course)) continue;
+    if (isGapCourse(course) || isApproachCourse(course) || isBypassCourse(course)) continue;
     const link = model.links.find(item => item.id === course.link);
     if (link?.attachments === undefined || course.side === undefined) throw new Error(`Course on ${course.link} cannot reserve a perimeter lane`);
     const draft: LaneDraft = { id: perimeterLaneId(link.id), side: course.side, ring: 0, ...(endHasNaturalFace(course) ? { aligned: true as const } : {}) };
@@ -1373,6 +1390,15 @@ function reserveCourseLanes(model: LayoutModel, pending: Lane[], occ: (group: La
  */
 function reserveGapLanes(model: LayoutModel, pending: Lane[], occ: (group: LayoutGroup, link?: LayoutLink) => Rect): void {
   for (const course of model.courses ?? []) {
+    if (isBypassCourse(course)) {
+      // The two stems of a row bypass: each at the centre of the gap beside its end (ticket 24, phase 5).
+      const link = model.links.find(item => item.id === course.link);
+      if (link === undefined) throw new CourseRefusal(`Course on ${course.link} cannot reserve a bypass`);
+      const admitted = admitBypassLanes(model, link, course, pending, laneWidth(model, link));
+      if ('why' in admitted) throw new CourseRefusal(admitted.why);
+      pending.push(...admitted.lanes);
+      continue;
+    }
     if (!isGapCourse(course)) continue;
     const link = model.links.find(item => item.id === course.link);
     if (link === undefined) throw new CourseRefusal(`Course on ${course.link} cannot reserve a column-gap lane`);
@@ -1418,6 +1444,11 @@ export function admitGapLane(model: LayoutModel, link: LayoutLink, course: Cours
   if (geometry === undefined) return { why: `The lane of ${link.id} has no extent` };
   Object.assign(lane.bounds, geometry.extent);
   return { lane };
+}
+/** The offer's filter for a bypass: the same admission on a placed model with the course standing, and the lanes it holds but this link's own. */
+export function probeBypassLanes(model: LayoutModel, link: LayoutLink, course: Course, extra: readonly Lane[] = []): { lanes: Lane[] } | { why: string } {
+  const pending = [...model.lanes.filter(lane => !(lane.owner.kind === 'link' && lane.owner.id === link.id)), ...extra];
+  return admitBypassLanes({ ...model, courses: [...(model.courses ?? []).filter(item => item.link !== course.link), course] }, link, course, pending, laneWidth(model, link), false);
 }
 /** The offer's filter: the same admission on a placed model (the baseline), with the lanes it holds but this link's own. The trial's 7a can still refuse. */
 export function probeGapLane(model: LayoutModel, link: LayoutLink, course: Course, extra: readonly Lane[] = []): { lane: Lane } | { why: string } {
@@ -1466,6 +1497,22 @@ function validateSpanLane(model: LayoutModel, lane: Lane): void {
     || Math.abs(lane.x - (box.x + box.width / 2)) > PLACEMENT_EPS) throw new Error(`Span lane ${lane.id} contradicts the chord of ${link.id}: ${JSON.stringify(lane.bounds)} against ${JSON.stringify(box)}`);
   // A wall in the corridor is not thrown for: a forced 7f move can cause it after 7a, and `spanLaneFindings` names it (`SPAN_CHORD_BLOCKED`).
 }
+/**
+ * A bypass lane (ticket 24, phase 5): one of the two stems of a row bypass. Its id, port and side are the end's; its x and extent are the ones the geometry derives from
+ * the node boxes now; it stands in no body of the model (the nodes of its own row stand beside the gap, not in it).
+ */
+function validateBypassLane(model: LayoutModel, lane: Lane, link: LayoutLink, course: Course): void {
+  const geometry = bypassGeometry(model, link, course), index = lane.id === bypassLaneId(link.id, 1) ? 1 : lane.id === bypassLaneId(link.id, 0) ? 0 : undefined;
+  if (geometry === undefined || index === undefined) throw new Error(`Gap lane ${lane.id} has no bypass course`);
+  const end = geometry.ends[index], extent = bypassLaneExtent(geometry, index);
+  if (lane.port === undefined || portId(lane.port) !== portId(end.ref) || lane.side !== end.port.side || lane.tier !== geometry.tier || lane.group !== geometry.group) throw new Error(`Bypass lane ${lane.id} does not serve its end`);
+  if (lane.bounds.x !== lane.x - lane.bounds.width / 2 || lane.bounds.width < laneWidth(model, link) - PLACEMENT_EPS || !Object.values(lane.bounds).every(Number.isFinite)) throw new Error(`Invalid bypass lane geometry ${lane.id}`);
+  if (Math.abs(lane.x - extent.x) > PLACEMENT_EPS || Math.abs(lane.bounds.y - extent.y) > PLACEMENT_EPS || Math.abs(lane.bounds.height - extent.height) > PLACEMENT_EPS) throw new Error(`Bypass lane ${lane.id} contradicts its gap and port`);
+  for (const node of Object.values(model.nodes)) {
+    const box = node.bounds;
+    if (box !== undefined && box.x < right(lane.bounds) - PLACEMENT_EPS && right(box) > lane.bounds.x + PLACEMENT_EPS && box.y < bottom(lane.bounds) - PLACEMENT_EPS && bottom(box) > lane.bounds.y + PLACEMENT_EPS) throw new Error(`Bypass lane ${lane.id} crosses the node ${node.id}`);
+  }
+}
 /** Validate reservations independently of allocation history, including restored JSON. */
 export function validateLanes(model: LayoutModel): void {
   const risers = (model.meshBuses ?? []).filter(bus => bus.cross !== undefined).flatMap(bus => {
@@ -1500,6 +1547,7 @@ export function validateLanes(model: LayoutModel): void {
   for (const lane of owned) {
     if (lane.kind !== 'gap') continue;
     const link = model.links.find(item => lane.owner.kind === 'link' && item.id === lane.owner.id), course = link === undefined ? undefined : courseOf(model, link.id);
+    if (link !== undefined && course !== undefined && isBypassCourse(course)) { validateBypassLane(model, lane, link, course); continue; }
     const geometry = link === undefined || course === undefined ? undefined : gapGeometry(model, link, course);
     if (link === undefined || course === undefined || geometry === undefined || lane.id !== gapLaneId(link.id)) throw new Error(`Gap lane ${lane.id} has no gap course`);
     if (lane.port === undefined || portId(lane.port) !== portId(link.attachments![geometry.lateral.which])) throw new Error(`Gap lane ${lane.id} does not serve the lateral end of its course`);

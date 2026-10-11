@@ -17,7 +17,7 @@ import { findPort } from './row-paths.js';
 export const gapLaneId = (link: string): string => `gap-lane:${link}:0`;
 
 /** Whether the course runs through a column gap (and not round the outside): its lane is a column-gap lane. */
-export const isGapCourse = (course: Course): boolean => course.runs.includes('gap') && !course.runs.includes('perimeter');
+export const isGapCourse = (course: Course): boolean => course.kind !== 'bypass' && course.runs.includes('gap') && !course.runs.includes('perimeter');
 
 /** The column-gap lane of a link, if its course owns one. */
 export const gapLaneOf = (model: LayoutModel, link: string): Lane | undefined => model.lanes.find(lane => lane.kind === 'gap' && lane.owner.kind === 'link' && lane.owner.id === link);

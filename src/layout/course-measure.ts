@@ -1,7 +1,9 @@
 import type { Point, Rect, Side } from '../model/geometry.js';
 import type { Course, Lane, LayoutGroup, LayoutLink, LayoutModel, LayoutPort } from '../model/layout.js';
 import { courseGeometry, ringsOf } from './course-lanes.js';
-import { probeGapLane } from './lanes.js';
+import { probeBypassLanes, probeGapLane } from './lanes.js';
+import { bypassGeometry } from './course-bypass.js';
+import { carriesTitle } from './bands.js';
 import { gapGeometry, gapPolyline } from './course-gap.js';
 import { polylineCrossings, polylineTurns } from './course-plan.js';
 import { authoredSide, groupShape } from './grid.js';
@@ -31,6 +33,8 @@ export interface CourseOffer {
   courses: Course[];
   /** For each offered link: the turns and crossings promised, and the baseline's. */
   promised: Map<string, { turns: number; crossings: number; base: { turns: number; crossings: number } }>;
+  /** The links whose row bypass the measure declined for a reason that is worth naming (`ROW_BYPASS_DECLINED`); a link that is no bypass case is not named. */
+  declined: { link: string; why: string }[];
 }
 
 /** The baseline route of a link is a poor one: removed, four turns or more, or two turns and three crossings or more. */
@@ -82,9 +86,11 @@ function modes(end: EndFacts, isUpper: boolean, s: 'left' | 'right', free: boole
 const added = (modesUsed: Mode[]): number => modesUsed.filter(mode => mode !== 'natural').length;
 
 export function measureCourses(base: LayoutModel, routedBase: LayoutModel, refusedLinks: ReadonlySet<string> = new Set()): CourseOffer {
-  const offer: CourseOffer = { courses: [], promised: new Map() };
+  const offer: CourseOffer = { courses: [], promised: new Map(), declined: [] };
   // The gap lanes of the offers made so far: a later skirt's column is read with them standing.
   const gapLanes: Lane[] = [];
+  // The group edges that an offered bypass stands on: a second bypass on the same edge is declined.
+  const bypassEdges = new Set<string>();
   const facts = linkFacts(base);
   const paths = new Map<string, Point[]>();
   for (const link of routedBase.links) if (link.layer === 'routed' && link.removed !== true) paths.set(link.id, pointsOf(link));
@@ -118,6 +124,16 @@ export function measureCourses(base: LayoutModel, routedBase: LayoutModel, refus
         offer.promised.set(link.id, { turns: gap.turns, crossings: gap.crossings, base: { turns: turns0 ?? Infinity, crossings: crossings0 } });
         paths.set(link.id, gap.points);
         gapLanes.push(gap.lane);
+        continue;
+      }
+      // A link of one row that a node of the row blocks: the row bypass (ticket 24, phase 5). One per edge of a group in an offer.
+      const bypass = bypassCandidate(base, link, found, usage, crossedBy, turns0, bypassEdges);
+      if (bypass !== undefined && 'why' in bypass) offer.declined.push({ link: link.id, why: bypass.why });
+      else if (bypass !== undefined) {
+        offer.courses.push(bypass.course);
+        offer.promised.set(link.id, { turns: bypass.turns, crossings: bypass.crossings, base: { turns: turns0 ?? Infinity, crossings: crossings0 } });
+        paths.set(link.id, bypass.points);
+        bypassEdges.add(`${found.from.group}|${bypass.course.edge}`);
       }
       continue;
     }
@@ -130,6 +146,35 @@ export function measureCourses(base: LayoutModel, routedBase: LayoutModel, refus
     paths.set(link.id, best.points);
   }
   return offer;
+}
+
+/**
+ * The row bypass of a link whose two ends stand in one row group with a node between them (ticket 24, phase 5; turn-order.md, Section 6): the edge of the row that
+ * fewer legs cross within the span of the two ends (the title edge on a tie), a stem in the gap beside each end and one padding row. It is offered when the stems
+ * can be reserved and the promised polyline has no more turns than the baseline route; the judge keeps it only on the published result. `undefined`: no bypass case.
+ */
+function bypassCandidate(base: LayoutModel, link: LayoutLink, found: LinkFacts, usageOf: (model: LayoutModel, key: string) => number,
+  crossedBy: (id: string, points: readonly Point[]) => number, turns0: number | undefined, taken: ReadonlySet<string>):
+  { course: Course; turns: number; crossings: number; points: Point[] } | { why: string } | undefined {
+  const group = base.groups[found.from.group];
+  if (!found.rowBetween || found.to.group !== found.from.group || group === undefined || group.frame !== undefined || group.flank !== undefined || groupShape(base, group.id) !== 'row') return undefined;
+  if ((found.from.side !== 'left' && found.from.side !== 'right') || (found.to.side !== 'left' && found.to.side !== 'right')) return undefined;
+  if (usageOf(base, portKey(found.from.ref)) !== 1 || usageOf(base, portKey(found.to.ref)) !== 1) return undefined;
+  const order = group.rowOrder ?? group.nodes, at = [order.indexOf(found.from.node), order.indexOf(found.to.node)];
+  if (at.some(index => index < 0)) return undefined;
+  const span = order.slice(Math.min(...at), Math.max(...at) + 1);
+  const legs = (side: 'top' | 'bottom'): number => span.reduce((sum, id) => sum + base.nodes[id]!.ports.filter(port => port.side === side && usageOf(base, portKey(port.ref)) > 0).length, 0);
+  const edge: 'top' | 'bottom' = legs('top') !== legs('bottom') ? (legs('top') < legs('bottom') ? 'top' : 'bottom') : carriesTitle(base, group, 'bottom') && !carriesTitle(base, group, 'top') ? 'bottom' : 'top';
+  if (taken.has(`${group.id}|${edge}`)) return { why: `another bypass stands on the ${edge} edge of ${group.id}` };
+  const course: Course = { link: link.id, kind: 'bypass', edge, from: { face: found.from.side }, to: { face: found.to.side }, runs: ['gap', 'padding', 'gap'] };
+  const model: LayoutModel = { ...base, courses: [...(base.courses ?? []), course] };
+  const geometry = bypassGeometry(model, link, course);
+  if (geometry === undefined) return undefined;
+  const admitted = probeBypassLanes(base, link, course);
+  if ('why' in admitted) return { why: admitted.why };
+  const turns = polylineTurns(geometry.polyline);
+  if (turns0 !== undefined && turns > turns0) return undefined;
+  return { course, turns, crossings: crossedBy(link.id, geometry.polyline), points: geometry.polyline };
 }
 
 /** The best perimeter course of a link between two tiers: the sides and the modes of both ends, judged by turns, crossings, ports and rows added, then the nearer margin. */

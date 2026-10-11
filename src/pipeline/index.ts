@@ -336,10 +336,18 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   // as it leaves one to every round after it. A forced turn order or forced courses (tests) have no turn round.
   const turnRoundOn = options.testCourses === undefined && options.testTurnOrder === undefined;
   const turnReserve = (): number => (turnRoundOn && measureTurnOrder(base).faces.length > 0 ? 1 : 0);
+  // A bypass that cannot be reserved stays a remainder of stage 8 and is named, once, with the reason (`ROW_BYPASS_DECLINED`).
+  const noteDeclined = (offer: ReturnType<typeof measureCourses>): void => {
+    for (const item of offer.declined) {
+      if (sideNotes.some(note => note.code === 'ROW_BYPASS_DECLINED' && note.owners?.some(owner => owner.kind === 'link' && owner.id === item.link))) continue;
+      sideNotes.push({ stage: 'placement', severity: 'info', code: 'ROW_BYPASS_DECLINED', owners: [{ kind: 'link', id: item.link }], message: `The link ${item.link} has no row bypass: ${item.why}.` });
+    }
+  };
   const courseRound = async (given?: ReturnType<typeof measureCourses>): Promise<void> => {
     routedBase = given === undefined ? routedFinal ?? routedBase ?? await routeModel(base) : routedBase;
     const offer = given ?? measureCourses(base, routedBase!);
     options.testSideTrace?.({ ev: 'courses', offer, base, routedBase });
+    noteDeclined(offer);
     if (offer.courses.length === 0) return;
     if (reruns >= maxReruns - turnReserve()) { options.testSideTrace?.({ ev: 'course-skipped', offer, reruns }); return; }
     // The floors of a kept side trial and of the course trial stay under this one.
@@ -362,7 +370,9 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     // A refused course round leaves the layout as the baseline made it, with no note (the trace names the reason), so a sheet it does not change is byte for byte as it was.
     const courseRefusal = (why: string): void => { options.testSideTrace?.({ ev: 'course-refused', links: names, why }); };
     let trial7e: LayoutModel | undefined;
-    try { trial7e = await timed('rerun-course', () => place(floors, hints, nodeFloors, trialAbort, laneKeys, offer.courses)); } catch (error) {
+    // A row bypass (ticket 24, phase 5) puts the closing link in the slot on its turn side: the trial carries the turn order, or its stems would cross the straight link of the gap.
+    const bypassTurn = activeTurn || offer.courses.some(course => course.kind === 'bypass');
+    try { trial7e = await timed('rerun-course', () => place(floors, hints, nodeFloors, trialAbort, laneKeys, offer.courses, activeSpans, bypassTurn)); } catch (error) {
       // A course moves columns the baseline never moved. A centring that cannot hold its feeds there is the course's refusal, not a bug of the baseline.
       if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError
         || (error instanceof Error && error.message.startsWith('Centring invariant violated')))) throw error;
@@ -384,10 +394,15 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
         if (verdict.kept) {
           for (const [id, promised] of offer.promised) keptPromises.set(id, promised.turns);
           if (routedFinal === undefined) routedBase = routedTrial;
-        base = trial; kept7e = trial7e; activeCourses = offer.courses; routedFinal = routedTrial;
+        base = trial; kept7e = trial7e; activeCourses = offer.courses; routedFinal = routedTrial; activeTurn = bypassTurn;
           baseMoved = trialMoved; baseUnmoved = trialUnmoved; courseFloors = new Map(nodeFloors);
           for (const course of offer.courses) {
             const was = offer.promised.get(course.link)!;
+            if (course.kind === 'bypass') {
+              sideNotes.push({ stage: 'placement', severity: 'info', code: 'ROW_BYPASS_PLANNED', owners: [{ kind: 'link', id: course.link }],
+                message: `The link ${course.link} takes a bypass along the ${course.edge} edge of its row: ${was.turns} turns promised, ${was.base.turns === Infinity ? 'removed' : was.base.turns} on the baseline.` });
+              continue;
+            }
             sideNotes.push({ stage: 'placement', severity: 'info', code: 'COURSE_TAKEN', owners: [{ kind: 'link', id: course.link }],
               message: `The link ${course.link} takes a course ${course.kind === 'shared-port' ? 'onto the pill of its shared port' : course.runs.includes('gap') ? 'through a column gap' : 'round the outside'}: ${was.turns} turns promised, ${was.base.turns === Infinity ? 'removed' : was.base.turns} on the baseline.` });
           }
@@ -487,6 +502,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     if (options.testSpanHints === undefined) await spanRound();
     const offer = measureCourses(base, routedBase);
     options.testSideTrace?.({ ev: 'courses', offer, base, routedBase });
+    noteDeclined(offer);
     if (offer.courses.length > 0) {
       const sideOffer = measureSides(base, kept7e, refused), bends = routedBends(routedBase);
       const sideStands = sideOffer.hints.size > 0 || unmovedMayStand();

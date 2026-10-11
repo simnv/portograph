@@ -65,7 +65,7 @@ describe('the acceptance sheets of ticket 15 lay out and name their links', () =
 
 describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
   // The named phase turns the test on by changing `it.fails` to `it`.
-  it.fails('01 (follow-up ticket, not phase 4): the ring closes round the outside with no crossing', async () => {
+  it('01 (architecture ticket 24, phase 5): the ring closes round the outside with no crossing', async () => {
     expect(counts(await run(SHEETS.ring)).routed.crossings).toBe(0);
   }, 60000);
 
