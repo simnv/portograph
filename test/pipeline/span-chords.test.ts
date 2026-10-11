@@ -198,14 +198,25 @@ describe('the span round on the sheets', () => {
     expect(model.lanes.filter(lane => (lane.kind ?? 'transit') === 'transit')).toHaveLength(plain.lanes.filter(lane => (lane.kind ?? 'transit') === 'transit').length);
   }, 60000);
 
-  it('a chord and a lane share a middle tier: with one re-run the refused trial spends it, and the course is lost (the measured cost)', async () => {
+  it('a chord and a lane share a middle tier: with one re-run the course keeps it (the span round leaves a re-run to the round after it)', async () => {
     const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 1 };
     const model = await layout(parse(source(SHEETS.share)), options);
     const plain = await layout(parse(source(SHEETS.share)), { ...options, testSpanHints: [] });
     const count = (m: LayoutModel, code: string): number => m.diagnostics.filter(item => item.code === code).length;
     expect(count(plain, 'COURSE_TAKEN')).toBe(1);
-    expect(count(model, 'COURSE_TAKEN')).toBe(0);
+    expect(count(model, 'COURSE_TAKEN')).toBe(1);
   }, 60000);
+
+  // A refused span trial spends placements and fan re-runs; it must not starve the course round that main runs (a-tier-gap-plan-orders-every-part: Q 0.6466 -> 0.4481, G5 failing).
+  it('a refused span trial does not starve the course round', async () => {
+    const text = readFileSync(new URL('../../goldens/synthetic/a-tier-gap-plan-orders-every-part.yaml', import.meta.url), 'utf8');
+    const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
+    const model = await layout(parse(text), options);
+    const plain = await layout(parse(text), { ...options, testSpanHints: [] });
+    expect(model.lanes.filter(lane => lane.kind === 'perimeter')).toHaveLength(plain.lanes.filter(lane => lane.kind === 'perimeter').length);
+    expect(model.lanes.some(lane => lane.kind === 'perimeter')).toBe(true);
+    expect(score(model).snapshot.gates.G5!.passed).toBe(true);
+  }, 120000);
 
   it('a labelled chord is taken and G3 passes', async () => {
     const { model } = await run(SHEETS.label);

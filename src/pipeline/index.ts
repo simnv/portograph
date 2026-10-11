@@ -396,7 +396,10 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     const offer = measureSpans(base, routedBase!);
     options.testSideTrace?.({ ev: 'spans', offer, base, routedBase });
     if (offer.links.length === 0) return false;
-    if (reruns >= maxReruns) { options.testSideTrace?.({ ev: 'span-refused', links: offer.links, why: 'budget' }); return false; }
+    // The round leaves one re-run to each round after it that has an offer on the baseline (course, side): a trial that is refused has spent its placements, and must not
+    // starve a round that main would have run.
+    const spanMax = maxReruns - (measureCourses(base, routedBase!).courses.length > 0 ? 1 : 0) - (measureSides(base, kept7e, refused).hints.size > 0 ? 1 : 0);
+    if (reruns >= spanMax) { options.testSideTrace?.({ ev: 'span-refused', links: offer.links, why: 'budget' }); return false; }
     reruns++;
     const spanRefusal = (why: string, detail: string): void => { options.testSideTrace?.({ ev: 'span-refused', links: offer.links, why, detail }); };
     const nodeFloors = new Map([...courseFloors, ...(options.testNodeFloors ?? [])]);
@@ -414,7 +417,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     // A fan of chords whose neighbours stand closer than the chord clearance is spread by placement (ticket 89): the chords of this trial are measured as the fan
     // rounds measure the first placement, and the trial places again with the floors they ask for. The re-runs are the command's (MAX_RERUNS).
     let trialFloors = floors;
-    for (let round = 0; round < FAN_ROUNDS && reruns < maxReruns; round++) {
+    for (let round = 0; round < FAN_ROUNDS && reruns < spanMax; round++) {
       const measure = await timed('measureFans', () => measureFans(trial7e!));
       const next: FanMeasure['floors'] = new Map(trialFloors);
       let grew = false;
