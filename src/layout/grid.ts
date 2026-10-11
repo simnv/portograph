@@ -1,9 +1,9 @@
-import type { GroupShape, PortRef } from '../model/document.js';
-import type { Side } from '../model/geometry.js';
+import type { GroupShape } from '../model/document.js';
 import type { Bundle, LayoutGroup, LayoutModel } from '../model/layout.js';
 import { orderedGroupIds } from '../model/model.js';
 import { bandGap, compareId, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
+import { authoredSide } from './grid-chains.js';
 
 /**
  * `grid` is the third group shape `CONTEXT.md` names (`row`, `bar`, `grid`, `ring`, `free`).
@@ -42,12 +42,7 @@ export function groupShape(model: LayoutModel, id: string): GroupShape {
   return shape === 'grid' && enclosedBundle(model, id) !== undefined ? 'row' : shape;
 }
 
-/** The side the author fixed on the port `ref` names, read from the document so no stage can move it. */
-export function authoredSide(model: LayoutModel, ref: PortRef): Side | undefined {
-  return model.document.nodes[ref.node]?.ports.find(port => port.ordinal === ref.ordinal
-    && (port.name ?? undefined) === (ref.name ?? undefined)
-    && (port.anonymous ?? false) === (ref.anonymous ?? false))?.side;
-}
+export { authoredSide };
 
 /**
  * The bundle whose whole channel lies inside `id` — both endpoint nodes are its own — or

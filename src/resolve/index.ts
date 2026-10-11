@@ -4,6 +4,7 @@ import {
   type NormalisedDocument, type Owner, type PortRef,
 } from '../model/index.js';
 import { enclosedBundle } from '../layout/grid.js';
+import { stackChains } from '../layout/grid-chains.js';
 import { expandRankedGroups } from '../layout/rank-cells.js';
 import { detectMeshBuses } from './mesh-bus.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
@@ -330,8 +331,12 @@ function declineStackedShapes(model: LayoutModel): void {
     if (model.document.groups[id]!.shape !== 'grid') continue;
     const bundle = enclosedBundle(model, id);
     if (!bundle) continue;
-    report(model, 'GROUP_SHAPE_DECLINED', `${id} keeps the row shape instead of grid: it holds both ends of ${bundle.id}, between ${bundle.nodes[0]} and ${bundle.nodes[1]}, and a stacked arrangement gives that bundle's channel no room`,
-      [{ kind: 'group', id }, bundle.owner], 'warning');
+    // Phase 1 of architecture ticket 23: the predicate runs and names its reason, the shape is still declined.
+    const stack = stackChains(model, id);
+    const reason = 'decline' in stack ? ` (reason: ${stack.decline})` : '';
+    const named = 'decline' in stack ? stack.bundle : bundle;
+    report(model, 'GROUP_SHAPE_DECLINED', `${id} keeps the row shape instead of grid: it holds both ends of ${named.id}, between ${named.nodes[0]} and ${named.nodes[1]}, and a stacked arrangement gives that bundle's channel no room${reason}`,
+      [{ kind: 'group', id }, named.owner], 'warning');
   }
 }
 
