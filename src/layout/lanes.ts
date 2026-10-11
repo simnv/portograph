@@ -4,7 +4,7 @@ import type { Rect } from '../model/geometry.js';
 import type { Course, Diagnostic, Lane, LayoutGroup, LayoutLink, LayoutModel, MeshBus, PathSegment } from '../model/layout.js';
 import type { PortRef } from '../model/document.js';
 import { DEFAULT_STROKE_WIDTHS as stroke, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth, routedStrokeWidth } from '../theme/geometry.js';
-import { segmentRectDistance } from '../geometry/planar.js';
+import { segmentRect, segmentRectDistance } from '../geometry/planar.js';
 import { findPort } from './row-paths.js';
 import { CourseRefusal, isCourseLane, validateCourseLane } from './courses.js';
 import { isGapRun, laneRunKind } from './lane-kind.js';
@@ -17,11 +17,12 @@ import { PLACEMENT_EPS } from './tolerance.js';
 import { moveGroup, union } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { withLayoutMutation } from './mutation.js';
-import { chordKind, chordsHold } from './frame-paths.js';
+import { chordKind, chordsHold, isRoutedChord } from './frame-paths.js';
 import { deriveFrames, foreignReach, foreignRoot, heldLaneReach, ownFrameCells, riserForeignReach, frameNodes } from './frames.js';
 import { BUS_RUN_CLEARANCE } from './bus-room.js';
 import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 import { nodeTier } from './read/tier.js';
+import { isSpanLane, replaySpanLane, spanCorridor, spanLaneId, SpanRefusal, SpanReservationRefusal } from './span-lanes.js';
 import { trunkBuses, trunkGeometry, trunkHeads, trunkHolds, trunkRing } from './trunk.js';
 
 /** A corridor `reseatLanes` moved, and the child port it moved it onto. */
@@ -253,7 +254,87 @@ function placementInfo(model: LayoutModel, code: string, message: string, link: 
 }
 /** `laneSidesHold`, the side lanes' far ports and the riser keep-out: what a move that can be declined must pass. */
 export function optionalMoveHolds(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[], report = true): boolean {
-  return riserKeepOutHolds(model, proposed) && trunkHolds(model, proposed) && laneSidesHold(model, proposed, report) && sideLanesHold(model, proposed, report);
+  return riserKeepOutHolds(model, proposed) && trunkHolds(model, proposed) && laneSidesHold(model, proposed, report) && sideLanesHold(model, proposed, report)
+    && spanCorridorsHold(model, proposed);
+}
+/**
+ * What a unit puts in a span corridor (architecture ticket 22): the corridor already holds the clearances (the group-edge link margin and the half stroke of the
+ * chord), so the unit counts by its box, the frame edge it stands inside for a chord foreign to its frame, and its bodies and pills with their own half stroke
+ * only. `occupied` adds the 10 px clearance a second time; against a corridor it would flag a chord that stands the gate clearance away.
+ */
+function spanWall(model: LayoutModel, group: LayoutGroup, link: LayoutLink): Rect {
+  const box = group.bounds!, reach = foreignReach(model, group.id, link);
+  return union([box, ...(reach ? [{ x: reach.x, y: box.y, width: reach.width, height: box.height }] : []), ...group.nodes.flatMap(id => {
+    const node = model.nodes[id]!, half = (node.strokeWidth ?? stroke.node) / 2, body = node.bounds!;
+    return [{ x: body.x - half, y: body.y, width: body.width + 2 * half, height: body.height },
+      ...node.ports.filter(port => port.pill).map(port => {
+        const pill = port.pill!.bounds;
+        return { x: pill.x - stroke.pill / 2, y: pill.y, width: pill.width + stroke.pill, height: pill.height };
+      })];
+  })]);
+}
+/**
+ * The walls that stand in a span corridor (architecture ticket 22, docs/design/routed-chords.md, Section 14.3), as `lane|wall` keys: a unit of the corridor's band
+ * (its occupied box, as `validateLanes` measures it) or a lane that is not a corridor, whose box meets the corridor. The end groups of the chord are no wall (they
+ * stand outside the transited bands). `proposed` is a move not made yet: the groups take the proposed boxes with their bodies, and the corridors are derived
+ * again from the end anchors that move.
+ */
+export function spanBreaches(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[] = []): Set<string> {
+  const result = new Set<string>();
+  const corridors = model.lanes.filter(isSpanLane);
+  if (!corridors.length) return result;
+  let moved = model;
+  if (proposed.length) {
+    const groups = { ...model.groups }, nodes = { ...model.nodes };
+    for (const { group, bounds } of proposed) {
+      const dx = bounds.x - group.bounds!.x, dy = bounds.y - group.bounds!.y;
+      groups[group.id] = { ...group, bounds: { ...bounds } };
+      if (!dx && !dy) continue;
+      for (const id of group.nodes) {
+        const node = model.nodes[id]!;
+        nodes[id] = { ...node, bounds: { ...node.bounds!, x: node.bounds!.x + dx, y: node.bounds!.y + dy },
+          ports: node.ports.map(port => ({ ...port, ...(port.anchor ? { anchor: { x: port.anchor.x + dx, y: port.anchor.y + dy } } : {}),
+            ...(port.pill ? { pill: { ...port.pill, bounds: { ...port.pill.bounds, x: port.pill.bounds.x + dx, y: port.pill.bounds.y + dy } } } : {}) })) };
+      }
+    }
+    moved = { ...model, groups, nodes };
+  }
+  for (const lane of corridors) {
+    const link = laneLink(model, lane);
+    const box = link === undefined ? undefined : spanCorridor(moved, link, lane.tier);
+    if (link === undefined || box === undefined) { result.add(`${lane.id}|chord`); continue; }
+    const meets = (other: Rect): boolean => other.x < right(box) - PLACEMENT_EPS && right(other) > box.x + PLACEMENT_EPS;
+    for (const group of Object.values(moved.groups)) {
+      if (group.tier !== lane.tier || group.bounds === undefined || !group.nodes.length) continue;
+      if (meets(spanWall(moved, group, link))) result.add(`${lane.id}|${group.id}`);
+    }
+    for (const other of model.lanes) if (other !== lane && other.tier === lane.tier && !isSpanLane(other) && meets(other.bounds)) result.add(`${lane.id}|${other.id}`);
+    // A chord that is no spanning chord and crosses the corridor box is a wall too (spanning chords cross each other by design). Legs and link labels are not
+    // placed yet when 7a to 7f read this (a leg is derived by the router, a label by stage 9), so they are no wall here; stage 9 reserves the label room (`spanLabelRooms`).
+    for (const other of moved.links) {
+      if (other.id === link.id || other.spanHint === true || !isRoutedChord(moved, other)) continue;
+      if (segmentRect(other.path!.segments[0]!, box)) result.add(`${lane.id}|${other.id}`);
+    }
+  }
+  return result;
+}
+/** Whether the proposed move leaves no wall in a span corridor that was clear before it: a unit that moves in, or an end that moves the corridor onto a wall. */
+export function spanCorridorsHold(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[]): boolean {
+  if (!model.lanes.some(isSpanLane)) return true;
+  const before = spanBreaches(model);
+  for (const key of spanBreaches(model, proposed)) if (!before.has(key)) return false;
+  return true;
+}
+/** `SPAN_CHORD_BLOCKED` (warning): a move that 7f cannot refuse put a wall into a held span corridor. The span round refuses a trial that carries one. */
+export function spanLaneFindings(model: LayoutModel): Diagnostic[] {
+  const blocked = new Map<string, string[]>();
+  for (const key of spanBreaches(model)) {
+    const [lane, wall] = key.split('|') as [string, string], owner = model.lanes.find(item => item.id === lane)?.owner;
+    if (owner?.kind !== 'link') continue;
+    blocked.set(owner.id, [...blocked.get(owner.id) ?? [], wall]);
+  }
+  return [...blocked].map(([link, walls]) => ({ stage: 'placement' as const, severity: 'warning' as const, code: 'SPAN_CHORD_BLOCKED', owners: [{ kind: 'link' as const, id: link }],
+    message: `A move that 7f could not refuse put ${[...new Set(walls)].join(', ')} in the corridor of the spanning chord ${link}.` }));
 }
 /**
  * The end of 7c: a side lane whose far port centring has put on the lane x (and that 7a did not seat there) is recorded once (`SIDE_LANE_SEATED`,
@@ -352,7 +433,7 @@ export function sideReservation(model: LayoutModel, link: LayoutLink, lane: Lane
 function laneReservation(model: LayoutModel, link: LayoutLink): PathSegment[] | undefined {
   // An overlay course reserves its lane and its padding rows, but no fixed segment: the router never sees an overlay, and `overlayPath` reads the lane (ticket 15, phase 7).
   if (link.layer === 'overlay') return undefined;
-  const owned = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === link.id);
+  const owned = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === link.id && !isSpanLane(lane));
   // A course lane reserves the runs of its course (ticket 15): the side runs and padding rows of its ends, and the vertical run beyond every box.
   const perimeter = owned.find(isCourseLane), course = perimeter === undefined ? undefined : courseOf(model, link.id);
   if (perimeter !== undefined && course !== undefined) {
@@ -368,6 +449,12 @@ function laneReservation(model: LayoutModel, link: LayoutLink): PathSegment[] | 
 /** Extent-only replay. Never allocates, moves, renames, or changes the owner of a lane. */
 export function rebuildLaneExtents(model: LayoutModel): void {
   for (const lane of model.lanes) {
+    if (isSpanLane(lane)) {
+      // A span corridor's x and width are derived from the two end anchors (architecture ticket 22).
+      const link = laneLink(model, lane);
+      if (link === undefined || !replaySpanLane(model, lane, link)) throw new SpanRefusal(`The span corridor ${lane.id} has no chord in its band`);
+      continue;
+    }
     if (lane.kind === 'gap') {
       // A column-gap lane keeps its x for good; its extent is replayed from the lateral port's y, as a side lane's is (ticket 15, phase 5).
       const link = laneLink(model, lane), course = link === undefined ? undefined : courseOf(model, link.id);
@@ -813,15 +900,14 @@ export function allocateLanes(model: LayoutModel): void {
       ? undefined : findPort(model, far)!.anchor!.x;
   };
   // A link with a course owns no transit lane: its perimeter lane stands in the crossed sub-tiers (ticket 15, Section 2).
-  const links = model.links.filter(link => transitTiers(model, link).length && courseOf(model, link.id) === undefined).sort((a, b) =>
+  const links = model.links.filter(link => transitTiers(model, link).length && courseOf(model, link.id) === undefined && link.spanHint !== true).sort((a, b) =>
     findPort(model, laneSource(model, a))!.anchor!.x - findPort(model, laneSource(model, b))!.anchor!.x || farX(a) - farX(b) || a.sourceIndex - b.sourceIndex);
   const fixedSources = new Set(links.map(link => model.document.nodes[laneSource(model, link).node]!.group));
   /**
    * Move the planned groups aside, then reserve the corridor beside `group`. Subsequent reservations
    * inspect current pills, not the pre-translation measurements.
    */
-  const commit = (link: LayoutLink, tier: number, groups: LayoutGroup[], group: LayoutGroup, x: number, shifts: number[]): void => {
-    const source = model.nodes[laneSource(model, link).node]!, width = laneWidth(model, link), half = width / 2;
+  const shiftGroups = (link: LayoutLink, groups: LayoutGroup[], shifts: number[]): void => {
     const moved: string[] = [];
     for (const [index, item] of groups.entries()) {
       const dx = shifts[index]!;
@@ -839,6 +925,10 @@ export function allocateLanes(model: LayoutModel): void {
       placementWarning(model, 'LANE_MARGIN_EXPANDED', `Expanded the occupied margin of ${item.id} for ${link.id}.`, [item.id], 'group');
     }
     if (moved.length) rebuildNodeGeometry(model, moved, 'current');
+  };
+  const commit = (link: LayoutLink, tier: number, groups: LayoutGroup[], group: LayoutGroup, x: number, shifts: number[]): void => {
+    const source = model.nodes[laneSource(model, link).node]!, width = laneWidth(model, link), half = width / 2;
+    shiftGroups(link, groups, shifts);
     if (x < source.bounds!.x || x > right(source.bounds!)) placementWarning(model, 'LANE_OUTSIDE_SOURCE_SPAN',
       `${link.id} cannot fit an in-span corridor beside existing reservations at tier ${tier}; routing must complete its attachment jog.`, [link.id]);
     pending.push({ id: laneId(link, tier), owner: { kind: 'link', id: link.id }, layer: 'routed', group: group.id, tier,
@@ -1054,6 +1144,7 @@ export function allocateLanes(model: LayoutModel): void {
     rebuildNodeGeometry(model, Object.keys(model.nodes), 'current');
     rebuildRegions(model);
   }
+  reserveSpanCorridors(model, pending, occ, shiftGroups);
   reserveSideLanes(model, pending, occ);
   reserveCourseLanes(model, pending, occ);
   reserveGapLanes(model, pending, occ);
@@ -1063,6 +1154,52 @@ export function allocateLanes(model: LayoutModel): void {
   rebuildNodeGeometry(model, Object.keys(model.nodes), 'current');
   rebuildRegions(model);
   rebuildLaneExtents(model);
+}
+/**
+ * Stage 7a, after the transit lanes: the span corridors of the spanning chords (architecture ticket 22, docs/design/routed-chords.md, Section 14.3). One corridor per transited
+ * band of each hinted link, in link order. The units of the band that stand in a corridor move out of it by the push of `marginTranslations` (a frame cell, a source of a
+ * lane and a lane already reserved are not pushed); a corridor that cannot be opened refuses the placement run (`SpanRefusal`), so that no later stage discovers it. Two
+ * corridors may overlap each other (two chords cross), but never a unit or another kind of lane: that is checked once all are reserved.
+ */
+function reserveSpanCorridors(model: LayoutModel, pending: Lane[], occ: (group: LayoutGroup, link?: LayoutLink) => Rect,
+  shift: (link: LayoutLink, groups: LayoutGroup[], shifts: number[]) => void): void {
+  for (const link of model.links) {
+    if (link.spanHint !== true) continue;
+    for (const tier of transitTiers(model, link)) {
+      const box = spanCorridor(model, link, tier);
+      if (box === undefined) throw new SpanReservationRefusal(`The chord of ${link.id} does not reach the band of tier ${tier}`);
+      const x = box.x + box.width / 2, width = box.width;
+      const groups = Object.values(model.groups).filter(group => group.tier === tier).sort((a, b) => a.bounds!.x - b.bounds!.x);
+      // A unit left of the corridor stays left of it, and a unit right of it right; a unit it crosses takes the side of its centre.
+      const isLeft = (group: LayoutGroup): boolean => {
+        const reach = spanWall(model, group, link);
+        return right(reach) <= box.x + PLACEMENT_EPS || (reach.x < right(box) - PLACEMENT_EPS && reach.x + reach.width / 2 < x);
+      };
+      const split = groups.filter(isLeft).length;
+      const prior = pending.filter(lane => lane.tier === tier && !isSpanLane(lane));
+      const shifts = groups.slice(0, split).every(isLeft) ? marginTranslations(group => spanWall(model, group, link), groups, split, x, width, prior, new Set()) : undefined;
+      if (shifts === undefined) throw new SpanReservationRefusal(`The corridor of ${link.id} cannot be opened in tier ${tier}: a unit or a lane stands in it and cannot move aside`);
+      shift(link, groups, shifts);
+      const host = [...groups].sort((a, b) => Math.abs(x - (a.bounds!.x + a.bounds!.width / 2)) - Math.abs(x - (b.bounds!.x + b.bounds!.width / 2)))[0]!;
+      const moved = spanCorridor(model, link, tier);
+      if (moved === undefined) throw new SpanReservationRefusal(`The chord of ${link.id} left the band of tier ${tier} when its units moved`);
+      const mx = moved.x + moved.width / 2;
+      pending.push({ id: spanLaneId(link.id, tier), kind: 'span', owner: { kind: 'link', id: link.id }, layer: 'routed', group: host.id, tier,
+        side: mx < host.bounds!.x ? 'left' : 'right', x: mx, bounds: { x: mx - moved.width / 2, width: moved.width, y: moved.y, height: moved.height } });
+    }
+  }
+  // A corridor stands in no unit of its band, and in no lane that is not a corridor.
+  for (const lane of pending.filter(isSpanLane)) {
+    for (const group of Object.values(model.groups)) {
+      if (group.tier !== lane.tier || group.bounds === undefined || !group.nodes.length) continue;
+      const box = spanWall(model, group, laneLink(model, lane)!);
+      if (box.x < right(lane.bounds) - PLACEMENT_EPS && right(box) > lane.bounds.x + PLACEMENT_EPS) throw new SpanReservationRefusal(`${lane.id} crosses the unit ${group.id}`);
+    }
+    for (const other of pending) {
+      if (other === lane || other.tier !== lane.tier || isSpanLane(other)) continue;
+      if (other.bounds.x < right(lane.bounds) - PLACEMENT_EPS && right(other.bounds) > lane.bounds.x + PLACEMENT_EPS) throw new SpanReservationRefusal(`${lane.id} crosses the lane ${other.id}`);
+    }
+  }
 }
 /** The stem a side run keeps at least (spec Section 10: the side run is the port's stem). */
 const SIDE_RUN_STEM = 15;
@@ -1312,6 +1449,20 @@ function validSideLane(model: LayoutModel, lane: Lane, link: LayoutLink): boolea
   return candidate !== undefined && port !== undefined && found?.anchor !== undefined && portId(candidate) === portId(port) && lane.id === sideLaneId(link)
     && found.side === lane.side && model.document.nodes[port.node]?.group === lane.group && nodeTier(model, port.node) === lane.tier;
 }
+/**
+ * A span corridor is valid on a hinted candidate only: its id, owner, band and layer are the link's, and its box is the corridor the chord derives from the two end anchors.
+ * Another chord's path may cross it (two chords cross each other).
+ */
+function validateSpanLane(model: LayoutModel, lane: Lane): void {
+  const link = lane.owner.kind === 'link' ? model.links.find(item => item.id === (lane.owner as { id: string }).id) : undefined;
+  if (link === undefined || link.spanHint !== true || lane.layer !== 'routed' || !transitTiers(model, link).includes(lane.tier) || lane.id !== spanLaneId(link.id, lane.tier)
+    || model.groups[lane.group]?.tier !== lane.tier || !['left', 'right'].includes(lane.side) || !Object.values(lane.bounds).every(Number.isFinite)) throw new Error(`Invalid span lane ${lane.id}`);
+  const box = spanCorridor(model, link, lane.tier);
+  if (box === undefined || Math.abs(box.x - lane.bounds.x) > PLACEMENT_EPS || Math.abs(box.width - lane.bounds.width) > PLACEMENT_EPS
+    || Math.abs(box.y - lane.bounds.y) > PLACEMENT_EPS || Math.abs(box.height - lane.bounds.height) > PLACEMENT_EPS
+    || Math.abs(lane.x - (box.x + box.width / 2)) > PLACEMENT_EPS) throw new Error(`Span lane ${lane.id} contradicts the chord of ${link.id}: ${JSON.stringify(lane.bounds)} against ${JSON.stringify(box)}`);
+  // A wall in the corridor is not thrown for: a forced 7f move can cause it after 7a, and `spanLaneFindings` names it (`SPAN_CHORD_BLOCKED`).
+}
 /** Validate reservations independently of allocation history, including restored JSON. */
 export function validateLanes(model: LayoutModel): void {
   const risers = (model.meshBuses ?? []).filter(bus => bus.cross !== undefined).flatMap(bus => {
@@ -1358,10 +1509,12 @@ export function validateLanes(model: LayoutModel): void {
     }
   }
   const sides = [...new Set(model.lanes.filter(isSideLane).map(lane => `side-lane:${lane.owner.kind === 'link' ? lane.owner.id : ''}`))];
-  const expected = [...model.links.flatMap(link => courseOf(model, link.id) === undefined ? transitTiers(model, link).map(tier => laneId(link, tier)) : []), ...risers, ...sides].sort();
+  const spans = model.links.flatMap(link => link.spanHint === true ? transitTiers(model, link).map(tier => spanLaneId(link.id, tier)) : []);
+  const expected = [...model.links.flatMap(link => courseOf(model, link.id) === undefined && link.spanHint !== true ? transitTiers(model, link).map(tier => laneId(link, tier)) : []), ...risers, ...sides, ...spans].sort();
   if (JSON.stringify(model.lanes.filter(lane => !isCourseLane(lane)).map(lane => lane.id).sort()) !== JSON.stringify(expected)) throw new Error('Lane reservations omit, repeat or invent a transit');
   for (const lane of model.lanes) {
     if (isCourseLane(lane)) continue;
+    if (isSpanLane(lane)) { validateSpanLane(model, lane); continue; }
     if (lane.owner.kind === 'mesh-bus') { validateRiserLane(model, lane); continue; }
     const ownerId = lane.owner.kind === 'link' ? lane.owner.id : undefined;
     const link = model.links.find(link => link.id === ownerId);
@@ -1378,7 +1531,7 @@ export function validateLanes(model: LayoutModel): void {
       const box = occupied(model, other, link);
       if (box.x < right(lane.bounds) - PLACEMENT_EPS && right(box) > lane.bounds.x + PLACEMENT_EPS) throw new Error(`Lane ${lane.id} crosses occupied group ${other.id}`);
     }
-    for (const other of model.lanes) if (other !== lane && other.tier === lane.tier && !isCourseLane(other)
+    for (const other of model.lanes) if (other !== lane && other.tier === lane.tier && !isCourseLane(other) && !isSpanLane(other)
       && Math.abs(other.x - lane.x) < (other.bounds.width + lane.bounds.width) / 2 - PLACEMENT_EPS) throw new Error('Owned lanes overlap');
     for (const other of model.links) if (other.id !== link.id && other.path?.fixed) for (const segment of other.path.segments) {
       if (segmentRectDistance(segment, lane.bounds) < linkStrokeWidth(other) / 2 - PLACEMENT_EPS) throw new Error('Fixed path crosses a foreign lane');

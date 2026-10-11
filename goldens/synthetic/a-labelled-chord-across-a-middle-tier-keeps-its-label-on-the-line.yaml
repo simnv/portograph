@@ -1,0 +1,25 @@
+# Expected: a labelled spanning chord (architecture ticket 22): the label of the link b-f lies on the chord (ticket 16) with its midpoint in a transited
+# tier, G3 passes, and the corridor in that tier is widened by the label so no body stands in its room.
+# Test-only input owned by architecture ticket 22; test/pipeline/span-chords.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  top: { tier: 0, label: Top }
+  one: { tier: 1, label: One }
+  two: { tier: 2, label: Two }
+  bottom: { tier: 3, label: Bottom }
+nodes:
+  a: { group: top, class: router, label: A }
+  b: { group: top, class: router, label: B }
+  c: { group: top, class: router, label: C }
+  m: { group: one, class: router, label: M }
+  n: { group: two, class: router, label: N }
+  f: { group: bottom, class: switch, label: F }
+  e: { group: bottom, class: switch, label: E }
+  g: { group: bottom, class: switch, label: G }
+links:
+  - [c, m]
+  - [m, n]
+  - [n, g]
+  - { from: b, to: f, label: Primary uplink to the lower site }
+  - [n, e]

@@ -28,7 +28,8 @@ export function reservations(model: LayoutModel, link: LayoutLink): { id: string
     }
   }
   for (const lane of model.lanes) {
-    if (lane.layer === 'overlay') continue;
+    // A span corridor is no router obstacle: its chord is a fixed path (architecture ticket 22).
+    if (lane.layer === 'overlay' || lane.kind === 'span') continue;
     const owner = lane.owner;
     const owns = owner.kind === 'link' ? owner.id === link.id
       : owner.kind === 'bundle' && model.bundles.some(bundle => bundle.id === owner.id && bundle.members.includes(link.id));

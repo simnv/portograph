@@ -1,0 +1,30 @@
+# Expected: nine spanning chords (architecture ticket 22): the mesh between tier 0 and tier 2 draws as straight chords beside the
+# tier-1 frame, with no transit lane. SPAN_CHORD_TAKEN nine times, routed bent links 2, turns 4.
+# Three nodes on tier 0, one on tier 1 and three on tier 2; a full routed mesh between tiers 0 and 2, and one link from the middle node to each outer tier.
+# Test-only input owned by architecture ticket 22; test/pipeline/span-chords.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  north: { tier: 0, label: North }
+  core: { tier: 1, label: Core }
+  south: { tier: 2, label: South }
+nodes:
+  n1: { group: north, class: router, label: N1 }
+  n2: { group: north, class: router, label: N2 }
+  n3: { group: north, class: router, label: N3 }
+  c1: { group: core, class: router, label: C1 }
+  s1: { group: south, class: switch, label: S1 }
+  s2: { group: south, class: switch, label: S2 }
+  s3: { group: south, class: switch, label: S3 }
+links:
+  - [n2, c1]
+  - [c1, s2]
+  - [n1, s1]
+  - [n1, s2]
+  - [n1, s3]
+  - [n2, s1]
+  - [n2, s2]
+  - [n2, s3]
+  - [n3, s1]
+  - [n3, s2]
+  - [n3, s3]

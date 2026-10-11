@@ -162,6 +162,14 @@ export function xCatalogue(model: LayoutModel, options: CatalogueOptions = {}): 
   for (const lane of model.lanes) for (const g of groups.filter(item => item.tier === lane.tier)) {
     const bodies = g.nodes.map(node => model.nodes[node]!.bounds!);
     if (!bodies.length) continue;
+    if (lane.kind === 'span') {
+      // A span corridor is derived from both ends of its chord (architecture ticket 22): its x is no fixed term, so the relation of a unit against it has three positions.
+      push({ kind: 'span-corridor', strength: 'hard', owners: [`lane:${lane.id}`, groupOwner(g.id)], source: 'architecture ticket 22 (routed-chords.md, 14.3): a unit of a transited band stands outside the span corridor of a chord',
+        basis: 'span corridor', anchor: 'declared-reservation', branch: `${g.id} stands ${bodies.reduce((sum, body) => sum + body.x + body.width / 2, 0) / bodies.length >= lane.x ? 'right' : 'left'} of ${lane.id}`,
+        contract: 'known', support: 'unsupported', bound: 0,
+        note: 'the corridor stands between the two end ports of its chord: a unit against it is (1-t)*x_a + t*x_b against x_body, three positions, not a difference constraint' });
+      continue;
+    }
     const y0 = Math.min(...bodies.map(body => body.y)), y1 = Math.max(...bodies.map(body => body.y + body.height));
     if (!overlap(y0, y1, lane.bounds.y, lane.bounds.y + lane.bounds.height)) continue;
     const left = Math.min(...bodies.map(body => body.x)), right = Math.max(...bodies.map(body => body.x + body.width));
@@ -195,7 +203,7 @@ export function xCatalogue(model: LayoutModel, options: CatalogueOptions = {}): 
         branch: 'the bodies stand on the published side of the chord', contract: 'known', support: 'unsupported', bound: 0,
         note: 'a body against a chord at fixed y is (1-t)*x_a + t*x_b against x_body: three positions, not a difference constraint; a fixed-endpoint restriction holds only when both ends are fixed' });
     }
-    const owned = !overlay && laneOwned.has(link.id);
+    const owned = !overlay && (laneOwned.has(link.id) || link.spanHint === true);
     push({ kind: overlay ? 'chord-alignment' : 'port-feed-alignment', strength: 'soft', owners: [`link:${link.id}`, groupOwner(ga), groupOwner(gb)],
       source: overlay ? 'Q78, Q86, Q112 (R7): a chord prefers its ports on one x' : 'Q81, ADR-0010 (R2): a feed prefers its child port under the parent port', basis: 'author preference',
       anchor: 'author-intent', branch: `ports on the ${pa.side}/${pb.side} faces as published`, contract: 'known', support: owned ? 'unsupported' : 'difference',

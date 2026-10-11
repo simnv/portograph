@@ -349,7 +349,8 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
     else if (!sharedStem(model, a, b, overlap)) { counters.overlaps++; fail('G4', 'collinear-overlap', [a.link.id, b.link.id], 'Routed segments share more than 1 px'); }
   });
   const lanesUsed = new Set<string>();
-  for (const lane of model.lanes.filter(lane => lane.layer !== 'overlay')) for (const s of routed) {
+  // A span corridor (architecture ticket 22) is a reservation for its chord, which crosses other chords' corridors strictly: it is no lane for this gate.
+  for (const lane of model.lanes.filter(lane => lane.layer !== 'overlay' && lane.kind !== 'span')) for (const s of routed) {
     if (!segmentRect(s.segment, lane.bounds)) continue;
     const laneOwner = lane.owner;
     const owns = laneOwner.kind === 'link' && laneOwner.id === s.link.id || laneOwner.kind === 'bundle' && laneOwner.id === s.link.bundle && model.bundles.some(b => b.id === laneOwner.id && b.owner.kind === 'bundle' && b.owner.id === b.id && b.members.includes(s.link.id));

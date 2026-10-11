@@ -19,7 +19,7 @@ export type ConstraintKind =
   | 'separation-frame-frames' | 'separation-cell-child-frame' | 'separation-frame-cells'
   | 'containment-cell' | 'containment-child-frame' | 'containment-held-lane'
   | 'lane-clearance' | 'anchor-tier-fixed'
-  | 'port-feed-alignment' | 'chord-alignment' | 'chord-side';
+  | 'port-feed-alignment' | 'chord-alignment' | 'chord-side' | 'span-corridor';
 
 /** Why the entry exists. Never "the published boxes stand so". */
 export type Anchor = 'author-intent' | 'documented-clearance' | 'declared-reservation' | 'conditional-choice';

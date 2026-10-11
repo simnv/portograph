@@ -109,7 +109,7 @@ export function simplify(points: Point[]): Point[] {
 export function ownedLanes(model: LayoutModel, link: LayoutLink): Lane[] {
   return model.lanes.filter(lane => {
     const owner = lane.owner;
-    if (lane.layer === 'overlay') return false;
+    if (lane.layer === 'overlay' || lane.kind === 'span') return false;
     if (owner.kind === 'link') return owner.id === link.id;
     return owner.kind === 'bundle' && model.bundles.some(bundle => bundle.id === owner.id && bundle.members.includes(link.id));
   });

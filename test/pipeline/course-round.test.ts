@@ -109,11 +109,21 @@ describe('the course round on the hand-solve sheets (ticket 15, phase 4)', () =>
     expect(Object.values(score(model).snapshot.gates).filter(gate => !gate.passed).length).toBeLessThanOrEqual(1);
   }, 60000);
 
-  it('04: the round refuses the courses and the sheet is as it was', async () => {
-    const model = await layout(parse(source(MESH)), options);
+  it('04: with no spanning chord, the round refuses the courses and the sheet is as it was', async () => {
+    // `testSpanHints: []` leaves the span round out (architecture ticket 22): the nine mesh links keep their lanes, as on main.
+    const model = await layout(parse(source(MESH)), { ...options, testSpanHints: [] });
     expect(model.courses).toBeUndefined();
     expect(model.lanes.some(lane => lane.kind === 'perimeter')).toBe(false);
     expect(side(model, 1, 'from')).toBe('bottom');
+  }, 60000);
+
+  it('04: after the span round the nine mesh links are chords, and the round takes the two courses (architecture ticket 22)', async () => {
+    const model = await layout(parse(source(MESH)), options);
+    expect(model.courses?.map(course => course.link)).toEqual(['link-1', 'link-2']);
+    expect(model.lanes.filter(lane => lane.kind === 'span')).toHaveLength(9);
+    expect([turns(model, 1), turns(model, 2)]).toEqual([2, 2]);
+    expect(score(model).snapshot.counts.routed.crossings).toBeLessThanOrEqual(9);
+    expect(Object.values(score(model).snapshot.gates).every(gate => gate.passed)).toBe(true);
   }, 60000);
 
   it('a sheet with no poor route keeps its layout and takes no course', async () => {

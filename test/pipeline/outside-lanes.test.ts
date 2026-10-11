@@ -81,14 +81,15 @@ describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
     expect(model.diagnostics.filter(item => item.code === 'COURSE_SHAPE_LOST')).toEqual([]);
   }, 60000);
 
-  // The round refuses the two courses (the other mesh links gain two turns): test/pipeline/course-round.test.ts pins the forced shape.
-  it.fails('04 (phase 4, refused by the judge): N2-C1 leaves N2 by the top face, C1-S2 enters S2 from the bottom, N1-S2 keeps its lane; crossings 19 -> 9 at most', async () => {
+  // Architecture ticket 22: the nine mesh links draw as spanning chords, which leaves N2-C1 and C1-S2 poor routes, and the course round takes the two courses of the solve.
+  it('04 (phase 4, after the span round): N2-C1 leaves N2 by the top face, C1-S2 enters S2 from the bottom; crossings 19 -> 9, bent 8 -> 2, turns 16 -> 4', async () => {
     const model = await run(SHEETS.mesh);
     expect(sideOf(model, 1, 'from')).toBe('top');
     expect(sideOf(model, 2, 'to')).toBe('bottom');
     expect(counts(model).routed.crossings).toBeLessThanOrEqual(9);
-    expect(counts(model).routed.bent).toBe(8);
-    expect(counts(model).routed.turns).toBe(16);
+    expect(counts(model).routed.bent).toBe(2);
+    expect(counts(model).routed.turns).toBe(4);
+    expect(gatesHold(model)).toBe(true);
   }, 60000);
 
   it('05 / 12 D (phase 4): the flank link into the canton member is drawn, into its right face, with 1 turn', async () => {

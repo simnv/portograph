@@ -17,6 +17,7 @@ import { rebuildBands, span, union, validateSkeletonBands } from './skeleton-geo
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, flankPair } from './flanks.js';
 import { rebuildLaneExtents, validateLanes, transitTiers } from './lanes.js';
+import { spanCandidate } from './frame-paths.js';
 import { isCourseLane, sameCourses, validateCourses } from './courses.js';
 import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
@@ -481,11 +482,26 @@ function validateGeometry(model: LayoutModel, allowNonConvergence = false): void
     'Tier band membership differs from groups');
   if (new Set(model.labels.map(label => label.id)).size !== model.labels.length) throw new Error('Duplicate label IDs');
 }
+/**
+ * A span hint is an input of placement (architecture ticket 22): `freeze.spans` lists the hinted links in link order, and each is a spanning-chord
+ * candidate under Section 14.1 (tiers two apart or more, facing ports, no lane hint). Whether the chord is still clear is not checked: restore accepts every
+ * layout the pipeline publishes, and 7f names a chord that a move closed (`SPAN_CHORD_BLOCKED`).
+ */
+function validateSpans(model: LayoutModel, frozen: readonly string[] | undefined): void {
+  const hinted = model.links.filter(link => link.spanHint !== undefined);
+  for (const link of hinted) {
+    if (link.spanHint !== true) throw new SideHintRefusal(`Span hint on ${link.id} is not true`);
+    if (!spanCandidate(model, link)) throw new SideHintRefusal(`Span hint on ${link.id}, which is no spanning-chord candidate`);
+  }
+  same(hinted.map(link => link.id), frozen ?? [], 'Frozen span hints changed');
+  if (frozen !== undefined && new Set(frozen).size !== frozen.length) throw new Error('Span hints name a link twice');
+}
 function validateFreeze(model: LayoutModel): void {
   const freeze = model.freeze;
   if (!freeze || freeze.version !== 1) throw new Error('Missing or unsupported topology freeze');
   same(topology(model), freeze.topology, 'Frozen port topology changed');
   if (!sameCourses(model.courses, freeze.courses)) throw new Error('Frozen courses changed');
+  validateSpans(model, freeze.spans);
   validateCourses(model);
   same(freeze.floors.map(floor => floor.node), orderedNodeIds(model.document), 'Frozen floors omit or repeat nodes');
   for (const floor of freeze.floors) if (floor.size.width <= 0 || floor.size.height <= 0) throw new Error('Invalid frozen floor');
@@ -513,6 +529,8 @@ export function freezePortTopology(model: LayoutModel, nodeFloors?: ReadonlyMap<
     floors: orderedNodeIds(model.document).map(id => ({ node: id, size: { ...model.nodes[id]!.sizeFloor! } })) };
   const floored = orderedNodeIds(model.document).filter(id => nodeFloors?.has(id));
   if (model.courses !== undefined) result.freeze.courses = clone(model.courses);
+  const spans = model.links.filter(link => link.spanHint === true).map(link => link.id);
+  if (spans.length) result.freeze.spans = spans;
   if (floored.length) result.freeze.nodeFloors = floored.map(id => ({ node: id, size: { ...nodeFloors!.get(id)! } }));
   return protect(result, baseline);
 }
@@ -665,7 +683,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
   }
   if (rule !== 'lanes') {
     // A course lane's x is derived from the boxes at each replay (ticket 15, Section 2); its id, owner, side, ring, span and width are fixed.
-    const identity = (lane: Lane) => isCourseLane(lane) ? { ...lane, x: 0, bounds: pick(lane.bounds, ['width']) } : { ...lane, bounds: pick(lane.bounds, ['x', 'width']) };
+    const identity = (lane: Lane) => lane.kind === 'span' ? { ...lane, x: 0, bounds: {} } : isCourseLane(lane) ? { ...lane, x: 0, bounds: pick(lane.bounds, ['width']) } : { ...lane, bounds: pick(lane.bounds, ['x', 'width']) };
     same(draft.lanes.map(identity), model.lanes.map(identity), 'Established lane identity, owner, x and width cannot change');
   } else if (model.lanes.length) throw new Error('Lanes cannot be reallocated');
   const supplied = clone(draft);
@@ -826,6 +844,8 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
   else if (changed || ['rows', 'lanes', 'flanks', 'centre', 'bundles'].includes(rule)) {
     if (stages.indexOf(rule) >= stages.indexOf('flanks')) {
       rebuildRegionGeometry(draft, undefined, rule === 'bars' ? model.tierBands : undefined, rule === 'bundles' || stages.indexOf(model.stage) >= stages.indexOf('bundles'));
+      // The geometry rebuild can move a port (the stems of a fan, 7e): a span corridor is derived from the two end anchors, so it is read again (architecture ticket 22).
+      if (draft.lanes.some(lane => lane.kind === 'span')) rebuildLaneExtents(draft);
       if (rule === 'bars') same(nonBarHorizontalPlacement(draft), nonBarHorizontalPlacement(model),
         'Bars may translate downstream tiers only vertically');
     }

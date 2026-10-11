@@ -1,6 +1,6 @@
 import type { Diagnostic, LayoutModel } from '../model/layout.js';
 import { blockedChords, edgeLeavers, freezeChords } from './frame-paths.js';
-import { type LaneFollow, sideLaneFindings, rebuildLaneExtents, reseatLanes } from './lanes.js';
+import { type LaneFollow, sideLaneFindings, spanLaneFindings, rebuildLaneExtents, reseatLanes } from './lanes.js';
 import { stepLinklessOutOfChords } from './overlay-place.js';
 import { type AdoptedCopy, stepOverChords } from './chord-clear.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
@@ -316,6 +316,8 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
   // The side lanes' findings are read once, after the 7f settle loop, on the final geometry (side-faces.md, Sections 10 and 11).
   draft.diagnostics = draft.diagnostics.filter(item => !['SIDE_SHAPE_LOST', 'SIDE_LANE_INSIDE_FRAME', 'SIDE_LANE_NOT_OUTERMOST'].includes(item.code));
   draft.diagnostics.push(...sideLaneFindings(draft));
+  draft.diagnostics = draft.diagnostics.filter(item => item.code !== 'SPAN_CHORD_BLOCKED');
+  draft.diagnostics.push(...spanLaneFindings(draft));
   // 7f may turn a held cross-frame chord shallow (a title widening pushes a column). The move is not refused, so the chord that now leaves its
   // frame by a side edge, or inside the 10 px corner margin, is named (reason `edge`); the gates judge it.
   for (const id of edgeLeavers(draft)) {

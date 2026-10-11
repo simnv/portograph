@@ -7,6 +7,7 @@ import { bandSide, frameSide, GROUP_LABEL_GEOMETRY, legRectsFor, nudgingDistance
 import { frameSubtreeCells } from '../model/model.js';
 import type { Point } from '../model/geometry.js';
 import { stopsOf } from './gap-runs.js';
+import { portId } from './skeleton-graph.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE, straightCorridorClear, type CorridorOptions } from './row-paths.js';
 
 const OUTWARD = { top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } } as const;
@@ -101,7 +102,29 @@ export function withLinkFacts<T>(model: LayoutModel, run: () => T): T {
   try { return run(); } finally { linkFactsScope = undefined; }
 }
 
-function chordKindOf(model: LayoutModel, link: LayoutLink): ChordKind | undefined {
+/**
+ * The tiers of the ends differ by this much (2 or more) and the link would be a cross-frame chord if it carried a span hint (architecture ticket 22,
+ * docs/design/routed-chords.md, Section 14.1): Section 3 items 1, 2 and 4 hold, item 3 reads "different" for "consecutive". Topology and the stage-5 faces only;
+ * the corridor test is `chordVerdict`'s. A link that already carries the hint is a candidate too.
+ */
+export function spanCandidate(model: LayoutModel, link: LayoutLink): boolean {
+  if (documentTierGap(model, link) === undefined || chordKindOf(model, link, true) !== 'cross') return false;
+  // A fan (several routed links on one port) is one shared stem tree whose leaves are the lanes of its links (7e, ticket 20): a link in it keeps its lane.
+  const ends = link.attachments!;
+  return ![ends.from, ends.to].some(end => model.links.some(other => other.id !== link.id && other.layer === 'routed' && other.attachments
+    && [other.attachments.from, other.attachments.to].some(ref => portId(ref) === portId(end))));
+}
+/** How many document tiers lie between the ends of the link, when it is two or more; otherwise undefined. */
+export function documentTierGap(model: LayoutModel, link: LayoutLink): number | undefined {
+  const ends = link.attachments;
+  if (ends === undefined) return undefined;
+  const a = model.document.nodes[ends.from.node]?.group, b = model.document.nodes[ends.to.node]?.group;
+  if (a === undefined || b === undefined) return undefined;
+  const one = documentTier(model, a), two = documentTier(model, b);
+  return one === undefined || two === undefined || Math.abs(one - two) < 2 ? undefined : Math.abs(one - two);
+}
+
+function chordKindOf(model: LayoutModel, link: LayoutLink, assumeSpan = false): ChordKind | undefined {
   if (link.layer !== 'routed' || !link.attachments || link.bundle !== undefined) return undefined;
   if (link.technique === 'stub' || effectiveLayer(link) !== 'routed') return undefined;
   const route = model.document.links[link.sourceIndex]?.route;
@@ -116,7 +139,10 @@ function chordKindOf(model: LayoutModel, link: LayoutLink): ChordKind | undefine
   if ([a, b].some(id => model.groups[id]?.flank !== undefined || groupShape(model, id) === 'bar')) return undefined;
   if (sameFrame(model, frameOfGroup(model, a), frameOfGroup(model, b))) return 'frame';
   const tiers = [documentTier(model, a), documentTier(model, b)];
-  if (tiers[0] === undefined || tiers[1] === undefined || Math.abs(tiers[0] - tiers[1]) !== 1) return undefined;
+  if (tiers[0] === undefined || tiers[1] === undefined) return undefined;
+  const gap = Math.abs(tiers[0] - tiers[1]);
+  // A spanning chord (ticket 22): the hint makes a link on tiers that are not consecutive a cross-frame candidate. An unhinted one is not.
+  if (gap !== 1 && !(gap >= 2 && (assumeSpan || link.spanHint === true))) return undefined;
   const [upper, lower] = tiers[0] < tiers[1] ? [from, to] : [to, from];
   return facesAllowed(findPort(model, upper), 'bottom') && facesAllowed(findPort(model, lower), 'top') ? 'cross' : undefined;
 }
@@ -394,7 +420,8 @@ export function chordVerdict(model: LayoutModel, link: LayoutLink, sideSlack = 0
   // cannot be given back after 7c has aligned the ends under it. Such a link keeps the lane and the
   // orthogonal route, so that no move after stage 7a can leave a transit without its reservation.
   const tiers = [link.attachments!.from.node, link.attachments!.to.node].map(id => model.groups[model.document.nodes[id]!.group]!.tier!);
-  if (model.tierBands.some(band => band.tier > Math.min(...tiers) && band.tier < Math.max(...tiers))) return { reason: 'transit' };
+  // A spanning chord (ticket 22) has no lane: the bands it crosses leave a corridor, which the checks below read as walls.
+  if (link.spanHint !== true && model.tierBands.some(band => band.tier > Math.min(...tiers) && band.tier < Math.max(...tiers))) return { reason: 'transit' };
   const line: PathSegment = { from: geometry.from, to: geometry.to, owner: { ...link.owner } };
   if (kind === 'cross') {
     // The port sides say which end is upper; the faces must agree, or the chord leaves a port inward.
@@ -494,7 +521,7 @@ function mouthLegs(model: LayoutModel, link: LayoutLink): { leg: PathSegment; ot
  * The checks of the fixed point on a chord that stands alone: the chords already held and the vertical legs of the links that stay
  * orthogonal, mouth legs of the gap's lanes included. The first that fails names the refusal.
  */
-export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment): 'chord' | 'leg' | 'title' | undefined {
+export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment, undecided?: ReadonlySet<string>): 'chord' | 'leg' | 'title' | undefined {
   // Two chords are no obstacle to each other for the router, but G6 still measures their clearance:
   // only a strict crossing excuses a pair that stands closer than 10 px (a shared end does not).
   const stroke = linkStrokeWidth(link);
@@ -509,13 +536,15 @@ export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment:
   // to the link's gap row, so the chord holds the clearance against the whole leg (ticket 91).
   for (const other of model.links) {
     if (other.id === link.id || other.layer !== 'routed' || other.technique === 'stub' || !other.attachments || other.removed === true) continue;
-    if (isRoutedChord(model, other)) continue;
+    // The span offer reads every candidate as a chord to be (ticket 22): the legs of the ones not yet decided are no wall.
+    if (isRoutedChord(model, other) || undecided?.has(other.id)) continue;
     for (const end of ['from', 'to'] as const) {
       const leg = orthogonalLeg(model, other, end);
       if (leg && segmentDistance(segment, leg) - (stroke + linkStrokeWidth(other)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return 'leg';
     }
   }
   for (const { leg, other } of mouthLegs(model, link)) {
+    if (other !== undefined && undecided?.has(other.id)) continue;
     if (segmentDistance(segment, leg) - (stroke + (other ? linkStrokeWidth(other) : stroke)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return 'leg';
   }
   // The title of an own end still fits beside this crossing, the held chords' crossings and the legs of the band's ports (ticket 100).
@@ -547,6 +576,12 @@ function frozenChordPath(model: LayoutModel, link: LayoutLink): LayoutPath | und
   return { owner: { ...link.owner }, layer: 'routed', fixed: true, ...pathStrokeWidth(link), segments: [segment] };
 }
 
+/** The first check that refuses a cross-frame candidate at the freeze (`freezeChords`); undefined when none does. */
+export function freezeRefusal(model: LayoutModel, link: LayoutLink): ChordRefusal | undefined {
+  const verdict = chordVerdict(model, link, SIDE_EDGE_SLACK);
+  return 'reason' in verdict ? verdict.reason : fixedPointRefusal(model, link, verdict.segment);
+}
+
 /**
  * The chords held at the start of 7f: the links that are straight now. Every cross-frame candidate that is not held is named once
  * (`ROUTED_CHORD_REFUSED`, info) with the first check that refuses it.
@@ -555,9 +590,8 @@ export function freezeChords(model: LayoutModel): void {
   const held = model.links.filter(link => isRoutedChord(model, link)).map(link => link.id);
   for (const link of model.links) {
     if (held.includes(link.id) || chordKind(model, link) !== 'cross') continue;
-    const verdict = chordVerdict(model, link, SIDE_EDGE_SLACK);
+    const reason = freezeRefusal(model, link);
     // A candidate no check refuses is not refused: it names nothing (it has no reason to give).
-    const reason: ChordRefusal | undefined = 'reason' in verdict ? verdict.reason : fixedPointRefusal(model, link, verdict.segment);
     if (reason === undefined) continue;
     model.diagnostics.push({ stage: 'placement', severity: 'info', code: 'ROUTED_CHORD_REFUSED',
       message: `The link ${link.id} keeps the orthogonal route between frames: ${reason}.`, owners: [{ kind: 'link', id: link.id }] });

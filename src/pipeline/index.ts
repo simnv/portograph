@@ -27,15 +27,19 @@ import { route, ROUTE_BUDGET_MS, type CreateRouteAttempt } from '../route/index.
 import { CommandDeadlineError, UNBOUNDED_BUDGET, type Budget } from './budget.js';
 // After the stages: the modules below reach the centring module, whose import order the tests that mock it depend on.
 import { declinedFanDiagnostics, fanRoundDropped, fanRoundHolds, measureFans, type FanMeasure } from '../layout/fan-spread.js';
-import { chordClearances, isRoutedChord } from '../layout/frame-paths.js';
+import { chordClearances, freezeRefusal, isRoutedChord } from '../layout/frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
 import { CourseRefusal } from '../layout/courses.js';
+import { SpanReservationRefusal } from '../layout/span-lanes.js';
 import { SideHintRefusal, TrunkBlocked, sideHintDiagnostics, type SideHints } from '../layout/side-hints.js';
 import { measureSides, refusedKey, type SideOffer } from '../layout/side-measure.js';
 import { judgeTrial, predictedWorse, predictPublished, routedBends, trialNotes } from '../layout/side-judge.js';
 import type { AttemptTraceEvent } from '../layout/placement-attempt.js';
 import { PLACEMENT_EPS } from '../layout/tolerance.js';
 import { attemptCounters, lastAttempt } from '../layout/attempt-counters.js';
+import { measureSpans } from '../layout/span-measure.js';
+import { judgeSpanTrial } from '../layout/span-judge.js';
+import { transitTiers } from '../layout/lanes.js';
 import { beats, gainOf, judgeCourseTrial, judgeOverlayTrial, measureCourses, measureOverlayCourses } from '../layout/course-measure.js';
 import { pathBends } from '../layout/objective.js';
 import { countStage, ledgerOn, ledgerSnapshot, startPlacementEntry, type LedgerSnapshot } from '../layout/attempt-ledger.js';
@@ -51,6 +55,10 @@ const SIDE_ROUNDS = 2;
  * deadline at 2 times slower, and a fourth re-run (2.7 s + 6.5 s of 7f, quiet) would not fit. The clock never chooses between layouts (ticket 141).
  */
 export const MAX_RERUNS = 3;
+/** A round asked for a placement past the command's budget (`MAX_RERUNS` + 1). A round refuses its trial on it; the first run is never refused. */
+export class PlacementBudgetExceeded extends Error {
+  constructor(readonly placements: number) { super(`The command has placed ${placements} times, which is the most it may.`); }
+}
 /** `node.name#ordinal`, or `node.#ordinal` for an anonymous port, from a port key. */
 const portName = (key: string): string => {
   const [node, anonymous, name, ordinal] = JSON.parse(key) as [string, boolean, string | null, number];
@@ -102,6 +110,8 @@ export interface LayoutOptions {
   testCourses?: readonly Course[];
   /** Test only. `false` skips the overlay round (ticket 15, phase 7): the overlay links keep the chord or the derived path they had before the rule of Q1. */
   testOverlayCourses?: boolean;
+  /** Test only (architecture ticket 22, phase 2): the ids of the links that every placement run reserves as spanning chords, before the span round has any say. */
+  testSpanHints?: readonly string[];
   /** Test only. Replaces `MAX_RERUNS` for one command. */
   testMaxReruns?: number;
   /** Test only. Called with the wall time of each placement run, measure, 7f, route and score-ready stage, and the budget left (ticket 115 timing). */
@@ -138,12 +148,26 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   /** Stages 1 to 7e, the placement the chords are decided on before 7f grows a gap, and so the placement a fan is measured on. `floors` are port pitches a fan of chords needs on a face (ticket 89); the first run has none. */
   // The courses every placement run reserves (ticket 15): the test's, or the ones the course round keeps.
   let activeCourses: readonly Course[] = options.testCourses ?? [];
+  // The links every placement run reserves as spanning chords (ticket 22): the test's, or the ones the span round keeps.
+  let activeSpans: ReadonlySet<string> = new Set(options.testSpanHints ?? []);
   const stage3Sizes = new WeakMap<LayoutModel, Map<string, Size>>();
   // The trunk joins a placement run found blocked (mesh-bus.md, section 12.4): the next run resolves with them declined.
-  const declinedTrunks = new Map<string, string>();
-  const place = async (floors: FanMeasure['floors'], hints = options.testSideHints, nodeFloors = options.testNodeFloors, abort?: (stage: string) => void, laneKeys: ReadonlySet<string> = new Set(), courses: readonly Course[] = activeCourses): Promise<LayoutModel> => {
+  /** The trunks declined for the next run. With `all` set (the budget is spent) every trunk reads as declined. */
+  class DeclinedTrunks extends Map<string, string> {
+    all = false;
+    override get(key: string): string | undefined { return super.get(key) ?? (this.all ? 'the placement budget is spent' : undefined); }
+  }
+  const declinedTrunks = new DeclinedTrunks();
+  let placements = 0;
+  // The cap on placements per command: the first run and the effective re-run budget (the fan rounds at the start run within FAN_ROUNDS even with a budget of 0).
+  const placeCap = Math.max(options.testMaxReruns ?? MAX_RERUNS, FAN_ROUNDS) + 1;
+  const place = async (floors: FanMeasure['floors'], hints = options.testSideHints, nodeFloors = options.testNodeFloors, abort?: (stage: string) => void, laneKeys: ReadonlySet<string> = new Set(), courses: readonly Course[] = activeCourses, spans: ReadonlySet<string> = activeSpans): Promise<LayoutModel> => {
+    // The one assertion of the placement budget: a command places at most MAX_RERUNS + 1 times (the first run and the re-runs), whatever round asks. A run that stage 7a
+    // refuses before any work is given back by the round that asked (`placements--`, with its `reruns--`).
+    if (placements >= placeCap) throw new PlacementBudgetExceeded(placements);
+    placements++;
     const stepIn = <T>(stage: LayoutStage, run: () => T): T => { abort?.(stage); return step(stage, run); };
-    const resolved = stepIn('resolve', () => resolve(document, { ...(options.diagnostics ? { diagnostics: options.diagnostics } : {}), ...(declinedTrunks.size ? { declinedTrunks } : {}) }));
+    const resolved = stepIn('resolve', () => resolve(document, { ...(options.diagnostics ? { diagnostics: options.diagnostics } : {}), ...(declinedTrunks.size || declinedTrunks.all ? { declinedTrunks } : {}) }));
     // A course face ranks above a hint (ticket 15): each end that does not keep its natural face names the port and the face.
     const courseFaces = new Map<string, Side>();
     for (const course of courses) {
@@ -153,6 +177,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
         if (ref !== undefined && 'ordinal' in ref && movesPort(course, which)) courseFaces.set(portKey(ref), course[which].face);
       }
     }
+    for (const link of resolved.links) if (spans.has(link.id)) link.spanHint = true;
     stepIn('sides-one', () => sidesOne(resolved, hints, laneKeys, courseFaces));
     if (courses.length) resolved.courses = JSON.parse(JSON.stringify(courses)) as Course[];
     // An approach (ticket 15, phase 6) is stored on the link and in its course; the port keeps its side.
@@ -205,6 +230,8 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   let reruns = 0;
   // A trunk with no admissible side is declined by one placement re-run, which shares `MAX_RERUNS` (mesh-bus.md, section 12.4).
   for (;;) {
+    // The last run the budget allows declines every trunk, so that it cannot be blocked and no run past the budget is needed.
+    declinedTrunks.all = reruns >= (options.testMaxReruns ?? MAX_RERUNS);
     try { model = await timed('place', () => place(new Map())); break; } catch (error) {
       if (!(error instanceof TrunkBlocked) || declinedTrunks.has(error.key)) throw error;
       declinedTrunks.set(error.key, error.why);
@@ -225,7 +252,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       message: `A side round was cut: ${why}. The baseline (stage 7f of the last kept placement) stands, and this layout may differ from one made with more time.` });
   };
   let floors: FanMeasure['floors'] = new Map();
-  for (let round = 0; round < FAN_ROUNDS; round++) {
+  for (let round = 0; round < FAN_ROUNDS && placements < placeCap; round++) {
     const measure = await timed('measureFans', () => measureFans(model));
     const next: FanMeasure['floors'] = new Map(floors);
     let grew = false;
@@ -331,7 +358,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       courseRefusal(`the placement run rejected them (${error.message})`);
       // Stage 7a refused a lane: no trial exists to route or judge, so the re-run is given back and the side offer keeps its place (one counter, no second run to
       // fall back to; a fallback would place twice in one re-run and split the budget the side round reads).
-      if (error instanceof CourseRefusal) reruns--;
+      if (error instanceof CourseRefusal) { reruns--; placements--; }
     }
     if (trial7e !== undefined && trial7e.fallbackUsed && !kept7e.fallbackUsed) {
       courseRefusal('ELK fell back during the course trial'); trial7e = undefined;
@@ -362,12 +389,91 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       }
     }
   };
+  // The span round (architecture ticket 22, phase 3). It reads the 7f baseline and its routed result, offers a spanning chord to every link between document tiers that
+  // are not consecutive whose corridor is clear, places again with the span hints, and keeps the trial only on its routed result (`judgeSpanTrial`). It runs before the
+  // course, side and overlay-course rounds, because a chord changes which routes are poor, and it shares their re-runs. A refused round leaves the sheet as it was.
+  const spanRound = async (): Promise<boolean> => {
+    const offer = measureSpans(base, routedBase!);
+    options.testSideTrace?.({ ev: 'spans', offer, base, routedBase });
+    if (offer.links.length === 0) return false;
+    // The round leaves one re-run to each round after it that has an offer on the baseline (course, side): a trial that is refused has spent its placements, and must not
+    // starve a round that main would have run.
+    const spanMax = maxReruns - (measureCourses(base, routedBase!).courses.length > 0 ? 1 : 0) - (measureSides(base, kept7e, refused).hints.size > 0 ? 1 : 0);
+    if (reruns >= spanMax) { options.testSideTrace?.({ ev: 'span-refused', links: offer.links, why: 'budget' }); return false; }
+    reruns++;
+    const spanRefusal = (why: string, detail: string): void => { options.testSideTrace?.({ ev: 'span-refused', links: offer.links, why, detail }); };
+    const nodeFloors = new Map([...courseFloors, ...(options.testNodeFloors ?? [])]);
+    let trial7e: LayoutModel | undefined;
+    try { trial7e = await timed('rerun-span', () => place(floors, hints, nodeFloors, trialAbort, laneKeys, activeCourses, new Set([...activeSpans, ...offer.links]))); } catch (error) {
+      // The span round is an offer: a trial that the placement cannot build is refused, whatever the cause, and the sheet stays as the baseline made it. Only the command
+      // deadline ends the command. The trace names the error, so a sweep that greps `span-refused` for `error` finds a defect.
+      if (!(error instanceof Error) || error instanceof CommandDeadlineError) throw error;
+      spanRefusal(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError ? 'placement' : 'error', error.message);
+      // Stage 7a refused a corridor: no trial exists to route or judge, so the re-run is given back, as for a course.
+      if (error instanceof SpanReservationRefusal) { reruns--; placements--; }
+      return false;
+    }
+    if (trial7e.fallbackUsed && !kept7e.fallbackUsed) { spanRefusal('placement', 'ELK fell back during the span trial'); return false; }
+    // A fan of chords whose neighbours stand closer than the chord clearance is spread by placement (ticket 89): the chords of this trial are measured as the fan
+    // rounds measure the first placement, and the trial places again with the floors they ask for. The re-runs are the command's (MAX_RERUNS).
+    let trialFloors = floors;
+    for (let round = 0; round < FAN_ROUNDS && reruns < spanMax; round++) {
+      const measure = await timed('measureFans', () => measureFans(trial7e!));
+      const next: FanMeasure['floors'] = new Map(trialFloors);
+      let grew = false;
+      for (const [id, pitch] of measure.floors) for (const [side, value] of Object.entries(pitch) as [Side, number][]) {
+        if (value > (next.get(id)?.[side] ?? 0)) { next.set(id, { ...next.get(id), [side]: value }); grew = true; }
+      }
+      if (!grew) break;
+      reruns++; attemptCounters.invalidations.fanReruns++;
+      let again: LayoutModel;
+      try { again = await timed('rerun-fan', () => place(next, hints, nodeFloors, trialAbort, laneKeys, activeCourses, new Set([...activeSpans, ...offer.links]))); } catch (error) {
+        if (!(error instanceof Error) || error instanceof CommandDeadlineError) throw error;
+        spanRefusal(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError ? 'placement' : 'error', error.message); return false;
+      }
+      if (again.fallbackUsed && !kept7e.fallbackUsed) { spanRefusal('placement', 'ELK fell back during the span trial'); return false; }
+      if (!fanRoundHolds(trial7e, again)) break;
+      trial7e = again; trialFloors = next;
+    }
+    // 7f freezes the chords that are straight now and no other (`freezeChords`), so a hinted link that is not straight here (the freeze refuses it, as `leg` when a neighbour's
+    // leg crowds it at the pitch the trial gave) is lost: the trial is refused here, before 7f and the route.
+    // The placement above is spent, so nothing is given back.
+    const lost = offer.links.filter(id => {
+      const item = trial7e!.links.find(other => other.id === id);
+      return item === undefined || !isRoutedChord(trial7e!, item);
+    });
+    if (lost.length > 0) { spanRefusal('promise', `the freeze would not hold ${lost.join(', ')}: ${lost.map(id => { const item = trial7e!.links.find(other => other.id === id); return item === undefined ? 'missing' : freezeRefusal(trial7e!, item) ?? 'not straight'; }).join(', ')} (before 7f)`); return false; }
+    try {
+      const trial = await timed('bands-trial', () => step('bands', () => bands(trial7e!, () => trialAbort('bands'), options.attemptTrace), true));
+      const trialMoved = lastAttempt.moved, trialUnmoved = lastAttempt.unmoved;
+      const routedTrial = await routeModel(trial, true);
+      const verdict = judgeSpanTrial(routedBase!, routedTrial, offer.links);
+      options.testSideTrace?.({ ev: 'span-trial', verdict, trial, routedTrial, routedBase, offer });
+      if (!verdict.kept) { spanRefusal(verdict.reason!, verdict.detail); return false; }
+      activeSpans = new Set([...activeSpans, ...offer.links]); floors = trialFloors;
+      base = trial; kept7e = trial7e; routedFinal = routedTrial; routedBase = routedTrial;
+      baseMoved = trialMoved; baseUnmoved = trialUnmoved;
+      for (const id of offer.links) {
+        const link = trial.links.find(item => item.id === id)!;
+        const crossed = transitTiers(trial, link);
+        sideNotes.push({ stage: 'placement', severity: 'info', code: 'SPAN_CHORD_TAKEN', owners: [{ kind: 'link', id }],
+          message: `The link ${id} takes a spanning chord over ${crossed.length + 1} tier gaps, through ${crossed.length} transited ${crossed.length === 1 ? 'band' : 'bands'} (sub-tier ${crossed.join(', ')}).` });
+      }
+      return true;
+    } catch (error) {
+      if (!(error instanceof Error) || error instanceof CommandDeadlineError) throw error;
+      spanRefusal(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError ? 'placement' : 'error', `stage 7f rejected them (${error.message})`);
+      return false;
+    }
+  };
   // The two rounds share the re-runs, and both are judged by the user's order on what they publish. A course kept first would take away the offer a side round
   // reads on the baseline (the 3b pattern), so where the budget allows both, the side round goes first and the course round reads its result. Where it allows one,
   // the offer whose promise gains more takes it (a side offer that only the unmoved copy has promises nothing and wins).
   let courseDeferred = false;
   if (options.testCourses === undefined) {
     routedBase = await routeModel(base);
+    // A forced hint (the test option) is the whole of the span round; otherwise the round runs here, before the course round.
+    if (options.testSpanHints === undefined) await spanRound();
     const offer = measureCourses(base, routedBase);
     options.testSideTrace?.({ ev: 'courses', offer, base, routedBase });
     if (offer.courses.length > 0) {
@@ -515,7 +621,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
           || (error instanceof Error && error.message.startsWith('Centring invariant violated')))) throw error;
         refuseOverlays(`the placement run rejected them (${error.message})`);
         // Stage 7a refused a lane: no trial exists, so the re-run is given back, as the course round does.
-        if (error instanceof CourseRefusal) reruns--;
+        if (error instanceof CourseRefusal) { reruns--; placements--; }
       }
       if (trial7e !== undefined && trial7e.fallbackUsed && !kept7e.fallbackUsed) { refuseOverlays('ELK fell back during the overlay trial'); trial7e = undefined; }
       if (trial7e !== undefined) {

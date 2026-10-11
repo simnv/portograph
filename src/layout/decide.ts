@@ -4,7 +4,7 @@ import { linkStrokeWidth } from '../theme/geometry.js';
 import type { Segment } from '../score/model.js';
 import { columnShifts, holdColumnAxes, holdMemberWalls, packBesideRows } from './columns.js';
 import { blockedChords } from './frame-paths.js';
-import { lanesHoldTheirChild, rebuildLaneExtents, type LaneFollow } from './lanes.js';
+import { lanesHoldTheirChild, rebuildLaneExtents, spanBreaches, type LaneFollow } from './lanes.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { saveGroups } from './overlay-order.js';
 import { moveGroup } from './skeleton-geometry.js';
@@ -345,6 +345,9 @@ export function chooseReseat(draft: LayoutModel, heldLanes: LayoutModel['lanes']
     separation: lazySeparation(() => separationShortfalls(settled)),
     facts: { lanesHold: lanesHoldTheirChild(settled, followed), chordsClear: blockedChords(settled).length === 0 } };
   draft.lanes = heldLanes; rebuildLaneExtents(draft);
+  // A reseat may not put a wall in a span corridor that was clear (architecture ticket 22).
+  const heldBreaches = spanBreaches(draft);
+  if ([...spanBreaches(settled)].some(key => !heldBreaches.has(key))) return false;
   reserveLinkLabelRoom(candidateCopy(draft), heldRoom);
   const held: Reading = { ...picture(draft), sets: { centring: new Set(centreViolations(draft)), gaps: new Set(shortGaps(draft)), room: new Set(heldRoom.map(item => item.link)),
     crowded: crowded(draft), disordered: disordered(draft) },
