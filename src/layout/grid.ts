@@ -3,7 +3,9 @@ import type { Bundle, LayoutGroup, LayoutModel } from '../model/layout.js';
 import { orderedGroupIds } from '../model/model.js';
 import { bandGap, compareId, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
-import { authoredSide, stackChains, type Chain } from './grid-chains.js';
+import { bundleChannelNeed } from './bundle-need.js';
+import { authoredSide, gridUnits, groupExits, seatUnits, stackChains, type Chain, type GridUnit } from './grid-chains.js';
+import { linkStrokeWidth } from '../theme/geometry.js';
 
 /**
  * `grid` is the third group shape `CONTEXT.md` names (`row`, `bar`, `grid`, `ring`, `free`).
@@ -39,7 +41,9 @@ export function groupShape(model: LayoutModel, id: string): GroupShape {
   // `ranked` is the default. Stage 1 turns a ranked group into rank cells (`row`) or, at one rank,
   // into a `row`; a `ranked` that reaches here has not been resolved and is a row to every rule.
   const shape = authored === 'ranked' ? 'row' : authored;
-  return shape === 'grid' && enclosedBundle(model, id) !== undefined ? 'row' : shape;
+  if (shape !== 'grid' || enclosedBundle(model, id) === undefined) return shape;
+  // A group that holds both ends of a bundle stands as a grid where every such bundle can stand vertically (`stackChains`).
+  return 'chains' in stackChains(model, id) ? 'grid' : 'row';
 }
 
 export { authoredSide };
@@ -49,11 +53,14 @@ export { authoredSide };
  * and 3 and the packer read. A group that is a row has none.
  */
 export function gridChains(model: LayoutModel): Chain[] {
-  return orderedGroupIds(model.document).flatMap(id => {
-    if (groupShape(model, id) !== 'grid') return [];
-    const found = stackChains(model, id);
-    return 'chains' in found ? found.chains : [];
-  });
+  return orderedGroupIds(model.document).flatMap(id => gridChainsOf(model, id));
+}
+
+/** The chains of group `id` when it stands as a grid, else none. */
+export function gridChainsOf(model: LayoutModel, id: string): Chain[] {
+  if (groupShape(model, id) !== 'grid' || enclosedBundle(model, id) === undefined) return [];
+  const found = stackChains(model, id);
+  return 'chains' in found ? found.chains : [];
 }
 
 /**
@@ -196,7 +203,7 @@ interface GridMetrics { columnX: number[]; columnWidth: number[]; rowY: number[]
  * row — a node is placed at its column's x, not packed against its own left neighbour — so the grid
  * reads as a grid and every later rule that repacks it lands on the same coordinates.
  */
-export function gridMetrics(model: LayoutModel, rows: GridCells, gap: (a: string, b: string) => number, rowGap: number): GridMetrics {
+export function gridMetrics(model: LayoutModel, rows: GridCells, gap: (a: string, b: string) => number, rowGap: number | readonly number[]): GridMetrics {
   const columns = Math.max(0, ...rows.map(row => row.length));
   const columnWidth: number[] = [], columnX: number[] = [];
   for (let c = 0; c < columns; c++) {
@@ -211,7 +218,7 @@ export function gridMetrics(model: LayoutModel, rows: GridCells, gap: (a: string
   const rowHeight = rows.map(row => Math.max(0, ...row.filter((id): id is string => id !== undefined).map(id => model.nodes[id]!.size!.height)));
   const rowY: number[] = [];
   let y = 0;
-  for (const [i, height] of rowHeight.entries()) { rowY.push(y); y += height + (i + 1 < rows.length ? rowGap : 0); }
+  for (const [i, height] of rowHeight.entries()) { rowY.push(y); y += height + (i + 1 < rows.length ? (typeof rowGap === 'number' ? rowGap : rowGap[i] ?? 0) : 0); }
   const width = columns ? columnX[columns - 1]! + columnWidth[columns - 1]! : 0;
   return { columnX, columnWidth, rowY, rowHeight, width, height: y };
 }
@@ -279,7 +286,7 @@ function moveNodeTo(model: LayoutModel, id: string, x: number, y: number): void 
  * (`gridCells`) without a stored field the mutation boundary would have to carry.
  */
 export function packGridRows(model: LayoutModel, group: LayoutGroup, rows: GridCells,
-  gap: (a: string, b: string) => number, rowGap: number): void {
+  gap: (a: string, b: string) => number, rowGap: number | readonly number[]): void {
   const original = group.bounds ?? { x: 0, y: 0, width: 0, height: 0 };
   const metrics = gridMetrics(model, rows, gap, rowGap);
   const originX = original.x + spacing.padding, originY = original.y + spacing.padding;
@@ -470,6 +477,8 @@ function seatFlankPeers(model: LayoutModel, group: LayoutGroup, rows: string[][]
 /** Pack `order` into the column count the aspect rule chooses, at the skeleton's node clearance. */
 export function packGrid(model: LayoutModel, group: LayoutGroup, order: string[]): void {
   const gap = gridNodeGap(model, group);
+  const chains = gridChainsOf(model, group.id);
+  if (chains.length) { packChains(model, group, order, chains, gap); return; }
   const ranks = exitRanks(model, group);
   const ranked = [...order].map((id, index) => ({ id, index, rank: ranks.rank.get(id) ?? 1 }))
     .sort((a, b) => a.rank - b.rank || a.index - b.index).map(item => item.id);
@@ -508,4 +517,57 @@ export function packRowsOf(model: LayoutModel, group: LayoutGroup): string[][] {
   return isGridGroup(model, group.id)
     ? gridCells(model, group).map(row => row.filter((id): id is string => id !== undefined))
     : [group.rowOrder ?? group.nodes];
+}
+
+/**
+ * The gap under each row of a packed grid: `bandGap`, and under a row whose node is the upper end of a
+ * chain link, `max(bandGap, need)`, where `need` is the channel the bundle planner reads
+ * (`bundleChannelNeed`). A bare number when the group has no chain, so a grid with no enclosed bundle
+ * keeps every byte.
+ */
+export function gridRowGaps(model: LayoutModel, group: LayoutGroup, cells: GridCells): number | number[] {
+  const base = gridRowGap(model), chains = gridChainsOf(model, group.id);
+  if (!chains.length) return base;
+  const at = new Map<string, [number, number]>();
+  cells.forEach((row, r) => row.forEach((id, c) => { if (id !== undefined) at.set(id, [r, c]); }));
+  const gaps = cells.slice(1).map(() => base);
+  const bundles = new Map(model.bundles.map(bundle => [bundle.id, bundle] as const));
+  for (const chain of chains) chain.bundles.forEach((id, index) => {
+    const upper = chain.nodes[index]!, lower = chain.nodes[index + 1]!, from = at.get(upper), to = at.get(lower);
+    const bundle = bundles.get(id);
+    if (!from || !to || !bundle || to[0] !== from[0] + 1) return;
+    const links = model.links.filter(link => link.bundle === id);
+    const q = 16 + Math.max(...links.map(linkStrokeWidth));
+    // Equal widths put the two port blocks at one x (the stage-3 floor); otherwise every member turns.
+    const aligned = model.nodes[upper]!.size!.width === model.nodes[lower]!.size!.width;
+    gaps[from[0]] = Math.max(gaps[from[0]]!, bundleChannelNeed(aligned ? 0 : links.length, q));
+  });
+  return gaps;
+}
+
+/** The units of `order` for a group with chains, upward exits first and downward last, ELK's order kept inside each rank. */
+function rankedUnits(model: LayoutModel, group: LayoutGroup, order: readonly string[], chains: readonly Chain[]): GridUnit[] {
+  const units = gridUnits(order, chains, groupExits(model, group.id));
+  const rank = (unit: GridUnit): number => unit.down ? 2 : unit.up ? 0 : 1;
+  return units.map((unit, index) => ({ unit, index })).sort((a, b) => rank(a.unit) - rank(b.unit) || a.index - b.index).map(item => item.unit);
+}
+
+/**
+ * Pack a grid that holds chains (architecture ticket 23). Each chain is one unit k rows tall in one
+ * column (`seatUnits`); the column count is the one whose box is closest to square among the counts that
+ * seat every unit, ties to the fewer. Like every other decision here it needs no route.
+ */
+function packChains(model: LayoutModel, group: LayoutGroup, order: readonly string[], chains: readonly Chain[], gap: number): void {
+  const units = rankedUnits(model, group, order, chains), count = order.length;
+  let best: GridCells | undefined, bestScore = Infinity;
+  for (let columns = 1; columns <= count; columns++) {
+    const cells = seatUnits(units, columns);
+    if (!cells) continue;
+    const metrics = gridMetrics(model, cells, () => gap, gridRowGaps(model, group, cells));
+    if (metrics.width <= 0 || metrics.height <= 0) continue;
+    const score = Math.abs(Math.log(metrics.width / metrics.height));
+    if (score < bestScore - 1e-9) { bestScore = score; best = cells; }
+  }
+  if (!best) throw new Error(`Group ${group.id} stands as a grid but no column count seats its chains`);
+  packGridRows(model, group, best, () => gap, gridRowGaps(model, group, best));
 }

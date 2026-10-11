@@ -140,11 +140,18 @@ describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
     expect(score(model).snapshot.gates['G6']!.violations).toEqual([]);
   }, 60000);
 
-  it.fails('10 (grid ticket, not reached): the farm stands as a 3 x 2 grid', async () => {
+  it('10 (architecture ticket 23): the farm stands as a 3 x 2 grid, S3 under S2, and the bundle turns to bottom/top and runs straight', async () => {
     const model = await run(SHEETS.grid);
     const boxes = ['s1', 's2', 's3', 's4', 's5', 's6'].map(id => model.nodes[id]!.bounds!);
     expect(new Set(boxes.map(box => Math.round(box.x))).size).toBe(3);
     expect(new Set(boxes.map(box => Math.round(box.y))).size).toBe(2);
+    expect(model.nodes.s3!.bounds!.x).toBe(model.nodes.s2!.bounds!.x);
+    expect(model.nodes.s3!.bounds!.y).toBeGreaterThan(model.nodes.s2!.bounds!.y);
+    expect([3, 4].map(n => [sideOf(model, n, 'from'), sideOf(model, n, 'to')])).toEqual([['bottom', 'top'], ['bottom', 'top']]);
+    expect(counts(model).routed).toMatchObject({ links: 4, bent: 0, turns: 0, crossings: 0 });
+    expect(model.diagnostics.filter(item => item.code === 'GRID_BUNDLE_STACKED')).toHaveLength(1);
+    expect(model.diagnostics.filter(item => item.code === 'GROUP_SHAPE_DECLINED')).toEqual([]);
+    expect(gatesHold(model)).toBe(true);
   }, 60000);
 
   it('11 (mesh-bus ticket 21): one trunk in the margin joins the three row buses; no plain overlay link, no crossing', async () => {

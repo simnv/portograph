@@ -331,12 +331,16 @@ function declineStackedShapes(model: LayoutModel): void {
     if (model.document.groups[id]!.shape !== 'grid') continue;
     const bundle = enclosedBundle(model, id);
     if (!bundle) continue;
-    // Phase 1 of architecture ticket 23: the predicate runs and names its reason, the shape is still declined.
     const stack = stackChains(model, id);
-    const reason = 'decline' in stack ? ` (reason: ${stack.decline})` : '';
-    const named = 'decline' in stack ? stack.bundle : bundle;
-    report(model, 'GROUP_SHAPE_DECLINED', `${id} keeps the row shape instead of grid: it holds both ends of ${named.id}, between ${named.nodes[0]} and ${named.nodes[1]}, and a stacked arrangement gives that bundle's channel no room${reason}`,
-      [{ kind: 'group', id }, named.owner], 'warning');
+    if ('chains' in stack) {
+      for (const chain of stack.chains) {
+        report(model, 'GRID_BUNDLE_STACKED', `${id} stands ${chain.bundles.join(', ')} vertically: ${chain.nodes.join(' over ')} share one column`,
+          [{ kind: 'group', id }, ...chain.bundles.map(bundleId => model.bundles.find(item => item.id === bundleId)!.owner)], 'info');
+      }
+      continue;
+    }
+    report(model, 'GROUP_SHAPE_DECLINED', `${id} keeps the row shape instead of grid: it holds both ends of ${stack.bundle.id}, between ${stack.bundle.nodes[0]} and ${stack.bundle.nodes[1]}, and a stacked arrangement gives that bundle's channel no room (reason: ${stack.decline})`,
+      [{ kind: 'group', id }, stack.bundle.owner], 'warning');
   }
 }
 

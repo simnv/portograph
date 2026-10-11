@@ -1,19 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { parse, resolve } from '../../src/index.js';
 import { chainSides, stackChains } from '../../src/layout/grid-chains.js';
 import { sidesOne } from '../../src/layout/sides-one.js';
 import { sizeNodes } from '../../src/layout/size.js';
 
-// Phase 2 of architecture ticket 23: the groups still decline the grid, so the stage-2 and stage-3 rules are driven
-// through the chains `stackChains` gives, as if the group stood as a grid.
-vi.mock('../../src/layout/grid.js', async importOriginal => {
-  const actual = await importOriginal<typeof import('../../src/layout/grid.js')>();
-  const { stackChains: chains } = await import('../../src/layout/grid-chains.js');
-  return { ...actual, gridChains: (model: Parameters<typeof actual.gridChains>[0]) => Object.keys(model.groups).flatMap(id => {
-    const found = model.document.groups[id]?.shape === 'grid' ? chains(model, id) : undefined;
-    return found && 'chains' in found ? found.chains : [];
-  }) };
-});
+// Architecture ticket 23, phases 2 and 3: the stage-2 sides and the stage-3 floors of a chain, read where the group stands as a grid.
 
 const yaml = `
 portograph: 2
