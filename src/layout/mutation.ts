@@ -683,7 +683,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
   }
   if (rule !== 'lanes') {
     // A course lane's x is derived from the boxes at each replay (ticket 15, Section 2); its id, owner, side, ring, span and width are fixed.
-    const identity = (lane: Lane) => isCourseLane(lane) ? { ...lane, x: 0, bounds: pick(lane.bounds, ['width']) } : { ...lane, bounds: pick(lane.bounds, ['x', 'width']) };
+    const identity = (lane: Lane) => lane.kind === 'span' ? { ...lane, x: 0, bounds: {} } : isCourseLane(lane) ? { ...lane, x: 0, bounds: pick(lane.bounds, ['width']) } : { ...lane, bounds: pick(lane.bounds, ['x', 'width']) };
     same(draft.lanes.map(identity), model.lanes.map(identity), 'Established lane identity, owner, x and width cannot change');
   } else if (model.lanes.length) throw new Error('Lanes cannot be reallocated');
   const supplied = clone(draft);

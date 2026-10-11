@@ -863,7 +863,8 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   // Transit corridors are wider than the ordinary port pitch. Reserve that capacity on the end the
   // lane aligns to (7a) before allocation, so consecutive feeds can retain their own x coordinates.
   for (const link of model.links) {
-    if (!transitTiers(model, link).length) continue;
+    // A spanning chord (ticket 22) owns no transit lane, so its ends take no lane pitch.
+    if (!transitTiers(model, link).length || link.spanHint === true) continue;
     const ref = laneSource(model, link), node = model.nodes[ref.node]!;
     const port = node.ports.find(port => key(port.ref) === key(ref))!;
     if (port.side === 'top' || port.side === 'bottom') {

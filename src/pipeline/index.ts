@@ -103,6 +103,8 @@ export interface LayoutOptions {
   testCourses?: readonly Course[];
   /** Test only. `false` skips the overlay round (ticket 15, phase 7): the overlay links keep the chord or the derived path they had before the rule of Q1. */
   testOverlayCourses?: boolean;
+  /** Test only (architecture ticket 22, phase 2): the ids of the links that every placement run reserves as spanning chords, before the span round has any say. */
+  testSpanHints?: readonly string[];
   /** Test only. Replaces `MAX_RERUNS` for one command. */
   testMaxReruns?: number;
   /** Test only. Called with the wall time of each placement run, measure, 7f, route and score-ready stage, and the budget left (ticket 115 timing). */
@@ -139,10 +141,12 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   /** Stages 1 to 7e, the placement the chords are decided on before 7f grows a gap, and so the placement a fan is measured on. `floors` are port pitches a fan of chords needs on a face (ticket 89); the first run has none. */
   // The courses every placement run reserves (ticket 15): the test's, or the ones the course round keeps.
   let activeCourses: readonly Course[] = options.testCourses ?? [];
+  // The links every placement run reserves as spanning chords (ticket 22): the test's, or the ones the span round keeps.
+  const activeSpans: ReadonlySet<string> = new Set(options.testSpanHints ?? []);
   const stage3Sizes = new WeakMap<LayoutModel, Map<string, Size>>();
   // The trunk joins a placement run found blocked (mesh-bus.md, section 12.4): the next run resolves with them declined.
   const declinedTrunks = new Map<string, string>();
-  const place = async (floors: FanMeasure['floors'], hints = options.testSideHints, nodeFloors = options.testNodeFloors, abort?: (stage: string) => void, laneKeys: ReadonlySet<string> = new Set(), courses: readonly Course[] = activeCourses): Promise<LayoutModel> => {
+  const place = async (floors: FanMeasure['floors'], hints = options.testSideHints, nodeFloors = options.testNodeFloors, abort?: (stage: string) => void, laneKeys: ReadonlySet<string> = new Set(), courses: readonly Course[] = activeCourses, spans: ReadonlySet<string> = activeSpans): Promise<LayoutModel> => {
     const stepIn = <T>(stage: LayoutStage, run: () => T): T => { abort?.(stage); return step(stage, run); };
     const resolved = stepIn('resolve', () => resolve(document, { ...(options.diagnostics ? { diagnostics: options.diagnostics } : {}), ...(declinedTrunks.size ? { declinedTrunks } : {}) }));
     // A course face ranks above a hint (ticket 15): each end that does not keep its natural face names the port and the face.
@@ -154,6 +158,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
         if (ref !== undefined && 'ordinal' in ref && movesPort(course, which)) courseFaces.set(portKey(ref), course[which].face);
       }
     }
+    for (const link of resolved.links) if (spans.has(link.id)) link.spanHint = true;
     stepIn('sides-one', () => sidesOne(resolved, hints, laneKeys, courseFaces));
     if (courses.length) resolved.courses = JSON.parse(JSON.stringify(courses)) as Course[];
     // An approach (ticket 15, phase 6) is stored on the link and in its course; the port keeps its side.

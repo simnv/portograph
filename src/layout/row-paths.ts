@@ -155,7 +155,8 @@ export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segm
     if (segmentRectDistance(segment, label.bounds) < stroke / 2 + (label.role === 'group' ? GROUP_LABEL_LINK_CLEARANCE : 0) - EPS) return refuse('corridor');
   }
   for (const lane of model.lanes) {
-    if (lane.layer === 'overlay' || beyond(lane.bounds, laneReach) || ownsObstacle(lane.owner)) continue;
+    // A span corridor (architecture ticket 22) is a reservation for its own chord: another chord crosses it strictly, and the chords' own clearance is `fixedPointRefusal`'s.
+    if (lane.layer === 'overlay' || lane.kind === 'span' || beyond(lane.bounds, laneReach) || ownsObstacle(lane.owner)) continue;
     if (segmentRectDistance(segment, lane.bounds) < stroke / 2 - EPS) return refuse('lane');
   }
   // A foreign group box, with its edge margin, is closed to this link (ADR-0013): placement must

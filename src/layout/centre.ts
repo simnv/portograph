@@ -1,7 +1,7 @@
 import type { LayoutGroup, LayoutModel, LayoutNode, LayoutPort } from '../model/layout.js';
 import type { Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
-import { laneSidesHold, recordSeatedSideLanes, optionalMoveHolds, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
+import { laneSidesHold, spanBreaches, recordSeatedSideLanes, optionalMoveHolds, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
 import { cellReach } from './frames.js';
 import { standsInCanton } from './read/canton.js';
 import { centringFeeds, type Feed } from './read/feeds.js';
@@ -450,7 +450,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   const group = model.groups[id]!, order = context.groupOrder.get(tier)!;
   const { own, wanted, yielded, conflicts } = groupFeeds(model, context, tier, list, id, warn);
   const unresolved = new Set<string>(conflicts);
-  const startPenetration = riserPenetrations(model, group), startCrossings = chordLaneCrossings(model, group);
+  const startPenetration = riserPenetrations(model, group), startCrossings = chordLaneCrossings(model, group), startBreaches = spanBreaches(model);
   const saved = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
   // Centre under the feeds that may own an alignment; a yielded transit would only pull the group
   // away from the x its child is then aligned to.
@@ -540,7 +540,8 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   // measured where they were made, and the clamp, the row pack and the region fit can undo them. A step that leaves a routed port of the facing edge
   // deeper in the keep-out than the step found it (port by port) is declined like a window that cannot hold the group.
   // The same for a frozen chord: a step that leaves one across a foreign lane box that it did not cross when the step began is declined.
-  if (!riserNoDeeper(startPenetration, riserPenetrations(model, group)) || [...chordLaneCrossings(model, group)].some(pair => !startCrossings.has(pair))) {
+  if (!riserNoDeeper(startPenetration, riserPenetrations(model, group)) || [...chordLaneCrossings(model, group)].some(pair => !startCrossings.has(pair))
+    || [...spanBreaches(model)].some(key => !startBreaches.has(key))) {
     model.groups[id] = saved.group;
     for (const node of saved.nodes) model.nodes[node.id] = node;
     packClear(model, context, tier, saved.group, previous);

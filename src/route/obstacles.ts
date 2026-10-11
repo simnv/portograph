@@ -185,7 +185,8 @@ export function routeObstacles(model: LayoutModel): RouteObstacle[] {
   // another descended 16 px off its centre, and the stitcher then refused geometry that occupied a
   // reservation placement had made.
   for (const lane of model.lanes) {
-    if (lane.layer === 'overlay') continue;
+    // A span corridor is no router obstacle: its chord is a fixed path (architecture ticket 22).
+    if (lane.layer === 'overlay' || lane.kind === 'span') continue;
     push({ id: lane.id, bounds: expand(lane.bounds, half), consumers: [] });
   }
   for (const bundle of model.bundles) {

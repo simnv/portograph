@@ -46,7 +46,8 @@ export function groupConsumers(model: LayoutModel, groupId: string): string[] {
     return ends !== undefined && (members.has(ends.from.node) || members.has(ends.to.node));
   };
   for (const lane of model.lanes) {
-    if (!owned.has(lane.group)) continue;
+    // A span corridor stands in the band of the middle group, and its chord does not consume that group (architecture ticket 22).
+    if (!owned.has(lane.group) || lane.kind === 'span') continue;
     const owner = lane.owner;
     if (owner.kind === 'link') { if (consumes(owner.id)) result.add(owner.id); }
     else if (owner.kind === 'bundle') for (const id of model.bundles.find(bundle => bundle.id === owner.id)?.members ?? []) if (consumes(id)) result.add(id);
