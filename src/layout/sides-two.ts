@@ -40,9 +40,9 @@ export const PILL_WIRE_GAP = 8;
  * The index is derived from the link array and cached against it. Membership and attachments are
  * fixed in stage 1, and every checked transaction clones the array, so a new array is a new index.
  */
-interface Peer { peer: PortRef; link: string }
+export interface Peer { peer: PortRef; link: string }
 const peerCache = new WeakMap<LayoutModel['links'], Map<string, Peer[]>>();
-function unreservedPeers(model: LayoutModel): Map<string, Peer[]> {
+export function unreservedPeers(model: LayoutModel): Map<string, Peer[]> {
   const cached = peerCache.get(model.links);
   if (cached) return cached;
   const index = new Map<string, Peer[]>();

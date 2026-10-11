@@ -1,0 +1,16 @@
+# Expected (architecture ticket 24, docs/design/turn-order.md): a node whose bottom face carries three links, one to a child on the left, one straight down and one to a child on the right.
+# No port has a planned first turn that the turn order reads, so the order is today's far-end order byte for byte: there is no turn offer and no turn round.
+# Test-only input owned by ticket 24; test/pipeline/turn-order.test.ts reads it.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  low: { tier: 1, label: Low }
+nodes:
+  hub: { group: top, class: router, label: Hub }
+  west: { group: low, class: server, label: West }
+  mid: { group: low, class: server, label: Mid }
+  east: { group: low, class: server, label: East }
+links:
+  - [hub, west]
+  - [hub, mid]
+  - [hub, east]
