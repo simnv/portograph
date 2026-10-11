@@ -24,6 +24,7 @@ import { freezePortTopology } from './mutation.js';
 import { busOfPort, busSide, meshBuses } from './bus.js';
 import { planTrunks } from './trunk.js';
 import { plannedTurns, turnOrder, type PlannedTurn, type TurnPort } from './turn-order.js';
+import { unreservedPeers } from './peers.js';
 const key = portId;
 
 /**
@@ -31,33 +32,6 @@ const key = portId;
  * link between them is drawn entirely behind them, which is a connection a reader cannot see.
  */
 export const PILL_WIRE_GAP = 8;
-
-/**
- * Peer ports of every routed attachment that no rule has already promised geometry to, keyed by
- * port. A bundle member is left out: stage 7e reserves its envelope, its pitch and its path, so it
- * never asks stage 8 for a stem. Everything else may still reach stage 8, which always gives it one.
- *
- * The index is derived from the link array and cached against it. Membership and attachments are
- * fixed in stage 1, and every checked transaction clones the array, so a new array is a new index.
- */
-export interface Peer { peer: PortRef; link: string }
-const peerCache = new WeakMap<LayoutModel['links'], Map<string, Peer[]>>();
-export function unreservedPeers(model: LayoutModel): Map<string, Peer[]> {
-  const cached = peerCache.get(model.links);
-  if (cached) return cached;
-  const index = new Map<string, Peer[]>();
-  for (const link of model.links) {
-    if (link.layer !== 'routed' || link.technique === 'stub' || link.bundle !== undefined || !link.attachments) continue;
-    const { from, to } = link.attachments;
-    for (const [near, far] of [[from, to], [to, from]] as const) {
-      const list = index.get(key(near)) ?? [];
-      list.push({ peer: far, link: link.id });
-      index.set(key(near), list);
-    }
-  }
-  peerCache.set(model.links, index);
-  return index;
-}
 
 /** How far a node's routing obstacle reaches beyond one side: its clearance, or an outward pill. */
 function sideReach(model: LayoutModel, id: string, side: Side): number {

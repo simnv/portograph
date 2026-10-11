@@ -3,6 +3,10 @@ import type { Point, Side } from '../model/geometry.js';
 import type { Diagnostic, LayoutLink, LayoutModel, LayoutPort } from '../model/layout.js';
 import { portId } from './skeleton-graph.js';
 import { COURSE_STEM, endMode } from './course-rows.js';
+import { laneSource } from './lanes.js';
+import { farCoordinate } from './peers.js';
+import { busOfPort } from './bus.js';
+import { groupShape } from './grid.js';
 
 /**
  * The order of the ports of one face from the planned first turn of their links (architecture ticket 24, `docs/design/turn-order.md`).
@@ -77,12 +81,13 @@ function overlayTurns(model: LayoutModel, planned: Map<string, PlannedTurn>): vo
  * to the node's side of the face line when the far end stands there (`return`), else on (`onward`). The reach is the far end's coordinate along the face.
  * No reservation, a far end in line with the node, or a port in no position yet: no turn.
  */
-function reservedTurn(model: LayoutModel, link: LayoutLink, which: 'from' | 'to'): PlannedTurn | undefined {
+function reservedTurn(model: LayoutModel, link: LayoutLink, which: 'from' | 'to', transit: boolean): PlannedTurn | undefined {
   const mine = link.attachments?.[which], other = link.attachments?.[which === 'from' ? 'to' : 'from'];
   if (mine === undefined || other === undefined) return undefined;
   const own = findPort(model, mine), far = findPort(model, other), box = model.nodes[mine.node]?.bounds;
   if (own?.side === undefined || far?.anchor === undefined || box === undefined) return undefined;
   const course = (model.courses ?? []).find(item => item.link === link.id);
+  if (course === undefined && own.laneHint !== true) return transit ? transitTurn(model, link, mine, own) : undefined;
   const reserved = course !== undefined ? course.kind === 'skirt' : own.laneHint === true;
   if (!reserved) return undefined;
   const side = course?.[which].face ?? own.side;
@@ -97,11 +102,26 @@ function reservedTurn(model: LayoutModel, link: LayoutLink, which: 'from' | 'to'
 }
 
 /**
+ * The turn of the source end of a link that owns a transit lane (stage 7a, Section 4): the run leaves the port along its horizontal face toward the lane and goes on
+ * down it. It is known only when the lane stands outside the span of the ports of the face, so that every permutation of the face turns the same way; a lane
+ * between two ports of the face fixes no turn. `reach` is the lane x.
+ */
+function transitTurn(model: LayoutModel, link: LayoutLink, mine: PortRef, own: LayoutPort): PlannedTurn | undefined {
+  if (own.side !== 'top' && own.side !== 'bottom') return undefined;
+  const lane = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === link.id && (item.kind === undefined || item.kind === 'transit'));
+  if (lane === undefined || link.spanHint === true || portId(laneSource(model, link)) !== portId(mine)) return undefined;
+  const xs = (model.nodes[mine.node]?.ports ?? []).filter(port => port.side === own.side && port.anchor !== undefined).map(port => port.anchor!.x);
+  if (lane.x < Math.min(...xs) - 1e-6) return { turn: 'low', shape: 'onward', reach: lane.x };
+  if (lane.x > Math.max(...xs) + 1e-6) return { turn: 'high', shape: 'onward', reach: lane.x };
+  return undefined;
+}
+
+/**
  * The planned first turn of every port that a reservation fixes before routing, by port key (ticket 24, Section 4). The overlay brackets always; in a
  * turn-ordered run (`model.turnOrder`) also the skirt courses and the side lanes. A shared port is one slot and takes a turn only when every link on it
  * plans the same turn and shape; its reach is their mean.
  */
-export function plannedTurns(model: LayoutModel, reservations: boolean = model.turnOrder === true): Map<string, PlannedTurn> {
+export function plannedTurns(model: LayoutModel, reservations: boolean = model.turnOrder === true, transit: boolean = reservations): Map<string, PlannedTurn> {
   const planned = new Map<string, PlannedTurn>();
   overlayTurns(model, planned);
   if (!reservations) return planned;
@@ -110,7 +130,7 @@ export function plannedTurns(model: LayoutModel, reservations: boolean = model.t
     if (link.layer !== 'routed' || link.attachments === undefined || link.bundle !== undefined) continue;
     for (const which of ['from', 'to'] as const) {
       const key = portId(link.attachments[which]), list = ends.get(key) ?? [];
-      list.push(reservedTurn(model, link, which));
+      list.push(reservedTurn(model, link, which, transit));
       ends.set(key, list);
     }
   }
@@ -189,4 +209,45 @@ export function turnMissed(model: LayoutModel): Diagnostic[] {
     }
   }
   return found;
+}
+
+/**
+ * The order the turn order gives one face of the model (Section 4): the same sort as stage 5, over the planned turns that stand now (courses, side lanes and, once 7a has
+ * reserved them, transit lanes). Authored order wins, the bus port stands last. `undefined` when the face is not the turn order's to place: a bundle member, a bar or an
+ * unplaced port is on it, or no transit lane fixes a turn on it, or another reservation (a course, a side lane) already planned one of its ports, which stage 5 placed.
+ */
+export function laneFaceOrder(model: LayoutModel, node: string, side: Side): LayoutPort[] | undefined {
+  const ports = model.nodes[node]!.ports.filter(port => port.side === side);
+  if (ports.length < 2 || ports.some(port => port.anchor === undefined)) return undefined;
+  const group = model.document.nodes[node]?.group;
+  if (group !== undefined && groupShape(model, group) === 'bar') return undefined;
+  if (model.links.some(link => link.bundle !== undefined && [link.attachments?.from, link.attachments?.to].some(ref => ref !== undefined && ref.node === node))) return undefined;
+  const early = plannedTurns(model, true, false), planned = plannedTurns(model);
+  if (ports.some(port => early.has(portId(port.ref))) || !ports.some(port => planned.has(portId(port.ref)))) return undefined;
+  const isBus = (port: LayoutPort): number => (busOfPort(model, port.ref) !== undefined ? 1 : 0);
+  const slots = new Map(ports.map(port => [port, { far: farCoordinate(model, port.ref, side), ...(planned.get(portId(port.ref)) ?? {}) } as TurnPort] as const));
+  const by = turnOrder([...slots.values()]);
+  const current = [...ports].sort((a, b) => a.engineOrder! - b.engineOrder!);
+  const sorted = [...current].sort((a, b) => isBus(a) - isBus(b) || by(slots.get(a)!, slots.get(b)!));
+  const authored = sorted.filter(port => port.authorOrder !== undefined).sort((a, b) => a.authorOrder! - b.authorOrder!);
+  let next = 0;
+  return sorted.map(port => (port.authorOrder === undefined ? port : authored[next++]!));
+}
+
+/**
+ * Stage 7a, once the lanes stand (Section 4): reorders the faces on which a transit lane fixes the planned first turn of a port, to the order `laneFaceOrder` gives. The
+ * ports exchange the slots of the face, so no anchor leaves the face; the faces are recorded in `freeze.turnOrder`. A run without the turn order never calls it.
+ */
+export function orderPortsByLanes(model: LayoutModel): void {
+  const faces: { node: string; side: Side }[] = [];
+  for (const node of Object.keys(model.nodes)) for (const side of ['bottom', 'right', 'top', 'left'] as const) {
+    const order = laneFaceOrder(model, node, side);
+    if (order === undefined) continue;
+    const current = model.nodes[node]!.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
+    if (order.every((port, index) => port === current[index])) continue;
+    const seats = current.map(port => ({ ...port.anchor! }));
+    order.forEach((port, index) => { port.engineOrder = index; port.anchor = seats[index]!; });
+    faces.push({ node, side });
+  }
+  if (faces.length > 0) model.freeze!.turnOrder = [...(model.freeze!.turnOrder ?? []), ...faces];
 }

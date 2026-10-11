@@ -1,6 +1,6 @@
 import { equal } from '../model/json-equality.js';
 import type { Rect, Side, Size } from '../model/geometry.js';
-import type { Lane, LayoutModel, LayoutStage, MeshBus, PlacementSnapshot } from '../model/layout.js';
+import type { Lane, LayoutFreeze, LayoutModel, LayoutStage, MeshBus, PlacementSnapshot } from '../model/layout.js';
 import { orderedNodeIds, orderedGroupIds } from '../model/model.js';
 import { resolve } from '../resolve/index.js';
 import { filterCss } from '../parse/css.js';
@@ -18,6 +18,7 @@ import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, flankPair } from './flanks.js';
 import { rebuildLaneExtents, validateLanes, transitTiers } from './lanes.js';
 import { spanCandidate } from './frame-paths.js';
+import { faceKey, laneFaceOrder } from './turn-order.js';
 import { isCourseLane, sameCourses, validateCourses } from './courses.js';
 import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
@@ -647,13 +648,15 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
   jsonValue(draft);
   validateRect(draft.canvas, 'canvas');
   // The lanes rule alone fixes the riser of a joined pair (mesh-bus.md, section 11.5) and the x of a trunk (section 12.5); nothing else of a bus changes in it.
-  const unriser = (value: LayoutModel): LayoutModel => rule === 'lanes' && value.meshBuses ? { ...value, meshBuses: value.meshBuses.map(bus => omit(bus, ['riser', 'trunk']) as MeshBus) } : value;
+  // Stage 7a may add the faces it ordered by a transit lane to `freeze.turnOrder` (ticket 24); the faces are checked against the reorders below.
+  const unfaced = (value: LayoutModel): LayoutModel => rule === 'lanes' && value.freeze?.turnOrder !== undefined ? { ...value, freeze: omit(value.freeze, ['turnOrder']) as LayoutFreeze } : value;
+  const unriser = (value: LayoutModel): LayoutModel => unfaced(rule === 'lanes' && value.meshBuses ? { ...value, meshBuses: value.meshBuses.map(bus => omit(bus, ['riser', 'trunk']) as MeshBus) } : value);
   const declared = ['nodes', 'groups', 'tierBands', 'labels', 'canvas', 'diagnostics', 'runtime', 'links', 'lanes', 'bundles', 'junctions', 'labelBands', 'barDrops', 'obstacles', 'regions', 'anchorTier', 'frames', 'removedLinks'];
   same(omit(unriser(draft), declared), omit(unriser(model), declared), 'Undeclared model field changed');
   // Stage 8 alone removes links (`ROUTE_CHECKPOINT_SKIPPED`, `ROUTE_GAP_REJECTED`); every later stage keeps the list.
   if (rule !== 'route') same(draft.removedLinks, model.removedLinks, 'Only the route rule may remove a link');
   same(draft.stage, model.stage, 'Transaction owns the stage marker');
-  same(draft.document, model.document, 'Document changed'); same(draft.freeze, model.freeze, 'Freeze metadata changed');
+  same(draft.document, model.document, 'Document changed'); same(unfaced(draft).freeze, unfaced(model).freeze, 'Freeze metadata changed');
   same(structure(draft, rule === 'centre'), structure(model, rule === 'centre'), 'Topology or membership changed');
   if (rule === 'centre') {
     if (draft.anchorTier !== undefined) same(draft.anchorTier, selectAnchorTier(draft), 'Invalid anchor tier');
@@ -757,6 +760,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     || draft.canvas.x + draft.canvas.width < model.canvas.x + model.canvas.width
     || draft.canvas.y + draft.canvas.height < model.canvas.y + model.canvas.height)) throw new Error('Canvas may only expand');
   const flankNodes = new Set(Object.values(model.groups).filter(group => group.flank).flatMap(group => [...group.nodes, ...(group.flank!.primaryPeer ? [group.flank!.primaryPeer] : [])]));
+  const reordered: string[] = [];
   for (const id of orderedNodeIds(model.document)) {
     const old = model.nodes[id]!, node = draft.nodes[id]!;
     same(omit(node, ['bounds', 'size', 'sidePitch', 'ports', 'icon']), omit(old, ['bounds', 'size', 'sidePitch', 'ports', 'icon']), 'Undeclared node field changed');
@@ -768,7 +772,20 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     same(node.contentSize, old.contentSize, 'Measured content changed');
     same(node.contentInsets, old.contentInsets, 'Content insets changed');
     if (rule === 'flanks') same(node.ports.map(port => port.engineOrder), flankOrder.nodes[id]!.ports.map(port => port.engineOrder), 'Flanks may reorder only the compatible primary bundle block');
-    if (!permission.reorder) same(node.ports.map(port => port.engineOrder), old.ports.map(port => port.engineOrder), `${rule} cannot reorder ports`);
+    const seated = new Map<string, { x: number; y: number }>();
+    if (!permission.reorder && rule === 'lanes' && model.turnOrder === true) {
+      // Stage 7a reorders a face only to the order the turn order gives it (ticket 24, Section 5), and records the face.
+      for (const side of SIDE_TIE_ORDER) {
+        const refs = (list: typeof node.ports): string[] => list.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!).map(port => portKey(port.ref));
+        if (refs(node.ports).join('|') === refs(old.ports).join('|')) continue;
+        const expected = laneFaceOrder(draft, id, side)?.map(port => portKey(port.ref));
+        if (expected === undefined || expected.join('|') !== refs(node.ports).join('|')) throw new Error(`${rule} cannot reorder ports`);
+        reordered.push(faceKey(id, side));
+        // The ports exchange the slots of the face: the anchors stay where they were.
+        const seats = old.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!).map(port => port.anchor!);
+        node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!).forEach((port, index) => seated.set(portKey(port.ref), seats[index]!));
+      }
+    } else if (!permission.reorder) same(node.ports.map(port => port.engineOrder), old.ports.map(port => port.engineOrder), `${rule} cannot reorder ports`);
     for (const side of SIDE_TIE_ORDER) {
       const authored = node.ports.filter(p => p.side === side && p.authorOrder !== undefined);
       for (const ordered of [[...authored].sort((a, b) => a.engineOrder! - b.engineOrder!),
@@ -783,7 +800,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
     if (rule === 'rows') {
       same(node.size, old.size, 'Rows cannot resize nodes');
       // A flank or non-row node moves only with its band: the vertical shift of its own group, anchors with it.
-      const seated = (): void => {
+      const seatedWithBand = (): void => {
         const dy = node.bounds!.y - old.bounds!.y;
         same(node, { ...old, bounds: { ...old.bounds!, y: old.bounds!.y + dy }, ports: old.ports.map(port => ({ ...port,
           ...(port.anchor ? { anchor: { x: port.anchor.x, y: port.anchor.y + dy } } : {}),
@@ -791,15 +808,15 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
           ...(old.icon ? { icon: { ...old.icon, bounds: { ...old.icon.bounds, y: old.icon.bounds.y + dy } } } : {}) }, 'Rows can only translate a flank or non-row node with its band');
         same(dy, draft.groups[model.document.nodes[id]!.group]!.bounds!.y - model.groups[model.document.nodes[id]!.group]!.bounds!.y, 'A flank or non-row node moves with its group');
       };
-      if (model.groups[model.document.nodes[id]!.group]!.flank) seated();
-      else if (groupShape(draft, draft.document.nodes[id]!.group) !== 'row') seated();
+      if (model.groups[model.document.nodes[id]!.group]!.flank) seatedWithBand();
+      else if (groupShape(draft, draft.document.nodes[id]!.group) !== 'row') seatedWithBand();
     }
     if (rule === 'lanes') {
       same(node.size, old.size, 'Lanes cannot resize nodes');
       const group = model.groups[model.document.nodes[id]!.group]!;
       const dx = draft.groups[group.id]!.bounds!.x - group.bounds!.x;
       same(node.bounds, { ...old.bounds!, x: old.bounds!.x + dx }, 'Lanes permit only whole-group horizontal translation');
-      node.ports.forEach((port, i) => same(port.anchor, { x: old.ports[i]!.anchor!.x + dx, y: old.ports[i]!.anchor!.y }, 'Lane translation must preserve relative anchors'));
+      node.ports.forEach((port, i) => { const seat = seated.get(portKey(port.ref)) ?? old.ports[i]!.anchor!; same(port.anchor, { x: seat.x + dx, y: seat.y }, 'Lane translation must preserve relative anchors'); });
       if (dx && !model.links.some(link => transitTiers(model, link).includes(group.tier!))) throw new Error('Lanes may expand only occupied intermediate tiers');
       if (dx && model.links.some(link => transitTiers(model, link).length && model.document.nodes[link.attachments!.from.node]!.group === group.id)) throw new Error('Lanes cannot move transit source anchors');
     }
@@ -835,6 +852,10 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
           'Flanks cannot change an unrelated anchor except for common translation or boundary growth');
       });
     }
+  }
+  if (rule === 'lanes') {
+    const was = (model.freeze?.turnOrder ?? []).map(face => faceKey(face.node, face.side)), now = (draft.freeze?.turnOrder ?? []).map(face => faceKey(face.node, face.side));
+    same(now, [...was, ...reordered], 'Stage 7a must record the faces it reordered in the turn order, and only those');
   }
   // The rows rule produces row paths; any later movement replaces them from the final anchors.
   if (stages.indexOf(rule) >= stages.indexOf('lanes') && permission.move) {

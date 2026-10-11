@@ -4,7 +4,7 @@ import { orderedNodeIds } from '../model/model.js';
 import { busOfPort } from './bus.js';
 import { SIDE_TIE_ORDER } from './sides-one.js';
 import { portId as portKey } from './skeleton-graph.js';
-import { unreservedPeers } from './sides-two.js';
+import { farCoordinate } from './peers.js';
 import { plannedTurns, turnOrder, type PlannedTurn, type TurnPort } from './turn-order.js';
 import { added as namesAdded, constraintFindings, gateFindings, separationWorse, spanBlockedNew } from './trial-findings.js';
 import { compare, lazyCount, profiles, reading, routedBends, type Reading } from './objective.js';
@@ -27,7 +27,7 @@ export interface TurnOffer {
  */
 export function measureTurnOrder(base: LayoutModel): TurnOffer {
   const offer: TurnOffer = { faces: [] };
-  const turns = plannedTurns(base, true), plain = plannedTurns(base, false), peers = unreservedPeers(base);
+  const turns = plannedTurns(base, true), plain = plannedTurns(base, false);
   for (const id of orderedNodeIds(base.document)) {
     const node = base.nodes[id]!;
     for (const side of SIDE_TIE_ORDER) {
@@ -35,11 +35,7 @@ export function measureTurnOrder(base: LayoutModel): TurnOffer {
       const ports = node.ports.filter(port => port.side === side && port.anchor !== undefined && port.authorOrder === undefined && busOfPort(base, port.ref) === undefined)
         .sort((a, b) => a.anchor![along] - b.anchor![along]);
       if (ports.length < 2) continue;
-      const far = (port: LayoutPort): number => {
-        const list = peers.get(portKey(port.ref)) ?? [];
-        const at = list.map(item => base.nodes[item.peer.node]?.ports.find(other => portKey(other.ref) === portKey(item.peer))?.anchor?.[along]).filter((value): value is number => value !== undefined);
-        return at.length ? at.reduce((sum, value) => sum + value, 0) / at.length : Infinity;
-      };
+      const far = (port: LayoutPort): number => farCoordinate(base, port.ref, side);
       const sorted = (planned: ReadonlyMap<string, PlannedTurn>): LayoutPort[] => {
         const slots = new Map(ports.map(port => [port, { far: far(port), ...(planned.get(portKey(port.ref)) ?? {}) } as TurnPort] as const));
         const by = turnOrder([...slots.values()]);

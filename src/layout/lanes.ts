@@ -23,6 +23,7 @@ import { BUS_RUN_CLEARANCE } from './bus-room.js';
 import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 import { nodeTier } from './read/tier.js';
 import { isSpanLane, replaySpanLane, spanCorridor, spanLaneId, SpanRefusal, SpanReservationRefusal } from './span-lanes.js';
+import { orderPortsByLanes } from './turn-order.js';
 import { trunkBuses, trunkGeometry, trunkHeads, trunkHolds, trunkRing } from './trunk.js';
 
 /** A corridor `reseatLanes` moved, and the child port it moved it onto. */
@@ -1151,6 +1152,8 @@ export function allocateLanes(model: LayoutModel): void {
   reserveRisers(model, pending, occ);
   reserveTrunks(model, pending, occ);
   model.lanes = pending;
+  // A transit lane fixes the planned first turn of its source port; in a turn-ordered run the ports of that face take the turn order (ticket 24, Section 4).
+  if (model.turnOrder === true) orderPortsByLanes(model);
   rebuildNodeGeometry(model, Object.keys(model.nodes), 'current');
   rebuildRegions(model);
   rebuildLaneExtents(model);
