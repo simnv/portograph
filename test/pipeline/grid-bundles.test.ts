@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { layout, parse, restoreLayoutModel, score } from '../../src/index.js';
+import { layout, parse, resolve, restoreLayoutModel, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
-import { checkStackedChannel, inversionPairs, members, pitch } from '../../src/layout/bundle-geometry.js';
-import { gridCells, groupShape } from '../../src/layout/grid.js';
+import { checkChainsStand, checkStackedChannel } from '../../src/layout/bundle-geometry.js';
+import { bandGap } from '../../src/layout/skeleton-graph.js';
+import { gridCells, gridRowGaps, groupShape } from '../../src/layout/grid.js';
 import { findPort } from '../../src/layout/row-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -61,7 +62,7 @@ describe('a grid that stands its bundles vertically', () => {
     expect(box(model, 'b').width).toBe(box(model, 'a').width);
     expect(box(model, 'a').width).toBeGreaterThan(box(model, 'c').width);
     expect(box(model, 'b').x).toBe(box(model, 'a').x);
-  }, 60000);
+  });
 });
 
 describe('a grid that cannot stand its bundles declines, and says why', () => {
@@ -79,17 +80,14 @@ describe('a grid that cannot stand its bundles declines, and says why', () => {
     expect(groupShape(model, group)).toBe('row');
     expect(gridCells(model, model.groups[group]!)).toHaveLength(1);
     expect(gatesHold(model)).toBe(true);
-  }, 60000);
+  });
 });
 
 describe('GRID_BUNDLE_CHANNEL_SHORT', () => {
   it('fires once when the faces stand closer than the members need, and is silent on the packed gap', async () => {
     const model = await run('a-bundle-in-a-grid-stands-as-a-grid');
     const draft = JSON.parse(JSON.stringify(model)) as LayoutModel, bundle = draft.bundles[0]!;
-    const check = () => {
-      const list = members(draft, bundle);
-      checkStackedChannel(draft, bundle, list, draft.nodes.s2!, draft.nodes.s3!, pitch(draft, bundle), inversionPairs(list).length, 0);
-    };
+    const check = () => checkStackedChannel(draft, bundle, draft.nodes.s2!, draft.nodes.s3!);
     check();
     expect(codes(draft, 'GRID_BUNDLE_CHANNEL_SHORT')).toEqual([]);
     // Shrink the row gap to 5 px and slide the lower port block off the upper one: the members now have to turn.
@@ -101,5 +99,50 @@ describe('GRID_BUNDLE_CHANNEL_SHORT', () => {
     const found = codes(draft, 'GRID_BUNDLE_CHANNEL_SHORT');
     expect(found).toHaveLength(1);
     expect(found[0]!.severity).toBe('error');
+  });
+});
+
+describe('review findings of ticket 23', () => {
+  const clone = async () => JSON.parse(JSON.stringify(await run('a-bundle-in-a-grid-stands-as-a-grid'))) as LayoutModel;
+
+  it('the row gap under a chain link grows when the port blocks are not aligned, and stays the band gap when they are', async () => {
+    const draft = await clone(), cells = gridCells(draft, draft.groups.farm!);
+    expect(gridRowGaps(draft, draft.groups.farm!, cells)).toEqual([bandGap(draft)]);
+    for (const port of draft.nodes.s3!.ports) port.anchor!.x += 7;
+    const [gap] = gridRowGaps(draft, draft.groups.farm!, cells) as number[];
+    expect(gap).toBeGreaterThan(bandGap(draft));
   }, 60000);
+
+  it('a chain that a placement step broke is named, once', async () => {
+    const draft = await clone();
+    expect(checkChainsStand(draft)).toBeUndefined();
+    expect(codes(draft, 'GRID_BUNDLE_CHAIN_LOST')).toEqual([]);
+    draft.nodes.s3!.bounds!.x += 20;
+    checkChainsStand(draft); checkChainsStand(draft);
+    const found = codes(draft, 'GRID_BUNDLE_CHAIN_LOST');
+    expect(found).toHaveLength(1);
+    expect(found[0]!.severity).toBe('error');
+  }, 60000);
+
+  it('a member port that also carries an outside link declines the grid, and stage 1 says so', () => {
+    const model = resolve(parse(`
+portograph: 2
+profile: network
+groups:
+  top: { tier: 0 }
+  farm: { tier: 1, shape: grid }
+nodes:
+  core: { group: top, class: router }
+  a: { group: farm, class: server, ports: [{ name: p }, { name: q }] }
+  b: { group: farm, class: server, ports: [{ name: p }] }
+  c: { group: farm, class: server }
+links:
+  - [b.p, a.p]
+  - [b.p, a.p]
+  - [core, a.p]
+  - [core, c]
+`));
+    expect(codes(model, 'GROUP_SHAPE_DECLINED')[0]!.message).toContain('(reason: shared-port)');
+    expect(groupShape(model, 'farm')).toBe('row');
+  });
 });

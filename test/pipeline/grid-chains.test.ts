@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parse, resolve } from '../../src/index.js';
-import { groupExits, seatUnits, stackChains, type GridUnit } from '../../src/layout/grid-chains.js';
+import { chainSides, groupExits, seatUnits, stackChains, type GridUnit } from '../../src/layout/grid-chains.js';
 
 /** A tier-1 grid `farm`, a core above and a rail below, the given nodes and links. */
 const model = (nodes: string, links: string[]) => resolve(parse(`
@@ -55,6 +55,28 @@ describe('stackChains', () => {
   });
 });
 
+describe('review findings', () => {
+  const ports = (extra: string) => `  a: { group: farm, ports: [{ name: p }, { name: q }${extra}] }\n  b: { group: farm, ports: [{ name: p }, { name: q }] }\n  c: { group: farm }`;
+
+  it('declines a member port that also carries a link outside the chain bundles (shared-port)', () => {
+    expect(ids(stackChains(model(ports(''), ['[b.p, a.p]', '[b.p, a.p]', '[core, a.p]']), 'farm'))).toBe('shared-port');
+    // The same port on a link inside the bundle only is fine.
+    expect(ids(stackChains(model(ports(''), ['[b.p, a.p]', '[b.p, a.p]', '[core, a.q]']), 'farm'))).toEqual(['ab']);
+  });
+
+  it('carries every parallel bundle of a pair: all sides, and a conflict between them declines', () => {
+    const pair = (q: string, r: string) => `  a: { group: farm, ports: [{ name: p, side: bottom }, { name: q${q} }] }\n  b: { group: farm, ports: [{ name: p, side: top }, { name: q${r} }] }`;
+    const links = ['[a.p, b.p]', '[a.p, b.p]', '[a.q, b.q]', '[a.q, b.q]'];
+    // The authored sides split the pair into two bundles; the second has sides of its own and none of them is lost.
+    const both = model(pair('', ''), links);
+    const found = stackChains(both, 'farm');
+    expect('chains' in found && found.chains[0]!.edges).toEqual([['bundle-1', 'bundle-2']]);
+    expect('chains' in found && chainSides(both, found.chains).map(item => `${item.ref.node}.${item.ref.name}:${item.side}`).sort())
+      .toEqual(['a.p:bottom', 'a.p:bottom', 'a.q:bottom', 'a.q:bottom', 'b.p:top', 'b.p:top', 'b.q:top', 'b.q:top']);
+    expect(ids(stackChains(model(pair(', side: top', ', side: bottom'), links), 'farm'))).toBe('authored-side');
+  });
+});
+
 describe('orientation', () => {
   it('an authored side fixes the upper end: bottom is on top', () => {
     const nodes = '  a: { group: farm, ports: [{ name: p, side: top }] }\n  b: { group: farm, ports: [{ name: p, side: bottom }] }';
@@ -106,5 +128,13 @@ describe('seatUnits', () => {
   it('the rest of a chain column holds only nodes that leave neither way', () => {
     expect(seatUnits([chain(['a', 'b']), one('c', false, true), one('d', true), one('e'), one('f')], 3))
       .toEqual([['d', 'a', 'e'], ['c', 'b', 'f']]);
+  });
+
+  it('seats a flank peer at the outer end of its own row, but never into a chain column', () => {
+    const units = [chain(['x', 'y']), one('p'), one('q'), one('r')];
+    expect(seatUnits(units, 3, new Map([['p', 'right' as const]]))).toEqual([['x', 'q', 'p'], ['y', 'r', undefined]]);
+    expect(seatUnits(units, 3, new Map([['p', 'left' as const]]))).toEqual([['x', 'p', 'q'], ['y', 'r', undefined]]);
+    // The left end is the chain column: the peer stays put.
+    expect(seatUnits(units, 3, new Map([['q', 'left' as const]]))).toEqual([['x', 'p', 'q'], ['y', 'r', undefined]]);
   });
 });

@@ -20,14 +20,16 @@ export function authoredSide(model: LayoutModel, ref: PortRef): Side | undefined
 }
 
 /** Why a grid group cannot stand its enclosed bundles. The first reason of this order is the one reported. */
-export type StackDecline = 'authored-side' | 'branch' | 'cycle' | 'exits' | 'rows';
+export type StackDecline = 'authored-side' | 'shared-port' | 'branch' | 'cycle' | 'exits' | 'rows';
 
 /** A simple path of nodes joined by enclosed bundles, top to bottom: one column, consecutive rows. */
 export interface Chain {
   /** Top to bottom. */
   nodes: string[];
-  /** The bundle ids between neighbours, top to bottom (`bundles[i]` joins `nodes[i]` and `nodes[i + 1]`). */
+  /** Every bundle id of the chain, top to bottom. */
   bundles: string[];
+  /** The bundle ids between neighbours, top to bottom: `edges[i]` joins `nodes[i]` and `nodes[i + 1]`, and holds every parallel bundle of that pair. */
+  edges: string[][];
 }
 
 export type StackChains = { chains: Chain[] } | { decline: StackDecline; bundle: Bundle };
@@ -77,7 +79,7 @@ export interface GridUnit { nodes: readonly string[]; up: boolean; down: boolean
  * bottom. The cells are filled in the order `units` has, which is the order of the caller's ranked
  * node order, so ELK's order survives where nothing forces a node elsewhere.
  */
-export function seatUnits(units: readonly GridUnit[], columns: number): (string | undefined)[][] | undefined {
+export function seatUnits(units: readonly GridUnit[], columns: number, ends: ReadonlyMap<string, 'left' | 'right'> = new Map()): (string | undefined)[][] | undefined {
   const count = units.reduce((sum, unit) => sum + unit.nodes.length, 0);
   const chains = units.filter(unit => unit.nodes.length > 1), singles = units.filter(unit => unit.nodes.length === 1);
   const longest = Math.max(1, ...chains.map(unit => unit.nodes.length));
@@ -116,6 +118,18 @@ export function seatUnits(units: readonly GridUnit[], columns: number): (string 
   const rest = singles.filter(unit => !unit.up && !unit.down);
   if (rest.length > free.length) return undefined;
   rest.forEach((unit, index) => { const [row, column] = free[index]!; cells[row]![column] = unit.nodes[0]; });
+  // A flank's primary peer takes the outer end of its own row, the end its lateral link runs from. It swaps with the
+  // cell there when that cell is empty or holds a node that leaves neither way, and never into or out of a chain column.
+  const vertical = new Set(singles.filter(unit => unit.up || unit.down).map(unit => unit.nodes[0]!));
+  for (const [id, align] of ends) {
+    const row = cells.findIndex(item => item.includes(id));
+    if (row < 0) continue;
+    const column = cells[row]!.indexOf(id), target = align === 'left' ? 0 : columns - 1;
+    const other = cells[row]![target];
+    if (column === target || chainColumns.has(column) || chainColumns.has(target) || vertical.has(id)) continue;
+    if (other !== undefined && (vertical.has(other) || ends.has(other))) continue;
+    cells[row]![target] = id; cells[row]![column] = other;
+  }
   if (cells.some(row => row.every(id => id === undefined))) return undefined;
   if (Array.from({ length: columns }, (_, column) => cells.every(row => row[column] === undefined)).some(Boolean)) return undefined;
   return cells;
@@ -191,9 +205,21 @@ export function stackChains(model: LayoutModel, id: string): StackChains {
   }
   const selfLoop = bundles.find(bundle => bundle.nodes[0] === bundle.nodes[1]);
   if (selfLoop) return { decline: 'cycle', bundle: selfLoop };
+  // A member port that also carries a link outside the chain bundles would be fixed to `bottom` or `top` against that
+  // link's own direction: the grid cannot stand the bundle vertically.
+  const memberIds = new Set(bundles.flatMap(bundle => bundle.members));
+  const portKey = (ref: PortRef): string => JSON.stringify([ref.node, ref.name ?? null, ref.ordinal, ref.anonymous ?? false]);
+  const owner = new Map(bundles.flatMap(bundle => ends(bundle).map(ref => [portKey(ref), bundle] as const)));
+  for (const other of model.links) {
+    if (memberIds.has(other.id) || !other.attachments) continue;
+    for (const ref of [other.attachments.from, other.attachments.to]) {
+      const found = owner.get(portKey(ref));
+      if (found !== undefined) return { decline: 'shared-port', bundle: found };
+    }
+  }
   const members = model.groups[id]?.nodes ?? [];
   const seen = new Set<string>();
-  const paths: { nodes: string[]; bundles: Bundle[] }[] = [];
+  const paths: { nodes: string[]; bundles: Bundle[]; edges: Bundle[][] }[] = [];
   for (const start of members) {
     if (seen.has(start) || !partners.has(start)) continue;
     const component: string[] = [], queue = [start];
@@ -203,12 +229,12 @@ export function stackChains(model: LayoutModel, id: string): StackChains {
     const first = bundles.find(bundle => component.includes(bundle.nodes[0]))!;
     if (edges >= component.length) return { decline: 'cycle', bundle: first };
     const end = component.find(node => partners.get(node)!.size === 1)!;
-    const nodes = [end], used: Bundle[] = [];
+    const nodes = [end], used: Bundle[] = [], edgesUsed: Bundle[][] = [];
     while (nodes.length < component.length) {
       const [next, via] = [...partners.get(nodes.at(-1)!)!].find(([other]) => !nodes.includes(other))!;
-      nodes.push(next); used.push(via[0]!);
+      nodes.push(next); used.push(via[0]!); edgesUsed.push(via);
     }
-    paths.push({ nodes, bundles: used });
+    paths.push({ nodes, bundles: used, edges: edgesUsed });
   }
   // 3. orientation: authored sides, then exits, then the direction the first bundle is written in
   const exits = groupExits(model, id);
@@ -216,9 +242,9 @@ export function stackChains(model: LayoutModel, id: string): StackChains {
   let exitFault: Bundle | undefined;
   for (const path of paths) {
     const votes = new Set<'forward' | 'backward'>();
-    path.bundles.forEach((bundle, index) => {
+    path.edges.forEach((edge, index) => {
       const upper = path.nodes[index]!, lower = path.nodes[index + 1]!;
-      for (const ref of ends(bundle)) {
+      for (const ref of edge.flatMap(ends)) {
         const side = authoredSide(model, ref);
         if (side === undefined) continue;
         const above = side === 'bottom' ? ref.node : side === 'top' ? (ref.node === upper ? lower : upper) : undefined;
@@ -238,7 +264,9 @@ export function stackChains(model: LayoutModel, id: string): StackChains {
       if (choice === undefined) { exitFault ??= path.bundles[0]; continue; }
     }
     if (!valid(choice)) { exitFault ??= path.bundles[0]; continue; }
-    oriented.push({ nodes: choice, bundles: choice === forward ? path.bundles.map(bundle => bundle.id) : path.bundles.map(bundle => bundle.id).reverse() });
+    const edges = path.edges.map(edge => edge.map(bundle => bundle.id));
+    if (choice !== forward) edges.reverse();
+    oriented.push({ nodes: choice, bundles: edges.flat(), edges });
   }
   if (exitFault) return { decline: 'exits', bundle: exitFault };
   if (!seatable(gridUnits(members, oriented, exits))) return { decline: 'rows', bundle: bundles[0]! };
@@ -262,9 +290,9 @@ export function chainSides(model: LayoutModel, chains: readonly Chain[]): { ref:
   const links = new Map(model.links.map(link => [link.id, link] as const));
   const bundles = new Map(model.bundles.map(bundle => [bundle.id, bundle] as const));
   const found: { ref: PortRef; side: Side }[] = [];
-  for (const chain of chains) chain.bundles.forEach((id, index) => {
+  for (const chain of chains) chain.edges.forEach((edge, index) => {
     const upper = chain.nodes[index]!;
-    for (const member of bundles.get(id)?.members ?? []) {
+    for (const id of edge) for (const member of bundles.get(id)?.members ?? []) {
       const attached = links.get(member)?.attachments;
       if (!attached) continue;
       for (const ref of [attached.from, attached.to]) found.push({ ref, side: ref.node === upper ? 'bottom' : 'top' });

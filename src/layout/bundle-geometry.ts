@@ -9,7 +9,7 @@ import { fitRegionGroup, bottom, groupInsets, right } from './regions.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
 import { rowGap } from './sides-two.js';
 import { bundleChannelNeed, facingBundleNeed } from './bundle-need.js';
-import { gridChains } from './grid.js';
+import { gridCells, gridChains } from './grid.js';
 import { PLACEMENT_EPS, SIGN_EPS } from './tolerance.js';
 
 export const MEMBER_GAP = 16;
@@ -467,14 +467,53 @@ export function splitUnderJunctions(model: LayoutModel, port: LayoutPort, cohort
  * packer reserved the channel (`bundleChannelNeed`, the function that sizes a tier gap too); 7e must find it there. If the
  * faces stand closer than the channel needs, the reservation was wrong: say so as an error, once, and grow nothing.
  */
-export function checkStackedChannel(model: LayoutModel, bundle: Bundle, list: Member[], upper: LayoutNode, lower: LayoutNode,
-  q: number, inversions: number, fan: number): void {
-  const aligned = list.every(item => Math.abs(coordinate(item.a) - coordinate(item.b)) < PLACEMENT_EPS);
-  const need = bundleChannelNeed(aligned, list.length, q, inversions, fan, edgeMargin(routedStrokeWidth(model)));
+export function checkStackedChannel(model: LayoutModel, bundle: Bundle, upper: LayoutNode, lower: LayoutNode): void {
+  const need = stackedChannelNeed(model, bundle);
   const have = lower.bounds!.y - bottom(upper.bounds!);
   if (have >= need - PLACEMENT_EPS || model.diagnostics.some(item => item.code === 'GRID_BUNDLE_CHANNEL_SHORT' && JSON.stringify(item.owners) === JSON.stringify([bundle.owner]))) return;
   model.diagnostics.push({ stage: 'placement', severity: 'error', code: 'GRID_BUNDLE_CHANNEL_SHORT', owners: [bundle.owner],
     message: `${bundle.id} stands between two rows of a grid with ${have} px between its faces, and its members need ${need} px; the row gap under a chain link was reserved short` });
+}
+
+/**
+ * The channel a chain bundle needs between its two faces, from the ports as they stand: the members' coordinates give
+ * the alignment and the inversions, and the junction trees the fan depth, exactly as 7e reads them. Before the ports are
+ * allocated (no anchor yet) the two widths stand in for the alignment, and the inversions and the fan are zero. The one
+ * function the packer reserves with (`gridRowGaps`) and the guard checks with.
+ */
+export function stackedChannelNeed(model: LayoutModel, bundle: Bundle): number {
+  const links = model.links.filter(link => link.bundle === bundle.id);
+  const q = 16 + Math.max(DEFAULT_STROKE_WIDTHS.path, ...links.map(linkStrokeWidth));
+  const margin = edgeMargin(routedStrokeWidth(model));
+  const list = members(model, bundle);
+  if (list.some(item => item.a.anchor === undefined || item.b.anchor === undefined || item.a.side === undefined || item.b.side === undefined)) {
+    const [one, other] = bundle.nodes.map(id => model.nodes[id]!);
+    return bundleChannelNeed(one!.size!.width === other!.size!.width, list.length, q, 0, 0, margin);
+  }
+  const aligned = list.every(item => Math.abs(coordinate(item.a) - coordinate(item.b)) < PLACEMENT_EPS);
+  if (aligned) return bundleChannelNeed(true, list.length, q, 0, 0, margin);
+  const pitchQ = pitch(model, bundle), inversions = inversionPairs(list).length;
+  const trees = new Map(treeCohorts(model).map(cohort => [portId(cohort.port.ref), cohort]));
+  const fan = fanDepth(model, trees, bundle, list, 'a', pitchQ) + fanDepth(model, trees, bundle, list, 'b', pitchQ);
+  return bundleChannelNeed(false, list.length, pitchQ, inversions, fan, margin);
+}
+
+/**
+ * A grid chain stands in one column and consecutive rows when it is packed. A later step (centring widens a body leftwards
+ * and splits a column, for one) can break that; the chain would then be lost without a word, because the planner skips a
+ * bundle that no longer faces. Say it, once per chain, before the planner runs.
+ */
+export function checkChainsStand(model: LayoutModel): void {
+  for (const chain of gridChains(model)) {
+    const group = model.groups[model.document.nodes[chain.nodes[0]!]!.group]!;
+    const cells = gridCells(model, group);
+    const at = chain.nodes.map(id => { const row = cells.findIndex(item => item.includes(id)); return [row, cells[row]?.indexOf(id) ?? -1] as const; });
+    const stands = at.every(([row, column], index) => column === at[0]![1] && row >= 0 && row === at[0]![0] + index);
+    const code = 'GRID_BUNDLE_CHAIN_LOST', owner = { kind: 'group' as const, id: group.id };
+    if (stands || model.diagnostics.some(item => item.code === code && JSON.stringify(item.owners) === JSON.stringify([owner]) && item.message.includes(chain.nodes.join(' '))))  continue;
+    model.diagnostics.push({ stage: 'placement', severity: 'error', code, owners: [owner],
+      message: `${group.id} no longer stands ${chain.nodes.join(' ')} in one column and consecutive rows: a placement step moved a chain node; its bundle cannot run straight` });
+  }
 }
 
 /** Geometry-only plan. No path, lane owner, bar reservation or envelope is written here. */
@@ -482,6 +521,7 @@ export function prepareBundleGeometry(model: LayoutModel): void {
   // A diagram with no bundle still reserves the depth of its plain fans (ticket 20); one with
   // neither has nothing to plan.
   if (!model.bundles.length && !treeCohorts(model).some(({ port }) => axis(port.side!) === 'x')) return;
+  checkChainsStand(model);
   const oldBands = clone(model.tierBands);
   for (const bundle of model.bundles) { orderDistinct(model, bundle); applyBundleOrder(model, bundle); }
   const planned = new Map<string, Map<LayoutPort, number>>();
@@ -737,7 +777,7 @@ export function prepareBundleGeometry(model: LayoutModel): void {
     const q = pitch(model, bundle), a = model.nodes[bundle.nodes[0]]!, b = model.nodes[bundle.nodes[1]]!;
     const upper = a.bounds!.y < b.bounds!.y ? a : b, lower = upper === a ? b : a;
     const upperTier = model.groups[model.document.nodes[upper.id]!.group]!.tier!, lowerTier = model.groups[model.document.nodes[lower.id]!.group]!.tier!;
-    if (upperTier >= lowerTier && stacked.has(bundle.id)) checkStackedChannel(model, bundle, list, upper, lower, q, inversions, fan);
+    if (upperTier >= lowerTier && stacked.has(bundle.id)) checkStackedChannel(model, bundle, upper, lower);
     if (upperTier >= lowerTier || model.lanes.some(lane => bundle.members.includes(lane.owner.kind === 'link' ? lane.owner.id : ''))) continue;
     const mergeMembers = list.filter(m => m.link.technique === 'merge').length;
     // A merge trunk interleaves its join and leave rows only where the members meet on one port.
