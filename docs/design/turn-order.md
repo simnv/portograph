@@ -1,8 +1,12 @@
 # Port order from the planned first turn (design, proposed)
 
-Status: proposed (architecture ticket 24, 2026-10-11). Evidence: hand solves 01 and 09, principle P2 of
-`ref/hand-solves/ANALYSIS.md`. This document states the rule. The ticket has the measurements, the phases and the
-questions for the user.
+Status: accepted (architecture ticket 24; user decisions 2026-10-11). Evidence: hand solves 01 and 09, principle P2
+of `ref/hand-solves/ANALYSIS.md`. This document states the rule and the round that offers it. The ticket has the
+measurements and the phases.
+
+The user's decisions: stage 5 and a 7a pass (Section 4); **an offer, not a fixed rule**, judged by `unified` and paid
+with one re-run of `MAX_RERUNS` (Section 10); G5 judges by the same rule (Section 7); the row bypass is in
+(Section 6).
 
 ## 1. Problem
 
@@ -83,10 +87,11 @@ reads only reservations, never the router.
 | Row bypass (Section 6) | stage 5 | toward the bypass edge; `onward` | the bypass row |
 | Transit lane of 7a, without a course | 7a | toward the lane x | read in 7a |
 
-Stage 5 sets the order from the first four sources. Stage 7a re-reads the same key once the lanes stand. It may
-reorder only ports whose class or reach a lane changed, before 7c centring. Thus centring, bars, bundles and bands
-read the final order, and nothing after 7a must repair it. A reorder keeps the count of ports on each face, so no
-node size changes.
+In a placement run that carries the turn order (the trial of Section 10, and every run after a kept trial), stage 5
+sets the order from the first four sources. Stage 7a re-reads the same key once the lanes stand. It may reorder only
+ports whose class or reach a lane changed, before 7c centring. Thus centring, bars, bundles and bands read the final
+order, and nothing after 7a must repair it. A reorder keeps the count of ports on each face, so no node size
+changes. A run that does not carry the turn order orders every face as today.
 
 ## 5. Invariant 4
 
@@ -112,19 +117,26 @@ has no plan today. Stage 8 finds a way round. This is a discovery. The bypass be
   end grows to the G6 clearance on each side of the stem plus the stroke, where it is narrower). One padding row on
   the chosen edge of the group, within the span (the group padding grows by one pitch where the row does not fit).
 - The faces stay lateral. The first turn of each end is toward the bypass edge, shape `onward`.
+- The bypass is a course candidate. The course round offers and judges it as it does every course (ticket 15), so
+  it is an offer too. Once kept, it is a planned turn, and the turn round of Section 10 reads it. Case 01 thus needs
+  two re-runs: the course round, then the turn round.
 
 ## 7. G5
 
-G5 `port-order` reads the same comparator on the published paths. A pair of ports in group 3, or a pair of
-onward ports of one class, is judged by the far-end ranges as today. Any other pair is judged by the turn order. One
+G5 `port-order` reads the same comparator on the published paths, on the faces that the turn order placed. The
+layout records those faces (`freeze.turnOrder`: node and side). On such a face, a pair of ports in group 3, or a pair
+of onward ports of one class, is judged by the far-end ranges as today, and any other pair by the turn order. Every
+other face is judged by the far-end ranges alone, so a baseline that no trial changed is judged as today. One
 predicate serves the gate and placement (`decide.ts`, `chord-clear.ts` and the far-end question of `flanks.ts`);
 placement reads the planned turns, and the gate reads the published turns. `docs/design/quality.md`, G5: "port order
 on a side matches the turn order (far-end order where no link turns)".
 
 ## 8. Diagnostics
 
-- `PORT_ORDER_BY_TURN` (info): a face whose turn order differs from its far-end order. It names the node, the side
-  and the links.
+- `TURN_ORDER_TAKEN` (info): a kept trial changed the order of a face. One per face; it names the node, the side,
+  the links, and the bent, turns and crossings before and after.
+- `TURN_ROUND_SKIPPED` (info): the baseline has an offer, and no re-run is left for it.
+- A refused trial has no note, as for the other rounds; the trace names the reason.
 - `PORT_TURN_MISSED` (warning): a published path whose first turn differs from the planned one at a port that
   the turn order placed. A non-zero count is a defect of a planner, not of the rule.
 
@@ -133,3 +145,54 @@ on a side matches the turn order (far-end order where no link turns)".
 - Two faces. A link on the left face and a link on the bottom face of one node can still cross (NTP has one such
   pair). This is P1 (the side follows the route), not P2.
 - A link with no reservation keeps group 3. The rule never guesses a turn.
+
+## 10. The turn round (user decision, 2026-10-11)
+
+The turn order is an offer. The round measures it on the kept result, places once more with it, and keeps the trial
+only when the published result is better by `unified`.
+
+**The offer.** On the kept 7f model and its routed result, the comparator of Section 3 reads the planned turns of
+every face. The offer is the set of faces whose turn order differs from the order they have. An empty set is no
+offer.
+
+**Where the round sits.** The rounds run in this order: fan rounds, span round (ticket 22), course round (ticket 15;
+before or after the side rounds, as today), side rounds, the deferred course round, **the turn round**, the overlay
+round. Reasons:
+- The turn order reads plans that the span, course and side rounds keep (a course is a planned turn; a span changes
+  which routes bend). It must read their kept result, so it runs after them.
+- The overlay round runs last on the kept routed result (ticket 15, phase 7). Its brackets already take groups 1 and
+  5 of the comparator in every run, so it needs no turn trial of its own. A kept turn order is an input of every
+  later run, the overlay trial included.
+
+**Budget.** The round takes one re-run from the shared `MAX_RERUNS` and places under the hard cap of ticket 22
+(`PlacementBudgetExceeded` refuses the trial). A run that stage 7a refuses before any work gives its re-run back.
+The starvation rule of ticket 22 is extended both ways:
+- The span, course and side rounds count the turn round as a later round with an offer when the turn offer is not
+  empty on the baseline they read. Each leaves it one re-run, as each leaves one to the rounds after it today.
+- The turn round leaves one re-run to the overlay round when the overlay round has an offer on the turn round's
+  baseline (`measureOverlayCourses` not empty). With one re-run left and both offers present, the turn round runs
+  only when its promise beats the overlay promise by `beats` (the pattern of the course and side rounds).
+- When no re-run is left, the round is skipped with `TURN_ROUND_SKIPPED`.
+
+A turn offer that exists only after a kept course (case 09: the courses make the faces) is not visible on the
+baseline, so no earlier round reserves for it. It takes a re-run that the earlier rounds left.
+
+**The judge.** The trial is kept only when all of these hold:
+- No removed link. No new gate finding (findings compared as sets). No minimum separation broken or deepened.
+- Every kept course publishes at most the turns it promised.
+- The canvas does not grow (the turn order adds no size; a growth is a sign of a planner fault, and refuses).
+- The whole reading is better by `unified`: fewer bent links over both layers; on a tie, fewer turns; on a tie,
+  fewer crossings.
+
+A pure crossing gain is the usual case: the turn order moves no bend by design. It is kept only when bent links and
+turns do not rise. This is the `unified` order itself, read lexicographically: a trial that removes crossings and
+adds one turn anywhere is refused. A trial equal on all three ranks is refused (no change without a gain).
+
+**Byte identity.**
+- No offer: no trial, no re-run spent, no reservation by the earlier rounds. The layout is byte for byte the layout
+  main makes.
+- A refused or skipped trial: the baseline stands, byte for byte as main makes it, with no note.
+- One exception, stated and measured: on a sheet whose baseline has a turn offer, an earlier round now leaves one
+  re-run for the turn round. If that round would have used the re-run (a side retry), its result can differ. The
+  corpus measure lists each such sheet.
+- `testTurnOrder: false` skips the round (tests and the before/after measure).
