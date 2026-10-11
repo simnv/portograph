@@ -9,7 +9,7 @@ import { fitRegionGroup, bottom, groupInsets, right } from './regions.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
 import { rowGap } from './sides-two.js';
 import { bundleChannelNeed, facingBundleNeed } from './bundle-need.js';
-import { gridCells, gridChains } from './grid.js';
+import { gridChains } from './grid.js';
 import { PLACEMENT_EPS, SIGN_EPS } from './tolerance.js';
 
 export const MEMBER_GAP = 16;
@@ -499,21 +499,24 @@ export function stackedChannelNeed(model: LayoutModel, bundle: Bundle): number {
 }
 
 /**
- * A grid chain stands in one column and consecutive rows when it is packed. A later step (centring widens a body leftwards
- * and splits a column, for one) can break that; the chain would then be lost without a word, because the planner skips a
- * bundle that no longer faces. Say it, once per chain, before the planner runs.
+ * What a grid chain pair must keep for its bundle to run straight between two rows: the members face each other
+ * (the upper end on `bottom`, the lower on `top`, the lower body below the upper) and the two port blocks stand at one
+ * coordinate. Centring may widen a body and split a column without breaking this, so the column is not tested, the
+ * ports are. Planned geometry only reaches here through the planner, which aligns the blocks; a pair that still fails
+ * was lost by a step that should have refused its move, so it is an error, once per bundle (a backstop, a bug if seen).
  */
-export function checkChainsStand(model: LayoutModel): void {
-  for (const chain of gridChains(model)) {
-    const group = model.groups[model.document.nodes[chain.nodes[0]!]!.group]!;
-    const cells = gridCells(model, group);
-    const at = chain.nodes.map(id => { const row = cells.findIndex(item => item.includes(id)); return [row, cells[row]?.indexOf(id) ?? -1] as const; });
-    const stands = at.every(([row, column], index) => column === at[0]![1] && row >= 0 && row === at[0]![0] + index);
-    const code = 'GRID_BUNDLE_CHAIN_LOST', owner = { kind: 'group' as const, id: group.id };
-    if (stands || model.diagnostics.some(item => item.code === code && JSON.stringify(item.owners) === JSON.stringify([owner]) && item.message.includes(chain.nodes.join(' '))))  continue;
-    model.diagnostics.push({ stage: 'placement', severity: 'error', code, owners: [owner],
-      message: `${group.id} no longer stands ${chain.nodes.join(' ')} in one column and consecutive rows: a placement step moved a chain node; its bundle cannot run straight` });
-  }
+export function checkChainPair(model: LayoutModel, bundle: Bundle): void {
+  const list = members(model, bundle), [one, other] = bundle.nodes.map(id => model.nodes[id]!);
+  const upper = one!.bounds!.y <= other!.bounds!.y ? one! : other!, lower = upper === one ? other! : one!;
+  const holds = list.length > 0 && list.every(item => {
+    const here = item.a.ref.node === upper.id ? item.a : item.b, there = here === item.a ? item.b : item.a;
+    return here.side === 'bottom' && there.side === 'top' && here.anchor !== undefined && there.anchor !== undefined
+      && Math.abs(coordinate(here) - coordinate(there)) < PLACEMENT_EPS;
+  }) && lower.bounds!.y >= bottom(upper.bounds!);
+  const code = 'GRID_BUNDLE_CHAIN_LOST';
+  if (holds || model.diagnostics.some(item => item.code === code && JSON.stringify(item.owners) === JSON.stringify([bundle.owner]))) return;
+  model.diagnostics.push({ stage: 'placement', severity: 'error', code, owners: [bundle.owner],
+    message: `${bundle.id} no longer runs straight between two rows of its grid: the faces or the port blocks of ${upper.id} and ${lower.id} moved apart after the packer seated them` });
 }
 
 /** Geometry-only plan. No path, lane owner, bar reservation or envelope is written here. */
@@ -521,7 +524,6 @@ export function prepareBundleGeometry(model: LayoutModel): void {
   // A diagram with no bundle still reserves the depth of its plain fans (ticket 20); one with
   // neither has nothing to plan.
   if (!model.bundles.length && !treeCohorts(model).some(({ port }) => axis(port.side!) === 'x')) return;
-  checkChainsStand(model);
   const oldBands = clone(model.tierBands);
   for (const bundle of model.bundles) { orderDistinct(model, bundle); applyBundleOrder(model, bundle); }
   const planned = new Map<string, Map<LayoutPort, number>>();
@@ -754,6 +756,7 @@ export function prepareBundleGeometry(model: LayoutModel): void {
   const stacked = new Set(gridChains(model).flatMap(chain => chain.bundles));
   for (const bundle of model.bundles) {
     const list = members(model, bundle), inversions = inversionPairs(list).length;
+    if (stacked.has(bundle.id)) checkChainPair(model, bundle);
     if (!facing(list)) continue;
     const q0 = pitch(model, bundle);
     const fan = fanDepth(model, trees, bundle, list, 'a', q0) + fanDepth(model, trees, bundle, list, 'b', q0);

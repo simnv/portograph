@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse, resolve, restoreLayoutModel, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
-import { checkChainsStand, checkStackedChannel } from '../../src/layout/bundle-geometry.js';
+import { checkChainPair, checkStackedChannel, members, prepareBundleGeometry } from '../../src/layout/bundle-geometry.js';
 import { bandGap } from '../../src/layout/skeleton-graph.js';
 import { gridCells, gridRowGaps, groupShape } from '../../src/layout/grid.js';
 import { findPort } from '../../src/layout/row-paths.js';
@@ -113,15 +113,29 @@ describe('review findings of ticket 23', () => {
     expect(gap).toBeGreaterThan(bandGap(draft));
   }, 60000);
 
-  it('a chain that a placement step broke is named, once', async () => {
-    const draft = await clone();
-    expect(checkChainsStand(draft)).toBeUndefined();
+  it('a body widened leftwards still stands over its partner: the ports are straight, so nothing is named', async () => {
+    const draft = await clone(), bundle = draft.bundles[0]!;
+    // Centring widens a body leftwards; the column x splits (`gridCells`), but the port blocks stay where they were.
+    draft.nodes.s2!.bounds!.x -= 30; draft.nodes.s2!.bounds!.width += 30;
+    checkChainPair(draft, bundle);
+    prepareBundleGeometry(draft);
     expect(codes(draft, 'GRID_BUNDLE_CHAIN_LOST')).toEqual([]);
-    draft.nodes.s3!.bounds!.x += 20;
-    checkChainsStand(draft); checkChainsStand(draft);
-    const found = codes(draft, 'GRID_BUNDLE_CHAIN_LOST');
-    expect(found).toHaveLength(1);
-    expect(found[0]!.severity).toBe('error');
+    expect(codes(draft, 'GRID_BUNDLE_CHANNEL_SHORT')).toEqual([]);
+    const list = members(draft, bundle);
+    expect(list.map(item => Math.abs(item.a.anchor!.x - item.b.anchor!.x))).toEqual([0, 0]);
+  }, 60000);
+
+  it('a pair whose port blocks moved apart is named once, by the check and by the planner', async () => {
+    const draft = await clone(), bundle = draft.bundles[0]!;
+    for (const port of draft.nodes.s3!.ports) port.anchor!.x += 7;
+    checkChainPair(draft, bundle); checkChainPair(draft, bundle);
+    expect(codes(draft, 'GRID_BUNDLE_CHAIN_LOST')).toHaveLength(1);
+    expect(codes(draft, 'GRID_BUNDLE_CHAIN_LOST')[0]!.severity).toBe('error');
+    // The planner calls the check: a lower body that no longer faces the upper one is named when 7e runs.
+    const faulty = await clone();
+    for (const port of faulty.nodes.s3!.ports) port.side = 'bottom';
+    try { prepareBundleGeometry(faulty); } catch { /* the planner may refuse a broken pair after the check has spoken */ }
+    expect(codes(faulty, 'GRID_BUNDLE_CHAIN_LOST')).toHaveLength(1);
   }, 60000);
 
   it('a member port that also carries an outside link declines the grid, and stage 1 says so', () => {

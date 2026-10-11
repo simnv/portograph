@@ -20,7 +20,7 @@ export function authoredSide(model: LayoutModel, ref: PortRef): Side | undefined
 }
 
 /** Why a grid group cannot stand its enclosed bundles. The first reason of this order is the one reported. */
-export type StackDecline = 'authored-side' | 'shared-port' | 'branch' | 'cycle' | 'exits' | 'rows';
+export type StackDecline = 'authored-side' | 'branch' | 'shared-port' | 'cycle' | 'exits' | 'rows';
 
 /** A simple path of nodes joined by enclosed bundles, top to bottom: one column, consecutive rows. */
 export interface Chain {
