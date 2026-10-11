@@ -315,3 +315,116 @@ to reach this; ticket 103 measures it.
 2. **Crossings.** Straight anyway: a clear chord draws straight even when it adds crossings
    (Section 11). The M1 golden's `golden-crossings` assertion takes the measured count, with a
    comment that cites this decision.
+
+## 14. Spanning chords (proposed, architecture ticket 22; not decided)
+
+Status: a proposal for the user. It amends Q108 only when the user accepts it. Evidence and measures:
+`.scratch/architecture/issues/22-a-chord-spans-several-tier-gaps.md`. Hand solve: case 04, principle P6 and
+contradiction 7 of `ref/hand-solves/ANALYSIS.md`.
+
+### 14.1 Rule
+
+A **spanning chord** is a cross-frame chord whose ends stand on document tiers `t` and `t + N`, `N` of 2 or more.
+No cap on `N`. It is one straight segment from face to face, as every routed chord.
+
+A link is a spanning-chord candidate when Section 3 items 1, 2 and 4 hold, and its end groups are on document
+tiers that are not consecutive. Item 3 changes: "consecutive" becomes "different".
+
+A **transited band** is a sub-tier band strictly between the end sub-tiers. Section 4 refuses every such band
+(`transit`). For a spanning chord a transited band is no refusal by itself. The band must leave the chord's
+**corridor** clear: the part of the segment between the band's top and bottom y, grown by the gate clearances.
+
+Open (ticket 22, question 2): whether the same test also replaces the `transit` refusal of a cross-frame chord on
+consecutive document tiers, where a rank band of an end's own tier stands between the ends (Section 3, last
+paragraph).
+
+### 14.2 The walls
+
+The walls are the walls of Section 4. Nothing is new, and nothing is relaxed:
+- every box of `groupBoxes` that holds neither end (frame, canton frame, free group, rank cell, flank, bar), grown
+  by the group-edge link margin (10 px plus half the stroke);
+- every foreign node body (10 px) and pill (contact);
+- every label and title strip, with the 8 px link-free margin (a title in a transited band stands inside its
+  foreign frame box, so the frame wall covers it);
+- every lane box of another link (no clearance), every bundle zone and obstacle;
+- every held chord (10 px, unless the two cross strictly), every orthogonal leg and mouth leg (10 px).
+
+Overlay geometry is no wall, as in Section 8: a bus bar, a stub, a riser, a trunk and an overlay lane.
+
+A lane is a wall. So a candidate that is straight today through its own transit lane (a vertical drop) is offered
+too: its lane box would refuse the chords that cross it, and the chord draws the same vertical with no lane.
+
+### 14.3 Reservation
+
+The load-bearing rule: 7a must not reserve a lane for a spanning chord, and 7a must reserve its corridor. Stage 7a
+cannot know the chord from geometry that it has not made. So the chord is decided on a placed baseline and
+enacted by a placement re-run, as a side hint (ADR-0022) and a course (ticket 15) are.
+
+- **Span hint.** `LayoutLink.spanHint: true`, an input of the re-run. It freezes with the topology
+  (`freeze.topology`); restore checks that the link is a candidate.
+- **Stage 5.** A hinted end port takes no lane pitch. The fan rule (ticket 89, Section 7) spreads a face that
+  takes several chords.
+- **7a.** No transit lane for a hinted link. One **span corridor** per transited band: `Lane.kind: 'span'`, owner
+  the link, layer `routed`, id `span:<link>:<sub-tier>`. Its box is the bounding box of the corridor in that band.
+  Its x is derived from the two end anchors at each `rebuildLaneExtents`, as a perimeter lane's x is derived
+  (ADR-0010 amendment of ticket 15: the id, owner and band are immutable, the x is not). 7a translates every unit
+  of the band out of the box (`marginTranslations`, as for a lane), and the other lanes keep out of it
+  (`corridorFree`). The span corridor is no router obstacle: the chord is a fixed path.
+- **7c to 7f.** A guard `spanCorridorsHold` joins `optionalMoveHolds` and the centring walls. It refuses a move that
+  puts a wall of Section 14.2 into a corridor: a unit or a lane of a transited band that moves in, or an end port
+  that moves the corridor onto a wall. The constraint catalogue names it as a hard kind `span-corridor`, support
+  `unsupported` (three positions, as `chord-side`).
+- **Freeze.** `freezeChords` holds the chord. A move that 7f cannot refuse (gap growth that turns the chord, a title
+  that widens, a grid that widens) keeps the chord and names it (`SPAN_CHORD_BLOCKED`). The span round refuses a
+  trial that carries one, so a published sheet has none.
+
+Why a derived corridor with a guard, and not a fixed column: the chord's x in a band depends on both end x, so no
+one-variable bound holds it. A fixed column would reserve the whole sweep that the ends could take, and it still
+needs a two-end bound to keep the chord inside it.
+
+### 14.4 The span round
+
+A pipeline round on the pattern of the course round (ticket 15, phase 4).
+1. **Offer.** On the kept baseline (after the fan rounds), `measureSpans` reads each candidate that owns a transit
+   lane. It removes the transit lanes of all candidates on a copy, then tests the chord of each with
+   `chordVerdict`, the `transit` check replaced by the corridor test of 14.1. Link order; a chord held earlier in
+   the pass is a wall to the next one (10 px, unless they cross strictly). The offer is every candidate that passes.
+   The offer is empty when no candidate is bent today, because no chord can then lower the bent count.
+2. **Trial.** One placement re-run with the span hints, then 7f and the route.
+3. **Judge** (`judgeSpanTrial`): no removed link; every hinted link publishes its chord (the promise); no new gate
+   finding and no new hard x-constraint entry (compared as sets); canvas growth within the 5 % share; then the
+   `unified` order over both layers (fewer bent links, then fewer turns, then fewer crossings). The trial is kept
+   only when it is strictly better. A trial that one chord spoils is refused whole.
+4. **Order and budget.** The span round runs before the course round, the side round and the overlay course round,
+   because a chord changes which routes are poor. It shares `MAX_RERUNS` and takes a re-run only when it offers
+   something. A refused round leaves the sheet byte-identical (trace only).
+
+A spanning chord adds crossings where it replaces a lane. That is P6, and Q108 decision 2 ("straight anyway"). The
+judge reads crossings last.
+
+### 14.5 Other rules
+
+- **Tier-gap plan.** A spanning chord crosses `N` tier gaps. `PlanFrame.chords` holds it in each gap it crosses (its
+  x at the gap's low and high y). A row crosses it strictly or keeps 10 px; a Z middle drop keeps `k`;
+  `TIER_GAP_CHORD_CROWDED` and `TIER_GAP_CHORD_EXPOSED` are named per gap. A gap loses the lane mouths of the
+  hinted links, so it can shrink.
+- **Labels.** A link label lies on the chord (ticket 16). If the midpoint falls in a transited band, 7a widens that
+  band's corridor by the label's half extent normal to the line plus the 2 px halo, so the label room is reserved
+  with the corridor. Section 6 (own title band) is unchanged.
+- **Overlay rule.** Unchanged. An overlay chord already spans tiers (`overlayChordAdmitted` does not read the
+  consecutive-tier clause). A routed spanning chord is no wall to an overlay line.
+- **Fans.** `measureFans` reads `routedChordCandidate`; a hinted link is one.
+- **Score, validate, gates.** `isRoutedChord` reads the hinted kind, so continuity, G5 (one declared diagonal), G7
+  and `route/validate` treat a spanning chord as every routed chord. G6 reads an axis-aligned chord (a vertical
+  drop) against frame edges; the corridor margin already keeps 10 px.
+- **draw.io.** A straight edge with no `edgeStyle`, as a cross-frame chord.
+
+### 14.6 Diagnostics
+
+| Code | Severity | When |
+|---|---|---|
+| `SPAN_CHORD_TAKEN` | info | Placement, the kept run: one per spanning chord, with the gaps it spans and its transited bands. |
+| `SPAN_CHORD_BLOCKED` | warning | 7f: a move that 7f cannot refuse puts a wall into a held span corridor. The span round refuses the trial. |
+
+The offer, the refused trial and its reason are in the trace only. `ROUTED_CHORD_REFUSED` does not change: a link
+with no hint is no spanning-chord candidate at the freeze.
