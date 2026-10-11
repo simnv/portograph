@@ -65,7 +65,7 @@ describe('the acceptance sheets of ticket 15 lay out and name their links', () =
 
 describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
   // The named phase turns the test on by changing `it.fails` to `it`.
-  it.fails('01 (follow-up ticket, not phase 4): the ring closes round the outside with no crossing', async () => {
+  it('01 (architecture ticket 24, phase 5): the ring closes round the outside with no crossing', async () => {
     expect(counts(await run(SHEETS.ring)).routed.crossings).toBe(0);
   }, 60000);
 
@@ -136,7 +136,8 @@ describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
     expect([sideOf(model, 6, 'from'), sideOf(model, 6, 'to'), turns(model, 6)]).toEqual(['bottom', 'left', 3]);
     expect([sideOf(model, 5, 'from'), sideOf(model, 5, 'to'), turns(model, 5)]).toEqual(['bottom', 'left', 3]);
     expect(counts(model).routed.turns).toBe(6);
-    expect(counts(model).routed.crossings).toBe(1);
+    // Ticket 24: the turn round orders the two skirts of the face by their planned first turn, so the self crossing of the far-end order is gone (it was 1).
+    expect(counts(model).routed.crossings).toBe(0);
     expect(score(model).snapshot.gates['G6']!.violations).toEqual([]);
   }, 60000);
 

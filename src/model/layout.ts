@@ -214,7 +214,7 @@ export interface LayoutLink {
 }
 
 /** What a course is for: the detour of its natural route (ticket 15, Section 1, T1 to T5). */
-export type CourseKind = 'transit' | 'u-turn' | 'skirt' | 'shared-port' | 'overlay';
+export type CourseKind = 'transit' | 'u-turn' | 'skirt' | 'shared-port' | 'overlay' | 'bypass';
 /** One run of a course, in order from the source: the kind of lane or row it stands on. `u` is a U part of the tier gap: both its legs stand on one boundary of the gap (phase 5). */
 export type CourseRun = 'padding' | 'transit' | 'gap' | 'perimeter' | 'tier-gap' | 'u';
 /** One end of a course. `face` is the side of the port (stage 5 sets it from the course); `approach` is the pill edge a stem meets when it differs. */
@@ -225,6 +225,8 @@ export interface CourseEnd { face: Side; approach?: Side }
  */
 export interface Course {
   link: string; kind: CourseKind; from: CourseEnd; to: CourseEnd; runs: CourseRun[];
+  /** A `bypass` course only (architecture ticket 24, phase 5): the edge of the row (`top` or `bottom` of the group) that its padding row stands on. */
+  edge?: 'top' | 'bottom';
   /** The margin the course's perimeter lane stands in. Present when `runs` has a `perimeter` run; the lane keeps it for good. */
   side?: 'left' | 'right';
 }
@@ -438,6 +440,16 @@ export interface LayoutRuntime {
 /** Geometry remains optional until the stage that produces it has completed. */
 export interface LayoutModel {
   freeze?: LayoutFreeze;
+  /**
+   * An input of the placement run (architecture ticket 24, docs/design/turn-order.md): stage 5 orders the ports of a face by the planned first turn of their
+   * links. Absent reads as the far-end order. `freeze.turnOrder` records the faces the order changed.
+   */
+  turnOrder?: true;
+  /**
+   * With `turnOrder`: the links whose faces take the turn order in this run, and no other face does (architecture ticket 24, phase 5: a bypass trial carries the order
+   * for its own link only). Absent reads as every face.
+   */
+  turnLinks?: string[];
   /** The planned course of each link that has one (ticket 15); absent until stage 5 plans them, and still absent when no link has a detour. */
   courses?: Course[];
   document: NormalisedDocument;
@@ -512,5 +524,7 @@ export interface LayoutFreeze {
   courses?: Course[];
   /** Present only when a span round placed a spanning chord (architecture ticket 22): the ids of the links that carry `spanHint`, in link order. A restore checks it against the model. */
   spans?: string[];
+  /** Present only when a turn-ordered run changed the order of a face (architecture ticket 24): node and side of each such face, in node and side order. G5 judges these faces by the turn order. */
+  turnOrder?: { node: string; side: Side }[];
   placement?: PlacementSnapshot;
 }

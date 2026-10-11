@@ -42,6 +42,8 @@ import { judgeSpanTrial } from '../layout/span-judge.js';
 import { transitTiers } from '../layout/lanes.js';
 import { beats, gainOf, judgeCourseTrial, judgeOverlayTrial, measureCourses, measureOverlayCourses } from '../layout/course-measure.js';
 import { pathBends } from '../layout/objective.js';
+import { turnMissed } from '../layout/turn-order.js';
+import { judgeTurnTrial, measureTurnOrder, roundLimit, turnReserve, turnRoundRuns } from '../layout/turn-measure.js';
 import { countStage, ledgerOn, ledgerSnapshot, startPlacementEntry, type LedgerSnapshot } from '../layout/attempt-ledger.js';
 
 
@@ -108,6 +110,10 @@ export interface LayoutOptions {
   testNodeFloors?: ReadonlyMap<string, Size>;
   /** Test only. Courses (ticket 15) for every placement run, before the course round has any say. */
   testCourses?: readonly Course[];
+  /** Test only (architecture ticket 24, phase 2). `true` forces the turn order on every placement run: stage 5 orders the ports of a face by the planned first turn of their links. */
+  testTurnOrder?: boolean;
+  /** Test only (ticket 24): the links whose faces every placement run orders by their turns, and no other face (see `LayoutModel.turnLinks`). */
+  testTurnLinks?: readonly string[];
   /** Test only. `false` skips the overlay round (ticket 15, phase 7): the overlay links keep the chord or the derived path they had before the rule of Q1. */
   testOverlayCourses?: boolean;
   /** Test only (architecture ticket 22, phase 2): the ids of the links that every placement run reserves as spanning chords, before the span round has any say. */
@@ -150,6 +156,10 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   let activeCourses: readonly Course[] = options.testCourses ?? [];
   // The links every placement run reserves as spanning chords (ticket 22): the test's, or the ones the span round keeps.
   let activeSpans: ReadonlySet<string> = new Set(options.testSpanHints ?? []);
+  // Whether every placement run orders the ports of a face by the planned first turn (ticket 24): forced by the test option, or set by a kept turn round.
+  let activeTurn = options.testTurnOrder === true;
+  // The links whose faces a kept bypass trial ordered by their turns; later runs keep that order on those faces (ticket 24, phase 5).
+  let activeTurnLinks: readonly string[] = options.testTurnLinks ?? [];
   const stage3Sizes = new WeakMap<LayoutModel, Map<string, Size>>();
   // The trunk joins a placement run found blocked (mesh-bus.md, section 12.4): the next run resolves with them declined.
   /** The trunks declined for the next run. With `all` set (the budget is spent) every trunk reads as declined. */
@@ -161,7 +171,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   let placements = 0;
   // The cap on placements per command: the first run and the effective re-run budget (the fan rounds at the start run within FAN_ROUNDS even with a budget of 0).
   const placeCap = Math.max(options.testMaxReruns ?? MAX_RERUNS, FAN_ROUNDS) + 1;
-  const place = async (floors: FanMeasure['floors'], hints = options.testSideHints, nodeFloors = options.testNodeFloors, abort?: (stage: string) => void, laneKeys: ReadonlySet<string> = new Set(), courses: readonly Course[] = activeCourses, spans: ReadonlySet<string> = activeSpans): Promise<LayoutModel> => {
+  const place = async (floors: FanMeasure['floors'], hints = options.testSideHints, nodeFloors = options.testNodeFloors, abort?: (stage: string) => void, laneKeys: ReadonlySet<string> = new Set(), courses: readonly Course[] = activeCourses, spans: ReadonlySet<string> = activeSpans, turn: boolean = activeTurn, turnLinks: readonly string[] = activeTurnLinks): Promise<LayoutModel> => {
     // The one assertion of the placement budget: a command places at most MAX_RERUNS + 1 times (the first run and the re-runs), whatever round asks. A run that stage 7a
     // refuses before any work is given back by the round that asked (`placements--`, with its `reruns--`).
     if (placements >= placeCap) throw new PlacementBudgetExceeded(placements);
@@ -178,6 +188,8 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       }
     }
     for (const link of resolved.links) if (spans.has(link.id)) link.spanHint = true;
+    if (turn) resolved.turnOrder = true;
+    else if (turnLinks.length > 0) { resolved.turnOrder = true; resolved.turnLinks = [...turnLinks]; }
     stepIn('sides-one', () => sidesOne(resolved, hints, laneKeys, courseFaces));
     if (courses.length) resolved.courses = JSON.parse(JSON.stringify(courses)) as Course[];
     // An approach (ticket 15, phase 6) is stored on the link and in its course; the port keeps its side.
@@ -325,12 +337,24 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   const keptPromises = new Map<string, number>();
   // Phase 3b's unmoved offer is a side trial too: when 7f moved the placement and the base has no offer, an offer of the unmoved copy may stand (the filter reads it).
   const unmovedMayStand = (): boolean => baseMoved && (baseUnmoved === undefined || measureSides(baseUnmoved, kept7e, refused).hints.size > 0);
+  // The turn round (ticket 24, Section 10) runs after these rounds, on what they keep. When it has an offer on the baseline a round reads, that round leaves it one re-run,
+  // as it leaves one to every round after it. A forced turn order or forced courses (tests) have no turn round.
+  const turnRoundOn = options.testCourses === undefined && options.testTurnOrder === undefined;
+  const reserve = (): number => turnReserve(base, turnRoundOn);
+  // A bypass that cannot be reserved stays a remainder of stage 8 and is named, once, with the reason (`ROW_BYPASS_DECLINED`).
+  const noteDeclined = (offer: ReturnType<typeof measureCourses>): void => {
+    for (const item of offer.declined) {
+      if (sideNotes.some(note => note.code === 'ROW_BYPASS_DECLINED' && note.owners?.some(owner => owner.kind === 'link' && owner.id === item.link))) continue;
+      sideNotes.push({ stage: 'placement', severity: 'info', code: 'ROW_BYPASS_DECLINED', owners: [{ kind: 'link', id: item.link }], message: `The link ${item.link} has no row bypass: ${item.why}.` });
+    }
+  };
   const courseRound = async (given?: ReturnType<typeof measureCourses>): Promise<void> => {
     routedBase = given === undefined ? routedFinal ?? routedBase ?? await routeModel(base) : routedBase;
     const offer = given ?? measureCourses(base, routedBase!);
     options.testSideTrace?.({ ev: 'courses', offer, base, routedBase });
+    noteDeclined(offer);
     if (offer.courses.length === 0) return;
-    if (reruns >= maxReruns) { options.testSideTrace?.({ ev: 'course-skipped', offer, reruns }); return; }
+    if (reruns >= roundLimit(maxReruns, reserve())) { options.testSideTrace?.({ ev: 'course-skipped', offer, reruns }); return; }
     // The floors of a kept side trial and of the course trial stay under this one.
     const nodeFloors = new Map([...courseFloors, ...(options.testNodeFloors ?? [])]);
     for (const key of hints.keys()) {
@@ -351,7 +375,10 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     // A refused course round leaves the layout as the baseline made it, with no note (the trace names the reason), so a sheet it does not change is byte for byte as it was.
     const courseRefusal = (why: string): void => { options.testSideTrace?.({ ev: 'course-refused', links: names, why }); };
     let trial7e: LayoutModel | undefined;
-    try { trial7e = await timed('rerun-course', () => place(floors, hints, nodeFloors, trialAbort, laneKeys, offer.courses)); } catch (error) {
+    // A row bypass (ticket 24, phase 5) puts the closing link in the slot on its turn side: the trial carries the turn order, or its stems would cross the straight link of the gap.
+    const bypassLinks = offer.courses.filter(course => course.kind === 'bypass').map(course => course.link);
+    const trialLinks = [...new Set([...activeTurnLinks, ...bypassLinks])];
+    try { trial7e = await timed('rerun-course', () => place(floors, hints, nodeFloors, trialAbort, laneKeys, offer.courses, activeSpans, activeTurn, trialLinks)); } catch (error) {
       // A course moves columns the baseline never moved. A centring that cannot hold its feeds there is the course's refusal, not a bug of the baseline.
       if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError
         || (error instanceof Error && error.message.startsWith('Centring invariant violated')))) throw error;
@@ -373,10 +400,15 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
         if (verdict.kept) {
           for (const [id, promised] of offer.promised) keptPromises.set(id, promised.turns);
           if (routedFinal === undefined) routedBase = routedTrial;
-        base = trial; kept7e = trial7e; activeCourses = offer.courses; routedFinal = routedTrial;
+        base = trial; kept7e = trial7e; activeCourses = offer.courses; routedFinal = routedTrial; activeTurnLinks = trialLinks;
           baseMoved = trialMoved; baseUnmoved = trialUnmoved; courseFloors = new Map(nodeFloors);
           for (const course of offer.courses) {
             const was = offer.promised.get(course.link)!;
+            if (course.kind === 'bypass') {
+              sideNotes.push({ stage: 'placement', severity: 'info', code: 'ROW_BYPASS_PLANNED', owners: [{ kind: 'link', id: course.link }],
+                message: `The link ${course.link} takes a bypass along the ${course.edge} edge of its row: ${was.turns} turns promised, ${was.base.turns === Infinity ? 'removed' : was.base.turns} on the baseline.` });
+              continue;
+            }
             sideNotes.push({ stage: 'placement', severity: 'info', code: 'COURSE_TAKEN', owners: [{ kind: 'link', id: course.link }],
               message: `The link ${course.link} takes a course ${course.kind === 'shared-port' ? 'onto the pill of its shared port' : course.runs.includes('gap') ? 'through a column gap' : 'round the outside'}: ${was.turns} turns promised, ${was.base.turns === Infinity ? 'removed' : was.base.turns} on the baseline.` });
           }
@@ -398,7 +430,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     if (offer.links.length === 0) return false;
     // The round leaves one re-run to each round after it that has an offer on the baseline (course, side): a trial that is refused has spent its placements, and must not
     // starve a round that main would have run.
-    const spanMax = maxReruns - (measureCourses(base, routedBase!).courses.length > 0 ? 1 : 0) - (measureSides(base, kept7e, refused).hints.size > 0 ? 1 : 0);
+    const spanMax = roundLimit(maxReruns, reserve()) - (measureCourses(base, routedBase!).courses.length > 0 ? 1 : 0) - (measureSides(base, kept7e, refused).hints.size > 0 ? 1 : 0);
     if (reruns >= spanMax) { options.testSideTrace?.({ ev: 'span-refused', links: offer.links, why: 'budget' }); return false; }
     reruns++;
     const spanRefusal = (why: string, detail: string): void => { options.testSideTrace?.({ ev: 'span-refused', links: offer.links, why, detail }); };
@@ -476,6 +508,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     if (options.testSpanHints === undefined) await spanRound();
     const offer = measureCourses(base, routedBase);
     options.testSideTrace?.({ ev: 'courses', offer, base, routedBase });
+    noteDeclined(offer);
     if (offer.courses.length > 0) {
       const sideOffer = measureSides(base, kept7e, refused), bends = routedBends(routedBase);
       const sideStands = sideOffer.hints.size > 0 || unmovedMayStand();
@@ -510,7 +543,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     options.testSideTrace?.({ ev: 'offer', round, offer, base, kept7e, unmoved: unmovedOffer, filtered });
     if (offer.capped) sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_PROBE_CAPPED', message: 'The side measure stopped at its probe cap; the links after it were not probed.' });
     if (offer.hints.size === 0) break;
-    if (reruns >= maxReruns) {
+    if (reruns >= roundLimit(maxReruns, reserve())) {
       sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_ROUND_SKIPPED', message: `A side round was skipped: the command has made its ${maxReruns} placement re-runs.` });
       break;
     }
@@ -588,6 +621,61 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     break; // one trial reaches 7f per command
   }
   if (courseDeferred) await courseRound();
+  // The turn round (architecture ticket 24, Section 10). On the kept result of the span, course and side rounds: when the planned first turns would reorder the ports of a
+  // face, placement runs once more with the turn order and the trial is kept only when the published result is better by the unified order. It takes one re-run of the
+  // shared budget and leaves one to the overlay round when that round has an offer. A refused or skipped trial leaves the layout as the baseline made it, with no note.
+  if (turnRoundOn) {
+    const offer = measureTurnOrder(base);
+    options.testSideTrace?.({ ev: 'turns', offer, base });
+    const names = offer.faces.map(face => `${face.node}.${face.side}`);
+    const refuseTurns = (why: string): void => { options.testSideTrace?.({ ev: 'turn-refused', faces: names, why }); };
+    if (offer.faces.length > 0) {
+      const current = routedFinal ?? routedBase ?? await routeModel(base);
+      const overlayOffer = options.testOverlayCourses !== false ? measureOverlayCourses(base, current) : undefined;
+      const overlayAhead = overlayOffer !== undefined && overlayOffer.courses.length > 0;
+      const left = maxReruns - reruns;
+      // The turn offer moves no bend and no turn by design, so it promises none: with one re-run left and both offers it runs only if the overlay offer promises nothing either.
+      const overlayGain = overlayAhead ? gainOf([...overlayOffer.promised].map(([, item]) => [item.base === Infinity ? undefined : item.base, item.turns] as [number | undefined, number])) : [0, 0, 0];
+      if (!turnRoundRuns(left, overlayAhead, overlayGain, beats)) {
+        sideNotes.push({ stage: 'placement', severity: 'info', code: 'TURN_ROUND_SKIPPED', message: `The turn round was skipped: the command has ${left <= 0 ? 'made its' : 'one left of its'} ${maxReruns} placement re-runs${left <= 0 ? '' : ', for the overlay round'}.` });
+      } else {
+        const nodeFloors = new Map([...courseFloors, ...(options.testNodeFloors ?? [])]);
+        for (const key of hints.keys()) {
+          const [node] = JSON.parse(key) as [string];
+          const size = stage3Sizes.get(kept7e)?.get(node);
+          if (size !== undefined) nodeFloors.set(node, { ...size });
+        }
+        let trial7e: LayoutModel | undefined;
+        reruns++;
+        try { trial7e = await timed('rerun-turn', () => place(floors, hints, nodeFloors, trialAbort, laneKeys, activeCourses, activeSpans, true)); } catch (error) {
+          if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError || error instanceof PlacementBudgetExceeded
+            || (error instanceof Error && error.message.startsWith('Centring invariant violated')))) throw error;
+          refuseTurns(`the placement run rejected it (${error.message})`);
+        }
+        if (trial7e !== undefined && trial7e.fallbackUsed && !kept7e.fallbackUsed) { refuseTurns('ELK fell back during the turn trial'); trial7e = undefined; }
+        // The offer was decided before any placement; this is left only when the measure and stage 5 disagree about a face. The placement is spent (no re-run is given back).
+        if (trial7e !== undefined && (trial7e.freeze?.turnOrder ?? []).length === 0) { refuseTurns('the turn order moved no face'); trial7e = undefined; }
+        if (trial7e !== undefined) {
+          try {
+            const trial = await timed('bands-trial', () => step('bands', () => bands(trial7e!, () => trialAbort('bands'), options.attemptTrace), true));
+            const routedTrial = await routeModel(trial, true);
+            const verdict = judgeTurnTrial(current, routedTrial, keptPromises);
+            options.testSideTrace?.({ ev: 'turn-trial', verdict, trial, routedTrial, routedBase: current });
+            if (verdict.kept) {
+              base = trial; kept7e = trial7e; routedFinal = routedTrial; courseFloors = new Map(nodeFloors); activeTurn = true;
+              for (const face of trial7e.freeze!.turnOrder!) {
+                sideNotes.push({ stage: 'placement', severity: 'info', code: 'TURN_ORDER_TAKEN', owners: [{ kind: 'node', id: face.node }],
+                  message: `The ports of the ${face.side} face of ${face.node} take the order of their planned first turns: ${verdict.before!.bent} bent links, ${verdict.before!.turns} turns and ${verdict.before!.crossings} crossings on the baseline, ${verdict.after!.bent}, ${verdict.after!.turns} and ${verdict.after!.crossings} after.` });
+              }
+            } else refuseTurns(verdict.reason);
+          } catch (error) {
+            if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError)) throw error;
+            refuseTurns(`stage 7f rejected it (${error.message})`);
+          }
+        }
+      }
+    }
+  }
   // The overlay round (ticket 15, phase 7; the user's decision on Q1). After the routed rounds, on their kept result: an overlay that a routed chord would not take is
   // offered a perimeter course on side faces, reserved in stage 5 of one more placement run and kept only when its published result is not worse by the unified order.
   // It shares `MAX_RERUNS` with the other rounds and takes only a re-run they left (user, 2026-10-05: an extra re-run cost NTP +141 % and was refused there).
@@ -676,6 +764,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     if (got === undefined || got > turns) lost.push({ stage: 'placement', severity: 'warning', code: 'COURSE_SHAPE_LOST', owners: [{ kind: 'link', id }],
       message: `The link ${id} has ${got === undefined ? 'no route' : `${got} turns`} on its course, ${turns} were promised.` });
   }
+  lost.push(...turnMissed(published));
   // A hinted link of a kept trial has no more bends than on the baseline (the judgment tested it); this names a break of that rule.
   if (routedFinal !== undefined && routedBase !== undefined) {
     const before = routedBends(routedBase), after = routedBends(routedFinal);

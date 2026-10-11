@@ -1,0 +1,36 @@
+# Expected (architecture ticket 24, docs/design/turn-order.md): a lateral face with a side-lane L and a straight peer. The load balancer `lb` reaches `outlet` through
+# a side lane on the right face of the bank, which turns up toward `lb`; `east` stands beside `outlet` and its link leaves the same face straight. The turn order puts the
+# L above the straight peer (group 2 before group 3), as the far-end order does here: the fixture pins that the rule never moves it. No crossing between the two links.
+# Test-only input owned by ticket 24; test/pipeline/turn-order.test.ts reads it.
+portograph: 2
+groups:
+  front: { tier: 0, label: Front }
+  bank: { tier: 1, label: Bank }
+  annex: { tier: 1, label: Annex }
+nodes:
+  fe: { group: front, class: router, label: FE }
+  fe2: { group: front, class: router, label: FE2 }
+  fe3: { group: front, class: router, label: FE3 }
+  fe4: { group: front, class: router, label: FE4 }
+  fe5: { group: front, class: router, label: FE5 }
+  fe6: { group: front, class: router, label: FE6 }
+  fe7: { group: front, class: router, label: FE7 }
+  fe8: { group: front, class: router, label: FE8 }
+  fe9: { group: front, class: router, label: FE9 }
+  fe10: { group: front, class: router, label: FE10 }
+  fe11: { group: front, class: router, label: FE11 }
+  fe12: { group: front, class: router, label: FE12 }
+  lb: { group: front, class: router, label: LB }
+  spare: { group: bank, class: server, label: Spare }
+  outlet: { group: bank, class: server, label: Outlet }
+  tail: { group: bank, class: server, label: Tail }
+  east: { group: annex, class: server, label: East }
+links:
+  - [fe, spare]
+  - [fe2, spare]
+  - [fe3, spare]
+  - [fe4, spare]
+  - [spare, tail]
+  - [outlet, tail]
+  - [outlet, east]
+  - [lb, outlet, { label: Health checks of the load balancer reach the outlet through the side of the bank }]

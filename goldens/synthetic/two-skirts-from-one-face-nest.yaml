@@ -1,0 +1,28 @@
+# Expected (architecture ticket 24, docs/design/turn-order.md): one node beside a neighbour group, two column-gap courses from its bottom face to two targets (the shape of
+# hand solve 09). Both skirts turn the same way and return into the gap beside their target; the nearer lane takes the slot on the turn side, so the two links nest and cross
+# nowhere. In a turn round the order of the face changes (TURN_ORDER_TAKEN) and the sheet has 0 crossings; in the far-end order it has 1.
+# Test-only input owned by ticket 24; test/pipeline/turn-order.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  town: { label: Town }
+  upper: { tier: 0, label: Upper }
+  core: { tier: 1, label: Core }
+  east: { tier: 1, canton: town, label: East }
+  south: { tier: 2, canton: town, label: South }
+  neighbour: { tier: 1, label: Neighbour }
+  flank: { align: left, of: core, label: Flank }
+nodes:
+  up-1: { group: upper, class: router, ports: [100G, 100G, 100G, 100G, 100G, 100G] }
+  core-1: { group: core, class: router, ports: [100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G] }
+  east-1: { group: east, class: router, ports: [100G, 100G, 100G, 100G] }
+  south-1: { group: south, class: router, ports: [100G, 100G] }
+  nb-1: { group: neighbour, class: router, ports: [100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G] }
+  fl-1: { group: flank, class: router, ports: [100G, 100G] }
+links:
+  - [up-1.100G, core-1.*]
+  - [up-1.100G, nb-1.*]
+  - [up-1.100G, east-1.*]
+  - [east-1.100G, south-1.*]
+  - [fl-1.100G, east-1.*]
+  - [fl-1.100G, core-1.*]

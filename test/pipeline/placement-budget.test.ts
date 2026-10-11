@@ -11,6 +11,8 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * the pipeline's `place`; a round that asks for more has its trial refused.
  */
 const SHEETS = [
+  'ref/hand-solves/09-flank-link-around-a-neighbour.yaml',
+  'goldens/synthetic/two-skirts-from-one-face-nest.yaml',
   'ref/hand-solves/04-mesh-across-a-tier.yaml',
   'goldens/synthetic/a-chord-and-a-lane-share-a-middle-tier.yaml',
   'goldens/synthetic/a-mesh-across-a-middle-tier-draws-straight-chords-beside-its-frame.yaml',
