@@ -1,5 +1,5 @@
 import { GROUP_EDGE_LINK_CLEARANCE, routedStrokeWidth } from '../theme/geometry.js';
-import type { Bundle, LayoutLink, LayoutModel, LayoutPort, PathSegment, Point, Side } from '../model/index.js';
+import type { Bundle, LayoutLink, LayoutModel, LayoutNode, LayoutPort, PathSegment, Point, Side } from '../model/index.js';
 import { repackOverlaps } from './rows.js';
 import { applyBundleOrder } from './bundle-order.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
@@ -8,6 +8,8 @@ import { bandGap, portId } from './skeleton-graph.js';
 import { fitRegionGroup, bottom, groupInsets, right } from './regions.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
 import { rowGap } from './sides-two.js';
+import { bundleChannelNeed, facingBundleNeed } from './bundle-need.js';
+import { gridChains } from './grid.js';
 import { PLACEMENT_EPS, SIGN_EPS } from './tolerance.js';
 
 export const MEMBER_GAP = 16;
@@ -460,6 +462,21 @@ export function splitUnderJunctions(model: LayoutModel, port: LayoutPort, cohort
   return forward ? rebuilt : flip(rebuilt);
 }
 
+/**
+ * A bundle of a grid chain (architecture ticket 23) stands between two rows of one group, where no tier gap grows. The
+ * packer reserved the channel (`bundleChannelNeed`, the function that sizes a tier gap too); 7e must find it there. If the
+ * faces stand closer than the channel needs, the reservation was wrong: say so as an error, once, and grow nothing.
+ */
+export function checkStackedChannel(model: LayoutModel, bundle: Bundle, list: Member[], upper: LayoutNode, lower: LayoutNode,
+  q: number, inversions: number, fan: number): void {
+  const aligned = list.every(item => Math.abs(coordinate(item.a) - coordinate(item.b)) < PLACEMENT_EPS);
+  const need = bundleChannelNeed(aligned, list.length, q, inversions, fan, edgeMargin(routedStrokeWidth(model)));
+  const have = lower.bounds!.y - bottom(upper.bounds!);
+  if (have >= need - PLACEMENT_EPS || model.diagnostics.some(item => item.code === 'GRID_BUNDLE_CHANNEL_SHORT' && JSON.stringify(item.owners) === JSON.stringify([bundle.owner]))) return;
+  model.diagnostics.push({ stage: 'placement', severity: 'error', code: 'GRID_BUNDLE_CHANNEL_SHORT', owners: [bundle.owner],
+    message: `${bundle.id} stands between two rows of a grid with ${have} px between its faces, and its members need ${need} px; the row gap under a chain link was reserved short` });
+}
+
 /** Geometry-only plan. No path, lane owner, bar reservation or envelope is written here. */
 export function prepareBundleGeometry(model: LayoutModel): void {
   // A diagram with no bundle still reserves the depth of its plain fans (ticket 20); one with
@@ -694,6 +711,7 @@ export function prepareBundleGeometry(model: LayoutModel): void {
   // off a group edge — which is the same figure 7e will draw, whether the tree comes from the
   // bundle's own shared port or from an ordinary routed link on it.
   const trees = new Map(treeCohorts(model).map(cohort => [portId(cohort.port.ref), cohort]));
+  const stacked = new Set(gridChains(model).flatMap(chain => chain.bundles));
   for (const bundle of model.bundles) {
     const list = members(model, bundle), inversions = inversionPairs(list).length;
     if (!facing(list)) continue;
@@ -719,14 +737,14 @@ export function prepareBundleGeometry(model: LayoutModel): void {
     const q = pitch(model, bundle), a = model.nodes[bundle.nodes[0]]!, b = model.nodes[bundle.nodes[1]]!;
     const upper = a.bounds!.y < b.bounds!.y ? a : b, lower = upper === a ? b : a;
     const upperTier = model.groups[model.document.nodes[upper.id]!.group]!.tier!, lowerTier = model.groups[model.document.nodes[lower.id]!.group]!.tier!;
+    if (upperTier >= lowerTier && stacked.has(bundle.id)) checkStackedChannel(model, bundle, list, upper, lower, q, inversions, fan);
     if (upperTier >= lowerTier || model.lanes.some(lane => bundle.members.includes(lane.owner.kind === 'link' ? lane.owner.id : ''))) continue;
     const mergeMembers = list.filter(m => m.link.technique === 'merge').length;
     // A merge trunk interleaves its join and leave rows only where the members meet on one port.
     const shared = (['a', 'b'] as const).some(end => new Set(list.map(m => portId(m[end].ref))).size < list.length);
     const mergeAllowance = shared && mergeMembers >= 2 ? (2 * list.length + 1) * q : 0;
     // Join, leave and fan rows may each move one edge margin off a group edge (ADR-0013).
-    const general = mergeAllowance + fan + 2 * MIN_STEM + (inversions ? 4 * q * inversions + 2 * q * (list.length + 1) : q * (list.length + 1))
-      + 2 * edgeMargin(routedStrokeWidth(model));
+    const general = facingBundleNeed(mergeAllowance, list.length, q, inversions, fan, edgeMargin(routedStrokeWidth(model)));
     // An unshared merge trunk needs its interleaved join and leave rows between the two stems too.
     const mergeTrunk = mergeMembers >= 2 ? 2 * MIN_STEM + (2 * mergeMembers - 1) * q + 2 * edgeMargin(routedStrokeWidth(model)) : 0;
     const required = Math.max(general, mergeTrunk);

@@ -5,7 +5,7 @@ import { bandGap, compareId, portId, SKELETON_SPACING as spacing } from './skele
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { bundleChannelNeed } from './bundle-need.js';
 import { authoredSide, gridUnits, groupExits, seatUnits, stackChains, type Chain, type GridUnit } from './grid-chains.js';
-import { linkStrokeWidth } from '../theme/geometry.js';
+import { GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth, routedStrokeWidth } from '../theme/geometry.js';
 
 /**
  * `grid` is the third group shape `CONTEXT.md` names (`row`, `bar`, `grid`, `ring`, `free`).
@@ -538,9 +538,10 @@ export function gridRowGaps(model: LayoutModel, group: LayoutGroup, cells: GridC
     if (!from || !to || !bundle || to[0] !== from[0] + 1) return;
     const links = model.links.filter(link => link.bundle === id);
     const q = 16 + Math.max(...links.map(linkStrokeWidth));
-    // Equal widths put the two port blocks at one x (the stage-3 floor); otherwise every member turns.
+    // Equal widths put the two port blocks at one x (the stage-3 floor), so the members run straight; otherwise the
+    // channel a tier gap reserves (the fan depth is not known before the ports are allocated).
     const aligned = model.nodes[upper]!.size!.width === model.nodes[lower]!.size!.width;
-    gaps[from[0]] = Math.max(gaps[from[0]]!, bundleChannelNeed(aligned ? 0 : links.length, q));
+    gaps[from[0]] = Math.max(gaps[from[0]]!, bundleChannelNeed(aligned, links.length, q, 0, 0, GROUP_EDGE_LINK_CLEARANCE + routedStrokeWidth(model) / 2));
   });
   return gaps;
 }
