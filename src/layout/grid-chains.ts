@@ -20,7 +20,7 @@ export function authoredSide(model: LayoutModel, ref: PortRef): Side | undefined
 }
 
 /** Why a grid group cannot stand its enclosed bundles. The first reason of this order is the one reported. */
-export type StackDecline = 'authored-side' | 'branch' | 'shared-port' | 'cycle' | 'exits' | 'rows';
+export type StackDecline = 'authored-side' | 'branch' | 'shared-port' | 'merge' | 'cycle' | 'exits' | 'rows';
 
 /** A simple path of nodes joined by enclosed bundles, top to bottom: one column, consecutive rows. */
 export interface Chain {
@@ -205,6 +205,9 @@ export function stackChains(model: LayoutModel, id: string): StackChains {
   }
   const selfLoop = bundles.find(bundle => bundle.nodes[0] === bundle.nodes[1]);
   if (selfLoop) return { decline: 'cycle', bundle: selfLoop };
+  // A merge trunk needs rows between the stems that `stackedChannelNeed` does not reserve.
+  const merging = bundles.find(bundle => bundle.members.some(member => links.get(member)?.technique === 'merge'));
+  if (merging !== undefined) return { decline: 'merge', bundle: merging };
   // A member port that also carries a link outside the chain bundles would be fixed to `bottom` or `top` against that
   // link's own direction: the grid cannot stand the bundle vertically.
   const memberIds = new Set(bundles.flatMap(bundle => bundle.members));

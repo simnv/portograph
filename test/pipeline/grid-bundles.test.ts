@@ -118,6 +118,7 @@ describe('review findings of ticket 23', () => {
     // Centring widens a body leftwards; the column x splits (`gridCells`), but the port blocks stay where they were.
     draft.nodes.s2!.bounds!.x -= 30; draft.nodes.s2!.bounds!.width += 30;
     checkChainPair(draft, bundle);
+    expect(codes(draft, 'GRID_BUNDLE_CHAIN_LOST')).toEqual([]);
     prepareBundleGeometry(draft);
     expect(codes(draft, 'GRID_BUNDLE_CHAIN_LOST')).toEqual([]);
     expect(codes(draft, 'GRID_BUNDLE_CHANNEL_SHORT')).toEqual([]);
@@ -159,4 +160,35 @@ links:
     expect(codes(model, 'GROUP_SHAPE_DECLINED')[0]!.message).toContain('(reason: shared-port)');
     expect(groupShape(model, 'farm')).toBe('row');
   });
+
+  it('a chain with merge members declines (merge), and stage 1 does not throw', () => {
+    const model = resolve(parse(`
+portograph: 2
+profile: network
+groups:
+  top: { tier: 0 }
+  farm: { tier: 1, shape: grid }
+nodes:
+  core: { group: top, class: router }
+  a: { group: farm, class: server }
+  b: { group: farm, class: server }
+links:
+  - [core, a]
+  - { from: a, to: b, route: merge }
+  - { from: a, to: b, route: merge }
+`));
+    expect(codes(model, 'GROUP_SHAPE_DECLINED')[0]!.message).toContain('(reason: merge)');
+    expect(groupShape(model, 'farm')).toBe('row');
+  });
+
+  it('a lower body that overlaps the upper one is a lost pair even when sides and port blocks hold', async () => {
+    const draft = await clone(), bundle = draft.bundles[0]!;
+    // Slide the lower body up into the upper one; its ports go with it, so the sides read bottom/top and the blocks coincide in x.
+    const upper = draft.nodes.s2!, lower = draft.nodes.s3!, dy = lower.bounds!.y - upper.bounds!.y - 10;
+    lower.bounds!.y -= dy;
+    for (const port of lower.ports) port.anchor!.y -= dy;
+    checkChainPair(draft, bundle);
+    expect(codes(draft, 'GRID_BUNDLE_CHAIN_LOST')).toHaveLength(1);
+  }, 60000);
 });
+
