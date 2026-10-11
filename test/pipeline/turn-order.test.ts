@@ -5,7 +5,7 @@ import type { LayoutModel } from '../../src/index.js';
 import { beats } from '../../src/layout/course-measure.js';
 import { betterByUnified, turnRoundRuns } from '../../src/layout/turn-measure.js';
 import { attemptCounters, resetAttemptCounters } from '../../src/layout/attempt-counters.js';
-import { measureTurnOrder } from '../../src/layout/turn-measure.js';
+import { measureTurnOrder, roundLimit, turnReserve } from '../../src/layout/turn-measure.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -180,5 +180,16 @@ describe('the carried turn order and the budget', () => {
     const room = await layout(parse(solve09()), { ...options, testMaxReruns: 2 });
     expect(attemptCounters.placeRuns).toBeLessThanOrEqual(3);
     expect(room.diagnostics.map(item => item.code)).toContain('TURN_ORDER_TAKEN');
+  });
+
+  it('sets a re-run aside for the turn round on a baseline that has an offer, and none on one that has not (finding 6)', async () => {
+    const held = await layout(parse(fixture('a-held-lane-stays-on-its-frames-side-of-a-foreign-frame')), { ...options, testTurnOrder: false });
+    const plain = await layout(parse(fixture('turns-both-ways-from-one-bottom-face')), { ...options, testTurnOrder: false });
+    expect(turnReserve(held, true)).toBe(1);
+    expect(turnReserve(held, false)).toBe(0);
+    expect(turnReserve(plain, true)).toBe(0);
+    // With the one re-run of the budget set aside, a round that has used none of it is already at its limit.
+    expect(0 >= roundLimit(1, turnReserve(held, true))).toBe(true);
+    expect(0 >= roundLimit(1, turnReserve(plain, true))).toBe(false);
   });
 });

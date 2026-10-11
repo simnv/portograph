@@ -48,6 +48,11 @@ export function measureTurnOrder(base: LayoutModel): TurnOffer {
   return offer;
 }
 
+/** The re-run that the span, course and side rounds set aside for the turn round: one when it has an offer on the baseline they read (Section 10, Budget), else none. */
+export const turnReserve = (base: LayoutModel, enabled: boolean): number => (enabled && measureTurnOrder(base).faces.length > 0 ? 1 : 0);
+/** The re-runs a round may reach with `reserve` set aside: it must leave that many to the rounds after it. */
+export const roundLimit = (maxReruns: number, reserve: number): number => maxReruns - reserve;
+
 export interface TurnVerdict {
   kept: boolean;
   reason: string;

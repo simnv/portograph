@@ -43,7 +43,7 @@ import { transitTiers } from '../layout/lanes.js';
 import { beats, gainOf, judgeCourseTrial, judgeOverlayTrial, measureCourses, measureOverlayCourses } from '../layout/course-measure.js';
 import { pathBends } from '../layout/objective.js';
 import { turnMissed } from '../layout/turn-order.js';
-import { judgeTurnTrial, measureTurnOrder, turnRoundRuns } from '../layout/turn-measure.js';
+import { judgeTurnTrial, measureTurnOrder, roundLimit, turnReserve, turnRoundRuns } from '../layout/turn-measure.js';
 import { countStage, ledgerOn, ledgerSnapshot, startPlacementEntry, type LedgerSnapshot } from '../layout/attempt-ledger.js';
 
 
@@ -340,7 +340,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   // The turn round (ticket 24, Section 10) runs after these rounds, on what they keep. When it has an offer on the baseline a round reads, that round leaves it one re-run,
   // as it leaves one to every round after it. A forced turn order or forced courses (tests) have no turn round.
   const turnRoundOn = options.testCourses === undefined && options.testTurnOrder === undefined;
-  const turnReserve = (): number => (turnRoundOn && measureTurnOrder(base).faces.length > 0 ? 1 : 0);
+  const reserve = (): number => turnReserve(base, turnRoundOn);
   // A bypass that cannot be reserved stays a remainder of stage 8 and is named, once, with the reason (`ROW_BYPASS_DECLINED`).
   const noteDeclined = (offer: ReturnType<typeof measureCourses>): void => {
     for (const item of offer.declined) {
@@ -354,7 +354,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     options.testSideTrace?.({ ev: 'courses', offer, base, routedBase });
     noteDeclined(offer);
     if (offer.courses.length === 0) return;
-    if (reruns >= maxReruns - turnReserve()) { options.testSideTrace?.({ ev: 'course-skipped', offer, reruns }); return; }
+    if (reruns >= roundLimit(maxReruns, reserve())) { options.testSideTrace?.({ ev: 'course-skipped', offer, reruns }); return; }
     // The floors of a kept side trial and of the course trial stay under this one.
     const nodeFloors = new Map([...courseFloors, ...(options.testNodeFloors ?? [])]);
     for (const key of hints.keys()) {
@@ -430,7 +430,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     if (offer.links.length === 0) return false;
     // The round leaves one re-run to each round after it that has an offer on the baseline (course, side): a trial that is refused has spent its placements, and must not
     // starve a round that main would have run.
-    const spanMax = maxReruns - (measureCourses(base, routedBase!).courses.length > 0 ? 1 : 0) - (measureSides(base, kept7e, refused).hints.size > 0 ? 1 : 0) - turnReserve();
+    const spanMax = roundLimit(maxReruns, reserve()) - (measureCourses(base, routedBase!).courses.length > 0 ? 1 : 0) - (measureSides(base, kept7e, refused).hints.size > 0 ? 1 : 0);
     if (reruns >= spanMax) { options.testSideTrace?.({ ev: 'span-refused', links: offer.links, why: 'budget' }); return false; }
     reruns++;
     const spanRefusal = (why: string, detail: string): void => { options.testSideTrace?.({ ev: 'span-refused', links: offer.links, why, detail }); };
@@ -543,7 +543,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     options.testSideTrace?.({ ev: 'offer', round, offer, base, kept7e, unmoved: unmovedOffer, filtered });
     if (offer.capped) sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_PROBE_CAPPED', message: 'The side measure stopped at its probe cap; the links after it were not probed.' });
     if (offer.hints.size === 0) break;
-    if (reruns >= maxReruns - turnReserve()) {
+    if (reruns >= roundLimit(maxReruns, reserve())) {
       sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_ROUND_SKIPPED', message: `A side round was skipped: the command has made its ${maxReruns} placement re-runs.` });
       break;
     }

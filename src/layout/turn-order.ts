@@ -315,13 +315,13 @@ export const LANE_PASS_ROUNDS = 6;
  * What it keeps is thus a fixed point of `laneFaceOrder`, which is what the mutation check reads. The faces it changed are recorded in `freeze.turnOrder`. A run without the
  * turn order never calls it.
  */
-export function orderPortsByLanes(model: LayoutModel, rounds: number = LANE_PASS_ROUNDS): void {
+export function orderPortsByLanes(model: LayoutModel, rounds: number = LANE_PASS_ROUNDS, orderOf: typeof laneFaceOrder = laneFaceOrder): void {
   const state = (): { port: LayoutPort; order: number; anchor: Point }[] => Object.values(model.nodes).flatMap(node => node.ports.map(port => ({ port, order: port.engineOrder!, anchor: { ...port.anchor! } })));
   const original = state();
   for (let round = 0; round <= rounds; round++) {
     let moved = false;
     for (const node of Object.keys(model.nodes)) for (const side of ['bottom', 'right', 'top', 'left'] as const) {
-      const order = laneFaceOrder(model, node, side);
+      const order = orderOf(model, node, side);
       if (order === undefined) continue;
       const current = model.nodes[node]!.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
       if (order.every((port, index) => port === current[index])) continue;

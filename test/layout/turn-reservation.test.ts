@@ -52,4 +52,15 @@ describe('the planned turn is read from the reservation', () => {
     });
     expect(plannedTurns(model).get(portId(ref('a')))).toMatchObject({ turn: 'high', shape: 'onward' });
   });
+
+  it('a gap skirt beside a shorter neighbour is planned high, as the lane beside its lateral end runs down (reviewer probe)', () => {
+    // `a` is a wide, tall node with its bottom port left of its centre; `b` is shorter and keeps its left face at x 600. The old reading took the far port against the centre of `a`
+    // (600 < 700, so low); the lane stands left of `b`, so the end turns right (high).
+    const model = mini({
+      a: { bounds: { x: 0, y: 0, width: 1400, height: 200 }, ports: [port('a', 'bottom', 100, 200)] },
+      b: { bounds: { x: 600, y: 0, width: 60, height: 40 }, ports: [port('b', 'left', 600, 20)] },
+      courses: [{ link: 'l', kind: 'skirt', from: { face: 'bottom' }, to: { face: 'left' }, runs: ['u', 'gap'] }], tiers: [0, 0],
+    });
+    expect(plannedTurns(model).get(portId(ref('a')))).toEqual({ turn: 'high', shape: 'return', reach: 600 });
+  });
 });

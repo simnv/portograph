@@ -93,4 +93,25 @@ describe('stage 7a and the turn order', () => {
       if (order !== undefined) expect(order.map(port => port.engineOrder)).toEqual([...order].map(port => port.engineOrder).sort((a, b) => a! - b!));
     }
   }, 60000);
+
+  it('settles two faces that read each other, which one round cannot (finding 5)', () => {
+    // Two faces of two nodes that share links: the face of `n1` follows the order of `n2`, which moves in the same pass and is read after it.
+    const port = (node: string, ordinal: number) => ({ ref: { node, ordinal, anonymous: true }, side: 'bottom', engineOrder: ordinal - 1, anchor: { x: ordinal * 10, y: 0 } });
+    const build = (): LayoutModel => ({ turnOrder: true, freeze: {}, document: { nodes: { n1: {}, n2: {} }, nodeOrder: ['n1', 'n2'] },
+      nodes: { n1: { ports: [port('n1', 1), port('n1', 2)] }, n2: { ports: [port('n2', 1), port('n2', 2)] } } }) as unknown as LayoutModel;
+    const reversed = (model: LayoutModel, node: string): boolean => model.nodes[node]!.ports.find(item => item.ref.ordinal === 1)!.engineOrder === 1;
+    const orderOf = (model: LayoutModel, node: string, side: string) => {
+      const wanted = node === 'n2' || reversed(model, 'n2');
+      const natural = model.nodes[node]!.ports.filter(item => item.side === side).sort((a, b) => a.ref.ordinal - b.ref.ordinal);
+      return wanted ? [...natural].reverse() : natural;
+    };
+    const settled = build();
+    orderPortsByLanes(settled, 6, orderOf);
+    expect([reversed(settled, 'n1'), reversed(settled, 'n2')]).toEqual([true, true]);
+    expect(settled.freeze!.turnOrder).toEqual([{ node: 'n1', side: 'bottom' }, { node: 'n2', side: 'bottom' }]);
+    const bounded = build();
+    orderPortsByLanes(bounded, 1, orderOf);
+    expect([reversed(bounded, 'n1'), reversed(bounded, 'n2')]).toEqual([false, false]);
+    expect(bounded.freeze!.turnOrder).toBeUndefined();
+  });
 });
