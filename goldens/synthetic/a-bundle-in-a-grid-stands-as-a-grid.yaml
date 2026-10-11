@@ -1,10 +1,9 @@
-# Expected: The farm stands as a 3 x 2 grid with the bundle inside it (not reached by ticket 15; the grid and bundle
-# ticket).
-# A farm of six servers with shape grid, fed by one core. Two of the servers
-# share a bundle of two links. A group that holds both ends of a bundle declines any shape that
-# stacks its nodes, because rows are stacked before the rules that grow a body run. The farm
-# becomes one row of six.
-# Source: 10-bundle-in-a-grid.yaml. Test-only input owned by architecture ticket 15; test/pipeline/outside-lanes.test.ts reads it.
+# Expected: The farm stands as a 3 x 2 grid (S1 S4 S2 / S5 S6 S3) with the bundle inside it: S3 stands under S2 in one column,
+# the bundle's members leave S2's bottom and enter S3's top, and they run straight across the row gap. Routed bent 0, turns 0,
+# crossings 0, all gates pass, `GRID_BUNDLE_STACKED` once and no `GROUP_SHAPE_DECLINED`.
+# A farm of six servers with shape grid, fed by one core. Two of the servers share a bundle of two links. The bundle's
+# direction is decided in stage 2 (architecture ticket 23), before the rows are stacked, so the grid keeps the author's shape.
+# Source: 10-bundle-in-a-grid.yaml. Test-only input owned by architecture tickets 15 and 23; test/pipeline/outside-lanes.test.ts and test/pipeline/grid-bundles.test.ts read it.
 portograph: 2
 profile: network
 groups:

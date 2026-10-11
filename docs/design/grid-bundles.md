@@ -1,6 +1,6 @@
 # A bundle in a grid turns to follow the stack (design)
 
-Status: proposed, 2026-10-11 (architecture ticket 23; hand solve 10, principle P10). Nothing here is implemented.
+Status: implemented, 2026-10-11 (architecture ticket 23; hand solve 10, principle P10). Deviations are listed in the ticket's `## Comments`.
 
 ## 1. Problem
 

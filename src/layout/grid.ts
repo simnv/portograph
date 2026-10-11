@@ -22,7 +22,7 @@ export const isGridGroup = (model: LayoutModel, id: string): boolean => groupSha
 
 /**
  * The shape a group really takes: the authored one, unless it holds both ends of a **bundle**
- * (`enclosedBundle`), in which case it takes `row`.
+ * (`enclosedBundle`) that it cannot stand vertically (`stackChains`), in which case it takes `row`.
  *
  * One function, because a declined group has to be a `row` to **every** rule and not only to the
  * packer: `rows.ts` repacks `row` groups, `row-paths.ts` pins a straight path between two nodes of

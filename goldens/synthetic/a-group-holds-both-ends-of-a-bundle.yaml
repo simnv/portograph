@@ -1,10 +1,11 @@
 # Expected: Decline the grid shape on `place` and keep its nodes on one line, because `place` holds
-# both ends of a bundle. A bundle's members turn in a channel, and the channel is the space between
+# both ends of a bundle whose member ports the author fixed to `right`/`left` (a grid stands a bundle
+# vertically, `bottom`/`top`; architecture ticket 23, reason `authored-side`). A bundle's members turn in a channel, and the channel is the space between
 # its two endpoint bodies: `a` leaves the group upward and `d` and `b` downward, so a column is a
 # corridor, the floor is two columns, and the ranks put `a` in the first row and `d` in the last.
 # Stacked, the bundle then reserves its member pitch on the two bodies' left and right sides, which
 # grows both of them in y until they meet — `Nodes a and d violate clearance`. Report
-# `GROUP_SHAPE_DECLINED` naming the bundle, and lay the group out as the row it became.
+# `GROUP_SHAPE_DECLINED` naming the bundle and the reason `authored-side`, and lay the group out as the row it became.
 portograph: 2
 profile: network
 groups:

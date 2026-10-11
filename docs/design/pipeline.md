@@ -234,20 +234,25 @@ and not left for a later stage to discover.
    between them. Two faults, and **two different answers**, because the measurements give two
    different answers.
 
-   **A bundle: refuse the shape.** Its members turn in a **channel**, the space between the two
-   endpoint bodies along the bundle's own normal; `parallelPaths` reads it as the signed difference
-   of the two port faces, and `straightPaths` beside it reads the same difference for
-   `BUNDLE_CROSSOVER_CAPACITY`, and neither asks whether the two faces are in order. Measured on the
-   gridded golden with `shape: grid` on `datacenter`: with the endpoints in one row and adjacent,
-   which is the arrangement the count picks, `EAC-02` grows to 322.75 px tall in `EBR-02`'s own
-   column and covers it — `BUNDLE_CHANNEL_BLOCKED`; with them in different rows, shipped
-   pre-ticket-31 code packs `[EAC-01 EBR-01 EAC-02] / [EBR-02]` and reports `have -368.25`, two
-   faces out of order reported as a shortfall of turning room. Keeping the endpoints in one row is
-   therefore **not** the rule: the grid already does that there and the bundle still fails, because
-   what crosses the channel is a body the rows were stacked before it grew. No arrangement answers
-   it, so the group declines the shape and takes `row`, and `GROUP_SHAPE_DECLINED` names the bundle.
+   **A bundle: decide its direction before the rows are stacked** (architecture ticket 23, Q117). Its
+   members turn in a **channel**, the space between the two endpoint bodies along the bundle's own
+   normal; `parallelPaths` reads it as the signed difference of the two port faces, and
+   `straightPaths` beside it reads the same difference for `BUNDLE_CROSSOVER_CAPACITY`, and neither
+   asks whether the two faces are in order. Measured on the gridded golden with `shape: grid` on
+   `datacenter`: with the endpoints in one row and adjacent, `EAC-02` grew to 322.75 px tall in
+   `EBR-02`'s own column and covered it — `BUNDLE_CHANNEL_BLOCKED`; with them in different rows,
+   pre-ticket-31 code packed `[EAC-01 EBR-01 EAC-02] / [EBR-02]` and reported `have -368.25`, two
+   faces out of order. Both faults have one cause: nobody decided the bundle's direction before the
+   rows were stacked. It is decided now, from the document alone (`stackChains`, `grid-chains.ts`):
+   the enclosed bundles of the group form **chains** (simple paths); stage 2 fixes the member ports
+   (`bottom` on the upper end, `top` on the lower), stage 3 gives the chain nodes the widest chain
+   width as a floor, and the packer seats each chain as one unit k rows tall in one column, with the
+   gap under each chain link `max(bandGap, need)`, `need` read from `bundle-need.ts`, which 7e reads
+   too. 7e grows nothing there (`GRID_BUNDLE_CHANNEL_SHORT`, error, if it would). A hard rule: no
+   offer, no re-run. The group declines the shape, as before, only where no chain can be seated, and
+   `GROUP_SHAPE_DECLINED` names the reason (`authored-side`, `branch`, `cycle`, `exits`, `rows`).
 
-   That refusal is **incomplete, by construction**: its predicate is "both ends in this group", so a
+   That predicate is **incomplete, by construction**: it is "both ends in this group", so a
    bundle between a **flank** and one node of the grid cannot be seen. Delete the two
    `EBR-01`↔`EBR-02` links from the gridded golden and `datacenter` keeps the grid, where
    `TBR-002`'s two cross-group bundles stack their reserved blocks into two different rows and fail

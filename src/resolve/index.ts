@@ -316,10 +316,12 @@ function groupBundles(model: LayoutModel): void {
 }
 
 /**
- * Say, once and in the model, where a group's authored shape is declined because the group holds
- * both ends of a bundle whose channel a stacked arrangement cannot promise (`enclosedBundle`). The
- * shape is read back through `groupShape`, which asks that same question of the same document, so
- * the diagnostic and the geometry cannot disagree — this reports the answer, it does not decide it.
+ * Say, once and in the model, what a grid group does with the bundles it holds both ends of
+ * (architecture ticket 23). Where `stackChains` gives chains, each chain stands vertically and
+ * `GRID_BUNDLE_STACKED` (info) names it; where it gives a reason, the shape is declined and
+ * `GROUP_SHAPE_DECLINED` (warning) names the bundle and the reason. The shape is read back through
+ * `groupShape`, which asks the same predicate of the same document, so the diagnostic and the
+ * geometry cannot disagree — this reports the answer, it does not decide it.
  *
  * Stage 1 reads a layout module here. That is the wrong way round for the layering, and it is
  * deliberate: the predicate has exactly one definition, and `grid.ts` is where the shape rules
