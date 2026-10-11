@@ -177,6 +177,18 @@ export function stackChains(model: LayoutModel, id: string): StackChains {
   };
   for (const bundle of bundles) if (bundle.nodes[0] !== bundle.nodes[1]) { link(bundle.nodes[0], bundle.nodes[1], bundle); link(bundle.nodes[1], bundle.nodes[0], bundle); }
   for (const bundle of bundles) if ((partners.get(bundle.nodes[0])?.size ?? 0) >= 3 || (partners.get(bundle.nodes[1])?.size ?? 0) >= 3) return { decline: 'branch', bundle };
+  // A port that two bundles share (to two different partners) cannot face both ways.
+  for (const [node, row] of partners) {
+    if (row.size < 2) continue;
+    const owner = new Map<string, Bundle>();
+    for (const bundle of [...row.values()].flat()) for (const ref of ends(bundle)) {
+      if (ref.node !== node) continue;
+      const key = JSON.stringify([ref.name ?? null, ref.ordinal, ref.anonymous ?? false]);
+      const other = owner.get(key);
+      if (other !== undefined && other.id !== bundle.id && !row.get(bundle.nodes.find(item => item !== node)!)!.includes(other)) return { decline: 'branch', bundle };
+      owner.set(key, bundle);
+    }
+  }
   const selfLoop = bundles.find(bundle => bundle.nodes[0] === bundle.nodes[1]);
   if (selfLoop) return { decline: 'cycle', bundle: selfLoop };
   const members = model.groups[id]?.nodes ?? [];
@@ -240,4 +252,23 @@ function writtenFirst(model: LayoutModel, path: { nodes: string[]; bundles: Bund
   path.bundles.forEach((bundle, at) => { if (order.get(bundle.id)! < order.get(path.bundles[index]!.id)!) index = at; });
   const first = links.get(path.bundles[index]!.members[0]!)?.attachments?.from.node;
   return first === undefined || first === path.nodes[index];
+}
+
+/**
+ * The side every member port of a chain takes: `bottom` on the upper end of each bundle, `top` on the
+ * lower end. Fixed at stage 2 like an authored side, so no later stage overturns it.
+ */
+export function chainSides(model: LayoutModel, chains: readonly Chain[]): { ref: PortRef; side: Side }[] {
+  const links = new Map(model.links.map(link => [link.id, link] as const));
+  const bundles = new Map(model.bundles.map(bundle => [bundle.id, bundle] as const));
+  const found: { ref: PortRef; side: Side }[] = [];
+  for (const chain of chains) chain.bundles.forEach((id, index) => {
+    const upper = chain.nodes[index]!;
+    for (const member of bundles.get(id)?.members ?? []) {
+      const attached = links.get(member)?.attachments;
+      if (!attached) continue;
+      for (const ref of [attached.from, attached.to]) found.push({ ref, side: ref.node === upper ? 'bottom' : 'top' });
+    }
+  });
+  return found;
 }

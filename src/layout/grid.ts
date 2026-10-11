@@ -3,7 +3,7 @@ import type { Bundle, LayoutGroup, LayoutModel } from '../model/layout.js';
 import { orderedGroupIds } from '../model/model.js';
 import { bandGap, compareId, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
-import { authoredSide } from './grid-chains.js';
+import { authoredSide, stackChains, type Chain } from './grid-chains.js';
 
 /**
  * `grid` is the third group shape `CONTEXT.md` names (`row`, `bar`, `grid`, `ring`, `free`).
@@ -43,6 +43,18 @@ export function groupShape(model: LayoutModel, id: string): GroupShape {
 }
 
 export { authoredSide };
+
+/**
+ * The chains of every group that stands as a grid (`stackChains`), in group order: the stacks stages 2
+ * and 3 and the packer read. A group that is a row has none.
+ */
+export function gridChains(model: LayoutModel): Chain[] {
+  return orderedGroupIds(model.document).flatMap(id => {
+    if (groupShape(model, id) !== 'grid') return [];
+    const found = stackChains(model, id);
+    return 'chains' in found ? found.chains : [];
+  });
+}
 
 /**
  * The bundle whose whole channel lies inside `id` — both endpoint nodes are its own — or

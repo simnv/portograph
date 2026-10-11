@@ -7,6 +7,7 @@ import { resolveNodeIcon } from '../profiles/network/icons.js';
 import { FONT_FAMILY, measurePortPill, measureText } from '../text/index.js';
 import { NODE_CONTENT_GEOMETRY as theme } from '../theme/content.js';
 import { SIDE_TIE_ORDER } from './sides-one.js';
+import { gridChains } from './grid.js';
 import { barLabelFloor, barPortsFloor } from './bar-width.js';
 
 export type NodeContentBlock =
@@ -149,6 +150,16 @@ export function sizeNodes(model: LayoutModel): LayoutModel {
       width: Math.max(node.sizeFloor.width, node.size?.width ?? 0, capacity('top'), capacity('bottom'), bar),
       height: Math.max(node.sizeFloor.height, node.size?.height ?? 0, capacity('left'), capacity('right')),
     };
+  }
+  // The nodes of a grid chain (architecture ticket 23) share the widest width of the chain as a floor, so
+  // their facing port blocks stand at one x and the bundle between them is straight.
+  for (const chain of gridChains(model)) {
+    const widest = Math.max(...chain.nodes.map(id => model.nodes[id]!.size!.width));
+    for (const id of chain.nodes) {
+      const node = model.nodes[id]!;
+      node.sizeFloor = { ...node.sizeFloor!, width: Math.max(node.sizeFloor!.width, widest) };
+      node.size = { ...node.size!, width: Math.max(node.size!.width, widest) };
+    }
   }
   if (model.stage === 'sides-one') model.stage = 'size';
   return model;

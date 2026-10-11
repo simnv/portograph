@@ -3,6 +3,8 @@ import type { Side } from '../model/geometry.js';
 import type { LayoutGroup, LayoutModel, LayoutPort } from '../model/layout.js';
 import { orderedGroupIds, orderedNodeIds } from '../model/model.js';
 import { busOfPort, busSide, meshBuses } from './bus.js';
+import { chainSides } from './grid-chains.js';
+import { gridChains } from './grid.js';
 import { checkSideHints, NO_SIDE_HINTS, SideHintRefusal, type SideHints } from './side-hints.js';
 
 /** Complete tie priority for direction votes and unused-port allocation. */
@@ -61,6 +63,10 @@ export function tiedPortComponents(model: LayoutModel): Map<string, string> {
 export function sidesOne(model: LayoutModel, hints: SideHints = NO_SIDE_HINTS, laneHints: ReadonlySet<string> = new Set(), courseFaces: ReadonlyMap<string, Side> = new Map()): LayoutModel {
   if (model.stage !== 'resolve') throw new Error('Phase-one sides require the resolve stage');
   if (hints.size) checkSideHints(model, hints);
+  // A chain of a grid (architecture ticket 23) stands one bundle end over the other: its member ports take
+  // `bottom` (upper end) and `top` (lower end), fixed here like an authored side, so the tied component
+  // binds and stage 5 never overturns them.
+  const stacked = chainSides(model, gridChains(model));
   const components = tiedPortComponents(model);
   const ports = new Map<string, { port: LayoutPort; known: Votes; predicted: Votes; unresolved: number; links: number }>();
   const rank = new Map<string, number>();
@@ -114,6 +120,10 @@ export function sidesOne(model: LayoutModel, hints: SideHints = NO_SIDE_HINTS, l
     return { port, known: sum(group.map(entry => entry.known)), predicted: sum(group.map(entry => entry.predicted)),
       unresolved: group.reduce((n, entry) => n + entry.unresolved, 0), links: own.links, ...(authoredSides.size ? { authored: [...authoredSides][0] } : {}) };
   };
+  for (const { ref, side } of stacked) {
+    const port = model.nodes[ref.node]?.ports.find(item => portKey(item.ref) === portKey(ref));
+    if (port !== undefined && port.side === undefined) port.side = side;
+  }
   for (const id of orderedNodeIds(model.document)) {
     const node = model.nodes[id]!;
     const capacity = emptyVotes();
