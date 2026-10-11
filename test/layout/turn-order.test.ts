@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { turnOrder, turnOrderViolated, type TurnPort } from '../../src/layout/turn-order.js';
+import { turnOrder, turnOrderViolated, turnRanker, type TurnPort } from '../../src/layout/turn-order.js';
 
 type Item = TurnPort & { id: string };
 /** A bracket (overlay course) is a low-turn return with its reach. */
@@ -42,16 +42,24 @@ describe('the five groups of the turn order', () => {
 describe('G5 on a turn-ordered face', () => {
   const low: TurnPort = { far: 0, turn: 'low', shape: 'onward', reach: 5 }, none: TurnPort = { far: 0 };
   const near: TurnPort = { far: 0, turn: 'high', shape: 'return', reach: 10 }, far: TurnPort = { far: 0, turn: 'high', shape: 'return', reach: 30 };
+  const rank = (...list: TurnPort[]) => turnRanker(list);
   it('judges two ports with no turn by their far-end ranges', () => {
-    expect(turnOrderViolated(none, none, true)).toBe(true);
-    expect(turnOrderViolated(none, none, false)).toBe(false);
+    expect(turnOrderViolated(none, none, rank(none), true)).toBe(true);
+    expect(turnOrderViolated(none, none, rank(none), false)).toBe(false);
   });
-  it('judges other pairs by the groups, not the ranges', () => {
-    expect(turnOrderViolated(low, none, true)).toBe(false);
-    expect(turnOrderViolated(none, low, false)).toBe(true);
+  it('judges other pairs by the rank, not the ranges', () => {
+    expect(turnOrderViolated(low, none, rank(low, none), true)).toBe(false);
+    expect(turnOrderViolated(none, low, rank(low, none), false)).toBe(true);
   });
   it('puts the shorter return at the high end', () => {
-    expect(turnOrderViolated(far, near, false)).toBe(false);
-    expect(turnOrderViolated(near, far, false)).toBe(true);
+    expect(turnOrderViolated(far, near, rank(far, near), false)).toBe(false);
+    expect(turnOrderViolated(near, far, rank(far, near), false)).toBe(true);
+  });
+  it("never fails the comparator's own output: an unturned port above the brackets stands above them (finding 1)", () => {
+    const list: Item[] = [bracket('c1', 10, 300), bracket('c2', 500, 200), { id: 'above', far: 50 }, { id: 'below', far: 450 }];
+    const ranked = turnRanker(list);
+    const out = [...list].sort(turnOrder(list));
+    expect(out.map(item => item.id)).toEqual(['above', 'c1', 'c2', 'below']);
+    for (let i = 0; i < out.length; i++) for (let j = i + 1; j < out.length; j++) expect(turnOrderViolated(out[i]!, out[j]!, ranked, false)).toBe(false);
   });
 });

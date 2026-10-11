@@ -23,7 +23,7 @@ import { gridCells, gridRowGaps, groupShape, isGridGroup, packGridRows } from '.
 import { freezePortTopology } from './mutation.js';
 import { busOfPort, busSide, meshBuses } from './bus.js';
 import { planTrunks } from './trunk.js';
-import { plannedTurns, turnOrder, type PlannedTurn, type TurnPort } from './turn-order.js';
+import { plannedTurns, turnOrder, turnScope, type PlannedTurn, type TurnPort } from './turn-order.js';
 import { unreservedPeers } from './peers.js';
 const key = portId;
 
@@ -903,8 +903,10 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
         const slots = slotsOf(turns), byslot = turnOrder([...slots.values()]);
         return [...ports].sort((a, b) => isBus(a.ref) - isBus(b.ref) || byslot(slots.get(a)!, slots.get(b)!));
       };
-      const plain = planned === plainTurns ? undefined : sorted(plainTurns);
-      ports.splice(0, ports.length, ...sorted(planned));
+      // A run that carries the order for some links only (`turnLinks`) orders the other faces as today.
+      const usePlanned = turnScope(model, id, side) ? planned : plainTurns;
+      const plain = usePlanned === plainTurns ? undefined : sorted(plainTurns);
+      ports.splice(0, ports.length, ...sorted(usePlanned));
       if (plain !== undefined && plain.some((port, index) => port !== ports[index])) turned.push({ node: id, side });
       const authored = ports.filter(port => port.authorOrder !== undefined).sort((a, b) => a.authorOrder! - b.authorOrder!);
       let next = 0;

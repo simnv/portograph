@@ -445,6 +445,11 @@ export interface LayoutModel {
    * links. Absent reads as the far-end order. `freeze.turnOrder` records the faces the order changed.
    */
   turnOrder?: true;
+  /**
+   * With `turnOrder`: the links whose faces take the turn order in this run, and no other face does (architecture ticket 24, phase 5: a bypass trial carries the order
+   * for its own link only). Absent reads as every face.
+   */
+  turnLinks?: string[];
   /** The planned course of each link that has one (ticket 15); absent until stage 5 plans them, and still absent when no link has a detour. */
   courses?: Course[];
   document: NormalisedDocument;

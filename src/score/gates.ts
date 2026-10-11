@@ -22,7 +22,7 @@ import { anchorOnBoundary, barContact, bundlePair, effectiveLayer, endpoints, gr
 import { overlayEndpoint } from '../layout/overlay-paths.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
 import { portId } from '../layout/skeleton-graph.js';
-import { faceKey, plannedTurns, portTurn, turnOrderViolated, type TurnPort } from '../layout/turn-order.js';
+import { faceKey, plannedTurns, portTurn, turnOrderViolated, turnRanker, type TurnPort } from '../layout/turn-order.js';
 import { separationShortfalls } from '../layout/constraints/separation.js';
 import type { Segment } from './model.js';
 import type { GateId, GateResult, ScoreCounters } from './types.js';
@@ -147,12 +147,13 @@ export function portOrder(model: LayoutModel, nodes: readonly LayoutNode[], rout
       const at: TurnPort = { far: (min + max) / 2, ...(turn === undefined ? {} : turn) };
       return [{ own: alongX ? p.anchor!.x : p.anchor!.y, min, max, at }];
     });
+    const rank = turnRanker(positions.map(item => item.at));
     for (let i = 0; i < positions.length; i++) for (let j = i + 1; j < positions.length; j++) {
       const a = positions[i]!, b = positions[j]!;
       const ranges = (x: typeof a, y: typeof a): boolean => x.own < y.own - EPS && x.min > y.max + EPS;
       // Lower slot first: on a placed face the pair is judged by its turns, else by its far-end ranges.
       const wrong = byTurns
-        ? (a.own < b.own - EPS && turnOrderViolated(a.at, b.at, ranges(a, b))) || (b.own < a.own - EPS && turnOrderViolated(b.at, a.at, ranges(b, a)))
+        ? (a.own < b.own - EPS && turnOrderViolated(a.at, b.at, rank, ranges(a, b))) || (b.own < a.own - EPS && turnOrderViolated(b.at, a.at, rank, ranges(b, a)))
         : ranges(a, b) || ranges(b, a);
       if (wrong)
         fail('G5', 'port-order', [node.id], 'Port order must match strictly separated far-end ranges unless authored');

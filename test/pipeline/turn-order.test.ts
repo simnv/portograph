@@ -4,6 +4,8 @@ import { layout, parse, restoreLayoutModel, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { beats } from '../../src/layout/course-measure.js';
 import { betterByUnified, turnRoundRuns } from '../../src/layout/turn-measure.js';
+import { attemptCounters, resetAttemptCounters } from '../../src/layout/attempt-counters.js';
+import { measureTurnOrder } from '../../src/layout/turn-measure.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -25,7 +27,7 @@ describe('the turn order of a forced run (hand solve 09)', () => {
   it('removes the self crossing of the two skirts and adds no turn', async () => {
     const plain = await layout(parse(solve09()), { ...options, testTurnOrder: false });
     const forced = await layout(parse(solve09()), { ...options, testTurnOrder: true });
-    expect(forced.freeze?.turnOrder).toEqual([{ node: 'mg-1', side: 'bottom' }]);
+    expect(forced.freeze?.turnOrder).toContainEqual({ node: 'mg-1', side: 'bottom' });
     expect(counts(plain).crossings).toBe(1);
     expect(counts(forced).crossings).toBe(0);
     expect(counts(forced).turns).toBeLessThanOrEqual(counts(plain).turns);
@@ -56,7 +58,7 @@ describe('the turn round', () => {
     expect(counts(on).turns).toBeLessThanOrEqual(counts(skipped).turns);
     expect(counts(skipped).crossings).toBe(1);
     expect(codes(skipped)).not.toContain('TURN_ORDER_TAKEN');
-    expect(on.freeze?.turnOrder).toEqual([{ node: 'fl-1', side: 'bottom' }]);
+    expect(on.freeze?.turnOrder).toContainEqual({ node: 'fl-1', side: 'bottom' });
   });
 
   it('is byte for byte the baseline when there is no offer (testTurnOrder false is the same layout)', async () => {
@@ -130,5 +132,53 @@ describe('the row bypass', () => {
     const off = await layout(parse(fixture(name)), { ...options, testCourses: [] });
     expect(geometry(on)).toBe(geometry(off));
     expect(on.courses).toBeUndefined();
+  });
+});
+
+/** Architecture ticket 24, review: the carried order is scoped (3), the budget is never given back (6). */
+describe('the carried turn order and the budget', () => {
+  it('a bypass trial orders the faces of the bypass link only, and later runs keep that scope (finding 3)', async () => {
+    const model = await layout(parse(fixture('a-ring-closes-above-its-row')), options);
+    expect(model.turnOrder).toBe(true);
+    expect(model.turnLinks).toEqual(['link-4']);
+  });
+
+  it('a run for some links orders their faces and no other face (finding 3)', async () => {
+    const full = await layout(parse(solve09()), { ...options, testTurnOrder: false });
+    const courses = full.courses!;
+    const all = await layout(parse(solve09()), { ...options, testCourses: courses, testTurnOrder: true });
+    const scoped = await layout(parse(solve09()), { ...options, testCourses: courses, testTurnLinks: ['link-5'] });
+    expect(all.freeze?.turnOrder).toContainEqual({ node: 'core-1', side: 'left' });
+    expect(scoped.freeze?.turnOrder).toEqual([{ node: 'mg-1', side: 'bottom' }]);
+    const none = await layout(parse(solve09()), { ...options, testCourses: courses, testTurnLinks: ['link-1'] });
+    expect(none.freeze?.turnOrder).toBeUndefined();
+  });
+
+  it('decides the offer before any placement: a sheet with no offer places exactly as without the round (finding 6)', async () => {
+    const name = 'turns-both-ways-from-one-bottom-face';
+    resetAttemptCounters();
+    await layout(parse(fixture(name)), options);
+    const on = attemptCounters.placeRuns;
+    resetAttemptCounters();
+    await layout(parse(fixture(name)), { ...options, testTurnOrder: false });
+    expect(on).toBe(attemptCounters.placeRuns);
+  });
+
+  it('measures its offer from the kept model: faces on a baseline that the courses made, none once the order stands (findings 6)', async () => {
+    const base = await layout(parse(solve09()), { ...options, testTurnOrder: false });
+    expect(measureTurnOrder(base).faces.length).toBeGreaterThan(0);
+    const kept = await layout(parse(solve09()), options);
+    expect(measureTurnOrder(kept).faces).toEqual([]);
+  });
+
+  it('skips the round, never passes the cap, and gives no re-run back (finding 6)', async () => {
+    resetAttemptCounters();
+    const tight = await layout(parse(solve09()), { ...options, testMaxReruns: 1 });
+    expect(attemptCounters.placeRuns).toBeLessThanOrEqual(2);
+    expect(tight.diagnostics.map(item => item.code)).toContain('TURN_ROUND_SKIPPED');
+    resetAttemptCounters();
+    const room = await layout(parse(solve09()), { ...options, testMaxReruns: 2 });
+    expect(attemptCounters.placeRuns).toBeLessThanOrEqual(3);
+    expect(room.diagnostics.map(item => item.code)).toContain('TURN_ORDER_TAKEN');
   });
 });
