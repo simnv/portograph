@@ -17,6 +17,7 @@ import { rebuildBands, span, union, validateSkeletonBands } from './skeleton-geo
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, flankPair } from './flanks.js';
 import { rebuildLaneExtents, validateLanes, transitTiers } from './lanes.js';
+import { spanCandidate } from './frame-paths.js';
 import { isCourseLane, sameCourses, validateCourses } from './courses.js';
 import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
@@ -481,11 +482,26 @@ function validateGeometry(model: LayoutModel, allowNonConvergence = false): void
     'Tier band membership differs from groups');
   if (new Set(model.labels.map(label => label.id)).size !== model.labels.length) throw new Error('Duplicate label IDs');
 }
+/**
+ * A span hint is an input of placement (architecture ticket 22): `freeze.spans` lists the hinted links in link order, and each is a spanning-chord
+ * candidate under Section 14.1 (tiers two apart or more, facing ports, no lane hint). Whether the chord is still clear is not checked: restore accepts every
+ * layout the pipeline publishes, and 7f names a chord that a move closed (`SPAN_CHORD_BLOCKED`).
+ */
+function validateSpans(model: LayoutModel, frozen: readonly string[] | undefined): void {
+  const hinted = model.links.filter(link => link.spanHint !== undefined);
+  for (const link of hinted) {
+    if (link.spanHint !== true) throw new SideHintRefusal(`Span hint on ${link.id} is not true`);
+    if (!spanCandidate(model, link)) throw new SideHintRefusal(`Span hint on ${link.id}, which is no spanning-chord candidate`);
+  }
+  same(hinted.map(link => link.id), frozen ?? [], 'Frozen span hints changed');
+  if (frozen !== undefined && new Set(frozen).size !== frozen.length) throw new Error('Span hints name a link twice');
+}
 function validateFreeze(model: LayoutModel): void {
   const freeze = model.freeze;
   if (!freeze || freeze.version !== 1) throw new Error('Missing or unsupported topology freeze');
   same(topology(model), freeze.topology, 'Frozen port topology changed');
   if (!sameCourses(model.courses, freeze.courses)) throw new Error('Frozen courses changed');
+  validateSpans(model, freeze.spans);
   validateCourses(model);
   same(freeze.floors.map(floor => floor.node), orderedNodeIds(model.document), 'Frozen floors omit or repeat nodes');
   for (const floor of freeze.floors) if (floor.size.width <= 0 || floor.size.height <= 0) throw new Error('Invalid frozen floor');
@@ -513,6 +529,8 @@ export function freezePortTopology(model: LayoutModel, nodeFloors?: ReadonlyMap<
     floors: orderedNodeIds(model.document).map(id => ({ node: id, size: { ...model.nodes[id]!.sizeFloor! } })) };
   const floored = orderedNodeIds(model.document).filter(id => nodeFloors?.has(id));
   if (model.courses !== undefined) result.freeze.courses = clone(model.courses);
+  const spans = model.links.filter(link => link.spanHint === true).map(link => link.id);
+  if (spans.length) result.freeze.spans = spans;
   if (floored.length) result.freeze.nodeFloors = floored.map(id => ({ node: id, size: { ...nodeFloors!.get(id)! } }));
   return protect(result, baseline);
 }

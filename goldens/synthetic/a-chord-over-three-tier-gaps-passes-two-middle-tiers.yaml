@@ -1,0 +1,25 @@
+# Expected: one spanning chord over three tier gaps (architecture ticket 22): a link from tier 0 to tier 3 draws as one straight chord
+# beside the units of tiers 1 and 2, which stand to one side. Two span corridors, one per transited tier, and no transit lane.
+# Test-only input owned by architecture ticket 22; test/pipeline/span-chords.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  top: { tier: 0, label: Top }
+  one: { tier: 1, label: One }
+  two: { tier: 2, label: Two }
+  bottom: { tier: 3, label: Bottom }
+nodes:
+  a: { group: top, class: router, label: A }
+  b: { group: top, class: router, label: B }
+  c: { group: top, class: router, label: C }
+  m: { group: one, class: router, label: M }
+  n: { group: two, class: router, label: N }
+  f: { group: bottom, class: switch, label: F }
+  e: { group: bottom, class: switch, label: E }
+  g: { group: bottom, class: switch, label: G }
+links:
+  - [c, m]
+  - [m, n]
+  - [n, g]
+  - [b, f]
+  - [n, e]

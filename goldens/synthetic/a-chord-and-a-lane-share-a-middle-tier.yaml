@@ -1,0 +1,23 @@
+# Expected: one spanning chord and one transit lane in one middle tier (architecture ticket 22): the link a1-d1 has a clear corridor beside the
+# middle bodies and draws straight; the link a2-d2 would cross a middle body and keeps its lane, outside the corridor of the chord.
+# Test-only input owned by architecture ticket 22; test/pipeline/span-chords.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  top: { tier: 0, label: Top }
+  middle: { tier: 1, label: Middle }
+  bottom: { tier: 2, label: Bottom }
+nodes:
+  a1: { group: top, class: router, label: A1 }
+  a2: { group: top, class: router, label: A2 }
+  m1: { group: middle, class: router, label: M1 }
+  m2: { group: middle, class: router, label: M2 }
+  d1: { group: bottom, class: switch, label: D1 }
+  d2: { group: bottom, class: switch, label: D2 }
+links:
+  - [a1, d1]
+  - [a2, d2]
+  - [a2, m1]
+  - [m1, d1]
+  - [a1, m2]
+  - [m2, d2]

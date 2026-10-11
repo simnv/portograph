@@ -36,6 +36,7 @@ import { judgeTrial, predictedWorse, predictPublished, routedBends, trialNotes }
 import type { AttemptTraceEvent } from '../layout/placement-attempt.js';
 import { PLACEMENT_EPS } from '../layout/tolerance.js';
 import { attemptCounters, lastAttempt } from '../layout/attempt-counters.js';
+import { measureSpans } from '../layout/span-measure.js';
 import { beats, gainOf, judgeCourseTrial, judgeOverlayTrial, measureCourses, measureOverlayCourses } from '../layout/course-measure.js';
 import { pathBends } from '../layout/objective.js';
 import { countStage, ledgerOn, ledgerSnapshot, startPlacementEntry, type LedgerSnapshot } from '../layout/attempt-ledger.js';
@@ -368,6 +369,8 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   let courseDeferred = false;
   if (options.testCourses === undefined) {
     routedBase = await routeModel(base);
+    // The span round's shadow (architecture ticket 22, phase 1): the offer is read for the trace only and changes nothing.
+    if (options.testSideTrace) options.testSideTrace({ ev: 'spans', offer: measureSpans(base, routedBase), base, routedBase });
     const offer = measureCourses(base, routedBase);
     options.testSideTrace?.({ ev: 'courses', offer, base, routedBase });
     if (offer.courses.length > 0) {

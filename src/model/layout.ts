@@ -205,6 +205,12 @@ export interface LayoutLink {
    * bottom port takes `left` or `right`. Stage 5 decides it with the link's course; `LayoutModel.courses` records the same fact.
    */
   approach?: { from?: Side; to?: Side };
+  /**
+   * An input of the placement re-run of the span round (architecture ticket 22, docs/design/routed-chords.md, Section 14): the link is a spanning chord,
+   * a routed chord between two document tiers that are not consecutive. Stage 5 gives its end ports no lane pitch and 7a reserves no transit lane for it,
+   * only one span corridor per transited band. `freeze.spans` records the same fact.
+   */
+  spanHint?: true;
 }
 
 /** What a course is for: the detour of its natural route (ticket 15, Section 1, T1 to T5). */
@@ -229,8 +235,10 @@ export interface Lane extends OwnedElement {
    * `transit` (absent reads `transit`, so an old layout restores): a full-band vertical run in a sub-tier the link crosses.
    * `side`: the run beside the lateral end's node from the band edge facing the far end to the lateral port's y, with the side run
    * to the port's face (docs/design/side-faces.md, Section 10). Its id is `side-lane:<link id>`.
+   * `span` (architecture ticket 22): the corridor of a spanning chord in one transited band, a reservation that is no router obstacle. Its id is
+   * `span:<link id>:<sub-tier>`; the id, owner and band are immutable, and `x` is derived from the two end anchors.
    */
-  kind?: 'transit' | 'side' | 'gap' | 'perimeter';
+  kind?: 'transit' | 'side' | 'gap' | 'perimeter' | 'span';
   /** A gap or perimeter lane only (ticket 15, Section 2): the sub-tiers the lane runs through, `top <= bottom`. */
   span?: { top: number; bottom: number };
   /** A perimeter lane only: the ring index, 0 nearest the drawing. The id, owner, side and ring are immutable; `x` is derived from the outermost box on the span. */
@@ -502,5 +510,7 @@ export interface LayoutFreeze {
   nodeFloors?: { node: string; size: Size }[];
   /** Present only when stage 5 planned a course: `LayoutModel.courses` as frozen. A restore checks it against the model. */
   courses?: Course[];
+  /** Present only when a span round placed a spanning chord (architecture ticket 22): the ids of the links that carry `spanHint`, in link order. A restore checks it against the model. */
+  spans?: string[];
   placement?: PlacementSnapshot;
 }

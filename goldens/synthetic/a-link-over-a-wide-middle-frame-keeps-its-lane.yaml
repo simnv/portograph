@@ -1,0 +1,23 @@
+# Expected: no spanning chord (architecture ticket 22): the middle tier holds a wide group that stands under both ends of the link a-d, and the
+# widest tier cannot move aside, so the corridor is closed (`frame` in the trace). The link keeps its transit lane and the sheet is as it was before the span round.
+# Test-only input owned by architecture ticket 22; test/pipeline/span-chords.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  top: { tier: 0, label: Top }
+  wide: { tier: 1, label: Wide }
+  bottom: { tier: 2, label: Bottom }
+nodes:
+  a: { group: top, class: router, label: A }
+  d: { group: bottom, class: switch, label: D }
+  w1: { group: wide, class: router, label: W1 }
+  w2: { group: wide, class: router, label: W2 }
+  w3: { group: wide, class: router, label: W3 }
+  w4: { group: wide, class: router, label: W4 }
+  w5: { group: wide, class: router, label: W5 }
+links:
+  - [a, d]
+  - [a, w1]
+  - [w5, d]
+  - [w2, w3]
+  - [w3, w4]
