@@ -23,7 +23,7 @@ import { gridCells, gridRowGaps, groupShape, isGridGroup, packGridRows } from '.
 import { freezePortTopology } from './mutation.js';
 import { busOfPort, busSide, meshBuses } from './bus.js';
 import { planTrunks } from './trunk.js';
-import { plannedTurns, turnOrder } from './turn-order.js';
+import { plannedTurns, turnOrder, type PlannedTurn, type TurnPort } from './turn-order.js';
 const key = portId;
 
 /**
@@ -900,7 +900,9 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   sweepTiers(model);
   if (Object.keys(model.groups).length) stackBands(model, true);
   // The planned first turn of each overlay course port (ticket 15; `turn-order.ts`): its lane runs to its far end's row, beyond it by a padding row, short of it by a drop.
-  const planned = plannedTurns(model);
+  const planned = plannedTurns(model), plainTurns = model.turnOrder === true ? plannedTurns(model, false) : planned;
+  // The faces that a planned first turn moved (ticket 24): the order with the turns differs from the order with the overlay brackets alone.
+  const turned: { node: string; side: Side }[] = [];
   for (const id of orderedNodeIds(model.document)) {
     const node = model.nodes[id]!;
     for (const side of SIDE_TIE_ORDER) {
@@ -919,12 +921,17 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
       // Two overlay courses that leave one lateral face are brackets of one margin and nest (ticket 15, P2): the lane that runs farther along its margin stands outside
       // the other, so its port stands where its run does not cross the other's. One comparator on one y scale (`turnOrder`): a routed port is not pushed past the brackets by their order.
       const lateral = side === 'left' || side === 'right';
-      const slots = new Map(ports.map(port => {
-        const turn = lateral ? planned.get(key(port.ref)) : undefined;
-        return [port, { far: far(port.ref), ...(turn === undefined ? {} : turn)}] as const;
+      const slotsOf = (turns: ReadonlyMap<string, PlannedTurn>): Map<LayoutPort, TurnPort> => new Map(ports.map(port => {
+        const turn = lateral || turns !== plainTurns ? turns.get(key(port.ref)) : undefined;
+        return [port, { far: far(port.ref), ...(turn === undefined ? {} : turn) }] as const;
       }));
-      const byslot = turnOrder([...slots.values()]);
-      ports.sort((a, b) => isBus(a.ref) - isBus(b.ref) || byslot(slots.get(a)!, slots.get(b)!));
+      const sorted = (turns: ReadonlyMap<string, PlannedTurn>): LayoutPort[] => {
+        const slots = slotsOf(turns), byslot = turnOrder([...slots.values()]);
+        return [...ports].sort((a, b) => isBus(a.ref) - isBus(b.ref) || byslot(slots.get(a)!, slots.get(b)!));
+      };
+      const plain = planned === plainTurns ? undefined : sorted(plainTurns);
+      ports.splice(0, ports.length, ...sorted(planned));
+      if (plain !== undefined && plain.some((port, index) => port !== ports[index])) turned.push({ node: id, side });
       const authored = ports.filter(port => port.authorOrder !== undefined).sort((a, b) => a.authorOrder! - b.authorOrder!);
       let next = 0;
       const ordered = ports.map(port => port.authorOrder === undefined ? port : authored[next++]!);
@@ -938,5 +945,5 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   if (Object.keys(model.groups).length) stackBands(model, true);
   rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');
   model.stage = 'sides-two';
-  return freezePortTopology(model, nodeFloors);
+  return freezePortTopology(model, nodeFloors, turned);
 }

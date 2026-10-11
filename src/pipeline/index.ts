@@ -42,6 +42,7 @@ import { judgeSpanTrial } from '../layout/span-judge.js';
 import { transitTiers } from '../layout/lanes.js';
 import { beats, gainOf, judgeCourseTrial, judgeOverlayTrial, measureCourses, measureOverlayCourses } from '../layout/course-measure.js';
 import { pathBends } from '../layout/objective.js';
+import { turnMissed } from '../layout/turn-order.js';
 import { countStage, ledgerOn, ledgerSnapshot, startPlacementEntry, type LedgerSnapshot } from '../layout/attempt-ledger.js';
 
 
@@ -108,6 +109,8 @@ export interface LayoutOptions {
   testNodeFloors?: ReadonlyMap<string, Size>;
   /** Test only. Courses (ticket 15) for every placement run, before the course round has any say. */
   testCourses?: readonly Course[];
+  /** Test only (architecture ticket 24, phase 2). `true` forces the turn order on every placement run: stage 5 orders the ports of a face by the planned first turn of their links. */
+  testTurnOrder?: boolean;
   /** Test only. `false` skips the overlay round (ticket 15, phase 7): the overlay links keep the chord or the derived path they had before the rule of Q1. */
   testOverlayCourses?: boolean;
   /** Test only (architecture ticket 22, phase 2): the ids of the links that every placement run reserves as spanning chords, before the span round has any say. */
@@ -150,6 +153,8 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   let activeCourses: readonly Course[] = options.testCourses ?? [];
   // The links every placement run reserves as spanning chords (ticket 22): the test's, or the ones the span round keeps.
   let activeSpans: ReadonlySet<string> = new Set(options.testSpanHints ?? []);
+  // Whether every placement run orders the ports of a face by the planned first turn (ticket 24).
+  const turnOrdered = options.testTurnOrder === true;
   const stage3Sizes = new WeakMap<LayoutModel, Map<string, Size>>();
   // The trunk joins a placement run found blocked (mesh-bus.md, section 12.4): the next run resolves with them declined.
   /** The trunks declined for the next run. With `all` set (the budget is spent) every trunk reads as declined. */
@@ -178,6 +183,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       }
     }
     for (const link of resolved.links) if (spans.has(link.id)) link.spanHint = true;
+    if (turnOrdered) resolved.turnOrder = true;
     stepIn('sides-one', () => sidesOne(resolved, hints, laneKeys, courseFaces));
     if (courses.length) resolved.courses = JSON.parse(JSON.stringify(courses)) as Course[];
     // An approach (ticket 15, phase 6) is stored on the link and in its course; the port keeps its side.
@@ -676,6 +682,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     if (got === undefined || got > turns) lost.push({ stage: 'placement', severity: 'warning', code: 'COURSE_SHAPE_LOST', owners: [{ kind: 'link', id }],
       message: `The link ${id} has ${got === undefined ? 'no route' : `${got} turns`} on its course, ${turns} were promised.` });
   }
+  lost.push(...turnMissed(published));
   // A hinted link of a kept trial has no more bends than on the baseline (the judgment tested it); this names a break of that rule.
   if (routedFinal !== undefined && routedBase !== undefined) {
     const before = routedBends(routedBase), after = routedBends(routedFinal);

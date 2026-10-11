@@ -21,6 +21,8 @@ const measurable = (x: number, y: number, right: number, bottom: number): boolea
 import { anchorOnBoundary, barContact, bundlePair, effectiveLayer, endpoints, groupBoxes, groupConsumers, incident, junctionFan, linkPort, mergedRun, outward, port, refEqual, refKey, sharedStem } from './model.js';
 import { overlayEndpoint } from '../layout/overlay-paths.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
+import { portId } from '../layout/skeleton-graph.js';
+import { faceKey, plannedTurns, portTurn, turnOrderViolated, type TurnPort } from '../layout/turn-order.js';
 import { separationShortfalls } from '../layout/constraints/separation.js';
 import type { Segment } from './model.js';
 import type { GateId, GateResult, ScoreCounters } from './types.js';
@@ -110,9 +112,17 @@ export function portOrder(model: LayoutModel, nodes: readonly LayoutNode[], rout
   // A link is seen from both of its ends, exactly as the gate saw it, and a link whose far port is
   // missing contributes nothing, as before.
   const farAnchors = new Map<string, Point[]>();
+  // On a face that the turn order placed (ticket 24, Section 7) the links at each port are kept too, to read their first turns.
+  const turned = new Set((model.freeze?.turnOrder ?? []).map(face => faceKey(face.node, face.side)));
+  const linksAt = new Map<string, { link: LayoutLink; which: 'from' | 'to' }[]>();
   for (const link of model.links) {
     if (!routedLinks.has(link)) continue;
     const ends = endpoints(link);
+    if (turned.size) for (const which of ['from', 'to'] as const) {
+      const list = linksAt.get(refKey(ends[which])) ?? [];
+      list.push({ link, which });
+      linksAt.set(refKey(ends[which]), list);
+    }
     for (const [near, far] of [[ends.from, ends.to], [ends.to, ends.from]] as const) {
       const target = port(model, far);
       if (!target) continue;
@@ -120,8 +130,10 @@ export function portOrder(model: LayoutModel, nodes: readonly LayoutNode[], rout
       if (list) list.push(target.anchor!); else farAnchors.set(at, [target.anchor!]);
     }
   }
+  const planned = turned.size ? plannedTurns(model) : undefined;
   for (const node of nodes) for (const side of ['top', 'right', 'bottom', 'left'] as const) {
     const alongX = side === 'top' || side === 'bottom';
+    const byTurns = turned.has(faceKey(node.id, side));
     const positions = node.ports.filter(p => p.side === side && p.authorOrder === undefined).flatMap(p => {
       const peers = farAnchors.get(refKey(p.ref));
       if (!peers?.length) return [];
@@ -131,11 +143,18 @@ export function portOrder(model: LayoutModel, nodes: readonly LayoutNode[], rout
         if (at < min) min = at;
         if (at > max) max = at;
       }
-      return [{ own: alongX ? p.anchor!.x : p.anchor!.y, min, max }];
+      const turn = byTurns ? portTurn(side, linksAt.get(refKey(p.ref)) ?? [], planned?.get(portId(p.ref))) : undefined;
+      const at: TurnPort = { far: (min + max) / 2, ...(turn === undefined ? {} : turn) };
+      return [{ own: alongX ? p.anchor!.x : p.anchor!.y, min, max, at }];
     });
     for (let i = 0; i < positions.length; i++) for (let j = i + 1; j < positions.length; j++) {
       const a = positions[i]!, b = positions[j]!;
-      if (a.own < b.own - EPS && a.min > b.max + EPS || b.own < a.own - EPS && b.min > a.max + EPS)
+      const ranges = (x: typeof a, y: typeof a): boolean => x.own < y.own - EPS && x.min > y.max + EPS;
+      // Lower slot first: on a placed face the pair is judged by its turns, else by its far-end ranges.
+      const wrong = byTurns
+        ? (a.own < b.own - EPS && turnOrderViolated(a.at, b.at, ranges(a, b))) || (b.own < a.own - EPS && turnOrderViolated(b.at, a.at, ranges(b, a)))
+        : ranges(a, b) || ranges(b, a);
+      if (wrong)
         fail('G5', 'port-order', [node.id], 'Port order must match strictly separated far-end ranges unless authored');
     }
     const authored = node.ports.filter(p => p.side === side && p.authorOrder !== undefined)

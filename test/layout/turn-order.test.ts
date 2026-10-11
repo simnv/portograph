@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { turnOrder, type TurnPort } from '../../src/layout/turn-order.js';
+import { turnOrder, turnOrderViolated, type TurnPort } from '../../src/layout/turn-order.js';
 
 type Item = TurnPort & { id: string };
 /** A bracket (overlay course) is a low-turn return with its reach. */
@@ -36,5 +36,22 @@ describe('the five groups of the turn order', () => {
   it('keeps the far-end order with no planned turn, and the input order on a tie', () => {
     expect(sorted([{ id: 'b', far: 9 }, { id: 'a', far: 1 }])).toEqual(['a', 'b']);
     expect(sorted([{ id: 'x', far: 1 }, { id: 'y', far: 1 }])).toEqual(['x', 'y']);
+  });
+});
+
+describe('G5 on a turn-ordered face', () => {
+  const low: TurnPort = { far: 0, turn: 'low', shape: 'onward', reach: 5 }, none: TurnPort = { far: 0 };
+  const near: TurnPort = { far: 0, turn: 'high', shape: 'return', reach: 10 }, far: TurnPort = { far: 0, turn: 'high', shape: 'return', reach: 30 };
+  it('judges two ports with no turn by their far-end ranges', () => {
+    expect(turnOrderViolated(none, none, true)).toBe(true);
+    expect(turnOrderViolated(none, none, false)).toBe(false);
+  });
+  it('judges other pairs by the groups, not the ranges', () => {
+    expect(turnOrderViolated(low, none, true)).toBe(false);
+    expect(turnOrderViolated(none, low, false)).toBe(true);
+  });
+  it('puts the shorter return at the high end', () => {
+    expect(turnOrderViolated(far, near, false)).toBe(false);
+    expect(turnOrderViolated(near, far, false)).toBe(true);
   });
 });

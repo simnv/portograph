@@ -438,6 +438,11 @@ export interface LayoutRuntime {
 /** Geometry remains optional until the stage that produces it has completed. */
 export interface LayoutModel {
   freeze?: LayoutFreeze;
+  /**
+   * An input of the placement run (architecture ticket 24, docs/design/turn-order.md): stage 5 orders the ports of a face by the planned first turn of their
+   * links. Absent reads as the far-end order. `freeze.turnOrder` records the faces the order changed.
+   */
+  turnOrder?: true;
   /** The planned course of each link that has one (ticket 15); absent until stage 5 plans them, and still absent when no link has a detour. */
   courses?: Course[];
   document: NormalisedDocument;
@@ -512,5 +517,7 @@ export interface LayoutFreeze {
   courses?: Course[];
   /** Present only when a span round placed a spanning chord (architecture ticket 22): the ids of the links that carry `spanHint`, in link order. A restore checks it against the model. */
   spans?: string[];
+  /** Present only when a turn-ordered run changed the order of a face (architecture ticket 24): node and side of each such face, in node and side order. G5 judges these faces by the turn order. */
+  turnOrder?: { node: string; side: Side }[];
   placement?: PlacementSnapshot;
 }

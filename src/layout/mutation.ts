@@ -1,5 +1,5 @@
 import { equal } from '../model/json-equality.js';
-import type { Rect, Size } from '../model/geometry.js';
+import type { Rect, Side, Size } from '../model/geometry.js';
 import type { Lane, LayoutModel, LayoutStage, MeshBus, PlacementSnapshot } from '../model/layout.js';
 import { orderedNodeIds, orderedGroupIds } from '../model/model.js';
 import { resolve } from '../resolve/index.js';
@@ -502,6 +502,7 @@ function validateFreeze(model: LayoutModel): void {
   same(topology(model), freeze.topology, 'Frozen port topology changed');
   if (!sameCourses(model.courses, freeze.courses)) throw new Error('Frozen courses changed');
   validateSpans(model, freeze.spans);
+  if (freeze.turnOrder !== undefined && (model.turnOrder !== true || freeze.turnOrder.some(face => model.nodes[face.node] === undefined))) throw new Error('Frozen turn order names a face the model does not carry');
   validateCourses(model);
   same(freeze.floors.map(floor => floor.node), orderedNodeIds(model.document), 'Frozen floors omit or repeat nodes');
   for (const floor of freeze.floors) if (floor.size.width <= 0 || floor.size.height <= 0) throw new Error('Invalid frozen floor');
@@ -520,7 +521,7 @@ function validateFreeze(model: LayoutModel): void {
 }
 
 /** Publish a clone. The caller must retain this immutable return value. */
-export function freezePortTopology(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Size>): LayoutModel {
+export function freezePortTopology(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Size>, turnFaces: readonly { node: string; side: Side }[] = []): LayoutModel {
   if (model.stage !== 'sides-two' || model.freeze) throw new Error('Topology can freeze only once at sides-two');
   jsonValue(model);
   const baseline = validateDocument(model);
@@ -531,6 +532,7 @@ export function freezePortTopology(model: LayoutModel, nodeFloors?: ReadonlyMap<
   if (model.courses !== undefined) result.freeze.courses = clone(model.courses);
   const spans = model.links.filter(link => link.spanHint === true).map(link => link.id);
   if (spans.length) result.freeze.spans = spans;
+  if (turnFaces.length) result.freeze.turnOrder = turnFaces.map(face => ({ ...face }));
   if (floored.length) result.freeze.nodeFloors = floored.map(id => ({ node: id, size: { ...nodeFloors!.get(id)! } }));
   return protect(result, baseline);
 }
