@@ -316,9 +316,9 @@ to reach this; ticket 103 measures it.
    (Section 11). The M1 golden's `golden-crossings` assertion takes the measured count, with a
    comment that cites this decision.
 
-## 14. Spanning chords (proposed, architecture ticket 22; not decided)
+## 14. Spanning chords (architecture ticket 22)
 
-Status: a proposal for the user. It amends Q108 only when the user accepts it. Evidence and measures:
+Status: decided by the user 2026-10-11 (all six recommendations of ticket 22); it amends Q108 when phase 4 merges. Evidence and measures:
 `.scratch/architecture/issues/22-a-chord-spans-several-tier-gaps.md`. Hand solve: case 04, principle P6 and
 contradiction 7 of `ref/hand-solves/ANALYSIS.md`.
 
@@ -334,9 +334,9 @@ A **transited band** is a sub-tier band strictly between the end sub-tiers. Sect
 (`transit`). For a spanning chord a transited band is no refusal by itself. The band must leave the chord's
 **corridor** clear: the part of the segment between the band's top and bottom y, grown by the gate clearances.
 
-Open (ticket 22, question 2): whether the same test also replaces the `transit` refusal of a cross-frame chord on
+Not in this version (user, 2026-10-11): the same test does not replace the `transit` refusal of a cross-frame chord on
 consecutive document tiers, where a rank band of an end's own tier stands between the ends (Section 3, last
-paragraph).
+paragraph). A follow-up may measure it.
 
 ### 14.2 The walls
 
