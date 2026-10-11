@@ -289,4 +289,17 @@ describe('a mesh over three rows: the guards (architecture ticket 21, review fix
     // The re-run is drawn from the shared MAX_RERUNS budget: one used, the rest left for the later rounds.
     expect(events).toEqual([expect.objectContaining({ reruns: 1, left: 2 })]);
   });
+
+  it('declines every trunk on the last run the budget allows, and publishes with no run past the cap', async () => {
+    const rows = [['a1', 'a2', 'a3'], ['b1', 'b2', 'b3'], ['c1', 'c2', 'c3']];
+    const yaml = mesh(rows, '  f: { tier: 1 }\n  g: { tier: 1 }\n', '  f1: { group: f }\n  g1: { group: g }\n', '  - [a1, f1]\n  - [a3, g1]\n');
+    for (const budget of [0, 1, 4]) {
+      const labels: string[] = [];
+      const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: budget, onProgress: progress => { labels.push(progress.stage); } });
+      expect(model.declinedTrunks).toHaveLength(1);
+      expect(model.meshBuses!.every(bus => bus.trunk === undefined)).toBe(true);
+      // Budget 0: the one run declines the trunk at once. Budget 1 or more: the first run is blocked and the second declines it.
+      expect(labels.filter(label => label === 'resolve')).toHaveLength(budget === 0 ? 1 : 2);
+    }
+  }, 120000);
 });

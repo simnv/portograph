@@ -17,6 +17,8 @@ import { measureText } from '../text/index.js';
 
 /** A placement run cannot reserve a span corridor (a unit or lane stands in it and cannot move aside). The span round refuses the trial; every other error is a bug. */
 export class SpanRefusal extends SideHintRefusal {}
+/** The 7a reservation (`reserveSpanCorridors`) cannot open a corridor. It is thrown before any later stage has run, so the round that asked gives the re-run back; a refusal of 7c to 7e (`SpanRefusal`) comes after most of the placement and gives nothing back. */
+export class SpanReservationRefusal extends SpanRefusal {}
 
 export const spanLaneId = (link: string, tier: number): string => `span:${link}:${tier}`;
 export const isSpanLane = (lane: Pick<Lane, 'kind'>): boolean => lane.kind === 'span';

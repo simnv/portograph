@@ -4,7 +4,8 @@ import { layout, parse } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { chooseReseat } from '../../src/layout/decide.js';
 import { fixedPointRefusal, isRoutedChord, orthogonalLeg } from '../../src/layout/frame-paths.js';
-import { spanBreaches } from '../../src/layout/lanes.js';
+import { rebuildLaneExtents, spanBreaches } from '../../src/layout/lanes.js';
+import { SpanRefusal, SpanReservationRefusal } from '../../src/layout/span-lanes.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -68,5 +69,22 @@ describe('the whole leg of a hinted link', () => {
     const segment = { from: { x: p.x + 3, y: p.y - 4 }, to: { x: p.x + 60, y: p.y + 4 }, owner: { ...link.owner }, straight: true as const };
     const model = { ...plain, links: plain.links.map(item => item.id === link.id ? link : item) };
     expect(fixedPointRefusal(model, link, segment)).toBe('leg');
+  }, 120000);
+});
+
+describe('which span refusal gives a re-run back', () => {
+  it('7a throws the reservation subclass; 7c to 7e throw the plain refusal, which gives nothing back', async () => {
+    const SHARE = 'goldens/synthetic/a-chord-and-a-lane-share-a-middle-tier.yaml';
+    // 7a: a forced hint whose corridor cannot be opened.
+    const early = await run(SHARE, { testSpanHints: ['link-1'] }).catch((error: unknown) => error);
+    expect(early).toBeInstanceOf(SpanReservationRefusal);
+    // 7c to 7e: the lane extents of a span lane whose link is gone.
+    const chords = await run(CASE04, { testSpanHints: MESH_IDS });
+    const model = clone(chords);
+    model.links = model.links.filter(item => item.id !== 'link-3');
+    let late: unknown;
+    try { rebuildLaneExtents(model); } catch (error) { late = error; }
+    expect(late).toBeInstanceOf(SpanRefusal);
+    expect(late).not.toBeInstanceOf(SpanReservationRefusal);
   }, 120000);
 });

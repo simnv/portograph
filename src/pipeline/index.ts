@@ -30,7 +30,7 @@ import { declinedFanDiagnostics, fanRoundDropped, fanRoundHolds, measureFans, ty
 import { chordClearances, freezeRefusal, isRoutedChord } from '../layout/frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
 import { CourseRefusal } from '../layout/courses.js';
-import { SpanRefusal } from '../layout/span-lanes.js';
+import { SpanReservationRefusal } from '../layout/span-lanes.js';
 import { SideHintRefusal, TrunkBlocked, sideHintDiagnostics, type SideHints } from '../layout/side-hints.js';
 import { measureSides, refusedKey, type SideOffer } from '../layout/side-measure.js';
 import { judgeTrial, predictedWorse, predictPublished, routedBends, trialNotes } from '../layout/side-judge.js';
@@ -152,15 +152,22 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   let activeSpans: ReadonlySet<string> = new Set(options.testSpanHints ?? []);
   const stage3Sizes = new WeakMap<LayoutModel, Map<string, Size>>();
   // The trunk joins a placement run found blocked (mesh-bus.md, section 12.4): the next run resolves with them declined.
-  const declinedTrunks = new Map<string, string>();
+  /** The trunks declined for the next run. With `all` set (the budget is spent) every trunk reads as declined. */
+  class DeclinedTrunks extends Map<string, string> {
+    all = false;
+    override get(key: string): string | undefined { return super.get(key) ?? (this.all ? 'the placement budget is spent' : undefined); }
+  }
+  const declinedTrunks = new DeclinedTrunks();
   let placements = 0;
+  // The cap on placements per command: the first run and the effective re-run budget (the fan rounds at the start run within FAN_ROUNDS even with a budget of 0).
+  const placeCap = Math.max(options.testMaxReruns ?? MAX_RERUNS, FAN_ROUNDS) + 1;
   const place = async (floors: FanMeasure['floors'], hints = options.testSideHints, nodeFloors = options.testNodeFloors, abort?: (stage: string) => void, laneKeys: ReadonlySet<string> = new Set(), courses: readonly Course[] = activeCourses, spans: ReadonlySet<string> = activeSpans): Promise<LayoutModel> => {
     // The one assertion of the placement budget: a command places at most MAX_RERUNS + 1 times (the first run and the re-runs), whatever round asks. A run that stage 7a
     // refuses before any work is given back by the round that asked (`placements--`, with its `reruns--`).
-    if (placements >= MAX_RERUNS + 1) throw new PlacementBudgetExceeded(placements);
+    if (placements >= placeCap) throw new PlacementBudgetExceeded(placements);
     placements++;
     const stepIn = <T>(stage: LayoutStage, run: () => T): T => { abort?.(stage); return step(stage, run); };
-    const resolved = stepIn('resolve', () => resolve(document, { ...(options.diagnostics ? { diagnostics: options.diagnostics } : {}), ...(declinedTrunks.size ? { declinedTrunks } : {}) }));
+    const resolved = stepIn('resolve', () => resolve(document, { ...(options.diagnostics ? { diagnostics: options.diagnostics } : {}), ...(declinedTrunks.size || declinedTrunks.all ? { declinedTrunks } : {}) }));
     // A course face ranks above a hint (ticket 15): each end that does not keep its natural face names the port and the face.
     const courseFaces = new Map<string, Side>();
     for (const course of courses) {
@@ -223,6 +230,8 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   let reruns = 0;
   // A trunk with no admissible side is declined by one placement re-run, which shares `MAX_RERUNS` (mesh-bus.md, section 12.4).
   for (;;) {
+    // The last run the budget allows declines every trunk, so that it cannot be blocked and no run past the budget is needed.
+    declinedTrunks.all = reruns >= (options.testMaxReruns ?? MAX_RERUNS);
     try { model = await timed('place', () => place(new Map())); break; } catch (error) {
       if (!(error instanceof TrunkBlocked) || declinedTrunks.has(error.key)) throw error;
       declinedTrunks.set(error.key, error.why);
@@ -243,7 +252,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       message: `A side round was cut: ${why}. The baseline (stage 7f of the last kept placement) stands, and this layout may differ from one made with more time.` });
   };
   let floors: FanMeasure['floors'] = new Map();
-  for (let round = 0; round < FAN_ROUNDS; round++) {
+  for (let round = 0; round < FAN_ROUNDS && placements < placeCap; round++) {
     const measure = await timed('measureFans', () => measureFans(model));
     const next: FanMeasure['floors'] = new Map(floors);
     let grew = false;
@@ -398,7 +407,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       if (!(error instanceof Error) || error instanceof CommandDeadlineError) throw error;
       spanRefusal(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError ? 'placement' : 'error', error.message);
       // Stage 7a refused a corridor: no trial exists to route or judge, so the re-run is given back, as for a course.
-      if (error instanceof SpanRefusal) { reruns--; placements--; }
+      if (error instanceof SpanReservationRefusal) { reruns--; placements--; }
       return false;
     }
     if (trial7e.fallbackUsed && !kept7e.fallbackUsed) { spanRefusal('placement', 'ELK fell back during the span trial'); return false; }

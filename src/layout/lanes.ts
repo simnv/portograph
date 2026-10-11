@@ -22,7 +22,7 @@ import { deriveFrames, foreignReach, foreignRoot, heldLaneReach, ownFrameCells, 
 import { BUS_RUN_CLEARANCE } from './bus-room.js';
 import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 import { nodeTier } from './read/tier.js';
-import { isSpanLane, replaySpanLane, spanCorridor, spanLaneId, SpanRefusal } from './span-lanes.js';
+import { isSpanLane, replaySpanLane, spanCorridor, spanLaneId, SpanRefusal, SpanReservationRefusal } from './span-lanes.js';
 import { trunkBuses, trunkGeometry, trunkHeads, trunkHolds, trunkRing } from './trunk.js';
 
 /** A corridor `reseatLanes` moved, and the child port it moved it onto. */
@@ -1167,7 +1167,7 @@ function reserveSpanCorridors(model: LayoutModel, pending: Lane[], occ: (group: 
     if (link.spanHint !== true) continue;
     for (const tier of transitTiers(model, link)) {
       const box = spanCorridor(model, link, tier);
-      if (box === undefined) throw new SpanRefusal(`The chord of ${link.id} does not reach the band of tier ${tier}`);
+      if (box === undefined) throw new SpanReservationRefusal(`The chord of ${link.id} does not reach the band of tier ${tier}`);
       const x = box.x + box.width / 2, width = box.width;
       const groups = Object.values(model.groups).filter(group => group.tier === tier).sort((a, b) => a.bounds!.x - b.bounds!.x);
       // A unit left of the corridor stays left of it, and a unit right of it right; a unit it crosses takes the side of its centre.
@@ -1178,11 +1178,11 @@ function reserveSpanCorridors(model: LayoutModel, pending: Lane[], occ: (group: 
       const split = groups.filter(isLeft).length;
       const prior = pending.filter(lane => lane.tier === tier && !isSpanLane(lane));
       const shifts = groups.slice(0, split).every(isLeft) ? marginTranslations(group => spanWall(model, group, link), groups, split, x, width, prior, new Set()) : undefined;
-      if (shifts === undefined) throw new SpanRefusal(`The corridor of ${link.id} cannot be opened in tier ${tier}: a unit or a lane stands in it and cannot move aside`);
+      if (shifts === undefined) throw new SpanReservationRefusal(`The corridor of ${link.id} cannot be opened in tier ${tier}: a unit or a lane stands in it and cannot move aside`);
       shift(link, groups, shifts);
       const host = [...groups].sort((a, b) => Math.abs(x - (a.bounds!.x + a.bounds!.width / 2)) - Math.abs(x - (b.bounds!.x + b.bounds!.width / 2)))[0]!;
       const moved = spanCorridor(model, link, tier);
-      if (moved === undefined) throw new SpanRefusal(`The chord of ${link.id} left the band of tier ${tier} when its units moved`);
+      if (moved === undefined) throw new SpanReservationRefusal(`The chord of ${link.id} left the band of tier ${tier} when its units moved`);
       const mx = moved.x + moved.width / 2;
       pending.push({ id: spanLaneId(link.id, tier), kind: 'span', owner: { kind: 'link', id: link.id }, layer: 'routed', group: host.id, tier,
         side: mx < host.bounds!.x ? 'left' : 'right', x: mx, bounds: { x: mx - moved.width / 2, width: moved.width, y: moved.y, height: moved.height } });
@@ -1193,11 +1193,11 @@ function reserveSpanCorridors(model: LayoutModel, pending: Lane[], occ: (group: 
     for (const group of Object.values(model.groups)) {
       if (group.tier !== lane.tier || group.bounds === undefined || !group.nodes.length) continue;
       const box = spanWall(model, group, laneLink(model, lane)!);
-      if (box.x < right(lane.bounds) - PLACEMENT_EPS && right(box) > lane.bounds.x + PLACEMENT_EPS) throw new SpanRefusal(`${lane.id} crosses the unit ${group.id}`);
+      if (box.x < right(lane.bounds) - PLACEMENT_EPS && right(box) > lane.bounds.x + PLACEMENT_EPS) throw new SpanReservationRefusal(`${lane.id} crosses the unit ${group.id}`);
     }
     for (const other of pending) {
       if (other === lane || other.tier !== lane.tier || isSpanLane(other)) continue;
-      if (other.bounds.x < right(lane.bounds) - PLACEMENT_EPS && right(other.bounds) > lane.bounds.x + PLACEMENT_EPS) throw new SpanRefusal(`${lane.id} crosses the lane ${other.id}`);
+      if (other.bounds.x < right(lane.bounds) - PLACEMENT_EPS && right(other.bounds) > lane.bounds.x + PLACEMENT_EPS) throw new SpanReservationRefusal(`${lane.id} crosses the lane ${other.id}`);
     }
   }
 }
