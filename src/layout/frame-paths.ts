@@ -7,6 +7,7 @@ import { bandSide, frameSide, GROUP_LABEL_GEOMETRY, legRectsFor, nudgingDistance
 import { frameSubtreeCells } from '../model/model.js';
 import type { Point } from '../model/geometry.js';
 import { stopsOf } from './gap-runs.js';
+import { portId } from './skeleton-graph.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE, straightCorridorClear, type CorridorOptions } from './row-paths.js';
 
 const OUTWARD = { top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } } as const;
@@ -107,7 +108,11 @@ export function withLinkFacts<T>(model: LayoutModel, run: () => T): T {
  * the corridor test is `chordVerdict`'s. A link that already carries the hint is a candidate too.
  */
 export function spanCandidate(model: LayoutModel, link: LayoutLink): boolean {
-  return documentTierGap(model, link) !== undefined && chordKindOf(model, link, true) === 'cross';
+  if (documentTierGap(model, link) === undefined || chordKindOf(model, link, true) !== 'cross') return false;
+  // A fan (several routed links on one port) is one shared stem tree whose leaves are the lanes of its links (7e, ticket 20): a link in it keeps its lane.
+  const ends = link.attachments!;
+  return ![ends.from, ends.to].some(end => model.links.some(other => other.id !== link.id && other.layer === 'routed' && other.attachments
+    && [other.attachments.from, other.attachments.to].some(ref => portId(ref) === portId(end))));
 }
 /** How many document tiers lie between the ends of the link, when it is two or more; otherwise undefined. */
 export function documentTierGap(model: LayoutModel, link: LayoutLink): number | undefined {

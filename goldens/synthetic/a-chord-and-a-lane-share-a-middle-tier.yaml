@@ -1,5 +1,5 @@
-# Expected: one spanning chord and one transit lane in one middle tier (architecture ticket 22): the link a1-d1 has a clear corridor beside the
-# middle bodies and draws straight; the link a2-d2 would cross a middle body and keeps its lane, outside the corridor of the chord.
+# Expected: one spanning chord and one transit lane in one middle tier (architecture ticket 22): one of the two links between tiers 0 and 2 has a clear
+# corridor beside the middle bodies and draws straight; the other would cross a middle frame and keeps its lane, outside the corridor of the chord.
 # Test-only input owned by architecture ticket 22; test/pipeline/span-chords.test.ts reads it.
 portograph: 2
 profile: network

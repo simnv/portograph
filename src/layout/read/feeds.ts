@@ -44,7 +44,7 @@ export function centringFeeds(model: LayoutModel, tier: number, authority: numbe
       // A bundle member carries its lane only until 7e, which owns member geometry; only a
       // non-bundle transit with an owned lane in the authority tier fixes its child's x here.
       const lane = parentTier === authority ? undefined
-        : model.lanes.find(lane => lane.owner.kind === 'link' && lane.owner.id === link.id && lane.tier === authority);
+        : model.lanes.find(lane => lane.owner.kind === 'link' && lane.owner.id === link.id && lane.tier === authority && lane.kind !== 'span');
       if (parentTier !== authority && (!lane || link.bundle)) continue;
       result.push({ parent, child, link: link.id, x: lane ? lane.x : parent.anchor!.x,
         key: portId(parent.ref), transit: Boolean(lane) });
@@ -110,7 +110,7 @@ export function columnPullFeeds(model: LayoutModel, sources: ReadonlySet<string>
         // puts the child under that lane, not under the parent port. Both rules read one x, or the last to run
         // wins and a second pass flips the child back (ranked-groups ticket 64). A bundle member carries no lane here.
         const lane = otherTier === near || link.bundle ? undefined
-          : model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === link.id && item.tier === near);
+          : model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === link.id && item.tier === near && item.kind !== 'span');
         if (beyond && lane === undefined) continue;
         children.set(portId(child.ref), { x: child.anchor.x, cell: ownGroup });
         parents.set(portId(parent.ref), lane?.x ?? parent.anchor.x);

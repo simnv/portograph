@@ -32,5 +32,14 @@ export function gateFindings(model: LayoutModel): { findings: Set<string>; count
   } catch { return undefined; }
 }
 
+/**
+ * The spanning chords (architecture ticket 22) that a trial leaves with a wall in their corridor and the baseline did not: `SPAN_CHORD_BLOCKED` names them at the end
+ * of 7f. A round after the span round (course, side, overlay course) may not buy a gain with one: its trial is refused.
+ */
+export function spanBlockedNew(base: LayoutModel, trial: LayoutModel): string[] {
+  const owners = (model: LayoutModel): Set<string> => new Set(model.diagnostics.filter(item => item.code === 'SPAN_CHORD_BLOCKED').flatMap(item => (item.owners ?? []).map(owner => 'id' in owner ? owner.id : '')));
+  return added(owners(trial), owners(base));
+}
+
 /** The names in `now` that `then` does not have. */
 export const added = (now: ReadonlySet<string>, then: ReadonlySet<string>): string[] => [...now].filter(name => !then.has(name));

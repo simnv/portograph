@@ -258,6 +258,22 @@ export function optionalMoveHolds(model: LayoutModel, proposed: { group: LayoutG
     && spanCorridorsHold(model, proposed);
 }
 /**
+ * What a unit puts in a span corridor (architecture ticket 22): the corridor already holds the clearances (the group-edge link margin and the half stroke of the
+ * chord), so the unit counts by its box, the frame edge it stands inside for a chord foreign to its frame, and its bodies and pills with their own half stroke
+ * only. `occupied` adds the 10 px clearance a second time; against a corridor it would flag a chord that stands the gate clearance away.
+ */
+function spanWall(model: LayoutModel, group: LayoutGroup, link: LayoutLink): Rect {
+  const box = group.bounds!, reach = foreignReach(model, group.id, link);
+  return union([box, ...(reach ? [{ x: reach.x, y: box.y, width: reach.width, height: box.height }] : []), ...group.nodes.flatMap(id => {
+    const node = model.nodes[id]!, half = (node.strokeWidth ?? stroke.node) / 2, body = node.bounds!;
+    return [{ x: body.x - half, y: body.y, width: body.width + 2 * half, height: body.height },
+      ...node.ports.filter(port => port.pill).map(port => {
+        const pill = port.pill!.bounds;
+        return { x: pill.x - stroke.pill / 2, y: pill.y, width: pill.width + stroke.pill, height: pill.height };
+      })];
+  })]);
+}
+/**
  * The walls that stand in a span corridor (architecture ticket 22, docs/design/routed-chords.md, Section 14.3), as `lane|wall` keys: a unit of the corridor's band
  * (its occupied box, as `validateLanes` measures it) or a lane that is not a corridor, whose box meets the corridor. The end groups of the chord are no wall (they
  * stand outside the transited bands). `proposed` is a move not made yet: the groups take the proposed boxes with their bodies, and the corridors are derived
@@ -290,7 +306,7 @@ export function spanBreaches(model: LayoutModel, proposed: { group: LayoutGroup;
     const meets = (other: Rect): boolean => other.x < right(box) - PLACEMENT_EPS && right(other) > box.x + PLACEMENT_EPS;
     for (const group of Object.values(moved.groups)) {
       if (group.tier !== lane.tier || group.bounds === undefined || !group.nodes.length) continue;
-      if (meets(occupied(moved, group, link))) result.add(`${lane.id}|${group.id}`);
+      if (meets(spanWall(moved, group, link))) result.add(`${lane.id}|${group.id}`);
     }
     for (const other of model.lanes) if (other !== lane && other.tier === lane.tier && !isSpanLane(other) && meets(other.bounds)) result.add(`${lane.id}|${other.id}`);
   }
@@ -1150,12 +1166,12 @@ function reserveSpanCorridors(model: LayoutModel, pending: Lane[], occ: (group: 
       const groups = Object.values(model.groups).filter(group => group.tier === tier).sort((a, b) => a.bounds!.x - b.bounds!.x);
       // A unit left of the corridor stays left of it, and a unit right of it right; a unit it crosses takes the side of its centre.
       const isLeft = (group: LayoutGroup): boolean => {
-        const reach = occ(group, link);
+        const reach = spanWall(model, group, link);
         return right(reach) <= box.x + PLACEMENT_EPS || (reach.x < right(box) - PLACEMENT_EPS && reach.x + reach.width / 2 < x);
       };
       const split = groups.filter(isLeft).length;
       const prior = pending.filter(lane => lane.tier === tier && !isSpanLane(lane));
-      const shifts = groups.slice(0, split).every(isLeft) ? marginTranslations(group => occ(group, link), groups, split, x, width, prior, new Set()) : undefined;
+      const shifts = groups.slice(0, split).every(isLeft) ? marginTranslations(group => spanWall(model, group, link), groups, split, x, width, prior, new Set()) : undefined;
       if (shifts === undefined) throw new SpanRefusal(`The corridor of ${link.id} cannot be opened in tier ${tier}: a unit or a lane stands in it and cannot move aside`);
       shift(link, groups, shifts);
       const host = [...groups].sort((a, b) => Math.abs(x - (a.bounds!.x + a.bounds!.width / 2)) - Math.abs(x - (b.bounds!.x + b.bounds!.width / 2)))[0]!;
@@ -1170,7 +1186,7 @@ function reserveSpanCorridors(model: LayoutModel, pending: Lane[], occ: (group: 
   for (const lane of pending.filter(isSpanLane)) {
     for (const group of Object.values(model.groups)) {
       if (group.tier !== lane.tier || group.bounds === undefined || !group.nodes.length) continue;
-      const box = occ(group);
+      const box = spanWall(model, group, laneLink(model, lane)!);
       if (box.x < right(lane.bounds) - PLACEMENT_EPS && right(box) > lane.bounds.x + PLACEMENT_EPS) throw new SpanRefusal(`${lane.id} crosses the unit ${group.id}`);
     }
     for (const other of pending) {
@@ -1438,7 +1454,7 @@ function validateSpanLane(model: LayoutModel, lane: Lane): void {
   const box = spanCorridor(model, link, lane.tier);
   if (box === undefined || Math.abs(box.x - lane.bounds.x) > PLACEMENT_EPS || Math.abs(box.width - lane.bounds.width) > PLACEMENT_EPS
     || Math.abs(box.y - lane.bounds.y) > PLACEMENT_EPS || Math.abs(box.height - lane.bounds.height) > PLACEMENT_EPS
-    || Math.abs(lane.x - (box.x + box.width / 2)) > PLACEMENT_EPS) throw new Error(`Span lane ${lane.id} contradicts the chord of ${link.id}`);
+    || Math.abs(lane.x - (box.x + box.width / 2)) > PLACEMENT_EPS) throw new Error(`Span lane ${lane.id} contradicts the chord of ${link.id}: ${JSON.stringify(lane.bounds)} against ${JSON.stringify(box)}`);
   // A wall in the corridor is not thrown for: a forced 7f move can cause it after 7a, and `spanLaneFindings` names it (`SPAN_CHORD_BLOCKED`).
 }
 /** Validate reservations independently of allocation history, including restored JSON. */

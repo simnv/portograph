@@ -844,6 +844,8 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
   else if (changed || ['rows', 'lanes', 'flanks', 'centre', 'bundles'].includes(rule)) {
     if (stages.indexOf(rule) >= stages.indexOf('flanks')) {
       rebuildRegionGeometry(draft, undefined, rule === 'bars' ? model.tierBands : undefined, rule === 'bundles' || stages.indexOf(model.stage) >= stages.indexOf('bundles'));
+      // The geometry rebuild can move a port (the stems of a fan, 7e): a span corridor is derived from the two end anchors, so it is read again (architecture ticket 22).
+      if (draft.lanes.some(lane => lane.kind === 'span')) rebuildLaneExtents(draft);
       if (rule === 'bars') same(nonBarHorizontalPlacement(draft), nonBarHorizontalPlacement(model),
         'Bars may translate downstream tiers only vertically');
     }

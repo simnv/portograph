@@ -11,7 +11,7 @@ import { profiles, drawnOverlays, read, pathBends, reading, routedFamily, routed
 import { measurePortPill } from '../text/index.js';
 import { findPort } from './row-paths.js';
 import { EDGE_MARGIN, RING_PITCH, paddingRows, rowsInset } from './course-rows.js';
-import { added as namesAdded, constraintFindings, gateFindings, separationWorse } from './trial-findings.js';
+import { added as namesAdded, constraintFindings, gateFindings, separationWorse, spanBlockedNew } from './trial-findings.js';
 import { portKey } from './sides-one.js';
 import type { ScoreCounts } from '../score/types.js';
 import { portId } from './skeleton-graph.js';
@@ -303,12 +303,12 @@ export function routedCrossingPairs(model: LayoutModel): number {
 }
 
 /** The user's unified order over both layers: a course that bends an overlay link to unbend a routed one is no gain. */
-const courseProfile = profiles.unified;
+export const courseProfile = profiles.unified;
 
 export interface CourseVerdict { kept: boolean; reason: string; removed: string[]; worse: string[] }
 
 /** The optional growth of the canvas (Q2: a perimeter lane's reserved width is not optional). */
-const GROWTH_BOUND = 0.05;
+export const GROWTH_BOUND = 0.05;
 
 /** The width and height a model's courses reserve: the outermost lane of each side with its margin, and each padding row with its depth. An upper bound. */
 function reservedGrowth(model: LayoutModel): { width: number; height: number } {
@@ -319,7 +319,7 @@ function reservedGrowth(model: LayoutModel): { width: number; height: number } {
   return { width: side.left + side.right, height };
 }
 
-const routedReading = (model: LayoutModel): Reading => reading({ routed: routedFamily(routedBends(model)), overlay: read(model, { overlays: drawnOverlays(model) }).overlay,
+export const routedReading = (model: LayoutModel): Reading => reading({ routed: routedFamily(routedBends(model)), overlay: read(model, { overlays: drawnOverlays(model) }).overlay,
   crossings: lazyCount(() => routedCrossingPairs(model)), crossingMode: 'pairs', tie: [] });
 
 /**
@@ -332,6 +332,8 @@ export function judgeCourseTrial(routedBase: LayoutModel, routedTrial: LayoutMod
   const worse = [...promised.keys()].filter(id => !trial.has(id) || (base.has(id) && trial.get(id)! > base.get(id)!));
   const verdict = (kept: boolean, reason: string): CourseVerdict => ({ kept, reason, removed, worse });
   if (removed.length > 0) return verdict(false, `the trial's route removes ${removed.join(', ')}, which the baseline's route keeps`);
+  const blocked = spanBlockedNew(routedBase, routedTrial);
+  if (blocked.length > 0) return verdict(false, `a move put a wall in the corridor of a spanning chord (${blocked.join(', ')})`);
   if (worse.length > 0) return verdict(false, `a link with a course has more turns than on the baseline (${worse.join(', ')})`);
   // The promise only proposes: the trial is judged on what it publishes. A course link that publishes more turns than its polyline promised is a trial that
   // did not reserve what the promise needs, and it is not kept.
@@ -446,6 +448,8 @@ export function judgeOverlayTrial(routedBase: LayoutModel, routedTrial: LayoutMo
   const removed = [...base.keys()].filter(id => !trial.has(id));
   const verdict = (kept: boolean, reason: string): CourseVerdict => ({ kept, reason, removed, worse: [] });
   if (removed.length > 0) return verdict(false, `the trial's route removes ${removed.join(', ')}, which the baseline's route keeps`);
+  const blocked = spanBlockedNew(routedBase, routedTrial);
+  if (blocked.length > 0) return verdict(false, `a move put a wall in the corridor of a spanning chord (${blocked.join(', ')})`);
   const lost = [...offer.promised].filter(([id, item]) => {
     const link = routedTrial.links.find(candidate => candidate.id === id), got = link === undefined ? undefined : pathBends(link);
     return got === undefined || got > item.turns;
