@@ -48,8 +48,16 @@ export function orderedNodeIds(document: NormalisedDocument): string[] {
 
 /** The cells of a frame and of every frame below it (a canton holds member frames, a member its child frames). */
 export function frameSubtreeCells(frames: Readonly<Record<string, NormalisedFrame>>, id: string): string[] {
-  const below = (frame: string): string[] => [...(frames[frame]?.cells ?? []),
-    ...Object.keys(frames).filter(child => frames[child]!.parent === frame).flatMap(below)];
+  // Children are indexed once per call, in key order, so a deep tree costs one scan instead of one per frame.
+  const childrenOf = new Map<string, string[]>();
+  for (const child in frames) {
+    const parent = frames[child]!.parent;
+    if (parent === undefined) continue;
+    const list = childrenOf.get(parent);
+    if (list) list.push(child);
+    else childrenOf.set(parent, [child]);
+  }
+  const below = (frame: string): string[] => [...(frames[frame]?.cells ?? []), ...(childrenOf.get(frame) ?? []).flatMap(below)];
   return below(id);
 }
 

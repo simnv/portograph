@@ -35,11 +35,19 @@ export function groupPadding(model: LayoutModel, group: LayoutGroup): { top: num
  */
 function cellPadding(model: LayoutModel, group: LayoutGroup, padding: Record<Side, number>): Record<Side, number> {
   const frames = model.document.frames!, frame = group.frame!;
-  const tiers = Object.entries(frames).filter(([id, item]) => id === frame || item.parent === frame)
-    .flatMap(([, item]) => item.cells).map(cell => model.groups[cell]?.tier ?? group.tier!);
+  let lowest = Infinity, highest = -Infinity;
+  for (const id in frames) {
+    const item = frames[id]!;
+    if (id !== frame && item.parent !== frame) continue;
+    for (const cell of item.cells) {
+      const tier = model.groups[cell]?.tier ?? group.tier!;
+      lowest = Math.min(lowest, tier);
+      highest = Math.max(highest, tier);
+    }
+  }
   return {
-    top: group.tier! <= Math.min(...tiers) ? padding.top : 0,
-    bottom: group.tier! >= Math.max(...tiers) ? padding.bottom : 0,
+    top: group.tier! <= lowest ? padding.top : 0,
+    bottom: group.tier! >= highest ? padding.bottom : 0,
     left: padding.left - GROUP_PADDING, right: padding.right - GROUP_PADDING,
   };
 }

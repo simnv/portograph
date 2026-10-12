@@ -33,12 +33,17 @@ export const FRAME_TO_FRAME_GAP = 2 * GROUP_PADDING;
  */
 export function cellReach(model: LayoutModel, id: string): Rect {
   const group = model.groups[id]!, box = group.bounds!, pad = groupPadding(model, group);
-  const bodies = group.nodes.map(node => model.nodes[node]!.bounds!);
-  if (!bodies.length) return { x: box.x - GROUP_PADDING, y: box.y, width: box.width + 2 * GROUP_PADDING, height: box.height };
+  if (!group.nodes.length) return { x: box.x - GROUP_PADDING, y: box.y, width: box.width + 2 * GROUP_PADDING, height: box.height };
+  let leftmost = Infinity, rightmost = -Infinity;
+  for (const node of group.nodes) {
+    const body = model.nodes[node]!.bounds!;
+    leftmost = Math.min(leftmost, body.x);
+    rightmost = Math.max(rightmost, body.x + body.width);
+  }
   // A cell box wider than its bodies (the linked-group grid, a label) is part of the frame; the column
   // clearance of `columnReach` moves boxes and never widens them, so it stays out.
-  const x = Math.min(box.x, Math.min(...bodies.map(body => body.x)) - pad.left - GROUP_PADDING);
-  const end = Math.max(box.x + box.width, Math.max(...bodies.map(body => body.x + body.width)) + pad.right + GROUP_PADDING);
+  const x = Math.min(box.x, leftmost - pad.left - GROUP_PADDING);
+  const end = Math.max(box.x + box.width, rightmost + pad.right + GROUP_PADDING);
   return { x, y: box.y, width: end - x, height: box.height };
 }
 const grow = (box: Rect, by: number): Rect => ({ x: box.x - by, y: box.y - by, width: box.width + 2 * by, height: box.height + 2 * by });
@@ -114,25 +119,28 @@ export function deriveFrames(model: LayoutModel, withBands = true): Frame[] | un
  */
 function transitLanes(model: LayoutModel, id: string): Rect[] {
   if (!model.lanes.length) return [];
-  const cells = new Set(frameCells(model, id)), inside = new Set(frameNodes(model, id));
+  // Both sets are built on the first lane that needs them: most frames meet only perimeter and gap lanes.
+  let cellSet: Set<string> | undefined, nodeSet: Set<string> | undefined;
+  const cellsOf = (): Set<string> => cellSet ??= new Set(frameCells(model, id));
+  const insideOf = (): Set<string> => nodeSet ??= new Set(frameNodes(model, id));
   const boxes: Rect[] = [];
   for (const lane of model.lanes) {
     // A riser lane stands inside the frames that hold a member of either bus; the frame grows to hold it (mesh-bus.md, section 11.5).
     if (lane.kind === 'perimeter' || lane.kind === 'gap') continue;
-    if (lane.owner.kind === 'mesh-bus' && cells.has(lane.group)) {
+    if (lane.owner.kind === 'mesh-bus' && cellsOf().has(lane.group)) {
       const ownerId = lane.owner.id, bus = model.meshBuses?.find(item => item.id === ownerId);
       const other = model.meshBuses?.find(item => item.id === bus?.joined);
-      if (bus && [...bus.nodes, ...(other?.nodes ?? [])].some(node => inside.has(node))) {
+      if (bus && [...bus.nodes, ...(other?.nodes ?? [])].some(node => insideOf().has(node))) {
         const box = model.groups[lane.group]!.bounds!;
         boxes.push({ x: lane.bounds.x, y: box.y, width: lane.bounds.width, height: box.height });
       }
       continue;
     }
     // A side, column-gap or perimeter lane stands outside the frame of its end and never grows it (side-faces.md, Section 10; ticket 15): this reader serves transit lanes only.
-    if (!cells.has(lane.group) || lane.owner.kind !== 'link' || !isTransitKind(lane)) continue;
+    if (!cellsOf().has(lane.group) || lane.owner.kind !== 'link' || !isTransitKind(lane)) continue;
     const owner = lane.owner.id;
     const link = model.links.find(item => item.id === owner);
-    if (!link?.attachments || ![link.attachments.from.node, link.attachments.to.node].some(node => inside.has(node))) continue;
+    if (!link?.attachments || ![link.attachments.from.node, link.attachments.to.node].some(node => insideOf().has(node))) continue;
     const box = model.groups[lane.group]!.bounds!;
     boxes.push({ x: lane.bounds.x, y: box.y, width: lane.bounds.width, height: box.height });
   }
