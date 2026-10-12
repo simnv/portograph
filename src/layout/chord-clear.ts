@@ -9,7 +9,7 @@ import { chordsHold } from './frame-paths.js';
 import { optionalMoveHolds, occupiedOverhang, selectAnchorTier } from './lanes.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { saveGroups } from './overlay-order.js';
-import { overlayBlockers, straightChord } from './overlay-paths.js';
+import { sharedBlockers, straightChord } from './overlay-paths.js';
 import { GROUP_PADDING, groupInsets } from './regions.js';
 import { rowGap } from './sides-two.js';
 import { moveGroup } from './skeleton-geometry.js';
@@ -86,7 +86,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
   });
   /** The chords that pass over `tier` and are straight without `skip`: the reservations a mover must not stand on. */
   const chordsOver = (tier: number, skip: ReadonlySet<string>): { from: { x: number; y: number }; to: { x: number; y: number } }[] => {
-    const bare = overlayBlockers(model, skip);
+    const bare = sharedBlockers(model, skip);
     return overlays.flatMap(link => {
       const ends = [tierOf(link.attachments!.from.node), tierOf(link.attachments!.to.node)];
       if (!(Math.min(...ends) < tier && tier < Math.max(...ends))) return [];

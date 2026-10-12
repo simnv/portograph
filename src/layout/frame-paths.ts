@@ -1,7 +1,7 @@
 import type { LayoutLink, LayoutModel, LayoutPath, LayoutPort, PathSegment } from '../model/layout.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { effectiveLayer } from '../score/model.js';
-import { crosses, overlayBlockers, straightChord } from './overlay-paths.js';
+import { crosses, sharedBlockers, straightChord } from './overlay-paths.js';
 import { groupShape } from './grid.js';
 import { bandSide, frameSide, GROUP_LABEL_GEOMETRY, legRectsFor, nudgingDistance } from './bands.js';
 import { frameSubtreeCells } from '../model/model.js';
@@ -621,7 +621,7 @@ export function freezeChords(model: LayoutModel): void {
  */
 export function blockedChords(model: LayoutModel): string[] {
   if (!model.frozenChords?.length) return [];
-  const blockers = overlayBlockers(model);
+  const blockers = sharedBlockers(model);
   return model.frozenChords.filter(id => {
     const link = model.links.find(item => item.id === id);
     if (link === undefined) return false;

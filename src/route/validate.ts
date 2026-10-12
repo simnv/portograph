@@ -8,7 +8,7 @@ import { EPS, horizontal, length, retracingRuns, samePoint, segmentRect, vertica
 import { outward } from '../score/model.js';
 import { effectiveLayer, reversedRuns } from './plan.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
-import { overlayBlockers, overlayEndpoint, overlayPath, publishedOverlayPath, type OverlayBlockers } from '../layout/overlay-paths.js';
+import { sharedBlockers, overlayEndpoint, overlayPath, publishedOverlayPath, type ShapeQuery } from '../layout/overlay-paths.js';
 import { ownedLanes, stubCandidate } from './paths.js';
 import { MIN_STEM, reservations, TOLERANCE, shrink } from './reservations.js';
 
@@ -85,7 +85,7 @@ export function retraces(id: string, segments: PathSegment[]): void {
  */
 export function validateRoutedPaths(model: LayoutModel, requireComplete = false): void {
   // Built on the first overlay link and shared by the rest; a diagram with none pays nothing.
-  let blockers: OverlayBlockers | undefined;
+  let blockers: ShapeQuery | undefined;
   // A link stage 8 removed has no path, and the model lists exactly those links.
   const removed = model.links.filter(link => link.removed === true).map(link => link.id);
   if (removed.join('|') !== (model.removedLinks ?? []).join('|')) throw new Error('removedLinks does not list the removed links');
@@ -134,7 +134,7 @@ export function validateRoutedPaths(model: LayoutModel, requireComplete = false)
       // the one deterministic producer is re-run and the published geometry has to be exactly it.
       // Ownership, the absence of a lane or `barCross` claim, and the orthogonal shape all follow
       // from the comparison, and a hand-written layout JSON cannot state a line of its own.
-      blockers ??= overlayBlockers(model);
+      blockers ??= sharedBlockers(model);
       // Either the ordinary path or, under `layout.overlayOverBodies`, the one stage 8 publishes (a judged trial route keeps the ordinary one).
       if (!equal(path.segments, overlayPath(model, link, blockers).segments) && !equal(path.segments, publishedOverlayPath(model, link, blockers).segments)) {
         throw new Error(`Overlay path on ${link.id} is not the one its ports and their boxes state`);

@@ -1,6 +1,6 @@
 import type { Point } from '../../model/geometry.js';
 import type { LayoutModel, PathSegment } from '../../model/layout.js';
-import { overlayBlockers, overlayPath, straightChord, type OverlayBlockers } from '../overlay-paths.js';
+import { sharedBlockers, overlayPath, straightChord, type ShapeQuery } from '../overlay-paths.js';
 
 /**
  * Shared readers: "is this overlay link straight?" The question has two answers, and both are named modes. They differ on one
@@ -24,7 +24,7 @@ export function isOneSegment(segments: readonly PathSegment[]): boolean {
  * rule cannot draw is not in the set. Read by the centring step (`centreGroupStep`) to keep what 7e reserved.
  */
 export function straightChordIds(model: LayoutModel): Set<string> {
-  const blockers = overlayBlockers(model);
+  const blockers = sharedBlockers(model);
   return new Set(model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && straightChord(model, link, blockers) !== undefined).map(link => link.id));
 }
 
@@ -38,10 +38,10 @@ export interface DrawnStraight { id: string; ends: Set<string>; from: Point; to:
  */
 export function straightOverlaysAsDrawn(model: LayoutModel, only?: ReadonlySet<string>): DrawnStraight[] {
   const found: DrawnStraight[] = [];
-  let blockers: OverlayBlockers | undefined;
+  let blockers: ShapeQuery | undefined;
   for (const link of model.links) {
     if (link.layer !== 'overlay' || link.meshBus !== undefined || !link.attachments || (only && !only.has(link.id))) continue;
-    const { segments } = overlayPath(model, link, blockers ??= overlayBlockers(model));
+    const { segments } = overlayPath(model, link, blockers ??= sharedBlockers(model));
     if (!isOneSegment(segments)) continue;
     found.push({ id: link.id, ends: new Set([link.attachments.from.node, link.attachments.to.node].map(node => model.document.nodes[node]!.group)), from: segments[0]!.from, to: segments[0]!.to });
   }

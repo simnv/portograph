@@ -3,7 +3,7 @@ import type { Lane, LayoutLink, LayoutModel, LayoutPath, PathSegment } from '../
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { endPort } from '../layout/approach.js';
 import { findPort } from '../layout/row-paths.js';
-import { overlayBlockers, overlayPath, publishedOverlayPath } from '../layout/overlay-paths.js';
+import { sharedBlockers, overlayPath, publishedOverlayPath } from '../layout/overlay-paths.js';
 import { stemReach } from '../layout/bands.js';
 import { equal } from '../model/json-equality.js';
 import { outward } from '../score/model.js';
@@ -294,7 +294,7 @@ export function stitchPaths(model: LayoutModel, plan: RoutePlan, routes: Map<str
   }
   // An overlay link never enters the router: its path is derived from the boxes placement reserved,
   // so stage 8 only publishes what `src/layout/overlay-paths.ts` states. One index serves them all.
-  const blockers = plan.overlay.length ? overlayBlockers(model) : undefined;
+  const blockers = plan.overlay.length ? sharedBlockers(model) : undefined;
   for (const id of plan.overlay) {
     result.push({ link: id, path: (ordinaryOverlay ? overlayPath : publishedOverlayPath)(model, model.links.find(link => link.id === id)!, blockers) });
   }
