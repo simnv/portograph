@@ -1,7 +1,7 @@
 import type { LayoutLink, LayoutModel } from '../model/layout.js';
 import { EPS, near } from '../geometry/planar.js';
 import { isRoutedChord } from './frame-paths.js';
-import { overlayBlockers, overlayPath } from './overlay-paths.js';
+import { sharedBlockers, overlayPath } from './overlay-paths.js';
 import { drawn, overlayCrossingPairs, overlayCrossingPoints, portKey, type Drawn } from './read/crossings.js';
 import { isOneSegment } from './read/overlay-straight.js';
 import { findPort } from './row-paths.js';
@@ -173,7 +173,7 @@ export const drawnOverlays = (model: LayoutModel): LayoutLink[] => model.links.f
 export function read(model: LayoutModel, options: ReadOptions): Reading {
   const parts: Partial<Reading> = {};
   if (options.overlays !== undefined) {
-    const blockers = overlayBlockers(model);
+    const blockers = sharedBlockers(model);
     const paths = options.overlays.map(link => ({ link, segments: overlayPath(model, link, blockers).segments }));
     const straightIds = new Set(paths.filter(path => isOneSegment(path.segments)).map(path => path.link.id));
     const bentIds = new Set(paths.filter(path => path.segments.length > 1).map(path => path.link.id));

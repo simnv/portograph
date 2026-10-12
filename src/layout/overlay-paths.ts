@@ -34,6 +34,7 @@ export type OverlayBlockers = RectangleIndex<OverlayShape>;
 /** What the straight test asks of the shapes: the index, or a composite that adds shapes the index does not hold (ticket 143). */
 export type ShapeQuery = Pick<OverlayBlockers, 'some'>;
 
+/** Every body and drawn pill of the model, in a fresh index the caller owns. */
 export function overlayBlockers(model: LayoutModel, skip?: ReadonlySet<string>): OverlayBlockers {
   const boxes: { bounds: Rect; value: OverlayShape }[] = [];
   for (const [id, node] of Object.entries(model.nodes)) {
@@ -44,6 +45,58 @@ export function overlayBlockers(model: LayoutModel, skip?: ReadonlySet<string>):
     }
   }
   return new RectangleIndex(boxes);
+}
+
+/**
+ * The same shapes for the layout's own reads. The index depends on nothing but the boxes it holds, in order, so the last few per model are kept by
+ * those boxes' numbers: the same bodies and pills come round again and again (a probe and a rebuild that moved nothing). Only `some` is handed out, so
+ * a caller cannot change a kept index, and the cache lives and dies with the model, never beyond one layout. A body is held as a copy.
+ */
+const BLOCKER_CACHE_SIZE = 8;
+const cachedBlockers = new WeakMap<LayoutModel, { signature: number[]; view: ShapeQuery }[]>();
+const sameNumber = (a: number, b: number): boolean => a === b && (a !== 0 || 1 / a === 1 / b);
+function sameSignature(a: readonly number[], b: readonly number[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (!sameNumber(a[i]!, b[i]!)) return false;
+  return true;
+}
+export function sharedBlockers(model: LayoutModel, skip?: ReadonlySet<string>): ShapeQuery {
+  const signature: number[] = [];
+  for (const [id, node] of Object.entries(model.nodes)) {
+    if (skip?.has(id)) continue;
+    const body = node.bounds;
+    if (body) signature.push(1, body.x, body.y, body.width, body.height);
+    else signature.push(0);
+    const at = signature.length;
+    signature.push(0);
+    for (const port of node.ports) {
+      if (!port.pill || port.ref.anonymous === true) continue;
+      const pill = port.pill.bounds;
+      signature[at]!++;
+      signature.push(pill.x, pill.y, pill.width, pill.height);
+    }
+  }
+  let kept = cachedBlockers.get(model);
+  if (kept === undefined) cachedBlockers.set(model, kept = []);
+  for (let i = 0; i < kept.length; i++) {
+    const held = kept[i]!;
+    if (!sameSignature(held.signature, signature)) continue;
+    if (i > 0) { kept.splice(i, 1); kept.unshift(held); }
+    return held.view;
+  }
+  const boxes: { bounds: Rect; value: OverlayShape }[] = [];
+  for (const [id, node] of Object.entries(model.nodes)) {
+    if (skip?.has(id)) continue;
+    if (node.bounds) boxes.push({ bounds: node.bounds, value: { ...node.bounds } });
+    for (const port of node.ports) {
+      if (port.pill && port.ref.anonymous !== true) boxes.push({ bounds: port.pill.bounds, value: { ...port.pill.bounds, pill: true } });
+    }
+  }
+  const index = new RectangleIndex(boxes);
+  const view: ShapeQuery = { some: (bounds, predicate, work, padding) => index.some(bounds, predicate, work, padding) };
+  kept.unshift({ signature, view });
+  if (kept.length > BLOCKER_CACHE_SIZE) kept.pop();
+  return view;
 }
 
 /** Whether an axis-aligned segment reaches inside `box`, rather than only touching its edge. */
@@ -382,7 +435,7 @@ export function chordPoints(one: OverlayEnd, two: OverlayEnd, blockers: ShapeQue
  *
  * Only stage 8 reads this (through `publishedOverlayPath`). Placement and every other reader of `overlayPath` keep the ordinary rule.
  */
-export function overlayOverBodies(model: LayoutModel, link: LayoutLink, blockers: OverlayBlockers): string[] | undefined {
+export function overlayOverBodies(model: LayoutModel, link: LayoutLink, blockers: ShapeQuery): string[] | undefined {
   if (model.document.layout?.overlayOverBodies !== true || link.meshBus !== undefined || !link.attachments) return undefined;
   const read = chordEnds(model, link);
   if (!read) return undefined;
@@ -420,10 +473,10 @@ export function bodiesPassedOver(model: LayoutModel, link: LayoutLink, path: Lay
  * The overlay path stage 8 publishes: `overlayPath`, except that under `layout.overlayOverBodies` a link blocked by node bodies alone is
  * the one straight segment from face to face. Placement never calls this; it reads `overlayPath`.
  */
-export function publishedOverlayPath(model: LayoutModel, link: LayoutLink, blockers?: OverlayBlockers): LayoutPath {
+export function publishedOverlayPath(model: LayoutModel, link: LayoutLink, blockers?: ShapeQuery): LayoutPath {
   const ordinary = overlayPath(model, link, blockers);
   if (model.document.layout?.overlayOverBodies !== true) return ordinary;
-  if (overlayOverBodies(model, link, blockers ?? overlayBlockers(model)) === undefined) return ordinary;
+  if (overlayOverBodies(model, link, blockers ?? sharedBlockers(model)) === undefined) return ordinary;
   const read = chordEnds(model, link)!;
   const segment = { from: { ...read.head.face }, to: { ...read.tail.face }, owner: { ...link.owner } };
   return { ...ordinary, segments: [segment] };
@@ -466,7 +519,7 @@ export function publishedOverlayPath(model: LayoutModel, link: LayoutLink, block
  * no side has no outward face to read and keeps its anchor, which is the one point `overlayEndpoint`
  * leaves as it was.
  */
-export function overlayPath(model: LayoutModel, link: LayoutLink, blockers?: OverlayBlockers): LayoutPath {
+export function overlayPath(model: LayoutModel, link: LayoutLink, blockers?: ShapeQuery): LayoutPath {
   const along = link.meshBus === undefined ? undefined : busMemberPath(model, link);
   if (along !== undefined) return along;
   const planned = overlayCoursePoints(model, link);
@@ -478,7 +531,7 @@ export function overlayPath(model: LayoutModel, link: LayoutLink, blockers?: Ove
   const from = findPort(model, attachments.from), to = findPort(model, attachments.to);
   const one = from && overlayEnd(model.nodes[attachments.from.node]!, from);
   const two = to && overlayEnd(model.nodes[attachments.to.node]!, to);
-  const shapes = one && two ? blockers ?? overlayBlockers(model) : undefined;
+  const shapes = one && two ? blockers ?? sharedBlockers(model) : undefined;
   // The two ends of the drawn line, whichever branch answers: the port's own outward face, and the
   // anchor only where there is no face to read — an end that states no side. G7 `endpoint-anchor`
   // and `route/validate` read `overlayEndpoint`, which is this same pair.
@@ -561,14 +614,14 @@ export function busMemberPath(model: LayoutModel, link: LayoutLink): LayoutPath 
  * overlay rule's own straight branch, read by the **straight** technique of a routed link inside
  * one frame (ticket 34), so the two families cannot state different faces or different blockers.
  */
-export function straightChord(model: LayoutModel, link: LayoutLink, blockers?: OverlayBlockers, geometryOnly = false): { from: Point; to: Point } | undefined {
+export function straightChord(model: LayoutModel, link: LayoutLink, blockers?: ShapeQuery, geometryOnly = false): { from: Point; to: Point } | undefined {
   const ends = link.attachments;
   if (!ends) return undefined;
   const from = findPort(model, ends.from), to = findPort(model, ends.to);
   const one = from && model.nodes[ends.from.node] && overlayEnd(model.nodes[ends.from.node]!, from);
   const two = to && model.nodes[ends.to.node] && overlayEnd(model.nodes[ends.to.node]!, to);
   if (!one || !two) return undefined;
-  if (!geometryOnly && !straightBetween(one, two, blockers ?? overlayBlockers(model))) return undefined;
+  if (!geometryOnly && !straightBetween(one, two, blockers ?? sharedBlockers(model))) return undefined;
   return { from: { ...one.face }, to: { ...two.face } };
 }
 

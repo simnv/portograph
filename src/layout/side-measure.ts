@@ -6,7 +6,7 @@ import { measurePortPill } from '../text/index.js';
 import { EPS } from '../geometry/planar.js';
 import { isRoutedChord } from './frame-paths.js';
 import { isSideLane, transitTiers } from './lanes.js';
-import { crosses, overlayBlockers, overlayPath, straightChord, type OverlayBlockers } from './overlay-paths.js';
+import { crosses, sharedBlockers, overlayPath, straightChord, type ShapeQuery } from './overlay-paths.js';
 import { facingSide, hintRefusal } from './side-hints.js';
 import { portKey } from './sides-one.js';
 import { measureChordSides } from './side-chords.js';
@@ -35,7 +35,7 @@ const isOverlay = (link: LayoutLink): boolean => link.layer === 'overlay' && lin
  * less one. A link with a pinned path (a chord, a level path): that path's segments less one. Any other routed link: per tier gap 0 when
  * its two ends stand on one x (a drop, adjacent tiers only), else 2. A lower bound.
  */
-export function plannedBends(model: LayoutModel, link: LayoutLink, blockers?: OverlayBlockers): number {
+export function plannedBends(model: LayoutModel, link: LayoutLink, blockers?: ShapeQuery): number {
   if (link.attachments === undefined) return 0;
   if (isOverlay(link)) return Math.max(0, overlayPath(model, link, blockers).segments.length - 1);
   if (isRoutedChord(model, link)) return 0;
@@ -108,7 +108,7 @@ function lShapes(model: LayoutModel, kept7e: LayoutModel, nodes: LayoutModel['no
     if (result === undefined) continue;
     const draft = { ...nodes, [lateral.ref.node]: result.node };
     const probe: LayoutModel = { ...model, nodes: draft };
-    const blockers = overlayBlockers(probe), segments = overlayPath(probe, link, blockers).segments;
+    const blockers = sharedBlockers(probe), segments = overlayPath(probe, link, blockers).segments;
     // `between()` falls back to paths that ignore pills and then bodies when every way round is blocked, and such a path can still have two
     // segments: an L is offered only when both runs are clear of every body and every foreign pill (ticket 116 review, H1).
     const own = ends.flatMap(ref => { const pill = probe.nodes[ref.node]?.ports.find(port => portKey(port.ref) === portKey(ref))?.pill; return pill === undefined ? [] : [pill.bounds]; });
@@ -141,7 +141,7 @@ function lShapes(model: LayoutModel, kept7e: LayoutModel, nodes: LayoutModel['no
  */
 export function measureSides(model: LayoutModel, kept7e: LayoutModel, refused: ReadonlySet<string>, probeCap = PROBE_CAP): SideOffer {
   const offer: SideOffer = { hints: new Map(), promised: new Map(), capped: false };
-  const blockers = overlayBlockers(model);
+  const blockers = sharedBlockers(model);
   const order = new Map(Object.keys(model.document.nodes).map((id, index) => [id, index]));
   const tierOf = (ref: PortRef): number => nodeTier(model, ref.node);
   let nodes: LayoutModel['nodes'] = model.nodes, nodes7e: LayoutModel['nodes'] = kept7e.nodes;
@@ -177,7 +177,7 @@ export function measureSides(model: LayoutModel, kept7e: LayoutModel, refused: R
         if (result7e !== undefined) draft7e = { ...draft7e, [lateral.ref.node]: result7e.node };
       }
       const probe: LayoutModel = { ...model, nodes: draft };
-      const chord = straightChord(probe, link, overlayBlockers(probe));
+      const chord = straightChord(probe, link, sharedBlockers(probe));
       if (chord === undefined) return;
       const length = Math.hypot(chord.to.x - chord.from.x, chord.to.y - chord.from.y);
       if (length <= EPS) return;

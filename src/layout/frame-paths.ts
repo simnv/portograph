@@ -1,7 +1,7 @@
 import type { LayoutLink, LayoutModel, LayoutPath, LayoutPort, PathSegment } from '../model/layout.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { effectiveLayer } from '../score/model.js';
-import { crosses, overlayBlockers, straightChord } from './overlay-paths.js';
+import { crosses, sharedBlockers, straightChord } from './overlay-paths.js';
 import { groupShape } from './grid.js';
 import { bandSide, frameSide, GROUP_LABEL_GEOMETRY, legRectsFor, nudgingDistance } from './bands.js';
 import { frameSubtreeCells } from '../model/model.js';
@@ -73,7 +73,12 @@ export function chordKind(model: LayoutModel, link: LayoutLink): ChordKind | und
     return shared.get(link);
   }
   const scope = linkFactsScope;
-  if (scope?.model !== model) return chordKindOf(model, link);
+  if (scope?.model !== model) {
+    const step = stepKinds;
+    if (step?.model !== model) return chordKindOf(model, link);
+    if (!step.kinds.has(link)) step.kinds.set(link, chordKindOf(model, link));
+    return step.kinds.get(link);
+  }
   if (!scope.kinds.has(link)) scope.kinds.set(link, chordKindOf(model, link));
   return scope.kinds.get(link);
 }
@@ -86,6 +91,17 @@ export function chordKind(model: LayoutModel, link: LayoutLink): ChordKind | und
 interface LinkFactsScope { model: LayoutModel; kinds: Map<LayoutLink, ChordKind | undefined>; legs: Map<LayoutLink, Map<'from' | 'to', PathSegment | undefined>> }
 let linkFactsScope: LinkFactsScope | undefined;
 let sharedKinds: Map<LayoutLink, ChordKind | undefined> | undefined;
+let stepKinds: { model: LayoutModel; kinds: Map<LayoutLink, ChordKind | undefined> } | undefined;
+/**
+ * One centring step asks for the kind of the same few chord links hundreds of times (every reading loops over the links). The step moves a group and
+ * its nodes, and no port side, lane hint, group or link field that the kind reads (the argument of `withSharedLinkKinds`), so for the span of one step on
+ * one model the kind of a link is read once. A step on another model, or outside a step, is never cached; a step never nests (the inner call reads through).
+ */
+export function withStepLinkKinds<T>(model: LayoutModel, run: () => T): T {
+  if (stepKinds !== undefined) return run();
+  stepKinds = { model, kinds: new Map() };
+  try { return run(); } finally { stepKinds = undefined; }
+}
 /**
  * The replays of the centring check run a step on many copies of one model, and the copies share their links, frozen (`centreViolations`). A frozen link is the
  * same object in every copy, and a centring step moves no port side, lane hint or group, which are all that its kind reads besides the link: so its kind is
@@ -605,7 +621,7 @@ export function freezeChords(model: LayoutModel): void {
  */
 export function blockedChords(model: LayoutModel): string[] {
   if (!model.frozenChords?.length) return [];
-  const blockers = overlayBlockers(model);
+  const blockers = sharedBlockers(model);
   return model.frozenChords.filter(id => {
     const link = model.links.find(item => item.id === id);
     if (link === undefined) return false;

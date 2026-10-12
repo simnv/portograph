@@ -3,7 +3,7 @@ import type { Point } from '../model/geometry.js';
 import { frameColumns, overlayFreeGroups, type FrameColumn } from './columns.js';
 import { groupShape } from './grid.js';
 import { optionalMoveHolds, occupiedOverhang, selectAnchorTier } from './lanes.js';
-import { crosses, overlayBlockers, overlayPath, straightChord } from './overlay-paths.js';
+import { crosses, sharedBlockers, overlayPath, straightChord } from './overlay-paths.js';
 import { saveGroups } from './overlay-order.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { orderedNodeIds } from '../model/model.js';
@@ -204,7 +204,7 @@ function place(model: LayoutModel, columns: readonly FrameColumn[], windows: boo
       return Math.min(...ends) <= tier && tier <= Math.max(...ends);
     });
     const straightIds = (): Set<string> => {
-      const blockers = overlayBlockers(model);
+      const blockers = sharedBlockers(model);
       return new Set(spanning.filter(link => overlayPath(model, link, blockers).segments.length === 1).map(link => link.id));
     };
     const nodesOfTier = groups.flatMap(group => group.nodes);
@@ -328,7 +328,7 @@ export function stepLinklessOutOfChords(model: LayoutModel, columns: readonly Fr
  * chords that cross the box now: the nearest edge of one chord may lie inside the next (ticket 76 review).
  */
 function chordBans(model: LayoutModel, group: LayoutGroup, overlays: readonly LayoutLink[]): { rows: { from: Point; to: Point }[]; banned: { low: number; high: number }[] } {
-  const box = group.bounds!, bare = overlayBlockers(model, new Set(group.nodes));
+  const box = group.bounds!, bare = sharedBlockers(model, new Set(group.nodes));
   const rows = overlays.flatMap(link => {
     const chord = straightChord(model, link, bare);
     return chord && Math.max(chord.from.y, chord.to.y) > box.y + PLACEMENT_EPS && Math.min(chord.from.y, chord.to.y) < box.y + box.height - PLACEMENT_EPS ? [chord] : [];

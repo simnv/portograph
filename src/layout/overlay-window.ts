@@ -1,7 +1,7 @@
 import type { Point, Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
 import { EPS } from '../geometry/planar.js';
-import { chordEnds, chordPoints, overlayBlockers, straightBetween, type OverlayEnd, type OverlayShape, type ShapeQuery } from './overlay-paths.js';
+import { chordEnds, chordPoints, sharedBlockers, straightBetween, type OverlayEnd, type OverlayShape, type ShapeQuery } from './overlay-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { gains, lazyCount, profiles, reading, tapVerdict, type Reading } from './objective.js';
 import { drawn, drawnCrossings, overlayCrossingPoints, portKey, type Drawn } from './read/crossings.js';
@@ -140,7 +140,7 @@ export function windowTarget(model: LayoutModel, group: LayoutGroup, input: Wind
   const mine = new Set(group.nodes);
   const skip = new Set(group.nodes);
   for (const other of Object.values(model.groups)) if (!settled.has(other.id) && other.id !== group.id) for (const node of other.nodes) skip.add(node);
-  const bare = overlayBlockers(model, skip);
+  const bare = sharedBlockers(model, skip);
   const counted: Counted[] = [];
   /** The links between two settled nodes, none in the group. Their paths are read for crossings; `rows` marks those that pass the group's rows. */
   const fixed: { link: LayoutLink; head: OverlayEnd; tail: OverlayEnd; rows: boolean; points: Point[]; drawn: Drawn }[] = [];

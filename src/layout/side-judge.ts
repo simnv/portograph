@@ -3,7 +3,7 @@ import type { Point, Rect } from '../model/geometry.js';
 import { isRoutedChord } from './frame-paths.js';
 import { crossingsOf } from './read/crossings.js';
 import { hintsFacingAway } from './side-hints.js';
-import { overlayBlockers } from './overlay-paths.js';
+import { sharedBlockers } from './overlay-paths.js';
 import { plannedBends } from './side-measure.js';
 import { added as namesAdded, constraintFindings, separationWorse, spanBlockedNew } from './trial-findings.js';
 import { compare, pathBends, reading, refusal, routedBends, routedFamily, sideTrialProfile, tapVerdict } from './objective.js';
@@ -117,7 +117,7 @@ export function predictPublished(trial7e: LayoutModel, kept7e: LayoutModel, base
  * refuses these only, and only when it can place again. A link that is only short of its promise is never in the answer.
  */
 export function predictedWorse(predicted: LayoutModel, base: LayoutModel, hinted: Iterable<string>): { links: string[]; away: string[] } {
-  const blockers = overlayBlockers(predicted), baseBlockers = overlayBlockers(base);
+  const blockers = sharedBlockers(predicted), baseBlockers = sharedBlockers(base);
   const links: string[] = [];
   for (const id of hinted) {
     const now = predicted.links.find(link => link.id === id), before = base.links.find(link => link.id === id);

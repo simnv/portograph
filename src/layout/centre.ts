@@ -24,7 +24,7 @@ import { placeOverlayFree } from './overlay-place.js';
 import { fitRegionGroup, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 import { EPS, segmentRectDistance } from '../geometry/planar.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
-import { chordKind, isRoutedChord, withSharedLinkKinds } from './frame-paths.js';
+import { chordKind, isRoutedChord, withSharedLinkKinds, withStepLinkKinds } from './frame-paths.js';
 
 export interface CentreBudget { remaining: number; passes: number }
 export function createCentreBudget(): CentreBudget { return { remaining: 8, passes: 0 }; }
@@ -425,6 +425,9 @@ function groupFeeds(model: LayoutModel, context: CentreContext, tier: number, li
  */
 const CHORD_STAGES = ['bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'];
 function centreGroupStep(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>): { unresolved: Set<string>; group: LayoutGroup } {
+  return withStepLinkKinds(model, () => centreGroupStepChecked(model, context, tier, list, id, previous, warn, tail));
+}
+function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>): { unresolved: Set<string>; group: LayoutGroup } {
   // From 7e on, an overlay link that draws one straight segment keeps the space placement reserved for it. A step that leaves fewer
   // of them straight (a body or a pill now stands on a chord) is declined as a whole, like a step that solves nothing: the group stays
   // where it stood (ticket 75). A step that straightens one link for another is a trade the alignment is allowed to make.
@@ -676,9 +679,9 @@ export function flagUnverifiedCentring(model: LayoutModel): void {
 }
 /**
  * The parts of the model that a replayed centring step only reads. The check runs one step per group, each on its own copy; these parts are copied once, frozen
- * and shared by all the copies (a write to one throws), so a copy parses only the groups, the nodes and the diagnostics (architecture ticket 14).
+ * and shared by all the copies (a write to one throws), so a copy parses only the groups and the nodes (architecture ticket 14). The diagnostics are shared too: a step with `warn` off writes none, and one that does throws and runs again on a full copy.
  */
-const TRIAL_SHARED = ['document', 'links', 'groupLinks', 'meshBuses', 'lanes', 'bundles', 'obstacles', 'frames', 'labels', 'regions', 'tierBands'];
+const TRIAL_SHARED = ['document', 'links', 'groupLinks', 'meshBuses', 'lanes', 'bundles', 'obstacles', 'frames', 'labels', 'regions', 'tierBands', 'diagnostics'];
 /**
  * The stage 7c invariant, readable at any later stage (ADR-0010): for every centred group, replaying
  * its own centring step on a copy either leaves each owning alignment where the model has it, or ends
@@ -709,7 +712,7 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
   // large model that block is more than a third of the JSON the per-group copy below would carry.
   const { freeze: _frozen, ...replayed } = model;
   void _frozen;
-  // Every trial starts from the same model. The parts a step only reads are copied once and frozen (`TRIAL_SHARED`), and so are the nodes (the diagnostics are not shared; each trial parses its own):
+  // Every trial starts from the same model. The parts a step only reads are copied once and frozen (`TRIAL_SHARED`), and so are the nodes:
   // a trial takes a fresh copy of the nodes of its group and of the group before it (the ones a step writes), and shares the rest. A step that writes
   // to a shared part throws; that trial is then run again on a full copy, so the answer is the one a full copy gives (architecture ticket 14).
   let replayedText: string | undefined, sharedParts: Record<string, unknown> | undefined, sharedNodes: Record<string, LayoutNode> | undefined, nodeTexts: Map<string, string> | undefined, fullText: string | undefined;
