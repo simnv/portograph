@@ -34,16 +34,54 @@ export type OverlayBlockers = RectangleIndex<OverlayShape>;
 /** What the straight test asks of the shapes: the index, or a composite that adds shapes the index does not hold (ticket 143). */
 export type ShapeQuery = Pick<OverlayBlockers, 'some'>;
 
+/**
+ * The index depends on nothing but the boxes it holds, in order, so the last few are kept by those boxes' numbers: the same bodies and pills
+ * come round again and again (a probe, a trial copy and a rebuild that moved nothing). A cached index is only read (`some`); nothing adds to it.
+ * A body is held as a copy, so a later write to the node cannot reach a cached index.
+ */
+const BLOCKER_CACHE_SIZE = 8;
+const cachedBlockers: { signature: number[]; index: OverlayBlockers }[] = [];
+const sameNumber = (a: number, b: number): boolean => a === b && (a !== 0 || 1 / a === 1 / b);
+function sameSignature(a: readonly number[], b: readonly number[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (!sameNumber(a[i]!, b[i]!)) return false;
+  return true;
+}
+
 export function overlayBlockers(model: LayoutModel, skip?: ReadonlySet<string>): OverlayBlockers {
+  const signature: number[] = [];
+  for (const [id, node] of Object.entries(model.nodes)) {
+    if (skip?.has(id)) continue;
+    const body = node.bounds;
+    if (body) signature.push(1, body.x, body.y, body.width, body.height);
+    else signature.push(0);
+    const at = signature.length;
+    signature.push(0);
+    for (const port of node.ports) {
+      if (!port.pill || port.ref.anonymous === true) continue;
+      const pill = port.pill.bounds;
+      signature[at]!++;
+      signature.push(pill.x, pill.y, pill.width, pill.height);
+    }
+  }
+  for (let i = 0; i < cachedBlockers.length; i++) {
+    const held = cachedBlockers[i]!;
+    if (!sameSignature(held.signature, signature)) continue;
+    if (i > 0) { cachedBlockers.splice(i, 1); cachedBlockers.unshift(held); }
+    return held.index;
+  }
   const boxes: { bounds: Rect; value: OverlayShape }[] = [];
   for (const [id, node] of Object.entries(model.nodes)) {
     if (skip?.has(id)) continue;
-    if (node.bounds) boxes.push({ bounds: node.bounds, value: node.bounds });
+    if (node.bounds) boxes.push({ bounds: node.bounds, value: { ...node.bounds } });
     for (const port of node.ports) {
       if (port.pill && port.ref.anonymous !== true) boxes.push({ bounds: port.pill.bounds, value: { ...port.pill.bounds, pill: true } });
     }
   }
-  return new RectangleIndex(boxes);
+  const index = new RectangleIndex(boxes);
+  cachedBlockers.unshift({ signature, index });
+  if (cachedBlockers.length > BLOCKER_CACHE_SIZE) cachedBlockers.pop();
+  return index;
 }
 
 /** Whether an axis-aligned segment reaches inside `box`, rather than only touching its edge. */
