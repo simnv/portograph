@@ -337,8 +337,16 @@ function validateRegionClaims(model: LayoutModel, intermediate = false): void {
     }
   }
   else if (model.anchorTier !== undefined) throw new Error('Premature anchor tier');
-  // A snapshot of the stages before 7f skips the second derivation of the paths below (`withStageMutation`).
-  if (intermediate || stages.indexOf(model.stage) < stages.indexOf('rows')) return;
+  if (stages.indexOf(model.stage) < stages.indexOf('rows')) return;
+  // A snapshot of the stages before the bundles skips the second derivation of the paths below (`withStageMutation`), but not the facing-order check:
+  // it runs only before the bundle stage, so no later check reads it.
+  if (intermediate) {
+    if (stages.indexOf(model.stage) >= stages.indexOf('flanks') && stages.indexOf(model.stage) < stages.indexOf('bundles')) {
+      const ordered = cloneModel(model); normalizePrimaryBundlePorts(ordered);
+      for (const id of Object.keys(model.nodes)) same(model.nodes[id]!.ports.map(port => port.engineOrder), ordered.nodes[id]!.ports.map(port => port.engineOrder), 'Primary bundle facing order contradicts normalization');
+    }
+    return;
+  }
   // Clear both kinds together so stale paths cannot suppress their replacements.
   for (const link of expected.links) if (rowPathCandidate(expected, link) || flankPathCandidate(expected, link)) delete link.path;
   // The draft decides the rows rule before it derives the bundles (`rebuildRegionGeometry` clears the member paths and the zones first): no member
@@ -644,9 +652,9 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
   return mutate(model, rule, edit, false, abortAt, trace, moves);
 }
 /**
- * The placement stages before 7f (rows to bundles) as the pipeline runs them. Their result is a snapshot the next stage reads, and 7f, the route
- * rule and stage 9 each validate the whole model again, with the same checks, on the geometry they publish. So a snapshot skips the one check that
- * those later stages repeat on their own result: the second derivation of the row, flank, bar and bundle paths (`validateRegionClaims`). Every
+ * The placement stages before the bundles (rows to bars) as the pipeline runs them. Their result is a snapshot the next stage reads, and the bundles
+ * stage (the last before 7f freezes the chords), 7f, the route rule and stage 9 each validate the whole model again, in full, on the geometry they
+ * publish. So a snapshot skips the one check that those later stages repeat on their own result: the second derivation of the row, flank, bar and bundle paths (`validateRegionClaims`). Every
  * other check stays, among them the centring invariant, whose error is the refusal signal of the course, turn and overlay rounds
  * (`Centring invariant violated`), and the side-hint checks, whose `SideHintRefusal` is the signal of the side rounds. `withLayoutMutation` itself
  * always validates in full.
@@ -654,7 +662,7 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
 export function withStageMutation(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutModel) => void): LayoutModel {
   return mutate(model, rule, edit, true);
 }
-const INTERMEDIATE_RULES: ReadonlySet<PlacementRule> = new Set<PlacementRule>(['rows', 'lanes', 'flanks', 'centre', 'bars', 'bundles']);
+const INTERMEDIATE_RULES: ReadonlySet<PlacementRule> = new Set<PlacementRule>(['rows', 'lanes', 'flanks', 'centre', 'bars']);
 function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutModel) => void, intermediate: boolean, abortAt?: () => void, trace?: (event: AttemptTraceEvent) => void, moves?: boolean): LayoutModel {
   if (!protectedModels.has(model)) throw new Error('Mutation requires a protected snapshot; use restoreLayoutModel');
   if (!Object.hasOwn(permissions, rule) || stages[stages.indexOf(model.stage) + 1] !== rule) throw new Error(`Incorrect predecessor stage for ${rule}`);
