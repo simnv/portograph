@@ -87,7 +87,7 @@ export const span: Round<SpanOffer> = {
     // The round leaves one re-run to each round after it that has an offer on the baseline (course, side): a trial that is refused has spent its placements, and must not
     // starve a round that main would have run.
     const max = roundLimit(env.maxReruns, turnReserve(s.base, turnRoundOn(env))) - (measureCourses(s.base, s.routedBase!).courses.length > 0 ? 1 : 0) - (measureSides(s.base, s.kept7e, s.refused).hints.size > 0 ? 1 : 0);
-    if (s.reruns >= max) { env.options.testSideTrace?.({ ev: 'span-refused', links: offer.links, why: 'budget' }); return undefined; }
+    if (env.reruns >= max) { env.options.testSideTrace?.({ ev: 'span-refused', links: offer.links, why: 'budget' }); return undefined; }
     return { ...offer, max };
   },
   // The trial reserves its chords on top of the ledger; the fans of the trial grow this one, and a kept trial keeps it.
@@ -96,16 +96,14 @@ export const span: Round<SpanOffer> = {
   // rounds measure the first placement, and the trial places again with the floors they ask for. The re-runs are the command's (MAX_RERUNS).
   async settle(env, s, o, ledger, trial7e) {
     const tentative: State = { ...s, kept7e: trial7e, kept: ledger, fallbackFrom: s.kept7e };
-    try {
-      for (let round = 0; round < FAN_ROUNDS && tentative.reruns < o.max; round++) {
-        const offer = await spanFan.measure(env, tentative);
-        if (offer === undefined) break;
-        const refused = await attempt(env, tentative, spanFan, offer);
-        if (refused === undefined) continue;
-        if (refused.at === 'ledger') break;
-        return refused;
-      }
-    } finally { s.reruns = tentative.reruns; }
+    for (let round = 0; round < FAN_ROUNDS && env.reruns < o.max; round++) {
+      const offer = await spanFan.measure(env, tentative);
+      if (offer === undefined) break;
+      const refused = await attempt(env, tentative, spanFan, offer);
+      if (refused === undefined) continue;
+      if (refused.at === 'ledger') break;
+      return refused;
+    }
     return { trial7e: tentative.kept7e, ledger: tentative.kept };
   },
   // 7f freezes the chords that are straight now and no other (`freezeChords`), so a hinted link that is not straight here (the freeze refuses it, as `leg` when a neighbour's
@@ -280,7 +278,7 @@ export const side: Round<SideTrialOffer> = {
     // moves. When its offer is empty the trial is skipped; otherwise the true unmoved baseline is rebuilt (silently: no progress event, no attempt trace, since
     // this run is never published) and the trial starts from the rebuilt offer. With no copy, the rebuild runs. Nothing is built when no re-run is left.
     let unmoved = false, filtered: boolean | undefined;
-    if (round === 0 && offer.hints.size === 0 && s.baseMoved && s.reruns < env.maxReruns) {
+    if (round === 0 && offer.hints.size === 0 && s.baseMoved && env.reruns < env.maxReruns) {
       if (s.baseUnmoved !== undefined) filtered = measureSides(s.baseUnmoved, s.kept7e, s.refused).hints.size > 0;
       if (filtered !== false || env.options.testRebuildAlways === true) {
         const rebuilt = await env.timed('bands-unmoved', () => bands(s.kept7e, () => env.trialAbort('bands'), undefined, false));
@@ -327,7 +325,7 @@ export const side: Round<SideTrialOffer> = {
   },
   // The predictor prunes only when another round and another re-run remain, and only the hints it calls worse (Section 19.3).
   predict(env, s, o, trial7e) {
-    if (o.unmoved || o.round + 1 >= SIDE_ROUNDS || s.reruns >= env.maxReruns) return undefined;
+    if (o.unmoved || o.round + 1 >= SIDE_ROUNDS || env.reruns >= env.maxReruns) return undefined;
     const worse = predictedWorse(predictPublished(trial7e, s.kept7e, s.base), s.base, hintedLinks(o));
     const pruned = [...o.offer.hints.keys()].filter(key => worse.away.includes(key) || worse.links.includes(o.offer.promised.get(key)?.link ?? ''));
     return pruned.length > 0 ? { at: 'predict', keys: pruned, why: 'the prediction from the moves of stage 7f gives it more bends than the baseline' } : undefined;

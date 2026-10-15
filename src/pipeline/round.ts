@@ -63,7 +63,7 @@ export interface Round<O> {
 export async function attempt<O>(env: Env, s: State, round: Round<O>, o: O): Promise<Refusal | undefined> {
   const refuse = (r: Refusal): Refusal => { round.refuse(env, s, o, r); return r; };
   let ledger = round.reserve(env, s, o);
-  s.reruns++;
+  env.reruns++;
   if (round.invalidation !== undefined) attemptCounters.invalidations[round.invalidation]++;
   let trial7e: LayoutModel;
   try { trial7e = await env.timed(round.label, () => env.place(ledger, round.abort ? env.trialAbort : undefined)); } catch (error) {

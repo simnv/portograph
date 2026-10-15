@@ -23,6 +23,8 @@ export interface Env {
   readonly clock: ElkClock | undefined;
   /** Placement runs started so far (the first run and the re-runs); a started run is never given back. */
   placements: number;
+  /** Placement re-runs started so far (the fan rounds, trunk declines and trials); the budget counts them. */
+  reruns: number;
   readonly placeCap: number;
   readonly maxReruns: number;
   readonly stage3Sizes: WeakMap<LayoutModel, Map<string, Size>>;
@@ -58,7 +60,7 @@ export function createEnv(document: NormalisedDocument, options: LayoutOptions):
   };
   const trialAbort = (stage: string): void => { if (budget.remainingMs() <= 0) throw new CommandDeadlineError(0, stage); };
   const env: Env = {
-    document, options, budget, clock, now, report, step, timed, trialAbort, placements: 0, stage3Sizes: new WeakMap(), maxReruns: options.testMaxReruns ?? MAX_RERUNS,
+    document, options, budget, clock, now, report, step, timed, trialAbort, placements: 0, reruns: 0, stage3Sizes: new WeakMap(), maxReruns: options.testMaxReruns ?? MAX_RERUNS,
     // The cap on placements per command: the first run and the effective re-run budget (the fan rounds at the start run within FAN_ROUNDS even with a budget of 0).
     placeCap: Math.max(options.testMaxReruns ?? MAX_RERUNS, FAN_ROUNDS) + 1,
     place: (reservations, abort) => place(env, reservations, abort),

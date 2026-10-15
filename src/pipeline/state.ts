@@ -22,8 +22,6 @@ export interface State {
   baseUnmoved?: LayoutModel | undefined;
   /** The ledger every placement run is told to keep. */
   kept: Reservations;
-  /** Placement re-runs started so far (the fan rounds, trunk declines and trials); the budget counts them. */
-  reruns: number;
   /** The fan rounds' and the side round's cut notes, the notes of the kept rounds, and the notes of the side trials that were kept. */
   cuts: Diagnostic[];
   sideNotes: Diagnostic[];
