@@ -4,7 +4,8 @@ import { layout, parse, score } from '../../src/index.js';
 import { validateLanes } from '../../src/internal.js';
 import type { Lane, LayoutLink, LayoutModel } from '../../src/index.js';
 import { BUS_RUN_CLEARANCE } from '../../src/layout/bus-room.js';
-import { laneSidesHold, laneWidth, optionalMoveHolds, reserveRisers, sideLaneFindings, sideLanesHold } from '../../src/layout/lanes.js';
+import { holdsMove } from '../../src/layout/move-reservations.js';
+import { laneSidesHold, laneWidth, reserveRisers, sideLaneFindings, sideLanesHold } from '../../src/layout/lanes.js';
 import { routedStrokeWidth } from '../../src/theme/geometry.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -100,9 +101,9 @@ describe('a side lane joins the tier-gap plan and the route (ticket 122)', () =>
     const group = model.groups[model.document.nodes['lb']!.group]!;
     const proposed = [{ group, bounds: { ...group.bounds!, x: group.bounds!.x + 12 } }];
     expect(sideLanesHold(model, proposed, false)).toBe(false);
-    expect(optionalMoveHolds(model, proposed, false)).toBe(false);
+    expect(holdsMove(model, proposed, false)).toBe(false);
     expect(model.diagnostics.some(item => item.code === 'SIDE_LANE_HELD')).toBe(false);
-    expect(optionalMoveHolds(model, proposed)).toBe(false);
+    expect(holdsMove(model, proposed)).toBe(false);
     expect(model.diagnostics.filter(item => item.code === 'SIDE_LANE_HELD')).toEqual([expect.objectContaining({ severity: 'info', owners: [{ kind: 'link', id: link.id }] })]);
     // A move that keeps the x is no business of the guard.
     expect(sideLanesHold(model, [{ group, bounds: { ...group.bounds! } }])).toBe(true);

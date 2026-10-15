@@ -8,7 +8,8 @@ import { frameSubtreeCells, orderedGroupIds } from '../model/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { createCentreBudget, type CentreBudget } from './centre.js';
-import { isSideLane, optionalMoveHolds, riserKeepOutBreaches } from './lanes.js';
+import { isSideLane, riserKeepOutBreaches } from './lanes.js';
+import { holdsMove } from './move-reservations.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { findPort, straightCorridorClear } from './row-paths.js';
@@ -686,7 +687,7 @@ function growthPlan(model: LayoutModel, grown: LayoutGroup, width: number): Grou
     if (!settled) return undefined;
   }
   const plan = [...tiers.values()].flatMap(item => item.rows);
-  return optionalMoveHolds(model, plan.map(item => ({ group: item.group,
+  return holdsMove(model, plan.map(item => ({ group: item.group,
     bounds: { ...item.group.bounds!, x: item.x, width: item.width } }))) ? plan : undefined;
 }
 
@@ -943,7 +944,7 @@ export function settleKeepOut(model: LayoutModel): boolean {
     const shifts = keepOutShifts(model);
     for (const [group, dx] of columnShifts(model, 0)) shifts.set(group, Math.max(shifts.get(group) ?? 0, dx));
     if (!shifts.size) break;
-    if (!optionalMoveHolds(model, [...shifts].map(([group, dx]) => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } })))) break;
+    if (!holdsMove(model, [...shifts].map(([group, dx]) => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } })))) break;
     const straight = straightOverlays(model), nodes = [...shifts.keys()].flatMap(group => group.nodes);
     for (const [group, dx] of shifts) moveGroup(model, group, dx, 0);
     rebuildNodeGeometry(model, nodes, 'current');
@@ -1226,7 +1227,7 @@ function alignGrid(model: LayoutModel): { changed: boolean; flanksMoved: boolean
       if (axis === 'x') for (const item of [...proposed]) proposed.push(...flankShifts(model, item.group, item.bounds));
       const others = Object.values(model.groups).filter(group => !proposed.some(item => item.group === group));
       if (proposed.some(item => others.some(other => rectOverlap(item.bounds, other.bounds!)))) continue;
-      if (axis === 'x' && !optionalMoveHolds(model, proposed)) continue;
+      if (axis === 'x' && !holdsMove(model, proposed)) continue;
       // A widening that would stand a box closer than the band gap to a group that is not part of it is refused: the gap is kept where the box is sized (ticket 19).
       // The pack of the beside rows that follows the grid in a sheet with frames seats frame cells only, so a plain group beside the box is held by this guard too. Seating the
       // neighbour by the push of a label's widening instead was measured and loses straight overlay links on two sheets (the ticket's review record).

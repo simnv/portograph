@@ -6,7 +6,8 @@ import { frameColumns, overlayFreeGroups } from './columns.js';
 import { groupShape } from './grid.js';
 import { cellReach, deriveFrames, FRAME_TO_FRAME_GAP } from './frames.js';
 import { chordsHold } from './frame-paths.js';
-import { optionalMoveHolds, occupiedOverhang, selectAnchorTier } from './lanes.js';
+import { occupiedOverhang, selectAnchorTier } from './lanes.js';
+import { holdsMove } from './move-reservations.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { saveGroups } from './overlay-order.js';
 import { sharedBlockers, straightChord } from './overlay-paths.js';
@@ -167,7 +168,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
     const at = cells[0]!.bounds!.x;
     const placed = decision.choose(key, candidates, 0, dx => { for (const cell of cells) moveGroup(model, cell, dx, 0); }, undo, nodes, dx => {
       const proposed = cells.map(group => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } }));
-      if (optionalMoveHolds(model, proposed, false)) return true;
+      if (holdsMove(model, proposed, false)) return true;
       if (refusal === undefined && !chordsHold(model, proposed, false)) refusal = proposed;
       return false;
     });
@@ -318,7 +319,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
           let refusal: { group: LayoutGroup; bounds: Rect }[] | undefined;
           placed = decision.choose(keep, candidates, box.x, dx => moveGroup(model, group, dx, 0), undo, group.nodes, x => {
             const proposed = [{ group, bounds: { ...box, x } }];
-            if (optionalMoveHolds(model, proposed, false)) return true;
+            if (holdsMove(model, proposed, false)) return true;
             if (refusal === undefined && !chordsHold(model, proposed, false)) refusal = proposed;
             return false;
           }, () => rankGuard === undefined ? sameFrames() : rankGuard.holds(), lower ? group.id : undefined);

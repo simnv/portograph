@@ -187,16 +187,6 @@ export function trunkXAfter(model: LayoutModel, head: MeshBus, proposed: readonl
   return x;
 }
 
-/** Whether a move that proposes these group boxes keeps every bar extension clear of a foreign unit that is not across one now (section 12.5, `trunkHolds`). */
-export function trunkHolds(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[]): boolean {
-  const heads = trunkHeads(model);
-  if (heads.length === 0) return true;
-  return heads.every(head => {
-    const now = new Set(foreignOverExtensions(model, head).map(item => `${item.group}|${item.bus}`));
-    return foreignOverExtensions(model, head, proposed, trunkXAfter(model, head, proposed)).every(item => now.has(`${item.group}|${item.bus}`));
-  });
-}
-
 /** The head bus of the trunk join a bus belongs to (re-exported for the readers of lanes). */
 export { trunkHead };
 

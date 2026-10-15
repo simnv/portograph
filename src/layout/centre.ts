@@ -1,7 +1,8 @@
 import type { LayoutGroup, LayoutModel, LayoutNode, LayoutPort } from '../model/layout.js';
 import type { Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
-import { laneSidesHold, spanBreaches, recordSeatedSideLanes, optionalMoveHolds, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
+import { laneSidesHold, spanBreaches, recordSeatedSideLanes, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
+import { holdsMove } from './move-reservations.js';
 import { cellReach } from './frames.js';
 import { standsInCanton } from './read/canton.js';
 import { centringFeeds, type Feed } from './read/feeds.js';
@@ -390,7 +391,7 @@ function standNearFeed(model: LayoutModel, context: CentreContext, tier: number,
   const window = reservedWindow(model, context, tier, id), low = Math.max(wideLow, window.low), high = Math.min(wideHigh, window.high);
   if (!standsInCanton(model, group) || !Number.isFinite(target) || box.width > high - low + EPS) return;
   const dx = Math.max(low, Math.min(target, high - box.width)) - box.x;
-  if (Math.abs(dx) <= EPS || !optionalMoveHolds(model, [{ group, bounds: { ...box, x: box.x + dx } }])) return;
+  if (Math.abs(dx) <= EPS || !holdsMove(model, [{ group, bounds: { ...box, x: box.x + dx } }])) return;
   moveGroup(model, group, dx, 0);
 }
 

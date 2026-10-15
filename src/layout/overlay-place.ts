@@ -2,7 +2,8 @@ import type { LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
 import type { Point } from '../model/geometry.js';
 import { frameColumns, overlayFreeGroups, type FrameColumn } from './columns.js';
 import { groupShape } from './grid.js';
-import { optionalMoveHolds, occupiedOverhang, selectAnchorTier } from './lanes.js';
+import { occupiedOverhang, selectAnchorTier } from './lanes.js';
+import { holdsMove } from './move-reservations.js';
 import { crosses, sharedBlockers, overlayPath, straightChord } from './overlay-paths.js';
 import { saveGroups } from './overlay-order.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
@@ -401,7 +402,7 @@ export function standLinklessBeside(model: LayoutModel, tiers: readonly number[]
       // chords of 7f are read by `laneSidesHold`.
       const fits = (x: number): boolean => !banned.some(({ low, high }) => x > low + PLACEMENT_EPS && x < high - PLACEMENT_EPS)
         && !wall.some(item => x - reach.left < item.high + item.gap - PLACEMENT_EPS && x - reach.left + width > item.low - item.gap + PLACEMENT_EPS)
-        && optionalMoveHolds(model, [{ group, bounds: { ...box, x } }], false);
+        && holdsMove(model, [{ group, bounds: { ...box, x } }], false);
       const left = extent.low - gap - width + reach.left, right = extent.high + gap + reach.left;
       const wasLeft = one.high <= extent.low;
       // From the point one gap off the extent, outward to the first x clear of the chords: the edges of the banned intervals are the only other candidates.
@@ -464,7 +465,7 @@ export function stepOutOfChords(model: LayoutModel, tiers: readonly number[], fr
       const pool = inside.length ? inside : candidates;
       const target = pool.reduce((best, x) => Math.abs(x - box.x) < Math.abs(best - box.x) - PLACEMENT_EPS ? x : best);
       // A step out of a chord is optional: it is not made into the riser keep-out (mesh-bus.md, section 11.5).
-      if (!optionalMoveHolds(model, [{ group, bounds: { ...box, x: target } }], false)) continue;
+      if (!holdsMove(model, [{ group, bounds: { ...box, x: target } }], false)) continue;
       // The candidate is made and judged by the decision loop (`decide.ts`, kind `linkless`); a refusal is named here.
       if (!chooseStep(model, overlays, group, target - box.x)) {
         placementWarning(model, 'LINKLESS_GROUP_MOVE_REFUSED',

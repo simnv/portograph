@@ -4,7 +4,8 @@ import { drawio, layout, parse, render, score } from '../../src/index.js';
 import { validateRoutedPaths } from '../../src/route/validate.js';
 import type { Lane, LayoutModel } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
-import { foreignOverExtensions, reportTrunkCrossings, trunkHolds, trunkRing, trunkXAfter } from '../../src/layout/trunk.js';
+import { foreignOverExtensions, reportTrunkCrossings, trunkRing, trunkXAfter } from '../../src/layout/trunk.js';
+import { holdsMove } from '../../src/layout/move-reservations.js';
 import { EDGE_MARGIN, RING_PITCH } from '../../src/layout/course-rows.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -240,15 +241,15 @@ describe('a mesh over three rows: the guards (architecture ticket 21, review fix
     const head = trunkOf(model), lane = laneOf(model), foreign = model.groups['foreign']!;
     const y = head.bar!.from.y, middle = box(model, 'r1');
     const across = { group: foreign, bounds: { x: lane.x - 60, y: y - 10, width: 40, height: 20 } };
-    expect(trunkHolds(model, [across])).toBe(false);
+    expect(holdsMove(model, [across], false, ['trunkExtension'])).toBe(false);
     expect(foreignOverExtensions(model, head, [across])).toEqual([{ group: 'foreign', bus: head.id }]);
     // The foreign group moved clear of every extension, and the member row moved outward: both hold.
-    expect(trunkHolds(model, [{ group: foreign, bounds: { ...across.bounds, y: y + 4000 } }])).toBe(true);
+    expect(holdsMove(model, [{ group: foreign, bounds: { ...across.bounds, y: y + 4000 } }], false, ['trunkExtension'])).toBe(true);
     const row = model.groups['r1']!;
-    expect(trunkHolds(model, [{ group: row, bounds: { ...middle, x: middle.x + 30 } }])).toBe(true);
+    expect(holdsMove(model, [{ group: row, bounds: { ...middle, x: middle.x + 30 } }], false, ['trunkExtension'])).toBe(true);
     // A foreign group that moves past the old trunk x: the extension does not reach it now, but the trunk moves out with the group and its extension would run through it.
     const past = lane.side === 'right' ? lane.x + 20 : lane.x - 60;
-    expect(trunkHolds(model, [{ group: foreign, bounds: { x: past, y: y - 10, width: 40, height: 20 } }])).toBe(false);
+    expect(holdsMove(model, [{ group: foreign, bounds: { x: past, y: y - 10, width: 40, height: 20 } }], false, ['trunkExtension'])).toBe(false);
     expect(foreignOverExtensions(model, head, [{ group: foreign, bounds: { x: past, y: y - 10, width: 40, height: 20 } }])).toEqual([]);
     // The trunk x is read after the move: a member row that moves outward carries it.
     expect(trunkXAfter(model, head, [{ group: row, bounds: { ...middle, x: middle.x + 30 } }])).toBeGreaterThan(lane.x);

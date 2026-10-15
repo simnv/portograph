@@ -15,6 +15,8 @@ import { isSpanLane } from './span-lanes.js';
 
 export type ProposedMove = { group: LayoutGroup; bounds: Rect }[];
 type Maker = (model: LayoutModel, proposed: ProposedMove) => Reservation[];
+/** The derived kinds a move is held to, in the order the guards were chained. */
+export type MoveKind = 'riserKeepOut' | 'trunkExtension' | 'laneSide' | 'sideAlignment' | 'spanCorridor';
 
 /** The routed ports of the member rows that stand in a riser keep-out now: a move may not take one deeper. */
 const riserKeepOut: Maker = (model, proposed) => {
@@ -44,11 +46,11 @@ const spanCorridor: Maker = model => {
   if (!model.lanes.some(isSpanLane)) return [];
   return [transient('spanCorridor', { kind: 'command', id: 'move' }, 'corridors', 'lanes', { link: '', allowedBreaches: [...spanBreaches(model)] })];
 };
-const MAKERS: readonly Maker[] = [riserKeepOut, trunkExtension, laneSide, sideAlignment, spanCorridor];
+const MAKERS: readonly (readonly [MoveKind, Maker])[] = [['riserKeepOut', riserKeepOut], ['trunkExtension', trunkExtension], ['laneSide', laneSide], ['sideAlignment', sideAlignment], ['spanCorridor', spanCorridor]];
 
 /** The reservations a move is held to, with their evidence read from `model` as it stands. */
 export function moveReservations(model: LayoutModel, proposed: ProposedMove): Reservations {
-  return MAKERS.flatMap(make => make(model, proposed));
+  return MAKERS.flatMap(([, make]) => make(model, proposed));
 }
 
 /** Whether the move keeps one derived reservation. The predicates are the guards of `optionalMoveHolds`, with the evidence taken from the payload. */
@@ -78,9 +80,12 @@ function holdsMoveEntry(entry: Reservation, model: LayoutModel, proposed: Propos
 
 /**
  * Whether a move that can be declined keeps every derived reservation: the verdict of `optionalMoveHolds`. A required move (`packClear`) never asks. Each kind is
- * derived only when the guards before it have passed, as the guards were chained.
+ * derived only when the guards before it have passed, as the guards were chained. `only` limits the check to some kinds (a test of one guard).
  */
-export function holdsMove(model: LayoutModel, proposed: ProposedMove, report = true): boolean {
-  for (const make of MAKERS) for (const entry of make(model, proposed)) if (!holdsMoveEntry(entry, model, proposed, report)) return false;
+export function holdsMove(model: LayoutModel, proposed: ProposedMove, report = true, only?: readonly MoveKind[]): boolean {
+  for (const [kind, make] of MAKERS) {
+    if (only !== undefined && !only.includes(kind)) continue;
+    for (const entry of make(model, proposed)) if (!holdsMoveEntry(entry, model, proposed, report)) return false;
+  }
   return true;
 }
