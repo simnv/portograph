@@ -18,7 +18,7 @@ async function run(extra: Partial<Parameters<typeof layout>[1]> = {}): Promise<C
   const model = await layout(parse(source), { createElkAttempt: () => { places++; return createAttempt(); }, createRouteAttempt: createAvoidAttempt, ...extra });
   return { model, places };
 }
-const strip = (model: LayoutModel): string => JSON.stringify(model, (key, value: unknown) => key === 'runtime' ? undefined : value);
+const strip = (model: LayoutModel): string => JSON.stringify(model, (key, value: unknown) => key === 'runtime' || key === 'reservations' ? undefined : value);
 const refusals = (model: LayoutModel): string[] => model.diagnostics.filter(item => item.code === 'ROUTED_CHORD_REFUSED').map(item => item.message);
 const toProvider = (model: LayoutModel, node: string): Link => model.links.find(link => link.attachments!.from.node === node && link.attachments!.to.node === 'provider')!;
 

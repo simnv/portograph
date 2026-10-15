@@ -11,7 +11,7 @@ import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { transient, type Reservation, type Reservations } from './reservations.js';
 import { isSideLane, laneLink, laneSidesHold, riserNoDeeper, riserPenetrations, sideLaneSource, sideLanesHold, spanBreaches } from './lanes.js';
 import { foreignOverExtensions, trunkHeads, trunkXAfter } from './trunk.js';
-import { isSpanLane } from './span-lanes.js';
+const isSpanLane = (lane: { kind?: string }): boolean => lane.kind === 'span';
 
 export type ProposedMove = { group: LayoutGroup; bounds: Rect }[];
 type Maker = (model: LayoutModel, proposed: ProposedMove) => Reservation[];
@@ -88,4 +88,13 @@ export function holdsMove(model: LayoutModel, proposed: ProposedMove, report = t
     for (const entry of make(model, proposed)) if (!holdsMoveEntry(entry, model, proposed, report)) return false;
   }
   return true;
+}
+
+/**
+ * Whether a slide of some nodes of a group by `dx` (a row slide or a single-node move; the group box stays) keeps the move reservations that read a body or an anchor: the riser
+ * keep-out of its facing ports and the far port of an aligned side lane. A node that leaves its lane's x is refused, as a unit that does.
+ */
+export function holdsNodeMove(model: LayoutModel, group: LayoutGroup, ids: readonly string[], dx: number): boolean {
+  if (Math.abs(dx) <= 1e-9) return true;
+  return holdsMove(model, [{ group: { ...group, nodes: [...ids] }, bounds: { ...group.bounds!, x: group.bounds!.x + dx } }], false, ['riserKeepOut', 'sideAlignment']);
 }

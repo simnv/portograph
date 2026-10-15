@@ -41,7 +41,8 @@ import { transitTiers } from '../layout/lanes.js';
 import { beats, gainOf, judgeCourseTrial, judgeOverlayTrial, measureCourses, measureOverlayCourses } from '../layout/course-measure.js';
 import { turnMissed } from '../layout/turn-order.js';
 import { judgeTurnTrial, measureTurnOrder, roundLimit, turnReserve, turnRoundRuns } from '../layout/turn-measure.js';
-import { pitchFloorsOf, nodeFloors as floorEntries, pitchGrowth, nodeFloorsOf, reserve as addReservations, courseEntries, coursesOf, declinedTrunksOf, holds, holdsRouted, promisedTurns, declineTrunk, laneKeysOf, laneOwners, sideFaces, sideHintsOf, spanEntries, spansOf, turnEntries, turnOf, type Reservations } from '../layout/reservations.js';
+import { pitchFloorsOf, nodeFloors as floorEntries, pitchGrowth, nodeFloorsOf, reserve as addReservations, courseEntries, coursesOf, declinedTrunksOf, promisedTurns, declineTrunk, laneKeysOf, laneOwners, sideFaces, sideHintsOf, spanEntries, spansOf, turnEntries, turnOf, type Reservations } from '../layout/reservations.js';
+import { holds, holdsRouted } from '../layout/reservation-checks.js';
 import { countStage, ledgerOn, ledgerSnapshot, startPlacementEntry, type LedgerSnapshot } from '../layout/attempt-ledger.js';
 
 
@@ -161,13 +162,13 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   const place = async (reservations: Reservations, abort?: (stage: string) => void): Promise<LayoutModel> => {
     // The one assertion of the placement budget: a command places at most MAX_RERUNS + 1 times (the first run and the re-runs), whatever round asks. A slot is released
     // only before a run starts; a run that has started is spent, even when stage 7a refuses it at once, so `placements` never goes down.
-    if (placements >= placeCap) throw new PlacementBudgetExceeded(placements);
     placements++; attemptCounters.placeStarts++;
+    if (placements > placeCap) throw new PlacementBudgetExceeded(placements - 1);
     const stepIn = <T>(stage: LayoutStage, run: () => T): T => { abort?.(stage); return step(stage, run); };
     // The trunk joins a placement run found blocked (mesh-bus.md, section 12.4) are declined in the next: the ledger names them, or all of them once the budget is spent.
     const declinedTrunks = declinedTrunksOf(reservations);
     const resolved = stepIn('resolve', () => resolve(document, { ...(options.diagnostics ? { diagnostics: options.diagnostics } : {}), ...(declinedTrunks.size || declinedTrunks.all ? { declinedTrunks } : {}) }));
-    if (reservations.length > 0) resolved.reservations = JSON.parse(JSON.stringify(reservations)) as Reservations;
+    resolved.reservations = JSON.parse(JSON.stringify(reservations)) as Reservations;
     const courses = coursesOf(reservations), spans = spansOf(reservations);
     // A course face ranks above a hint (ticket 15): each end that does not keep its natural face names the port and the face.
     const courseFaces = new Map<string, Side>();
@@ -282,6 +283,9 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       cut('ELK fell back during it, and the re-run was dropped'); break;
     }
     if (!fanRoundHolds(model, trial)) { cuts.push(fanRoundDropped(model, trial)); break; }
+    // Every active reservation holds at the final 7e of the re-run, or the re-run is dropped.
+    const broken = holds(next, trial);
+    if (broken.length > 0) { cut(`it broke a reservation (${broken[0]!.why})`); break; }
     model = trial; kept = next;
   }
   // Side rounds (side-faces.md, Section 19). 7f runs on the kept model first: its output is the baseline, the model the command publishes when no
@@ -382,6 +386,9 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     if (trial7e !== undefined && trial7e.fallbackUsed && !kept7e.fallbackUsed) {
       courseRefusal('ELK fell back during the course trial'); trial7e = undefined;
     }
+    // Every active reservation holds at the trial's final 7e, the kept ones of earlier rounds with the new courses, before 7f and the route.
+    const courseBroken = trial7e === undefined ? [] : holds(trialLedger, trial7e);
+    if (courseBroken.length > 0) { courseRefusal(`a reservation does not hold at stage 7e (${courseBroken[0]!.why})`); trial7e = undefined; }
     if (trial7e !== undefined) {
       try {
         const trial = await timed('bands-trial', () => step('bands', () => bands(trial7e!, () => trialAbort('bands'), options.attemptTrace), true));
@@ -389,7 +396,10 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
         const routedTrial = await routeModel(trial, true);
         const verdict = judgeCourseTrial(routedBase!, routedTrial, new Map([...offer.promised].map(([id, item]) => [id, item.turns] as const)));
         options.testSideTrace?.({ ev: 'course-trial', verdict, trial, routedTrial, routedBase });
-        if (verdict.kept) {
+        // A course kept earlier keeps its promise through this trial as well.
+        const courseLost = verdict.kept ? holdsRouted(kept, routedTrial) : [];
+        if (courseLost.length > 0) courseRefusal(`a kept course publishes more turns than it promised (${courseLost.map(failure => failure.link).join(', ')})`);
+        else if (verdict.kept) {
           if (routedFinal === undefined) routedBase = routedTrial;
         base = trial; kept7e = trial7e; routedFinal = routedTrial;
           baseMoved = trialMoved; baseUnmoved = trialUnmoved; kept = trialLedger;
@@ -456,8 +466,12 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     // 7f freezes the chords that are straight now and no other (`freezeChords`), so a hinted link that is not straight here (the freeze refuses it, as `leg` when a neighbour's
     // leg crowds it at the pitch the trial gave) is lost: the trial is refused here, before 7f and the route.
     // The placement above is spent, so nothing is given back.
-    const lost = holds(trialFloors, trial7e!, entry => entry.kind === 'spanChord' && offer.links.includes(entry.payload.link)).map(failure => failure.link!);
+    const spanFailed = holds(trialFloors, trial7e!);
+    const lost = spanFailed.filter(failure => failure.kind === 'spanChord' && offer.links.includes(failure.link!)).map(failure => failure.link!);
     if (lost.length > 0) { spanRefusal('promise', `the freeze would not hold ${lost.join(', ')}: ${lost.map(id => { const item = trial7e!.links.find(other => other.id === id); return item === undefined ? 'missing' : freezeRefusal(trial7e!, item) ?? 'not straight'; }).join(', ')} (before 7f)`); return false; }
+    // A reservation kept by an earlier round must hold at the trial's final 7e as well (ticket 22 left that open).
+    const otherLost = spanFailed.filter(failure => !lost.includes(failure.link!) || failure.kind !== 'spanChord');
+    if (otherLost.length > 0) { spanRefusal('promise', `a kept reservation does not hold: ${otherLost[0]!.why} (before 7f)`); return false; }
     try {
       const trial = await timed('bands-trial', () => step('bands', () => bands(trial7e!, () => trialAbort('bands'), options.attemptTrace), true));
       const trialMoved = lastAttempt.moved, trialUnmoved = lastAttempt.unmoved;
@@ -465,6 +479,8 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       const verdict = judgeSpanTrial(routedBase!, routedTrial, offer.links);
       options.testSideTrace?.({ ev: 'span-trial', verdict, trial, routedTrial, routedBase, offer });
       if (!verdict.kept) { spanRefusal(verdict.reason!, verdict.detail); return false; }
+      const spanBroken = holdsRouted(kept, routedTrial);
+      if (spanBroken.length > 0) { spanRefusal('promise', `a kept course publishes more turns than it promised (${spanBroken.map(failure => failure.link).join(', ')})`); return false; }
       kept = trialFloors;
       base = trial; kept7e = trial7e; routedFinal = routedTrial; routedBase = routedTrial;
       baseMoved = trialMoved; baseUnmoved = trialUnmoved;
@@ -557,7 +573,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     // The ledger answers for the faces and lanes of the trial (this round's and the kept ones) at its final 7e, before 7f and the route: a port hinted for the straight shape
     // of a routed link must hold its chord (otherwise the router would find its route, review M1, ticket 117), and a port hinted for the routed L must own a source-aligned
     // side lane (an exterior corridor gives three bends, ticket 119).
-    const failed = holds(trialLedger, trial7e, entry => entry.kind === 'sideFace' || entry.kind === 'laneOwner');
+    const failed = holds(trialLedger, trial7e);
     const chordLost = failed.filter(failure => failure.kind === 'sideFace');
     if (chordLost.length > 0) {
       const own = chordLost.map(failure => failure.key!).filter(key => offer.hints.has(key));
@@ -572,6 +588,8 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
         `a port hinted for a side lane has no source-aligned lane at stage 7e (${[...new Set(laneLost.map(failure => failure.link))].join(', ')})`);
       continue;
     }
+    const otherFailed = failed.filter(failure => failure.kind !== 'sideFace' && failure.kind !== 'laneOwner');
+    if (otherFailed.length > 0) { refuse(offer.hints.keys(), all, `a reservation does not hold at stage 7e (${otherFailed[0]!.why})`); continue; }
     const hintedLinks = new Map([...offer.promised.values()].map(item => [item.link, item.bends] as const));
     // The predictor prunes only when another round and another re-run remain, and only the hints it calls worse (Section 19.3).
     if (!unmovedOffer && round + 1 < SIDE_ROUNDS && reruns < maxReruns) {
@@ -639,7 +657,8 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
         }
         if (trial7e !== undefined && trial7e.fallbackUsed && !kept7e.fallbackUsed) { refuseTurns('ELK fell back during the turn trial'); trial7e = undefined; }
         // The offer was decided before any placement; this is left only when the measure and stage 5 disagree about a face. The placement is spent (no re-run is given back).
-        if (trial7e !== undefined && holds(trialLedger, trial7e, entry => entry.kind === 'turnOrder').length > 0) { refuseTurns('the turn order moved no face'); trial7e = undefined; }
+        const turnFailed = trial7e === undefined ? [] : holds(trialLedger, trial7e);
+        if (turnFailed.length > 0) { refuseTurns(turnFailed[0]!.kind === 'turnOrder' ? turnFailed[0]!.why : `a reservation does not hold at stage 7e (${turnFailed[0]!.why})`); trial7e = undefined; }
         if (trial7e !== undefined) {
           try {
             const trial = await timed('bands-trial', () => step('bands', () => bands(trial7e!, () => trialAbort('bands'), options.attemptTrace), true));
@@ -697,13 +716,18 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
         refuseOverlays(`the placement run rejected them (${error.message})`);
       }
       if (trial7e !== undefined && trial7e.fallbackUsed && !kept7e.fallbackUsed) { refuseOverlays('ELK fell back during the overlay trial'); trial7e = undefined; }
+      const overlayBroken = trial7e === undefined ? [] : holds(trialLedger, trial7e);
+      if (overlayBroken.length > 0) { refuseOverlays(`a reservation does not hold at stage 7e (${overlayBroken[0]!.why})`); trial7e = undefined; }
       if (trial7e !== undefined) {
         try {
           const trial = await timed('bands-trial', () => step('bands', () => bands(trial7e!, () => trialAbort('bands'), options.attemptTrace), true));
           const routedTrial = await routeModel(trial, true);
           const verdict = judgeOverlayTrial(current, routedTrial, overlayOffer);
           options.testSideTrace?.({ ev: 'overlay-trial', verdict, trial, routedTrial, routedBase: current });
-          if (verdict.kept) {
+          // The overlay judge reads the overlay links only; a course kept earlier keeps its promise through this trial too.
+          const overlayLost = verdict.kept ? holdsRouted(kept, routedTrial) : [];
+          if (overlayLost.length > 0) refuseOverlays(`a kept course publishes more turns than it promised (${overlayLost.map(failure => failure.link).join(', ')})`);
+          else if (verdict.kept) {
             base = trial; kept7e = trial7e; routedFinal = routedTrial; kept = trialLedger;
             for (const course of overlayOffer.courses) {
               const was = overlayOffer.promised.get(course.link)!;

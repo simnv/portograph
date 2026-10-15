@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { courseEntries, holds, holdsRouted, promisedTurns, coursesOf, declinedEntries, declineTrunk, declinedTrunksOf, DeclinedTrunks, laneKeysOf, laneOwners, nodeFloors, nodeFloorsOf, pitchFloors, pitchFloorsOf, portRefOf, reserve, validateReservations, sideFaces, sideHintsOf, spanEntries, spansOf, turnEntries, turnOf } from '../../src/layout/reservations.js';
+import { holds, holdsRouted } from '../../src/layout/reservation-checks.js';
+import { courseEntries, promisedTurns, coursesOf, declinedEntries, declineTrunk, declinedTrunksOf, DeclinedTrunks, laneKeysOf, laneOwners, nodeFloors, nodeFloorsOf, pitchFloors, pitchFloorsOf, portRefOf, reserve, validateReservations, sideFaces, sideHintsOf, spanEntries, spansOf, turnEntries, turnOf } from '../../src/layout/reservations.js';
 import { portKey } from '../../src/layout/sides-one.js';
 
 describe('reservation ledger', () => {
@@ -62,22 +63,46 @@ describe('reservation ledger', () => {
     expect(() => validateReservations(model(declineTrunk(undefined, 'the placement budget is spent', 0)))).not.toThrow();
     expect(() => validateReservations(model(declineTrunk('other', 'blocked', 0)))).toThrow(/no reservation declines it/);
   });
-  it('fails a chord, a lane, a span and a turn order that 7e does not show, each with the port and link it concerns', () => {
-    const key = portKey({ node: 'n', name: 'p', ordinal: 1 });
+  it('fails a chord, a lane, a course, a turn order and a trunk decline that 7e does not show, and a missing owner, each with the port and link it concerns', () => {
+    const ref = { node: 'n', name: 'p', ordinal: 1 }, key = portKey(ref);
     const hints = new Map([[key, 'left' as const]]), promised = new Map([[key, { link: 'l', bends: 0, shape: 'straight' as const }]]);
     const lanePromised = new Map([[key, { link: 'l', bends: 1, shape: 'lane' as const }]]);
-    const bare = { links: [{ id: 'l', layer: 'routed' }], lanes: [], freeze: { turnOrder: [] }, nodes: {} };
-    const chord = holds(sideFaces(hints, promised, 'side', 0), bare as never);
-    expect(chord.map(item => [item.kind, item.key, item.link])).toEqual([['sideFace', key, 'l']]);
-    expect(holds(sideFaces(hints, new Map(), 'side', 0), bare as never)).toEqual([]);
-    const lane = holds(laneOwners([key], hints, lanePromised, 'side', 0), bare as never);
+    const model = (extra: object = {}): never => ({ links: [{ id: 'l', layer: 'routed' }], lanes: [], freeze: { turnOrder: [] },
+      nodes: { n: { id: 'n', ports: [{ ref, side: 'left', sideHint: true }] } }, ...extra }) as never;
+    // The port stands on its side, but the link holds no chord there.
+    expect(holds(sideFaces(hints, promised, 'side', 0), model()).map(item => [item.kind, item.key, item.link])).toEqual([['sideFace', key, 'l']]);
+    expect(holds(sideFaces(hints, new Map(), 'side', 0), model())).toEqual([]);
+    // A missing port, or a port on another side, is a failure; a missing owner never passes.
+    expect(holds(sideFaces(hints, new Map(), 'side', 0), model({ nodes: {} })).map(item => item.key)).toEqual([key]);
+    expect(holds(sideFaces(new Map([[key, 'right' as const]]), new Map(), 'side', 0), model())).toHaveLength(1);
+    expect(holds(sideFaces(hints, promised, 'side', 0), model({ links: [] })).map(item => item.link)).toEqual(['l']);
+    const lane = holds(laneOwners([key], hints, lanePromised, 'side', 0), model());
     expect(lane.map(item => [item.kind, item.key, item.link])).toEqual([['laneOwner', key, 'l']]);
-    const seated = { ...bare, lanes: [{ kind: 'side', owner: { kind: 'link', id: 'l' }, aligned: true }] };
-    expect(holds(laneOwners([key], hints, lanePromised, 'side', 0), seated as never)).toEqual([]);
-    expect(holds(spanEntries(['l', 'gone'], 'span', 0), bare as never, entry => entry.kind === 'spanChord' && entry.payload.link === 'gone').map(item => item.link)).toEqual(['gone']);
-    expect(holds(turnEntries(true, [], true, 'turn', 0), bare as never)).toHaveLength(1);
-    expect(holds(turnEntries(true, [], false, 'turn', 0), bare as never)).toEqual([]);
-    expect(holds(turnEntries(true, [], true, 'turn', 0), { ...bare, freeze: { turnOrder: [{ node: 'n', side: 'top' }] } } as never)).toEqual([]);
+    const seated = model({ lanes: [{ kind: 'side', owner: { kind: 'link', id: 'l' }, aligned: true }] });
+    expect(holds(laneOwners([key], hints, lanePromised, 'side', 0), seated)).toEqual([]);
+    expect(holds(laneOwners([key], hints, lanePromised, 'side', 0), model({ nodes: {} }))).toHaveLength(1);
+    // A span chord whose link is gone fails.
+    expect(holds(spanEntries(['gone'], 'span', 0), model()).map(item => item.link)).toEqual(['gone']);
+    // A course the model does not carry, or carries on another face, fails.
+    const course = { link: 'l', kind: 'gap', from: { face: 'left' }, to: { face: 'right' }, runs: [] } as never;
+    const courses = courseEntries([course], undefined, 'course', 0);
+    expect(holds(courses, model())).toHaveLength(1);
+    expect(holds(courses, model({ courses: [course] }))).toEqual([]);
+    expect(holds(courses, model({ courses: [{ ...(course as object), kind: 'perimeter' }] }))).toHaveLength(1);
+    expect(holds(courses, model({ courses: [course], links: [] })).map(item => item.link)).toEqual(['l']);
+    // The turn order: carried, scoped, and moving a face when it must.
+    expect(holds(turnEntries(true, [], true, 'turn', 0), model({ turnOrder: true }))).toHaveLength(1);
+    expect(holds(turnEntries(true, [], false, 'turn', 0), model({ turnOrder: true }))).toEqual([]);
+    expect(holds(turnEntries(true, [], false, 'turn', 0), model())).toHaveLength(1);
+    expect(holds(turnEntries(true, [], true, 'turn', 0), model({ turnOrder: true, freeze: { turnOrder: [{ node: 'n', side: 'top' }] } }))).toEqual([]);
+    expect(holds(turnEntries(false, ['l'], false, 'course', 0), model({ turnOrder: true, turnLinks: ['x'] }))).toHaveLength(1);
+    expect(holds(turnEntries(false, ['l'], false, 'course', 0), model({ turnOrder: true, turnLinks: ['l'] }))).toEqual([]);
+    // Every trunk declined: a model that still has a trunk join fails.
+    const trunk = { id: 'b', nodes: ['n'], trunk: { buses: ['b'] } };
+    expect(holds(declineTrunk(undefined, 'budget', 0), model({ meshBuses: [trunk] }))).toHaveLength(1);
+    expect(holds(declineTrunk(undefined, 'budget', 0), model({ meshBuses: [] }))).toEqual([]);
+    expect(holds(declineTrunk('n', 'blocked', 0), model({ meshBuses: [trunk] }))).toHaveLength(1);
+    expect(holds(declineTrunk('other', 'blocked', 0), model({ meshBuses: [trunk] }))).toEqual([]);
   });
   it('holds a kept course to the turns it promised on a routed model', () => {
     const course = { link: 'l', kind: 'gap', from: { face: 'left' }, to: { face: 'right' }, runs: [] } as never;

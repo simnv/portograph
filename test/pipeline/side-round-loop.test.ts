@@ -28,7 +28,7 @@ const run = async (name: string, script?: Script, testMaxReruns?: number): Promi
   return layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, ...(testMaxReruns === undefined ? {} : { testMaxReruns }) });
 };
 const withoutNotes = (model: LayoutModel): string => JSON.stringify({ ...model, diagnostics: model.diagnostics.filter(item => !item.code.startsWith('SIDE_')) },
-  (key, value: unknown) => key === 'runtime' ? undefined : value);
+  (key, value: unknown) => key === 'runtime' || key === 'reservations' ? undefined : value);
 const offerOf = (key: string, side: 'left' | 'right', link: string): SideOffer => ({
   hints: new Map([[key, side]]), promised: new Map([[key, { link, bends: 0, shape: 'straight' as const }]]), capped: false });
 

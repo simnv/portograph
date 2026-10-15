@@ -8,8 +8,6 @@
  */
 import type { Course, LayoutModel, LayoutStage, Owner, PortRef, Side, Size } from '../model/index.js';
 import { portKey } from './sides-one.js';
-import { isRoutedChord } from './frame-paths.js';
-import { pathBends } from './objective.js';
 
 export type RoundId = 'initial' | 'fan' | 'span' | 'course' | 'side' | 'turn' | 'overlay';
 /** A model owner, or the command (a reservation no single element owns: the turn order of every face, a budget decline of every trunk). */
@@ -247,73 +245,65 @@ export function declinedEntries(declined: DeclinedTrunks, revision: number): Res
 
 // ---- Predicates and validators ---------------------------------------------------------------------------------------------------
 
-/**
- * The failures of the reservations that a 7e model can show, in ledger order. A round asks once, after its final 7e and before 7f and the route, with `only` naming the
- * entries it answers for (a side round judges its faces and lanes, a span round its own chords, a turn round its turn order).
- */
-export function holds(ledger: Reservations, model: LayoutModel, only: (entry: Reservation) => boolean = () => true): ReservationFailure[] {
-  const failures: ReservationFailure[] = [];
-  for (const entry of ledger) {
-    if (!only(entry)) continue;
-    const found = holdsOne(entry, model);
-    if (found !== undefined) failures.push({ id: entry.id, kind: entry.kind, entry, ...found });
+/** The predicate of a floor against a placed model: sizes and pitches only grow, so it holds at every stage. */
+export function floorFailure(item: Reservation, model: LayoutModel): string | undefined {
+  if (item.kind === 'pitchFloor') {
+    const have = model.nodes[item.payload.node]?.sidePitch?.[item.payload.side];
+    return have !== undefined && have >= item.payload.min ? undefined : `the ${item.payload.side} pitch of ${item.payload.node} is under ${item.payload.min}`;
   }
-  return failures;
+  if (item.kind === 'nodeFloor') {
+    const size = model.nodes[item.payload.node]?.size;
+    return size !== undefined && size.width >= item.payload.min.width && size.height >= item.payload.min.height ? undefined : `${item.payload.node} is smaller than its floor`;
+  }
+  return undefined;
 }
 
-type Found = { why: string; key?: string; link?: string };
-function holdsOne(item: Reservation, model: LayoutModel): Found | undefined {
-  switch (item.kind) {
-    case 'pitchFloor': {
-      const have = model.nodes[item.payload.node]?.sidePitch?.[item.payload.side];
-      return have !== undefined && have >= item.payload.min ? undefined : { why: `the ${item.payload.side} pitch of ${item.payload.node} is under ${item.payload.min}` };
-    }
-    case 'nodeFloor': {
-      const size = model.nodes[item.payload.node]?.size;
-      return size !== undefined && size.width >= item.payload.min.width && size.height >= item.payload.min.height ? undefined : { why: `${item.payload.node} is smaller than its floor` };
-    }
-    case 'spanChord': {
-      const link = model.links.find(other => other.id === item.payload.link);
-      return link !== undefined && isRoutedChord(model, link) ? undefined : { why: `${item.payload.link} does not hold a routed chord`, link: item.payload.link };
-    }
-    case 'sideFace': {
-      // A port hinted for the straight shape of a routed link must hold its chord at 7e. Otherwise it would be routed with no lane and no chord, and the router would find its route.
-      const promise = item.payload.promise;
-      if (promise?.shape !== 'straight') return undefined;
-      const link = model.links.find(candidate => candidate.id === promise.link);
-      return link !== undefined && link.layer === 'routed' && !isRoutedChord(model, link)
-        ? { why: `a port hinted for a chord does not hold its chord at stage 7e (${promise.link})`, key: portKey(item.payload.port), link: promise.link } : undefined;
-    }
-    case 'laneOwner': {
-      // A port hinted for the routed L must own a source-aligned side lane at 7e. Without one the router would find its route (an exterior corridor gives three bends).
-      const link = item.payload.link;
-      return model.lanes.some(lane => lane.kind === 'side' && lane.owner.kind === 'link' && lane.owner.id === link && lane.aligned === true)
-        ? undefined : { why: `a port hinted for a side lane has no source-aligned lane at stage 7e (${link})`, key: portKey(item.payload.port), link };
-    }
-    case 'turnOrder':
-      return item.payload.requireChanged && (model.freeze?.turnOrder ?? []).length === 0 ? { why: 'the turn order moved no face' } : undefined;
-    default: return undefined;
-  }
-}
-
-/**
- * The failures of the routed obligations of a ledger against a routed model: a course that was kept with a turn count publishes no more turns than it promised
- * (`maxTurns`). It runs for every later trial that is judged and for the model the command publishes; a 7e prediction of the turns would only be a lower bound.
- * `got` is the turns the link has, absent when it has no route.
- */
-export function holdsRouted(ledger: Reservations, routed: LayoutModel): (ReservationFailure & { got: number | undefined; max: number })[] {
-  const failures: (ReservationFailure & { got: number | undefined; max: number })[] = [];
-  for (const entry of ofKind(ledger, 'course')) {
-    const max = entry.payload.maxTurns;
-    if (max === undefined) continue;
-    const link = routed.links.find(item => item.id === entry.payload.course.link), got = link === undefined ? undefined : pathBends(link);
-    if (got === undefined || got > max) failures.push({ id: entry.id, kind: 'course', entry, why: `${entry.payload.course.link} has ${got === undefined ? 'no route' : `${got} turns`}, ${max} were promised`, link: entry.payload.course.link, got, max });
-  }
-  return failures;
-}
 /** The turn count each kept course promised, by link id: what the turn round's judgment compares a trial with. */
 export function promisedTurns(ledger: Reservations): Map<string, number> {
   return new Map(ofKind(ledger, 'course').flatMap(({ payload }) => payload.maxTurns === undefined ? [] : [[payload.course.link, payload.maxTurns] as const]));
+}
+
+const isString = (value: unknown): value is string => typeof value === 'string';
+const isNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+const isPort = (value: unknown): boolean => isObject(value) && isString(value['node']) && Number.isInteger(value['ordinal']) && (value['anonymous'] === true ? value['name'] === undefined : isString(value['name']));
+const STORED_KINDS: ReadonlySet<string> = new Set(['pitchFloor', 'nodeFloor', 'sideFace', 'laneOwner', 'course', 'spanChord', 'turnOrder', 'trunkDeclined']);
+const PRODUCERS: ReadonlySet<string> = new Set(['initial', 'fan', 'span', 'course', 'side', 'turn', 'overlay', 'lanes', 'bands']);
+
+/** Why a stored entry is not the shape its kind has, or undefined. Restore reads JSON a hand may have written. */
+function shapeFailure(entry: unknown): string | undefined {
+  if (!isObject(entry)) return 'not an object';
+  const { id, kind, owner, producer, payload } = entry;
+  if (!isString(id) || !isString(kind) || !STORED_KINDS.has(kind)) return `kind ${String(kind)} is not stored`;
+  if (!isObject(owner) || !isString(owner['kind']) || !(isString(owner['id']) || (owner['kind'] === 'barCross' && isString(owner['node'])))) return `${id} has no owner`;
+  if (!isString(producer) || !PRODUCERS.has(producer)) return `${id} has no producer`;
+  if (!isObject(payload)) return `${id} has no payload`;
+  const bad = `${id} has a payload of the wrong shape`;
+  const sides = ['top', 'bottom', 'left', 'right'];
+  switch (kind) {
+    case 'pitchFloor': return isString(payload['node']) && sides.includes(payload['side'] as string) && isNumber(payload['min']) && (payload['min'] as number) > 0 ? undefined : bad;
+    case 'nodeFloor': {
+      const min = payload['min'];
+      return isString(payload['node']) && isObject(min) && isNumber(min['width']) && isNumber(min['height']) && (min['width'] as number) > 0 && (min['height'] as number) > 0 ? undefined : bad;
+    }
+    case 'sideFace': {
+      const promise = payload['promise'];
+      const promiseOk = promise === undefined || (isObject(promise) && isString(promise['link']) && (promise['shape'] === 'straight' || promise['shape'] === 'L') && Number.isInteger(promise['bends']));
+      return isPort(payload['port']) && (payload['side'] === 'left' || payload['side'] === 'right') && promiseOk ? undefined : bad;
+    }
+    case 'laneOwner': return isPort(payload['port']) && (payload['side'] === 'left' || payload['side'] === 'right') && isString(payload['link']) && payload['bends'] === 1 ? undefined : bad;
+    case 'course': return isObject(payload['course']) && isString(payload['course']['link']) && (payload['maxTurns'] === undefined || Number.isInteger(payload['maxTurns'])) ? undefined : bad;
+    case 'spanChord': return isString(payload['link']) ? undefined : bad;
+    case 'turnOrder': {
+      const scope = payload['scope'];
+      const scopeOk = isObject(scope) && (scope['all'] === true || (Array.isArray(scope['links']) && scope['links'].every(isString)));
+      return scopeOk && typeof payload['requireChanged'] === 'boolean' ? undefined : bad;
+    }
+    default: {
+      const scope = payload['scope'];
+      return isObject(scope) && (scope['all'] === true || isString(scope['key'])) && isString(payload['reason']) ? undefined : bad;
+    }
+  }
 }
 
 /**
@@ -323,6 +313,10 @@ export function promisedTurns(ledger: Reservations): Map<string, number> {
 export function validateReservations(model: LayoutModel): void {
   const ledger = model.reservations ?? [];
   if (!Array.isArray(ledger)) throw new Error('Reservations must be a list');
+  for (const entry of ledger) {
+    const bad = shapeFailure(entry);
+    if (bad !== undefined) throw new Error(`Reservation is malformed: ${bad}`);
+  }
   const ids = new Set<string>();
   for (const entry of ledger) {
     const item = entry as unknown as { id?: unknown; kind?: unknown; activeFrom?: unknown; revision?: unknown } | null;
@@ -375,7 +369,8 @@ export function validateReservations(model: LayoutModel): void {
     if (!turn.all && !same(turn.links, model.turnLinks ?? [])) throw new Error('The reserved turn links differ from the turn links of the model');
   }
   // A floor is a promise about the placed geometry, which later stages may only grow; the kinds below are checked on every restored stage.
-  for (const failure of holds(ledger.filter(item => RESTORED.has(item.kind)), model)) throw new Error(`Reservation ${failure.id} does not hold: ${failure.why}`);
+  for (const item of ledger) {
+    const why = floorFailure(item, model);
+    if (why !== undefined) throw new Error(`Reservation ${item.id} does not hold: ${why}`);
+  }
 }
-/** The kinds whose predicate reads only what every published stage keeps. */
-const RESTORED: ReadonlySet<ReservationKind> = new Set<ReservationKind>(['pitchFloor', 'nodeFloor']);
