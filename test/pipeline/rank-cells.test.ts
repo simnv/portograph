@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { stringify } from 'yaml';
-import { layout, parse, resolve, restoreFinalLayout, serializeLayoutModel } from '../../src/index.js';
+import { layout, parse, restoreFinalLayout, serializeLayoutModel } from '../../src/index.js';
+import { resolve } from '../../src/internal.js';
 import { groupShape } from '../../src/layout/grid.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';

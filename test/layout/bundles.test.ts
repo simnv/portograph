@@ -1,7 +1,7 @@
 import { goldenWithRemainders } from '../golden-remainders.js';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import * as api from '../../src/index.js';
+import * as api from '../../src/internal.js';
 import type { LayoutModel } from '../../src/model/index.js';
 import { rows } from '../../src/layout/rows.js';
 import { lanes } from '../../src/layout/lanes.js';

@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import type { LayoutLink, LayoutModel, Rect } from '../../src/index.js';
-import { bands, bars, bundles, centre, flanks, layout, lanes, parse, rows, score } from '../../src/index.js';
+import { layout, parse, score } from '../../src/index.js';
+import { bands, bars, bundles, centre, flanks, lanes, rows } from '../../src/internal.js';
 import { tierGapPlans } from '../../src/layout/gap-plan.js';
 import { chordKind, frameLinkCandidate, isRoutedChord } from '../../src/layout/frame-paths.js';
 import { bandGap } from '../../src/layout/skeleton-graph.js';
@@ -30,7 +31,7 @@ async function runWithoutRule(text: string): Promise<LayoutModel> {
     ...await importOriginal<typeof import('../../src/layout/overlay-order.js')>(), orderFramesByOverlay: () => false,
   }));
   try {
-    const api = await import('../../src/index.js');
+    const api = await import('../../src/internal.js');
     return await api.layout(api.parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   } finally {
     vi.doUnmock('../../src/layout/overlay-order.js');

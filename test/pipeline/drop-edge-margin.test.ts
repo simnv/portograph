@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
-import { bands, bars, bundles, centre, flanks, lanes, linkLabels, planRoute, route, rows, score } from '../../src/index.js';
+import { score } from '../../src/index.js';
+import { bands, bars, bundles, centre, flanks, lanes, linkLabels, planRoute, route, rows } from '../../src/internal.js';
 import { GROUP_EDGE_LINK_CLEARANCE } from '../../src/theme/geometry.js';
 import { placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';

@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
-import { bars, bundles, centre, flanks, lanes, restoreLayoutModel, rows, score } from '../../src/index.js';
+import { score } from '../../src/index.js';
+import { bars, bundles, centre, flanks, lanes, restoreLayoutModel, rows } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/model/index.js';
 import { validateLanes } from '../../src/layout/lanes.js';
 import { placed } from './phase-two-fixture.js';

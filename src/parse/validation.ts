@@ -1,18 +1,66 @@
-import { parseDocument } from 'yaml';
+import { isMap, isScalar, isSeq, LineCounter, parseDocument } from 'yaml';
+import type { Document, Node } from 'yaml';
 import type { Diagnostic } from '../model/index.js';
 
 /** A schema path uses JSONPath bracket notation for array indices. */
 export interface SourceDiagnostic extends Diagnostic { path: string }
 
+/** A place in the authored text, 1-based. Kept beside the diagnostics, not inside them, so layout JSON does not change. */
+export interface SourceLocation { line: number; column: number }
+
+export type LocateDiagnostic = (diagnostic: SourceDiagnostic) => SourceLocation | undefined;
+
 export class ParseError extends Error {
-  constructor(public readonly diagnostics: SourceDiagnostic[]) {
-    super(diagnostics.filter(d => d.severity === 'error').map(d => `${d.path}: ${d.message}`).join('\n'));
+  constructor(public readonly diagnostics: SourceDiagnostic[], locate?: LocateDiagnostic) {
+    super(diagnostics.filter(d => d.severity === 'error').map(d => {
+      const at = locate?.(d);
+      return `${at ? `${at.line}:${at.column} ` : ''}${d.path}: ${d.message}`;
+    }).join('\n'));
     this.name = 'ParseError';
   }
 }
 
+
 export class Validation {
   readonly diagnostics: SourceDiagnostic[] = [];
+  private ast: Document.Parsed | undefined;
+  private readonly lines = new LineCounter();
+  private readonly known = new WeakMap<SourceDiagnostic, SourceLocation>();
+
+  /**
+   * Where a diagnostic points in the authored text: the key or list item its path names, or the
+   * deepest part of that path that exists (a missing key points at the map that should hold it).
+   */
+  locate = (diagnostic: SourceDiagnostic): SourceLocation | undefined => {
+    const known = this.known.get(diagnostic);
+    if (known !== undefined || this.ast === undefined) return known;
+    let node: unknown = this.ast.contents;
+    let offset: number | undefined = (node as Node | null)?.range?.[0];
+    // Walk the path string against the document, not a split of it: a key may hold `.` or `[`,
+    // so at a map the longest key that the rest of the path starts with (and ends on a boundary) wins.
+    let rest = diagnostic.path.startsWith('$') ? diagnostic.path.slice(1) : diagnostic.path;
+    while (rest !== '') {
+      const index = /^\[(\d+)\]/.exec(rest);
+      if (isMap(node) && rest.startsWith('.')) {
+        const fits = node.items.filter(item => isScalar(item.key) && rest.startsWith(`.${String(item.key.value)}`)
+          && (rest.length === String(item.key.value).length + 1 || rest[String(item.key.value).length + 1] === '.' || rest[String(item.key.value).length + 1] === '['));
+        const pair = fits.sort((a, b) => String((b.key as { value: unknown }).value).length - String((a.key as { value: unknown }).value).length)[0];
+        if (pair === undefined) break;
+        rest = rest.slice(String((pair.key as { value: unknown }).value).length + 1);
+        offset = (pair.key as Node).range?.[0] ?? offset;
+        node = pair.value;
+      } else if (isSeq(node) && index !== null) {
+        const item = node.items[Number(index[1])];
+        if (item === undefined) break;
+        rest = rest.slice(index[0].length);
+        offset = (item as Node).range?.[0] ?? offset;
+        node = item;
+      } else break;
+    }
+    if (offset === undefined) return undefined;
+    const { line, col } = this.lines.linePos(offset);
+    return { line, column: col };
+  };
 
   report(code: string, path: string, message: string, severity: Diagnostic['severity'] = 'error', stage: Diagnostic['stage'] = 'parse'): void {
     this.diagnostics.push({ code, path, message, severity, stage });
@@ -22,8 +70,13 @@ export class Validation {
 
   yaml(text: string): unknown {
     try {
-      const ast = parseDocument(text, { stringKeys: true, merge: true, prettyErrors: false });
-      for (const error of ast.errors) this.report('INVALID_YAML', '$', error.message);
+      const ast = parseDocument(text, { stringKeys: true, merge: true, prettyErrors: false, lineCounter: this.lines });
+      this.ast = ast;
+      for (const error of ast.errors) {
+        this.report('INVALID_YAML', '$', error.message);
+        const start = error.pos[0];
+        if (typeof start === 'number') { const { line, col } = this.lines.linePos(start); this.known.set(this.diagnostics.at(-1)!, { line, column: col }); }
+      }
       for (const warning of ast.warnings) this.report('YAML_WARNING', '$', warning.message, 'warning');
       // Maps preserve the AST's declaration order, including integer-like IDs, before
       // any JavaScript object is created. Keep YAML's default alias expansion bound.

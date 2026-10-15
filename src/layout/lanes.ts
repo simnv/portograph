@@ -340,7 +340,7 @@ export function spanLaneFindings(model: LayoutModel): Diagnostic[] {
     blocked.set(owner.id, [...blocked.get(owner.id) ?? [], wall]);
   }
   return [...blocked].map(([link, walls]) => ({ stage: 'placement' as const, severity: 'warning' as const, code: 'SPAN_CHORD_BLOCKED', owners: [{ kind: 'link' as const, id: link }],
-    message: `A move that 7f could not refuse put ${[...new Set(walls)].join(', ')} in the corridor of the spanning chord ${link}.` }));
+    message: `A placement move that could not be refused put ${[...new Set(walls)].join(', ')} in the corridor of the spanning chord ${link}.` }));
 }
 /**
  * The end of 7c: a side lane whose far port centring has put on the lane x (and that 7a did not seat there) is recorded once (`SIDE_LANE_SEATED`,

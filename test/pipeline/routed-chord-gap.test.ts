@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
-import { bands, bars, bundles, centre, flanks, lanes, layout, parse, rows, score } from '../../src/index.js';
+import { layout, parse, score } from '../../src/index.js';
+import { bands, bars, bundles, centre, flanks, lanes, rows } from '../../src/internal.js';
 import { chordGapNotes, tierGapPlans } from '../../src/layout/gap-plan.js';
 import { growTierGaps } from '../../src/layout/gap-room.js';
 import { intersection, samePoint } from '../../src/score/geometry.js';

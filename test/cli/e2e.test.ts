@@ -1,5 +1,6 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -197,4 +198,81 @@ links:
     expect(() => process.kill(Number(match![1]), 0)).toThrow();
     expect(readdirSync(temp).filter(name => /^deadline\.(svg|layout\.json|score\.json)$/.test(name))).toEqual([]);
   }, 15000);
+
+  it('writes the same bytes on two runs, and keeps the stage timings only on request', async () => {
+    const [a, b] = [join(temp, 'det-a.svg'), join(temp, 'det-b.svg')];
+    for (const path of [a, b]) expect((await command(['render', golden, '-o', path])).code).toBe(0);
+    for (const suffix of ['.layout.json', '.score.json']) {
+      expect(readFileSync(a.replace('.svg', suffix), 'utf8')).toBe(readFileSync(b.replace('.svg', suffix), 'utf8'));
+    }
+    expect(readFileSync(a, 'utf8')).toBe(readFileSync(b, 'utf8'));
+    expect(readFileSync(a.replace('.svg', '.layout.json'), 'utf8')).not.toContain('durationMs');
+    expect(JSON.parse(readFileSync(a.replace('.svg', '.score.json'), 'utf8')).runtime).toEqual({ stages: [] });
+    const timed = join(temp, 'det-timed.svg');
+    expect((await command(['render', '--timings', golden, '-o', timed])).code).toBe(0);
+    expect(readFileSync(timed.replace('.svg', '.layout.json'), 'utf8')).toContain('durationMs');
+    expect(readFileSync(timed.replace('.svg', '.score.json'), 'utf8')).toContain('"runtime"');
+  }, 60000);
+
+  it('names file, line and column for a schema error and for a syntax error, without a cascade', async () => {
+    const schema = join(temp, 'schema.yaml');
+    writeFileSync(schema, 'portograph: 2\ngroups:\n  g: { tier: 0 }\nnodes:\n  a:\n    group: g\n    colour: red\n');
+    const unknown = await command(['layout', schema]);
+    expect(unknown.code).toBe(2);
+    expect(unknown.stderr).toContain(`UNKNOWN_KEY at ${schema}:7:5 ($.nodes.a.colour)`);
+    const syntax = join(temp, 'syntax.yaml');
+    writeFileSync(syntax, 'portograph: 2\ngroups:\n  g: { tier: 0\nnodes: {}\n');
+    const broken = await command(['layout', syntax]);
+    expect(broken.code).toBe(2);
+    expect(broken.stderr).toMatch(new RegExp(`INVALID_YAML at ${syntax}:\\d+:\\d+:`));
+    expect(broken.stderr.match(/portograph: error:/g)).toHaveLength(1);
+  }, 30000);
+
+  it('reads the document from stdin with -, names it <stdin> in diagnostics, and writes to stdout with -o -', async () => {
+    const text = readFileSync(golden, 'utf8');
+    const piped = await new Promise<{ code: number | null; stdout: string; stderr: string }>(resolve => {
+      const child = spawn(process.execPath, [cli, 'layout', '-', '-o', '-'], { cwd: temp });
+      let stdout = '', stderr = '';
+      child.stdout.on('data', chunk => { stdout += chunk; });
+      child.stderr.on('data', chunk => { stderr += chunk; });
+      child.on('close', code => resolve({ code, stdout, stderr }));
+      child.stdin.end(text);
+    });
+    expect(piped.code, piped.stderr).toBe(0);
+    const direct = await command(['layout', golden]);
+    expect(piped.stdout).toBe(direct.stdout);
+    const bad = await new Promise<{ code: number | null; stderr: string }>(resolve => {
+      const child = spawn(process.execPath, [cli, 'layout', '-'], { cwd: temp });
+      let stderr = '';
+      child.stderr.on('data', chunk => { stderr += chunk; });
+      child.on('close', code => resolve({ code, stderr }));
+      child.stdin.end('portograph: 2\ngroups:\n  g: { tier: 0 }\nnodes:\n  a:\n    group: g\n    colour: red\n');
+    });
+    expect(bad.code).toBe(2);
+    expect(bad.stderr).toContain('UNKNOWN_KEY at <stdin>:7:5 ($.nodes.a.colour)');
+  }, 60000);
+
+  it('writes diagnostics and status lines as one JSON object per line with --diagnostics json', async () => {
+    const schema = join(temp, 'json.yaml');
+    writeFileSync(schema, 'portograph: 2\ngroups:\n  g: { tier: 0 }\nnodes:\n  a:\n    group: g\n    colour: red\n');
+    const result = await command(['layout', schema, '--diagnostics', 'json']);
+    expect(result.code).toBe(2);
+    const lines = result.stderr.trim().split('\n').map(line => JSON.parse(line) as Record<string, unknown>);
+    expect(lines[0]).toMatchObject({ kind: 'diagnostic', code: 'UNKNOWN_KEY', severity: 'error', path: '$.nodes.a.colour', source: schema, line: 7, column: 5 });
+    expect(lines.every(line => typeof line.message === 'string' && typeof line.severity === 'string')).toBe(true);
+    const wrote = await command(['render', golden, '-o', join(temp, 'json-out.svg'), '--diagnostics=json']);
+    expect(wrote.code, wrote.stderr).toBe(0);
+    expect(JSON.parse(wrote.stderr.trim().split('\n').at(-1)!)).toMatchObject({ kind: 'status', severity: 'info', code: 'WROTE' });
+    const usage = await command(['layout', schema, '--diagnostics', 'json', '--nope']);
+    expect(usage.code).toBe(2);
+    expect(JSON.parse(usage.stderr.trim())).toMatchObject({ kind: 'status', severity: 'error', code: 'USAGE' });
+  }, 60000);
+
+  it('builds dist/index.js and dist/index.cjs with the export keys of src/index.ts', async () => {
+    const wanted = Object.keys(await import('../../src/index.js')).sort();
+    const esm = Object.keys(await import(join(root, 'dist/index.js'))).sort();
+    const cjs = Object.keys(createRequire(import.meta.url)(join(root, 'dist/index.cjs'))).sort();
+    expect(esm).toEqual(wanted);
+    expect(cjs).toEqual(wanted);
+  });
 });

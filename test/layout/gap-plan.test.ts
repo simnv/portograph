@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { bands, bars, bundles, centre, flanks, lanes, rows } from '../../src/index.js';
+import { bands, bars, bundles, centre, flanks, lanes, rows } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
 import { facingTips, plannedSegments, planGap, tierGapPlan, tierGapPlans, type GapPlan, type PlanFrame, type PlanInput } from '../../src/layout/gap-plan.js';
 import { tierGaps } from '../../src/layout/gap-runs.js';

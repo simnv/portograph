@@ -354,7 +354,7 @@ function declineStackedShapes(model: LayoutModel): void {
 export function resolveBeforeExpansion(input: NormalisedDocument, options: ResolveOptions = {}): LayoutModel {
   const model = createLayoutModel(input);
   model.diagnostics = JSON.parse(JSON.stringify(options.diagnostics ?? []));
-  if (input.profile !== 'network') report(model, 'UNSUPPORTED_PROFILE', `M1 does not support profile ${input.profile}`, []);
+  if (input.profile !== 'network') report(model, 'UNSUPPORTED_PROFILE', `Profile ${input.profile} is not supported; use network`, []);
   stopOnErrors(model);
   const groupOrder = new Map(orderedGroupIds(model.document).map((id, index) => [id, index]));
   for (const id of groupOrder.keys()) {

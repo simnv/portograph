@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parse, resolve } from '../../src/index.js';
+import { parse } from '../../src/index.js';
+import { resolve } from '../../src/internal.js';
 import { chainSides, groupExits, seatUnits, stackChains, type GridUnit } from '../../src/layout/grid-chains.js';
 
 /** A tier-1 grid `farm`, a core above and a rail below, the given nodes and links. */

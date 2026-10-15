@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { layout, parse, resolve, restoreLayoutModel, score } from '../../src/index.js';
+import { layout, parse, score } from '../../src/index.js';
+import { resolve, restoreLayoutModel } from '../../src/internal.js';
 import type { LayoutModel, PortRef, Side } from '../../src/index.js';
 import { portKey, sidesOne } from '../../src/layout/sides-one.js';
 import { sizeNodes } from '../../src/layout/size.js';

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
-import { layout, parse, restoreLayoutModel, score } from '../../src/index.js';
+import { layout, parse, score } from '../../src/index.js';
+import { restoreLayoutModel } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
 import { rebuildBarDrops } from '../../src/layout/bars.js';
 import { enclosedBundle, gridCells, gridChunks, gridColumnFloor, gridRows, groupShape, isGridGroup, likeSidePairs, packRowsOf } from '../../src/layout/grid.js';

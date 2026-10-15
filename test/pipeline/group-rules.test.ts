@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
-import { centre, flanks, lanes, layout, parse, restoreLayoutModel, rows, score } from '../../src/index.js';
+import { layout, parse, score } from '../../src/index.js';
+import { centre, flanks, lanes, restoreLayoutModel, rows } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { GROUP_EDGE_LINK_CLEARANCE } from '../../src/theme/geometry.js';

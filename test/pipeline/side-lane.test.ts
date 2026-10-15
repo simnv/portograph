@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { layout, parse, restoreLayoutModel, validateLanes, rebuildLaneExtents } from '../../src/index.js';
+import { layout, parse } from '../../src/index.js';
+import { restoreLayoutModel, validateLanes, rebuildLaneExtents } from '../../src/internal.js';
 import type { Lane, LayoutModel } from '../../src/index.js';
 import { reseatLanes, sideLaneExtent } from '../../src/layout/lanes.js';
 import { LINK_LABEL_GEOMETRY } from '../../src/layout/link-labels.js';

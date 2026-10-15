@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { layout, parse, restoreLayoutModel, score } from '../../src/index.js';
+import { layout, parse, score } from '../../src/index.js';
+import { restoreLayoutModel } from '../../src/internal.js';
 import type { Course, LayoutLink, LayoutModel } from '../../src/index.js';
 import { overlayChordAdmitted } from '../../src/layout/frame-paths.js';
 import { judgeOverlayTrial, measureOverlayCourses } from '../../src/layout/course-measure.js';

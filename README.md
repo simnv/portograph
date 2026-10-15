@@ -23,6 +23,46 @@ Renders: [`prototype/out/out-tall2-av.png`](prototype/out/out-tall2-av.png) →
 [`prototype/out/out-tall5-av.png`](prototype/out/out-tall5-av.png). Target:
 [`docs/design/target-example.jpeg`](docs/design/target-example.jpeg).
 
+## Use
+
+Needs Node 22 or newer. Install from a tarball (`npm pack`) or from the git repository; a git
+install builds the package on `npm install` (the `prepare` script).
+
+```sh
+npm install ./portograph-0.1.0.tgz
+npx portograph render diagram.yaml --output diagram.svg      # also writes diagram.layout.json and diagram.score.json
+npx portograph render diagram.yaml --format drawio --output diagram.drawio
+npx portograph score diagram.layout.json
+cat diagram.yaml | npx portograph layout - > diagram.layout.json    # - reads stdin; stdout is the default output
+npx portograph layout diagram.yaml --diagnostics json 2> diagnostics.jsonl
+```
+
+A diagnostic names the file, line and column of the YAML it is about, for example
+`portograph: error: UNKNOWN_KEY at diagram.yaml:7:5 ($.nodes.a.colour): Unknown key colour`.
+`--diagnostics json` writes the same as one JSON object per line. The layout and score JSON hold no
+timings, so two runs on one input write the same bytes; `--timings` adds them. Run
+`npx portograph --help` for every option.
+
+As a library (ESM or CommonJS), the package root exports `parse`, `parseWithDiagnostics`, `layout`,
+`score`, `render`, `drawio`, `migrate`, `restoreFinalLayout`, `serializeLayoutModel`, the error
+classes and the types. `portograph/node` supplies the worker factories for Node. The stage
+functions and tables are in `portograph/internal`, which has no stability promise.
+
+```js
+import { parseWithDiagnostics, layout, score, render } from 'portograph';
+import { createNodeElkFactory, createNodeRouteFactory } from 'portograph/node';
+
+const parsed = parseWithDiagnostics(yaml);
+if (!parsed.ok) throw new Error(JSON.stringify(parsed.diagnostics));
+const model = await layout(parsed.document, {
+  diagnostics: parsed.diagnostics,
+  createElkAttempt: createNodeElkFactory(),
+  createRouteAttempt: createNodeRouteFactory(),
+});
+const report = score(model);
+const svg = render(model);
+```
+
 ## Read in this order
 
 1. [`CONTEXT.md`](CONTEXT.md) — the vocabulary and invariants. Everything else uses these words.
@@ -63,11 +103,10 @@ agy (renders) before merge; correctness and metric regressions block.
 
 TypeScript · elkjs 0.12 (layered; tiers by partitioning with per-band fallback) · libavoid-js for
 links the region rules do not claim · Vite lib build + `vite-plugin-dts` · Vitest · zero DOM in the
-core. Supported Node versions: `^18.18.0 || ^20.9.0 || >=22.0.0`.
+core. Supported Node versions: 22 or newer.
 
 Run `npm ci`, then `npm run build`, `npm test`, `npm run typecheck`, and `npm run lint`.
-The core exposes `parseWithDiagnostics`, `layout`, `score`, `render`, the staged JSON model,
-font measurements and port geometry helpers.
+The staged JSON model, font measurements and port geometry helpers are in `portograph/internal`.
 See [text measurement](docs/design/text-measurement.md) for font and pill conventions.
 
 ```sh
@@ -88,23 +127,6 @@ and 3 for processing failure or the 60-second command deadline. A computed gate 
 writes the complete artifact set; `--allow-gate-failures` changes only its exit code. Link, port
 and degree limits warn and continue; more than 1,000 nodes requires `--force`.
 Set `PORTOGRAPH_PROGRESS=1` to see stage timings and worker startup on stderr.
-
-For Node library use:
-
-```js
-import { parseWithDiagnostics, layout, score, render } from 'portograph';
-import { createNodeElkFactory, createNodeRouteFactory } from 'portograph/node';
-
-const parsed = parseWithDiagnostics(yaml);
-if (!parsed.ok) throw new Error(JSON.stringify(parsed.diagnostics));
-const model = await layout(parsed.document, {
-  diagnostics: parsed.diagnostics,
-  createElkAttempt: createNodeElkFactory(),
-  createRouteAttempt: createNodeRouteFactory(),
-});
-const report = score(model);
-const svg = render(model);
-```
 
 The CLI enforces its deadline in a separate process, including synchronous placement and scoring;
 library calls remain portable and use the supplied worker factories and optional shared budget.

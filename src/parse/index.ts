@@ -3,20 +3,21 @@ import { orderedGroupIds, orderedNodeIds, unsupportedMessage } from '../model/in
 import { BOTTOM_CLASSES, TOP_CLASSES } from '../profiles/network/tiers.js';
 import { filterCss } from './css.js';
 import { own, ParseError, put, Validation } from './validation.js';
-import type { SourceDiagnostic } from './validation.js';
+import type { LocateDiagnostic, SourceDiagnostic, SourceLocation } from './validation.js';
 
 export { ParseError } from './validation.js';
-export type { SourceDiagnostic } from './validation.js';
+export type { LocateDiagnostic, SourceDiagnostic, SourceLocation } from './validation.js';
 
 export interface ParseOptions {
   /** Overrides the >1000 node refusal only (ADR-0006). */
   force?: boolean;
-  onDiagnostic?: (diagnostic: SourceDiagnostic) => void;
+  /** The second argument is where the diagnostic points in the authored text, when it is known. */
+  onDiagnostic?: (diagnostic: SourceDiagnostic, location?: SourceLocation) => void;
 }
 
 export type ParseResult =
-  | { ok: true; document: NormalisedDocument; diagnostics: SourceDiagnostic[] }
-  | { ok: false; diagnostics: SourceDiagnostic[] };
+  | { ok: true; document: NormalisedDocument; diagnostics: SourceDiagnostic[]; locate: LocateDiagnostic }
+  | { ok: false; diagnostics: SourceDiagnostic[]; locate: LocateDiagnostic };
 
 const sides = ['top', 'right', 'bottom', 'left'] as const;
 const routes = ['orthogonal', 'straight', 'bundle', 'merge', 'overlay', 'stub', 'group-link'] as const;
@@ -59,11 +60,11 @@ function groups(input: Map<string, unknown>, doc: NormalisedDocument, v: Validat
     if (fields.has('shape')) {
       const shape = v.choice(fields.get('shape'), ['ranked', 'row', 'bar', 'grid', 'ring', 'free'], `${path}.shape`);
       if (shape === 'ranked' || shape === 'row' || shape === 'bar' || shape === 'grid') content.shape = shape;
-      else if (shape !== undefined) v.report('UNSUPPORTED_SHAPE', `${path}.shape`, `M1 does not support ${shape} groups`);
+      else if (shape !== undefined) v.report('UNSUPPORTED_SHAPE', `${path}.shape`, `${shape} groups are not supported`);
     }
     if (fields.has('collapsed')) {
       if (typeof fields.get('collapsed') !== 'boolean') v.report('INVALID_TYPE', `${path}.collapsed`, 'Expected a boolean');
-      else v.report('COLLAPSED_UNSUPPORTED', `${path}.collapsed`, 'M1 ignores collapsed', 'warning', 'model');
+      else v.report('COLLAPSED_UNSUPPORTED', `${path}.collapsed`, 'collapsed is ignored', 'warning', 'model');
     }
     if (fields.has('layout')) {
       const layout: Record<string, string | number | boolean> = {};
@@ -352,14 +353,26 @@ function limits(doc: NormalisedDocument, inputLinkCount: number, options: ParseO
   }
 }
 
+/** `locate` is a method of the result, not data: it stays out of enumeration, so two results of one text compare equal. */
+function withLocate<T extends object>(result: T, locate: LocateDiagnostic): T & { locate: LocateDiagnostic } {
+  return Object.defineProperty(result, 'locate', { value: locate, enumerable: false }) as T & { locate: LocateDiagnostic };
+}
+
 export function parseWithDiagnostics(text: string, options: ParseOptions = {}): ParseResult {
   const v = new Validation();
-  const root = v.map(v.yaml(text), '$');
+  const parsedYaml = v.yaml(text);
+  // A syntax error leaves nothing to check: the schema pass would only repeat it as a pile of
+  // "missing key" errors, so stop at the first thing the author has to fix.
+  if (v.failed) {
+    for (const diagnostic of v.diagnostics) options.onDiagnostic?.(diagnostic, v.locate(diagnostic));
+    return withLocate({ ok: false, diagnostics: v.diagnostics }, v.locate);
+  }
+  const root = v.map(parsedYaml, '$');
   v.keys(root, ['portograph', 'profile', 'title', 'css', 'layout', 'groups', 'nodes', 'links', 'overlays'], '$');
   if (root.get('portograph') !== 2) v.report('VERSION', '$.portograph', 'portograph: 2 is required');
   if (root.has('profile')) {
     const profile = v.string(root.get('profile'), '$.profile');
-    if (profile !== undefined && profile !== 'network') v.report('UNSUPPORTED_PROFILE', '$.profile', `M1 does not support profile ${profile}`);
+    if (profile !== undefined && profile !== 'network') v.report('UNSUPPORTED_PROFILE', '$.profile', `Profile ${profile} is not supported; use network`);
   }
   const doc: NormalisedDocument = { portograph: 2, profile: 'network', groups: {}, nodes: {}, links: [] };
   optionalStrings(root, doc, ['title'], '$', v);
@@ -395,13 +408,13 @@ export function parseWithDiagnostics(text: string, options: ParseOptions = {}): 
   if (root.has('links')) links(root.get('links'), doc, v);
   const linkInput = root.get('links');
   limits(doc, Array.isArray(linkInput) ? linkInput.length : 0, options, v);
-  for (const diagnostic of v.diagnostics) options.onDiagnostic?.(diagnostic);
-  return v.failed ? { ok: false, diagnostics: v.diagnostics } : { ok: true, document: doc, diagnostics: v.diagnostics };
+  for (const diagnostic of v.diagnostics) options.onDiagnostic?.(diagnostic, v.locate(diagnostic));
+  return withLocate(v.failed ? { ok: false, diagnostics: v.diagnostics } : { ok: true, document: doc, diagnostics: v.diagnostics }, v.locate);
 }
 
 /** Parse to stage-0 JSON. Use the result variant or callback to retain diagnostics. */
 export function parse(text: string, options: ParseOptions = {}): NormalisedDocument {
   const result = parseWithDiagnostics(text, options);
-  if (!result.ok) throw new ParseError(result.diagnostics);
+  if (!result.ok) throw new ParseError(result.diagnostics, result.locate);
   return result.document;
 }

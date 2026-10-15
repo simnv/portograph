@@ -261,7 +261,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   };
   const cutSide = (why: string): void => {
     cuts.push({ stage: 'placement', severity: 'warning', code: 'SIDE_ROUND_CUT',
-      message: `A side round was cut: ${why}. The baseline (stage 7f of the last kept placement) stands, and this layout may differ from one made with more time.` });
+      message: `A side round was cut: ${why}. The last kept placement stands, and this layout may differ from one made with more time.` });
   };
   let floors: FanMeasure['floors'] = new Map();
   for (let round = 0; round < FAN_ROUNDS && placements < placeCap; round++) {
@@ -752,7 +752,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     const before = atFreeze.get(pair);
     if (now < STRAIGHT_PATH_CLEARANCE.path - PLACEMENT_EPS && before !== undefined) {
       lost.push({ stage: 'placement', severity: 'warning', code: 'CHORD_CLEARANCE_LOST',
-        message: `Stage 7f moved the straight links ${pair.replace('|', ' and ')} from ${before.toFixed(1)} px apart to ${now.toFixed(1)} px, under the ${STRAIGHT_PATH_CLEARANCE.path} px chord clearance.`,
+        message: `Placement moved the straight links ${pair.replace('|', ' and ')} from ${before.toFixed(1)} px apart to ${now.toFixed(1)} px, under the ${STRAIGHT_PATH_CLEARANCE.path} px chord clearance.`,
         owners: pair.split('|').map(id => ({ kind: 'link' as const, id })) });
     }
   }

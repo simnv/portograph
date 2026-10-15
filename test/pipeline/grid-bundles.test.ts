@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { layout, parse, resolve, restoreLayoutModel, score } from '../../src/index.js';
+import { layout, parse, score } from '../../src/index.js';
+import { resolve, restoreLayoutModel } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
 import { checkChainPair, checkStackedChannel, members, prepareBundleGeometry } from '../../src/layout/bundle-geometry.js';
 import { bandGap } from '../../src/layout/skeleton-graph.js';

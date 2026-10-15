@@ -149,7 +149,7 @@ export async function route(model: LayoutModel, options: RouteOptions = {}): Pro
       if (!stubCandidate(draft, link)) continue;
       link.stubCandidate = true;
       draft.diagnostics.push({ stage: 'final-geometry', severity: 'warning', code: 'ROUTE_STUB_CANDIDATE',
-        message: `${link.id} crosses more than two tiers or detours more than three times its direct distance; M1 keeps the routed path.`,
+        message: `${link.id} crosses more than two tiers or detours more than three times its direct distance; the routed path is kept.`,
         owners: [{ ...link.owner }] });
     }
   });

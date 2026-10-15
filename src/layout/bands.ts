@@ -1400,7 +1400,7 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
     if (!from?.anchor || !to?.anchor) continue;
     const fromNode = model.nodes[link.attachments.from.node]!, toNode = model.nodes[link.attachments.to.node]!;
     const fromGroup = model.groups[model.document.nodes[fromNode.id]!.group]!, toGroup = model.groups[model.document.nodes[toNode.id]!.group]!;
-    const unreserved = (why: string): void => placementWarning(model, 'LINK_LABEL_ROOM_UNRESERVED', `${link.id} ${why}; its label room cannot be reserved and the stage 9 ladder decides.`, [link.id]);
+    const unreserved = (why: string): void => placementWarning(model, 'LINK_LABEL_ROOM_UNRESERVED', `${link.id} ${why}; its label room cannot be reserved and the label placement decides.`, [link.id]);
     if (fromNode === toNode) { unreserved('returns to its own node'); continue; }
     const measured = measureText(text, { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight });
     const overlay = effectiveLayer(link) === 'overlay';

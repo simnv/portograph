@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
-import { bands, bars, bundles, centre, flanks, lanes, linkLabels, restoreLayoutModel, route, rows, score } from '../../src/index.js';
+import { score } from '../../src/index.js';
+import { bands, bars, bundles, centre, flanks, lanes, linkLabels, restoreLayoutModel, route, rows } from '../../src/internal.js';
 import { placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from './fixture.js';
 
