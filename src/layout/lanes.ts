@@ -25,6 +25,7 @@ import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, 
 import { nodeTier } from './read/tier.js';
 import { isSpanLane, replaySpanLane, spanCorridor, spanLaneId, SpanRefusal, SpanReservationRefusal } from './span-lanes.js';
 import { orderPortsByLanes } from './turn-order.js';
+import { holdsMove } from './move-reservations.js';
 import { trunkBuses, trunkGeometry, trunkHeads, trunkHolds, trunkRing } from './trunk.js';
 
 /** A corridor `reseatLanes` moved, and the child port it moved it onto. */
@@ -260,8 +261,17 @@ function placementInfo(model: LayoutModel, code: string, message: string, link: 
 }
 /** `laneSidesHold`, the side lanes' far ports and the riser keep-out: what a move that can be declined must pass. */
 export function optionalMoveHolds(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[], report = true): boolean {
-  return riserKeepOutHolds(model, proposed) && trunkHolds(model, proposed) && laneSidesHold(model, proposed, report) && sideLanesHold(model, proposed, report)
+  const old = riserKeepOutHolds(model, proposed) && trunkHolds(model, proposed) && laneSidesHold(model, proposed, report) && sideLanesHold(model, proposed, report)
     && spanCorridorsHold(model, proposed);
+  // SHADOW (ticket 03, step 11): the ledger verdict is compared with the guards'; a difference is a defect of the ledger.
+  if ((globalThis as { PORTOGRAPH_SHADOW_MOVES?: string }).PORTOGRAPH_SHADOW_MOVES === '1') {
+    const verdict = holdsMove(model, proposed, false), counter = globalThis as { PORTOGRAPH_SHADOW_COUNT?: number };
+    counter.PORTOGRAPH_SHADOW_COUNT = (counter.PORTOGRAPH_SHADOW_COUNT ?? 0) + 1;
+    const log = (globalThis as { PORTOGRAPH_SHADOW_LOG?: (line: string) => void }).PORTOGRAPH_SHADOW_LOG;
+    if (counter.PORTOGRAPH_SHADOW_COUNT % 25 === 1) log?.(`count ${counter.PORTOGRAPH_SHADOW_COUNT}`);
+    if (verdict !== old) log?.(`guards ${old}, ledger ${verdict}, groups ${proposed.map(item => item.group.id).join(',')}`);
+  }
+  return old;
 }
 /**
  * What a unit puts in a span corridor (architecture ticket 22): the corridor already holds the clearances (the group-edge link margin and the half stroke of the
@@ -384,7 +394,7 @@ export function sideLaneFindings(model: LayoutModel): Diagnostic[] {
   return result;
 }
 /** The link a lane belongs to. */
-function laneLink(model: LayoutModel, lane: Lane): LayoutLink | undefined {
+export function laneLink(model: LayoutModel, lane: Lane): LayoutLink | undefined {
   return lane.owner.kind === 'link' ? model.links.find(link => link.id === (lane.owner as { id: string }).id) : undefined;
 }
 function laneId(link: LayoutLink, tier: number): string { return `lane:${JSON.stringify(link.id)}:${tier}`; }

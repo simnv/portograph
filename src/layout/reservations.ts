@@ -31,10 +31,14 @@ export interface ReservationPayload {
   turnOrder: { scope: { all: true } | { links: readonly string[] }; requireChanged: boolean };
   /** A trunk join (or every trunk join) that placement declines. */
   trunkDeclined: { scope: { all: true } | { key: string }; reason: string };
+  /** A move keeps every routed port of a member row's facing edge from standing deeper in a riser keep-out than it did (mesh-bus.md, section 11.5). */
   riserKeepOut: { bus: string; maxDepth: readonly (readonly [string, number])[] };
+  /** A move puts no foreign unit across a bar extension of a trunk join that is not across one now (section 12.5). `allowedPairs` are the `group|bus` pairs that are across now. */
   trunkExtension: { head: string; allowedPairs: readonly string[] };
-  laneSide: { lane: string; groups: readonly (readonly [string, 'left' | 'right'])[]; frameReach: readonly (readonly [string, number])[]; chords: readonly string[] };
-  sideAlignment: { lane: string; far: PortRef };
+  /** A move keeps each unit on its side of every reserved lane, keeps the containing frames from reaching deeper across a side lane, and keeps the frozen chords. */
+  laneSide: { lanes: readonly string[]; groups: readonly (readonly [string, 'left' | 'right'])[]; frameReach: readonly (readonly [string, number])[]; chords: readonly string[] };
+  /** A move does not take the far port of an aligned side lane off the lane's x. */
+  sideAlignment: { lanes: readonly { lane: string; far: PortRef }[] };
   spanCorridor: { link: string; allowedBreaches: readonly string[] };
 }
 export type ReservationKind = keyof ReservationPayload;
@@ -63,6 +67,11 @@ const ACTIVE_FROM: Record<ReservationKind, LayoutStage> = {
   pitchFloor: 'size', nodeFloor: 'size', sideFace: 'sides-one', laneOwner: 'sides-one', course: 'sides-one', spanChord: 'resolve',
   turnOrder: 'sides-two', trunkDeclined: 'resolve', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes',
 };
+
+/** A reservation that lives for one move check and is never stored: no clone of the payload, revision 0. */
+export function transient<K extends ReservationKind>(kind: K, owner: ReservationOwner, detail: string, producer: Reservation['producer'], payload: ReservationPayload[K]): ReservationOf<K> {
+  return { id: `${kind}:${ownerKey(owner)}:${detail}`, kind, owner, producer, revision: 0, activeFrom: ACTIVE_FROM[kind], payload } as unknown as ReservationOf<K>;
+}
 
 /** One reservation. The id is `(kind, owner, detail)`; `detail` names the port, side or scope that tells two of one owner apart. */
 export function reservation<K extends ReservationKind>(kind: K, owner: ReservationOwner, detail: string, producer: Reservation['producer'], revision: number,
