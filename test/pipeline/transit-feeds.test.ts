@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
-import { bars, bundles, centre, flanks, lanes, layout, parse, rows, score } from '../../src/index.js';
+import { layout, parse, score } from '../../src/index.js';
+import { bars, bundles, centre, flanks, lanes, rows } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';

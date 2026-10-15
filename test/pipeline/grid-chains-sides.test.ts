@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parse, resolve } from '../../src/index.js';
+import { parse } from '../../src/index.js';
+import { resolve } from '../../src/internal.js';
 import { chainSides, stackChains } from '../../src/layout/grid-chains.js';
 import { sidesOne } from '../../src/layout/sides-one.js';
 import { sizeNodes } from '../../src/layout/size.js';

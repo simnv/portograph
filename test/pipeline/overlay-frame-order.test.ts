@@ -20,7 +20,7 @@ async function runWithoutRule(name: string, extra: { testMaxReruns?: number } = 
     ...await importOriginal<typeof import('../../src/layout/overlay-order.js')>(), orderFramesByOverlay: () => false,
   }));
   try {
-    const api = await import('../../src/index.js');
+    const api = await import('../../src/internal.js');
     const model = await api.layout(api.parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, ...extra });
     return { model, metrics: api.score(model).snapshot.metrics };
   } finally {

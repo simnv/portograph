@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
-import { DEFAULT_STROKE_WIDTHS, parse, render, resolve, restoreLayoutModel, score, sidesOne, sizeNodes } from '../../src/index.js';
+import { parse, render, score } from '../../src/index.js';
+import { DEFAULT_STROKE_WIDTHS, resolve, restoreLayoutModel, sidesOne, sizeNodes } from '../../src/internal.js';
 import { linkStrokeWidth, routedStrokeWidth } from '../../src/theme/geometry.js';
 import { bands } from '../../src/layout/bands.js';
 import { bars } from '../../src/layout/bars.js';

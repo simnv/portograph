@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { bands, bars, bundles, centre, flanks, lanes, layout, parse, rows } from '../../src/index.js';
+import { layout, parse } from '../../src/index.js';
+import { bands, bars, bundles, centre, flanks, lanes, rows } from '../../src/internal.js';
 import { tierGapPlans } from '../../src/layout/gap-plan.js';
 import type { LayoutLink, LayoutModel } from '../../src/index.js';
 import { findPort } from '../../src/layout/row-paths.js';

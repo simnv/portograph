@@ -80,7 +80,7 @@ export const isHinted = (port: LayoutPort): boolean => port.sideHint === true;
  */
 export function sideHintDiagnostics(model: LayoutModel): Diagnostic[] {
   return hintsFacingAway(model).map(({ link, own, peer }) => ({ stage: 'placement' as const, severity: 'warning' as const, code: 'SIDE_HINT_FACES_AWAY',
-    message: `The side hint on ${describe(own)} faces away from its peer ${peer.node} after stage 7f.`, owners: [{ kind: 'link' as const, id: link }] }));
+    message: `The side hint on ${describe(own)} faces away from its peer ${peer.node} after placement.`, owners: [{ kind: 'link' as const, id: link }] }));
 }
 
 /** Each hinted port whose peer stands on the side the port does not face, in link order (the round reads it at 7e, the pipeline after 7f). */

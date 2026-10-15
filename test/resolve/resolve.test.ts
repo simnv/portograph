@@ -338,7 +338,7 @@ links: [[a, c], [a, d], [b, c], [b, d], [g2, g3, {route: group-link}]]`);
   it('rejects an unsupported profile instead of guessing its families', () => {
     const doc = input(['[a, c]']);
     doc.profile = 'architecture';
-    expect(() => resolve(doc)).toThrow(/does not support profile architecture/);
+    expect(() => resolve(doc)).toThrow(/Profile architecture is not supported/);
   });
 
   it('warns when one authored group link creates distinct links sharing a concrete port', () => {

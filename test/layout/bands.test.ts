@@ -3,7 +3,7 @@ import { GROUP_PADDING } from '../../src/layout/regions.js';
 import { GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../../src/theme/geometry.js';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import * as api from '../../src/index.js';
+import * as api from '../../src/internal.js';
 import type { LayoutModel, Rect } from '../../src/model/index.js';
 import { bars } from '../../src/layout/bars.js';
 import { bundles } from '../../src/layout/bundles.js';

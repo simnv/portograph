@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
-import { layout, parse, resolve, score } from '../../src/index.js';
+import { layout, parse, score } from '../../src/index.js';
+import { resolve } from '../../src/internal.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { gapLegs, gapPlan, legReservation } from '../../src/layout/sides-two.js';

@@ -1,11 +1,10 @@
 import { APPROVED_Q } from '../golden-baseline.js';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import {
-  CommandDeadlineError, createBudget, layout, parseWithDiagnostics, render, restoreFinalLayout,
-  restoreLayoutModel, score, serializeLayoutModel, UNBOUNDED_BUDGET,
-} from '../../src/index.js';
-import type { ElkAttempt, ElkClock, GateId, LayoutProgress } from '../../src/index.js';
+import { CommandDeadlineError, createBudget, layout, parseWithDiagnostics, render, restoreFinalLayout, score, serializeLayoutModel } from '../../src/index.js';
+import { restoreLayoutModel, UNBOUNDED_BUDGET } from '../../src/internal.js';
+import type { GateId, LayoutProgress } from '../../src/index.js';
+import type { ElkAttempt, ElkClock } from '../../src/internal.js';
 import { skeleton } from '../../src/layout/skeleton.js';
 import { ElkDeadlineError } from '../../src/layout/elk-worker.js';
 import { sidesOne } from '../../src/layout/sides-one.js';

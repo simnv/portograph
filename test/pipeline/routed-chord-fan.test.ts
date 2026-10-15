@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
-import { bands, bars, bundles, centre, flanks, lanes, layout, parse, rows, score } from '../../src/index.js';
+import { layout, parse, score } from '../../src/index.js';
+import { bands, bars, bundles, centre, flanks, lanes, rows } from '../../src/internal.js';
 import { declinedFanDiagnostics, FAN_PITCH_CAP, fanRoundChords, fanRoundHolds, measureFans } from '../../src/layout/fan-spread.js';
 import { chordClearances, chordKind, isRoutedChord } from '../../src/layout/frame-paths.js';
 import { deriveFrames } from '../../src/layout/frames.js';

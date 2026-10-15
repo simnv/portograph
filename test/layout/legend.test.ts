@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel, Rect } from '../../src/index.js';
-import { DEFAULT_STROKE_WIDTHS, LEGEND_GEOMETRY, classDisplayLabel, diagramBounds, drawnBoxes, legendBoxes, legendRequired, legendVariants,
-  paintedSwatch, portRoles, produceLegend, restoreLayoutModel, score } from '../../src/index.js';
+import { score } from '../../src/index.js';
+import { DEFAULT_STROKE_WIDTHS, LEGEND_GEOMETRY, classDisplayLabel, diagramBounds, drawnBoxes, legendBoxes, legendRequired, legendVariants, paintedSwatch, portRoles, produceLegend, restoreLayoutModel } from '../../src/internal.js';
 import { bands } from '../../src/layout/bands.js';
 import { bars } from '../../src/layout/bars.js';
 import { bundles } from '../../src/layout/bundles.js';

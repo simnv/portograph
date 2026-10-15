@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { layout, parse, resolveBeforeExpansion } from '../../src/index.js';
+import { layout, parse } from '../../src/index.js';
+import { resolveBeforeExpansion } from '../../src/internal.js';
 import { deriveRanks } from '../../src/layout/ranks.js';
 import { rankInputOf } from '../../src/layout/rank-input.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';

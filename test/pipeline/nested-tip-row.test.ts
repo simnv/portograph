@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
-import { allocateGapRuns, bands, bars, bundles, centre, flanks, layout, lanes, parse, rows } from '../../src/index.js';
+import { layout, parse } from '../../src/index.js';
+import { allocateGapRuns, bands, bars, bundles, centre, flanks, lanes, rows } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/model/layout.js';
 import { portId } from '../../src/layout/skeleton-graph.js';
 import { stemReach } from '../../src/layout/bands.js';

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { layout, overlayBlockers, parse, render } from '../../src/index.js';
+import { layout, parse, render } from '../../src/index.js';
+import { overlayBlockers } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';

@@ -1,7 +1,7 @@
 import { GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../../src/theme/geometry.js';
 import { GROUP_LABEL_GEOMETRY, routedStroke } from '../../src/layout/bands.js';
 import { describe, expect, it } from 'vitest';
-import { bands, bars, bundles, centre, flanks, lanes, rows } from '../../src/index.js';
+import { bands, bars, bundles, centre, flanks, lanes, rows } from '../../src/internal.js';
 import { batchRequest, disjointShapes, pendingStemObstacles, planRoute, stemCheckpoint } from '../../src/route/plan.js';
 import { nodeClearance, routeObstacles, trimChain, TERMINAL_TRIM } from '../../src/route/obstacles.js';
 import { checkpointsHonoured, simplify } from '../../src/route/paths.js';

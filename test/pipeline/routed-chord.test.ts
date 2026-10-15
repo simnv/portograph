@@ -198,7 +198,7 @@ describe('what a chord leaves to its neighbours', () => {
     expect(named.length).toBeGreaterThan(0);
     for (const item of named) {
       expect(item.severity).toBe('warning');
-      expect(item.message).toMatch(/\(edge\)\.$/);
+      expect(item.message).toMatch(/after placement\.$/);
       expect(edgeLeavers(model)).toContain((item.owners![0] as { id: string }).id);
     }
   }, 60000);

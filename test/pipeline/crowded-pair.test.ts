@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allocateGapRuns, bands, bars, bundles, centre, flanks, lanes, planRoute, rows } from '../../src/index.js';
+import { allocateGapRuns, bands, bars, bundles, centre, flanks, lanes, planRoute, rows } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
 import { tierGapPlans } from '../../src/layout/gap-plan.js';
 import { findPort } from '../../src/layout/row-paths.js';

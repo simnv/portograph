@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { LEGEND_GEOMETRY, parseWithDiagnostics, produceLegend, render } from '../../src/index.js';
+import { parseWithDiagnostics, render } from '../../src/index.js';
+import { LEGEND_GEOMETRY, produceLegend } from '../../src/internal.js';
 import { pillLabel, scene } from './fixture.js';
 
 function elements(svg: string, name: string): Record<string, string>[] {

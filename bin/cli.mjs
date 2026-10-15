@@ -28,6 +28,13 @@ async function loadLibrary() {
   }
 }
 
+/** All of a stream as UTF-8 text; stdin is read here, in the parent, so the child needs no handle on it. */
+async function readAll(stream) {
+  const chunks = [];
+  for await (const chunk of stream) chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  return Buffer.concat(chunks).toString('utf8');
+}
+
 /** The deadline a command really gets. The environment override exists so tests can prove the
  * termination path with real computational work instead of waiting a minute. */
 function deadlineMs(fallback) {
@@ -45,7 +52,7 @@ function deadlineMs(fallback) {
  * `input` or `processing`. Progress and diagnostics reach `io.err` while the child still runs, so
  * a long command is not silent.
  */
-function compute(request, io, limitMs) {
+function compute(request, io, limitMs, inputText) {
   return new Promise((resolve) => {
     const deadlineAt = Date.now() + limitMs;
     let child;
@@ -87,7 +94,7 @@ function compute(request, io, limitMs) {
     // that follows a successful send is not mistaken for a silent death.
     child.on('exit', (code, signal) => setImmediate(() => finish({ ok: false, kind: 'processing',
       message: `compute process ended without a result (${signal ? `signal ${signal}` : `exit code ${code}`})` })));
-    child.send({ type: 'run', request, deadlineAt });
+    child.send({ type: 'run', request, inputText, deadlineAt });
   });
 }
 
@@ -125,7 +132,9 @@ function publishArtifacts(entries) {
   }
 }
 
-function writeArtifacts(command, result, io, EXIT, sidecarPaths) {
+function writeArtifacts(command, result, io, library) {
+  const { EXIT, sidecarPaths, formatStatus } = library;
+  const status = (severity, code, message) => io.err.write(`${formatStatus(command.diagnostics, severity, code, message)}\n`);
   if (command.output === undefined) {
     io.out.write(result.primary);
     if (!result.primary.endsWith('\n')) io.out.write('\n');
@@ -134,18 +143,18 @@ function writeArtifacts(command, result, io, EXIT, sidecarPaths) {
       if (result.sidecars) {
         const paths = sidecarPaths(command.output);
         publishArtifacts([[command.output, result.primary], [paths.layout, result.sidecars.layout], [paths.score, result.sidecars.score]]);
-        io.err.write(`portograph: wrote ${command.output}, ${paths.layout}, ${paths.score}\n`);
+        status('info', 'WROTE', `wrote ${command.output}, ${paths.layout}, ${paths.score}`);
       } else {
         publishArtifacts([[command.output, result.primary]]);
-        io.err.write(`portograph: wrote ${command.output}\n`);
+        status('info', 'WROTE', `wrote ${command.output}`);
       }
     } catch (error) {
-      io.err.write(`portograph: cannot write ${command.output}: ${error.message}\n`);
+      status('error', 'OUTPUT_FAILED', `cannot write ${command.output}: ${error.message}`);
       return EXIT.inputError;
     }
   }
   if (result.passed === false) {
-    io.err.write('portograph: an enforced gate or assertion failed; see the score report\n');
+    status('error', 'GATE_FAILED', 'an enforced gate or assertion failed; see the score report');
     return command.allowGateFailures ? EXIT.ok : EXIT.gateFailure;
   }
   return EXIT.ok;
@@ -155,9 +164,9 @@ function writeArtifacts(command, result, io, EXIT, sidecarPaths) {
  * Run the CLI on `argv` (without the node and script paths).
  * Writes to `io.out` / `io.err` and returns the process exit code.
  */
-export async function main(argv, io = { out: process.stdout, err: process.stderr }) {
+export async function main(argv, io = { out: process.stdout, err: process.stderr, in: process.stdin }) {
   const library = await loadLibrary();
-  const { COMMAND_DEADLINE_MS, EXIT, helpText, isVerb, parseCommand, sidecarPaths } = library;
+  const { COMMAND_DEADLINE_MS, EXIT, formatStatus, helpText, isVerb, parseCommand } = library;
   const [verb, ...rest] = argv;
 
   if (verb === undefined || verb === '--help' || verb === '-h') {
@@ -181,7 +190,10 @@ export async function main(argv, io = { out: process.stdout, err: process.stderr
   try {
     command = parseCommand(verb, rest);
   } catch (error) {
-    io.err.write(`portograph: ${error.message}\n\nRun 'portograph --help' for the full usage.\n`);
+    // A caller that asked for JSON gets JSON for a usage error too; the option is read before parsing fails.
+    const asJson = rest.includes('--diagnostics=json') || rest.some((argument, index) => argument === '--diagnostics' && rest[index + 1] === 'json');
+    if (asJson) io.err.write(`${formatStatus('json', 'error', 'USAGE', error.message)}\n`);
+    else io.err.write(`portograph: ${error.message}\n\nRun 'portograph --help' for the full usage.\n`);
     return EXIT.inputError;
   }
 
@@ -193,9 +205,18 @@ export async function main(argv, io = { out: process.stdout, err: process.stderr
     return EXIT.inputError;
   }
 
-  const outcome = await compute(command, io, limitMs);
-  if (outcome.ok) return writeArtifacts(command, outcome.result, io, EXIT, sidecarPaths);
-  if (outcome.code) io.err.write(`portograph: error: ${outcome.code}: ${outcome.message}\n`);
-  else io.err.write(`portograph: ${outcome.message}\n`);
+  let inputText;
+  if (command.input === '-') {
+    try {
+      inputText = await readAll(io.in);
+    } catch (error) {
+      io.err.write(`${formatStatus(command.diagnostics, 'error', 'STDIN_FAILED', `cannot read stdin: ${error.message}`)}\n`);
+      return EXIT.inputError;
+    }
+  }
+
+  const outcome = await compute(command, io, limitMs, inputText);
+  if (outcome.ok) return writeArtifacts(command, outcome.result, io, library);
+  io.err.write(`${formatStatus(command.diagnostics, 'error', outcome.code ?? (outcome.kind === 'input' ? 'INVALID_INPUT' : 'FAILED'), outcome.message, Boolean(outcome.code))}\n`);
   return outcome.kind === 'input' ? EXIT.inputError : EXIT.processingFailure;
 }

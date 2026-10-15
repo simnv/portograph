@@ -1,7 +1,7 @@
 import { APPROVED_Q } from '../golden-baseline.js';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import * as api from '../../src/index.js';
+import * as api from '../../src/internal.js';
 import type { GateId, LayoutLabel, LayoutModel, PathSegment, Rect, Side } from '../../src/index.js';
 import { bands } from '../../src/layout/bands.js';
 import { bars } from '../../src/layout/bars.js';

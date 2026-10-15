@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { bands, bars, bundles, centre, flanks, layout, lanes, parse, render, rows } from '../../src/index.js';
+import { layout, parse, render } from '../../src/index.js';
+import { bands, bars, bundles, centre, flanks, lanes, rows } from '../../src/internal.js';
 import type { Point } from '../../src/model/geometry.js';
 import { planRoute } from '../../src/route/plan.js';
 import { tryStitch } from '../../src/route/paths.js';

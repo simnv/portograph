@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
-import { layout, parse, rebuildRowPaths } from '../../src/index.js';
+import { layout, parse } from '../../src/index.js';
+import { rebuildRowPaths } from '../../src/internal.js';
 import { centreContext, centreViolations } from '../../src/layout/centre.js';
 import { chordKind, orthogonalLeg, withLinkFacts } from '../../src/layout/frame-paths.js';
 import { findPort } from '../../src/layout/row-paths.js';

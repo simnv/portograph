@@ -4,26 +4,41 @@
   "description": "YAML in, a laid-out diagram (SVG) out: nodes with ports, grouped into tiers, links routed per region.",
   "type": "module",
   "engines": {
-    "node": "^18.18.0 || ^20.9.0 || >=22.0.0"
+    "node": ">=22"
   },
   "bin": {
     "portograph": "bin/portograph.mjs"
   },
-  "main": "./dist/portograph.umd.cjs",
-  "module": "./dist/portograph.js",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/portograph.js",
-      "require": "./dist/portograph.umd.cjs"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
-    "./package.json": "./package.json",
+    "./internal": {
+      "import": {
+        "types": "./dist/internal.d.ts",
+        "default": "./dist/portograph.js"
+      },
+      "require": {
+        "types": "./dist/internal.d.cts",
+        "default": "./dist/portograph.umd.cjs"
+      }
+    },
     "./node": {
       "types": "./dist/node.d.cts",
       "import": "./dist/node.cjs",
       "require": "./dist/node.cjs"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "bin",
@@ -35,24 +50,25 @@
     "test": "vitest run",
     "test:full": "vitest run --reporter=default",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit && tsc -p tsconfig.json --noEmit --module NodeNext --moduleResolution NodeNext",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "prepare": "vite build"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "@types/node": "^18.19.130",
+    "elkjs": "0.12.0",
     "eslint": "^9.39.5",
     "globals": "^17.12.0",
+    "libavoid-js": "0.5.0-beta.5",
+    "postcss": "^8.5.28",
     "typescript": "^5.9.3",
     "typescript-eslint": "~8.55.0",
     "vite": "^6.4.3",
     "vite-plugin-dts": "^5.1.0",
-    "vitest": "^3.2.7"
+    "vitest": "^3.2.7",
+    "yaml": "^2.9.0"
   },
   "dependencies": {
-    "elkjs": "0.12.0",
-    "libavoid-js": "0.5.0-beta.5",
-    "postcss": "^8.5.28",
-    "web-worker": "1.4.1",
-    "yaml": "^2.9.0"
+    "web-worker": "1.4.1"
   }
 }
