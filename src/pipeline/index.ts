@@ -11,8 +11,8 @@ import { resolve } from '../resolve/index.js';
 import { portKey, sidesOne } from '../layout/sides-one.js';
 import { endMode, movesPort } from '../layout/course-rows.js';
 import { sizeNodes } from '../layout/size.js';
-import { skeleton, SkeletonError } from '../layout/skeleton.js';
-import { BundleFeasibilityError } from '../layout/bundle-paths.js';
+import { skeleton } from '../layout/skeleton.js';
+import { PlacementRefusal, refusedAtBands } from '../layout/placement-refusal.js';
 import { sidesTwo } from '../layout/sides-two.js';
 import { rows } from '../layout/rows.js';
 import { lanes } from '../layout/lanes.js';
@@ -29,7 +29,7 @@ import { CommandDeadlineError, UNBOUNDED_BUDGET, type Budget } from './budget.js
 import { declinedFanDiagnostics, fanRoundDropped, fanRoundHolds, measureFans } from '../layout/fan-spread.js';
 import { chordClearances, freezeRefusal } from '../layout/frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
-import { SideHintRefusal, TrunkBlocked, sideHintDiagnostics, type SideHints } from '../layout/side-hints.js';
+import { TrunkBlocked, sideHintDiagnostics, type SideHints } from '../layout/side-hints.js';
 import { measureSides, refusedKey, type SideOffer } from '../layout/side-measure.js';
 import { judgeTrial, predictedWorse, predictPublished, routedBends, trialNotes } from '../layout/side-judge.js';
 import type { AttemptTraceEvent } from '../layout/placement-attempt.js';
@@ -57,10 +57,12 @@ const SIDE_ROUNDS = 2;
  */
 export const MAX_RERUNS = 3;
 /** A round asked for a placement past the command's budget (`MAX_RERUNS` + 1). A round refuses its trial on it; the first run is never refused. */
-export class PlacementBudgetExceeded extends Error {
-  constructor(readonly placements: number) { super(`The command has placed ${placements} times, which is the most it may.`); }
+export class PlacementBudgetExceeded extends PlacementRefusal {
+  constructor(readonly placements: number) { super('budget', `The command has placed ${placements} times, which is the most it may.`, { stage: 'place' }); }
 }
 /** `node.name#ordinal`, or `node.#ordinal` for an anonymous port, from a port key. */
+/** The span round's label of a refusal: `placement` for an expected one, `error` for anything else (the trace names it, so a sweep finds a defect). */
+const spanCode = (error: Error): 'placement' | 'error' => error instanceof PlacementRefusal && error.code !== 'centring' && error.code !== 'budget' ? 'placement' : 'error';
 const portName = (key: string): string => {
   const [node, anonymous, name, ordinal] = JSON.parse(key) as [string, boolean, string | null, number];
   return `${node}.${anonymous ? '' : name}#${ordinal}`;
@@ -379,8 +381,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     let trial7e: LayoutModel | undefined;
     try { trial7e = await timed('rerun-course', () => place(trialLedger, trialAbort)); } catch (error) {
       // A course moves columns the baseline never moved. A centring that cannot hold its feeds there is the course's refusal, not a bug of the baseline.
-      if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError
-        || (error instanceof Error && error.message.startsWith('Centring invariant violated')))) throw error;
+      if (!(error instanceof PlacementRefusal) || error.code === 'budget') throw error;
       courseRefusal(`the placement run rejected them (${error.message})`);
     }
     if (trial7e !== undefined && trial7e.fallbackUsed && !kept7e.fallbackUsed) {
@@ -417,7 +418,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
           courseRefusal(`${verdict.reason}`);
         }
       } catch (error) {
-        if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError)) throw error;
+        if (!refusedAtBands(error)) throw error;
         courseRefusal(`stage 7f rejected them (${error.message})`);
       }
     }
@@ -442,7 +443,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       // The span round is an offer: a trial that the placement cannot build is refused, whatever the cause, and the sheet stays as the baseline made it. Only the command
       // deadline ends the command. The trace names the error, so a sweep that greps `span-refused` for `error` finds a defect.
       if (!(error instanceof Error) || error instanceof CommandDeadlineError) throw error;
-      spanRefusal(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError ? 'placement' : 'error', error.message);
+      spanRefusal(spanCode(error), error.message);
       return false;
     }
     if (trial7e.fallbackUsed && !kept7e.fallbackUsed) { spanRefusal('placement', 'ELK fell back during the span trial'); return false; }
@@ -457,7 +458,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       let again: LayoutModel;
       try { again = await timed('rerun-fan', () => place(next, trialAbort)); } catch (error) {
         if (!(error instanceof Error) || error instanceof CommandDeadlineError) throw error;
-        spanRefusal(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError ? 'placement' : 'error', error.message); return false;
+        spanRefusal(spanCode(error), error.message); return false;
       }
       if (again.fallbackUsed && !kept7e.fallbackUsed) { spanRefusal('placement', 'ELK fell back during the span trial'); return false; }
       if (!fanRoundHolds(trial7e, again)) break;
@@ -493,7 +494,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       return true;
     } catch (error) {
       if (!(error instanceof Error) || error instanceof CommandDeadlineError) throw error;
-      spanRefusal(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError ? 'placement' : 'error', `stage 7f rejected them (${error.message})`);
+      spanRefusal(spanCode(error), `stage 7f rejected them (${error.message})`);
       return false;
     }
   };
@@ -563,7 +564,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     reruns++; attemptCounters.invalidations.sideReruns++;
     try { trial7e = await timed('rerun-side', () => place(trialLedger, trialAbort)); } catch (error) {
       // Only the layout's own refusals drop the offer; anything else (a TypeError) is a bug and must surface.
-      if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError)) throw error;
+      if (!refusedAtBands(error)) throw error;
       refuse(offer.hints.keys(), offer.hints, `the placement run rejected it (${error.message})`);
       continue;
     }
@@ -603,7 +604,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       routedBase ??= await routeModel(base);
       routedTrial = await routeModel(trial, true);
     } catch (error) {
-      if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError)) throw error;
+      if (!refusedAtBands(error)) throw error;
       refuse(offer.hints.keys(), offer.hints, `its stage 7f rejected it (${error.message})`);
       break;
     }
@@ -651,8 +652,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
         const keptTurn = addReservations(kept, [...floorEntries(nodeFloors, 'turn', placements), ...turnEntries(true, [], false, 'turn', placements)]);
         const trialLedger = addReservations(keptTurn, turnEntries(true, [], true, 'turn', placements));
         try { trial7e = await timed('rerun-turn', () => place(trialLedger, trialAbort)); } catch (error) {
-          if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError || error instanceof PlacementBudgetExceeded
-            || (error instanceof Error && error.message.startsWith('Centring invariant violated')))) throw error;
+          if (!(error instanceof PlacementRefusal)) throw error;
           refuseTurns(`the placement run rejected it (${error.message})`);
         }
         if (trial7e !== undefined && trial7e.fallbackUsed && !kept7e.fallbackUsed) { refuseTurns('ELK fell back during the turn trial'); trial7e = undefined; }
@@ -673,7 +673,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
               }
             } else refuseTurns(verdict.reason);
           } catch (error) {
-            if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError)) throw error;
+            if (!refusedAtBands(error)) throw error;
             refuseTurns(`stage 7f rejected it (${error.message})`);
           }
         }
@@ -711,8 +711,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       const trialLedger = addReservations(kept, [...floorEntries(nodeFloors, 'overlay', placements),
         ...courseEntries(overlayOffer.courses, new Map([...overlayOffer.promised].map(([id, item]) => [id, item.turns] as const)), 'overlay', placements)]);
       try { trial7e = await timed('rerun-overlay', () => place(trialLedger, trialAbort)); } catch (error) {
-        if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError
-          || (error instanceof Error && error.message.startsWith('Centring invariant violated')))) throw error;
+        if (!(error instanceof PlacementRefusal) || error.code === 'budget') throw error;
         refuseOverlays(`the placement run rejected them (${error.message})`);
       }
       if (trial7e !== undefined && trial7e.fallbackUsed && !kept7e.fallbackUsed) { refuseOverlays('ELK fell back during the overlay trial'); trial7e = undefined; }
@@ -736,7 +735,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
             }
           } else refuseOverlays(verdict.reason);
         } catch (error) {
-          if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError)) throw error;
+          if (!refusedAtBands(error)) throw error;
           refuseOverlays(`stage 7f rejected them (${error.message})`);
         }
       }

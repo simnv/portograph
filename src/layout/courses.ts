@@ -3,10 +3,13 @@ import type { Course, CourseEnd, CourseKind, CourseRun, Lane, LayoutLink, Layout
 import type { PortRef } from '../model/document.js';
 import { findPort } from './row-paths.js';
 import { SideHintRefusal } from './side-hints.js';
+import type { RefusalDetail } from './placement-refusal.js';
 export { isGapRun, laneRunKind } from './lane-kind.js';
 
 /** A placement run cannot reserve a course (its faces cannot join one lane). The course round drops the offer; every other error is a bug. */
-export class CourseRefusal extends SideHintRefusal {}
+export class CourseRefusal extends SideHintRefusal {
+  constructor(message: string, detail: RefusalDetail = {}) { super(message, { ...detail, code: 'course' }); }
+}
 
 /**
  * The data shapes of architecture ticket 15, phase 1. A course is the planned route of one link, face to face (CONTEXT, course);

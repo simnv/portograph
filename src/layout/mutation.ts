@@ -14,6 +14,7 @@ import { NODE_CONTENT_GEOMETRY } from '../theme/content.js';
 import { nodeGap } from './skeleton-graph.js';
 import { groupShape } from './grid.js';
 import { hintRefusal, SideHintRefusal } from './side-hints.js';
+import { PlacementRefusal } from './placement-refusal.js';
 import { rebuildBands, span, union, validateSkeletonBands } from './skeleton-geometry.js';
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, flankPair } from './flanks.js';
@@ -329,7 +330,7 @@ function validateRegionClaims(model: LayoutModel, intermediate = false): void {
       // A spent shared budget is producer state geometry cannot witness (ADR-0010). A model that
       // reports it keeps its last state and is judged by the final gates; the unverified alignments
       // are recorded on it. Every other model must hold the invariant exactly.
-      if (!diagnosed(model)) throw new Error(`Centring invariant violated: ${centring.join('; ')}`);
+      if (!diagnosed(model)) throw new PlacementRefusal('centring', `Centring invariant violated: ${centring.join('; ')}`, { stage: model.stage });
       const message = `Centring invariant unverified after a spent budget: ${centring.join('; ')}`;
       if (!model.diagnostics.some(d => d.code === 'CENTRE_INVARIANT_UNVERIFIED' && d.message === message)) {
         model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'CENTRE_INVARIANT_UNVERIFIED', message });

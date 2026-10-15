@@ -9,11 +9,16 @@ import { EPS, intersection, overlapSegment, samePoint, segmentDistance } from '.
 import { MEMBER_GAP, MIN_STEM, clearOfGroupEdges, clone, coordinate, edgeMargin, facing, inversionPairs, members, normal, outward, pitch, type DepthPair, type Member } from './bundle-geometry.js';
 import { bundleTurnSpan } from './bundle-need.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { PlacementRefusal } from './placement-refusal.js';
 
-export class BundleFeasibilityError extends Error {
-  readonly code: string;
+export class BundleFeasibilityError extends PlacementRefusal {
+  /** The rule that failed (`BUNDLE_CHANNEL_BLOCKED`, ...); `code` is the refusal's family. */
+  readonly reason: string;
   readonly bundle: string;
-  constructor(code: string, bundle: string, detail: string) { super(`${code}: ${bundle}: ${detail}`); this.code = code; this.bundle = bundle; }
+  constructor(reason: string, bundle: string, detail: string) {
+    super('bundle', `${reason}: ${bundle}: ${detail}`, { stage: 'bundles', owners: [{ kind: 'bundle', id: bundle }] });
+    this.reason = reason; this.bundle = bundle;
+  }
 }
 export function polyline(points: Point[], owner: Owner): PathSegment[] {
   const result: PathSegment[] = [];
@@ -271,7 +276,7 @@ export function straightMembers(model: LayoutModel, bundle: Bundle, list: Member
   try { staircase = total(crossedPaths(bundle, list, q)); } catch (error) {
     // Only "the staircase does not fit" leaves straight members as the remaining shape; any other
     // failure is a defect and must surface.
-    if (!(error instanceof BundleFeasibilityError) || error.code !== 'BUNDLE_CROSSOVER_CAPACITY') throw error;
+    if (!(error instanceof BundleFeasibilityError) || error.reason !== 'BUNDLE_CROSSOVER_CAPACITY') throw error;
     return true;
   }
   return staircase > STRAIGHT_LENGTH_FACTOR * total(straightPaths(bundle, list));
