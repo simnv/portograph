@@ -2,18 +2,20 @@
  * The six rounds as descriptors (architecture 2, ticket 04): fan, span, course, side, turn and overlay. Each one is a table of what it measures, reserves, checks, judges, commits and
  * says when it is refused; `attempt` (round.ts) runs a trial from it. A descriptor holds the round's own rules and nothing about the order of the rounds.
  */
-import type { Diagnostic } from '../model/index.js';
+import type { Course, Diagnostic, Size } from '../model/index.js';
+import { portKey } from '../layout/sides-one.js';
+import { endMode } from '../layout/course-rows.js';
 import { fanRoundDropped, fanRoundHolds, measureFans } from '../layout/fan-spread.js';
 import { TrunkBlocked } from '../layout/side-hints.js';
-import { PlacementRefusal } from '../layout/placement-refusal.js';
+import { PlacementRefusal, refusedAtBands } from '../layout/placement-refusal.js';
 import { freezeRefusal } from '../layout/frame-paths.js';
 import { transitTiers } from '../layout/lanes.js';
 import { measureSpans } from '../layout/span-measure.js';
 import { judgeSpanTrial } from '../layout/span-judge.js';
-import { measureCourses } from '../layout/course-measure.js';
+import { judgeCourseTrial, measureCourses } from '../layout/course-measure.js';
 import { measureSides } from '../layout/side-measure.js';
 import { roundLimit, turnReserve } from '../layout/turn-measure.js';
-import { pitchGrowth, reserve as addReservations, spanEntries, type Reservations } from '../layout/reservations.js';
+import { pitchGrowth, nodeFloors as floorEntries, courseEntries, reserve as addReservations, sideHintsOf, spanEntries, turnEntries, type Reservations } from '../layout/reservations.js';
 import { holds, holdsRouted } from '../layout/reservation-checks.js';
 import { attempt, type Round } from './round.js';
 import { CommandDeadlineError } from './budget.js';
@@ -138,5 +140,97 @@ export const span: Round<SpanOffer> = {
     const [why, detail] = r.at === 'place' ? [spanCode(r.error!), r.error!.message] : r.at === 'fallback' ? ['placement', 'ELK fell back during the span trial']
       : r.at === 'bands' ? [spanCode(r.error!), `stage 7f rejected them (${r.error!.message})`] : [r.why, r.detail];
     env.options.testSideTrace?.({ ev: 'span-refused', links: o.links, why, detail });
+  },
+};
+
+/** The node floors a kept side or course ledger keeps: the stage-3 size of each node with a hinted port, so a later trial does not re-size a node a kept trial moved. */
+const keptFloors = (env: Env, s: State): Map<string, Size> => {
+  const floors = new Map<string, Size>();
+  for (const key of sideHintsOf(s.kept).keys()) {
+    const [node] = JSON.parse(key) as [string];
+    const size = env.stage3Sizes.get(s.kept7e)?.get(node);
+    if (size !== undefined) floors.set(node, { ...size });
+  }
+  return floors;
+};
+/** The nodes whose end of a course changes face keep their size (P9): the capacity estimate of the face they leave must not re-size them. `skirtsU` leaves out an end that leaves by a U part, whose content grows with its face. */
+const pinMovedEnds = (env: Env, s: State, floors: Map<string, Size>, courses: readonly Course[], skirtsU: boolean): void => {
+  for (const course of courses) {
+    const link = s.kept7e.links.find(item => item.id === course.link)!;
+    for (const which of ['from', 'to'] as const) {
+      const size = env.stage3Sizes.get(s.kept7e)?.get(link.attachments![which].node);
+      if (size !== undefined && (!skirtsU || endMode(course, which) !== 'u') && course[which].face !== (s.kept7e.nodes[link.attachments![which].node]!.ports.find(port => portKey(port.ref) === portKey(link.attachments![which]))?.side)) floors.set(link.attachments![which].node, { ...size });
+    }
+  }
+};
+const promisedTurnsOf = (promised: ReadonlyMap<string, { turns: number }>): Map<string, number> => new Map([...promised].map(([id, item]) => [id, item.turns] as const));
+/** A bypass that cannot be reserved stays a remainder of stage 8 and is named, once, with the reason (`ROW_BYPASS_DECLINED`). */
+export const noteDeclined = (s: State, offer: CourseOffer): void => {
+  for (const item of offer.declined) {
+    if (s.sideNotes.some(note => note.code === 'ROW_BYPASS_DECLINED' && note.owners?.some(owner => owner.kind === 'link' && owner.id === item.link))) continue;
+    s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'ROW_BYPASS_DECLINED', owners: [{ kind: 'link', id: item.link }], message: `The link ${item.link} has no row bypass: ${item.why}.` });
+  }
+};
+
+type CourseOffer = ReturnType<typeof measureCourses>;
+/**
+ * The course round (ticket 15, phase 4). It reads the baseline's routed result, offers perimeter courses for the links whose route is a poor one, places again with the courses
+ * reserved in stage 5, and keeps the trial only on its routed result. A refused course round leaves the layout as the baseline made it, with no note (the trace names the reason),
+ * so a sheet it does not change is byte for byte as it was.
+ */
+export const course: Round<CourseOffer> = {
+  id: 'course', label: 'rerun-course', routed: true, abort: true,
+  // A course moves columns the baseline never moved. A centring that cannot hold its feeds there is the course's refusal, not a bug of the baseline.
+  tolerates: (error, phase) => phase === 'place' ? error instanceof PlacementRefusal && error.code !== 'budget' : refusedAtBands(error),
+  async measure(env, s) {
+    s.routedBase = s.routedFinal ?? s.routedBase ?? await env.route(s.base);
+    const offer = measureCourses(s.base, s.routedBase);
+    env.options.testSideTrace?.({ ev: 'courses', offer, base: s.base, routedBase: s.routedBase });
+    noteDeclined(s, offer);
+    return offer.courses.length === 0 ? undefined : offer;
+  },
+  reserve(env, s, o) {
+    // The node floors of a kept course trial stay under this one (a later side trial keeps them, or it would re-size the nodes the course moved).
+    const nodeFloors = keptFloors(env, s);
+    // A node whose end leaves by a U part is not pinned: its face moves from a lateral side to the bottom, and its content grows with it (P9 asks for few moves, not for none).
+    pinMovedEnds(env, s, nodeFloors, o.courses, true);
+    // A row bypass (ticket 24, phase 5) puts the closing link in the slot on its turn side: the trial carries the turn order, or its stems would cross the straight link of the gap.
+    const bypassLinks = o.courses.filter(item => item.kind === 'bypass').map(item => item.link);
+    return addReservations(s.kept, [...floorEntries(nodeFloors, 'course', env.placements),
+      ...courseEntries(o.courses, promisedTurnsOf(o.promised), 'course', env.placements),
+      ...turnEntries(false, bypassLinks, false, 'course', env.placements)]);
+  },
+  // Every active reservation holds at the trial's final 7e, the kept ones of earlier rounds with the new courses, before 7f and the route.
+  holdsAt7e(_env, _s, _o, ledger, trial7e) {
+    const broken = holds(ledger, trial7e);
+    return broken.length > 0 ? { at: 'ledger', why: `a reservation does not hold at stage 7e (${broken[0]!.why})` } : undefined;
+  },
+  judge(env, s, o, t) {
+    const verdict = judgeCourseTrial(s.routedBase!, t.routedTrial, promisedTurnsOf(o.promised));
+    env.options.testSideTrace?.({ ev: 'course-trial', verdict, trial: t.trial, routedTrial: t.routedTrial, routedBase: s.routedBase });
+    // A course kept earlier keeps its promise through this trial as well.
+    const lost = verdict.kept ? holdsRouted(s.kept, t.routedTrial) : [];
+    if (lost.length > 0) return { at: 'promise', why: `a kept course publishes more turns than it promised (${lost.map(failure => failure.link).join(', ')})` };
+    return verdict.kept ? undefined : { at: 'verdict', why: `${verdict.reason}` };
+  },
+  commit(_env, s, o, t) {
+    if (s.routedFinal === undefined) s.routedBase = t.routedTrial;
+    s.base = t.trial; s.kept7e = t.trial7e; s.routedFinal = t.routedTrial;
+    s.baseMoved = t.moved; s.baseUnmoved = t.unmoved; s.kept = t.ledger;
+    for (const item of o.courses) {
+      const was = o.promised.get(item.link)!;
+      if (item.kind === 'bypass') {
+        s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'ROW_BYPASS_PLANNED', owners: [{ kind: 'link', id: item.link }],
+          message: `The link ${item.link} takes a bypass along the ${item.edge} edge of its row: ${was.turns} turns promised, ${was.base.turns === Infinity ? 'removed' : was.base.turns} on the baseline.` });
+        continue;
+      }
+      s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'COURSE_TAKEN', owners: [{ kind: 'link', id: item.link }],
+        message: `The link ${item.link} takes a course ${item.kind === 'shared-port' ? 'onto the pill of its shared port' : item.runs.includes('gap') ? 'through a column gap' : 'round the outside'}: ${was.turns} turns promised, ${was.base.turns === Infinity ? 'removed' : was.base.turns} on the baseline.` });
+    }
+  },
+  refuse(env, _s, o, r) {
+    const why = r.at === 'place' ? `the placement run rejected them (${r.why})` : r.at === 'fallback' ? 'ELK fell back during the course trial'
+      : r.at === 'bands' ? `stage 7f rejected them (${r.why})` : r.why;
+    env.options.testSideTrace?.({ ev: 'course-refused', links: o.courses.map(item => item.link), why });
   },
 };
