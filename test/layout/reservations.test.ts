@@ -25,6 +25,15 @@ describe('reservation ledger', () => {
     expect(() => validateReservations(model({ side: 'left' }))).toThrow(/not the face/);
     expect(() => validateReservations(model({ side: 'left', sideHint: true }, pitchFloors(new Map([['n', { left: 1 }]]), 'fan', 0)))).toThrow(/no reservation|does not hold/);
   });
+  it('refuses a lane hint that has no lane owner, and a lane owner with no side face', () => {
+    const ref = { node: 'n', name: 'p', ordinal: 1 }, key = portKey(ref);
+    const hints = new Map([[key, 'left' as const]]), promised = new Map([[key, { link: 'l', bends: 1, shape: 'lane' as const }]]);
+    const faces = sideFaces(hints, promised, 'side', 0), owners = laneOwners([key], hints, promised, 'side', 0);
+    const model = (port: object, reservations: readonly unknown[] = [...faces, ...owners]): never => ({ reservations, nodes: { n: { id: 'n', ports: [{ ref, side: 'left', sideHint: true, ...port }] } } }) as never;
+    expect(() => validateReservations(model({ laneHint: true }))).not.toThrow();
+    expect(() => validateReservations(model({}))).toThrow(/lane owners/);
+    expect(() => validateReservations(model({ laneHint: true }, owners))).toThrow(/no side face|not the face|no reservation/);
+  });
   it('merges pitch and node floors by componentwise maximum and keeps declaration order', () => {
     const a = reserve([], pitchFloors(new Map([['n', { left: 10 }], ['m', { right: 4 }]]), 'fan', 0));
     const b = reserve(a, pitchFloors(new Map([['n', { left: 8, right: 6 }]]), 'fan', 1));

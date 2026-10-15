@@ -290,6 +290,12 @@ export function validateReservations(model: LayoutModel): void {
     for (const node of Object.values(model.nodes)) for (const port of node.ports) {
       if (port.sideHint === true && faces.get(portKey(port.ref)) !== port.side) throw new Error(`Side hint on ${node.id} has no reservation`);
     }
+    // A lane hint is a lane owner's: the same ports, and each owner's port is a hinted one.
+    const owners = laneKeysOf(ledger);
+    for (const key of owners) if (!faces.has(key)) throw new Error(`Lane owner on ${key} has no side face`);
+    for (const node of Object.values(model.nodes)) for (const port of node.ports) {
+      if ((port.laneHint === true) !== owners.has(portKey(port.ref))) throw new Error(`Lane hint on ${node.id} does not match the lane owners`);
+    }
   }
   // A floor is a promise about the placed geometry, which later stages may only grow; the kinds below are checked on every restored stage.
   for (const failure of holds(ledger.filter(item => RESTORED.has(item.kind)), model)) throw new Error(`Reservation ${failure.id} does not hold: ${failure.why}`);
