@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { holds, holdsRouted } from '../../src/layout/reservation-checks.js';
 import { courseEntries, promisedTurns, coursesOf, declinedEntries, declineTrunk, declinedTrunksOf, DeclinedTrunks, laneKeysOf, laneOwners, nodeFloors, nodeFloorsOf, pitchFloors, pitchFloorsOf, portRefOf, reserve, validateReservations, sideFaces, sideHintsOf, spanEntries, spansOf, turnEntries, turnOf } from '../../src/layout/reservations.js';
+import { adoptSettled } from '../../src/layout/placement-attempt.js';
 import { portKey } from '../../src/layout/sides-one.js';
 
 describe('reservation ledger', () => {
@@ -78,8 +79,14 @@ describe('reservation ledger', () => {
     expect(holds(sideFaces(hints, promised, 'side', 0), model({ links: [] })).map(item => item.link)).toEqual(['l']);
     const lane = holds(laneOwners([key], hints, lanePromised, 'side', 0), model());
     expect(lane.map(item => [item.kind, item.key, item.link])).toEqual([['laneOwner', key, 'l']]);
-    const seated = model({ lanes: [{ kind: 'side', owner: { kind: 'link', id: 'l' }, aligned: true }] });
-    expect(holds(laneOwners([key], hints, lanePromised, 'side', 0), seated)).toEqual([]);
+    // The lane holds when the far port of the link stands on the lane's x now; the flag alone is history.
+    const far = { node: 'f', name: 'q', ordinal: 1 };
+    const seated = (anchorX: number, extra: object = {}): never => model({ links: [{ id: 'l', layer: 'routed', attachments: { from: ref, to: far } }],
+      lanes: [{ kind: 'side', owner: { kind: 'link', id: 'l' }, aligned: true, x: 50, port: ref }],
+      nodes: { n: { id: 'n', ports: [{ ref, side: 'left', sideHint: true }] }, f: { id: 'f', ports: [{ ref: far, anchor: { x: anchorX, y: 0 } }] } }, ...extra });
+    expect(holds(laneOwners([key], hints, lanePromised, 'side', 0), seated(50))).toEqual([]);
+    expect(holds(laneOwners([key], hints, lanePromised, 'side', 0), seated(60)).map(item => item.link)).toEqual(['l']);
+    expect(holds(laneOwners([key], hints, lanePromised, 'side', 0), seated(50, { links: [] })).map(item => item.why)).toEqual(['l is missing']);
     expect(holds(laneOwners([key], hints, lanePromised, 'side', 0), model({ nodes: {} }))).toHaveLength(1);
     // A span chord whose link is gone fails.
     expect(holds(spanEntries(['gone'], 'span', 0), model()).map(item => item.link)).toEqual(['gone']);
@@ -90,6 +97,13 @@ describe('reservation ledger', () => {
     expect(holds(courses, model({ courses: [course] }))).toEqual([]);
     expect(holds(courses, model({ courses: [{ ...(course as object), kind: 'perimeter' }] }))).toHaveLength(1);
     expect(holds(courses, model({ courses: [course], links: [] })).map(item => item.link)).toEqual(['l']);
+    // The whole course is compared: the opposite perimeter side, the runs and the approach fail too.
+    const perimeter = { ...(course as object), side: 'left' } as never;
+    const reserved = courseEntries([perimeter], undefined, 'overlay', 0);
+    expect(holds(reserved, model({ courses: [perimeter] }))).toEqual([]);
+    expect(holds(reserved, model({ courses: [{ ...(perimeter as object), side: 'right' }] }))).toHaveLength(1);
+    expect(holds(reserved, model({ courses: [{ ...(perimeter as object), runs: [{ kind: 'gap' }] }] }))).toHaveLength(1);
+    expect(holds(courses, model({ courses: [{ ...(course as object), from: { face: 'left', approach: 'top' } }] }))).toHaveLength(1);
     // The turn order: carried, scoped, and moving a face when it must.
     expect(holds(turnEntries(true, [], true, 'turn', 0), model({ turnOrder: true }))).toHaveLength(1);
     expect(holds(turnEntries(true, [], false, 'turn', 0), model({ turnOrder: true }))).toEqual([]);
@@ -115,6 +129,12 @@ describe('reservation ledger', () => {
     expect(bent.map(item => [item.link, item.got, item.max])).toEqual([['l', 2, 1]]);
     expect(holdsRouted(ledger, routed(undefined)).map(item => item.got)).toEqual([undefined]);
     expect(holdsRouted(courseEntries([course], undefined, 'course', 0), routed(undefined))).toEqual([]);
+  });
+  it('does not adopt a settled copy that loses a requested promise', () => {
+    const course = { link: 'l', kind: 'gap', from: { face: 'left' }, to: { face: 'right' }, runs: [] } as never;
+    const draft = { reservations: courseEntries([course], undefined, 'course', 0), diagnostics: [], links: [{ id: 'l' }], courses: [course] };
+    const lost = { ...draft, courses: [] };
+    expect(adoptSettled(draft as never, lost as never, 0, new Set())).toBe(false);
   });
   it('merges pitch and node floors by componentwise maximum and keeps declaration order', () => {
     const a = reserve([], pitchFloors(new Map([['n', { left: 10 }], ['m', { right: 4 }]]), 'fan', 0));

@@ -7,6 +7,7 @@ import { rebuildRegionGeometry } from './region-rebuild.js';
 import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, produceGroupLabelBands, replanGroupLabels } from './bands.js';
 import { holdColumnAxes, refreshHeldWarnings } from './columns.js';
 import { growTierGaps } from './gap-room.js';
+import { holds } from './reservation-checks.js';
 import { candidateCopy, chooseReseat, shortGaps } from './decide.js';
 import { attemptCounters, lastAttempt } from './attempt-counters.js';
 import { countStep, ledgerOn, ledgerSnapshot, startAttemptEntry, type LedgerSnapshot } from './attempt-ledger.js';
@@ -81,6 +82,8 @@ const REPLAY_CODES = /^(MESH_BUS|GROUP_GRID|GROUP_LABEL|COLUMN_AXIS|PLACEMENT_|R
  * Keys the copy no longer has (`delete model.busBands`) are deleted from `model`.
  */
 export function adoptSettled(model: LayoutModel, copy: LayoutModel, baseDiagnostics: number, original: ReadonlySet<Diagnostic>): boolean {
+  // The replay inside a settled copy may move a group by a required move, which keeps its exception. A copy that loses a requested promise (a lane owner's far anchor on the lane, a course) is not adopted.
+  if (holds(model.reservations ?? [], copy, entry => entry.kind === 'laneOwner' || entry.kind === 'course').length > 0) return false;
   const added = model.diagnostics.slice(baseDiagnostics);
   const survivors = copy.diagnostics.filter(item => original.has(item)), fresh = copy.diagnostics.filter(item => !original.has(item));
   if (added.length) {

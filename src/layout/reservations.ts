@@ -355,7 +355,7 @@ export function validateReservations(model: LayoutModel): void {
   }
   if (model.reservations !== undefined) {
     // The courses the ledger reserves are the courses the model carries, link for link.
-    if (!same(coursesOf(ledger).map(course => course.link), (model.courses ?? []).map(course => course.link))) throw new Error('Reserved courses differ from the courses of the model');
+    if (!same(coursesOf(ledger), model.courses ?? [])) throw new Error('Reserved courses differ from the courses of the model');
   }
   if (model.reservations !== undefined) {
     // The spanning chords the ledger reserves are the frozen span hints, link for link in link order.

@@ -7,7 +7,9 @@
 import type { LayoutModel } from '../model/layout.js';
 import { isRoutedChord } from './frame-paths.js';
 import { pathBends } from './objective.js';
-import { transitTiers } from './lanes.js';
+import { sideLaneSource, transitTiers } from './lanes.js';
+import { findPort } from './row-paths.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 import { spanLaneId } from './span-lanes.js';
 import { trunkKey } from './bus-room.js';
 import { trunkBuses, trunkHeads } from './trunk.js';
@@ -50,13 +52,18 @@ function holdsOne(item: Reservation, model: LayoutModel): Found | undefined {
       // A port hinted for the routed L must own a source-aligned side lane at 7e. Without one the router would find its route (an exterior corridor gives three bends).
       const link = item.payload.link, key = portKey(item.payload.port);
       if (portOf(model, item.payload.port, key) === undefined) return { why: `the port ${key} is missing`, key, link };
-      return model.lanes.some(lane => lane.kind === 'side' && lane.owner.kind === 'link' && lane.owner.id === link && lane.aligned === true)
+      const owner = model.links.find(candidate => candidate.id === link);
+      if (owner === undefined) return { why: `${link} is missing`, key, link };
+      // The lane is aligned now: the far port of the link stands on the lane's x (the flag alone says only that 7a seated it so).
+      const lane = model.lanes.find(candidate => candidate.kind === 'side' && candidate.owner.kind === 'link' && candidate.owner.id === link && candidate.aligned === true);
+      const anchor = lane === undefined || !owner.attachments ? undefined : findPort(model, sideLaneSource(owner, lane))?.anchor;
+      return lane !== undefined && anchor !== undefined && Math.abs(anchor.x - lane.x) <= PLACEMENT_EPS
         ? undefined : { why: `a port hinted for a side lane has no source-aligned lane at stage 7e (${link})`, key, link };
     }
     case 'course': {
       const wanted = item.payload.course, have = model.courses?.find(course => course.link === wanted.link);
       if (!model.links.some(link => link.id === wanted.link)) return { why: `${wanted.link} is missing`, link: wanted.link };
-      if (have === undefined || have.kind !== wanted.kind || have.from.face !== wanted.from.face || have.to.face !== wanted.to.face) return { why: `${wanted.link} does not take its course`, link: wanted.link };
+      if (have === undefined || JSON.stringify(have) !== JSON.stringify(wanted)) return { why: `${wanted.link} does not take its course`, link: wanted.link };
       return undefined;
     }
     case 'turnOrder': {
