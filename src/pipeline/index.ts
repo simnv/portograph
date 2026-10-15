@@ -15,7 +15,7 @@ import { createEnv } from './env.js';
 import { FAN_ROUNDS, MAX_RERUNS, SIDE_ROUNDS } from './limits.js';
 import type { State } from './state.js';
 import { attempt } from './round.js';
-import { course, fan, noteDeclined, portName, side, span } from './rounds.js';
+import { course, fan, noteDeclined, portName, side, span, turn } from './rounds.js';
 // After the stages: the modules below reach the centring module, whose import order the tests that mock it depend on.
 import { declinedFanDiagnostics, measureFans } from '../layout/fan-spread.js';
 import { chordClearances } from '../layout/frame-paths.js';
@@ -26,8 +26,8 @@ import { measureSides } from '../layout/side-measure.js';
 import { routedBends } from '../layout/side-judge.js';
 import { PLACEMENT_EPS } from '../layout/tolerance.js';
 import { beats, gainOf, judgeOverlayTrial, measureOverlayCourses } from '../layout/course-measure.js';
-import { judgeTurnTrial, measureTurnOrder, roundLimit, turnReserve, turnRoundRuns } from '../layout/turn-measure.js';
-import { nodeFloors as floorEntries, reserve as addReservations, courseEntries, declinedTrunksOf, promisedTurns, declineTrunk, sideFaces, sideHintsOf, spanEntries, turnEntries, type Reservations } from '../layout/reservations.js';
+import { roundLimit, turnReserve, turnRoundRuns } from '../layout/turn-measure.js';
+import { nodeFloors as floorEntries, reserve as addReservations, courseEntries, declinedTrunksOf, declineTrunk, sideFaces, sideHintsOf, spanEntries, turnEntries, type Reservations } from '../layout/reservations.js';
 import { holds, holdsRouted } from '../layout/reservation-checks.js';
 
 
@@ -135,59 +135,18 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   // The turn round (architecture ticket 24, Section 10). On the kept result of the span, course and side rounds: when the planned first turns would reorder the ports of a
   // face, placement runs once more with the turn order and the trial is kept only when the published result is better by the unified order. It takes one re-run of the
   // shared budget and leaves one to the overlay round when that round has an offer. A refused or skipped trial leaves the layout as the baseline made it, with no note.
+  // The turn round (architecture ticket 24, Section 10) takes one re-run of the shared budget and leaves one to the overlay round when that round has an offer.
   if (turnRoundOn) {
-    const offer = measureTurnOrder(s.base);
-    options.testSideTrace?.({ ev: 'turns', offer, base: s.base });
-    const names = offer.faces.map(face => `${face.node}.${face.side}`);
-    const refuseTurns = (why: string): void => { options.testSideTrace?.({ ev: 'turn-refused', faces: names, why }); };
-    if (offer.faces.length > 0) {
-      const current = s.routedFinal ?? s.routedBase ?? await env.route(s.base);
-      const overlayOffer = options.testOverlayCourses !== false ? measureOverlayCourses(s.base, current) : undefined;
+    const offer = await turn.measure(env, s);
+    if (offer !== undefined) {
+      const overlayOffer = options.testOverlayCourses !== false ? measureOverlayCourses(s.base, offer.current) : undefined;
       const overlayAhead = overlayOffer !== undefined && overlayOffer.courses.length > 0;
       const left = env.maxReruns - s.reruns;
       // The turn offer moves no bend and no turn by design, so it promises none: with one re-run left and both offers it runs only if the overlay offer promises nothing either.
       const overlayGain = overlayAhead ? gainOf([...overlayOffer.promised].map(([, item]) => [item.base === Infinity ? undefined : item.base, item.turns] as [number | undefined, number])) : [0, 0, 0];
       if (!turnRoundRuns(left, overlayAhead, overlayGain, beats)) {
         s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'TURN_ROUND_SKIPPED', message: `The turn round was skipped: the command has ${left <= 0 ? 'made its' : 'one left of its'} ${env.maxReruns} placement re-runs${left <= 0 ? '' : ', for the overlay round'}.` });
-      } else {
-        const nodeFloors = new Map<string, Size>();
-        for (const key of sideHintsOf(s.kept).keys()) {
-          const [node] = JSON.parse(key) as [string];
-          const size = env.stage3Sizes.get(s.kept7e)?.get(node);
-          if (size !== undefined) nodeFloors.set(node, { ...size });
-        }
-        let trial7e: LayoutModel | undefined;
-        s.reruns++;
-        // The ledger a kept trial keeps asks for no change of a face; the trial's own asks for one (the turn order must move a face, or the trial is refused).
-        const keptTurn = addReservations(s.kept, [...floorEntries(nodeFloors, 'turn', env.placements), ...turnEntries(true, [], false, 'turn', env.placements)]);
-        const trialLedger = addReservations(keptTurn, turnEntries(true, [], true, 'turn', env.placements));
-        try { trial7e = await env.timed('rerun-turn', () => env.place(trialLedger, env.trialAbort)); } catch (error) {
-          if (!(error instanceof PlacementRefusal)) throw error;
-          refuseTurns(`the placement run rejected it (${error.message})`);
-        }
-        if (trial7e !== undefined && trial7e.fallbackUsed && !s.kept7e.fallbackUsed) { refuseTurns('ELK fell back during the turn trial'); trial7e = undefined; }
-        // The offer was decided before any placement; this is left only when the measure and stage 5 disagree about a face. The placement is spent (no re-run is given back).
-        const turnFailed = trial7e === undefined ? [] : holds(trialLedger, trial7e);
-        if (turnFailed.length > 0) { refuseTurns(turnFailed[0]!.kind === 'turnOrder' ? turnFailed[0]!.why : `a reservation does not hold at stage 7e (${turnFailed[0]!.why})`); trial7e = undefined; }
-        if (trial7e !== undefined) {
-          try {
-            const trial = (await env.bands(trial7e!, true)).model;
-            const routedTrial = await env.route(trial, true);
-            const verdict = judgeTurnTrial(current, routedTrial, promisedTurns(s.kept));
-            options.testSideTrace?.({ ev: 'turn-trial', verdict, trial, routedTrial, routedBase: current });
-            if (verdict.kept) {
-              s.base = trial; s.kept7e = trial7e; s.routedFinal = routedTrial; s.kept = keptTurn;
-              for (const face of trial7e.freeze!.turnOrder!) {
-                s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'TURN_ORDER_TAKEN', owners: [{ kind: 'node', id: face.node }],
-                  message: `The ports of the ${face.side} face of ${face.node} take the order of their planned first turns: ${verdict.before!.bent} bent links, ${verdict.before!.turns} turns and ${verdict.before!.crossings} crossings on the baseline, ${verdict.after!.bent}, ${verdict.after!.turns} and ${verdict.after!.crossings} after.` });
-              }
-            } else refuseTurns(verdict.reason);
-          } catch (error) {
-            if (!refusedAtBands(error)) throw error;
-            refuseTurns(`stage 7f rejected it (${error.message})`);
-          }
-        }
-      }
+      } else await attempt(env, s, turn, offer);
     }
   }
   // The overlay round (ticket 15, phase 7; the user's decision on Q1). After the routed rounds, on their kept result: an overlay that a routed chord would not take is

@@ -2,7 +2,7 @@
  * The six rounds as descriptors (architecture 2, ticket 04): fan, span, course, side, turn and overlay. Each one is a table of what it measures, reserves, checks, judges, commits and
  * says when it is refused; `attempt` (round.ts) runs a trial from it. A descriptor holds the round's own rules and nothing about the order of the rounds.
  */
-import type { Course, Diagnostic, Size } from '../model/index.js';
+import type { Course, Diagnostic, LayoutModel, Size } from '../model/index.js';
 import { portKey } from '../layout/sides-one.js';
 import { endMode } from '../layout/course-rows.js';
 import { fanRoundDropped, fanRoundHolds, measureFans } from '../layout/fan-spread.js';
@@ -16,8 +16,8 @@ import { judgeCourseTrial, measureCourses } from '../layout/course-measure.js';
 import { measureSides, refusedKey, type SideOffer } from '../layout/side-measure.js';
 import { judgeTrial, predictedWorse, predictPublished, trialNotes } from '../layout/side-judge.js';
 import { bands } from '../layout/bands.js';
-import { roundLimit, turnReserve } from '../layout/turn-measure.js';
-import { pitchGrowth, nodeFloors as floorEntries, courseEntries, laneOwners, reserve as addReservations, sideFaces, sideHintsOf, spanEntries, turnEntries, type Reservations } from '../layout/reservations.js';
+import { judgeTurnTrial, measureTurnOrder, roundLimit, turnReserve } from '../layout/turn-measure.js';
+import { pitchGrowth, nodeFloors as floorEntries, courseEntries, laneOwners, promisedTurns, reserve as addReservations, sideFaces, sideHintsOf, spanEntries, turnEntries, type Reservations } from '../layout/reservations.js';
 import { holds, holdsRouted } from '../layout/reservation-checks.js';
 import { attempt, type Round } from './round.js';
 import { CommandDeadlineError } from './budget.js';
@@ -354,5 +354,51 @@ export const side: Round<SideTrialOffer> = {
     if (r.at === 'fallback') { cutSide(s, 'ELK fell back during it, and the re-run was dropped'); return; }
     refuseHints(s, r.keys ?? o.offer.hints.keys(), o.offer.hints,
       r.at === 'place' ? `the placement run rejected it (${r.why})` : r.at === 'bands' ? `its stage 7f rejected it (${r.why})` : r.why);
+  },
+};
+
+type TurnOffer = { offer: ReturnType<typeof measureTurnOrder>; current: LayoutModel; keptTurn?: Reservations; verdict?: ReturnType<typeof judgeTurnTrial> };
+/**
+ * The turn round (architecture ticket 24, Section 10). On the kept result of the span, course and side rounds: when the planned first turns would reorder the ports of a
+ * face, placement runs once more with the turn order and the trial is kept only when the published result is better by the unified order. A refused or skipped trial
+ * leaves the layout as the baseline made it, with no note.
+ */
+export const turn: Round<TurnOffer> = {
+  id: 'turn', label: 'rerun-turn', routed: true, abort: true,
+  tolerates: (error, phase) => phase === 'place' ? error instanceof PlacementRefusal : refusedAtBands(error),
+  async measure(env, s) {
+    const offer = measureTurnOrder(s.base);
+    env.options.testSideTrace?.({ ev: 'turns', offer, base: s.base });
+    if (offer.faces.length === 0) return undefined;
+    return { offer, current: s.routedFinal ?? s.routedBase ?? await env.route(s.base) };
+  },
+  reserve(env, s, o) {
+    // The ledger a kept trial keeps asks for no change of a face; the trial's own asks for one (the turn order must move a face, or the trial is refused).
+    o.keptTurn = addReservations(s.kept, [...floorEntries(keptFloors(env, s), 'turn', env.placements), ...turnEntries(true, [], false, 'turn', env.placements)]);
+    return addReservations(o.keptTurn, turnEntries(true, [], true, 'turn', env.placements));
+  },
+  // The offer was decided before any placement; this is left only when the measure and stage 5 disagree about a face. The placement is spent (no re-run is given back).
+  holdsAt7e(_env, _s, _o, ledger, trial7e) {
+    const failed = holds(ledger, trial7e);
+    return failed.length > 0 ? { at: 'ledger', why: failed[0]!.kind === 'turnOrder' ? failed[0]!.why : `a reservation does not hold at stage 7e (${failed[0]!.why})` } : undefined;
+  },
+  judge(env, s, o, t) {
+    const verdict = judgeTurnTrial(o.current, t.routedTrial, promisedTurns(s.kept));
+    o.verdict = verdict;
+    env.options.testSideTrace?.({ ev: 'turn-trial', verdict, trial: t.trial, routedTrial: t.routedTrial, routedBase: o.current });
+    return verdict.kept ? undefined : { at: 'verdict', why: verdict.reason };
+  },
+  commit(_env, s, o, t) {
+    s.base = t.trial; s.kept7e = t.trial7e; s.routedFinal = t.routedTrial; s.kept = o.keptTurn!;
+    const verdict = o.verdict!;
+    for (const face of t.trial7e.freeze!.turnOrder!) {
+      s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'TURN_ORDER_TAKEN', owners: [{ kind: 'node', id: face.node }],
+        message: `The ports of the ${face.side} face of ${face.node} take the order of their planned first turns: ${verdict.before!.bent} bent links, ${verdict.before!.turns} turns and ${verdict.before!.crossings} crossings on the baseline, ${verdict.after!.bent}, ${verdict.after!.turns} and ${verdict.after!.crossings} after.` });
+    }
+  },
+  refuse(env, _s, o, r) {
+    const why = r.at === 'place' ? `the placement run rejected it (${r.why})` : r.at === 'fallback' ? 'ELK fell back during the turn trial'
+      : r.at === 'bands' ? `stage 7f rejected it (${r.why})` : r.why;
+    env.options.testSideTrace?.({ ev: 'turn-refused', faces: o.offer.faces.map(face => `${face.node}.${face.side}`), why });
   },
 };
