@@ -301,6 +301,11 @@ export function validateReservations(model: LayoutModel): void {
     // The courses the ledger reserves are the courses the model carries, link for link.
     if (!same(coursesOf(ledger).map(course => course.link), (model.courses ?? []).map(course => course.link))) throw new Error('Reserved courses differ from the courses of the model');
   }
+  if (model.reservations !== undefined) {
+    // The spanning chords the ledger reserves are the frozen span hints, link for link in link order.
+    const held = spansOf(ledger);
+    if (!same(model.links.filter(link => held.has(link.id)).map(link => link.id), model.freeze?.spans ?? []) || held.size !== (model.freeze?.spans ?? []).length) throw new Error('Reserved spanning chords differ from the frozen span hints');
+  }
   // A floor is a promise about the placed geometry, which later stages may only grow; the kinds below are checked on every restored stage.
   for (const failure of holds(ledger.filter(item => RESTORED.has(item.kind)), model)) throw new Error(`Reservation ${failure.id} does not hold: ${failure.why}`);
 }

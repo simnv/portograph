@@ -44,7 +44,7 @@ import { beats, gainOf, judgeCourseTrial, judgeOverlayTrial, measureCourses, mea
 import { pathBends } from '../layout/objective.js';
 import { turnMissed } from '../layout/turn-order.js';
 import { judgeTurnTrial, measureTurnOrder, roundLimit, turnReserve, turnRoundRuns } from '../layout/turn-measure.js';
-import { pitchFloorsOf, nodeFloors as floorEntries, pitchGrowth, nodeFloorsOf, reserve as addReservations, courseEntries, coursesOf, laneKeysOf, laneOwners, sideFaces, sideHintsOf, type Reservations } from '../layout/reservations.js';
+import { pitchFloorsOf, nodeFloors as floorEntries, pitchGrowth, nodeFloorsOf, reserve as addReservations, courseEntries, coursesOf, laneKeysOf, laneOwners, sideFaces, sideHintsOf, spanEntries, spansOf, type Reservations } from '../layout/reservations.js';
 import { countStage, ledgerOn, ledgerSnapshot, startPlacementEntry, type LedgerSnapshot } from '../layout/attempt-ledger.js';
 
 
@@ -153,8 +153,6 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   };
 
   /** Stages 1 to 7e, the placement the chords are decided on before 7f grows a gap, and so the placement a fan is measured on. `reservations` hold the port pitches a fan of chords needs on a face (ticket 89); the first run has none. */
-  // The links every placement run reserves as spanning chords (ticket 22): the test's, or the ones the span round keeps.
-  let activeSpans: ReadonlySet<string> = new Set(options.testSpanHints ?? []);
   // Whether every placement run orders the ports of a face by the planned first turn (ticket 24): forced by the test option, or set by a kept turn round.
   let activeTurn = options.testTurnOrder === true;
   // The links whose faces a kept bypass trial ordered by their turns; later runs keep that order on those faces (ticket 24, phase 5).
@@ -170,7 +168,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   let placements = 0;
   // The cap on placements per command: the first run and the effective re-run budget (the fan rounds at the start run within FAN_ROUNDS even with a budget of 0).
   const placeCap = Math.max(options.testMaxReruns ?? MAX_RERUNS, FAN_ROUNDS) + 1;
-  const place = async (reservations: Reservations, abort?: (stage: string) => void, spans: ReadonlySet<string> = activeSpans, turn: boolean = activeTurn, turnLinks: readonly string[] = activeTurnLinks): Promise<LayoutModel> => {
+  const place = async (reservations: Reservations, abort?: (stage: string) => void, turn: boolean = activeTurn, turnLinks: readonly string[] = activeTurnLinks): Promise<LayoutModel> => {
     // The one assertion of the placement budget: a command places at most MAX_RERUNS + 1 times (the first run and the re-runs), whatever round asks. A run that stage 7a
     // refuses before any work is given back by the round that asked (`placements--`, with its `reruns--`).
     if (placements >= placeCap) throw new PlacementBudgetExceeded(placements);
@@ -178,7 +176,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     const stepIn = <T>(stage: LayoutStage, run: () => T): T => { abort?.(stage); return step(stage, run); };
     const resolved = stepIn('resolve', () => resolve(document, { ...(options.diagnostics ? { diagnostics: options.diagnostics } : {}), ...(declinedTrunks.size || declinedTrunks.all ? { declinedTrunks } : {}) }));
     if (reservations.length > 0) resolved.reservations = JSON.parse(JSON.stringify(reservations)) as Reservations;
-    const courses = coursesOf(reservations);
+    const courses = coursesOf(reservations), spans = spansOf(reservations);
     // A course face ranks above a hint (ticket 15): each end that does not keep its natural face names the port and the face.
     const courseFaces = new Map<string, Side>();
     for (const course of courses) {
@@ -246,7 +244,9 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   // What every placement run is told to keep: the test's node floors first, then what the rounds keep.
   let kept: Reservations = [...floorEntries(options.testNodeFloors ?? new Map(), 'initial', 0), ...sideFaces(options.testSideHints ?? new Map(), new Map(), 'initial', 0),
     // The courses every placement run reserves (ticket 15): the test's, or the ones the course round keeps.
-    ...courseEntries(options.testCourses ?? [], undefined, 'initial', 0)];
+    ...courseEntries(options.testCourses ?? [], undefined, 'initial', 0),
+    // The links every placement run reserves as spanning chords (ticket 22): the test's, or the ones the span round keeps.
+    ...spanEntries(options.testSpanHints ?? [], 'initial', 0)];
   // A trunk with no admissible side is declined by one placement re-run, which shares `MAX_RERUNS` (mesh-bus.md, section 12.4).
   for (;;) {
     // The last run the budget allows declines every trunk, so that it cannot be blocked and no run past the budget is needed.
@@ -379,7 +379,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     // A row bypass (ticket 24, phase 5) puts the closing link in the slot on its turn side: the trial carries the turn order, or its stems would cross the straight link of the gap.
     const bypassLinks = offer.courses.filter(course => course.kind === 'bypass').map(course => course.link);
     const trialLinks = [...new Set([...activeTurnLinks, ...bypassLinks])];
-    try { trial7e = await timed('rerun-course', () => place(trialLedger, trialAbort, activeSpans, activeTurn, trialLinks)); } catch (error) {
+    try { trial7e = await timed('rerun-course', () => place(trialLedger, trialAbort, activeTurn, trialLinks)); } catch (error) {
       // A course moves columns the baseline never moved. A centring that cannot hold its feeds there is the course's refusal, not a bug of the baseline.
       if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError
         || (error instanceof Error && error.message.startsWith('Centring invariant violated')))) throw error;
@@ -435,8 +435,10 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     if (reruns >= spanMax) { options.testSideTrace?.({ ev: 'span-refused', links: offer.links, why: 'budget' }); return false; }
     reruns++;
     const spanRefusal = (why: string, detail: string): void => { options.testSideTrace?.({ ev: 'span-refused', links: offer.links, why, detail }); };
+    // The trial reserves its chords on top of the ledger; the fans of the trial grow this one, and a kept trial keeps it.
+    let trialFloors = addReservations(kept, spanEntries(offer.links, 'span', placements));
     let trial7e: LayoutModel | undefined;
-    try { trial7e = await timed('rerun-span', () => place(kept, trialAbort, new Set([...activeSpans, ...offer.links]))); } catch (error) {
+    try { trial7e = await timed('rerun-span', () => place(trialFloors, trialAbort)); } catch (error) {
       // The span round is an offer: a trial that the placement cannot build is refused, whatever the cause, and the sheet stays as the baseline made it. Only the command
       // deadline ends the command. The trace names the error, so a sweep that greps `span-refused` for `error` finds a defect.
       if (!(error instanceof Error) || error instanceof CommandDeadlineError) throw error;
@@ -448,7 +450,6 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     if (trial7e.fallbackUsed && !kept7e.fallbackUsed) { spanRefusal('placement', 'ELK fell back during the span trial'); return false; }
     // A fan of chords whose neighbours stand closer than the chord clearance is spread by placement (ticket 89): the chords of this trial are measured as the fan
     // rounds measure the first placement, and the trial places again with the floors they ask for. The re-runs are the command's (MAX_RERUNS).
-    let trialFloors = kept;
     for (let round = 0; round < FAN_ROUNDS && reruns < spanMax; round++) {
       const measure = await timed('measureFans', () => measureFans(trial7e!));
       const grown = pitchGrowth(trialFloors, measure.floors, 'span', placements);
@@ -456,7 +457,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       const next = addReservations(trialFloors, grown);
       reruns++; attemptCounters.invalidations.fanReruns++;
       let again: LayoutModel;
-      try { again = await timed('rerun-fan', () => place(next, trialAbort, new Set([...activeSpans, ...offer.links]))); } catch (error) {
+      try { again = await timed('rerun-fan', () => place(next, trialAbort)); } catch (error) {
         if (!(error instanceof Error) || error instanceof CommandDeadlineError) throw error;
         spanRefusal(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError ? 'placement' : 'error', error.message); return false;
       }
@@ -479,7 +480,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       const verdict = judgeSpanTrial(routedBase!, routedTrial, offer.links);
       options.testSideTrace?.({ ev: 'span-trial', verdict, trial, routedTrial, routedBase, offer });
       if (!verdict.kept) { spanRefusal(verdict.reason!, verdict.detail); return false; }
-      activeSpans = new Set([...activeSpans, ...offer.links]); kept = trialFloors;
+      kept = trialFloors;
       base = trial; kept7e = trial7e; routedFinal = routedTrial; routedBase = routedTrial;
       baseMoved = trialMoved; baseUnmoved = trialUnmoved;
       for (const id of offer.links) {
@@ -648,7 +649,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
         let trial7e: LayoutModel | undefined;
         reruns++;
         const trialLedger = addReservations(kept, floorEntries(nodeFloors, 'turn', placements));
-        try { trial7e = await timed('rerun-turn', () => place(trialLedger, trialAbort, activeSpans, true)); } catch (error) {
+        try { trial7e = await timed('rerun-turn', () => place(trialLedger, trialAbort, true)); } catch (error) {
           if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError || error instanceof PlacementBudgetExceeded
             || (error instanceof Error && error.message.startsWith('Centring invariant violated')))) throw error;
           refuseTurns(`the placement run rejected it (${error.message})`);

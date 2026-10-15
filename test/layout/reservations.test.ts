@@ -5,21 +5,21 @@ import { portKey } from '../../src/layout/sides-one.js';
 describe('reservation ledger', () => {
   it('refuses a restored model whose pitch is under a reserved floor, and one that holds twice an id', () => {
     const ledger = pitchFloors(new Map([['n', { left: 10 }]]), 'fan', 0);
-    const model = (pitch: number, reservations = ledger): never => ({ reservations, nodes: { n: { id: 'n', ports: [], sidePitch: { left: pitch } } } }) as never;
+    const model = (pitch: number, reservations = ledger): never => ({ links: [], reservations, nodes: { n: { id: 'n', ports: [], sidePitch: { left: pitch } } } }) as never;
     expect(() => validateReservations(model(10))).not.toThrow();
     expect(() => validateReservations(model(9))).toThrow(/does not hold/);
     expect(() => validateReservations(model(10, [...ledger, ...ledger]))).toThrow(/held twice/);
   });
   it('refuses a ledger whose node floors are not the frozen ones', () => {
     const ledger = nodeFloors(new Map([['n', { width: 10, height: 20 }]]), 'side', 0);
-    const model = (frozen: number): never => ({ reservations: ledger, freeze: { nodeFloors: [{ node: 'n', size: { width: frozen, height: 20 } }] }, nodes: { n: { id: 'n', ports: [], size: { width: 12, height: 20 } } } }) as never;
+    const model = (frozen: number): never => ({ links: [], reservations: ledger, freeze: { nodeFloors: [{ node: 'n', size: { width: frozen, height: 20 } }] }, nodes: { n: { id: 'n', ports: [], size: { width: 12, height: 20 } } } }) as never;
     expect(() => validateReservations(model(10))).not.toThrow();
     expect(() => validateReservations(model(11))).toThrow(/frozen node floors/);
   });
   it('refuses a side face the port does not stand on, and a hinted port with no reservation', () => {
     const ref = { node: 'n', name: 'p', ordinal: 1 }, key = portKey(ref);
     const ledger = sideFaces(new Map([[key, 'left' as const]]), new Map(), 'side', 0);
-    const model = (port: object, reservations = ledger): never => ({ reservations, nodes: { n: { id: 'n', ports: [{ ref, ...port }] } } }) as never;
+    const model = (port: object, reservations = ledger): never => ({ links: [], reservations, nodes: { n: { id: 'n', ports: [{ ref, ...port }] } } }) as never;
     expect(() => validateReservations(model({ side: 'left', sideHint: true }))).not.toThrow();
     expect(() => validateReservations(model({ side: 'right', sideHint: true }))).toThrow(/not the face/);
     expect(() => validateReservations(model({ side: 'left' }))).toThrow(/not the face/);
@@ -29,16 +29,22 @@ describe('reservation ledger', () => {
     const ref = { node: 'n', name: 'p', ordinal: 1 }, key = portKey(ref);
     const hints = new Map([[key, 'left' as const]]), promised = new Map([[key, { link: 'l', bends: 1, shape: 'lane' as const }]]);
     const faces = sideFaces(hints, promised, 'side', 0), owners = laneOwners([key], hints, promised, 'side', 0);
-    const model = (port: object, reservations: readonly unknown[] = [...faces, ...owners]): never => ({ reservations, nodes: { n: { id: 'n', ports: [{ ref, side: 'left', sideHint: true, ...port }] } } }) as never;
+    const model = (port: object, reservations: readonly unknown[] = [...faces, ...owners]): never => ({ links: [], reservations, nodes: { n: { id: 'n', ports: [{ ref, side: 'left', sideHint: true, ...port }] } } }) as never;
     expect(() => validateReservations(model({ laneHint: true }))).not.toThrow();
     expect(() => validateReservations(model({}))).toThrow(/lane owners/);
     expect(() => validateReservations(model({ laneHint: true }, owners))).toThrow(/no side face|not the face|no reservation/);
   });
   it('refuses a ledger whose courses are not the courses of the model', () => {
     const course = { link: 'l', kind: 'gap', from: { face: 'left' }, to: { face: 'right' }, runs: [] } as never;
-    const model = (courses: object[]): never => ({ reservations: courseEntries([course], new Map([['l', 2]]), 'course', 0), courses, nodes: {} }) as never;
+    const model = (courses: object[]): never => ({ links: [], reservations: courseEntries([course], new Map([['l', 2]]), 'course', 0), courses, nodes: {} }) as never;
     expect(() => validateReservations(model([course]))).not.toThrow();
     expect(() => validateReservations(model([]))).toThrow(/Reserved courses/);
+  });
+  it('refuses a ledger whose spanning chords are not the frozen span hints', () => {
+    const model = (frozen: string[]): never => ({ reservations: spanEntries(['b'], 'span', 0), links: [{ id: 'a' }, { id: 'b' }], freeze: { spans: frozen }, nodes: {} }) as never;
+    expect(() => validateReservations(model(['b']))).not.toThrow();
+    expect(() => validateReservations(model(['a']))).toThrow(/spanning chords/);
+    expect(() => validateReservations(model([]))).toThrow(/spanning chords/);
   });
   it('merges pitch and node floors by componentwise maximum and keeps declaration order', () => {
     const a = reserve([], pitchFloors(new Map([['n', { left: 10 }], ['m', { right: 4 }]]), 'fan', 0));
