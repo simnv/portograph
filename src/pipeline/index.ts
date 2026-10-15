@@ -149,11 +149,15 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     return result;
   };
 
-  /** Stages 1 to 7e, the placement the chords are decided on before 7f grows a gap, and so the placement a fan is measured on. `reservations` hold the port pitches a fan of chords needs on a face (ticket 89); the first run has none. */
   const stage3Sizes = new WeakMap<LayoutModel, Map<string, Size>>();
   let placements = 0;
   // The cap on placements per command: the first run and the effective re-run budget (the fan rounds at the start run within FAN_ROUNDS even with a budget of 0).
   const placeCap = Math.max(options.testMaxReruns ?? MAX_RERUNS, FAN_ROUNDS) + 1;
+  /**
+   * Stages 1 to 7e, the placement the chords are decided on before 7f grows a gap, and so the placement a fan is measured on. Its one input is the ledger
+   * (`src/layout/reservations.ts`): the pitch and node floors, side faces, lane owners, courses, spanning chords, turn order and declined trunks the run must keep, written on the
+   * model it returns. `abort` is the deadline check of a trial; it reserves nothing.
+   */
   const place = async (reservations: Reservations, abort?: (stage: string) => void): Promise<LayoutModel> => {
     // The one assertion of the placement budget: a command places at most MAX_RERUNS + 1 times (the first run and the re-runs), whatever round asks. A slot is released
     // only before a run starts; a run that has started is spent, even when stage 7a refuses it at once, so `placements` never goes down.
