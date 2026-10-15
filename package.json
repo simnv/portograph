@@ -4,7 +4,7 @@
   "description": "YAML in, a laid-out diagram (SVG) out: nodes with ports, grouped into tiers, links routed per region.",
   "type": "module",
   "engines": {
-    "node": "^18.18.0 || ^20.9.0 || >=22.0.0"
+    "node": ">=22"
   },
   "bin": {
     "portograph": "bin/portograph.mjs"

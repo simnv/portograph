@@ -63,7 +63,7 @@ agy (renders) before merge; correctness and metric regressions block.
 
 TypeScript · elkjs 0.12 (layered; tiers by partitioning with per-band fallback) · libavoid-js for
 links the region rules do not claim · Vite lib build + `vite-plugin-dts` · Vitest · zero DOM in the
-core. Supported Node versions: `^18.18.0 || ^20.9.0 || >=22.0.0`.
+core. Supported Node versions: 22 or newer.
 
 Run `npm ci`, then `npm run build`, `npm test`, `npm run typecheck`, and `npm run lint`.
 The core exposes `parseWithDiagnostics`, `layout`, `score`, `render`, the staged JSON model,

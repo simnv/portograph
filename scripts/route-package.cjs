@@ -1,6 +1,6 @@
 'use strict';
 // Pack, install and exercise the stage-8 router from an unrelated working directory, on this Node
-// and on the supported floor (Node 18.18). Run with: node scripts/route-package.cjs
+// and on the supported floor (Node 22.0). Run with: node scripts/route-package.cjs
 const { execFileSync } = require('node:child_process');
 const { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
@@ -10,12 +10,12 @@ const root = path.resolve('.');
 const temp = mkdtempSync(path.join(tmpdir(), 'portograph-route-package-'));
 let floor;
 try {
-  floor = execFileSync('npx', ['--yes', '--package=node@18.18.0', 'node', '-p', 'process.execPath'],
+  floor = execFileSync('npx', ['--yes', '--package=node@22.0.0', 'node', '-p', 'process.execPath'],
     { encoding: 'utf8', timeout: 300000 }).trim();
 } catch (error) {
-  throw new Error(`Node 18.18 floor runtime is unavailable: ${error.message}`);
+  throw new Error(`Node 22.0 floor runtime is unavailable: ${error.message}`);
 }
-if (!existsSync(floor)) throw new Error(`Node 18.18 floor runtime is unavailable at ${floor}`);
+if (!existsSync(floor)) throw new Error(`Node 22.0 floor runtime is unavailable at ${floor}`);
 
 const yaml = [
   'portograph: 2',
