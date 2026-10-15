@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
+import { SkeletonError } from '../../src/layout/skeleton.js';
 import { attemptCounters, resetAttemptCounters } from '../../src/layout/attempt-counters.js';
 import { MAX_RERUNS } from '../../src/pipeline/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -25,5 +26,23 @@ describe('placements per command', () => {
     await layout(parse(readFileSync(sheet, 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     expect(attemptCounters.placeRuns).toBeLessThanOrEqual(MAX_RERUNS + 1);
     expect(attemptCounters.placeRuns).toBeGreaterThanOrEqual(1);
+  }, 120000);
+});
+
+describe('a started placement is never given back (architecture 2, ticket 03)', () => {
+  // A trial that is refused after it began (here: its ELK attempt cannot be made) has spent its slot. The count of starts is the count of attempts the sheet asked for.
+  it.each(SHEETS)('%s: refused re-runs still count as starts', async sheet => {
+    resetAttemptCounters();
+    let attempts = 0;
+    const refusing = (): ReturnType<typeof createAttempt> => {
+      attempts++;
+      if (attempts > 1) throw new SkeletonError('injected refusal after the run began');
+      return createAttempt();
+    };
+    // A fan re-run does not catch a refusal (it ends the command), so the command may end in an error; either way the starts are bounded.
+    await layout(parse(readFileSync(sheet, 'utf8')), { createElkAttempt: refusing, createRouteAttempt: createAvoidAttempt }).catch(() => undefined);
+    expect(attempts).toBeGreaterThan(1);
+    expect(attemptCounters.placeStarts).toBeLessThanOrEqual(MAX_RERUNS + 1);
+    expect(attemptCounters.placeStarts).toBeGreaterThanOrEqual(1);
   }, 120000);
 });
