@@ -14,7 +14,8 @@ const PAST_SIBLING = 'an-overlay-leaves-a-lateral-side-past-a-sibling-body';
 const BLOCKED = 'an-overlay-keeps-its-natural-side-when-the-lateral-segment-is-blocked';
 const TWO_TIERS = 'members-of-two-tiers-stand-as-two-rows';
 const FAN = 'a-fan-spreads-its-ports-so-its-chords-hold-clearance';
-const withoutRuntime = (model: LayoutModel): string => JSON.stringify(model, (key, value: unknown) => key === 'runtime' ? undefined : value);
+// The `reservations` field (architecture 2, ticket 03) is the declared ledger of the run, not geometry: the bytes main made have none.
+const withoutRuntime = (model: LayoutModel): string => JSON.stringify(model, (key, value: unknown) => key === 'runtime' || key === 'reservations' ? undefined : value);
 const hash = (model: LayoutModel): string => createHash('sha256').update(withoutRuntime(model)).digest('hex').slice(0, 16);
 interface Counted { model: LayoutModel; places: number }
 async function run(name: string, extra: Partial<Parameters<typeof layout>[1]> = {}): Promise<Counted> {

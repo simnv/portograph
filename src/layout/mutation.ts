@@ -1,3 +1,4 @@
+import { validateReservations } from './reservations.js';
 import { equal } from '../model/json-equality.js';
 import type { Rect, Side, Size } from '../model/geometry.js';
 import type { Lane, LayoutFreeze, LayoutModel, LayoutStage, MeshBus, PlacementSnapshot } from '../model/layout.js';
@@ -524,6 +525,7 @@ function validateFreeze(model: LayoutModel): void {
       if (!model.nodes[floor.node]!.ports.some(port => port.sideHint === true || port.courseHint === true)) throw new SideHintRefusal(`Node floor on ${floor.node}, which has no hinted port`);
     }
   }
+  validateReservations(model);
   if (stages.indexOf(model.stage) >= stages.indexOf('bands')) {
     if (!freeze.placement) throw new Error('Missing final placement freeze');
     same(placement(model), freeze.placement, 'Final placement changed');

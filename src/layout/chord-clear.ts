@@ -6,7 +6,8 @@ import { frameColumns, overlayFreeGroups } from './columns.js';
 import { groupShape } from './grid.js';
 import { cellReach, deriveFrames, FRAME_TO_FRAME_GAP } from './frames.js';
 import { chordsHold } from './frame-paths.js';
-import { optionalMoveHolds, occupiedOverhang, selectAnchorTier } from './lanes.js';
+import { occupiedOverhang, selectAnchorTier } from './lanes.js';
+import { holdsMove, holdsNodeMove } from './move-reservations.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { saveGroups } from './overlay-order.js';
 import { sharedBlockers, straightChord } from './overlay-paths.js';
@@ -167,7 +168,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
     const at = cells[0]!.bounds!.x;
     const placed = decision.choose(key, candidates, 0, dx => { for (const cell of cells) moveGroup(model, cell, dx, 0); }, undo, nodes, dx => {
       const proposed = cells.map(group => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } }));
-      if (optionalMoveHolds(model, proposed, false)) return true;
+      if (holdsMove(model, proposed, false)) return true;
       if (refusal === undefined && !chordsHold(model, proposed, false)) refusal = proposed;
       return false;
     });
@@ -318,7 +319,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
           let refusal: { group: LayoutGroup; bounds: Rect }[] | undefined;
           placed = decision.choose(keep, candidates, box.x, dx => moveGroup(model, group, dx, 0), undo, group.nodes, x => {
             const proposed = [{ group, bounds: { ...box, x } }];
-            if (optionalMoveHolds(model, proposed, false)) return true;
+            if (holdsMove(model, proposed, false)) return true;
             if (refusal === undefined && !chordsHold(model, proposed, false)) refusal = proposed;
             return false;
           }, () => rankGuard === undefined ? sameFrames() : rankGuard.holds(), lower ? group.id : undefined);
@@ -350,7 +351,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
           };
           const framed = (): boolean => mayGrow(group, before, cellReach(model, group.id));
           // The ticket-80 slide stays as it was for a lower rank too: it is not under the rank rule, since the rule would refuse moves main makes.
-          if (candidates.length && decision.choose(`row:${group.id}`, candidates, 0, slide, undo, ids, () => true, framed)) {
+          if (candidates.length && decision.choose(`row:${group.id}`, candidates, 0, slide, undo, ids, dx => holdsNodeMove(model, group, ids, dx), framed)) {
             moved = true;
             edge(model).grown += outward(before, cellReach(model, group.id));
             continue;
@@ -387,7 +388,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
         // A node of a cell moves only where the frame stays as it is: the frame edge stands off the outermost body (`cellReach`).
         const reach = cellOfFrame(group) ? cellReach(model, group.id) : undefined;
         const framed = (): boolean => rankGuard !== undefined ? rankGuard.holds() : reach === undefined || mayGrow(group, reach, cellReach(model, group.id));
-        if (decision.choose(`node:${id}`, candidates, body.x, shift, undo, [id], () => true, framed, lowerCell ? group.id : undefined)) {
+        if (decision.choose(`node:${id}`, candidates, body.x, shift, undo, [id], x => holdsNodeMove(model, group, [id], x - body.x), framed, lowerCell ? group.id : undefined)) {
           moved = true;
           if (rankGuard !== undefined) { edge(model).grown += rankGuard.grown(); noteRank(id); }
           else if (reach !== undefined) edge(model).grown += outward(reach, cellReach(model, group.id));

@@ -3,7 +3,8 @@ import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { frameSubtreeCells } from '../model/model.js';
 import { CELL_TO_CHILD_FRAME_GAP, cellReach, deriveFrames, frameNodes } from './frames.js';
 import { GROUP_PADDING } from './regions.js';
-import { optionalMoveHolds, selectAnchorTier } from './lanes.js';
+import { selectAnchorTier } from './lanes.js';
+import { holdsMove } from './move-reservations.js';
 import { findPort } from './row-paths.js';
 import { cellTier } from './read/tier.js';
 import { isCantonUnit } from './read/canton.js';
@@ -545,7 +546,7 @@ function closeUp(model: LayoutModel, tiers: Unit[][], index: number, slack: numb
   const named = run.find(unit => isCanton(unit) && unit.groups.some(group => shifts.has(group))) ?? run.find(isCanton)!;
   let cause = stepBlock(model, tier, run, at, isCanton);
   const proposed = [...shifts].map(([group, dx]) => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } }));
-  if (cause === undefined && !optionalMoveHolds(model, proposed)) cause = 'a reserved lane it would cross holds it';
+  if (cause === undefined && !holdsMove(model, proposed)) cause = 'a reserved lane it would cross holds it';
   if (cause === undefined) {
     const straight = straightOverlays(model), undo = exactUndo(model, shifts.keys());
     for (const [group, dx] of shifts) moveGroup(model, group, dx, 0);
@@ -940,7 +941,7 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
       const dx = target[i]! - item.x;
       if (Math.abs(dx) > PLACEMENT_EPS) for (const group of item.unit.groups) shifts.set(group, dx);
     }
-    const allowed = shifts.size > 0 && optionalMoveHolds(model, [...shifts].map(([group, dx]) => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } })));
+    const allowed = shifts.size > 0 && holdsMove(model, [...shifts].map(([group, dx]) => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } })));
     // A move must not put a frame into the way of an overlay link that is one straight segment: the cells slide
     // inside the box later, so the box is what the segment must clear, and the link would be routed round the
     // cells. The plan is refused as a whole, as for a lane, and the columns stay where they stand.

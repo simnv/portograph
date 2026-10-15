@@ -2,6 +2,7 @@ import type { Rect } from '../model/geometry.js';
 import type { Lane, LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { EPS } from '../geometry/planar.js';
+import { spanLaneId } from './lane-kind.js';
 import { SideHintRefusal } from './side-hints.js';
 import { straightChord } from './overlay-paths.js';
 import { candidateBox, haloSize, isDirect, lineAngle, LINK_LABEL_GEOMETRY, turnedBox } from './link-labels.js';
@@ -20,7 +21,7 @@ export class SpanRefusal extends SideHintRefusal {}
 /** The 7a reservation (`reserveSpanCorridors`) cannot open a corridor. It is thrown before any later stage has run, so the round that asked gives the re-run back; a refusal of 7c to 7e (`SpanRefusal`) comes after most of the placement and gives nothing back. */
 export class SpanReservationRefusal extends SpanRefusal {}
 
-export const spanLaneId = (link: string, tier: number): string => `span:${link}:${tier}`;
+export { spanLaneId };
 export const isSpanLane = (lane: Pick<Lane, 'kind'>): boolean => lane.kind === 'span';
 
 /** The vertical extent a lane of this band covers: the band grown by the pad the transit lanes use (`laneExtent`). */

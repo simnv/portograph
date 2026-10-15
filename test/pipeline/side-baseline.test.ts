@@ -48,7 +48,7 @@ async function run(name: string, extra: Partial<Parameters<typeof layout>[1]> = 
 }
 const codes = (model: LayoutModel): string[] => model.diagnostics.map(item => item.code);
 const withoutNotes = (model: LayoutModel): string => JSON.stringify({ ...model, diagnostics: model.diagnostics.filter(item => !item.code.startsWith('SIDE_')) },
-  (key, value: unknown) => key === 'runtime' ? undefined : value);
+  (key, value: unknown) => key === 'runtime' || key === 'reservations' ? undefined : value);
 const overlayOf = (model: LayoutModel): LayoutLink => model.links.find(item => item.layer === 'overlay')!;
 /** The link's path with `bends` bends between its two ends: a zigzag (what a body moved onto the segment would leave). */
 const bendTo = (routed: LayoutModel, id: string, bends: number): LayoutModel => ({ ...routed, links: routed.links.map(link => {

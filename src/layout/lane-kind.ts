@@ -8,5 +8,8 @@ import type { Lane } from '../model/layout.js';
 export const laneRunKind = (lane: Pick<Lane, 'kind'>): 'transit' | 'gap' | 'perimeter' | 'span' =>
   lane.kind === 'perimeter' ? 'perimeter' : lane.kind === 'gap' || lane.kind === 'side' ? 'gap' : lane.kind === 'span' ? 'span' : 'transit';
 
+/** The id of the span corridor of a spanning chord in one sub-tier. A leaf, so the ledger can name a corridor without loading the span rules. */
+export const spanLaneId = (link: string, tier: number): string => `span:${link}:${tier}`;
+
 /** Whether a lane is a column-gap run: a gap lane of a course, or a side lane. */
 export const isGapRun = (lane: Pick<Lane, 'kind'>): boolean => laneRunKind(lane) === 'gap';

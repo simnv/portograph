@@ -1,5 +1,6 @@
 import type { Endpoint, NormalisedDocument, PortRef, Route } from './document.js';
 import type { Point, Rect, Side, Size } from './geometry.js';
+import type { Reservations } from '../layout/reservations.js';
 
 /** Last completed stage; checked transactions enforce progression after sides-two. */
 export type LayoutStage = 'normalised' | 'resolve' | 'sides-one' | 'size' | 'skeleton'
@@ -440,6 +441,12 @@ export interface LayoutRuntime {
 /** Geometry remains optional until the stage that produces it has completed. */
 export interface LayoutModel {
   freeze?: LayoutFreeze;
+  /**
+   * What this placement run was told to keep (architecture 2, ticket 03): pitch and size floors, side faces, lane owners, courses, spanning chords, the turn
+   * order and the declined trunks. Plain JSON, set by the pipeline before stage 5 and never changed; absent reads as no reservation. A restore checks it
+   * against the fields the model records (`freeze`, `courses`, `turnOrder`, `declinedTrunks` and the port flags).
+   */
+  reservations?: Reservations;
   /**
    * An input of the placement run (architecture ticket 24, docs/design/turn-order.md): stage 5 orders the ports of a face by the planned first turn of their
    * links. Absent reads as the far-end order. `freeze.turnOrder` records the faces the order changed.

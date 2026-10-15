@@ -4,7 +4,8 @@ import { layout, parse, restoreFinalLayout, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { isRoutedChord } from '../../src/layout/frame-paths.js';
 import { pathBends } from '../../src/layout/objective.js';
-import { spanBreaches, spanCorridorsHold, validateLanes } from '../../src/layout/lanes.js';
+import { holdsMove } from '../../src/layout/move-reservations.js';
+import { spanBreaches, validateLanes } from '../../src/layout/lanes.js';
 import { spanCorridor } from '../../src/layout/span-lanes.js';
 import { evaluate, xCatalogue } from '../../src/layout/constraints/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -12,7 +13,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
 
 /**
  * Architecture ticket 22, phase 2: the reservation without the round. The hints are forced by the test option `testSpanHints`; nothing else offers them.
- * Stage 5 gives a hinted end no lane pitch, 7a reserves one span corridor per transited band and no transit lane, the guard `spanCorridorsHold` keeps every
+ * Stage 5 gives a hinted end no lane pitch, 7a reserves one span corridor per transited band and no transit lane, the guard `holdsMove` keeps every
  * wall out of a corridor from 7a to 7f, and the chord is held as every cross-frame chord is.
  */
 const source = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
@@ -89,29 +90,29 @@ describe('case 04 with the nine mesh links forced as spanning chords', () => {
   }, 60000);
 });
 
-describe('the guard spanCorridorsHold', () => {
+describe('the spanCorridor move reservation', () => {
   let model: LayoutModel;
   beforeAll(async () => { model = await forced(MESH, MESH_LINKS); }, 60000);
 
   it('refuses a unit that moves into a corridor', () => {
     const core = model.groups.core!;
     const lane = model.lanes.find(item => item.kind === 'span')!;
-    expect(spanCorridorsHold(model, [{ group: core, bounds: { ...core.bounds! } }])).toBe(true);
+    expect(holdsMove(model, [{ group: core, bounds: { ...core.bounds! } }], false, ['spanCorridor'])).toBe(true);
     const into = lane.x - core.bounds!.width / 2;
-    expect(spanCorridorsHold(model, [{ group: core, bounds: { ...core.bounds!, x: into } }])).toBe(false);
+    expect(holdsMove(model, [{ group: core, bounds: { ...core.bounds!, x: into } }], false, ['spanCorridor'])).toBe(false);
   }, 60000);
 
   it('refuses an end that moves the corridor onto a body', () => {
     const north = model.groups.north!, core = model.groups.core!;
     // Sweep the whole North group towards the right until a corridor reaches the core body.
-    const tried = [40, 80, 160, 320, 640].map(dx => spanCorridorsHold(model, [{ group: north, bounds: { ...north.bounds!, x: north.bounds!.x + dx } }]));
+    const tried = [40, 80, 160, 320, 640].map(dx => holdsMove(model, [{ group: north, bounds: { ...north.bounds!, x: north.bounds!.x + dx } }], false, ['spanCorridor']));
     expect(tried.at(-1)).toBe(false);
     expect(core.bounds).toBeDefined();
   }, 60000);
 
   it('accepts a model with no span corridor without reading anything', async () => {
     const none = await plain(MESH);
-    expect(spanCorridorsHold(none, [{ group: none.groups.core!, bounds: { ...none.groups.core!.bounds!, x: 0 } }])).toBe(true);
+    expect(holdsMove(none, [{ group: none.groups.core!, bounds: { ...none.groups.core!.bounds!, x: 0 } }], false, ['spanCorridor'])).toBe(true);
   }, 60000);
 });
 

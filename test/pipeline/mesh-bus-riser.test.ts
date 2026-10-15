@@ -5,7 +5,8 @@ import { bars, bundles, centre, flanks, lanes, rows } from '../../src/internal.j
 import { placed as placedModel } from '../layout/phase-two-fixture.js';
 import type { LayoutModel } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
-import { laneSidesHold, optionalMoveHolds, riserKeepOutBreaches, riserNoDeeper, riserPenetrations } from '../../src/layout/lanes.js';
+import { holdsMove } from '../../src/layout/move-reservations.js';
+import { laneSidesHold, riserKeepOutBreaches, riserNoDeeper, riserPenetrations } from '../../src/layout/lanes.js';
 import { routedStrokeWidth } from '../../src/theme/geometry.js';
 import { BUS_RUN_CLEARANCE } from '../../src/layout/bus-room.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -180,7 +181,7 @@ describe('the riser in placement (ticket 96)', () => {
       .filter(port => port.side === 'bottom' && used.has(`${id}:${port.ref.ordinal}`)).map(port => ({ group, port }))) : [])[0];
     if (found === undefined) return;
     const bounds = found.group.bounds!, dx = x - found.port.anchor!.x + 2;
-    expect(optionalMoveHolds(model, [{ group: found.group, bounds: { ...bounds, x: bounds.x + dx } }], false)).toBe(false);
+    expect(holdsMove(model, [{ group: found.group, bounds: { ...bounds, x: bounds.x + dx } }], false)).toBe(false);
     // A move that must be made is never vetoed by the keep-out (`packClear` uses `laneSidesHold` alone).
     expect(laneSidesHold(model, [{ group: found.group, bounds: { ...bounds, x: bounds.x + dx } }], false)).toBe(true);
   });
@@ -241,7 +242,7 @@ describe('the riser in placement (ticket 96)', () => {
     const total = (m: Map<string, number>): number => [...m.values()].reduce((sum, depth) => sum + depth, 0);
     expect(total(after)).toBeLessThan(total(before));
     expect(riserNoDeeper(before, after)).toBe(false);
-    expect(optionalMoveHolds(model, move, false)).toBe(false);
+    expect(holdsMove(model, move, false)).toBe(false);
   });
 
   it('measures riserNoDeeper port by port', () => {
@@ -254,10 +255,10 @@ describe('the riser in placement (ticket 96)', () => {
   it('asks the keep-out from every optional mover: only packClear calls laneSidesHold', () => {
     const source = (name: string): string => readFileSync(new URL(`../../src/layout/${name}.ts`, import.meta.url), 'utf8');
     const calls = (name: string): number => (source(name).match(/\blaneSidesHold\(model/g) ?? []).length;
-    const asks = (name: string): number => (source(name).match(/\boptionalMoveHolds\(model/g) ?? []).length;
+    const asks = (name: string): number => (source(name).match(/\bholdsMove\(model/g) ?? []).length;
     for (const name of ['columns', 'bands', 'chord-clear', 'overlay-place']) {
       expect(calls(name), `${name} calls laneSidesHold directly`).toBe(0);
-      expect(asks(name), `${name} asks optionalMoveHolds`).toBeGreaterThan(0);
+      expect(asks(name), `${name} asks holdsMove`).toBeGreaterThan(0);
     }
     expect(calls('centre'), 'centre: packClear alone').toBe(1);
     expect(asks('centre')).toBeGreaterThan(0);

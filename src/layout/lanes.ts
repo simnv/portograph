@@ -25,7 +25,7 @@ import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, 
 import { nodeTier } from './read/tier.js';
 import { isSpanLane, replaySpanLane, spanCorridor, spanLaneId, SpanRefusal, SpanReservationRefusal } from './span-lanes.js';
 import { orderPortsByLanes } from './turn-order.js';
-import { trunkBuses, trunkGeometry, trunkHeads, trunkHolds, trunkRing } from './trunk.js';
+import { trunkBuses, trunkGeometry, trunkHeads, trunkRing } from './trunk.js';
 
 /** A corridor `reseatLanes` moved, and the child port it moved it onto. */
 export interface LaneFollow { lane: string; child: PortRef }
@@ -258,11 +258,6 @@ function placementInfo(model: LayoutModel, code: string, message: string, link: 
   if (model.diagnostics.some(item => item.code === code && item.message === message)) return;
   model.diagnostics.push({ stage: 'placement', severity: 'info', code, message, owners: [{ kind: 'link', id: link }] });
 }
-/** `laneSidesHold`, the side lanes' far ports and the riser keep-out: what a move that can be declined must pass. */
-export function optionalMoveHolds(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[], report = true): boolean {
-  return riserKeepOutHolds(model, proposed) && trunkHolds(model, proposed) && laneSidesHold(model, proposed, report) && sideLanesHold(model, proposed, report)
-    && spanCorridorsHold(model, proposed);
-}
 /**
  * What a unit puts in a span corridor (architecture ticket 22): the corridor already holds the clearances (the group-edge link margin and the half stroke of the
  * chord), so the unit counts by its box, the frame edge it stands inside for a chord foreign to its frame, and its bodies and pills with their own half stroke
@@ -324,13 +319,6 @@ export function spanBreaches(model: LayoutModel, proposed: { group: LayoutGroup;
   }
   return result;
 }
-/** Whether the proposed move leaves no wall in a span corridor that was clear before it: a unit that moves in, or an end that moves the corridor onto a wall. */
-export function spanCorridorsHold(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[]): boolean {
-  if (!model.lanes.some(isSpanLane)) return true;
-  const before = spanBreaches(model);
-  for (const key of spanBreaches(model, proposed)) if (!before.has(key)) return false;
-  return true;
-}
 /** `SPAN_CHORD_BLOCKED` (warning): a move that 7f cannot refuse put a wall into a held span corridor. The span round refuses a trial that carries one. */
 export function spanLaneFindings(model: LayoutModel): Diagnostic[] {
   const blocked = new Map<string, string[]>();
@@ -384,7 +372,7 @@ export function sideLaneFindings(model: LayoutModel): Diagnostic[] {
   return result;
 }
 /** The link a lane belongs to. */
-function laneLink(model: LayoutModel, lane: Lane): LayoutLink | undefined {
+export function laneLink(model: LayoutModel, lane: Lane): LayoutLink | undefined {
   return lane.owner.kind === 'link' ? model.links.find(link => link.id === (lane.owner as { id: string }).id) : undefined;
 }
 function laneId(link: LayoutLink, tier: number): string { return `lane:${JSON.stringify(link.id)}:${tier}`; }

@@ -49,7 +49,9 @@ const ROWS: Row[] = [
   row('a-member-title-widens-a-beside-row', '1/7/7/3', 1, 1, 1, 0, 0, { base7f: '0/1/0' }),
   // The cost counters (settle, centring passes, copies, replays) of this sheet move with every change to the sweep that seats a flank beside a frame (architecture ticket 19: the
   // centring passes 15 to 13); what the sheet pins is its behaviour: the runs, the attempts, the rounds, no open round, no chord move, and the findings below.
-  row('a-canton-column-is-not-pulled-into-a-flank', undefined, 4, 2, 2, 0, 0),
+  // Architecture 2, ticket 03: the side trial on this sheet (link-3, a lane hint on up-1.100G#3) is refused at its 7e now, because the far port of the lane is 65 px off the lane x
+  // (the reservation `laneOwner` reads the anchor, not the flag), where it was refused after 7f for no fewer bends. The second 7f attempt never starts: attempts and rounds 2 to 1. The published layout and score are the same.
+  row('a-canton-column-is-not-pulled-into-a-flank', undefined, 4, 1, 1, 0, 0),
   row('a-flank-link-around-a-neighbour-runs-along-the-core-edge', '1/4/7/3', 1, 1, 1, 0, 0),
   row('m1-sip-edge', '1/5/7/3', 1, 1, 1, 0, 0),
   // The phase-1 fixture: the base 7f chord step moves a group (before this, only NTP among the named sheets did).

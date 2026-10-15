@@ -26,11 +26,9 @@ import { elkDeadlineMs, type CreateElkAttempt, type ElkClock } from '../layout/e
 import { route, ROUTE_BUDGET_MS, type CreateRouteAttempt } from '../route/index.js';
 import { CommandDeadlineError, UNBOUNDED_BUDGET, type Budget } from './budget.js';
 // After the stages: the modules below reach the centring module, whose import order the tests that mock it depend on.
-import { declinedFanDiagnostics, fanRoundDropped, fanRoundHolds, measureFans, type FanMeasure } from '../layout/fan-spread.js';
-import { chordClearances, freezeRefusal, isRoutedChord } from '../layout/frame-paths.js';
+import { declinedFanDiagnostics, fanRoundDropped, fanRoundHolds, measureFans } from '../layout/fan-spread.js';
+import { chordClearances, freezeRefusal } from '../layout/frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
-import { CourseRefusal } from '../layout/courses.js';
-import { SpanReservationRefusal } from '../layout/span-lanes.js';
 import { SideHintRefusal, TrunkBlocked, sideHintDiagnostics, type SideHints } from '../layout/side-hints.js';
 import { measureSides, refusedKey, type SideOffer } from '../layout/side-measure.js';
 import { judgeTrial, predictedWorse, predictPublished, routedBends, trialNotes } from '../layout/side-judge.js';
@@ -41,9 +39,10 @@ import { measureSpans } from '../layout/span-measure.js';
 import { judgeSpanTrial } from '../layout/span-judge.js';
 import { transitTiers } from '../layout/lanes.js';
 import { beats, gainOf, judgeCourseTrial, judgeOverlayTrial, measureCourses, measureOverlayCourses } from '../layout/course-measure.js';
-import { pathBends } from '../layout/objective.js';
 import { turnMissed } from '../layout/turn-order.js';
 import { judgeTurnTrial, measureTurnOrder, roundLimit, turnReserve, turnRoundRuns } from '../layout/turn-measure.js';
+import { pitchFloorsOf, nodeFloors as floorEntries, pitchGrowth, nodeFloorsOf, reserve as addReservations, courseEntries, coursesOf, declinedTrunksOf, promisedTurns, declineTrunk, laneKeysOf, laneOwners, sideFaces, sideHintsOf, spanEntries, spansOf, turnEntries, turnOf, type Reservations } from '../layout/reservations.js';
+import { holds, holdsRouted } from '../layout/reservation-checks.js';
 import { countStage, ledgerOn, ledgerSnapshot, startPlacementEntry, type LedgerSnapshot } from '../layout/attempt-ledger.js';
 
 
@@ -151,33 +150,26 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     return result;
   };
 
-  /** Stages 1 to 7e, the placement the chords are decided on before 7f grows a gap, and so the placement a fan is measured on. `floors` are port pitches a fan of chords needs on a face (ticket 89); the first run has none. */
-  // The courses every placement run reserves (ticket 15): the test's, or the ones the course round keeps.
-  let activeCourses: readonly Course[] = options.testCourses ?? [];
-  // The links every placement run reserves as spanning chords (ticket 22): the test's, or the ones the span round keeps.
-  let activeSpans: ReadonlySet<string> = new Set(options.testSpanHints ?? []);
-  // Whether every placement run orders the ports of a face by the planned first turn (ticket 24): forced by the test option, or set by a kept turn round.
-  let activeTurn = options.testTurnOrder === true;
-  // The links whose faces a kept bypass trial ordered by their turns; later runs keep that order on those faces (ticket 24, phase 5).
-  let activeTurnLinks: readonly string[] = options.testTurnLinks ?? [];
   const stage3Sizes = new WeakMap<LayoutModel, Map<string, Size>>();
-  // The trunk joins a placement run found blocked (mesh-bus.md, section 12.4): the next run resolves with them declined.
-  /** The trunks declined for the next run. With `all` set (the budget is spent) every trunk reads as declined. */
-  class DeclinedTrunks extends Map<string, string> {
-    all = false;
-    override get(key: string): string | undefined { return super.get(key) ?? (this.all ? 'the placement budget is spent' : undefined); }
-  }
-  const declinedTrunks = new DeclinedTrunks();
   let placements = 0;
   // The cap on placements per command: the first run and the effective re-run budget (the fan rounds at the start run within FAN_ROUNDS even with a budget of 0).
   const placeCap = Math.max(options.testMaxReruns ?? MAX_RERUNS, FAN_ROUNDS) + 1;
-  const place = async (floors: FanMeasure['floors'], hints = options.testSideHints, nodeFloors = options.testNodeFloors, abort?: (stage: string) => void, laneKeys: ReadonlySet<string> = new Set(), courses: readonly Course[] = activeCourses, spans: ReadonlySet<string> = activeSpans, turn: boolean = activeTurn, turnLinks: readonly string[] = activeTurnLinks): Promise<LayoutModel> => {
-    // The one assertion of the placement budget: a command places at most MAX_RERUNS + 1 times (the first run and the re-runs), whatever round asks. A run that stage 7a
-    // refuses before any work is given back by the round that asked (`placements--`, with its `reruns--`).
-    if (placements >= placeCap) throw new PlacementBudgetExceeded(placements);
-    placements++;
+  /**
+   * Stages 1 to 7e, the placement the chords are decided on before 7f grows a gap, and so the placement a fan is measured on. Its one input is the ledger
+   * (`src/layout/reservations.ts`): the pitch and node floors, side faces, lane owners, courses, spanning chords, turn order and declined trunks the run must keep, written on the
+   * model it returns. `abort` is the deadline check of a trial; it reserves nothing.
+   */
+  const place = async (reservations: Reservations, abort?: (stage: string) => void): Promise<LayoutModel> => {
+    // The one assertion of the placement budget: a command places at most MAX_RERUNS + 1 times (the first run and the re-runs), whatever round asks. A slot is released
+    // only before a run starts; a run that has started is spent, even when stage 7a refuses it at once, so `placements` never goes down.
+    placements++; attemptCounters.placeStarts++;
+    if (placements > placeCap) throw new PlacementBudgetExceeded(placements - 1);
     const stepIn = <T>(stage: LayoutStage, run: () => T): T => { abort?.(stage); return step(stage, run); };
+    // The trunk joins a placement run found blocked (mesh-bus.md, section 12.4) are declined in the next: the ledger names them, or all of them once the budget is spent.
+    const declinedTrunks = declinedTrunksOf(reservations);
     const resolved = stepIn('resolve', () => resolve(document, { ...(options.diagnostics ? { diagnostics: options.diagnostics } : {}), ...(declinedTrunks.size || declinedTrunks.all ? { declinedTrunks } : {}) }));
+    resolved.reservations = JSON.parse(JSON.stringify(reservations)) as Reservations;
+    const courses = coursesOf(reservations), spans = spansOf(reservations);
     // A course face ranks above a hint (ticket 15): each end that does not keep its natural face names the port and the face.
     const courseFaces = new Map<string, Side>();
     for (const course of courses) {
@@ -188,8 +180,10 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       }
     }
     for (const link of resolved.links) if (spans.has(link.id)) link.spanHint = true;
-    if (turn) resolved.turnOrder = true;
-    else if (turnLinks.length > 0) { resolved.turnOrder = true; resolved.turnLinks = [...turnLinks]; }
+    const turn = turnOf(reservations);
+    if (turn.all) resolved.turnOrder = true;
+    else if (turn.links.length > 0) { resolved.turnOrder = true; resolved.turnLinks = [...turn.links]; }
+    const hints = sideHintsOf(reservations), laneKeys = laneKeysOf(reservations);
     stepIn('sides-one', () => sidesOne(resolved, hints, laneKeys, courseFaces));
     if (courses.length) resolved.courses = JSON.parse(JSON.stringify(courses)) as Course[];
     // An approach (ticket 15, phase 6) is stored on the link and in its course; the port keeps its side.
@@ -201,9 +195,10 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
         if (approach !== undefined) link.approach = { ...link.approach, [which]: approach };
       }
     }
-    for (const [id, pitch] of floors) resolved.nodes[id]!.sidePitch = { ...resolved.nodes[id]!.sidePitch, ...pitch };
+    for (const [id, pitch] of pitchFloorsOf(reservations)) resolved.nodes[id]!.sidePitch = { ...resolved.nodes[id]!.sidePitch, ...pitch };
     // A hinted node keeps the size the measured run gave it, so the skeleton input is the same (a floor on `size`, not on `sizeFloor`, which alignment reads).
-    for (const [id, size] of nodeFloors ?? []) resolved.nodes[id]!.size = { ...size };
+    const nodeFloors = nodeFloorsOf(reservations);
+    for (const [id, size] of nodeFloors) resolved.nodes[id]!.size = { ...size };
     stepIn('size', () => sizeNodes(resolved));
     const sizes = new Map(Object.entries(resolved.nodes).map(([id, node]) => [id, { ...node.size! }] as const));
 
@@ -223,7 +218,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     attemptCounters.placeRuns++;
     // The ledger reads the routed chords and the straight overlay links after each stage, only when a test or the trace asked for it.
     const ledger = ledgerOn(options.attemptTrace !== undefined);
-    let model = stepIn('sides-two', () => sidesTwo(resolved, nodeFloors));
+    let model = stepIn('sides-two', () => sidesTwo(resolved, nodeFloors.size > 0 ? nodeFloors : undefined));
     let seen: LedgerSnapshot | undefined = ledger ? ledgerSnapshot(model) : undefined;
     const entry = ledger ? startPlacementEntry() : undefined;
     const account = (stage: string): void => { if (seen === undefined || entry === undefined) return; const now = ledgerSnapshot(model); countStage(stage, seen, now, entry); seen = now; };
@@ -240,13 +235,21 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   // the placed chords say the pitch each face needs, and placement runs again with those floors until no face needs more.
   let model!: LayoutModel;
   let reruns = 0;
+  // What every placement run is told to keep: the test's node floors first, then what the rounds keep.
+  let kept: Reservations = [...floorEntries(options.testNodeFloors ?? new Map(), 'initial', 0), ...sideFaces(options.testSideHints ?? new Map(), new Map(), 'initial', 0),
+    // The courses every placement run reserves (ticket 15): the test's, or the ones the course round keeps.
+    ...courseEntries(options.testCourses ?? [], undefined, 'initial', 0),
+    // The links every placement run reserves as spanning chords (ticket 22): the test's, or the ones the span round keeps.
+    ...spanEntries(options.testSpanHints ?? [], 'initial', 0),
+    // Whether every placement run orders the ports of a face by the planned first turn (ticket 24): forced by the test option, or set by a kept turn round.
+    ...turnEntries(options.testTurnOrder === true, options.testTurnLinks ?? [], false, 'initial', 0)];
   // A trunk with no admissible side is declined by one placement re-run, which shares `MAX_RERUNS` (mesh-bus.md, section 12.4).
   for (;;) {
     // The last run the budget allows declines every trunk, so that it cannot be blocked and no run past the budget is needed.
-    declinedTrunks.all = reruns >= (options.testMaxReruns ?? MAX_RERUNS);
-    try { model = await timed('place', () => place(new Map())); break; } catch (error) {
-      if (!(error instanceof TrunkBlocked) || declinedTrunks.has(error.key)) throw error;
-      declinedTrunks.set(error.key, error.why);
+    if (reruns >= (options.testMaxReruns ?? MAX_RERUNS)) kept = addReservations(kept, declineTrunk(undefined, 'the placement budget is spent', placements));
+    try { model = await timed('place', () => place(kept)); break; } catch (error) {
+      if (!(error instanceof TrunkBlocked) || declinedTrunksOf(kept).has(error.key)) throw error;
+      kept = addReservations(kept, declineTrunk(error.key, error.why, placements));
       reruns++;
       options.testSideTrace?.({ ev: 'trunk-blocked', key: error.key, reruns, left: (options.testMaxReruns ?? MAX_RERUNS) - reruns });
     }
@@ -263,15 +266,11 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     cuts.push({ stage: 'placement', severity: 'warning', code: 'SIDE_ROUND_CUT',
       message: `A side round was cut: ${why}. The last kept placement stands, and this layout may differ from one made with more time.` });
   };
-  let floors: FanMeasure['floors'] = new Map();
   for (let round = 0; round < FAN_ROUNDS && placements < placeCap; round++) {
     const measure = await timed('measureFans', () => measureFans(model));
-    const next: FanMeasure['floors'] = new Map(floors);
-    let grew = false;
-    for (const [id, pitch] of measure.floors) for (const [side, value] of Object.entries(pitch) as [Side, number][]) {
-      if (value > (next.get(id)?.[side] ?? 0)) { next.set(id, { ...next.get(id), [side]: value }); grew = true; }
-    }
-    if (!grew) break;
+    const grown = pitchGrowth(kept, measure.floors, 'fan', placements);
+    if (grown.length === 0) break;
+    const next = addReservations(kept, grown);
     reruns++; attemptCounters.invalidations.fanReruns++;
     // A fan floor can move the rows, and a trunk that the baseline placed may then have a foreign unit on both sides. The run that found it blocked is a
     // trial, so the round is cut and the baseline stands (a test cannot reach this: it needs a floor that reorders a row of the mesh).
@@ -284,7 +283,10 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       cut('ELK fell back during it, and the re-run was dropped'); break;
     }
     if (!fanRoundHolds(model, trial)) { cuts.push(fanRoundDropped(model, trial)); break; }
-    model = trial; floors = next;
+    // Every active reservation holds at the final 7e of the re-run, or the re-run is dropped.
+    const broken = holds(next, trial);
+    if (broken.length > 0) { cut(`it broke a reservation (${broken[0]!.why})`); break; }
+    model = trial; kept = next;
   }
   // Side rounds (side-faces.md, Section 19). 7f runs on the kept model first: its output is the baseline, the model the command publishes when no
   // trial is kept. A measure reads the baseline. One batched trial reaches 7f per command; it is kept only on its routed result. Every bound is a
@@ -295,10 +297,6 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   let base = await timed('bands', () => step('bands', () => bands(kept7e, () => trialAbort('bands'), options.attemptTrace)));
   // What the 7f run of the baseline did, for phase 3b's trigger; a kept course trial replaces it with its own run's.
   let baseMoved = lastAttempt.moved, baseUnmoved = lastAttempt.unmoved;
-  // The node floors a kept course trial placed with; a later side trial keeps them, or it would re-size the nodes the course moved.
-  let courseFloors = new Map<string, { width: number; height: number }>();
-  let hints = new Map<string, 'left' | 'right'>(options.testSideHints ?? []);
-  let laneKeys = new Set<string>();
   const promised: SideOffer['promised'] = new Map(), refused = new Set<string>(), sideNotes: Diagnostic[] = [];
   const trialLinks = new Map<string, string>();
   // The extra trial of the unmoved baseline's offer (phase 3b) publishes no refusal note: its kept result never offered the hint.
@@ -334,7 +332,6 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   const keptNotes: Diagnostic[] = [];
   // The course round (ticket 15, phase 4) runs before the side round and shares its re-runs. It reads the baseline's routed result, offers perimeter courses
   // for the links whose route is a poor one, places again with the courses reserved in stage 5, and keeps the trial only on its routed result.
-  const keptPromises = new Map<string, number>();
   // Phase 3b's unmoved offer is a side trial too: when 7f moved the placement and the base has no offer, an offer of the unmoved copy may stand (the filter reads it).
   const unmovedMayStand = (): boolean => baseMoved && (baseUnmoved === undefined || measureSides(baseUnmoved, kept7e, refused).hints.size > 0);
   // The turn round (ticket 24, Section 10) runs after these rounds, on what they keep. When it has an offer on the baseline a round reads, that round leaves it one re-run,
@@ -355,9 +352,9 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     noteDeclined(offer);
     if (offer.courses.length === 0) return;
     if (reruns >= roundLimit(maxReruns, reserve())) { options.testSideTrace?.({ ev: 'course-skipped', offer, reruns }); return; }
-    // The floors of a kept side trial and of the course trial stay under this one.
-    const nodeFloors = new Map([...courseFloors, ...(options.testNodeFloors ?? [])]);
-    for (const key of hints.keys()) {
+    // The node floors of a kept course trial stay under this one (a later side trial keeps them, or it would re-size the nodes the course moved).
+    const nodeFloors = new Map<string, Size>();
+    for (const key of sideHintsOf(kept).keys()) {
       const [node] = JSON.parse(key) as [string];
       const size = stage3Sizes.get(kept7e)?.get(node);
       if (size !== undefined) nodeFloors.set(node, { ...size });
@@ -371,25 +368,27 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       }
     }
     reruns++;
+    // A row bypass (ticket 24, phase 5) puts the closing link in the slot on its turn side: the trial carries the turn order, or its stems would cross the straight link of the gap.
+    const bypassLinks = offer.courses.filter(course => course.kind === 'bypass').map(course => course.link);
+    const trialLedger = addReservations(kept, [...floorEntries(nodeFloors, 'course', placements),
+      ...courseEntries(offer.courses, new Map([...offer.promised].map(([id, item]) => [id, item.turns] as const)), 'course', placements),
+      ...turnEntries(false, bypassLinks, false, 'course', placements)]);
     const names = offer.courses.map(course => course.link);
     // A refused course round leaves the layout as the baseline made it, with no note (the trace names the reason), so a sheet it does not change is byte for byte as it was.
     const courseRefusal = (why: string): void => { options.testSideTrace?.({ ev: 'course-refused', links: names, why }); };
     let trial7e: LayoutModel | undefined;
-    // A row bypass (ticket 24, phase 5) puts the closing link in the slot on its turn side: the trial carries the turn order, or its stems would cross the straight link of the gap.
-    const bypassLinks = offer.courses.filter(course => course.kind === 'bypass').map(course => course.link);
-    const trialLinks = [...new Set([...activeTurnLinks, ...bypassLinks])];
-    try { trial7e = await timed('rerun-course', () => place(floors, hints, nodeFloors, trialAbort, laneKeys, offer.courses, activeSpans, activeTurn, trialLinks)); } catch (error) {
+    try { trial7e = await timed('rerun-course', () => place(trialLedger, trialAbort)); } catch (error) {
       // A course moves columns the baseline never moved. A centring that cannot hold its feeds there is the course's refusal, not a bug of the baseline.
       if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError
         || (error instanceof Error && error.message.startsWith('Centring invariant violated')))) throw error;
       courseRefusal(`the placement run rejected them (${error.message})`);
-      // Stage 7a refused a lane: no trial exists to route or judge, so the re-run is given back and the side offer keeps its place (one counter, no second run to
-      // fall back to; a fallback would place twice in one re-run and split the budget the side round reads).
-      if (error instanceof CourseRefusal) { reruns--; placements--; }
     }
     if (trial7e !== undefined && trial7e.fallbackUsed && !kept7e.fallbackUsed) {
       courseRefusal('ELK fell back during the course trial'); trial7e = undefined;
     }
+    // Every active reservation holds at the trial's final 7e, the kept ones of earlier rounds with the new courses, before 7f and the route.
+    const courseBroken = trial7e === undefined ? [] : holds(trialLedger, trial7e);
+    if (courseBroken.length > 0) { courseRefusal(`a reservation does not hold at stage 7e (${courseBroken[0]!.why})`); trial7e = undefined; }
     if (trial7e !== undefined) {
       try {
         const trial = await timed('bands-trial', () => step('bands', () => bands(trial7e!, () => trialAbort('bands'), options.attemptTrace), true));
@@ -397,11 +396,13 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
         const routedTrial = await routeModel(trial, true);
         const verdict = judgeCourseTrial(routedBase!, routedTrial, new Map([...offer.promised].map(([id, item]) => [id, item.turns] as const)));
         options.testSideTrace?.({ ev: 'course-trial', verdict, trial, routedTrial, routedBase });
-        if (verdict.kept) {
-          for (const [id, promised] of offer.promised) keptPromises.set(id, promised.turns);
+        // A course kept earlier keeps its promise through this trial as well.
+        const courseLost = verdict.kept ? holdsRouted(kept, routedTrial) : [];
+        if (courseLost.length > 0) courseRefusal(`a kept course publishes more turns than it promised (${courseLost.map(failure => failure.link).join(', ')})`);
+        else if (verdict.kept) {
           if (routedFinal === undefined) routedBase = routedTrial;
-        base = trial; kept7e = trial7e; activeCourses = offer.courses; routedFinal = routedTrial; activeTurnLinks = trialLinks;
-          baseMoved = trialMoved; baseUnmoved = trialUnmoved; courseFloors = new Map(nodeFloors);
+        base = trial; kept7e = trial7e; routedFinal = routedTrial;
+          baseMoved = trialMoved; baseUnmoved = trialUnmoved; kept = trialLedger;
           for (const course of offer.courses) {
             const was = offer.promised.get(course.link)!;
             if (course.kind === 'bypass') {
@@ -434,32 +435,27 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     if (reruns >= spanMax) { options.testSideTrace?.({ ev: 'span-refused', links: offer.links, why: 'budget' }); return false; }
     reruns++;
     const spanRefusal = (why: string, detail: string): void => { options.testSideTrace?.({ ev: 'span-refused', links: offer.links, why, detail }); };
-    const nodeFloors = new Map([...courseFloors, ...(options.testNodeFloors ?? [])]);
+    // The trial reserves its chords on top of the ledger; the fans of the trial grow this one, and a kept trial keeps it.
+    let trialFloors = addReservations(kept, spanEntries(offer.links, 'span', placements));
     let trial7e: LayoutModel | undefined;
-    try { trial7e = await timed('rerun-span', () => place(floors, hints, nodeFloors, trialAbort, laneKeys, activeCourses, new Set([...activeSpans, ...offer.links]))); } catch (error) {
+    try { trial7e = await timed('rerun-span', () => place(trialFloors, trialAbort)); } catch (error) {
       // The span round is an offer: a trial that the placement cannot build is refused, whatever the cause, and the sheet stays as the baseline made it. Only the command
       // deadline ends the command. The trace names the error, so a sweep that greps `span-refused` for `error` finds a defect.
       if (!(error instanceof Error) || error instanceof CommandDeadlineError) throw error;
       spanRefusal(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError ? 'placement' : 'error', error.message);
-      // Stage 7a refused a corridor: no trial exists to route or judge, so the re-run is given back, as for a course.
-      if (error instanceof SpanReservationRefusal) { reruns--; placements--; }
       return false;
     }
     if (trial7e.fallbackUsed && !kept7e.fallbackUsed) { spanRefusal('placement', 'ELK fell back during the span trial'); return false; }
     // A fan of chords whose neighbours stand closer than the chord clearance is spread by placement (ticket 89): the chords of this trial are measured as the fan
     // rounds measure the first placement, and the trial places again with the floors they ask for. The re-runs are the command's (MAX_RERUNS).
-    let trialFloors = floors;
     for (let round = 0; round < FAN_ROUNDS && reruns < spanMax; round++) {
       const measure = await timed('measureFans', () => measureFans(trial7e!));
-      const next: FanMeasure['floors'] = new Map(trialFloors);
-      let grew = false;
-      for (const [id, pitch] of measure.floors) for (const [side, value] of Object.entries(pitch) as [Side, number][]) {
-        if (value > (next.get(id)?.[side] ?? 0)) { next.set(id, { ...next.get(id), [side]: value }); grew = true; }
-      }
-      if (!grew) break;
+      const grown = pitchGrowth(trialFloors, measure.floors, 'span', placements);
+      if (grown.length === 0) break;
+      const next = addReservations(trialFloors, grown);
       reruns++; attemptCounters.invalidations.fanReruns++;
       let again: LayoutModel;
-      try { again = await timed('rerun-fan', () => place(next, hints, nodeFloors, trialAbort, laneKeys, activeCourses, new Set([...activeSpans, ...offer.links]))); } catch (error) {
+      try { again = await timed('rerun-fan', () => place(next, trialAbort)); } catch (error) {
         if (!(error instanceof Error) || error instanceof CommandDeadlineError) throw error;
         spanRefusal(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError ? 'placement' : 'error', error.message); return false;
       }
@@ -470,11 +466,12 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     // 7f freezes the chords that are straight now and no other (`freezeChords`), so a hinted link that is not straight here (the freeze refuses it, as `leg` when a neighbour's
     // leg crowds it at the pitch the trial gave) is lost: the trial is refused here, before 7f and the route.
     // The placement above is spent, so nothing is given back.
-    const lost = offer.links.filter(id => {
-      const item = trial7e!.links.find(other => other.id === id);
-      return item === undefined || !isRoutedChord(trial7e!, item);
-    });
+    const spanFailed = holds(trialFloors, trial7e!);
+    const lost = spanFailed.filter(failure => failure.kind === 'spanChord' && offer.links.includes(failure.link!)).map(failure => failure.link!);
     if (lost.length > 0) { spanRefusal('promise', `the freeze would not hold ${lost.join(', ')}: ${lost.map(id => { const item = trial7e!.links.find(other => other.id === id); return item === undefined ? 'missing' : freezeRefusal(trial7e!, item) ?? 'not straight'; }).join(', ')} (before 7f)`); return false; }
+    // A reservation kept by an earlier round must hold at the trial's final 7e as well (ticket 22 left that open).
+    const otherLost = spanFailed.filter(failure => !lost.includes(failure.link!) || failure.kind !== 'spanChord');
+    if (otherLost.length > 0) { spanRefusal('promise', `a kept reservation does not hold: ${otherLost[0]!.why} (before 7f)`); return false; }
     try {
       const trial = await timed('bands-trial', () => step('bands', () => bands(trial7e!, () => trialAbort('bands'), options.attemptTrace), true));
       const trialMoved = lastAttempt.moved, trialUnmoved = lastAttempt.unmoved;
@@ -482,7 +479,9 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       const verdict = judgeSpanTrial(routedBase!, routedTrial, offer.links);
       options.testSideTrace?.({ ev: 'span-trial', verdict, trial, routedTrial, routedBase, offer });
       if (!verdict.kept) { spanRefusal(verdict.reason!, verdict.detail); return false; }
-      activeSpans = new Set([...activeSpans, ...offer.links]); floors = trialFloors;
+      const spanBroken = holdsRouted(kept, routedTrial);
+      if (spanBroken.length > 0) { spanRefusal('promise', `a kept course publishes more turns than it promised (${spanBroken.map(failure => failure.link).join(', ')})`); return false; }
+      kept = trialFloors;
       base = trial; kept7e = trial7e; routedFinal = routedTrial; routedBase = routedTrial;
       baseMoved = trialMoved; baseUnmoved = trialUnmoved;
       for (const id of offer.links) {
@@ -547,19 +546,22 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_ROUND_SKIPPED', message: `A side round was skipped: the command has made its ${maxReruns} placement re-runs.` });
       break;
     }
-    const all = new Map([...hints, ...offer.hints]);
+    const all = new Map([...sideHintsOf(kept), ...offer.hints]);
     for (const [key, item] of offer.promised) trialLinks.set(key, item.link);
-    const nodeFloors = new Map([...courseFloors, ...(options.testNodeFloors ?? [])]);
+    const nodeFloors = new Map<string, Size>();
     for (const key of all.keys()) {
       const [node] = JSON.parse(key) as [string];
       // The 7e model keys the size cache, never the baseline (a new object: the lookup would give undefined with no error).
       const size = stage3Sizes.get(kept7e)?.get(node);
       if (size !== undefined) nodeFloors.set(node, { ...size });
     }
-    const allLanes = new Set([...laneKeys, ...[...offer.promised].filter(([, item]) => item.shape === 'lane').map(([key]) => key)]);
     let trial7e: LayoutModel;
+    // The faces stay with the ledger when the trial is kept; the size floors of a side trial do not (a later round measures its own).
+    const faces = [...sideFaces(offer.hints, offer.promised, 'side', placements),
+      ...laneOwners([...offer.promised].filter(([, item]) => item.shape === 'lane').map(([key]) => key), offer.hints, offer.promised, 'side', placements)];
+    const trialLedger = addReservations(kept, [...floorEntries(nodeFloors, 'side', placements), ...faces]);
     reruns++; attemptCounters.invalidations.sideReruns++;
-    try { trial7e = await timed('rerun-side', () => place(floors, all, nodeFloors, trialAbort, allLanes)); } catch (error) {
+    try { trial7e = await timed('rerun-side', () => place(trialLedger, trialAbort)); } catch (error) {
       // Only the layout's own refusals drop the offer; anything else (a TypeError) is a bug and must surface.
       if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError)) throw error;
       refuse(offer.hints.keys(), offer.hints, `the placement run rejected it (${error.message})`);
@@ -568,28 +570,26 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     if (trial7e.fallbackUsed && !kept7e.fallbackUsed) {
       cutSide('ELK fell back during it, and the re-run was dropped'); break;
     }
-    // A port hinted for the straight shape of a routed link (this round's, or kept) must hold its chord at the trial's 7e. Otherwise it would be routed with
-    // no lane (`sideLaneCandidate`) and no chord, and the router would find its route (review M1, ticket 117).
-    const chordLost = [...new Map([...promised, ...offer.promised])].filter(([, item]) => {
-      const link = trial7e.links.find(candidate => candidate.id === item.link);
-      return item.shape === 'straight' && link !== undefined && link.layer === 'routed' && !isRoutedChord(trial7e, link);
-    });
+    // The ledger answers for the faces and lanes of the trial (this round's and the kept ones) at its final 7e, before 7f and the route: a port hinted for the straight shape
+    // of a routed link must hold its chord (otherwise the router would find its route, review M1, ticket 117), and a port hinted for the routed L must own a source-aligned
+    // side lane (an exterior corridor gives three bends, ticket 119).
+    const failed = holds(trialLedger, trial7e);
+    const chordLost = failed.filter(failure => failure.kind === 'sideFace');
     if (chordLost.length > 0) {
-      const own = chordLost.map(([key]) => key).filter(key => offer.hints.has(key));
+      const own = chordLost.map(failure => failure.key!).filter(key => offer.hints.has(key));
       refuse(own.length > 0 && own.length === chordLost.length ? own : offer.hints.keys(), all,
-        `a port hinted for a chord does not hold its chord at stage 7e (${[...new Set(chordLost.map(([, item]) => item.link))].join(', ')})`);
+        `a port hinted for a chord does not hold its chord at stage 7e (${[...new Set(chordLost.map(failure => failure.link))].join(', ')})`);
       continue;
     }
-    // A port hinted for the routed L must own a source-aligned side lane at the trial's 7e (ticket 119). Without one the router would find its route (an
-    // exterior corridor gives three bends), so the hint is refused before 7f.
-    const laneLost = [...new Map([...promised, ...offer.promised])].filter(([, item]) => item.shape === 'lane'
-      && !trial7e.lanes.some(lane => lane.kind === 'side' && lane.owner.kind === 'link' && lane.owner.id === item.link && lane.aligned === true));
+    const laneLost = failed.filter(failure => failure.kind === 'laneOwner');
     if (laneLost.length > 0) {
-      const own = laneLost.map(([key]) => key).filter(key => offer.hints.has(key));
+      const own = laneLost.map(failure => failure.key!).filter(key => offer.hints.has(key));
       refuse(own.length > 0 && own.length === laneLost.length ? own : offer.hints.keys(), all,
-        `a port hinted for a side lane has no source-aligned lane at stage 7e (${[...new Set(laneLost.map(([, item]) => item.link))].join(', ')})`);
+        `a port hinted for a side lane has no source-aligned lane at stage 7e (${[...new Set(laneLost.map(failure => failure.link))].join(', ')})`);
       continue;
     }
+    const otherFailed = failed.filter(failure => failure.kind !== 'sideFace' && failure.kind !== 'laneOwner');
+    if (otherFailed.length > 0) { refuse(offer.hints.keys(), all, `a reservation does not hold at stage 7e (${otherFailed[0]!.why})`); continue; }
     const hintedLinks = new Map([...offer.promised.values()].map(item => [item.link, item.bends] as const));
     // The predictor prunes only when another round and another re-run remain, and only the hints it calls worse (Section 19.3).
     if (!unmovedOffer && round + 1 < SIDE_ROUNDS && reruns < maxReruns) {
@@ -611,12 +611,12 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     options.testSideTrace?.({ ev: 'trial', verdict, base, kept7e, trial7e, trial, routedBase, routedTrial, hinted: hintedLinks });
     options.testSideProbe?.({ offer, routedBase, routedTrial, verdict });
     // A kept course keeps its promise through the side round as well: a side trial that makes a course link publish more turns than it promised is refused.
-    const brokenPromise = verdict.kept ? [...keptPromises].filter(([id, turns]) => (routedBends(routedTrial).get(id) ?? Infinity) > turns).map(([id]) => id) : [];
+    const brokenPromise = verdict.kept ? holdsRouted(kept, routedTrial).map(failure => failure.link!) : [];
     if (brokenPromise.length > 0) { refuse(offer.hints.keys(), all, `a course link publishes more turns than it promised (${brokenPromise.join(', ')})`); break; }
     if (!verdict.kept) { refuse(offer.hints.keys(), all, verdict.reason); break; }
     // Kept: the trial is the baseline now. The notes name what the net count accepted.
     keptNotes.push(...trialNotes(routedBase, routedTrial, verdict, hintedLinks.keys()));
-    base = trial; kept7e = trial7e; hints = all; laneKeys = allLanes; routedFinal = routedTrial;
+    base = trial; kept7e = trial7e; kept = addReservations(kept, faces); routedFinal = routedTrial;
     for (const [key, item] of offer.promised) promised.set(key, item);
     break; // one trial reaches 7f per command
   }
@@ -639,30 +639,34 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       if (!turnRoundRuns(left, overlayAhead, overlayGain, beats)) {
         sideNotes.push({ stage: 'placement', severity: 'info', code: 'TURN_ROUND_SKIPPED', message: `The turn round was skipped: the command has ${left <= 0 ? 'made its' : 'one left of its'} ${maxReruns} placement re-runs${left <= 0 ? '' : ', for the overlay round'}.` });
       } else {
-        const nodeFloors = new Map([...courseFloors, ...(options.testNodeFloors ?? [])]);
-        for (const key of hints.keys()) {
+        const nodeFloors = new Map<string, Size>();
+        for (const key of sideHintsOf(kept).keys()) {
           const [node] = JSON.parse(key) as [string];
           const size = stage3Sizes.get(kept7e)?.get(node);
           if (size !== undefined) nodeFloors.set(node, { ...size });
         }
         let trial7e: LayoutModel | undefined;
         reruns++;
-        try { trial7e = await timed('rerun-turn', () => place(floors, hints, nodeFloors, trialAbort, laneKeys, activeCourses, activeSpans, true)); } catch (error) {
+        // The ledger a kept trial keeps asks for no change of a face; the trial's own asks for one (the turn order must move a face, or the trial is refused).
+        const keptTurn = addReservations(kept, [...floorEntries(nodeFloors, 'turn', placements), ...turnEntries(true, [], false, 'turn', placements)]);
+        const trialLedger = addReservations(keptTurn, turnEntries(true, [], true, 'turn', placements));
+        try { trial7e = await timed('rerun-turn', () => place(trialLedger, trialAbort)); } catch (error) {
           if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError || error instanceof PlacementBudgetExceeded
             || (error instanceof Error && error.message.startsWith('Centring invariant violated')))) throw error;
           refuseTurns(`the placement run rejected it (${error.message})`);
         }
         if (trial7e !== undefined && trial7e.fallbackUsed && !kept7e.fallbackUsed) { refuseTurns('ELK fell back during the turn trial'); trial7e = undefined; }
         // The offer was decided before any placement; this is left only when the measure and stage 5 disagree about a face. The placement is spent (no re-run is given back).
-        if (trial7e !== undefined && (trial7e.freeze?.turnOrder ?? []).length === 0) { refuseTurns('the turn order moved no face'); trial7e = undefined; }
+        const turnFailed = trial7e === undefined ? [] : holds(trialLedger, trial7e);
+        if (turnFailed.length > 0) { refuseTurns(turnFailed[0]!.kind === 'turnOrder' ? turnFailed[0]!.why : `a reservation does not hold at stage 7e (${turnFailed[0]!.why})`); trial7e = undefined; }
         if (trial7e !== undefined) {
           try {
             const trial = await timed('bands-trial', () => step('bands', () => bands(trial7e!, () => trialAbort('bands'), options.attemptTrace), true));
             const routedTrial = await routeModel(trial, true);
-            const verdict = judgeTurnTrial(current, routedTrial, keptPromises);
+            const verdict = judgeTurnTrial(current, routedTrial, promisedTurns(kept));
             options.testSideTrace?.({ ev: 'turn-trial', verdict, trial, routedTrial, routedBase: current });
             if (verdict.kept) {
-              base = trial; kept7e = trial7e; routedFinal = routedTrial; courseFloors = new Map(nodeFloors); activeTurn = true;
+              base = trial; kept7e = trial7e; routedFinal = routedTrial; kept = keptTurn;
               for (const face of trial7e.freeze!.turnOrder!) {
                 sideNotes.push({ stage: 'placement', severity: 'info', code: 'TURN_ORDER_TAKEN', owners: [{ kind: 'node', id: face.node }],
                   message: `The ports of the ${face.side} face of ${face.node} take the order of their planned first turns: ${verdict.before!.bent} bent links, ${verdict.before!.turns} turns and ${verdict.before!.crossings} crossings on the baseline, ${verdict.after!.bent}, ${verdict.after!.turns} and ${verdict.after!.crossings} after.` });
@@ -686,8 +690,8 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     options.testSideTrace?.({ ev: 'overlay-courses', offer: overlayOffer, base, routedBase: current });
     if (overlayOffer.courses.length > 0 && reruns >= maxReruns) options.testSideTrace?.({ ev: 'overlay-skipped', offer: overlayOffer, reruns });
     else if (overlayOffer.courses.length > 0) {
-      const nodeFloors = new Map([...courseFloors, ...(options.testNodeFloors ?? [])]);
-      for (const key of hints.keys()) {
+      const nodeFloors = new Map<string, Size>();
+      for (const key of sideHintsOf(kept).keys()) {
         const [node] = JSON.parse(key) as [string];
         const size = stage3Sizes.get(kept7e)?.get(node);
         if (size !== undefined) nodeFloors.set(node, { ...size });
@@ -704,23 +708,27 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       const refuseOverlays = (why: string): void => { options.testSideTrace?.({ ev: 'overlay-refused', links: names, why }); };
       let trial7e: LayoutModel | undefined;
       reruns++;
-      try { trial7e = await timed('rerun-overlay', () => place(floors, hints, nodeFloors, trialAbort, laneKeys, [...activeCourses, ...overlayOffer.courses])); } catch (error) {
+      const trialLedger = addReservations(kept, [...floorEntries(nodeFloors, 'overlay', placements),
+        ...courseEntries(overlayOffer.courses, new Map([...overlayOffer.promised].map(([id, item]) => [id, item.turns] as const)), 'overlay', placements)]);
+      try { trial7e = await timed('rerun-overlay', () => place(trialLedger, trialAbort)); } catch (error) {
         if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError
           || (error instanceof Error && error.message.startsWith('Centring invariant violated')))) throw error;
         refuseOverlays(`the placement run rejected them (${error.message})`);
-        // Stage 7a refused a lane: no trial exists, so the re-run is given back, as the course round does.
-        if (error instanceof CourseRefusal) { reruns--; placements--; }
       }
       if (trial7e !== undefined && trial7e.fallbackUsed && !kept7e.fallbackUsed) { refuseOverlays('ELK fell back during the overlay trial'); trial7e = undefined; }
+      const overlayBroken = trial7e === undefined ? [] : holds(trialLedger, trial7e);
+      if (overlayBroken.length > 0) { refuseOverlays(`a reservation does not hold at stage 7e (${overlayBroken[0]!.why})`); trial7e = undefined; }
       if (trial7e !== undefined) {
         try {
           const trial = await timed('bands-trial', () => step('bands', () => bands(trial7e!, () => trialAbort('bands'), options.attemptTrace), true));
           const routedTrial = await routeModel(trial, true);
           const verdict = judgeOverlayTrial(current, routedTrial, overlayOffer);
           options.testSideTrace?.({ ev: 'overlay-trial', verdict, trial, routedTrial, routedBase: current });
-          if (verdict.kept) {
-            for (const [id, item] of overlayOffer.promised) keptPromises.set(id, item.turns);
-            base = trial; kept7e = trial7e; activeCourses = [...activeCourses, ...overlayOffer.courses]; routedFinal = routedTrial; courseFloors = new Map(nodeFloors);
+          // The overlay judge reads the overlay links only; a course kept earlier keeps its promise through this trial too.
+          const overlayLost = verdict.kept ? holdsRouted(kept, routedTrial) : [];
+          if (overlayLost.length > 0) refuseOverlays(`a kept course publishes more turns than it promised (${overlayLost.map(failure => failure.link).join(', ')})`);
+          else if (verdict.kept) {
+            base = trial; kept7e = trial7e; routedFinal = routedTrial; kept = trialLedger;
             for (const course of overlayOffer.courses) {
               const was = overlayOffer.promised.get(course.link)!;
               sideNotes.push({ stage: 'placement', severity: 'info', code: 'COURSE_TAKEN', owners: [{ kind: 'link', id: course.link }],
@@ -735,7 +743,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     }
   }
   for (const [key, item] of promised) {
-    const side = hints.get(key);
+    const side = sideHintsOf(kept).get(key);
     if (side === undefined) continue;
     sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_HINT_TAKEN',
       message: `The port ${portName(key)} takes the side ${side}: the ${item.shape} shape of ${item.link} (${item.bends} bends).`, owners: [{ kind: 'link', id: item.link }] });
@@ -759,10 +767,9 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   // With the setting on, the kept model is routed once more to publish: a judged route carries the ordinary overlay paths.
   const published = model.document.layout?.overlayOverBodies === true ? await routeModel(model, undefined, true) : routedFinal ?? routedBase ?? await routeModel(model);
   // A course that publishes more turns than its candidate promised is named; the promise is the polyline its own lane geometry reserved.
-  for (const [id, turns] of keptPromises) {
-    const link = published.links.find(item => item.id === id), got = link === undefined ? undefined : pathBends(link);
-    if (got === undefined || got > turns) lost.push({ stage: 'placement', severity: 'warning', code: 'COURSE_SHAPE_LOST', owners: [{ kind: 'link', id }],
-      message: `The link ${id} has ${got === undefined ? 'no route' : `${got} turns`} on its course, ${turns} were promised.` });
+  for (const failure of holdsRouted(kept, published)) {
+    lost.push({ stage: 'placement', severity: 'warning', code: 'COURSE_SHAPE_LOST', owners: [{ kind: 'link', id: failure.link! }],
+      message: `The link ${failure.link} has ${failure.got === undefined ? 'no route' : `${failure.got} turns`} on its course, ${failure.max} were promised.` });
   }
   lost.push(...turnMissed(published));
   // A hinted link of a kept trial has no more bends than on the baseline (the judgment tested it); this names a break of that rule.
