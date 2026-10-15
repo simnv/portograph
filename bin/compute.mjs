@@ -33,11 +33,11 @@ async function run(request, emit) {
 
   const budget = createBudget(Math.max(1, request.deadlineAt - Date.now()));
   const printed = new Set();
-  const say = (diagnostic) => {
+  const say = (diagnostic, location) => {
     const key = JSON.stringify(diagnostic);
     if (printed.has(key)) return;
     printed.add(key);
-    emit({ type: 'diagnostic', text: formatDiagnostic(diagnostic) });
+    emit({ type: 'diagnostic', text: formatDiagnostic(diagnostic, location === undefined ? undefined : { source: input, ...location }) });
   };
   const progress = process.env.PORTOGRAPH_PROGRESS === '1'
     ? (event) => emit({ type: 'progress',
@@ -54,8 +54,7 @@ async function run(request, emit) {
   const published = (model) => (timings ? model : { ...model, runtime: { stages: [] } });
   const publishedReport = (report) => {
     if (timings) return report;
-    const { runtime: _runtime, ...rest } = report;
-    return rest;
+    return { snapshot: report.snapshot };
   };
   void allowGateFailures; // the parent applies it to the exit code; the report never changes.
   const source = readInput(input);

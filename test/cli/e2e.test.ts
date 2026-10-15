@@ -212,4 +212,18 @@ links:
     expect(readFileSync(timed.replace('.svg', '.layout.json'), 'utf8')).toContain('durationMs');
     expect(readFileSync(timed.replace('.svg', '.score.json'), 'utf8')).toContain('"runtime"');
   }, 60000);
+
+  it('names file, line and column for a schema error and for a syntax error, without a cascade', async () => {
+    const schema = join(temp, 'schema.yaml');
+    writeFileSync(schema, 'portograph: 2\ngroups:\n  g: { tier: 0 }\nnodes:\n  a:\n    group: g\n    colour: red\n');
+    const unknown = await command(['layout', schema]);
+    expect(unknown.code).toBe(2);
+    expect(unknown.stderr).toContain(`UNKNOWN_KEY at ${schema}:7:5 ($.nodes.a.colour)`);
+    const syntax = join(temp, 'syntax.yaml');
+    writeFileSync(syntax, 'portograph: 2\ngroups:\n  g: { tier: 0\nnodes: {}\n');
+    const broken = await command(['layout', syntax]);
+    expect(broken.code).toBe(2);
+    expect(broken.stderr).toMatch(new RegExp(`INVALID_YAML at ${syntax}:\\d+:\\d+:`));
+    expect(broken.stderr.match(/portograph: error:/g)).toHaveLength(1);
+  }, 30000);
 });

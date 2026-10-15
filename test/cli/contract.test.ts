@@ -145,5 +145,9 @@ describe('formatDiagnostic', () => {
       .toBe('portograph: info: X: y');
     expect(formatDiagnostic({ stage: 'model', severity: 'warning', code: 'B', message: 'c', owners: [{ kind: 'barCross', node: 'bar', link: 'link-1' }] }))
       .toBe('portograph: warning: B at barCross bar/link-1: c');
+    expect(formatDiagnostic({ stage: 'parse', severity: 'error', code: 'UNKNOWN_KEY', path: '$.nodes.a.colour', message: 'Unknown key colour' }, { source: 'net.yaml', line: 7, column: 5 }))
+      .toBe('portograph: error: UNKNOWN_KEY at net.yaml:7:5 ($.nodes.a.colour): Unknown key colour');
+    expect(formatDiagnostic({ stage: 'parse', severity: 'error', code: 'INVALID_YAML', path: '$', message: 'bad' }, { source: 'net.yaml', line: 3, column: 1 }))
+      .toBe('portograph: error: INVALID_YAML at net.yaml:3:1: bad');
   });
 });

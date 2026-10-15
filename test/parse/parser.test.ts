@@ -316,3 +316,38 @@ describe('parse diagnostics', () => {
     }
   });
 });
+
+describe('source locations', () => {
+  const text = ['portograph: 2', 'groups:', '  g: { tier: 0 }', 'nodes:', '  a:', '    group: g', '    colour: red', '    ports:', '      - p', '      - { name: q, side: up }'].join('\n');
+
+  it('points a schema error at the key or list item its path names', () => {
+    const result = parseWithDiagnostics(text);
+    const place = (code: string) => { const d = result.diagnostics.find(item => item.code === code)!; return result.locate(d); };
+    expect(place('UNKNOWN_KEY')).toEqual({ line: 7, column: 5 });
+    expect(place('INVALID_TYPE')).toEqual({ line: 10, column: 20 });
+  });
+
+  it('falls back to the map that should hold a missing key', () => {
+    const result = parseWithDiagnostics('portograph: 2\ngroups:\n  g: { tier: 0 }\nnodes:\n  a:\n    label: x\n');
+    const missing = result.diagnostics.find(d => d.code === 'NODE_GROUP_REQUIRED')!;
+    expect(result.locate(missing)).toEqual({ line: 5, column: 3 });
+  });
+
+  it('passes the place to onDiagnostic', () => {
+    const seen: unknown[] = [];
+    parseWithDiagnostics(text, { onDiagnostic: (d, at) => seen.push([d.code, at]) });
+    expect(seen).toContainEqual(['UNKNOWN_KEY', { line: 7, column: 5 }]);
+  });
+
+  it('reports a YAML syntax error with its line and column, and stops there', () => {
+    const broken = 'portograph: 2\ngroups:\n  g: { tier: 0\nnodes:\n  a: [1, 2\n';
+    const result = parseWithDiagnostics(broken);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.length).toBeGreaterThan(0);
+    expect(result.diagnostics.every(d => d.code === 'INVALID_YAML')).toBe(true);
+    expect(result.locate(result.diagnostics[0]!)).toEqual({ line: 4, column: 1 });
+    try { parse(broken); expect.unreachable(); } catch (error) {
+      expect((error as Error).message).toMatch(/^\d+:\d+ \$: /);
+    }
+  });
+});

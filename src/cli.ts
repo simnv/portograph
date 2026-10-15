@@ -254,13 +254,18 @@ export function sidecarPaths(output: string): { layout: string; score: string } 
 const ownerText = (owner: Owner): string =>
   owner.kind === 'barCross' ? `barCross ${owner.node}/${owner.link}` : `${owner.kind} ${owner.id}`;
 
+/** Where a diagnostic points in the authored text, as `parseWithDiagnostics` reports it. */
+export interface DiagnosticPlace { source: string; line: number; column: number }
+
 /**
  * One diagnostic, one stderr line, built from its structured fields. A parse diagnostic keeps its
- * exact JSONPath; a later stage names the objects it is about, because those have no source path.
+ * exact JSONPath and, when the place in the text is known, adds `file:line:col` before it; a later
+ * stage names the objects it is about, because those have no source path.
  */
-export function formatDiagnostic(diagnostic: Diagnostic & { path?: string }): string {
+export function formatDiagnostic(diagnostic: Diagnostic & { path?: string }, place?: DiagnosticPlace): string {
   const path = 'path' in diagnostic && typeof diagnostic.path === 'string' ? diagnostic.path : undefined;
   const owners = diagnostic.owners?.length ? diagnostic.owners.map(ownerText).join(', ') : undefined;
-  const where = path ?? owners;
+  const at = place === undefined ? undefined : `${place.source}:${place.line}:${place.column}`;
+  const where = at !== undefined ? (path === undefined || path === '$' ? at : `${at} (${path})`) : path ?? owners;
   return `portograph: ${diagnostic.severity}: ${diagnostic.code}${where === undefined ? '' : ` at ${where}`}: ${diagnostic.message}`;
 }
