@@ -197,4 +197,19 @@ links:
     expect(() => process.kill(Number(match![1]), 0)).toThrow();
     expect(readdirSync(temp).filter(name => /^deadline\.(svg|layout\.json|score\.json)$/.test(name))).toEqual([]);
   }, 15000);
+
+  it('writes the same bytes on two runs, and keeps the stage timings only on request', async () => {
+    const [a, b] = [join(temp, 'det-a.svg'), join(temp, 'det-b.svg')];
+    for (const path of [a, b]) expect((await command(['render', golden, '-o', path])).code).toBe(0);
+    for (const suffix of ['.layout.json', '.score.json']) {
+      expect(readFileSync(a.replace('.svg', suffix), 'utf8')).toBe(readFileSync(b.replace('.svg', suffix), 'utf8'));
+    }
+    expect(readFileSync(a, 'utf8')).toBe(readFileSync(b, 'utf8'));
+    expect(readFileSync(a.replace('.svg', '.layout.json'), 'utf8')).not.toContain('durationMs');
+    expect(readFileSync(a.replace('.svg', '.score.json'), 'utf8')).not.toContain('"runtime"');
+    const timed = join(temp, 'det-timed.svg');
+    expect((await command(['render', '--timings', golden, '-o', timed])).code).toBe(0);
+    expect(readFileSync(timed.replace('.svg', '.layout.json'), 'utf8')).toContain('durationMs');
+    expect(readFileSync(timed.replace('.svg', '.score.json'), 'utf8')).toContain('"runtime"');
+  }, 60000);
 });

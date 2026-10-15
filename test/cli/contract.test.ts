@@ -47,12 +47,12 @@ describe('parseCommand', () => {
     const before = parseCommand('render', ['--force', '--output=b.svg', 'a.yaml']);
     const short = parseCommand('render', ['-f', '-o', 'b.svg', 'a.yaml']);
     for (const command of [after, before, short]) {
-      expect(command).toEqual({ verb: 'render', input: 'a.yaml', output: 'b.svg', force: true, allowGateFailures: false });
+      expect(command).toEqual({ verb: 'render', input: 'a.yaml', output: 'b.svg', force: true, allowGateFailures: false, timings: false });
     }
   });
 
   it('defaults to stdout with no option set', () => {
-    expect(parseCommand('layout', ['a.yaml'])).toEqual({ verb: 'layout', input: 'a.yaml', force: false, allowGateFailures: false });
+    expect(parseCommand('layout', ['a.yaml'])).toEqual({ verb: 'layout', input: 'a.yaml', force: false, allowGateFailures: false, timings: false });
   });
 
   it('requires exactly one input path and reads no stdin', () => {

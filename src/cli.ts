@@ -52,6 +52,8 @@ export interface Command {
   output?: string;
   force: boolean;
   allowGateFailures: boolean;
+  /** Keep the wall-clock stage timings in the layout and score JSON. Absent means they are left out, so two runs write the same bytes. */
+  timings: boolean;
   /** `render` only. Absent means both families draw and `document.overlays` applies. */
   layers?: Layer[];
   /** `render` only. Absent means SVG. */
@@ -75,6 +77,7 @@ const OPTIONS: Record<string, OptionSpec> = {
   '--output': { value: true, summary: 'Write the primary artifact to this path instead of stdout' },
   '--force': { value: false, summary: 'Lay out and score more than 1,000 nodes' },
   '--allow-gate-failures': { verbs: ['render', 'score'], value: false, summary: 'Report a failed gate but exit 0' },
+  '--timings': { verbs: ['layout', 'render', 'score'], value: false, summary: 'Keep the wall-clock stage timings in the layout and score JSON (default: left out, so two runs write the same bytes)' },
   '--layers': { verbs: ['render'], value: true, summary: 'Draw only these link families: routed, overlay (comma separated)' },
   '--format': { verbs: ['render'], value: true, summary: 'Primary artifact format: svg (default) or drawio' },
   '--theme': { verbs: ['render'], value: true, summary: 'draw.io palette: auto (default, light and dark in one file), light, dark or print' },
@@ -224,6 +227,7 @@ export function parseCommand(verb: Verb, args: readonly string[]): Command {
     ...(output === undefined ? {} : { output }),
     force: seen.has('--force'),
     allowGateFailures: seen.has('--allow-gate-failures'),
+    timings: seen.has('--timings'),
     ...(layers === undefined ? {} : { layers: parseLayers(layers) }),
     ...(format === undefined ? {} : { format: parseFormat(format) }),
     ...(theme === undefined ? {} : { theme: parseTheme(theme) }),

@@ -44,12 +44,19 @@ async function run(request, emit) {
       text: `portograph: ${event.stage} took ${Math.round(event.durationMs)} ms, ${Number.isFinite(event.remainingMs) ? `${Math.round(event.remainingMs)} ms left` : 'no deadline'}` })
     : undefined;
 
-  const { verb, input, force, allowGateFailures, layers, format, theme, labels, icons } = request.command;
+  const { verb, input, force, allowGateFailures, timings, layers, format, theme, labels, icons } = request.command;
   // One place decides what `render` writes, so the restored-layout path and the from-YAML path can
   // never drift apart on it.
   const primaryArtifact = (model) => format === 'drawio'
     ? drawio(model, { ...(layers ? { layers } : {}), ...(theme ? { theme } : {}), ...(labels ? { labels } : {}), ...(icons ? { icons } : {}) })
     : render(model, layers ? { layers } : {});
+  // Timings change on every run. The published artifacts leave them out unless `--timings` asks.
+  const published = (model) => (timings ? model : { ...model, runtime: { stages: [] } });
+  const publishedReport = (report) => {
+    if (timings) return report;
+    const { runtime: _runtime, ...rest } = report;
+    return rest;
+  };
   void allowGateFailures; // the parent applies it to the exit code; the report never changes.
   const source = readInput(input);
   if (source.ok !== true) return source;
@@ -84,10 +91,10 @@ async function run(request, emit) {
     const report = score(model, { force });
     if (verb === 'render') return { ok: true, result: {
       primary: primaryArtifact(model),
-      sidecars: { layout: `${serializeLayoutModel(model)}\n`, score: `${JSON.stringify(report, null, 2)}\n` },
+      sidecars: { layout: `${serializeLayoutModel(published(model))}\n`, score: `${JSON.stringify(publishedReport(report), null, 2)}\n` },
       passed: report.snapshot.passed,
     } };
-    return { ok: true, result: { primary: `${JSON.stringify(report, null, 2)}\n`, passed: report.snapshot.passed } };
+    return { ok: true, result: { primary: `${JSON.stringify(publishedReport(report), null, 2)}\n`, passed: report.snapshot.passed } };
   }
 
   const parsed = parseWithDiagnostics(source.text, { force, onDiagnostic: say });
@@ -126,13 +133,13 @@ async function run(request, emit) {
   }
   for (const diagnostic of model.diagnostics) say(diagnostic);
 
-  const layoutJson = `${serializeLayoutModel(model)}\n`;
+  const layoutJson = `${serializeLayoutModel(published(model))}\n`;
   if (verb === 'layout') return { ok: true, result: { primary: layoutJson } };
 
   const report = score(model, { force });
   return { ok: true, result: {
     primary: primaryArtifact(model),
-    sidecars: { layout: layoutJson, score: `${JSON.stringify(report, null, 2)}\n` },
+    sidecars: { layout: layoutJson, score: `${JSON.stringify(publishedReport(report), null, 2)}\n` },
     passed: report.snapshot.passed,
   } };
 }
