@@ -3,6 +3,7 @@ const { existsSync } = require('node:fs');
 const { dirname, join } = require('node:path');
 const { pathToFileURL } = require('node:url');
 const Worker = require('web-worker');
+const { createWarmElk } = require('./warm-elk.cjs');
 const workerUrl = require.resolve('elkjs/lib/elk-worker.min.js');
 
 /** Resolve the worker relative to this installed module, independent of the caller's cwd. */
@@ -18,8 +19,8 @@ exports.createNodeElkFactory = function createNodeElkFactory() {
  * A timed-out or failed attempt drops the worker and the next attempt starts a new one.
  */
 exports.createNodeWarmElk = function createNodeWarmElk() {
-  const { createWarmElk } = require('./portograph.umd.cjs');
-  return createWarmElk(() => new Worker(workerUrl));
+  const { createWorkerElkAttempt } = require('./portograph.umd.cjs');
+  return createWarmElk(createWorkerElkAttempt, () => new Worker(workerUrl));
 };
 
 /**

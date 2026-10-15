@@ -1,8 +1,10 @@
 import { createRequire } from 'node:module';
 import { describe, expect, it, vi } from 'vitest';
 import type { ElkNode } from 'elkjs/lib/elk-api.js';
-import { createWarmElk, createWorkerElkAttempt, runElkAttempt, elkDeadlineMs, type ElkWorker } from '../../src/layout/elk-worker.js';
+import { createWorkerElkAttempt, runElkAttempt, elkDeadlineMs, type ElkWorker } from '../../src/layout/elk-worker.js';
 const require = createRequire(import.meta.url);
+const { createWarmElk: warmElk } = require('../../runtime/warm-elk.cjs') as { createWarmElk: (create: typeof createWorkerElkAttempt, make: () => ElkWorker) => { attempt: () => ReturnType<typeof createWorkerElkAttempt>; warm(): void; close(): void } };
+const createWarmElk = (make: () => ElkWorker) => warmElk(createWorkerElkAttempt, make);
 const Worker = require('web-worker') as new (url: string) => ElkWorker;
 const workerUrl = require.resolve('elkjs/lib/elk-worker.min.js');
 const graph: ElkNode = { id: 'root', children: [{ id: 'n', width: 50, height: 35 }] };
@@ -57,6 +59,24 @@ describe('one warm ELK worker for the attempts of a command', () => {
     expect(geometry(second)).toBe(geometry(cold));
     warm.close();
     expect(made[0]!.terminate).toHaveBeenCalledTimes(1);
+  });
+  it('gives a mixed history of graphs (A, B, C, A, B) the geometry a cold worker gives each', async () => {
+    const chain = (n: number, size: number): ElkNode => ({ id: 'root', layoutOptions: { 'elk.algorithm': 'layered', 'elk.randomSeed': '1' },
+      children: Array.from({ length: n }, (_, i) => ({ id: `n${i}`, width: size + i, height: 30 })),
+      edges: Array.from({ length: n - 1 }, (_, i) => ({ id: `e${i}`, sources: [`n${i}`], targets: [`n${i + 1}`] })) });
+    const fan: ElkNode = { id: 'root', layoutOptions: { 'elk.algorithm': 'layered', 'elk.randomSeed': '1' },
+      children: ['a', 'b', 'c', 'd', 'e'].map((id, i) => ({ id, width: 40 + 5 * i, height: 25 })),
+      edges: ['b', 'c', 'd', 'e'].map(id => ({ id: `a-${id}`, sources: ['a'], targets: [id] })) };
+    const history = [chain(6, 40), fan, chain(11, 55), chain(6, 40), fan];
+    const geometry = (node: ElkNode): string => JSON.stringify(node, (key, value: unknown) => (key === '$H' ? undefined : value));
+    const { make } = spawned();
+    const warm = createWarmElk(make);
+    for (const input of history) {
+      const warmed = await runElkAttempt(structuredClone(input), warm.attempt, 5000);
+      const cold = await runElkAttempt(structuredClone(input), realAttempt, 5000);
+      expect(geometry(warmed)).toBe(geometry(cold));
+    }
+    warm.close();
   });
   it('starts the worker on the first attempt when warm() was not called', async () => {
     const { made, make } = spawned();
