@@ -17,8 +17,10 @@ import type { LayoutOptions } from './options.js';
 import { createEnv } from './env.js';
 import { FAN_ROUNDS, MAX_RERUNS, SIDE_ROUNDS } from './limits.js';
 import type { State } from './state.js';
+import { attempt } from './round.js';
+import { fan } from './rounds.js';
 // After the stages: the modules below reach the centring module, whose import order the tests that mock it depend on.
-import { declinedFanDiagnostics, fanRoundDropped, fanRoundHolds, measureFans } from '../layout/fan-spread.js';
+import { declinedFanDiagnostics, fanRoundHolds, measureFans } from '../layout/fan-spread.js';
 import { chordClearances, freezeRefusal } from '../layout/frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
 import { TrunkBlocked, sideHintDiagnostics } from '../layout/side-hints.js';
@@ -82,35 +84,13 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   // The re-runs are bounded by FAN_ROUNDS alone, and no re-run reads the clock (ticket 141): the same input gives the same layout at any speed.
   // The command deadline ends the whole command with an error (`step`, `route`, `trialAbort`) and never picks a layout. A re-run that makes ELK
   // fall back (an ELK error, never a timeout: a timeout ends the command) is dropped: the placement already made stands (ticket 89 review).
-  const cut = (why: string): void => {
-    s.cuts.push({ stage: 'placement', severity: 'warning', code: 'FAN_SPREAD_CUT',
-      message: `A fan re-run was cut: ${why}. The fans keep the pitch of the last completed placement, and this layout may differ from one made with more time.` });
-  };
   const cutSide = (why: string): void => {
     s.cuts.push({ stage: 'placement', severity: 'warning', code: 'SIDE_ROUND_CUT',
       message: `A side round was cut: ${why}. The last kept placement stands, and this layout may differ from one made with more time.` });
   };
   for (let round = 0; round < FAN_ROUNDS && env.placements < env.placeCap; round++) {
-    const measure = await env.timed('measureFans', () => measureFans(s.kept7e));
-    const grown = pitchGrowth(s.kept, measure.floors, 'fan', env.placements);
-    if (grown.length === 0) break;
-    const next = addReservations(s.kept, grown);
-    s.reruns++; attemptCounters.invalidations.fanReruns++;
-    // A fan floor can move the rows, and a trunk that the baseline placed may then have a foreign unit on both sides. The run that found it blocked is a
-    // trial, so the round is cut and the baseline stands (a test cannot reach this: it needs a floor that reorders a row of the mesh).
-    let trial: LayoutModel;
-    try { trial = await env.timed('rerun-fan', () => env.place(next)); } catch (error) {
-      if (!(error instanceof TrunkBlocked)) throw error;
-      cut('a trunk join was blocked by the moved rows, and the re-run was dropped'); break;
-    }
-    if (trial.fallbackUsed && !s.kept7e.fallbackUsed) {
-      cut('ELK fell back during it, and the re-run was dropped'); break;
-    }
-    if (!fanRoundHolds(s.kept7e, trial)) { s.cuts.push(fanRoundDropped(s.kept7e, trial)); break; }
-    // Every active reservation holds at the final 7e of the re-run, or the re-run is dropped.
-    const broken = holds(next, trial);
-    if (broken.length > 0) { cut(`it broke a reservation (${broken[0]!.why})`); break; }
-    s.kept7e = trial; s.kept = next;
+    const offer = await fan.measure(env, s);
+    if (offer === undefined || await attempt(env, s, fan, offer) !== undefined) break;
   }
   // Side rounds (side-faces.md, Section 19). 7f runs on the kept model first: its output is the baseline, the model the command publishes when no
   // trial is kept. A measure reads the baseline. One batched trial reaches 7f per command; it is kept only on its routed result. Every bound is a
