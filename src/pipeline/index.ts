@@ -155,7 +155,6 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   /** Stages 1 to 7e, the placement the chords are decided on before 7f grows a gap, and so the placement a fan is measured on. `reservations` hold the port pitches a fan of chords needs on a face (ticket 89); the first run has none. */
   // Whether every placement run orders the ports of a face by the planned first turn (ticket 24): forced by the test option, or set by a kept turn round.
   // The links whose faces a kept bypass trial ordered by their turns; later runs keep that order on those faces (ticket 24, phase 5).
-  let activeTurnLinks: readonly string[] = options.testTurnLinks ?? [];
   const stage3Sizes = new WeakMap<LayoutModel, Map<string, Size>>();
   // The trunk joins a placement run found blocked (mesh-bus.md, section 12.4): the next run resolves with them declined.
   /** The trunks declined for the next run. With `all` set (the budget is spent) every trunk reads as declined. */
@@ -167,7 +166,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   let placements = 0;
   // The cap on placements per command: the first run and the effective re-run budget (the fan rounds at the start run within FAN_ROUNDS even with a budget of 0).
   const placeCap = Math.max(options.testMaxReruns ?? MAX_RERUNS, FAN_ROUNDS) + 1;
-  const place = async (reservations: Reservations, abort?: (stage: string) => void, turnLinks: readonly string[] = activeTurnLinks): Promise<LayoutModel> => {
+  const place = async (reservations: Reservations, abort?: (stage: string) => void): Promise<LayoutModel> => {
     // The one assertion of the placement budget: a command places at most MAX_RERUNS + 1 times (the first run and the re-runs), whatever round asks. A run that stage 7a
     // refuses before any work is given back by the round that asked (`placements--`, with its `reruns--`).
     if (placements >= placeCap) throw new PlacementBudgetExceeded(placements);
@@ -186,8 +185,9 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       }
     }
     for (const link of resolved.links) if (spans.has(link.id)) link.spanHint = true;
-    if (turnOf(reservations).all) resolved.turnOrder = true;
-    else if (turnLinks.length > 0) { resolved.turnOrder = true; resolved.turnLinks = [...turnLinks]; }
+    const turn = turnOf(reservations);
+    if (turn.all) resolved.turnOrder = true;
+    else if (turn.links.length > 0) { resolved.turnOrder = true; resolved.turnLinks = [...turn.links]; }
     const hints = sideHintsOf(reservations), laneKeys = laneKeysOf(reservations);
     stepIn('sides-one', () => sidesOne(resolved, hints, laneKeys, courseFaces));
     if (courses.length) resolved.courses = JSON.parse(JSON.stringify(courses)) as Course[];
@@ -247,7 +247,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     // The links every placement run reserves as spanning chords (ticket 22): the test's, or the ones the span round keeps.
     ...spanEntries(options.testSpanHints ?? [], 'initial', 0),
     // Whether every placement run orders the ports of a face by the planned first turn (ticket 24): forced by the test option, or set by a kept turn round.
-    ...turnEntries(options.testTurnOrder === true, [], false, 'initial', 0)];
+    ...turnEntries(options.testTurnOrder === true, options.testTurnLinks ?? [], false, 'initial', 0)];
   // A trunk with no admissible side is declined by one placement re-run, which shares `MAX_RERUNS` (mesh-bus.md, section 12.4).
   for (;;) {
     // The last run the budget allows declines every trunk, so that it cannot be blocked and no run past the budget is needed.
@@ -371,16 +371,16 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       }
     }
     reruns++;
+    // A row bypass (ticket 24, phase 5) puts the closing link in the slot on its turn side: the trial carries the turn order, or its stems would cross the straight link of the gap.
+    const bypassLinks = offer.courses.filter(course => course.kind === 'bypass').map(course => course.link);
     const trialLedger = addReservations(kept, [...floorEntries(nodeFloors, 'course', placements),
-      ...courseEntries(offer.courses, new Map([...offer.promised].map(([id, item]) => [id, item.turns] as const)), 'course', placements)]);
+      ...courseEntries(offer.courses, new Map([...offer.promised].map(([id, item]) => [id, item.turns] as const)), 'course', placements),
+      ...turnEntries(false, bypassLinks, false, 'course', placements)]);
     const names = offer.courses.map(course => course.link);
     // A refused course round leaves the layout as the baseline made it, with no note (the trace names the reason), so a sheet it does not change is byte for byte as it was.
     const courseRefusal = (why: string): void => { options.testSideTrace?.({ ev: 'course-refused', links: names, why }); };
     let trial7e: LayoutModel | undefined;
-    // A row bypass (ticket 24, phase 5) puts the closing link in the slot on its turn side: the trial carries the turn order, or its stems would cross the straight link of the gap.
-    const bypassLinks = offer.courses.filter(course => course.kind === 'bypass').map(course => course.link);
-    const trialLinks = [...new Set([...activeTurnLinks, ...bypassLinks])];
-    try { trial7e = await timed('rerun-course', () => place(trialLedger, trialAbort, trialLinks)); } catch (error) {
+    try { trial7e = await timed('rerun-course', () => place(trialLedger, trialAbort)); } catch (error) {
       // A course moves columns the baseline never moved. A centring that cannot hold its feeds there is the course's refusal, not a bug of the baseline.
       if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError
         || (error instanceof Error && error.message.startsWith('Centring invariant violated')))) throw error;
@@ -402,7 +402,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
         if (verdict.kept) {
           for (const [id, promised] of offer.promised) keptPromises.set(id, promised.turns);
           if (routedFinal === undefined) routedBase = routedTrial;
-        base = trial; kept7e = trial7e; routedFinal = routedTrial; activeTurnLinks = trialLinks;
+        base = trial; kept7e = trial7e; routedFinal = routedTrial;
           baseMoved = trialMoved; baseUnmoved = trialUnmoved; kept = trialLedger;
           for (const course of offer.courses) {
             const was = offer.promised.get(course.link)!;

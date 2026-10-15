@@ -51,6 +51,11 @@ describe('reservation ledger', () => {
     expect(() => validateReservations(model(true))).not.toThrow();
     expect(() => validateReservations(model(false))).toThrow(/turn order/);
   });
+  it('refuses reserved turn links that are not the turn links of the model', () => {
+    const model = (turnLinks: string[]): never => ({ links: [], reservations: turnEntries(false, ['a', 'b'], false, 'course', 0), turnOrder: true, turnLinks, nodes: {} }) as never;
+    expect(() => validateReservations(model(['a', 'b']))).not.toThrow();
+    expect(() => validateReservations(model(['a']))).toThrow(/turn links/);
+  });
   it('merges pitch and node floors by componentwise maximum and keeps declaration order', () => {
     const a = reserve([], pitchFloors(new Map([['n', { left: 10 }], ['m', { right: 4 }]]), 'fan', 0));
     const b = reserve(a, pitchFloors(new Map([['n', { left: 8, right: 6 }]]), 'fan', 1));
