@@ -17,7 +17,7 @@ import { portId } from './skeleton-graph.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { moveGroup, union } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
-import { withLayoutMutation } from './mutation.js';
+import { withStageMutation } from './mutation.js';
 import { chordKind, chordsHold, isRoutedChord } from './frame-paths.js';
 import { deriveFrames, foreignReach, foreignRoot, heldLaneReach, ownFrameCells, riserForeignReach, frameNodes } from './frames.js';
 import { BUS_RUN_CLEARANCE } from './bus-room.js';
@@ -1596,4 +1596,4 @@ export function validateLanes(model: LayoutModel): void {
     }
   }
 }
-export function lanes(model: LayoutModel): LayoutModel { return withLayoutMutation(model, 'lanes', allocateLanes); }
+export function lanes(model: LayoutModel): LayoutModel { return withStageMutation(model, 'lanes', allocateLanes); }

@@ -18,7 +18,7 @@ import { packRowsOf } from './grid.js';
 import { rowGap } from './sides-two.js';
 import { linkLabelGap } from './bands.js';
 import { alignmentAllowance, ownSideWidth } from './size.js';
-import { withLayoutMutation } from './mutation.js';
+import { withStageMutation } from './mutation.js';
 import { barReach } from './bars.js';
 import { placeOverlayFree } from './overlay-place.js';
 import { fitRegionGroup, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
@@ -780,5 +780,5 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
   return result;
 }
 export function centre(model: LayoutModel): LayoutModel {
-  return withLayoutMutation(model, 'centre', draft => { centreDraft(draft, createCentreBudget()); recordSeatedSideLanes(draft); });
+  return withStageMutation(model, 'centre', draft => { centreDraft(draft, createCentreBudget()); recordSeatedSideLanes(draft); });
 }

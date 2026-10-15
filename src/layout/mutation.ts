@@ -64,12 +64,12 @@ function pick<T extends object, K extends keyof T>(value: T, keys: readonly K[])
 function omit(value: object, keys: readonly string[]): object {
   return Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)));
 }
-function protect(model: LayoutModel, baseline: LayoutModel): LayoutModel {
+function protect(model: LayoutModel, baseline: LayoutModel, intermediate = false): LayoutModel {
   const outer = publishing;
   let result: LayoutModel;
   publishing = { model };
   try {
-    validatePublication(model, baseline);
+    validatePublication(model, baseline, intermediate);
     result = cloneModel(model);
   } finally { publishing = outer; }
   const freeze = (value: unknown): void => {
@@ -295,17 +295,17 @@ function validateJoins(model: LayoutModel): void {
   }
 }
 /** Every protected result passes this same boundary, including direct freeze and restore. */
-function validatePublication(model: LayoutModel, baseline: LayoutModel): void {
+function validatePublication(model: LayoutModel, baseline: LayoutModel, intermediate = false): void {
   jsonValue(model);
   if (hasUnsupportedClaims(model)) throw new Error('Claim validator is not implemented');
   validateTechniques(model, baseline);
   validateJoins(model);
   validateGeometry(model, diagnosed(model));
   validateFreeze(model);
-  validateRegionClaims(model);
+  validateRegionClaims(model, intermediate);
 }
 /** The same ordered producers validate every publication, including restored JSON. */
-function validateRegionClaims(model: LayoutModel): void {
+function validateRegionClaims(model: LayoutModel, intermediate = false): void {
   const expected = cloneModel(model);
   const barStage = stages.indexOf(model.stage) >= stages.indexOf('bars');
   const bundleStage = stages.indexOf(model.stage) >= stages.indexOf('bundles');
@@ -337,7 +337,8 @@ function validateRegionClaims(model: LayoutModel): void {
     }
   }
   else if (model.anchorTier !== undefined) throw new Error('Premature anchor tier');
-  if (stages.indexOf(model.stage) < stages.indexOf('rows')) return;
+  // A snapshot of the stages before 7f skips the second derivation of the paths below (`withStageMutation`).
+  if (intermediate || stages.indexOf(model.stage) < stages.indexOf('rows')) return;
   // Clear both kinds together so stale paths cannot suppress their replacements.
   for (const link of expected.links) if (rowPathCandidate(expected, link) || flankPathCandidate(expected, link)) delete link.path;
   // The draft decides the rows rule before it derives the bundles (`rebuildRegionGeometry` clears the member paths and the zones first): no member
@@ -640,6 +641,21 @@ function rebuildBoxes(model: LayoutModel): void {
 
 /** One synchronous checked commit per stage. Future producers extend the closed validators here. */
 export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutModel) => void, abortAt?: () => void, trace?: (event: AttemptTraceEvent) => void, moves?: boolean): LayoutModel {
+  return mutate(model, rule, edit, false, abortAt, trace, moves);
+}
+/**
+ * The placement stages before 7f (rows to bundles) as the pipeline runs them. Their result is a snapshot the next stage reads, and 7f, the route
+ * rule and stage 9 each validate the whole model again, with the same checks, on the geometry they publish. So a snapshot skips the one check that
+ * those later stages repeat on their own result: the second derivation of the row, flank, bar and bundle paths (`validateRegionClaims`). Every
+ * other check stays, among them the centring invariant, whose error is the refusal signal of the course, turn and overlay rounds
+ * (`Centring invariant violated`), and the side-hint checks, whose `SideHintRefusal` is the signal of the side rounds. `withLayoutMutation` itself
+ * always validates in full.
+ */
+export function withStageMutation(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutModel) => void): LayoutModel {
+  return mutate(model, rule, edit, true);
+}
+const INTERMEDIATE_RULES: ReadonlySet<PlacementRule> = new Set<PlacementRule>(['rows', 'lanes', 'flanks', 'centre', 'bars', 'bundles']);
+function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutModel) => void, intermediate: boolean, abortAt?: () => void, trace?: (event: AttemptTraceEvent) => void, moves?: boolean): LayoutModel {
   if (!protectedModels.has(model)) throw new Error('Mutation requires a protected snapshot; use restoreLayoutModel');
   if (!Object.hasOwn(permissions, rule) || stages[stages.indexOf(model.stage) + 1] !== rule) throw new Error(`Incorrect predecessor stage for ${rule}`);
   const started = Date.now(), draft = clone(model), permission = permissions[rule];
@@ -878,5 +894,5 @@ export function withLayoutMutation(model: LayoutModel, rule: PlacementRule, edit
   draft.stage = rule;
   draft.runtime.stages.push({ stage: rule, durationMs: Date.now() - started });
   if (rule === 'bands') draft.freeze!.placement = clone(placement(draft));
-  return protect(draft, model);
+  return protect(draft, model, intermediate && INTERMEDIATE_RULES.has(rule));
 }
