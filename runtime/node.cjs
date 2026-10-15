@@ -14,6 +14,15 @@ exports.createNodeElkFactory = function createNodeElkFactory() {
 };
 
 /**
+ * One real ELK worker kept for all the attempts of one command, with `warm()` to start it early and `close()` to end it (`createWarmElk`).
+ * A timed-out or failed attempt drops the worker and the next attempt starts a new one.
+ */
+exports.createNodeWarmElk = function createNodeWarmElk() {
+  const { createWarmElk } = require('./portograph.umd.cjs');
+  return createWarmElk(() => new Worker(workerUrl));
+};
+
+/**
  * Create the stage-8 router factory for Node. The worker asset ships beside this file; libavoid's
  * Node entry and its sibling WASM are resolved from the installed package, never from the caller's
  * working directory and never through an unexported deep subpath.

@@ -67,6 +67,46 @@ export function createWorkerElkAttempt(worker: ElkWorker): ElkAttempt {
   };
 }
 
+/**
+ * One ELK worker for the attempts of one command. Starting a worker costs a script load and a cold engine, and a command asks for several layouts. A layout runs on
+ * a fresh graph and ELK keeps nothing from the one before, so the worker is kept between attempts (the output of every layout is the same on a warm worker).
+ * `warm()` starts the worker ahead of the first attempt. A worker is dropped, and the next attempt starts a new one, when an attempt ends while a layout is still
+ * running (the deadline of `runElkAttempt` terminates it), when a layout fails, or on `close()`. The state is the factory's own: nothing is shared between two factories.
+ */
+export interface WarmElk {
+  /** The factory to pass as `createElkAttempt`. */
+  attempt: CreateElkAttempt;
+  /** Start the worker now, so that it boots while the caller does other work. A failure to start is left for the first attempt to raise. */
+  warm(): void;
+  /** Terminate the worker, if one is running. */
+  close(): void;
+}
+export function createWarmElk(makeWorker: () => ElkWorker): WarmElk {
+  let shared: ElkAttempt | undefined;
+  const open = (): ElkAttempt => shared ??= createWorkerElkAttempt(makeWorker());
+  const drop = (worker: ElkAttempt): void => {
+    if (shared === worker) shared = undefined;
+    worker.terminateWorker();
+  };
+  return {
+    attempt: () => {
+      const worker = open();
+      let running = 0;
+      return {
+        layout(graph) {
+          running++;
+          return worker.layout(graph).then(
+            result => { running--; return result; },
+            (error: unknown) => { running--; drop(worker); throw error; });
+        },
+        terminateWorker() { if (running > 0) drop(worker); },
+      };
+    },
+    warm() { try { open(); } catch { /* the first attempt raises it */ } },
+    close() { if (shared !== undefined) drop(shared); },
+  };
+}
+
 /** Serve the emitted portograph-elk-worker.js asset beside the page, or pass its absolute URL. */
 export function createBrowserElkFactory(workerUrl = 'portograph-elk-worker.js'): CreateElkAttempt {
   return () => {

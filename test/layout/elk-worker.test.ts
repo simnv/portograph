@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module';
 import { describe, expect, it, vi } from 'vitest';
 import type { ElkNode } from 'elkjs/lib/elk-api.js';
-import { createWorkerElkAttempt, runElkAttempt, elkDeadlineMs, type ElkWorker } from '../../src/layout/elk-worker.js';
+import { createWarmElk, createWorkerElkAttempt, runElkAttempt, elkDeadlineMs, type ElkWorker } from '../../src/layout/elk-worker.js';
 const require = createRequire(import.meta.url);
 const Worker = require('web-worker') as new (url: string) => ElkWorker;
 const workerUrl = require.resolve('elkjs/lib/elk-worker.min.js');
@@ -33,6 +33,61 @@ describe('real ELK worker lifecycle', () => {
   });
   it('applies the node-count deadline boundary', () => {
     expect([0, 300, 301, 1000].map(elkDeadlineMs)).toEqual([10000, 10000, 20000, 20000]);
+  });
+});
+
+describe('one warm ELK worker for the attempts of a command', () => {
+  const spawned = (): { made: ElkWorker[]; make: () => ElkWorker } => {
+    const made: ElkWorker[] = [];
+    return { made, make: () => { const worker = new Worker(workerUrl); made.push(worker); vi.spyOn(worker, 'terminate'); return worker; } };
+  };
+  it('keeps one worker across attempts and gives the layout a cold worker would give', async () => {
+    const { made, make } = spawned();
+    const warm = createWarmElk(make);
+    warm.warm();
+    expect(made).toHaveLength(1);
+    const first = await runElkAttempt(graph, warm.attempt, 3000);
+    const second = await runElkAttempt(graph, warm.attempt, 3000);
+    const cold = await runElkAttempt(graph, realAttempt, 3000);
+    expect(made).toHaveLength(1);
+    expect(made[0]!.terminate).not.toHaveBeenCalled();
+    // `$H` is the identity counter of the compiled Java in the reply; it grows with the layouts a worker has run, and ELK reads no order off it.
+    const geometry = (node: ElkNode): string => JSON.stringify(node, (key, value: unknown) => (key === '$H' ? undefined : value));
+    expect(geometry(first)).toBe(geometry(cold));
+    expect(geometry(second)).toBe(geometry(cold));
+    warm.close();
+    expect(made[0]!.terminate).toHaveBeenCalledTimes(1);
+  });
+  it('starts the worker on the first attempt when warm() was not called', async () => {
+    const { made, make } = spawned();
+    const warm = createWarmElk(make);
+    expect(made).toHaveLength(0);
+    await runElkAttempt(graph, warm.attempt, 3000);
+    expect(made).toHaveLength(1);
+    warm.close();
+  });
+  it('terminates a worker whose layout times out and starts a new one for the next attempt', async () => {
+    const { made, make } = spawned();
+    const warm = createWarmElk(make);
+    warm.warm();
+    made[0]!.postMessage = () => {};
+    await expect(runElkAttempt(graph, warm.attempt, 40)).rejects.toThrow('deadline');
+    expect(made[0]!.terminate).toHaveBeenCalledTimes(1);
+    expect((await runElkAttempt(graph, warm.attempt, 3000)).children?.[0]?.id).toBe('n');
+    expect(made).toHaveLength(2);
+    expect(made[1]!.terminate).not.toHaveBeenCalled();
+    warm.close();
+  });
+  it('drops a worker whose layout fails and starts a new one for the next attempt', async () => {
+    const { made, make } = spawned();
+    let starts = 0;
+    const failing = `data:application/javascript;base64,${Buffer.from('setTimeout(() => { throw new Error("injected worker failure"); }, 0);').toString('base64')}`;
+    const warm = createWarmElk(() => (++starts === 1 ? new Worker(failing) : make()));
+    await expect(runElkAttempt(graph, warm.attempt, 3000)).rejects.toThrow();
+    expect((await runElkAttempt(graph, warm.attempt, 3000)).children?.[0]?.id).toBe('n');
+    expect(starts).toBe(2);
+    expect(made).toHaveLength(1);
+    warm.close();
   });
 });
 

@@ -6,9 +6,11 @@
 // This process writes no artifact and no diagnostic of its own. It returns strings to the parent,
 // which owns stdout, stderr and the files.
 import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import * as nodeModule from 'node:module';
 
-const require = createRequire(import.meta.url);
+// Node 22.1 and newer keep the compiled code of the library and of its packages on disk between runs; older Node has no such call. The cache holds compiled code only.
+nodeModule.enableCompileCache?.();
+const require = nodeModule.createRequire(import.meta.url);
 
 function loadLibrary() {
   return import('../dist/portograph.js');
@@ -90,15 +92,26 @@ async function run(request, emit) {
     return { ok: true, result: { primary: `${JSON.stringify(report, null, 2)}\n`, passed: report.snapshot.passed } };
   }
 
+  // One ELK worker serves every attempt of this command. It boots on its own thread while the parser runs; a worker that fails to start
+  // is reported after the parse, as before, so an input error is never hidden behind an asset error.
+  let nodeRuntime;
+  let elk;
+  let assetError;
+  try {
+    nodeRuntime = require('../dist/node.cjs');
+    elk = nodeRuntime.createNodeWarmElk();
+    elk.warm();
+  } catch (error) {
+    assetError = error;
+  }
+
   const parsed = parseWithDiagnostics(source.text, { force, onDiagnostic: say });
   if (!parsed.ok) return failure('input', `${input} has ${parsed.diagnostics.filter((d) => d.severity === 'error').length} error(s)`);
 
-  const { createNodeElkFactory, createNodeRouteFactory } = require('../dist/node.cjs');
-  let elk;
   let router;
   try {
-    elk = createNodeElkFactory();
-    router = createNodeRouteFactory();
+    if (assetError) throw assetError;
+    router = nodeRuntime.createNodeRouteFactory();
   } catch (error) {
     return failure('processing', `a packaged worker asset is unavailable: ${error.message}`, 'WORKER_ASSET');
   }
@@ -108,7 +121,7 @@ async function run(request, emit) {
     model = await layout(parsed.document, {
       diagnostics: parsed.diagnostics,
       createElkAttempt: () => {
-        const attempt = elk();
+        const attempt = elk.attempt();
         if (progress) emit({ type: 'progress', text: 'portograph: ELK worker started' });
         return attempt;
       },

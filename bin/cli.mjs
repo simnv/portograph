@@ -10,10 +10,12 @@
 import { fork } from 'node:child_process';
 import { existsSync, lstatSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { createRequire } from 'node:module';
+import * as nodeModule from 'node:module';
 import { fileURLToPath } from 'node:url';
 
-const require = createRequire(import.meta.url);
+// Node 22.1 and newer keep the compiled code of the library on disk between runs; older Node has no such call. The cache holds compiled code only.
+nodeModule.enableCompileCache?.();
+const require = nodeModule.createRequire(import.meta.url);
 const { version } = require('../package.json');
 const COMPUTE = fileURLToPath(new URL('./compute.mjs', import.meta.url));
 
