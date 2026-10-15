@@ -37,10 +37,28 @@ export interface FacingPair {
   right: { node: LayoutNode; port: LayoutPort };
 }
 
+/**
+ * Where a port stood in its node's list the last time it was looked up, kept per reference object. A hint only: it is checked against the port at that
+ * place on every use, and a port's identity is unique within its node, so the answer is the one a scan gives whatever the hint says.
+ */
+const portPlace = new WeakMap<PortRef, number>();
 export function findPort(model: LayoutModel, ref: PortRef): LayoutPort | undefined {
+  const ports = model.nodes[ref.node]?.ports;
+  if (ports === undefined) return undefined;
   // The fields `portId` keys on, compared without building the key.
-  const anonymous = ref.anonymous === true, name = ref.name ?? null;
-  return model.nodes[ref.node]?.ports.find(({ ref: at }) => at.ordinal === ref.ordinal && at.node === ref.node && (at.name ?? null) === name && (at.anonymous === true) === anonymous);
+  const anonymous = ref.anonymous === true, name = ref.name ?? null, ordinal = ref.ordinal, node = ref.node;
+  const place = portPlace.get(ref);
+  if (place !== undefined) {
+    const hinted = ports[place];
+    if (hinted !== undefined) {
+      const at = hinted.ref;
+      if (at.ordinal === ordinal && at.node === node && (at.name ?? null) === name && (at.anonymous === true) === anonymous) return hinted;
+    }
+  }
+  const index = ports.findIndex(({ ref: at }) => at.ordinal === ordinal && at.node === node && (at.name ?? null) === name && (at.anonymous === true) === anonymous);
+  if (index < 0) return undefined;
+  portPlace.set(ref, index);
+  return ports[index];
 }
 function rowNode(model: LayoutModel, id: string): boolean {
   const document = model.document.nodes[id];

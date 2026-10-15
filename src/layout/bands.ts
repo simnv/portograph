@@ -14,6 +14,7 @@ import { rebuildRegionGeometry } from './region-rebuild.js';
 import { findPort, straightCorridorClear } from './row-paths.js';
 import { bandGap, portId } from './skeleton-graph.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
+import { allBut, copyWithShared } from './trial-copy.js';
 import { closeCantons, columnShifts, keepOutShifts, holdColumnAxes, packBesideRows, sweptUnits } from './columns.js';
 import { deriveFrames } from './frames.js';
 import { bandHeldBy, bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placementWarning, rebuildRegions, right } from './regions.js';
@@ -873,7 +874,8 @@ function holdColumnsAfterPush(model: LayoutModel): boolean {
 
 /** The groups the beside rows would move on a copy of the model with the proposed boxes in place: the rows the grid must not open, judged one by one. */
 function packOpens(model: LayoutModel, proposed: readonly { group: LayoutGroup; bounds: Rect }[]): Set<string> {
-  const trial = clone(model);
+  // The pack writes group boxes, node boxes and port anchors (`moveGroup`) and nothing else, so only those two parts are copied.
+  const trial = copyWithShared(model, allBut(model, ['groups', 'nodes']));
   for (const item of proposed) trial.groups[item.group.id]!.bounds = { ...item.bounds };
   const before = new Map(Object.values(trial.groups).map(group => [group.id, group.bounds!.x]));
   packBesideRows(trial, cell => !trial.groups[cell]!.flank);
