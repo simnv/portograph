@@ -122,6 +122,15 @@ export function pitchFloors(floors: ReadonlyMap<string, Partial<Record<Side, num
     reservation('pitchFloor', { kind: 'node', id: node }, side, producer, revision, { node, side, min })));
 }
 
+/** The pitch entries of `wanted` that raise a floor the ledger holds: a value over the held one, or over 0 when none is held (ticket 89). Empty when no face needs more. */
+export function pitchGrowth(ledger: Reservations, wanted: ReadonlyMap<string, Partial<Record<Side, number>>>, producer: RoundId, revision: number): Reservations {
+  const held = pitchFloorsOf(ledger), grown = new Map<string, Partial<Record<Side, number>>>();
+  for (const [node, pitch] of wanted) for (const [side, value] of Object.entries(pitch) as [Side, number][]) {
+    if (value > (held.get(node)?.[side] ?? 0)) grown.set(node, { ...grown.get(node), [side]: value });
+  }
+  return pitchFloors(grown, producer, revision);
+}
+
 /** The node size floors, per node. */
 export function nodeFloorsOf(ledger: Reservations): Map<string, Size> {
   return new Map(ofKind(ledger, 'nodeFloor').map(({ payload }) => [payload.node, { ...payload.min }] as const));
@@ -266,4 +275,8 @@ export function validateReservations(model: LayoutModel): void {
     if (item.activeFrom !== ACTIVE_FROM[item.kind as ReservationKind]) throw new Error(`Reservation ${item.id} is active from the wrong stage`);
     if (!Number.isInteger(item.revision) || (item.revision as number) < 0) throw new Error(`Reservation ${item.id} has no revision`);
   }
+  // A floor is a promise about the placed geometry, which later stages may only grow; the kinds below are checked on every restored stage.
+  for (const failure of holds(ledger.filter(item => RESTORED.has(item.kind)), model)) throw new Error(`Reservation ${failure.id} does not hold: ${failure.why}`);
 }
+/** The kinds whose predicate reads only what every published stage keeps. */
+const RESTORED: ReadonlySet<ReservationKind> = new Set<ReservationKind>(['pitchFloor']);

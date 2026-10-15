@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { courseEntries, coursesOf, declinedEntries, declinedTrunksOf, DeclinedTrunks, laneKeysOf, laneOwners, nodeFloors, nodeFloorsOf, pitchFloors, pitchFloorsOf, portRefOf, reserve, sideFaces, sideHintsOf, spanEntries, spansOf, turnEntries, turnOf } from '../../src/layout/reservations.js';
+import { courseEntries, coursesOf, declinedEntries, declinedTrunksOf, DeclinedTrunks, laneKeysOf, laneOwners, nodeFloors, nodeFloorsOf, pitchFloors, pitchFloorsOf, portRefOf, reserve, validateReservations, sideFaces, sideHintsOf, spanEntries, spansOf, turnEntries, turnOf } from '../../src/layout/reservations.js';
 import { portKey } from '../../src/layout/sides-one.js';
 
 describe('reservation ledger', () => {
+  it('refuses a restored model whose pitch is under a reserved floor, and one that holds twice an id', () => {
+    const ledger = pitchFloors(new Map([['n', { left: 10 }]]), 'fan', 0);
+    const model = (pitch: number, reservations = ledger): never => ({ reservations, nodes: { n: { sidePitch: { left: pitch } } } }) as never;
+    expect(() => validateReservations(model(10))).not.toThrow();
+    expect(() => validateReservations(model(9))).toThrow(/does not hold/);
+    expect(() => validateReservations(model(10, [...ledger, ...ledger]))).toThrow(/held twice/);
+  });
   it('merges pitch and node floors by componentwise maximum and keeps declaration order', () => {
     const a = reserve([], pitchFloors(new Map([['n', { left: 10 }], ['m', { right: 4 }]]), 'fan', 0));
     const b = reserve(a, pitchFloors(new Map([['n', { left: 8, right: 6 }]]), 'fan', 1));

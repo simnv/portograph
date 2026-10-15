@@ -26,7 +26,7 @@ import { elkDeadlineMs, type CreateElkAttempt, type ElkClock } from '../layout/e
 import { route, ROUTE_BUDGET_MS, type CreateRouteAttempt } from '../route/index.js';
 import { CommandDeadlineError, UNBOUNDED_BUDGET, type Budget } from './budget.js';
 // After the stages: the modules below reach the centring module, whose import order the tests that mock it depend on.
-import { declinedFanDiagnostics, fanRoundDropped, fanRoundHolds, measureFans, type FanMeasure } from '../layout/fan-spread.js';
+import { declinedFanDiagnostics, fanRoundDropped, fanRoundHolds, measureFans } from '../layout/fan-spread.js';
 import { chordClearances, freezeRefusal, isRoutedChord } from '../layout/frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
 import { CourseRefusal } from '../layout/courses.js';
@@ -44,6 +44,7 @@ import { beats, gainOf, judgeCourseTrial, judgeOverlayTrial, measureCourses, mea
 import { pathBends } from '../layout/objective.js';
 import { turnMissed } from '../layout/turn-order.js';
 import { judgeTurnTrial, measureTurnOrder, roundLimit, turnReserve, turnRoundRuns } from '../layout/turn-measure.js';
+import { pitchFloorsOf, pitchGrowth, reserve as addReservations, type Reservations } from '../layout/reservations.js';
 import { countStage, ledgerOn, ledgerSnapshot, startPlacementEntry, type LedgerSnapshot } from '../layout/attempt-ledger.js';
 
 
@@ -151,7 +152,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     return result;
   };
 
-  /** Stages 1 to 7e, the placement the chords are decided on before 7f grows a gap, and so the placement a fan is measured on. `floors` are port pitches a fan of chords needs on a face (ticket 89); the first run has none. */
+  /** Stages 1 to 7e, the placement the chords are decided on before 7f grows a gap, and so the placement a fan is measured on. `reservations` hold the port pitches a fan of chords needs on a face (ticket 89); the first run has none. */
   // The courses every placement run reserves (ticket 15): the test's, or the ones the course round keeps.
   let activeCourses: readonly Course[] = options.testCourses ?? [];
   // The links every placement run reserves as spanning chords (ticket 22): the test's, or the ones the span round keeps.
@@ -171,13 +172,14 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   let placements = 0;
   // The cap on placements per command: the first run and the effective re-run budget (the fan rounds at the start run within FAN_ROUNDS even with a budget of 0).
   const placeCap = Math.max(options.testMaxReruns ?? MAX_RERUNS, FAN_ROUNDS) + 1;
-  const place = async (floors: FanMeasure['floors'], hints = options.testSideHints, nodeFloors = options.testNodeFloors, abort?: (stage: string) => void, laneKeys: ReadonlySet<string> = new Set(), courses: readonly Course[] = activeCourses, spans: ReadonlySet<string> = activeSpans, turn: boolean = activeTurn, turnLinks: readonly string[] = activeTurnLinks): Promise<LayoutModel> => {
+  const place = async (reservations: Reservations, hints = options.testSideHints, nodeFloors = options.testNodeFloors, abort?: (stage: string) => void, laneKeys: ReadonlySet<string> = new Set(), courses: readonly Course[] = activeCourses, spans: ReadonlySet<string> = activeSpans, turn: boolean = activeTurn, turnLinks: readonly string[] = activeTurnLinks): Promise<LayoutModel> => {
     // The one assertion of the placement budget: a command places at most MAX_RERUNS + 1 times (the first run and the re-runs), whatever round asks. A run that stage 7a
     // refuses before any work is given back by the round that asked (`placements--`, with its `reruns--`).
     if (placements >= placeCap) throw new PlacementBudgetExceeded(placements);
     placements++;
     const stepIn = <T>(stage: LayoutStage, run: () => T): T => { abort?.(stage); return step(stage, run); };
     const resolved = stepIn('resolve', () => resolve(document, { ...(options.diagnostics ? { diagnostics: options.diagnostics } : {}), ...(declinedTrunks.size || declinedTrunks.all ? { declinedTrunks } : {}) }));
+    if (reservations.length > 0) resolved.reservations = JSON.parse(JSON.stringify(reservations)) as Reservations;
     // A course face ranks above a hint (ticket 15): each end that does not keep its natural face names the port and the face.
     const courseFaces = new Map<string, Side>();
     for (const course of courses) {
@@ -201,7 +203,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
         if (approach !== undefined) link.approach = { ...link.approach, [which]: approach };
       }
     }
-    for (const [id, pitch] of floors) resolved.nodes[id]!.sidePitch = { ...resolved.nodes[id]!.sidePitch, ...pitch };
+    for (const [id, pitch] of pitchFloorsOf(reservations)) resolved.nodes[id]!.sidePitch = { ...resolved.nodes[id]!.sidePitch, ...pitch };
     // A hinted node keeps the size the measured run gave it, so the skeleton input is the same (a floor on `size`, not on `sizeFloor`, which alignment reads).
     for (const [id, size] of nodeFloors ?? []) resolved.nodes[id]!.size = { ...size };
     stepIn('size', () => sizeNodes(resolved));
@@ -244,7 +246,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   for (;;) {
     // The last run the budget allows declines every trunk, so that it cannot be blocked and no run past the budget is needed.
     declinedTrunks.all = reruns >= (options.testMaxReruns ?? MAX_RERUNS);
-    try { model = await timed('place', () => place(new Map())); break; } catch (error) {
+    try { model = await timed('place', () => place([])); break; } catch (error) {
       if (!(error instanceof TrunkBlocked) || declinedTrunks.has(error.key)) throw error;
       declinedTrunks.set(error.key, error.why);
       reruns++;
@@ -263,15 +265,12 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     cuts.push({ stage: 'placement', severity: 'warning', code: 'SIDE_ROUND_CUT',
       message: `A side round was cut: ${why}. The last kept placement stands, and this layout may differ from one made with more time.` });
   };
-  let floors: FanMeasure['floors'] = new Map();
+  let floors: Reservations = [];
   for (let round = 0; round < FAN_ROUNDS && placements < placeCap; round++) {
     const measure = await timed('measureFans', () => measureFans(model));
-    const next: FanMeasure['floors'] = new Map(floors);
-    let grew = false;
-    for (const [id, pitch] of measure.floors) for (const [side, value] of Object.entries(pitch) as [Side, number][]) {
-      if (value > (next.get(id)?.[side] ?? 0)) { next.set(id, { ...next.get(id), [side]: value }); grew = true; }
-    }
-    if (!grew) break;
+    const grown = pitchGrowth(floors, measure.floors, 'fan', placements);
+    if (grown.length === 0) break;
+    const next = addReservations(floors, grown);
     reruns++; attemptCounters.invalidations.fanReruns++;
     // A fan floor can move the rows, and a trunk that the baseline placed may then have a foreign unit on both sides. The run that found it blocked is a
     // trial, so the round is cut and the baseline stands (a test cannot reach this: it needs a floor that reorders a row of the mesh).
@@ -451,12 +450,9 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     let trialFloors = floors;
     for (let round = 0; round < FAN_ROUNDS && reruns < spanMax; round++) {
       const measure = await timed('measureFans', () => measureFans(trial7e!));
-      const next: FanMeasure['floors'] = new Map(trialFloors);
-      let grew = false;
-      for (const [id, pitch] of measure.floors) for (const [side, value] of Object.entries(pitch) as [Side, number][]) {
-        if (value > (next.get(id)?.[side] ?? 0)) { next.set(id, { ...next.get(id), [side]: value }); grew = true; }
-      }
-      if (!grew) break;
+      const grown = pitchGrowth(trialFloors, measure.floors, 'span', placements);
+      if (grown.length === 0) break;
+      const next = addReservations(trialFloors, grown);
       reruns++; attemptCounters.invalidations.fanReruns++;
       let again: LayoutModel;
       try { again = await timed('rerun-fan', () => place(next, hints, nodeFloors, trialAbort, laneKeys, activeCourses, new Set([...activeSpans, ...offer.links]))); } catch (error) {
