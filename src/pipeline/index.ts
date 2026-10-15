@@ -44,7 +44,7 @@ import { beats, gainOf, judgeCourseTrial, judgeOverlayTrial, measureCourses, mea
 import { pathBends } from '../layout/objective.js';
 import { turnMissed } from '../layout/turn-order.js';
 import { judgeTurnTrial, measureTurnOrder, roundLimit, turnReserve, turnRoundRuns } from '../layout/turn-measure.js';
-import { pitchFloorsOf, nodeFloors as floorEntries, pitchGrowth, nodeFloorsOf, reserve as addReservations, courseEntries, coursesOf, laneKeysOf, laneOwners, sideFaces, sideHintsOf, spanEntries, spansOf, turnEntries, turnOf, type Reservations } from '../layout/reservations.js';
+import { pitchFloorsOf, nodeFloors as floorEntries, pitchGrowth, nodeFloorsOf, reserve as addReservations, courseEntries, coursesOf, declinedTrunksOf, declineTrunk, laneKeysOf, laneOwners, sideFaces, sideHintsOf, spanEntries, spansOf, turnEntries, turnOf, type Reservations } from '../layout/reservations.js';
 import { countStage, ledgerOn, ledgerSnapshot, startPlacementEntry, type LedgerSnapshot } from '../layout/attempt-ledger.js';
 
 
@@ -153,16 +153,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   };
 
   /** Stages 1 to 7e, the placement the chords are decided on before 7f grows a gap, and so the placement a fan is measured on. `reservations` hold the port pitches a fan of chords needs on a face (ticket 89); the first run has none. */
-  // Whether every placement run orders the ports of a face by the planned first turn (ticket 24): forced by the test option, or set by a kept turn round.
-  // The links whose faces a kept bypass trial ordered by their turns; later runs keep that order on those faces (ticket 24, phase 5).
   const stage3Sizes = new WeakMap<LayoutModel, Map<string, Size>>();
-  // The trunk joins a placement run found blocked (mesh-bus.md, section 12.4): the next run resolves with them declined.
-  /** The trunks declined for the next run. With `all` set (the budget is spent) every trunk reads as declined. */
-  class DeclinedTrunks extends Map<string, string> {
-    all = false;
-    override get(key: string): string | undefined { return super.get(key) ?? (this.all ? 'the placement budget is spent' : undefined); }
-  }
-  const declinedTrunks = new DeclinedTrunks();
   let placements = 0;
   // The cap on placements per command: the first run and the effective re-run budget (the fan rounds at the start run within FAN_ROUNDS even with a budget of 0).
   const placeCap = Math.max(options.testMaxReruns ?? MAX_RERUNS, FAN_ROUNDS) + 1;
@@ -172,6 +163,8 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     if (placements >= placeCap) throw new PlacementBudgetExceeded(placements);
     placements++;
     const stepIn = <T>(stage: LayoutStage, run: () => T): T => { abort?.(stage); return step(stage, run); };
+    // The trunk joins a placement run found blocked (mesh-bus.md, section 12.4) are declined in the next: the ledger names them, or all of them once the budget is spent.
+    const declinedTrunks = declinedTrunksOf(reservations);
     const resolved = stepIn('resolve', () => resolve(document, { ...(options.diagnostics ? { diagnostics: options.diagnostics } : {}), ...(declinedTrunks.size || declinedTrunks.all ? { declinedTrunks } : {}) }));
     if (reservations.length > 0) resolved.reservations = JSON.parse(JSON.stringify(reservations)) as Reservations;
     const courses = coursesOf(reservations), spans = spansOf(reservations);
@@ -251,10 +244,10 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   // A trunk with no admissible side is declined by one placement re-run, which shares `MAX_RERUNS` (mesh-bus.md, section 12.4).
   for (;;) {
     // The last run the budget allows declines every trunk, so that it cannot be blocked and no run past the budget is needed.
-    declinedTrunks.all = reruns >= (options.testMaxReruns ?? MAX_RERUNS);
+    if (reruns >= (options.testMaxReruns ?? MAX_RERUNS)) kept = addReservations(kept, declineTrunk(undefined, 'the placement budget is spent', placements));
     try { model = await timed('place', () => place(kept)); break; } catch (error) {
-      if (!(error instanceof TrunkBlocked) || declinedTrunks.has(error.key)) throw error;
-      declinedTrunks.set(error.key, error.why);
+      if (!(error instanceof TrunkBlocked) || declinedTrunksOf(kept).has(error.key)) throw error;
+      kept = addReservations(kept, declineTrunk(error.key, error.why, placements));
       reruns++;
       options.testSideTrace?.({ ev: 'trunk-blocked', key: error.key, reruns, left: (options.testMaxReruns ?? MAX_RERUNS) - reruns });
     }

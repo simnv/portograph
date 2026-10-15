@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { courseEntries, coursesOf, declinedEntries, declinedTrunksOf, DeclinedTrunks, laneKeysOf, laneOwners, nodeFloors, nodeFloorsOf, pitchFloors, pitchFloorsOf, portRefOf, reserve, validateReservations, sideFaces, sideHintsOf, spanEntries, spansOf, turnEntries, turnOf } from '../../src/layout/reservations.js';
+import { courseEntries, coursesOf, declinedEntries, declineTrunk, declinedTrunksOf, DeclinedTrunks, laneKeysOf, laneOwners, nodeFloors, nodeFloorsOf, pitchFloors, pitchFloorsOf, portRefOf, reserve, validateReservations, sideFaces, sideHintsOf, spanEntries, spansOf, turnEntries, turnOf } from '../../src/layout/reservations.js';
 import { portKey } from '../../src/layout/sides-one.js';
 
 describe('reservation ledger', () => {
@@ -55,6 +55,12 @@ describe('reservation ledger', () => {
     const model = (turnLinks: string[]): never => ({ links: [], reservations: turnEntries(false, ['a', 'b'], false, 'course', 0), turnOrder: true, turnLinks, nodes: {} }) as never;
     expect(() => validateReservations(model(['a', 'b']))).not.toThrow();
     expect(() => validateReservations(model(['a']))).toThrow(/turn links/);
+  });
+  it('refuses a declined trunk join that the ledger does not decline', () => {
+    const model = (reservations: readonly unknown[]): never => ({ links: [], reservations, declinedTrunks: ['k'], nodes: {} }) as never;
+    expect(() => validateReservations(model(declineTrunk('k', 'blocked', 0)))).not.toThrow();
+    expect(() => validateReservations(model(declineTrunk(undefined, 'the placement budget is spent', 0)))).not.toThrow();
+    expect(() => validateReservations(model(declineTrunk('other', 'blocked', 0)))).toThrow(/no reservation declines it/);
   });
   it('merges pitch and node floors by componentwise maximum and keeps declaration order', () => {
     const a = reserve([], pitchFloors(new Map([['n', { left: 10 }], ['m', { right: 4 }]]), 'fan', 0));

@@ -221,6 +221,12 @@ export function declinedTrunksOf(ledger: Reservations): DeclinedTrunks {
   }
   return declined;
 }
+/** One decline: the trunk join `key`, or with no key every trunk join (the placement budget is spent). */
+export function declineTrunk(key: string | undefined, reason: string, revision: number): Reservations {
+  return key === undefined
+    ? [reservation('trunkDeclined', { kind: 'command', id: 'trunk-declines' }, 'all', 'initial', revision, { scope: { all: true }, reason })]
+    : [reservation('trunkDeclined', { kind: 'mesh-bus', id: key }, key, 'initial', revision, { scope: { key }, reason })];
+}
 export function declinedEntries(declined: DeclinedTrunks, revision: number): Reservations {
   const owner = { kind: 'command' as const, id: 'trunk-declines' };
   return [
@@ -296,6 +302,11 @@ export function validateReservations(model: LayoutModel): void {
     for (const node of Object.values(model.nodes)) for (const port of node.ports) {
       if ((port.laneHint === true) !== owners.has(portKey(port.ref))) throw new Error(`Lane hint on ${node.id} does not match the lane owners`);
     }
+  }
+  if (model.reservations !== undefined) {
+    // A trunk join the model declined is one the ledger declines, by its key or for every trunk.
+    const declined = declinedTrunksOf(ledger);
+    for (const key of model.declinedTrunks ?? []) if (declined.get(key) === undefined) throw new Error(`The trunk join ${key} is declined, and no reservation declines it`);
   }
   if (model.reservations !== undefined) {
     // The courses the ledger reserves are the courses the model carries, link for link.
