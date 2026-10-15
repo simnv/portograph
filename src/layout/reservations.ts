@@ -9,6 +9,7 @@
 import type { Course, LayoutModel, LayoutStage, Owner, PortRef, Side, Size } from '../model/index.js';
 import { portKey } from './sides-one.js';
 import { isRoutedChord } from './frame-paths.js';
+import { pathBends } from './objective.js';
 
 export type RoundId = 'initial' | 'fan' | 'span' | 'course' | 'side' | 'turn' | 'overlay';
 /** A model owner, or the command (a reservation no single element owns: the turn order of every face, a budget decline of every trunk). */
@@ -56,8 +57,8 @@ export type Reservation = { [K in ReservationKind]: Readonly<{
 export type Reservations = readonly Reservation[];
 export type ReservationOf<K extends ReservationKind> = Extract<Reservation, { kind: K }>;
 
-/** A typed failure of one reservation against a model. */
-export interface ReservationFailure { id: string; kind: ReservationKind; why: string }
+/** A typed failure of one reservation against a model: the entry, why it fails, and the port key and link it concerns when it names them. */
+export interface ReservationFailure { id: string; kind: ReservationKind; why: string; entry: Reservation; key?: string; link?: string }
 
 export const NO_RESERVATIONS: Reservations = [];
 
@@ -246,32 +247,73 @@ export function declinedEntries(declined: DeclinedTrunks, revision: number): Res
 
 // ---- Predicates and validators ---------------------------------------------------------------------------------------------------
 
-/** The failures of the reservations that a 7e model can show. The checks of the kinds the ledger has taken over are added with each channel. */
-export function holds(ledger: Reservations, model: LayoutModel): ReservationFailure[] {
+/**
+ * The failures of the reservations that a 7e model can show, in ledger order. A round asks once, after its final 7e and before 7f and the route, with `only` naming the
+ * entries it answers for (a side round judges its faces and lanes, a span round its own chords, a turn round its turn order).
+ */
+export function holds(ledger: Reservations, model: LayoutModel, only: (entry: Reservation) => boolean = () => true): ReservationFailure[] {
   const failures: ReservationFailure[] = [];
-  for (const item of ledger) {
-    const why = holdsOne(item, model);
-    if (why !== undefined) failures.push({ id: item.id, kind: item.kind, why });
+  for (const entry of ledger) {
+    if (!only(entry)) continue;
+    const found = holdsOne(entry, model);
+    if (found !== undefined) failures.push({ id: entry.id, kind: entry.kind, entry, ...found });
   }
   return failures;
 }
 
-function holdsOne(item: Reservation, model: LayoutModel): string | undefined {
+type Found = { why: string; key?: string; link?: string };
+function holdsOne(item: Reservation, model: LayoutModel): Found | undefined {
   switch (item.kind) {
     case 'pitchFloor': {
       const have = model.nodes[item.payload.node]?.sidePitch?.[item.payload.side];
-      return have !== undefined && have >= item.payload.min ? undefined : `the ${item.payload.side} pitch of ${item.payload.node} is under ${item.payload.min}`;
+      return have !== undefined && have >= item.payload.min ? undefined : { why: `the ${item.payload.side} pitch of ${item.payload.node} is under ${item.payload.min}` };
     }
     case 'nodeFloor': {
       const size = model.nodes[item.payload.node]?.size;
-      return size !== undefined && size.width >= item.payload.min.width && size.height >= item.payload.min.height ? undefined : `${item.payload.node} is smaller than its floor`;
+      return size !== undefined && size.width >= item.payload.min.width && size.height >= item.payload.min.height ? undefined : { why: `${item.payload.node} is smaller than its floor` };
     }
     case 'spanChord': {
       const link = model.links.find(other => other.id === item.payload.link);
-      return link !== undefined && isRoutedChord(model, link) ? undefined : `${item.payload.link} does not hold a routed chord`;
+      return link !== undefined && isRoutedChord(model, link) ? undefined : { why: `${item.payload.link} does not hold a routed chord`, link: item.payload.link };
     }
+    case 'sideFace': {
+      // A port hinted for the straight shape of a routed link must hold its chord at 7e. Otherwise it would be routed with no lane and no chord, and the router would find its route.
+      const promise = item.payload.promise;
+      if (promise?.shape !== 'straight') return undefined;
+      const link = model.links.find(candidate => candidate.id === promise.link);
+      return link !== undefined && link.layer === 'routed' && !isRoutedChord(model, link)
+        ? { why: `a port hinted for a chord does not hold its chord at stage 7e (${promise.link})`, key: portKey(item.payload.port), link: promise.link } : undefined;
+    }
+    case 'laneOwner': {
+      // A port hinted for the routed L must own a source-aligned side lane at 7e. Without one the router would find its route (an exterior corridor gives three bends).
+      const link = item.payload.link;
+      return model.lanes.some(lane => lane.kind === 'side' && lane.owner.kind === 'link' && lane.owner.id === link && lane.aligned === true)
+        ? undefined : { why: `a port hinted for a side lane has no source-aligned lane at stage 7e (${link})`, key: portKey(item.payload.port), link };
+    }
+    case 'turnOrder':
+      return item.payload.requireChanged && (model.freeze?.turnOrder ?? []).length === 0 ? { why: 'the turn order moved no face' } : undefined;
     default: return undefined;
   }
+}
+
+/**
+ * The failures of the routed obligations of a ledger against a routed model: a course that was kept with a turn count publishes no more turns than it promised
+ * (`maxTurns`). It runs for every later trial that is judged and for the model the command publishes; a 7e prediction of the turns would only be a lower bound.
+ * `got` is the turns the link has, absent when it has no route.
+ */
+export function holdsRouted(ledger: Reservations, routed: LayoutModel): (ReservationFailure & { got: number | undefined; max: number })[] {
+  const failures: (ReservationFailure & { got: number | undefined; max: number })[] = [];
+  for (const entry of ofKind(ledger, 'course')) {
+    const max = entry.payload.maxTurns;
+    if (max === undefined) continue;
+    const link = routed.links.find(item => item.id === entry.payload.course.link), got = link === undefined ? undefined : pathBends(link);
+    if (got === undefined || got > max) failures.push({ id: entry.id, kind: 'course', entry, why: `${entry.payload.course.link} has ${got === undefined ? 'no route' : `${got} turns`}, ${max} were promised`, link: entry.payload.course.link, got, max });
+  }
+  return failures;
+}
+/** The turn count each kept course promised, by link id: what the turn round's judgment compares a trial with. */
+export function promisedTurns(ledger: Reservations): Map<string, number> {
+  return new Map(ofKind(ledger, 'course').flatMap(({ payload }) => payload.maxTurns === undefined ? [] : [[payload.course.link, payload.maxTurns] as const]));
 }
 
 /**

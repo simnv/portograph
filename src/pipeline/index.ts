@@ -27,7 +27,7 @@ import { route, ROUTE_BUDGET_MS, type CreateRouteAttempt } from '../route/index.
 import { CommandDeadlineError, UNBOUNDED_BUDGET, type Budget } from './budget.js';
 // After the stages: the modules below reach the centring module, whose import order the tests that mock it depend on.
 import { declinedFanDiagnostics, fanRoundDropped, fanRoundHolds, measureFans } from '../layout/fan-spread.js';
-import { chordClearances, freezeRefusal, isRoutedChord } from '../layout/frame-paths.js';
+import { chordClearances, freezeRefusal } from '../layout/frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
 import { CourseRefusal } from '../layout/courses.js';
 import { SpanReservationRefusal } from '../layout/span-lanes.js';
@@ -41,10 +41,9 @@ import { measureSpans } from '../layout/span-measure.js';
 import { judgeSpanTrial } from '../layout/span-judge.js';
 import { transitTiers } from '../layout/lanes.js';
 import { beats, gainOf, judgeCourseTrial, judgeOverlayTrial, measureCourses, measureOverlayCourses } from '../layout/course-measure.js';
-import { pathBends } from '../layout/objective.js';
 import { turnMissed } from '../layout/turn-order.js';
 import { judgeTurnTrial, measureTurnOrder, roundLimit, turnReserve, turnRoundRuns } from '../layout/turn-measure.js';
-import { pitchFloorsOf, nodeFloors as floorEntries, pitchGrowth, nodeFloorsOf, reserve as addReservations, courseEntries, coursesOf, declinedTrunksOf, declineTrunk, laneKeysOf, laneOwners, sideFaces, sideHintsOf, spanEntries, spansOf, turnEntries, turnOf, type Reservations } from '../layout/reservations.js';
+import { pitchFloorsOf, nodeFloors as floorEntries, pitchGrowth, nodeFloorsOf, reserve as addReservations, courseEntries, coursesOf, declinedTrunksOf, holds, holdsRouted, promisedTurns, declineTrunk, laneKeysOf, laneOwners, sideFaces, sideHintsOf, spanEntries, spansOf, turnEntries, turnOf, type Reservations } from '../layout/reservations.js';
 import { countStage, ledgerOn, ledgerSnapshot, startPlacementEntry, type LedgerSnapshot } from '../layout/attempt-ledger.js';
 
 
@@ -327,7 +326,6 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   const keptNotes: Diagnostic[] = [];
   // The course round (ticket 15, phase 4) runs before the side round and shares its re-runs. It reads the baseline's routed result, offers perimeter courses
   // for the links whose route is a poor one, places again with the courses reserved in stage 5, and keeps the trial only on its routed result.
-  const keptPromises = new Map<string, number>();
   // Phase 3b's unmoved offer is a side trial too: when 7f moved the placement and the base has no offer, an offer of the unmoved copy may stand (the filter reads it).
   const unmovedMayStand = (): boolean => baseMoved && (baseUnmoved === undefined || measureSides(baseUnmoved, kept7e, refused).hints.size > 0);
   // The turn round (ticket 24, Section 10) runs after these rounds, on what they keep. When it has an offer on the baseline a round reads, that round leaves it one re-run,
@@ -393,7 +391,6 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
         const verdict = judgeCourseTrial(routedBase!, routedTrial, new Map([...offer.promised].map(([id, item]) => [id, item.turns] as const)));
         options.testSideTrace?.({ ev: 'course-trial', verdict, trial, routedTrial, routedBase });
         if (verdict.kept) {
-          for (const [id, promised] of offer.promised) keptPromises.set(id, promised.turns);
           if (routedFinal === undefined) routedBase = routedTrial;
         base = trial; kept7e = trial7e; routedFinal = routedTrial;
           baseMoved = trialMoved; baseUnmoved = trialUnmoved; kept = trialLedger;
@@ -462,10 +459,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     // 7f freezes the chords that are straight now and no other (`freezeChords`), so a hinted link that is not straight here (the freeze refuses it, as `leg` when a neighbour's
     // leg crowds it at the pitch the trial gave) is lost: the trial is refused here, before 7f and the route.
     // The placement above is spent, so nothing is given back.
-    const lost = offer.links.filter(id => {
-      const item = trial7e!.links.find(other => other.id === id);
-      return item === undefined || !isRoutedChord(trial7e!, item);
-    });
+    const lost = holds(trialFloors, trial7e!, entry => entry.kind === 'spanChord' && offer.links.includes(entry.payload.link)).map(failure => failure.link!);
     if (lost.length > 0) { spanRefusal('promise', `the freeze would not hold ${lost.join(', ')}: ${lost.map(id => { const item = trial7e!.links.find(other => other.id === id); return item === undefined ? 'missing' : freezeRefusal(trial7e!, item) ?? 'not straight'; }).join(', ')} (before 7f)`); return false; }
     try {
       const trial = await timed('bands-trial', () => step('bands', () => bands(trial7e!, () => trialAbort('bands'), options.attemptTrace), true));
@@ -563,26 +557,22 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     if (trial7e.fallbackUsed && !kept7e.fallbackUsed) {
       cutSide('ELK fell back during it, and the re-run was dropped'); break;
     }
-    // A port hinted for the straight shape of a routed link (this round's, or kept) must hold its chord at the trial's 7e. Otherwise it would be routed with
-    // no lane (`sideLaneCandidate`) and no chord, and the router would find its route (review M1, ticket 117).
-    const chordLost = [...new Map([...promised, ...offer.promised])].filter(([, item]) => {
-      const link = trial7e.links.find(candidate => candidate.id === item.link);
-      return item.shape === 'straight' && link !== undefined && link.layer === 'routed' && !isRoutedChord(trial7e, link);
-    });
+    // The ledger answers for the faces and lanes of the trial (this round's and the kept ones) at its final 7e, before 7f and the route: a port hinted for the straight shape
+    // of a routed link must hold its chord (otherwise the router would find its route, review M1, ticket 117), and a port hinted for the routed L must own a source-aligned
+    // side lane (an exterior corridor gives three bends, ticket 119).
+    const failed = holds(trialLedger, trial7e, entry => entry.kind === 'sideFace' || entry.kind === 'laneOwner');
+    const chordLost = failed.filter(failure => failure.kind === 'sideFace');
     if (chordLost.length > 0) {
-      const own = chordLost.map(([key]) => key).filter(key => offer.hints.has(key));
+      const own = chordLost.map(failure => failure.key!).filter(key => offer.hints.has(key));
       refuse(own.length > 0 && own.length === chordLost.length ? own : offer.hints.keys(), all,
-        `a port hinted for a chord does not hold its chord at stage 7e (${[...new Set(chordLost.map(([, item]) => item.link))].join(', ')})`);
+        `a port hinted for a chord does not hold its chord at stage 7e (${[...new Set(chordLost.map(failure => failure.link))].join(', ')})`);
       continue;
     }
-    // A port hinted for the routed L must own a source-aligned side lane at the trial's 7e (ticket 119). Without one the router would find its route (an
-    // exterior corridor gives three bends), so the hint is refused before 7f.
-    const laneLost = [...new Map([...promised, ...offer.promised])].filter(([, item]) => item.shape === 'lane'
-      && !trial7e.lanes.some(lane => lane.kind === 'side' && lane.owner.kind === 'link' && lane.owner.id === item.link && lane.aligned === true));
+    const laneLost = failed.filter(failure => failure.kind === 'laneOwner');
     if (laneLost.length > 0) {
-      const own = laneLost.map(([key]) => key).filter(key => offer.hints.has(key));
+      const own = laneLost.map(failure => failure.key!).filter(key => offer.hints.has(key));
       refuse(own.length > 0 && own.length === laneLost.length ? own : offer.hints.keys(), all,
-        `a port hinted for a side lane has no source-aligned lane at stage 7e (${[...new Set(laneLost.map(([, item]) => item.link))].join(', ')})`);
+        `a port hinted for a side lane has no source-aligned lane at stage 7e (${[...new Set(laneLost.map(failure => failure.link))].join(', ')})`);
       continue;
     }
     const hintedLinks = new Map([...offer.promised.values()].map(item => [item.link, item.bends] as const));
@@ -606,7 +596,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     options.testSideTrace?.({ ev: 'trial', verdict, base, kept7e, trial7e, trial, routedBase, routedTrial, hinted: hintedLinks });
     options.testSideProbe?.({ offer, routedBase, routedTrial, verdict });
     // A kept course keeps its promise through the side round as well: a side trial that makes a course link publish more turns than it promised is refused.
-    const brokenPromise = verdict.kept ? [...keptPromises].filter(([id, turns]) => (routedBends(routedTrial).get(id) ?? Infinity) > turns).map(([id]) => id) : [];
+    const brokenPromise = verdict.kept ? holdsRouted(kept, routedTrial).map(failure => failure.link!) : [];
     if (brokenPromise.length > 0) { refuse(offer.hints.keys(), all, `a course link publishes more turns than it promised (${brokenPromise.join(', ')})`); break; }
     if (!verdict.kept) { refuse(offer.hints.keys(), all, verdict.reason); break; }
     // Kept: the trial is the baseline now. The notes name what the net count accepted.
@@ -652,12 +642,12 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
         }
         if (trial7e !== undefined && trial7e.fallbackUsed && !kept7e.fallbackUsed) { refuseTurns('ELK fell back during the turn trial'); trial7e = undefined; }
         // The offer was decided before any placement; this is left only when the measure and stage 5 disagree about a face. The placement is spent (no re-run is given back).
-        if (trial7e !== undefined && (trial7e.freeze?.turnOrder ?? []).length === 0) { refuseTurns('the turn order moved no face'); trial7e = undefined; }
+        if (trial7e !== undefined && holds(trialLedger, trial7e, entry => entry.kind === 'turnOrder').length > 0) { refuseTurns('the turn order moved no face'); trial7e = undefined; }
         if (trial7e !== undefined) {
           try {
             const trial = await timed('bands-trial', () => step('bands', () => bands(trial7e!, () => trialAbort('bands'), options.attemptTrace), true));
             const routedTrial = await routeModel(trial, true);
-            const verdict = judgeTurnTrial(current, routedTrial, keptPromises);
+            const verdict = judgeTurnTrial(current, routedTrial, promisedTurns(kept));
             options.testSideTrace?.({ ev: 'turn-trial', verdict, trial, routedTrial, routedBase: current });
             if (verdict.kept) {
               base = trial; kept7e = trial7e; routedFinal = routedTrial; kept = keptTurn;
@@ -719,7 +709,6 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
           const verdict = judgeOverlayTrial(current, routedTrial, overlayOffer);
           options.testSideTrace?.({ ev: 'overlay-trial', verdict, trial, routedTrial, routedBase: current });
           if (verdict.kept) {
-            for (const [id, item] of overlayOffer.promised) keptPromises.set(id, item.turns);
             base = trial; kept7e = trial7e; routedFinal = routedTrial; kept = trialLedger;
             for (const course of overlayOffer.courses) {
               const was = overlayOffer.promised.get(course.link)!;
@@ -759,10 +748,9 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   // With the setting on, the kept model is routed once more to publish: a judged route carries the ordinary overlay paths.
   const published = model.document.layout?.overlayOverBodies === true ? await routeModel(model, undefined, true) : routedFinal ?? routedBase ?? await routeModel(model);
   // A course that publishes more turns than its candidate promised is named; the promise is the polyline its own lane geometry reserved.
-  for (const [id, turns] of keptPromises) {
-    const link = published.links.find(item => item.id === id), got = link === undefined ? undefined : pathBends(link);
-    if (got === undefined || got > turns) lost.push({ stage: 'placement', severity: 'warning', code: 'COURSE_SHAPE_LOST', owners: [{ kind: 'link', id }],
-      message: `The link ${id} has ${got === undefined ? 'no route' : `${got} turns`} on its course, ${turns} were promised.` });
+  for (const failure of holdsRouted(kept, published)) {
+    lost.push({ stage: 'placement', severity: 'warning', code: 'COURSE_SHAPE_LOST', owners: [{ kind: 'link', id: failure.link! }],
+      message: `The link ${failure.link} has ${failure.got === undefined ? 'no route' : `${failure.got} turns`} on its course, ${failure.max} were promised.` });
   }
   lost.push(...turnMissed(published));
   // A hinted link of a kept trial has no more bends than on the baseline (the judgment tested it); this names a break of that rule.

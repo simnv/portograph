@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { courseEntries, coursesOf, declinedEntries, declineTrunk, declinedTrunksOf, DeclinedTrunks, laneKeysOf, laneOwners, nodeFloors, nodeFloorsOf, pitchFloors, pitchFloorsOf, portRefOf, reserve, validateReservations, sideFaces, sideHintsOf, spanEntries, spansOf, turnEntries, turnOf } from '../../src/layout/reservations.js';
+import { courseEntries, holds, holdsRouted, promisedTurns, coursesOf, declinedEntries, declineTrunk, declinedTrunksOf, DeclinedTrunks, laneKeysOf, laneOwners, nodeFloors, nodeFloorsOf, pitchFloors, pitchFloorsOf, portRefOf, reserve, validateReservations, sideFaces, sideHintsOf, spanEntries, spansOf, turnEntries, turnOf } from '../../src/layout/reservations.js';
 import { portKey } from '../../src/layout/sides-one.js';
 
 describe('reservation ledger', () => {
@@ -61,6 +61,35 @@ describe('reservation ledger', () => {
     expect(() => validateReservations(model(declineTrunk('k', 'blocked', 0)))).not.toThrow();
     expect(() => validateReservations(model(declineTrunk(undefined, 'the placement budget is spent', 0)))).not.toThrow();
     expect(() => validateReservations(model(declineTrunk('other', 'blocked', 0)))).toThrow(/no reservation declines it/);
+  });
+  it('fails a chord, a lane, a span and a turn order that 7e does not show, each with the port and link it concerns', () => {
+    const key = portKey({ node: 'n', name: 'p', ordinal: 1 });
+    const hints = new Map([[key, 'left' as const]]), promised = new Map([[key, { link: 'l', bends: 0, shape: 'straight' as const }]]);
+    const lanePromised = new Map([[key, { link: 'l', bends: 1, shape: 'lane' as const }]]);
+    const bare = { links: [{ id: 'l', layer: 'routed' }], lanes: [], freeze: { turnOrder: [] }, nodes: {} };
+    const chord = holds(sideFaces(hints, promised, 'side', 0), bare as never);
+    expect(chord.map(item => [item.kind, item.key, item.link])).toEqual([['sideFace', key, 'l']]);
+    expect(holds(sideFaces(hints, new Map(), 'side', 0), bare as never)).toEqual([]);
+    const lane = holds(laneOwners([key], hints, lanePromised, 'side', 0), bare as never);
+    expect(lane.map(item => [item.kind, item.key, item.link])).toEqual([['laneOwner', key, 'l']]);
+    const seated = { ...bare, lanes: [{ kind: 'side', owner: { kind: 'link', id: 'l' }, aligned: true }] };
+    expect(holds(laneOwners([key], hints, lanePromised, 'side', 0), seated as never)).toEqual([]);
+    expect(holds(spanEntries(['l', 'gone'], 'span', 0), bare as never, entry => entry.kind === 'spanChord' && entry.payload.link === 'gone').map(item => item.link)).toEqual(['gone']);
+    expect(holds(turnEntries(true, [], true, 'turn', 0), bare as never)).toHaveLength(1);
+    expect(holds(turnEntries(true, [], false, 'turn', 0), bare as never)).toEqual([]);
+    expect(holds(turnEntries(true, [], true, 'turn', 0), { ...bare, freeze: { turnOrder: [{ node: 'n', side: 'top' }] } } as never)).toEqual([]);
+  });
+  it('holds a kept course to the turns it promised on a routed model', () => {
+    const course = { link: 'l', kind: 'gap', from: { face: 'left' }, to: { face: 'right' }, runs: [] } as never;
+    const ledger = courseEntries([course], new Map([['l', 1]]), 'course', 0);
+    expect([...promisedTurns(ledger)]).toEqual([['l', 1]]);
+    const segment = (x0: number, y0: number, x1: number, y1: number): object => ({ from: { x: x0, y: y0 }, to: { x: x1, y: y1 } });
+    const routed = (segments: object[] | undefined): never => ({ links: [{ id: 'l', ...(segments === undefined ? {} : { path: { segments } }) }] }) as never;
+    expect(holdsRouted(ledger, routed([segment(0, 0, 10, 0), segment(10, 0, 10, 10)]))).toEqual([]);
+    const bent = holdsRouted(ledger, routed([segment(0, 0, 10, 0), segment(10, 0, 10, 10), segment(10, 10, 20, 10)]));
+    expect(bent.map(item => [item.link, item.got, item.max])).toEqual([['l', 2, 1]]);
+    expect(holdsRouted(ledger, routed(undefined)).map(item => item.got)).toEqual([undefined]);
+    expect(holdsRouted(courseEntries([course], undefined, 'course', 0), routed(undefined))).toEqual([]);
   });
   it('merges pitch and node floors by componentwise maximum and keeps declaration order', () => {
     const a = reserve([], pitchFloors(new Map([['n', { left: 10 }], ['m', { right: 4 }]]), 'fan', 0));
