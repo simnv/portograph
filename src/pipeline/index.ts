@@ -6,16 +6,14 @@
  * the previous stage published. What this file does own is the *budget*: one remainder shared by
  * the ELK attempts and the router, so a command cannot spend a fresh stage policy per attempt.
  */
-import type { Diagnostic, LayoutModel, NormalisedDocument, Size } from '../model/index.js';
-import { portKey } from '../layout/sides-one.js';
-import { PlacementRefusal, refusedAtBands } from '../layout/placement-refusal.js';
+import type { Diagnostic, LayoutModel, NormalisedDocument } from '../model/index.js';
 import { linkLabels } from '../layout/link-labels.js';
 import type { LayoutOptions } from './options.js';
 import { createEnv } from './env.js';
 import { FAN_ROUNDS, MAX_RERUNS, SIDE_ROUNDS } from './limits.js';
 import type { State } from './state.js';
 import { attempt } from './round.js';
-import { course, fan, noteDeclined, portName, side, span, turn } from './rounds.js';
+import { course, fan, noteDeclined, overlay, portName, side, span, turn } from './rounds.js';
 // After the stages: the modules below reach the centring module, whose import order the tests that mock it depend on.
 import { declinedFanDiagnostics, measureFans } from '../layout/fan-spread.js';
 import { chordClearances } from '../layout/frame-paths.js';
@@ -25,10 +23,10 @@ import { turnMissed } from '../layout/turn-order.js';
 import { measureSides } from '../layout/side-measure.js';
 import { routedBends } from '../layout/side-judge.js';
 import { PLACEMENT_EPS } from '../layout/tolerance.js';
-import { beats, gainOf, judgeOverlayTrial, measureOverlayCourses } from '../layout/course-measure.js';
+import { beats, gainOf, measureOverlayCourses } from '../layout/course-measure.js';
 import { roundLimit, turnReserve, turnRoundRuns } from '../layout/turn-measure.js';
 import { nodeFloors as floorEntries, reserve as addReservations, courseEntries, declinedTrunksOf, declineTrunk, sideFaces, sideHintsOf, spanEntries, turnEntries, type Reservations } from '../layout/reservations.js';
-import { holds, holdsRouted } from '../layout/reservation-checks.js';
+import { holdsRouted } from '../layout/reservation-checks.js';
 
 
 export { MAX_RERUNS, PlacementBudgetExceeded } from './limits.js';
@@ -154,61 +152,9 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   // It shares `MAX_RERUNS` with the other rounds and takes only a re-run they left (user, 2026-10-05: an extra re-run cost NTP +141 % and was refused there).
   // A refused trial leaves the layout as it was.
   if (options.testCourses === undefined && options.testOverlayCourses !== false) {
-    const current = s.routedFinal ?? s.routedBase ?? await env.route(s.base);
-    const overlayOffer = measureOverlayCourses(s.base, current);
-    options.testSideTrace?.({ ev: 'overlay-courses', offer: overlayOffer, base: s.base, routedBase: current });
-    if (overlayOffer.courses.length > 0 && s.reruns >= env.maxReruns) options.testSideTrace?.({ ev: 'overlay-skipped', offer: overlayOffer, reruns: s.reruns });
-    else if (overlayOffer.courses.length > 0) {
-      const nodeFloors = new Map<string, Size>();
-      for (const key of sideHintsOf(s.kept).keys()) {
-        const [node] = JSON.parse(key) as [string];
-        const size = env.stage3Sizes.get(s.kept7e)?.get(node);
-        if (size !== undefined) nodeFloors.set(node, { ...size });
-      }
-      // A node whose overlay end changes face keeps its size (P9): the capacity estimate of the face it leaves must not re-size it.
-      for (const course of overlayOffer.courses) {
-        const link = s.kept7e.links.find(item => item.id === course.link)!;
-        for (const which of ['from', 'to'] as const) {
-          const size = env.stage3Sizes.get(s.kept7e)?.get(link.attachments![which].node);
-          if (size !== undefined && course[which].face !== s.kept7e.nodes[link.attachments![which].node]!.ports.find(port => portKey(port.ref) === portKey(link.attachments![which]))?.side) nodeFloors.set(link.attachments![which].node, { ...size });
-        }
-      }
-      const names = overlayOffer.courses.map(course => course.link);
-      const refuseOverlays = (why: string): void => { options.testSideTrace?.({ ev: 'overlay-refused', links: names, why }); };
-      let trial7e: LayoutModel | undefined;
-      s.reruns++;
-      const trialLedger = addReservations(s.kept, [...floorEntries(nodeFloors, 'overlay', env.placements),
-        ...courseEntries(overlayOffer.courses, new Map([...overlayOffer.promised].map(([id, item]) => [id, item.turns] as const)), 'overlay', env.placements)]);
-      try { trial7e = await env.timed('rerun-overlay', () => env.place(trialLedger, env.trialAbort)); } catch (error) {
-        if (!(error instanceof PlacementRefusal) || error.code === 'budget') throw error;
-        refuseOverlays(`the placement run rejected them (${error.message})`);
-      }
-      if (trial7e !== undefined && trial7e.fallbackUsed && !s.kept7e.fallbackUsed) { refuseOverlays('ELK fell back during the overlay trial'); trial7e = undefined; }
-      const overlayBroken = trial7e === undefined ? [] : holds(trialLedger, trial7e);
-      if (overlayBroken.length > 0) { refuseOverlays(`a reservation does not hold at stage 7e (${overlayBroken[0]!.why})`); trial7e = undefined; }
-      if (trial7e !== undefined) {
-        try {
-          const trial = (await env.bands(trial7e!, true)).model;
-          const routedTrial = await env.route(trial, true);
-          const verdict = judgeOverlayTrial(current, routedTrial, overlayOffer);
-          options.testSideTrace?.({ ev: 'overlay-trial', verdict, trial, routedTrial, routedBase: current });
-          // The overlay judge reads the overlay links only; a course kept earlier keeps its promise through this trial too.
-          const overlayLost = verdict.kept ? holdsRouted(s.kept, routedTrial) : [];
-          if (overlayLost.length > 0) refuseOverlays(`a kept course publishes more turns than it promised (${overlayLost.map(failure => failure.link).join(', ')})`);
-          else if (verdict.kept) {
-            s.base = trial; s.kept7e = trial7e; s.routedFinal = routedTrial; s.kept = trialLedger;
-            for (const course of overlayOffer.courses) {
-              const was = overlayOffer.promised.get(course.link)!;
-              s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'COURSE_TAKEN', owners: [{ kind: 'link', id: course.link }],
-                message: `The overlay link ${course.link} takes a course round the outside: ${was.turns} turns promised, ${was.base} on the baseline.` });
-            }
-          } else refuseOverlays(verdict.reason);
-        } catch (error) {
-          if (!refusedAtBands(error)) throw error;
-          refuseOverlays(`stage 7f rejected them (${error.message})`);
-        }
-      }
-    }
+    const offer = await overlay.measure(env, s);
+    if (offer !== undefined && s.reruns >= env.maxReruns) options.testSideTrace?.({ ev: 'overlay-skipped', offer: offer.offer, reruns: s.reruns });
+    else if (offer !== undefined) await attempt(env, s, overlay, offer);
   }
   for (const [key, item] of s.promised) {
     const side = sideHintsOf(s.kept).get(key);

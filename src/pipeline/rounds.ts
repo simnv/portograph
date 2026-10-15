@@ -12,7 +12,7 @@ import { freezeRefusal } from '../layout/frame-paths.js';
 import { transitTiers } from '../layout/lanes.js';
 import { measureSpans } from '../layout/span-measure.js';
 import { judgeSpanTrial } from '../layout/span-judge.js';
-import { judgeCourseTrial, measureCourses } from '../layout/course-measure.js';
+import { judgeCourseTrial, judgeOverlayTrial, measureCourses, measureOverlayCourses } from '../layout/course-measure.js';
 import { measureSides, refusedKey, type SideOffer } from '../layout/side-measure.js';
 import { judgeTrial, predictedWorse, predictPublished, trialNotes } from '../layout/side-judge.js';
 import { bands } from '../layout/bands.js';
@@ -400,5 +400,54 @@ export const turn: Round<TurnOffer> = {
     const why = r.at === 'place' ? `the placement run rejected it (${r.why})` : r.at === 'fallback' ? 'ELK fell back during the turn trial'
       : r.at === 'bands' ? `stage 7f rejected it (${r.why})` : r.why;
     env.options.testSideTrace?.({ ev: 'turn-refused', faces: o.offer.faces.map(face => `${face.node}.${face.side}`), why });
+  },
+};
+
+type OverlayOffer = { offer: ReturnType<typeof measureOverlayCourses>; current: LayoutModel };
+/**
+ * The overlay round (ticket 15, phase 7; the user's decision on Q1). After the routed rounds, on their kept result: an overlay that a routed chord would not take is offered a
+ * perimeter course on side faces, reserved in stage 5 of one more placement run and kept only when its published result is not worse by the unified order. A refused trial
+ * leaves the layout as it was.
+ */
+export const overlay: Round<OverlayOffer> = {
+  id: 'overlay', label: 'rerun-overlay', routed: true, abort: true,
+  tolerates: (error, phase) => phase === 'place' ? error instanceof PlacementRefusal && error.code !== 'budget' : refusedAtBands(error),
+  async measure(env, s) {
+    const current = s.routedFinal ?? s.routedBase ?? await env.route(s.base);
+    const offer = measureOverlayCourses(s.base, current);
+    env.options.testSideTrace?.({ ev: 'overlay-courses', offer, base: s.base, routedBase: current });
+    return offer.courses.length === 0 ? undefined : { offer, current };
+  },
+  reserve(env, s, o) {
+    const nodeFloors = keptFloors(env, s);
+    // A node whose overlay end changes face keeps its size (P9): the capacity estimate of the face it leaves must not re-size it.
+    pinMovedEnds(env, s, nodeFloors, o.offer.courses, false);
+    return addReservations(s.kept, [...floorEntries(nodeFloors, 'overlay', env.placements),
+      ...courseEntries(o.offer.courses, promisedTurnsOf(o.offer.promised), 'overlay', env.placements)]);
+  },
+  holdsAt7e(_env, _s, _o, ledger, trial7e) {
+    const broken = holds(ledger, trial7e);
+    return broken.length > 0 ? { at: 'ledger', why: `a reservation does not hold at stage 7e (${broken[0]!.why})` } : undefined;
+  },
+  judge(env, s, o, t) {
+    const verdict = judgeOverlayTrial(o.current, t.routedTrial, o.offer);
+    env.options.testSideTrace?.({ ev: 'overlay-trial', verdict, trial: t.trial, routedTrial: t.routedTrial, routedBase: o.current });
+    // The overlay judge reads the overlay links only; a course kept earlier keeps its promise through this trial too.
+    const lost = verdict.kept ? holdsRouted(s.kept, t.routedTrial) : [];
+    if (lost.length > 0) return { at: 'promise', why: `a kept course publishes more turns than it promised (${lost.map(failure => failure.link).join(', ')})` };
+    return verdict.kept ? undefined : { at: 'verdict', why: verdict.reason };
+  },
+  commit(_env, s, o, t) {
+    s.base = t.trial; s.kept7e = t.trial7e; s.routedFinal = t.routedTrial; s.kept = t.ledger;
+    for (const item of o.offer.courses) {
+      const was = o.offer.promised.get(item.link)!;
+      s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'COURSE_TAKEN', owners: [{ kind: 'link', id: item.link }],
+        message: `The overlay link ${item.link} takes a course round the outside: ${was.turns} turns promised, ${was.base} on the baseline.` });
+    }
+  },
+  refuse(env, _s, o, r) {
+    const why = r.at === 'place' ? `the placement run rejected them (${r.why})` : r.at === 'fallback' ? 'ELK fell back during the overlay trial'
+      : r.at === 'bands' ? `stage 7f rejected them (${r.why})` : r.why;
+    env.options.testSideTrace?.({ ev: 'overlay-refused', links: o.offer.courses.map(item => item.link), why });
   },
 };
