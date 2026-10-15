@@ -1,0 +1,269 @@
+/**
+ * The reservation ledger (architecture 2, ticket 03): what placement is told to keep, as one immutable value.
+ *
+ * Before the ledger a hint was a wish. Each round offered it through one of eight `place()` channels, placement ran again, and the
+ * result was guarded after the fact. The load-bearing rule of the pipeline says nothing may be discovered in routing that could have been
+ * reserved in placement; the ledger makes that rule explicit. A reservation is plain JSON data (it lives on the model, which requires
+ * plain JSON), and every predicate that judges one is code in this file, outside the model.
+ */
+import type { Course, LayoutModel, LayoutStage, Owner, PortRef, Side, Size } from '../model/index.js';
+import { portKey } from './sides-one.js';
+import { isRoutedChord } from './frame-paths.js';
+
+export type RoundId = 'initial' | 'fan' | 'span' | 'course' | 'side' | 'turn' | 'overlay';
+/** A model owner, or the command (a reservation no single element owns: the turn order of every face, a budget decline of every trunk). */
+export type ReservationOwner = Owner | { kind: 'command'; id: string };
+
+export interface ReservationPayload {
+  /** A fan of chords needs this port pitch on a face (ticket 89). */
+  pitchFloor: { node: string; side: Side; min: number };
+  /** A hinted or course node keeps the size a measured run gave it (side-faces.md, Section 8). */
+  nodeFloor: { node: string; min: Size };
+  /** A lateral port takes `side`; `promise` is the routed shape the face was offered for. */
+  sideFace: { port: PortRef; side: 'left' | 'right'; promise?: { link: string; shape: 'straight' | 'L'; bends: number } };
+  /** The port's link owns a source-aligned side lane. */
+  laneOwner: { port: PortRef; side: 'left' | 'right'; link: string; bends: 1 };
+  /** A planned course; `maxTurns` is the turn count it promised. */
+  course: { course: Course; maxTurns?: number };
+  /** The link is a spanning chord. */
+  spanChord: { link: string };
+  /** Stage 5 orders the ports of a face by the planned first turn of their links. */
+  turnOrder: { scope: { all: true } | { links: readonly string[] }; requireChanged: boolean };
+  /** A trunk join (or every trunk join) that placement declines. */
+  trunkDeclined: { scope: { all: true } | { key: string }; reason: string };
+  riserKeepOut: { bus: string; maxDepth: readonly (readonly [string, number])[] };
+  trunkExtension: { head: string; allowedPairs: readonly string[] };
+  laneSide: { lane: string; groups: readonly (readonly [string, 'left' | 'right'])[]; frameReach: readonly (readonly [string, number])[]; chords: readonly string[] };
+  sideAlignment: { lane: string; far: PortRef };
+  spanCorridor: { link: string; allowedBreaches: readonly string[] };
+}
+export type ReservationKind = keyof ReservationPayload;
+
+export type Reservation = { [K in ReservationKind]: Readonly<{
+  id: string;
+  kind: K;
+  owner: ReservationOwner;
+  producer: RoundId | 'lanes' | 'bands';
+  /** The measured baseline the reservation was made on: the number of placements the command had started. */
+  revision: number;
+  activeFrom: LayoutStage;
+  payload: ReservationPayload[K];
+}> }[ReservationKind];
+export type Reservations = readonly Reservation[];
+export type ReservationOf<K extends ReservationKind> = Extract<Reservation, { kind: K }>;
+
+/** A typed failure of one reservation against a model. */
+export interface ReservationFailure { id: string; kind: ReservationKind; why: string }
+
+export const NO_RESERVATIONS: Reservations = [];
+
+const ownerKey = (owner: ReservationOwner): string => 'node' in owner ? `${owner.kind}:${owner.node}:${owner.link}` : `${owner.kind}:${owner.id}`;
+const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+const ACTIVE_FROM: Record<ReservationKind, LayoutStage> = {
+  pitchFloor: 'size', nodeFloor: 'size', sideFace: 'sides-one', laneOwner: 'sides-one', course: 'sides-one', spanChord: 'resolve',
+  turnOrder: 'sides-two', trunkDeclined: 'resolve', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes',
+};
+
+/** One reservation. The id is `(kind, owner, detail)`; `detail` names the port, side or scope that tells two of one owner apart. */
+export function reservation<K extends ReservationKind>(kind: K, owner: ReservationOwner, detail: string, producer: Reservation['producer'], revision: number,
+  payload: ReservationPayload[K]): ReservationOf<K> {
+  return { id: `${kind}:${ownerKey(owner)}:${detail}`, kind, owner, producer, revision, activeFrom: ACTIVE_FROM[kind], payload: clone(payload) } as unknown as ReservationOf<K>;
+}
+
+const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * The ledger with `entries` added, in declaration order. Floors merge by componentwise maximum, spans, turn links and declines by union; a
+ * course that names the same link twice must agree. An entry for an id the ledger has merges into it, so reserving twice reserves once.
+ */
+export function reserve(ledger: Reservations, entries: Reservations): Reservations {
+  const result: Reservation[] = [...ledger];
+  for (const entry of entries) {
+    const at = result.findIndex(item => item.id === entry.id);
+    if (at < 0) { result.push(entry); continue; }
+    const old = result[at]!;
+    if (old.kind === 'pitchFloor' && entry.kind === 'pitchFloor') {
+      if (entry.payload.min > old.payload.min) result[at] = { ...old, revision: entry.revision, producer: entry.producer, payload: { ...old.payload, min: entry.payload.min } };
+    } else if (old.kind === 'nodeFloor' && entry.kind === 'nodeFloor') {
+      const min = { width: Math.max(old.payload.min.width, entry.payload.min.width), height: Math.max(old.payload.min.height, entry.payload.min.height) };
+      if (!same(min, old.payload.min)) result[at] = { ...old, revision: entry.revision, producer: entry.producer, payload: { ...old.payload, min } };
+    } else if (old.kind === 'sideFace' && entry.kind === 'sideFace') {
+      if (old.payload.side !== entry.payload.side) throw new Error(`Reservation ${entry.id} asks for the side ${entry.payload.side}, and the ledger holds ${old.payload.side}`);
+      if (old.payload.promise === undefined && entry.payload.promise !== undefined) result[at] = { ...old, payload: { ...old.payload, promise: entry.payload.promise } };
+    } else if (old.kind === 'course' && entry.kind === 'course') {
+      if (!same(old.payload.course, entry.payload.course)) throw new Error(`Reservation ${entry.id} conflicts with a course the ledger holds`);
+    } else if (old.kind === 'turnOrder' && entry.kind === 'turnOrder') {
+      if ('links' in old.payload.scope && 'links' in entry.payload.scope) {
+        const links = [...new Set([...old.payload.scope.links, ...entry.payload.scope.links])];
+        result[at] = { ...old, payload: { scope: { links }, requireChanged: old.payload.requireChanged || entry.payload.requireChanged } };
+      } else if (entry.payload.requireChanged && !old.payload.requireChanged) result[at] = { ...old, payload: { ...old.payload, requireChanged: true } };
+    }
+    // Every other kind is idempotent: the first entry stands.
+  }
+  return result;
+}
+
+/** The entries of one kind, in declaration order. */
+export function ofKind<K extends ReservationKind>(ledger: Reservations, kind: K): ReservationOf<K>[] {
+  return ledger.filter((item): item is ReservationOf<K> => item.kind === kind);
+}
+
+// ---- Readers: the inputs placement derives from a ledger. -------------------------------------------------------------------------
+
+/** The port pitch each face needs, per node. */
+export function pitchFloorsOf(ledger: Reservations): Map<string, Partial<Record<Side, number>>> {
+  const floors = new Map<string, Partial<Record<Side, number>>>();
+  for (const { payload } of ofKind(ledger, 'pitchFloor')) floors.set(payload.node, { ...floors.get(payload.node), [payload.side]: payload.min });
+  return floors;
+}
+/** The pitch entries of a floor map, for `reserve`: one per node and side. */
+export function pitchFloors(floors: ReadonlyMap<string, Partial<Record<Side, number>>>, producer: RoundId, revision: number): Reservations {
+  return [...floors].flatMap(([node, pitch]) => (Object.entries(pitch) as [Side, number][]).map(([side, min]) =>
+    reservation('pitchFloor', { kind: 'node', id: node }, side, producer, revision, { node, side, min })));
+}
+
+/** The node size floors, per node. */
+export function nodeFloorsOf(ledger: Reservations): Map<string, Size> {
+  return new Map(ofKind(ledger, 'nodeFloor').map(({ payload }) => [payload.node, { ...payload.min }] as const));
+}
+export function nodeFloors(floors: ReadonlyMap<string, Size>, producer: RoundId, revision: number): Reservations {
+  return [...floors].map(([node, min]) => reservation('nodeFloor', { kind: 'node', id: node }, '', producer, revision, { node, min }));
+}
+
+/** `[node, anonymous, name, ordinal]` back to the reference `portKey` made it from. */
+export function portRefOf(key: string): PortRef {
+  const [node, anonymous, name, ordinal] = JSON.parse(key) as [string, boolean, string | null, number];
+  return (anonymous ? { node, anonymous: true, ordinal } : { node, name: name as string, ordinal }) as PortRef;
+}
+
+/** The lateral side each hinted port takes, by `portKey`, in declaration order. */
+export function sideHintsOf(ledger: Reservations): Map<string, 'left' | 'right'> {
+  return new Map(ofKind(ledger, 'sideFace').map(({ payload }) => [portKey(payload.port), payload.side] as const));
+}
+/** The ports whose link owns a source-aligned side lane, by `portKey`. */
+export function laneKeysOf(ledger: Reservations): Set<string> {
+  return new Set(ofKind(ledger, 'laneOwner').map(({ payload }) => portKey(payload.port)));
+}
+/** The hint entries for `hints`; `promised` gives a key the shape its link was offered for. */
+export function sideFaces(hints: ReadonlyMap<string, 'left' | 'right'>,
+  promised: ReadonlyMap<string, { link: string; bends: number; shape: 'straight' | 'L' | 'lane' }>, producer: RoundId, revision: number): Reservations {
+  return [...hints].map(([key, side]) => {
+    const port = portRefOf(key), item = promised.get(key);
+    const promise = item === undefined || item.shape === 'lane' ? undefined : { link: item.link, shape: item.shape, bends: item.bends };
+    return reservation('sideFace', { kind: 'node', id: port.node }, key, producer, revision, { port, side, ...(promise === undefined ? {} : { promise }) });
+  });
+}
+export function laneOwners(keys: Iterable<string>, hints: ReadonlyMap<string, 'left' | 'right'>,
+  promised: ReadonlyMap<string, { link: string; bends: number; shape: 'straight' | 'L' | 'lane' }>, producer: RoundId, revision: number): Reservations {
+  const entries: Reservation[] = [];
+  for (const key of keys) {
+    const item = promised.get(key), side = hints.get(key), port = portRefOf(key);
+    if (item === undefined || side === undefined) throw new Error(`A lane on ${key} has no hint or no promised link`);
+    entries.push(reservation('laneOwner', { kind: 'link', id: item.link }, key, producer, revision, { port, side, link: item.link, bends: 1 }));
+  }
+  return entries;
+}
+
+/** The courses every placement run reserves, in declaration order. */
+export function coursesOf(ledger: Reservations): Course[] {
+  return ofKind(ledger, 'course').map(({ payload }) => clone(payload.course));
+}
+export function courseEntries(courses: readonly Course[], promised: ReadonlyMap<string, number> | undefined, producer: RoundId, revision: number): Reservations {
+  return courses.map(course => reservation('course', { kind: 'link', id: course.link }, '', producer, revision,
+    { course, ...(promised?.has(course.link) ? { maxTurns: promised.get(course.link)! } : {}) }));
+}
+
+/** The links that are reserved as spanning chords. */
+export function spansOf(ledger: Reservations): Set<string> {
+  return new Set(ofKind(ledger, 'spanChord').map(({ payload }) => payload.link));
+}
+export function spanEntries(links: Iterable<string>, producer: RoundId, revision: number): Reservations {
+  return [...links].map(link => reservation('spanChord', { kind: 'link', id: link }, '', producer, revision, { link }));
+}
+
+/** Whether every face takes the turn order, and the links whose faces take it when not every face does. */
+export function turnOf(ledger: Reservations): { all: boolean; links: string[]; requireChanged: boolean } {
+  let all = false, requireChanged = false;
+  const links: string[] = [];
+  for (const { payload } of ofKind(ledger, 'turnOrder')) {
+    if ('all' in payload.scope) all = true; else for (const id of payload.scope.links) if (!links.includes(id)) links.push(id);
+    requireChanged ||= payload.requireChanged;
+  }
+  return { all, links, requireChanged };
+}
+export function turnEntries(turn: boolean, links: readonly string[], requireChanged: boolean, producer: RoundId, revision: number): Reservations {
+  const command = { kind: 'command' as const, id: 'turn-order' };
+  return [
+    ...(turn ? [reservation('turnOrder', command, 'all', producer, revision, { scope: { all: true }, requireChanged })] : []),
+    ...(links.length > 0 ? [reservation('turnOrder', command, 'links', producer, revision, { scope: { links: [...links] }, requireChanged: false })] : []),
+  ];
+}
+
+/** The trunk joins that the next run resolves with declined. With `all` set (the budget is spent) every trunk reads as declined. */
+export class DeclinedTrunks extends Map<string, string> {
+  all = false;
+  allReason = 'the placement budget is spent';
+  override get(key: string): string | undefined { return super.get(key) ?? (this.all ? this.allReason : undefined); }
+}
+export function declinedTrunksOf(ledger: Reservations): DeclinedTrunks {
+  const declined = new DeclinedTrunks();
+  for (const { payload } of ofKind(ledger, 'trunkDeclined')) {
+    if ('all' in payload.scope) { declined.all = true; declined.allReason = payload.reason; } else declined.set(payload.scope.key, payload.reason);
+  }
+  return declined;
+}
+export function declinedEntries(declined: DeclinedTrunks, revision: number): Reservations {
+  const owner = { kind: 'command' as const, id: 'trunk-declines' };
+  return [
+    ...[...declined].map(([key, reason]) => reservation('trunkDeclined', { kind: 'mesh-bus', id: key }, key, 'initial', revision, { scope: { key }, reason })),
+    ...(declined.all ? [reservation('trunkDeclined', owner, 'all', 'initial', revision, { scope: { all: true }, reason: declined.allReason })] : []),
+  ];
+}
+
+// ---- Predicates and validators ---------------------------------------------------------------------------------------------------
+
+/** The failures of the reservations that a 7e model can show. The checks of the kinds the ledger has taken over are added with each channel. */
+export function holds(ledger: Reservations, model: LayoutModel): ReservationFailure[] {
+  const failures: ReservationFailure[] = [];
+  for (const item of ledger) {
+    const why = holdsOne(item, model);
+    if (why !== undefined) failures.push({ id: item.id, kind: item.kind, why });
+  }
+  return failures;
+}
+
+function holdsOne(item: Reservation, model: LayoutModel): string | undefined {
+  switch (item.kind) {
+    case 'pitchFloor': {
+      const have = model.nodes[item.payload.node]?.sidePitch?.[item.payload.side];
+      return have !== undefined && have >= item.payload.min ? undefined : `the ${item.payload.side} pitch of ${item.payload.node} is under ${item.payload.min}`;
+    }
+    case 'nodeFloor': {
+      const size = model.nodes[item.payload.node]?.size;
+      return size !== undefined && size.width >= item.payload.min.width && size.height >= item.payload.min.height ? undefined : `${item.payload.node} is smaller than its floor`;
+    }
+    case 'spanChord': {
+      const link = model.links.find(other => other.id === item.payload.link);
+      return link !== undefined && isRoutedChord(model, link) ? undefined : `${item.payload.link} does not hold a routed chord`;
+    }
+    default: return undefined;
+  }
+}
+
+/**
+ * A restored layout must carry a ledger that agrees with what the model records. Each channel checks its own kind against the field it
+ * stands behind; a ledger entry the model does not show, or a model field no entry explains, is a layout the pipeline did not publish.
+ */
+export function validateReservations(model: LayoutModel): void {
+  const ledger = model.reservations ?? [];
+  if (!Array.isArray(ledger)) throw new Error('Reservations must be a list');
+  const ids = new Set<string>();
+  for (const entry of ledger) {
+    const item = entry as unknown as { id?: unknown; kind?: unknown; activeFrom?: unknown; revision?: unknown } | null;
+    if (typeof item !== 'object' || item === null || typeof item.id !== 'string' || typeof item.kind !== 'string' || !Object.hasOwn(ACTIVE_FROM, item.kind)) throw new Error('A reservation is malformed');
+    if (ids.has(item.id)) throw new Error(`Reservation ${item.id} is held twice`);
+    ids.add(item.id);
+    if (item.activeFrom !== ACTIVE_FROM[item.kind as ReservationKind]) throw new Error(`Reservation ${item.id} is active from the wrong stage`);
+    if (!Number.isInteger(item.revision) || (item.revision as number) < 0) throw new Error(`Reservation ${item.id} has no revision`);
+  }
+}
