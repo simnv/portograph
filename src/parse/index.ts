@@ -60,11 +60,11 @@ function groups(input: Map<string, unknown>, doc: NormalisedDocument, v: Validat
     if (fields.has('shape')) {
       const shape = v.choice(fields.get('shape'), ['ranked', 'row', 'bar', 'grid', 'ring', 'free'], `${path}.shape`);
       if (shape === 'ranked' || shape === 'row' || shape === 'bar' || shape === 'grid') content.shape = shape;
-      else if (shape !== undefined) v.report('UNSUPPORTED_SHAPE', `${path}.shape`, `M1 does not support ${shape} groups`);
+      else if (shape !== undefined) v.report('UNSUPPORTED_SHAPE', `${path}.shape`, `${shape} groups are not supported`);
     }
     if (fields.has('collapsed')) {
       if (typeof fields.get('collapsed') !== 'boolean') v.report('INVALID_TYPE', `${path}.collapsed`, 'Expected a boolean');
-      else v.report('COLLAPSED_UNSUPPORTED', `${path}.collapsed`, 'M1 ignores collapsed', 'warning', 'model');
+      else v.report('COLLAPSED_UNSUPPORTED', `${path}.collapsed`, 'collapsed is ignored', 'warning', 'model');
     }
     if (fields.has('layout')) {
       const layout: Record<string, string | number | boolean> = {};
@@ -372,7 +372,7 @@ export function parseWithDiagnostics(text: string, options: ParseOptions = {}): 
   if (root.get('portograph') !== 2) v.report('VERSION', '$.portograph', 'portograph: 2 is required');
   if (root.has('profile')) {
     const profile = v.string(root.get('profile'), '$.profile');
-    if (profile !== undefined && profile !== 'network') v.report('UNSUPPORTED_PROFILE', '$.profile', `M1 does not support profile ${profile}`);
+    if (profile !== undefined && profile !== 'network') v.report('UNSUPPORTED_PROFILE', '$.profile', `Profile ${profile} is not supported; use network`);
   }
   const doc: NormalisedDocument = { portograph: 2, profile: 'network', groups: {}, nodes: {}, links: [] };
   optionalStrings(root, doc, ['title'], '$', v);

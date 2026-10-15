@@ -8,7 +8,7 @@ import type { LayoutGroup, LayoutModel, LayoutNode, LayoutPort } from './layout.
  * them (stress ticket 23) — so naming a layer here would be wrong for an overlay set.
  */
 export function unsupportedMessage(technique: 'stub' | 'group-link'): string {
-  return technique === 'stub' ? 'M1 falls back to routed for stub' : 'M1 draws the members for group-link';
+  return technique === 'stub' ? 'A stub link is drawn as a routed link' : 'A group-link is drawn as its member links';
 }
 
 function serialize(value: unknown): string {

@@ -175,7 +175,7 @@ export function crossBundleFans(model: LayoutModel): void {
   const { cohorts, excluded } = fanCohorts(model);
   for (const { port, link } of excluded) {
     placementWarning(model, 'FAN_MEMBER_UNRESERVED',
-      `${link.id} keeps a path an earlier rule fixed, so the shared stem at ${port.ref.node}.${port.ref.name ?? '*'} does not cover it; its own stem overlaps the tree root (ticket 37).`,
+      `${link.id} keeps a path an earlier rule fixed, so the shared stem at ${port.ref.node}.${port.ref.name ?? '*'} does not cover it; its own stem overlaps the tree root.`,
       [link.id]);
   }
   for (const { port, links } of cohorts) {
@@ -369,7 +369,7 @@ export function crossBundleFans(model: LayoutModel): void {
     const release = (item: typeof items[number]): void => placementWarning(model, 'FAN_BRANCH_UNRESERVED',
       `${item.link.id} keeps only the shared stem at ${port.ref.node}.${port.ref.name ?? '*'}: a branch to `
       + `${item.far.ref.node}.${item.far.ref.name ?? '*'} would hand over beyond that port's own approach, `
-      + 'and stage 8 would come back along the reserved run (ticket 48).', [item.link.id]);
+      + 'and the router would come back along the reserved run.', [item.link.id]);
     let active = [...ordered], cursor = { ...port.anchor! }, parent: string | undefined, depth = 0;
     let peeled: number | undefined;
     const paths = new Map(items.map(item => [item.link.id, [] as PathSegment[]]));
@@ -513,7 +513,7 @@ function releaseHemmedFans(model: LayoutModel): void {
     if (!foreign) continue;
     release.add(`${item.link.id}:${item.end}`);
     placementWarning(model, 'FAN_BRANCH_THROUGH_GROUP',
-      `${item.link.id}'s reserved branch would fail a gate at the group ${foreign.id}; it keeps its shared stem and stage 8 routes the rest (ticket 99).`, [item.link.id]);
+      `${item.link.id}'s reserved branch would fail a gate at the group ${foreign.id}; it keeps its shared stem and the router routes the rest.`, [item.link.id]);
   }
   for (const link of model.links) {
     // Stage 8 approaches a port only for a link it routes, and `planRoute` passes over every link
@@ -548,7 +548,7 @@ function releaseHemmedFans(model: LayoutModel): void {
         for (const own of ['from', 'to'] as const) release.add(`${link.id}:${own}`);
         placementWarning(model, 'FAN_BRANCH_HEMMED',
           `${branch.link.id}'s reserved branch closes the approach to ${ref.node}.${ref.name ?? '*'}; `
-          + 'both keep their shared stems and stage 8 routes the rest (ticket 46).', [branch.link.id, link.id]);
+          + 'both keep their shared stems and the router routes the rest.', [branch.link.id, link.id]);
       }
     }
   }

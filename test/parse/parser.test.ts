@@ -351,3 +351,12 @@ describe('source locations', () => {
     }
   });
 });
+
+describe('user-facing messages', () => {
+  it('use no milestone, ticket or stage words', () => {
+    const text = stringify({ portograph: 2, profile: 'architecture', groups: { g: { tier: 0, collapsed: true }, h: { shape: 'ring' } }, nodes: { a: { group: 'g' }, b: { group: 'g' } }, links: [['a', 'b', { route: 'stub' }], ['a', 'b', { route: 'group-link' }]] });
+    const result = parseWithDiagnostics(text);
+    expect(result.diagnostics.length).toBeGreaterThanOrEqual(4);
+    for (const d of result.diagnostics) expect(d.message, d.code).not.toMatch(/\bM\d\b|ticket|\bstage\b|\b\d[a-g]\b/i);
+  });
+});

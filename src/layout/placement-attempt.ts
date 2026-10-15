@@ -311,7 +311,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
   // The chord is kept, its link is named, and the final gates judge it; it never falls back (ticket 34).
   for (const id of blockedChords(draft)) {
     draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'STRAIGHT_LINK_BLOCKED',
-      message: `A body stands on the straight link ${id} that 7f could not move.`, owners: [{ kind: 'link', id }] });
+      message: `A body stands on the straight link ${id} that placement could not move.`, owners: [{ kind: 'link', id }] });
   }
   // The side lanes' findings are read once, after the 7f settle loop, on the final geometry (side-faces.md, Sections 10 and 11).
   draft.diagnostics = draft.diagnostics.filter(item => !['SIDE_SHAPE_LOST', 'SIDE_LANE_INSIDE_FRAME', 'SIDE_LANE_NOT_OUTERMOST'].includes(item.code));
@@ -322,7 +322,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
   // frame by a side edge, or inside the 10 px corner margin, is named (reason `edge`); the gates judge it.
   for (const id of edgeLeavers(draft)) {
     draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'STRAIGHT_LINK_EDGE',
-      message: `The straight link ${id} leaves its frame by a side edge or inside the corner margin after 7f (edge).`, owners: [{ kind: 'link', id }] });
+      message: `The straight link ${id} leaves its frame by a side edge or inside the corner margin after placement.`, owners: [{ kind: 'link', id }] });
   }
   note('diagnostics', 'done');
 }

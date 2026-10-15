@@ -81,7 +81,7 @@ const OPTIONS: Record<string, OptionSpec> = {
   '--layers': { verbs: ['render'], value: true, summary: 'Draw only these link families: routed, overlay (comma separated)' },
   '--format': { verbs: ['render'], value: true, summary: 'Primary artifact format: svg (default) or drawio' },
   '--theme': { verbs: ['render'], value: true, summary: 'draw.io palette: auto (default, light and dark in one file), light, dark or print' },
-  '--labels': { verbs: ['render'], value: true, summary: 'draw.io link labels: on-run (default) or measured, the box stage 9 placed' },
+  '--labels': { verbs: ['render'], value: true, summary: 'draw.io link labels: on-run (default) or measured, the box the layout placed' },
   '--icons': { verbs: ['render'], value: true, summary: "draw.io glyphs: cisco19 (default), draw.io's own Cisco shapes, which follow its dark appearance, or profile, an embedded image that cannot" },
 };
 
@@ -210,7 +210,7 @@ export function parseCommand(verb: Verb, args: readonly string[]): Command {
   const theme = values.get('--theme');
   const labels = values.get('--labels');
   if (labels !== undefined && (format === undefined || parseFormat(format) === 'svg')) {
-    throw new UsageError('--labels applies to --format drawio; an SVG draws the label box stage 9 measured');
+    throw new UsageError('--labels applies to --format drawio; an SVG draws the label box the layout measured');
   }
   const icons = values.get('--icons');
   if (icons !== undefined && (format === undefined || parseFormat(format) === 'svg')) {
