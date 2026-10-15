@@ -12,16 +12,15 @@ import { endMode } from '../layout/course-rows.js';
 import { PlacementRefusal, refusedAtBands } from '../layout/placement-refusal.js';
 import { bands } from '../layout/bands.js';
 import { linkLabels } from '../layout/link-labels.js';
-import { CommandDeadlineError } from './budget.js';
 import type { LayoutOptions } from './options.js';
 import { createEnv } from './env.js';
 import { FAN_ROUNDS, MAX_RERUNS, SIDE_ROUNDS } from './limits.js';
 import type { State } from './state.js';
 import { attempt } from './round.js';
-import { fan } from './rounds.js';
+import { fan, span } from './rounds.js';
 // After the stages: the modules below reach the centring module, whose import order the tests that mock it depend on.
-import { declinedFanDiagnostics, fanRoundHolds, measureFans } from '../layout/fan-spread.js';
-import { chordClearances, freezeRefusal } from '../layout/frame-paths.js';
+import { declinedFanDiagnostics, measureFans } from '../layout/fan-spread.js';
+import { chordClearances } from '../layout/frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
 import { TrunkBlocked, sideHintDiagnostics } from '../layout/side-hints.js';
 import { turnMissed } from '../layout/turn-order.js';
@@ -29,18 +28,13 @@ import { measureSides, refusedKey } from '../layout/side-measure.js';
 import { judgeTrial, predictedWorse, predictPublished, routedBends, trialNotes } from '../layout/side-judge.js';
 import { PLACEMENT_EPS } from '../layout/tolerance.js';
 import { attemptCounters } from '../layout/attempt-counters.js';
-import { measureSpans } from '../layout/span-measure.js';
-import { judgeSpanTrial } from '../layout/span-judge.js';
-import { transitTiers } from '../layout/lanes.js';
 import { beats, gainOf, judgeCourseTrial, judgeOverlayTrial, measureCourses, measureOverlayCourses } from '../layout/course-measure.js';
 import { judgeTurnTrial, measureTurnOrder, roundLimit, turnReserve, turnRoundRuns } from '../layout/turn-measure.js';
-import { pitchGrowth, nodeFloors as floorEntries, reserve as addReservations, courseEntries, declinedTrunksOf, promisedTurns, declineTrunk, laneOwners, sideFaces, sideHintsOf, spanEntries, turnEntries, type Reservations } from '../layout/reservations.js';
+import { nodeFloors as floorEntries, reserve as addReservations, courseEntries, declinedTrunksOf, promisedTurns, declineTrunk, laneOwners, sideFaces, sideHintsOf, spanEntries, turnEntries, type Reservations } from '../layout/reservations.js';
 import { holds, holdsRouted } from '../layout/reservation-checks.js';
 
 
 export { MAX_RERUNS, PlacementBudgetExceeded } from './limits.js';
-/** The span round's label of a refusal: `placement` for an expected one, `error` for anything else (the trace names it, so a sweep finds a defect). */
-const spanCode = (error: Error): 'placement' | 'error' => error instanceof PlacementRefusal && error.code !== 'centring' && error.code !== 'budget' ? 'placement' : 'error';
 const portName = (key: string): string => {
   const [node, anonymous, name, ordinal] = JSON.parse(key) as [string, boolean, string | null, number];
   return `${node}.${anonymous ? '' : name}#${ordinal}`;
@@ -199,80 +193,6 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       }
     }
   };
-  // The span round (architecture ticket 22, phase 3). It reads the 7f baseline and its routed result, offers a spanning chord to every link between document tiers that
-  // are not consecutive whose corridor is clear, places again with the span hints, and keeps the trial only on its routed result (`judgeSpanTrial`). It runs before the
-  // course, side and overlay-course rounds, because a chord changes which routes are poor, and it shares their re-runs. A refused round leaves the sheet as it was.
-  const spanRound = async (): Promise<boolean> => {
-    const offer = measureSpans(s.base, s.routedBase!);
-    options.testSideTrace?.({ ev: 'spans', offer, base: s.base, routedBase: s.routedBase });
-    if (offer.links.length === 0) return false;
-    // The round leaves one re-run to each round after it that has an offer on the baseline (course, side): a trial that is refused has spent its placements, and must not
-    // starve a round that main would have run.
-    const spanMax = roundLimit(env.maxReruns, reserve()) - (measureCourses(s.base, s.routedBase!).courses.length > 0 ? 1 : 0) - (measureSides(s.base, s.kept7e, s.refused).hints.size > 0 ? 1 : 0);
-    if (s.reruns >= spanMax) { options.testSideTrace?.({ ev: 'span-refused', links: offer.links, why: 'budget' }); return false; }
-    s.reruns++;
-    const spanRefusal = (why: string, detail: string): void => { options.testSideTrace?.({ ev: 'span-refused', links: offer.links, why, detail }); };
-    // The trial reserves its chords on top of the ledger; the fans of the trial grow this one, and a kept trial keeps it.
-    let trialFloors = addReservations(s.kept, spanEntries(offer.links, 'span', env.placements));
-    let trial7e: LayoutModel | undefined;
-    try { trial7e = await env.timed('rerun-span', () => env.place(trialFloors, env.trialAbort)); } catch (error) {
-      // The span round is an offer: a trial that the placement cannot build is refused, whatever the cause, and the sheet stays as the baseline made it. Only the command
-      // deadline ends the command. The trace names the error, so a sweep that greps `span-refused` for `error` finds a defect.
-      if (!(error instanceof Error) || error instanceof CommandDeadlineError) throw error;
-      spanRefusal(spanCode(error), error.message);
-      return false;
-    }
-    if (trial7e.fallbackUsed && !s.kept7e.fallbackUsed) { spanRefusal('placement', 'ELK fell back during the span trial'); return false; }
-    // A fan of chords whose neighbours stand closer than the chord clearance is spread by placement (ticket 89): the chords of this trial are measured as the fan
-    // rounds measure the first placement, and the trial places again with the floors they ask for. The re-runs are the command's (MAX_RERUNS).
-    for (let round = 0; round < FAN_ROUNDS && s.reruns < spanMax; round++) {
-      const measure = await env.timed('measureFans', () => measureFans(trial7e!));
-      const grown = pitchGrowth(trialFloors, measure.floors, 'span', env.placements);
-      if (grown.length === 0) break;
-      const next = addReservations(trialFloors, grown);
-      s.reruns++; attemptCounters.invalidations.fanReruns++;
-      let again: LayoutModel;
-      try { again = await env.timed('rerun-fan', () => env.place(next, env.trialAbort)); } catch (error) {
-        if (!(error instanceof Error) || error instanceof CommandDeadlineError) throw error;
-        spanRefusal(spanCode(error), error.message); return false;
-      }
-      if (again.fallbackUsed && !s.kept7e.fallbackUsed) { spanRefusal('placement', 'ELK fell back during the span trial'); return false; }
-      if (!fanRoundHolds(trial7e, again)) break;
-      trial7e = again; trialFloors = next;
-    }
-    // 7f freezes the chords that are straight now and no other (`freezeChords`), so a hinted link that is not straight here (the freeze refuses it, as `leg` when a neighbour's
-    // leg crowds it at the pitch the trial gave) is lost: the trial is refused here, before 7f and the route.
-    // The placement above is spent, so nothing is given back.
-    const spanFailed = holds(trialFloors, trial7e!);
-    const lost = spanFailed.filter(failure => failure.kind === 'spanChord' && offer.links.includes(failure.link!)).map(failure => failure.link!);
-    if (lost.length > 0) { spanRefusal('promise', `the freeze would not hold ${lost.join(', ')}: ${lost.map(id => { const item = trial7e!.links.find(other => other.id === id); return item === undefined ? 'missing' : freezeRefusal(trial7e!, item) ?? 'not straight'; }).join(', ')} (before 7f)`); return false; }
-    // A reservation kept by an earlier round must hold at the trial's final 7e as well (ticket 22 left that open).
-    const otherLost = spanFailed.filter(failure => !lost.includes(failure.link!) || failure.kind !== 'spanChord');
-    if (otherLost.length > 0) { spanRefusal('promise', `a kept reservation does not hold: ${otherLost[0]!.why} (before 7f)`); return false; }
-    try {
-      const { model: trial, moved: trialMoved, unmoved: trialUnmoved } = await env.bands(trial7e!, true);
-      const routedTrial = await env.route(trial, true);
-      const verdict = judgeSpanTrial(s.routedBase!, routedTrial, offer.links);
-      options.testSideTrace?.({ ev: 'span-trial', verdict, trial, routedTrial, routedBase: s.routedBase, offer });
-      if (!verdict.kept) { spanRefusal(verdict.reason!, verdict.detail); return false; }
-      const spanBroken = holdsRouted(s.kept, routedTrial);
-      if (spanBroken.length > 0) { spanRefusal('promise', `a kept course publishes more turns than it promised (${spanBroken.map(failure => failure.link).join(', ')})`); return false; }
-      s.kept = trialFloors;
-      s.base = trial; s.kept7e = trial7e; s.routedFinal = routedTrial; s.routedBase = routedTrial;
-      s.baseMoved = trialMoved; s.baseUnmoved = trialUnmoved;
-      for (const id of offer.links) {
-        const link = trial.links.find(item => item.id === id)!;
-        const crossed = transitTiers(trial, link);
-        s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'SPAN_CHORD_TAKEN', owners: [{ kind: 'link', id }],
-          message: `The link ${id} takes a spanning chord over ${crossed.length + 1} tier gaps, through ${crossed.length} transited ${crossed.length === 1 ? 'band' : 'bands'} (sub-tier ${crossed.join(', ')}).` });
-      }
-      return true;
-    } catch (error) {
-      if (!(error instanceof Error) || error instanceof CommandDeadlineError) throw error;
-      spanRefusal(spanCode(error), `stage 7f rejected them (${error.message})`);
-      return false;
-    }
-  };
   // The two rounds share the re-runs, and both are judged by the user's order on what they publish. A course kept first would take away the offer a side round
   // reads on the baseline (the 3b pattern), so where the budget allows both, the side round goes first and the course round reads its result. Where it allows one,
   // the offer whose promise gains more takes it (a side offer that only the unmoved copy has promises nothing and wins).
@@ -280,7 +200,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   if (options.testCourses === undefined) {
     s.routedBase = await env.route(s.base);
     // A forced hint (the test option) is the whole of the span round; otherwise the round runs here, before the course round.
-    if (options.testSpanHints === undefined) await spanRound();
+    if (options.testSpanHints === undefined) { const offer = await span.measure(env, s); if (offer !== undefined) await attempt(env, s, span, offer); }
     const offer = measureCourses(s.base, s.routedBase);
     options.testSideTrace?.({ ev: 'courses', offer, base: s.base, routedBase: s.routedBase });
     noteDeclined(offer);

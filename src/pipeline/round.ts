@@ -70,7 +70,7 @@ export async function attempt<O>(env: Env, s: State, round: Round<O>, o: O): Pro
     if (!round.tolerates(error, 'place')) throw error;
     return refuse({ at: 'place', why: (error as Error).message, error: error as Error });
   }
-  if (trial7e.fallbackUsed && !s.kept7e.fallbackUsed) return refuse({ at: 'fallback', why: `ELK fell back during the ${round.id} trial` });
+  if (trial7e.fallbackUsed && !(s.fallbackFrom ?? s.kept7e).fallbackUsed) return refuse({ at: 'fallback', why: `ELK fell back during the ${round.id} trial` });
   if (round.settle !== undefined) {
     const settled = await round.settle(env, s, o, ledger, trial7e);
     if ('at' in settled) return refuse(settled);

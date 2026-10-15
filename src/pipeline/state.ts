@@ -10,6 +10,8 @@ import type { SideOffer } from '../layout/side-measure.js';
 export interface State {
   /** The kept result of stages 1 to 7e: the model a measure reads, and the key of the stage-3 sizes. */
   kept7e: LayoutModel;
+  /** Set on a trial's tentative state (the span's fans): the model whose ELK fallback a re-run is compared with. */
+  fallbackFrom?: LayoutModel;
   /** The kept result of stage 7f on `kept7e`: the baseline every offer is measured on. */
   base: LayoutModel;
   /** The routed baseline, and the routed result of the last kept trial. */
