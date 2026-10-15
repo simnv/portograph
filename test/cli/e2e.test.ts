@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -226,4 +226,41 @@ links:
     expect(broken.stderr).toMatch(new RegExp(`INVALID_YAML at ${syntax}:\\d+:\\d+:`));
     expect(broken.stderr.match(/portograph: error:/g)).toHaveLength(1);
   }, 30000);
+
+  it('reads the document from stdin with -, names it <stdin> in diagnostics, and writes to stdout with -o -', async () => {
+    const text = readFileSync(golden, 'utf8');
+    const piped = await new Promise<{ code: number | null; stdout: string; stderr: string }>(resolve => {
+      const child = spawn(process.execPath, [cli, 'layout', '-', '-o', '-'], { cwd: temp });
+      let stdout = '', stderr = '';
+      child.stdout.on('data', chunk => { stdout += chunk; });
+      child.stderr.on('data', chunk => { stderr += chunk; });
+      child.on('close', code => resolve({ code, stdout, stderr }));
+      child.stdin.end(text);
+    });
+    expect(piped.code, piped.stderr).toBe(0);
+    const direct = await command(['layout', golden]);
+    expect(piped.stdout).toBe(direct.stdout);
+    const bad = await new Promise<{ code: number | null; stderr: string }>(resolve => {
+      const child = spawn(process.execPath, [cli, 'layout', '-'], { cwd: temp });
+      let stderr = '';
+      child.stderr.on('data', chunk => { stderr += chunk; });
+      child.on('close', code => resolve({ code, stderr }));
+      child.stdin.end('portograph: 2\ngroups:\n  g: { tier: 0 }\nnodes:\n  a:\n    group: g\n    colour: red\n');
+    });
+    expect(bad.code).toBe(2);
+    expect(bad.stderr).toContain('UNKNOWN_KEY at <stdin>:7:5 ($.nodes.a.colour)');
+  }, 60000);
+
+  it('writes diagnostics and status lines as one JSON object per line with --diagnostics json', async () => {
+    const schema = join(temp, 'json.yaml');
+    writeFileSync(schema, 'portograph: 2\ngroups:\n  g: { tier: 0 }\nnodes:\n  a:\n    group: g\n    colour: red\n');
+    const result = await command(['layout', schema, '--diagnostics', 'json']);
+    expect(result.code).toBe(2);
+    const lines = result.stderr.trim().split('\n').map(line => JSON.parse(line) as Record<string, unknown>);
+    expect(lines[0]).toMatchObject({ code: 'UNKNOWN_KEY', severity: 'error', path: '$.nodes.a.colour', source: schema, line: 7, column: 5 });
+    expect(lines.every(line => typeof line.message === 'string' && typeof line.severity === 'string')).toBe(true);
+    const wrote = await command(['render', golden, '-o', join(temp, 'json-out.svg'), '--diagnostics=json']);
+    expect(wrote.code, wrote.stderr).toBe(0);
+    expect(JSON.parse(wrote.stderr.trim().split('\n').at(-1)!)).toMatchObject({ severity: 'info', code: 'WROTE' });
+  }, 60000);
 });

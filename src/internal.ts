@@ -9,7 +9,7 @@
  * first-class output that `score` and the tests consume.
  */
 
-export { VERBS, EXIT, COMMAND_DEADLINE_MS, isVerb, helpText, parseCommand, sidecarPaths, formatDiagnostic, UsageError } from './cli.js';
+export { VERBS, EXIT, COMMAND_DEADLINE_MS, isVerb, helpText, parseCommand, sidecarPaths, formatDiagnostic, formatDiagnosticJson, formatStatus, UsageError } from './cli.js';
 export type { Command, Verb } from './cli.js';
 export { layout, createBudget, CommandDeadlineError, UNBOUNDED_BUDGET } from './pipeline/index.js';
 export type { Budget, LayoutOptions, LayoutProgress } from './pipeline/index.js';

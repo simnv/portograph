@@ -45,11 +45,18 @@ export class UsageError extends Error {
   constructor(message: string) { super(message); this.name = 'UsageError'; }
 }
 
+/** How diagnostics and status lines reach stderr: a text line each, or one JSON object per line. */
+export const DIAGNOSTIC_FORMATS = ['text', 'json'] as const;
+export type DiagnosticFormat = (typeof DIAGNOSTIC_FORMATS)[number];
+
 export interface Command {
   verb: Verb;
+  /** A path, or `-` for stdin. */
   input: string;
-  /** Absent means the primary artifact goes to stdout. */
+  /** Absent means the primary artifact goes to stdout; so does `-`, which parsing drops. */
   output?: string;
+  /** Absent means `text`. */
+  diagnostics?: DiagnosticFormat;
   force: boolean;
   allowGateFailures: boolean;
   /** Keep the wall-clock stage timings in the layout and score JSON. Absent means they are left out, so two runs write the same bytes. */
@@ -74,7 +81,8 @@ interface OptionSpec {
 }
 
 const OPTIONS: Record<string, OptionSpec> = {
-  '--output': { value: true, summary: 'Write the primary artifact to this path instead of stdout' },
+  '--output': { value: true, summary: 'Write the primary artifact to this path instead of stdout (- means stdout)' },
+  '--diagnostics': { value: true, summary: 'Diagnostics and status lines on stderr: text (default) or json, one object per line' },
   '--force': { value: false, summary: 'Lay out and score more than 1,000 nodes' },
   '--allow-gate-failures': { verbs: ['render', 'score'], value: false, summary: 'Report a failed gate but exit 0' },
   '--timings': { verbs: ['layout', 'render', 'score'], value: false, summary: 'Keep the wall-clock stage timings in the layout and score JSON (default: left out, so two runs write the same bytes)' },
@@ -104,7 +112,7 @@ export function helpText(): string {
     'Verbs:',
     ...VERBS.map((verb) => `  ${verb.name.padEnd(width)}  ${verb.summary}`),
     '',
-    'Options may come before or after the file. Exactly one file is required; stdin is not read.',
+    'Options may come before or after the file. Exactly one file is required; - reads stdin.',
     '',
     'Options:',
     ...names.map(option),
@@ -203,8 +211,14 @@ export function parseCommand(verb: Verb, args: readonly string[]): Command {
   }
   if (!inputs.length) throw new UsageError(`${verb} needs one input file`);
   if (inputs.length > 1) throw new UsageError(`${verb} takes exactly one input file; got ${inputs.length}`);
-  const output = values.get('--output');
-  if (output !== undefined && output === '') throw new UsageError('--output needs a path');
+  const rawOutput = values.get('--output');
+  if (rawOutput !== undefined && rawOutput === '') throw new UsageError('--output needs a path');
+  // `-` is stdout, which is where the artifact goes without --output; there are no sidecars then.
+  const output = rawOutput === '-' ? undefined : rawOutput;
+  const diagnostics = values.get('--diagnostics');
+  if (diagnostics !== undefined && !DIAGNOSTIC_FORMATS.includes(diagnostics as DiagnosticFormat)) {
+    throw new UsageError(`--diagnostics does not know '${diagnostics}'; use text or json`);
+  }
   const layers = values.get('--layers');
   const format = values.get('--format');
   const theme = values.get('--theme');
@@ -225,6 +239,7 @@ export function parseCommand(verb: Verb, args: readonly string[]): Command {
     verb,
     input: inputs[0]!,
     ...(output === undefined ? {} : { output }),
+    ...(diagnostics === undefined || diagnostics === 'text' ? {} : { diagnostics: diagnostics as DiagnosticFormat }),
     force: seen.has('--force'),
     allowGateFailures: seen.has('--allow-gate-failures'),
     timings: seen.has('--timings'),
@@ -268,4 +283,20 @@ export function formatDiagnostic(diagnostic: Diagnostic & { path?: string }, pla
   const at = place === undefined ? undefined : `${place.source}:${place.line}:${place.column}`;
   const where = at !== undefined ? (path === undefined || path === '$' ? at : `${at} (${path})`) : path ?? owners;
   return `portograph: ${diagnostic.severity}: ${diagnostic.code}${where === undefined ? '' : ` at ${where}`}: ${diagnostic.message}`;
+}
+
+/**
+ * The same diagnostic as one JSON object, for `--diagnostics json`. The structured fields stay as
+ * they are; a place in the authored text is added as `source`, `line` and `column`.
+ */
+export function formatDiagnosticJson(diagnostic: Diagnostic & { path?: string }, place?: DiagnosticPlace): string {
+  return JSON.stringify({ ...diagnostic, ...(place === undefined ? {} : { source: place.source, line: place.line, column: place.column }) });
+}
+
+/**
+ * A status line of the command itself (not a diagnostic of the document) in the chosen format.
+ * The text form names severity and code only when `showCode` is set, as the coded failures do.
+ */
+export function formatStatus(format: DiagnosticFormat | undefined, severity: 'info' | 'warning' | 'error', code: string, message: string, showCode = false): string {
+  return format === 'json' ? JSON.stringify({ severity, code, message }) : `portograph: ${showCode ? `${severity}: ${code}: ` : ''}${message}`;
 }

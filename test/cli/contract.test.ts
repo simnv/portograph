@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { COMMAND_DEADLINE_MS, EXIT, UsageError, VERBS, formatDiagnostic, helpText, isVerb, parseCommand, sidecarPaths } from '../../src/internal.js';
+import { COMMAND_DEADLINE_MS, EXIT, UsageError, VERBS, formatDiagnostic, formatDiagnosticJson, formatStatus, helpText, isVerb, parseCommand, sidecarPaths } from '../../src/internal.js';
 
 describe('CLI contract', () => {
   it('help lists the four verbs in pipeline order and each one is a recognised verb', () => {
@@ -22,7 +22,7 @@ describe('CLI contract', () => {
       expect(help).toContain(option);
     }
     expect(help).toContain('Options may come before or after the file');
-    expect(help).toContain('stdin is not read');
+    expect(help).toContain('- reads stdin');
     expect(help).toContain('X.layout.json');
     expect(help).toContain('X.score.json');
     expect(help).toContain(`${EXIT.ok}  ok`);
@@ -56,7 +56,7 @@ describe('parseCommand', () => {
     expect(() => parseCommand('layout', [])).toThrow(UsageError);
     expect(() => parseCommand('layout', [])).toThrow(/needs one input file/);
     expect(() => parseCommand('layout', ['a.yaml', 'b.yaml'])).toThrow(/exactly one input file; got 2/);
-    // A bare `-` is a path, not a request to read stdin.
+    // A bare `-` is the request to read stdin.
     expect(parseCommand('layout', ['-']).input).toBe('-');
     expect(parseCommand('layout', ['--', '--weird.yaml']).input).toBe('--weird.yaml');
   });
@@ -83,6 +83,25 @@ describe('parseCommand', () => {
     for (const value of ['', 'nope', 'routed,', ',overlay', 'routed,nope']) {
       expect(() => parseCommand('render', ['--layers', value, 'a.yaml'])).toThrow(UsageError);
     }
+  });
+});
+
+describe('stdin, stdout and diagnostics options', () => {
+  it('takes - as stdout for --output, which is the same as no --output', () => {
+    expect(parseCommand('layout', ['a.yaml', '-o', '-'])).toEqual(parseCommand('layout', ['a.yaml']));
+    expect(parseCommand('render', ['-', '--output=-']).output).toBeUndefined();
+    expect(helpText()).toContain('- reads stdin');
+  });
+
+  it('knows two diagnostic formats, text being the default', () => {
+    expect(parseCommand('layout', ['a.yaml', '--diagnostics', 'json']).diagnostics).toBe('json');
+    expect(parseCommand('layout', ['a.yaml', '--diagnostics=text']).diagnostics).toBeUndefined();
+    expect(() => parseCommand('layout', ['a.yaml', '--diagnostics', 'xml'])).toThrow(UsageError);
+    expect(JSON.parse(formatDiagnosticJson({ stage: 'parse', severity: 'error', code: 'UNKNOWN_KEY', path: '$.a', message: 'm' }, { source: 'x.yaml', line: 2, column: 3 })))
+      .toEqual({ stage: 'parse', severity: 'error', code: 'UNKNOWN_KEY', path: '$.a', message: 'm', source: 'x.yaml', line: 2, column: 3 });
+    expect(formatStatus(undefined, 'info', 'WROTE', 'wrote x')).toBe('portograph: wrote x');
+    expect(formatStatus(undefined, 'error', 'COMMAND_DEADLINE', 'too slow', true)).toBe('portograph: error: COMMAND_DEADLINE: too slow');
+    expect(JSON.parse(formatStatus('json', 'error', 'GATE_FAILED', 'g'))).toEqual({ severity: 'error', code: 'GATE_FAILED', message: 'g' });
   });
 });
 
