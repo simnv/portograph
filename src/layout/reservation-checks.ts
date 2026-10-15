@@ -10,7 +10,7 @@ import { pathBends } from './objective.js';
 import { sideLaneSource, transitTiers } from './lanes.js';
 import { findPort } from './row-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
-import { spanLaneId } from './span-lanes.js';
+import { spanLaneId } from './lane-kind.js';
 import { trunkKey } from './bus-room.js';
 import { trunkBuses, trunkHeads } from './trunk.js';
 import { portKey } from './sides-one.js';
