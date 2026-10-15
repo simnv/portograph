@@ -5,7 +5,7 @@ import { pathStrokeWidth } from '../theme/geometry.js';
 import { findPort, straightCorridorClear } from './row-paths.js';
 import { portId } from './skeleton-graph.js';
 import { moveGroup, validateSkeletonBands } from './skeleton-geometry.js';
-import { withLayoutMutation } from './mutation.js';
+import { withStageMutation } from './mutation.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { joinFanTrees } from './bundle-geometry.js';
 import { fitRegionGroup, placementWarning, rebuildRegions } from './regions.js';
@@ -189,4 +189,4 @@ export function alignFlanks(model: LayoutModel): void {
   if (validateSkeletonBands(model).length) placementWarning(model, 'PLACEMENT_NON_CONVERGENCE',
     'Flank growth exceeds the available tier band; later placement must retain this conflict for final gates.', Object.keys(model.groups), 'group');
 }
-export function flanks(model: LayoutModel): LayoutModel { return withLayoutMutation(model, 'flanks', alignFlanks); }
+export function flanks(model: LayoutModel): LayoutModel { return withStageMutation(model, 'flanks', alignFlanks); }

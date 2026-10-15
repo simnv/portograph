@@ -68,19 +68,30 @@ function documentTier(model: LayoutModel, id: string): number | undefined {
  */
 export function chordKind(model: LayoutModel, link: LayoutLink): ChordKind | undefined {
   const shared = sharedKinds;
-  if (shared !== undefined && Object.isFrozen(link)) {
-    if (!shared.has(link)) shared.set(link, chordKindOf(model, link));
-    return shared.get(link);
+  if (shared !== undefined) {
+    // A link in the map was frozen when it went in, and a frozen object stays frozen: a hit needs no second check.
+    const known = shared.get(link);
+    if (known !== undefined) return known;
+    if (shared.has(link)) return undefined;
+    if (Object.isFrozen(link)) { const kind = chordKindOf(model, link); shared.set(link, kind); return kind; }
   }
   const scope = linkFactsScope;
   if (scope?.model !== model) {
     const step = stepKinds;
     if (step?.model !== model) return chordKindOf(model, link);
-    if (!step.kinds.has(link)) step.kinds.set(link, chordKindOf(model, link));
-    return step.kinds.get(link);
+    const known = step.kinds.get(link);
+    if (known !== undefined) return known;
+    if (step.kinds.has(link)) return undefined;
+    const kind = chordKindOf(model, link);
+    step.kinds.set(link, kind);
+    return kind;
   }
-  if (!scope.kinds.has(link)) scope.kinds.set(link, chordKindOf(model, link));
-  return scope.kinds.get(link);
+  const known = scope.kinds.get(link);
+  if (known !== undefined) return known;
+  if (scope.kinds.has(link)) return undefined;
+  const kind = chordKindOf(model, link);
+  scope.kinds.set(link, kind);
+  return kind;
 }
 
 /**

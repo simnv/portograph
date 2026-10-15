@@ -6,7 +6,7 @@ import { moveGroup, rebuildBands, union } from './skeleton-geometry.js';
 import { groupInsets } from './regions.js';
 import { holdColumnAxes, packBesideRows, separateFrameColumns } from './columns.js';
 import { rowGap } from './sides-two.js';
-import { withLayoutMutation } from './mutation.js';
+import { withStageMutation } from './mutation.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { facingPair, type FacingPair } from './row-paths.js';
 import { NODE_CONTENT_GEOMETRY as theme } from '../theme/content.js';
@@ -174,7 +174,7 @@ function levelFacingPorts(draft: LayoutModel): void {
 
 /** Stage 6: one baseline per tier row, repack on overlap, level facing ports. The transaction pins eligible row paths. */
 export function rows(model: LayoutModel): LayoutModel {
-  return withLayoutMutation(model, 'rows', draft => {
+  return withStageMutation(model, 'rows', draft => {
     flattenRows(draft);
     reseatBands(draft);
     repackOverlaps(draft);

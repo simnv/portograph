@@ -14,6 +14,7 @@ import { separationShortfalls } from './constraints/separation.js';
 import { centreViolations } from './centre.js';
 import { reserveLinkLabelRoom, type LinkLabelShortfall } from './bands.js';
 import { attemptCounters, lastAttempt } from './attempt-counters.js';
+import { copyWithShared } from './trial-copy.js';
 import { drawnOverlays, judges, lazySeparation, compare, gains, holds as readingHolds, read, reading, tapVerdict, type Reading } from './objective.js';
 
 /**
@@ -119,7 +120,9 @@ const residuals = (model: LayoutModel): Set<string> => new Set(model.diagnostics
  */
 function drift(model: LayoutModel): number {
   try {
-    const clone = candidateCopy(model), before = new Map(Object.values(clone.groups).map(group => [group.id, { ...group.bounds! }]));
+    // The column rules write groups, nodes (boxes, anchors, pills), the label list (replaced, not edited) and the diagnostics; the links, the document and the freeze block are read only.
+    attemptCounters.candidateCopies++;
+    const clone = copyWithShared(model, ['links', 'document', 'freeze']), before = new Map(Object.values(clone.groups).map(group => [group.id, { ...group.bounds! }]));
     columnShifts(clone, 0);
     packBesideRows(clone);
     holdMemberWalls(clone);

@@ -74,6 +74,7 @@ export default defineConfig({
         ['portograph-avoid.mjs', join(avoidDir, 'index.js')],
         ['portograph-avoid-node.mjs', join(avoidDir, 'index-node.mjs')],
         ['portograph-libavoid-LICENSE.txt', join(avoidDir, '..', 'LICENSE')],
+        ['warm-elk.cjs', new URL('./runtime/warm-elk.cjs', import.meta.url)],
         ['node.cjs', new URL('./runtime/node.cjs', import.meta.url)],
         ['node.d.cts', new URL('./runtime/node.d.cts', import.meta.url)],
       ] as const) this.emitFile({ type: 'asset', fileName, source: readFileSync(source, 'utf8').replace(/\n?\/\/# sourceMappingURL=.*$/m, '') });

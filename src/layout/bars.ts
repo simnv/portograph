@@ -8,7 +8,7 @@ import { nodeGap, portId } from './skeleton-graph.js';
 import { splitUnderJunctions, treeCohorts } from './bundle-geometry.js';
 import { bandHeldBy, groupInsets, placementWarning } from './regions.js';
 import { findPort } from './row-paths.js';
-import { withLayoutMutation } from './mutation.js';
+import { withStageMutation } from './mutation.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { BAR_PADDING, barLabelFloor } from './bar-width.js';
 
@@ -474,7 +474,7 @@ export function rebuildBarDrops(model: LayoutModel): void {
 
 /** Stage 7d. Geometry is edited in the callback; the transaction rebuilds all derived paths. */
 export function bars(model: LayoutModel): LayoutModel {
-  return withLayoutMutation(model, 'bars', shapeBars);
+  return withStageMutation(model, 'bars', shapeBars);
 }
 
 export { BAR_PADDING };
