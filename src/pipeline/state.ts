@@ -33,6 +33,8 @@ export interface State {
   refused: Set<string>;
   trialLinks: Map<string, string>;
   silent: boolean;
+  /** The side measures made so far: the index of the round that measures next. */
+  sideRound: number;
 }
 
 /** One try of a round, built from its ledger: the 7e result, the 7f result, the routed result and what 7f did. */

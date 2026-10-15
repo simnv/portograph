@@ -82,8 +82,8 @@ export async function attempt<O>(env: Env, s: State, round: Round<O>, o: O): Pro
   if (!round.routed) t = { ledger, trial7e, trial: trial7e, routedTrial: trial7e, moved: false, unmoved: undefined };
   else {
     try {
-      await round.ready?.(env, s);
       const banded = await env.bands(trial7e, true);
+      await round.ready?.(env, s);
       t = { ledger, trial7e, trial: banded.model, routedTrial: await env.route(banded.model, true), moved: banded.moved, unmoved: banded.unmoved };
     } catch (error) {
       if (!round.tolerates(error, 'bands')) throw error;

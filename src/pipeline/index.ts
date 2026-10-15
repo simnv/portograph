@@ -9,36 +9,29 @@
 import type { Diagnostic, LayoutModel, NormalisedDocument, Size } from '../model/index.js';
 import { portKey } from '../layout/sides-one.js';
 import { PlacementRefusal, refusedAtBands } from '../layout/placement-refusal.js';
-import { bands } from '../layout/bands.js';
 import { linkLabels } from '../layout/link-labels.js';
 import type { LayoutOptions } from './options.js';
 import { createEnv } from './env.js';
 import { FAN_ROUNDS, MAX_RERUNS, SIDE_ROUNDS } from './limits.js';
 import type { State } from './state.js';
 import { attempt } from './round.js';
-import { course, fan, noteDeclined, span } from './rounds.js';
+import { course, fan, noteDeclined, portName, side, span } from './rounds.js';
 // After the stages: the modules below reach the centring module, whose import order the tests that mock it depend on.
 import { declinedFanDiagnostics, measureFans } from '../layout/fan-spread.js';
 import { chordClearances } from '../layout/frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
 import { TrunkBlocked, sideHintDiagnostics } from '../layout/side-hints.js';
 import { turnMissed } from '../layout/turn-order.js';
-import { measureSides, refusedKey } from '../layout/side-measure.js';
-import { judgeTrial, predictedWorse, predictPublished, routedBends, trialNotes } from '../layout/side-judge.js';
+import { measureSides } from '../layout/side-measure.js';
+import { routedBends } from '../layout/side-judge.js';
 import { PLACEMENT_EPS } from '../layout/tolerance.js';
-import { attemptCounters } from '../layout/attempt-counters.js';
 import { beats, gainOf, judgeOverlayTrial, measureOverlayCourses } from '../layout/course-measure.js';
 import { judgeTurnTrial, measureTurnOrder, roundLimit, turnReserve, turnRoundRuns } from '../layout/turn-measure.js';
-import { nodeFloors as floorEntries, reserve as addReservations, courseEntries, declinedTrunksOf, promisedTurns, declineTrunk, laneOwners, sideFaces, sideHintsOf, spanEntries, turnEntries, type Reservations } from '../layout/reservations.js';
+import { nodeFloors as floorEntries, reserve as addReservations, courseEntries, declinedTrunksOf, promisedTurns, declineTrunk, sideFaces, sideHintsOf, spanEntries, turnEntries, type Reservations } from '../layout/reservations.js';
 import { holds, holdsRouted } from '../layout/reservation-checks.js';
 
 
 export { MAX_RERUNS, PlacementBudgetExceeded } from './limits.js';
-const portName = (key: string): string => {
-  const [node, anonymous, name, ordinal] = JSON.parse(key) as [string, boolean, string | null, number];
-  return `${node}.${anonymous ? '' : name}#${ordinal}`;
-};
-
 export { CommandDeadlineError, createBudget, UNBOUNDED_BUDGET } from './budget.js';
 export type { Budget } from './budget.js';
 
@@ -73,14 +66,10 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       options.testSideTrace?.({ ev: 'trunk-blocked', key: error.key, reruns, left: (options.testMaxReruns ?? MAX_RERUNS) - reruns });
     }
   }
-  const s: State = { kept7e: first, base: first, baseMoved: false, kept, reruns, cuts: [], sideNotes: [], keptNotes: [], promised: new Map(), refused: new Set(), trialLinks: new Map(), silent: false };
+  const s: State = { kept7e: first, base: first, baseMoved: false, kept, reruns, cuts: [], sideNotes: [], keptNotes: [], promised: new Map(), refused: new Set(), trialLinks: new Map(), silent: false, sideRound: 0 };
   // The re-runs are bounded by FAN_ROUNDS alone, and no re-run reads the clock (ticket 141): the same input gives the same layout at any speed.
   // The command deadline ends the whole command with an error (`step`, `route`, `trialAbort`) and never picks a layout. A re-run that makes ELK
   // fall back (an ELK error, never a timeout: a timeout ends the command) is dropped: the placement already made stands (ticket 89 review).
-  const cutSide = (why: string): void => {
-    s.cuts.push({ stage: 'placement', severity: 'warning', code: 'SIDE_ROUND_CUT',
-      message: `A side round was cut: ${why}. The last kept placement stands, and this layout may differ from one made with more time.` });
-  };
   for (let round = 0; round < FAN_ROUNDS && env.placements < env.placeCap; round++) {
     const offer = await fan.measure(env, s);
     if (offer === undefined || await attempt(env, s, fan, offer) !== undefined) break;
@@ -91,15 +80,6 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   // The abort check of 7f, the baseline's and the trial's: the command deadline, checked between the passes. It ends the whole command, so it never picks a layout (ticket 141).
   const banded = await env.bands(s.kept7e);
   s.base = banded.model; s.baseMoved = banded.moved; s.baseUnmoved = banded.unmoved;
-  const refuse = (keys: Iterable<string>, side: ReadonlyMap<string, 'left' | 'right'>, reason: string): void => {
-    for (const key of keys) {
-      s.refused.add(refusedKey(key, side.get(key)!));
-      if (s.silent) continue;
-      const link = s.promised.get(key)?.link ?? s.trialLinks.get(key);
-      s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_HINT_REFUSED',
-        message: `The side hint ${side.get(key)} on ${portName(key)} was refused: ${reason}.`, ...(link === undefined ? {} : { owners: [{ kind: 'link' as const, id: link }] }) });
-    }
-  };
   // `publish` routes the model the command publishes. Every other route is a judged model, and keeps the ordinary overlay rule, so the
   // opt-in `layout.overlayOverBodies` (ticket 152) changes no side-round decision.
   // The course round (ticket 15, phase 4) runs before the side round and shares its re-runs. It reads the baseline's routed result, offers perimeter courses
@@ -141,103 +121,15 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     }
   }
   for (let round = 0; round < SIDE_ROUNDS; round++) {
-    s.silent = false; // only the round-0 extra trial is silent; a later round publishes its refusals
-    let offer = await env.timed('measureSides', () => measureSides(s.base, s.kept7e, s.refused));
-    // No offer on the kept 7f result. If a 7f move changed the placement, the unmoved baseline may have had one that the move removed: it runs as one
-    // extra side trial, judged on routed results like any other, so the kept result stands unless a real trial beats it (architecture ticket 15, phase 3b).
-    // The settled copy 7f judged its first move against is only a filter: it is the round-0 state plus one settle, not the state 7f would publish without
-    // moves. When its offer is empty the trial is skipped; otherwise the true unmoved baseline is rebuilt (silently: no progress event, no attempt trace, since
-    // this run is never published) and the trial starts from the rebuilt offer. With no copy, the rebuild runs. Nothing is built when no re-run is left.
-    let unmovedOffer = false, filtered: boolean | undefined;
-    if (round === 0 && offer.hints.size === 0 && s.baseMoved && s.reruns < env.maxReruns) {
-      if (s.baseUnmoved !== undefined) filtered = measureSides(s.baseUnmoved, s.kept7e, s.refused).hints.size > 0;
-      if (filtered !== false || options.testRebuildAlways === true) {
-        const unmoved = await env.timed('bands-unmoved', () => bands(s.kept7e, () => env.trialAbort('bands'), undefined, false));
-        offer = await env.timed('measureSides', () => measureSides(unmoved, s.kept7e, s.refused));
-        unmovedOffer = offer.hints.size > 0;
-        s.silent = unmovedOffer;
-      }
-    }
-    options.testSideTrace?.({ ev: 'offer', round, offer, base: s.base, kept7e: s.kept7e, unmoved: unmovedOffer, filtered });
-    if (offer.capped) s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_PROBE_CAPPED', message: 'The side measure stopped at its probe cap; the links after it were not probed.' });
-    if (offer.hints.size === 0) break;
+    const offer = await side.measure(env, s);
+    if (offer === undefined) break;
     if (s.reruns >= roundLimit(env.maxReruns, reserve())) {
       s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_ROUND_SKIPPED', message: `A side round was skipped: the command has made its ${env.maxReruns} placement re-runs.` });
       break;
     }
-    const all = new Map([...sideHintsOf(s.kept), ...offer.hints]);
-    for (const [key, item] of offer.promised) s.trialLinks.set(key, item.link);
-    const nodeFloors = new Map<string, Size>();
-    for (const key of all.keys()) {
-      const [node] = JSON.parse(key) as [string];
-      // The 7e model keys the size cache, never the baseline (a new object: the lookup would give undefined with no error).
-      const size = env.stage3Sizes.get(s.kept7e)?.get(node);
-      if (size !== undefined) nodeFloors.set(node, { ...size });
-    }
-    let trial7e: LayoutModel;
-    // The faces stay with the ledger when the trial is kept; the size floors of a side trial do not (a later round measures its own).
-    const faces = [...sideFaces(offer.hints, offer.promised, 'side', env.placements),
-      ...laneOwners([...offer.promised].filter(([, item]) => item.shape === 'lane').map(([key]) => key), offer.hints, offer.promised, 'side', env.placements)];
-    const trialLedger = addReservations(s.kept, [...floorEntries(nodeFloors, 'side', env.placements), ...faces]);
-    s.reruns++; attemptCounters.invalidations.sideReruns++;
-    try { trial7e = await env.timed('rerun-side', () => env.place(trialLedger, env.trialAbort)); } catch (error) {
-      // Only the layout's own refusals drop the offer; anything else (a TypeError) is a bug and must surface.
-      if (!refusedAtBands(error)) throw error;
-      refuse(offer.hints.keys(), offer.hints, `the placement run rejected it (${error.message})`);
-      continue;
-    }
-    if (trial7e.fallbackUsed && !s.kept7e.fallbackUsed) {
-      cutSide('ELK fell back during it, and the re-run was dropped'); break;
-    }
-    // The ledger answers for the faces and lanes of the trial (this round's and the kept ones) at its final 7e, before 7f and the route: a port hinted for the straight shape
-    // of a routed link must hold its chord (otherwise the router would find its route, review M1, ticket 117), and a port hinted for the routed L must own a source-aligned
-    // side lane (an exterior corridor gives three bends, ticket 119).
-    const failed = holds(trialLedger, trial7e);
-    const chordLost = failed.filter(failure => failure.kind === 'sideFace');
-    if (chordLost.length > 0) {
-      const own = chordLost.map(failure => failure.key!).filter(key => offer.hints.has(key));
-      refuse(own.length > 0 && own.length === chordLost.length ? own : offer.hints.keys(), all,
-        `a port hinted for a chord does not hold its chord at stage 7e (${[...new Set(chordLost.map(failure => failure.link))].join(', ')})`);
-      continue;
-    }
-    const laneLost = failed.filter(failure => failure.kind === 'laneOwner');
-    if (laneLost.length > 0) {
-      const own = laneLost.map(failure => failure.key!).filter(key => offer.hints.has(key));
-      refuse(own.length > 0 && own.length === laneLost.length ? own : offer.hints.keys(), all,
-        `a port hinted for a side lane has no source-aligned lane at stage 7e (${[...new Set(laneLost.map(failure => failure.link))].join(', ')})`);
-      continue;
-    }
-    const otherFailed = failed.filter(failure => failure.kind !== 'sideFace' && failure.kind !== 'laneOwner');
-    if (otherFailed.length > 0) { refuse(offer.hints.keys(), all, `a reservation does not hold at stage 7e (${otherFailed[0]!.why})`); continue; }
-    const hintedLinks = new Map([...offer.promised.values()].map(item => [item.link, item.bends] as const));
-    // The predictor prunes only when another round and another re-run remain, and only the hints it calls worse (Section 19.3).
-    if (!unmovedOffer && round + 1 < SIDE_ROUNDS && s.reruns < env.maxReruns) {
-      const worse = predictedWorse(predictPublished(trial7e, s.kept7e, s.base), s.base, hintedLinks.keys());
-      const pruned = [...offer.hints.keys()].filter(key => worse.away.includes(key) || worse.links.includes(offer.promised.get(key)?.link ?? ''));
-      if (pruned.length > 0) { refuse(pruned, all, 'the prediction from the moves of stage 7f gives it more bends than the baseline'); continue; }
-    }
-    let trial: LayoutModel, routedTrial: LayoutModel;
-    try {
-      trial = (await env.bands(trial7e, true)).model;
-      s.routedBase ??= await env.route(s.base);
-      routedTrial = await env.route(trial, true);
-    } catch (error) {
-      if (!refusedAtBands(error)) throw error;
-      refuse(offer.hints.keys(), offer.hints, `its stage 7f rejected it (${error.message})`);
-      break;
-    }
-    const verdict = judgeTrial({ routedBase: s.routedBase, routedTrial, kept7e: s.kept7e, trial7e, hinted: hintedLinks, lanes: new Set([...offer.promised.values()].filter(item => item.shape === 'lane').map(item => item.link)) });
-    options.testSideTrace?.({ ev: 'trial', verdict, base: s.base, kept7e: s.kept7e, trial7e, trial, routedBase: s.routedBase, routedTrial, hinted: hintedLinks });
-    options.testSideProbe?.({ offer, routedBase: s.routedBase, routedTrial, verdict });
-    // A kept course keeps its promise through the side round as well: a side trial that makes a course link publish more turns than it promised is refused.
-    const brokenPromise = verdict.kept ? holdsRouted(s.kept, routedTrial).map(failure => failure.link!) : [];
-    if (brokenPromise.length > 0) { refuse(offer.hints.keys(), all, `a course link publishes more turns than it promised (${brokenPromise.join(', ')})`); break; }
-    if (!verdict.kept) { refuse(offer.hints.keys(), all, verdict.reason); break; }
-    // Kept: the trial is the baseline now. The notes name what the net count accepted.
-    s.keptNotes.push(...trialNotes(s.routedBase, routedTrial, verdict, hintedLinks.keys()));
-    s.base = trial; s.kept7e = trial7e; s.kept = addReservations(s.kept, faces); s.routedFinal = routedTrial;
-    for (const [key, item] of offer.promised) s.promised.set(key, item);
-    break; // one trial reaches 7f per command
+    // A kept trial ends the round (one trial reaches 7f per command), and so does a refusal at 7f or after it; a refusal of the placement or the 7e checks tries the next round.
+    const refusal = await attempt(env, s, side, offer);
+    if (refusal === undefined || !['place', 'ledger', 'predict'].includes(refusal.at)) break;
   }
   if (courseDeferred) await courseRound();
   // The turn round (architecture ticket 24, Section 10). On the kept result of the span, course and side rounds: when the planned first turns would reorder the ports of a
