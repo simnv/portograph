@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  COMMAND_DEADLINE_MS, EXIT, UsageError, VERBS, formatDiagnostic, helpText, isVerb, parseCommand,
-  sidecarPaths,
-} from '../../src/index.js';
+import { COMMAND_DEADLINE_MS, EXIT, UsageError, VERBS, formatDiagnostic, helpText, isVerb, parseCommand, sidecarPaths } from '../../src/internal.js';
 
 describe('CLI contract', () => {
   it('help lists the four verbs in pipeline order and each one is a recognised verb', () => {

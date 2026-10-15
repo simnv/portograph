@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { bars, bundles, centre, createCentreBudget, flanks, layout, lanes, parse, rows } from '../../src/index.js';
+import { layout, parse } from '../../src/index.js';
+import { bars, bundles, centre, createCentreBudget, flanks, lanes, rows } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
 import { centreDraft } from '../../src/layout/centre.js';
 import { withLayoutMutation } from '../../src/layout/mutation.js';

@@ -1,7 +1,8 @@
 import { APPROVED_Q } from '../golden-baseline.js';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { layout, parse, parseWithDiagnostics, restoreLayoutModel, score, serializeLayoutModel } from '../../src/index.js';
+import { layout, parse, parseWithDiagnostics, score, serializeLayoutModel } from '../../src/index.js';
+import { restoreLayoutModel } from '../../src/internal.js';
 import type { GateId, LayoutModel } from '../../src/index.js';
 import { rowGap } from '../../src/layout/sides-two.js';
 import { findPort } from '../../src/layout/row-paths.js';

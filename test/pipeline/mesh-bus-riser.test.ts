@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { bars, bundles, centre, flanks, lanes, layout, parse, rows, score } from '../../src/index.js';
+import { layout, parse, score } from '../../src/index.js';
+import { bars, bundles, centre, flanks, lanes, rows } from '../../src/internal.js';
 import { placed as placedModel } from '../layout/phase-two-fixture.js';
 import type { LayoutModel } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';

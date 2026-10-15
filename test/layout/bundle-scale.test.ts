@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { generateScaleYaml } from '../../scripts/scale-input.mjs';
-import { bands, bars, bundles, centre, flanks, lanes, restoreLayoutModel, rows } from '../../src/index.js';
+import { bands, bars, bundles, centre, flanks, lanes, restoreLayoutModel, rows } from '../../src/internal.js';
 import { bundleCrossings } from '../../src/layout/bundle-paths.js';
 import { members } from '../../src/layout/bundle-geometry.js';
 import { placed } from './phase-two-fixture.js';

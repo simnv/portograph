@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
-import { COMMAND_DEADLINE_MS, CommandDeadlineError, createBudget, layout, parse } from '../../src/index.js';
+import { CommandDeadlineError, createBudget, layout, parse } from '../../src/index.js';
+import { COMMAND_DEADLINE_MS } from '../../src/internal.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 

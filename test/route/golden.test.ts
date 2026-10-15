@@ -1,6 +1,7 @@
 import { goldenWithRemainders } from '../golden-remainders.js';
 import { expect, it } from 'vitest';
-import { bands, bars, bundles, centre, flanks, lanes, restoreLayoutModel, route, routeRemainders, rows, score } from '../../src/index.js';
+import { score } from '../../src/index.js';
+import { bands, bars, bundles, centre, flanks, lanes, restoreLayoutModel, route, routeRemainders, rows } from '../../src/internal.js';
 import type { GateId } from '../../src/index.js';
 import { planRoute } from '../../src/route/plan.js';
 import { reservationConflicts } from '../../src/route/validate.js';

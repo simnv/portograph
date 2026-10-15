@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel, PathSegment } from '../../src/index.js';
-import { allocateGapRuns, layout, parse, score } from '../../src/index.js';
+import { layout, parse, score } from '../../src/index.js';
+import { allocateGapRuns } from '../../src/internal.js';
 import { chordsHold } from '../../src/layout/frame-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';

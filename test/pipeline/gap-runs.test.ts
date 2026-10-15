@@ -1,7 +1,8 @@
 import { goldenWithRemainders } from '../golden-remainders.js';
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
-import { allocateGapRuns, bands, bars, bundles, centre, flanks, growTierGaps, lanes, linkLabels, planRoute, route, rows, score } from '../../src/index.js';
+import { score } from '../../src/index.js';
+import { allocateGapRuns, bands, bars, bundles, centre, flanks, growTierGaps, lanes, linkLabels, planRoute, route, rows } from '../../src/internal.js';
 import type { LayoutModel, PathSegment } from '../../src/model/layout.js';
 import { ownedLanes } from '../../src/route/paths.js';
 import { produceGroupLabelBands, nudgingDistance, routedStroke, stemReach } from '../../src/layout/bands.js';

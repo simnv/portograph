@@ -9,21 +9,36 @@
   "bin": {
     "portograph": "bin/portograph.mjs"
   },
-  "main": "./dist/portograph.umd.cjs",
-  "module": "./dist/portograph.js",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/portograph.js",
-      "require": "./dist/portograph.umd.cjs"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
-    "./package.json": "./package.json",
+    "./internal": {
+      "import": {
+        "types": "./dist/internal.d.ts",
+        "default": "./dist/portograph.js"
+      },
+      "require": {
+        "types": "./dist/internal.d.ts",
+        "default": "./dist/portograph.umd.cjs"
+      }
+    },
     "./node": {
       "types": "./dist/node.d.cts",
       "import": "./dist/node.cjs",
       "require": "./dist/node.cjs"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "bin",

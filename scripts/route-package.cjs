@@ -88,14 +88,14 @@ try {
   const packed = JSON.parse(execFileSync('npm', ['pack', '--json', '--pack-destination', temp], { cwd: root, encoding: 'utf8' }));
   writeFileSync(path.join(temp, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
   execFileSync('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', path.join(temp, packed[0].filename)], { cwd: temp, stdio: 'pipe' });
-  writeFileSync(path.join(temp, 'consumer.mjs'), `import * as api from 'portograph';
+  writeFileSync(path.join(temp, 'consumer.mjs'), `import * as api from 'portograph/internal';
 import { createNodeElkFactory, createNodeRouteFactory } from 'portograph/node';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const mode = 'ES';
 ${assets}
 ${body}`);
-  writeFileSync(path.join(temp, 'consumer.cjs'), `const api = require('portograph');
+  writeFileSync(path.join(temp, 'consumer.cjs'), `const api = require('portograph/internal');
 const { createNodeElkFactory, createNodeRouteFactory } = require('portograph/node');
 const mode = 'UMD';
 ${assets}
@@ -116,7 +116,7 @@ ${assets}
     if (restoredSvg.trimEnd() !== readFileSync(output, 'utf8').trimEnd()) throw new Error('Packed CLI JSON renderer differs');
     console.log('packed CLI YAML / final JSON passed on ' + execFileSync(runtime, ['--version'], { encoding: 'utf8' }).trim());
   }
-  writeFileSync(path.join(temp, 'types.mts'), `import { route, type CreateRouteAttempt, type RouteOptions } from 'portograph';\nimport { createNodeRouteFactory } from 'portograph/node';\nconst factory: CreateRouteAttempt = createNodeRouteFactory();\nconst options: RouteOptions = { createAttempt: factory, routeBudgetMs: 30000 };\nvoid route; void options;\n`);
+  writeFileSync(path.join(temp, 'types.mts'), `import { route, type CreateRouteAttempt, type RouteOptions } from 'portograph/internal';\nimport { createNodeRouteFactory } from 'portograph/node';\nconst factory: CreateRouteAttempt = createNodeRouteFactory();\nconst options: RouteOptions = { createAttempt: factory, routeBudgetMs: 30000 };\nvoid route; void options;\n`);
   writeFileSync(path.join(temp, 'types.cts'), `import adapter = require('portograph/node');\nconst attempt = adapter.createNodeRouteFactory()();\nattempt.worker.terminate();\n`);
   execFileSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--skipLibCheck',
     '--module', 'NodeNext', '--moduleResolution', 'NodeNext', '--target', 'ES2022', 'types.mts', 'types.cts'], { cwd: temp, stdio: 'pipe' });

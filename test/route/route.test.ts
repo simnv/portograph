@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { bands, bars, bundles, centre, flanks, lanes, restoreLayoutModel, route, routeRemainders, rows, score } from '../../src/index.js';
+import { score } from '../../src/index.js';
+import { bands, bars, bundles, centre, flanks, lanes, restoreLayoutModel, route, routeRemainders, rows } from '../../src/internal.js';
 import type { GateId, LayoutModel, PathSegment, Point, Rect } from '../../src/index.js';
 import type { RouteBatch, RoutedConnector } from '../../src/route/types.js';
 import { completedRouteObstacles } from '../../src/route/obstacles.js';

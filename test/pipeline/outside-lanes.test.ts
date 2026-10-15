@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { layout, parse, restoreLayoutModel, score, validateLanes } from '../../src/index.js';
+import { layout, parse, score } from '../../src/index.js';
+import { restoreLayoutModel, validateLanes } from '../../src/internal.js';
 import type { Course, Lane, LayoutLink, LayoutModel } from '../../src/index.js';
 import type { Side } from '../../src/model/geometry.js';
 import { validateCourseLane, validateCourses } from '../../src/layout/courses.js';

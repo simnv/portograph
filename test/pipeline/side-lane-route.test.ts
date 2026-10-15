@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { layout, parse, score, validateLanes } from '../../src/index.js';
+import { layout, parse, score } from '../../src/index.js';
+import { validateLanes } from '../../src/internal.js';
 import type { Lane, LayoutLink, LayoutModel } from '../../src/index.js';
 import { BUS_RUN_CLEARANCE } from '../../src/layout/bus-room.js';
 import { laneSidesHold, laneWidth, optionalMoveHolds, reserveRisers, sideLaneFindings, sideLanesHold } from '../../src/layout/lanes.js';
