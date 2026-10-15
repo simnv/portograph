@@ -275,8 +275,13 @@ export function validateReservations(model: LayoutModel): void {
     if (item.activeFrom !== ACTIVE_FROM[item.kind as ReservationKind]) throw new Error(`Reservation ${item.id} is active from the wrong stage`);
     if (!Number.isInteger(item.revision) || (item.revision as number) < 0) throw new Error(`Reservation ${item.id} has no revision`);
   }
+  if (model.reservations !== undefined) {
+    // The size floors the ledger reserves are the ones the freeze records, node for node.
+    const held = nodeFloorsOf(ledger), frozen = new Map((model.freeze?.nodeFloors ?? []).map(floor => [floor.node, floor.size] as const));
+    if (held.size !== frozen.size || [...held].some(([node, size]) => !same(frozen.get(node), size))) throw new Error('Reserved node floors differ from the frozen node floors');
+  }
   // A floor is a promise about the placed geometry, which later stages may only grow; the kinds below are checked on every restored stage.
   for (const failure of holds(ledger.filter(item => RESTORED.has(item.kind)), model)) throw new Error(`Reservation ${failure.id} does not hold: ${failure.why}`);
 }
 /** The kinds whose predicate reads only what every published stage keeps. */
-const RESTORED: ReadonlySet<ReservationKind> = new Set<ReservationKind>(['pitchFloor']);
+const RESTORED: ReadonlySet<ReservationKind> = new Set<ReservationKind>(['pitchFloor', 'nodeFloor']);

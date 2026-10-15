@@ -10,6 +10,12 @@ describe('reservation ledger', () => {
     expect(() => validateReservations(model(9))).toThrow(/does not hold/);
     expect(() => validateReservations(model(10, [...ledger, ...ledger]))).toThrow(/held twice/);
   });
+  it('refuses a ledger whose node floors are not the frozen ones', () => {
+    const ledger = nodeFloors(new Map([['n', { width: 10, height: 20 }]]), 'side', 0);
+    const model = (frozen: number): never => ({ reservations: ledger, freeze: { nodeFloors: [{ node: 'n', size: { width: frozen, height: 20 } }] }, nodes: { n: { size: { width: 12, height: 20 } } } }) as never;
+    expect(() => validateReservations(model(10))).not.toThrow();
+    expect(() => validateReservations(model(11))).toThrow(/frozen node floors/);
+  });
   it('merges pitch and node floors by componentwise maximum and keeps declaration order', () => {
     const a = reserve([], pitchFloors(new Map([['n', { left: 10 }], ['m', { right: 4 }]]), 'fan', 0));
     const b = reserve(a, pitchFloors(new Map([['n', { left: 8, right: 6 }]]), 'fan', 1));

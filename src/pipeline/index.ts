@@ -44,7 +44,7 @@ import { beats, gainOf, judgeCourseTrial, judgeOverlayTrial, measureCourses, mea
 import { pathBends } from '../layout/objective.js';
 import { turnMissed } from '../layout/turn-order.js';
 import { judgeTurnTrial, measureTurnOrder, roundLimit, turnReserve, turnRoundRuns } from '../layout/turn-measure.js';
-import { pitchFloorsOf, pitchGrowth, reserve as addReservations, type Reservations } from '../layout/reservations.js';
+import { pitchFloorsOf, nodeFloors as floorEntries, pitchGrowth, nodeFloorsOf, reserve as addReservations, type Reservations } from '../layout/reservations.js';
 import { countStage, ledgerOn, ledgerSnapshot, startPlacementEntry, type LedgerSnapshot } from '../layout/attempt-ledger.js';
 
 
@@ -172,7 +172,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   let placements = 0;
   // The cap on placements per command: the first run and the effective re-run budget (the fan rounds at the start run within FAN_ROUNDS even with a budget of 0).
   const placeCap = Math.max(options.testMaxReruns ?? MAX_RERUNS, FAN_ROUNDS) + 1;
-  const place = async (reservations: Reservations, hints = options.testSideHints, nodeFloors = options.testNodeFloors, abort?: (stage: string) => void, laneKeys: ReadonlySet<string> = new Set(), courses: readonly Course[] = activeCourses, spans: ReadonlySet<string> = activeSpans, turn: boolean = activeTurn, turnLinks: readonly string[] = activeTurnLinks): Promise<LayoutModel> => {
+  const place = async (reservations: Reservations, hints = options.testSideHints, abort?: (stage: string) => void, laneKeys: ReadonlySet<string> = new Set(), courses: readonly Course[] = activeCourses, spans: ReadonlySet<string> = activeSpans, turn: boolean = activeTurn, turnLinks: readonly string[] = activeTurnLinks): Promise<LayoutModel> => {
     // The one assertion of the placement budget: a command places at most MAX_RERUNS + 1 times (the first run and the re-runs), whatever round asks. A run that stage 7a
     // refuses before any work is given back by the round that asked (`placements--`, with its `reruns--`).
     if (placements >= placeCap) throw new PlacementBudgetExceeded(placements);
@@ -205,7 +205,8 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     }
     for (const [id, pitch] of pitchFloorsOf(reservations)) resolved.nodes[id]!.sidePitch = { ...resolved.nodes[id]!.sidePitch, ...pitch };
     // A hinted node keeps the size the measured run gave it, so the skeleton input is the same (a floor on `size`, not on `sizeFloor`, which alignment reads).
-    for (const [id, size] of nodeFloors ?? []) resolved.nodes[id]!.size = { ...size };
+    const nodeFloors = nodeFloorsOf(reservations);
+    for (const [id, size] of nodeFloors) resolved.nodes[id]!.size = { ...size };
     stepIn('size', () => sizeNodes(resolved));
     const sizes = new Map(Object.entries(resolved.nodes).map(([id, node]) => [id, { ...node.size! }] as const));
 
@@ -225,7 +226,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     attemptCounters.placeRuns++;
     // The ledger reads the routed chords and the straight overlay links after each stage, only when a test or the trace asked for it.
     const ledger = ledgerOn(options.attemptTrace !== undefined);
-    let model = stepIn('sides-two', () => sidesTwo(resolved, nodeFloors));
+    let model = stepIn('sides-two', () => sidesTwo(resolved, nodeFloors.size > 0 ? nodeFloors : undefined));
     let seen: LedgerSnapshot | undefined = ledger ? ledgerSnapshot(model) : undefined;
     const entry = ledger ? startPlacementEntry() : undefined;
     const account = (stage: string): void => { if (seen === undefined || entry === undefined) return; const now = ledgerSnapshot(model); countStage(stage, seen, now, entry); seen = now; };
@@ -242,11 +243,13 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   // the placed chords say the pitch each face needs, and placement runs again with those floors until no face needs more.
   let model!: LayoutModel;
   let reruns = 0;
+  // What every placement run is told to keep: the test's node floors first, then what the rounds keep.
+  let kept: Reservations = floorEntries(options.testNodeFloors ?? new Map(), 'initial', 0);
   // A trunk with no admissible side is declined by one placement re-run, which shares `MAX_RERUNS` (mesh-bus.md, section 12.4).
   for (;;) {
     // The last run the budget allows declines every trunk, so that it cannot be blocked and no run past the budget is needed.
     declinedTrunks.all = reruns >= (options.testMaxReruns ?? MAX_RERUNS);
-    try { model = await timed('place', () => place([])); break; } catch (error) {
+    try { model = await timed('place', () => place(kept)); break; } catch (error) {
       if (!(error instanceof TrunkBlocked) || declinedTrunks.has(error.key)) throw error;
       declinedTrunks.set(error.key, error.why);
       reruns++;
@@ -265,12 +268,11 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     cuts.push({ stage: 'placement', severity: 'warning', code: 'SIDE_ROUND_CUT',
       message: `A side round was cut: ${why}. The last kept placement stands, and this layout may differ from one made with more time.` });
   };
-  let floors: Reservations = [];
   for (let round = 0; round < FAN_ROUNDS && placements < placeCap; round++) {
     const measure = await timed('measureFans', () => measureFans(model));
-    const grown = pitchGrowth(floors, measure.floors, 'fan', placements);
+    const grown = pitchGrowth(kept, measure.floors, 'fan', placements);
     if (grown.length === 0) break;
-    const next = addReservations(floors, grown);
+    const next = addReservations(kept, grown);
     reruns++; attemptCounters.invalidations.fanReruns++;
     // A fan floor can move the rows, and a trunk that the baseline placed may then have a foreign unit on both sides. The run that found it blocked is a
     // trial, so the round is cut and the baseline stands (a test cannot reach this: it needs a floor that reorders a row of the mesh).
@@ -283,7 +285,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       cut('ELK fell back during it, and the re-run was dropped'); break;
     }
     if (!fanRoundHolds(model, trial)) { cuts.push(fanRoundDropped(model, trial)); break; }
-    model = trial; floors = next;
+    model = trial; kept = next;
   }
   // Side rounds (side-faces.md, Section 19). 7f runs on the kept model first: its output is the baseline, the model the command publishes when no
   // trial is kept. A measure reads the baseline. One batched trial reaches 7f per command; it is kept only on its routed result. Every bound is a
@@ -294,8 +296,6 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   let base = await timed('bands', () => step('bands', () => bands(kept7e, () => trialAbort('bands'), options.attemptTrace)));
   // What the 7f run of the baseline did, for phase 3b's trigger; a kept course trial replaces it with its own run's.
   let baseMoved = lastAttempt.moved, baseUnmoved = lastAttempt.unmoved;
-  // The node floors a kept course trial placed with; a later side trial keeps them, or it would re-size the nodes the course moved.
-  let courseFloors = new Map<string, { width: number; height: number }>();
   let hints = new Map<string, 'left' | 'right'>(options.testSideHints ?? []);
   let laneKeys = new Set<string>();
   const promised: SideOffer['promised'] = new Map(), refused = new Set<string>(), sideNotes: Diagnostic[] = [];
@@ -354,8 +354,8 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     noteDeclined(offer);
     if (offer.courses.length === 0) return;
     if (reruns >= roundLimit(maxReruns, reserve())) { options.testSideTrace?.({ ev: 'course-skipped', offer, reruns }); return; }
-    // The floors of a kept side trial and of the course trial stay under this one.
-    const nodeFloors = new Map([...courseFloors, ...(options.testNodeFloors ?? [])]);
+    // The node floors of a kept course trial stay under this one (a later side trial keeps them, or it would re-size the nodes the course moved).
+    const nodeFloors = new Map<string, Size>();
     for (const key of hints.keys()) {
       const [node] = JSON.parse(key) as [string];
       const size = stage3Sizes.get(kept7e)?.get(node);
@@ -370,6 +370,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       }
     }
     reruns++;
+    const trialLedger = addReservations(kept, floorEntries(nodeFloors, 'course', placements));
     const names = offer.courses.map(course => course.link);
     // A refused course round leaves the layout as the baseline made it, with no note (the trace names the reason), so a sheet it does not change is byte for byte as it was.
     const courseRefusal = (why: string): void => { options.testSideTrace?.({ ev: 'course-refused', links: names, why }); };
@@ -377,7 +378,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     // A row bypass (ticket 24, phase 5) puts the closing link in the slot on its turn side: the trial carries the turn order, or its stems would cross the straight link of the gap.
     const bypassLinks = offer.courses.filter(course => course.kind === 'bypass').map(course => course.link);
     const trialLinks = [...new Set([...activeTurnLinks, ...bypassLinks])];
-    try { trial7e = await timed('rerun-course', () => place(floors, hints, nodeFloors, trialAbort, laneKeys, offer.courses, activeSpans, activeTurn, trialLinks)); } catch (error) {
+    try { trial7e = await timed('rerun-course', () => place(trialLedger, hints, trialAbort, laneKeys, offer.courses, activeSpans, activeTurn, trialLinks)); } catch (error) {
       // A course moves columns the baseline never moved. A centring that cannot hold its feeds there is the course's refusal, not a bug of the baseline.
       if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError
         || (error instanceof Error && error.message.startsWith('Centring invariant violated')))) throw error;
@@ -400,7 +401,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
           for (const [id, promised] of offer.promised) keptPromises.set(id, promised.turns);
           if (routedFinal === undefined) routedBase = routedTrial;
         base = trial; kept7e = trial7e; activeCourses = offer.courses; routedFinal = routedTrial; activeTurnLinks = trialLinks;
-          baseMoved = trialMoved; baseUnmoved = trialUnmoved; courseFloors = new Map(nodeFloors);
+          baseMoved = trialMoved; baseUnmoved = trialUnmoved; kept = trialLedger;
           for (const course of offer.courses) {
             const was = offer.promised.get(course.link)!;
             if (course.kind === 'bypass') {
@@ -433,9 +434,8 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     if (reruns >= spanMax) { options.testSideTrace?.({ ev: 'span-refused', links: offer.links, why: 'budget' }); return false; }
     reruns++;
     const spanRefusal = (why: string, detail: string): void => { options.testSideTrace?.({ ev: 'span-refused', links: offer.links, why, detail }); };
-    const nodeFloors = new Map([...courseFloors, ...(options.testNodeFloors ?? [])]);
     let trial7e: LayoutModel | undefined;
-    try { trial7e = await timed('rerun-span', () => place(floors, hints, nodeFloors, trialAbort, laneKeys, activeCourses, new Set([...activeSpans, ...offer.links]))); } catch (error) {
+    try { trial7e = await timed('rerun-span', () => place(kept, hints, trialAbort, laneKeys, activeCourses, new Set([...activeSpans, ...offer.links]))); } catch (error) {
       // The span round is an offer: a trial that the placement cannot build is refused, whatever the cause, and the sheet stays as the baseline made it. Only the command
       // deadline ends the command. The trace names the error, so a sweep that greps `span-refused` for `error` finds a defect.
       if (!(error instanceof Error) || error instanceof CommandDeadlineError) throw error;
@@ -447,7 +447,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     if (trial7e.fallbackUsed && !kept7e.fallbackUsed) { spanRefusal('placement', 'ELK fell back during the span trial'); return false; }
     // A fan of chords whose neighbours stand closer than the chord clearance is spread by placement (ticket 89): the chords of this trial are measured as the fan
     // rounds measure the first placement, and the trial places again with the floors they ask for. The re-runs are the command's (MAX_RERUNS).
-    let trialFloors = floors;
+    let trialFloors = kept;
     for (let round = 0; round < FAN_ROUNDS && reruns < spanMax; round++) {
       const measure = await timed('measureFans', () => measureFans(trial7e!));
       const grown = pitchGrowth(trialFloors, measure.floors, 'span', placements);
@@ -455,7 +455,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       const next = addReservations(trialFloors, grown);
       reruns++; attemptCounters.invalidations.fanReruns++;
       let again: LayoutModel;
-      try { again = await timed('rerun-fan', () => place(next, hints, nodeFloors, trialAbort, laneKeys, activeCourses, new Set([...activeSpans, ...offer.links]))); } catch (error) {
+      try { again = await timed('rerun-fan', () => place(next, hints, trialAbort, laneKeys, activeCourses, new Set([...activeSpans, ...offer.links]))); } catch (error) {
         if (!(error instanceof Error) || error instanceof CommandDeadlineError) throw error;
         spanRefusal(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError ? 'placement' : 'error', error.message); return false;
       }
@@ -478,7 +478,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       const verdict = judgeSpanTrial(routedBase!, routedTrial, offer.links);
       options.testSideTrace?.({ ev: 'span-trial', verdict, trial, routedTrial, routedBase, offer });
       if (!verdict.kept) { spanRefusal(verdict.reason!, verdict.detail); return false; }
-      activeSpans = new Set([...activeSpans, ...offer.links]); floors = trialFloors;
+      activeSpans = new Set([...activeSpans, ...offer.links]); kept = trialFloors;
       base = trial; kept7e = trial7e; routedFinal = routedTrial; routedBase = routedTrial;
       baseMoved = trialMoved; baseUnmoved = trialUnmoved;
       for (const id of offer.links) {
@@ -545,7 +545,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     }
     const all = new Map([...hints, ...offer.hints]);
     for (const [key, item] of offer.promised) trialLinks.set(key, item.link);
-    const nodeFloors = new Map([...courseFloors, ...(options.testNodeFloors ?? [])]);
+    const nodeFloors = new Map<string, Size>();
     for (const key of all.keys()) {
       const [node] = JSON.parse(key) as [string];
       // The 7e model keys the size cache, never the baseline (a new object: the lookup would give undefined with no error).
@@ -555,7 +555,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     const allLanes = new Set([...laneKeys, ...[...offer.promised].filter(([, item]) => item.shape === 'lane').map(([key]) => key)]);
     let trial7e: LayoutModel;
     reruns++; attemptCounters.invalidations.sideReruns++;
-    try { trial7e = await timed('rerun-side', () => place(floors, all, nodeFloors, trialAbort, allLanes)); } catch (error) {
+    try { trial7e = await timed('rerun-side', () => place(addReservations(kept, floorEntries(nodeFloors, 'side', placements)), all, trialAbort, allLanes)); } catch (error) {
       // Only the layout's own refusals drop the offer; anything else (a TypeError) is a bug and must surface.
       if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError)) throw error;
       refuse(offer.hints.keys(), offer.hints, `the placement run rejected it (${error.message})`);
@@ -635,7 +635,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       if (!turnRoundRuns(left, overlayAhead, overlayGain, beats)) {
         sideNotes.push({ stage: 'placement', severity: 'info', code: 'TURN_ROUND_SKIPPED', message: `The turn round was skipped: the command has ${left <= 0 ? 'made its' : 'one left of its'} ${maxReruns} placement re-runs${left <= 0 ? '' : ', for the overlay round'}.` });
       } else {
-        const nodeFloors = new Map([...courseFloors, ...(options.testNodeFloors ?? [])]);
+        const nodeFloors = new Map<string, Size>();
         for (const key of hints.keys()) {
           const [node] = JSON.parse(key) as [string];
           const size = stage3Sizes.get(kept7e)?.get(node);
@@ -643,7 +643,8 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
         }
         let trial7e: LayoutModel | undefined;
         reruns++;
-        try { trial7e = await timed('rerun-turn', () => place(floors, hints, nodeFloors, trialAbort, laneKeys, activeCourses, activeSpans, true)); } catch (error) {
+        const trialLedger = addReservations(kept, floorEntries(nodeFloors, 'turn', placements));
+        try { trial7e = await timed('rerun-turn', () => place(trialLedger, hints, trialAbort, laneKeys, activeCourses, activeSpans, true)); } catch (error) {
           if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError || error instanceof PlacementBudgetExceeded
             || (error instanceof Error && error.message.startsWith('Centring invariant violated')))) throw error;
           refuseTurns(`the placement run rejected it (${error.message})`);
@@ -658,7 +659,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
             const verdict = judgeTurnTrial(current, routedTrial, keptPromises);
             options.testSideTrace?.({ ev: 'turn-trial', verdict, trial, routedTrial, routedBase: current });
             if (verdict.kept) {
-              base = trial; kept7e = trial7e; routedFinal = routedTrial; courseFloors = new Map(nodeFloors); activeTurn = true;
+              base = trial; kept7e = trial7e; routedFinal = routedTrial; kept = trialLedger; activeTurn = true;
               for (const face of trial7e.freeze!.turnOrder!) {
                 sideNotes.push({ stage: 'placement', severity: 'info', code: 'TURN_ORDER_TAKEN', owners: [{ kind: 'node', id: face.node }],
                   message: `The ports of the ${face.side} face of ${face.node} take the order of their planned first turns: ${verdict.before!.bent} bent links, ${verdict.before!.turns} turns and ${verdict.before!.crossings} crossings on the baseline, ${verdict.after!.bent}, ${verdict.after!.turns} and ${verdict.after!.crossings} after.` });
@@ -682,7 +683,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     options.testSideTrace?.({ ev: 'overlay-courses', offer: overlayOffer, base, routedBase: current });
     if (overlayOffer.courses.length > 0 && reruns >= maxReruns) options.testSideTrace?.({ ev: 'overlay-skipped', offer: overlayOffer, reruns });
     else if (overlayOffer.courses.length > 0) {
-      const nodeFloors = new Map([...courseFloors, ...(options.testNodeFloors ?? [])]);
+      const nodeFloors = new Map<string, Size>();
       for (const key of hints.keys()) {
         const [node] = JSON.parse(key) as [string];
         const size = stage3Sizes.get(kept7e)?.get(node);
@@ -700,7 +701,8 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       const refuseOverlays = (why: string): void => { options.testSideTrace?.({ ev: 'overlay-refused', links: names, why }); };
       let trial7e: LayoutModel | undefined;
       reruns++;
-      try { trial7e = await timed('rerun-overlay', () => place(floors, hints, nodeFloors, trialAbort, laneKeys, [...activeCourses, ...overlayOffer.courses])); } catch (error) {
+      const trialLedger = addReservations(kept, floorEntries(nodeFloors, 'overlay', placements));
+      try { trial7e = await timed('rerun-overlay', () => place(trialLedger, hints, trialAbort, laneKeys, [...activeCourses, ...overlayOffer.courses])); } catch (error) {
         if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError
           || (error instanceof Error && error.message.startsWith('Centring invariant violated')))) throw error;
         refuseOverlays(`the placement run rejected them (${error.message})`);
@@ -716,7 +718,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
           options.testSideTrace?.({ ev: 'overlay-trial', verdict, trial, routedTrial, routedBase: current });
           if (verdict.kept) {
             for (const [id, item] of overlayOffer.promised) keptPromises.set(id, item.turns);
-            base = trial; kept7e = trial7e; activeCourses = [...activeCourses, ...overlayOffer.courses]; routedFinal = routedTrial; courseFloors = new Map(nodeFloors);
+            base = trial; kept7e = trial7e; activeCourses = [...activeCourses, ...overlayOffer.courses]; routedFinal = routedTrial; kept = trialLedger;
             for (const course of overlayOffer.courses) {
               const was = overlayOffer.promised.get(course.link)!;
               sideNotes.push({ stage: 'placement', severity: 'info', code: 'COURSE_TAKEN', owners: [{ kind: 'link', id: course.link }],

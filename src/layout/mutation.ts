@@ -513,7 +513,6 @@ function validateFreeze(model: LayoutModel): void {
   same(topology(model), freeze.topology, 'Frozen port topology changed');
   if (!sameCourses(model.courses, freeze.courses)) throw new Error('Frozen courses changed');
   validateSpans(model, freeze.spans);
-  validateReservations(model);
   if (freeze.turnOrder !== undefined && (model.turnOrder !== true || freeze.turnOrder.some(face => model.nodes[face.node] === undefined))) throw new Error('Frozen turn order names a face the model does not carry');
   validateCourses(model);
   same(freeze.floors.map(floor => floor.node), orderedNodeIds(model.document), 'Frozen floors omit or repeat nodes');
@@ -526,6 +525,7 @@ function validateFreeze(model: LayoutModel): void {
       if (!model.nodes[floor.node]!.ports.some(port => port.sideHint === true || port.courseHint === true)) throw new SideHintRefusal(`Node floor on ${floor.node}, which has no hinted port`);
     }
   }
+  validateReservations(model);
   if (stages.indexOf(model.stage) >= stages.indexOf('bands')) {
     if (!freeze.placement) throw new Error('Missing final placement freeze');
     same(placement(model), freeze.placement, 'Final placement changed');
