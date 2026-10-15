@@ -306,6 +306,7 @@ export function validateReservations(model: LayoutModel): void {
     const held = spansOf(ledger);
     if (!same(model.links.filter(link => held.has(link.id)).map(link => link.id), model.freeze?.spans ?? []) || held.size !== (model.freeze?.spans ?? []).length) throw new Error('Reserved spanning chords differ from the frozen span hints');
   }
+  if (model.reservations !== undefined && turnOf(ledger).all && model.turnOrder !== true) throw new Error('The turn order is reserved for every face, and the model does not carry it');
   // A floor is a promise about the placed geometry, which later stages may only grow; the kinds below are checked on every restored stage.
   for (const failure of holds(ledger.filter(item => RESTORED.has(item.kind)), model)) throw new Error(`Reservation ${failure.id} does not hold: ${failure.why}`);
 }
