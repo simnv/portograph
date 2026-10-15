@@ -34,6 +34,12 @@ describe('reservation ledger', () => {
     expect(() => validateReservations(model({}))).toThrow(/lane owners/);
     expect(() => validateReservations(model({ laneHint: true }, owners))).toThrow(/no side face|not the face|no reservation/);
   });
+  it('refuses a ledger whose courses are not the courses of the model', () => {
+    const course = { link: 'l', kind: 'gap', from: { face: 'left' }, to: { face: 'right' }, runs: [] } as never;
+    const model = (courses: object[]): never => ({ reservations: courseEntries([course], new Map([['l', 2]]), 'course', 0), courses, nodes: {} }) as never;
+    expect(() => validateReservations(model([course]))).not.toThrow();
+    expect(() => validateReservations(model([]))).toThrow(/Reserved courses/);
+  });
   it('merges pitch and node floors by componentwise maximum and keeps declaration order', () => {
     const a = reserve([], pitchFloors(new Map([['n', { left: 10 }], ['m', { right: 4 }]]), 'fan', 0));
     const b = reserve(a, pitchFloors(new Map([['n', { left: 8, right: 6 }]]), 'fan', 1));

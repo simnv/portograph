@@ -297,6 +297,10 @@ export function validateReservations(model: LayoutModel): void {
       if ((port.laneHint === true) !== owners.has(portKey(port.ref))) throw new Error(`Lane hint on ${node.id} does not match the lane owners`);
     }
   }
+  if (model.reservations !== undefined) {
+    // The courses the ledger reserves are the courses the model carries, link for link.
+    if (!same(coursesOf(ledger).map(course => course.link), (model.courses ?? []).map(course => course.link))) throw new Error('Reserved courses differ from the courses of the model');
+  }
   // A floor is a promise about the placed geometry, which later stages may only grow; the kinds below are checked on every restored stage.
   for (const failure of holds(ledger.filter(item => RESTORED.has(item.kind)), model)) throw new Error(`Reservation ${failure.id} does not hold: ${failure.why}`);
 }
