@@ -44,7 +44,7 @@ import { beats, gainOf, judgeCourseTrial, judgeOverlayTrial, measureCourses, mea
 import { pathBends } from '../layout/objective.js';
 import { turnMissed } from '../layout/turn-order.js';
 import { judgeTurnTrial, measureTurnOrder, roundLimit, turnReserve, turnRoundRuns } from '../layout/turn-measure.js';
-import { pitchFloorsOf, nodeFloors as floorEntries, pitchGrowth, nodeFloorsOf, reserve as addReservations, type Reservations } from '../layout/reservations.js';
+import { pitchFloorsOf, nodeFloors as floorEntries, pitchGrowth, nodeFloorsOf, reserve as addReservations, sideFaces, sideHintsOf, type Reservations } from '../layout/reservations.js';
 import { countStage, ledgerOn, ledgerSnapshot, startPlacementEntry, type LedgerSnapshot } from '../layout/attempt-ledger.js';
 
 
@@ -172,7 +172,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   let placements = 0;
   // The cap on placements per command: the first run and the effective re-run budget (the fan rounds at the start run within FAN_ROUNDS even with a budget of 0).
   const placeCap = Math.max(options.testMaxReruns ?? MAX_RERUNS, FAN_ROUNDS) + 1;
-  const place = async (reservations: Reservations, hints = options.testSideHints, abort?: (stage: string) => void, laneKeys: ReadonlySet<string> = new Set(), courses: readonly Course[] = activeCourses, spans: ReadonlySet<string> = activeSpans, turn: boolean = activeTurn, turnLinks: readonly string[] = activeTurnLinks): Promise<LayoutModel> => {
+  const place = async (reservations: Reservations, abort?: (stage: string) => void, laneKeys: ReadonlySet<string> = new Set(), courses: readonly Course[] = activeCourses, spans: ReadonlySet<string> = activeSpans, turn: boolean = activeTurn, turnLinks: readonly string[] = activeTurnLinks): Promise<LayoutModel> => {
     // The one assertion of the placement budget: a command places at most MAX_RERUNS + 1 times (the first run and the re-runs), whatever round asks. A run that stage 7a
     // refuses before any work is given back by the round that asked (`placements--`, with its `reruns--`).
     if (placements >= placeCap) throw new PlacementBudgetExceeded(placements);
@@ -192,6 +192,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     for (const link of resolved.links) if (spans.has(link.id)) link.spanHint = true;
     if (turn) resolved.turnOrder = true;
     else if (turnLinks.length > 0) { resolved.turnOrder = true; resolved.turnLinks = [...turnLinks]; }
+    const hints = sideHintsOf(reservations);
     stepIn('sides-one', () => sidesOne(resolved, hints, laneKeys, courseFaces));
     if (courses.length) resolved.courses = JSON.parse(JSON.stringify(courses)) as Course[];
     // An approach (ticket 15, phase 6) is stored on the link and in its course; the port keeps its side.
@@ -244,7 +245,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   let model!: LayoutModel;
   let reruns = 0;
   // What every placement run is told to keep: the test's node floors first, then what the rounds keep.
-  let kept: Reservations = floorEntries(options.testNodeFloors ?? new Map(), 'initial', 0);
+  let kept: Reservations = [...floorEntries(options.testNodeFloors ?? new Map(), 'initial', 0), ...sideFaces(options.testSideHints ?? new Map(), new Map(), 'initial', 0)];
   // A trunk with no admissible side is declined by one placement re-run, which shares `MAX_RERUNS` (mesh-bus.md, section 12.4).
   for (;;) {
     // The last run the budget allows declines every trunk, so that it cannot be blocked and no run past the budget is needed.
@@ -296,7 +297,6 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   let base = await timed('bands', () => step('bands', () => bands(kept7e, () => trialAbort('bands'), options.attemptTrace)));
   // What the 7f run of the baseline did, for phase 3b's trigger; a kept course trial replaces it with its own run's.
   let baseMoved = lastAttempt.moved, baseUnmoved = lastAttempt.unmoved;
-  let hints = new Map<string, 'left' | 'right'>(options.testSideHints ?? []);
   let laneKeys = new Set<string>();
   const promised: SideOffer['promised'] = new Map(), refused = new Set<string>(), sideNotes: Diagnostic[] = [];
   const trialLinks = new Map<string, string>();
@@ -356,7 +356,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     if (reruns >= roundLimit(maxReruns, reserve())) { options.testSideTrace?.({ ev: 'course-skipped', offer, reruns }); return; }
     // The node floors of a kept course trial stay under this one (a later side trial keeps them, or it would re-size the nodes the course moved).
     const nodeFloors = new Map<string, Size>();
-    for (const key of hints.keys()) {
+    for (const key of sideHintsOf(kept).keys()) {
       const [node] = JSON.parse(key) as [string];
       const size = stage3Sizes.get(kept7e)?.get(node);
       if (size !== undefined) nodeFloors.set(node, { ...size });
@@ -378,7 +378,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     // A row bypass (ticket 24, phase 5) puts the closing link in the slot on its turn side: the trial carries the turn order, or its stems would cross the straight link of the gap.
     const bypassLinks = offer.courses.filter(course => course.kind === 'bypass').map(course => course.link);
     const trialLinks = [...new Set([...activeTurnLinks, ...bypassLinks])];
-    try { trial7e = await timed('rerun-course', () => place(trialLedger, hints, trialAbort, laneKeys, offer.courses, activeSpans, activeTurn, trialLinks)); } catch (error) {
+    try { trial7e = await timed('rerun-course', () => place(trialLedger, trialAbort, laneKeys, offer.courses, activeSpans, activeTurn, trialLinks)); } catch (error) {
       // A course moves columns the baseline never moved. A centring that cannot hold its feeds there is the course's refusal, not a bug of the baseline.
       if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError
         || (error instanceof Error && error.message.startsWith('Centring invariant violated')))) throw error;
@@ -435,7 +435,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     reruns++;
     const spanRefusal = (why: string, detail: string): void => { options.testSideTrace?.({ ev: 'span-refused', links: offer.links, why, detail }); };
     let trial7e: LayoutModel | undefined;
-    try { trial7e = await timed('rerun-span', () => place(kept, hints, trialAbort, laneKeys, activeCourses, new Set([...activeSpans, ...offer.links]))); } catch (error) {
+    try { trial7e = await timed('rerun-span', () => place(kept, trialAbort, laneKeys, activeCourses, new Set([...activeSpans, ...offer.links]))); } catch (error) {
       // The span round is an offer: a trial that the placement cannot build is refused, whatever the cause, and the sheet stays as the baseline made it. Only the command
       // deadline ends the command. The trace names the error, so a sweep that greps `span-refused` for `error` finds a defect.
       if (!(error instanceof Error) || error instanceof CommandDeadlineError) throw error;
@@ -455,7 +455,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       const next = addReservations(trialFloors, grown);
       reruns++; attemptCounters.invalidations.fanReruns++;
       let again: LayoutModel;
-      try { again = await timed('rerun-fan', () => place(next, hints, trialAbort, laneKeys, activeCourses, new Set([...activeSpans, ...offer.links]))); } catch (error) {
+      try { again = await timed('rerun-fan', () => place(next, trialAbort, laneKeys, activeCourses, new Set([...activeSpans, ...offer.links]))); } catch (error) {
         if (!(error instanceof Error) || error instanceof CommandDeadlineError) throw error;
         spanRefusal(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError ? 'placement' : 'error', error.message); return false;
       }
@@ -543,7 +543,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_ROUND_SKIPPED', message: `A side round was skipped: the command has made its ${maxReruns} placement re-runs.` });
       break;
     }
-    const all = new Map([...hints, ...offer.hints]);
+    const all = new Map([...sideHintsOf(kept), ...offer.hints]);
     for (const [key, item] of offer.promised) trialLinks.set(key, item.link);
     const nodeFloors = new Map<string, Size>();
     for (const key of all.keys()) {
@@ -554,8 +554,11 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     }
     const allLanes = new Set([...laneKeys, ...[...offer.promised].filter(([, item]) => item.shape === 'lane').map(([key]) => key)]);
     let trial7e: LayoutModel;
+    // The faces stay with the ledger when the trial is kept; the size floors of a side trial do not (a later round measures its own).
+    const faces = sideFaces(offer.hints, offer.promised, 'side', placements);
+    const trialLedger = addReservations(kept, [...floorEntries(nodeFloors, 'side', placements), ...faces]);
     reruns++; attemptCounters.invalidations.sideReruns++;
-    try { trial7e = await timed('rerun-side', () => place(addReservations(kept, floorEntries(nodeFloors, 'side', placements)), all, trialAbort, allLanes)); } catch (error) {
+    try { trial7e = await timed('rerun-side', () => place(trialLedger, trialAbort, allLanes)); } catch (error) {
       // Only the layout's own refusals drop the offer; anything else (a TypeError) is a bug and must surface.
       if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError)) throw error;
       refuse(offer.hints.keys(), offer.hints, `the placement run rejected it (${error.message})`);
@@ -612,7 +615,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     if (!verdict.kept) { refuse(offer.hints.keys(), all, verdict.reason); break; }
     // Kept: the trial is the baseline now. The notes name what the net count accepted.
     keptNotes.push(...trialNotes(routedBase, routedTrial, verdict, hintedLinks.keys()));
-    base = trial; kept7e = trial7e; hints = all; laneKeys = allLanes; routedFinal = routedTrial;
+    base = trial; kept7e = trial7e; kept = addReservations(kept, faces); laneKeys = allLanes; routedFinal = routedTrial;
     for (const [key, item] of offer.promised) promised.set(key, item);
     break; // one trial reaches 7f per command
   }
@@ -636,7 +639,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
         sideNotes.push({ stage: 'placement', severity: 'info', code: 'TURN_ROUND_SKIPPED', message: `The turn round was skipped: the command has ${left <= 0 ? 'made its' : 'one left of its'} ${maxReruns} placement re-runs${left <= 0 ? '' : ', for the overlay round'}.` });
       } else {
         const nodeFloors = new Map<string, Size>();
-        for (const key of hints.keys()) {
+        for (const key of sideHintsOf(kept).keys()) {
           const [node] = JSON.parse(key) as [string];
           const size = stage3Sizes.get(kept7e)?.get(node);
           if (size !== undefined) nodeFloors.set(node, { ...size });
@@ -644,7 +647,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
         let trial7e: LayoutModel | undefined;
         reruns++;
         const trialLedger = addReservations(kept, floorEntries(nodeFloors, 'turn', placements));
-        try { trial7e = await timed('rerun-turn', () => place(trialLedger, hints, trialAbort, laneKeys, activeCourses, activeSpans, true)); } catch (error) {
+        try { trial7e = await timed('rerun-turn', () => place(trialLedger, trialAbort, laneKeys, activeCourses, activeSpans, true)); } catch (error) {
           if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError || error instanceof PlacementBudgetExceeded
             || (error instanceof Error && error.message.startsWith('Centring invariant violated')))) throw error;
           refuseTurns(`the placement run rejected it (${error.message})`);
@@ -684,7 +687,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     if (overlayOffer.courses.length > 0 && reruns >= maxReruns) options.testSideTrace?.({ ev: 'overlay-skipped', offer: overlayOffer, reruns });
     else if (overlayOffer.courses.length > 0) {
       const nodeFloors = new Map<string, Size>();
-      for (const key of hints.keys()) {
+      for (const key of sideHintsOf(kept).keys()) {
         const [node] = JSON.parse(key) as [string];
         const size = stage3Sizes.get(kept7e)?.get(node);
         if (size !== undefined) nodeFloors.set(node, { ...size });
@@ -702,7 +705,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       let trial7e: LayoutModel | undefined;
       reruns++;
       const trialLedger = addReservations(kept, floorEntries(nodeFloors, 'overlay', placements));
-      try { trial7e = await timed('rerun-overlay', () => place(trialLedger, hints, trialAbort, laneKeys, [...activeCourses, ...overlayOffer.courses])); } catch (error) {
+      try { trial7e = await timed('rerun-overlay', () => place(trialLedger, trialAbort, laneKeys, [...activeCourses, ...overlayOffer.courses])); } catch (error) {
         if (!(error instanceof SideHintRefusal || error instanceof SkeletonError || error instanceof BundleFeasibilityError
           || (error instanceof Error && error.message.startsWith('Centring invariant violated')))) throw error;
         refuseOverlays(`the placement run rejected them (${error.message})`);
@@ -733,7 +736,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
     }
   }
   for (const [key, item] of promised) {
-    const side = hints.get(key);
+    const side = sideHintsOf(kept).get(key);
     if (side === undefined) continue;
     sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_HINT_TAKEN',
       message: `The port ${portName(key)} takes the side ${side}: the ${item.shape} shape of ${item.link} (${item.bends} bends).`, owners: [{ kind: 'link', id: item.link }] });

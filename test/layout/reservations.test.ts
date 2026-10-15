@@ -5,16 +5,25 @@ import { portKey } from '../../src/layout/sides-one.js';
 describe('reservation ledger', () => {
   it('refuses a restored model whose pitch is under a reserved floor, and one that holds twice an id', () => {
     const ledger = pitchFloors(new Map([['n', { left: 10 }]]), 'fan', 0);
-    const model = (pitch: number, reservations = ledger): never => ({ reservations, nodes: { n: { sidePitch: { left: pitch } } } }) as never;
+    const model = (pitch: number, reservations = ledger): never => ({ reservations, nodes: { n: { id: 'n', ports: [], sidePitch: { left: pitch } } } }) as never;
     expect(() => validateReservations(model(10))).not.toThrow();
     expect(() => validateReservations(model(9))).toThrow(/does not hold/);
     expect(() => validateReservations(model(10, [...ledger, ...ledger]))).toThrow(/held twice/);
   });
   it('refuses a ledger whose node floors are not the frozen ones', () => {
     const ledger = nodeFloors(new Map([['n', { width: 10, height: 20 }]]), 'side', 0);
-    const model = (frozen: number): never => ({ reservations: ledger, freeze: { nodeFloors: [{ node: 'n', size: { width: frozen, height: 20 } }] }, nodes: { n: { size: { width: 12, height: 20 } } } }) as never;
+    const model = (frozen: number): never => ({ reservations: ledger, freeze: { nodeFloors: [{ node: 'n', size: { width: frozen, height: 20 } }] }, nodes: { n: { id: 'n', ports: [], size: { width: 12, height: 20 } } } }) as never;
     expect(() => validateReservations(model(10))).not.toThrow();
     expect(() => validateReservations(model(11))).toThrow(/frozen node floors/);
+  });
+  it('refuses a side face the port does not stand on, and a hinted port with no reservation', () => {
+    const ref = { node: 'n', name: 'p', ordinal: 1 }, key = portKey(ref);
+    const ledger = sideFaces(new Map([[key, 'left' as const]]), new Map(), 'side', 0);
+    const model = (port: object, reservations = ledger): never => ({ reservations, nodes: { n: { id: 'n', ports: [{ ref, ...port }] } } }) as never;
+    expect(() => validateReservations(model({ side: 'left', sideHint: true }))).not.toThrow();
+    expect(() => validateReservations(model({ side: 'right', sideHint: true }))).toThrow(/not the face/);
+    expect(() => validateReservations(model({ side: 'left' }))).toThrow(/not the face/);
+    expect(() => validateReservations(model({ side: 'left', sideHint: true }, pitchFloors(new Map([['n', { left: 1 }]]), 'fan', 0)))).toThrow(/no reservation|does not hold/);
   });
   it('merges pitch and node floors by componentwise maximum and keeps declaration order', () => {
     const a = reserve([], pitchFloors(new Map([['n', { left: 10 }], ['m', { right: 4 }]]), 'fan', 0));

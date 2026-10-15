@@ -280,6 +280,17 @@ export function validateReservations(model: LayoutModel): void {
     const held = nodeFloorsOf(ledger), frozen = new Map((model.freeze?.nodeFloors ?? []).map(floor => [floor.node, floor.size] as const));
     if (held.size !== frozen.size || [...held].some(([node, size]) => !same(frozen.get(node), size))) throw new Error('Reserved node floors differ from the frozen node floors');
   }
+  if (model.reservations !== undefined) {
+    // A hinted port stands on the side its reservation names (a course face may supersede the hint), and every hinted port has its reservation.
+    const faces = sideHintsOf(ledger);
+    for (const [key, side] of faces) {
+      const ref = portRefOf(key), port = model.nodes[ref.node]?.ports.find(item => portKey(item.ref) === key);
+      if (port === undefined || (port.courseHint !== true && (port.sideHint !== true || port.side !== side))) throw new Error(`Reserved side face on ${key} is not the face the port stands on`);
+    }
+    for (const node of Object.values(model.nodes)) for (const port of node.ports) {
+      if (port.sideHint === true && faces.get(portKey(port.ref)) !== port.side) throw new Error(`Side hint on ${node.id} has no reservation`);
+    }
+  }
   // A floor is a promise about the placed geometry, which later stages may only grow; the kinds below are checked on every restored stage.
   for (const failure of holds(ledger.filter(item => RESTORED.has(item.kind)), model)) throw new Error(`Reservation ${failure.id} does not hold: ${failure.why}`);
 }
