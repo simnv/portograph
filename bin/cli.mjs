@@ -190,7 +190,10 @@ export async function main(argv, io = { out: process.stdout, err: process.stderr
   try {
     command = parseCommand(verb, rest);
   } catch (error) {
-    io.err.write(`portograph: ${error.message}\n\nRun 'portograph --help' for the full usage.\n`);
+    // A caller that asked for JSON gets JSON for a usage error too; the option is read before parsing fails.
+    const asJson = rest.includes('--diagnostics=json') || rest.some((argument, index) => argument === '--diagnostics' && rest[index + 1] === 'json');
+    if (asJson) io.err.write(`${formatStatus('json', 'error', 'USAGE', error.message)}\n`);
+    else io.err.write(`portograph: ${error.message}\n\nRun 'portograph --help' for the full usage.\n`);
     return EXIT.inputError;
   }
 

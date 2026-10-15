@@ -327,6 +327,13 @@ describe('source locations', () => {
     expect(place('INVALID_TYPE')).toEqual({ line: 10, column: 20 });
   });
 
+  it('finds a key that holds a dot or a bracket', () => {
+    const result = parseWithDiagnostics('portograph: 2\ngroups:\n  g: { tier: 0 }\nnodes:\n  a:\n    group: g\noverlays:\n  "a.b[1]": maybe\n');
+    const bad = result.diagnostics.find(d => d.path.startsWith('$.overlays.'))!;
+    expect(bad.path).toBe('$.overlays.a.b[1]');
+    expect(result.locate(bad)).toEqual({ line: 8, column: 3 });
+  });
+
   it('falls back to the map that should hold a missing key', () => {
     const result = parseWithDiagnostics('portograph: 2\ngroups:\n  g: { tier: 0 }\nnodes:\n  a:\n    label: x\n');
     const missing = result.diagnostics.find(d => d.code === 'NODE_GROUP_REQUIRED')!;

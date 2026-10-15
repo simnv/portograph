@@ -98,10 +98,10 @@ describe('stdin, stdout and diagnostics options', () => {
     expect(parseCommand('layout', ['a.yaml', '--diagnostics=text']).diagnostics).toBeUndefined();
     expect(() => parseCommand('layout', ['a.yaml', '--diagnostics', 'xml'])).toThrow(UsageError);
     expect(JSON.parse(formatDiagnosticJson({ stage: 'parse', severity: 'error', code: 'UNKNOWN_KEY', path: '$.a', message: 'm' }, { source: 'x.yaml', line: 2, column: 3 })))
-      .toEqual({ stage: 'parse', severity: 'error', code: 'UNKNOWN_KEY', path: '$.a', message: 'm', source: 'x.yaml', line: 2, column: 3 });
+      .toEqual({ kind: 'diagnostic', stage: 'parse', severity: 'error', code: 'UNKNOWN_KEY', path: '$.a', message: 'm', source: 'x.yaml', line: 2, column: 3 });
     expect(formatStatus(undefined, 'info', 'WROTE', 'wrote x')).toBe('portograph: wrote x');
     expect(formatStatus(undefined, 'error', 'COMMAND_DEADLINE', 'too slow', true)).toBe('portograph: error: COMMAND_DEADLINE: too slow');
-    expect(JSON.parse(formatStatus('json', 'error', 'GATE_FAILED', 'g'))).toEqual({ severity: 'error', code: 'GATE_FAILED', message: 'g' });
+    expect(JSON.parse(formatStatus('json', 'error', 'GATE_FAILED', 'g'))).toEqual({ kind: 'status', severity: 'error', code: 'GATE_FAILED', message: 'g' });
   });
 });
 

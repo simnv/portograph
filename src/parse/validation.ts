@@ -20,12 +20,6 @@ export class ParseError extends Error {
   }
 }
 
-/** Split `$.groups.core.ports.list[0].side` into its keys and indices. */
-function pathSegments(path: string): (string | number)[] {
-  const segments: (string | number)[] = [];
-  for (const match of path.matchAll(/\.([^.[\]]+)|\[(\d+)\]/g)) segments.push(match[2] !== undefined ? Number(match[2]) : match[1]!);
-  return segments;
-}
 
 export class Validation {
   readonly diagnostics: SourceDiagnostic[] = [];
@@ -42,15 +36,23 @@ export class Validation {
     if (known !== undefined || this.ast === undefined) return known;
     let node: unknown = this.ast.contents;
     let offset: number | undefined = (node as Node | null)?.range?.[0];
-    for (const segment of pathSegments(diagnostic.path)) {
-      if (typeof segment === 'string' && isMap(node)) {
-        const pair = node.items.find(item => isScalar(item.key) && String(item.key.value) === segment);
+    // Walk the path string against the document, not a split of it: a key may hold `.` or `[`,
+    // so at a map the longest key that the rest of the path starts with (and ends on a boundary) wins.
+    let rest = diagnostic.path.startsWith('$') ? diagnostic.path.slice(1) : diagnostic.path;
+    while (rest !== '') {
+      const index = /^\[(\d+)\]/.exec(rest);
+      if (isMap(node) && rest.startsWith('.')) {
+        const fits = node.items.filter(item => isScalar(item.key) && rest.startsWith(`.${String(item.key.value)}`)
+          && (rest.length === String(item.key.value).length + 1 || rest[String(item.key.value).length + 1] === '.' || rest[String(item.key.value).length + 1] === '['));
+        const pair = fits.sort((a, b) => String((b.key as { value: unknown }).value).length - String((a.key as { value: unknown }).value).length)[0];
         if (pair === undefined) break;
+        rest = rest.slice(String((pair.key as { value: unknown }).value).length + 1);
         offset = (pair.key as Node).range?.[0] ?? offset;
         node = pair.value;
-      } else if (typeof segment === 'number' && isSeq(node)) {
-        const item = node.items[segment];
+      } else if (isSeq(node) && index !== null) {
+        const item = node.items[Number(index[1])];
         if (item === undefined) break;
+        rest = rest.slice(index[0].length);
         offset = (item as Node).range?.[0] ?? offset;
         node = item;
       } else break;

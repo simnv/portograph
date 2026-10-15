@@ -57,7 +57,7 @@ async function run(request, emit) {
   const published = (model) => (timings ? model : { ...model, runtime: { stages: [] } });
   const publishedReport = (report) => {
     if (timings) return report;
-    return { snapshot: report.snapshot };
+    return { snapshot: report.snapshot, runtime: { stages: [] } };
   };
   void allowGateFailures; // the parent applies it to the exit code; the report never changes.
   const source = readInput(input, request.inputText);

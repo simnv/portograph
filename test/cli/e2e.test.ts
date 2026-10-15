@@ -1,5 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -206,7 +207,7 @@ links:
     }
     expect(readFileSync(a, 'utf8')).toBe(readFileSync(b, 'utf8'));
     expect(readFileSync(a.replace('.svg', '.layout.json'), 'utf8')).not.toContain('durationMs');
-    expect(readFileSync(a.replace('.svg', '.score.json'), 'utf8')).not.toContain('"runtime"');
+    expect(JSON.parse(readFileSync(a.replace('.svg', '.score.json'), 'utf8')).runtime).toEqual({ stages: [] });
     const timed = join(temp, 'det-timed.svg');
     expect((await command(['render', '--timings', golden, '-o', timed])).code).toBe(0);
     expect(readFileSync(timed.replace('.svg', '.layout.json'), 'utf8')).toContain('durationMs');
@@ -257,10 +258,21 @@ links:
     const result = await command(['layout', schema, '--diagnostics', 'json']);
     expect(result.code).toBe(2);
     const lines = result.stderr.trim().split('\n').map(line => JSON.parse(line) as Record<string, unknown>);
-    expect(lines[0]).toMatchObject({ code: 'UNKNOWN_KEY', severity: 'error', path: '$.nodes.a.colour', source: schema, line: 7, column: 5 });
+    expect(lines[0]).toMatchObject({ kind: 'diagnostic', code: 'UNKNOWN_KEY', severity: 'error', path: '$.nodes.a.colour', source: schema, line: 7, column: 5 });
     expect(lines.every(line => typeof line.message === 'string' && typeof line.severity === 'string')).toBe(true);
     const wrote = await command(['render', golden, '-o', join(temp, 'json-out.svg'), '--diagnostics=json']);
     expect(wrote.code, wrote.stderr).toBe(0);
-    expect(JSON.parse(wrote.stderr.trim().split('\n').at(-1)!)).toMatchObject({ severity: 'info', code: 'WROTE' });
+    expect(JSON.parse(wrote.stderr.trim().split('\n').at(-1)!)).toMatchObject({ kind: 'status', severity: 'info', code: 'WROTE' });
+    const usage = await command(['layout', schema, '--diagnostics', 'json', '--nope']);
+    expect(usage.code).toBe(2);
+    expect(JSON.parse(usage.stderr.trim())).toMatchObject({ kind: 'status', severity: 'error', code: 'USAGE' });
   }, 60000);
+
+  it('builds dist/index.js and dist/index.cjs with the export keys of src/index.ts', async () => {
+    const wanted = Object.keys(await import('../../src/index.js')).sort();
+    const esm = Object.keys(await import(join(root, 'dist/index.js'))).sort();
+    const cjs = Object.keys(createRequire(import.meta.url)(join(root, 'dist/index.cjs'))).sort();
+    expect(esm).toEqual(wanted);
+    expect(cjs).toEqual(wanted);
+  });
 });

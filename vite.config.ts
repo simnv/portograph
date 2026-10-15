@@ -14,8 +14,20 @@ import dts from 'vite-plugin-dts';
 function publicNames(): string[] {
   const text = readFileSync(new URL('./src/index.ts', import.meta.url), 'utf8');
   const names: string[] = [];
-  for (const match of text.matchAll(/^export \{([^}]*)\} from '[^']+';/gm)) {
-    names.push(...match[1]!.split(',').map(name => name.trim()).filter(Boolean));
+  // Every code line must be a plain value export, a type export or a comment; anything else fails the build.
+  let inComment = false;
+  for (const [index, line] of text.split('\n').entries()) {
+    const trimmed = line.trim();
+    if (inComment) { inComment = !trimmed.includes('*/'); continue; }
+    if (trimmed.startsWith('/*')) { inComment = !trimmed.includes('*/'); continue; }
+    if (trimmed === '' || trimmed.startsWith('//')) continue;
+    if (/^export type [{*] ?.*from '[^']+';$/.test(trimmed)) continue;
+    const match = /^export \{([^}]*)\} from '[^']+';$/.exec(trimmed);
+    const listed = match?.[1]!.split(',').map(name => name.trim()).filter(Boolean);
+    if (listed === undefined || listed.some(name => !/^[A-Za-z_$][\w$]*$/.test(name))) {
+      throw new Error(`src/index.ts:${index + 1} cannot be read by the build; use one line, \`export { a, b } from './internal.js';\` (no \`as\`, no \`export *\`): ${trimmed}`);
+    }
+    names.push(...listed);
   }
   return names;
 }
@@ -33,8 +45,10 @@ export default defineConfig({
         const require = createRequire(import.meta.url);
         // The one elkjs type the declarations name is `ElkNode`; ship elkjs's own declaration file (EPL-2.0 header kept).
         // One line of it fails under `strict` (`T['children'][number]` on an optional list); the fix keeps the type.
-        writeFileSync(join(dist, 'elk-api.d.ts'), readFileSync(join(dirname(require.resolve('elkjs/package.json')), 'lib', 'elk-api.d.ts'), 'utf8')
-          .replace("(T['children'][number] & ElkNode)[]", "(NonNullable<T['children']>[number] & ElkNode)[]"));
+        const elkTypes = readFileSync(join(dirname(require.resolve('elkjs/package.json')), 'lib', 'elk-api.d.ts'), 'utf8');
+        const fixedElkTypes = elkTypes.replace("(T['children'][number] & ElkNode)[]", "(NonNullable<T['children']>[number] & ElkNode)[]");
+        if (fixedElkTypes === elkTypes) throw new Error('elkjs lib/elk-api.d.ts no longer holds the line the build patches; check the installed elkjs');
+        writeFileSync(join(dist, 'elk-api.d.ts'), fixedElkTypes);
         const declarations = (directory: string): string[] => readdirSync(directory, { withFileTypes: true })
           .flatMap(entry => entry.isDirectory() ? declarations(join(directory, entry.name)) : entry.name.endsWith('.d.ts') ? [join(directory, entry.name)] : []);
         for (const file of declarations(dist)) {

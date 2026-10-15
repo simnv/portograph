@@ -290,7 +290,7 @@ export function formatDiagnostic(diagnostic: Diagnostic & { path?: string }, pla
  * they are; a place in the authored text is added as `source`, `line` and `column`.
  */
 export function formatDiagnosticJson(diagnostic: Diagnostic & { path?: string }, place?: DiagnosticPlace): string {
-  return JSON.stringify({ ...diagnostic, ...(place === undefined ? {} : { source: place.source, line: place.line, column: place.column }) });
+  return JSON.stringify({ kind: 'diagnostic', ...diagnostic, ...(place === undefined ? {} : { source: place.source, line: place.line, column: place.column }) });
 }
 
 /**
@@ -298,5 +298,5 @@ export function formatDiagnosticJson(diagnostic: Diagnostic & { path?: string },
  * The text form names severity and code only when `showCode` is set, as the coded failures do.
  */
 export function formatStatus(format: DiagnosticFormat | undefined, severity: 'info' | 'warning' | 'error', code: string, message: string, showCode = false): string {
-  return format === 'json' ? JSON.stringify({ severity, code, message }) : `portograph: ${showCode ? `${severity}: ${code}: ` : ''}${message}`;
+  return format === 'json' ? JSON.stringify({ kind: 'status', severity, code, message }) : `portograph: ${showCode ? `${severity}: ${code}: ` : ''}${message}`;
 }
