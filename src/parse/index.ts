@@ -1,4 +1,4 @@
-import type { Endpoint, GroupContent, NormalisedDocument, NormalisedLink, NormalisedNode, NormalisedPort, Side } from '../model/index.js';
+import type { Endpoint, GroupContent, Meta, NormalisedDocument, NormalisedLink, NormalisedNode, NormalisedPort, Side } from '../model/index.js';
 import { orderedGroupIds, orderedNodeIds, unsupportedMessage } from '../model/index.js';
 import { BOTTOM_CLASSES, TOP_CLASSES } from '../profiles/network/tiers.js';
 import { filterCss } from './css.js';
@@ -27,6 +27,24 @@ function optionalStrings<T extends object, K extends keyof T & string>(input: Ma
     const value = v.string(input.get(key), `${path}.${key}`);
     if (value !== undefined) Object.assign(output, { [key]: value });
   }
+}
+
+/** A meta key is an XML attribute name a draw.io cell can carry without a namespace. */
+const META_KEY = /^[A-Za-z_][A-Za-z0-9_-]*$/;
+/** Keys draw.io or the binding contract own on a cell (docs/drawio-binding-contract.md). */
+const RESERVED_META = /^(?:pg-.*|id|label|placeholders|xml.*)$/i;
+
+/** `meta:` on the root, a node, a port or a link: a flat map of scalars that only the draw.io export reads. */
+function meta(value: unknown, path: string, v: Validation): Meta | undefined {
+  const result: Meta = {};
+  for (const [key, item] of v.map(value, path)) {
+    const at = `${path}.${key}`;
+    if (!META_KEY.test(key)) v.report('BAD_META_KEY', at, 'A meta key starts with a letter or an underscore and contains letters, digits, underscores or hyphens');
+    else if (RESERVED_META.test(key)) v.report('RESERVED_META_KEY', at, `The meta key ${key} is reserved; the pg- prefix, id, label, placeholders and xml are not available`);
+    else if (typeof item === 'string' || typeof item === 'boolean' || (typeof item === 'number' && Number.isFinite(item))) put(result, key, item);
+    else v.report('INVALID_TYPE', at, 'Expected a string, a finite number or a boolean');
+  }
+  return Object.keys(result).length ? result : undefined;
 }
 
 function groups(input: Map<string, unknown>, doc: NormalisedDocument, v: Validation): Map<string, number | undefined> {
@@ -133,7 +151,7 @@ function ports(value: unknown, path: string, v: Validation): NormalisedPort[] {
   for (const [index, item] of v.list(list, listPath).entries()) {
     const itemPath = `${listPath}[${index}]`;
     const fields = typeof item === 'string' ? new Map<string, unknown>([['name', item]]) : v.map(item, itemPath);
-    v.keys(fields, ['name', 'side', 'order', 'class'], itemPath);
+    v.keys(fields, ['name', 'side', 'order', 'class', 'meta'], itemPath);
     const name = v.identifier(fields.get('name'), `${itemPath}.name`);
     const side = fields.has('side') ? v.choice(fields.get('side'), sides, `${itemPath}.side`) : inherited;
     const order = fields.has('order') ? v.number(fields.get('order'), `${itemPath}.order`, true) : undefined;
@@ -144,6 +162,8 @@ function ports(value: unknown, path: string, v: Validation): NormalisedPort[] {
     if (side !== undefined) port.side = side;
     if (order !== undefined) port.order = order;
     optionalStrings(fields, port, ['class'], itemPath, v);
+    const data = fields.has('meta') ? meta(fields.get('meta'), `${itemPath}.meta`, v) : undefined;
+    if (data !== undefined) port.meta = data;
     result.push(port);
   }
   return result;
@@ -155,7 +175,7 @@ function nodes(input: Map<string, unknown>, doc: NormalisedDocument, v: Validati
     if (v.identifier(id, path) === undefined) continue;
     if (own(doc.groups, id) !== undefined) v.report('NAMESPACE_COLLISION', path, `${id} names both a node and a group`);
     const fields = v.map(value, path);
-    v.keys(fields, ['group', 'class', 'label', 'description', 'icon', 'ports', 'size'], path);
+    v.keys(fields, ['group', 'class', 'label', 'description', 'icon', 'ports', 'size', 'meta'], path);
     if (!fields.has('group')) v.report('NODE_GROUP_REQUIRED', `${path}.group`, 'A node requires group');
     const group = fields.has('group') ? v.identifier(fields.get('group'), `${path}.group`) : undefined;
     if (group === undefined) continue;
@@ -169,6 +189,8 @@ function nodes(input: Map<string, unknown>, doc: NormalisedDocument, v: Validati
       const height = v.number(size.get('height'), `${path}.size.height`, false, 0);
       if (width !== undefined && height !== undefined) node.size = { width, height };
     }
+    const data = fields.has('meta') ? meta(fields.get('meta'), `${path}.meta`, v) : undefined;
+    if (data !== undefined) node.meta = data;
     put(doc.nodes, id, node);
   }
 }
@@ -300,6 +322,7 @@ function endpoint(value: unknown, path: string, doc: NormalisedDocument, used: M
 
 function links(value: unknown, doc: NormalisedDocument, v: Validation): void {
   const used = new Map<NormalisedPort, Set<number>>();
+  const ids = new Set<string>();
   for (const [index, item] of v.list(value, '$.links').entries()) {
     const path = `$.links[${index}]`;
     let fields: Map<string, unknown>, fromValue: unknown, toValue: unknown;
@@ -307,16 +330,21 @@ function links(value: unknown, doc: NormalisedDocument, v: Validation): void {
       if (item.length < 2 || item.length > 3) v.report('LINK_ENDPOINTS', path, 'Expected two endpoints and optional options');
       fromValue = item[0]; toValue = item[1];
       fields = item.length > 2 ? v.map(item[2], `${path}.options`) : new Map<string, unknown>();
-      v.keys(fields, ['class', 'label', 'route', 'weight'], path);
+      v.keys(fields, ['id', 'class', 'label', 'route', 'weight', 'meta'], path);
     } else {
       fields = v.map(item, path);
-      v.keys(fields, ['from', 'to', 'class', 'label', 'route', 'weight'], path);
+      v.keys(fields, ['id', 'from', 'to', 'class', 'label', 'route', 'weight', 'meta'], path);
       if (!fields.has('from') || !fields.has('to')) v.report('LINK_ENDPOINTS', path, 'Expected from and to endpoints');
       fromValue = fields.get('from'); toValue = fields.get('to');
     }
     const from = endpoint(fromValue, `${path}.from`, doc, used, index, v);
     const to = endpoint(toValue, `${path}.to`, doc, used, index, v);
     const options: Partial<NormalisedLink> = {};
+    if (fields.has('id')) {
+      const id = v.identifier(fields.get('id'), `${path}.id`);
+      if (id !== undefined && ids.has(id)) v.report('DUPLICATE_LINK_ID', `${path}.id`, `Another link already has the id ${id}`);
+      else if (id !== undefined) { ids.add(id); options.id = id; }
+    }
     optionalStrings(fields, options, ['class', 'label'], path, v);
     if (fields.has('route')) {
       const route = v.choice(fields.get('route'), routes, `${path}.route`);
@@ -328,6 +356,8 @@ function links(value: unknown, doc: NormalisedDocument, v: Validation): void {
       const weight = v.number(fields.get('weight'), `${path}.weight`, false, 0);
       if (weight !== undefined) options.weight = weight;
     }
+    const data = fields.has('meta') ? meta(fields.get('meta'), `${path}.meta`, v) : undefined;
+    if (data !== undefined) options.meta = data;
     // Bundle cardinality for merge is owned by stage 1, after grouping.
     if (from !== undefined && to !== undefined) doc.links.push({ ...options, from, to });
   }
@@ -368,7 +398,7 @@ export function parseWithDiagnostics(text: string, options: ParseOptions = {}): 
     return withLocate({ ok: false, diagnostics: v.diagnostics }, v.locate);
   }
   const root = v.map(parsedYaml, '$');
-  v.keys(root, ['portograph', 'profile', 'title', 'css', 'layout', 'groups', 'nodes', 'links', 'overlays'], '$');
+  v.keys(root, ['portograph', 'profile', 'title', 'css', 'layout', 'meta', 'groups', 'nodes', 'links', 'overlays'], '$');
   if (root.get('portograph') !== 2) v.report('VERSION', '$.portograph', 'portograph: 2 is required');
   if (root.has('profile')) {
     const profile = v.string(root.get('profile'), '$.profile');
@@ -395,6 +425,7 @@ export function parseWithDiagnostics(text: string, options: ParseOptions = {}): 
     }
     if (Object.keys(settings).length) doc.layout = settings;
   }
+  if (root.has('meta')) { const data = meta(root.get('meta'), '$.meta', v); if (data !== undefined) doc.meta = data; }
   const groupInput = v.map(root.get('groups'), '$.groups');
   const nodeInput = v.map(root.get('nodes'), '$.nodes');
   const ranks = groups(groupInput, doc, v);

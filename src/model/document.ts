@@ -24,8 +24,14 @@ export interface GroupRef {
 }
 export type Endpoint = PortRef | GroupRef;
 
+/**
+ * Author metadata that the pipeline carries and never reads. The draw.io export writes each entry
+ * as an attribute of the cell (docs/drawio-binding-contract.md). Present only when the author wrote `meta:`.
+ */
+export type Meta = Record<string, string | number | boolean>;
+
 /** `class` is the port's author tokens: a profile role, a status, or anything a `css:` rule names. */
-export type NormalisedPort = PortIdentity & { side?: Side; order?: number; class?: string };
+export type NormalisedPort = PortIdentity & { side?: Side; order?: number; class?: string; meta?: Meta };
 
 export interface GroupContent {
   label: string;
@@ -74,15 +80,19 @@ export interface NormalisedNode {
   description?: string;
   icon?: string;
   size?: Size;
+  meta?: Meta;
 }
 
 export interface NormalisedLink {
+  /** The author's own link id. Without it, `linkIds` derives one from the two ends. */
+  id?: string;
   from: Endpoint;
   to: Endpoint;
   class?: string;
   label?: string;
   route?: Route;
   weight?: number;
+  meta?: Meta;
 }
 
 /** Stage 0 output. Explicit order metadata preserves integer-like ID declaration order. */
@@ -106,4 +116,6 @@ export interface NormalisedDocument {
     /** When true, an overlay link blocked only by node bodies is drawn as the straight chord over them. Default false. */
     overlayOverBodies?: boolean;
   };
+  /** Document metadata, present only when the author wrote `meta:` at the root. No cell inherits it. */
+  meta?: Meta;
 }
