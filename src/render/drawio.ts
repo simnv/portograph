@@ -46,6 +46,8 @@ import type { Point, Rect, Side } from '../model/geometry.js';
 import type {
   Layer, LayoutLabel, LayoutLink, LayoutModel, LayoutPort, PathSegment,
 } from '../model/layout.js';
+import type { Meta } from '../model/document.js';
+import { endpointId, linkIds } from '../model/link-ids.js';
 import { orderedNodeIds } from '../model/model.js';
 import { isDirect } from '../layout/link-labels.js';
 import { iconKey, iconPath } from '../profiles/network/icons.js';
@@ -374,6 +376,28 @@ export interface DrawioOptions {
 
 type StyleValue = string | number | undefined;
 
+/** The version of the binding contract the export writes (docs/drawio-binding-contract.md). */
+export const BINDING_SCHEMA = '1';
+
+/** The binding attributes of one cell: the `pg-*` keys first, then the author's `meta:` keys in sorted order. */
+type Binding = Readonly<Record<string, string>>;
+const binding = (own: Binding, meta: Meta | undefined): Binding => ({
+  ...own,
+  ...Object.fromEntries(Object.keys(meta ?? {}).sort().map(key => [key, String(meta![key])])),
+});
+
+/**
+ * A cell, bare or bound. A bound cell is a draw.io `UserObject`: an `<object>` that holds the id, the
+ * label and the binding attributes, around an `<mxCell>` that holds the rest. draw.io keeps the
+ * attributes through an edit and in an SVG export with the diagram embedded, and its *Edit Data*
+ * dialog shows them.
+ */
+function cellElement(attributes: Readonly<Record<string, StyleValue>>, children: string | undefined, bound?: Binding): string {
+  if (bound === undefined) return element('mxCell', attributes, children);
+  const { id, value, ...rest } = attributes;
+  return element('object', { id, label: value ?? '', ...bound }, element('mxCell', rest, children));
+}
+
 /**
  * A style string: leading named tokens, then `key=value` pairs. draw.io splits pairs on `;` and
  * then on the first `=`, so a value may hold `=` but never `;`.
@@ -547,9 +571,23 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     return id;
   };
   const vertex = (id: string, parent: string, style: string, box: Rect, value?: string,
-    extra: Readonly<Record<string, StyleValue>> = {}): void => {
-    cells.push(element('mxCell', { id: claim(id), value, style, vertex: 1, parent, ...extra },
-      element('mxGeometry', { x: box.x, y: box.y, width: box.width, height: box.height, as: 'geometry' })));
+    extra: Readonly<Record<string, StyleValue>> = {}, bound?: Binding): void => {
+    cells.push(cellElement({ id: claim(id), value, style, vertex: 1, parent, ...extra },
+      element('mxGeometry', { x: box.x, y: box.y, width: box.width, height: box.height, as: 'geometry' }), bound));
+  };
+
+  // ---- binding ------------------------------------------------------------------------------
+  // The ids a dashboard binds to. A link's id comes from its ends, not from its place in the YAML,
+  // so reordering the links does not move a binding; the layout model keeps its positional ids.
+  const stableIds = linkIds(document);
+  const stableId = (link: LayoutLink): string => stableIds[link.sourceIndex] ?? link.id;
+  const linkBinding = (link: LayoutLink, run?: { index: number; count: number }): Binding => {
+    const source = document.links[link.sourceIndex];
+    return binding({
+      'pg-kind': 'link', 'pg-id': stableId(link),
+      'pg-from': endpointId(source?.from ?? link.from), 'pg-to': endpointId(source?.to ?? link.to),
+      ...(run ? { 'pg-run': String(run.index), 'pg-runs': String(run.count) } : {}),
+    }, source?.meta);
   };
 
   /** A text cell placed at exactly the box stage 9 measured, so no label is re-flowed on open. */
@@ -775,7 +813,8 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         fontFamily: FONT_FAMILY, fontSize: first?.fontSize, fontColor: paint.node.text,
         fontStyle: first?.fontWeight === 700 ? 1 : undefined,
       }),
-    }), relative(box, origin), text === '' ? undefined : text);
+    }), relative(box, origin), text === '' ? undefined : text, {},
+    binding({ 'pg-kind': 'node', 'pg-id': id }, document.nodes[id]?.meta));
 
     if (node.icon) {
       const tile = relative(shiftRect(node.icon.bounds), shift(node.bounds!));
@@ -873,7 +912,11 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           horizontal: port.pill.textRotation === -90 ? 0 : undefined,
         } : {}),
       }), relative(shiftRect(port.pill.bounds), shift(node.bounds!)),
-      shown ? htmlText(shown.lines ?? [shown.text]) : undefined);
+      shown ? htmlText(shown.lines ?? [shown.text]) : undefined, {},
+      binding({
+        'pg-kind': 'port', 'pg-id': endpointId({ node: id, name: port.ref.name!, ordinal: port.ref.ordinal }),
+        'pg-node': id, 'pg-port': port.ref.name!,
+      }, document.nodes[id]?.ports.find(item => item.name === port.ref.name && item.ordinal === port.ref.ordinal)?.meta));
     }
   }
 
@@ -973,17 +1016,17 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   const edgeCell = (id: string, layer: string, style: string, points: readonly Point[],
     ends: { source?: string | undefined; target?: string | undefined;
       sourcePoint?: Point | undefined; targetPoint?: Point | undefined },
-    label?: { value: string; at: EdgeLabel }): void => {
+    label?: { value: string; at: EdgeLabel }, bound?: Binding): void => {
     const waypoints = points.length > 2
       ? element('Array', { as: 'points' },
         points.slice(1, -1).map(point => element('mxPoint', { x: point.x, y: point.y })).join(''))
       : '';
     const dangling = (ends.sourcePoint ? element('mxPoint', { x: ends.sourcePoint.x, y: ends.sourcePoint.y, as: 'sourcePoint' }) : '')
       + (ends.targetPoint ? element('mxPoint', { x: ends.targetPoint.x, y: ends.targetPoint.y, as: 'targetPoint' }) : '');
-    cells.push(element('mxCell', { id: claim(id), value: label?.value, style, edge: 1, parent: layer,
+    cells.push(cellElement({ id: claim(id), value: label?.value, style, edge: 1, parent: layer,
       source: ends.source, target: ends.target },
     element('mxGeometry', { ...(label ? { x: label.at.x, y: label.at.y } : {}), relative: 1, as: 'geometry' },
-      waypoints + dangling + residualPoint(label?.at))));
+      waypoints + dangling + residualPoint(label?.at)), bound));
   };
 
   // A mesh bus member is not a connector of its own: the bus is a bar and its stubs, exported below (mesh-bus.md, section 6).
@@ -1131,7 +1174,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       if (index === 0 && head) points[0] = head.at;
       if (index === runs.length - 1 && tail) points[points.length - 1] = tail.at;
       return {
-        id: runs.length === 1 ? cellId('link', link.id) : cellId('link', link.id, String(index)),
+        id: runs.length === 1 ? cellId('link', stableId(link)) : cellId('link', stableId(link), String(index)),
         points, first: run.first, last: run.last,
       };
     });
@@ -1183,7 +1226,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       }, carried ? {
         value: htmlText(carried.label.lines ?? [carried.label.text]),
         at: carried.at,
-      } : undefined);
+      } : undefined, linkBinding(link, runs.length === 1 ? undefined : { index, count: runs.length }));
     });
     edgeRuns.set(link.id, shown);
 
@@ -1204,7 +1247,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         const at = mark.host?.at ?? shift(mark.at);
         const box = { x: at.x - OVERLAY_ENDPOINT_RADIUS, y: at.y - OVERLAY_ENDPOINT_RADIUS,
           width: 2 * OVERLAY_ENDPOINT_RADIUS, height: 2 * OVERLAY_ENDPOINT_RADIUS };
-        vertex(cellId('overlayMark', link.id, mark.end), mark.host?.cell ?? layerId('overlay'),
+        vertex(cellId('overlayMark', stableId(link), mark.end), mark.host?.cell ?? layerId('overlay'),
           styleString(['ellipse'], {
             html: 1, fillColor: paint.overlay.mark, strokeColor: 'none', points: '[]',
           }), mark.host ? relative(box, mark.host.box) : box);
@@ -1354,8 +1397,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     const run = ids[runFor(label, link, ids)]!;
     const at = labelPoint(label, link);
     const relativeAt = edgeLabel(run.points, at, supportIn(label, link, run));
-    cells.push(element('mxCell', {
-      id: claim(cellId('linkLabel', label.id)), value: htmlText(label.lines ?? [label.text]),
+    const labelId = label.owner.kind === 'barCross' ? cellId('linkLabel', stableId(link), label.owner.node) : cellId('linkLabel', stableId(link));
+    cells.push(cellElement({
+      id: claim(labelId), value: htmlText(label.lines ?? [label.text]),
       style: styleString(['edgeLabel'], {
         // `edgeLabel` is a named style in draw.io's bundled sheet and brings
         // `labelBackgroundColor=default` with it — the white box the SVG does not draw.
@@ -1365,7 +1409,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       }),
       vertex: 1, connectable: 0, parent: run.id,
     }, element('mxGeometry', { x: relativeAt.x, y: relativeAt.y, relative: 1, as: 'geometry' },
-      residualPoint(relativeAt) || undefined)));
+      residualPoint(relativeAt) || undefined), { 'pg-kind': 'link-label', 'pg-of': stableId(link) }));
   }
 
   // ---- legend -------------------------------------------------------------------------------
@@ -1487,7 +1531,8 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     // goes. So this one states the chosen palette's backdrop and lets draw.io's own inversion
     // darken it, which for a flat backdrop is exactly what inversion is good at.
     math: 0, shadow: 0, background: NETWORK_THEME[mode].background,
-  }, element('root', {}, element('mxCell', { id: claim('0') }) + layers + cells.join('')));
+  }, element('root', {}, cellElement({ id: claim('0') }, undefined, binding({ 'pg-schema': BINDING_SCHEMA }, document.meta))
+    + layers + cells.join('')));
   const title = document.title ?? 'portograph';
   return `<?xml version="1.0" encoding="UTF-8"?>\n`
     + element('mxfile', { host: 'portograph' },
