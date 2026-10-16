@@ -1,14 +1,14 @@
 {
   "a-free-client-group-stands-where-its-overlay-links-cross-least": {
     "attemptCheap": "20 f32b1d89feee5194",
-    "centreGroupStep": "7 505d7242e794a114",
+    "centreGroupStep": "1 6e2b427c58a1e1e9",
     "pickTarget": "6 4a1096de1fd3c802",
     "sheetGains": "3 b9424f11f6b52537",
     "windowsHold": "3 acefa63a7c5aadc3"
   },
   "a-lower-rank-steps-off-the-chords-of-rank-0": {
     "attemptCheap": "8 d700632eef126e2a",
-    "centreGroupStep": "66 c890e68c026a7e8e",
+    "centreGroupStep": "29 cddf0a3ce1e87882",
     "holdsSettled": "4 c42dda64b543ae83",
     "pickRankMove": "1 179cf15d4cb7b521",
     "pickTarget": "8 c4af1c283e7cccb6",
@@ -16,31 +16,31 @@
   },
   "a-mover-takes-the-position-that-clears-most-chords": {
     "attemptCheap": "3 f26fec4a40bed0de",
-    "centreGroupStep": "13 51136782092e8d16",
+    "centreGroupStep": "3 52618acacbccbbe8",
     "holdsSettled": "1 bec70fbae0fde7b0",
     "pickTarget": "10 db65bbf8ed22600d"
   },
   "a-side-hint-moves-a-port-to-a-lateral-side": {
-    "centreGroupStep": "7 c5d487c40e5feed2"
+    "centreGroupStep": "1 123fd9e157a59830"
   },
   "a-chord-hint-and-a-lane-hint-never-share-a-batch": {
-    "centreGroupStep": "94 ae63001dfa3e4c34",
+    "centreGroupStep": "43 76c8767b8fb8d9e4",
     "fanRoundHolds": "1 0a22f04442a90cca",
     "judgeTrial": "1 cbf69f5f691d95cd",
     "pullTier": "12 54cf982033f571d4",
     "settleKeepOut": "2 3d075ae4342c7142"
   },
   "a-location-router-leaves-a-lateral-side-toward-a-far-provider": {
-    "centreGroupStep": "39 1473c0808d722e2d",
+    "centreGroupStep": "11 8c069ab3fdc9ede5",
     "judgeTrial": "1 cbf69f5f691d95cd"
   },
   "a-fan-spreads-its-ports-so-its-chords-hold-clearance": {
-    "centreGroupStep": "16 c9d6d88d4fd8c944",
+    "centreGroupStep": "9 b70ec2510a30ba71",
     "fanRoundHolds": "1 0a22f04442a90cca"
   },
   "three-canton-groups-close-up-to-a-band-gap": {
     "attemptCheap": "124 a1d499f44eebf289",
-    "centreGroupStep": "1512 ab6a58dcebd8207c",
+    "centreGroupStep": "1189 35655e657c9eb36c",
     "closeUp": "26 5b888ef2bb5c6903",
     "holdsSettled": "18 5b2366432453a9fd",
     "judgeTrial": "1 cbf69f5f691d95cd",
@@ -52,13 +52,13 @@
     "windowsHold": "74 40244e0979c55329"
   },
   "a-canton-member-frame-slides-off-a-straight-chord": {
-    "centreGroupStep": "51 2d749b745e2deda5",
+    "centreGroupStep": "33 7f0263d0fe64a80d",
     "fanRoundHolds": "1 0a22f04442a90cca",
     "pullTier": "16 299c30ead527ebd0"
   },
   "three-continents": {
     "attemptCheap": "78 e339c80595a7d32a",
-    "centreGroupStep": "1625 1125ddae5697c20b",
+    "centreGroupStep": "1235 8049eb07584523b9",
     "holdsSettled": "17 e6f70c17a5b0c9ae",
     "judgeTrial": "1 40c5e1b547e445dd",
     "pickTarget": "234 8c88d88ecc24c00d",
@@ -67,17 +67,17 @@
     "windowsHold": "55 f75ef8d5e496e9ec"
   },
   "a-group-with-routed-links-steps-off-a-straight-chord": {
-    "centreGroupStep": "16 d17575727f9edf5b",
+    "centreGroupStep": "6 05a98be679fb1378",
     "fanRoundHolds": "1 0a22f04442a90cca"
   },
   "a-linked-node-steps-out-of-a-straight-chord": {
     "attemptCheap": "2 4c9158be6e09263a",
-    "centreGroupStep": "16 2f569bd09d021e25",
+    "centreGroupStep": "4 e8ab5492e0d707d1",
     "holdsSettled": "2 3072158bc9120386",
     "pickTarget": "12 727812f2808992bc"
   },
   "overlay-links-reorder-two-locations": {
-    "centreGroupStep": "160 1c99ecf629486fbc",
+    "centreGroupStep": "128 c9dff42384ded98e",
     "judgeTrial": "1 b9449d780e1a4d74",
     "pullTier": "13 025c7ba8baa49833",
     "pullTierHeld": "5 b6207d17ad1f803b",
@@ -85,7 +85,7 @@
   },
   "an-overlay-that-7f-straightens-needs-more-than-four-pixels-of-slack": {
     "attemptCheap": "2 0d5ac49bf18f7073",
-    "centreGroupStep": "46 39893f351c49c8be",
+    "centreGroupStep": "17 da3a51d317b0cf4e",
     "holdsSettled": "1 b0e37b1079e63c37",
     "judgeTrial": "1 91bcbb903350cca7",
     "pickRankMove": "1 66eec4d604677902",
@@ -98,7 +98,7 @@
     "pullTier": "6 4aef7fb3deea9c91"
   },
   "a-held-lane-between-two-cantons-refuses-the-close-up": {
-    "centreGroupStep": "35 b22ce71849fd6282",
+    "centreGroupStep": "9 b70ec2510a30ba71",
     "pullTier": "22 45013d47f795b44c",
     "pullTierHeld": "2 8441be4be830c9e3"
   }

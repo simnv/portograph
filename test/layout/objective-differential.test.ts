@@ -12,6 +12,10 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * one objective module, and the module reproduces what each judge said before it. The expected digests in `objective-verdicts.json` were
  * recorded from main at 86680ab, before any judge moved, by the same test-only tap (`verdictTap`); the profiles must give the same
  * verdicts, in the same order, with the same figures, on each fixture. Not a golden: it changes only when a judge is meant to.
+ *
+ * The `centreGroupStep` entries were re-recorded at 7598f3b (architecture 2 ticket 07). That commit skips the replay of the centring check for a group
+ * with no candidate, and a replay calls the judge, so the call count fell (for example 7 to 1). Recorded on all 16 fixtures with inputs: every call the
+ * branch still makes has main's verdict, and every call it dropped belonged to a replay whose result the check discarded. The verdicts did not change.
  */
 const FIXTURES = [
   'a-free-client-group-stands-where-its-overlay-links-cross-least', 'a-lower-rank-steps-off-the-chords-of-rank-0', 'a-mover-takes-the-position-that-clears-most-chords',
