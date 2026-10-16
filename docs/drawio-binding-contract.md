@@ -86,6 +86,7 @@ All attribute values are strings. A reader must parse numbers and booleans.
 | `pg-run` | link, split into runs only | the index of this run, from `0` |
 | `pg-runs` | link, split into runs only | the number of runs |
 | `pg-of` | link label | the `pg-id` of the link that owns the label |
+| `pg-rules` | root cell `id="0"` | reserved, not written in version 1. It will hold binding rules as one YAML or JSON string, versioned with `pg-schema` |
 
 A link from `pg-from` to `pg-to` has the YAML direction. Use it to select the counter for each
 direction, for example the transmit counter of the `pg-from` port.
@@ -160,3 +161,6 @@ These cells have no binding attributes:
 - A new attribute or a new `pg-kind` value does not change the version. A reader must ignore an
   attribute or a kind that it does not know.
 - A change to an id format or to the meaning of an attribute increments the version.
+- `pg-rules` is reserved for binding rules on the root cell. The export does not write it yet, and
+  `meta:` cannot set it, because all `pg-` keys are reserved. A reader must ignore it until a later
+  version defines its content.
