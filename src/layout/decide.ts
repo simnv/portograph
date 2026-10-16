@@ -14,6 +14,7 @@ import { separationShortfalls } from './constraints/separation.js';
 import { centreViolations } from './centre.js';
 import { reserveLinkLabelRoom, type LinkLabelShortfall } from './bands.js';
 import { attemptCounters, lastAttempt } from './attempt-counters.js';
+import { attemptTimings, timed, timedTrial } from './attempt-timings.js';
 import { copyWithShared } from './trial-copy.js';
 import { drawnOverlays, judges, lazySeparation, compare, gains, holds as readingHolds, read, reading, tapVerdict, type Reading } from './objective.js';
 
@@ -144,7 +145,7 @@ function drift(model: LayoutModel): number {
 export interface AdoptedCopy { copy: LayoutModel; baseDiagnostics: number; original: ReadonlySet<Diagnostic>; result: unknown }
 
 const verdict = (model: LayoutModel, overlays: readonly LayoutLink[]): Verdict =>
-  ({ ...read(model, { overlays, routed: { straight: 'aligned' }, crossings: 'pairs', growth: true }), sets: { crowded: crowded(model), disordered: disordered(model), residuals: residuals(model) }, drift: drift(model), separation: lazySeparation(() => separationShortfalls(model)) });
+  ({ ...timed('verdict-read', () => read(model, { overlays, routed: { straight: 'aligned' }, crossings: 'pairs', growth: true })), sets: { crowded: timed('verdict-crowded', () => crowded(model)), disordered: timed('verdict-disordered', () => disordered(model)), residuals: timed('verdict-residuals', () => residuals(model)) }, drift: timed('verdict-drift', () => drift(model)), separation: lazySeparation(() => separationShortfalls(model)) });
 
 /**
  * The growth a cell's frame edge may take when its bodies move (ticket 80): the frame stands off the outermost body, so the frame, the
@@ -195,12 +196,16 @@ export function chordDecision(model: LayoutModel, follow: ((probe: LayoutModel) 
   /** The verdict on a settled copy of the model as it stands now, or `undefined` when the copy cannot be settled. */
   const settled = (): Verdict | undefined => {
     try {
-      const probe = candidateCopy(model), baseDiagnostics = model.diagnostics.length, original = new Set(probe.diagnostics);
-      attemptCounters.settledTrials++;
-      const result = follow!(probe);
-      const read = verdict(probe, overlays);
-      copies.set(read, { copy: probe, baseDiagnostics, original, result });
-      return read;
+      return timedTrial(() => {
+        const probe = timed('trial-copy', () => candidateCopy(model)), baseDiagnostics = model.diagnostics.length, original = new Set(probe.diagnostics);
+        attemptCounters.settledTrials++;
+        if (attemptTimings.on) attemptTimings.hooks.enter?.(probe);
+        const result = follow!(probe);
+        if (attemptTimings.on) attemptTimings.hooks.exit?.(probe);
+        const read = verdict(probe, overlays);
+        copies.set(read, { copy: probe, baseDiagnostics, original, result });
+        return read;
+      });
     } catch {
       return undefined;
     }

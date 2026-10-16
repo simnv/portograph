@@ -9,6 +9,7 @@ import { placementWarning, rebuildRegions } from './regions.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { attemptCounters } from './attempt-counters.js';
+import { timed } from './attempt-timings.js';
 
 /**
  * ADR-0015 rule 1, the gap's own height: **a tier gap grows to the rows it must seat.**
@@ -56,8 +57,8 @@ export function growTierGaps(model: LayoutModel, out?: { trial?: LayoutModel; ba
   const room = new Map<number, number>();
   for (let round = 0; round < MAX_ROUNDS; round++) {
     attemptCounters.gapRounds++;
-    trial = settled(model, new Map([...grown].map(([tier, item]) => [tier, item.extra])));
-    plans = tierGapPlans(trial);
+    trial = timed('grow-clone', () => settled(model, new Map([...grown].map(([tier, item]) => [tier, item.extra]))));
+    plans = timed('grow-plans', () => tierGapPlans(trial));
     if (!round) for (const { gap, plan } of plans) room.set(gap.below, plan.bandTop - plan.low);
     // Each round replaces the growth of a gap by the height its plan asks on the model grown as before: `extra = H − room`. The rounds
     // do not accumulate. A round that adds what its trial still asks for counts a stem that nested only in a larger gap twice, and

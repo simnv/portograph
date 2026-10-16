@@ -10,6 +10,7 @@ import { growTierGaps } from './gap-room.js';
 import { holds } from './reservation-checks.js';
 import { candidateCopy, chooseReseat, shortGaps } from './decide.js';
 import { attemptCounters, lastAttempt } from './attempt-counters.js';
+import { attemptTimings, timed } from './attempt-timings.js';
 import { countStep, ledgerOn, ledgerSnapshot, startAttemptEntry, type LedgerSnapshot } from './attempt-ledger.js';
 
 /**
@@ -55,8 +56,8 @@ function revisionOf(model: LayoutModel): string {
 
 /** The grid and the labels, settled again: the part of a replay that does not rebuild the regions. */
 export function replayGridAndLabels(model: LayoutModel): void {
-  alignLinkedGroupGridAndPack(model);
-  replanGroupLabels(model);
+  timed('grid-pack', () => alignLinkedGroupGridAndPack(model));
+  timed('labels', () => replanGroupLabels(model));
 }
 /**
  * The replay a move of groups is followed by: the regions, the grid and the labels. This is the one place that names it; `settleRound`,
@@ -110,7 +111,7 @@ export function adoptSettled(model: LayoutModel, copy: LayoutModel, baseDiagnost
 export function settleRound(model: LayoutModel, tap?: (step: 'grow' | 'close-up' | 'keep-out', changed: boolean) => void): number {
   attemptCounters.settleCalls++;
   const trial: { trial?: LayoutModel; baseDiagnostics?: number; original?: ReadonlySet<Diagnostic> } = {};
-  const grew = growTierGaps(model, trial);
+  const grew = timed('grow-tier-gaps', () => growTierGaps(model, trial));
   // The growth stopped on "no change": its last trial is the grown model after the replay below, so it is taken instead of replaying (ticket 13, phase 2).
   // `adoptSettled` declines when the diagnostics would differ from the replay's; the replay then runs.
   if (grew && !(trial.trial !== undefined && trial.original !== undefined && adoptSettled(model, trial.trial, trial.baseDiagnostics!, trial.original))) {
@@ -123,11 +124,11 @@ export function settleRound(model: LayoutModel, tap?: (step: 'grow' | 'close-up'
     replayRegions(model);
   }
   tap?.('grow', grew);
-  const shift = closeCantonsAndSettle(model);
+  const shift = timed('close-cantons', () => closeCantonsAndSettle(model));
   if (shift > 0) replayRegions(model);
   tap?.('close-up', shift > 0);
   // A frame edge a foreign drop would run along is moved off it before anything is planned in the geometry (ticket 75).
-  const kept = settleKeepOut(model);
+  const kept = timed('keep-out', () => settleKeepOut(model));
   if (kept) replayRegions(model);
   tap?.('keep-out', kept);
   return shift;
@@ -135,10 +136,12 @@ export function settleRound(model: LayoutModel, tap?: (step: 'grow' | 'close-up'
 
 /** What the step over a chord judges a move by: the replays and a round of `settleRound`, which is what the next round does. */
 export function trialSettle(probe: LayoutModel): SettleReading {
-  replayRegions(probe);
-  const steps: SettleReading['steps'] = [];
-  const shift = settleRound(probe, (step, changed) => { steps.push([step, changed]); });
-  return { shift, steps };
+  return timed('trial-settle', () => {
+    timed('replay-first', () => replayRegions(probe));
+    const steps: SettleReading['steps'] = [];
+    const shift = timed('settle-round', () => settleRound(probe, (step, changed) => { steps.push([step, changed]); }));
+    return { shift, steps };
+  });
 }
 /** What a round of `settleRound` found, with the steps it took in order: a copy that adopted it hands this on instead of settling again. */
 export interface SettleReading { shift: number; steps: ['grow' | 'close-up' | 'keep-out', boolean][] }
@@ -186,6 +189,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
   let taken: SettleReading | undefined;
   for (let round = 0; round < CANTON_ROUNDS && (!closed || again); round++) {
     abortAt?.();
+    if (attemptTimings.on) attemptTimings.hooks.round?.(draft);
     // A creep under half a pixel, left by the centring replay, counts as settled; the replay still follows any move.
     const afterChords = again;
     const tapped = (step: 'grow' | 'close-up' | 'keep-out', changed: boolean): void => {
@@ -199,6 +203,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
       shift = taken.shift;
       taken = undefined;
     } else shift = settleRound(draft, tapped);
+    if (attemptTimings.on) attemptTimings.hooks.base?.(draft);
     closed = shift < CANTON_CREEP;
     attemptCounters.rounds++; entry.rounds++;
     if (!closed) { attemptCounters.openRounds++; entry.openRounds++; if (afterChords) attemptCounters.invalidations.closeUpReopened++; }

@@ -8,6 +8,7 @@ import { rebuildNodeGeometry } from './node-geometry.js';
 import { rebuildBarDrops, shapeBars } from './bars.js';
 import { prepareBundleGeometry } from './bundle-geometry.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
+import { timed } from './attempt-timings.js';
 import { moveGroup, rebuildBands, span, union } from './skeleton-geometry.js';
 
 const barStages = ['bars', 'bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'];
@@ -55,28 +56,32 @@ function rebuildBarGeometry(draft: LayoutModel, before: readonly TierBand[] = dr
  * use individual geometry producers; the transaction owns derived row/flank path writes.
  */
 export function rebuildRegionGeometry(draft: LayoutModel, budget?: CentreBudget, beforeBarBands?: readonly TierBand[], bundlesReady = ['bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'].includes(draft.stage)): void {
-  if (bundlesReady) {
-    for (const link of draft.links) if (link.bundle) delete link.path;
-    for (const bundle of draft.bundles) { delete bundle.rows; delete bundle.envelope; delete bundle.centreline; delete bundle.envelopeParts; }
-    prepareBundleGeometry(draft);
-    budget ??= createCentreBudget();
-  }
-  const barsReady = barStages.includes(draft.stage) || beforeBarBands !== undefined;
-  if (barsReady) rebuildBarGeometry(draft, beforeBarBands);
-  rebuildRegions(draft);
-  rebuildLaneExtents(draft);
-  if (budget) {
-    centreDraft(draft, budget);
-    if (bundlesReady) prepareBundleGeometry(draft);
-    if (barsReady) rebuildBarGeometry(draft);
-    rebuildRegions(draft);
-    rebuildLaneExtents(draft);
-  }
-  rebuildNodeGeometry(draft, Object.keys(draft.nodes), 'current');
-  for (const link of draft.links) if (rowPathCandidate(draft, link) || flankPathCandidate(draft, link)) delete link.path;
-  rebuildRowPaths(draft);
-  rebuildFlankPaths(draft);
-  if (barsReady) rebuildBarDrops(draft);
-  if (bundlesReady) rebuildBundlePaths(draft);
-  if (budget) flagUnverifiedCentring(draft);
+  timed('rebuild-region-geometry', () => {
+    if (bundlesReady) {
+      timed('bundle-prep', () => {
+        for (const link of draft.links) if (link.bundle) delete link.path;
+        for (const bundle of draft.bundles) { delete bundle.rows; delete bundle.envelope; delete bundle.centreline; delete bundle.envelopeParts; }
+        prepareBundleGeometry(draft);
+      });
+      budget ??= createCentreBudget();
+    }
+    const barsReady = barStages.includes(draft.stage) || beforeBarBands !== undefined;
+    if (barsReady) timed('bar-geometry', () => rebuildBarGeometry(draft, beforeBarBands));
+    timed('regions', () => rebuildRegions(draft));
+    timed('lane-extents', () => rebuildLaneExtents(draft));
+    if (budget) {
+      timed('centre-draft', () => centreDraft(draft, budget!));
+      if (bundlesReady) timed('bundle-prep', () => prepareBundleGeometry(draft));
+      if (barsReady) timed('bar-geometry', () => rebuildBarGeometry(draft));
+      timed('regions', () => rebuildRegions(draft));
+      timed('lane-extents', () => rebuildLaneExtents(draft));
+    }
+    timed('node-geometry', () => rebuildNodeGeometry(draft, Object.keys(draft.nodes), 'current'));
+    timed('row-path-delete', () => { for (const link of draft.links) if (rowPathCandidate(draft, link) || flankPathCandidate(draft, link)) delete link.path; });
+    timed('row-paths', () => rebuildRowPaths(draft));
+    timed('flank-paths', () => rebuildFlankPaths(draft));
+    if (barsReady) timed('bar-drops', () => rebuildBarDrops(draft));
+    if (bundlesReady) timed('bundle-paths', () => rebuildBundlePaths(draft));
+    if (budget) timed('centre-flag', () => flagUnverifiedCentring(draft));
+  });
 }
