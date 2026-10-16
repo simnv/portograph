@@ -4,9 +4,14 @@
  */
 
 const TEXT = /[&<>]/g;
-const ATTRIBUTE = /[&<>"']/g;
+/**
+ * A parser normalises a literal tab, newline or carriage return inside an attribute value to a
+ * space (XML 1.0, section 3.3.3), so an attribute writes them as character references to keep them.
+ */
+const ATTRIBUTE = /[&<>"'\t\n\r]/g;
 const ENTITIES: Readonly<Record<string, string>> = {
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;',
+  '\t': '&#9;', '\n': '&#10;', '\r': '&#13;',
 };
 
 /** U+FFFD, the substitute for a character XML cannot carry at all. */

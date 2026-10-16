@@ -35,9 +35,13 @@ interface Bound {
   body: string;
 }
 
+/** The five named entities and the numeric references the export writes, decoded as a parser decodes them. */
+const decode = (value: string): string => value.replace(/&(?:#(\d+)|(amp|lt|gt|quot|apos));/g, (_, code: string | undefined, name: string | undefined) =>
+  code !== undefined ? String.fromCharCode(Number(code)) : ({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" })[name!]!);
+
 const attributesOf = (tag: string): Record<string, string> => {
   const found: Record<string, string> = {};
-  for (const pair of tag.matchAll(/([\w:-]+)="([^"]*)"/g)) found[pair[1]!] = pair[2]!;
+  for (const pair of tag.matchAll(/([\w:-]+)="([^"]*)"/g)) found[pair[1]!] = decode(pair[2]!);
   return found;
 };
 
@@ -45,10 +49,16 @@ const attributesOf = (tag: string): Record<string, string> => {
 const objects = (xml: string): Bound[] =>
   [...xml.matchAll(/<object\b([^>]*)>([\s\S]*?)<\/object>/g)].map(match => ({ attributes: attributesOf(match[1]!), body: match[2]! }));
 
-const allIds = (xml: string): string[] => [...xml.matchAll(/<(?:object|mxCell)\b[^>]*?\sid="([^"]*)"/g)].map(match => match[1]!);
+const allIds = (xml: string): string[] => [...xml.matchAll(/<(?:object|mxCell)\b[^>]*?\sid="([^"]*)"/g)].map(match => decode(match[1]!));
 const ids = (xml: string, prefix: string): string[] => allIds(xml).filter(id => id.startsWith(prefix)).sort();
 
 describe('draw.io binding', () => {
+  it('keeps a tab, a newline and a carriage return in a meta value', async () => {
+    const xml = await render(sheet(`${first}\n${second}`).replace('meta: {zone: lab,', 'meta: {note: "a\\nb\\tc\\rd", zone: lab,'));
+    expect(xml).toContain('note="a&#10;b&#9;c&#13;d"');
+    expect(objects(xml).find(item => item.attributes.id === '0')!.attributes.note).toBe('a\nb\tc\rd');
+  }, 60000);
+
   let xml: string;
   let found: Bound[];
   const kind = (name: string): Bound[] => found.filter(item => item.attributes['pg-kind'] === name);
@@ -81,7 +91,8 @@ describe('draw.io binding', () => {
   it('wraps a node with pg-kind, pg-id and its meta, around one inner mxCell without an id', () => {
     const node = kind('node').find(item => item.attributes['pg-id'] === 'a')!;
     expect(node).toBeDefined();
-    expect(node.attributes).toMatchObject({ 'pg-kind': 'node', 'pg-id': 'a', rack: '7', owner: 'ops', area: 'north &amp; east' });
+    expect(node.attributes).toMatchObject({ 'pg-kind': 'node', 'pg-id': 'a', rack: '7', owner: 'ops', area: 'north & east' });
+    expect(xml).toContain('area="north &amp; east"');
     expect(node.attributes['id']).toBeTruthy();
     expect([...node.body.matchAll(/<mxCell\b/g)]).toHaveLength(1);
     expect(/<mxCell\b[^>]*\sid=/.test(node.body)).toBe(false);
@@ -106,8 +117,8 @@ describe('draw.io binding', () => {
     expect(uplink).toBeDefined();
     expect(uplink.attributes).toMatchObject({ id: 'pg-link~uplink', 'pg-from': 'a:p', 'pg-to': 'b:p', speed: '10', tag: 'core' });
     expect(uplink.body).toMatch(/\bedge="1"/);
-    const derived = kind('link').find(item => item.attributes['pg-id'] === 'a:q--c:p')!;
-    expect(derived.attributes).toMatchObject({ id: 'pg-link~a:q--c:p', 'pg-from': 'a:q', 'pg-to': 'c:p' });
+    const derived = kind('link').find(item => item.attributes['pg-id'] === 'a:q->c:p')!;
+    expect(derived.attributes).toMatchObject({ id: 'pg-link~a:q->c:p', 'pg-from': 'a:q', 'pg-to': 'c:p' });
   });
 
   it('writes pg-run and pg-runs only on a link that has more than one run', () => {
@@ -122,8 +133,8 @@ describe('draw.io binding', () => {
   it('carries the text of a link label on the link object itself', () => {
     const labelOf = (id: string): string | undefined => kind('link').find(item => item.attributes['pg-id'] === id)!.attributes['label'];
     expect(labelOf('uplink')).toContain('Main');
-    expect(labelOf('a:q--b:q')).toContain('Spare');
-    expect(labelOf('a:q--c:p')).toBe('');
+    expect(labelOf('a:q->b:q')).toContain('Spare');
+    expect(labelOf('a:q->c:p')).toBe('');
   });
 
   it('writes the meta keys sorted, after the pg- keys', () => {
@@ -138,7 +149,7 @@ describe('draw.io binding', () => {
 
   it('keeps the link ids and their labels when the links swap places in the YAML (acceptance)', async () => {
     const swapped = await render(sheet([third, second, first].join('\n')));
-    expect(ids(xml, 'pg-link~')).toEqual(['pg-link~a:q--b:q', 'pg-link~a:q--c:p', 'pg-link~uplink']);
+    expect(ids(xml, 'pg-link~')).toEqual(['pg-link~a:q->b:q', 'pg-link~a:q->c:p', 'pg-link~uplink']);
     expect(ids(swapped, 'pg-link~')).toEqual(ids(xml, 'pg-link~'));
     expect(ids(swapped, 'pg-linkLabel~')).toEqual(ids(xml, 'pg-linkLabel~'));
     const bindings = (text: string) => objects(text).filter(item => item.attributes['pg-kind'] === 'link')
@@ -160,7 +171,7 @@ links: ${links}
     expect(ids(one, 'pg-linkLabel~').length).toBeGreaterThanOrEqual(1);
     expect(ids(two, 'pg-linkLabel~')).toEqual(ids(one, 'pg-linkLabel~'));
     expect(ids(two, 'pg-link~')).toEqual(ids(one, 'pg-link~'));
-    expect(ids(one, 'pg-link~')).toEqual(['pg-link~a:p--b:p', 'pg-link~a:r--b:r', 'pg-link~b:q--a:q']);
+    expect(ids(one, 'pg-link~')).toEqual(['pg-link~a:p->b:p', 'pg-link~a:r->b:r', 'pg-link~b:q->a:q']);
   }, 60000);
 
   it('names its link on a label cell of its own, and hangs the label on a run of that link', async () => {
@@ -184,7 +195,7 @@ links: ${links}
     expect(root.attributes).toMatchObject({ 'pg-schema': '1', datasource: 'prometheus', site: 'lab' });
     const links = objects(xml).filter(item => item.attributes['pg-kind'] === 'link');
     expect(links.map(item => item.attributes['pg-id']).sort()).toEqual(
-      ['edge--server', 'edge--server@2', 'edge:lan--switch:p3', 'switch:p2--server:nic0', 'uplink']);
+      ['edge->server', 'edge->server@2', 'edge:lan->switch:p3', 'switch:p2->server:nic0', 'uplink']);
     expect(links.find(item => item.attributes['pg-id'] === 'uplink')!.attributes).toMatchObject(
       { 'pg-from': 'router:eth1', 'pg-to': 'switch:p1', capacity: '10000000000' });
     const port = objects(xml).find(item => item.attributes['pg-id'] === 'router:eth1')!;
