@@ -68,6 +68,7 @@ pipeline. Labels are free text; ids are not.
 | `nodes` | map | yes | |
 | `links` | list | no | |
 | `overlays` | map | no | render switches, e.g. `{ flow: hidden }` |
+| `meta` | map | no | document metadata for the draw.io export, on the root cell; no cell inherits it. See **Meta** below |
 
 ## Group
 
@@ -103,8 +104,9 @@ with a warning. Inference is logged as an info message.
 | `label` | string | default: id |
 | `description` | string | |
 | `icon` | string | from the profile icon set |
-| `ports` | list \| map | list of `string` or `{ name, side?, order?, class? }`; or `{ side: <side>, list: [...] }` |
+| `ports` | list \| map | list of `string` or `{ name, side?, order?, class?, meta? }`; or `{ side: <side>, list: [...] }` |
 | `size` | `{ width, height }` | a floor; the engine may grow, never shrink |
+| `meta` | map | metadata for the draw.io export; see **Meta** below |
 
 Per-port keys: `side` fixes the side; `order` (int) fixes the position on that side among
 author-ordered ports (engine-ordered ports fill the gaps by far-end position). Declaration order
@@ -142,10 +144,21 @@ Options:
 | `label` | string | |
 | `route` | `orthogonal` \| `straight` \| `bundle` \| `merge` \| `overlay` \| `stub` \| `group-link` | override. `merge` is selected first and validated at model time after bundle grouping; it requires membership in a bundle of ≥ 2. `group-link` requires group endpoints. M1: `stub` and `group-link` warn and fall back to routed |
 | `weight` | number | line-weight multiplier |
+| `id` | identifier | the link's own id; unique among links (`DUPLICATE_LINK_ID`). Without it the id is derived from the two ends (docs/drawio-binding-contract.md) |
+| `meta` | map | metadata for the draw.io export; see **Meta** below |
 
 **Aggregation eligibility** (automatic `group-link`): both endpoint groups have ≥ 2 nodes; the
 links form the complete bipartite set between the two groups' nodes; all share one class and
 family; none carries `route:`. Membership is preserved in the model.
+
+## Meta
+
+`meta:` is a flat map of scalars: a string, a finite number or a boolean. The pipeline carries it
+and does not read it, so it never changes geometry. The draw.io export writes each entry as an
+attribute of the cell (docs/drawio-binding-contract.md). A key starts with a letter or an
+underscore and contains letters, digits, underscores or hyphens (`BAD_META_KEY`). The keys `id`,
+`label`, `placeholders`, any key that starts with `pg-` and any key that starts with `xml` are
+reserved, in any case (`RESERVED_META_KEY`). Another value is `INVALID_TYPE`.
 
 ## Diagnostics, by stage
 
