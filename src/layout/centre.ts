@@ -426,10 +426,16 @@ function groupFeeds(model: LayoutModel, context: CentreContext, tier: number, li
  * by the publication/restore check, so both read one definition.
  */
 const CHORD_STAGES = ['bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'];
-function centreGroupStep(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>): { unresolved: Set<string>; group: LayoutGroup } {
-  return withStepLinkKinds(model, () => centreGroupStepChecked(model, context, tier, list, id, previous, warn, tail));
+/**
+ * What the replays of one check read before their step moves anything. Every replay starts from a copy of one model, and the readings below depend on the
+ * content of the model alone; the one thing a replay does first is rebuild the nodes of its group. When that leaves the nodes as the model has them (`texts`),
+ * the replay stands on the model itself and takes the readings of the first one that did, so they are read once per check and not once per replay.
+ */
+interface BaseReadings { texts: ReadonlyMap<string, string>; held?: Set<string>; breached?: Set<string> }
+function centreGroupStep(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, base?: BaseReadings): { unresolved: Set<string>; group: LayoutGroup } {
+  return withStepLinkKinds(model, () => centreGroupStepChecked(model, context, tier, list, id, previous, warn, tail, base));
 }
-function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>): { unresolved: Set<string>; group: LayoutGroup } {
+function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, base?: BaseReadings): { unresolved: Set<string>; group: LayoutGroup } {
   // From 7e on, an overlay link that draws one straight segment keeps the space placement reserved for it. A step that leaves fewer
   // of them straight (a body or a pill now stands on a chord) is declined as a whole, like a step that solves nothing: the group stays
   // where it stood (ticket 75). A step that straightens one link for another is a trade the alignment is allowed to make.
@@ -437,7 +443,9 @@ function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier
   const group = model.groups[id]!;
   // `moveGroup` leaves pill bounds behind, and the chord reads them: both readings are taken on rebuilt nodes.
   rebuildNodeGeometry(model, group.nodes, 'current');
-  const held = straightChordIds(model), breached = new Set([...keepOutShifts(model).keys()].map(item => item.id));
+  const standing = base !== undefined && group.nodes.every(node => JSON.stringify(model.nodes[node]) === base.texts.get(node));
+  const held = standing && base.held ? base.held : straightChordIds(model), breached = standing && base.breached ? base.breached : new Set([...keepOutShifts(model).keys()].map(item => item.id));
+  if (standing) { base.held = held; base.breached = breached; }
   const snapshot = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
   const result = centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail);
   rebuildNodeGeometry(model, model.groups[id]!.nodes, 'current');
@@ -716,6 +724,7 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
   // Every trial starts from the same model. The parts a step only reads are copied once and frozen (`TRIAL_SHARED`), and so are the nodes:
   // a trial takes a fresh copy of the nodes of its group and of the group before it (the ones a step writes), and shares the rest. A step that writes
   // to a shared part throws; that trial is then run again on a full copy, so the answer is the one a full copy gives (architecture ticket 14).
+  let baseReadings: BaseReadings | undefined;
   let replayedText: string | undefined, sharedParts: Record<string, unknown> | undefined, sharedNodes: Record<string, LayoutNode> | undefined, nodeTexts: Map<string, string> | undefined, fullText: string | undefined;
   const freezeDeep = (value: unknown): void => { if (value && typeof value === 'object') { Object.values(value).forEach(freezeDeep); Object.freeze(value); } };
   for (const { tier, authority } of context.steps) {
@@ -762,6 +771,7 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
         freezeDeep(sharedParts);
       }
       const reserved = tail ??= tailReservation(model, context, tier, order);
+      const base: BaseReadings = baseReadings ??= { texts: nodeTexts! };
       const attempt = (full: boolean): { trial: LayoutModel; step: ReturnType<typeof centreGroupStep> } => {
         let trial: LayoutModel;
         if (full) {
@@ -772,7 +782,7 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
           const fresh = JSON.parse(replayedText!) as Record<string, unknown>;
           trial = Object.assign(fresh, sharedParts, { nodes }) as unknown as LayoutModel;
         }
-        return { trial, step: centreGroupStep(trial, context, tier, centringFeeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, reserved) };
+        return { trial, step: centreGroupStep(trial, context, tier, centringFeeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, reserved, base) };
       };
       let step: ReturnType<typeof centreGroupStep>;
       try { step = attempt(false).step; } catch (error) {
