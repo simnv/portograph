@@ -19,12 +19,17 @@ import { bands } from '../layout/bands.js';
 import { judgeTurnTrial, measureTurnOrder } from '../layout/turn-measure.js';
 import { pitchGrowth, nodeFloors as floorEntries, courseEntries, laneOwners, promisedTurns, reserve as addReservations, sideFaces, sideHintsOf, spanEntries, turnEntries, type Reservations } from '../layout/reservations.js';
 import { holds, holdsRouted } from '../layout/reservation-checks.js';
-import type { Round } from './round.js';
-import { CommandDeadlineError } from './budget.js';
+import type { ReservationFailure } from '../layout/reservations.js';
+import type { Refusal, Round } from './round.js';
 import type { Env } from './env.js';
 import { FAN_ROUNDS, SIDE_ROUNDS } from './limits.js';
 import type { State } from './state.js';
 
+/** A refusal at the final 7e, with the ids of the reservations that did not hold. */
+const ledgerRefusal = (failures: readonly ReservationFailure[], r: Omit<Refusal, 'at'>): Refusal => {
+  const reservationIds = failures.map(failure => failure.id);
+  return { at: 'ledger', ...r, reservationIds, error: new PlacementRefusal('ledger', r.why, { stage: '7e', reservationIds }) };
+};
 /** A fan re-run was cut: the fans keep the pitch of the last completed placement. */
 const cutNote = (why: string): Diagnostic => ({ stage: 'placement', severity: 'warning', code: 'FAN_SPREAD_CUT',
   message: `A fan re-run was cut: ${why}. The fans keep the pitch of the last completed placement, and this layout may differ from one made with more time.` });
@@ -44,7 +49,7 @@ const fanRound = (child: boolean): Round<{ grown: Reservations }> => ({
   skip: () => undefined,
   // A fan floor can move the rows, and a trunk that the baseline placed may then have a foreign unit on both sides. The run that found it blocked is a
   // trial, so the round is cut and the baseline stands (a test cannot reach this: it needs a floor that reorders a row of the mesh).
-  tolerates: (error, phase) => phase === 'place' && (child ? isRefusable(error) : error instanceof TrunkBlocked),
+  tolerates: (error, phase) => phase === 'place' && (child ? error instanceof PlacementRefusal : error instanceof TrunkBlocked),
   async measure(env, s) {
     const measure = await env.timed('measureFans', () => measureFans(s.kept7e));
     const grown = pitchGrowth(s.kept, measure.floors, child ? 'span' : 'fan', env.placements);
@@ -55,7 +60,7 @@ const fanRound = (child: boolean): Round<{ grown: Reservations }> => ({
     if (!fanRoundHolds(s.kept7e, trial7e)) return { at: 'ledger', why: 'the fan round does not hold', note: fanRoundDropped(s.kept7e, trial7e) };
     // Every active reservation holds at the final 7e of the re-run, or the re-run is dropped.
     const broken = child ? [] : holds(ledger, trial7e);
-    return broken.length > 0 ? { at: 'ledger', why: broken[0]!.why } : undefined;
+    return broken.length > 0 ? ledgerRefusal(broken, { why: broken[0]!.why }) : undefined;
   },
   judge: () => undefined,
   commit(_env, s, _o, t) { s.kept7e = t.trial7e; s.kept = t.ledger; },
@@ -68,10 +73,6 @@ const fanRound = (child: boolean): Round<{ grown: Reservations }> => ({
 export const fan = fanRound(false);
 const spanFan = fanRound(true);
 
-/** Any error but the command deadline: the span round is an offer, and a trial the placement cannot build is refused, whatever the cause. */
-const isRefusable = (error: unknown): error is Error => error instanceof Error && !(error instanceof CommandDeadlineError);
-/** The span round's label of a refusal: `placement` for an expected one, `error` for anything else (the trace names it, so a sweep finds a defect). */
-const spanCode = (error: Error): 'placement' | 'error' => error instanceof PlacementRefusal && error.code !== 'centring' && error.code !== 'budget' ? 'placement' : 'error';
 /** Whether the turn round runs at all: a forced turn order or forced courses (tests) have no turn round. */
 export const turnRoundOn = (env: Env): boolean => env.options.testCourses === undefined && env.options.testTurnOrder === undefined;
 
@@ -90,11 +91,11 @@ export const span: Round<SpanOffer> = {
   enabled: env => env.options.testCourses === undefined && env.options.testSpanHints === undefined,
   gain: () => [0, 0, 0],
   skip(env, _s, o) { env.options.testSideTrace?.({ ev: 'span-refused', links: o.links, why: 'budget' }); },
-  tolerates: (error) => isRefusable(error),
+  // Only the placement's own refusals, as in every other round: the command deadline (also an ELK deadline) and a defect (a TypeError) end the command.
+  tolerates: (error, phase) => phase === 'place' ? error instanceof PlacementRefusal : refusedAtBands(error),
   async measure(env, s) {
     const offer = measureSpans(s.base, s.routedBase!);
     env.options.testSideTrace?.({ ev: 'spans', offer, base: s.base, routedBase: s.routedBase });
-    if (offer.links.length === 0) return undefined;
     return offer.links.length === 0 ? undefined : offer;
   },
   // The trial reserves its chords on top of the ledger; the fans of the trial grow this one, and a kept trial keeps it.
@@ -105,11 +106,11 @@ export const span: Round<SpanOffer> = {
     const failed = holds(ledger, trial7e);
     const lost = failed.filter(failure => failure.kind === 'spanChord' && o.links.includes(failure.link!)).map(failure => failure.link!);
     if (lost.length > 0) {
-      return { at: 'ledger', why: 'promise', detail: `the freeze would not hold ${lost.join(', ')}: ${lost.map(id => { const item = trial7e.links.find(other => other.id === id); return item === undefined ? 'missing' : freezeRefusal(trial7e, item) ?? 'not straight'; }).join(', ')} (before 7f)` };
+      return ledgerRefusal(failed.filter(failure => failure.kind === 'spanChord' && o.links.includes(failure.link!)), { why: 'promise', detail: `the freeze would not hold ${lost.join(', ')}: ${lost.map(id => { const item = trial7e.links.find(other => other.id === id); return item === undefined ? 'missing' : freezeRefusal(trial7e, item) ?? 'not straight'; }).join(', ')} (before 7f)` });
     }
     // A reservation kept by an earlier round must hold at the trial's final 7e as well (ticket 22 left that open).
     const otherLost = failed.filter(failure => !lost.includes(failure.link!) || failure.kind !== 'spanChord');
-    return otherLost.length > 0 ? { at: 'ledger', why: 'promise', detail: `a kept reservation does not hold: ${otherLost[0]!.why} (before 7f)` } : undefined;
+    return otherLost.length > 0 ? ledgerRefusal(otherLost, { why: 'promise', detail: `a kept reservation does not hold: ${otherLost[0]!.why} (before 7f)` }) : undefined;
   },
   judge(env, s, o, t) {
     const verdict = judgeSpanTrial(s.routedBase!, t.routedTrial, o.links);
@@ -130,8 +131,8 @@ export const span: Round<SpanOffer> = {
     }
   },
   refuse(env, _s, o, r) {
-    const [why, detail] = r.at === 'place' ? [spanCode(r.error!), r.error!.message] : r.at === 'fallback' ? ['placement', 'ELK fell back during the span trial']
-      : r.at === 'bands' ? [spanCode(r.error!), `stage 7f rejected them (${r.error!.message})`] : [r.why, r.detail];
+    const [why, detail] = r.at === 'place' ? ['placement', r.error!.message] : r.at === 'fallback' ? ['placement', 'ELK fell back during the span trial']
+      : r.at === 'bands' ? ['placement', `stage 7f rejected them (${r.error!.message})`] : [r.why, r.detail];
     env.options.testSideTrace?.({ ev: 'span-refused', links: o.links, why, detail });
   },
 };
@@ -200,7 +201,7 @@ export const course: Round<CourseOffer> = {
   // Every active reservation holds at the trial's final 7e, the kept ones of earlier rounds with the new courses, before 7f and the route.
   holdsAt7e(_env, _s, _o, ledger, trial7e) {
     const broken = holds(ledger, trial7e);
-    return broken.length > 0 ? { at: 'ledger', why: `a reservation does not hold at stage 7e (${broken[0]!.why})` } : undefined;
+    return broken.length > 0 ? ledgerRefusal(broken, { why: `a reservation does not hold at stage 7e (${broken[0]!.why})` }) : undefined;
   },
   judge(env, s, o, t) {
     const verdict = judgeCourseTrial(s.routedBase!, t.routedTrial, promisedTurnsOf(o.promised));
@@ -284,9 +285,10 @@ export const side: Round<SideTrialOffer> = {
     // moves. When its offer is empty the trial is skipped; otherwise the true unmoved baseline is rebuilt (silently: no progress event, no attempt trace, since
     // this run is never published) and the trial starts from the rebuilt offer. With no copy, the rebuild runs. Nothing is built when no re-run is left.
     let unmoved = false, filtered: boolean | undefined;
-    if (round === 0 && offer.hints.size === 0 && s.baseMoved && env.reruns < env.maxReruns) {
+    if (round === 0 && offer.hints.size === 0 && s.baseMoved && !s.unmovedRebuilt && env.reruns < env.maxReruns) {
       if (s.baseUnmoved !== undefined) filtered = measureSides(s.baseUnmoved, s.kept7e, s.refused).hints.size > 0;
       if (filtered !== false || env.options.testRebuildAlways === true) {
+        s.unmovedRebuilt = true;
         const rebuilt = await env.timed('bands-unmoved', () => bands(s.kept7e, () => env.trialAbort('bands'), undefined, false));
         offer = await env.timed('measureSides', () => measureSides(rebuilt, s.kept7e, s.refused));
         unmoved = offer.hints.size > 0;
@@ -294,7 +296,7 @@ export const side: Round<SideTrialOffer> = {
       }
     }
     env.options.testSideTrace?.({ ev: 'offer', round, offer, base: s.base, kept7e: s.kept7e, unmoved, filtered });
-    if (offer.capped) s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_PROBE_CAPPED', message: 'The side measure stopped at its probe cap; the links after it were not probed.' });
+    if (offer.capped && !s.sideNotes.some(note => note.code === 'SIDE_PROBE_CAPPED')) s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_PROBE_CAPPED', message: 'The side measure stopped at its probe cap; the links after it were not probed.' });
     if (offer.hints.size === 0) return undefined;
     for (const [key, item] of offer.promised) s.trialLinks.set(key, item.link);
     return { offer, round, unmoved };
@@ -324,11 +326,11 @@ export const side: Round<SideTrialOffer> = {
     };
     const links = (lost: typeof failed): string => [...new Set(lost.map(failure => failure.link))].join(', ');
     const chordLost = failed.filter(failure => failure.kind === 'sideFace');
-    if (chordLost.length > 0) return { at: 'ledger', keys: own(chordLost), why: `a port hinted for a chord does not hold its chord at stage 7e (${links(chordLost)})` };
+    if (chordLost.length > 0) return ledgerRefusal(chordLost, { keys: own(chordLost), why: `a port hinted for a chord does not hold its chord at stage 7e (${links(chordLost)})` });
     const laneLost = failed.filter(failure => failure.kind === 'laneOwner');
-    if (laneLost.length > 0) return { at: 'ledger', keys: own(laneLost), why: `a port hinted for a side lane has no source-aligned lane at stage 7e (${links(laneLost)})` };
+    if (laneLost.length > 0) return ledgerRefusal(laneLost, { keys: own(laneLost), why: `a port hinted for a side lane has no source-aligned lane at stage 7e (${links(laneLost)})` });
     const otherFailed = failed.filter(failure => failure.kind !== 'sideFace' && failure.kind !== 'laneOwner');
-    return otherFailed.length > 0 ? { at: 'ledger', why: `a reservation does not hold at stage 7e (${otherFailed[0]!.why})` } : undefined;
+    return otherFailed.length > 0 ? ledgerRefusal(otherFailed, { why: `a reservation does not hold at stage 7e (${otherFailed[0]!.why})` }) : undefined;
   },
   // The predictor prunes only when another round and another re-run remain, and only the hints it calls worse (Section 19.3).
   predict(env, s, o, trial7e) {
@@ -393,7 +395,7 @@ export const turn: Round<TurnOffer> = {
   // The offer was decided before any placement; this is left only when the measure and stage 5 disagree about a face. The placement is spent (no re-run is given back).
   holdsAt7e(_env, _s, _o, ledger, trial7e) {
     const failed = holds(ledger, trial7e);
-    return failed.length > 0 ? { at: 'ledger', why: failed[0]!.kind === 'turnOrder' ? failed[0]!.why : `a reservation does not hold at stage 7e (${failed[0]!.why})` } : undefined;
+    return failed.length > 0 ? ledgerRefusal(failed, { why: failed[0]!.kind === 'turnOrder' ? failed[0]!.why : `a reservation does not hold at stage 7e (${failed[0]!.why})` }) : undefined;
   },
   judge(env, s, o, t) {
     const verdict = judgeTurnTrial(o.current, t.routedTrial, promisedTurns(s.kept));
@@ -444,7 +446,7 @@ export const overlay: Round<OverlayOffer> = {
   },
   holdsAt7e(_env, _s, _o, ledger, trial7e) {
     const broken = holds(ledger, trial7e);
-    return broken.length > 0 ? { at: 'ledger', why: `a reservation does not hold at stage 7e (${broken[0]!.why})` } : undefined;
+    return broken.length > 0 ? ledgerRefusal(broken, { why: `a reservation does not hold at stage 7e (${broken[0]!.why})` }) : undefined;
   },
   judge(env, s, o, t) {
     const verdict = judgeOverlayTrial(o.current, t.routedTrial, o.offer);

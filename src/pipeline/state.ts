@@ -33,6 +33,8 @@ export interface State {
   silent: boolean;
   /** The side measures made so far: the index of the round that measures next. */
   sideRound: number;
+  /** Whether the unmoved baseline was rebuilt for a side offer: it is rebuilt at most once in a command. */
+  unmovedRebuilt: boolean;
 }
 
 /** One try of a round, built from its ledger: the 7e result, the 7f result, the routed result and what 7f did. */

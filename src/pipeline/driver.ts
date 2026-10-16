@@ -16,7 +16,6 @@ import type { State } from './state.js';
 
 /** The rounds in the order of the pipeline. A group holds the rounds that compete for the same starts: the fan, the span, the side and course, the turn and overlay. */
 const PLAN: readonly (readonly AnyRound[])[] = [[fan], [span], [side, course], [turn, overlay]];
-const ROUNDS = PLAN.flat();
 /** The starts a round may still take: the command's budget less the starts spent, or the floor the round has of its own. */
 const tokens = (env: Env, round: AnyRound): number => Math.max(env.maxReruns, round.budget.floor) - env.reruns;
 const tied = (a: readonly number[], b: readonly number[]): boolean => !beats(a, b) && !beats(b, a);
@@ -32,10 +31,10 @@ export function chooseStart(room: number, offers: readonly { gain: readonly numb
 }
 
 /** How many of the rounds that `group` protects have an offer waiting for a start. */
-async function reservedFor(env: Env, s: State, group: readonly AnyRound[]): Promise<number> {
+export async function reservedFor(env: Env, s: State, group: readonly AnyRound[], rounds: readonly AnyRound[]): Promise<number> {
   const ids = new Set(group.flatMap(round => round.budget.protects));
   let count = 0;
-  for (const round of ROUNDS) if (ids.has(round.id) && round.enabled(env) && await round.live?.(env, s) === true) count++;
+  for (const round of rounds) if (ids.has(round.id) && round.enabled(env) && await round.live?.(env, s) === true) count++;
   return count;
 }
 
@@ -90,23 +89,25 @@ async function visit(env: Env, s: State, round: AnyRound, first: unknown, reserv
   }
 }
 
-export async function drive(env: Env, s: State): Promise<void> {
-  for (const [index, group] of PLAN.entries()) {
+export async function drive(env: Env, s: State, plan: readonly (readonly AnyRound[])[] = PLAN): Promise<void> {
+  const rounds = plan.flat();
+  for (const [index, group] of plan.entries()) {
     if (index === 1) await baseline(env, s);
+    // A round is measured again after a trial only if it had an offer before, or declares that a sibling's trial may give it one (`reopens`). A skipped sibling is not dropped:
+    // it is measured again and gets a start if the kept trial left one (the turn offer gone), and is skipped when it is found without one.
+    const offered = new Set<AnyRound>();
     let pending = group.filter(round => round.enabled(env));
     while (pending.length > 0) {
       const offers: [AnyRound, unknown][] = [];
-      for (const round of pending) { const offer = await round.measure(env, s); if (offer !== undefined) offers.push([round, offer]); }
+      for (const round of pending) { const offer = await round.measure(env, s); if (offer !== undefined) { offers.push([round, offer]); offered.add(round); } }
       if (offers.length === 0) break;
-      const reserved = await reservedFor(env, s, offers.map(([round]) => round));
-      const room = tokens(env, offers[0]![0]) - reserved, left = env.maxReruns - env.reruns, scarce = room < offers.length;
-      // Scarce starts: the round whose offer promises the most keeps them; the others are skipped before it runs.
+      const reserved = await reservedFor(env, s, offers.map(([round]) => round), rounds);
+      const room = Math.max(...offers.map(([round]) => tokens(env, round))) - reserved, left = env.maxReruns - env.reruns;
       const winner = chooseStart(room, offers.map(([round, offer]) => ({ gain: round.gain(env, s, offer), tie: round.budget.tie })));
-      for (const [i, [round, offer]] of offers.entries()) if (scarce && i !== winner) round.skip(env, s, offer, left);
-      if (winner < 0) break;
-      await visit(env, s, offers[winner]![0], offers[winner]![1], reserved);
-      const ran = offers[0]![0];
-      pending = scarce ? [] : pending.filter(round => round !== ran && (group.indexOf(round) > group.indexOf(ran) || round.budget.reopens));
+      if (winner < 0) { for (const [round, offer] of offers) round.skip(env, s, offer, left); break; }
+      const [ran, offer] = offers[winner]!;
+      await visit(env, s, ran, offer, reserved);
+      pending = pending.filter(round => round !== ran && (offered.has(round) || round.budget.reopens));
     }
   }
 }

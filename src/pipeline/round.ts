@@ -21,6 +21,8 @@ export interface Refusal {
   /** The error of a refused placement or 7f run. */
   error?: Error;
   detail?: string;
+  /** The ids of the reservations that did not hold (a refusal at the final 7e). */
+  reservationIds?: readonly string[];
   /** A note that a refusal publishes as it is (the fan round's dropped note). */
   note?: Diagnostic;
 }

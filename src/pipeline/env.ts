@@ -3,6 +3,8 @@
  * share. It decides no layout. A round reads it to place, band and route a trial, and to count what it spent.
  */
 import type { LayoutModel, LayoutStage, NormalisedDocument, Size } from '../model/index.js';
+// The placement run first: it loads the stages in the order the tests that mock a stage module depend on (it was the order of the imports of the old index).
+import { place } from './place.js';
 import { bands } from '../layout/bands.js';
 import type { ElkClock } from '../layout/elk-worker.js';
 import { lastAttempt } from '../layout/attempt-counters.js';
@@ -11,7 +13,6 @@ import { route, ROUTE_BUDGET_MS } from '../route/index.js';
 import { CommandDeadlineError, UNBOUNDED_BUDGET, type Budget } from './budget.js';
 import type { LayoutOptions } from './options.js';
 import { FAN_ROUNDS, MAX_RERUNS } from './limits.js';
-import { place } from './place.js';
 
 /** What stage 7f did to a model, with the copy of its first settled state (`lastAttempt`): phase 3b's trigger. */
 export interface Banded { model: LayoutModel; moved: boolean; unmoved: LayoutModel | undefined }
