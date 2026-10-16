@@ -2,6 +2,7 @@ import type { LayoutModel } from '../model/layout.js';
 import { createBrowserElkFactory, elkDeadlineMs, ElkDeadlineError, runElkAttempt, systemElkClock,
   type CreateElkAttempt, type ElkClock } from './elk-worker.js';
 import { UNBOUNDED_BUDGET, type Budget } from '../pipeline/budget.js';
+import { PlacementRefusal } from './placement-refusal.js';
 import { buildSkeletonGraph } from './skeleton-graph.js';
 import { orderByOverlay, orderFramesByOverlay } from './overlay-order.js';
 import { packGridGroups, placeFlanksAndPeers, readSkeleton, rebuildBands, stackBands, validateSkeletonBands } from './skeleton-geometry.js';
@@ -17,8 +18,8 @@ export interface SkeletonOptions {
    */
   budget?: Budget;
 }
-export class SkeletonError extends Error {
-  constructor(message: string) { super(message); this.name = 'SkeletonError'; }
+export class SkeletonError extends PlacementRefusal {
+  constructor(message: string) { super('skeleton', message, { stage: 'skeleton' }); this.name = 'SkeletonError'; }
 }
 const copy = (model: LayoutModel): LayoutModel => JSON.parse(JSON.stringify(model)) as LayoutModel;
 

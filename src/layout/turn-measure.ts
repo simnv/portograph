@@ -48,11 +48,6 @@ export function measureTurnOrder(base: LayoutModel): TurnOffer {
   return offer;
 }
 
-/** The re-run that the span, course and side rounds set aside for the turn round: one when it has an offer on the baseline they read (Section 10, Budget), else none. */
-export const turnReserve = (base: LayoutModel, enabled: boolean): number => (enabled && measureTurnOrder(base).faces.length > 0 ? 1 : 0);
-/** The re-runs a round may reach with `reserve` set aside: it must leave that many to the rounds after it. */
-export const roundLimit = (maxReruns: number, reserve: number): number => maxReruns - reserve;
-
 export interface TurnVerdict {
   kept: boolean;
   reason: string;
@@ -65,14 +60,6 @@ interface Count { bent: number; turns: number; crossings: number }
 /** Better by the unified order, read lexicographically: fewer bent links, then fewer turns, then fewer crossings. Equal on all three is no gain. */
 export function betterByUnified(before: Count, after: Count): boolean {
   return after.bent !== before.bent ? after.bent < before.bent : after.turns !== before.turns ? after.turns < before.turns : after.crossings < before.crossings;
-}
-
-/**
- * Whether the turn round places (Section 10, Budget). It needs a re-run. With one left and an overlay offer on the same baseline it leaves that re-run to the overlay
- * round unless its own promise beats the overlay promise: it promises no bend and no turn, so it runs only when the overlay offer promises nothing either.
- */
-export function turnRoundRuns(left: number, overlayAhead: boolean, overlayGain: readonly number[], beats: (a: readonly number[], b: readonly number[]) => boolean): boolean {
-  return left > 0 && !(overlayAhead && left === 1 && !beats([0, 0, 0], overlayGain));
 }
 
 const countOf = (counts: ScoreCounts): Count => ({ bent: counts.routed.bent + counts.overlay.bent, turns: counts.routed.turns + counts.overlay.turns, crossings: counts.routed.crossings + counts.overlay.crossings.pairs });
