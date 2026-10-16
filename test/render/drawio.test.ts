@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel, Point } from '../../src/index.js';
+import { linkIds } from '../../src/model/index.js';
 import { drawio, render } from '../../src/index.js';
 import { bands } from '../../src/layout/bands.js';
 import { bars } from '../../src/layout/bars.js';
@@ -16,10 +17,17 @@ import { effectiveLayer } from '../../src/score/model.js';
 import { OVERLAY_ENDPOINT_RADIUS } from '../../src/theme/geometry.js';
 import { placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { flatCells } from './drawio-cells.js';
 
 /** The exporter's id scheme, mirrored so a test names a cell the way the file does. */
 const id = (kind: string, ...parts: readonly string[]): string =>
   parts.length ? `pg-${kind}~${parts.map(value => value.replace(/[%~]/g, c => `%${c.charCodeAt(0).toString(16)}`)).join('~')}` : `pg-${kind}`;
+
+/** The id a link carries in the file: its stable id, as `linkIds` derives it from the document. */
+const stable = (model: LayoutModel, linkId: string): string => {
+  const link = model.links.find(item => item.id === linkId);
+  return link ? linkIds(model.document)[link.sourceIndex] ?? link.id : linkId;
+};
 
 const fixture = (name: string): string =>
   readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
@@ -50,7 +58,7 @@ interface Cell {
 /** Every `<mxCell>`, with its style string split the way draw.io splits it. */
 function cells(xml: string): Map<string, Cell> {
   const found = new Map<string, Cell>();
-  for (const match of xml.matchAll(/<mxCell\b([^>]*?)(\/>|>([\s\S]*?)<\/mxCell>)/g)) {
+  for (const match of flatCells(xml).matchAll(/<mxCell\b([^>]*?)(\/>|>([\s\S]*?)<\/mxCell>)/g)) {
     const attributes: Record<string, string> = {};
     for (const pair of match[1]!.matchAll(/([\w:-]+)="([^"]*)"/g)) attributes[pair[1]!] = pair[2]!;
     const body = match[3] ?? '';
@@ -118,7 +126,7 @@ describe('draw.io export', () => {
     let pinned = 0;
     for (const link of model.links) {
       if (link.technique === 'stub' || !link.path) continue;
-      const cell = all.get(id('link', link.id));
+      const cell = all.get(id('link', stable(model, link.id)));
       if (!cell) continue;
       // The claim: the connector carries the reserved polyline verbatim, under the orthogonal
       // router that keeps it square when a shape is moved. An overlay link is the one exception —
@@ -184,9 +192,9 @@ describe('draw.io export', () => {
     expect(order).toEqual([id('layer', 'canvas'), id('layer', 'diagram'), id('layer', 'overlay'),
       id('layer', 'links'), id('layer', 'labels'), id('layer', 'legend')]);
     const overlay = model.links.find(link => link.technique === 'overlay' || link.layer === 'overlay')!;
-    expect(layerOf(all, id('link', overlay.id))).toBe(id('layer', 'overlay'));
+    expect(layerOf(all, id('link', stable(model, overlay.id)))).toBe(id('layer', 'overlay'));
     const routed = model.links.find(link => link.path && link.technique !== 'stub' && link.id !== overlay.id)!;
-    expect(layerOf(all, id('link', routed.id))).toBe(id('layer', 'links'));
+    expect(layerOf(all, id('link', stable(model, routed.id)))).toBe(id('layer', 'links'));
     for (const key of Object.keys(model.nodes)) expect(layerOf(all, id('node', key))).toBe(id('layer', 'diagram'));
   }, 60000);
 
@@ -217,7 +225,7 @@ nodes:
 links: []
 `);
     const xml = drawio(model);
-    const ids = [...xml.matchAll(/<mxCell id="([^"]+)"/g)].map(match => match[1]!);
+    const ids = [...flatCells(xml).matchAll(/<mxCell id="([^"]+)"/g)].map(match => match[1]!);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).toContain(id('node', 'a'));
     expect(ids).toContain(id('node', 'node-a'));
@@ -242,7 +250,7 @@ links: [[a.p, b.r, {label: X}], [a.q, b.q], [a.r, b.p]]
     const label = model.labels.find(item => item.role === 'link' && !item.omitted
       && item.textRotation !== undefined && item.textRotation % 90 !== 0)!;
     expect(label).toBeDefined();
-    const cell = cells(drawio(model)).get(id('linkLabel', label.id))!;
+    const cell = cells(drawio(model)).get(id('linkLabel', stable(model, (label.owner as { id: string }).id)))!;
     expect(Number(cell.style['rotation'])).toBe(label.textRotation);
   }, 60000);
 
@@ -281,8 +289,8 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
     // is really behind it; `measured` keeps the box stage 9 placed and needs no fill at all.
     // The label is the connector's own, so it is the edge cell that carries it.
     const owner = (label.owner as { id: string }).id;
-    const on = cells(drawio(model, { labels: 'on-run' })).get(id('link', owner))!;
-    const measured = cells(drawio(model, { labels: 'measured' })).get(id('link', owner))!;
+    const on = cells(drawio(model, { labels: 'on-run' })).get(id('link', stable(model, owner)))!;
+    const measured = cells(drawio(model, { labels: 'measured' })).get(id('link', stable(model, owner)))!;
     expect(on.value).toBe(label.text);
     expect(measured.style['labelBackgroundColor']).toBe('none');
     expect(on.style['labelBackgroundColor']).toMatch(/^(#[0-9a-f]{6}|light-dark\(#[0-9a-f]{6},#[0-9a-f]{6}\))$/);
@@ -305,7 +313,7 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
     expect(support.through).toBeGreaterThan(support.segment);
     const segments = link.path!.segments, at = (n: number) => segments.slice(0, n).reduce((sum, s) => sum + Math.hypot(s.to.x - s.from.x, s.to.y - s.from.y), 0);
     const total = at(segments.length), middle = (at(support.segment) + at(support.through + 1)) / 2;
-    const cell = cells(drawio(model, { labels: 'on-run' })).get(id('link', link.id))!;
+    const cell = cells(drawio(model, { labels: 'on-run' })).get(id('link', stable(model, link.id)))!;
     // The label is stated at the middle of the joined run, on the line: not clamped to the 15 px stem, and with at most the sub-pixel rounding of the arc length as offset.
     expect(Math.hypot(cell.offset?.x ?? 0, cell.offset?.y ?? 0)).toBeLessThan(1);
     expect(Number(cell.geometry['y'])).toBeCloseTo(0, 9);
@@ -397,7 +405,7 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
       && item.textRotation === -90);
     if (turned) {
       const owner = (turned.owner as { id: string }).id;
-      expect(all.get(id('link', owner))!.style['horizontal']).toBe('0');
+      expect(all.get(id('link', stable(model, owner)))!.style['horizontal']).toBe('0');
     }
   }, 60000);
 
@@ -659,7 +667,7 @@ describe('link labels', () => {
    */
   const drawnBy = (xml: string, all: Map<string, Cell>, cell: Cell): Point[] => {
     const end = (as: 'sourcePoint' | 'targetPoint'): Point => {
-      const body = new RegExp(`<mxCell id="${cell.id.replace(/[%]/g, '\\$&')}"[\\s\\S]*?</mxCell>`).exec(xml)![0];
+      const body = new RegExp(`<mxCell id="${cell.id.replace(/[%]/g, '\\$&')}"[\\s\\S]*?</mxCell>`).exec(flatCells(xml))![0];
       const match = new RegExp(`<mxPoint x="([^"]*)" y="([^"]*)" as="${as}"/>`).exec(body)!;
       return { x: Number(match[1]), y: Number(match[2]) };
     };
@@ -687,10 +695,10 @@ describe('link labels', () => {
    * The canvas starts at the origin, which keeps the exported numbers the same as the written ones.
    */
   const probe = (base: LayoutModel, cases: readonly {
-    id: string; runs: Point[][]; labels: { at: Point; support?: number }[];
+    id: string; runs: Point[][]; labels: { at: Point; support?: number; bar?: string }[];
   }[]): LayoutModel => ({
     ...base,
-    document: { ...base.document, nodes: {}, groups: {}, links: cases.map(() => ({})) as never },
+    document: { ...base.document, nodes: {}, groups: {}, links: cases.map(item => ({ id: item.id, from: { node: 'from', name: 'a', ordinal: 1 }, to: { node: 'to', name: 'b', ordinal: 1 } })) as never },
     nodes: {}, groups: {}, lanes: [], labelBands: [], tierBands: [], bundles: [], junctions: [],
     barDrops: [], groupLinks: [], regions: [], obstacles: [],
     canvas: { x: 0, y: 0, width: 800, height: 700 },
@@ -705,7 +713,8 @@ describe('link labels', () => {
       } as const;
     }),
     labels: cases.flatMap(item => item.labels.map((label, index) => ({
-      id: `${item.id}-${index}`, owner: { kind: 'link', id: item.id } as const,
+      id: `${item.id}-${index}`,
+      owner: label.bar === undefined ? { kind: 'link', id: item.id } as const : { kind: 'barCross', node: label.bar, link: item.id } as const,
       layer: 'routed' as const, role: 'link' as const,
       text: `${item.id}-${index}`, lines: [`${item.id}-${index}`], fontSize: 9, fontWeight: 400 as const,
       bounds: { x: label.at.x - 20, y: label.at.y - 6, width: 40, height: 12 },
@@ -732,7 +741,7 @@ links: []
     const link = model.links.find(item => item.id === owner)!;
     const xml = drawio(model, { labels: 'measured' });
     const all = cells(xml);
-    const edge = all.get(id('link', owner))!;
+    const edge = all.get(id('link', stable(model, owner)))!;
 
     const reserved = [link.path!.segments[0]!.from, ...link.path!.segments.map(segment => segment.to)]
       .map(at => ({ x: at.x - model.canvas!.x, y: at.y - model.canvas!.y }));
@@ -794,7 +803,7 @@ links: []
     const model = probe(await blank(), [
       { id: 'own', runs, labels: [{ at: point(500, 480), support: 1 }] },
       { id: 'children', runs,
-        labels: [{ at: point(150, 480), support: 0 }, { at: point(500, 480), support: 1 }] },
+        labels: [{ at: point(150, 480), support: 0 }, { at: point(500, 480), support: 1, bar: 'x' }] },
     ]);
     const xml = drawio(model, { labels: 'measured' });
     const all = cells(xml);
@@ -804,9 +813,10 @@ links: []
     expect(all.get(id('link', 'own', '0'))!.value).toBeUndefined();
     expect(landing(xml, all, later, later)).toEqual({ x: 500, y: 480 });
     // A child label follows the same rule: two eligible labels on one link are both children, and
-    // each belongs to the connector that draws the segment it was measured against.
+    // each belongs to the connector that draws the segment it was measured against. A link's own
+    // label takes the id of the link; a second label on it is a bar crossing, and takes the bar's node too.
     for (const [index, want] of [point(150, 480), point(500, 480)].entries()) {
-      const child = all.get(id('linkLabel', `children-${index}`))!;
+      const child = all.get(index === 0 ? id('linkLabel', 'children') : id('linkLabel', 'children', 'x'))!;
       expect(child.parent).toBe(id('link', 'children', String(index)));
       expect(landing(xml, all, all.get(child.parent!)!, child)).toEqual(want);
     }
@@ -1060,7 +1070,8 @@ describe('connection grid, rotation and tiles', () => {
     const model = structuredClone(source);
     const label = model.labels.find(item => item.role === 'link' && !item.omitted && item.bounds)!;
     label.textRotation = angle;
-    return { all: cells(drawio(model)), label: label.id, link: (label.owner as { id: string }).id };
+    const link = stable(model, (label.owner as { id: string }).id);
+    return { all: cells(drawio(model)), label: link, link };
   };
 
   it('encodes a link label turn on the carrier that honours it', async () => {
@@ -1192,7 +1203,7 @@ describe('maintainer edit principles', () => {
       x: pill.x + (pill.side === 'right' ? pill.width : pill.side === 'left' ? 0 : pill.width / 2),
       y: pill.y + (pill.side === 'bottom' ? pill.height : pill.side === 'top' ? 0 : pill.height / 2),
     });
-    const cell = all.get(id('link', link.id))!;
+    const cell = all.get(id('link', stable(model, link.id)))!;
     const head = pillOf(link.attachments!.from), tail = pillOf(link.attachments!.to);
     return { cell, head, tail, path: [outward(head), ...cell.points, outward(tail)] };
   }
@@ -1231,7 +1242,7 @@ describe('maintainer edit principles', () => {
     let square = 0;
     for (const link of model.links) {
       if (link.technique === 'stub' || !link.path || effectiveLayer(link) === 'overlay') continue;
-      const cell = all.get(id('link', link.id))!;
+      const cell = all.get(id('link', stable(model, link.id)))!;
       expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
       expect(cell.style['jettySize']).toBe('0');
       expect(cell.points).toEqual(link.path.segments.slice(0, -1)
@@ -1254,7 +1265,7 @@ describe('maintainer edit principles', () => {
     const corner = path.segments[0]!;
     const off = { x: corner.to.x + 7, y: corner.to.y + 3 };
     path.segments = [{ ...corner, to: off }, { ...corner, from: off }, ...path.segments.slice(1)];
-    const cell = cells(drawio(bent)).get(id('link', straight.id))!;
+    const cell = cells(drawio(bent)).get(id('link', stable(model, straight.id)))!;
     expect(cell.style['edgeStyle']).toBe('none');
     expect(cell.style['jettySize']).toBeUndefined();
     // The waypoints are still the stated ones: the guard changes the style, never the geometry.
@@ -1269,7 +1280,7 @@ describe('maintainer edit principles', () => {
     // reserved.
     const model = await pipeline(fixture('drawio-constructs'));
     const link = model.links.find(item => effectiveLayer(item) === 'overlay' && item.path)!;
-    const square = cells(drawio(model)).get(id('link', link.id))!;
+    const square = cells(drawio(model)).get(id('link', stable(model, link.id)))!;
     expect(square.style['edgeStyle']).toBe('orthogonalEdgeStyle');
     const skewed = structuredClone(model);
     const ref = link.attachments!.from;
@@ -1280,7 +1291,7 @@ describe('maintainer edit principles', () => {
     // which is the case this guard is for.
     skewed.nodes[ref.node]!.ports.find(item => item.ref.name === ref.name
       && item.ref.ordinal === ref.ordinal)!.pill!.bounds.y += 12;
-    const cell = cells(drawio(skewed)).get(id('link', link.id))!;
+    const cell = cells(drawio(skewed)).get(id('link', stable(model, link.id)))!;
     expect(cell.points).toEqual(square.points);
     expect(cell.style['edgeStyle']).toBe('none');
     expect(cell.style['jettySize']).toBeUndefined();
@@ -1310,15 +1321,15 @@ links:
     const points = [link.path!.segments[0]!.from, ...link.path!.segments.map(segment => segment.to)];
     expect(points[0]).toEqual(bare.anchor);
     expect(points[1]).toEqual({ x: bare.anchor!.x + CLEARANCE, y: bare.anchor!.y });
-    const canvas = model.canvas!, cell = cells(drawio(model)).get(id('link', link.id))!;
+    const canvas = model.canvas!, cell = cells(drawio(model)).get(id('link', stable(model, link.id)))!;
     expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
     expect(cell.style['jettySize']).toBe('0');
     expect(cell.points).toEqual(points.slice(1, -1)
       .map(point => ({ x: point.x - canvas.x, y: point.y - canvas.y })));
     // A port with no pill hangs its mark on its node (issue 03), so the node carries it.
     const marks = cells(drawio(model));
-    expect(marks.get(id('overlayMark', link.id, 'from'))!.parent).toBe(id('node', 'b'));
-    expect(marks.get(id('overlayMark', link.id, 'to'))!.parent)
+    expect(marks.get(id('overlayMark', stable(model, link.id), 'from'))!.parent).toBe(id('node', 'b'));
+    expect(marks.get(id('overlayMark', stable(model, link.id), 'to'))!.parent)
       .toBe(id('port', 'c', 'lo', '1'));
   }, 60000);
 
@@ -1411,7 +1422,7 @@ links:
   - [b.alt, c.up, {route: overlay, label: sync}]
 `);
     const link = model.links.find(item => effectiveLayer(item) === 'overlay')!;
-    const cell = cells(drawio(model)).get(id('link', link.id))!;
+    const cell = cells(drawio(model)).get(id('link', stable(model, link.id)))!;
     expect(cell.value).toBe('sync');
     // `y` is the signed perpendicular distance from the drawn polyline, so on the run means nearly
     // zero — and what the relative pair cannot reach is left as an absolute offset, which here is
@@ -1468,7 +1479,7 @@ links:
       const port = model.nodes[ref.node]!.ports.find(item => item.ref.name === ref.name
         && item.ref.ordinal === ref.ordinal)!;
       const pill = port.pill!.bounds;
-      const cell = all.get(id('overlayMark', link.id, end))!;
+      const cell = all.get(id('overlayMark', stable(model, link.id), end))!;
       expect(cell.parent).toBe(id('port', ref.node, ref.name!, String(ref.ordinal)));
       // The mark sits on the pill's outward point, where the connector really ends — not on the
       // anchor, which is the pill's centre and the port's name. Relative to the pill's own
@@ -1576,7 +1587,7 @@ describe('direct lines', () => {
       expect(effectiveLayer(link)).toBe('routed');
       expect(link.path!.segments.length).toBe(1);
       const head = pillOf(stated.from), tail = pillOf(stated.to);
-      const cell = all.get(id('link', link.id))!;
+      const cell = all.get(id('link', stable(model, link.id)))!;
       expect(cell.source).toBe(head.cell);
       expect(cell.target).toBe(tail.cell);
       expect(cell.value).toBe(stated.value);
@@ -1596,10 +1607,10 @@ describe('direct lines', () => {
     // The model holds that route, not the exporter: the waypoints are its own interior points, and
     // the two stubs it leaves are the ones the pinned terminals stand for (synthetics review 01).
     expect(overlay.path!.segments.length).toBe(5);
-    expect(all.get(id('link', overlay.id))!.points).toEqual(overlay.path!.segments.slice(1)
+    expect(all.get(id('link', stable(model, overlay.id)))!.points).toEqual(overlay.path!.segments.slice(1)
       .map(segment => ({ x: segment.from.x - model.canvas!.x, y: segment.from.y - model.canvas!.y })));
     const head = pillOf('b.lo'), tail = pillOf('c.lo');
-    const cell = all.get(id('link', overlay.id))!;
+    const cell = all.get(id('link', stable(model, overlay.id)))!;
     expect([head.side, tail.side]).toEqual(['top', 'bottom']);
     expect(cell.source).toBe(head.cell);
     expect(cell.target).toBe(tail.cell);
@@ -1636,7 +1647,7 @@ describe('signal links', () => {
     const edges = model.links.filter(link => model.document.links[link.sourceIndex]!.class === 'signal');
     expect(edges).toHaveLength(4);
     for (const link of edges) {
-      const style = all.get(id('link', link.id))!.style;
+      const style = all.get(id('link', stable(model, link.id)))!.style;
       expect([style['dashed'], style['dashPattern']]).toEqual(['1', signal.dash]);
       expect(style['dashPattern']).toBe('4 4');
       expect(style['strokeColor']).toContain(signal.strokes.light);
@@ -1682,10 +1693,10 @@ describe('link ends and nested groups move with their owner (issue 03)', () => {
     const overlays = model.links.filter(item => effectiveLayer(item) === 'overlay');
     expect(overlays).toHaveLength(2);
     for (const link of overlays) {
-      const edge = all.get(id('link', link.id))!;
+      const edge = all.get(id('link', stable(model, link.id)))!;
       const ends = [['from', edge.source, link.path!.segments[0]!.from], ['to', edge.target, link.path!.segments.at(-1)!.to]] as const;
       for (const [end, terminal, point] of ends) {
-        const mark = all.get(id('overlayMark', link.id, end))!;
+        const mark = all.get(id('overlayMark', stable(model, link.id), end))!;
         expect(terminal).toMatch(/^pg-node~/);
         expect(mark.parent).toBe(terminal);
         // Relative to the node, and on the point the model gave: the shape carries it.

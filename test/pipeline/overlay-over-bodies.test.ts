@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { drawio, layout, parse, score } from '../../src/index.js';
 import type { LayoutModel, Point } from '../../src/index.js';
+import { flatCells } from '../render/drawio-cells.js';
+import { linkIds } from '../../src/model/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -93,8 +95,8 @@ describe('layout.overlayOverBodies (ticket 152)', () => {
   it('pins the draw.io export of an over-body link: one straight edge, drawn over the body (draw.io has no mask)', async () => {
     const model = await run(read(MIDDLE) + ON);
     const xml = drawio(model);
-    const id = overlay(model).id;
-    const cell = xml.split('<mxCell').find(part => part.includes(`pg-link~${id}"`));
+    const link = overlay(model), id = linkIds(model.document)[link.sourceIndex]!;
+    const cell = flatCells(xml).split('<mxCell').find(part => part.includes(`pg-link~${id}"`));
     expect(cell).toBeDefined();
     expect(cell).toContain('edge="1"');
     expect(cell).not.toContain('<mxPoint as="points"');

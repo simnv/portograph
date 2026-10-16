@@ -4,6 +4,7 @@ import { drawio, layout, parse, render, score } from '../../src/index.js';
 import type { LayoutLabel, LayoutModel, PathSegment } from '../../src/index.js';
 import { isDirect, lineAngle, produceLinkLabels } from '../../src/layout/link-labels.js';
 import { segmentRect } from '../../src/score/geometry.js';
+import { flatCells } from '../render/drawio-cells.js';
 import { bench } from '../layout/link-label-fixture.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -101,7 +102,7 @@ describe('a label on a direct line', () => {
   it('is a rotated edge-label cell in draw.io, with a backdrop that hides the line', () => {
     const file = drawio(model);
     for (const { label } of labelled()) {
-      const cell = file.split('<mxCell ').find(chunk => chunk.includes(`value="${label.text}"`) && chunk.includes('edgeLabel'))
+      const cell = flatCells(file).split('<mxCell ').find(chunk => chunk.includes(`value="${label.text}"`) && chunk.includes('edgeLabel'))
         ?.match(/style="([^"]*)"/)?.[1];
       expect(cell, label.text).toBeDefined();
       const rotation = Number(/rotation=([-0-9.e]+)/.exec(cell!)?.[1]);

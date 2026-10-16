@@ -4,8 +4,12 @@ import { drawio, layout, parse, render, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { validateRoutedPaths } from '../../src/route/validate.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
+import { linkIds } from '../../src/model/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+
+/** The id a link carries in the draw.io file: its stable id, which no longer follows its place in the YAML. */
+const cellOf = (model: LayoutModel, id: string): string => `pg-link~${linkIds(model.document)[model.links.find(link => link.id === id)!.sourceIndex]!}`;
 
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 // The side round is off on the riser fixture: it frees link-6 as a chord (ticket 117), and these tests read the riser.
@@ -107,7 +111,7 @@ describe('the riser publishes paths, renders and exports (ticket 97)', () => {
       const joined = model.meshBuses!.some(bus => bus.riser !== undefined);
       expect(count(xml, /id="pg-busRiser~/g)).toBe(joined ? 1 : 0);
       for (const bus of model.meshBuses!) expect(count(xml, new RegExp(`id="pg-busStub~${bus.id}~`, 'g'))).toBe(bus.stubs!.length);
-      for (const bus of model.meshBuses!.filter(item => item.cross !== undefined)) for (const id of bus.cross!) expect(xml).not.toContain(`id="pg-link~${id}"`);
+      for (const bus of model.meshBuses!.filter(item => item.cross !== undefined)) for (const id of bus.cross!) expect(xml).not.toContain(`id="${cellOf(model, id)}"`);
     }, 60000);
   }
 });

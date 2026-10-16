@@ -4,9 +4,13 @@ import { drawio, layout, parse, render, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { busGeometry, busLegCounts, busVerticalCounts, busVerticals } from '../../src/layout/bus.js';
 import { produceLinkLabels } from '../../src/layout/link-labels.js';
+import { linkIds } from '../../src/model/index.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+
+/** The id a link carries in the draw.io file: its stable id, which no longer follows its place in the YAML. */
+const cellOf = (model: LayoutModel, id: string): string => `pg-link~${linkIds(model.document)[model.links.find(link => link.id === id)!.sourceIndex]!}`;
 
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (yaml: string): Promise<LayoutModel> =>
@@ -215,7 +219,7 @@ describe('the bus publishes member paths, scores, renders and exports (ticket 84
       expect(count(xml, /id="pg-busStub~/g)).toBe(bus.stubs!.length);
       expect(count(xml, /id="pg-busMark~/g)).toBe(bus.stubs!.length);
       expect(xml).toContain(`${bus.class} mesh (${bus.nodes.length} nodes)`);
-      for (const member of bus.members) expect(xml).not.toContain(`id="pg-link~${member}"`);
+      for (const member of bus.members) expect(xml).not.toContain(`id="${cellOf(model, member)}"`);
     }, 60000);
   }
 });

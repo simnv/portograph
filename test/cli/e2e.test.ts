@@ -63,7 +63,7 @@ describe('real CLI', () => {
     expect(xml).toContain('<mxGraphModel');
     expect(xml).not.toContain('compressed="true"');
     // The two mandatory root cells, and the sidecars named from the stem of either extension.
-    expect(xml).toContain('<mxCell id="0"/>');
+    expect(xml).toContain('<object id="0" label="" pg-schema="1"><mxCell/></object>');
     // With no `--icons`, the icons are draw.io's own bundled stencils, which resolve from the style
     // string and take paired `light-dark()` colours. No glyph is an embedded image, because an
     // embedded image cannot follow draw.io's dark appearance by any means.
