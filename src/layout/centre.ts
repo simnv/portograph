@@ -11,6 +11,7 @@ import { holds, profiles, reading, straightOf, tapVerdict } from './objective.js
 import { besideWalls, frameColumns, keepOutShifts, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
 import { findPort } from './row-paths.js';
 import { attemptCounters } from './attempt-counters.js';
+import { timed } from './attempt-timings.js';
 import { portId, bandGap, SKELETON_SPACING } from './skeleton-graph.js';
 import { crosses } from './overlay-paths.js';
 import { moveGroup } from './skeleton-geometry.js';
@@ -589,10 +590,10 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
 }
 /** Reusable bounded producer. The caller shares one budget across all ordered placement replay. */
 export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
-  centrePasses(model, budget);
+  timed('centre-passes', () => centrePasses(model, budget));
   // The windows of the overlay barycentre are read once, where centring has left the partners (ticket 143): a window read in a pass
   // is read on geometry that a later step moves.
-  if (selectAnchorTier(model) !== undefined) { placeOverlayFree(model); rebuildRegions(model); }
+  if (selectAnchorTier(model) !== undefined) timed('centre-overlay-final', () => { placeOverlayFree(model); rebuildRegions(model); });
 }
 function centrePasses(model: LayoutModel, budget: CentreBudget): void {
   if (!Number.isSafeInteger(budget.remaining) || !Number.isSafeInteger(budget.passes) || budget.remaining < 0
@@ -640,8 +641,7 @@ function centrePasses(model: LayoutModel, budget: CentreBudget): void {
       }
     }
     // A partner that a step above moved is read where it stands now (the pass is idempotent).
-    placeOverlayFree(model, columns, false);
-    rebuildRegions(model);
+    timed('centre-overlay-pass', () => { placeOverlayFree(model, columns, false); rebuildRegions(model); });
     const after = geometry(model);
     if (!stepped && after.every((value, i) => Math.abs(value - before[i]!) <= 0.5)) {
       // Rows packed again are a change of geometry: the next pass reads the settled walls.
@@ -650,7 +650,7 @@ function centrePasses(model: LayoutModel, budget: CentreBudget): void {
       // point of the passes is a fixed point of the step only when the publication check, which
       // replays each step on a context built where the model now stands, agrees. When it does not,
       // the next pass reads a context built from the geometry that stands now.
-      if (!centreViolations(model, true).length) return;
+      if (!timed('centre-violations', () => centreViolations(model, true)).length) return;
       const now = geometry(model);
       if (now.every((value, i) => Math.abs(value - built[i]!) <= 0.5)) break;
       columns = frameColumns(model);
@@ -662,7 +662,7 @@ function centrePasses(model: LayoutModel, budget: CentreBudget): void {
   // check still found an alignment the step would move (a stall the passes cannot see). A fixed point
   // that the check confirms returns above. A run that entered with no budget left has measured
   // nothing, so it reports only what the check finds off its feed.
-  if (ran || centreViolations(model, true).length > 0) reportStall(model, [...unresolved]);
+  if (ran || timed('centre-violations', () => centreViolations(model, true)).length > 0) reportStall(model, [...unresolved]);
 }
 function reportStall(model: LayoutModel, unresolved: string[], message = 'Centering exhausted the shared eight-pass budget; unresolved alignments remain for routing and final gates.'): void {
   if (model.diagnostics.some(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE')) return;
