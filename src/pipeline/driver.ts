@@ -21,6 +21,16 @@ const ROUNDS = PLAN.flat();
 const tokens = (env: Env, round: AnyRound): number => Math.max(env.maxReruns, round.budget.floor) - env.reruns;
 const tied = (a: readonly number[], b: readonly number[]): boolean => !beats(a, b) && !beats(b, a);
 
+/**
+ * The admission rule for one group: which offer takes the starts that `room` leaves. All of them when they all fit (the first is returned and the rest follow), none when `room` is
+ * under one, else the one that promises the most; a tie goes to the higher declared tie, and the first of equals stays.
+ */
+export function chooseStart(room: number, offers: readonly { gain: readonly number[]; tie: number }[]): number {
+  if (room >= offers.length) return 0;
+  if (room < 1) return -1;
+  return offers.reduce((best, item, i) => beats(item.gain, offers[best]!.gain) || (tied(item.gain, offers[best]!.gain) && item.tie > offers[best]!.tie) ? i : best, 0);
+}
+
 /** How many of the rounds that `group` protects have an offer waiting for a start. */
 async function reservedFor(env: Env, s: State, group: readonly AnyRound[]): Promise<number> {
   const ids = new Set(group.flatMap(round => round.budget.protects));
@@ -90,9 +100,8 @@ export async function drive(env: Env, s: State): Promise<void> {
       if (offers.length === 0) break;
       const reserved = await reservedFor(env, s, offers.map(([round]) => round));
       const room = tokens(env, offers[0]![0]) - reserved, left = env.maxReruns - env.reruns, scarce = room < offers.length;
-      // Scarce starts: the round whose offer promises the most keeps them; the others are skipped before it runs. A round that is not first has to beat the best so far.
-      const gain = ([round, offer]: [AnyRound, unknown]): readonly number[] => round.gain(env, s, offer);
-      const winner = !scarce ? 0 : room < 1 ? -1 : offers.reduce((best, item, i) => beats(gain(item), gain(offers[best]!)) || (tied(gain(item), gain(offers[best]!)) && item[0].budget.tie > offers[best]![0].budget.tie) ? i : best, 0);
+      // Scarce starts: the round whose offer promises the most keeps them; the others are skipped before it runs.
+      const winner = chooseStart(room, offers.map(([round, offer]) => ({ gain: round.gain(env, s, offer), tie: round.budget.tie })));
       for (const [i, [round, offer]] of offers.entries()) if (scarce && i !== winner) round.skip(env, s, offer, left);
       if (winner < 0) break;
       await visit(env, s, offers[winner]![0], offers[winner]![1], reserved);

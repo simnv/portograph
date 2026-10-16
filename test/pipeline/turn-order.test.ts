@@ -3,10 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
-import { beats } from '../../src/layout/course-measure.js';
-import { betterByUnified, turnRoundRuns } from '../../src/layout/turn-measure.js';
+import { betterByUnified } from '../../src/layout/turn-measure.js';
 import { attemptCounters, resetAttemptCounters } from '../../src/layout/attempt-counters.js';
-import { measureTurnOrder, roundLimit, turnReserve } from '../../src/layout/turn-measure.js';
+import { measureTurnOrder } from '../../src/layout/turn-measure.js';
+import type { Env } from '../../src/pipeline/env.js';
+import { chooseStart } from '../../src/pipeline/driver.js';
+import { turn } from '../../src/pipeline/rounds.js';
+import type { State } from '../../src/pipeline/state.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -80,13 +83,14 @@ describe('the turn round', () => {
     expect(betterByUnified({ bent: 2, turns: 6, crossings: 1 }, { bent: 1, turns: 9, crossings: 5 })).toBe(true);
   });
 
-  it('needs a re-run, and leaves the last one to an overlay round that promises something', () => {
-    expect(turnRoundRuns(0, false, [0, 0, 0], beats)).toBe(false);
-    expect(turnRoundRuns(1, false, [0, 0, 0], beats)).toBe(true);
-    expect(turnRoundRuns(2, true, [0, 1, 4], beats)).toBe(true);
-    expect(turnRoundRuns(1, true, [0, 1, 4], beats)).toBe(false);
-    expect(turnRoundRuns(1, true, [0, 0, 0], beats)).toBe(false);
-    expect(turnRoundRuns(1, true, [0, -1, 0], beats)).toBe(true);
+  it('needs a start, and leaves the last one to an overlay round that promises something (the admission rule)', () => {
+    const turnOffer = { gain: [0, 0, 0], tie: 0 }, overlay = (gain: number[]) => ({ gain, tie: 1 });
+    expect(chooseStart(0, [turnOffer])).toBe(-1);
+    expect(chooseStart(1, [turnOffer])).toBe(0);
+    expect(chooseStart(2, [turnOffer, overlay([0, 1, 4])])).toBe(0);
+    expect(chooseStart(1, [turnOffer, overlay([0, 1, 4])])).toBe(1);
+    expect(chooseStart(1, [turnOffer, overlay([0, 0, 0])])).toBe(1);
+    expect(chooseStart(1, [turnOffer, overlay([0, -1, 0])])).toBe(0);
   });
 });
 
@@ -183,14 +187,14 @@ describe('the carried turn order and the budget', () => {
     expect(room.diagnostics.map(item => item.code)).toContain('TURN_ORDER_TAKEN');
   });
 
-  it('sets a re-run aside for the turn round on a baseline that has an offer, and none on one that has not (finding 6)', async () => {
+  it('sets a start aside for the turn round on a baseline that has an offer, and none on one that has not (finding 6)', async () => {
     const held = await layout(parse(fixture('a-held-lane-stays-on-its-frames-side-of-a-foreign-frame')), { ...options, testTurnOrder: false });
     const plain = await layout(parse(fixture('turns-both-ways-from-one-bottom-face')), { ...options, testTurnOrder: false });
-    expect(turnReserve(held, true)).toBe(1);
-    expect(turnReserve(held, false)).toBe(0);
-    expect(turnReserve(plain, true)).toBe(0);
-    // With the one re-run of the budget set aside, a round that has used none of it is already at its limit.
-    expect(0 >= roundLimit(1, turnReserve(held, true))).toBe(true);
-    expect(0 >= roundLimit(1, turnReserve(plain, true))).toBe(false);
+    const live = (base: LayoutModel): Promise<boolean | undefined> => turn.live?.({} as Env, { base } as State) ?? Promise.resolve(undefined);
+    expect(await live(held)).toBe(true);
+    expect(await live(plain)).toBe(false);
+    // With the one start of the budget set aside, a round that has used none of it has no start left; on a baseline without an offer it keeps its start.
+    expect(chooseStart(1 - 1, [{ gain: [0, 0, 0], tie: 0 }])).toBe(-1);
+    expect(chooseStart(1 - 0, [{ gain: [0, 0, 0], tie: 0 }])).toBe(0);
   });
 });
