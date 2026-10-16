@@ -14,15 +14,16 @@ export function endpointId(end: Endpoint): string {
 
 /**
  * One stable id per link, in document order (docs/drawio-binding-contract.md). An author id wins.
- * Any other link takes `<from>--<to>`; when that id is taken, by an author id or by an earlier
- * parallel link, it takes `<from>--<to>@k` with the smallest free k from 2. So an id changes only
+ * Any other link takes `<from>-><to>`; when that id is taken, by an author id or by an earlier
+ * parallel link, it takes `<from>-><to>@k` with the smallest free k from 2. So an id changes only
  * when the link's own ends change, or when a parallel link with the same ends moves before it.
+ * An end never holds `>` or `@`, so two links with different ends never derive the same base.
  */
 export function linkIds(document: Pick<NormalisedDocument, 'links'>): string[] {
   const taken = new Set(document.links.flatMap(link => link.id === undefined ? [] : [link.id]));
   return document.links.map(link => {
     if (link.id !== undefined) return link.id;
-    const base = `${endpointId(link.from)}--${endpointId(link.to)}`;
+    const base = `${endpointId(link.from)}->${endpointId(link.to)}`;
     let id = base;
     for (let k = 2; taken.has(id); k++) id = `${base}@${k}`;
     taken.add(id);

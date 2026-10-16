@@ -46,14 +46,18 @@ In a cell `id`, the separator is `~`. The export writes a `%` or a `~` inside a 
 ### 2.1 Link ids
 
 1. A link with `id:` in the YAML has that id.
-2. Any other link has `<from>--<to>`, in YAML direction. An end is:
+2. Any other link has `<from>-><to>`, in YAML direction. An end is:
    - `<node>:<port>` for a named port (`<node>:<port>#<n>` when n > 1),
    - `<node>` for an anonymous port (the YAML end names a node and no port),
    - `<group>` for a group end.
-3. When that id is already used, the link gets `<from>--<to>@<k>`, with the smallest free k from 2.
-   Ids from rule 1 are used first, then rule 2 goes through the links in YAML order.
+3. When that id is already used, the link gets `<from>-><to>@<k>`, with the smallest free k from 2.
+   Rule 2 goes through the links in YAML order.
 
-Examples: `sw1:eth2--srv1:eth0`, `router--isp` (two anonymous ports), `router--isp@2` (a second,
+An end never contains `>` or `@`, and a YAML id never contains `:`, `>` or `@`. Thus an id from
+rule 1 never equals an id from rule 2, and two links with different ends never get the same id.
+In the XML file, `>` is written `&gt;`. An XML parser gives it back as `>`.
+
+Examples: `sw1:eth2->srv1:eth0`, `router->isp` (two anonymous ports), `router->isp@2` (a second,
 parallel link).
 
 The id does not change when you reorder the links. It changes when an end of the link changes.
@@ -126,7 +130,8 @@ links:
 Rules:
 
 - A value is a string, a finite number or a boolean. The export writes it as a string. A number
-  uses the JavaScript form: `1e9` becomes `1000000000`.
+  uses the JavaScript form: `1e9` becomes `1000000000`. A tab, a newline or a carriage return in a
+  string is written as a character reference (`&#9;`, `&#10;`, `&#13;`), so a parser keeps it.
 - A key starts with a letter or an underscore. It contains letters, digits, underscores or
   hyphens. The key goes into the attribute name with no prefix and no change.
 - These keys are reserved, in any case: `id`, `label`, `placeholders`, all keys that start with
@@ -146,7 +151,8 @@ These cells have no binding attributes:
 - group and frame boxes,
 - mesh bus bars, stubs, joints and risers (a mesh bus member link has no link cell),
 - overlay end marks, icons and the legend,
-- the count label of a merge bundle.
+- the count label of a merge bundle. Its cell id comes from the bundle number, which can change
+  when you reorder the links.
 
 ## 6. Versioning
 

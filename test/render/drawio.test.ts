@@ -17,16 +17,16 @@ import { effectiveLayer } from '../../src/score/model.js';
 import { OVERLAY_ENDPOINT_RADIUS } from '../../src/theme/geometry.js';
 import { placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
-import { flatCells } from './drawio-cells.js';
+import { flatCells, inFile } from './drawio-cells.js';
 
 /** The exporter's id scheme, mirrored so a test names a cell the way the file does. */
 const id = (kind: string, ...parts: readonly string[]): string =>
   parts.length ? `pg-${kind}~${parts.map(value => value.replace(/[%~]/g, c => `%${c.charCodeAt(0).toString(16)}`)).join('~')}` : `pg-${kind}`;
 
-/** The id a link carries in the file: its stable id, as `linkIds` derives it from the document. */
+/** The id a link carries in the file: its stable id, as `linkIds` derives it, spelled as the XML spells it. */
 const stable = (model: LayoutModel, linkId: string): string => {
   const link = model.links.find(item => item.id === linkId);
-  return link ? linkIds(model.document)[link.sourceIndex] ?? link.id : linkId;
+  return inFile(link ? linkIds(model.document)[link.sourceIndex] ?? link.id : linkId);
 };
 
 const fixture = (name: string): string =>

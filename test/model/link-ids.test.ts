@@ -21,9 +21,9 @@ describe('endpointId', () => {
 });
 
 describe('linkIds', () => {
-  it('derives <from>--<to> from the two ends', () => {
+  it('derives <from>-><to> from the two ends', () => {
     expect(linkIds({ links: [link(named('a', 'p'), named('b', 'q')), link(anonymous('a'), { group: 'g' })] }))
-      .toEqual(['a:p--b:q', 'a--g']);
+      .toEqual(['a:p->b:q', 'a->g']);
   });
 
   it('lets an explicit id win', () => {
@@ -32,25 +32,25 @@ describe('linkIds', () => {
 
   it('moves a derived id that equals an explicit id to @2, wherever the explicit link stands', () => {
     const derived = link(named('a', 'p'), named('b', 'q'));
-    const explicit = link(named('c', 'p'), named('d', 'q'), 'a:p--b:q');
-    expect(linkIds({ links: [derived, explicit] })).toEqual(['a:p--b:q@2', 'a:p--b:q']);
-    expect(linkIds({ links: [explicit, derived] })).toEqual(['a:p--b:q', 'a:p--b:q@2']);
+    const explicit = link(named('c', 'p'), named('d', 'q'), 'a:p->b:q');
+    expect(linkIds({ links: [derived, explicit] })).toEqual(['a:p->b:q@2', 'a:p->b:q']);
+    expect(linkIds({ links: [explicit, derived] })).toEqual(['a:p->b:q', 'a:p->b:q@2']);
   });
 
   it('gives parallel anonymous links the base, @2 and @3 in document order', () => {
     const parallel = (): NormalisedLink => link(anonymous('a'), anonymous('b'));
-    expect(linkIds({ links: [parallel(), parallel(), parallel()] })).toEqual(['a--b', 'a--b@2', 'a--b@3']);
+    expect(linkIds({ links: [parallel(), parallel(), parallel()] })).toEqual(['a->b', 'a->b@2', 'a->b@3']);
   });
 
   it('skips a suffix that an explicit id already holds', () => {
     const parallel = (): NormalisedLink => link(anonymous('a'), anonymous('b'));
-    expect(linkIds({ links: [parallel(), parallel(), link(anonymous('c'), anonymous('d'), 'a--b@2')] }))
-      .toEqual(['a--b', 'a--b@3', 'a--b@2']);
+    expect(linkIds({ links: [parallel(), parallel(), link(anonymous('c'), anonymous('d'), 'a->b@2')] }))
+      .toEqual(['a->b', 'a->b@3', 'a->b@2']);
   });
 
   it('treats the reverse direction as another link', () => {
     expect(linkIds({ links: [link(anonymous('a'), anonymous('b')), link(anonymous('b'), anonymous('a'))] }))
-      .toEqual(['a--b', 'b--a']);
+      .toEqual(['a->b', 'b->a']);
   });
 
   describe('YAML order', () => {
@@ -73,8 +73,8 @@ ${links.map(item => `  - ${item}`).join('\n')}
       const one = byEnds(yaml(['[a.p, b.p]', '[a.q, c.p]']));
       const two = byEnds(yaml(['[a.q, c.p]', '[a.p, b.p]']));
       expect(one).toEqual(two);
-      expect(one.get('a:p>b:p')).toBe('a:p--b:p');
-      expect(one.get('a:q>c:p')).toBe('a:q--c:p');
+      expect(one.get('a:p>b:p')).toBe('a:p->b:p');
+      expect(one.get('a:q>c:p')).toBe('a:q->c:p');
     });
 
     it('keeps the id of a link that stands before a parallel pair when the pair moves', () => {
@@ -82,5 +82,12 @@ ${links.map(item => `  - ${item}`).join('\n')}
       const two = byEnds(yaml(['[a.q, c.p]', '[a.q, c.p]', '[a.p, b.p]']));
       expect(one.get('a:p>b:p')).toBe(two.get('a:p>b:p'));
     });
+  });
+
+  it('keeps links apart whose node ids hold hyphens, in either order', () => {
+    // `a` to `b--c` and `a--b` to `c` would both read `a--b--c` with a hyphen separator.
+    const one = link(anonymous('a'), anonymous('b--c')), two = link(anonymous('a--b'), anonymous('c'));
+    expect(linkIds({ links: [one, two] })).toEqual(['a->b--c', 'a--b->c']);
+    expect(linkIds({ links: [two, one] })).toEqual(['a--b->c', 'a->b--c']);
   });
 });

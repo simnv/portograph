@@ -5,7 +5,7 @@ import type { LayoutLink, LayoutModel, Point, Rect } from '../../src/index.js';
 import { LINK_LABEL_GEOMETRY, lineAngle } from '../../src/layout/link-labels.js';
 import { measureText } from '../../src/text/index.js';
 import { OVERLAY_PILL_CLEARANCE } from '../../src/layout/overlay-paths.js';
-import { flatCells } from '../render/drawio-cells.js';
+import { flatCells, inFile } from '../render/drawio-cells.js';
 import { linkIds } from '../../src/model/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -279,7 +279,7 @@ links:
     // to the pill heads the first and last runs pass through, so the whole drawn polyline is the
     // model's with those two stubs shortened — never a line the exporter invented.
     const file = flatCells(drawio(model));
-    const cell = new RegExp(`<mxCell id="pg-link~${linkIds(model.document)[link.sourceIndex]}"[^>]*>([\\s\\S]*?)</mxCell>`).exec(file)![1]!;
+    const cell = new RegExp(`<mxCell id="pg-link~${inFile(linkIds(model.document)[link.sourceIndex]!)}"[^>]*>([\\s\\S]*?)</mxCell>`).exec(file)![1]!;
     expect([...cell.matchAll(/<mxPoint x="([-\d.]+)" y="([-\d.]+)"/g)].map(match =>
       ({ x: Number(match[1]), y: Number(match[2]) })))
       .toEqual(points.slice(1, -1).map(point => ({ x: point.x - canvas.x, y: point.y - canvas.y })));

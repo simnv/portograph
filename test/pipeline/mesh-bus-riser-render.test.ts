@@ -5,11 +5,12 @@ import type { LayoutModel } from '../../src/index.js';
 import { validateRoutedPaths } from '../../src/route/validate.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { linkIds } from '../../src/model/index.js';
+import { inFile } from '../render/drawio-cells.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 /** The id a link carries in the draw.io file: its stable id, which no longer follows its place in the YAML. */
-const cellOf = (model: LayoutModel, id: string): string => `pg-link~${linkIds(model.document)[model.links.find(link => link.id === id)!.sourceIndex]!}`;
+const cellOf = (model: LayoutModel, id: string): string => `pg-link~${inFile(linkIds(model.document)[model.links.find(link => link.id === id)!.sourceIndex]!)}`;
 
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 // The side round is off on the riser fixture: it frees link-6 as a chord (ticket 117), and these tests read the riser.

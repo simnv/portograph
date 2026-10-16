@@ -1,3 +1,5 @@
+import { escapeAttribute } from '../../src/render/svg.js';
+
 /**
  * A bound cell is a draw.io `UserObject`: `<object id label pg-*>` around an `<mxCell>` with no id and
  * no value. `flatCells` folds each wrapper back into one `<mxCell id value ...>`, as the exporter wrote
@@ -5,6 +7,9 @@
  * empty `label` stands for no `value`; the `pg-*` and `meta` attributes stay on the folded tag.
  */
 const OBJECT = /<object\b((?:[^>"]|"[^"]*")*)>\s*<mxCell\b((?:[^>"/]|"[^"]*"|\/(?!>))*)(\/>|>([\s\S]*?)<\/mxCell>)\s*<\/object>/g;
+
+/** An id as the file spells it: a stable link id holds `>`, which an attribute writes `&gt;`. */
+export const inFile = (id: string): string => escapeAttribute(id);
 
 export function flatCells(xml: string): string {
   return xml.replace(OBJECT, (_whole, outer: string, inner: string, close: string, body: string | undefined) => {

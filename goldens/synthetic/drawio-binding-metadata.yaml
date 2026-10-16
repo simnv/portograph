@@ -1,7 +1,7 @@
 # Expected: the draw.io export binds every node, port and link cell (docs/drawio-binding-contract.md).
 # The root carries pg-schema="1" and the root meta; each link id comes from its ends or its `id:`,
 # so a reorder of the links keeps every link cell id; two parallel links between anonymous ports
-# take `edge--server` and `edge--server@2`; meta changes no geometry.
+# take `edge->server` and `edge->server@2`; meta changes no geometry.
 portograph: 2
 profile: network
 meta: { datasource: prometheus, site: lab }
