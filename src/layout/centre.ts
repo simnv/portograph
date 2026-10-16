@@ -720,12 +720,36 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
   const freezeDeep = (value: unknown): void => { if (value && typeof value === 'object') { Object.values(value).forEach(freezeDeep); Object.freeze(value); } };
   for (const { tier, authority } of context.steps) {
     const list = centringFeeds(model, tier, authority), order = context.groupOrder.get(tier)!;
-    const tail = tailReservation(model, context, tier, order);
+    // The reservation of the tier is read only by a replay, and a replay runs only for a group with a candidate: the first one reads it.
+    let tail: Map<string, number> | undefined;
     let previous: LayoutGroup | undefined;
     for (const id of order) {
       const group = model.groups[id]!;
       const owned = groupFeeds(model, context, tier, list, id, false);
       if (model.document.groups[id]!.shape === 'bar' || !owned.own.length) { previous = group; continue; }
+      // Both lookups below read one key per wanted child; keying them once keeps the scan of the
+      // group's own feeds and ports out of the loop. First entry wins, as `find` did.
+      const ownFeeds = new Map<string, Feed>();
+      for (const item of owned.own) { const at = portId(item.child.ref); if (!ownFeeds.has(at)) ownFeeds.set(at, item); }
+      const groupPorts = new Map<string, LayoutPort>();
+      for (const nodeId of group.nodes) for (const item of model.nodes[nodeId]!.ports) {
+        const at = portId(item.ref); if (!groupPorts.has(at)) groupPorts.set(at, item);
+      }
+      // The replay below says only which child ports the producer's own step could not resolve, and those are excused. A group whose wanted
+      // ports are all excused by another rule, or stand within half a pixel of their feed, has nothing for the replay to excuse: it is not run.
+      const candidates: { child: string; x: number; feed: Feed; port: LayoutPort }[] = [];
+      for (const [child, x] of owned.wanted) {
+        const feed = ownFeeds.get(child)!;
+        if (byId.get(feed.link)?.bundle || drops.has(feed.link)) continue;
+        // A held chord runs between two faces at any angle: its child port owes it no place under the feed (ticket 100, the centring of a chord that a title band once refused).
+        // Only the publication check excuses it: the centring loop's own check (`ahead`) keeps asking for the alignment, so the passes are the ones they were.
+        if (!ahead && isRoutedChord(model, byId.get(feed.link)!) && chordKind(model, byId.get(feed.link)!) === 'cross') continue;
+        if ((afterBundles && bundled.has(child)) || (atBundles && bundled.has(portId(feed.parent.ref)))) continue;
+        if (isBar(feed.child.ref.node) || isBar(feed.parent.ref.node)) continue;
+        const port = groupPorts.get(child)!;
+        if (Math.abs(port.anchor!.x - x) > 0.5) candidates.push({ child, x, feed, port });
+      }
+      if (!candidates.length) { previous = group; continue; }
       if (replayedText === undefined) {
         const own: Record<string, unknown> = {}, still: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(replayed)) (TRIAL_SHARED.includes(key) ? still : own)[key] = value;
@@ -737,6 +761,7 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
         sharedParts = JSON.parse(JSON.stringify(still)) as Record<string, unknown>;
         freezeDeep(sharedParts);
       }
+      const reserved = tail ??= tailReservation(model, context, tier, order);
       const attempt = (full: boolean): { trial: LayoutModel; step: ReturnType<typeof centreGroupStep> } => {
         let trial: LayoutModel;
         if (full) {
@@ -747,7 +772,7 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
           const fresh = JSON.parse(replayedText!) as Record<string, unknown>;
           trial = Object.assign(fresh, sharedParts, { nodes }) as unknown as LayoutModel;
         }
-        return { trial, step: centreGroupStep(trial, context, tier, centringFeeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, tail) };
+        return { trial, step: centreGroupStep(trial, context, tier, centringFeeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, reserved) };
       };
       let step: ReturnType<typeof centreGroupStep>;
       try { step = attempt(false).step; } catch (error) {
@@ -755,26 +780,10 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
         step = attempt(true).step;
       }
       previous = group;
-      // Both lookups below read one key per wanted child; keying them once keeps the scan of the
-      // group's own feeds and ports out of the loop. First entry wins, as `find` did.
-      const ownFeeds = new Map<string, Feed>();
-      for (const item of owned.own) { const at = portId(item.child.ref); if (!ownFeeds.has(at)) ownFeeds.set(at, item); }
-      const groupPorts = new Map<string, LayoutPort>();
-      for (const nodeId of group.nodes) for (const item of model.nodes[nodeId]!.ports) {
-        const at = portId(item.ref); if (!groupPorts.has(at)) groupPorts.set(at, item);
-      }
-      for (const [child, x] of owned.wanted) {
+      for (const { child, x, feed, port } of candidates) {
         // Only the ports the producer's own step could not resolve are excused, never their siblings.
         if (step.unresolved.has(child)) continue;
-        const feed = ownFeeds.get(child)!;
-        if (byId.get(feed.link)?.bundle || drops.has(feed.link)) continue;
-        // A held chord runs between two faces at any angle: its child port owes it no place under the feed (ticket 100, the centring of a chord that a title band once refused).
-        // Only the publication check excuses it: the centring loop's own check (`ahead`) keeps asking for the alignment, so the passes are the ones they were.
-        if (!ahead && isRoutedChord(model, byId.get(feed.link)!) && chordKind(model, byId.get(feed.link)!) === 'cross') continue;
-        if ((afterBundles && bundled.has(child)) || (atBundles && bundled.has(portId(feed.parent.ref)))) continue;
-        if (isBar(feed.child.ref.node) || isBar(feed.parent.ref.node)) continue;
-        const port = groupPorts.get(child)!;
-        if (Math.abs(port.anchor!.x - x) > 0.5) result.push(`${feed.link}: ${child} sits at x ${port.anchor!.x} instead of its feed x ${x}`);
+        result.push(`${feed.link}: ${child} sits at x ${port.anchor!.x} instead of its feed x ${x}`);
       }
     }
   }
