@@ -26,6 +26,7 @@ import { nodeTier } from './read/tier.js';
 import { isSpanLane, replaySpanLane, spanCorridor, spanLaneId, SpanRefusal, SpanReservationRefusal } from './span-lanes.js';
 import { orderPortsByLanes } from './turn-order.js';
 import { trunkBuses, trunkGeometry, trunkHeads, trunkRing } from './trunk.js';
+import { PlacementRefusal } from './placement-refusal.js';
 
 /** A corridor `reseatLanes` moved, and the child port it moved it onto. */
 export interface LaneFollow { lane: string; child: PortRef }
@@ -1478,11 +1479,11 @@ function validSideLane(model: LayoutModel, lane: Lane, link: LayoutLink): boolea
 function validateSpanLane(model: LayoutModel, lane: Lane): void {
   const link = lane.owner.kind === 'link' ? model.links.find(item => item.id === (lane.owner as { id: string }).id) : undefined;
   if (link === undefined || link.spanHint !== true || lane.layer !== 'routed' || !transitTiers(model, link).includes(lane.tier) || lane.id !== spanLaneId(link.id, lane.tier)
-    || model.groups[lane.group]?.tier !== lane.tier || !['left', 'right'].includes(lane.side) || !Object.values(lane.bounds).every(Number.isFinite)) throw new Error(`Invalid span lane ${lane.id}`);
+    || model.groups[lane.group]?.tier !== lane.tier || !['left', 'right'].includes(lane.side) || !Object.values(lane.bounds).every(Number.isFinite)) throw new PlacementRefusal('span', `Invalid span lane ${lane.id}`, { stage: 'lanes', owners: [{ kind: 'lane', id: lane.id }] });
   const box = spanCorridor(model, link, lane.tier);
   if (box === undefined || Math.abs(box.x - lane.bounds.x) > PLACEMENT_EPS || Math.abs(box.width - lane.bounds.width) > PLACEMENT_EPS
     || Math.abs(box.y - lane.bounds.y) > PLACEMENT_EPS || Math.abs(box.height - lane.bounds.height) > PLACEMENT_EPS
-    || Math.abs(lane.x - (box.x + box.width / 2)) > PLACEMENT_EPS) throw new Error(`Span lane ${lane.id} contradicts the chord of ${link.id}: ${JSON.stringify(lane.bounds)} against ${JSON.stringify(box)}`);
+    || Math.abs(lane.x - (box.x + box.width / 2)) > PLACEMENT_EPS) throw new PlacementRefusal('span', `Span lane ${lane.id} contradicts the chord of ${link.id}: ${JSON.stringify(lane.bounds)} against ${JSON.stringify(box)}`, { stage: 'lanes', owners: [{ kind: 'lane', id: lane.id }, { kind: 'link', id: link.id }] });
   // A wall in the corridor is not thrown for: a forced 7f move can cause it after 7a, and `spanLaneFindings` names it (`SPAN_CHORD_BLOCKED`).
 }
 /**

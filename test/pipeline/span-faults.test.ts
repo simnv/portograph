@@ -54,4 +54,12 @@ describe('the span round and the errors it does not own', () => {
     expect(model.links.length).toBeGreaterThan(0);
     expect(refused.length).toBeGreaterThan(0);
   }, 60000);
+
+  it('refuses a trial whose span lane contradicts its chord (a typed refusal of the lane validator) and publishes the sheet', async () => {
+    const refused: string[] = [];
+    const model = await layout(parse(source('a-tier-gap-grows-to-its-rows')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
+      testSideTrace: event => { if (event.ev === 'span-refused') refused.push(String(event.detail)); } });
+    expect(model.links.length).toBeGreaterThan(0);
+    expect(refused.some(detail => detail.includes('contradicts the chord'))).toBe(true);
+  }, 60000);
 });
