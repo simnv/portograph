@@ -1,7 +1,7 @@
 /**
- * The shape of a round and the one function that runs a trial of it. A round is a table of descriptors (`rounds.ts`): what it measures on the kept baseline, what it reserves,
- * what must hold at the final 7e, how a routed trial is judged, what a kept trial changes and what a refused one says. `attempt` is the only code that places, bands and routes a
- * trial; a round decides nothing about the order of the placements, which is the driver's.
+ * The shape of a round and the two functions that run a trial of it. A round is a table of descriptors (`rounds.ts`): what it measures on the kept baseline, what it reserves,
+ * what must hold at the final 7e, how a routed trial is judged, what a kept trial changes and what a refused one says. `open` places the trial and `close` checks, bands, routes,
+ * judges and commits it; a round decides nothing about the order of the placements, which is the driver's.
  */
 import type { Diagnostic, LayoutModel } from '../model/index.js';
 import { attemptCounters } from '../layout/attempt-counters.js';
@@ -25,8 +25,22 @@ export interface Refusal {
   note?: Diagnostic;
 }
 
-/** What a settled trial hands on: its final 7e model and the ledger it was placed with. */
-export interface Settled { trial7e: LayoutModel; ledger: Reservations }
+/** What the driver needs to ration the placements. A round costs one start per trial; the driver decides which trials get one. */
+export interface RoundBudget {
+  /** The rounds whose live offers this round leaves a start to before it takes one. A child round inherits the protections of its parent. */
+  protects: readonly RoundId[];
+  /** Wins a tie of promised gain against a sibling that wants the same start: the higher value. */
+  tie: number;
+  /** Most trials one round makes in a command: a trial that was refused early, with the state as it was, tries again on a fresh measure. */
+  visits: number;
+  /** Whether a kept trial gives the round another visit (the fan), and which refusals do (the side round's early ones). */
+  again: boolean;
+  retries: readonly RefusalAt[];
+  /** Whether a trial of a later sibling may give the round an offer it had no first, so that it is measured again after it (the side round after a course). */
+  reopens: boolean;
+  /** Starts the round has even when the command's budget is lower: the fan's two. */
+  floor: number;
+}
 
 export interface Round<O> {
   readonly id: RoundId;
@@ -34,17 +48,24 @@ export interface Round<O> {
   readonly label: string;
   /** False for a round that is judged on the 7e model alone (the fan round): it has no 7f run and no route. */
   readonly routed: boolean;
-  /** Whether the trial's placement and 7f runs check the command deadline between their stages. */
-  readonly abort: boolean;
   readonly invalidation?: 'fanReruns' | 'sideReruns';
+  readonly budget: RoundBudget;
+  /** The rounds that run inside a trial of this one, on its tentative state (the span's fans). */
+  readonly children: readonly AnyRound[];
+  /** Whether the options of the command let the round run at all. */
+  enabled(env: Env): boolean;
+  /** Whether the round has an offer on the kept baseline. It measures quietly: no trace, no note. Only the rounds that another round protects need it. */
+  live?(env: Env, s: State): Promise<boolean>;
+  /** The gain the offer promises, compared lexicographically: links restored, bent links saved, turns saved. */
+  gain(env: Env, s: State, o: O): readonly number[];
+  /** Say that the round had an offer and was given no start. */
+  skip(env: Env, s: State, o: O, left: number): void;
   /** Whether the round answers `error` of its placement run (`place`) or its 7f run and route (`bands`) with a refusal; every other error is a defect and propagates. */
   tolerates(error: unknown, phase: 'place' | 'bands'): boolean;
   /** The offer on the kept baseline, or `undefined` when the round has none. */
   measure(env: Env, s: State): Promise<O | undefined>;
   /** The ledger the trial is placed with: what `s.kept` keeps, plus what the offer reserves. */
   reserve(env: Env, s: State, o: O): Reservations;
-  /** Work between the placement and the checks that places again (the span's fans); it may end the trial. */
-  settle?(env: Env, s: State, o: O, ledger: Reservations, trial7e: LayoutModel): Promise<Settled | Refusal>;
   /** What the ledger and the round's own promises require at the final 7e, before 7f and the route. */
   holdsAt7e(env: Env, s: State, o: O, ledger: Reservations, trial7e: LayoutModel): Refusal | undefined;
   /** The side predictor: refuse a trial from its 7e model before 7f is paid for. */
@@ -58,26 +79,33 @@ export interface Round<O> {
   /** Say why the trial ended: the notes, the trace and the refused keys of the round. */
   refuse(env: Env, s: State, o: O, r: Refusal): void;
 }
+// A round is stored with the offer type it measures; the driver hands a round only the offers that round measured.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AnyRound = Round<any>;
 
-/** Run one trial of `round` on the offer `o`: reserve, place, check, band, route, judge, commit. Returns `undefined` when the trial was kept, else the refusal. */
-export async function attempt<O>(env: Env, s: State, round: Round<O>, o: O): Promise<Refusal | undefined> {
-  const refuse = (r: Refusal): Refusal => { round.refuse(env, s, o, r); return r; };
-  let ledger = round.reserve(env, s, o);
+/** A trial that was placed: the ledger it was placed with and its 7e model. */
+export interface Opened { ledger: Reservations; trial7e: LayoutModel }
+
+const refuse = <O>(env: Env, s: State, round: Round<O>, o: O, r: Refusal): Refusal => { round.refuse(env, s, o, r); return r; };
+
+/** Reserve and place a trial of `round` on the offer `o`. A started placement is never given back. */
+export async function open<O>(env: Env, s: State, round: Round<O>, o: O): Promise<Opened | Refusal> {
+  const ledger = round.reserve(env, s, o);
   env.reruns++;
   if (round.invalidation !== undefined) attemptCounters.invalidations[round.invalidation]++;
   let trial7e: LayoutModel;
-  try { trial7e = await env.timed(round.label, () => env.place(ledger, round.abort ? env.trialAbort : undefined)); } catch (error) {
+  try { trial7e = await env.timed(round.label, () => env.place(ledger, env.trialAbort)); } catch (error) {
     if (!round.tolerates(error, 'place')) throw error;
-    return refuse({ at: 'place', why: (error as Error).message, error: error as Error });
+    return refuse(env, s, round, o, { at: 'place', why: (error as Error).message, error: error as Error });
   }
-  if (trial7e.fallbackUsed && !(s.fallbackFrom ?? s.kept7e).fallbackUsed) return refuse({ at: 'fallback', why: `ELK fell back during the ${round.id} trial` });
-  if (round.settle !== undefined) {
-    const settled = await round.settle(env, s, o, ledger, trial7e);
-    if ('at' in settled) return refuse(settled);
-    ({ ledger, trial7e } = settled);
-  }
+  if (trial7e.fallbackUsed && !(s.fallbackFrom ?? s.kept7e).fallbackUsed) return refuse(env, s, round, o, { at: 'fallback', why: `ELK fell back during the ${round.id} trial` });
+  return { ledger, trial7e };
+}
+
+/** Check, band, route, judge and commit a placed trial. Returns `undefined` when the trial was kept, else the refusal. */
+export async function close<O>(env: Env, s: State, round: Round<O>, o: O, { ledger, trial7e }: Opened): Promise<Refusal | undefined> {
   const held = round.holdsAt7e(env, s, o, ledger, trial7e) ?? round.predict?.(env, s, o, trial7e);
-  if (held !== undefined) return refuse(held);
+  if (held !== undefined) return refuse(env, s, round, o, held);
   let t: Trial;
   if (!round.routed) t = { ledger, trial7e, trial: trial7e, routedTrial: trial7e, moved: false, unmoved: undefined };
   else {
@@ -87,11 +115,11 @@ export async function attempt<O>(env: Env, s: State, round: Round<O>, o: O): Pro
       t = { ledger, trial7e, trial: banded.model, routedTrial: await env.route(banded.model, true), moved: banded.moved, unmoved: banded.unmoved };
     } catch (error) {
       if (!round.tolerates(error, 'bands')) throw error;
-      return refuse({ at: 'bands', why: (error as Error).message, error: error as Error });
+      return refuse(env, s, round, o, { at: 'bands', why: (error as Error).message, error: error as Error });
     }
   }
   const verdict = round.judge(env, s, o, t);
-  if (verdict !== undefined) return refuse(verdict);
+  if (verdict !== undefined) return refuse(env, s, round, o, verdict);
   round.commit(env, s, o, t);
   return undefined;
 }

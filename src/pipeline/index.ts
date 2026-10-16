@@ -10,7 +10,7 @@ import type { LayoutModel, NormalisedDocument } from '../model/index.js';
 import type { LayoutOptions } from './options.js';
 import { createEnv } from './env.js';
 import { firstState } from './initial.js';
-import { legacySchedule } from './legacy.js';
+import { drive } from './driver.js';
 import { publish } from './publish.js';
 
 export { MAX_RERUNS, PlacementBudgetExceeded } from './limits.js';
@@ -25,6 +25,6 @@ export type { LayoutOptions, LayoutProgress } from './options.js';
 export async function layout(document: NormalisedDocument, options: LayoutOptions = {}): Promise<LayoutModel> {
   const env = createEnv(document, options);
   const state = await firstState(env);
-  await legacySchedule(env, state);
+  await drive(env, state);
   return publish(env, state);
 }

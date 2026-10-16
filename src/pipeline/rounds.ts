@@ -1,6 +1,6 @@
 /**
  * The six rounds as descriptors (architecture 2, ticket 04): fan, span, course, side, turn and overlay. Each one is a table of what it measures, reserves, checks, judges, commits and
- * says when it is refused; `attempt` (round.ts) runs a trial from it. A descriptor holds the round's own rules and nothing about the order of the rounds.
+ * says when it is refused; `open` and `close` (round.ts) run a trial from it. A descriptor holds the round's own rules and nothing about the order of the rounds.
  */
 import type { Course, Diagnostic, LayoutModel, Size } from '../model/index.js';
 import { portKey } from '../layout/sides-one.js';
@@ -12,14 +12,14 @@ import { freezeRefusal } from '../layout/frame-paths.js';
 import { transitTiers } from '../layout/lanes.js';
 import { measureSpans } from '../layout/span-measure.js';
 import { judgeSpanTrial } from '../layout/span-judge.js';
-import { judgeCourseTrial, judgeOverlayTrial, measureCourses, measureOverlayCourses } from '../layout/course-measure.js';
+import { gainOf, judgeCourseTrial, judgeOverlayTrial, measureCourses, measureOverlayCourses } from '../layout/course-measure.js';
 import { measureSides, refusedKey, type SideOffer } from '../layout/side-measure.js';
-import { judgeTrial, predictedWorse, predictPublished, trialNotes } from '../layout/side-judge.js';
+import { judgeTrial, predictedWorse, predictPublished, routedBends, trialNotes } from '../layout/side-judge.js';
 import { bands } from '../layout/bands.js';
-import { judgeTurnTrial, measureTurnOrder, roundLimit, turnReserve } from '../layout/turn-measure.js';
+import { judgeTurnTrial, measureTurnOrder } from '../layout/turn-measure.js';
 import { pitchGrowth, nodeFloors as floorEntries, courseEntries, laneOwners, promisedTurns, reserve as addReservations, sideFaces, sideHintsOf, spanEntries, turnEntries, type Reservations } from '../layout/reservations.js';
 import { holds, holdsRouted } from '../layout/reservation-checks.js';
-import { attempt, type Round } from './round.js';
+import type { Round } from './round.js';
 import { CommandDeadlineError } from './budget.js';
 import type { Env } from './env.js';
 import { FAN_ROUNDS, SIDE_ROUNDS } from './limits.js';
@@ -37,7 +37,11 @@ const cutNote = (why: string): Diagnostic => ({ stage: 'placement', severity: 'w
  * (the span checks the ledger once, at its final 7e).
  */
 const fanRound = (child: boolean): Round<{ grown: Reservations }> => ({
-  id: 'fan', label: 'rerun-fan', routed: false, abort: child, invalidation: 'fanReruns',
+  id: 'fan', label: 'rerun-fan', routed: false, invalidation: 'fanReruns', children: [],
+  budget: { protects: [], tie: 0, visits: child ? 1 : FAN_ROUNDS, again: !child, retries: [], reopens: false, floor: child ? 0 : FAN_ROUNDS },
+  enabled: () => true,
+  gain: () => [0, 0, 0],
+  skip: () => undefined,
   // A fan floor can move the rows, and a trunk that the baseline placed may then have a foreign unit on both sides. The run that found it blocked is a
   // trial, so the round is cut and the baseline stands (a test cannot reach this: it needs a floor that reorders a row of the mesh).
   tolerates: (error, phase) => phase === 'place' && (child ? isRefusable(error) : error instanceof TrunkBlocked),
@@ -71,41 +75,30 @@ const spanCode = (error: Error): 'placement' | 'error' => error instanceof Place
 /** Whether the turn round runs at all: a forced turn order or forced courses (tests) have no turn round. */
 export const turnRoundOn = (env: Env): boolean => env.options.testCourses === undefined && env.options.testTurnOrder === undefined;
 
-type SpanOffer = ReturnType<typeof measureSpans> & { max: number };
+type SpanOffer = ReturnType<typeof measureSpans>;
 /**
  * The span round (architecture ticket 22, phase 3). It reads the 7f baseline and its routed result, offers a spanning chord to every link between document tiers that
  * are not consecutive whose corridor is clear, places again with the span hints, and keeps the trial only on its routed result (`judgeSpanTrial`). It runs before the
  * course, side and overlay-course rounds, because a chord changes which routes are poor, and it shares their re-runs. A refused round leaves the sheet as it was.
  */
 export const span: Round<SpanOffer> = {
-  id: 'span', label: 'rerun-span', routed: true, abort: true,
+  id: 'span', label: 'rerun-span', routed: true, children: [spanFan],
+  // The round leaves a start to each round after it that has an offer on the baseline (course, side, turn): a trial that is refused has spent its placements, and must not
+  // starve a round that would have run. Its fans inherit that.
+  budget: { protects: ['course', 'side', 'turn'], tie: 0, visits: 1, again: false, retries: [], reopens: false, floor: 0 },
+  // A forced hint (the test option) is the whole of the span round; otherwise the round runs here, before the course round.
+  enabled: env => env.options.testCourses === undefined && env.options.testSpanHints === undefined,
+  gain: () => [0, 0, 0],
+  skip(env, _s, o) { env.options.testSideTrace?.({ ev: 'span-refused', links: o.links, why: 'budget' }); },
   tolerates: (error) => isRefusable(error),
   async measure(env, s) {
     const offer = measureSpans(s.base, s.routedBase!);
     env.options.testSideTrace?.({ ev: 'spans', offer, base: s.base, routedBase: s.routedBase });
     if (offer.links.length === 0) return undefined;
-    // The round leaves one re-run to each round after it that has an offer on the baseline (course, side): a trial that is refused has spent its placements, and must not
-    // starve a round that main would have run.
-    const max = roundLimit(env.maxReruns, turnReserve(s.base, turnRoundOn(env))) - (measureCourses(s.base, s.routedBase!).courses.length > 0 ? 1 : 0) - (measureSides(s.base, s.kept7e, s.refused).hints.size > 0 ? 1 : 0);
-    if (env.reruns >= max) { env.options.testSideTrace?.({ ev: 'span-refused', links: offer.links, why: 'budget' }); return undefined; }
-    return { ...offer, max };
+    return offer.links.length === 0 ? undefined : offer;
   },
   // The trial reserves its chords on top of the ledger; the fans of the trial grow this one, and a kept trial keeps it.
   reserve: (env, s, o) => addReservations(s.kept, spanEntries(o.links, 'span', env.placements)),
-  // A fan of chords whose neighbours stand closer than the chord clearance is spread by placement (ticket 89): the chords of this trial are measured as the fan
-  // rounds measure the first placement, and the trial places again with the floors they ask for. The re-runs are the command's (MAX_RERUNS).
-  async settle(env, s, o, ledger, trial7e) {
-    const tentative: State = { ...s, kept7e: trial7e, kept: ledger, fallbackFrom: s.kept7e };
-    for (let round = 0; round < FAN_ROUNDS && env.reruns < o.max; round++) {
-      const offer = await spanFan.measure(env, tentative);
-      if (offer === undefined) break;
-      const refused = await attempt(env, tentative, spanFan, offer);
-      if (refused === undefined) continue;
-      if (refused.at === 'ledger') break;
-      return refused;
-    }
-    return { trial7e: tentative.kept7e, ledger: tentative.kept };
-  },
   // 7f freezes the chords that are straight now and no other (`freezeChords`), so a hinted link that is not straight here (the freeze refuses it, as `leg` when a neighbour's
   // leg crowds it at the pitch the trial gave) is lost: the trial is refused here, before 7f and the route. The placement above is spent, so nothing is given back.
   holdsAt7e(_env, _s, o, ledger, trial7e) {
@@ -179,8 +172,12 @@ type CourseOffer = ReturnType<typeof measureCourses>;
  * so a sheet it does not change is byte for byte as it was.
  */
 export const course: Round<CourseOffer> = {
-  id: 'course', label: 'rerun-course', routed: true, abort: true,
-  // A course moves columns the baseline never moved. A centring that cannot hold its feeds there is the course's refusal, not a bug of the baseline.
+  id: 'course', label: 'rerun-course', routed: true, children: [],
+  budget: { protects: ['turn'], tie: 0, visits: 1, again: false, retries: [], reopens: false, floor: 0 },
+  enabled: env => env.options.testCourses === undefined,
+  async live(_env, s) { return measureCourses(s.base, s.routedFinal ?? s.routedBase!).courses.length > 0; },
+  gain: (_env, _s, o) => gainOf([...o.promised].map(([, item]) => [item.base.turns === Infinity ? undefined : item.base.turns, item.turns] as [number | undefined, number])),
+  skip(env, _s, o) { env.options.testSideTrace?.({ ev: 'course-skipped', offer: o, reruns: env.reruns }); },
   tolerates: (error, phase) => phase === 'place' ? error instanceof PlacementRefusal && error.code !== 'budget' : refusedAtBands(error),
   async measure(env, s) {
     s.routedBase = s.routedFinal ?? s.routedBase ?? await env.route(s.base);
@@ -265,11 +262,20 @@ export interface SideTrialOffer { offer: SideOffer; round: number; unmoved: bool
  * the baseline. One batched trial reaches 7f per command; it is kept only on its routed result.
  */
 export const side: Round<SideTrialOffer> = {
-  id: 'side', label: 'rerun-side', routed: true, abort: true, invalidation: 'sideReruns',
-  // Only the layout's own refusals drop the offer; anything else (a TypeError) is a bug and must surface.
+  id: 'side', label: 'rerun-side', routed: true, invalidation: 'sideReruns', children: [],
+  // A refusal of the placement or the 7e checks leaves the state as it was: the round measures again and tries once more. A kept trial ends it (one trial reaches 7f per command).
+  budget: { protects: ['turn'], tie: 1, visits: SIDE_ROUNDS, again: false, retries: ['place', 'ledger', 'predict'], reopens: true, floor: 0 },
+  enabled: () => true,
+  async live(_env, s) { return measureSides(s.base, s.kept7e, s.refused).hints.size > 0; },
+  // The unmoved offer promises nothing and takes the start from a course that promises something (phase 3b).
+  gain(_env, s, o) {
+    const bends = s.routedBase === undefined ? new Map<string, number>() : routedBends(s.routedBase);
+    return o.unmoved ? [Infinity, 0, 0] : gainOf([...o.offer.promised.values()].map(item => [bends.get(item.link), item.bends] as [number | undefined, number]));
+  },
+  skip(env, s) { s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'SIDE_ROUND_SKIPPED', message: `A side round was skipped: the command has made its ${env.maxReruns} placement re-runs.` }); },
   tolerates: (error) => refusedAtBands(error),
   async measure(env, s) {
-    const round = s.sideRound++;
+    const round = s.sideRound;
     s.silent = false; // only the round-0 extra trial is silent; a later round publishes its refusals
     let offer = await env.timed('measureSides', () => measureSides(s.base, s.kept7e, s.refused));
     // No offer on the kept 7f result. If a 7f move changed the placement, the unmoved baseline may have had one that the move removed: it runs as one
@@ -294,6 +300,7 @@ export const side: Round<SideTrialOffer> = {
     return { offer, round, unmoved };
   },
   reserve(env, s, o) {
+    s.sideRound++;
     const nodeFloors = new Map<string, Size>();
     for (const key of new Map([...sideHintsOf(s.kept), ...o.offer.hints]).keys()) {
       const [node] = JSON.parse(key) as [string];
@@ -362,7 +369,15 @@ type TurnOffer = { offer: ReturnType<typeof measureTurnOrder>; current: LayoutMo
  * leaves the layout as the baseline made it, with no note.
  */
 export const turn: Round<TurnOffer> = {
-  id: 'turn', label: 'rerun-turn', routed: true, abort: true,
+  id: 'turn', label: 'rerun-turn', routed: true, children: [],
+  // The turn offer moves no bend and no turn by design, so it promises none: with one start left and an overlay offer it runs only if the overlay offer promises nothing either.
+  budget: { protects: [], tie: 0, visits: 1, again: false, retries: [], reopens: false, floor: 0 },
+  enabled: turnRoundOn,
+  async live(_env, s) { return measureTurnOrder(s.base).faces.length > 0; },
+  gain: () => [0, 0, 0],
+  skip(env, s, _o, left) {
+    s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'TURN_ROUND_SKIPPED', message: `The turn round was skipped: the command has ${left <= 0 ? 'made its' : 'one left of its'} ${env.maxReruns} placement re-runs${left <= 0 ? '' : ', for the overlay round'}.` });
+  },
   tolerates: (error, phase) => phase === 'place' ? error instanceof PlacementRefusal : refusedAtBands(error),
   async measure(env, s) {
     const offer = measureTurnOrder(s.base);
@@ -408,7 +423,11 @@ type OverlayOffer = { offer: ReturnType<typeof measureOverlayCourses>; current: 
  * leaves the layout as it was.
  */
 export const overlay: Round<OverlayOffer> = {
-  id: 'overlay', label: 'rerun-overlay', routed: true, abort: true,
+  id: 'overlay', label: 'rerun-overlay', routed: true, children: [],
+  budget: { protects: [], tie: 1, visits: 1, again: false, retries: [], reopens: false, floor: 0 },
+  enabled: env => env.options.testCourses === undefined && env.options.testOverlayCourses !== false,
+  gain: (_env, _s, o) => gainOf([...o.offer.promised].map(([, item]) => [item.base === Infinity ? undefined : item.base, item.turns] as [number | undefined, number])),
+  skip(env, _s, o) { env.options.testSideTrace?.({ ev: 'overlay-skipped', offer: o.offer, reruns: env.reruns }); },
   tolerates: (error, phase) => phase === 'place' ? error instanceof PlacementRefusal && error.code !== 'budget' : refusedAtBands(error),
   async measure(env, s) {
     const current = s.routedFinal ?? s.routedBase ?? await env.route(s.base);
