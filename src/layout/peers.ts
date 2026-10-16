@@ -1,5 +1,5 @@
 import type { PortRef } from '../model/document.js';
-import type { LayoutModel } from '../model/layout.js';
+import type { LayoutLink, LayoutModel } from '../model/layout.js';
 import { portId } from './skeleton-graph.js';
 const key = portId;
 
@@ -27,6 +27,24 @@ export function unreservedPeers(model: LayoutModel): Map<string, Peer[]> {
     }
   }
   peerCache.set(model.links, index);
+  return index;
+}
+
+const routedAtCache = new WeakMap<LayoutModel['links'], Map<string, LayoutLink[]>>();
+/**
+ * The routed links of each port key in link order (a link from a port to itself counts once), cached against the link array like `unreservedPeers`: the layer, the
+ * technique and the attachments of a link are fixed in stage 1. The lists are shared and read only.
+ */
+export function routedLinksAt(model: LayoutModel): Map<string, LayoutLink[]> {
+  const cached = routedAtCache.get(model.links);
+  if (cached) return cached;
+  const index = new Map<string, LayoutLink[]>();
+  for (const link of model.links) {
+    if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
+    const from = key(link.attachments.from), to = key(link.attachments.to);
+    for (const end of from === to ? [from] : [from, to]) { const list = index.get(end); if (list) list.push(link); else index.set(end, [link]); }
+  }
+  routedAtCache.set(model.links, index);
   return index;
 }
 

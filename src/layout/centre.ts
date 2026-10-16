@@ -426,10 +426,16 @@ function groupFeeds(model: LayoutModel, context: CentreContext, tier: number, li
  * by the publication/restore check, so both read one definition.
  */
 const CHORD_STAGES = ['bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'];
-function centreGroupStep(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>): { unresolved: Set<string>; group: LayoutGroup } {
-  return withStepLinkKinds(model, () => centreGroupStepChecked(model, context, tier, list, id, previous, warn, tail));
+/**
+ * What the replays of one check read before their step moves anything. Every replay starts from a copy of one model, and the readings below depend on the
+ * content of the model alone; the one thing a replay does first is rebuild the nodes of its group. When that leaves the nodes as the model has them (`texts`),
+ * the replay stands on the model itself and takes the readings of the first one that did, so they are read once per check and not once per replay.
+ */
+interface BaseReadings { texts: ReadonlyMap<string, string>; held?: Set<string>; breached?: Set<string> }
+function centreGroupStep(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, base?: BaseReadings): { unresolved: Set<string>; group: LayoutGroup } {
+  return withStepLinkKinds(model, () => centreGroupStepChecked(model, context, tier, list, id, previous, warn, tail, base));
 }
-function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>): { unresolved: Set<string>; group: LayoutGroup } {
+function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, base?: BaseReadings): { unresolved: Set<string>; group: LayoutGroup } {
   // From 7e on, an overlay link that draws one straight segment keeps the space placement reserved for it. A step that leaves fewer
   // of them straight (a body or a pill now stands on a chord) is declined as a whole, like a step that solves nothing: the group stays
   // where it stood (ticket 75). A step that straightens one link for another is a trade the alignment is allowed to make.
@@ -437,7 +443,9 @@ function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier
   const group = model.groups[id]!;
   // `moveGroup` leaves pill bounds behind, and the chord reads them: both readings are taken on rebuilt nodes.
   rebuildNodeGeometry(model, group.nodes, 'current');
-  const held = straightChordIds(model), breached = new Set([...keepOutShifts(model).keys()].map(item => item.id));
+  const standing = base !== undefined && group.nodes.every(node => JSON.stringify(model.nodes[node]) === base.texts.get(node));
+  const held = standing && base.held ? base.held : straightChordIds(model), breached = standing && base.breached ? base.breached : new Set([...keepOutShifts(model).keys()].map(item => item.id));
+  if (standing) { base.held = held; base.breached = breached; }
   const snapshot = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
   const result = centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail);
   rebuildNodeGeometry(model, model.groups[id]!.nodes, 'current');
@@ -716,16 +724,41 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
   // Every trial starts from the same model. The parts a step only reads are copied once and frozen (`TRIAL_SHARED`), and so are the nodes:
   // a trial takes a fresh copy of the nodes of its group and of the group before it (the ones a step writes), and shares the rest. A step that writes
   // to a shared part throws; that trial is then run again on a full copy, so the answer is the one a full copy gives (architecture ticket 14).
+  let baseReadings: BaseReadings | undefined;
   let replayedText: string | undefined, sharedParts: Record<string, unknown> | undefined, sharedNodes: Record<string, LayoutNode> | undefined, nodeTexts: Map<string, string> | undefined, fullText: string | undefined;
   const freezeDeep = (value: unknown): void => { if (value && typeof value === 'object') { Object.values(value).forEach(freezeDeep); Object.freeze(value); } };
   for (const { tier, authority } of context.steps) {
     const list = centringFeeds(model, tier, authority), order = context.groupOrder.get(tier)!;
-    const tail = tailReservation(model, context, tier, order);
+    // The reservation of the tier is read only by a replay, and a replay runs only for a group with a candidate: the first one reads it.
+    let tail: Map<string, number> | undefined;
     let previous: LayoutGroup | undefined;
     for (const id of order) {
       const group = model.groups[id]!;
       const owned = groupFeeds(model, context, tier, list, id, false);
       if (model.document.groups[id]!.shape === 'bar' || !owned.own.length) { previous = group; continue; }
+      // Both lookups below read one key per wanted child; keying them once keeps the scan of the
+      // group's own feeds and ports out of the loop. First entry wins, as `find` did.
+      const ownFeeds = new Map<string, Feed>();
+      for (const item of owned.own) { const at = portId(item.child.ref); if (!ownFeeds.has(at)) ownFeeds.set(at, item); }
+      const groupPorts = new Map<string, LayoutPort>();
+      for (const nodeId of group.nodes) for (const item of model.nodes[nodeId]!.ports) {
+        const at = portId(item.ref); if (!groupPorts.has(at)) groupPorts.set(at, item);
+      }
+      // The replay below says only which child ports the producer's own step could not resolve, and those are excused. A group whose wanted
+      // ports are all excused by another rule, or stand within half a pixel of their feed, has nothing for the replay to excuse: it is not run.
+      const candidates: { child: string; x: number; feed: Feed; port: LayoutPort }[] = [];
+      for (const [child, x] of owned.wanted) {
+        const feed = ownFeeds.get(child)!;
+        if (byId.get(feed.link)?.bundle || drops.has(feed.link)) continue;
+        // A held chord runs between two faces at any angle: its child port owes it no place under the feed (ticket 100, the centring of a chord that a title band once refused).
+        // Only the publication check excuses it: the centring loop's own check (`ahead`) keeps asking for the alignment, so the passes are the ones they were.
+        if (!ahead && isRoutedChord(model, byId.get(feed.link)!) && chordKind(model, byId.get(feed.link)!) === 'cross') continue;
+        if ((afterBundles && bundled.has(child)) || (atBundles && bundled.has(portId(feed.parent.ref)))) continue;
+        if (isBar(feed.child.ref.node) || isBar(feed.parent.ref.node)) continue;
+        const port = groupPorts.get(child)!;
+        if (Math.abs(port.anchor!.x - x) > 0.5) candidates.push({ child, x, feed, port });
+      }
+      if (!candidates.length) { previous = group; continue; }
       if (replayedText === undefined) {
         const own: Record<string, unknown> = {}, still: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(replayed)) (TRIAL_SHARED.includes(key) ? still : own)[key] = value;
@@ -737,6 +770,8 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
         sharedParts = JSON.parse(JSON.stringify(still)) as Record<string, unknown>;
         freezeDeep(sharedParts);
       }
+      const reserved = tail ??= tailReservation(model, context, tier, order);
+      const base: BaseReadings = baseReadings ??= { texts: nodeTexts! };
       const attempt = (full: boolean): { trial: LayoutModel; step: ReturnType<typeof centreGroupStep> } => {
         let trial: LayoutModel;
         if (full) {
@@ -747,7 +782,7 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
           const fresh = JSON.parse(replayedText!) as Record<string, unknown>;
           trial = Object.assign(fresh, sharedParts, { nodes }) as unknown as LayoutModel;
         }
-        return { trial, step: centreGroupStep(trial, context, tier, centringFeeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, tail) };
+        return { trial, step: centreGroupStep(trial, context, tier, centringFeeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, reserved, base) };
       };
       let step: ReturnType<typeof centreGroupStep>;
       try { step = attempt(false).step; } catch (error) {
@@ -755,26 +790,10 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
         step = attempt(true).step;
       }
       previous = group;
-      // Both lookups below read one key per wanted child; keying them once keeps the scan of the
-      // group's own feeds and ports out of the loop. First entry wins, as `find` did.
-      const ownFeeds = new Map<string, Feed>();
-      for (const item of owned.own) { const at = portId(item.child.ref); if (!ownFeeds.has(at)) ownFeeds.set(at, item); }
-      const groupPorts = new Map<string, LayoutPort>();
-      for (const nodeId of group.nodes) for (const item of model.nodes[nodeId]!.ports) {
-        const at = portId(item.ref); if (!groupPorts.has(at)) groupPorts.set(at, item);
-      }
-      for (const [child, x] of owned.wanted) {
+      for (const { child, x, feed, port } of candidates) {
         // Only the ports the producer's own step could not resolve are excused, never their siblings.
         if (step.unresolved.has(child)) continue;
-        const feed = ownFeeds.get(child)!;
-        if (byId.get(feed.link)?.bundle || drops.has(feed.link)) continue;
-        // A held chord runs between two faces at any angle: its child port owes it no place under the feed (ticket 100, the centring of a chord that a title band once refused).
-        // Only the publication check excuses it: the centring loop's own check (`ahead`) keeps asking for the alignment, so the passes are the ones they were.
-        if (!ahead && isRoutedChord(model, byId.get(feed.link)!) && chordKind(model, byId.get(feed.link)!) === 'cross') continue;
-        if ((afterBundles && bundled.has(child)) || (atBundles && bundled.has(portId(feed.parent.ref)))) continue;
-        if (isBar(feed.child.ref.node) || isBar(feed.parent.ref.node)) continue;
-        const port = groupPorts.get(child)!;
-        if (Math.abs(port.anchor!.x - x) > 0.5) result.push(`${feed.link}: ${child} sits at x ${port.anchor!.x} instead of its feed x ${x}`);
+        result.push(`${feed.link}: ${child} sits at x ${port.anchor!.x} instead of its feed x ${x}`);
       }
     }
   }
