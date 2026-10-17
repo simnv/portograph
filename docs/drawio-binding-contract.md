@@ -157,7 +157,7 @@ These cells have no binding attributes:
 
 - group and frame boxes,
 - mesh bus bars, stubs, joints and risers (a mesh bus member link has no link cell),
-- overlay end marks, icons and the legend,
+- overlay end marks, icon tiles, node descriptions and the legend,
 - the count label of a merge bundle. Its cell id comes from the bundle number, which can change
   when you reorder the links.
 
