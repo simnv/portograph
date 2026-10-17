@@ -440,6 +440,9 @@ const labelSize = (label: LayoutLabel): number => finite(label.fontSize ?? 9);
  */
 const plainPitch = (fontSize: number): number => Math.round(fontSize * 1.2);
 
+/** The size the font table is read at for `firstBaseline`, large enough that its rounding is lost. */
+const METRIC_SIZE = 1000;
+
 /**
  * Where `render` puts a label's first baseline, as an offset from the centre of its measured box,
  * along the text's own vertical — the same arithmetic as the SVG renderer's `textElement`. A
@@ -449,11 +452,12 @@ const plainPitch = (fontSize: number): number => Math.round(fontSize * 1.2);
 function firstBaseline(label: LayoutLabel, size: number): number {
   const lines = labelLines(label);
   const angle = label.textRotation ?? 0, box = label.bounds!;
-  // A size outside the contract is exported rather than refused, measured as one pixel of type.
-  const font = measureText('', { fontSize: size > 0 && Number.isFinite(size) ? size : 1, weight: label.fontWeight === 700 ? 700 : 400 });
-  const pitch = label.lineHeight ?? font.lineHeight;
+  // The font table is read once at a fixed size and scaled, so a size far outside the contract is
+  // exported rather than refused.
+  const unit = measureText('', { fontSize: METRIC_SIZE, weight: label.fontWeight === 700 ? 700 : 400 });
+  const pitch = label.lineHeight ?? finite(Math.ceil(unit.lineHeight / METRIC_SIZE * size));
   const height = angle === -90 || angle === 90 ? box.width : angle !== 0 ? pitch * lines.length : box.height;
-  return finite(-height / 2 + font.ascent);
+  return finite(-height / 2 + finite(unit.ascent / METRIC_SIZE * size));
 }
 
 /**
@@ -786,7 +790,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         // A name may stand off the node's centre — clear of a pill on the same row — and `render`
         // centres it on its own measured box, as the description cell is. Centred text moves by
         // half of `spacingLeft − spacingRight`, and only the positive side is stated.
-        ...(across > 0 ? { spacingLeft: 2 * across } : across < 0 ? { spacingRight: -2 * across } : {}),
+        ...(across > 0 ? { spacingLeft: finite(2 * across) } : across < 0 ? { spacingRight: finite(-2 * across) } : {}),
         fontFamily: FONT_FAMILY, fontSize: nameSize, fontColor: paint.node.text,
         fontStyle: (named.fontWeight ?? 700) === 700 ? 1 : undefined,
       }),
@@ -806,6 +810,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       };
       const resolved = dual(pick);
       const native = iconSet === 'cisco19' ? CISCO19[iconKey(node.icon.icon)] : undefined;
+      // The icon is bound like a link label: by the node it belongs to, so a dashboard can colour
+      // the icon rather than the whole node. The tile behind a silhouette stays unbound.
+      const iconBinding: Binding = { 'pg-kind': 'node-icon', 'pg-of': id };
       if (native) {
         // A badge carries its own frame, so it replaces the tile; a silhouette keeps it.
         if (native.kind === 'silhouette' && positive(tile)) {
@@ -827,7 +834,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
             // filled with the glyph colour and has no frame to stroke.
             fillColor: native.kind === 'badge' ? resolved.tile.fill : resolved.glyph,
             strokeColor: native.kind === 'badge' ? resolved.glyph : 'none',
-          }), box);
+          }), box, undefined, {}, iconBinding);
         }
       } else {
         if (positive(tile)) {
@@ -847,7 +854,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           vertex(cellId('icon', id), cellId('node', id), styleString([], {
             shape: 'image', imageAspect: 0, points: '[]',
             image: svgImage(glyph),
-          }), inner);
+          }), inner, undefined, {}, iconBinding);
         }
       }
     }

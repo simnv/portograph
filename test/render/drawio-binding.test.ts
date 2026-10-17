@@ -188,6 +188,26 @@ links: ${links}
     }
   }, 60000);
 
+  it('binds each node icon to its node, in both icon sets, and leaves the tile unbound', async () => {
+    const yaml = readFileSync(new URL('../../goldens/synthetic/drawio-constructs.yaml', import.meta.url), 'utf8');
+    const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const withIcon = Object.keys(model.nodes).filter(key => model.nodes[key]!.icon);
+    expect(withIcon.length).toBeGreaterThan(0);
+    for (const icons of ['cisco19', 'profile'] as const) {
+      const xml = drawio(model, { icons });
+      const bound = objects(xml);
+      const marks = bound.filter(item => item.attributes['pg-kind'] === 'node-icon');
+      expect(marks.map(item => item.attributes['pg-of']).sort()).toEqual([...withIcon].sort());
+      for (const mark of marks) {
+        const of = mark.attributes['pg-of']!;
+        expect(mark.attributes.id).toBe(`pg-icon~${of}`);
+        expect(attributesOf(/<mxCell\b([^>]*)/.exec(mark.body)![1]!).parent).toBe(`pg-node~${of}`);
+        expect(bound.some(item => item.attributes['pg-kind'] === 'node' && item.attributes['pg-id'] === of)).toBe(true);
+      }
+      expect(bound.some(item => item.attributes.id?.startsWith('pg-iconTile~'))).toBe(false);
+    }
+  }, 60000);
+
   it('binds the synthetic fixture: root meta, parallel links, and a reorder that moves no link id', async () => {
     const yaml = readFileSync(new URL('../../goldens/synthetic/drawio-binding-metadata.yaml', import.meta.url), 'utf8');
     const xml = await render(yaml);

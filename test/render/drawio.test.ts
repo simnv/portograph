@@ -574,6 +574,13 @@ describe('node text', () => {
       && item.owner.id === 'named' && item.role === 'node')!;
     far.bounds!.y = -1e308;
     far.lineHeight = 1.7e308;
+    // Codex: a finite size too large for the font table, and a centre that overflows when doubled.
+    const huge = JSON.parse(JSON.stringify(odd)) as LayoutModel;
+    const hugeName = huge.labels.find(item => item.owner.kind === 'node'
+      && item.owner.id === 'both' && item.role === 'node')!;
+    hugeName.fontSize = 1.6e308;
+    hugeName.bounds!.x = 1e308;
+    expect(drawio(huge, { theme: 'light' })).not.toMatch(/Infinity|NaN/);
     const xml = drawio(odd, { theme: 'light' });
     expect(Number.isFinite(Number(cells(xml).get(id('node', 'named'))!.style['spacingTop']))).toBe(true);
     expect(Number.isFinite(Number(cells(xml).get(id('nodeDescription', 'both'))!.style['spacingTop']))).toBe(true);
