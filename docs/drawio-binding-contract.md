@@ -105,8 +105,13 @@ A link label is in one of two places:
 To find the label of a link, look for a `link-label` cell with its `pg-of` first. If there is no
 such cell, use the `label` of the link object. A split link carries its label on one run only.
 
-The labels are HTML (`html=1` in the style). The export does not set `placeholders`, so draw.io
+The labels are plain text: the style has no `html` key, and a label of more than one line has its
+lines one newline (`&#10;`) apart. An SVG export of the file draws each line as a native `<text>`,
+not as a `<foreignObject>` with a PNG fallback. The export does not set `placeholders`, so draw.io
 shows a `%name%` in a label as it is.
+
+A node's `label` is its name only. Plain text has one font per cell, so a node's description is a
+separate, unbound text cell (`pg-nodeDescription~<node>`), a child of the node cell.
 
 ## 4. Author metadata
 

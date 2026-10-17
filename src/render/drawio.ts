@@ -35,8 +35,12 @@
  *    1, which projects the point onto the perimeter instead of using it.
  * 3. `startSize` does not shift a child's origin: a child is always placed from the parent's
  *    top-left, so the title band's inset is ours to add.
- * 4. With `html=1` the value is assigned to `innerHTML`, so text is HTML-escaped first and then
- *    XML-escaped for the attribute. Single-escaped markup is swallowed without a word.
+ * 4. Every label is plain text: no `html` key, the lines one `\n` apart, no markup. An SVG export
+ *    then draws each line as a native `<text>`, where `html=1` draws a `<foreignObject>` with a PNG
+ *    fallback beside it — several times the bytes, softer type, and a warning in a dashboard that
+ *    embeds the SVG. Plain text has one font per cell and draw.io's own line pitch, so a node's
+ *    description is a cell of its own and every label states the `spacingTop` that puts its first
+ *    baseline where `render` puts it (`middleSpacing`).
  *
  * Named styles do not exist in the file format — an `<mxStylesheet>` in an `mxfile` is dropped — so
  * the palette lives here and every cell carries its own resolved style string.
@@ -411,32 +415,14 @@ function styleString(tokens: readonly string[], entries: Readonly<Record<string,
   return parts.length ? `${parts.join(';')};` : '';
 }
 
-const HTML = /[&<>]/g;
-const HTML_ENTITIES: Readonly<Record<string, string>> = { '&': '&amp;', '<': '&lt;', '>': '&gt;' };
-
 /**
- * Label text for a cell carrying `html=1`. The value is HTML-escaped here and XML-escaped again by
- * the attribute serializer, because draw.io assigns the XML-decoded string to `innerHTML`: text
- * escaped only once loses everything between a `<` and the next `>`.
+ * Label text for a plain-text cell: the lines as they are, one `\n` apart. The attribute serializer
+ * writes a line break as `&#10;`, so the break survives the XML, and nothing here is markup.
  */
-const htmlText = (lines: readonly string[]): string =>
-  lines.map(line => line.replace(HTML, character => HTML_ENTITIES[character]!)).join('<br>');
+const plainText = (lines: readonly string[]): string => lines.join('\n');
 
-/** One measured label of a node's own text, in the form draw.io lays text out in. */
-interface TextBlock {
-  /** The block's lines, HTML-escaped and joined the way a cell value joins them. */
-  html: string;
-  /** The pitch stage 9 put between two lines of this label, which is also its CSS `line-height`. */
-  pitch: number;
-  /** Where the block's first line box has to start for its baseline to land on the measured one. */
-  top: number;
-  /** One pitch per line: the box the next block is placed below, whatever the lines then do. */
-  height: number;
-  fontSize: number;
-  fontWeight: 400 | 700;
-  /** Stated only when the block does not take the cell's own `fontColor`. */
-  colour?: string;
-}
+/** The lines a label draws, which is none for an empty label. */
+const labelLines = (label: LayoutLabel): readonly string[] => label.lines ?? (label.text === '' ? [] : [label.text]);
 
 /**
  * A quantity a model states, or one derived from it, kept finite: no draw.io attribute can carry an
@@ -444,62 +430,47 @@ interface TextBlock {
  */
 const finite = (value: number): number => Number.isFinite(value) ? value : 0;
 
+/** The size `render` draws a label at when the label does not state its own. */
+const labelSize = (label: LayoutLabel): number => finite(label.fontSize ?? 9);
+
 /**
- * A measured label as a draw.io text block, or nothing when the label draws no line.
- *
- * draw.io lays a label out as CSS line boxes, and a CSS line box centres its glyphs in the leading:
- * the baseline sits half a leading plus one ascent below the box top. The pipeline puts the first
- * baseline exactly one ascent below the box it measured, with all the leading underneath. So the
- * block states the pipeline's own line pitch as `line-height` — which also keeps a wrapped label's
- * further lines at the measured pitch — and starts half a leading higher, which puts every baseline
- * back where stage 9 measured it. Measured against drawio-desktop 31.4.5.
- *
- * The font table supplies the leading and the model supplies the box, which is the division of
- * labour `render` already uses to put a baseline inside a measured label. Nothing here sizes,
- * moves or grows anything: the same box is expressed in draw.io's own layout language. The table is
- * read for one pixel of type and scaled, so a model that states an absurd font size is exported
- * rather than refused.
+ * draw.io's own line pitch for plain text, `round(fontSize × 1.2)`. It takes no `lineHeight` from a
+ * style, so a wrapped label keeps its first baseline exact and its further lines move by the
+ * difference to the measured pitch: a pixel a line at 7 px type, nothing at 8, 9 or 12 px.
  */
-function textBlock(label: LayoutLabel, size: number, weight: 400 | 700, colour?: string): TextBlock | undefined {
-  const lines = label.lines ?? (label.text === '' ? [] : [label.text]);
-  if (lines.length === 0) return undefined;
-  const fontSize = finite(label.fontSize ?? size);
-  // The model knows two weights. Anything else is out of contract and reads as the regular one.
-  const fontWeight = (label.fontWeight ?? weight) === 700 ? 700 : 400;
-  const unit = measureText('', { fontSize: 1, weight: fontWeight });
-  const glyphs = finite((unit.ascent + unit.descent) * fontSize);
-  // A pitch is a length. A negative or infinite one is not CSS, and the arithmetic below and the
-  // browser have to agree, so both use the clamped value.
-  const pitch = Math.max(0, finite(label.lineHeight ?? label.bounds!.height / lines.length));
-  return {
-    html: htmlText(lines), pitch, top: finite(label.bounds!.y - (pitch - glyphs) / 2),
-    height: finite(pitch * lines.length), fontSize, fontWeight,
-    ...(colour === undefined ? {} : { colour }),
-  };
+const plainPitch = (fontSize: number): number => Math.round(fontSize * 1.2);
+
+/**
+ * Where `render` puts a label's first baseline, as an offset from the centre of its measured box,
+ * along the text's own vertical — the same arithmetic as the SVG renderer's `textElement`. A
+ * rotated box is already rotated, so a quarter turn takes its height from the box's width, and any
+ * other angle from the line pitch.
+ */
+function firstBaseline(label: LayoutLabel, size: number): number {
+  const lines = labelLines(label);
+  const angle = label.textRotation ?? 0, box = label.bounds!;
+  // A size outside the contract is exported rather than refused, measured as one pixel of type.
+  const font = measureText('', { fontSize: size > 0 && Number.isFinite(size) ? size : 1, weight: label.fontWeight === 700 ? 700 : 400 });
+  const pitch = label.lineHeight ?? font.lineHeight;
+  const height = angle === -90 || angle === 90 ? box.width : angle !== 0 ? pitch * lines.length : box.height;
+  return finite(-height / 2 + font.ascent);
 }
 
 /**
- * The blocks as one cell value: a `<div>` each, stacked by the gaps the pipeline measured.
- *
- * One `<div>` per block rather than one run of `<br>`-separated spans, because a block carries its
- * own weight, size and line pitch, and a `<span>` inside a shared line inherits the cell's weight —
- * which is how a 400-weight description came out bold beside a 700-weight name.
- *
- * Each block states its measured height as well as its pitch. A browser counts line boxes its own
- * way — a trailing `<br>` opens none — so the block that follows is placed below the height stage 9
- * measured, and never below a height the text happened to occupy.
+ * The `spacingTop` that puts a middle-aligned plain-text label's first baseline where `render` puts
+ * it. draw.io centres a block of plain text in the label box, and sets the first baseline at
+ * `centre + size − 1 − (size + (lines − 1) × pitch) / 2`, plus half of `spacingTop − spacingBottom`
+ * — on a vertex, a turned vertex, a swimlane head, an edge and a child edge label alike, along the
+ * text's own vertical. An edge's own `horizontal=0` label is the one exception and takes the value
+ * as `spacingLeft` (`labelStyle`). `offset` is how far the box draw.io centres on lies below the
+ * label's own centre, for a cell whose box is larger than the label. Measured against
+ * drawio-desktop 31.4.5.
  */
-function blockValue(blocks: readonly TextBlock[]): string {
-  return blocks.map((block, index) => {
-    const previous = blocks[index - 1];
-    const margin = previous === undefined ? undefined
-      : finite(block.top - (previous.top + previous.height));
-    return `<div style="line-height:${num(block.pitch)}px;height:${num(block.height)}px;`
-      + `font-size:${num(block.fontSize)}px;font-weight:${block.fontWeight}`
-      + (block.colour === undefined ? '' : `;color:${block.colour}`)
-      + (margin === undefined ? '' : `;margin-top:${num(margin)}px`)
-      + `">${block.html}</div>`;
-  }).join('');
+function middleSpacing(label: LayoutLabel, size: number, offset = 0): number | undefined {
+  if (!label.bounds) return undefined;
+  const lines = Math.max(1, labelLines(label).length);
+  const drawn = size - 1 - (size + (lines - 1) * plainPitch(size)) / 2;
+  return finite(2 * (firstBaseline(label, size) - offset - drawn));
 }
 
 /** A data URI draw.io can use as an image, with no `;` or `=` to break the style string. */
@@ -591,19 +562,22 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   };
 
   /** A text cell placed at exactly the box stage 9 measured, so no label is re-flowed on open. */
-  const textCell = (id: string, parent: string, label: LayoutLabel, box: Rect, colour: string): void => {
+  const textCell = (id: string, parent: string, label: LayoutLabel, box: Rect, colour: string,
+    size = labelSize(label)): void => {
     // A label's `bounds` is already the rotated box and the model keeps no unrotated size, so the
     // angle is reproduced the way the SVG renderer reproduces it: the text is laid out unclipped
     // about the box centre and then turned. `rotation` is clockwise-positive in both formats, and
     // it takes every reserved angle — a straight bundle member's label is rotated to its own run
     // (ADR-0017), not to a quarter turn.
+    // `spacingTop` turns with the text, so one value puts the first baseline where `render` does.
     vertex(id, parent, styleString(['text'], {
-      html: 1, strokeColor: 'none', fillColor: 'none', align: 'center', verticalAlign: 'middle',
+      strokeColor: 'none', fillColor: 'none', align: 'center', verticalAlign: 'middle',
       whiteSpace: 'nowrap', overflow: 'visible', points: '[]', resizable: 0,
-      fontFamily: FONT_FAMILY, fontSize: label.fontSize, fontColor: colour,
+      spacingTop: middleSpacing(label, size),
+      fontFamily: FONT_FAMILY, fontSize: size, fontColor: colour,
       fontStyle: label.fontWeight === 700 ? 1 : undefined,
       rotation: label.textRotation ? label.textRotation : undefined,
-    }), box, htmlText(label.lines ?? [label.text]));
+    }), box, plainText(labelLines(label)));
   };
 
   // ---- paint resolution -------------------------------------------------------------------
@@ -671,7 +645,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   // it. The rectangle is inert: it takes no pointer events and is locked, so it is backdrop rather
   // than furniture.
   vertex(cellId('canvas'), layerId('canvas'), styleString([], {
-    html: 1, fillColor: paint.background, strokeColor: 'none', points: '[]',
+    fillColor: paint.background, strokeColor: 'none', points: '[]',
     pointerEvents: 0, locked: 1, movable: 0, resizable: 0, deletable: 0, editable: 0, connectable: 0,
   }), { x: 0, y: 0, width: canvas.width, height: canvas.height });
 
@@ -706,14 +680,16 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     const swimlane = centred ? band! : undefined;
     const style = swimlane
       ? styleString(['swimlane'], {
-        html: 1, whiteSpace: 'nowrap', container: 1, collapsible: 0, rounded: 1,
+        whiteSpace: 'nowrap', container: 1, collapsible: 0, rounded: 1,
         absoluteArcSize: 1, arcSize: CORNER_RADII.group * 2,
         horizontal: 1, startSize: swimlane.bounds.height,
         // `flipV` mirrors the shape paths only — the label group is rendered outside the flip, so
         // a bottom band keeps upright text, which `direction=south` would not.
         flipV: swimlane.side === 'bottom' ? 1 : undefined,
         align: 'center', verticalAlign: 'middle',
-        fontFamily: FONT_FAMILY, fontSize: title!.fontSize, fontColor: paint.group.text,
+        // The head is centred on the band, which may sit up to half a pixel off the title's centre.
+        spacingTop: middleSpacing(title!, labelSize(title!), centre(swimlane.bounds).y - centre(title!.bounds!).y),
+        fontFamily: FONT_FAMILY, fontSize: labelSize(title!), fontColor: paint.group.text,
         fontStyle: title!.fontWeight === 700 ? 1 : undefined,
         swimlaneLine: 0,
         // On a swimlane `fillColor` paints the head and `swimlaneFillColor` the body, the reverse
@@ -722,7 +698,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         strokeColor: paint.group.stroke, fillOpacity: Math.round(paint.group.fillOpacity * 100),
       })
       : styleString([], {
-        html: 1, container: 1, collapsible: 0, rounded: 1,
+        container: 1, collapsible: 0, rounded: 1,
         absoluteArcSize: 1, arcSize: CORNER_RADII.group * 2,
         fillColor: paint.group.fill, strokeColor: paint.group.stroke,
         fillOpacity: Math.round(paint.group.fillOpacity * 100),
@@ -730,7 +706,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       });
     const holder = frame ? frameParent.get(id) : undefined;
     vertex(cellId('group', id), holder === undefined ? layerId('diagram') : cellId('group', holder), style,
-      holder === undefined ? box : relative(box, frameBox.get(holder)!), swimlane ? htmlText(title!.lines ?? [title!.text]) : undefined);
+      holder === undefined ? box : relative(box, frameBox.get(holder)!), swimlane ? plainText(labelLines(title!)) : undefined);
     if (title && !swimlane) {
       textCell(cellId('groupTitle', id), cellId('group', id), title,
         relative(shiftRect(title.bounds!), box), paint.group.text);
@@ -776,45 +752,51 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           ? `[${num(fraction)},${num(fixed)},0]` : `[${num(fixed)},${num(fraction)},0]`);
       }
     }
-    // The node's name is the node's own label, and its description follows it in the same label:
-    // a shape carries its text in draw.io, and a reader who double-clicks the node expects to be
-    // renaming the node. The description is a styled block rather than a second cell, and its
-    // colour is a CSS `light-dark()` so it adapts with everything else.
+    // The node's name is the node's own label: a shape carries its text in draw.io, and a reader
+    // who double-clicks the node expects to be renaming the node. The description is a second,
+    // unbound text cell inside the node. Plain text has one font per cell, and a 400-weight 7 px
+    // description in the name's cell would draw at the name's 700-weight 9 px. As a child of the
+    // node it still moves and copies with it.
     const named = layout.labels.find(item => item.owner.kind === 'node' && item.owner.id === id
-      && item.role === 'node' && !item.omitted);
+      && item.role === 'node' && !item.omitted && labelLines(item).length > 0);
     const described = layout.labels.find(item => item.owner.kind === 'node' && item.owner.id === id
-      && item.role === 'description' && !item.omitted);
-    // A node may carry a description and no name, so the geometry and the base font come from the
-    // first block that draws, whichever it is, and not from the name.
-    const blocks = [
-      named === undefined ? undefined : textBlock(named, NODE_NAME_SIZE, 700),
-      described === undefined ? undefined : textBlock(described, NODE_DESCRIPTION_SIZE, 400, paint.node.description),
-    ].filter((block): block is TextBlock => block !== undefined);
-    const text = blockValue(blocks);
-    // Stage 3 sized the box around these blocks and stage 9 measured where they sit. `spacingTop`
-    // states that offset, and it is stated in full: draw.io adds `spacing` and its own
-    // `baseSpacingTop` to it, so a label that names only the measured offset lands 7 px low.
-    const first = blocks[0];
-    const top = first === undefined ? undefined
-      : finite(first.top - node.bounds!.y - BASE_SPACING_TOP - LABEL_SPACING);
+      && item.role === 'description' && !item.omitted && labelLines(item).length > 0);
+    const nameSize = named === undefined ? NODE_NAME_SIZE : finite(named.fontSize ?? NODE_NAME_SIZE);
+    // Stage 3 sized the box around the name and stage 9 measured where it sits. draw.io sets a
+    // top-aligned plain label's first baseline at `spacing + baseSpacingTop + spacingTop + size − 1`
+    // below the shape, so `spacingTop` states the rest of the measured offset in full — measured
+    // against drawio-desktop 31.4.5. The baseline itself is `render`'s.
+    const top = named === undefined ? undefined
+      : finite(centre(named.bounds!).y + firstBaseline(named, nameSize) - node.bounds!.y
+        - LABEL_SPACING - BASE_SPACING_TOP - (nameSize - 1));
+    const across = named === undefined ? 0 : finite(centre(named.bounds!).x - centre(node.bounds!).x);
     vertex(cellId('node', id), group, styleString([], {
       // A node really does contain its ports and its icon, so it says so: a container moves,
       // copies and accepts a drop as one thing, which is what a node is.
-      html: 1, container: 1, collapsible: 0, recursiveResize: 0,
+      container: 1, collapsible: 0, recursiveResize: 0,
       rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.node * 2,
       whiteSpace: 'nowrap', fillColor: dual(of => washFill(washToken(authored), of, washes)), strokeColor: paint.node.stroke,
       strokeWidth: node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node,
       points: `[${[...anchors].join(',')}]`,
-      ...(text === '' ? {} : {
+      ...(named === undefined ? {} : {
         align: 'center', verticalAlign: 'top', overflow: 'visible',
         // The offset is signed. draw.io honours a negative `spacingTop` — measured — and a node
         // whose first line starts within 7 px of its top edge needs one.
         spacingTop: top,
-        fontFamily: FONT_FAMILY, fontSize: first?.fontSize, fontColor: paint.node.text,
-        fontStyle: first?.fontWeight === 700 ? 1 : undefined,
+        // A name may stand off the node's centre — clear of a pill on the same row — and `render`
+        // centres it on its own measured box, as the description cell is. Centred text moves by
+        // half of `spacingLeft − spacingRight`, and only the positive side is stated.
+        ...(across > 0 ? { spacingLeft: 2 * across } : across < 0 ? { spacingRight: -2 * across } : {}),
+        fontFamily: FONT_FAMILY, fontSize: nameSize, fontColor: paint.node.text,
+        fontStyle: (named.fontWeight ?? 700) === 700 ? 1 : undefined,
       }),
-    }), relative(box, origin), text === '' ? undefined : text, {},
+    }), relative(box, origin), named === undefined ? undefined : plainText(labelLines(named)), {},
     binding({ 'pg-kind': 'node', 'pg-id': id }, document.nodes[id]?.meta));
+    if (described !== undefined) {
+      textCell(cellId('nodeDescription', id), cellId('node', id), described,
+        relative(shiftRect(described.bounds!), shift(node.bounds!)), paint.node.description,
+        finite(described.fontSize ?? NODE_DESCRIPTION_SIZE));
+    }
 
     if (node.icon) {
       const tile = relative(shiftRect(node.icon.bounds), shift(node.bounds!));
@@ -828,7 +810,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         // A badge carries its own frame, so it replaces the tile; a silhouette keeps it.
         if (native.kind === 'silhouette' && positive(tile)) {
           vertex(cellId('iconTile', id), cellId('node', id), styleString([], {
-            html: 1, rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
+            rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
             fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
           }), tile);
         }
@@ -838,7 +820,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         const box = glyphBox(tile, native);
         if (box) {
           vertex(cellId('icon', id), cellId('node', id), styleString([], {
-            sketch: 0, html: 1, aspect: 'fixed', points: '[]',
+            sketch: 0, aspect: 'fixed', points: '[]',
             shape: native.kind === 'badge' ? 'mxgraph.cisco19.rect' : `mxgraph.cisco19.${native.shape}`,
             ...(native.kind === 'badge' ? { prIcon: native.shape } : {}),
             // On a badge `fillColor` is the frame and `strokeColor` is the glyph; a silhouette is
@@ -850,7 +832,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       } else {
         if (positive(tile)) {
           vertex(cellId('iconTile', id), cellId('node', id), styleString([], {
-            html: 1, rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
+            rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
             fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
           }), tile);
         }
@@ -863,7 +845,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
             + `<path d="${iconPath(node.icon.icon)}" fill="none" stroke="${pick(mode).glyph}"`
             + ` stroke-width="${num(GLYPH_STROKE)}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
           vertex(cellId('icon', id), cellId('node', id), styleString([], {
-            shape: 'image', html: 1, imageAspect: 0, points: '[]',
+            shape: 'image', imageAspect: 0, points: '[]',
             image: svgImage(glyph),
           }), inner);
         }
@@ -895,7 +877,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       // a rounded rectangle of uniform radius, fill and stroke, so a half turn of the shape is
       // invisible. Also measured.
       vertex(cellId('port', ...identity), cellId('node', id), styleString([], {
-        html: 1, rounded: 1, absoluteArcSize: 1, arcSize: port.pill.radius * 2,
+        rounded: 1, absoluteArcSize: 1, arcSize: port.pill.radius * 2,
         fillColor: resolved.fill, strokeColor: resolved.stroke,
         strokeWidth: DEFAULT_STROKE_WIDTHS.pill,
         points: outward ? `[[${num(outward.x)},${num(outward.y)},0]]` : '[]',
@@ -907,12 +889,15 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         ...dashEntries(resolved.dash),
         ...(shown ? {
           verticalAlign: 'middle', align: 'center', whiteSpace: 'nowrap', overflow: 'visible',
-          fontFamily: FONT_FAMILY, fontSize: shown.fontSize, fontColor: resolved.text,
+          // `horizontal=0` turns `spacingTop` with the text, as `rotation=` does.
+          spacingTop: shown.bounds && middleSpacing(shown, labelSize(shown), port.pill.textRotation === -90
+            ? centre(port.pill.bounds).x - centre(shown.bounds).x : centre(port.pill.bounds).y - centre(shown.bounds).y),
+          fontFamily: FONT_FAMILY, fontSize: labelSize(shown), fontColor: resolved.text,
           fontStyle: shown.fontWeight === 700 ? 1 : undefined,
           horizontal: port.pill.textRotation === -90 ? 0 : undefined,
         } : {}),
       }), relative(shiftRect(port.pill.bounds), shift(node.bounds!)),
-      shown ? htmlText(shown.lines ?? [shown.text]) : undefined, {},
+      shown ? plainText(labelLines(shown)) : undefined, {},
       binding({
         'pg-kind': 'port', 'pg-id': endpointId({ node: id, name: port.ref.name!, ordinal: port.ref.ordinal }),
         'pg-node': id, 'pg-port': port.ref.name!,
@@ -1082,12 +1067,17 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         : 'none',
       ...(on ? { spacing: LABEL_MARGIN } : {}),
       align: 'center', verticalAlign: 'middle',
-      fontFamily: FONT_FAMILY, fontSize: label.fontSize,
+      fontFamily: FONT_FAMILY, fontSize: labelSize(label),
       fontColor: multiplicity ? paint.link.multiplicity : paint.link.label,
       fontStyle: label.fontWeight === 700 ? 1 : undefined,
+      // The label is centred on its point, and the shift that puts its baseline where `render`
+      // does turns with the text — except on an edge's own `horizontal=0` label, which draw.io
+      // shifts by `spacingLeft` instead: measured, `spacingTop` there moves it along its own line.
       ...(carrier === 'edge'
-        ? { horizontal: label.textRotation === -90 ? 0 : undefined }
-        : { rotation: label.textRotation ? label.textRotation : undefined }),
+        ? label.textRotation === -90
+          ? { horizontal: 0, spacingLeft: middleSpacing(label, labelSize(label)) }
+          : { spacingTop: middleSpacing(label, labelSize(label)) }
+        : { rotation: label.textRotation ? label.textRotation : undefined, spacingTop: middleSpacing(label, labelSize(label)) }),
     };
   };
 
@@ -1209,7 +1199,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const style = styleString([], {
         edgeStyle: square ? 'orthogonalEdgeStyle' : 'none',
         jettySize: square ? 0 : undefined,
-        rounded: 0, html: 1, endArrow: 'none', startArrow: 'none',
+        rounded: 0, endArrow: 'none', startArrow: 'none',
         strokeColor: dual(of => overlay && !themed ? NETWORK_THEME[of].overlay.stroke : klass.strokes[of]),
         strokeWidth: linkStrokeWidth(link),
         opacity: overlay ? Math.round(paint.overlay.opacity * 100) : undefined,
@@ -1224,7 +1214,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         sourcePoint: source ? undefined : points[0],
         targetPoint: target ? undefined : points[points.length - 1],
       }, carried ? {
-        value: htmlText(carried.label.lines ?? [carried.label.text]),
+        value: plainText(labelLines(carried.label)),
         at: carried.at,
       } : undefined, linkBinding(link, runs.length === 1 ? undefined : { index, count: runs.length }));
     });
@@ -1249,7 +1239,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           width: 2 * OVERLAY_ENDPOINT_RADIUS, height: 2 * OVERLAY_ENDPOINT_RADIUS };
         vertex(cellId('overlayMark', stableId(link), mark.end), mark.host?.cell ?? layerId('overlay'),
           styleString(['ellipse'], {
-            html: 1, fillColor: paint.overlay.mark, strokeColor: 'none', points: '[]',
+            fillColor: paint.overlay.mark, strokeColor: 'none', points: '[]',
           }), mark.host ? relative(box, mark.host.box) : box);
       }
     }
@@ -1267,7 +1257,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     const themed = authored !== undefined && NETWORK_LINK_CLASSES.some(([key]) => key === authored);
     const stroke = (square: boolean, extra: Readonly<Record<string, StyleValue>> = {}): string => styleString([], {
       edgeStyle: square ? 'orthogonalEdgeStyle' : 'none', jettySize: square ? 0 : undefined,
-      rounded: 0, html: 1, endArrow: 'none', startArrow: 'none',
+      rounded: 0, endArrow: 'none', startArrow: 'none',
       strokeColor: dual(of => !themed ? NETWORK_THEME[of].overlay.stroke : klass.strokes[of]),
       strokeWidth: linkStrokeWidth(first),
       opacity: Math.round(paint.overlay.opacity * 100),
@@ -1313,7 +1303,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const host = markHost(spot.ref)!;
       const box = { x: spot.at.x - JOINT / 2, y: spot.at.y - JOINT / 2, width: JOINT, height: JOINT };
       vertex(spot.id, host.cell, styleString(['ellipse'], {
-        html: 1, fillColor: 'none', strokeColor: 'none', points: '[]',
+        fillColor: 'none', strokeColor: 'none', points: '[]',
         movable: 0, resizable: 0, rotatable: 0, editable: 0, connectable: 0, deletable: 0, pointerEvents: 0,
       }), relative(box, host.box));
     }
@@ -1335,7 +1325,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const box = { x: at.x - OVERLAY_ENDPOINT_RADIUS, y: at.y - OVERLAY_ENDPOINT_RADIUS,
         width: 2 * OVERLAY_ENDPOINT_RADIUS, height: 2 * OVERLAY_ENDPOINT_RADIUS };
       vertex(cellId('busMark', bus.id, stub.node), pill?.cell ?? layerId('overlay'),
-        styleString(['ellipse'], { html: 1, fillColor: paint.overlay.mark, strokeColor: 'none', points: '[]' }),
+        styleString(['ellipse'], { fillColor: paint.overlay.mark, strokeColor: 'none', points: '[]' }),
         pill ? relative(box, pill.box) : box);
     }
     // The bar, one piece between each two neighbouring joints.
@@ -1399,11 +1389,11 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     const relativeAt = edgeLabel(run.points, at, supportIn(label, link, run));
     const labelId = label.owner.kind === 'barCross' ? cellId('linkLabel', stableId(link), label.owner.node) : cellId('linkLabel', stableId(link));
     cells.push(cellElement({
-      id: claim(labelId), value: htmlText(label.lines ?? [label.text]),
+      id: claim(labelId), value: plainText(labelLines(label)),
       style: styleString(['edgeLabel'], {
         // `edgeLabel` is a named style in draw.io's bundled sheet and brings
         // `labelBackgroundColor=default` with it — the white box the SVG does not draw.
-        html: 1, resizable: 0, points: '[]',
+        resizable: 0, points: '[]',
         // A child cell states its whole turn in `rotation=`, at any angle. `labelStyle` carries it.
         ...labelStyle(label, at, 'child', link),
       }),
@@ -1415,7 +1405,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   // ---- legend -------------------------------------------------------------------------------
   if (layout.legend) {
     const box = shiftRect(layout.legend.bounds);
-    vertex(cellId('legend'), layerId('legend'), styleString(['group'], { html: 1, points: '[]' }), box);
+    vertex(cellId('legend'), layerId('legend'), styleString(['group'], { points: '[]' }), box);
     for (const entry of layout.legend.entries) {
       // A legend row is one thing: a swatch and the name of what it means. It is emitted as one
       // cell carrying that name as its own label, with the swatch inside it — so the row moves and
@@ -1428,21 +1418,23 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         : shiftRect(entry.swatch);
       const row = relative(outer, shift(layout.legend.bounds));
       vertex(cellId('legendRow', entry.id), cellId('legend'), styleString([], {
-        html: 1, fillColor: 'none', strokeColor: 'none', points: '[]',
+        fillColor: 'none', strokeColor: 'none', points: '[]',
         ...(shown ? {
           align: 'left', verticalAlign: 'middle', whiteSpace: 'nowrap', overflow: 'visible',
           spacingLeft: shiftRect(shown.bounds!).x - outer.x - LABEL_SPACING,
-          fontFamily: FONT_FAMILY, fontSize: shown.fontSize, fontColor: paint.legend.text,
+          // The row is centred on the swatch and the caption together, not on the caption alone.
+          spacingTop: middleSpacing(shown, labelSize(shown), centre(outer).y - centre(shiftRect(shown.bounds!)).y),
+          fontFamily: FONT_FAMILY, fontSize: labelSize(shown), fontColor: paint.legend.text,
           fontStyle: shown.fontWeight === 700 ? 1 : undefined,
         } : {}),
-      }), row, shown ? htmlText(shown.lines ?? [shown.text]) : undefined);
+      }), row, shown ? plainText(labelLines(shown)) : undefined);
       const swatch = relative(shiftRect(entry.swatch), outer);
       if (entry.kind === 'line') {
         const klass = entry.key === LEGEND_DEFAULT_CLASS ? linkClassStyle(undefined) : linkClassStyle(entry.key);
         // `shape=line` draws the sample across its own box, so the swatch is a vertex like every
         // other one and sits in the row rather than floating over it.
         vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
-          shape: 'line', html: 1, points: '[]',
+          shape: 'line', points: '[]',
           strokeColor: dual(of => klass.strokes[of]), strokeWidth: entry.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path,
           ...dashEntries(klass.dash),
         }), swatch);
@@ -1456,7 +1448,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
             : { ...rolePaint, fill: outlinedFill(of, washes) };
         }) : undefined;
         vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
-          html: 1, rounded: 1, absoluteArcSize: 1,
+          rounded: 1, absoluteArcSize: 1,
           arcSize: (entry.radius ?? CORNER_RADII.pill) * 2,
           fillColor: resolved?.fill ?? paint.pill.fill,
           strokeColor: resolved?.stroke ?? paint.pill.stroke,
@@ -1466,7 +1458,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         // The key shows the class's body wash behind its tile, as a node of the class shows it.
         const body = swatch, grow = 2;
         vertex(cellId('legendBody', entry.id), cellId('legendRow', entry.id), styleString([], {
-          html: 1, rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.node * 2,
+          rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.node * 2,
           fillColor: dual(of => washFill(washToken(authorClass(entry.key)), of, washes)), strokeColor: paint.node.stroke,
           strokeWidth: DEFAULT_STROKE_WIDTHS.pill, points: '[]',
         }), { x: body.x - grow, y: body.y - grow, width: body.width + 2 * grow, height: body.height + 2 * grow });
@@ -1482,14 +1474,14 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           // rather than writing a negative box draw.io silently draws as nothing.
           if (native.kind === 'silhouette' && positive(swatch)) {
             vertex(cellId('legendTile', entry.id), cellId('legendRow', entry.id), styleString([], {
-              html: 1, rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
+              rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
               fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
             }), swatch);
           }
           const box = glyphBox(swatch, native);
           if (box) {
             vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
-              sketch: 0, html: 1, aspect: 'fixed', points: '[]',
+              sketch: 0, aspect: 'fixed', points: '[]',
               shape: native.kind === 'badge' ? 'mxgraph.cisco19.rect' : `mxgraph.cisco19.${native.shape}`,
               ...(native.kind === 'badge' ? { prIcon: native.shape } : {}),
               fillColor: native.kind === 'badge' ? resolved.tile.fill : resolved.glyph,
@@ -1499,7 +1491,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         } else {
           if (positive(swatch)) {
             vertex(cellId('legendTile', entry.id), cellId('legendRow', entry.id), styleString([], {
-              html: 1, rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
+              rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
               fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
             }), swatch);
           }
@@ -1509,7 +1501,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
               + `<path d="${iconPath(entry.icon)}" fill="none" stroke="${pick(mode).glyph}"`
               + ` stroke-width="${num(GLYPH_STROKE)}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
             vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
-              shape: 'image', html: 1, imageAspect: 0, points: '[]', image: svgImage(glyph),
+              shape: 'image', imageAspect: 0, points: '[]', image: svgImage(glyph),
             }), inner);
           }
         }
