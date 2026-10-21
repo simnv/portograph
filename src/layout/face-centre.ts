@@ -1,6 +1,7 @@
 import type { LayoutModel, LayoutNode } from '../model/layout.js';
 import type { Side } from '../model/geometry.js';
 import { findPort } from './row-paths.js';
+import { portId } from './skeleton-graph.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 
 const HORIZONTAL: readonly Side[] = ['top', 'bottom'];
@@ -41,7 +42,8 @@ export function seatedFaces(model: LayoutModel): SeatedFace[] {
  * transit lane, a side lane or an aligned perimeter lane: the feeds `centringFeeds` reads), or the end of a bus stub. Those positions were set
  * on purpose, and the 7c publication check reads them. Sides `left` and `right` (`sideFace`, `laneOwner`) are never recentred.
  */
-function pinned(model: LayoutModel, node: LayoutNode, side: Side): boolean {
+function pinned(model: LayoutModel, node: LayoutNode, side: Side, feeds: ReadonlySet<string>): boolean {
+  if (node.ports.some(port => port.side === side && feeds.has(portId(port.ref)))) return true;
   const own = new Set(node.ports.filter(port => port.side === side).map(port => port.anchor));
   for (const link of model.links) {
     if (!link.attachments) continue;
@@ -62,7 +64,7 @@ function pinned(model: LayoutModel, node: LayoutNode, side: Side): boolean {
  * of its two margins; it writes no width and reads no feed, so it cannot feed back into the growth. A face with a port aligned to a peer, a bus
  * stub, or a node on a bar keeps its positions: they were set on purpose.
  */
-export function recentreSeatedFaces(model: LayoutModel, faces: readonly SeatedFace[]): void {
+export function recentreSeatedFaces(model: LayoutModel, faces: readonly SeatedFace[], feeds: ReadonlySet<string> = new Set()): void {
   for (const face of faces) {
     const node = model.nodes[face.node]!, box = node.bounds;
     if (box === undefined || box.width <= face.width + PLACEMENT_EPS) continue;
@@ -71,7 +73,7 @@ export function recentreSeatedFaces(model: LayoutModel, faces: readonly SeatedFa
     if (m === undefined) continue;
     if (Math.abs(m.first - face.first) > PLACEMENT_EPS && Math.abs(m.low - face.low) > PLACEMENT_EPS) continue;
     const shift = (m.high - m.low) / 2;
-    if (Math.abs(shift) <= PLACEMENT_EPS || pinned(model, node, face.side)) continue;
+    if (Math.abs(shift) <= PLACEMENT_EPS || pinned(model, node, face.side, feeds)) continue;
     for (const port of node.ports) if (port.side === face.side && port.anchor !== undefined) port.anchor.x += shift;
   }
 }

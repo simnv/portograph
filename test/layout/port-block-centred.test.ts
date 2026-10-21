@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
+import { portId } from '../../src/layout/skeleton-graph.js';
 import { recentreSeatedFaces, seatedFaces } from '../../src/layout/face-centre.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -62,6 +63,13 @@ describe('recentreSeatedFaces skips a face held on purpose', () => {
     const after = (id: string): number[] => model.nodes[id]!.ports.map(p => p.anchor!.x);
     expect(after('peered')).toEqual(before['peered']);
     expect(after('laned')).toEqual(before['laned']);
+    // A port that centring owes a feed x (a child port, or the parent port whose x is the feed; the 100-node fan of bundle-scale.test.ts) pins its face.
+    const again = build();
+    const seatedAgain = seatedFaces(again);
+    again.nodes['free']!.bounds!.width = 156;
+    const kept = again.nodes['free']!.ports.map(p => p.anchor!.x);
+    recentreSeatedFaces(again, seatedAgain, new Set([portId(again.nodes['free']!.ports[1]!.ref)]));
+    expect(again.nodes['free']!.ports.map(p => p.anchor!.x)).toEqual(kept);
     const free = after('free');
     expect(Math.abs((free[0]! - 600) - (756 - free[1]!))).toBeLessThanOrEqual(EPS);
   });
