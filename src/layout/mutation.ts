@@ -29,6 +29,7 @@ import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
 import { validateGroupLabelBands } from './bands.js';
+import { reservedGeometryBreaches } from './growth-guard.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { produceLinkLabels, validateLinkLabels } from './link-labels.js';
 import { validateRoutedPaths } from '../route/validate.js';
@@ -402,7 +403,12 @@ function validateRegionClaims(model: LayoutModel, intermediate = false): void {
       same(link.technique, expected.links[index]!.technique, `Bar path technique on ${link.id} contradicts its reservation`);
     }
   }
-  if (stages.indexOf(model.stage) >= stages.indexOf('bands')) validateGroupLabelBands(model);
+  // The reserved room is validated from the finished model alone, at publication and at restore (ticket 16): the producer's own replay is not that proof.
+  if (stages.indexOf(model.stage) >= stages.indexOf('bands')) {
+    const breaches = reservedGeometryBreaches(model);
+    if (breaches.length) throw new Error(`Reserved geometry is breached: ${breaches.join('; ')}`);
+    validateGroupLabelBands(model);
+  }
   // Route geometry cannot be re-derived without the router, so its claims are checked structurally.
   if (stages.indexOf(model.stage) >= stages.indexOf('route')) validateRoutedPaths(model, stages.indexOf(model.stage) > stages.indexOf('route'));
   if (stages.indexOf(model.stage) >= stages.indexOf('link-labels')) validateLinkLabels(model);

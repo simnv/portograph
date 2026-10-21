@@ -10,6 +10,8 @@ import { DEFAULT_STROKE_WIDTHS, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } fr
 import { createCentreBudget, type CentreBudget } from './centre.js';
 import { isSideLane, riserKeepOutBreaches } from './lanes.js';
 import { holdsMove } from './move-reservations.js';
+import { holdsGrowth, reservedGeometryBreaches } from './growth-guard.js';
+import { PlacementRefusal } from './placement-refusal.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { findPort, straightCorridorClear } from './row-paths.js';
@@ -906,22 +908,35 @@ export function alignLinkedGroupGridAndPack(model: LayoutModel, budget?: CentreB
   // A warning of an earlier call is stale once a later call settles: it is raised again below when this one does not.
   model.diagnostics = model.diagnostics.filter(item => !(item.code === 'GROUP_GRID_NON_CONVERGENCE' && item.message.startsWith(GRID_PACK_WARNING)));
   let widened = false;
+  // The breaches a model stood in before the grid are not its doing; a replay that adds one refuses the attempt.
+  const standing = new Set(reservedGeometryBreaches(model));
+  const refuseNewBreaches = (): void => {
+    const added = reservedGeometryBreaches(model).filter(item => !standing.has(item));
+    if (added.length) throw new PlacementRefusal('ledger', `The linked-group grid took reserved room: ${added.join('; ')}`, { stage: model.stage });
+  };
+  const replay = (): void => {
+    const passes = budget?.passes ?? 0;
+    rebuildRegionGeometry(model, budget, undefined, true);
+    if (budget !== undefined) consumeGrowthPass(budget, passes);
+    refuseNewBreaches();
+  };
   for (let round = 0; round < GRID_PACK_ROUNDS; round++) {
     const grid = alignGrid(model);
     if (!grid.changed) return widened;
     widened = true;
     // A grid that refuses what the pack would undo widens onto a packed row and leaves it packed; a row that stood open before the grid is packed once.
-    // A flank the grid moved asks for the region replay even when no beside row needs packing; one replay serves both.
-    if (!packRowsAfterGrid(model) && !grid.flanksMoved) return widened;
-    const passes = budget?.passes ?? 0;
-    rebuildRegionGeometry(model, budget, undefined, true);
-    if (budget !== undefined) consumeGrowthPass(budget, passes);
+    // A flank the grid moved asks for the region replay even when no beside row needs packing; one replay serves both. A box that only grew takes no replay: a replay
+    // refits the boxes and undoes the grid. Its reservations were judged before it grew (`holdsGrowth`), and `standing` judges the result.
+    if (!packRowsAfterGrid(model) && !grid.flanksMoved) { refuseNewBreaches(); return widened; }
+    replay();
   }
   // The grid still widened after the last pack. The model is left with the grid aligned (`validateGroupLabelBands` reads the grid, and accepts it) and a row may stand open: say so.
   const last = alignGrid(model);
   if (last.changed) {
-    // A flank moved by this last reading stands off the regions reserved beside it.
-    if (last.flanksMoved) rebuildRegionGeometry(model, budget, undefined, true);
+    // A flank moved by this last reading stands off the regions reserved beside it: replayed with the budget as it is, spent or not. A box it only grew was judged by `holdsGrowth`;
+    // the check below states that on the result, and the attempt is refused when the grid took reserved room.
+    if (last.flanksMoved) replay();
+    else refuseNewBreaches();
     placementWarning(model, 'GROUP_GRID_NON_CONVERGENCE', `${GRID_PACK_WARNING} ${GRID_PACK_ROUNDS} rounds; the grid is left aligned and a beside row may stand open.`, [], 'group');
   }
   return widened;
@@ -1227,7 +1242,8 @@ function alignGrid(model: LayoutModel): { changed: boolean; flanksMoved: boolean
       if (axis === 'x') for (const item of [...proposed]) proposed.push(...flankShifts(model, item.group, item.bounds));
       const others = Object.values(model.groups).filter(group => !proposed.some(item => item.group === group));
       if (proposed.some(item => others.some(other => rectOverlap(item.bounds, other.bounds!)))) continue;
-      if (axis === 'x' && !holdsMove(model, proposed)) continue;
+      // Either axis keeps the reservations: the lane and chord guards, the lane windows and corridors the box would newly claim, and the tier gaps that fit (ticket 16).
+      if (!holdsMove(model, proposed) || !holdsGrowth(model, proposed)) continue;
       // A widening that would stand a box closer than the band gap to a group that is not part of it is refused: the gap is kept where the box is sized (ticket 19).
       // The pack of the beside rows that follows the grid in a sheet with frames seats frame cells only, so a plain group beside the box is held by this guard too. Seating the
       // neighbour by the push of a label's widening instead was measured and loses straight overlay links on two sheets (the ticket's review record).
