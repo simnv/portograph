@@ -521,7 +521,11 @@ export function checkChainPair(model: LayoutModel, bundle: Bundle): void {
 
 /** Order only (architecture ticket 12): the common order of every bundle's ports, with no capacity, pitch, path or envelope. Centring reads it before it seats a port. */
 export function orderBundles(model: LayoutModel): void {
-  for (const bundle of model.bundles) { orderDistinct(model, bundle); applyBundleOrder(model, bundle); }
+  for (const bundle of model.bundles) {
+    // A bundle whose search spent its budget keeps the order centring read: a later run starts from another order and could pick a better one than the seats saw.
+    if (model.diagnostics.some(d => d.code === 'BUNDLE_ORDER_OPTIMIZATION_LIMIT' && d.owners?.some(o => o.kind === 'bundle' && o.id === bundle.id))) continue;
+    orderDistinct(model, bundle); applyBundleOrder(model, bundle);
+  }
 }
 
 /** Geometry-only plan. No path, lane owner, bar reservation or envelope is written here. */

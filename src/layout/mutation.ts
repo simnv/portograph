@@ -853,9 +853,16 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
       if (node.size!.width < old.size!.width) throw new Error(`Centring cannot shrink ${id}: width ${node.size!.width} < ${old.size!.width}`);
       const group = model.groups[model.document.nodes[id]!.group]!;
       if (group.tier === draft.anchorTier || group.flank) {
-        // Bundle order, decided before the first seat (ticket 12), may exchange the slots of bundled ports: the set of anchors of each face stays.
+        // Bundle order, decided before the first seat (ticket 12), may exchange the slots of bundled ports: the set of anchors of each face stays,
+        // an unbundled port stays where it is, and a pill travels with its anchor.
         const faces = (list: typeof node.ports): string => JSON.stringify(list.map(port => [port.side, port.anchor]).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
         same(faces(node.ports), faces(old.ports), 'Centring cannot move anchor tier or flanks');
+        const relative = (port: (typeof node.ports)[number]): unknown => port.pill === undefined ? undefined : { ...port.pill, bounds: { ...port.pill.bounds, x: port.pill.bounds.x - port.anchor!.x, y: port.pill.bounds.y - port.anchor!.y } };
+        node.ports.forEach((port, index) => {
+          const prior = old.ports[index]!;
+          if (!bundledPorts.has(JSON.stringify(port.ref))) same({ anchor: port.anchor, pill: port.pill }, { anchor: prior.anchor, pill: prior.pill }, 'Centring cannot move anchor tier or flanks');
+          same(relative(port), relative(prior), 'Centring cannot move anchor tier or flanks');
+        });
         same({ ...node, ports: node.ports.map(port => omit(port, ['engineOrder', 'anchor', 'pill'])) }, { ...old, ports: old.ports.map(port => omit(port, ['engineOrder', 'anchor', 'pill'])) }, 'Centring cannot move anchor tier or flanks');
       }
     }

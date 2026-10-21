@@ -13,6 +13,7 @@ import { findPort } from './row-paths.js';
 import { attemptCounters } from './attempt-counters.js';
 import { timed } from './attempt-timings.js';
 import { orderBundles } from './bundle-geometry.js';
+import { normalizePrimaryBundlePorts } from './flanks.js';
 import { portId, bandGap, SKELETON_SPACING } from './skeleton-graph.js';
 import { crosses } from './overlay-paths.js';
 import { moveGroup } from './skeleton-geometry.js';
@@ -409,6 +410,16 @@ function standNearFeed(model: LayoutModel, context: CentreContext, tier: number,
   moveGroup(model, group, dx, 0);
 }
 
+/** How many targets of a face stand in engine order at the face's pitch: the in-order keep of `keptTargets` without its limits, allowance or stops. */
+function inOrderTargets(node: LayoutNode, side: Side, targets: ReadonlyMap<string, number>): number {
+  const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!), pitch = node.sidePitch![side]!;
+  let last: { index: number; x: number } | undefined, count = 0;
+  for (const [index, port] of ports.entries()) {
+    const x = targets.get(portId(port.ref));
+    if (x !== undefined && (!last || x - last.x >= (index - last.index) * pitch)) { last = { index, x }; count++; }
+  }
+  return count;
+}
 /**
  * The feeds of one group in one step, with the x each child port wants and the transits that yield. A child port has one seat (architecture ticket 12):
  * a port fed by two parents at different x seats under the feed its face keeps with the most of its siblings' seats, ties and a lone port to the first
@@ -441,9 +452,10 @@ function groupFeeds(model: LayoutModel, context: CentreContext, tier: number, li
     for (const [key, feed] of seats) if (key !== child && !rival.has(key) && feed.child.ref.node === node.id && feed.child.side === side) others.set(key, feed.x);
     let best = first, bestCount = -1;
     if (others.size) {
-      const limit = siblingLimit(model, model.groups[id]!, node), stops = overlayStops(model, node);
+      // Read from the order and the pitch of the face alone, never from the bounds: the producer reads the face before the step and the validator after it,
+      // and both must pick one seat (the widened body would let a rival fit that did not fit before).
       for (const candidate of candidates) {
-        const count = keptTargets(node, side, new Map([...others, [child, candidate.x]]), limit, stops).length;
+        const count = inOrderTargets(node, side, new Map([...others, [child, candidate.x]]));
         if (count > bestCount) { best = candidate; bestCount = count; }
       }
     }
@@ -854,5 +866,5 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
   return result;
 }
 export function centre(model: LayoutModel): LayoutModel {
-  return withStageMutation(model, 'centre', draft => { orderBundles(draft); centreDraft(draft, createCentreBudget()); recordSeatedSideLanes(draft); });
+  return withStageMutation(model, 'centre', draft => { orderBundles(draft); normalizePrimaryBundlePorts(draft); centreDraft(draft, createCentreBudget()); recordSeatedSideLanes(draft); });
 }
