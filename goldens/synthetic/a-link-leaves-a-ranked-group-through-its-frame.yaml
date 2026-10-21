@@ -1,0 +1,22 @@
+# Expected: the shared-port diagram of a-link-leaves-its-group-through-a-door, with the home group ranked: a
+# node below the router puts it in two ranks, so its box is a frame derived from its cells. The group
+# exit guard reads the proposed frame box from the proposed cells, not the stored one. Test input of
+# test/layout/growth-guard.test.ts. Architecture ticket 13, round 6.
+portograph: 2
+groups:
+  up: { tier: 2, label: "Up" }
+  centre: { tier: 5, label: "Centre" }
+  home: { tier: 6, label: "Home" }
+  beside: { tier: 6, label: "Beside" }
+nodes:
+  u1: { group: up, class: tbr, label: "u1" }
+  s1: { group: home, class: router, label: "s1", ports: [{ name: p, side: top }] }
+  s2: { group: home, class: switch, label: "s2" }
+  c1: { group: centre, class: rr, label: "c1" }
+  c2: { group: centre, class: provider, label: "c2", ports: [{ name: a, side: bottom, order: 1 }, { name: b, side: bottom, order: 2 }] }
+  b1: { group: beside, class: tbr, label: "b1" }
+links:
+  - [s1.p, c1]
+  - [s1.p, c2.a]
+  - [c2.b, b1]
+  - [s1, s2]
