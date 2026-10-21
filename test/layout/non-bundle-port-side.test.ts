@@ -34,4 +34,15 @@ describe('a port outside a bundle keeps its side of the block', () => {
       }
     }
   });
+
+  it('keeps the members straight when a long node label puts the free ports far right in stage 7b', async () => {
+    const wide = fixture.replace('label: core', 'label: a-core-node-with-a-very-long-label-that-widens-the-box-a-lot');
+    const model = await layout(parse(wide), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const members = model.links.filter(link => link.bundle);
+    expect(members).toHaveLength(3);
+    for (const link of members) {
+      expect(link.path!.segments, link.id).toHaveLength(1);
+      expect(link.path!.segments[0]!.from.x, link.id).toBeCloseTo(link.path!.segments[0]!.to.x, 3);
+    }
+  });
 });

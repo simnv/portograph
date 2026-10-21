@@ -588,7 +588,7 @@ export function prepareBundleGeometry(model: LayoutModel): void {
         }
         // Alignment is optional; capacity and immutable lanes are not. Leave a bundle bent when
         // projecting a distant peer's x would grow this node across a sibling or reserved lane.
-        const sideCount = node.ports.filter(port => port.side === ports[0]!.side).length;
+        const sideCount = node.ports.filter(port => port.side === ports[0]!.side).length - (lead.get(node.id) ?? 0);
         if (start + (sideCount - 1) * spacing + 10 + spacing / 2 > limit) {
           start = floorOf(node.id);
         }
@@ -680,27 +680,33 @@ export function prepareBundleGeometry(model: LayoutModel): void {
     }
     const bundled = new Set(model.links.filter(l => l.bundle).flatMap(l => [portId(l.attachments!.from), portId(l.attachments!.to)]));
     const unrelated = new Set(node.ports.filter(p => p.side === side && !bundled.has(portId(p.ref))));
-    // A port outside every bundle keeps the side of the block that stage 7b gave it. The plan puts the
-    // block at the node's start, or under its peers, which can lie left of a port that 7b seated before
-    // it; sorting by coordinate alone would then carry that port across the pills, and its chord with it
-    // (ticket 09). Engine order may change here only as the bundle rules require (invariant 4), and
-    // moving a free port past a block is not one of them. A port with a planned x of its own (a fixed
-    // lane) and a port 7b seated between two bundled ports keep their coordinate.
-    const planned7b = node.ports.filter(p => p.side === side && bundled.has(portId(p.ref)) && plan.has(p));
-    const blockLow = Math.min(...planned7b.map(p => p.engineOrder!)), blockHigh = Math.max(...planned7b.map(p => p.engineOrder!));
-    const blockStart = Math.min(...planned7b.map(p => plan.get(p)!)), blockEnd = Math.max(...planned7b.map(p => plan.get(p)!));
+    // A port outside every bundle keeps the side of every bundled port that stage 7b gave it (ticket 09). The plan puts a
+    // block at the node's start, or under its peers, which can lie left of a free port that 7b seated before it; sorting by
+    // coordinate alone would carry that port across the pills, and its chord with it. Engine order may change here only as
+    // the bundle rules require (invariant 4), and moving a free port past a block is not one of them. The value is the
+    // seat itself, not the 7b coordinate: the block's room before it is reserved by `floorOf`. A port with a planned x of
+    // its own (a fixed lane) keeps it; so does a free port whose bounds contradict each other (the bundle rules reordered
+    // the bundled ports against their 7b order).
+    const faceBundled = node.ports.filter(p => p.side === side && bundled.has(portId(p.ref)));
     const seat = (p: LayoutPort): number => {
       if (plan.has(p)) return plan.get(p)!;
-      if (planned7b.length && unrelated.has(p)) {
-        if (p.engineOrder! < blockLow) return Math.min(coordinate(p), blockStart - PLACEMENT_EPS);
-        if (p.engineOrder! > blockHigh) return Math.max(coordinate(p), blockEnd + PLACEMENT_EPS);
+      if (!unrelated.has(p)) return coordinate(p);
+      let low = -Infinity, high = Infinity;
+      for (const q of faceBundled) {
+        const at = plan.get(q) ?? coordinate(q);
+        if (q.engineOrder! < p.engineOrder!) low = Math.max(low, at + PLACEMENT_EPS);
+        else if (q.engineOrder! > p.engineOrder!) high = Math.min(high, at - PLACEMENT_EPS);
       }
-      return coordinate(p);
+      return low <= high ? Math.min(Math.max(coordinate(p), low), high) : coordinate(p);
     };
     const ports = sorted(node.ports.filter(p => p.side === side), seat, unrelated);
     let prior = node.bounds![tangent] + 10 - spacing / 2;
+    // A free port that stands before a planned one gives way to it: the ports on its left move left by a pitch each, rather than
+    // pushing the planned port right out of line with its peers. `floorOf` has reserved the room.
+    const wanted = ports.map(seat);
+    for (let i = ports.length - 2; i >= 0; i--) if (!plan.has(ports[i]!) && unrelated.has(ports[i]!)) wanted[i] = Math.min(wanted[i]!, wanted[i + 1]! - spacing);
     ports.forEach((port, engineOrder) => {
-      const value = Math.max(plan.get(port) ?? coordinate(port), prior + spacing);
+      const value = Math.max(wanted[engineOrder]!, prior + spacing);
       port.engineOrder = engineOrder; port.anchor![tangent] = value; prior = value;
     });
     const dim = tangent === 'x' ? 'width' : 'height';
