@@ -1,23 +1,34 @@
 # AGENTS.md
 
-`portograph` — YAML in, a laid-out diagram (SVG) out. Nodes with ports on their edges, grouped
-into tiers; links attach to ports and are routed per region. Design complete, implementation
-not started; see [`README.md`](README.md) for the reading order.
+`portograph`: YAML in, a laid-out SVG diagram out. Nodes carry ports on their edges, grouped into
+tiers; links attach to ports and are routed per region. A CLI and a library exist; see
+[`README.md`](README.md).
 
-Before working here read [`CONTEXT.md`](CONTEXT.md) (vocabulary and invariants — use its terms
-exactly) and the ADRs in [`docs/adr/`](docs/adr/). The reference corpus that informed the design
-is under [`ref/`](ref/README.md); the prototype that proved it is under `prototype/`.
+Never let a route, size or spacing be discovered during routing that could have been reserved
+during placement. This is the pipeline's one load-bearing rule.
+
+## Read on demand
+
+- [`CONTEXT.md`](CONTEXT.md): always, first. Vocabulary and invariants; use its terms exactly.
+- [`docs/design/pipeline.md`](docs/design/pipeline.md): when you change or reason about a stage.
+  Read that stage's section only (`## Stage N`; stage 7 has subsections 7a to 7f).
+- [`docs/adr/`](docs/adr/): when a rule or decision is in question. Pick by file name.
+- [`docs/design/decisions-log.md`](docs/design/decisions-log.md): when you need the history of a choice.
+- [`docs/design/quality.md`](docs/design/quality.md): when you judge a render.
+- [`ref/README.md`](ref/README.md): reference corpus behind the design.
 
 ## Agent skills
 
 ### Issue tracker
 
-Issues live as markdown files under `.scratch/<feature>/` in this repo. See `docs/agents/issue-tracker.md`.
+Issues are markdown files in `.scratch/<feature>/`. See `docs/agents/issue-tracker.md`. The live
+tracker is `.scratch/architecture-2/README.md` (status table); its issues are in
+`.scratch/architecture-2/issues/`.
 
 ### Triage labels
 
-The five canonical roles, each label string equal to its name. See `docs/agents/triage-labels.md`.
+Five canonical roles, each label string equal to its name. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
-Single-context: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+Single context: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
