@@ -400,7 +400,8 @@ links: [[a.p, c.p], [a.q, b.p]]`;
     expect(right(model.groups.wide!.bounds!)).toBeGreaterThan(input.groups.middle!.bounds!.x);
     // Ticket 75: the blocked group holds its place on every pass; that is settled, not a stall.
     // (Q108: a link between two groups may name why it stays orthogonal, ROUTED_CHORD_REFUSED, an info.)
-    expect(model.diagnostics.map(d => d.code).filter(code => code !== 'ROUTED_CHORD_REFUSED')).toEqual([]);
+    // Ticket 15 (architecture-2): the jogs left (a parent move that would shift its group) are named, not silent: two links here.
+    expect(model.diagnostics.map(d => d.code).filter(code => code !== 'ROUTED_CHORD_REFUSED')).toEqual(['CENTRE_PARENT_MOVE_SHIFTS_GROUP', 'CENTRE_PARENT_MOVE_SHIFTS_GROUP']);
     // No foreign group obstacle contains an attachment shape. Every group keeps the band gap.
     const plan = planRoute(model);
     for (const batch of plan.batches) expect(() => batchRequest(plan, batch, [])).not.toThrow();
