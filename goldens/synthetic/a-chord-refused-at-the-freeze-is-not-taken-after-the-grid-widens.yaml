@@ -1,0 +1,52 @@
+portograph: 2
+groups:
+  wan:
+    tier: 0
+  site-a:
+    tier: 1
+  site-b:
+    tier: 1
+nodes:
+  edge:
+    group: wan
+  relay-a:
+    group: wan
+  relay-b:
+    group: wan
+  relay-c:
+    group: wan
+  gate-a:
+    group: site-a
+    ports:
+    - name: uplink-1
+    - name: eth2_102
+  gate-b:
+    group: site-b
+    ports:
+    - name: uplink-3
+links:
+- - gate-a.uplink-1
+  - edge
+  - id: link-1
+- - gate-a.eth2_102
+  - edge
+  - id: link-2
+- - gate-b.uplink-3
+  - edge
+  - id: link-3
+    label: fibre 120M
+- - gate-a
+  - gate-b
+  - id: tunnel
+- - gate-a
+  - relay-b
+  - id: ov-1
+    route: overlay
+- - gate-a
+  - relay-a
+  - id: ov-2
+    route: overlay
+- - gate-b
+  - relay-c
+  - id: ov-3
+    route: overlay
