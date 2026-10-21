@@ -47,8 +47,8 @@
   "sideEffects": false,
   "scripts": {
     "build": "vite build",
-    "test": "vitest run",
-    "test:full": "vitest run --reporter=default",
+    "test": "vitest run --project default && vitest run --project slow",
+    "test:full": "vitest run --reporter=default --project default && vitest run --reporter=default --project slow",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit && tsc -p tsconfig.json --noEmit --module NodeNext --moduleResolution NodeNext",
     "lint": "eslint .",
     "hooks:install": "git config core.hooksPath .githooks",

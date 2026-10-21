@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, relative as relativePath } from 'node:path';
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 import dts from 'vite-plugin-dts';
 
 // Library build: one bundle of everything (`src/internal.ts`), ES + UMD, declarations from
@@ -31,6 +31,12 @@ function publicNames(): string[] {
   }
   return names;
 }
+
+const slowFiles = [
+  'test/cli/e2e.test.ts',
+  'test/layout/regions-review.test.ts',
+  'test/pipeline/frame-chord-leg.test.ts',
+];
 
 export default defineConfig({
   plugins: [dts({ tsconfigPath: './tsconfig.json' }), {
@@ -95,10 +101,14 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['test/**/*.test.ts'],
     environment: 'node',
     // Default 5 s is too close to the slowest untimed tests (1-2.6 s quiet) when agents share the machine.
     // Per-test timeouts larger than this stay in force.
     testTimeout: 30000,
+    projects: [
+      { extends: true, test: { name: 'default', include: ['test/**/*.test.ts'], exclude: [...configDefaults.exclude, ...slowFiles] } },
+      // Files that take minutes alone: run one at a time after the default project, so a loaded run cannot starve them.
+      { extends: true, test: { name: 'slow', include: slowFiles, fileParallelism: false, testTimeout: 600000 } },
+    ],
   },
 });
