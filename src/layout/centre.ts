@@ -16,6 +16,7 @@ import { portId, bandGap, SKELETON_SPACING } from './skeleton-graph.js';
 import { crosses } from './overlay-paths.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
+import { recentreSeatedFaces, seatedFaces } from './face-centre.js';
 import { packRowsOf } from './grid.js';
 import { rowGap } from './sides-two.js';
 import { linkLabelGap } from './bands.js';
@@ -598,10 +599,28 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
 }
 /** Reusable bounded producer. The caller shares one budget across all ordered placement replay. */
 export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
+  const seated = seatedFaces(model);
   timed('centre-passes', () => centrePasses(model, budget));
+  // A face centring left alone stands centred on the body it widened (architecture ticket 10, D3). Read before the overlay windows below.
+  recentreSeatedFaces(model, seated, feedPorts(model));
   // The windows of the overlay barycentre are read once, where centring has left the partners (ticket 143): a window read in a pass
   // is read on geometry that a later step moves.
   if (selectAnchorTier(model) !== undefined) timed('centre-overlay-final', () => { placeOverlayFree(model); rebuildRegions(model); });
+}
+/**
+ * The ports centring owes or reads a feed x: the child ports and the parent ports whose x is the feed, read the way the publication check reads them (`readCentreViolations`): `groupFeeds` of every step. A
+ * face with one of these ports is not recentred, so the check cannot see a feed moved (architecture ticket 10).
+ */
+function feedPorts(model: LayoutModel): Set<string> {
+  const anchor = model.anchorTier, result = new Set<string>();
+  if (anchor === undefined || !model.tierBands.some(band => band.tier === anchor)) return result;
+  const context = centreContext(model, anchor);
+  for (const { tier, authority } of context.steps) {
+    const list = centringFeeds(model, tier, authority);
+    for (const feed of list) result.add(portId(feed.parent.ref));
+    for (const id of context.groupOrder.get(tier)!) for (const child of groupFeeds(model, context, tier, list, id, false).wanted.keys()) result.add(child);
+  }
+  return result;
 }
 function centrePasses(model: LayoutModel, budget: CentreBudget): void {
   if (!Number.isSafeInteger(budget.remaining) || !Number.isSafeInteger(budget.passes) || budget.remaining < 0
