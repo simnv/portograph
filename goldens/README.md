@@ -184,6 +184,9 @@ is a standalone schema-v2 document. `stage-inputs.yaml` is separate test data.
 | [a-bundle-of-three-ports-agrees-at-both-ends](synthetic/a-bundle-of-three-ports-agrees-at-both-ends.yaml) | 3, 7c | Three parallel links without ports, `edge` over `r1`: both ends take one order, so `r1` stays about 72 px and centres under its ports. |
 | [a-bundle-of-four-ports-agrees-at-both-ends](synthetic/a-bundle-of-four-ports-agrees-at-both-ends.yaml) | 3, 7c | The same with four links (it grew to 339 px, to negative x, when the ends disagreed). |
 | [a-bundle-of-named-ports-agrees-at-both-ends](synthetic/a-bundle-of-named-ports-agrees-at-both-ends.yaml) | 3, 7c | Two named ports of `r` against two free ports of `e`, with an overlay link to a spare node: the bundle order is the same at both ends. |
+| [an-authored-order-on-the-first-node-leads-the-bundle](synthetic/an-authored-order-on-the-first-node-leads-the-bundle.yaml) | 3, 7c | `order:` on `r`, the node the document names first: `e` follows it, `r` stays narrow. |
+| [an-authored-order-on-the-second-node-leads-the-bundle](synthetic/an-authored-order-on-the-second-node-leads-the-bundle.yaml) | 3, 7c | `order:` on `e`, the node sorted second: the end with an authored order leads, so the ends still agree. |
+| [a-bundle-port-with-a-link-beyond-the-bundle-follows-the-bundle](synthetic/a-bundle-port-with-a-link-beyond-the-bundle-follows-the-bundle.yaml) | 3, 7c | `r.p3` joins `e` in the bundle and `x` outside it: its node seats its ports as free ports and both ends keep one order (the width of `r` is a centring gap, ticket 08). |
 
 The first 14 diagrams are ticket 00's approved counter-examples. `fitting-link-label` is the
 test-only successful-label input ticket 14 added beside them; it needs no stage precondition,
