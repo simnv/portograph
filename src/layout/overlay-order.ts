@@ -1,13 +1,13 @@
 import type { Point, Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
 import { groupShape } from './grid.js';
-import { corridorReader, corridorSide, laneSource, laneWidth, ownsTransitLanes, selectAnchorTier, transitedCore } from './lanes.js';
+import { corridorReader, corridorSide, directPlan, fixedSourceGroups, laneSource, laneWidth, ownsTransitLanes, selectAnchorTier, transitedCore } from './lanes.js';
 import { crosses } from './overlay-paths.js';
 import { placementWarning } from './regions.js';
 import { bandGap, compareId, nodeGap, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { findPort } from './row-paths.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
-import { cellReach } from './frames.js';
+import { cellReach, foreignRoot, ownFrameCells } from './frames.js';
 import { frameSubtreeCells } from '../model/model.js';
 import { frameTiers, packTier, unitOrder, type Column } from './columns.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -57,7 +57,9 @@ export function readDraft(model: LayoutModel) {
 
   // ---- measurement -------------------------------------------------------------------------
 
-  const corridors = corridorReader(model);
+  // `layout.corridorRowOrder: false` keeps the measure of main as well (ticket 17): no transit link is cut at a corridor.
+  const cut = model.document.layout?.corridorRowOrder !== false;
+  const corridors = corridorReader(model), fixed = fixedSourceGroups(model);
   const peersOf = new Map<string, string[]>();
   for (const link of model.links) if (link.attachments) {
     const { from, to } = link.attachments;
@@ -65,33 +67,74 @@ export function readDraft(model: LayoutModel) {
     peersOf.set(portId(to), [...peersOf.get(portId(to)) ?? [], from.node]);
   }
   /**
+   * What one measurement reads again and again on one geometry: the groups of each sub-tier left to right, and the source x of each
+   * link. `measureRange` empties it, because a candidate moves the geometry between two measurements.
+   */
+  const memo = { groups: new Map<number, LayoutGroup[]>(), source: new Map<LayoutLink, number>() };
+  const groupsAt = (tier: number): LayoutGroup[] => {
+    let list = memo.groups.get(tier);
+    if (list === undefined) {
+      list = Object.values(model.groups).filter(group => group.tier === tier && group.bounds !== undefined && group.nodes.length)
+        .sort((a, b) => a.bounds!.x - b.bounds!.x || compareId(a.id, b.id));
+      memo.groups.set(tier, list);
+    }
+    return list;
+  };
+  /**
    * The x the alignment end of a transit link is predicted to hold (ticket 17). The draft has no final port x yet: `sides-two` centres the
    * ports of a face over the node at the face's pitch, in the order of the mean x of their peers, and gives the face of an alignment end
    * at least the lane width as pitch. This reads the same order on the draft, with the peers at their node centres; a port whose side is
    * not `top` or `bottom` is read at its node centre.
    */
   const sourceX = (link: LayoutLink): number => {
+    const known = memo.source.get(link);
+    if (known !== undefined) return known;
     const ref = laneSource(model, link), node = model.nodes[ref.node]!, side = findPort(model, ref)?.side;
-    if (side !== 'top' && side !== 'bottom') return centre(ref.node);
-    const far = (key: string): number => mean((peersOf.get(key) ?? []).filter(peer => model.nodes[peer]?.bounds !== undefined).map(centre)) ?? Infinity;
-    const face = node.ports.filter(port => port.side === side).map((port, i) => ({ key: portId(port.ref), x: far(portId(port.ref)), i }))
-      .sort((a, b) => a.x - b.x || a.i - b.i); // the last key: the port's place on the node
-    const at = face.findIndex(item => item.key === portId(ref)), pitch = Math.max(node.sidePitch?.[side] ?? 0, laneWidth(model, link));
-    return centre(ref.node) + (at - (face.length - 1) / 2) * pitch;
+    let x = centre(ref.node);
+    if (side === 'top' || side === 'bottom') {
+      const far = (key: string): number => mean((peersOf.get(key) ?? []).filter(peer => model.nodes[peer]?.bounds !== undefined).map(centre)) ?? Infinity;
+      const face = node.ports.filter(port => port.side === side).map((port, i) => ({ key: portId(port.ref), x: far(portId(port.ref)), i }))
+        .sort((a, b) => a.x - b.x || a.i - b.i); // the last key: the port's place on the node
+      const at = face.findIndex(item => item.key === portId(ref)), pitch = Math.max(node.sidePitch?.[side] ?? 0, laneWidth(model, link));
+      x += (at - (face.length - 1) / 2) * pitch;
+    }
+    memo.source.set(link, x);
+    return x;
   };
   /**
-   * The x of the corridor a transit link is predicted to hold in the sub-tier `k` (index) it crosses (ticket 17): beside the main group
-   * of that sub-tier nearest its source, on the side `corridorSide` gives, as 7a reserves it. The source is read at `sourceX` and the
-   * target at its node centre: a prediction of 7a, not its answer. Undefined when the sub-tier holds no main group.
+   * The x of the corridor a transit link is predicted to hold in the sub-tier `k` (index) it crosses (ticket 17), as 7a reserves it:
+   * beside the main group of that sub-tier nearest the source. The side is the one of 7a's direct plan at the source x (`directPlan`,
+   * the same function, with the draft boxes and the groups 7a holds), which faces the target where it can; where no direct plan exists,
+   * 7a keeps the side the source asks for. The target is read at its node centre. A prediction of 7a, not its answer. Undefined when the
+   * sub-tier holds no main group.
    */
   const corridorX = (link: LayoutLink, k: number): number | undefined => {
-    const tier = tiers[k]!, sx = sourceX(link);
-    const main = Object.values(model.groups).filter(group => !group.flank && group.tier === tier && group.bounds !== undefined && group.nodes.length)
-      .sort((a, b) => a.bounds!.x - b.bounds!.x || compareId(a.id, b.id));
-    const core = transitedCore(main, sx)?.bounds;
+    const tier = tiers[k]!, sx = sourceX(link), groups = groupsAt(tier), main = groups.filter(group => !group.flank);
+    // A link foreign to a frame of this sub-tier passes the frame outside it, at one x (ticket 04): 7a counts the frame roots whose
+    // centre stands before the target x (or the source x) and takes the gap after them. The roots are read as their cells stand.
+    const roots = new Map<string, Rect[]>();
+    for (const group of Object.values(model.groups)) {
+      const root = group.bounds === undefined ? undefined : foreignRoot(model, group.id, link);
+      if (root !== undefined) roots.set(root, [...roots.get(root) ?? [], group.bounds!]);
+    }
+    if ([...roots.values()].some(boxes => boxes.some(box => groups.some(group => group.bounds === box)))) {
+      const spans = [...roots.values()].map(boxes => ({ low: Math.min(...boxes.map(box => box.x)), high: Math.max(...boxes.map(box => box.x + box.width)) }))
+        .sort((a, b) => (a.low + a.high) - (b.low + b.high));
+      const far = corridors.target(link, tier), desire = far === undefined ? sx : centre(far.node), half = laneWidth(model, link) / 2;
+      // A lane the link holds in its own frame keeps that frame's side of every frame it is foreign to (7a, ticket 26).
+      const own = ownFrameCells(model, link), held = groups.filter(group => own.has(group.id)).map(group => group.bounds!);
+      const heldCentre = held.length ? (Math.min(...held.map(box => box.x)) + Math.max(...held.map(box => box.x + box.width))) / 2 : undefined;
+      const gap = spans.filter(span => (span.low + span.high) / 2 < (heldCentre ?? desire)).length;
+      return gap === 0 ? Math.min(sx, spans[0]!.low - half) : gap === spans.length ? Math.max(sx, spans[gap - 1]!.high + half)
+        : Math.min(Math.max(sx, spans[gap - 1]!.high + half), spans[gap]!.low - half);
+    }
+    const core = transitedCore(main, sx);
     if (core === undefined) return undefined;
-    const far = corridors.target(link, tier), half = laneWidth(model, link) / 2;
-    return corridorSide(core, sx, far === undefined ? undefined : centre(far.node)) === 'left' ? Math.min(sx, core.x - half) : Math.max(sx, core.x + core.width + half);
+    const box = core.bounds!, far = corridors.target(link, tier), width = laneWidth(model, link), half = width / 2;
+    const wanted = far === undefined ? undefined : corridorSide(box, sx, centre(far.node)), at = groups.indexOf(core);
+    const plan = directPlan(group => group.bounds!, groups, at, wanted, sx, width, [], fixed);
+    const side = plan === undefined ? corridorSide(box, sx) : plan.split <= at ? 'left' : 'right';
+    return side === 'left' ? Math.min(sx, box.x - half) : Math.max(sx, box.x + box.width + half);
   };
   /**
    * Routed crossings in the region between tiers `a` and `b` (indices). A link is read as a straight line between its two body
@@ -103,7 +146,7 @@ export function readDraft(model: LayoutModel) {
       .map(pair => {
         const [upper, lower] = tierOf(pair.from) <= tierOf(pair.to) ? [pair.from, pair.to] : [pair.to, pair.from];
         const p = tierOf(upper), q = tierOf(lower), top = centre(upper), end = centre(lower);
-        const owns = q - p > 1 && ownsTransitLanes(model, pair.link);
+        const owns = cut && q - p > 1 && ownsTransitLanes(model, pair.link);
         const at = (k: number): number => (owns && k > p && k < q ? corridorX(pair.link, k) : undefined) ?? top + (end - top) * (k - p) / (q - p);
         return [at(a), at(b)] as const;
       });
@@ -113,6 +156,20 @@ export function readDraft(model: LayoutModel) {
       if (upper * lower < 0) count++;
     }
     return count;
+  };
+  /**
+   * The sub-tiers (indices) a re-order of the rows of `groups` can change the routed crossings of: their own, and every sub-tier a routed
+   * link spans that has an end in them or crosses one of their sub-tiers. A turned row moves the source x and the target of such a link,
+   * and with them its corridor in every sub-tier it crosses (ticket 17 review).
+   */
+  const reach = (groups: readonly LayoutGroup[]): [number, number] => {
+    const own = new Set(groups.flatMap(group => group.nodes)), at = new Set(groups.map(group => index.get(group.tier!)!));
+    let low = Math.min(...at), high = Math.max(...at);
+    for (const pair of routed) {
+      const p = Math.min(tierOf(pair.from), tierOf(pair.to)), q = Math.max(tierOf(pair.from), tierOf(pair.to));
+      if (own.has(pair.from) || own.has(pair.to) || [...at].some(k => k > p && k < q)) { low = Math.min(low, p); high = Math.max(high, q); }
+    }
+    return [low, high];
   };
   const bodies = (): Rect[] => Object.keys(model.nodes).filter(placed).map(node => model.nodes[node]!.bounds!);
   /**
@@ -165,6 +222,7 @@ export function readDraft(model: LayoutModel) {
    * and also counts `blocked`: the routed links inside one sub-tier with a body between their ends.
    */
   const measureRange = (low: number, high: number, aligned = false, crossOnly = false): { crossings: number; straight: number; blocked: number } => {
+    memo.groups.clear(); memo.source.clear();
     let crossings = 0;
     for (let a = low - 1; a <= high; a++) if (a >= 0 && a + 1 < tiers.length) crossings += regionCrossings(a, a + 1);
     const boxes = bodies(), rows = aligned ? rowBoxes() : undefined;
@@ -182,7 +240,7 @@ export function readDraft(model: LayoutModel) {
     });
     return items.map(item => keys.get(item) === undefined ? item : queue.shift()!);
   };
-  return { anchor, tiers, index, tierOf, groupOf, drawn, busDrawn, centre, isRow, partners, touched, keyOfNodes, same, measure, measureRange, reorder };
+  return { anchor, tiers, index, tierOf, groupOf, drawn, busDrawn, centre, isRow, partners, touched, keyOfNodes, same, measure, measureRange, reach, reorder };
 }
 
 /** What both orderings (groups and nodes, and frames) read: the draft's keys, its tiers and its two measures. */

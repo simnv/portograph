@@ -8,6 +8,7 @@ import { sizeNodes } from '../../src/layout/size.js';
 import { skeleton } from '../../src/layout/skeleton.js';
 import { orderByCorridors, ROW_ORDER_PERMUTED_NODES, validateRowOrderDecisions } from '../../src/layout/corridor-order.js';
 import { corridorSide } from '../../src/layout/lanes.js';
+import { readDraft, reseatRow } from '../../src/layout/overlay-order.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -90,10 +91,10 @@ links: [[a, m], [b, n], [m, x], [n, y], [a, y], [n, s]]`);
     const foreign = copy(model);
     foreign.groups.middle!.rowOrderDecision = { rule: 'kept', before: ['m0', 'b0'], after: ['m0', 'b0'] };
     expect(validateRowOrderDecisions(foreign)).toContain('The row order decision of middle names nodes that are not its own');
-    // Absent is no error: the step did not decide that row.
+    // Absent on a free row is an error: the step decides every free row of two or more nodes.
     const absent = copy(model);
     delete absent.groups.base!.rowOrderDecision;
-    expect(validateRowOrderDecisions(absent)).toEqual([]);
+    expect(validateRowOrderDecisions(absent)).toEqual(['Free row base has no row order decision']);
   }, 60000);
 
   it('judges a long row in its adjacent swaps only, and names the cap', async () => {
@@ -132,6 +133,15 @@ links: [[a, y], [b, x]]`);
     orderByCorridors(model);
     expect(model.groups.top!.rowOrderDecision).toEqual({ rule: 'kept', before: before.groups.top!.rowOrder, after: before.groups.top!.rowOrder });
     expect(Object.values(model.nodes).map(node => node.bounds)).toEqual(Object.values(before.nodes).map(node => node.bounds));
+  }, 60000);
+
+  it('reads every transit link as one diagonal under layout.corridorRowOrder: false, as main did', async () => {
+    const [on, off] = await Promise.all([skeletonOf(fixture), skeletonOf(declared)]);
+    // The same declared order on both: `on` is turned by the step, so it is put back first.
+    for (const [group, order] of [['top', ['t0', 't1']], ['upper', ['u0', 'u1']]] as const) expect(reseatRow(on, on.groups[group]!, [...order], true)).toBe(true);
+    // Cut at their corridors, the two transit links of the declared order cross two feeds; read as diagonals, one.
+    expect(readDraft(on)!.measureRange(0, 3, true).crossings).toBe(2);
+    expect(readDraft(off)!.measureRange(0, 3, true).crossings).toBe(1);
   }, 60000);
 
   it('passes a transited box on the side of the target where it is known, else on the side of the source (7a)', () => {

@@ -1,5 +1,5 @@
 import type { Diagnostic, LayoutGroup, LayoutModel, RowOrderDecision } from '../model/layout.js';
-import { ownsTransitLanes } from './lanes.js';
+import { ownsTransitLanes, selectAnchorTier } from './lanes.js';
 import { orderTools, readDraft, reseatRow, saveGroups } from './overlay-order.js';
 import { compareId } from './skeleton-graph.js';
 import { rebuildBands } from './skeleton-geometry.js';
@@ -56,7 +56,7 @@ const sameOrder = (a: readonly string[], b: readonly string[]): boolean => a.len
 export function orderByCorridors(model: LayoutModel): void {
   const draft = readDraft(model);
   if (draft === undefined) return;
-  const { anchor, tiers, index, measureRange } = draft;
+  const { anchor, tiers, index, measureRange, reach } = draft;
   const { freeRow } = orderTools(model);
   const orderOf = (group: LayoutGroup): string[] => [...(group.rowOrder ?? group.nodes)];
   const rows = (k: number): LayoutGroup[] => Object.values(model.groups).filter(group => group.tier === tiers[k] && group.nodes.length > 1 && freeRow(group))
@@ -114,8 +114,9 @@ export function orderByCorridors(model: LayoutModel): void {
     }
     if (!candidates.length) return;
     spent += candidates.length;
-    const low = Math.min(k, next ?? k), high = Math.max(k, next ?? k);
     const groups = [...rows(k), ...(next === undefined ? [] : rows(next))];
+    // Every region a turned row can change: the whole span of each routed link with an end in a candidate row or crossing its sub-tier.
+    const [low, high] = reach(groups);
     const now = measureRange(low, high, true);
     let best: { candidate: Candidate; measure: ReturnType<typeof measureRange> } | undefined;
     for (const candidate of candidates) {
@@ -150,15 +151,22 @@ export function orderByCorridors(model: LayoutModel): void {
  * The stage-4 validator of `rowOrderDecision` (R1, R5): it reads the record and the row order, and never runs the search again.
  * A recorded row stands in the order the record names; `before` and `after` are orders of the row's own nodes; `kept` and `author`
  * name one order twice and `corridor-crossings` two different orders; `author` stands exactly when the document sets
- * `layout.corridorRowOrder: false`; only a free row carries a record.
+ * `layout.corridorRowOrder: false`; only a free row carries a record, and every free row of two or more nodes carries one when the
+ * sheet has an anchor tier.
  */
 export function validateRowOrderDecisions(model: LayoutModel): string[] {
   const errors: string[] = [];
   const { freeRow } = orderTools(model);
+  // `readDraft` answers nothing, and the step records nothing, exactly when no tier is the anchor.
+  const decided = selectAnchorTier(model) !== undefined;
   const ofRow = (group: LayoutGroup, order: readonly string[]): boolean => sameOrder([...order].sort(compareId), [...group.nodes].sort(compareId));
   for (const group of Object.values(model.groups)) {
     const decision = group.rowOrderDecision;
-    if (decision === undefined) continue;
+    // Absent is the decision "not this step's" only where the step does not decide: no main tier, or no free row of two nodes.
+    if (decision === undefined) {
+      if (decided && freeRow(group) && group.nodes.length > 1) errors.push(`Free row ${group.id} has no row order decision`);
+      continue;
+    }
     if (!freeRow(group) || group.nodes.length < 2) errors.push(`Group ${group.id} records a row order decision but is no free row`);
     if (!ofRow(group, decision.before) || !ofRow(group, decision.after)) errors.push(`The row order decision of ${group.id} names nodes that are not its own`);
     if ((decision.rule !== 'corridor-crossings') !== sameOrder(decision.before, decision.after)) errors.push(`The row order decision of ${group.id} is ${decision.rule}, and its before and after orders contradict it`);

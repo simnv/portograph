@@ -19,7 +19,7 @@ import { moveGroup, union } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { withStageMutation } from './mutation.js';
 import { chordKind, chordsHold, isRoutedChord } from './frame-paths.js';
-import { deriveFrames, foreignReach, foreignRoot, heldLaneReach, ownFrameCells, riserForeignReach, frameNodes } from './frames.js';
+import { deriveFrames, foreignReach, foreignRoot, heldLaneReach, ownFrameCells, rebuildFrames, riserForeignReach, frameNodes } from './frames.js';
 import { BUS_RUN_CLEARANCE } from './bus-room.js';
 import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 import { nodeTier } from './read/tier.js';
@@ -635,7 +635,8 @@ export function reseatLanes(model: LayoutModel, followed?: LaneFollow[]): boolea
     placementWarning(model, 'LANE_FOLLOWS_ITS_CHILD',
       `${link.id} could not be seated under its corridor at tier ${lane.tier}; the corridor follows the child port.`, [link.id]);
   }
-  if (moved) rebuildLaneExtents(model);
+  // A frame holds the lanes of its own links (`heldLaneReach`), so a moved corridor can move a frame edge: the frames are derived again.
+  if (moved) { rebuildLaneExtents(model); rebuildFrames(model); }
   return moved;
 }
 /** Prefer the nearest in-span slot that leaves room for the remaining members of this source. */
@@ -852,6 +853,26 @@ function reserveTrunks(model: LayoutModel, pending: Lane[], occ: (group: LayoutG
 export function heldSourceGroups(model: LayoutModel): Set<string> {
   return new Set(model.links.filter(link => transitTiers(model, link).length).map(link => model.document.nodes[link.attachments!.from.node]!.group));
 }
+/** The groups no 7a plan may push: the alignment-end group of every link that owns a lane, and `heldSourceGroups`. */
+export function fixedSourceGroups(model: LayoutModel): Set<string> {
+  const owners = model.links.filter(link => ownsTransitLanes(model, link));
+  return new Set([...owners.map(link => model.document.nodes[laneSource(model, link).node]!.group), ...heldSourceGroups(model)]);
+}
+/**
+ * The direct plan of a corridor at the source x (7a): of the insertion gaps whose push `marginTranslations` admits, the one that leaves
+ * the transited group `groups[at]` on the `side` the target asks for, else any, then the least total displacement. `split` is the count
+ * of groups left of the corridor, so the corridor passes the transited group on its left when `split <= at`. 7a and the stage-4 row
+ * order (ticket 17) call it, so the two read one feasibility.
+ */
+export function directPlan(read: (group: LayoutGroup) => Rect, groups: LayoutGroup[], at: number, side: 'left' | 'right' | undefined, sx: number,
+  width: number, prior: Lane[], fixed: Set<string>): { split: number; shift: number[] } | undefined {
+  const offSide = (split: number): number => side === undefined ? 0 : Number(side === 'left' ? split > at : split <= at);
+  return Array.from({ length: groups.length + 1 }, (_, split) => split)
+    .map(split => ({ split, shift: marginTranslations(read, groups, split, sx, width, prior, fixed) }))
+    .filter((plan): plan is { split: number; shift: number[] } => plan.shift !== undefined)
+    .sort((a, b) => offSide(a.split) - offSide(b.split)
+      || a.shift.reduce((sum, dx) => sum + Math.abs(dx), 0) - b.shift.reduce((sum, dx) => sum + Math.abs(dx), 0))[0];
+}
 /** Whether 7a reserves transit lanes for a link. A link with a course owns none: its perimeter lane stands in the crossed sub-tiers (ticket 15, Section 2); a spanning chord owns span corridors (ticket 22). */
 export function ownsTransitLanes(model: LayoutModel, link: LayoutLink): boolean {
   return transitTiers(model, link).length > 0 && courseOf(model, link.id) === undefined && link.spanHint !== true;
@@ -951,7 +972,7 @@ export function allocateLanes(model: LayoutModel): void {
     findPort(model, laneSource(model, a))!.anchor!.x - findPort(model, laneSource(model, b))!.anchor!.x || farX(a) - farX(b) || a.sourceIndex - b.sourceIndex);
   // The alignment-end groups stay, and so does every group the lane stage's guard holds (`heldSourceGroups`): a link with a course
   // or a spanning chord owns no lane here, but its source group may not move either (ticket 17 found a plan that moved one).
-  const fixedSources = new Set([...links.map(link => model.document.nodes[laneSource(model, link).node]!.group), ...heldSourceGroups(model)]);
+  const fixedSources = fixedSourceGroups(model);
   /**
    * Move the planned groups aside, then reserve the corridor beside `group`. Subsequent reservations
    * inspect current pills, not the pre-translation measurements.
@@ -1159,12 +1180,7 @@ export function allocateLanes(model: LayoutModel): void {
       // An insertion gap that leaves the transited group on the target side is taken first; a plan
       // on the other side is taken only where the target side has none.
       const at = groups.indexOf(nearest);
-      const offSide = (split: number): number => side === undefined ? 0 : Number(side === 'left' ? split > at : split <= at);
-      const direct = Array.from({ length: groups.length + 1 }, (_, split) => split)
-        .map(split => ({ split, shift: marginTranslations(group => occ(group, link), groups, split, sx, width, prior, fixedSources) }))
-        .filter((plan): plan is { split: number; shift: number[] } => plan.shift !== undefined)
-        .sort((a, b) => offSide(a.split) - offSide(b.split)
-          || a.shift.reduce((sum, dx) => sum + Math.abs(dx), 0) - b.shift.reduce((sum, dx) => sum + Math.abs(dx), 0))[0]?.shift;
+      const direct = directPlan(group => occ(group, link), groups, at, side, sx, width, prior, fixedSources)?.shift;
       let shifts: number[] | undefined;
       if (direct) { x = sx; shifts = direct; }
       else {
