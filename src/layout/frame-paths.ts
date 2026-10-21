@@ -623,8 +623,9 @@ export function freezeChords(model: LayoutModel): void {
     model.diagnostics.push({ stage: 'placement', severity: 'info', code: 'ROUTED_CHORD_REFUSED',
       message: `The link ${link.id} keeps the orthogonal route between frames: ${reason}.`, owners: [{ kind: 'link', id: link.id }] });
   }
-  // No field where nothing is held, so a model without a chord keeps the shape it always had.
-  if (held.length) model.frozenChords = held;
+  // The freeze is a decision even when nothing is held: a link that was not straight here stays orthogonal. An absent field would let the replays of 7f
+  // take a chord the freeze refused, on boxes that the grid then widens (a row path that the region rule derives differently once the geometry settles).
+  model.frozenChords = held;
 }
 
 /**
