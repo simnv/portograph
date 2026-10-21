@@ -1,0 +1,29 @@
+portograph: 2
+groups:
+  src: { tier: 0 }
+  access: { tier: 1 }
+  edge-far: { tier: 2 }
+  edge-near: { tier: 2 }
+nodes:
+  src0: { group: src, class: router, ports: [] }
+  src1: { group: src, class: router, ports: [] }
+  acc0: { group: access, class: switch, ports: [] }
+  acc1: { group: access, class: switch, ports: [] }
+  acc2: { group: access, class: switch, ports: [] }
+  acc3: { group: access, class: switch, ports: [] }
+  acc4: { group: access, class: switch, ports: [] }
+  snk0: { group: edge-near, class: server, ports: [] }
+  snk1: { group: edge-far, class: server, ports: [] }
+links:
+  - [src0, acc0]
+  - [src1, acc1]
+  - [src0, acc2]
+  - [src1, acc3]
+  - [src0, acc4]
+  - [acc0, snk0]
+  - [acc1, snk1]
+  - [acc2, snk0]
+  - [acc3, snk1]
+  - [acc4, snk0]
+  - [src0, snk1]
+  - [src1, snk1]

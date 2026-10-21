@@ -29,6 +29,10 @@ tracker is `.scratch/architecture-2/README.md` (status table); its issues are in
 
 Five canonical roles, each label string equal to its name. See `docs/agents/triage-labels.md`.
 
+### Gates
+
+`npm run corpus`, `npm run sweep` and `npm run gate:compare` measure a branch against main. See `docs/agents/gates.md`.
+
 ### Domain docs
 
 Single context: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
