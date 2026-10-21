@@ -1,0 +1,26 @@
+# Expected: A body stretches past its sibling to keep three links straight (architecture-2 ticket 14, the case that
+# bounds the rule). rB feeds b from the left end of the row above, rA feeds a1 to a3 from its right end, and the
+# sibling s1 stands right of n1. In each pass the a-ports are beyond s1 and declined, but the move toward their mean
+# and the growth that keeps b under rB stretch n1 to the right a pass at a time, until it spans both routers.
+# Today: all four links of n1 stand straight; n1 is 383.9 px wide and s1's own link bends.
+# Wanted: the same four straight links. A rule that stops a declined feed from pulling the move bends the three links
+# to rA instead (measured: 3 bent links, not 1); it has to price the push of the sibling.
+# Test-only input owned by architecture-2 ticket 14; test/pipeline/declined-feed-growth.test.ts runs the whole pipeline on it.
+portograph: 2
+profile: network
+groups:
+  top: {tier: 0, label: Top}
+  low: {tier: 1, label: Low}
+nodes:
+  rB: {group: top, class: router, label: RB, ports: [{name: q, side: bottom}]}
+  f1: {group: top, label: F1}
+  f2: {group: top, label: F2}
+  rA: {group: top, class: router, label: RA, ports: [{name: p1, side: bottom}, {name: p2, side: bottom}, {name: p3, side: bottom}]}
+  n1: {group: low, label: N1, ports: [{name: a1, side: top}, {name: a2, side: top}, {name: a3, side: top}, {name: b, side: top}]}
+  s1: {group: low, label: S1}
+links:
+- [rA.p1, n1.a1]
+- [rA.p2, n1.a2]
+- [rA.p3, n1.a3]
+- [rB.q, n1.b]
+- [f1, s1]
