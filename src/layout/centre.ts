@@ -425,11 +425,12 @@ function inOrderTargets(node: LayoutNode, side: Side, targets: ReadonlyMap<strin
  * a port fed by two parents at different x seats under the feed its face keeps with the most of its siblings' seats, ties and a lone port to the first
  * feed, and the other feeds are fan remainders that pull nothing and grow nothing. `seats` names the feed each seat is read from.
  */
-function groupFeeds(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, warn: boolean): { own: Feed[]; wanted: Map<string, number>; yielded: Set<Feed>; seats: Map<string, Feed> } {
+function groupFeeds(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, warn: boolean): { own: Feed[]; wanted: Map<string, number>; yielded: Set<Feed>; seats: Map<string, Feed>; conflicts: Set<string> } {
   const own = list.filter(feed => model.document.nodes[feed.child.ref.node]!.group === id);
   // Adjacent feeds first: a transit yields to any other feed of the same child port instead of
   // contesting it, so a fan of lanes into one port cannot exhaust the shared budget.
-  const yielded = new Set<Feed>(), seats = new Map<string, Feed>(), rival = new Map<string, Feed[]>();
+  const yielded = new Set<Feed>(), seats = new Map<string, Feed>(), rival = new Map<string, Feed[]>(), conflicts = new Set<string>();
+  const wide = keptWide(model);
   const remainder = (feed: Feed): void => {
     yielded.add(feed);
     if (warn) placementWarning(model, 'CENTRE_FAN_REMAINDER', `${feed.link} shares its child port with a feed at another x; that feed owns vertical alignment.`, [feed.link]);
@@ -444,6 +445,7 @@ function groupFeeds(model: LayoutModel, context: CentreContext, tier: number, li
     if (!seat) { seats.set(child, feed); continue; }
     if (seat.x === feed.x) continue;
     if (feed.transit) remainder(feed);
+    else if (wide) conflicts.add(child);
     else rival.set(child, [...(rival.get(child) ?? [seat]), feed]);
   }
   for (const [child, candidates] of rival) {
@@ -464,7 +466,7 @@ function groupFeeds(model: LayoutModel, context: CentreContext, tier: number, li
   }
   const wanted = new Map<string, number>();
   for (const [child, feed] of seats) wanted.set(child, feed.x);
-  return { own, wanted, yielded, seats };
+  return { own, wanted, yielded, seats, conflicts };
 }
 /**
  * One group's centring step: centre under its owning feeds, align the wanted ports, repack, fit,
@@ -509,8 +511,8 @@ function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier
 }
 function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>): { unresolved: Set<string>; group: LayoutGroup } {
   const group = model.groups[id]!, order = context.groupOrder.get(tier)!;
-  const { own, wanted, yielded } = groupFeeds(model, context, tier, list, id, warn);
-  const unresolved = new Set<string>();
+  const { own, wanted, yielded, conflicts } = groupFeeds(model, context, tier, list, id, warn);
+  const unresolved = new Set<string>(conflicts);
   const startPenetration = riserPenetrations(model, group), startCrossings = chordLaneCrossings(model, group), startBreaches = spanBreaches(model);
   const saved = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
   // Centre under the feeds that may own an alignment; a yielded transit would only pull the group
@@ -865,6 +867,51 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
   }
   return result;
 }
+/** The code of the note that a model keeps the wide seats of the first feeds: narrowing it would have bent a link that stood straight (ticket 12, "narrow only if free"). */
+const KEPT_WIDE = 'CENTRE_SEATS_KEPT_WIDE';
+const keptWide = (model: LayoutModel): boolean => model.diagnostics.some(d => d.code === KEPT_WIDE);
+/** The links whose two ends stand on one vertical, facing: the links that run straight. */
+function straightLinks(model: LayoutModel): Set<string> {
+  const result = new Set<string>();
+  for (const link of model.links) {
+    if (link.layer !== 'routed' || !link.attachments) continue;
+    const one = findPort(model, link.attachments.from)?.anchor, two = findPort(model, link.attachments.to)?.anchor;
+    if (one && two && Math.abs(one.x - two.x) <= 0.5) result.add(link.id);
+  }
+  return result;
+}
+/** Whether any child port of the model is fed by two parents at different x: the only case the narrow seat differs from the wide one. */
+function hasRivals(model: LayoutModel): boolean {
+  const anchor = model.anchorTier;
+  if (anchor === undefined || !model.tierBands.some(band => band.tier === anchor)) return false;
+  const context = centreContext(model, anchor);
+  for (const { tier, authority } of context.steps) {
+    const list = centringFeeds(model, tier, authority), seen = new Map<string, number>();
+    for (const feed of list) {
+      if (feed.transit) continue;
+      const key = portId(feed.child.ref), x = seen.get(key);
+      if (x !== undefined && x !== feed.x) return true;
+      seen.set(key, feed.x);
+    }
+  }
+  return false;
+}
 export function centre(model: LayoutModel): LayoutModel {
-  return withStageMutation(model, 'centre', draft => { orderBundles(draft); normalizePrimaryBundlePorts(draft); centreDraft(draft, createCentreBudget()); recordSeatedSideLanes(draft); });
+  return withStageMutation(model, 'centre', draft => {
+    // The wide twin: the seats of the first feeds with the conflicting feeds pulling, as before ticket 12. It is built only where a port has two parents.
+    const twin = (): LayoutModel => {
+      const copy = JSON.parse(JSON.stringify(draft)) as LayoutModel;
+      copy.diagnostics.push({ stage: 'placement', severity: 'info', code: KEPT_WIDE, message: 'The first feeds seat their ports; a port with two parents is not narrowed.' });
+      return copy;
+    };
+    const wideTwin = hasRivals(draft) ? twin() : undefined;
+    orderBundles(draft); normalizePrimaryBundlePorts(draft); centreDraft(draft, createCentreBudget()); recordSeatedSideLanes(draft);
+    if (!wideTwin) return;
+    centreDraft(wideTwin, createCentreBudget()); recordSeatedSideLanes(wideTwin);
+    // Narrow only if free: a link that stands straight under the wide seat must stand straight under the narrow one, or the node keeps its wide seat.
+    const narrow = straightLinks(draft);
+    if ([...straightLinks(wideTwin)].every(id => narrow.has(id))) return;
+    for (const key of Object.keys(draft)) delete (draft as unknown as Record<string, unknown>)[key];
+    Object.assign(draft, wideTwin);
+  });
 }
