@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
-import { alignLinkedGroupGrid, alignLinkedGroupGridAndPack } from '../../src/layout/bands.js';
+import { alignLinkedGroupGrid, forgedRefusals, alignLinkedGroupGridAndPack } from '../../src/layout/bands.js';
 import { gapsHoldGrowth, lanesHoldGrowth } from '../../src/layout/growth-guard.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { rebuildBands } from '../../src/layout/skeleton-geometry.js';
@@ -119,4 +119,16 @@ it('a plan that cannot be read refuses a y-widening', async () => {
   const core = model.groups['core']!;
   model.tierBands[0]!.bounds = undefined as never;
   expect(gapsHoldGrowth(model, [{ group: core, bounds: { ...core.bounds!, height: core.bounds!.height + 5 } }])).toBe(false);
+});
+
+it('a recorded refusal stands whatever skip would apply to its pair, and is forged only when the pair shares an extent', async () => {
+  const model = await short();
+  const refusals = new Set(['y:core|side']);
+  // The pair is apart and a growth through another pair has left it beyond the growth cap: the replay skips it before any guard, and the record is true.
+  const flank = model.groups['side']!.bounds!;
+  flank.height = model.groups['core']!.bounds!.height * 0.4;
+  expect(forgedRefusals(structuredClone(model), refusals)).toEqual([]);
+  // A pair that shares an extent in the final model is a forged record; so is a pair that is not linked.
+  expect(forgedRefusals(structuredClone(await publish('a-grid-growth-stops-at-a-reserved-lane')), refusals)).toEqual(['y:core|side']);
+  expect(forgedRefusals(structuredClone(model), new Set(['y:core|nobody']))).toEqual(['y:core|nobody']);
 });

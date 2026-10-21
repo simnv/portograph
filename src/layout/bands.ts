@@ -1199,17 +1199,22 @@ function flankShifts(model: LayoutModel, group: LayoutGroup, box: Rect): { group
  * that would overlap another group, make a frame box overlap another frame's, or cross a reserved lane window is skipped. Chains converge in
  * a bounded number of passes because every pass only merges extents.
  */
+/** The recorded refusals that are not true of the model: a pair that is not linked, or that shares an extent. A grid replay honouring the record reads this on its result. */
+export function forgedRefusals(model: LayoutModel, honour: ReadonlySet<string>): string[] {
+  const { shares } = alignGrid(model, honour);
+  return [...honour].filter(key => shares.get(key) !== false);
+}
 export function alignLinkedGroupGrid(model: LayoutModel, honour?: ReadonlySet<string>): boolean {
   return alignGrid(model, honour).changed;
 }
 /** The grid, and whether it moved a flank: the caller then owes the regions a replay (`alignLinkedGroupGridAndPack`). */
-function alignGrid(model: LayoutModel, honour?: ReadonlySet<string>): { changed: boolean; flanksMoved: boolean; honoured: ReadonlySet<string> } {
+function alignGrid(model: LayoutModel, honour?: ReadonlySet<string>): { changed: boolean; flanksMoved: boolean; shares: ReadonlyMap<string, boolean> } {
   let changed = false, base: Set<string> | undefined;
   const flankMoved: string[] = [];
   const refused = new Set<string>(), heldOff = new Set<string>();
   // The pairs a reservation guard refused are a decision of this call, recorded in `model.gridRefusals` (ticket 16). A caller that validates passes the record as `honour`: those pairs are skipped as the
   // producer skipped them, because the lanes and gap plans the guards read have moved since, and every other pair is judged live.
-  const decided = new Map<string, { members: LayoutGroup[]; pos: 'x' | 'y'; len: 'width' | 'height' }>(), honoured = new Set<string>();
+  const decided = new Map<string, { members: LayoutGroup[]; pos: 'x' | 'y'; len: 'width' | 'height' }>(), keys = new Map<string, boolean>();
   model.diagnostics = model.diagnostics.filter(item => item.code !== 'GROUP_GRID_YIELDS_TO_PACK');
   // Within one call extents only grow and only ever onto existing box edges, so the process terminates; the cap
   // exhausting is a defect signal, not a design bound. Across calls nothing is monotone: a replay refits the boxes and a pack moves a
@@ -1223,6 +1228,9 @@ function alignGrid(model: LayoutModel, honour?: ReadonlySet<string>): { changed:
     for (const { a, b, axis } of linkedGroupPairs(model)) {
       const [pos, len] = axis === 'x' ? ['x', 'width'] as const : ['y', 'height'] as const;
       const members = [...a, ...b];
+      const key = `${axis}:${members.map(group => group.id).sort().join('|')}`;
+      // A recorded refusal is consumed first, whatever skip would apply to the pair below: the validator judges whether the record is true on the final model.
+      if (honour?.has(key)) continue;
       const low = Math.min(...members.map(group => group.bounds![pos]));
       const high = Math.max(...members.map(group => group.bounds![pos] + group.bounds![len]));
       const extent = high - low;
@@ -1239,8 +1247,6 @@ function alignGrid(model: LayoutModel, honour?: ReadonlySet<string>): { changed:
       if (proposed.some(item => others.some(other => rectOverlap(item.bounds, other.bounds!)))) continue;
       // Either axis keeps the reservations (ticket 16): the lane and chord guards here, the tier gaps that fit below, after the cheap guards. A refusal is kept for the call.
       const held = `${members.map(group => group.id).join('|')}${JSON.stringify(proposed.map(item => item.bounds))}`;
-      const key = `${axis}:${members.map(group => group.id).sort().join('|')}`;
-      if (honour?.has(key)) { honoured.add(key); continue; }
       if (heldOff.has(held)) continue;
       // `holdsMove` on the x axis is a live guard of main and stays unrecorded; the guards ticket 16 added are recorded.
       const refuse = (): void => { heldOff.add(held); decided.set(key, { members, pos, len }); };
@@ -1304,7 +1310,13 @@ function alignGrid(model: LayoutModel, honour?: ReadonlySet<string>): { changed:
     }).map(([key]) => key).sort();
     if (apart.length) model.gridRefusals = apart; else delete model.gridRefusals;
   }
-  return { changed, flanksMoved: flankMoved.length > 0, honoured };
+  // Whether each linked pair shares an extent now: the validator reads the recorded pairs off this.
+  if (honour !== undefined) for (const { a, b, axis } of linkedGroupPairs(model)) {
+    const [pos, len] = axis === 'x' ? ['x', 'width'] as const : ['y', 'height'] as const, members = [...a, ...b];
+    const low = Math.min(...members.map(group => group.bounds![pos])), high = Math.max(...members.map(group => group.bounds![pos] + group.bounds![len]));
+    keys.set(`${axis}:${members.map(group => group.id).sort().join('|')}`, members.every(group => Math.abs(group.bounds![len] - (high - low)) <= PLACEMENT_EPS && Math.abs(group.bounds![pos] - low) <= PLACEMENT_EPS));
+  }
+  return { changed, flanksMoved: flankMoved.length > 0, shares: keys };
 }
 
 
@@ -1724,8 +1736,8 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   // The producer's refusals are honoured for the pairs it names (the lanes and plans they read have moved since); a record that names a pair the boxes already share is a forgery.
   const honour = new Set(model.gridRefusals ?? []);
   const replay = alignGrid(trial, honour), changed = replay.changed, exhausted = trial.diagnostics.some(item => item.code === 'GROUP_GRID_NON_CONVERGENCE');
-  const unreached = honour.size === 0 ? [] : [...honour].filter(key => !replay.honoured.has(key));
-  if (unreached.length) throw new Error(`The grid refusals ${unreached.join(', ')} name pairs the boxes already share`);
+  const forged = [...honour].filter(key => replay.shares.get(key) !== false);
+  if (forged.length) throw new Error(`The grid refusals ${forged.join(', ')} name pairs that are not linked or that already share an extent`);
   if (changed && !exhausted) {
     const moved = orderedGroupIds(model.document).filter(id => !equal(model.groups[id]!.bounds, trial.groups[id]!.bounds))
       .map(id => `${id} ${JSON.stringify(model.groups[id]!.bounds)} would be ${JSON.stringify(trial.groups[id]!.bounds)}`);
