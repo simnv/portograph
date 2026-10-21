@@ -81,12 +81,35 @@ function inFaceOrder<T>(items: T[], port: (item: T) => LayoutPort, target: (item
 
 export function standPortsOverChildren(model: LayoutModel, steps: readonly { tier: number; authority: number }[]): void {
   const read = faces(model), movers: { feed: Feed; parent: LayoutPort; target: number }[] = [];
-  for (const feed of read.feeds(steps)) {
+  const lists = steps.map(({ tier, authority }) => centringFeeds(model, tier, authority));
+  const groupOf = (feed: Feed): string => model.document.nodes[feed.child.ref.node]!.group;
+  /**
+   * The offset a group step centres on: the mean x of its distinct parent ports against the mean x of its distinct child ports (`centreGroupStepRaw`). A move
+   * that changes it makes the step shift the whole group, and every alignment the group holds with it. The ports in `moved` stand at their new x.
+   */
+  const offset = (feed: Feed, moved: ReadonlyMap<string, number>): number => {
+    const own = lists.find(list => list.includes(feed))!.filter(item => groupOf(item) === groupOf(feed));
+    const parents = new Map(own.map(item => [item.key, moved.get(item.key) ?? item.x]));
+    const children = new Map(own.map(item => [portId(item.child.ref), moved.get(portId(item.child.ref)) ?? item.child.anchor!.x]));
+    const mean = (values: Iterable<number>): number => { const xs = [...values]; return xs.reduce((sum, x) => sum + x, 0) / xs.length; };
+    return mean(parents.values()) - mean(children.values());
+  };
+  const placed = new Map<string, number>();
+  // In the order of the ports, not of the links: what an earlier move leaves in the offset decides the next.
+  for (const feed of [...lists.flat()].sort((a, b) => portId(a.parent.ref).localeCompare(portId(b.parent.ref)) || portId(a.child.ref).localeCompare(portId(b.child.ref)))) {
     if (feed.transit || !read.eligible(feed)) continue;
     // The parent is the port of the upper tier, whichever side of the anchor tier the feed reads it on. A parent port with several links is a fan: the
     // first child by x owns the vertical, and the rest stay where the fan puts them.
     const [parent, child] = read.upper(feed.parent, feed.child);
     if (!read.sole(parent) || Math.abs(parent.anchor!.x - child.anchor!.x) <= 0.5) continue;
+    // A move is free only when the step of the group cannot follow it: the offset the step centres on stays where it was. Whether a group with a nonzero offset
+    // stands against a wall is not known here, so a move that changes the offset is declined (the group would shift, and every other port of it would leave its feed).
+    const before = offset(feed, placed), after = offset(feed, new Map([...placed, [portId(parent.ref), child.anchor!.x]]));
+    if (Math.abs(after - before) > 0.5) {
+      name(model, read.linkOf.get(feed.link)!);
+      continue;
+    }
+    placed.set(portId(parent.ref), child.anchor!.x);
     movers.push({ feed, parent, target: child.anchor!.x });
   }
   // Only the parent port moves: the child side is `alignSide`'s, which may also widen the body and so answers to the widening allowance.
