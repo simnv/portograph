@@ -1,0 +1,25 @@
+# Expected: The minority feed stands inside the row above (architecture-2 ticket 14): rA, f1, rB, f2, with n1 and its
+# sibling s1 below. b's alignment is declined in each pass.
+# Today: n1 ends 189.9 px wide for no straight link.
+# Wanted: the three links to rA stand straight and n1 keeps the 90 px its four ports need.
+# Status: ticket 14 is open. The "Wanted" line is the rule; the "Today" line is what main does. The test marks the
+# wanted assertions `it.fails` until the rule lands.
+# Test-only input owned by architecture-2 ticket 14; test/pipeline/declined-feed-growth.test.ts runs the whole pipeline on it.
+portograph: 2
+profile: network
+groups:
+  top: {tier: 0, label: Top}
+  low: {tier: 1, label: Low}
+nodes:
+  rA: {group: top, class: router, label: RA, ports: [{name: p1, side: bottom}, {name: p2, side: bottom}, {name: p3, side: bottom}]}
+  f1: {group: top, label: F1}
+  rB: {group: top, class: router, label: RB, ports: [{name: q, side: bottom}]}
+  f2: {group: top, label: F2}
+  n1: {group: low, label: N1, ports: [{name: a1, side: top}, {name: a2, side: top}, {name: a3, side: top}, {name: b, side: top}]}
+  s1: {group: low, label: S1}
+links:
+- [rA.p1, n1.a1]
+- [rA.p2, n1.a2]
+- [rA.p3, n1.a3]
+- [rB.q, n1.b]
+- [f1, s1]
