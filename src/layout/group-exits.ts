@@ -50,6 +50,14 @@ function overlapsRun(a: PathSegment, from: Point, to: Point, width: number): boo
   const ax = across(a.from, aHorizontal), bx = across(from, bHorizontal);
   return ax > b0 + PLACEMENT_EPS && ax < b1 - PLACEMENT_EPS && bx > a0 + PLACEMENT_EPS && bx < a1 - PLACEMENT_EPS;
 }
+/**
+ * What tells two parallel links apart without their place in a list: the author's own id when there is one, else the class, label, route
+ * and weight of the link as written. Links that agree on all of it are interchangeable, and the order of the document breaks that tie last.
+ */
+function contentKey(model: LayoutModel, link: LayoutLink): string {
+  const written = model.document.links[link.sourceIndex];
+  return JSON.stringify([written?.id ?? null, written?.class ?? null, written?.label ?? null, written?.route ?? null, written?.weight ?? null]) + `|${String(link.sourceIndex).padStart(8, '0')}`;
+}
 const fixed = (n: number): string => (Math.round(n * 1000) / 1000).toFixed(3);
 
 /** The tree a junction id belongs to: the id without its depth. Links on one tree share its stems. */
@@ -61,7 +69,7 @@ interface Exit {
   end: 'from' | 'to';
   terminal: Point;
   exited: string[];
-  /** The key that orders exits and breaks ties: endpoints and the side only, never an array index, an id or a source index. */
+  /** The key that orders exits: endpoints, the side and the boxes, then the link's own content. Never an array index. */
   key: string;
   candidates: Candidate[];
   chosen?: Candidate | undefined;
@@ -85,7 +93,7 @@ interface Exit {
  * All runs are committed together, each recorded as a `GroupExit` promise on the model; an exit
  * with no candidate left is a placement error, `GROUP_EXIT_BLOCKED`, and keeps its terminal.
  */
-export function reserveGroupExits(model: LayoutModel): void {
+export function reserveGroupExits(model: LayoutModel, searchBudget = SEARCH_BUDGET): void {
   delete model.groupExits;
   const boxes = groupBoxes(model), half = routedStroke(model) / 2;
   const margin = half + GROUP_EDGE_LINK_CLEARANCE + EXIT_SLACK;
@@ -153,7 +161,7 @@ export function reserveGroupExits(model: LayoutModel): void {
         if (!blocked) candidates.push({ rank, to, strip });
       }
       exits.push({ link, end, terminal, exited: exited.map(box => box.id).sort(), candidates,
-        key: [fixed(terminal.x), fixed(terminal.y), fixed(port.anchor.x), fixed(port.anchor.y), fixed(farPort.anchor.x), fixed(farPort.anchor.y), port.side, exited.map(box => box.id).sort().join(',')].join('|') });
+        key: [fixed(terminal.x), fixed(terminal.y), fixed(port.anchor.x), fixed(port.anchor.y), fixed(farPort.anchor.x), fixed(farPort.anchor.y), port.side, exited.map(box => box.id).sort().join(','), contentKey(model, link)].join('|') });
     }
   }
   exits.sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
@@ -168,10 +176,11 @@ export function reserveGroupExits(model: LayoutModel): void {
   const components = new Map<number, Exit[]>();
   for (const [i, item] of exits.entries()) components.set(find(i), [...(components.get(find(i)) ?? []), item]);
   for (const component of components.values()) {
-    let best = Infinity, bestPick: (Candidate | undefined)[] = [], budget = SEARCH_BUDGET;
+    let best = Infinity, bestPick: (Candidate | undefined)[] = [], budget = searchBudget, capped = false;
     const pick: (Candidate | undefined)[] = [];
     const search = (index: number, cost: number): void => {
-      if (cost >= best || budget-- <= 0) return;
+      if (cost >= best) return;
+      if (budget-- <= 0) { capped = true; return; }
       if (index === component.length) { best = cost; bestPick = [...pick]; return; }
       for (const candidate of component[index]!.candidates) {
         if (pick.slice(0, index).some(other => other !== undefined && clash(other, candidate))) continue;
@@ -181,6 +190,10 @@ export function reserveGroupExits(model: LayoutModel): void {
     };
     search(0, 0);
     for (const [index, item] of component.entries()) item.chosen = bestPick[index];
+    if (capped) {
+      model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'GROUP_EXIT_SEARCH_CAPPED', owners: component.map(item => ({ kind: 'link' as const, id: item.link.id })),
+        message: `The search for the group exits of ${component.map(item => item.link.id).join(', ')} stopped after ${searchBudget} steps; the best assignment found stands.` });
+    }
   }
   const promised: GroupExit[] = [];
   for (const item of exits) {

@@ -134,3 +134,37 @@ describe('the exits are allocated together (architecture ticket 13, round 3)', (
     expect(holdsMove(model, [{ group, bounds: grown }], false, ['groupExit'])).toBe(false);
   }, 60000);
 });
+
+describe('parallel links and the search cap (architecture ticket 13, round 4)', () => {
+  /** The door fixture with a second link between the same two ports, labelled so the two differ in content only. */
+  async function parallel(): Promise<LayoutModel> {
+    const model = unexited(await run(fixture('a-claimed-run-clears-a-shared-run')));
+    const first = model.links.find(link => link.id === 'link-1')!;
+    const twin = structuredClone(first);
+    twin.id = 'link-9'; twin.sourceIndex = model.document.links.length;
+    model.document.links.push({ ...structuredClone(model.document.links[first.sourceIndex]!), label: 'beta' });
+    model.document.links[first.sourceIndex] = { ...model.document.links[first.sourceIndex]!, label: 'alpha' };
+    model.links.push(twin);
+    return model;
+  }
+  const labelOf = (model: LayoutModel, id: string): string | undefined => model.document.links[model.links.find(link => link.id === id)!.sourceIndex]!.label;
+
+  it('give the strip to the same link whichever way the links are listed', async () => {
+    const a = await parallel(), b = await parallel();
+    b.links.reverse();
+    reserveGroupExits(a); reserveGroupExits(b);
+    const kept = (model: LayoutModel): string[] => (model.groupExits ?? []).map(item => labelOf(model, item.link)!).sort();
+    const refused = (model: LayoutModel): string[] => model.diagnostics.filter(item => item.code === 'GROUP_EXIT_BLOCKED').flatMap(item => item.owners ?? []).map(owner => labelOf(model, (owner as { id: string }).id)!).sort();
+    expect(kept(a).length + refused(a).length).toBe(2);
+    expect(kept(b)).toEqual(kept(a));
+    expect(refused(b)).toEqual(refused(a));
+  }, 60000);
+
+  it('names a search that hit its cap', async () => {
+    const model = await parallel();
+    reserveGroupExits(model, 2);
+    const capped = model.diagnostics.filter(item => item.code === 'GROUP_EXIT_SEARCH_CAPPED');
+    expect(capped.length).toBe(1);
+    expect((capped[0]!.owners ?? []).length).toBeGreaterThanOrEqual(2);
+  }, 60000);
+});
