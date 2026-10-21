@@ -189,6 +189,8 @@ is a standalone schema-v2 document. `stage-inputs.yaml` is separate test data.
 | [an-authored-order-on-the-first-node-leads-the-bundle](synthetic/an-authored-order-on-the-first-node-leads-the-bundle.yaml) | 3, 7c | `order:` on `r`, the node the document names first: `e` follows it, `r` stays narrow. |
 | [an-authored-order-on-the-second-node-leads-the-bundle](synthetic/an-authored-order-on-the-second-node-leads-the-bundle.yaml) | 3, 7c | `order:` on `e`, the node sorted second: the end with an authored order leads, so the ends still agree. |
 | [a-bundle-port-with-a-link-beyond-the-bundle-follows-the-bundle](synthetic/a-bundle-port-with-a-link-beyond-the-bundle-follows-the-bundle.yaml) | 3, 7c | `r.p3` joins `e` in the bundle and `x` outside it: its node seats its ports as free ports and both ends keep one order (the width of `r` is a centring gap, ticket 08). |
+| [a-port-with-two-parents-keeps-its-first-feed-and-its-width](synthetic/a-port-with-two-parents-keeps-its-first-feed-and-its-width.yaml) | 5 | A lone port fed by two parents seats under the first feed; the second feed is a fan remainder and does not widen the node (ticket 12). |
+| [a-bundle-port-with-a-link-listed-first-follows-the-bundle](synthetic/a-bundle-port-with-a-link-listed-first-follows-the-bundle.yaml) | 3, 5 | The probe with the outside link listed first: the port still seats under the bundle's peer (ticket 12). |
 
 The first 14 diagrams are ticket 00's approved counter-examples. `fitting-link-label` is the
 test-only successful-label input ticket 14 added beside them; it needs no stage precondition,
