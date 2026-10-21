@@ -1,0 +1,29 @@
+# Expected: architecture ticket 10 (defect D3). `hub` is a small node with three overlay links on its
+# top face and two routed children below it. Centring widens `hub` to align its two bottom ports with
+# `h3` and `h4`, which stand on the anchor tier. The three top ports align to nothing, so they stay where
+# stage 5 centred them on the face: the block of three ports (the pitch is kept) is centred on the widened
+# face, not bunched at one corner. test/layout/port-block-centred.test.ts reads the layout.
+portograph: 2
+groups:
+  up: { tier: 0, label: Up }
+  mid: { tier: 1, label: Middle }
+  low: { tier: 2, label: Low }
+nodes:
+  s1: { group: up, class: server, label: S1 }
+  s2: { group: up, class: server, label: S2 }
+  s3: { group: up, class: server, label: S3 }
+  a: { group: mid, class: server, label: A }
+  b: { group: mid, class: server, label: B }
+  hub: { group: mid, class: server, label: Hub }
+  h1: { group: low, class: server, label: H1 }
+  h2: { group: low, class: server, label: H2 }
+  h3: { group: low, class: server, label: H3 }
+  h4: { group: low, class: server, label: H4 }
+links:
+  - [a, h1]
+  - [b, h2]
+  - [hub, h3]
+  - [hub, h4]
+  - [s1, hub, { route: overlay }]
+  - [s2, hub, { route: overlay }]
+  - [s3, hub, { route: overlay }]

@@ -16,6 +16,7 @@ import { portId, bandGap, SKELETON_SPACING } from './skeleton-graph.js';
 import { crosses } from './overlay-paths.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
+import { recentreSeatedFaces, seatedFaces } from './face-centre.js';
 import { packRowsOf } from './grid.js';
 import { rowGap } from './sides-two.js';
 import { linkLabelGap } from './bands.js';
@@ -598,7 +599,10 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
 }
 /** Reusable bounded producer. The caller shares one budget across all ordered placement replay. */
 export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
+  const seated = seatedFaces(model);
   timed('centre-passes', () => centrePasses(model, budget));
+  // A face centring left alone stands centred on the body it widened (architecture ticket 10, D3). Read before the overlay windows below.
+  recentreSeatedFaces(model, seated);
   // The windows of the overlay barycentre are read once, where centring has left the partners (ticket 143): a window read in a pass
   // is read on geometry that a later step moves.
   if (selectAnchorTier(model) !== undefined) timed('centre-overlay-final', () => { placeOverlayFree(model); rebuildRegions(model); });
