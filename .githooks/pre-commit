@@ -1,0 +1,9 @@
+#!/bin/sh
+# Versioned pre-commit guardrail. Enable: git config core.hooksPath .githooks
+dir=$(dirname "$0")
+sh "$dir/check-denylist.sh" || exit 1
+if git diff --cached --name-only --diff-filter=ACMR | grep -Eq '^(src|test|scripts)/.*\.(ts|js|mjs|json)$|^[^/]+\.(ts|js|mjs|cjs|json)$'; then
+  npm run typecheck && npm run lint || exit 1
+else
+  echo "pre-commit: no code files staged, typecheck and lint skipped"
+fi
