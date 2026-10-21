@@ -34,7 +34,7 @@ it('decides a face the same way whatever the order of the links', async () => {
   expect(flipped).not.toBe(fixture);
   const [one, two] = await Promise.all([fixture, flipped].map(text => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt })));
   const face = (model: Awaited<ReturnType<typeof layout>>): string[] => model.nodes['core-sw']!.ports.filter(port => port.side === 'bottom').map(port => `${port.ref.name}@${port.anchor!.x.toFixed(1)}`).sort();
-  expect(face(two)).toEqual(face(one));
+  expect(face(two!)).toEqual(face(one!));
 }, 120000);
 
 it('puts a source port back when the corridor of its link did not follow', async () => {
