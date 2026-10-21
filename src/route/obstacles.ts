@@ -1,4 +1,4 @@
-import type { Point, Rect, Side } from '../model/geometry.js';
+import type { Point, Rect } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import { orderedNodeIds } from '../model/model.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
@@ -202,97 +202,6 @@ export function routeObstacles(model: LayoutModel): RouteObstacle[] {
       consumers: obstacle.owner.kind === 'link' ? [obstacle.owner.id] : [] });
   }
   for (const item of reservedRunObstacles(model)) push(item);
-  for (const item of ownGroupExitWalls(model, result)) push(item);
-  return result;
-}
-
-
-const OPPOSITE_SIDE: Record<Side, Side> = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' };
-
-/** `outer` minus the `holes`, as disjoint rectangles: the grid the hole edges cut, merged along each row band. */
-function subtract(outer: Rect, holes: Rect[]): Rect[] {
-  const cut = (lo: number, hi: number, values: number[]): number[] =>
-    [...new Set([lo, hi, ...values.filter(v => v > lo && v < hi)])].sort((a, b) => a - b);
-  const xs = cut(outer.x, outer.x + outer.width, holes.flatMap(h => [h.x, h.x + h.width]));
-  const ys = cut(outer.y, outer.y + outer.height, holes.flatMap(h => [h.y, h.y + h.height]));
-  const result: Rect[] = [];
-  for (let j = 0; j + 1 < ys.length; j++) {
-    let start: number | undefined;
-    const flush = (end: number): void => {
-      if (start !== undefined) result.push({ x: start, y: ys[j]!, width: end - start, height: ys[j + 1]! - ys[j]! });
-      start = undefined;
-    };
-    for (let i = 0; i + 1 < xs.length; i++) {
-      const cx = (xs[i]! + xs[i + 1]!) / 2, cy = (ys[j]! + ys[j + 1]!) / 2;
-      const inHole = holes.some(h => cx > h.x && cx < h.x + h.width && cy > h.y && cy < h.y + h.height);
-      if (inHole) flush(xs[i]!); else start ??= xs[i]!;
-    }
-    flush(xs.at(-1)!);
-  }
-  return result;
-}
-
-const overlaps = (a: Rect, b: Rect): boolean =>
-  a.x < b.x + b.width - PLACEMENT_EPS && b.x < a.x + a.width - PLACEMENT_EPS
-  && a.y < b.y + b.height - PLACEMENT_EPS && b.y < a.y + a.height - PLACEMENT_EPS;
-
-const containsPoint = (box: Rect, p: Point): boolean =>
-  p.x >= box.x - PLACEMENT_EPS && p.x <= box.x + box.width + PLACEMENT_EPS
-  && p.y >= box.y - PLACEMENT_EPS && p.y <= box.y + box.height + PLACEMENT_EPS;
-
-/**
- * The walls of a link's own group beyond the end of its shared run (ticket 13, ADR-0013).
- *
- * A link attached inside a group is exempt from that group's obstacle, because it crosses the
- * boundary at its port. A shared run ends at a junction row that stands inside the group's padding
- * (rows are measured from the port, not from the group edge), and from there the exempt router
- * is free to run along the group's edge at any distance. The group cannot simply become solid for
- * this link: the terminal is inside it.
- *
- * The exits are doors: strips one stroke wide that run from the terminal through the wall in each
- * direction but back towards the port's own node. They lie in the padding and the margin around the
- * terminal, which the fan's junction row and the group edge margin already reserve (the row is
- * placed by `fanRows`, the margin by `edgeMargin`). Everywhere else the group box, with its edge
- * margin, is a wall for this link, so the exterior remainder keeps the group clearance. A door
- * that meets foreign geometry is dropped, and with no door left the link keeps the exemption it
- * had. Nothing here is discovered by the router: the doors come from the terminal and the box,
- * both fixed before placement freezes.
- */
-function ownGroupExitWalls(model: LayoutModel, existing: RouteObstacle[]): RouteObstacle[] {
-  const result: RouteObstacle[] = [];
-  const stroke = routedStroke(model), half = stroke / 2, boxes = groupBoxes(model);
-  for (const link of model.links) {
-    if (link.layer === 'overlay' || link.path || link.fixedSegments?.length || !link.attachments) continue;
-    for (const end of ['from', 'to'] as const) {
-      const runs = link.sharedRuns?.[end];
-      if (!runs?.length) continue;
-      const ref = link.attachments[end], other = link.attachments[end === 'from' ? 'to' : 'from'];
-      const group = model.document.nodes[ref.node]?.group;
-      if (group === undefined || model.document.nodes[other.node]?.group === group) continue;
-      const port = model.nodes[ref.node]?.ports.find(item => portId(item.ref) === portId(ref));
-      const box = boxes.find(item => item.id === group)?.bounds;
-      if (!port?.side || !box) continue;
-      const terminal = runs.at(-1)!.to;
-      if (!containsPoint(box, terminal)) continue;
-      const wall = expand(box, half + GROUP_EDGE_LINK_CLEARANCE);
-      const lo = half, back = port.side;
-      // A door runs from the terminal out through the wall in one direction; the way back to the
-      // port's own node is not one. Each door must be clear of foreign geometry to count.
-      const doors = ([
-        ['top', { x: terminal.x - lo, y: wall.y, width: 2 * lo, height: terminal.y - wall.y }],
-        ['bottom', { x: terminal.x - lo, y: terminal.y, width: 2 * lo, height: wall.y + wall.height - terminal.y }],
-        ['left', { x: wall.x, y: terminal.y - lo, width: terminal.x - wall.x, height: 2 * lo }],
-        ['right', { x: terminal.x, y: terminal.y - lo, width: wall.x + wall.width - terminal.x, height: 2 * lo }],
-      ] as [Side, Rect][]).filter(([side, door]) => side !== OPPOSITE_SIDE[back] && door.width > 0 && door.height > 0
-        && !existing.some(item => !item.id.startsWith('group:') && !item.consumers.includes(link.id)
-          && !containsPoint(item.bounds, terminal) && overlaps(item.bounds, door))).map(([, door]) => door);
-      if (!doors.length) continue;
-      const consumers = groupConsumers(model, group).filter(id => id !== link.id);
-      for (const [index, bounds] of subtract(wall, doors).entries()) {
-        result.push({ id: `exit-wall:${link.id}:${end}:${index}`, bounds, consumers });
-      }
-    }
-  }
   return result;
 }
 
