@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { alignLinkedGroupGrid, alignLinkedGroupGridAndPack } from '../../src/layout/bands.js';
-import { gapsHoldGrowth, holdsGrowth, reservedGeometryBreaches } from '../../src/layout/growth-guard.js';
+import { addedBreaches, gapsHoldGrowth, lanesHoldGrowth, reservedGeometryBreaches } from '../../src/layout/growth-guard.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { rebuildBands } from '../../src/layout/skeleton-geometry.js';
 import { bars } from '../../src/layout/bars.js';
@@ -56,10 +56,10 @@ it('a reserved lane window in the room an x-widening would claim refuses it', as
   const model = structuredClone(await publish('a-grid-growth-stops-at-a-reserved-lane'));
   const core = model.groups['core']!, side = model.groups['side']!;
   const wider = { group: side, bounds: { ...side.bounds!, width: side.bounds!.width + 40 } };
-  expect(holdsGrowth(model, [wider])).toBe(true);
+  expect(lanesHoldGrowth(model, [wider])).toBe(true);
   const probe = structuredClone(model.lanes[0]!);
   model.lanes.push({ ...probe, id: 'lane:"probe":9', tier: 9, bounds: { x: side.bounds!.x + side.bounds!.width + 10, y: core.bounds!.y + 10, width: 10, height: 12 } });
-  expect(holdsGrowth(model, [wider])).toBe(false);
+  expect(lanesHoldGrowth(model, [wider])).toBe(false);
 });
 
 it('an exhausted budget still grows the box where the reservations allow, and refuses it where they do not', async () => {
@@ -93,4 +93,25 @@ it('a finished model is judged for reserved room on its own, at publication and 
   tampered.groups['lower']!.bounds = { ...tampered.lanes[0]!.bounds };
   expect(reservedGeometryBreaches(tampered)).toEqual([expect.stringContaining('lower stands in the reserved run of')]);
   expect(() => restoreLayoutModel(JSON.stringify(tampered))).toThrow();
+});
+
+it('publication judges only the breaches the grid added, and a model that records none restores', async () => {
+  const model = structuredClone(await publish('a-grid-growth-stops-at-a-reserved-lane'));
+  // A restore of a layout published before the check has no record: it validates.
+  delete model.runtime.standingBreaches;
+  expect(() => restoreLayoutModel(JSON.stringify(model))).not.toThrow();
+  const tampered = structuredClone(model);
+  tampered.groups['lower']!.bounds = { ...tampered.lanes[0]!.bounds };
+  expect(addedBreaches(tampered)).toEqual([]);
+  tampered.runtime.standingBreaches = [];
+  expect(addedBreaches(tampered)).toHaveLength(1);
+  tampered.runtime.standingBreaches = reservedGeometryBreaches(tampered);
+  expect(addedBreaches(tampered)).toEqual([]);
+});
+
+it('a plan that cannot be read refuses a y-widening', async () => {
+  const model = structuredClone(await publish('a-grid-growth-stops-at-a-reserved-lane'));
+  const core = model.groups['core']!;
+  model.tierBands[0]!.bounds = undefined as never;
+  expect(gapsHoldGrowth(model, [{ group: core, bounds: { ...core.bounds!, height: core.bounds!.height + 5 } }])).toBe(false);
 });

@@ -435,6 +435,8 @@ export interface Diagnostic {
 
 export interface LayoutRuntime {
   totalMs?: number;
+  /** The breaches of reserved room the model stood in when the linked-group grid last ran (ticket 16): publication judges only what the grid added. Absent reads as unknown. */
+  standingBreaches?: string[];
   stages: { stage: LayoutStage; durationMs: number }[];
 }
 

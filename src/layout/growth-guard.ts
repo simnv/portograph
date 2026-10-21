@@ -22,22 +22,24 @@ const meets = (p: Rect, q: Rect): boolean => p.x < right(q) - PLACEMENT_EPS && q
 /** The lanes that stand in room the boxes do not own: a transit, side or span run of a link. A course lane, a perimeter lane and a trunk lane derive from the boxes. */
 const reservedLane = (lane: Lane): boolean => lane.layer !== 'overlay' && lane.owner.kind === 'link' && lane.kind !== 'gap' && lane.kind !== 'perimeter';
 
-/** The parts of `to` outside `from`: the room a growth newly claims. */
-export function strips(from: Rect, to: Rect): Rect[] {
-  const result: Rect[] = [];
-  if (to.x < from.x - PLACEMENT_EPS) result.push({ x: to.x, y: to.y, width: from.x - to.x, height: to.height });
-  if (right(to) > right(from) + PLACEMENT_EPS) result.push({ x: right(from), y: to.y, width: right(to) - right(from), height: to.height });
-  if (to.y < from.y - PLACEMENT_EPS) result.push({ x: to.x, y: to.y, width: to.width, height: from.y - to.y });
-  if (bottom(to) > bottom(from) + PLACEMENT_EPS) result.push({ x: to.x, y: bottom(from), width: to.width, height: bottom(to) - bottom(from) });
-  return result;
-}
+const intersection = (p: Rect, q: Rect): Rect | undefined => {
+  const x = Math.max(p.x, q.x), y = Math.max(p.y, q.y), r = Math.min(right(p), right(q)), b = Math.min(bottom(p), bottom(q));
+  return r - x > PLACEMENT_EPS && b - y > PLACEMENT_EPS ? { x, y, width: r - x, height: b - y } : undefined;
+};
+const sameRect = (p: Rect, q: Rect): boolean => Math.abs(p.x - q.x) <= PLACEMENT_EPS && Math.abs(p.y - q.y) <= PLACEMENT_EPS
+  && Math.abs(p.width - q.width) <= PLACEMENT_EPS && Math.abs(p.height - q.height) <= PLACEMENT_EPS;
 
-/** Whether the room the proposed boxes newly claim holds no reserved lane window or span corridor (a lane that already meets the box is not this growth's doing). */
+/**
+ * Whether no reserved lane window or span corridor meets a proposed box beyond the part it meets now. A lane that already meets the box excuses that part only (a bypass lane
+ * inside the box stays inside it); any more of the lane taken is the growth's doing.
+ */
 export function lanesHoldGrowth(model: LayoutModel, proposed: Growth): boolean {
-  return proposed.every(({ group, bounds }) => {
-    const claimed = strips(group.bounds!, bounds);
-    return claimed.length === 0 || model.lanes.filter(reservedLane).every(lane => meets(lane.bounds, group.bounds!) || !claimed.some(strip => meets(strip, lane.bounds)));
-  });
+  return proposed.every(({ group, bounds }) => model.lanes.filter(reservedLane).every(lane => {
+    const now = intersection(lane.bounds, bounds);
+    if (now === undefined) return true;
+    const was = intersection(lane.bounds, group.bounds!);
+    return was !== undefined && sameRect(was, now);
+  }));
 }
 
 /** What each tier gap seats, by the tier below it: the room it still lacks for its rows, and the parts the plan seats. */
@@ -48,25 +50,22 @@ function gapStates(model: LayoutModel): Map<number, { ask: number; parts: number
 /**
  * Whether a growth in y leaves every tier gap that seats its rows seating them. A gap that already asks for room (7f has not grown it yet) is not judged on its ask: the
  * growth of 7f counts the box. A gap that fits must still fit, and must keep every part the plan seated (a box that moved the low boundary off a stem tip turns the
- * parts over to the router). The check reads a copy with the proposed boxes and the bands rebuilt from them; the model is not touched.
+ * parts over to the router). A plan that cannot be read refuses the growth. The check reads a copy with the proposed boxes and the bands rebuilt from them; the model is not touched.
  */
 export function gapsHoldGrowth(model: LayoutModel, proposed: Growth): boolean {
   if (!proposed.some(({ group, bounds }) => Math.abs(bounds.y - group.bounds!.y) > PLACEMENT_EPS || Math.abs(bounds.height - group.bounds!.height) > PLACEMENT_EPS)) return true;
   if (model.tierBands.length < 2) return true;
   const before = gapStates(model);
-  if (before === undefined) return true;
+  if (before === undefined) return false;
   const trial = JSON.parse(JSON.stringify(model)) as LayoutModel;
   for (const { group, bounds } of proposed) trial.groups[group.id]!.bounds = { ...bounds };
   rebuildBands(trial);
   const after = gapStates(trial);
-  return after === undefined || [...after].every(([below, state]) => {
+  return after !== undefined && [...after].every(([below, state]) => {
     const was = before.get(below);
     return was === undefined || ((was.ask > PLACEMENT_EPS || state.ask <= PLACEMENT_EPS) && state.parts >= was.parts);
   });
 }
-
-/** Whether the proposed boxes keep the reserved room on both axes: the lane windows and corridors, and the tier gaps that fit. `holdsMove` is asked separately. */
-export const holdsGrowth = (model: LayoutModel, proposed: Growth): boolean => lanesHoldGrowth(model, proposed) && gapsHoldGrowth(model, proposed);
 
 /** A finished model's lane windows and span corridors, read without the producer: no group of another sub-tier stands in the box of a reserved lane. */
 function laneBreaches(model: LayoutModel): string[] {
@@ -80,3 +79,9 @@ export const RESERVED_GEOMETRY_CHECKS: readonly ((model: LayoutModel) => string[
 
 /** The breaches of reserved geometry a model shows after 7e. */
 export const reservedGeometryBreaches = (model: LayoutModel): string[] => RESERVED_GEOMETRY_CHECKS.flatMap(check => check(model));
+
+/** The breaches the linked-group grid added: those a model does not record as standing (`runtime.standingBreaches`). A model that records none is not judged. */
+export function addedBreaches(model: LayoutModel): string[] {
+  const standing = model.runtime.standingBreaches;
+  return standing === undefined ? [] : reservedGeometryBreaches(model).filter(item => !standing.includes(item));
+}
