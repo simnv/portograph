@@ -1,0 +1,23 @@
+# Expected: Width that keeps links straight is kept (architecture-2 ticket 14, "bends first"). n1 is the last node of
+# the anchor row. Three links run to rA and one to rB in the tier below; rB stands under n1 and rA beside it. The
+# bundle to rA projects its far end's x (stage 7e), so n1 grows to 216.3 px and all four links stand straight. A
+# narrower n1 would bend the bundle: width is not traded against a bend.
+# Test-only input owned by architecture-2 ticket 14; test/pipeline/declined-feed-growth.test.ts runs the whole pipeline on it.
+portograph: 2
+profile: network
+groups:
+  top: {tier: 0, label: Top}
+  ga: {tier: 1, label: Group A}
+  gb: {tier: 1, label: Group B}
+nodes:
+  f1: {group: top, label: F1}
+  f2: {group: top, label: F2}
+  f3: {group: top, label: F3}
+  n1: {group: top, label: N1}
+  rB: {group: gb, class: router, label: RB}
+  rA: {group: ga, class: router, label: RA}
+links:
+- [n1, rB, {id: b1}]
+- [n1, rA, {id: a3}]
+- [n1, rA, {id: a2}]
+- [n1, rA, {id: a1}]
