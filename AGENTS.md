@@ -10,6 +10,7 @@ during placement. This is the pipeline's one load-bearing rule.
 ## Read on demand
 
 - [`CONTEXT.md`](CONTEXT.md): always, first. Vocabulary and invariants; use its terms exactly.
+- [`CODING_STANDARDS.md`](CODING_STANDARDS.md): before you write code or review a diff. Rules R1 to R9 from review history; cite them by id.
 - [`docs/design/pipeline.md`](docs/design/pipeline.md): when you change or reason about a stage.
   Read that stage's section only (`## Stage N`; stage 7 has subsections 7a to 7f).
 - [`docs/adr/`](docs/adr/): when a rule or decision is in question. Pick by file name.
