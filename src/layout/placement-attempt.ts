@@ -1,5 +1,7 @@
 import type { Diagnostic, LayoutModel } from '../model/layout.js';
 import { blockedChords, edgeLeavers, freezeChords } from './frame-paths.js';
+import { seatLaneSources } from './parent-stand.js';
+import { centreContext } from './centre.js';
 import { type LaneFollow, sideLaneFindings, spanLaneFindings, rebuildLaneExtents, reseatLanes } from './lanes.js';
 import { stepLinklessOutOfChords } from './overlay-place.js';
 import { type AdoptedCopy, stepOverChords } from './chord-clear.js';
@@ -263,6 +265,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
   // are settled again below, and one of the two can move a node when it settles.
   abortAt?.();
   const heldLanes = clone(draft.lanes), followedLanes: LaneFollow[] = [];
+  const seated = draft.anchorTier === undefined ? undefined : seatLaneSources(draft, centreContext(draft, draft.anchorTier).steps);
   if (reseatLanes(draft, followedLanes)) {
     rebuildLaneExtents(draft);
     // Four things the move can spoil, and it is refused rather than allowed to. It may open an
@@ -303,15 +306,17 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
     // places, and on `a-corridor-moves-after-the-grid-settles` the grid really does widen a box by
     // 29.03 px here. The accepted model is the trial itself, so nothing is re-derived twice.
     // The candidate is derived once, on a copy that has the grid and the labels replayed, and judged there by `judges.laneReseat` (decide.ts, kind `lane-reseat`).
-    if (chooseReseat(draft, heldLanes, followedLanes, replayGridAndLabels)) {
+    if (chooseReseat(draft, heldLanes, followedLanes, replayGridAndLabels, seated?.undo)) {
       attemptCounters.reseat.adopted++;
       note('reseat-lanes', 'adopted');
     } else {
+      seated?.undo();
       draft.diagnostics = draft.diagnostics.filter(item => item.code !== 'LANE_FOLLOWS_ITS_CHILD');
       attemptCounters.reseat.refused++;
       note('reseat-lanes', 'refused');
     }
-  } else { attemptCounters.reseat.none++; note('reseat-lanes', 'none'); }
+  } else { seated?.undo(); attemptCounters.reseat.none++; note('reseat-lanes', 'none'); }
+  seated?.settle(draft);
   // A perimeter lane's x is derived from the boxes over its span (ADR-0010, amendment of ticket 15, phase 4): the settling above can move a box after the last
   // replay, so the lane is read once more on the geometry that publishes.
   if (draft.lanes.some(lane => lane.kind === 'perimeter')) rebuildLaneExtents(draft);

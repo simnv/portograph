@@ -27,6 +27,7 @@ import { placeOverlayFree } from './overlay-place.js';
 import { fitRegionGroup, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 import { EPS, segmentRectDistance } from '../geometry/planar.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
+import { standPortsOverChildren } from './parent-stand.js';
 import { chordKind, isRoutedChord, withSharedLinkKinds, withStepLinkKinds } from './frame-paths.js';
 
 export interface CentreBudget { remaining: number; passes: number }
@@ -601,6 +602,9 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
 export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
   const seated = seatedFaces(model);
   timed('centre-passes', () => centrePasses(model, budget));
+  // The parent side of a single feed, after the last pass has moved the children (architecture ticket 15).
+  const anchorTier = model.anchorTier;
+  if (anchorTier !== undefined && model.tierBands.some(band => band.tier === anchorTier)) standPortsOverChildren(model, centreContext(model, anchorTier).steps);
   // A face centring left alone stands centred on the body it widened (architecture ticket 10, D3). Read before the overlay windows below.
   recentreSeatedFaces(model, seated, feedPorts(model));
   // The windows of the overlay barycentre are read once, where centring has left the partners (ticket 143): a window read in a pass
