@@ -11,8 +11,7 @@ const portX = (model: LayoutModel, node: string, name: string): number => model.
 const remainders = (model: LayoutModel): string[] => model.diagnostics.filter(d => d.code === 'CENTRE_FAN_REMAINDER').map(d => d.message.split(' ')[0]!);
 
 describe('a port with two parents has one seat (architecture ticket 12)', () => {
-  // Skipped: the engine order of r is p3,p2,p1 when centring first reads it and p2,p1,p3 after the bundle order is agreed, so the seats cannot all be kept (ticket 12 comments).
-  it.skip('does not widen a node for the feed beyond its bundle', async () => {
+  it('does not widen a node for the feed beyond its bundle', async () => {
     const model = await run('a-bundle-port-with-a-link-beyond-the-bundle-follows-the-bundle');
     const r = model.nodes['r']!;
     // The three ports need 72.5 px (the ticket 08 control); main stood at 569 px.
@@ -29,10 +28,10 @@ describe('a port with two parents has one seat (architecture ticket 12)', () => 
     expect(remainders(model)).toContain('link-2');
   }, 60000);
 
-  it.skip('seats under the bundle when the outside link is listed first', async () => {
+  it('seats under the bundle when the outside link is listed first', async () => {
     const model = await run('a-bundle-port-with-a-link-listed-first-follows-the-bundle');
     expect(Math.abs(model.nodes['r']!.bounds!.width - 72.5)).toBeLessThanOrEqual(1);
-    expect(remainders(model)).toContain('link-4');
-    expect(remainders(model)).not.toContain('link-3');
+    expect(remainders(model)).toContain('link-1');
+    expect(remainders(model)).not.toContain('link-4');
   }, 60000);
 });

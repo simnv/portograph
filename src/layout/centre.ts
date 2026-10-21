@@ -12,6 +12,7 @@ import { besideWalls, frameColumns, keepOutShifts, packBesideRows, type CellWind
 import { findPort } from './row-paths.js';
 import { attemptCounters } from './attempt-counters.js';
 import { timed } from './attempt-timings.js';
+import { orderBundles } from './bundle-geometry.js';
 import { portId, bandGap, SKELETON_SPACING } from './skeleton-graph.js';
 import { crosses } from './overlay-paths.js';
 import { moveGroup } from './skeleton-geometry.js';
@@ -853,5 +854,5 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
   return result;
 }
 export function centre(model: LayoutModel): LayoutModel {
-  return withStageMutation(model, 'centre', draft => { centreDraft(draft, createCentreBudget()); recordSeatedSideLanes(draft); });
+  return withStageMutation(model, 'centre', draft => { orderBundles(draft); centreDraft(draft, createCentreBudget()); recordSeatedSideLanes(draft); });
 }

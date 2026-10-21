@@ -519,13 +519,18 @@ export function checkChainPair(model: LayoutModel, bundle: Bundle): void {
     message: `${bundle.id} no longer runs straight between two rows of its grid: the faces or the port blocks of ${upper.id} and ${lower.id} moved apart after the packer seated them` });
 }
 
+/** Order only (architecture ticket 12): the common order of every bundle's ports, with no capacity, pitch, path or envelope. Centring reads it before it seats a port. */
+export function orderBundles(model: LayoutModel): void {
+  for (const bundle of model.bundles) { orderDistinct(model, bundle); applyBundleOrder(model, bundle); }
+}
+
 /** Geometry-only plan. No path, lane owner, bar reservation or envelope is written here. */
 export function prepareBundleGeometry(model: LayoutModel): void {
   // A diagram with no bundle still reserves the depth of its plain fans (ticket 20); one with
   // neither has nothing to plan.
   if (!model.bundles.length && !treeCohorts(model).some(({ port }) => axis(port.side!) === 'x')) return;
   const oldBands = clone(model.tierBands);
-  for (const bundle of model.bundles) { orderDistinct(model, bundle); applyBundleOrder(model, bundle); }
+  orderBundles(model);
   const planned = new Map<string, Map<LayoutPort, number>>();
   const set = (port: LayoutPort, value: number): void => {
     const key = JSON.stringify([port.ref.node, port.side]);
