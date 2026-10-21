@@ -497,8 +497,23 @@ export interface LayoutModel {
    * its geometry follows the ports, the decision is never re-taken, and a move that would put a body on it is refused.
    */
   frozenChords?: string[];
+  /** The exits 7e reserved for shared runs that end inside their own group (architecture ticket 13); absent when none. */
+  groupExits?: GroupExit[];
   /** One per `document.frames` entry, in document order; absent when no group was replaced by cells. */
   frames?: Frame[];
+}
+
+/**
+ * A placement promise: the shared run of `link` at `end` leaves the boxes in `exited` along the straight run `from` to `to`, and ends `clearance`
+ * px beyond the farthest of them. Stage 8 starts outside those boxes and may not re-enter their margin.
+ */
+export interface GroupExit {
+  link: string;
+  end: 'from' | 'to';
+  exited: string[];
+  from: Point;
+  to: Point;
+  clearance: number;
 }
 
 export interface FrozenPort {

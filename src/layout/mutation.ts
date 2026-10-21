@@ -372,6 +372,7 @@ function validateRegionClaims(model: LayoutModel, intermediate = false): void {
     same(model.bundles, expected.bundles, 'Bundle reservations contradict final paths');
     same(model.junctions, expected.junctions, 'Junctions contradict shared incidence');
     same(model.links.map(l => l.sharedRuns), expected.links.map(l => l.sharedRuns), 'Shared runs contradict port incidence');
+    same(model.groupExits, expected.groupExits, 'Group exits contradict shared runs');
     for (const [index, link] of model.links.entries()) if (link.bundle) same(link.path, expected.links[index]!.path, `Bundle path on ${link.id} contradicts final anchors`);
   }
   // A candidate its rule declined to pin is unclaimed geometry; stage 8 owns it from then on, and
