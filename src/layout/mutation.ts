@@ -18,7 +18,7 @@ import { PlacementRefusal } from './placement-refusal.js';
 import { rebuildBands, span, union, validateSkeletonBands } from './skeleton-geometry.js';
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, flankPair } from './flanks.js';
-import { rebuildLaneExtents, validateLanes, transitTiers } from './lanes.js';
+import { heldSourceGroups, rebuildLaneExtents, validateLanes, transitTiers } from './lanes.js';
 import { spanCandidate } from './frame-paths.js';
 import { faceKey, laneFaceOrder } from './turn-order.js';
 import { isCourseLane, sameCourses, validateCourses } from './courses.js';
@@ -849,7 +849,7 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
       same(node.bounds, { ...old.bounds!, x: old.bounds!.x + dx }, 'Lanes permit only whole-group horizontal translation');
       node.ports.forEach((port, i) => { const seat = seated.get(portKey(port.ref)) ?? old.ports[i]!.anchor!; same(port.anchor, { x: seat.x + dx, y: seat.y }, 'Lane translation must preserve relative anchors'); });
       if (dx && !model.links.some(link => transitTiers(model, link).includes(group.tier!))) throw new Error('Lanes may expand only occupied intermediate tiers');
-      if (dx && model.links.some(link => transitTiers(model, link).length && model.document.nodes[link.attachments!.from.node]!.group === group.id)) throw new Error('Lanes cannot move transit source anchors');
+      if (dx && heldSourceGroups(model).has(group.id)) throw new Error('Lanes cannot move transit source anchors');
     }
     if (rule === 'centre') {
       same(node.bounds!.y, old.bounds!.y, 'Centring cannot change y');

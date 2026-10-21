@@ -32,8 +32,12 @@ const rowsOwed = readFileSync(new URL('../../goldens/synthetic/a-tier-gap-grows-
 const bandEdgeResidue = readFileSync(new URL('../../goldens/synthetic/a-band-holds-the-group-that-set-its-edge.yaml', import.meta.url), 'utf8');
 /** Stress ticket 19's fixture: the one shape whose label plan answers from the `firstFree` walk. */
 const grownLabel = readFileSync(new URL('../../goldens/synthetic/a-grown-label-lands-inside-its-inset.yaml', import.meta.url), 'utf8');
-/** Stress ticket 18's fixture: a corridor would follow its child across a labelled row link's split. */
-const corridorCrossesSplit = readFileSync(new URL('../../goldens/synthetic/a-corridor-crosses-a-labelled-rows-split.yaml', import.meta.url), 'utf8');
+/**
+ * Stress ticket 18's fixture: a corridor would follow its child across a labelled row link's split. The claim needs the declared
+ * row order, so the sheet is read with `layout: { corridorRowOrder: false }` (architecture-2 ticket 17 turns two rows by default).
+ */
+const corridorCrossesSplit = readFileSync(new URL('../../goldens/synthetic/a-corridor-crosses-a-labelled-rows-split.yaml', import.meta.url), 'utf8')
+  .replace('portograph: 2\n', 'portograph: 2\nlayout: { corridorRowOrder: false }\n');
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const right = (box: Rect): number => box.x + box.width;
 const bottom = (box: Rect): number => box.y + box.height;

@@ -5,6 +5,7 @@ import { UNBOUNDED_BUDGET, type Budget } from '../pipeline/budget.js';
 import { PlacementRefusal } from './placement-refusal.js';
 import { buildSkeletonGraph } from './skeleton-graph.js';
 import { orderByOverlay, orderFramesByOverlay } from './overlay-order.js';
+import { orderByCorridors, validateRowOrderDecisions } from './corridor-order.js';
 import { packGridGroups, placeFlanksAndPeers, readSkeleton, rebuildBands, stackBands, validateSkeletonBands } from './skeleton-geometry.js';
 export { buildSkeletonGraph } from './skeleton-graph.js';
 export { validateSkeletonBands } from './skeleton-geometry.js';
@@ -82,8 +83,10 @@ export async function skeleton(model: LayoutModel, options: SkeletonOptions = {}
     }
     // Overlay links weigh the order ELK chose (ranked-groups spec 3.2); sides-two reads the result.
     orderByOverlay(work);
+    // The free rows then take the order the corridors through them cross least (ticket 17); the record is checked below.
+    orderByCorridors(work);
     placeFlanksAndPeers(work, columns => { orderFramesByOverlay(work, columns); });
-    const errors = validateSkeletonBands(work);
+    const errors = [...validateSkeletonBands(work), ...validateRowOrderDecisions(work)];
     if (errors.length) throw new SkeletonError(errors.join('; '));
     work.stage = 'skeleton';
     work.runtime.stages.push({ stage: 'skeleton', durationMs: clock.now() - started });

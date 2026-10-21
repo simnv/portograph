@@ -23,7 +23,11 @@
 # is produced at Q 0.4132939050368625 with G4, G5 and G6 failing — none of them this rule.
 #
 # Shrunk from the generated corpus input `transit-t6-p3-f1-s3`, which fails the same way.
+#
+# The rows keep their declared order (`layout.corridorRowOrder: false`, architecture-2 ticket 17): the claim above
+# needs the crossings that order makes, and the corridor row order would remove them.
 portograph: 2
+layout: { corridorRowOrder: false }
 groups:
   t0: { tier: 0, label: Tier 0 }
   t1: { tier: 1, label: Tier 1 }

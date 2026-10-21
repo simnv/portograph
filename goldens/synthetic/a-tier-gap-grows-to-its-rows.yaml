@@ -14,7 +14,11 @@
 # 26.5 px of headroom the high boundary keeps for an approach standing on it. The gap ends at
 # 90.5 px between the lane extents, 101.25 px of band gap, and seats all four. The diagram
 # publishes.
+#
+# The rows keep their declared order (`layout.corridorRowOrder: false`, architecture-2 ticket 17): the claim above
+# needs the crossings that order makes, and the corridor row order would remove them.
 portograph: 2
+layout: { corridorRowOrder: false }
 groups:
   g0: { tier: 0 }
   g1: { tier: 1 }

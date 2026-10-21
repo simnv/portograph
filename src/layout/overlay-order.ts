@@ -1,10 +1,11 @@
 import type { Point, Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
 import { groupShape } from './grid.js';
-import { selectAnchorTier } from './lanes.js';
+import { corridorReader, corridorSide, laneSource, laneWidth, ownsTransitLanes, selectAnchorTier, transitedCore } from './lanes.js';
 import { crosses } from './overlay-paths.js';
 import { placementWarning } from './regions.js';
-import { bandGap, compareId, nodeGap, SKELETON_SPACING as spacing } from './skeleton-graph.js';
+import { bandGap, compareId, nodeGap, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
+import { findPort } from './row-paths.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
 import { cellReach } from './frames.js';
 import { frameSubtreeCells } from '../model/model.js';
@@ -14,7 +15,11 @@ import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { isCantonUnit } from './read/canton.js';
 import { overlayCourse } from './courses.js';
 
-function readDraft(model: LayoutModel) {
+/** Two placed nodes that a link joins, and the link. */
+export interface Pair { from: string; to: string; link: LayoutLink }
+
+/** The stage-4 draft as the orders read it: its tiers and keys, and the measures that judge a re-order. */
+export function readDraft(model: LayoutModel) {
   const anchor = selectAnchorTier(model);
   if (anchor === undefined) return undefined;
   // A bus member is neither straight nor bent (mesh-bus.md, section 4): it is no straight overlay link to keep, and its pairs are
@@ -31,7 +36,6 @@ function readDraft(model: LayoutModel) {
   const isRow = (group: LayoutGroup): boolean => !group.flank && !flanked.has(group.id) && groupShape(model, group.id) === 'row' && model.document.groups[group.id]?.shape !== 'bar';
   const centre = (node: string): number => model.nodes[node]!.bounds!.x + model.nodes[node]!.bounds!.width / 2;
 
-  interface Pair { from: string; to: string; link: LayoutLink }
   const pairs = (links: LayoutLink[]): Pair[] => links.filter(link => placed(link.attachments!.from.node) && placed(link.attachments!.to.node))
     .map(link => ({ from: link.attachments!.from.node, to: link.attachments!.to.node, link }));
   const routed = pairs(model.links.filter(link => link.layer === 'routed' && link.attachments && link.technique !== 'stub'
@@ -53,13 +57,54 @@ function readDraft(model: LayoutModel) {
 
   // ---- measurement -------------------------------------------------------------------------
 
-  /** Routed crossings in the region between tiers `a` and `b` (indices), links read as straight lines. */
+  const corridors = corridorReader(model);
+  const peersOf = new Map<string, string[]>();
+  for (const link of model.links) if (link.attachments) {
+    const { from, to } = link.attachments;
+    peersOf.set(portId(from), [...peersOf.get(portId(from)) ?? [], to.node]);
+    peersOf.set(portId(to), [...peersOf.get(portId(to)) ?? [], from.node]);
+  }
+  /**
+   * The x the alignment end of a transit link is predicted to hold (ticket 17). The draft has no final port x yet: `sides-two` centres the
+   * ports of a face over the node at the face's pitch, in the order of the mean x of their peers, and gives the face of an alignment end
+   * at least the lane width as pitch. This reads the same order on the draft, with the peers at their node centres; a port whose side is
+   * not `top` or `bottom` is read at its node centre.
+   */
+  const sourceX = (link: LayoutLink): number => {
+    const ref = laneSource(model, link), node = model.nodes[ref.node]!, side = findPort(model, ref)?.side;
+    if (side !== 'top' && side !== 'bottom') return centre(ref.node);
+    const far = (key: string): number => mean((peersOf.get(key) ?? []).filter(peer => model.nodes[peer]?.bounds !== undefined).map(centre)) ?? Infinity;
+    const face = node.ports.filter(port => port.side === side).map((port, i) => ({ key: portId(port.ref), x: far(portId(port.ref)), i }))
+      .sort((a, b) => a.x - b.x || a.i - b.i); // the last key: the port's place on the node
+    const at = face.findIndex(item => item.key === portId(ref)), pitch = Math.max(node.sidePitch?.[side] ?? 0, laneWidth(model, link));
+    return centre(ref.node) + (at - (face.length - 1) / 2) * pitch;
+  };
+  /**
+   * The x of the corridor a transit link is predicted to hold in the sub-tier `k` (index) it crosses (ticket 17): beside the main group
+   * of that sub-tier nearest its source, on the side `corridorSide` gives, as 7a reserves it. The source is read at `sourceX` and the
+   * target at its node centre: a prediction of 7a, not its answer. Undefined when the sub-tier holds no main group.
+   */
+  const corridorX = (link: LayoutLink, k: number): number | undefined => {
+    const tier = tiers[k]!, sx = sourceX(link);
+    const main = Object.values(model.groups).filter(group => !group.flank && group.tier === tier && group.bounds !== undefined && group.nodes.length)
+      .sort((a, b) => a.bounds!.x - b.bounds!.x || compareId(a.id, b.id));
+    const core = transitedCore(main, sx)?.bounds;
+    if (core === undefined) return undefined;
+    const far = corridors.target(link, tier), half = laneWidth(model, link) / 2;
+    return corridorSide(core, sx, far === undefined ? undefined : centre(far.node)) === 'left' ? Math.min(sx, core.x - half) : Math.max(sx, core.x + core.width + half);
+  };
+  /**
+   * Routed crossings in the region between tiers `a` and `b` (indices). A link is read as a straight line between its two body
+   * centres, except a link that owns transit lanes: it is cut at its predicted corridor in each sub-tier it crosses, one straight
+   * piece per tier gap (ticket 17), because 7a puts the run beside the transited group, not on the diagonal.
+   */
   const regionCrossings = (a: number, b: number): number => {
     const across = routed.filter(pair => Math.min(tierOf(pair.from), tierOf(pair.to)) <= a && Math.max(tierOf(pair.from), tierOf(pair.to)) >= b)
       .map(pair => {
         const [upper, lower] = tierOf(pair.from) <= tierOf(pair.to) ? [pair.from, pair.to] : [pair.to, pair.from];
         const p = tierOf(upper), q = tierOf(lower), top = centre(upper), end = centre(lower);
-        const at = (k: number): number => top + (end - top) * (k - p) / (q - p);
+        const owns = q - p > 1 && ownsTransitLanes(model, pair.link);
+        const at = (k: number): number => (owns && k > p && k < q ? corridorX(pair.link, k) : undefined) ?? top + (end - top) * (k - p) / (q - p);
         return [at(a), at(b)] as const;
       });
     let count = 0;
@@ -147,7 +192,7 @@ function readDraft(model: LayoutModel) {
  * With `grow` the box may grow to the right, as far as the group to its right leaves room; without it a row that needs more room than
  * it has is refused (a frame cell stands in a column whose width is fixed). Returns whether the row was seated.
  */
-function reseatRow(model: LayoutModel, group: LayoutGroup, next: string[], grow: boolean): boolean {
+export function reseatRow(model: LayoutModel, group: LayoutGroup, next: string[], grow: boolean): boolean {
   const order = group.rowOrder ?? group.nodes;
   const left = Math.min(...order.map(node => model.nodes[node]!.bounds!.x));
   let need = left;
@@ -301,6 +346,21 @@ function rowTools(model: LayoutModel, draft: NonNullable<ReturnType<typeof readD
  * A tier that no overlay link touches keeps ELK's order, so an input with no overlay link is
  * untouched.
  */
+/**
+ * Which groups a stage-4 order may move. `movable`: a group with nodes that is no flank, no frame cell, no bar, and has no parent
+ * group and no child group. `freeRow`: a movable `row` group that no flank stands beside, so no rule but the order places its nodes.
+ * `orderByOverlay` and `orderByCorridors` (ticket 17) read these two, so the two orders agree on what is free.
+ */
+export function orderTools(model: LayoutModel): { movable: (group: LayoutGroup) => boolean; freeRow: (group: LayoutGroup) => boolean } {
+  const parents = new Set(Object.values(model.document.groups).flatMap(group => group.parent === undefined ? [] : [group.parent]));
+  const flanked = new Set(Object.values(model.groups).flatMap(group => group.flank ? [group.flank.of] : []));
+  const movable = (group: LayoutGroup): boolean => group.bounds !== undefined && group.nodes.length > 0 && !group.flank
+    && group.frame === undefined && !parents.has(group.id) && model.document.groups[group.id]?.parent === undefined
+    && model.document.groups[group.id]?.shape !== 'bar';
+  const freeRow = (group: LayoutGroup): boolean => movable(group) && !flanked.has(group.id) && groupShape(model, group.id) === 'row';
+  return { movable, freeRow };
+}
+
 export function orderByOverlay(model: LayoutModel): void {
   const draft = readDraft(model);
   if (draft === undefined) return;
@@ -308,11 +368,7 @@ export function orderByOverlay(model: LayoutModel): void {
 
   // ---- moving ------------------------------------------------------------------------------
 
-  const parents = new Set(Object.values(model.document.groups).flatMap(group => group.parent === undefined ? [] : [group.parent]));
-  const flanked = new Set(Object.values(model.groups).flatMap(group => group.flank ? [group.flank.of] : []));
-  const movable = (group: LayoutGroup): boolean => group.bounds !== undefined && group.nodes.length > 0 && !group.flank
-    && group.frame === undefined && !parents.has(group.id) && model.document.groups[group.id]?.parent === undefined
-    && model.document.groups[group.id]?.shape !== 'bar';
+  const { movable, freeRow } = orderTools(model);
   const save = (groups: LayoutGroup[]): (() => void) => saveGroups(model, groups);
   /** Re-orders the groups of `tier` inside each run between two walls. Returns whether any run changed. */
   const orderGroups = (tier: number, pick: (run: LayoutGroup[]) => LayoutGroup[] = run => reorder(run, group => keyOfNodes(group.nodes))): boolean => {
@@ -337,9 +393,9 @@ export function orderByOverlay(model: LayoutModel): void {
   /** Re-orders the nodes of every movable `row` group of `tier`; returns whether any group changed. */
   const orderNodes = (tier: number, pick: (group: LayoutGroup, order: string[]) => string[] = (_group, order) => reorder(order, node => keyOfNodes([node]))): boolean => {
     let changed = false;
-    for (const group of Object.values(model.groups).filter(group => group.tier === tier && movable(group) && !flanked.has(group.id))) {
+    for (const group of Object.values(model.groups).filter(group => group.tier === tier && freeRow(group))) {
       const order = group.rowOrder ?? group.nodes;
-      if (order.length < 2 || groupShape(model, group.id) !== 'row') continue;
+      if (order.length < 2) continue;
       const next = pick(group, order);
       if (next.every((node, i) => node === order[i])) continue;
       if (!reseatRow(model, group, next, true)) continue;

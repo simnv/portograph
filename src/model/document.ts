@@ -115,6 +115,11 @@ export interface NormalisedDocument {
   layout?: {
     /** When true, an overlay link blocked only by node bodies is drawn as the straight chord over them. Default false. */
     overlayOverBodies?: boolean;
+    /**
+     * When false, every free row keeps the order the skeleton gave it, and the corridor row order (architecture-2 ticket 17) records
+     * `author` for it. Default true: a free row takes the order that the corridors through it cross least.
+     */
+    corridorRowOrder?: boolean;
   };
   /** Document metadata, present only when the author wrote `meta:` at the root. No cell inherits it. */
   meta?: Meta;
