@@ -108,7 +108,7 @@ export default defineConfig({
     projects: [
       { extends: true, test: { name: 'default', include: ['test/**/*.test.ts'], exclude: [...configDefaults.exclude, ...slowFiles] } },
       // Files that take minutes alone: run one at a time after the default project, so a loaded run cannot starve them.
-      { extends: true, test: { name: 'slow', include: slowFiles, fileParallelism: false, testTimeout: 600000 } },
+      { extends: true, test: { name: 'slow', include: slowFiles, poolOptions: { forks: { singleFork: true }, threads: { singleThread: true } }, testTimeout: 600000 } },
     ],
   },
 });
