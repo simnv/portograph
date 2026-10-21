@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { alignLinkedGroupGrid, alignLinkedGroupGridAndPack } from '../../src/layout/bands.js';
-import { gapsHoldGrowth, lanesHoldGrowth, reservedGeometryBreaches } from '../../src/layout/growth-guard.js';
+import { gapsHoldGrowth, lanesHoldGrowth } from '../../src/layout/growth-guard.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { rebuildBands } from '../../src/layout/skeleton-geometry.js';
 import { bars } from '../../src/layout/bars.js';
@@ -67,7 +67,7 @@ it('an exhausted budget still grows the box where the reservations allow, and re
   const open = await short();
   expect(alignLinkedGroupGridAndPack(open, spent())).toBe(true);
   expect(open.groups['side']!.bounds!.height).toBeCloseTo(open.groups['core']!.bounds!.height, 6);
-  expect(reservedGeometryBreaches(open)).toEqual([]);
+  expect(open.gridRefusals).toBeUndefined();
 
   const held = withWindowAboveFlank(await short());
   const before = JSON.stringify(held.groups['side']!.bounds);
@@ -86,13 +86,19 @@ it('a y-widening that would take the room of a seated tier gap row is refused', 
   expect(gapsHoldGrowth(model, [{ group: middle, bounds: { ...middle.bounds!, height: middle.bounds!.height + 20 } }])).toBe(false);
 });
 
-it('a finished model is judged for reserved room on its own, at publication and at restore', async () => {
-  const model = await publish('a-grid-growth-stops-at-a-reserved-lane');
-  expect(reservedGeometryBreaches(model)).toEqual([]);
-  const tampered = structuredClone(model);
-  tampered.groups['lower']!.bounds = { ...tampered.lanes[0]!.bounds };
-  expect(reservedGeometryBreaches(tampered)).toEqual([expect.stringContaining('lower stands in the reserved run of')]);
-  expect(() => restoreLayoutModel(JSON.stringify(tampered))).toThrow();
+it('the grid records the pair a guard refused, and a lane that moves away later does not make the replay grow it', async () => {
+  const model = withWindowAboveFlank(await short());
+  expect(alignLinkedGroupGrid(model)).toBe(false);
+  expect(model.gridRefusals).toEqual(['y:core|side']);
+  const refusals = new Set(model.gridRefusals);
+  // The lane leaves the room after 7e: live guards would grow the flank, the record does not.
+  const later = structuredClone(model);
+  later.lanes.at(-1)!.bounds.y -= 500;
+  expect(alignLinkedGroupGrid(structuredClone(later))).toBe(true);
+  expect(alignLinkedGroupGrid(later, refusals)).toBe(false);
+  // A grid that is aligned records nothing.
+  expect(alignLinkedGroupGrid(later)).toBe(true);
+  expect(later.gridRefusals).toBeUndefined();
 });
 
 it('a restore of the output re-validates the grid, and a hand-added GROUP_GRID_REFUSED or a tampered grid does not pass it', async () => {
@@ -101,6 +107,8 @@ it('a restore of the output re-validates the grid, and a hand-added GROUP_GRID_R
   const tampered = structuredClone(model);
   const flank = tampered.groups['side']!.bounds!;
   flank.height -= 20;
+  expect(() => restoreLayoutModel(JSON.stringify(tampered))).toThrow();
+  tampered.gridRefusals = ['y:core|side'];
   expect(() => restoreLayoutModel(JSON.stringify(tampered))).toThrow();
   tampered.diagnostics.push({ stage: 'placement', severity: 'info', code: 'GROUP_GRID_REFUSED', message: 'The linked-group grid would take reserved room.', owners: [] });
   expect(() => restoreLayoutModel(JSON.stringify(tampered))).toThrow();

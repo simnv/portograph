@@ -9,8 +9,9 @@ import { FONT_FAMILY, measureText } from '../text/index.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { createCentreBudget, type CentreBudget } from './centre.js';
 import { isSideLane, rebuildLaneExtents, riserKeepOutBreaches } from './lanes.js';
+import { PlacementRefusal } from './placement-refusal.js';
 import { holdsMove } from './move-reservations.js';
-import { gapsHoldGrowth, lanesHoldGrowth } from './growth-guard.js';
+import { gapsHoldGrowth, growthHolds } from './growth-guard.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { findPort, straightCorridorClear } from './row-paths.js';
@@ -1198,14 +1199,17 @@ function flankShifts(model: LayoutModel, group: LayoutGroup, box: Rect): { group
  * that would overlap another group, make a frame box overlap another frame's, or cross a reserved lane window is skipped. Chains converge in
  * a bounded number of passes because every pass only merges extents.
  */
-export function alignLinkedGroupGrid(model: LayoutModel): boolean {
-  return alignGrid(model).changed;
+export function alignLinkedGroupGrid(model: LayoutModel, honour?: ReadonlySet<string>): boolean {
+  return alignGrid(model, honour).changed;
 }
 /** The grid, and whether it moved a flank: the caller then owes the regions a replay (`alignLinkedGroupGridAndPack`). */
-function alignGrid(model: LayoutModel): { changed: boolean; flanksMoved: boolean } {
+function alignGrid(model: LayoutModel, honour?: ReadonlySet<string>): { changed: boolean; flanksMoved: boolean; honoured: ReadonlySet<string> } {
   let changed = false, base: Set<string> | undefined;
   const flankMoved: string[] = [];
   const refused = new Set<string>(), heldOff = new Set<string>();
+  // The pairs a reservation guard refused are a decision of this call, recorded in `model.gridRefusals` (ticket 16). A caller that validates passes the record as `honour`: those pairs are skipped as the
+  // producer skipped them, because the lanes and gap plans the guards read have moved since, and every other pair is judged live.
+  const decided = new Map<string, { members: LayoutGroup[]; pos: 'x' | 'y'; len: 'width' | 'height' }>(), honoured = new Set<string>();
   model.diagnostics = model.diagnostics.filter(item => item.code !== 'GROUP_GRID_YIELDS_TO_PACK');
   // Within one call extents only grow and only ever onto existing box edges, so the process terminates; the cap
   // exhausting is a defect signal, not a design bound. Across calls nothing is monotone: a replay refits the boxes and a pack moves a
@@ -1235,8 +1239,13 @@ function alignGrid(model: LayoutModel): { changed: boolean; flanksMoved: boolean
       if (proposed.some(item => others.some(other => rectOverlap(item.bounds, other.bounds!)))) continue;
       // Either axis keeps the reservations (ticket 16): the lane and chord guards here, the tier gaps that fit below, after the cheap guards. A refusal is kept for the call.
       const held = `${members.map(group => group.id).join('|')}${JSON.stringify(proposed.map(item => item.bounds))}`;
+      const key = `${axis}:${members.map(group => group.id).sort().join('|')}`;
+      if (honour?.has(key)) { honoured.add(key); continue; }
       if (heldOff.has(held)) continue;
-      if (!holdsMove(model, proposed) || !lanesHoldGrowth(model, proposed)) { heldOff.add(held); continue; }
+      // `holdsMove` on the x axis is a live guard of main and stays unrecorded; the guards ticket 16 added are recorded.
+      const refuse = (): void => { heldOff.add(held); decided.set(key, { members, pos, len }); };
+      if (!holdsMove(model, proposed)) { heldOff.add(held); if (axis === 'y') decided.set(key, { members, pos, len }); continue; }
+      if (!growthHolds(model, proposed)) { refuse(); continue; }
       // A widening that would stand a box closer than the band gap to a group that is not part of it is refused: the gap is kept where the box is sized (ticket 19).
       // The pack of the beside rows that follows the grid in a sheet with frames seats frame cells only, so a plain group beside the box is held by this guard too. Seating the
       // neighbour by the push of a label's widening instead was measured and loses straight overlay links on two sheets (the ticket's review record).
@@ -1259,15 +1268,26 @@ function alignGrid(model: LayoutModel): { changed: boolean; flanksMoved: boolean
           continue;
         }
       }
-      if (!gapsHoldGrowth(model, proposed)) { heldOff.add(held); continue; }
-      const shifted: string[] = [];
+      if (!gapsHoldGrowth(model, proposed)) { refuse(); continue; }
+      const shifted: string[] = [], old = proposed.map(item => ({ item, bounds: { ...item.group.bounds! } }));
       for (const item of proposed) {
         if (item.dx === 0) item.group.bounds = item.bounds;
         else { moveGroup(model, item.group, item.dx, 0); shifted.push(...item.group.nodes); }
       }
-      flankMoved.push(...shifted);
       // A moved flank carries its lanes with it: the pairs after it are judged on the bands, regions and lane extents as they stand now. The labels and pills follow at the end of the call, once, so that their order is the one a single refit gives.
-      if (shifted.length) { rebuildBands(model); rebuildRegions(model); rebuildLaneExtents(model); }
+      // A span corridor that cannot follow the move refuses this pair: the move is undone and the lanes put back.
+      if (shifted.length) {
+        const lanes = JSON.stringify(model.lanes);
+        try { rebuildBands(model); rebuildRegions(model); rebuildLaneExtents(model); } catch (error) {
+          if (!(error instanceof PlacementRefusal && error.code === 'span')) throw error;
+          for (const { item, bounds } of old) { if (item.dx === 0) item.group.bounds = bounds; else moveGroup(model, item.group, -item.dx, 0); }
+          model.lanes = JSON.parse(lanes) as typeof model.lanes;
+          rebuildBands(model); rebuildRegions(model);
+          refuse();
+          continue;
+        }
+      }
+      flankMoved.push(...shifted);
       moved = changed = true;
     }
     if (!moved) break;
@@ -1276,7 +1296,15 @@ function alignGrid(model: LayoutModel): { changed: boolean; flanksMoved: boolean
   // A moved flank carries its nodes' labels and pills with it only after a refit, and the bundle and row paths reserved beside it stand where it was.
   if (flankMoved.length) rebuildNodeGeometry(model, flankMoved, 'current');
   if (changed) { rebuildBands(model); rebuildRegions(model); }
-  return { changed, flanksMoved: flankMoved.length > 0 };
+  if (honour === undefined) {
+    // The record keeps the pairs this call refused that still stand apart; a pair a later pass made is not refused.
+    const apart = [...decided].filter(([, { members, pos, len }]) => {
+      const low = Math.min(...members.map(group => group.bounds![pos])), high = Math.max(...members.map(group => group.bounds![pos] + group.bounds![len]));
+      return !members.every(group => Math.abs(group.bounds![len] - (high - low)) <= PLACEMENT_EPS && Math.abs(group.bounds![pos] - low) <= PLACEMENT_EPS);
+    }).map(([key]) => key).sort();
+    if (apart.length) model.gridRefusals = apart; else delete model.gridRefusals;
+  }
+  return { changed, flanksMoved: flankMoved.length > 0, honoured };
 }
 
 
@@ -1693,7 +1721,11 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   }
   const trial = clone(model);
   trial.diagnostics = trial.diagnostics.filter(item => item.code !== 'GROUP_GRID_NON_CONVERGENCE');
-  const changed = alignLinkedGroupGrid(trial), exhausted = trial.diagnostics.some(item => item.code === 'GROUP_GRID_NON_CONVERGENCE');
+  // The producer's refusals are honoured for the pairs it names (the lanes and plans they read have moved since); a record that names a pair the boxes already share is a forgery.
+  const honour = new Set(model.gridRefusals ?? []);
+  const replay = alignGrid(trial, honour), changed = replay.changed, exhausted = trial.diagnostics.some(item => item.code === 'GROUP_GRID_NON_CONVERGENCE');
+  const unreached = honour.size === 0 ? [] : [...honour].filter(key => !replay.honoured.has(key));
+  if (unreached.length) throw new Error(`The grid refusals ${unreached.join(', ')} name pairs the boxes already share`);
   if (changed && !exhausted) {
     const moved = orderedGroupIds(model.document).filter(id => !equal(model.groups[id]!.bounds, trial.groups[id]!.bounds))
       .map(id => `${id} ${JSON.stringify(model.groups[id]!.bounds)} would be ${JSON.stringify(trial.groups[id]!.bounds)}`);

@@ -3,10 +3,7 @@
  *
  * After 7e the linked-group grid widens boxes in either axis (`alignGrid`). A move in x is held by `holdsMove`; this module holds what `holdsMove` does not read:
  * the room a box would newly claim (a strip beyond its present edges), judged against the reserved lane windows and span corridors, and the tier gaps whose rows the
- * 7f plan has seated. `reservedGeometryBreaches` states the lane reservations on a finished model, from the model alone.
- * The validator proves the grid by replaying it with these guards (`validateGroupLabelBands`).
- *
- * Ticket 13 adds the exit-margin predicate: append it to `RESERVED_GEOMETRY_CHECKS`.
+ * 7f plan has seated.
  */
 import type { Rect } from '../model/geometry.js';
 import type { Lane, LayoutGroup, LayoutModel } from '../model/layout.js';
@@ -17,7 +14,6 @@ import { tierGapPlans } from './gap-plan.js';
 
 export type Growth = { group: LayoutGroup; bounds: Rect }[];
 
-const meets = (p: Rect, q: Rect): boolean => p.x < right(q) - PLACEMENT_EPS && q.x < right(p) - PLACEMENT_EPS && p.y < bottom(q) - PLACEMENT_EPS && q.y < bottom(p) - PLACEMENT_EPS;
 
 /** The lanes that stand in room the boxes do not own: a transit, side or span run of a link. A course lane, a perimeter lane and a trunk lane derive from the boxes. */
 const reservedLane = (lane: Lane): boolean => lane.layer !== 'overlay' && lane.owner.kind === 'link' && lane.kind !== 'gap' && lane.kind !== 'perimeter';
@@ -67,15 +63,9 @@ export function gapsHoldGrowth(model: LayoutModel, proposed: Growth): boolean {
   });
 }
 
-/** A finished model's lane windows and span corridors, read without the producer: no group of another sub-tier stands in the box of a reserved lane. */
-function laneBreaches(model: LayoutModel): string[] {
-  return model.lanes.filter(reservedLane).flatMap(lane => Object.values(model.groups)
-    .filter(group => group.bounds !== undefined && group.nodes.length > 0 && group.tier !== lane.tier && meets(group.bounds, lane.bounds))
-    .map(group => `${group.id} stands in the reserved run of ${lane.id}`));
-}
-
-/** The independent checks of reserved geometry, each on the model alone. Ticket 13 appends the exit-margin predicate. */
-export const RESERVED_GEOMETRY_CHECKS: readonly ((model: LayoutModel) => string[])[] = [laneBreaches];
-
-/** The breaches of reserved geometry a model shows after 7e. */
-export const reservedGeometryBreaches = (model: LayoutModel): string[] => RESERVED_GEOMETRY_CHECKS.flatMap(check => check(model));
+/**
+ * The guards a growth meets before the costly gap guard, each on the model and the proposed boxes. Ticket 13 appends the exit-margin predicate here: `alignGrid` asks every one
+ * of them, and a pair one refuses is recorded in `model.gridRefusals`, which the validator honours.
+ */
+export const GROWTH_GUARDS: readonly ((model: LayoutModel, proposed: Growth) => boolean)[] = [lanesHoldGrowth];
+export const growthHolds = (model: LayoutModel, proposed: Growth): boolean => GROWTH_GUARDS.every(guard => guard(model, proposed));
