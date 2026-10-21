@@ -90,8 +90,15 @@ export function standPortsOverChildren(model: LayoutModel, steps: readonly { tie
     movers.push({ feed, parent, target: child.anchor!.x });
   }
   // Only the parent port moves: the child side is `alignSide`'s, which may also widen the body and so answers to the widening allowance.
+  // A port with a corridor of its own stands where 7a put the corridor, and the next pass packs the ports next to a moved one again (`alignSide` places a
+  // port that has no target of its own between the kept ones): a face that holds such a port, other than a mover, keeps its ports where they stand.
+  const corridor = new Set(model.lanes.filter(lane => lane.owner.kind === 'link').map(lane => (lane.owner as { id: string }).id));
+  const movingPorts = new Set(movers.map(item => item.parent));
+  const held = (parent: LayoutPort): boolean => model.nodes[parent.ref.node]!.ports.some(port => port.side === parent.side && !movingPorts.has(port)
+    && model.links.some(link => corridor.has(link.id) && link.attachments && [link.attachments.from, link.attachments.to].some(end => portId(end) === portId(port.ref))));
   for (const { feed, parent, target } of inFaceOrder(movers, item => item.parent, item => item.target)) {
-    if (read.reaches(parent, target)) read.place(parent, target);
+    if (held(parent)) name(model, read.linkOf.get(feed.link)!);
+    else if (read.reaches(parent, target)) read.place(parent, target);
     else name(model, read.linkOf.get(feed.link)!);
   }
 }

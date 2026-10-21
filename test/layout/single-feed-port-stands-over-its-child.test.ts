@@ -54,3 +54,23 @@ it('puts a source port back when the corridor of its link did not follow', async
   expect(source.anchor!.x).toBeCloseTo(before, 1);
   expect(source.anchor!.x).toBeCloseTo(lane.x, 1);
 }, 120000);
+
+it('adopts the reseat of a free corridor and takes back the port of a blocked one', async () => {
+  const laid = await layout(parse(fixture), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const model = JSON.parse(JSON.stringify(laid)) as typeof laid;
+  const portOf = (link: string): NonNullable<typeof model.links[number]['attachments']>['from'] => model.links.find(item => item.id === link)!.attachments!.from;
+  const sourceOf = (link: string) => model.nodes[portOf(link).node]!.ports.find(port => port.ref.name === portOf(link).name)!;
+  const laneOf = (link: string) => model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === link)!;
+  // link-6 is the blocked one (its corridor stays); link-5 is free (the reseat moves its corridor).
+  for (const link of ['link-6', 'link-5']) { laneOf(link).x -= 12; laneOf(link).bounds.x -= 12; sourceOf(link).anchor!.x -= 12; }
+  const free = sourceOf('link-5').anchor!.x, blocked = sourceOf('link-6').anchor!.x;
+  const seated = seatLaneSources(model, centreContext(model, model.anchorTier!).steps);
+  expect(sourceOf('link-5').anchor!.x).toBeCloseTo(free + 12, 1);
+  expect(sourceOf('link-6').anchor!.x).toBeCloseTo(blocked + 12, 1);
+  // What `reseatLanes` does for the free link.
+  laneOf('link-5').x += 12; laneOf('link-5').bounds.x += 12;
+  seated.reconcile();
+  expect(sourceOf('link-5').anchor!.x).toBeCloseTo(laneOf('link-5').x, 1);
+  expect(sourceOf('link-6').anchor!.x).toBeCloseTo(blocked, 1);
+  expect(sourceOf('link-6').anchor!.x).toBeCloseTo(laneOf('link-6').x, 1);
+}, 120000);
