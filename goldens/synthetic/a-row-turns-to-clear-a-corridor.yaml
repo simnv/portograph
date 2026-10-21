@@ -1,0 +1,37 @@
+# Expected (architecture-2 ticket 17): a free row takes the order that the corridors through it cross least.
+# Two transit links cross a tier they do not end in: `m0` → `t1` passes beside `upper`, and `b2` → `u0`
+# passes beside `middle`. 7a puts each corridor beside the transited group, on the side `corridorSide`
+# gives, so the run from the corridor to the far end crosses the feeds of a row whose order puts the far
+# end on the other side. In the declared order (`t0 t1`, `u0 u1`) the corridor of `m0` → `t1` stands left of
+# `upper` and its run to `t1` crosses the feed `t0` → `u0`, and the run of `b2` → `u0` crosses the feed
+# `u1` → `m1`. Stage 4 cuts each transit link at its predicted corridor, counts 2 crossings in the declared
+# order and 1 with `top` and `upper` turned, and turns both rows (`rowOrderDecision` `corridor-crossings`).
+#
+# Measured: with `layout: { corridorRowOrder: false }` the sheet publishes at Q 0.6796, crossings 2,
+# bends 7, canvas 1389 × 670; by default at Q 0.7672, crossings 1, bends 6, canvas 418 × 653, and no gate
+# fails. Test-only input owned by architecture-2 ticket 17; test/layout/corridor-order.test.ts reads it.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  upper: { tier: 1, label: Upper }
+  middle: { tier: 2, label: Middle }
+  base: { tier: 3, label: Base }
+nodes:
+  t0: { group: top, class: router, label: T0 }
+  t1: { group: top, class: router, label: T1 }
+  u0: { group: upper, class: switch, label: U0 }
+  u1: { group: upper, class: switch, label: U1 }
+  m0: { group: middle, class: switch, label: M0 }
+  m1: { group: middle, class: switch, label: M1 }
+  b0: { group: base, class: server, label: B0 }
+  b1: { group: base, class: server, label: B1 }
+  b2: { group: base, class: server, label: B2 }
+links:
+  - [t0, u0]
+  - [t1, u1]
+  - [u0, m0]
+  - [u1, m1]
+  - [m0, b0]
+  - [m1, b1]
+  - [m0, t1]
+  - [b2, u0]

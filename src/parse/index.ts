@@ -419,9 +419,9 @@ export function parseWithDiagnostics(text: string, options: ParseOptions = {}): 
     // Document settings (ticket 152). Only written when the author states them, so a document without the key is unchanged.
     const settings: NonNullable<NormalisedDocument['layout']> = {};
     for (const [key, value] of v.map(root.get('layout'), '$.layout')) {
-      if (key !== 'overlayOverBodies') v.report('UNKNOWN_KEY', `$.layout.${key}`, `Unknown key ${key}`);
+      if (key !== 'overlayOverBodies' && key !== 'corridorRowOrder') v.report('UNKNOWN_KEY', `$.layout.${key}`, `Unknown key ${key}`);
       else if (typeof value !== 'boolean') v.report('INVALID_TYPE', `$.layout.${key}`, 'Expected a boolean');
-      else settings.overlayOverBodies = value;
+      else settings[key] = value;
     }
     if (Object.keys(settings).length) doc.layout = settings;
   }

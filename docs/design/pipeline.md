@@ -303,6 +303,31 @@ and not left for a later stage to discover.
    shape group by group without re-reading the whole sheet. An input with no grid group keeps ELK's
    geometry untouched.
 
+**A free row counts the corridors through it (architecture-2 ticket 17, `corridor-order.ts`).** ELK keeps
+the declared order of every row, and the overlay order re-orders only the tiers an overlay link touches.
+Neither sees the corridors 7a reserves later, so a run from a corridor to its far end can cross the
+feeds of a row whose other order would let it pass clear. After the overlay order, the draft measure
+cuts each link that owns transit lanes at its predicted corridor, one straight piece per tier gap: beside
+the main group of the crossed tier nearest the source, on the side of 7a's direct plan at the source x
+(`directPlan`, the function 7a calls, with the draft boxes and the groups 7a holds, `fixedSourceGroups`),
+which faces the target where it can; where no direct plan exists, on the side the source asks for
+(`corridorSide`). A link foreign to a frame of the crossed tier passes outside the frame, in the gap after the frame roots whose centre stands before the target x (or the source x), as 7a's frame pass takes it. The source is read at the port x `sides-two` will give it (the ports of a face centred
+at the face's pitch, in the order of their peers' x), the target at its node centre. The overlay order
+reads the same measure. A candidate is measured over every region it can change: the whole span of each
+routed link with an end in a candidate row or crossing a candidate row's tier (`reach`), because a turned
+row moves the source x, and so the corridor, in every tier the link crosses. Then one step per sub-tier that a transit link spans, down from the anchor
+tier and then up, judges the free rows (`movable`, `row`, no flank beside them; frame cells and canton
+members keep their order; so does a row whose `reach` holds a tier with a frame cell, because the frame
+columns are packed after this step and the draft has not their x) of that tier together with those of the next tier away from the anchor: every
+order of a row of at most 5 nodes, else its adjacent swaps, within a count cap per step and per sheet
+(`ROW_ORDER_SEARCH_CAPPED`, info, names a truncation). A candidate stands only when the routed
+crossings drop strictly, the straight overlay links do not fall and the blocked row links do not rise;
+ties keep the current order. Every free row records `rowOrderDecision` (`kept`, `corridor-crossings`,
+`frame-columns` for a row kept for a frame cell in its reach, or `author` under `layout.corridorRowOrder: false`), and the stage-4 validator checks the row order against
+the record without searching again; a free row of two or more nodes without a record fails it. The setting
+`false` also switches the corridor cut off, so the overlay order measures as before ticket 17. The prediction is not 7a's answer: a later round (a course, a
+spanning chord, centring) can still move the link, so the corpus measures the rule.
+
 **Time and failure:** ELK runs in a worker with a deadline (`layoutBudgetMs`, default 10 s at
 ≤ 300 nodes, 20 s above). On exception **or deadline**, terminate the worker and run the
 fallback: one ELK run per tier band without partitioning, bands stacked in tier order with the
@@ -486,6 +511,9 @@ probes, with no side flipped by it. The rule is not tightened for that: the corr
 away from its child is the case the move in 7f answers, and that move is the safety net here.
 Before fixing any lane x, expand occupied intermediate margins through horizontal group/node/flank
 translations and expand the canvas. Preserve transit source anchors and the groups' internal order.
+The held groups are one set, `heldSourceGroups`: the group of the authored source of every routed link
+that crosses a tier, a link with a course or a spanning chord included. The lane plans, the span
+corridors and the lane-stage guard read it, so a plan refuses the push the guard would throw on.
 Plan displacement outward from the insertion gap and propagate it through neighboring groups.
 Repeated pushes publish node positions and anchors from their original coordinates plus the
 final group delta, avoiding accumulated rounding under the exact translation guard.
@@ -542,7 +570,7 @@ and the corridor moves only where that room holds the new row. Running the move 
 so the height rule counts the row was measured and rejected for the number above — the golden is
 byte-identical either way, but the fixture the rule exists for loses its whole point.
 
-The reservation follows the corridor: extents and `fixedSegments` are rebuilt from the new x, so
+The reservation follows the corridor: extents and `fixedSegments` are rebuilt from the new x, and so are the frames (a frame holds the lanes of its own links, so a moved corridor can move a frame edge), so
 the tier-gap plan that reads lane x after 7a and 7c reads the moved one. A moved corridor
 reports `LANE_FOLLOWS_ITS_CHILD`.
 

@@ -1,23 +1,21 @@
-# Expected: stress ticket 18. `n3_0.r0` → `n3_1.l0` is a labelled row link, and the run between the
-# two pill faces holds 9 px where its label needs 206.61279296875. 7f cannot reserve that room: the
-# corridor `link-16` owns across tier 2 stands at x 231, beyond the link's split, and lane geometry
-# cannot move — so the link is diagnosed `LINK_LABEL_ROOM_UNRESERVED` and the stage 9 ladder decides.
+# Expected (architecture-2 ticket 17): the rows of tiers 0 and 1 take the order the corridors cross
+# least. `link-15` runs from `n2_0` up to `n0_1` beside tier 1, and `link-16` from `n3_2` up to
+# `n1_0` beside tier 2. In the declared order (`n0_0 n0_1`, `n1_0 n1_1`) the corridor of `link-15`
+# stands left of tier 1 and its run to `n0_1` crosses the feed `n0_0` → `n1_0`, and the run of
+# `link-16` to `n1_0` crosses the feed `n1_1` → `n2_1`. Stage 4 cuts each transit link at its predicted
+# corridor and counts 2 crossings there in the declared order and 1 with both rows turned, so both rows
+# turn (`rowOrderDecision` `corridor-crossings` on `t0` and `t1`). Measured: crossings 11 → 8, bends
+# 20 → 14, canvas 1277 × 1259 → 558 × 1237, Q 0.5832 → 0.6369, G5 passes; G4 and G6 fail, which is
+# the routing backlog. Both corridors follow their children (`LANE_FOLLOWS_ITS_CHILD`, x 61.5 and
+# x 302.43), and link-17's label is still left to the ladder, which omits it.
 #
-# Then 7f's last step moves that corridor **left**, to its child's port x at -197.1860853536607,
-# which is on the far side of the split. The reservation the production pass declined is one the
-# publication replay makes, and it throws
-#
-#   A labelled link is shorter than the run its label reserved: link-17 needs 206.61279296875 px
-#   along its row and holds 9 px
-#
-# on a model nothing else touched. Re-reserving is not the answer here: it moves nodes, and by 7f's
-# last step the corridors are fixed. So the corridor move is refused, beside the centring and
-# short-gap contradictions it was already refused for, and `LANE_FOLLOWS_ITS_CHILD` is dropped with
-# it. The build produces the diagram, keeps both corridors where 7a put them (x 95.5 and x 231) and
-# leaves link-17's label to the ladder, which omits it.
-#
-# The diagram is produced at Q 0.5234685207782394 with G4, G5 and G6 failing: a transit diagram with
-# one crossing pair, which is the routing backlog and no part of this claim.
+# Stress ticket 18 (the earlier claim of this sheet) needs the declared order, so its test reads this
+# sheet with `layout: { corridorRowOrder: false }`: `n3_0.r0` → `n3_1.l0` is a labelled row link whose
+# run holds 9 px where its label needs 206.61279296875, the corridor of `link-16` stands at x 231 beyond
+# the link's split, and 7f's last step would move it left to -197.1860853536607, across the split, where
+# the publication replay would reserve a run the model does not have. That move is refused,
+# `LANE_FOLLOWS_ITS_CHILD` is dropped with it, and both corridors publish where 7a put them (x 95.5 and
+# x 231).
 portograph: 2
 groups:
   t0: { tier: 0, label: Tier 0 }

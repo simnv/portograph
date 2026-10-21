@@ -685,7 +685,18 @@
       "rowOrder": [
         "provider-1",
         "provider-2"
-      ]
+      ],
+      "rowOrderDecision": {
+        "rule": "kept",
+        "before": [
+          "provider-1",
+          "provider-2"
+        ],
+        "after": [
+          "provider-1",
+          "provider-2"
+        ]
+      }
     },
     "datacenter": {
       "id": "datacenter",
@@ -789,7 +800,18 @@
       "rowOrder": [
         "RR-01",
         "RR-02"
-      ]
+      ],
+      "rowOrderDecision": {
+        "rule": "kept",
+        "before": [
+          "RR-01",
+          "RR-02"
+        ],
+        "after": [
+          "RR-01",
+          "RR-02"
+        ]
+      }
     },
     "backbone": {
       "id": "backbone",
