@@ -111,6 +111,7 @@ is a standalone schema-v2 document. `stage-inputs.yaml` is separate test data.
 | [flank-two-peers](synthetic/flank-two-peers.yaml) | 7b | Select the two-link primary peer; route the other peer's link. |
 | [unequal-pitch](synthetic/unequal-pitch.yaml) | 3, 7b | Respace both sides to the larger measured pitch before alignment. |
 | [a-port-outside-a-bundle-keeps-its-side-of-the-block](synthetic/a-port-outside-a-bundle-keeps-its-side-of-the-block.yaml) | 7b | A port outside every bundle (an overlay port whose far end lies to the left) stays on the side of the bundle block that stage 7b gave it, so its chord crosses no pill. |
+| [a-chord-refused-at-the-freeze-is-not-taken-after-the-grid-widens](synthetic/a-chord-refused-at-the-freeze-is-not-taken-after-the-grid-widens.yaml) | 7f | A cross-frame chord that 7e did not hold (the facing edge refuses it) stays orthogonal when 7f reserves space and the grid then widens its group: the row path stands as the region rule derives it, and the layout publishes with no error. |
 | [shared-peer-port](synthetic/shared-peer-port.yaml) | 7b, 7e, 8 | Retain one shared peer anchor and stem; route incompatible pairs. |
 | [stacked-at-one-x](synthetic/stacked-at-one-x.yaml) | 6 | Flatten and repack the row before pinning its link. |
 | [parent-two-children](synthetic/parent-two-children.yaml) | 7c | Keep the parent anchor fixed; one child link is vertical and the other fans. |
