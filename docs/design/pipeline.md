@@ -317,12 +317,13 @@ reads the same measure. A candidate is measured over every region it can change:
 routed link with an end in a candidate row or crossing a candidate row's tier (`reach`), because a turned
 row moves the source x, and so the corridor, in every tier the link crosses. Then one step per sub-tier that a transit link spans, down from the anchor
 tier and then up, judges the free rows (`movable`, `row`, no flank beside them; frame cells and canton
-members keep their order) of that tier together with those of the next tier away from the anchor: every
+members keep their order; so does a row whose `reach` holds a tier with a frame cell, because the frame
+columns are packed after this step and the draft has not their x) of that tier together with those of the next tier away from the anchor: every
 order of a row of at most 5 nodes, else its adjacent swaps, within a count cap per step and per sheet
 (`ROW_ORDER_SEARCH_CAPPED`, info, names a truncation). A candidate stands only when the routed
 crossings drop strictly, the straight overlay links do not fall and the blocked row links do not rise;
-ties keep the current order. Every free row records `rowOrderDecision` (`kept`, `corridor-crossings`, or
-`author` under `layout.corridorRowOrder: false`), and the stage-4 validator checks the row order against
+ties keep the current order. Every free row records `rowOrderDecision` (`kept`, `corridor-crossings`,
+`frame-columns` for a row kept for a frame cell in its reach, or `author` under `layout.corridorRowOrder: false`), and the stage-4 validator checks the row order against
 the record without searching again; a free row of two or more nodes without a record fails it. The setting
 `false` also switches the corridor cut off, so the overlay order measures as before ticket 17. The prediction is not 7a's answer: a later round (a course, a
 spanning chord, centring) can still move the link, so the corpus measures the rule.

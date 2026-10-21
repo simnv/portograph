@@ -36,11 +36,15 @@ async function throughLanes(yaml: string, spans: string[], order: Record<string,
 const guardError = (error: unknown): boolean => error instanceof Error && !(error instanceof PlacementRefusal) && /transit source anchors/.test(error.message);
 
 it('a transit plan does not push the group of a source whose link has a course', async () => {
-  // The default order turns `top` (ticket 17). A course trial of link-4 (gate-a to deep-a) then leaves it no lane, and the transit plan of
-  // link-5 pushed gate, which holds gate-a. Only a course trial reaches it, so the whole pipeline runs (no hand-made course).
-  const yaml = readFileSync(new URL('../../goldens/synthetic/a-transit-inside-a-canton.yaml', import.meta.url), 'utf8');
-  const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
-  expect(model.groups.top!.rowOrderDecision?.rule).toBe('corridor-crossings');
+  // When the ticket-17 row step turned `top`, a course trial of link-4 (gate-a to deep-a) left it no lane, and the transit plan of
+  // link-5 pushed gate, which holds gate-a. The step now keeps `top` (its turn changes the canton's frame regions, rule
+  // `frame-columns`), and the authored turn below places top-b at other x, so this run no longer reaches that trial: it pins only the
+  // record and a clean run. The plans and the guard read one predicate, `heldSourceGroups` (R1); the span test below reaches it.
+  const source = readFileSync(new URL('../../goldens/synthetic/a-transit-inside-a-canton.yaml', import.meta.url), 'utf8');
+  const lines = source.split('\n'), one = lines.findIndex(line => line.startsWith('  top-a:'));
+  [lines[one], lines[one + 1]] = [lines[one + 1]!, lines[one]!];
+  const model = await layout(parse(lines.join('\n')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  expect(model.groups.top!.rowOrderDecision).toEqual({ rule: 'frame-columns', before: ['top-b', 'top-a'], after: ['top-b', 'top-a'] });
   expect(model.removedLinks ?? []).toEqual([]);
 }, 60000);
 

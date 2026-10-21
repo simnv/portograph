@@ -35,7 +35,8 @@ const sameOrder = (a: readonly string[], b: readonly string[]): boolean => a.len
  * whose order would let it pass clear. This step runs after `orderByOverlay`, on the same draft, and reads the corridor-aware
  * crossings of `readDraft` (each transit link cut at its predicted corridor).
  *
- * - **What moves.** The nodes of a free row (`orderTools().freeRow`) with two or more nodes. A flank, a frame cell (a canton member
+ * - **What moves.** The nodes of a free row (`orderTools().freeRow`) with two or more nodes whose turn changes no region that holds
+ *   a frame cell. Such a row records `frame-columns`: the frame columns are packed after this step, so the draft has not their x. A flank, a frame cell (a canton member
  *   among them: its author order stands, R3), a grid, a bar and a nested group keep their order. The anchor tier is the reference
  *   of both sweeps and keeps its order.
  * - **The sweep.** From the anchor tier downwards, then from the anchor tier upwards, one step per sub-tier that a transit link spans
@@ -79,11 +80,18 @@ export function orderByCorridors(model: LayoutModel): void {
     for (let k = p; k <= q; k++) spanned.add(k);
   }
 
+  // A row whose turn can change a region that holds a frame cell is left out: the frame columns are packed after this step
+  // (`placeFlanksAndPeers`), so the draft does not hold the x the frames will stand at, and a corridor predicted against it is not
+  // the one 7a reserves (ticket 17 review). The row records `frame-columns`.
+  const framed = new Set(Object.values(model.groups).filter(group => group.frame !== undefined && group.bounds !== undefined).map(group => index.get(group.tier!)!));
+  const frameBound = new Set(free.filter(group => { const [low, high] = reach([group]); return [...framed].some(k => k >= low && k <= high); }));
+  const turnable = (k: number): LayoutGroup[] => rows(k).filter(group => !frameBound.has(group));
+
   const caps = new Set<string>();
   let spent = 0, moved = false;
   /** The candidates of the free rows of tier `k`: their product, or one row at a time when the product passes the step cap. */
   const tierCandidates = (k: number): Candidate[] => {
-    const lists = rows(k).map(group => {
+    const lists = turnable(k).map(group => {
       const order = orderOf(group);
       if (order.length > ROW_ORDER_PERMUTED_NODES) caps.add(`row ${group.id} has ${order.length} nodes, so only its adjacent swaps were judged`);
       return { group, orders: order.length <= ROW_ORDER_PERMUTED_NODES ? permutations(order) : adjacentSwaps(order) };
@@ -114,7 +122,7 @@ export function orderByCorridors(model: LayoutModel): void {
     }
     if (!candidates.length) return;
     spent += candidates.length;
-    const groups = [...rows(k), ...(next === undefined ? [] : rows(next))];
+    const groups = [...turnable(k), ...(next === undefined ? [] : turnable(next))];
     // Every region a turned row can change: the whole span of each routed link with an end in a candidate row or crossing its sub-tier.
     const [low, high] = reach(groups);
     const now = measureRange(low, high, true);
@@ -137,7 +145,7 @@ export function orderByCorridors(model: LayoutModel): void {
 
   for (const [group, order] of before) {
     const after = orderOf(group);
-    const decision: RowOrderDecision = { rule: sameOrder(order, after) ? 'kept' : 'corridor-crossings', before: order, after };
+    const decision: RowOrderDecision = { rule: frameBound.has(group) ? 'frame-columns' : sameOrder(order, after) ? 'kept' : 'corridor-crossings', before: order, after };
     group.rowOrderDecision = decision;
   }
   for (const reason of caps) {
