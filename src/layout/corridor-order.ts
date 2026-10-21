@@ -80,11 +80,12 @@ export function orderByCorridors(model: LayoutModel): void {
     for (let k = p; k <= q; k++) spanned.add(k);
   }
 
-  // A row whose turn can change a region that holds a frame cell is left out: the frame columns are packed after this step
+  // A row whose turn can change a region that touches a frame cell (the measured regions run from tier low - 1 to high + 1) is left
+  // out: the frame columns are packed after this step
   // (`placeFlanksAndPeers`), so the draft does not hold the x the frames will stand at, and a corridor predicted against it is not
   // the one 7a reserves (ticket 17 review). The row records `frame-columns`.
   const framed = new Set(Object.values(model.groups).filter(group => group.frame !== undefined && group.bounds !== undefined).map(group => index.get(group.tier!)!));
-  const frameBound = new Set(free.filter(group => { const [low, high] = reach([group]); return [...framed].some(k => k >= low && k <= high); }));
+  const frameBound = new Set(free.filter(group => { const [low, high] = reach([group]); return [...framed].some(k => k >= low - 1 && k <= high + 1); }));
   const turnable = (k: number): LayoutGroup[] => rows(k).filter(group => !frameBound.has(group));
 
   const caps = new Set<string>();

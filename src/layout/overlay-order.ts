@@ -1,13 +1,13 @@
 import type { Point, Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
 import { groupShape } from './grid.js';
-import { corridorReader, corridorSide, directPlan, fixedSourceGroups, laneSource, laneWidth, ownsTransitLanes, selectAnchorTier, transitedCore } from './lanes.js';
+import { corridorReader, corridorSide, directPlan, fixedSourceGroups, laneSource, laneWidth, ownsTransitLanes, selectAnchorTier, transitedCore, transitTiers } from './lanes.js';
 import { crosses } from './overlay-paths.js';
 import { placementWarning } from './regions.js';
 import { bandGap, compareId, nodeGap, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { findPort } from './row-paths.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
-import { cellReach, foreignRoot, ownFrameCells } from './frames.js';
+import { cellReach, foreignRoot } from './frames.js';
 import { frameSubtreeCells } from '../model/model.js';
 import { frameTiers, packTier, unitOrder, type Column } from './columns.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -110,24 +110,6 @@ export function readDraft(model: LayoutModel) {
    */
   const corridorX = (link: LayoutLink, k: number): number | undefined => {
     const tier = tiers[k]!, sx = sourceX(link), groups = groupsAt(tier), main = groups.filter(group => !group.flank);
-    // A link foreign to a frame of this sub-tier passes the frame outside it, at one x (ticket 04): 7a counts the frame roots whose
-    // centre stands before the target x (or the source x) and takes the gap after them. The roots are read as their cells stand.
-    const roots = new Map<string, Rect[]>();
-    for (const group of Object.values(model.groups)) {
-      const root = group.bounds === undefined ? undefined : foreignRoot(model, group.id, link);
-      if (root !== undefined) roots.set(root, [...roots.get(root) ?? [], group.bounds!]);
-    }
-    if ([...roots.values()].some(boxes => boxes.some(box => groups.some(group => group.bounds === box)))) {
-      const spans = [...roots.values()].map(boxes => ({ low: Math.min(...boxes.map(box => box.x)), high: Math.max(...boxes.map(box => box.x + box.width)) }))
-        .sort((a, b) => (a.low + a.high) - (b.low + b.high));
-      const far = corridors.target(link, tier), desire = far === undefined ? sx : centre(far.node), half = laneWidth(model, link) / 2;
-      // A lane the link holds in its own frame keeps that frame's side of every frame it is foreign to (7a, ticket 26).
-      const own = ownFrameCells(model, link), held = groups.filter(group => own.has(group.id)).map(group => group.bounds!);
-      const heldCentre = held.length ? (Math.min(...held.map(box => box.x)) + Math.max(...held.map(box => box.x + box.width))) / 2 : undefined;
-      const gap = spans.filter(span => (span.low + span.high) / 2 < (heldCentre ?? desire)).length;
-      return gap === 0 ? Math.min(sx, spans[0]!.low - half) : gap === spans.length ? Math.max(sx, spans[gap - 1]!.high + half)
-        : Math.min(Math.max(sx, spans[gap - 1]!.high + half), spans[gap]!.low - half);
-    }
     const core = transitedCore(main, sx);
     if (core === undefined) return undefined;
     const box = core.bounds!, far = corridors.target(link, tier), width = laneWidth(model, link), half = width / 2;
@@ -139,14 +121,30 @@ export function readDraft(model: LayoutModel) {
   /**
    * Routed crossings in the region between tiers `a` and `b` (indices). A link is read as a straight line between its two body
    * centres, except a link that owns transit lanes: it is cut at its predicted corridor in each sub-tier it crosses, one straight
-   * piece per tier gap (ticket 17), because 7a puts the run beside the transited group, not on the diagonal.
+   * piece per tier gap (ticket 17), because 7a puts the run beside the transited group, not on the diagonal. A link that passes a frame
+   * it is foreign to keeps the diagonal (`passesFrame`).
    */
+  /**
+   * Whether a link is foreign to a frame cell of a sub-tier it crosses. 7a passes such a link outside the frame at one x, by a gap choice
+   * over the frame roots this draft does not hold (the frame columns are packed later), so the link keeps the diagonal of main's measure
+   * (ticket 17 review, R1: no second copy of 7a's gap choice). The answer does not depend on geometry, so it is kept for the whole step.
+   */
+  const passing = new Map<LayoutLink, boolean>();
+  const passesFrame = (link: LayoutLink): boolean => {
+    let known = passing.get(link);
+    if (known === undefined) {
+      const crossed = new Set(transitTiers(model, link));
+      known = Object.values(model.groups).some(group => group.tier !== undefined && crossed.has(group.tier) && foreignRoot(model, group.id, link) !== undefined);
+      passing.set(link, known);
+    }
+    return known;
+  };
   const regionCrossings = (a: number, b: number): number => {
     const across = routed.filter(pair => Math.min(tierOf(pair.from), tierOf(pair.to)) <= a && Math.max(tierOf(pair.from), tierOf(pair.to)) >= b)
       .map(pair => {
         const [upper, lower] = tierOf(pair.from) <= tierOf(pair.to) ? [pair.from, pair.to] : [pair.to, pair.from];
         const p = tierOf(upper), q = tierOf(lower), top = centre(upper), end = centre(lower);
-        const owns = cut && q - p > 1 && ownsTransitLanes(model, pair.link);
+        const owns = cut && q - p > 1 && ownsTransitLanes(model, pair.link) && !passesFrame(pair.link);
         const at = (k: number): number => (owns && k > p && k < q ? corridorX(pair.link, k) : undefined) ?? top + (end - top) * (k - p) / (q - p);
         return [at(a), at(b)] as const;
       });
