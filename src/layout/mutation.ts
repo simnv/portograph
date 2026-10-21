@@ -402,7 +402,10 @@ function validateRegionClaims(model: LayoutModel, intermediate = false): void {
       same(link.technique, expected.links[index]!.technique, `Bar path technique on ${link.id} contradicts its reservation`);
     }
   }
-  if (stages.indexOf(model.stage) >= stages.indexOf('bands')) validateGroupLabelBands(model);
+  // The linked-group grid is validated by replaying it with the guards of the producer (`validateGroupLabelBands`): equality with the producer is the proof (ticket 16).
+  if (stages.indexOf(model.stage) >= stages.indexOf('bands')) {
+    validateGroupLabelBands(model);
+  }
   // Route geometry cannot be re-derived without the router, so its claims are checked structurally.
   if (stages.indexOf(model.stage) >= stages.indexOf('route')) validateRoutedPaths(model, stages.indexOf(model.stage) > stages.indexOf('route'));
   if (stages.indexOf(model.stage) >= stages.indexOf('link-labels')) validateLinkLabels(model);

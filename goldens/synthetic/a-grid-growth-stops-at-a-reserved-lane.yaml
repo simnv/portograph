@@ -1,0 +1,21 @@
+# Expected: the linked grid gives the short right flank the core's y-extent, and the transit lane of the link that crosses the core tier keeps its run: no box
+# grown by the grid stands in a reserved lane window or a tier gap row, and the diagram publishes. The tests of ticket 16 put a lane in the room the flank would claim
+# and the flank stays short.
+# Source: architecture ticket 16.
+portograph: 2
+profile: network
+groups:
+  upper: { tier: 0, label: Upper }
+  core: { tier: 1, label: Core }
+  side: { align: right, of: core, label: Side }
+  lower: { tier: 2, label: Lower }
+nodes:
+  up-1: { group: upper, class: router, ports: [100G] }
+  up-2: { group: upper, class: router, ports: [100G] }
+  core-1: { group: core, class: router, ports: [100G, 100G] }
+  side-1: { group: side, class: router, ports: [100G] }
+  low-1: { group: lower, class: router, ports: [100G, 100G] }
+links:
+  - [up-1.100G, core-1.*]
+  - [side-1.100G, core-1.*]
+  - [up-2.100G, low-1.*]
