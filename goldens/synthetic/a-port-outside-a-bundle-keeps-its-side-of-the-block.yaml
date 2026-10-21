@@ -1,0 +1,60 @@
+portograph: 2
+profile: network
+title: A port outside a bundle keeps its side of the block
+groups:
+  up:
+    tier: 0
+    label: UP
+  low:
+    tier: 1
+    label: LOW
+  other:
+    tier: 1
+    label: OTHER
+nodes:
+  peer-a:
+    group: up
+    label: peer-a
+  peer-b:
+    group: up
+    label: peer-b
+  edge:
+    group: up
+    label: edge
+  spare:
+    group: other
+    label: spare
+  core:
+    group: low
+    label: core
+    ports:
+    - name: wan1
+    - name: wan2
+    - name: wan3
+links:
+- - spare
+  - edge
+  - id: spare-link
+    label: spare
+- - core.wan1
+  - edge
+  - id: wan-one
+    label: one
+- - core.wan2
+  - edge
+  - id: wan-two
+    label: two
+- - core.wan3
+  - edge
+  - id: wan-three
+    label: three
+- - core
+  - peer-a
+  - id: overlay-a
+    label: ov-a
+    route: overlay
+- - core
+  - peer-b
+  - id: overlay-b
+    label: ov-b
+    route: overlay

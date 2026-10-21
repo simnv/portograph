@@ -549,7 +549,16 @@ export function prepareBundleGeometry(model: LayoutModel): void {
       && !model.barDrops.some(drop => bundle.members.includes(drop.link) && drop.barCross.length);
     const spacing = Math.max(q * (inverted || freeBarStar ? 2 : 1), ...list.flatMap(m => [model.nodes[m.a.ref.node]!.sidePitch![m.a.side!]!, model.nodes[m.b.ref.node]!.sidePitch![m.b.side!]!]));
     for (const item of list) for (const p of [item.a, item.b]) model.nodes[p.ref.node]!.sidePitch![p.side!] = spacing;
-    const commonStart = Math.max(lower ?? -Infinity, ...bundle.nodes.map(id => model.nodes[id]!.bounds![tangent] + 10 + spacing / 2));
+    // Ports outside every bundle that stage 7b seated before this block keep their place before it
+    // (ticket 09), so the block starts after them rather than at the node's edge.
+    const inAnyBundle = new Set(model.links.filter(l => l.bundle).flatMap(l => [portId(l.attachments!.from), portId(l.attachments!.to)]));
+    const leading = (port: LayoutPort): number => {
+      const first = Math.min(...list.flatMap(m => [m.a, m.b]).filter(p => p.ref.node === port.ref.node && p.side === port.side).map(p => p.engineOrder!));
+      return model.nodes[port.ref.node]!.ports.filter(p => p.side === port.side && !inAnyBundle.has(portId(p.ref)) && p.engineOrder! < first).length;
+    };
+    const lead = new Map<string, number>(list.flatMap(m => [m.a, m.b]).map(p => [p.ref.node, leading(p)] as const));
+    const floorOf = (id: string): number => model.nodes[id]!.bounds![tangent] + 10 + spacing / 2 + (lead.get(id) ?? 0) * spacing;
+    const commonStart = Math.max(lower ?? -Infinity, ...bundle.nodes.map(floorOf));
     for (const end of ['a', 'b'] as const) {
       const far = end === 'a' ? 'b' : 'a';
       const ordered = [...list].sort((a, b) => a[end].engineOrder! - b[end].engineOrder! || a[far].engineOrder! - b[far].engineOrder! || a.link.sourceIndex - b.link.sourceIndex);
@@ -579,9 +588,9 @@ export function prepareBundleGeometry(model: LayoutModel): void {
         }
         // Alignment is optional; capacity and immutable lanes are not. Leave a bundle bent when
         // projecting a distant peer's x would grow this node across a sibling or reserved lane.
-        const sideCount = node.ports.filter(port => port.side === ports[0]!.side).length;
+        const sideCount = node.ports.filter(port => port.side === ports[0]!.side).length - (lead.get(node.id) ?? 0);
         if (start + (sideCount - 1) * spacing + 10 + spacing / 2 > limit) {
-          start = node.bounds!.x + 10 + spacing / 2;
+          start = floorOf(node.id);
         }
       }
       ports.forEach(port => set(port, start + ordered.findIndex(m => m[end] === port) * spacing));
@@ -671,10 +680,33 @@ export function prepareBundleGeometry(model: LayoutModel): void {
     }
     const bundled = new Set(model.links.filter(l => l.bundle).flatMap(l => [portId(l.attachments!.from), portId(l.attachments!.to)]));
     const unrelated = new Set(node.ports.filter(p => p.side === side && !bundled.has(portId(p.ref))));
-    const ports = sorted(node.ports.filter(p => p.side === side), p => plan.get(p) ?? coordinate(p), unrelated);
+    // A port outside every bundle keeps the side of every bundled port that stage 7b gave it (ticket 09). The plan puts a
+    // block at the node's start, or under its peers, which can lie left of a free port that 7b seated before it; sorting by
+    // coordinate alone would carry that port across the pills, and its chord with it. Engine order may change here only as
+    // the bundle rules require (invariant 4), and moving a free port past a block is not one of them. The value is the
+    // seat itself, not the 7b coordinate: the block's room before it is reserved by `floorOf`. A port with a planned x of
+    // its own (a fixed lane) keeps it; so does a free port whose bounds contradict each other (the bundle rules reordered
+    // the bundled ports against their 7b order).
+    const faceBundled = node.ports.filter(p => p.side === side && bundled.has(portId(p.ref)));
+    const seat = (p: LayoutPort): number => {
+      if (plan.has(p)) return plan.get(p)!;
+      if (!unrelated.has(p)) return coordinate(p);
+      let low = -Infinity, high = Infinity;
+      for (const q of faceBundled) {
+        const at = plan.get(q) ?? coordinate(q);
+        if (q.engineOrder! < p.engineOrder!) low = Math.max(low, at + PLACEMENT_EPS);
+        else if (q.engineOrder! > p.engineOrder!) high = Math.min(high, at - PLACEMENT_EPS);
+      }
+      return low <= high ? Math.min(Math.max(coordinate(p), low), high) : coordinate(p);
+    };
+    const ports = sorted(node.ports.filter(p => p.side === side), seat, unrelated);
     let prior = node.bounds![tangent] + 10 - spacing / 2;
+    // A free port that stands before a planned one gives way to it: the ports on its left move left by a pitch each, rather than
+    // pushing the planned port right out of line with its peers. `floorOf` has reserved the room.
+    const wanted = ports.map(seat);
+    for (let i = ports.length - 2; i >= 0; i--) if (!plan.has(ports[i]!) && unrelated.has(ports[i]!)) wanted[i] = Math.min(wanted[i]!, wanted[i + 1]! - spacing);
     ports.forEach((port, engineOrder) => {
-      const value = Math.max(plan.get(port) ?? coordinate(port), prior + spacing);
+      const value = Math.max(wanted[engineOrder]!, prior + spacing);
       port.engineOrder = engineOrder; port.anchor![tangent] = value; prior = value;
     });
     const dim = tangent === 'x' ? 'width' : 'height';
