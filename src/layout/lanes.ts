@@ -595,7 +595,7 @@ function corridorFree(model: LayoutModel, lane: Lane, link: LayoutLink, child: P
  * afterwards can ask whether the corridor still stands at that port, and refuse a move that no
  * longer does.
  */
-export function reseatLanes(model: LayoutModel, followed?: LaneFollow[], only?: ReadonlySet<string>): boolean {
+export function reseatLanes(model: LayoutModel, followed?: LaneFollow[]): boolean {
   let moved = false;
   // The corridors are taken in reservation order and each candidate is measured against the ones
   // already moved, the same serialization 7a allocates in. A corridor is never measured against a
@@ -604,7 +604,7 @@ export function reseatLanes(model: LayoutModel, followed?: LaneFollow[], only?: 
     // A side lane serves the lateral end and is never seated under a child: only transit corridors follow their child.
     if (lane.owner.kind !== 'link' || laneRunKind(lane) !== 'transit') continue;
     const link = model.links.find(item => item.id === (lane.owner as { id: string }).id);
-    if (!link || link.bundle || !link.attachments || (only && !only.has(link.id))) continue;
+    if (!link || link.bundle || !link.attachments) continue;
     // A lane that passes a frame the link is foreign to is one x for the whole frame (ticket 04); the
     // corridor cannot follow the child alone without breaking that.
     if (foreignRoot(model, lane.group, link) !== undefined) continue;

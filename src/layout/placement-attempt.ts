@@ -267,6 +267,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
   const heldLanes = clone(draft.lanes), followedLanes: LaneFollow[] = [];
   const seated = draft.anchorTier === undefined ? undefined : seatLaneSources(draft, centreContext(draft, draft.anchorTier).steps);
   if (reseatLanes(draft, followedLanes)) {
+    seated?.reconcile();
     rebuildLaneExtents(draft);
     // Four things the move can spoil, and it is refused rather than allowed to. It may open an
     // alignment 7c could not reach, and the centring invariant would then read the published

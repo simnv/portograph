@@ -65,52 +65,79 @@ function faces(model: LayoutModel) {
 }
 function name(model: LayoutModel, link: LayoutLink): void {
   if (model.diagnostics.some(d => d.code === 'CENTRE_ALIGNMENT_INFEASIBLE' && d.owners?.some(owner => 'id' in owner && owner.id === link.id))) return;
-  placementWarning(model, 'CENTRE_ALIGNMENT_INFEASIBLE', `${link.id} keeps a jog: neither of its ports can reach the other's x within its face; routing completes it.`, [link.id]);
+  placementWarning(model, 'CENTRE_ALIGNMENT_INFEASIBLE', `${link.id} keeps a jog: its port cannot reach the other port's x within its face; routing completes it.`, [link.id]);
+}
+
+/**
+ * The order the movers of a face take: the ones that go left, from the left, then the ones that go right, from the right, each in engine order. A port moves
+ * between neighbours as they stand, so the order, and not the order of `model.links`, decides what a face gives (review of ticket 15).
+ */
+function inFaceOrder<T>(items: T[], port: (item: T) => LayoutPort, target: (item: T) => number): T[] {
+  const key = (item: T): string => `${port(item).ref.node}\u0000${port(item).side}`;
+  const at = (item: T): number => port(item).engineOrder!;
+  const left = (item: T): boolean => target(item) < port(item).anchor!.x;
+  return [...items].sort((a, b) => key(a).localeCompare(key(b)) || Number(left(b)) - Number(left(a)) || (left(a) ? at(a) - at(b) : at(b) - at(a)));
 }
 
 export function standPortsOverChildren(model: LayoutModel, steps: readonly { tier: number; authority: number }[]): void {
-  const read = faces(model);
+  const read = faces(model), movers: { feed: Feed; parent: LayoutPort; target: number }[] = [];
   for (const feed of read.feeds(steps)) {
     if (feed.transit || !read.eligible(feed)) continue;
     // The parent is the port of the upper tier, whichever side of the anchor tier the feed reads it on. A parent port with several links is a fan: the
     // first child by x owns the vertical, and the rest stay where the fan puts them.
     const [parent, child] = read.upper(feed.parent, feed.child);
-    if (!read.sole(parent)) continue;
-    const parentAt = parent.anchor!.x, childAt = child.anchor!.x;
-    if (Math.abs(parentAt - childAt) <= 0.5) continue;
-    // Only the parent port moves: the child side is `alignSide`'s, which may also widen the body and so answers to the widening allowance.
-    if (read.reaches(parent, childAt)) read.place(parent, childAt);
+    if (!read.sole(parent) || Math.abs(parent.anchor!.x - child.anchor!.x) <= 0.5) continue;
+    movers.push({ feed, parent, target: child.anchor!.x });
+  }
+  // Only the parent port moves: the child side is `alignSide`'s, which may also widen the body and so answers to the widening allowance.
+  for (const { feed, parent, target } of inFaceOrder(movers, item => item.parent, item => item.target)) {
+    if (read.reaches(parent, target)) read.place(parent, target);
     else name(model, read.linkOf.get(feed.link)!);
   }
 }
 
 /** What `seatLaneSources` did, to be taken back when the corridor reseat is refused, and to be named when the link keeps its jog. */
-export interface LaneSources { undo: () => void; settle: (model: LayoutModel) => void }
+export interface LaneSources { undo: () => void; reconcile: () => void; settle: (model: LayoutModel) => void }
 /**
  * The source port of a transit corridor goes over the port the corridor follows, so that the corridor's reseat gives a straight link and not the same jog
- * at the other end. Only a link with one corridor, whose source port carries no other link and can reach the child's x, is seated.
+ * at the other end. Only a link with one corridor, whose source port carries no other link and can reach the child's x, is seated. `reconcile` runs after
+ * `reseatLanes`, which skips a link for reasons of its own (a shared end, a foreign frame, a corridor that is not free, a feed order that would break):
+ * a source port whose corridor did not follow goes back, so that no link jogs at both ends.
  */
 export function seatLaneSources(model: LayoutModel, steps: readonly { tier: number; authority: number }[]): LaneSources {
-  const read = faces(model), moved: { ref: PortRef; x: number }[] = [], pending: { link: string; source: PortRef; child: PortRef }[] = [];
+  const read = faces(model), moved: { ref: PortRef; x: number; target: number; link: string }[] = [], pending: { link: string; source: PortRef; child: PortRef }[] = [];
+  const wanted: { feed: Feed; target: number }[] = [];
   for (const feed of read.feeds(steps)) {
     if (!feed.transit || !read.eligible(feed) || !read.sole(feed.parent)) continue;
     const lanes = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === feed.link);
     if (lanes.length !== 1 || laneRunKind(lanes[0]!) !== 'transit') continue;
-    const sourceAt = feed.child.anchor!.x, target = feed.parent.anchor!.x;
-    if (Math.abs(sourceAt - target) <= 0.5) continue;
+    if (Math.abs(feed.child.anchor!.x - feed.parent.anchor!.x) <= 0.5) continue;
     pending.push({ link: feed.link, source: feed.child.ref, child: feed.parent.ref });
-    if (!read.sole(feed.child) || !read.reaches(feed.child, target)) continue;
-    moved.push({ ref: feed.child.ref, x: sourceAt });
+    if (read.sole(feed.child)) wanted.push({ feed, target: feed.parent.anchor!.x });
+  }
+  for (const { feed, target } of inFaceOrder(wanted, item => item.feed.child, item => item.target)) {
+    if (!read.reaches(feed.child, target)) continue;
+    moved.push({ ref: feed.child.ref, x: feed.child.anchor!.x, target, link: feed.link });
     read.place(feed.child, target);
   }
   const at = (m: LayoutModel, ref: PortRef): number => findPort(m, ref)!.anchor!.x;
   return {
-    undo() { for (const item of moved.splice(0)) read.place(findPort(model, item.ref)!, item.x); },
+    undo() { for (const item of moved.splice(0).reverse()) read.place(findPort(model, item.ref)!, item.x); },
+    reconcile() {
+      for (const item of [...moved].reverse()) {
+        const lane = model.lanes.find(candidate => candidate.owner.kind === 'link' && candidate.owner.id === item.link);
+        if (lane !== undefined && Math.abs(lane.x - item.target) <= 0.5) continue;
+        read.place(findPort(model, item.ref)!, item.x);
+        moved.splice(moved.indexOf(item), 1);
+      }
+    },
     settle(final) {
-      // A link whose corridor does not stand at both ports is a jog the layout knew about; the lane x is the feed x of the source.
+      // A link whose corridor does not stand at both ports is a jog the layout knew about; the lane x is the feed x of the source. A link that stands has no
+      // such finding left.
       for (const item of pending) {
         const lane = final.lanes.find(candidate => candidate.owner.kind === 'link' && candidate.owner.id === item.link);
         if (lane === undefined || Math.abs(at(final, item.source) - lane.x) > 0.5 || Math.abs(at(final, item.child) - lane.x) > 0.5) name(final, final.links.find(link => link.id === item.link)!);
+        else final.diagnostics = final.diagnostics.filter(d => !(d.code === 'CENTRE_ALIGNMENT_INFEASIBLE' && d.message.startsWith(`${item.link} keeps a jog`) && d.owners?.some(owner => 'id' in owner && owner.id === item.link)));
       }
     },
   };
