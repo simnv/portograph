@@ -341,7 +341,7 @@ export function chooseStep(model: LayoutModel, overlays: readonly LayoutLink[], 
  * loses the room a run had reserved (room), and a corridor that no longer stands at the child it follows; and a body on a frozen chord. All are
  * measured on the settled model, as sets where a trade of one item for another is not "no worse".
  */
-export function chooseReseat(draft: LayoutModel, heldLanes: LayoutModel['lanes'], followed: LaneFollow[], settle: (copy: LayoutModel) => void): boolean {
+export function chooseReseat(draft: LayoutModel, heldLanes: LayoutModel['lanes'], followed: LaneFollow[], settle: (copy: LayoutModel) => void, standHeld: () => void = () => {}): boolean {
   const settled = candidateCopy(draft);
   settle(settled);
   const afterRoom: LinkLabelShortfall[] = [], heldRoom: LinkLabelShortfall[] = [];
@@ -352,6 +352,8 @@ export function chooseReseat(draft: LayoutModel, heldLanes: LayoutModel['lanes']
     crowded: crowded(settled), disordered: disordered(settled) },
     separation: lazySeparation(() => separationShortfalls(settled)),
     facts: { lanesHold: lanesHoldTheirChild(settled, followed), chordsClear: blockedChords(settled).length === 0 } };
+  // The held reading is the one without the source ports the reseat moved with its corridors (architecture ticket 15).
+  standHeld();
   draft.lanes = heldLanes; rebuildLaneExtents(draft);
   // A reseat may not put a wall in a span corridor that was clear (architecture ticket 22).
   const heldBreaches = spanBreaches(draft);

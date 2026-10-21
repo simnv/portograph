@@ -27,6 +27,7 @@ import { placeOverlayFree } from './overlay-place.js';
 import { fitRegionGroup, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 import { EPS, segmentRectDistance } from '../geometry/planar.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
+import { standPortsOverChildren } from './parent-stand.js';
 import { chordKind, isRoutedChord, withSharedLinkKinds, withStepLinkKinds } from './frame-paths.js';
 
 export interface CentreBudget { remaining: number; passes: number }
@@ -419,6 +420,11 @@ function groupFeeds(model: LayoutModel, context: CentreContext, tier: number, li
   }
   return { own, wanted, yielded, conflicts };
 }
+/** The feeds a group step centres on: the ones that may own an alignment. A fan remainder and a yielded transit would only pull the group away from the x its child is aligned to. */
+function chosenFeeds(context: CentreContext, tier: number, own: Feed[], yielded: ReadonlySet<Feed>): Feed[] {
+  const vertical = own.filter(feed => context.winners.get(`${tier}:${feed.key}`) === portId(feed.child.ref) && !yielded.has(feed));
+  return vertical.length ? vertical : own;
+}
 /**
  * One group's centring step: centre under its owning feeds, align the wanted ports, repack, fit,
  * clamp into the lane/flank/neighbour window. Reports exactly which child ports stay unresolved —
@@ -468,8 +474,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   const saved = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
   // Centre under the feeds that may own an alignment; a yielded transit would only pull the group
   // away from the x its child is then aligned to.
-  const vertical = own.filter(feed => context.winners.get(`${tier}:${feed.key}`) === portId(feed.child.ref) && !yielded.has(feed));
-  const chosen = vertical.length ? vertical : own;
+  const chosen = chosenFeeds(context, tier, own, yielded);
   const distinctParents = new Map(chosen.map(feed => [feed.key, feed.x]));
   const distinctChildren = new Map(chosen.map(feed => [portId(feed.child.ref), feed.child.anchor!.x]));
   const mean = (values: Iterable<number>) => { const xs = [...values]; return xs.reduce((sum, x) => sum + x, 0) / xs.length; };
@@ -601,6 +606,12 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
 export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
   const seated = seatedFaces(model);
   timed('centre-passes', () => centrePasses(model, budget));
+  // The parent side of a single feed, after the last pass has moved the children (architecture ticket 15).
+  const anchorTier = model.anchorTier;
+  if (anchorTier !== undefined && model.tierBands.some(band => band.tier === anchorTier)) {
+    const context = centreContext(model, anchorTier);
+    standPortsOverChildren(model, context.steps, (tier, list, id) => { const { own, yielded } = groupFeeds(model, context, tier, list, id, false); return chosenFeeds(context, tier, own, yielded); });
+  }
   // A face centring left alone stands centred on the body it widened (architecture ticket 10, D3). Read before the overlay windows below.
   recentreSeatedFaces(model, seated, feedPorts(model));
   // The windows of the overlay barycentre are read once, where centring has left the partners (ticket 143): a window read in a pass

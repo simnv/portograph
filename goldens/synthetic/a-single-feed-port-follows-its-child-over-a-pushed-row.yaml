@@ -1,0 +1,99 @@
+portograph: 2
+profile: network
+groups:
+  uplink: {tier: 0, label: UPLINK}
+  core: {tier: 1, label: CORE}
+  leaves: {tier: 2, label: LEAVES}
+  rack: {tier: 3, label: RACK}
+nodes:
+  leaf-a:
+    group: leaves
+    label: leaf-a
+    class: server
+    ports:
+    - {name: n1}
+  leaf-b: {group: leaves, label: leaf-b, class: router}
+  leaf-c:
+    group: leaves
+    label: leaf-c
+    class: server
+    ports:
+    - {name: n1}
+  leaf-d: {group: leaves, label: leaf-d, class: router}
+  leaf-e: {group: leaves, label: leaf-e, class: router}
+  leaf-f: {group: leaves, label: leaf-f, class: switch}
+  gate:
+    group: uplink
+    label: gate
+    class: router
+    ports:
+    - {name: u1}
+    - {name: u2}
+  core-sw:
+    group: core
+    label: core-sw
+    class: switch
+    ports:
+    - {name: p16}
+    - {name: p8}
+    - {name: p14}
+    - {name: p9}
+    - {name: p11}
+    - {name: p13}
+    - {name: p6}
+    - {name: p15}
+    - {name: p3}
+    - {name: p4}
+    - {name: p2}
+    - {name: p5}
+  edge-sw:
+    group: core
+    label: edge-sw
+    class: switch
+    ports:
+    - {name: p1}
+    - {name: p5}
+  cam-1: {group: rack, label: cam-1, class: server}
+  cam-2: {group: rack, label: cam-2, class: server}
+  cam-3: {group: rack, label: cam-3, class: server}
+  cam-4: {group: rack, label: cam-4, class: server}
+links:
+- - core-sw.p16
+  - gate.u1
+  - {id: l-16}
+- - core-sw.p8
+  - edge-sw.p1
+  - {id: l-8}
+- - edge-sw.p5
+  - leaf-d
+  - {id: p-flex-5}
+- - core-sw.p14
+  - leaf-a.n1
+  - {id: l-14}
+- - core-sw.p9
+  - leaf-b
+  - {id: l-9}
+- - core-sw.p11
+  - leaf-c.n1
+  - {id: l-11}
+- - core-sw.p13
+  - leaf-f
+  - {id: l-13}
+- - core-sw.p6
+  - leaf-e
+  - {id: l-6}
+- - core-sw.p15
+  - gate.u2
+  - {id: l-15}
+- - core-sw.p3
+  - cam-1
+  - {id: l-3}
+- - core-sw.p4
+  - cam-2
+  - {id: l-4}
+- - core-sw.p2
+  - cam-3
+  - {id: l-2}
+- - core-sw.p5
+  - cam-4
+  - {id: l-5}
