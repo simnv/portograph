@@ -1,0 +1,27 @@
+# Expected: the shared-port diagram of a-link-leaves-its-group-through-a-door twice over, in one group,
+# so two junction rows stand on one y in the group padding. Each fan reserves an exit of its own, owned
+# by its link, and the two exits are not merged into one band: the links keep the group edge clearance
+# (G6 clean; the two fans' branch rows overlap at 380, a G4 this ticket leaves to the fan rows). Architecture ticket 13, review finding 3.
+portograph: 2
+groups:
+  top: { tier: 2, label: "Top" }
+  mid: { tier: 5, label: "Middle" }
+  hub: { tier: 6, label: "Hub" }
+  low: { tier: 6, label: "Lower" }
+nodes:
+  t1: { group: top, class: tbr, label: "t1" }
+  h1: { group: hub, class: router, label: "h1", ports: [{ name: p, side: top }] }
+  h2: { group: hub, class: router, label: "h2", ports: [{ name: p, side: top }] }
+  m1: { group: mid, class: rr, label: "m1" }
+  m2: { group: mid, class: provider, label: "m2", ports: [{ name: a, side: bottom, order: 1 }, { name: b, side: bottom, order: 2 }] }
+  m3: { group: mid, class: rr, label: "m3" }
+  m4: { group: mid, class: provider, label: "m4", ports: [{ name: a, side: bottom, order: 1 }, { name: b, side: bottom, order: 2 }] }
+  l1: { group: low, class: tbr, label: "l1" }
+  l2: { group: low, class: tbr, label: "l2" }
+links:
+  - [h1.p, m1]
+  - [h1.p, m2.a]
+  - [m2.b, l1]
+  - [h2.p, m3]
+  - [h2.p, m4.a]
+  - [m4.b, l2]

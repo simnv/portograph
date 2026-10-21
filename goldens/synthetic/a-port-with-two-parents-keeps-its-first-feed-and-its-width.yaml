@@ -1,0 +1,12 @@
+portograph: 2
+profile: network
+groups:
+  top: {tier: 0, label: TOP}
+  mid: {tier: 1, label: MID}
+nodes:
+  a: {group: top, label: A}
+  b: {group: top, label: B}
+  r: {group: mid, class: router, label: r, ports: [{name: p1}]}
+links:
+- [r.p1, a, {id: l1}]
+- [r.p1, b, {id: l2}]

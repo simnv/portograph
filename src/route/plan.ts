@@ -15,6 +15,7 @@ export { disjointShapes } from './containment.js';
 import { completedRouteObstacles, reservedRunObstacles, routeObstacles, type RouteObstacle } from './obstacles.js';
 import { ALL_DIRECTIONS, DIRECTION_BITS, type RouteBatch, type RouteCheckpoint, type RouteConnector, type RouteEndpoint, type RoutePin, type RouteShape } from './types.js';
 import { PLACEMENT_EPS } from '../layout/tolerance.js';
+import { exitSide } from '../layout/group-exits.js';
 
 /** Shape buffer stays at zero; every obstacle already carries its exact clearance. */
 export const SHAPE_BUFFER_DISTANCE = 0;
@@ -142,7 +143,10 @@ function endpointFor(model: LayoutModel, link: LayoutLink, end: 'from' | 'to',
   const runs = link.sharedRuns?.[end];
   if (runs?.length) {
     const terminal = runs.at(-1)!.to;
-    return { endpoint: { kind: 'point', x: terminal.x, y: terminal.y }, point: { ...terminal }, directions: ALL_DIRECTIONS };
+    // A terminal that is the end of a reserved group exit is a handoff: the route leaves it away from the group it left, never back into it.
+    const exit = model.groupExits?.find(item => item.link === link.id && item.end === end);
+    const directions = exit ? ALL_DIRECTIONS & ~DIRECTION_BITS[OPPOSITE[exitSide(exit)]] : ALL_DIRECTIONS;
+    return { endpoint: { kind: 'point', x: terminal.x, y: terminal.y }, point: { ...terminal }, directions };
   }
   const ref = link.attachments![end], port = endPort(model, link, end)!;
   const node = model.nodes[ref.node]!;

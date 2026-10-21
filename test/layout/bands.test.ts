@@ -241,14 +241,15 @@ links: [[a.p, b.p], [a.p, b.q], [a.p, c.p], [a.q, d.p], [a.r, d.q], [a.s, d.r]]`
     const remainder = model.links.find(link => link.id === 'link-3')!;
     const member = model.links.find(link => link.id === 'link-1')!;
     expect(remainder.path).toBeUndefined();
-    expect(remainder.sharedRuns!.from).toHaveLength(3);
+    // Three runs of the fan and the exit that takes the remainder out of its own group (architecture ticket 13).
+    expect(remainder.sharedRuns!.from).toHaveLength(4);
     expect(member.path!.segments.slice(0, 3)).toEqual(member.sharedRuns!.from);
 
     // Every reserved run of the pathless remainder is an obstacle with its own stable ID, while the
     // member's identical copies inside its complete path collapse to the path entries.
     const obstacles = groupLabelObstacles(model);
     expect(obstacles.filter(item => item.id.startsWith('link-3:')).map(item => item.id))
-      .toEqual(['link-3:shared:from:0', 'link-3:shared:from:1', 'link-3:shared:from:2']);
+      .toEqual(['link-3:shared:from:0', 'link-3:shared:from:1', 'link-3:shared:from:2', 'link-3:shared:from:3']);
     expect(obstacles.filter(item => item.id.startsWith('link-1:')).map(item => item.id))
       .toEqual(['link-1:path:0', 'link-1:path:1', 'link-1:path:2', 'link-1:path:3']);
     for (const [index, segment] of remainder.sharedRuns!.from!.entries()) {

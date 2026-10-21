@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { alignLinkedGroupGrid, forgedRefusals, alignLinkedGroupGridAndPack } from '../../src/layout/bands.js';
-import { gapsHoldGrowth, lanesHoldGrowth } from '../../src/layout/growth-guard.js';
+import { exitsHoldGrowth, gapsHoldGrowth, GROWTH_GUARDS, lanesHoldGrowth } from '../../src/layout/growth-guard.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { rebuildBands } from '../../src/layout/skeleton-geometry.js';
 import { bars } from '../../src/layout/bars.js';
@@ -132,3 +132,36 @@ it('a recorded refusal stands whatever skip would apply to its pair, and is forg
   expect(forgedRefusals(structuredClone(await publish('a-grid-growth-stops-at-a-reserved-lane')), refusals)).toEqual(['y:core|side']);
   expect(forgedRefusals(structuredClone(model), new Set(['y:core|nobody']))).toEqual(['y:core|nobody']);
 });
+
+it('ticket 13: a growth that swallows the margin of a reserved group exit is refused (exitsHoldGrowth)', async () => {
+  const model = await publish('a-claimed-run-clears-a-shared-run');
+  const exit = model.groupExits![0]!, group = model.groups[exit.exited[0]!]!, box = group.bounds!;
+  expect(GROWTH_GUARDS).toContain(exitsHoldGrowth);
+  expect(exitsHoldGrowth(model, [{ group, bounds: box }])).toBe(true);
+  // Growing the box by more than the slack past the exit's end puts the end inside the margin.
+  expect(exitsHoldGrowth(model, [{ group, bounds: { x: box.x - 30, y: box.y - 30, width: box.width + 60, height: box.height + 60 } }])).toBe(false);
+  // A model with no exit holds every growth.
+  const bare = structuredClone(model);
+  delete bare.groupExits;
+  expect(exitsHoldGrowth(bare, [{ group, bounds: { ...box, width: box.width + 60 } }])).toBe(true);
+}, 60000);
+
+it('ticket 13: a cell that widens its frame over a reserved exit is refused, and an unrelated old violation does not block an unrelated growth', async () => {
+  const model = structuredClone(await publish('a-link-leaves-a-ranked-group-through-its-frame'));
+  const frame = model.frames!.find(item => item.id === 'home')!, link = model.links.find(item => item.attachments?.from.node === 's1')!;
+  const cell = model.groups[frame.cells[0]!]!;
+  // An exit that leaves the frame to the left, its end at the margin 7e reserves.
+  const clearance = 12.75, exit = { link: link.id, end: 'from' as const, exited: ['home'], from: { x: frame.box.x + 20, y: frame.box.y + 20 }, to: { x: frame.box.x - clearance, y: frame.box.y + 20 }, clearance };
+  model.groupExits = [exit];
+  const widened = { x: cell.bounds!.x - 30, y: cell.bounds!.y, width: cell.bounds!.width + 30, height: cell.bounds!.height };
+  // The stored frame box does not move with the proposal; the frame derived from the proposed cell does, and swallows the end.
+  expect(exitsHoldGrowth(model, [{ group: cell, bounds: widened }])).toBe(false);
+  expect(exitsHoldGrowth(model, [{ group: cell, bounds: { ...cell.bounds! } }])).toBe(true);
+  // Another group's growth, away from the exit, is not judged on an exit already short of its margin, nor on a link without attachments.
+  const old = { ...exit, to: { x: frame.box.x + 5, y: frame.box.y + 20 } };
+  const lost = { ...exit, link: 'no-such-link' };
+  model.groupExits = [old, lost];
+  const other = Object.values(model.groups).find(group => group.frame === undefined && group.nodes.length > 0 && group.id !== 'home')!;
+  const b = other.bounds!;
+  expect(exitsHoldGrowth(model, [{ group: other, bounds: { x: b.x, y: b.y, width: b.width + 4, height: b.height } }])).toBe(true);
+}, 60000);

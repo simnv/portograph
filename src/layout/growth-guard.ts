@@ -11,6 +11,7 @@ import { bottom, right } from './regions.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { rebuildBands } from './skeleton-geometry.js';
 import { tierGapPlans } from './gap-plan.js';
+import { groupExitsHold } from './group-exit-check.js';
 
 export type Growth = { group: LayoutGroup; bounds: Rect }[];
 
@@ -63,9 +64,14 @@ export function gapsHoldGrowth(model: LayoutModel, proposed: Growth): boolean {
   });
 }
 
+/** Whether no reserved group exit loses its margin to the proposed boxes (architecture ticket 13): the end of an exit stays beyond the margin of each box it leaves. */
+export function exitsHoldGrowth(model: LayoutModel, proposed: Growth): boolean {
+  return model.groupExits === undefined || model.groupExits.length === 0 || groupExitsHold(model, model.groupExits, proposed);
+}
+
 /**
- * The guards a growth meets before the costly gap guard, each on the model and the proposed boxes. Ticket 13 appends the exit-margin predicate here: `alignGrid` asks every one
+ * The guards a growth meets before the costly gap guard, each on the model and the proposed boxes. `exitsHoldGrowth` (ticket 13) is the exit-margin predicate: `alignGrid` asks every one
  * of them, and a pair one refuses is recorded in `model.gridRefusals`, which the validator honours.
  */
-export const GROWTH_GUARDS: readonly ((model: LayoutModel, proposed: Growth) => boolean)[] = [lanesHoldGrowth];
+export const GROWTH_GUARDS: readonly ((model: LayoutModel, proposed: Growth) => boolean)[] = [lanesHoldGrowth, exitsHoldGrowth];
 export const growthHolds = (model: LayoutModel, proposed: Growth): boolean => GROWTH_GUARDS.every(guard => guard(model, proposed));

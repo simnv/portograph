@@ -372,6 +372,7 @@ function validateRegionClaims(model: LayoutModel, intermediate = false): void {
     same(model.bundles, expected.bundles, 'Bundle reservations contradict final paths');
     same(model.junctions, expected.junctions, 'Junctions contradict shared incidence');
     same(model.links.map(l => l.sharedRuns), expected.links.map(l => l.sharedRuns), 'Shared runs contradict port incidence');
+    same(model.groupExits, expected.groupExits, 'Group exits contradict shared runs');
     for (const [index, link] of model.links.entries()) if (link.bundle) same(link.path, expected.links[index]!.path, `Bundle path on ${link.id} contradicts final anchors`);
   }
   // A candidate its rule declined to pin is unclaimed geometry; stage 8 owns it from then on, and
@@ -589,7 +590,7 @@ export function restoreFinalLayout(json: string): LayoutModel {
 
 const permissions: Record<PlacementRule, { move: boolean; reorder: boolean }> = {
   rows: { move: true, reorder: false }, lanes: { move: true, reorder: false },
-  flanks: { move: true, reorder: true }, centre: { move: true, reorder: false },
+  flanks: { move: true, reorder: true }, centre: { move: true, reorder: true },
   bars: { move: true, reorder: true }, bundles: { move: true, reorder: true }, bands: { move: true, reorder: false },
   route: { move: false, reorder: false }, 'link-labels': { move: false, reorder: false },
   validate: { move: false, reorder: false }, emit: { move: false, reorder: false },
@@ -796,7 +797,7 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
     same(omit(node, ['bounds', 'size', 'sidePitch', 'ports', 'icon']), omit(old, ['bounds', 'size', 'sidePitch', 'ports', 'icon']), 'Undeclared node field changed');
     node.ports.forEach((port, index) => {
       same(omit(port, ['engineOrder', 'anchor', 'pill']), omit(old.ports[index]!, ['engineOrder', 'anchor', 'pill']), 'Undeclared port field changed');
-      if (rule === 'bundles' && !bundledPorts.has(JSON.stringify(port.ref))) same(port.engineOrder, old.ports[index]!.engineOrder, 'Bundles cannot reorder unrelated ports');
+      if ((rule === 'bundles' || rule === 'centre') && !bundledPorts.has(JSON.stringify(port.ref))) same(port.engineOrder, old.ports[index]!.engineOrder, `${rule === 'bundles' ? 'Bundles' : 'Centring'} cannot reorder unrelated ports`);
     });
     same(node.sizeFloor, old.sizeFloor, 'Stored content floor changed');
     same(node.contentSize, old.contentSize, 'Measured content changed');
@@ -855,7 +856,19 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
       same(node.size!.height, old.size!.height, 'Centring cannot change height');
       if (node.size!.width < old.size!.width) throw new Error(`Centring cannot shrink ${id}: width ${node.size!.width} < ${old.size!.width}`);
       const group = model.groups[model.document.nodes[id]!.group]!;
-      if (group.tier === draft.anchorTier || group.flank) same(node, old, 'Centring cannot move anchor tier or flanks');
+      if (group.tier === draft.anchorTier || group.flank) {
+        // Bundle order, decided before the first seat (ticket 12), may exchange the slots of bundled ports: the set of anchors of each face stays,
+        // an unbundled port stays where it is, and a pill travels with its anchor.
+        const faces = (list: typeof node.ports): string => JSON.stringify(list.map(port => [port.side, port.anchor]).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
+        same(faces(node.ports), faces(old.ports), 'Centring cannot move anchor tier or flanks');
+        const relative = (port: (typeof node.ports)[number]): unknown => port.pill === undefined ? undefined : { ...port.pill, bounds: { ...port.pill.bounds, x: port.pill.bounds.x - port.anchor!.x, y: port.pill.bounds.y - port.anchor!.y } };
+        node.ports.forEach((port, index) => {
+          const prior = old.ports[index]!;
+          if (!bundledPorts.has(JSON.stringify(port.ref))) same({ anchor: port.anchor, pill: port.pill }, { anchor: prior.anchor, pill: prior.pill }, 'Centring cannot move anchor tier or flanks');
+          same(relative(port), relative(prior), 'Centring cannot move anchor tier or flanks');
+        });
+        same({ ...node, ports: node.ports.map(port => omit(port, ['engineOrder', 'anchor', 'pill'])) }, { ...old, ports: old.ports.map(port => omit(port, ['engineOrder', 'anchor', 'pill'])) }, 'Centring cannot move anchor tier or flanks');
+      }
     }
     if (rule === 'bundles') {
       same(node.size, old.size, 'Bundles cannot resize nodes');

@@ -1,6 +1,7 @@
 import type { Bundle, LayoutLink, LayoutModel, LayoutPort, Owner, PathSegment, Point, Rect } from '../model/index.js';
 import type { PortRef } from '../model/document.js';
 import { portId } from './skeleton-graph.js';
+import { reserveGroupExits } from './group-exits.js';
 import { MEMBER_GAP, axis, bundleFanRows, clone, coordinate, facing, fanCohorts, fanEnd, fanPitch, fanRows, junctionId, normal, type Member } from './bundle-geometry.js';
 import { placementWarning } from './regions.js';
 import { STRAIGHT_PATH_CLEARANCE, findPort } from './row-paths.js';
@@ -423,6 +424,7 @@ export function crossBundleFans(model: LayoutModel): void {
     }
   }
   releaseHemmedFans(model);
+  reserveGroupExits(model);
 }
 
 /** How many leading segments of a reserved fan run are the tree's stems: those along the port's own normal. */

@@ -10,13 +10,14 @@ import type { Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { transient, type Reservation, type Reservations } from './reservations.js';
 import { isSideLane, laneLink, laneSidesHold, riserNoDeeper, riserPenetrations, sideLaneSource, sideLanesHold, spanBreaches } from './lanes.js';
+import { groupExitsHold } from './group-exit-check.js';
 import { foreignOverExtensions, trunkHeads, trunkXAfter } from './trunk.js';
 const isSpanLane = (lane: { kind?: string }): boolean => lane.kind === 'span';
 
 export type ProposedMove = { group: LayoutGroup; bounds: Rect }[];
 type Maker = (model: LayoutModel, proposed: ProposedMove) => Reservation[];
 /** The derived kinds a move is held to, in the order the guards were chained. */
-export type MoveKind = 'riserKeepOut' | 'trunkExtension' | 'laneSide' | 'sideAlignment' | 'spanCorridor';
+export type MoveKind = 'riserKeepOut' | 'trunkExtension' | 'laneSide' | 'sideAlignment' | 'spanCorridor' | 'groupExit';
 
 /** The routed ports of the member rows that stand in a riser keep-out now: a move may not take one deeper. */
 const riserKeepOut: Maker = (model, proposed) => {
@@ -46,7 +47,10 @@ const spanCorridor: Maker = model => {
   if (!model.lanes.some(isSpanLane)) return [];
   return [transient('spanCorridor', { kind: 'command', id: 'move' }, 'corridors', 'lanes', { link: '', allowedBreaches: [...spanBreaches(model)] })];
 };
-const MAKERS: readonly (readonly [MoveKind, Maker])[] = [['riserKeepOut', riserKeepOut], ['trunkExtension', trunkExtension], ['laneSide', laneSide], ['sideAlignment', sideAlignment], ['spanCorridor', spanCorridor]];
+/** The exits 7e reserved (architecture ticket 13): a move keeps the end of each beyond the margin of the boxes it leaves, and its strip clear of every other group. */
+const groupExit: Maker = model => model.groupExits?.length
+  ? [transient('groupExit', { kind: 'command', id: 'move' }, 'exits', 'bands', { exits: model.groupExits })] : [];
+const MAKERS: readonly (readonly [MoveKind, Maker])[] = [['riserKeepOut', riserKeepOut], ['trunkExtension', trunkExtension], ['laneSide', laneSide], ['sideAlignment', sideAlignment], ['spanCorridor', spanCorridor], ['groupExit', groupExit]];
 
 /** The reservations a move is held to, with their evidence read from `model` as it stands. */
 export function moveReservations(model: LayoutModel, proposed: ProposedMove): Reservations {
@@ -74,6 +78,7 @@ function holdsMoveEntry(entry: Reservation, model: LayoutModel, proposed: Propos
       for (const key of spanBreaches(model, proposed)) if (!allowed.has(key)) return false;
       return true;
     }
+    case 'groupExit': return groupExitsHold(model, entry.payload.exits, proposed);
     default: return true;
   }
 }

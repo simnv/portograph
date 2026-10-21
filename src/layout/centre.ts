@@ -12,6 +12,8 @@ import { besideWalls, frameColumns, keepOutShifts, packBesideRows, type CellWind
 import { findPort } from './row-paths.js';
 import { attemptCounters } from './attempt-counters.js';
 import { timed } from './attempt-timings.js';
+import { orderBundles } from './bundle-geometry.js';
+import { normalizePrimaryBundlePorts } from './flanks.js';
 import { portId, bandGap, SKELETON_SPACING } from './skeleton-graph.js';
 import { crosses } from './overlay-paths.js';
 import { moveGroup } from './skeleton-geometry.js';
@@ -94,25 +96,12 @@ function overlayStops(model: LayoutModel, node: LayoutNode): OverlayStops {
   return stops;
 }
 
-/**
- * Keep compatible targets that fit between siblings and inside the node's own alignment allowance;
- * other ports retain their legal slots.
- *
- * A target is kept only when reaching it leaves the body no wider than `alignmentAllowance` — the
- * third bound on a widening, beside the siblings of the row and the reserved lane and flank window
- * of `reservedWindow`, and the one that says the node has to stay something a reader still reads as
- * this node (ticket 29). What gives way is the alignment: the port keeps its legal slot, the feed is
- * reported `CENTRE_ALIGNMENT_INFEASIBLE` like any other alignment the row cannot hold, and stage 8
- * routes the link instead of receiving it pinned. Two targets that each fit alone but not together —
- * one parent far to the left, one far to the right — decline the whole side, because widening to the
- * outer one is the same growth by another name.
- */
-function alignSide(node: LayoutNode, side: Side, targets: Map<string, number>, limit: WideningLimit, stops: OverlayStops, stopped: (link: string) => void,
-  avoid: { xs: number[]; keep: number; routed: Set<string> } = { xs: [], keep: 0, routed: new Set() }, held: ReadonlyMap<string, (x: number) => boolean> = new Map()): Set<string> {
+/** The keep decision of `alignSide` without its mutation: the targets a side keeps, none when the side is declined as a whole (architecture ticket 12). */
+function keptTargets(node: LayoutNode, side: Side, targets: ReadonlyMap<string, number>, limit: WideningLimit, stops: OverlayStops, stopped: (link: string) => void = () => {}): { index: number; x: number; key: string }[] {
   const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
   const pitch = node.sidePitch![side]!, kept: { index: number; x: number; key: string }[] = [];
   const box = node.bounds!, oldRight = right(box);
-  if (box.x < limit.low - EPS || oldRight > limit.high + EPS) return new Set();
+  if (box.x < limit.low - EPS || oldRight > limit.high + EPS) return [];
   const allowance = alignmentAllowance(node, side);
   /** The width the body ends with when the port at `index` is aligned to `x`. */
   const reach = (index: number, x: number): number =>
@@ -133,10 +122,34 @@ function alignSide(node: LayoutNode, side: Side, targets: Map<string, number>, l
     }
     if (x !== undefined && (!last || x - last.x >= (index - last.index) * pitch)) kept.push({ index, x, key });
   }
-  if (!kept.length) return new Set();
+  if (!kept.length) return [];
   const first = kept[0]!, last = kept[kept.length - 1]!;
   if (Math.max(oldRight, last.x + (ports.length - 1 - last.index) * pitch + 10 + pitch / 2)
-    - Math.min(box.x, first.x - first.index * pitch - 10 - pitch / 2) > allowance + EPS) return new Set();
+    - Math.min(box.x, first.x - first.index * pitch - 10 - pitch / 2) > allowance + EPS) return [];
+  return kept;
+}
+
+/**
+ * Keep compatible targets that fit between siblings and inside the node's own alignment allowance;
+ * other ports retain their legal slots.
+ *
+ * A target is kept only when reaching it leaves the body no wider than `alignmentAllowance` — the
+ * third bound on a widening, beside the siblings of the row and the reserved lane and flank window
+ * of `reservedWindow`, and the one that says the node has to stay something a reader still reads as
+ * this node (ticket 29). What gives way is the alignment: the port keeps its legal slot, the feed is
+ * reported `CENTRE_ALIGNMENT_INFEASIBLE` like any other alignment the row cannot hold, and stage 8
+ * routes the link instead of receiving it pinned. Two targets that each fit alone but not together —
+ * one parent far to the left, one far to the right — decline the whole side, because widening to the
+ * outer one is the same growth by another name.
+ */
+function alignSide(node: LayoutNode, side: Side, targets: Map<string, number>, limit: WideningLimit, stops: OverlayStops, stopped: (link: string) => void,
+  avoid: { xs: number[]; keep: number; routed: Set<string> } = { xs: [], keep: 0, routed: new Set() }, held: ReadonlyMap<string, (x: number) => boolean> = new Map()): Set<string> {
+  const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
+  const pitch = node.sidePitch![side]!;
+  const box = node.bounds!, oldRight = right(box);
+  const kept = keptTargets(node, side, targets, limit, stops, stopped);
+  if (!kept.length) return new Set();
+  const first = kept[0]!, last = kept[kept.length - 1]!;
   // The width the alignment needs is what each edge moved outward, added to the width the node
   // already has. `Math.max(oldRight, grown) - box.x` states the same thing through two absolute
   // edges, and a rectangle recovered through an edge it was not stored with does not come back:
@@ -398,27 +411,63 @@ function standNearFeed(model: LayoutModel, context: CentreContext, tier: number,
   moveGroup(model, group, dx, 0);
 }
 
-/** The feeds of one group in one step, with the x each child port wants and the transits that yield. */
-function groupFeeds(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, warn: boolean): { own: Feed[]; wanted: Map<string, number>; yielded: Set<Feed>; conflicts: Set<string> } {
+/** How many targets of a face stand in engine order at the face's pitch: the in-order keep of `keptTargets` without its limits, allowance or stops. */
+function inOrderTargets(node: LayoutNode, side: Side, targets: ReadonlyMap<string, number>): number {
+  const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!), pitch = node.sidePitch![side]!;
+  let last: { index: number; x: number } | undefined, count = 0;
+  for (const [index, port] of ports.entries()) {
+    const x = targets.get(portId(port.ref));
+    if (x !== undefined && (!last || x - last.x >= (index - last.index) * pitch)) { last = { index, x }; count++; }
+  }
+  return count;
+}
+/**
+ * The feeds of one group in one step, with the x each child port wants and the transits that yield. A child port has one seat (architecture ticket 12):
+ * a port fed by two parents at different x seats under the feed its face keeps with the most of its siblings' seats, ties and a lone port to the first
+ * feed, and the other feeds are fan remainders that pull nothing and grow nothing. `seats` names the feed each seat is read from.
+ */
+function groupFeeds(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, warn: boolean): { own: Feed[]; wanted: Map<string, number>; yielded: Set<Feed>; seats: Map<string, Feed>; conflicts: Set<string> } {
   const own = list.filter(feed => model.document.nodes[feed.child.ref.node]!.group === id);
   // Adjacent feeds first: a transit yields to any other feed of the same child port instead of
   // contesting it, so a fan of lanes into one port cannot exhaust the shared budget.
-  const wanted = new Map<string, number>(), yielded = new Set<Feed>(), conflicts = new Set<string>();
+  const yielded = new Set<Feed>(), seats = new Map<string, Feed>(), rival = new Map<string, Feed[]>(), conflicts = new Set<string>();
+  const wide = keptWide(model);
+  const remainder = (feed: Feed): void => {
+    yielded.add(feed);
+    if (warn) placementWarning(model, 'CENTRE_FAN_REMAINDER', `${feed.link} shares its child port with a feed at another x; that feed owns vertical alignment.`, [feed.link]);
+  };
   for (const feed of [...own].sort((a, b) => Number(a.transit) - Number(b.transit))) {
     const child = portId(feed.child.ref);
     if (context.winners.get(`${tier}:${feed.key}`) !== child) {
       if (warn) placementWarning(model, 'CENTRE_FAN_REMAINDER', `${feed.link} shares a parent port; the first child by x owns vertical alignment.`, [feed.link]);
       continue;
     }
-    if (!wanted.has(child)) wanted.set(child, feed.x);
-    else if (wanted.get(child) !== feed.x) {
-      if (feed.transit) {
-        yielded.add(feed);
-        if (warn) placementWarning(model, 'CENTRE_FAN_REMAINDER', `${feed.link} shares its child port with a feed at another x; that feed owns vertical alignment.`, [feed.link]);
-      } else conflicts.add(child);
-    }
+    const seat = seats.get(child);
+    if (!seat) { seats.set(child, feed); continue; }
+    if (seat.x === feed.x) continue;
+    if (feed.transit) remainder(feed);
+    else if (wide) conflicts.add(child);
+    else rival.set(child, [...(rival.get(child) ?? [seat]), feed]);
   }
-  return { own, wanted, yielded, conflicts };
+  for (const [child, candidates] of rival) {
+    const first = candidates[0]!, node = model.nodes[first.child.ref.node]!, side = first.child.side!;
+    const others = new Map<string, number>();
+    for (const [key, feed] of seats) if (key !== child && !rival.has(key) && feed.child.ref.node === node.id && feed.child.side === side) others.set(key, feed.x);
+    let best = first, bestCount = -1;
+    if (others.size) {
+      // Read from the order and the pitch of the face alone, never from the bounds: the producer reads the face before the step and the validator after it,
+      // and both must pick one seat (the widened body would let a rival fit that did not fit before).
+      for (const candidate of candidates) {
+        const count = inOrderTargets(node, side, new Map([...others, [child, candidate.x]]));
+        if (count > bestCount) { best = candidate; bestCount = count; }
+      }
+    }
+    seats.set(child, best);
+    for (const feed of candidates) if (feed.x !== best.x) remainder(feed);
+  }
+  const wanted = new Map<string, number>();
+  for (const [child, feed] of seats) wanted.set(child, feed.x);
+  return { own, wanted, yielded, seats, conflicts };
 }
 /** The feeds a group step centres on: the ones that may own an alignment. A fan remainder and a yielded transit would only pull the group away from the x its child is aligned to. */
 function chosenFeeds(context: CentreContext, tier: number, own: Feed[], yielded: ReadonlySet<Feed>): Feed[] {
@@ -769,7 +818,7 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
       // Both lookups below read one key per wanted child; keying them once keeps the scan of the
       // group's own feeds and ports out of the loop. First entry wins, as `find` did.
       const ownFeeds = new Map<string, Feed>();
-      for (const item of owned.own) { const at = portId(item.child.ref); if (!ownFeeds.has(at)) ownFeeds.set(at, item); }
+      for (const item of owned.own) { const at = portId(item.child.ref); if (!ownFeeds.has(at)) ownFeeds.set(at, owned.seats.get(at) ?? item); }
       const groupPorts = new Map<string, LayoutPort>();
       for (const nodeId of group.nodes) for (const item of model.nodes[nodeId]!.ports) {
         const at = portId(item.ref); if (!groupPorts.has(at)) groupPorts.set(at, item);
@@ -829,6 +878,51 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
   }
   return result;
 }
+/** The code of the note that a model keeps the wide seats of the first feeds: narrowing it would have bent a link that stood straight (ticket 12, "narrow only if free"). */
+const KEPT_WIDE = 'CENTRE_SEATS_KEPT_WIDE';
+const keptWide = (model: LayoutModel): boolean => model.diagnostics.some(d => d.code === KEPT_WIDE);
+/** The links whose two ends stand on one vertical, facing: the links that run straight. */
+function straightLinks(model: LayoutModel): Set<string> {
+  const result = new Set<string>();
+  for (const link of model.links) {
+    if (link.layer !== 'routed' || !link.attachments) continue;
+    const one = findPort(model, link.attachments.from)?.anchor, two = findPort(model, link.attachments.to)?.anchor;
+    if (one && two && Math.abs(one.x - two.x) <= 0.5) result.add(link.id);
+  }
+  return result;
+}
+/** Whether any child port of the model is fed by two parents at different x: the only case the narrow seat differs from the wide one. */
+function hasRivals(model: LayoutModel): boolean {
+  const anchor = model.anchorTier;
+  if (anchor === undefined || !model.tierBands.some(band => band.tier === anchor)) return false;
+  const context = centreContext(model, anchor);
+  for (const { tier, authority } of context.steps) {
+    const list = centringFeeds(model, tier, authority), seen = new Map<string, number>();
+    for (const feed of list) {
+      if (feed.transit) continue;
+      const key = portId(feed.child.ref), x = seen.get(key);
+      if (x !== undefined && x !== feed.x) return true;
+      seen.set(key, feed.x);
+    }
+  }
+  return false;
+}
 export function centre(model: LayoutModel): LayoutModel {
-  return withStageMutation(model, 'centre', draft => { centreDraft(draft, createCentreBudget()); recordSeatedSideLanes(draft); });
+  return withStageMutation(model, 'centre', draft => {
+    // The wide twin: the seats of the first feeds with the conflicting feeds pulling, as before ticket 12. It is built only where a port has two parents.
+    const twin = (): LayoutModel => {
+      const copy = JSON.parse(JSON.stringify(draft)) as LayoutModel;
+      copy.diagnostics.push({ stage: 'placement', severity: 'info', code: KEPT_WIDE, message: 'The first feeds seat their ports; a port with two parents is not narrowed.' });
+      return copy;
+    };
+    const wideTwin = hasRivals(draft) ? twin() : undefined;
+    orderBundles(draft); normalizePrimaryBundlePorts(draft); centreDraft(draft, createCentreBudget()); recordSeatedSideLanes(draft);
+    if (!wideTwin) return;
+    centreDraft(wideTwin, createCentreBudget()); recordSeatedSideLanes(wideTwin);
+    // Narrow only if free: a link that stands straight under the wide seat must stand straight under the narrow one, or the node keeps its wide seat.
+    const narrow = straightLinks(draft);
+    if ([...straightLinks(wideTwin)].every(id => narrow.has(id))) return;
+    for (const key of Object.keys(draft)) delete (draft as unknown as Record<string, unknown>)[key];
+    Object.assign(draft, wideTwin);
+  });
 }

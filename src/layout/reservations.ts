@@ -6,7 +6,7 @@
  * reserved in placement; the ledger makes that rule explicit. A reservation is plain JSON data (it lives on the model, which requires
  * plain JSON), and every predicate that judges one is code in this file, outside the model.
  */
-import type { Course, LayoutModel, LayoutStage, Owner, PortRef, Side, Size } from '../model/index.js';
+import type { Course, GroupExit, LayoutModel, LayoutStage, Owner, PortRef, Side, Size } from '../model/index.js';
 import { portKey } from './sides-one.js';
 
 export type RoundId = 'initial' | 'fan' | 'span' | 'course' | 'side' | 'turn' | 'overlay';
@@ -39,6 +39,8 @@ export interface ReservationPayload {
   /** A move does not take the far port of an aligned side lane off the lane's x. */
   sideAlignment: { lanes: readonly { lane: string; far: PortRef }[] };
   spanCorridor: { link: string; allowedBreaches: readonly string[] };
+  /** A move keeps each reserved group exit clear of every box and node but the ones it leaves, and keeps its end beyond the margin of the boxes it leaves (architecture ticket 13). */
+  groupExit: { exits: readonly GroupExit[] };
 }
 export type ReservationKind = keyof ReservationPayload;
 
@@ -64,7 +66,7 @@ const ownerKey = (owner: ReservationOwner): string => 'node' in owner ? `${owner
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const ACTIVE_FROM: Record<ReservationKind, LayoutStage> = {
   pitchFloor: 'size', nodeFloor: 'size', sideFace: 'sides-one', laneOwner: 'sides-one', course: 'sides-one', spanChord: 'resolve',
-  turnOrder: 'sides-two', trunkDeclined: 'resolve', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes',
+  turnOrder: 'sides-two', trunkDeclined: 'resolve', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes', groupExit: 'lanes',
 };
 
 /** A reservation that lives for one move check and is never stored: no clone of the payload, revision 0. */

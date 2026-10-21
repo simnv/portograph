@@ -173,7 +173,9 @@ export function routeObstacles(model: LayoutModel): RouteObstacle[] {
   // owns a lane in its margin (ADR-0013). Attached links still cross the boundary at their ports.
   // A rank cell is never an obstacle: the frame it belongs to is, in its place.
   for (const { id, bounds } of groupBoxes(model)) {
-    push({ id: `group:${id}`, bounds: expand(bounds, half + GROUP_EDGE_LINK_CLEARANCE), consumers: groupConsumers(model, id) });
+    // A link that has left this box by a reserved exit starts outside it and may not come back into its margin (architecture ticket 13).
+    const left = new Set((model.groupExits ?? []).filter(exit => exit.exited.includes(id)).map(exit => exit.link));
+    push({ id: `group:${id}`, bounds: expand(bounds, half + GROUP_EDGE_LINK_CLEARANCE), consumers: groupConsumers(model, id).filter(link => !left.has(link)) });
   }
   // A label band reserves placement space, not a solid barrier across the whole group.
   // Its measured label is protected above, including against the group's own attachments.

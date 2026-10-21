@@ -319,7 +319,8 @@ it('ticket 48: a branch that would hand over beyond its port keeps the shared st
   const model = await run(fixture('a-hemmed-fan-branch-keeps-its-stem'));
   expect(score(model).snapshot.passed).toBe(true);
   const branch = model.links[1]!, anchor = model.nodes['hub']!.ports[0]!.anchor!;
-  const runs = branch.sharedRuns!.from!;
+  // The exit of architecture ticket 13 is a run of the link's own, past the stems; the stems are what the release keeps.
+  const runs = branch.sharedRuns!.from!.filter(run => run.owner.kind === 'shared-stem');
   expect(runs).toHaveLength(1);
   expect(runs[0]).toMatchObject({ from: anchor, to: { x: anchor.x + MIN_STEM, y: anchor.y } });
   expect(runs[0]!.owner.kind).toBe('shared-stem');
@@ -341,7 +342,7 @@ it('ticket 46: a branch that hems another link\'s approach gives way, and so doe
   const onStems = (item: LayoutModel): void => {
     for (const link of item.links) {
       for (const end of ['from', 'to'] as const) {
-        for (const run of link.sharedRuns?.[end] ?? []) expect(run.from.y).toBe(run.to.y);
+        for (const run of link.sharedRuns?.[end] ?? []) if (run.owner.kind === 'shared-stem') expect(run.from.y).toBe(run.to.y);
       }
     }
   };
@@ -400,7 +401,7 @@ it('stress 10: a checkpoint inside a link\'s own reserved run is not hemmed, and
   const alone = bare.links.filter(link => link.attachments!.to.node === 'right');
   expect(alone).toHaveLength(1);
   expect(alone[0]!.sharedRuns?.to ?? []).toEqual([]);
-  const across = bare.links.find(link => link.id === 'link-3')!.sharedRuns!.to!;
+  const across = bare.links.find(link => link.id === 'link-3')!.sharedRuns!.to!.filter(runItem => runItem.owner.kind === 'shared-stem');
   // The hemming branch kept its stems and nothing else, and the stems never reach that point.
   expect(across.every(runItem => runItem.from.x === runItem.to.x)).toBe(true);
   const stillClosed = closedPoint(bare, 'right');
