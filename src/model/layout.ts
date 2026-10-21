@@ -497,6 +497,11 @@ export interface LayoutModel {
    * its geometry follows the ports, the decision is never re-taken, and a move that would put a body on it is refused.
    */
   frozenChords?: string[];
+  /**
+   * The linked-group pairs the grid left apart because a reservation guard refused their growth (`axis:id|id`, sorted; ticket 16). The producer sets it, absent reads as none, and the validator
+   * replays the grid honouring exactly these pairs.
+   */
+  gridRefusals?: string[];
   /** One per `document.frames` entry, in document order; absent when no group was replaced by cells. */
   frames?: Frame[];
 }
