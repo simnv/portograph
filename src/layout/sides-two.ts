@@ -863,6 +863,17 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   sweepTiers(model);
   if (Object.keys(model.groups).length) stackBands(model, true);
   // The planned first turn of each overlay course port (ticket 15; `turn-order.ts`): its lane runs to its far end's row, beyond it by a padding row, short of it by a drop.
+  // The ports of the links of a bundle, each link with a port of its own at the node. The two ends of a bundle are one order, so the node that is sorted second reads the order the
+  // first one took, not the slots the skeleton left: below, a sorted face hands the slots it has to its bundle ports in their new order, before the next face is sorted.
+  const bundled = new Set<string>();
+  for (const bundle of model.bundles) {
+    if (bundle.nodes[0] === bundle.nodes[1]) continue;
+    const ends = bundle.members.map(member => model.links.find(link => link.id === member)!.attachments!);
+    for (const node of bundle.nodes) {
+      const mine = ends.map(item => (item.from.node === node ? item.from : item.to));
+      if (new Set(mine.map(key)).size === mine.length) for (const ref of mine) bundled.add(key(ref));
+    }
+  }
   const planned = plannedTurns(model), plainTurns = model.turnOrder === true ? plannedTurns(model, false) : planned;
   // The faces that a planned first turn moved (ticket 24): the order with the turns differs from the order with the overlay brackets alone.
   const turned: { node: string; side: Side }[] = [];
@@ -901,6 +912,11 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
       let next = 0;
       const ordered = ports.map(port => port.authorOrder === undefined ? port : authored[next++]!);
       ordered.forEach((port, index) => { port.engineOrder = index; });
+      const seated = ordered.filter(port => bundled.has(key(port.ref)) && port.anchor !== undefined);
+      if (seated.length > 1) {
+        const at = side === 'top' || side === 'bottom' ? 'x' : 'y', slots = seated.map(port => port.anchor![at]).sort((a, b) => a - b);
+        seated.forEach((port, index) => { port.anchor![at] = slots[index]!; });
+      }
     }
   }
   rebuildNodeGeometry(model, orderedNodeIds(model.document), 'from-slots');

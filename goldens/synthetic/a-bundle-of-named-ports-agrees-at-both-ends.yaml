@@ -1,0 +1,14 @@
+portograph: 2
+profile: network
+groups:
+  top: {tier: 0, label: TOP}
+  mid: {tier: 1, label: MID}
+nodes:
+  t: {group: top, label: target}
+  u: {group: top, label: spacer}
+  e: {group: top, label: EDGE}
+  r: {group: mid, class: router, label: r, ports: [{name: pppoe-wan}, {name: eth2_103}]}
+links:
+- [r.pppoe-wan, e, {id: w1}]
+- [r.eth2_103, e, {id: w2}]
+- [r, t, {id: o1, route: overlay}]
