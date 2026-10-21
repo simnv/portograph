@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import { centreContext, centreViolations } from '../../src/layout/centre.js';
-import { seatLaneSources } from '../../src/layout/parent-stand.js';
+import { seatLaneSources, standPortsOverChildren } from '../../src/layout/parent-stand.js';
+import { centringFeeds } from '../../src/layout/read/feeds.js';
+import { nodeTier } from '../../src/layout/read/tier.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -73,4 +75,48 @@ it('adopts the reseat of a free corridor and takes back the port of a blocked on
   expect(sourceOf('link-5').anchor!.x).toBeCloseTo(laneOf('link-5').x, 1);
   expect(sourceOf('link-6').anchor!.x).toBeCloseTo(blocked, 1);
   expect(sourceOf('link-6').anchor!.x).toBeCloseTo(laneOf('link-6').x, 1);
+}, 120000);
+
+// The offset rule. A group step centres on the mean x of its parent ports against the mean x of its child ports; a move of one port changes it by its own share.
+// A row of six single links (neutral names): the test displaces some upper-tier ports off their children by `shift` and lets `standPortsOverChildren` decide.
+const row = `portograph: 2
+profile: network
+groups:
+  top: {tier: 0, label: TOP}
+  low: {tier: 1, label: LOW}
+  deep: {tier: 2, label: DEEP}
+nodes:
+${[1, 2, 3, 4, 5, 6].map(i => `  t${i}: {group: top, label: t${i}, ports: [{name: o}]}`).join('\n')}
+${[1, 2, 3, 4, 5, 6].map(i => `  b${i}: {group: low, label: b${i}, ports: [{name: i}, {name: o}]}`).join('\n')}
+${[1, 2, 3, 4, 5, 6].map(i => `  c${i}: {group: deep, label: c${i}, ports: [{name: i}]}`).join('\n')}
+links:
+${[1, 2, 3, 4, 5, 6].map(i => `- [t${i}.o, b${i}.i, {id: r${i}, route: orthogonal}]\n- [b${i}.o, c${i}.i, {id: s${i}, route: orthogonal}]`).join('\n')}
+`;
+async function displaced(count: number, shift: (n: number) => number) {
+  const laid = await layout(parse(row), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const model = JSON.parse(JSON.stringify(laid)) as typeof laid;
+  const steps = centreContext(model, model.anchorTier!).steps;
+  const groupOf = (feed: { child: { ref: { node: string } } }): string => model.document.nodes[feed.child.ref.node]!.group;
+  const stepFeeds = (_tier: number, list: ReturnType<typeof centringFeeds>, group: string) => list.filter(feed => groupOf(feed) === group);
+  const feeds = steps.flatMap(({ tier, authority }) => centringFeeds(model, tier, authority));
+  const upper = (feed: (typeof feeds)[number]) => (nodeTier(model, feed.parent.ref.node) <= nodeTier(model, feed.child.ref.node) ? feed.parent : feed.child);
+  const chosen = feeds.filter(feed => model.groups[model.document.nodes[upper(feed).ref.node]!.group]!.tier !== model.anchorTier).slice(0, count);
+  expect(chosen).toHaveLength(count);
+  for (const feed of chosen) upper(feed).anchor!.x += shift(feeds.length / 2);
+  const before = chosen.map(feed => upper(feed).anchor!.x);
+  standPortsOverChildren(model, steps, stepFeeds);
+  return { model, moved: chosen.filter((feed, i) => Math.abs(upper(feed).anchor!.x - before[i]!) > 0.01).length };
+}
+
+it('declines a move that changes the offset its group is centred on, and names the link', async () => {
+  const { model, moved } = await displaced(1, n => 3 * n);
+  expect(moved).toBe(0);
+  expect(model.diagnostics.some(item => item.code === 'CENTRE_PARENT_MOVE_SHIFTS_GROUP')).toBe(true);
+}, 120000);
+
+it('takes moves in port order only while their sum stays within half a pixel', async () => {
+  // Each share is 0.2 px (shift = 0.2 n), so each of the three passes alone; two together are 0.4 px, three are 0.6 px: the third is declined.
+  const { model, moved } = await displaced(3, n => 0.2 * n + 0.001);
+  expect(moved).toBe(2);
+  expect(model.diagnostics.filter(item => item.code === 'CENTRE_PARENT_MOVE_SHIFTS_GROUP')).toHaveLength(1);
 }, 120000);

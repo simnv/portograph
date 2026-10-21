@@ -22,7 +22,10 @@ import { portId } from './skeleton-graph.js';
  * `seatLaneSources`', which runs inside the corridor reseat of 7f: the corridor may move only there (every centring replay reads its x as the feed x),
  * and the source port and the corridor have to move together.
  *
- * A port that cannot reach the other end's x stays, and the link is named `CENTRE_ALIGNMENT_INFEASIBLE`.
+ * A move is declined, and its link named, for one of three reasons, each with its own code: the port cannot reach the other end's x within its face
+ * (`CENTRE_ALIGNMENT_INFEASIBLE`); the moves of its group together would change the offset the group step centres on by more than half a pixel, and the step
+ * would shift the whole group (`CENTRE_PARENT_MOVE_SHIFTS_GROUP`); its face holds a port that stands on a corridor of its own, which the next pass would pack
+ * again (`CENTRE_PARENT_MOVE_HELD_FACE`).
  */
 function faces(model: LayoutModel) {
   const count = new Map<string, number>();
@@ -63,9 +66,15 @@ function faces(model: LayoutModel) {
     feeds: (steps: readonly { tier: number; authority: number }[]): Feed[] => steps.flatMap(({ tier, authority }) => centringFeeds(model, tier, authority)),
   };
 }
-function name(model: LayoutModel, link: LayoutLink): void {
-  if (model.diagnostics.some(d => d.code === 'CENTRE_ALIGNMENT_INFEASIBLE' && d.owners?.some(owner => 'id' in owner && owner.id === link.id))) return;
-  placementWarning(model, 'CENTRE_ALIGNMENT_INFEASIBLE', `${link.id} keeps a jog: its port cannot reach the other port's x within its face; routing completes it.`, [link.id]);
+const DECLINES = {
+  reach: { code: 'CENTRE_ALIGNMENT_INFEASIBLE', text: "its port cannot reach the other port's x within its face" },
+  offset: { code: 'CENTRE_PARENT_MOVE_SHIFTS_GROUP', text: 'moving its port would change the offset its group is centred on and shift the group' },
+  face: { code: 'CENTRE_PARENT_MOVE_HELD_FACE', text: 'its face holds a port that stands on a corridor of its own, which a move would pack again' },
+} as const;
+function name(model: LayoutModel, link: LayoutLink, why: keyof typeof DECLINES = 'reach'): void {
+  const { code, text } = DECLINES[why];
+  if (model.diagnostics.some(d => d.code === code && d.owners?.some(owner => 'id' in owner && owner.id === link.id))) return;
+  placementWarning(model, code, `${link.id} keeps a jog: ${text}; routing completes it.`, [link.id]);
 }
 
 /**
@@ -79,21 +88,25 @@ function inFaceOrder<T>(items: T[], port: (item: T) => LayoutPort, target: (item
   return [...items].sort((a, b) => key(a).localeCompare(key(b)) || Number(left(b)) - Number(left(a)) || (left(a) ? at(a) - at(b) : at(b) - at(a)));
 }
 
-export function standPortsOverChildren(model: LayoutModel, steps: readonly { tier: number; authority: number }[]): void {
+export function standPortsOverChildren(model: LayoutModel, steps: readonly { tier: number; authority: number }[],
+  stepFeeds: (tier: number, list: Feed[], group: string) => Feed[]): void {
   const read = faces(model), movers: { feed: Feed; parent: LayoutPort; target: number }[] = [];
   const lists = steps.map(({ tier, authority }) => centringFeeds(model, tier, authority));
   const groupOf = (feed: Feed): string => model.document.nodes[feed.child.ref.node]!.group;
   /**
-   * The offset a group step centres on: the mean x of its distinct parent ports against the mean x of its distinct child ports (`centreGroupStepRaw`). A move
-   * that changes it makes the step shift the whole group, and every alignment the group holds with it. The ports in `moved` stand at their new x.
+   * The offset a group step centres on: the mean x of its distinct parent ports against the mean x of its distinct child ports, over the feeds the step
+   * itself centres on (`stepFeeds`, the selection `centreGroupStepRaw` makes). The ports in `moved` stand at their new x.
    */
   const offset = (feed: Feed, moved: ReadonlyMap<string, number>): number => {
-    const own = lists.find(list => list.includes(feed))!.filter(item => groupOf(item) === groupOf(feed));
+    const at = lists.findIndex(list => list.includes(feed));
+    const own = stepFeeds(steps[at]!.tier, lists[at]!, groupOf(feed));
     const parents = new Map(own.map(item => [item.key, moved.get(item.key) ?? item.x]));
     const children = new Map(own.map(item => [portId(item.child.ref), moved.get(portId(item.child.ref)) ?? item.child.anchor!.x]));
     const mean = (values: Iterable<number>): number => { const xs = [...values]; return xs.reduce((sum, x) => sum + x, 0) / xs.length; };
     return mean(parents.values()) - mean(children.values());
   };
+  /** The offset of each group step before any move: the moves of one group together may not change it by more than half a pixel. */
+  const start = new Map<Feed, number>();
   const placed = new Map<string, number>();
   // In the order of the ports, not of the links: what an earlier move leaves in the offset decides the next.
   for (const feed of [...lists.flat()].sort((a, b) => portId(a.parent.ref).localeCompare(portId(b.parent.ref)) || portId(a.child.ref).localeCompare(portId(b.child.ref)))) {
@@ -104,9 +117,10 @@ export function standPortsOverChildren(model: LayoutModel, steps: readonly { tie
     if (!read.sole(parent) || Math.abs(parent.anchor!.x - child.anchor!.x) <= 0.5) continue;
     // A move is free only when the step of the group cannot follow it: the offset the step centres on stays where it was. Whether a group with a nonzero offset
     // stands against a wall is not known here, so a move that changes the offset is declined (the group would shift, and every other port of it would leave its feed).
-    const before = offset(feed, placed), after = offset(feed, new Map([...placed, [portId(parent.ref), child.anchor!.x]]));
-    if (Math.abs(after - before) > 0.5) {
-      name(model, read.linkOf.get(feed.link)!);
+    if (!start.has(feed)) start.set(feed, offset(feed, new Map()));
+    const after = offset(feed, new Map([...placed, [portId(parent.ref), child.anchor!.x]]));
+    if (Math.abs(after - start.get(feed)!) > 0.5) {
+      name(model, read.linkOf.get(feed.link)!, 'offset');
       continue;
     }
     placed.set(portId(parent.ref), child.anchor!.x);
@@ -120,7 +134,7 @@ export function standPortsOverChildren(model: LayoutModel, steps: readonly { tie
   const held = (parent: LayoutPort): boolean => model.nodes[parent.ref.node]!.ports.some(port => port.side === parent.side && !movingPorts.has(port)
     && model.links.some(link => corridor.has(link.id) && link.attachments && [link.attachments.from, link.attachments.to].some(end => portId(end) === portId(port.ref))));
   for (const { feed, parent, target } of inFaceOrder(movers, item => item.parent, item => item.target)) {
-    if (held(parent)) name(model, read.linkOf.get(feed.link)!);
+    if (held(parent)) name(model, read.linkOf.get(feed.link)!, 'face');
     else if (read.reaches(parent, target)) read.place(parent, target);
     else name(model, read.linkOf.get(feed.link)!);
   }
