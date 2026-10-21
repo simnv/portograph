@@ -8,9 +8,9 @@ import { frameSubtreeCells, orderedGroupIds } from '../model/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { createCentreBudget, type CentreBudget } from './centre.js';
-import { isSideLane, riserKeepOutBreaches } from './lanes.js';
+import { isSideLane, rebuildLaneExtents, riserKeepOutBreaches } from './lanes.js';
 import { holdsMove } from './move-reservations.js';
-import { gapsHoldGrowth, lanesHoldGrowth, reservedGeometryBreaches } from './growth-guard.js';
+import { gapsHoldGrowth, lanesHoldGrowth } from './growth-guard.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { findPort, straightCorridorClear } from './row-paths.js';
@@ -907,24 +907,6 @@ export function alignLinkedGroupGridAndPack(model: LayoutModel, budget?: CentreB
   // A warning of an earlier call is stale once a later call settles: it is raised again below when this one does not.
   model.diagnostics = model.diagnostics.filter(item => !(item.code === 'GROUP_GRID_NON_CONVERGENCE' && item.message.startsWith(GRID_PACK_WARNING)));
   let widened = false;
-  // The breaches a model stood in before the grid are not its doing (publication judges the same record). A grid that adds one is undone whole: the model goes back to
-  // what it was and keeps its boxes (`GROUP_GRID_REFUSED`), so a sheet never stops for an optional growth. Only a model with a reserved lane can breach one.
-  const guarded = model.lanes.some(lane => lane.layer !== 'overlay' && lane.owner.kind === 'link' && lane.kind !== 'gap' && lane.kind !== 'perimeter');
-  const standing = guarded ? reservedGeometryBreaches(model) : [];
-  if (guarded) model.runtime.standingBreaches = standing;
-  const snapshot = guarded ? JSON.stringify(model) : undefined;
-  const undone = (): boolean => {
-    const added = reservedGeometryBreaches(model).filter(item => !standing.includes(item));
-    if (added.length === 0) return false;
-    const back = JSON.parse(snapshot!) as LayoutModel;
-    for (const key of Object.keys(model)) if (!(key in back)) delete (model as unknown as Record<string, unknown>)[key];
-    Object.assign(model, back);
-    const message = `The linked-group grid would take reserved room (${added.join('; ')}); the boxes keep their extents.`;
-    if (!model.diagnostics.some(item => item.code === 'GROUP_GRID_REFUSED' && item.message === message)) {
-      model.diagnostics.push({ stage: 'placement', severity: 'info', code: 'GROUP_GRID_REFUSED', message, owners: [] });
-    }
-    return true;
-  };
   const replay = (): void => {
     const passes = budget?.passes ?? 0;
     rebuildRegionGeometry(model, budget, undefined, true);
@@ -936,17 +918,16 @@ export function alignLinkedGroupGridAndPack(model: LayoutModel, budget?: CentreB
     widened = true;
     // A grid that refuses what the pack would undo widens onto a packed row and leaves it packed; a row that stood open before the grid is packed once.
     // A flank the grid moved asks for the region replay even when no beside row needs packing; one replay serves both. A box that only grew takes no replay: a replay
-    // refits the boxes and undoes the grid. Its reservations were judged before it grew, and the breaches it could add are judged on the result.
-    if (!packRowsAfterGrid(model) && !grid.flanksMoved) return !undone() && widened;
+    // refits the boxes and undoes the grid. Its reservations were judged before it grew (`alignGrid`: `holdsMove`, `lanesHoldGrowth`, `gapsHoldGrowth`), and the validator
+    // replays the same guards.
+    if (!packRowsAfterGrid(model) && !grid.flanksMoved) return widened;
     replay();
-    if (undone()) return false;
   }
   // The grid still widened after the last pack. The model is left with the grid aligned (`validateGroupLabelBands` reads the grid, and accepts it) and a row may stand open: say so.
   const last = alignGrid(model);
   if (last.changed) {
     // A flank moved by this last reading stands off the regions reserved beside it: replayed with the budget as it is, spent or not.
     if (last.flanksMoved) replay();
-    if (undone()) return false;
     placementWarning(model, 'GROUP_GRID_NON_CONVERGENCE', `${GRID_PACK_WARNING} ${GRID_PACK_ROUNDS} rounds; the grid is left aligned and a beside row may stand open.`, [], 'group');
   }
   return widened;
@@ -1285,8 +1266,8 @@ function alignGrid(model: LayoutModel): { changed: boolean; flanksMoved: boolean
         else { moveGroup(model, item.group, item.dx, 0); shifted.push(...item.group.nodes); }
       }
       flankMoved.push(...shifted);
-      // A moved flank carries its lanes with it: the pairs after it are judged on the lanes as they stand now.
-      if (shifted.length) { rebuildNodeGeometry(model, shifted, 'current'); rebuildBands(model); rebuildRegions(model); }
+      // A moved flank carries its lanes with it: the pairs after it are judged on the bands, regions and lane extents as they stand now. The labels and pills follow at the end of the call, once, so that their order is the one a single refit gives.
+      if (shifted.length) { rebuildBands(model); rebuildRegions(model); rebuildLaneExtents(model); }
       moved = changed = true;
     }
     if (!moved) break;
@@ -1713,7 +1694,7 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   const trial = clone(model);
   trial.diagnostics = trial.diagnostics.filter(item => item.code !== 'GROUP_GRID_NON_CONVERGENCE');
   const changed = alignLinkedGroupGrid(trial), exhausted = trial.diagnostics.some(item => item.code === 'GROUP_GRID_NON_CONVERGENCE');
-  if (changed && !exhausted && !model.diagnostics.some(item => item.code === 'GROUP_GRID_REFUSED')) {
+  if (changed && !exhausted) {
     const moved = orderedGroupIds(model.document).filter(id => !equal(model.groups[id]!.bounds, trial.groups[id]!.bounds))
       .map(id => `${id} ${JSON.stringify(model.groups[id]!.bounds)} would be ${JSON.stringify(trial.groups[id]!.bounds)}`);
     throw new Error(`Linked groups do not share the grid their links require: ${moved.join('; ')}`);

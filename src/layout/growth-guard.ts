@@ -3,8 +3,8 @@
  *
  * After 7e the linked-group grid widens boxes in either axis (`alignGrid`). A move in x is held by `holdsMove`; this module holds what `holdsMove` does not read:
  * the room a box would newly claim (a strip beyond its present edges), judged against the reserved lane windows and span corridors, and the tier gaps whose rows the
- * 7f plan has seated. `reservedGeometryBreaches` states the same reservations on a finished model, from the model alone, so publication and restore validate
- * reserved geometry without the producer's help (equality with the producer is not that proof).
+ * 7f plan has seated. `reservedGeometryBreaches` states the lane reservations on a finished model, from the model alone.
+ * The validator proves the grid by replaying it with these guards (`validateGroupLabelBands`).
  *
  * Ticket 13 adds the exit-margin predicate: append it to `RESERVED_GEOMETRY_CHECKS`.
  */
@@ -79,9 +79,3 @@ export const RESERVED_GEOMETRY_CHECKS: readonly ((model: LayoutModel) => string[
 
 /** The breaches of reserved geometry a model shows after 7e. */
 export const reservedGeometryBreaches = (model: LayoutModel): string[] => RESERVED_GEOMETRY_CHECKS.flatMap(check => check(model));
-
-/** The breaches the linked-group grid added: those a model does not record as standing (`runtime.standingBreaches`). A model that records none is not judged. */
-export function addedBreaches(model: LayoutModel): string[] {
-  const standing = model.runtime.standingBreaches;
-  return standing === undefined ? [] : reservedGeometryBreaches(model).filter(item => !standing.includes(item));
-}

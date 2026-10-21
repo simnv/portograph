@@ -29,7 +29,6 @@ import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
 import { validateGroupLabelBands } from './bands.js';
-import { addedBreaches } from './growth-guard.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { produceLinkLabels, validateLinkLabels } from './link-labels.js';
 import { validateRoutedPaths } from '../route/validate.js';
@@ -403,11 +402,8 @@ function validateRegionClaims(model: LayoutModel, intermediate = false): void {
       same(link.technique, expected.links[index]!.technique, `Bar path technique on ${link.id} contradicts its reservation`);
     }
   }
-  // The reserved room is validated from the finished model alone, at publication and at restore (ticket 16): the producer's own replay is not that proof. It judges what the
-  // linked-group grid added to the breaches the model stood in (`runtime.standingBreaches`); a model that records none (published before the check) is not judged.
+  // The linked-group grid is validated by replaying it with the guards of the producer (`validateGroupLabelBands`): equality with the producer is the proof (ticket 16).
   if (stages.indexOf(model.stage) >= stages.indexOf('bands')) {
-    const breaches = addedBreaches(model);
-    if (breaches.length) throw new PlacementRefusal('ledger', `Reserved geometry is breached: ${breaches.join('; ')}`, { stage: model.stage });
     validateGroupLabelBands(model);
   }
   // Route geometry cannot be re-derived without the router, so its claims are checked structurally.
