@@ -110,6 +110,7 @@ is a standalone schema-v2 document. `stage-inputs.yaml` is separate test data.
 | [a-flank-frame-stands-in-front-of-the-frame-it-flanks](synthetic/a-flank-frame-stands-in-front-of-the-frame-it-flanks.yaml) | render | A flank frame that overlaps the frame it flanks is drawn after it (smaller box in front), in the SVG and in draw.io. |
 | [flank-two-peers](synthetic/flank-two-peers.yaml) | 7b | Select the two-link primary peer; route the other peer's link. |
 | [unequal-pitch](synthetic/unequal-pitch.yaml) | 3, 7b | Respace both sides to the larger measured pitch before alignment. |
+| [a-port-outside-a-bundle-keeps-its-side-of-the-block](synthetic/a-port-outside-a-bundle-keeps-its-side-of-the-block.yaml) | 7b | A port outside every bundle (an overlay port whose far end lies to the left) stays on the side of the bundle block that stage 7b gave it, so its chord crosses no pill. |
 | [shared-peer-port](synthetic/shared-peer-port.yaml) | 7b, 7e, 8 | Retain one shared peer anchor and stem; route incompatible pairs. |
 | [stacked-at-one-x](synthetic/stacked-at-one-x.yaml) | 6 | Flatten and repack the row before pinning its link. |
 | [parent-two-children](synthetic/parent-two-children.yaml) | 7c | Keep the parent anchor fixed; one child link is vertical and the other fans. |

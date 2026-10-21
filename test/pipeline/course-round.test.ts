@@ -65,18 +65,23 @@ describe('which routes the round looks at', () => {
 });
 
 describe('the course round on the hand-solve sheets (ticket 15, phase 4)', () => {
-  // Case 05 and the 12 D fixture: the removed flank link is drawn into the right face of the canton member, one turn.
-  it('05 / 12 D: the removed flank link takes a course into the right face, with the turns it promised', async () => {
+  // Case 05 and the 12 D fixture. Ticket 09 (architecture-2): the flank port keeps its stage 7b place after the bundle block, so the link is no longer removed
+  // and no course is offered (`poorRoute` skips a 2-turn route with no crossing); it enters the top face of the canton member with 2 turns. The 1-turn course
+  // into the right face is lost; a narrower course rule to win it back is the follow-up recorded on ticket 09. The course round itself stays covered by the
+  // sheets below (08, 04, the flank links around a neighbour).
+  it('05 / 12 D: the flank link is drawn, not removed, and enters the top face with 2 turns (ticket 09)', async () => {
     const model = await layout(parse(source(ACROSS)), options);
     expect(model.links.filter(item => item.removed === true)).toEqual([]);
-    expect(side(model, 6, 'to')).toBe('right');
+    expect(side(model, 6, 'to')).toBe('top');
     expect(side(model, 6, 'from')).toBe('bottom');
-    expect(turns(model, 6)).toBe(1);
-    expect(codes(model)).toContain('COURSE_TAKEN');
+    expect(turns(model, 6)).toBe(2);
+    expect(model.courses).toBeUndefined();
     expect(codes(model)).not.toContain('COURSE_SHAPE_LOST');
-    expect(model.courses!.map(course => course.link)).toEqual(['link-6']);
-    expect(model.lanes.some(lane => lane.kind === 'perimeter' && lane.owner.kind === 'link' && lane.owner.id === 'link-6')).toBe(true);
-    // The kept layout restores: the course, its port faces and its lane are invariants of the published model.
+  }, 60000);
+
+  it('a flank course keeps its lane and its faces when the published model is restored', async () => {
+    const model = await layout(parse(source(AROUND)), options);
+    expect(model.courses!.map(course => course.link)).toEqual(['link-5', 'link-6']);
     const restored = restoreLayoutModel(JSON.stringify(model));
     expect(restored.courses).toEqual(model.courses);
   }, 60000);
@@ -133,10 +138,11 @@ describe('the course round on the hand-solve sheets (ticket 15, phase 4)', () =>
     expect(codes(model).filter(code => code.startsWith('COURSE'))).toEqual([]);
   }, 60000);
 
+  // Moved from the 05 / 12 D sheet to a sheet that still takes a course (ticket 09): the budget sharing is the same.
   it('the round shares the re-runs of the side round: with none left it takes no course', async () => {
-    const model = await layout(parse(source(ACROSS)), { ...options, testMaxReruns: 0 });
+    const model = await layout(parse(source(AROUND)), { ...options, testMaxReruns: 0 });
     expect(model.courses).toBeUndefined();
-    expect(model.links.filter(item => item.removed === true).map(item => item.id)).toEqual(['link-6']);
+    expect(model.links.filter(item => item.removed === true)).toEqual([]);
   }, 60000);
 
   // Phase 5: every eligible skirt is offered a column-gap course and the judge keeps what wins by the unified order. Both flank links take one here (6 turns, 1
