@@ -5,7 +5,7 @@ import { PLACEMENT_EPS } from './tolerance.js';
 
 const HORIZONTAL: readonly Side[] = ['top', 'bottom'];
 /** A port is aligned with its peer when the two stand on one vertical within this distance. */
-const ALIGNED = 1e-3;
+const ALIGNED = 0.5;
 
 /** The room before the first port and after the last port of a face, and where the first port stands. Undefined for a face with no port. */
 function margins(node: LayoutNode, side: Side): { low: number; high: number; first: number } | undefined {
@@ -36,21 +36,22 @@ export function seatedFaces(model: LayoutModel): SeatedFace[] {
   return faces;
 }
 
-/** Whether any link at a port of the face runs straight down to a peer on the same vertical, or is a bus stub: those positions are not ours to move. */
+/**
+ * Whether a port of the face is held where it stands: aligned within centring's own tolerance to its peer, or to the x of a lane of its link (a
+ * transit lane, a side lane or an aligned perimeter lane: the feeds `centringFeeds` reads), or the end of a bus stub. Those positions were set
+ * on purpose, and the 7c publication check reads them. Sides `left` and `right` (`sideFace`, `laneOwner`) are never recentred.
+ */
 function pinned(model: LayoutModel, node: LayoutNode, side: Side): boolean {
   const own = new Set(node.ports.filter(port => port.side === side).map(port => port.anchor));
   for (const link of model.links) {
     if (!link.attachments) continue;
-    if (link.technique === 'mesh-bus') {
-      if ([link.attachments.from, link.attachments.to].some(ref => ref.node === node.id)) return true;
-      continue;
-    }
     const one = findPort(model, link.attachments.from), two = findPort(model, link.attachments.to);
-    if (!one?.anchor || !two?.anchor) continue;
-    const mine = own.has(one.anchor) ? one : own.has(two.anchor) ? two : undefined;
-    if (mine === undefined) continue;
-    const peer = mine === one ? two : one;
-    if (Math.abs(peer.anchor!.x - mine.anchor!.x) <= ALIGNED) return true;
+    for (const [port, peer] of [[one, two], [two, one]] as const) {
+      if (port?.anchor === undefined || !own.has(port.anchor)) continue;
+      if (link.technique === 'mesh-bus') return true;
+      if (peer?.anchor !== undefined && Math.abs(peer.anchor.x - port.anchor.x) <= ALIGNED) return true;
+      if (model.lanes.some(lane => lane.owner.kind === 'link' && lane.owner.id === link.id && Math.abs(lane.x - port.anchor!.x) <= ALIGNED)) return true;
+    }
   }
   return false;
 }

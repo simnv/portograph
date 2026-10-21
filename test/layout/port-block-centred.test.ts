@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
+import { recentreSeatedFaces, seatedFaces } from '../../src/layout/face-centre.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -31,4 +32,37 @@ describe('the port block of a face (architecture ticket 10, defect D3)', () => {
     expect(bottom).toHaveLength(2);
     bottom.forEach((x, index) => expect(Math.abs(x - feeds[index]!)).toBeLessThanOrEqual(EPS));
   }, 60000);
+});
+
+describe('recentreSeatedFaces skips a face held on purpose', () => {
+  // A model reduced to what the rule reads: nodes of two top ports each, centred on a 56 px body, then widened to 156 px.
+  const build = (): LayoutModel => {
+    const node = (id: string, x: number) => ({ id, bounds: { x, y: 0, width: 56, height: 35 },
+      ports: [x + 22, x + 34].map((px, i) => ({ side: 'top', ref: { node: id, name: `p${i}`, ordinal: 0 }, anchor: { x: px, y: 0 } })) });
+    const nodes = Object.fromEntries([node('peered', 0), node('laned', 300), node('free', 600), node('peer', 1000)].map(n => [n.id, n]));
+    return {
+      nodes,
+      document: { nodes: { peered: { group: 'g' }, laned: { group: 'g' }, free: { group: 'g' }, peer: { group: 'g' } }, groups: { g: {} } },
+      links: [
+        { id: 'a', attachments: { from: nodes['peered']!.ports[0]!.ref, to: nodes['peer']!.ports[0]!.ref } },
+        { id: 'b', attachments: { from: nodes['laned']!.ports[0]!.ref, to: nodes['peer']!.ports[1]!.ref } },
+      ],
+      lanes: [{ owner: { kind: 'link', id: 'b' }, x: 322.2 }],
+    } as unknown as LayoutModel;
+  };
+  it('moves a free face, and keeps a face with a peer-aligned port and a face with a lane-aligned port', () => {
+    const model = build();
+    // The peer of link a stands within 0.5 px of the first port of `peered`; the lane of link b within 0.5 px of the first port of `laned`.
+    const seated = seatedFaces(model);
+    expect(seated).toHaveLength(4);
+    model.nodes['peer']!.ports[0]!.anchor!.x = 22.3;
+    for (const id of ['peered', 'laned', 'free']) model.nodes[id]!.bounds!.width = 156;
+    const before = Object.fromEntries(['peered', 'laned', 'free'].map(id => [id, model.nodes[id]!.ports.map(p => p.anchor!.x)]));
+    recentreSeatedFaces(model, seated);
+    const after = (id: string): number[] => model.nodes[id]!.ports.map(p => p.anchor!.x);
+    expect(after('peered')).toEqual(before['peered']);
+    expect(after('laned')).toEqual(before['laned']);
+    const free = after('free');
+    expect(Math.abs((free[0]! - 600) - (756 - free[1]!))).toBeLessThanOrEqual(EPS);
+  });
 });
