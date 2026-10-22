@@ -56,6 +56,11 @@ export const LABEL_BORDER_REACH = LINK_LABEL_GEOMETRY.borderMargin + DEFAULT_STR
  *
  * Placement reads it to reserve the label room (`reserveLinkLabelRoom`) and stage 9 reads it to
  * place the label, so the two cannot disagree on where a label may stand (R1).
+ *
+ * The windows cut the run along its own line only. The label box stands beside the run, so stage 9
+ * also tests the whole box with `labelCrossesBorder`: a border parallel to the run, or a corner, that
+ * the box reaches and the run does not refuses the candidate there. Placement reserves no room across
+ * the run for that case; such a label falls back to the midpoint and reports `LINK_LABEL_ON_BORDER`.
  */
 export function labelRunWindows(boxes: readonly Rect[], run: PathSegment): { from: number; to: number }[] | undefined {
   const vertical = Math.abs(run.to.x - run.from.x) <= EPS, horizontal = Math.abs(run.to.y - run.from.y) <= EPS;
@@ -85,6 +90,14 @@ export function labelRunWindows(boxes: readonly Rect[], run: PathSegment): { fro
   return windows;
 }
 
+/**
+ * Whether a window of `labelRunWindows` holds a label `extent` long along the run. Placement
+ * (`reserveLinkLabelRoom`) and stage 9 (`windowCentre`) both ask this, with this one tolerance (R1).
+ */
+export function windowHolds(window: { from: number; to: number }, extent: number): boolean {
+  return window.to - window.from >= extent - EPS;
+}
+
 /** The windows of a run (`labelRunWindows`) when a border cuts it; `undefined` for a run no border cuts or a run with no axis. */
 function cutWindows(boxes: readonly Rect[], run: PathSegment): { from: number; to: number }[] | undefined {
   const windows = labelRunWindows(boxes, run);
@@ -105,7 +118,7 @@ function windowCentre(windows: readonly { from: number; to: number }[], run: Pat
   const mid = vertical ? (run.from.y + run.to.y) / 2 : (run.from.x + run.to.x) / 2;
   let best: number | undefined;
   for (const window of windows) {
-    if (window.to - window.from < extent - EPS) continue;
+    if (!windowHolds(window, extent)) continue;
     const centre = Math.min(Math.max(mid, window.from + extent / 2), window.to - extent / 2);
     if (best === undefined || Math.abs(centre - mid) < Math.abs(best - mid) - EPS) best = centre;
   }

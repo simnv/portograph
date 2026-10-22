@@ -7,7 +7,8 @@ Three rules for link descriptions (stage 9 labels):
 1. **Text follows the run.** A label on a horizontal segment stays upright; a label on a vertical
    segment is rotated so it reads bottom-to-top. This is Visio's "gravity": rotated text is never
    upside down and never reads top-to-bottom, so orthogonal paths need only the headings 0° and −90°; a straight bundle member (ADR-0017) takes
-   its run's own heading, brought into (−90°, 90°] by the same rule.
+   its run's own heading, brought into (−90°, 90°] by the same rule. An exactly vertical member is
+   a vertical run: it takes −90° and reads bottom-to-top, whichever way the member runs.
    The stored label box is the rotated one, with its long side along the segment; the renderer
    already draws rotated text about the box centre exactly as it does for port pills.
 2. **Description width influences link length.** Stage 7f reserves, before anything is routed, a

@@ -297,9 +297,10 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
     expect(measured.style['labelBackgroundColor']).toBe('none');
     expect(on.style['labelBackgroundColor']).toMatch(/^(#[0-9a-f]{6}|light-dark\(#[0-9a-f]{6},#[0-9a-f]{6}\))$/);
     // The claim: a label is stated in the edge's own relative terms — `x` arc length along it, `y`
-    // signed perpendicular — so it follows its connector when a shape moves. `offset` would be
-    // absolute screen pixels, which is why it is not used: the label would stay put and drift off
-    // the line. On the run means a perpendicular of zero; measured keeps the distance stage 9 gave.
+    // signed perpendicular — so it follows its connector when a shape moves. `offset` is absolute
+    // screen pixels, so it carries only the remainder the relative pair cannot: the label would stay
+    // put and drift off the line if it carried more. On the run means a perpendicular of zero;
+    // measured keeps the distance stage 9 gave.
     expect(Number(on.geometry['y'])).toBeCloseTo(0, 9);
     expect(Math.abs(Number(measured.geometry['y']))).toBeGreaterThan(1);
     expect(Number(on.geometry['x'])).toBeGreaterThanOrEqual(-1);
