@@ -512,6 +512,12 @@ export interface LayoutModel {
    * its geometry follows the ports, the decision is never re-taken, and a move that would put a body on it is refused.
    */
   frozenChords?: string[];
+  /**
+   * The parent-port moves taken at a frame-column wall (architecture ticket 15, follow-up): the link, its moved port and where the port stood before the
+   * move, as a distance from the left edge of its node box (the node can move between replays). `centreDraft` reads it before its passes and after its
+   * last step, and withdraws a move whose wall no longer holds (the column widened). Absent = no such move.
+   */
+  parentWallMoves?: { link: string; port: PortRef; fromLeft: number }[];
   /** The exits 7e reserved for shared runs that end inside their own group (architecture ticket 13); absent when none. */
   groupExits?: GroupExit[];
   /**

@@ -25,7 +25,8 @@ import { portId } from './skeleton-graph.js';
  * A move is declined, and its link named, for one of three reasons, each with its own code: the port cannot reach the other end's x within its face
  * (`CENTRE_ALIGNMENT_INFEASIBLE`); the moves of its group together would change the offset the group step centres on by more than half a pixel, and the step
  * would shift the whole group (`CENTRE_PARENT_MOVE_SHIFTS_GROUP`); its face holds a port that stands on a corridor of its own, which the next pass would pack
- * again (`CENTRE_PARENT_MOVE_HELD_FACE`).
+ * again (`CENTRE_PARENT_MOVE_HELD_FACE`). A move that changes the offset is taken when the group fills the column of its frame and the step puts it at the same
+ * x for both offsets (`stepTakesOffset`); the move is recorded (`CENTRE_PARENT_MOVE_AT_WALL`, information).
  */
 function faces(model: LayoutModel) {
   const count = new Map<string, number>();
@@ -44,6 +45,7 @@ function faces(model: LayoutModel) {
   };
   return {
     linkOf,
+    room,
     place(port: LayoutPort, x: number): void {
       const box = model.nodes[port.ref.node]!.bounds!;
       port.anchor = portAnchor(box, port.side!, x - box.x);
@@ -78,6 +80,22 @@ function name(model: LayoutModel, link: LayoutLink, why: keyof typeof DECLINES =
 }
 
 /**
+ * The record of a move taken although it changes the offset its group step centres on: the group fills the column of its frame, so the step does not shift
+ * it (`stepTakesOffset`). Information only; no validator reads it (`centreViolations` replays the step on the geometry, R5).
+ */
+function walled(model: LayoutModel, link: LayoutLink): void {
+  // The link stands now: a jog an earlier pass or replay named for it is gone (as `settle` does for a seated corridor).
+  model.diagnostics = model.diagnostics.filter(d => !(['CENTRE_ALIGNMENT_INFEASIBLE', 'CENTRE_PARENT_MOVE_SHIFTS_GROUP'].includes(d.code) && owns(d, link.id)));
+  if (model.diagnostics.some(d => d.code === 'CENTRE_PARENT_MOVE_AT_WALL' && owns(d, link.id))) return;
+  model.diagnostics.push({ stage: 'placement', severity: 'info', code: 'CENTRE_PARENT_MOVE_AT_WALL',
+    message: `${link.id} stands straight: its port moved over the other port, and its group fills the column of its frame, so the group does not shift.`, owners: [{ kind: 'link', id: link.id }] });
+}
+
+function owns(diagnostic: LayoutModel['diagnostics'][number], link: string): boolean {
+  return diagnostic.owners?.some(owner => 'id' in owner && owner.id === link) ?? false;
+}
+
+/**
  * The order the movers of a face take: the ones that go left, from the left, then the ones that go right, from the right, each in engine order. A port moves
  * between neighbours as they stand, so the order, and not the order of `model.links`, decides what a face gives (review of ticket 15).
  */
@@ -88,23 +106,78 @@ function inFaceOrder<T>(items: T[], port: (item: T) => LayoutPort, target: (item
   return [...items].sort((a, b) => key(a).localeCompare(key(b)) || Number(left(b)) - Number(left(a)) || (left(a) ? at(a) - at(b) : at(b) - at(a)));
 }
 
-export function standPortsOverChildren(model: LayoutModel, steps: readonly { tier: number; authority: number }[],
-  stepFeeds: (tier: number, list: Feed[], group: string) => Feed[]): void {
-  const read = faces(model), movers: { feed: Feed; parent: LayoutPort; target: number }[] = [];
+/** What `standPortsOverChildren` reads of a group step (`centre.ts`): the feeds the step centres on, and whether a change of its offset shifts the group. */
+export interface StepReader {
+  /** The feeds the step of `group` centres on (the selection `centreGroupStepRaw` makes). */
+  feeds: (tier: number, list: Feed[], group: string) => Feed[];
+  /** Whether the step of `group` puts the group at the same x for the offsets `from` and `to` (`stepTakesOffset`): the group fills the column of its frame. */
+  takes: (tier: number, list: Feed[], group: string, from: number, to: number) => boolean;
+}
+
+/** The feeds of the centring steps, and the offset each group step centres on, read through `reader`. */
+function stepReadings(model: LayoutModel, steps: readonly { tier: number; authority: number }[], reader: StepReader) {
   const lists = steps.map(({ tier, authority }) => centringFeeds(model, tier, authority));
   const groupOf = (feed: Feed): string => model.document.nodes[feed.child.ref.node]!.group;
+  const stepOf = (feed: Feed): number => lists.findIndex(list => list.includes(feed));
+  /** Whether the step of the feed's group leaves the group where it is when its offset goes from `from` to `to`. */
+  const takes = (feed: Feed, from: number, to: number): boolean => reader.takes(steps[stepOf(feed)]!.tier, lists[stepOf(feed)]!, groupOf(feed), from, to);
   /**
    * The offset a group step centres on: the mean x of its distinct parent ports against the mean x of its distinct child ports, over the feeds the step
-   * itself centres on (`stepFeeds`, the selection `centreGroupStepRaw` makes). The ports in `moved` stand at their new x.
+   * itself centres on (`reader.feeds`, the selection `centreGroupStepRaw` makes). The ports in `moved` stand at their new x.
    */
   const offset = (feed: Feed, moved: ReadonlyMap<string, number>): number => {
-    const at = lists.findIndex(list => list.includes(feed));
-    const own = stepFeeds(steps[at]!.tier, lists[at]!, groupOf(feed));
+    const at = stepOf(feed);
+    const own = reader.feeds(steps[at]!.tier, lists[at]!, groupOf(feed));
     const parents = new Map(own.map(item => [item.key, moved.get(item.key) ?? item.x]));
     const children = new Map(own.map(item => [portId(item.child.ref), moved.get(portId(item.child.ref)) ?? item.child.anchor!.x]));
     const mean = (values: Iterable<number>): number => { const xs = [...values]; return xs.reduce((sum, x) => sum + x, 0) / xs.length; };
     return mean(parents.values()) - mean(children.values());
   };
+  return { lists, takes, offset };
+}
+
+/**
+ * Gives back the moves a replay before took at a frame-column wall (`model.parentWallMoves`) whose wall no longer holds where the model stands now: the column
+ * widened, so the step would shift the group by the share of the moved port. Runs at the start of `centreDraft`, before the passes centre on the ports. A
+ * move given back puts its port where it stood before the move, from the left edge of its node box (inside its face room), and the record becomes a decline
+ * (`CENTRE_PARENT_MOVE_SHIFTS_GROUP`). A link that is no longer a feed cannot be read, so its move is given back too; a record whose port is gone is dropped
+ * with a warning (R6). One reading per record. Returns whether a move was given back.
+ */
+export function withdrawWallMoves(model: LayoutModel, steps: readonly { tier: number; authority: number }[], reader: StepReader): boolean {
+  const records = model.parentWallMoves;
+  if (records === undefined) return false;
+  const read = faces(model), kept: typeof records = [];
+  // The feeds copy the parent x (`Feed.x`): after a move is given back, the next record reads them again.
+  let readings = stepReadings(model, steps, reader), withdrawn = false;
+  // By link id: the records are independent readings, and the order of the document is not a key (R3).
+  for (const record of [...records].sort((a, b) => a.link.localeCompare(b.link))) {
+    const port = findPort(model, record.port), link = read.linkOf.get(record.link);
+    if (port === undefined || link === undefined) {
+      placementWarning(model, 'CENTRE_PARENT_MOVE_RECORD_DROPPED', `${record.link}: the port of its move at a frame-column wall is gone; the record is dropped.`, [record.link]);
+      continue;
+    }
+    const from = model.nodes[port.ref.node]!.bounds!.x + record.fromLeft;
+    const feed = readings.lists.flat().find(item => item.link === record.link && !item.transit);
+    if (feed !== undefined) {
+      const now = readings.offset(feed, new Map()), was = readings.offset(feed, new Map([[portId(port.ref), from]]));
+      if (Math.abs(now - was) <= 0.5 || readings.takes(feed, was, now)) { kept.push(record); continue; }
+    }
+    // A face with no room left (its neighbours closer than two pitches) keeps the port where it is: a clamp would put it on a neighbour.
+    const { low, high } = read.room(port);
+    if (low <= high + EPS) read.place(port, Math.max(low, Math.min(from, high)));
+    model.diagnostics = model.diagnostics.filter(d => !(d.code === 'CENTRE_PARENT_MOVE_AT_WALL' && owns(d, link.id)));
+    name(model, link, 'offset');
+    readings = stepReadings(model, steps, reader);
+    withdrawn = true;
+  }
+  if (kept.length) model.parentWallMoves = kept;
+  else delete model.parentWallMoves;
+  return withdrawn;
+}
+
+export function standPortsOverChildren(model: LayoutModel, steps: readonly { tier: number; authority: number }[], reader: StepReader): void {
+  const read = faces(model), movers: { feed: Feed; parent: LayoutPort; target: number; wall: boolean }[] = [];
+  const { lists, takes, offset } = stepReadings(model, steps, reader);
   /** The offset of each group step before any move: the moves of one group together may not change it by more than half a pixel. */
   const start = new Map<Feed, number>();
   const placed = new Map<string, number>();
@@ -115,16 +188,19 @@ export function standPortsOverChildren(model: LayoutModel, steps: readonly { tie
     // first child by x owns the vertical, and the rest stay where the fan puts them.
     const [parent, child] = read.upper(feed.parent, feed.child);
     if (!read.sole(parent) || Math.abs(parent.anchor!.x - child.anchor!.x) <= 0.5) continue;
-    // A move is free only when the step of the group cannot follow it: the offset the step centres on stays where it was. Whether a group with a nonzero offset
-    // stands against a wall is not known here, so a move that changes the offset is declined (the group would shift, and every other port of it would leave its feed).
+    // A move is free only when the step of the group cannot follow it: the offset the step centres on stays where it was, or the group fills the column of
+    // its frame and the step puts it at the same x for both offsets (`stepTakesOffset`). Otherwise the group would shift, and every other port of it would
+    // leave its feed: the move is declined.
     if (!start.has(feed)) start.set(feed, offset(feed, new Map()));
     const after = offset(feed, new Map([...placed, [portId(parent.ref), child.anchor!.x]]));
-    if (Math.abs(after - start.get(feed)!) > 0.5) {
+    if (Math.abs(after - start.get(feed)!) > 0.5 && !takes(feed, start.get(feed)!, after)) {
       name(model, read.linkOf.get(feed.link)!, 'offset');
       continue;
     }
+    // A move is recorded as taken at the wall when its own share changes the offset; a move whose share is within half a pixel is free on its own.
+    const wall = Math.abs(after - offset(feed, placed)) > 0.5;
     placed.set(portId(parent.ref), child.anchor!.x);
-    movers.push({ feed, parent, target: child.anchor!.x });
+    movers.push({ feed, parent, target: child.anchor!.x, wall });
   }
   // Only the parent port moves: the child side is `alignSide`'s, which may also widen the body and so answers to the widening allowance.
   // A port with a corridor of its own stands where 7a put the corridor, and the next pass packs the ports next to a moved one again (`alignSide` places a
@@ -133,10 +209,17 @@ export function standPortsOverChildren(model: LayoutModel, steps: readonly { tie
   const movingPorts = new Set(movers.map(item => item.parent));
   const held = (parent: LayoutPort): boolean => model.nodes[parent.ref.node]!.ports.some(port => port.side === parent.side && !movingPorts.has(port)
     && model.links.some(link => corridor.has(link.id) && link.attachments && [link.attachments.from, link.attachments.to].some(end => portId(end) === portId(port.ref))));
-  for (const { feed, parent, target } of inFaceOrder(movers, item => item.parent, item => item.target)) {
+  for (const { feed, parent, target, wall } of inFaceOrder(movers, item => item.parent, item => item.target)) {
     if (held(parent)) name(model, read.linkOf.get(feed.link)!, 'face');
-    else if (read.reaches(parent, target)) read.place(parent, target);
-    else name(model, read.linkOf.get(feed.link)!);
+    else if (read.reaches(parent, target)) {
+      const fromLeft = parent.anchor!.x - model.nodes[parent.ref.node]!.bounds!.x;
+      read.place(parent, target);
+      if (!wall) continue;
+      walled(model, read.linkOf.get(feed.link)!);
+      // The x before the first move is the place a withdrawal gives back; a record already held keeps it.
+      const records = model.parentWallMoves ?? [];
+      if (!records.some(record => record.link === feed.link)) model.parentWallMoves = [...records, { link: feed.link, port: { ...parent.ref }, fromLeft }];
+    } else name(model, read.linkOf.get(feed.link)!);
   }
 }
 
