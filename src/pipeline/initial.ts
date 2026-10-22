@@ -3,7 +3,7 @@
  * re-run, which shares `MAX_RERUNS` (mesh-bus.md, section 12.4).
  */
 import type { LayoutModel } from '../model/index.js';
-import { TrunkBlocked } from '../layout/side-hints.js';
+import { TrunkBlocked } from '../layout/placement-refusal.js';
 import { nodeFloors as floorEntries, reserve as addReservations, courseEntries, declinedTrunksOf, declineTrunk, sideFaces, spanEntries, turnEntries, type Reservations } from '../layout/reservations.js';
 import type { Env } from './env.js';
 import type { State } from './state.js';

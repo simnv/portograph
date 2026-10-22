@@ -6,7 +6,7 @@ import type { Course, Diagnostic, LayoutModel, Size } from '../model/index.js';
 import { portKey } from '../layout/sides-one.js';
 import { endMode } from '../layout/course-rows.js';
 import { fanRoundDropped, fanRoundHolds, measureFans } from '../layout/fan-spread.js';
-import { TrunkBlocked } from '../layout/side-hints.js';
+import { TrunkBlocked } from '../layout/placement-refusal.js';
 import { PlacementRefusal, refusedAtBands } from '../layout/placement-refusal.js';
 import { freezeRefusal } from '../layout/frame-paths.js';
 import { transitTiers } from '../layout/lanes.js';
