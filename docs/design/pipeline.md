@@ -1520,6 +1520,18 @@ one keeping the most characters wins (ADR-0014); then the label is omitted with 
 clear of it, shortened text across it. Authored labels run in link order, then merge runs in bundle and run order, so
 an accepted label is an obstacle for every later one.
 
+**A link label stays in one region.** A label never lies across the border of a drawn group or
+frame box (`groupBoxes`: a frame in its cells' place). Each text first runs both overlay rungs with
+those borders as walls: on an axis-aligned run that a border cuts, the label may stand only in a
+**window** of the run (`labelRunWindows`: the run less the 8 px shorten margin at each end, less
+every stretch within 8 px of a border's stroke), at the point nearest the midpoint; a shortened
+text fits the longest window. A run no border cuts keeps the midpoint, as before. Only when no
+place clears every border do both overlay rungs run again at the midpoint without the walls (a
+whole label across a border still beats a shortened one), and the label is reported as
+`LINK_LABEL_ON_BORDER`. Placement reserves the window: 7f's `reserveLinkLabelRoom` measures a
+vertical run between two tiers with the same windows and grows the tier gap when no window holds
+the text. The scorer counts the crossings as `labelBorderCrossings`.
+
 **What a candidate must clear.** Visible nodes and their stroke, visible pills, every already
 placed label, and every routed-layer segment with its half stroke. Only the *clearance zone* of the
 one segment the label was finally measured against is exempt, through a persisted `support`

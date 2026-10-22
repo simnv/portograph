@@ -129,6 +129,7 @@ is a standalone schema-v2 document. `stage-inputs.yaml` is separate test data.
 | [bar-fan](synthetic/bar-fan.yaml) | 7d, 7e | A bar drop and two remainders from one port: the drop is split under the tree's junction ids and joins as the straight leaf. |
 | [unfittable-link-label](synthetic/unfittable-link-label.yaml) | 9 | Keep the full tooltip and report one omitted visible label (with its stage precondition; the whole pipeline reserves run and band room and places the full label on the longest run, ADR-0014). |
 | [fitting-link-label](synthetic/fitting-link-label.yaml) | 9 | Place the measured label along the longest segment — rotated to read bottom-to-top on a vertical run — with no collision. |
+| [a-link-label-stays-clear-of-a-group-border](synthetic/a-link-label-stays-clear-of-a-group-border.yaml) | 7f, 9 | A link label stays in one region: the run's midpoint lies near the upper group's bottom border, so 7f reserves the window between the two borders and stage 9 slides the label into it, 8 px clear of each border. |
 | [long-label-portless-node](synthetic/long-label-portless-node.yaml) | 3 | Grow the node to contain its measured label and description. |
 | [zero-link-diagram](synthetic/zero-link-diagram.yaml) | 10 | Produce finite scores and use 1 for empty routed-link metrics. |
 | [widened-child-packs-tier](synthetic/widened-child-packs-tier.yaml) | 7c, 8 | A widened child covers the group beside it; the tier is packed again, so no group obstacle contains an attachment shape. |

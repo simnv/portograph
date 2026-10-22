@@ -3,7 +3,7 @@ import { frameSubtreeCells } from '../model/index.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
 import { overlayEndpoint } from '../layout/overlay-paths.js';
 import { endPort } from '../layout/approach.js';
-import { linkStrokeWidth } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { EPS, bottom, contains, horizontal, length, near, pointRect, right, samePoint, vertical } from './geometry.js';
 
 export interface Segment { segment: PathSegment; link: LayoutLink; index: number; stroke: number }
@@ -24,6 +24,19 @@ export function groupBoxes(model: LayoutModel): { id: string; bounds: Rect }[] {
   const groups = Object.entries(model.groups).filter(([, group]) => group.frame === undefined && group.bounds && group.nodes.length)
     .map(([id, group]) => ({ id, bounds: group.bounds! }));
   return [...groups, ...(model.frames ?? []).map(frame => ({ id: frame.id, bounds: frame.box }))];
+}
+/**
+ * True when `label` lies across the drawn border of `box`: it touches the stroke of an edge, so it is
+ * neither wholly inside the box nor wholly outside it. A link label stays in one region (stage 9);
+ * stage 9 and the `labelBorderCrossings` counter read this one predicate.
+ */
+export function labelCrossesBorder(label: Rect, box: Rect): boolean {
+  const half = DEFAULT_STROKE_WIDTHS.group / 2;
+  const outside = label.x >= right(box) + half - EPS || right(label) <= box.x - half + EPS
+    || label.y >= bottom(box) + half - EPS || bottom(label) <= box.y - half + EPS;
+  const inside = label.x >= box.x + half - EPS && right(label) <= right(box) - half + EPS
+    && label.y >= box.y + half - EPS && bottom(label) <= bottom(box) - half + EPS;
+  return !outside && !inside;
 }
 /** Links a group's or frame's box does not obstruct: attached inside it, or owning a lane reserved in its margin. */
 export function groupConsumers(model: LayoutModel, groupId: string): string[] {

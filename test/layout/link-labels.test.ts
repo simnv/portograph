@@ -32,7 +32,7 @@ const overlaps = (a: Rect, b: Rect): boolean => Math.min(a.x + a.width, b.x + b.
 const NORMAL_GAP = 4, SHORTEN_MARGIN = 8, ELLIPSIS = '...';
 it('keeps the theme and spacing rulings stage 9 was given', () => {
   expect(LINK_LABEL_GEOMETRY).toEqual({ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 9,
-    fontWeight: 400, normalGap: NORMAL_GAP, ellipsis: ELLIPSIS, shortenMargin: SHORTEN_MARGIN, verticalRotation: -90, halo: 2, alongStep: 2 });
+    fontWeight: 400, normalGap: NORMAL_GAP, ellipsis: ELLIPSIS, shortenMargin: SHORTEN_MARGIN, verticalRotation: -90, halo: 2, alongStep: 2, borderMargin: 8 });
   expect(OVERLAY_LABEL_DENSITY).toBe(3);
 });
 
@@ -796,7 +796,8 @@ it('ADR-0017: a label on a straight bundle member follows the diagonal and never
   const size = { width: 40, height: 10 };
   for (const [dx, dy] of [[80, 60], [-80, 60], [80, -60], [-80, -60]] as const) {
     const { bounds, textRotation } = candidateBox(diagonal(dx, dy), 0.75, size, false);
-    // The heading is the run's own angle, brought into (-90, 90] so the text stays upright.
+    // The heading is the run's own angle, brought into (-90, 90] so the text stays upright. An exactly
+    // vertical member is the exception: it takes -90 and reads bottom-to-top (checked below).
     expect(textRotation).toBeGreaterThan(-90);
     expect(textRotation).toBeLessThanOrEqual(90);
     const run = Math.atan2(dy, dx) * 180 / Math.PI;
@@ -807,5 +808,11 @@ it('ADR-0017: a label on a straight bundle member follows the diagonal and never
     expect(bounds.height).toBeCloseTo(Math.abs(size.width * Math.sin(radians)) + Math.abs(size.height * Math.cos(radians)), 9);
     // The stored box — what every gate measures — clears the run by the visible gap.
     expect(segmentRectDistance(diagonal(dx, dy), bounds)).toBeGreaterThanOrEqual(LINK_LABEL_GEOMETRY.normalGap + 0.75 - 1e-9);
+  }
+  // An exactly vertical member reads bottom-to-top whichever way it runs, its first side on the right.
+  for (const dy of [80, -80]) {
+    const { bounds, textRotation } = candidateBox(diagonal(0, dy), 0.75, size, false);
+    expect(textRotation).toBe(-90);
+    expect(bounds.x).toBeCloseTo(100 + LINK_LABEL_GEOMETRY.normalGap + 0.75, 9);
   }
 });
