@@ -3,7 +3,7 @@ import type { Lane, LayoutLink, LayoutModel, PathSegment } from '../model/layout
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { EPS } from '../geometry/planar.js';
 import { spanLaneId } from './lane-kind.js';
-import { SideHintRefusal } from './side-hints.js';
+import { SideHintRefusal } from './placement-refusal.js';
 import type { RefusalDetail } from './placement-refusal.js';
 import { straightChord } from './overlay-paths.js';
 import { candidateBox, haloSize, isDirect, lineAngle, LINK_LABEL_GEOMETRY, turnedBox } from './link-labels.js';

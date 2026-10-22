@@ -1,3 +1,5 @@
+import { readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 
 /**
@@ -20,5 +22,16 @@ describe('the module graph loads from every entry', () => {
   it.each(Object.keys(ENTRIES))('%s loads first', async name => {
     vi.resetModules();
     await expect(ENTRIES[name]!()).resolves.toBeDefined();
+  });
+});
+
+/** Every module under src/layout, loaded first and alone in a fresh module graph, so a new cycle through any of them is caught. */
+const LAYOUT_DIR = fileURLToPath(new URL('../../src/layout/', import.meta.url));
+const LAYOUT = readdirSync(LAYOUT_DIR, { recursive: true, encoding: 'utf8' }).filter(file => file.endsWith('.ts')).sort();
+
+describe('every layout module loads first in a fresh module graph', () => {
+  it.each(LAYOUT)('%s', async file => {
+    vi.resetModules();
+    await expect(import(/* @vite-ignore */ `${LAYOUT_DIR}${file}`)).resolves.toBeDefined();
   });
 });
