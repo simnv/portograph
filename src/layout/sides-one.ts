@@ -5,7 +5,8 @@ import { orderedGroupIds, orderedNodeIds } from '../model/model.js';
 import { busOfPort, busSide, meshBuses } from './bus.js';
 import { chainSides } from './grid-chains.js';
 import { gridChains } from './grid.js';
-import { checkSideHints, NO_SIDE_HINTS, SideHintRefusal, type SideHints } from './side-hints.js';
+import { checkSideHints, NO_SIDE_HINTS, type SideHints } from './side-hints.js';
+import { SideHintRefusal } from './placement-refusal.js';
 
 /** Complete tie priority for direction votes and unused-port allocation. */
 export const SIDE_TIE_ORDER: readonly Side[] = ['bottom', 'right', 'top', 'left'];

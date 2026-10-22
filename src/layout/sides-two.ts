@@ -12,7 +12,7 @@ import { moveGroup, stackBands } from './skeleton-geometry.js';
 import { COLUMN_SLACK, separateFrameColumns } from './columns.js';
 import { deriveFrames } from './frames.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
-import { SideHintRefusal } from './side-hints.js';
+import { SideHintRefusal } from './placement-refusal.js';
 import { carriesTitle, nodeObstacleReach, nudgingDistance, routedStroke, stemReach } from './bands.js';
 import { MEMBER_GAP, fanEnd } from './bundle-geometry.js';
 import { laneSource, laneWidth, transitTiers } from './lanes.js';

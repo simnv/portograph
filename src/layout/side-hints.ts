@@ -4,22 +4,13 @@ import type { Diagnostic, LayoutModel, LayoutPort } from '../model/layout.js';
 import { busOfPort } from './bus.js';
 import { authoredSide, groupShape } from './grid.js';
 import { portKey, tiedPortComponents } from './sides-one.js';
-import { PlacementRefusal, type RefusalCode, type RefusalDetail } from './placement-refusal.js';
+import { SideHintRefusal } from './placement-refusal.js';
 
 /**
  * Side hints (docs/design/side-faces.md, Sections 3, 4 and 7): the lateral side an engine measure asks a port to take in the next placement
  * run, keyed by `portKey`. A hint ranks below an author `side:` and above the stage-2 rule. It is an input of placement (ADR-0022), never
  * written in the YAML.
  */
-/** A placement run refused a side hint (not a candidate, a lateral vote, a floor below the content). The side round drops the offer; every other error is a bug. */
-export class SideHintRefusal extends PlacementRefusal {
-  constructor(message: string, detail: RefusalDetail & { code?: RefusalCode } = {}) { super(detail.code ?? 'side', message, detail); }
-}
-
-/** Stage 5 found a foreign unit beside a member row of a trunk join on both sides: the join is declined by one placement re-run (`trunk-blocked`, mesh-bus.md, section 12.4). */
-export class TrunkBlocked extends SideHintRefusal {
-  constructor(public readonly key: string, public readonly why: string) { super(`The trunk join ${key} is blocked: ${why}`, { code: 'trunk' }); }
-}
 export type SideHints = ReadonlyMap<string, 'left' | 'right'>;
 export const NO_SIDE_HINTS: SideHints = new Map();
 
