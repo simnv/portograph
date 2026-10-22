@@ -21,7 +21,7 @@ import { overlayChordAdmitted } from './frame-paths.js';
 
 /**
  * The course round's measure and judge (architecture ticket 15, phase 4; the redesign of 2026-10-05). `measureCourses` reads the 7f baseline and its routed
- * result and names the links whose route is a poor one (removed, many turns, or crossed often); for each it builds the perimeter courses its ends admit and
+ * result and names the links whose route is a poor one (removed, many turns, or crossed often) or a step that an L can shorten (`stepRoute`); for each it builds the perimeter courses its ends admit and
  * keeps the one whose promised polyline beats the baseline route by the unified order. The pipeline places again with those courses reserved in stage 5,
  * routes the trial, and `judgeCourseTrial` keeps it only on the routed result. The promise of a course is the polyline its own lane geometry reserves.
  */
@@ -41,6 +41,19 @@ export interface CourseOffer {
 export function poorRoute(turns: number | undefined, crossings: number): boolean {
   return turns === undefined || turns >= 4 || (turns >= 2 && crossings >= 3);
 }
+
+/** The turns of a step: down the stem, along a row of the tier gap, down into the far end. */
+const STEP_TURNS = 2;
+/**
+ * The baseline route of a link between two neighbouring tiers is a step: two turns in the one tier gap between the ends, and no crossing (architecture-2
+ * ticket 09, follow-up). An L into a free lateral face of one end joins the same two ports with one turn. A step is no poor route, and it is offered a course
+ * only when that course is shorter and crosses nothing (`stepGain`), so it adds no crossing to the joint trial of the poor routes.
+ */
+export function stepRoute(found: LinkFacts, turns: number | undefined, crossings: number): boolean {
+  return found.from.tier !== found.to.tier && found.crossed.length === 0 && turns === STEP_TURNS && crossings === 0;
+}
+/** The course a step takes: fewer turns than the step (one: an L), and no crossing. */
+export const stepGain = (turns: number, crossings: number): boolean => turns < STEP_TURNS && crossings === 0;
 
 const pointsOf = (link: LayoutLink): Point[] => {
   const segments = link.path?.segments ?? [];
@@ -113,7 +126,8 @@ export function measureCourses(base: LayoutModel, routedBase: LayoutModel, refus
       offer.promised.set(link.id, { turns: approach.turns, crossings: 0, base: { turns: turns0 ?? Infinity, crossings: crossings0 } });
       continue;
     }
-    if (!poorRoute(turns0, crossings0)) continue;
+    const poor = poorRoute(turns0, crossings0), step = !poor && stepRoute(found, turns0, crossings0);
+    if (!poor && !step) continue;
     const [upper, lower] = found.from.tier < found.to.tier ? [found.from, found.to] : [found.to, found.from];
     if (upper.tier === lower.tier) {
       // A skirt: both ends in one band with a unit between them. It reads its cost from the baseline's route (turns0, crossings0), and every eligible skirt is
@@ -138,7 +152,7 @@ export function measureCourses(base: LayoutModel, routedBase: LayoutModel, refus
       continue;
     }
     const best = perimeterBest(base, link, found, upper, lower, crossedBy, nodes, false);
-    if (best.course === undefined) continue;
+    if (best.course === undefined || (step && !stepGain(best.turns, best.crossings))) continue;
     const gain = turns0 === undefined ? true : best.turns < turns0 || (best.turns === turns0 && best.crossings < crossings0);
     if (!gain) continue;
     offer.courses.push(best.course);

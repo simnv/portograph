@@ -90,12 +90,12 @@ it('a flank link around a neighbour takes a column-gap course and passes every g
 });
 
 // Cause D (ticket 12) was first fixed by the course round (ticket 15, phase 4). Since ticket 09 (architecture-2) the flank port keeps its place after the bundle
-// block, so the link is not removed and needs no course; it enters directly with 2 turns. A narrower course rule to win the turn back is the ticket's follow-up.
-it('a flank link across a neighbour beside a bundle is not removed and takes no course (ticket 12, cause D; ticket 09)', async () => {
+// block, so the link is not removed; its baseline route is a step (2 turns), and the step course of the ticket 09 follow-up takes the 1-turn L.
+it('a flank link across a neighbour beside a bundle is not removed and takes the step course (ticket 12, cause D; ticket 09)', async () => {
   const yaml = readFileSync(new URL('../../goldens/synthetic/a-flank-link-across-a-neighbour-enters-a-bundle-envelope.yaml', import.meta.url), 'utf8');
   const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   expect(model.links.filter(link => link.removed === true)).toEqual([]);
-  expect(model.courses).toBeUndefined();
+  expect(model.courses?.map(course => course.link)).toEqual(['link-6']);
 });
 
 it('a right flank beside a canton bundle lays out and passes every gate', async () => {
