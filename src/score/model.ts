@@ -221,6 +221,22 @@ export function sharedStem(model: LayoutModel, a: Segment, b: Segment, overlap: 
         width: Math.abs(stem.to.x - stem.from.x), height: Math.abs(stem.to.y - stem.from.y) }, pointRect(p)));
   });
 }
+/**
+ * The copy that `own`'s link carries of the stem `shared` is. A junction's stem is one run that every
+ * member of the junction carries in its own path (`junctionChain` verifies each copy), so a member's
+ * segment paired with another member's copy is the same pair as with its own copy. Only the stem of a
+ * verified junction that holds both links qualifies; any other shared-stem run is not a copy.
+ */
+export function stemCopy(model: LayoutModel, own: Segment, shared: Segment): Segment | undefined {
+  if (own.link.id === shared.link.id || shared.segment.owner.kind !== 'shared-stem') return undefined;
+  const j = model.junctions.find(item => claimed(shared, 'shared-stem', item.id));
+  if (!j?.stem || !j.links.includes(own.link.id) || !j.links.includes(shared.link.id) || !junctionChain(model, j)) return undefined;
+  const same = (s: PathSegment): boolean => samePoint(s.from, j.stem!.from) && samePoint(s.to, j.stem!.to)
+    || samePoint(s.from, j.stem!.to) && samePoint(s.to, j.stem!.from);
+  if (!same(shared.segment)) return undefined;
+  const index = own.link.path?.segments.findIndex(s => s.owner.kind === 'shared-stem' && s.owner.id === j.id && same(s)) ?? -1;
+  return index < 0 ? undefined : { segment: own.link.path!.segments[index]!, link: own.link, index, stroke: own.stroke };
+}
 /** Only the incident run and immediately outgoing branches at one verified tree vertex qualify. */
 export function junctionFan(model: LayoutModel, a: Segment, b: Segment): boolean {
   return model.junctions.some(j => {
