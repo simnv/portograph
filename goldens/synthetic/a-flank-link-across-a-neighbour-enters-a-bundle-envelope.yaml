@@ -1,4 +1,5 @@
-# Pinned failure (architecture ticket 12, cause D): a right flank links to a canton member on tier 2 across a neighbour, beside a bundle of two parallel core links to the same member. Stage 8 removes the flank link (its route enters the reserved bundle envelope). The sheet passes without the flank.
+# Pinned failure (architecture ticket 12, cause D): a right flank links to a canton member on tier 2 across a neighbour, beside a bundle of two parallel core links to the same member. Stage 8 once removed the flank link (its route entered the reserved bundle envelope).
+# Expected (architecture-2 ticket 09 and its follow-up): the flank port keeps its stage 7b place after the bundle block, so the link is not removed; its baseline route is a step into the top face (2 turns), and the step course takes the L into the right face of the member (1 turn, no crossing). Every link is drawn.
 # Source: architecture ticket 12 matrix.
 portograph: 2
 profile: network

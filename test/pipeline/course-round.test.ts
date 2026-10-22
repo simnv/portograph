@@ -5,7 +5,11 @@ import { restoreLayoutModel } from '../../src/internal.js';
 import type { Course, LayoutLink, LayoutModel } from '../../src/index.js';
 import type { Side } from '../../src/model/geometry.js';
 import { naturalPolyline, polylineCrossings, polylineTurns, simplify } from '../../src/layout/course-plan.js';
-import { judgeCourseTrial, poorRoute } from '../../src/layout/course-measure.js';
+import { drawnCrossings, judgeCourseTrial, measureCourses, poorRoute, stepGain, stepRoute } from '../../src/layout/course-measure.js';
+import { COURSE_VISITS, course as courseRound } from '../../src/pipeline/rounds.js';
+import type { Env } from '../../src/pipeline/env.js';
+import type { State } from '../../src/pipeline/state.js';
+import type { LinkFacts } from '../../src/layout/read/courses.js';
 import { constraintFindings } from '../../src/layout/trial-findings.js';
 import { findPort } from '../../src/layout/row-paths.js';
 import { pathBends } from '../../src/layout/objective.js';
@@ -62,21 +66,41 @@ describe('which routes the round looks at', () => {
   ])('a route of %s turns and %s crossings: %s', (bends, crossings, poor) => {
     expect(poorRoute(bends, crossings)).toBe(poor);
   });
+
+  // A step: two neighbouring tiers, no tier between them, two turns and no crossing. It is offered only the course that is shorter and crosses nothing.
+  const facts = (fromTier: number, toTier: number, crossed: number[]): LinkFacts => ({ from: { tier: fromTier }, to: { tier: toTier }, crossed } as unknown as LinkFacts);
+  it.each<[string, LinkFacts, number | undefined, number, boolean]>([
+    ['a step between neighbouring tiers', facts(1, 2, []), 2, 0, true],
+    ['a step that crosses a link', facts(1, 2, []), 2, 1, false],
+    ['a route with one turn', facts(1, 2, []), 1, 0, false],
+    ['a route with three turns', facts(1, 2, []), 3, 0, false],
+    ['a removed link', facts(1, 2, []), undefined, 0, false],
+    ['a link across a tier', facts(0, 2, [1]), 2, 0, false],
+    ['a link in one tier', facts(1, 1, []), 2, 0, false],
+  ])('stepRoute: %s', (_name, found, bends, crossings, step) => {
+    expect(stepRoute(found, bends, crossings)).toBe(step);
+  });
+  it.each<[number, number, boolean]>([[1, 0, true], [0, 0, true], [1, 1, false], [2, 0, false]])('stepGain: a course of %s turns and %s crossings: %s', (bends, crossings, gain) => {
+    expect(stepGain(bends, crossings)).toBe(gain);
+  });
 });
 
 describe('the course round on the hand-solve sheets (ticket 15, phase 4)', () => {
-  // Case 05 and the 12 D fixture. Ticket 09 (architecture-2): the flank port keeps its stage 7b place after the bundle block, so the link is no longer removed
-  // and no course is offered (`poorRoute` skips a 2-turn route with no crossing); it enters the top face of the canton member with 2 turns. The 1-turn course
-  // into the right face is lost; a narrower course rule to win it back is the follow-up recorded on ticket 09. The course round itself stays covered by the
-  // sheets below (08, 04, the flank links around a neighbour).
-  it('05 / 12 D: the flank link is drawn, not removed, and enters the top face with 2 turns (ticket 09)', async () => {
+  // Case 05 and the 12 D fixture. Since ticket 09 (architecture-2) the flank port keeps its stage 7b place after the bundle block, so the link is no longer removed:
+  // its baseline route is a step into the top face of the canton member (2 turns, no crossing). The follow-up of ticket 09 offers a step the L that crosses
+  // nothing (`stepRoute`), and the round takes it: the link enters the right face with 1 turn.
+  it('05 / 12 D: the flank link steps on the baseline and takes the L into the right face, with the turn it promised (ticket 09 follow-up)', async () => {
     const model = await layout(parse(source(ACROSS)), options);
     expect(model.links.filter(item => item.removed === true)).toEqual([]);
-    expect(side(model, 6, 'to')).toBe('top');
+    expect(side(model, 6, 'to')).toBe('right');
     expect(side(model, 6, 'from')).toBe('bottom');
-    expect(turns(model, 6)).toBe(2);
-    expect(model.courses).toBeUndefined();
+    expect(turns(model, 6)).toBe(1);
+    expect(model.courses!.map(course => course.link)).toEqual(['link-6']);
+    expect(model.lanes.some(lane => lane.kind === 'perimeter' && lane.owner.kind === 'link' && lane.owner.id === 'link-6')).toBe(true);
+    expect(codes(model)).toContain('COURSE_TAKEN');
     expect(codes(model)).not.toContain('COURSE_SHAPE_LOST');
+    // The kept layout restores: the course, its port faces and its lane are invariants of the published model.
+    expect(restoreLayoutModel(JSON.stringify(model)).courses).toEqual(model.courses);
   }, 60000);
 
   it('a flank course keeps its lane and its faces when the published model is restored', async () => {
@@ -192,6 +216,78 @@ describe('the judge reads what the trial publishes (review of phase 4)', () => {
       expect(codes(model), name).not.toContain('COURSE_SHAPE_LOST');
     }
   }, 120000);
+});
+
+describe('a step course never costs the course of a poor route (ticket 09 follow-up)', () => {
+  // With no re-run left the flank link keeps its baseline route: the step (2 turns, no crossing) that the round would offer the L.
+  const stepped = async (): Promise<LayoutModel> => layout(parse(source(ACROSS)), { ...options, testMaxReruns: 0 });
+
+  it('records the step links of an offer, and leaves them out on request', async () => {
+    const model = await stepped();
+    expect(turns(model, 6)).toBe(2);
+    const offer = measureCourses(model, model);
+    expect(offer.courses.map(item => item.link)).toEqual(['link-6']);
+    expect(offer.steps).toEqual(['link-6']);
+    expect(measureCourses(model, model, new Set(), false).courses).toEqual([]);
+  }, 60000);
+
+  it('a refused trial with a step course beside a poor-route course gets one more trial without the step; any other refused trial gets none', async () => {
+    expect(courseRound.budget.visits).toBe(COURSE_VISITS);
+    expect(COURSE_VISITS).toBe(2);
+    expect(courseRound.budget.retries).toContain('verdict');
+    const model = await stepped();
+    const env = { options: {} } as unknown as Env;
+    const fresh = (): State => ({ base: model, routedBase: model, sideNotes: [] }) as unknown as State;
+    const refusal = { at: 'verdict' as const, why: 'no gain' };
+    // A mixed offer: the step of link-6 and a poor-route course of another link.
+    let s = fresh();
+    const first = (await courseRound.measure(env, s))!;
+    const poor: Course = { link: 'link-1', kind: 'skirt', side: 'left', from: { face: 'left' }, to: { face: 'top' }, runs: ['perimeter', 'tier-gap'] };
+    courseRound.refuse(env, s, { ...first, courses: [...first.courses, poor] }, refusal);
+    expect(s.courseRetry).toBe('without-steps');
+    // The second measure leaves the step out (on this sheet nothing else is offered).
+    expect(await courseRound.measure(env, s)).toBeUndefined();
+    // A refused offer of step courses alone, or of poor routes alone, is not tried again: a second trial would repeat the first.
+    s = fresh();
+    courseRound.refuse(env, s, first, refusal);
+    expect(s.courseRetry).toBe('none');
+    expect(await courseRound.measure(env, s)).toBeUndefined();
+    s = fresh();
+    courseRound.refuse(env, s, { ...first, courses: [poor], steps: [] }, refusal);
+    expect(s.courseRetry).toBe('none');
+    // The second trial refused as well: no third.
+    s = fresh();
+    s.courseRetry = 'without-steps';
+    courseRound.refuse(env, s, { ...first, courses: [...first.courses, poor] }, refusal);
+    expect(s.courseRetry).toBe('none');
+  }, 60000);
+
+  it('the judge refuses a step course that publishes a crossing', async () => {
+    const base = await stepped();
+    const published = await layout(parse(source(ACROSS)), options);
+    expect(published.courses!.map(item => item.link)).toEqual(['link-6']);
+    // The trial: the published model with one more routed path across the middle of the first straight piece of link-6.
+    const trial = structuredClone(published) as LayoutModel;
+    const piece = link(trial, 6).path!.segments.find(segment => Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y) > 20)!;
+    const mid = { x: (piece.from.x + piece.to.x) / 2, y: (piece.from.y + piece.to.y) / 2 }, level = piece.from.y === piece.to.y;
+    const across = level ? { from: { x: mid.x, y: mid.y - 10 }, to: { x: mid.x, y: mid.y + 10 } } : { from: { x: mid.x - 10, y: mid.y }, to: { x: mid.x + 10, y: mid.y } };
+    trial.links.push({ ...link(trial, 1), id: 'probe', path: { ...link(trial, 1).path!, segments: [{ ...piece, ...across }] } });
+    const promised = new Map([['link-6', 1]]);
+    expect(judgeCourseTrial(base, trial, promised, new Set(['link-6'])).reason).toMatch(/a step course publishes a crossing \(link-6\)/);
+    expect(judgeCourseTrial(base, trial, promised).reason).not.toMatch(/step course/);
+  }, 60000);
+
+  it('the offer and the judge count the same crossings: every drawn link, overlay included, and no removed link', async () => {
+    const model = await layout(parse(source(ACROSS)), options);
+    const own = link(model, 6), points = [own.path!.segments[0]!.from, ...own.path!.segments.map(segment => segment.to)];
+    expect(drawnCrossings(model, 'link-6', points)).toBe(0);
+    const piece = own.path!.segments.find(segment => Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y) > 20)!;
+    const mid = { x: (piece.from.x + piece.to.x) / 2, y: (piece.from.y + piece.to.y) / 2 }, level = piece.from.y === piece.to.y;
+    const across = level ? { from: { x: mid.x, y: mid.y - 10 }, to: { x: mid.x, y: mid.y + 10 } } : { from: { x: mid.x - 10, y: mid.y }, to: { x: mid.x + 10, y: mid.y } };
+    const other = { ...link(model, 1), id: 'probe', path: { ...link(model, 1).path!, segments: [{ ...piece, ...across }] } };
+    expect(drawnCrossings({ ...model, links: [...model.links, { ...other, layer: 'overlay' as const }] }, 'link-6', points)).toBe(1);
+    expect(drawnCrossings({ ...model, links: [...model.links, { ...other, removed: true }] }, 'link-6', points)).toBe(0);
+  }, 60000);
 });
 
 describe('the courses a placement run reserves', () => {
