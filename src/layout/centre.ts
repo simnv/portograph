@@ -716,11 +716,7 @@ export function stepReader(model: LayoutModel, context: CentreContext): StepRead
 export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
   // A move a replay before took at a frame-column wall is read again where the model stands now: a wall that no longer holds gives the move back before the
   // passes centre on it (architecture ticket 15, follow-up).
-  const recorded = model.parentWallMoves?.length ? selectAnchorTier(model) : undefined;
-  if (recorded !== undefined && model.tierBands.some(band => band.tier === recorded)) {
-    const context = centreContext(model, recorded);
-    withdrawWallMoves(model, context.steps, stepReader(model, context));
-  }
+  withdrawRecorded(model);
   const seated = seatedFaces(model);
   timed('centre-passes', () => centrePasses(model, budget));
   // The parent side of a single feed, after the last pass has moved the children (architecture ticket 15).
@@ -734,6 +730,19 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
   // The windows of the overlay barycentre are read once, where centring has left the partners (ticket 143): a window read in a pass
   // is read on geometry that a later step moves.
   if (selectAnchorTier(model) !== undefined) timed('centre-overlay-final', () => { placeOverlayFree(model); rebuildRegions(model); });
+  // The seated faces and the overlay barycentre above can widen a column after the moves were taken. Read once more; a move given back is settled by the
+  // passes the budget has left (none left: the publication check judges it, ADR-0010).
+  if (withdrawRecorded(model)) {
+    timed('centre-passes', () => centrePasses(model, budget));
+    if (selectAnchorTier(model) !== undefined) timed('centre-overlay-final', () => { placeOverlayFree(model); rebuildRegions(model); });
+  }
+}
+/** Reads the recorded wall moves again (`withdrawWallMoves`) on the anchor tier centring stored; whether a move was given back. */
+function withdrawRecorded(model: LayoutModel): boolean {
+  const anchor = model.anchorTier;
+  if (!model.parentWallMoves?.length || anchor === undefined || !model.tierBands.some(band => band.tier === anchor)) return false;
+  const context = centreContext(model, anchor);
+  return withdrawWallMoves(model, context.steps, stepReader(model, context));
 }
 /**
  * The ports centring owes or reads a feed x: the child ports and the parent ports whose x is the feed, read the way the publication check reads them (`readCentreViolations`): `groupFeeds` of every step. A

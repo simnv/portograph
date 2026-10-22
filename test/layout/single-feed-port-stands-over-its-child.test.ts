@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
-import { centreContext, centreViolations, stepReader, stepTakesOffset } from '../../src/layout/centre.js';
+import { centreContext, centreDraft, centreViolations, createCentreBudget, stepReader, stepTakesOffset } from '../../src/layout/centre.js';
+import { attemptCounters } from '../../src/layout/attempt-counters.js';
 import { seatLaneSources, standPortsOverChildren, withdrawWallMoves } from '../../src/layout/parent-stand.js';
 import { findPort } from '../../src/layout/row-paths.js';
 import { centringFeeds } from '../../src/layout/read/feeds.js';
@@ -145,21 +146,43 @@ it('takes a move that changes the offset when the group fills the column of its 
 // of `site-zone` widen, the step would shift the group, and the move is given back with a decline in place of the record.
 it('gives a wall move back when a later replay widens the column, and keeps it while the column holds', async () => {
   const laid = await layout(parse(nested), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
-  const replay = (widen: number) => {
+  const replay = (widen: number, nodeShift = 0) => {
     const model = JSON.parse(JSON.stringify(laid)) as typeof laid;
-    const record = model.parentWallMoves![0]!, port = findPort(model, record.port)!, moved = port.anchor!.x;
+    const record = model.parentWallMoves![0]!, port = findPort(model, record.port)!, node = model.nodes[record.port.node]!;
+    // The node of the port moves between replays: the record is read from the left edge of its box, not as an absolute x.
+    node.bounds!.x += nodeShift;
+    for (const item of node.ports) item.anchor!.x += nodeShift;
+    const moved = port.anchor!.x;
     Object.values(model.groups).find(group => group.id.startsWith('clients'))!.bounds!.width += widen;
     const context = centreContext(model, model.anchorTier!);
     withdrawWallMoves(model, context.steps, stepReader(model, context));
-    return { model, record, x: port.anchor!.x, moved };
+    return { model, x: port.anchor!.x, moved, from: node.bounds!.x + record.fromLeft };
   };
   const held = replay(0);
   expect(held.x).toBeCloseTo(held.moved, 6);
   expect(held.model.parentWallMoves).toHaveLength(1);
-  const widened = replay(200);
-  expect(Math.abs(widened.x - widened.record.from)).toBeLessThan(Math.abs(widened.moved - widened.record.from));
+  const widened = replay(200, 30);
+  expect(widened.x).toBeCloseTo(widened.from, 6);
   expect(widened.model.parentWallMoves).toBeUndefined();
   const codes = widened.model.diagnostics.filter(item => item.owners?.some(owner => 'id' in owner && owner.id === 'link-2')).map(item => item.code);
   expect(codes).toContain('CENTRE_PARENT_MOVE_SHIFTS_GROUP');
   expect(codes).not.toContain('CENTRE_PARENT_MOVE_AT_WALL');
+}, 120000);
+
+// The same through a real replay: `centreDraft` reads the record before its passes, so the widened column gives the move back and names the decline.
+it('withdraws a wall move in a centreDraft replay before the passes centre on it', async () => {
+  const laid = await layout(parse(nested), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const model = JSON.parse(JSON.stringify(laid)) as typeof laid;
+  Object.values(model.groups).find(group => group.id.startsWith('clients'))!.bounds!.width += 200;
+  // The record as the first pass begins: each pass counts itself on `attemptCounters.centringPasses`.
+  let recordAtFirstPass: unknown = 'no pass', value = attemptCounters.centringPasses;
+  Object.defineProperty(attemptCounters, 'centringPasses', { configurable: true, enumerable: true, get: () => value,
+    set: (next: number) => { if (recordAtFirstPass === 'no pass') recordAtFirstPass = model.parentWallMoves; value = next; } });
+  try {
+    centreDraft(model, createCentreBudget());
+  } finally {
+    Object.defineProperty(attemptCounters, 'centringPasses', { configurable: true, enumerable: true, writable: true, value });
+  }
+  expect(recordAtFirstPass).toBeUndefined();
+  expect(model.diagnostics.some(item => item.code === 'CENTRE_PARENT_MOVE_SHIFTS_GROUP' && item.owners?.some(owner => 'id' in owner && owner.id === 'link-2'))).toBe(true);
 }, 120000);

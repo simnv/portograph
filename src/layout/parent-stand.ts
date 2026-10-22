@@ -139,29 +139,40 @@ function stepReadings(model: LayoutModel, steps: readonly { tier: number; author
 /**
  * Gives back the moves a replay before took at a frame-column wall (`model.parentWallMoves`) whose wall no longer holds where the model stands now: the column
  * widened, so the step would shift the group by the share of the moved port. Runs at the start of `centreDraft`, before the passes centre on the ports. A
- * move given back puts its port at the x it stood at before the move (inside its face room), and the record becomes a decline
- * (`CENTRE_PARENT_MOVE_SHIFTS_GROUP`). A link that is no longer a feed cannot be read, so its move is given back too (R6). One reading per record.
+ * move given back puts its port where it stood before the move, from the left edge of its node box (inside its face room), and the record becomes a decline
+ * (`CENTRE_PARENT_MOVE_SHIFTS_GROUP`). A link that is no longer a feed cannot be read, so its move is given back too; a record whose port is gone is dropped
+ * with a warning (R6). One reading per record. Returns whether a move was given back.
  */
-export function withdrawWallMoves(model: LayoutModel, steps: readonly { tier: number; authority: number }[], reader: StepReader): void {
+export function withdrawWallMoves(model: LayoutModel, steps: readonly { tier: number; authority: number }[], reader: StepReader): boolean {
   const records = model.parentWallMoves;
-  if (records === undefined) return;
-  const read = faces(model), { lists, takes, offset } = stepReadings(model, steps, reader), kept: typeof records = [];
+  if (records === undefined) return false;
+  const read = faces(model), kept: typeof records = [];
+  // The feeds copy the parent x (`Feed.x`): after a move is given back, the next record reads them again.
+  let readings = stepReadings(model, steps, reader), withdrawn = false;
   // By link id: the records are independent readings, and the order of the document is not a key (R3).
   for (const record of [...records].sort((a, b) => a.link.localeCompare(b.link))) {
     const port = findPort(model, record.port), link = read.linkOf.get(record.link);
-    if (port === undefined || link === undefined) continue;
-    const feed = lists.flat().find(item => item.link === record.link && !item.transit);
-    if (feed !== undefined) {
-      const now = offset(feed, new Map()), was = offset(feed, new Map([[portId(port.ref), record.from]]));
-      if (Math.abs(now - was) <= 0.5 || takes(feed, was, now)) { kept.push(record); continue; }
+    if (port === undefined || link === undefined) {
+      placementWarning(model, 'CENTRE_PARENT_MOVE_RECORD_DROPPED', `${record.link}: the port of its move at a frame-column wall is gone; the record is dropped.`, [record.link]);
+      continue;
     }
+    const from = model.nodes[port.ref.node]!.bounds!.x + record.fromLeft;
+    const feed = readings.lists.flat().find(item => item.link === record.link && !item.transit);
+    if (feed !== undefined) {
+      const now = readings.offset(feed, new Map()), was = readings.offset(feed, new Map([[portId(port.ref), from]]));
+      if (Math.abs(now - was) <= 0.5 || readings.takes(feed, was, now)) { kept.push(record); continue; }
+    }
+    // A face with no room left (its neighbours closer than two pitches) keeps the port where it is: a clamp would put it on a neighbour.
     const { low, high } = read.room(port);
-    read.place(port, Math.max(low, Math.min(record.from, high)));
+    if (low <= high + EPS) read.place(port, Math.max(low, Math.min(from, high)));
     model.diagnostics = model.diagnostics.filter(d => !(d.code === 'CENTRE_PARENT_MOVE_AT_WALL' && owns(d, link.id)));
     name(model, link, 'offset');
+    readings = stepReadings(model, steps, reader);
+    withdrawn = true;
   }
   if (kept.length) model.parentWallMoves = kept;
   else delete model.parentWallMoves;
+  return withdrawn;
 }
 
 export function standPortsOverChildren(model: LayoutModel, steps: readonly { tier: number; authority: number }[], reader: StepReader): void {
@@ -201,13 +212,13 @@ export function standPortsOverChildren(model: LayoutModel, steps: readonly { tie
   for (const { feed, parent, target, wall } of inFaceOrder(movers, item => item.parent, item => item.target)) {
     if (held(parent)) name(model, read.linkOf.get(feed.link)!, 'face');
     else if (read.reaches(parent, target)) {
-      const from = parent.anchor!.x;
+      const fromLeft = parent.anchor!.x - model.nodes[parent.ref.node]!.bounds!.x;
       read.place(parent, target);
       if (!wall) continue;
       walled(model, read.linkOf.get(feed.link)!);
       // The x before the first move is the place a withdrawal gives back; a record already held keeps it.
       const records = model.parentWallMoves ?? [];
-      if (!records.some(record => record.link === feed.link)) model.parentWallMoves = [...records, { link: feed.link, port: { ...parent.ref }, from }];
+      if (!records.some(record => record.link === feed.link)) model.parentWallMoves = [...records, { link: feed.link, port: { ...parent.ref }, fromLeft }];
     } else name(model, read.linkOf.get(feed.link)!);
   }
 }
