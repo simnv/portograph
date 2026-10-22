@@ -18,7 +18,7 @@ interface Span { x: number; y: number; right: number; bottom: number; measurable
 const REJECT_LIMIT = 2 ** 26;
 const measurable = (x: number, y: number, right: number, bottom: number): boolean =>
   x > -REJECT_LIMIT && y > -REJECT_LIMIT && right < REJECT_LIMIT && bottom < REJECT_LIMIT;
-import { anchorOnBoundary, barContact, bundlePair, effectiveLayer, endpoints, groupBoxes, groupConsumers, incident, junctionFan, linkPort, mergedRun, outward, port, refEqual, refKey, sharedStem } from './model.js';
+import { anchorOnBoundary, barContact, bundlePair, effectiveLayer, endpoints, groupBoxes, groupConsumers, incident, junctionFan, linkPort, mergedRun, outward, port, refEqual, refKey, sharedStem, stemCopy } from './model.js';
 import { overlayEndpoint } from '../layout/overlay-paths.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
 import { portId } from '../layout/skeleton-graph.js';
@@ -190,6 +190,13 @@ export function parallelClearance(model: LayoutModel, routed: Segment[], fail: (
     // and states that routing completes the attachment jog, so a tread shorter than the clearance
     // is expected geometry rather than a corridor two objects share.
     if (staircaseTread(a, b)) continue;
+    // A junction's stem is one run in every member's path. Paired with another member's segment, it
+    // is judged as that member's own copy: its own neighbour or its own tread is no clearance pair.
+    const own = (x: Segment, y: Segment): boolean => {
+      const copy = stemCopy(model, x, y);
+      return copy !== undefined && (Math.abs(x.index - copy.index) <= 1 || staircaseTread(x, copy));
+    };
+    if (own(a, b) || own(b, a)) continue;
     const overlap = overlapSegment(a.segment, b.segment);
     if (overlap && sharedStem(model, a, b, overlap) || junctionFan(model, a, b)) continue;
     const bundle = bundlePair(model, a, b);
