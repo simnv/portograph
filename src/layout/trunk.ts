@@ -5,7 +5,7 @@ import { authoredBusSide, busExtent, busLegCounts, busTitleEdge, meshBuses, trun
 import { EDGE_MARGIN, RING_PITCH } from './course-rows.js';
 import { laneSource } from './lanes.js';
 import { findPort } from './row-paths.js';
-import { TrunkBlocked } from './side-hints.js';
+import { TrunkBlocked } from './placement-refusal.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 
 /**
