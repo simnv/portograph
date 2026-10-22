@@ -76,6 +76,21 @@ describe('verified shared runs', () => {
     foreign.junctions[0]!.links = ['one', 'forged'];
     expect(clearance(foreign).map(v => v.elements)).toContainEqual(['one', 'two']);
   });
+  it('judges a member\'s straight continuation off the stem\'s end as its own neighbour segment', () => {
+    const clearance = (model: LayoutModel) => score(model).snapshot.gates.G6.violations.filter(v => v.code === 'parallel-clearance');
+    // Branch `one` goes on straight from the junction point, on a run the junction does not claim: it touches the stem
+    // `two` carries end to end, and that stem is its own previous segment.
+    const straight = (): LayoutModel => {
+      const model = fan('source', 'bottom'), one = model.links[0]!.path!.segments;
+      one.splice(1, 2, { from: { x: 50, y: 80 }, to: { x: 50, y: 220 }, owner: { kind: 'link', id: 'one' } });
+      return model;
+    };
+    expect(clearance(straight())).toEqual([]);
+    // Without a verified junction that names both links, the same pair is measured.
+    const foreign = straight();
+    foreign.junctions[0]!.links = ['one', 'forged'];
+    expect(clearance(foreign).map(v => v.elements)).toContainEqual(['one', 'two']);
+  });
   it('leaves ordinary distinct-port reversed order invalid but allows overlapping peer ranges', () => {
     const model = parallel(30), one = model.links[0]!, two = model.links[1]!;
     const a = structuredClone(one), b = structuredClone(two);
