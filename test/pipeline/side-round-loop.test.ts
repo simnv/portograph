@@ -84,7 +84,11 @@ describe('the round loop (ticket 115, side-faces.md Section 7)', () => {
 
   it('refuses a hint for a chord that the trial 7e does not hold, and keeps the baseline (review M1, ticket 117)', async () => {
     const far = 'a-location-router-leaves-a-lateral-side-toward-a-far-provider';
-    const plain = await run(far, undefined, 0);
+    // The baseline is the sheet with no side offer, the other rounds as they run: on this sheet the course round offers link-3 the L of a step (ticket 09
+    // of architecture-2, follow-up), so a run with no re-run at all is not the baseline the refused hint must keep.
+    const none = (): SideOffer => ({ hints: new Map(), promised: new Map(), capped: false });
+    const plain = await run(far, none);
+    expect(plain.courses?.map(item => item.link)).toEqual(['link-3']);
     const link = plain.links.find(item => item.attachments!.from.node === 'east-router' && item.attachments!.to.node === 'provider')!;
     // The left face of the east router faces away from its peer: the chord leaves inward, so 7e cannot hold it. The scripted offer promises the straight shape.
     const model = await run(far, call => call === 1 ? offerOf(portKey(link.attachments!.from), 'left', link.id) : { hints: new Map(), promised: new Map(), capped: false });

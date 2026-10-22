@@ -167,6 +167,8 @@ export const noteDeclined = (s: State, offer: CourseOffer): void => {
 };
 
 type CourseOffer = ReturnType<typeof measureCourses>;
+/** The trials of the course round in one command: the offer, and the offer without its step courses after a refusal. */
+export const COURSE_VISITS = 2;
 /**
  * The course round (ticket 15, phase 4). It reads the baseline's routed result, offers perimeter courses for the links whose route is a poor one, places again with the courses
  * reserved in stage 5, and keeps the trial only on its routed result. A refused course round leaves the layout as the baseline made it, with no note (the trace names the reason),
@@ -174,15 +176,18 @@ type CourseOffer = ReturnType<typeof measureCourses>;
  */
 export const course: Round<CourseOffer> = {
   id: 'course', label: 'rerun-course', routed: true, children: [],
-  budget: { protects: ['turn'], tie: 0, visits: 1, again: false, retries: [], reopens: false, floor: 0 },
+  // Two visits at most (R4): a refused trial that held a step course next to a poor-route course gets one more trial without the step courses (architecture-2
+  // ticket 09, follow-up), so that a step never costs the course of a poor route. Any other refused trial ends the round: `measure` finds no second offer.
+  budget: { protects: ['turn'], tie: 0, visits: COURSE_VISITS, again: false, retries: ['place', 'fallback', 'ledger', 'bands', 'verdict', 'promise'], reopens: false, floor: 0 },
   enabled: env => env.options.testCourses === undefined,
   async live(_env, s) { return measureCourses(s.base, s.routedFinal ?? s.routedBase!).courses.length > 0; },
   gain: (_env, _s, o) => gainOf([...o.promised].map(([, item]) => [item.base.turns === Infinity ? undefined : item.base.turns, item.turns] as [number | undefined, number])),
   skip(env, _s, o) { env.options.testSideTrace?.({ ev: 'course-skipped', offer: o, reruns: env.reruns }); },
   tolerates: (error, phase) => phase === 'place' ? error instanceof PlacementRefusal && error.code !== 'budget' : refusedAtBands(error),
   async measure(env, s) {
+    if (s.courseRetry === 'none') return undefined;
     s.routedBase = s.routedFinal ?? s.routedBase ?? await env.route(s.base);
-    const offer = measureCourses(s.base, s.routedBase);
+    const offer = measureCourses(s.base, s.routedBase, new Set(), s.courseRetry !== 'without-steps');
     env.options.testSideTrace?.({ ev: 'courses', offer, base: s.base, routedBase: s.routedBase });
     noteDeclined(s, offer);
     return offer.courses.length === 0 ? undefined : offer;
@@ -204,7 +209,7 @@ export const course: Round<CourseOffer> = {
     return broken.length > 0 ? ledgerRefusal(broken, { why: `a reservation does not hold at stage 7e (${broken[0]!.why})` }) : undefined;
   },
   judge(env, s, o, t) {
-    const verdict = judgeCourseTrial(s.routedBase!, t.routedTrial, promisedTurnsOf(o.promised));
+    const verdict = judgeCourseTrial(s.routedBase!, t.routedTrial, promisedTurnsOf(o.promised), new Set(o.steps));
     env.options.testSideTrace?.({ ev: 'course-trial', verdict, trial: t.trial, routedTrial: t.routedTrial, routedBase: s.routedBase });
     // A course kept earlier keeps its promise through this trial as well.
     const lost = verdict.kept ? holdsRouted(s.kept, t.routedTrial) : [];
@@ -226,7 +231,8 @@ export const course: Round<CourseOffer> = {
         message: `The link ${item.link} takes a course ${item.kind === 'shared-port' ? 'onto the pill of its shared port' : item.runs.includes('gap') ? 'through a column gap' : 'round the outside'}: ${was.turns} turns promised, ${was.base.turns === Infinity ? 'removed' : was.base.turns} on the baseline.` });
     }
   },
-  refuse(env, _s, o, r) {
+  refuse(env, s, o, r) {
+    s.courseRetry = s.courseRetry === undefined && o.steps.length > 0 && o.steps.length < o.courses.length ? 'without-steps' : 'none';
     const why = r.at === 'place' ? `the placement run rejected them (${r.why})` : r.at === 'fallback' ? 'ELK fell back during the course trial'
       : r.at === 'bands' ? `stage 7f rejected them (${r.why})` : r.why;
     env.options.testSideTrace?.({ ev: 'course-refused', links: o.courses.map(item => item.link), why });
