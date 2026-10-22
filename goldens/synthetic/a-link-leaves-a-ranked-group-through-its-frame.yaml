@@ -1,7 +1,10 @@
 # Expected: the shared-port diagram of a-link-leaves-its-group-through-a-door, with the home group ranked: a
 # node below the router puts it in two ranks, so its box is a frame derived from its cells. The group
 # exit guard reads the proposed frame box from the proposed cells, not the stored one. Test input of
-# test/layout/growth-guard.test.ts. Architecture ticket 13, round 6.
+# test/layout/growth-guard.test.ts, which injects the exit: 7e reserves none here, because link-1 leaves
+# through the frame top on its own run. link-1 turns off the stem by less than the clearance and rises.
+# That is its own staircase tread, also against link-2's copy of the stem, so every gate passes.
+# Architecture ticket 13, round 6, and its G6 follow-up.
 portograph: 2
 groups:
   up: { tier: 2, label: "Up" }

@@ -33,6 +33,15 @@ describe('a link leaves its own group through a reserved exit (architecture tick
     expect(out.map(link => link.id)).toContain('link-1');
   }, 60000);
 
+  it('a ranked group: a branch that turns short of the clearance off the stem is its own tread, so no gate fails', async () => {
+    const model = await check('a-link-leaves-a-ranked-group-through-its-frame');
+    // link-1 turns off the stem by less than the clearance and rises; the stem is also link-2's run.
+    const [stem, tread] = model.links.find(link => link.id === 'link-1')!.path!.segments;
+    expect(model.frames!.map(frame => frame.id)).toEqual(['home']);
+    expect(tread!.owner).toEqual(stem!.owner);
+    expect(Math.abs(tread!.to.x - tread!.from.x)).toBeLessThan(10);
+  }, 60000);
+
   it('a link into a child group is not walled out of the parent (finding 1)', async () => {
     const model = await check('a-link-from-a-parent-group-into-its-child');
     const link = model.links.find(item => item.id === 'link-1')!;

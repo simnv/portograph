@@ -869,7 +869,10 @@ router a gap it can answer orthogonally (stress ticket 10).
 the reserved run already passes through — a lane's approach point that a deep leaf has reached — is
 consumed by the run and not asked of the router. Stage 13 consumes `from` outward and `to` in reverse order and direction;
 a partial run never becomes a complete `path`. G4 exempts only validated shared runs. G6's fan
-exception covers the incident run and immediate outgoing branches at the same verified vertex.
+exception covers the incident run and immediate outgoing branches at the same verified vertex. A junction's stem is one
+run in every member's path. A member's segment paired with another member's copy of the stem is judged as a pair of that
+member's own segments: a branch that turns off the stem by less than the clearance and goes on outward is its own
+staircase tread, not a clearance pair.
 
 A global shared prefix is consumed even when only one member of a bundle uses that port. Ordinary
 endpoints keep ordinary approaches. Reserved lane/bar routes connect to the shared tree's leaf
