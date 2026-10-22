@@ -49,13 +49,20 @@ const STEP_TURNS = 2;
 /**
  * Whether the baseline route of a link is a step (architecture-2 ticket 09, follow-up): its two ends stand in two different tiers with no tier between them
  * (`crossed` is empty), and the route has exactly two turns and no crossing. A step is no poor route. It is offered a course only when the best perimeter course
- * of the link has fewer turns and no crossing (`stepGain`, read on the baseline), and the judge refuses a trial in which the course publishes a crossing.
+ * of the link has fewer turns and crosses no drawn link, routed or overlay (`stepGain`, `drawnCrossings`, read on the baseline), and the judge refuses a trial in which the course publishes a crossing.
  */
 export function stepRoute(found: LinkFacts, turns: number | undefined, crossings: number): boolean {
   return found.from.tier !== found.to.tier && found.crossed.length === 0 && turns === STEP_TURNS && crossings === 0;
 }
 /** The course a step takes: fewer turns than the step (one: an L), and no crossing. */
 export const stepGain = (turns: number, crossings: number): boolean => turns < STEP_TURNS && crossings === 0;
+/**
+ * The drawn links of `model` that the polyline `points` of link `id` crosses: every link with a path that is not removed, routed and overlay alike. One count
+ * for the offer (the promised polyline on the routed baseline) and the judge (the published path on the routed trial) of a step course (R1).
+ */
+export function drawnCrossings(model: LayoutModel, id: string, points: readonly Point[]): number {
+  return model.links.filter(other => other.id !== id && other.path !== undefined && other.removed !== true && polylineCrossings(points, pointsOf(other)) > 0).length;
+}
 
 const pointsOf = (link: LayoutLink): Point[] => {
   const segments = link.path?.segments ?? [];
@@ -155,7 +162,7 @@ export function measureCourses(base: LayoutModel, routedBase: LayoutModel, refus
       continue;
     }
     const best = perimeterBest(base, link, found, upper, lower, crossedBy, nodes, false);
-    if (best.course === undefined || (step && !stepGain(best.turns, best.crossings))) continue;
+    if (best.course === undefined || (step && !stepGain(best.turns, best.crossings + drawnCrossings(routedBase, link.id, best.points)))) continue;
     const gain = turns0 === undefined ? true : best.turns < turns0 || (best.turns === turns0 && best.crossings < crossings0);
     if (!gain) continue;
     offer.courses.push(best.course);
@@ -402,8 +409,11 @@ export function judgeCourseTrial(routedBase: LayoutModel, routedTrial: LayoutMod
   // did not reserve what the promise needs, and it is not kept.
   const lost = [...promised].filter(([id, turns]) => (trial.get(id) ?? Infinity) > turns).map(([id]) => id);
   if (lost.length > 0) return verdict(false, `a link with a course publishes more turns than it promised (${lost.join(', ')})`);
-  // A step course is offered only when it crosses nothing on the baseline (`stepGain`); the trial must publish it so.
-  const crossed = [...steps].filter(id => crossingsOf(routedTrial, id) > 0);
+  // A step course is offered only when it crosses no drawn link of the baseline (`stepGain`, `drawnCrossings`); the trial must publish it so, by the same count.
+  const crossed = [...steps].filter(id => {
+    const drawn = routedTrial.links.find(item => item.id === id);
+    return drawn !== undefined && drawnCrossings(routedTrial, id, pointsOf(drawn)) > 0;
+  });
   if (crossed.length > 0) return verdict(false, `a step course publishes a crossing (${crossed.join(', ')})`);
   // No finding is new, read as sets: a gate violation, or a hard entry of the x constraint catalogue (a band gap between two root groups), that the baseline
   // did not have. A course that buys a turn with a lane overlap, a clearance or a gap is no gain (the stop rule of ticket 15, phase 4).

@@ -5,7 +5,7 @@ import { restoreLayoutModel } from '../../src/internal.js';
 import type { Course, LayoutLink, LayoutModel } from '../../src/index.js';
 import type { Side } from '../../src/model/geometry.js';
 import { naturalPolyline, polylineCrossings, polylineTurns, simplify } from '../../src/layout/course-plan.js';
-import { judgeCourseTrial, measureCourses, poorRoute, stepGain, stepRoute } from '../../src/layout/course-measure.js';
+import { drawnCrossings, judgeCourseTrial, measureCourses, poorRoute, stepGain, stepRoute } from '../../src/layout/course-measure.js';
 import { COURSE_VISITS, course as courseRound } from '../../src/pipeline/rounds.js';
 import type { Env } from '../../src/pipeline/env.js';
 import type { State } from '../../src/pipeline/state.js';
@@ -275,6 +275,18 @@ describe('a step course never costs the course of a poor route (ticket 09 follow
     const promised = new Map([['link-6', 1]]);
     expect(judgeCourseTrial(base, trial, promised, new Set(['link-6'])).reason).toMatch(/a step course publishes a crossing \(link-6\)/);
     expect(judgeCourseTrial(base, trial, promised).reason).not.toMatch(/step course/);
+  }, 60000);
+
+  it('the offer and the judge count the same crossings: every drawn link, overlay included, and no removed link', async () => {
+    const model = await layout(parse(source(ACROSS)), options);
+    const own = link(model, 6), points = [own.path!.segments[0]!.from, ...own.path!.segments.map(segment => segment.to)];
+    expect(drawnCrossings(model, 'link-6', points)).toBe(0);
+    const piece = own.path!.segments.find(segment => Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y) > 20)!;
+    const mid = { x: (piece.from.x + piece.to.x) / 2, y: (piece.from.y + piece.to.y) / 2 }, level = piece.from.y === piece.to.y;
+    const across = level ? { from: { x: mid.x, y: mid.y - 10 }, to: { x: mid.x, y: mid.y + 10 } } : { from: { x: mid.x - 10, y: mid.y }, to: { x: mid.x + 10, y: mid.y } };
+    const other = { ...link(model, 1), id: 'probe', path: { ...link(model, 1).path!, segments: [{ ...piece, ...across }] } };
+    expect(drawnCrossings({ ...model, links: [...model.links, { ...other, layer: 'overlay' as const }] }, 'link-6', points)).toBe(1);
+    expect(drawnCrossings({ ...model, links: [...model.links, { ...other, removed: true }] }, 'link-6', points)).toBe(0);
   }, 60000);
 });
 
