@@ -21,7 +21,7 @@ import { overlayChordAdmitted } from './frame-paths.js';
 
 /**
  * The course round's measure and judge (architecture ticket 15, phase 4; the redesign of 2026-10-05). `measureCourses` reads the 7f baseline and its routed
- * result and names the links whose route is a poor one (removed, many turns, or crossed often); for each it builds the perimeter courses its ends admit and
+ * result and names the links whose route is a poor one (removed, many turns, or crossed often) or a step that an L can shorten (`stepRoute`); for each it builds the perimeter courses its ends admit and
  * keeps the one whose promised polyline beats the baseline route by the unified order. The pipeline places again with those courses reserved in stage 5,
  * routes the trial, and `judgeCourseTrial` keeps it only on the routed result. The promise of a course is the polyline its own lane geometry reserves.
  */
@@ -35,11 +35,33 @@ export interface CourseOffer {
   promised: Map<string, { turns: number; crossings: number; base: { turns: number; crossings: number } }>;
   /** The links whose row bypass the measure declined for a reason that is worth naming (`ROW_BYPASS_DECLINED`); a link that is no bypass case is not named. */
   declined: { link: string; why: string }[];
+  /** The offered links whose baseline route is a step (`stepRoute`), not a poor route: the course round drops them from its second trial. */
+  steps: string[];
 }
 
 /** The baseline route of a link is a poor one: removed, four turns or more, or two turns and three crossings or more. */
 export function poorRoute(turns: number | undefined, crossings: number): boolean {
   return turns === undefined || turns >= 4 || (turns >= 2 && crossings >= 3);
+}
+
+/** The turns of a step: down the stem, along a row of the tier gap, down into the far end. */
+const STEP_TURNS = 2;
+/**
+ * Whether the baseline route of a link is a step (architecture-2 ticket 09, follow-up): its two ends stand in two different tiers with no tier between them
+ * (`crossed` is empty), and the route has exactly two turns and no crossing. A step is no poor route. It is offered a course only when the best perimeter course
+ * of the link has fewer turns and crosses no drawn link, routed or overlay (`stepGain`, `drawnCrossings`, read on the baseline), and the judge refuses a trial in which the course publishes a crossing.
+ */
+export function stepRoute(found: LinkFacts, turns: number | undefined, crossings: number): boolean {
+  return found.from.tier !== found.to.tier && found.crossed.length === 0 && turns === STEP_TURNS && crossings === 0;
+}
+/** The course a step takes: fewer turns than the step (one: an L), and no crossing. */
+export const stepGain = (turns: number, crossings: number): boolean => turns < STEP_TURNS && crossings === 0;
+/**
+ * The drawn links of `model` that the polyline `points` of link `id` crosses: every link with a path that is not removed, routed and overlay alike. One count
+ * for the offer (the promised polyline on the routed baseline) and the judge (the published path on the routed trial) of a step course (R1).
+ */
+export function drawnCrossings(model: LayoutModel, id: string, points: readonly Point[]): number {
+  return model.links.filter(other => other.id !== id && other.path !== undefined && other.removed !== true && polylineCrossings(points, pointsOf(other)) > 0).length;
 }
 
 const pointsOf = (link: LayoutLink): Point[] => {
@@ -85,8 +107,9 @@ function modes(end: EndFacts, isUpper: boolean, s: 'left' | 'right', free: boole
 /** Fewer ports and rows added, then the shorter run, as the design's tie key. */
 const added = (modesUsed: Mode[]): number => modesUsed.filter(mode => mode !== 'natural').length;
 
-export function measureCourses(base: LayoutModel, routedBase: LayoutModel, refusedLinks: ReadonlySet<string> = new Set()): CourseOffer {
-  const offer: CourseOffer = { courses: [], promised: new Map(), declined: [] };
+/** `steps` false leaves the step routes out of the offer: the course round's second trial, after a refused trial that held a step course. */
+export function measureCourses(base: LayoutModel, routedBase: LayoutModel, refusedLinks: ReadonlySet<string> = new Set(), steps = true): CourseOffer {
+  const offer: CourseOffer = { courses: [], promised: new Map(), declined: [], steps: [] };
   // The gap lanes of the offers made so far: a later skirt's column is read with them standing.
   const gapLanes: Lane[] = [];
   // The group edges that an offered bypass stands on: a second bypass on the same edge is declined.
@@ -113,7 +136,8 @@ export function measureCourses(base: LayoutModel, routedBase: LayoutModel, refus
       offer.promised.set(link.id, { turns: approach.turns, crossings: 0, base: { turns: turns0 ?? Infinity, crossings: crossings0 } });
       continue;
     }
-    if (!poorRoute(turns0, crossings0)) continue;
+    const poor = poorRoute(turns0, crossings0), step = !poor && steps && stepRoute(found, turns0, crossings0);
+    if (!poor && !step) continue;
     const [upper, lower] = found.from.tier < found.to.tier ? [found.from, found.to] : [found.to, found.from];
     if (upper.tier === lower.tier) {
       // A skirt: both ends in one band with a unit between them. It reads its cost from the baseline's route (turns0, crossings0), and every eligible skirt is
@@ -138,11 +162,12 @@ export function measureCourses(base: LayoutModel, routedBase: LayoutModel, refus
       continue;
     }
     const best = perimeterBest(base, link, found, upper, lower, crossedBy, nodes, false);
-    if (best.course === undefined) continue;
+    if (best.course === undefined || (step && !stepGain(best.turns, best.crossings + drawnCrossings(routedBase, link.id, best.points)))) continue;
     const gain = turns0 === undefined ? true : best.turns < turns0 || (best.turns === turns0 && best.crossings < crossings0);
     if (!gain) continue;
     offer.courses.push(best.course);
     offer.promised.set(link.id, { turns: best.turns, crossings: best.crossings, base: { turns: turns0 ?? Infinity, crossings: crossings0 } });
+    if (step) offer.steps.push(link.id);
     paths.set(link.id, best.points);
   }
   return offer;
@@ -368,10 +393,10 @@ export const routedReading = (model: LayoutModel): Reading => reading({ routed: 
   crossings: lazyCount(() => routedCrossingPairs(model)), crossingMode: 'pairs', tie: [] });
 
 /**
- * Whether the trial that reserves `courses` is kept: no link the baseline keeps is removed, no offered link has more turns than on the baseline or than it promised, and the
- * unified order on the routed result gains (fewer bent links, then fewer turns, then fewer crossings).
+ * Whether the trial that reserves `courses` is kept: no link the baseline keeps is removed, no offered link has more turns than on the baseline or than it promised, no
+ * step course (`steps`) publishes a crossing, and the unified order on the routed result gains (fewer bent links, then fewer turns, then fewer crossings).
  */
-export function judgeCourseTrial(routedBase: LayoutModel, routedTrial: LayoutModel, promised: ReadonlyMap<string, number>): CourseVerdict {
+export function judgeCourseTrial(routedBase: LayoutModel, routedTrial: LayoutModel, promised: ReadonlyMap<string, number>, steps: ReadonlySet<string> = new Set()): CourseVerdict {
   const base = routedBends(routedBase), trial = routedBends(routedTrial);
   const removed = [...base.keys()].filter(id => !trial.has(id));
   const worse = [...promised.keys()].filter(id => !trial.has(id) || (base.has(id) && trial.get(id)! > base.get(id)!));
@@ -384,6 +409,12 @@ export function judgeCourseTrial(routedBase: LayoutModel, routedTrial: LayoutMod
   // did not reserve what the promise needs, and it is not kept.
   const lost = [...promised].filter(([id, turns]) => (trial.get(id) ?? Infinity) > turns).map(([id]) => id);
   if (lost.length > 0) return verdict(false, `a link with a course publishes more turns than it promised (${lost.join(', ')})`);
+  // A step course is offered only when it crosses no drawn link of the baseline (`stepGain`, `drawnCrossings`); the trial must publish it so, by the same count.
+  const crossed = [...steps].filter(id => {
+    const drawn = routedTrial.links.find(item => item.id === id);
+    return drawn !== undefined && drawnCrossings(routedTrial, id, pointsOf(drawn)) > 0;
+  });
+  if (crossed.length > 0) return verdict(false, `a step course publishes a crossing (${crossed.join(', ')})`);
   // No finding is new, read as sets: a gate violation, or a hard entry of the x constraint catalogue (a band gap between two root groups), that the baseline
   // did not have. A course that buys a turn with a lane overlap, a clearance or a gap is no gain (the stop rule of ticket 15, phase 4).
   const gatesNow = gateFindings(routedTrial), gatesThen = gateFindings(routedBase);

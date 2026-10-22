@@ -93,13 +93,13 @@ describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
     expect(gatesHold(model)).toBe(true);
   }, 60000);
 
-  // Ticket 09 (architecture-2): the flank port keeps its place after the bundle block, so no course is needed; the link enters the top face with 2 turns.
-  // The follow-up on ticket 09 is a narrower course rule to win the 1-turn right-face entry back.
-  it('05 / 12 D (phase 4): the flank link into the canton member is drawn, not removed, into its top face, with 2 turns', async () => {
+  // Ticket 09 (architecture-2): the flank port keeps its place after the bundle block, so the link is not removed and steps into the top face (2 turns).
+  // The step course of the ticket 09 follow-up (`stepRoute`) takes the L into the right face with 1 turn.
+  it('05 / 12 D (phase 4): the flank link into the canton member is drawn, not removed, into its right face, with 1 turn', async () => {
     const model = await run(SHEETS.across);
     expect(model.links.filter(item => item.removed === true).map(item => item.id)).toEqual([]);
-    expect(sideOf(model, 6, 'to')).toBe('top');
-    expect(turns(model, 6)).toBe(2);
+    expect(sideOf(model, 6, 'to')).toBe('right');
+    expect(turns(model, 6)).toBe(1);
   }, 60000);
 
   it.fails('06 (render ticket, not reached): the flank stands beside the frame and every gate holds', async () => {

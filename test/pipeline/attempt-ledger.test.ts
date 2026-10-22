@@ -113,7 +113,8 @@ describe('the ledger of the 7f placement attempt reads the counts of the ticket 
     await layout(parse(golden('a-member-title-widens-a-beside-row')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     const i = attemptCounters.invalidations;
     // The cheap counters run; the ones that need a read of the links stay at zero and the logs hold no entry. (With the ledger on this fixture loses 1 routed aligned link.)
-    expect(attemptCounters.attempts).toBe(1);
+    // Two 7f runs: the baseline and the course trial that gives link-3 the L of a step (architecture-2 ticket 09, follow-up; one trial, kept).
+    expect(attemptCounters.attempts).toBe(2);
     expect([i.routedAlignedLost, i.overlayStraightLost, i.preOverlayStraightLost, i.shortGapsAfterRounds]).toEqual([0, 0, 0, 0]);
     expect(attemptCounters.placements).toEqual([]);
     expect(attemptCounters.attemptLog).toEqual([]);
