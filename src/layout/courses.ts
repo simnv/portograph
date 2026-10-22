@@ -2,7 +2,7 @@ import type { Side } from '../model/geometry.js';
 import type { Course, CourseEnd, CourseKind, CourseRun, Lane, LayoutLink, LayoutModel } from '../model/layout.js';
 import type { PortRef } from '../model/document.js';
 import { findPort } from './row-paths.js';
-import { SideHintRefusal } from './side-hints.js';
+import { SideHintRefusal } from './placement-refusal.js';
 import type { RefusalDetail } from './placement-refusal.js';
 export { isGapRun, laneRunKind } from './lane-kind.js';
 

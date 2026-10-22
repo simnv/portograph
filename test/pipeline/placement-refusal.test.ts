@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BundleFeasibilityError } from '../../src/layout/bundle-paths.js';
 import { CourseRefusal } from '../../src/layout/courses.js';
 import { PlacementRefusal, refusedAtBands } from '../../src/layout/placement-refusal.js';
-import { SideHintRefusal, TrunkBlocked } from '../../src/layout/side-hints.js';
+import { SideHintRefusal, TrunkBlocked } from '../../src/layout/placement-refusal.js';
 import { SkeletonError } from '../../src/layout/skeleton.js';
 import { SpanRefusal } from '../../src/layout/span-lanes.js';
 import { PlacementBudgetExceeded } from '../../src/pipeline/index.js';

@@ -32,5 +32,15 @@ export class PlacementRefusal extends Error {
   }
 }
 
+/** A placement run refused a side hint (not a candidate, a lateral vote, a floor below the content). The side round drops the offer; every other error is a bug. */
+export class SideHintRefusal extends PlacementRefusal {
+  constructor(message: string, detail: RefusalDetail & { code?: RefusalCode } = {}) { super(detail.code ?? 'side', message, detail); }
+}
+
+/** Stage 5 found a foreign unit beside a member row of a trunk join on both sides: the join is declined by one placement re-run (`trunk-blocked`, mesh-bus.md, section 12.4). */
+export class TrunkBlocked extends SideHintRefusal {
+  constructor(public readonly key: string, public readonly why: string) { super(`The trunk join ${key} is blocked: ${why}`, { code: 'trunk' }); }
+}
+
 /** A refusal that stage 7f may also give (a trial's bands run): the centring invariant and the budget are the command's, never a trial's. */
 export const refusedAtBands = (error: unknown): error is PlacementRefusal => error instanceof PlacementRefusal && error.code !== 'centring' && error.code !== 'budget';
