@@ -45,6 +45,7 @@ function faces(model: LayoutModel) {
   };
   return {
     linkOf,
+    room,
     place(port: LayoutPort, x: number): void {
       const box = model.nodes[port.ref.node]!.bounds!;
       port.anchor = portAnchor(box, port.side!, x - box.x);
@@ -83,9 +84,15 @@ function name(model: LayoutModel, link: LayoutLink, why: keyof typeof DECLINES =
  * it (`stepTakesOffset`). Information only; no validator reads it (`centreViolations` replays the step on the geometry, R5).
  */
 function walled(model: LayoutModel, link: LayoutLink): void {
-  if (model.diagnostics.some(d => d.code === 'CENTRE_PARENT_MOVE_AT_WALL' && d.owners?.some(owner => 'id' in owner && owner.id === link.id))) return;
+  // The link stands now: a jog an earlier pass or replay named for it is gone (as `settle` does for a seated corridor).
+  model.diagnostics = model.diagnostics.filter(d => !(['CENTRE_ALIGNMENT_INFEASIBLE', 'CENTRE_PARENT_MOVE_SHIFTS_GROUP'].includes(d.code) && owns(d, link.id)));
+  if (model.diagnostics.some(d => d.code === 'CENTRE_PARENT_MOVE_AT_WALL' && owns(d, link.id))) return;
   model.diagnostics.push({ stage: 'placement', severity: 'info', code: 'CENTRE_PARENT_MOVE_AT_WALL',
     message: `${link.id} stands straight: its port moved over the other port, and its group fills the column of its frame, so the group does not shift.`, owners: [{ kind: 'link', id: link.id }] });
+}
+
+function owns(diagnostic: LayoutModel['diagnostics'][number], link: string): boolean {
+  return diagnostic.owners?.some(owner => 'id' in owner && owner.id === link) ?? false;
 }
 
 /**
@@ -107,8 +114,8 @@ export interface StepReader {
   takes: (tier: number, list: Feed[], group: string, from: number, to: number) => boolean;
 }
 
-export function standPortsOverChildren(model: LayoutModel, steps: readonly { tier: number; authority: number }[], reader: StepReader): void {
-  const read = faces(model), movers: { feed: Feed; parent: LayoutPort; target: number; wall: boolean }[] = [];
+/** The feeds of the centring steps, and the offset each group step centres on, read through `reader`. */
+function stepReadings(model: LayoutModel, steps: readonly { tier: number; authority: number }[], reader: StepReader) {
   const lists = steps.map(({ tier, authority }) => centringFeeds(model, tier, authority));
   const groupOf = (feed: Feed): string => model.document.nodes[feed.child.ref.node]!.group;
   const stepOf = (feed: Feed): number => lists.findIndex(list => list.includes(feed));
@@ -126,6 +133,40 @@ export function standPortsOverChildren(model: LayoutModel, steps: readonly { tie
     const mean = (values: Iterable<number>): number => { const xs = [...values]; return xs.reduce((sum, x) => sum + x, 0) / xs.length; };
     return mean(parents.values()) - mean(children.values());
   };
+  return { lists, takes, offset };
+}
+
+/**
+ * Gives back the moves a replay before took at a frame-column wall (`model.parentWallMoves`) whose wall no longer holds where the model stands now: the column
+ * widened, so the step would shift the group by the share of the moved port. Runs at the start of `centreDraft`, before the passes centre on the ports. A
+ * move given back puts its port at the x it stood at before the move (inside its face room), and the record becomes a decline
+ * (`CENTRE_PARENT_MOVE_SHIFTS_GROUP`). A link that is no longer a feed cannot be read, so its move is given back too (R6). One reading per record.
+ */
+export function withdrawWallMoves(model: LayoutModel, steps: readonly { tier: number; authority: number }[], reader: StepReader): void {
+  const records = model.parentWallMoves;
+  if (records === undefined) return;
+  const read = faces(model), { lists, takes, offset } = stepReadings(model, steps, reader), kept: typeof records = [];
+  // By link id: the records are independent readings, and the order of the document is not a key (R3).
+  for (const record of [...records].sort((a, b) => a.link.localeCompare(b.link))) {
+    const port = findPort(model, record.port), link = read.linkOf.get(record.link);
+    if (port === undefined || link === undefined) continue;
+    const feed = lists.flat().find(item => item.link === record.link && !item.transit);
+    if (feed !== undefined) {
+      const now = offset(feed, new Map()), was = offset(feed, new Map([[portId(port.ref), record.from]]));
+      if (Math.abs(now - was) <= 0.5 || takes(feed, was, now)) { kept.push(record); continue; }
+    }
+    const { low, high } = read.room(port);
+    read.place(port, Math.max(low, Math.min(record.from, high)));
+    model.diagnostics = model.diagnostics.filter(d => !(d.code === 'CENTRE_PARENT_MOVE_AT_WALL' && owns(d, link.id)));
+    name(model, link, 'offset');
+  }
+  if (kept.length) model.parentWallMoves = kept;
+  else delete model.parentWallMoves;
+}
+
+export function standPortsOverChildren(model: LayoutModel, steps: readonly { tier: number; authority: number }[], reader: StepReader): void {
+  const read = faces(model), movers: { feed: Feed; parent: LayoutPort; target: number; wall: boolean }[] = [];
+  const { lists, takes, offset } = stepReadings(model, steps, reader);
   /** The offset of each group step before any move: the moves of one group together may not change it by more than half a pixel. */
   const start = new Map<Feed, number>();
   const placed = new Map<string, number>();
@@ -141,11 +182,12 @@ export function standPortsOverChildren(model: LayoutModel, steps: readonly { tie
     // leave its feed: the move is declined.
     if (!start.has(feed)) start.set(feed, offset(feed, new Map()));
     const after = offset(feed, new Map([...placed, [portId(parent.ref), child.anchor!.x]]));
-    const wall = Math.abs(after - start.get(feed)!) > 0.5;
-    if (wall && !takes(feed, start.get(feed)!, after)) {
+    if (Math.abs(after - start.get(feed)!) > 0.5 && !takes(feed, start.get(feed)!, after)) {
       name(model, read.linkOf.get(feed.link)!, 'offset');
       continue;
     }
+    // A move is recorded as taken at the wall when its own share changes the offset; a move whose share is within half a pixel is free on its own.
+    const wall = Math.abs(after - offset(feed, placed)) > 0.5;
     placed.set(portId(parent.ref), child.anchor!.x);
     movers.push({ feed, parent, target: child.anchor!.x, wall });
   }
@@ -159,8 +201,13 @@ export function standPortsOverChildren(model: LayoutModel, steps: readonly { tie
   for (const { feed, parent, target, wall } of inFaceOrder(movers, item => item.parent, item => item.target)) {
     if (held(parent)) name(model, read.linkOf.get(feed.link)!, 'face');
     else if (read.reaches(parent, target)) {
+      const from = parent.anchor!.x;
       read.place(parent, target);
-      if (wall) walled(model, read.linkOf.get(feed.link)!);
+      if (!wall) continue;
+      walled(model, read.linkOf.get(feed.link)!);
+      // The x before the first move is the place a withdrawal gives back; a record already held keeps it.
+      const records = model.parentWallMoves ?? [];
+      if (!records.some(record => record.link === feed.link)) model.parentWallMoves = [...records, { link: feed.link, port: { ...parent.ref }, from }];
     } else name(model, read.linkOf.get(feed.link)!);
   }
 }

@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
-import { centreContext, centreViolations, stepTakesOffset } from '../../src/layout/centre.js';
-import { seatLaneSources, standPortsOverChildren } from '../../src/layout/parent-stand.js';
+import { centreContext, centreViolations, stepReader, stepTakesOffset } from '../../src/layout/centre.js';
+import { seatLaneSources, standPortsOverChildren, withdrawWallMoves } from '../../src/layout/parent-stand.js';
+import { findPort } from '../../src/layout/row-paths.js';
 import { centringFeeds } from '../../src/layout/read/feeds.js';
 import { nodeTier } from '../../src/layout/read/tier.js';
 import { createAttempt } from './phase-two-fixture.js';
@@ -134,5 +135,31 @@ it('takes a move that changes the offset when the group fills the column of its 
   expect(link.path!.segments.every(segment => Math.abs(segment.from.x - segment.to.x) <= 0.5)).toBe(true);
   expect(model.diagnostics.some(item => item.code === 'CENTRE_PARENT_MOVE_AT_WALL' && item.severity === 'info' && item.owners?.some(owner => 'id' in owner && owner.id === 'link-2'))).toBe(true);
   expect(model.diagnostics.some(item => item.code === 'CENTRE_PARENT_MOVE_SHIFTS_GROUP')).toBe(false);
+  // The stale jog an earlier pass named for the link is gone with the jog.
+  expect(model.diagnostics.some(item => item.code === 'CENTRE_ALIGNMENT_INFEASIBLE' && item.owners?.some(owner => 'id' in owner && owner.id === 'link-2'))).toBe(false);
+  expect(model.parentWallMoves?.map(record => record.link)).toEqual(['link-2']);
   expect(centreViolations(model)).toEqual([]);
+}, 120000);
+
+// A later replay reads the record first. While the column holds, the move stays; when a sibling cell of the canton grows, the canton box and so the column
+// of `site-zone` widen, the step would shift the group, and the move is given back with a decline in place of the record.
+it('gives a wall move back when a later replay widens the column, and keeps it while the column holds', async () => {
+  const laid = await layout(parse(nested), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const replay = (widen: number) => {
+    const model = JSON.parse(JSON.stringify(laid)) as typeof laid;
+    const record = model.parentWallMoves![0]!, port = findPort(model, record.port)!, moved = port.anchor!.x;
+    Object.values(model.groups).find(group => group.id.startsWith('clients'))!.bounds!.width += widen;
+    const context = centreContext(model, model.anchorTier!);
+    withdrawWallMoves(model, context.steps, stepReader(model, context));
+    return { model, record, x: port.anchor!.x, moved };
+  };
+  const held = replay(0);
+  expect(held.x).toBeCloseTo(held.moved, 6);
+  expect(held.model.parentWallMoves).toHaveLength(1);
+  const widened = replay(200);
+  expect(Math.abs(widened.x - widened.record.from)).toBeLessThan(Math.abs(widened.moved - widened.record.from));
+  expect(widened.model.parentWallMoves).toBeUndefined();
+  const codes = widened.model.diagnostics.filter(item => item.owners?.some(owner => 'id' in owner && owner.id === 'link-2')).map(item => item.code);
+  expect(codes).toContain('CENTRE_PARENT_MOVE_SHIFTS_GROUP');
+  expect(codes).not.toContain('CENTRE_PARENT_MOVE_AT_WALL');
 }, 120000);

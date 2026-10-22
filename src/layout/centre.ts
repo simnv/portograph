@@ -29,7 +29,7 @@ import { placeOverlayFree } from './overlay-place.js';
 import { fitRegionGroup, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 import { EPS, segmentRectDistance } from '../geometry/planar.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
-import { standPortsOverChildren } from './parent-stand.js';
+import { standPortsOverChildren, withdrawWallMoves, type StepReader } from './parent-stand.js';
 import { chordKind, isRoutedChord, withSharedLinkKinds, withStepLinkKinds } from './frame-paths.js';
 
 export interface CentreBudget { remaining: number; passes: number }
@@ -520,14 +520,15 @@ function standingBox(model: LayoutModel, group: LayoutGroup): LayoutGroup {
  * - the step as it runs now puts the group at the same x for both offsets: the main move, stopped at the overlay walls, then the clamp into the step window.
  * The widenings, the row pack and the region fit of the step are not predicted: the two readings of one box differ only by the offset.
  */
-export function stepTakesOffset(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, from: number, to: number): boolean {
+export function stepTakesOffset(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, from: number, to: number,
+  tail: ReadonlyMap<string, number> = tailReservation(model, context, tier, context.groupOrder.get(tier)!)): boolean {
   const group = model.groups[id]!, order = context.groupOrder.get(tier)!, at = order.indexOf(id), box = group.bounds!;
   const column = columnWindow(model, context, tier, id);
   if (column.high - column.low > box.width + 0.5) return false;
   const walls = new Map(group.rowOrder!.map(node => [node, overlayStops(model, model.nodes[node]!)]));
   const { farthestLeft, farthestRight } = farthest(model, walls);
   const previous = at > 0 ? standingBox(model, model.groups[order[at - 1]!]!) : undefined;
-  const { low, high } = stepWindow(model, context, tier, list, id, previous, tailReservation(model, context, tier, order));
+  const { low, high } = stepWindow(model, context, tier, list, id, previous, tail);
   // A window that cannot hold the group proves nothing: the step then declines and stands the group near its feed, which moves it.
   if (box.width > high - low + EPS) return false;
   const lands = (toMean: number): number => Math.max(low, Math.min(box.x + mainMove(model, group, farthestLeft, farthestRight, toMean), high - box.width));
@@ -699,18 +700,34 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   }
   return { unresolved, group };
 }
+/** What the parent-port pass reads of the group steps (`StepReader`), on one context. The tail reservation is read once per tier: the pass moves ports, not boxes. */
+export function stepReader(model: LayoutModel, context: CentreContext): StepReader {
+  const tails = new Map<number, Map<string, number>>();
+  const tail = (tier: number): Map<string, number> => {
+    if (!tails.has(tier)) tails.set(tier, tailReservation(model, context, tier, context.groupOrder.get(tier)!));
+    return tails.get(tier)!;
+  };
+  return {
+    feeds: (tier, list, id) => { const { own, yielded } = groupFeeds(model, context, tier, list, id, false); return chosenFeeds(context, tier, own, yielded); },
+    takes: (tier, list, id, from, to) => stepTakesOffset(model, context, tier, list, id, from, to, tail(tier)),
+  };
+}
 /** Reusable bounded producer. The caller shares one budget across all ordered placement replay. */
 export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
+  // A move a replay before took at a frame-column wall is read again where the model stands now: a wall that no longer holds gives the move back before the
+  // passes centre on it (architecture ticket 15, follow-up).
+  const recorded = model.parentWallMoves?.length ? selectAnchorTier(model) : undefined;
+  if (recorded !== undefined && model.tierBands.some(band => band.tier === recorded)) {
+    const context = centreContext(model, recorded);
+    withdrawWallMoves(model, context.steps, stepReader(model, context));
+  }
   const seated = seatedFaces(model);
   timed('centre-passes', () => centrePasses(model, budget));
   // The parent side of a single feed, after the last pass has moved the children (architecture ticket 15).
   const anchorTier = model.anchorTier;
   if (anchorTier !== undefined && model.tierBands.some(band => band.tier === anchorTier)) {
     const context = centreContext(model, anchorTier);
-    standPortsOverChildren(model, context.steps, {
-      feeds: (tier, list, id) => { const { own, yielded } = groupFeeds(model, context, tier, list, id, false); return chosenFeeds(context, tier, own, yielded); },
-      takes: (tier, list, id, from, to) => stepTakesOffset(model, context, tier, list, id, from, to),
-    });
+    standPortsOverChildren(model, context.steps, stepReader(model, context));
   }
   // A face centring left alone stands centred on the body it widened (architecture ticket 10, D3). Read before the overlay windows below.
   recentreSeatedFaces(model, seated, feedPorts(model));
