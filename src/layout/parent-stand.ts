@@ -25,7 +25,8 @@ import { portId } from './skeleton-graph.js';
  * A move is declined, and its link named, for one of three reasons, each with its own code: the port cannot reach the other end's x within its face
  * (`CENTRE_ALIGNMENT_INFEASIBLE`); the moves of its group together would change the offset the group step centres on by more than half a pixel, and the step
  * would shift the whole group (`CENTRE_PARENT_MOVE_SHIFTS_GROUP`); its face holds a port that stands on a corridor of its own, which the next pass would pack
- * again (`CENTRE_PARENT_MOVE_HELD_FACE`).
+ * again (`CENTRE_PARENT_MOVE_HELD_FACE`). A move that changes the offset is taken when the group fills the column of its frame and the step puts it at the same
+ * x for both offsets (`stepTakesOffset`); the move is recorded (`CENTRE_PARENT_MOVE_AT_WALL`, information).
  */
 function faces(model: LayoutModel) {
   const count = new Map<string, number>();
@@ -78,6 +79,16 @@ function name(model: LayoutModel, link: LayoutLink, why: keyof typeof DECLINES =
 }
 
 /**
+ * The record of a move taken although it changes the offset its group step centres on: the group fills the column of its frame, so the step does not shift
+ * it (`stepTakesOffset`). Information only; no validator reads it (`centreViolations` replays the step on the geometry, R5).
+ */
+function walled(model: LayoutModel, link: LayoutLink): void {
+  if (model.diagnostics.some(d => d.code === 'CENTRE_PARENT_MOVE_AT_WALL' && d.owners?.some(owner => 'id' in owner && owner.id === link.id))) return;
+  model.diagnostics.push({ stage: 'placement', severity: 'info', code: 'CENTRE_PARENT_MOVE_AT_WALL',
+    message: `${link.id} stands straight: its port moved over the other port, and its group fills the column of its frame, so the group does not shift.`, owners: [{ kind: 'link', id: link.id }] });
+}
+
+/**
  * The order the movers of a face take: the ones that go left, from the left, then the ones that go right, from the right, each in engine order. A port moves
  * between neighbours as they stand, so the order, and not the order of `model.links`, decides what a face gives (review of ticket 15).
  */
@@ -88,18 +99,28 @@ function inFaceOrder<T>(items: T[], port: (item: T) => LayoutPort, target: (item
   return [...items].sort((a, b) => key(a).localeCompare(key(b)) || Number(left(b)) - Number(left(a)) || (left(a) ? at(a) - at(b) : at(b) - at(a)));
 }
 
-export function standPortsOverChildren(model: LayoutModel, steps: readonly { tier: number; authority: number }[],
-  stepFeeds: (tier: number, list: Feed[], group: string) => Feed[]): void {
-  const read = faces(model), movers: { feed: Feed; parent: LayoutPort; target: number }[] = [];
+/** What `standPortsOverChildren` reads of a group step (`centre.ts`): the feeds the step centres on, and whether a change of its offset shifts the group. */
+export interface StepReader {
+  /** The feeds the step of `group` centres on (the selection `centreGroupStepRaw` makes). */
+  feeds: (tier: number, list: Feed[], group: string) => Feed[];
+  /** Whether the step of `group` puts the group at the same x for the offsets `from` and `to` (`stepTakesOffset`): the group fills the column of its frame. */
+  takes: (tier: number, list: Feed[], group: string, from: number, to: number) => boolean;
+}
+
+export function standPortsOverChildren(model: LayoutModel, steps: readonly { tier: number; authority: number }[], reader: StepReader): void {
+  const read = faces(model), movers: { feed: Feed; parent: LayoutPort; target: number; wall: boolean }[] = [];
   const lists = steps.map(({ tier, authority }) => centringFeeds(model, tier, authority));
   const groupOf = (feed: Feed): string => model.document.nodes[feed.child.ref.node]!.group;
+  const stepOf = (feed: Feed): number => lists.findIndex(list => list.includes(feed));
+  /** Whether the step of the feed's group leaves the group where it is when its offset goes from `from` to `to`. */
+  const takes = (feed: Feed, from: number, to: number): boolean => reader.takes(steps[stepOf(feed)]!.tier, lists[stepOf(feed)]!, groupOf(feed), from, to);
   /**
    * The offset a group step centres on: the mean x of its distinct parent ports against the mean x of its distinct child ports, over the feeds the step
-   * itself centres on (`stepFeeds`, the selection `centreGroupStepRaw` makes). The ports in `moved` stand at their new x.
+   * itself centres on (`reader.feeds`, the selection `centreGroupStepRaw` makes). The ports in `moved` stand at their new x.
    */
   const offset = (feed: Feed, moved: ReadonlyMap<string, number>): number => {
-    const at = lists.findIndex(list => list.includes(feed));
-    const own = stepFeeds(steps[at]!.tier, lists[at]!, groupOf(feed));
+    const at = stepOf(feed);
+    const own = reader.feeds(steps[at]!.tier, lists[at]!, groupOf(feed));
     const parents = new Map(own.map(item => [item.key, moved.get(item.key) ?? item.x]));
     const children = new Map(own.map(item => [portId(item.child.ref), moved.get(portId(item.child.ref)) ?? item.child.anchor!.x]));
     const mean = (values: Iterable<number>): number => { const xs = [...values]; return xs.reduce((sum, x) => sum + x, 0) / xs.length; };
@@ -115,16 +136,18 @@ export function standPortsOverChildren(model: LayoutModel, steps: readonly { tie
     // first child by x owns the vertical, and the rest stay where the fan puts them.
     const [parent, child] = read.upper(feed.parent, feed.child);
     if (!read.sole(parent) || Math.abs(parent.anchor!.x - child.anchor!.x) <= 0.5) continue;
-    // A move is free only when the step of the group cannot follow it: the offset the step centres on stays where it was. Whether a group with a nonzero offset
-    // stands against a wall is not known here, so a move that changes the offset is declined (the group would shift, and every other port of it would leave its feed).
+    // A move is free only when the step of the group cannot follow it: the offset the step centres on stays where it was, or the group fills the column of
+    // its frame and the step puts it at the same x for both offsets (`stepTakesOffset`). Otherwise the group would shift, and every other port of it would
+    // leave its feed: the move is declined.
     if (!start.has(feed)) start.set(feed, offset(feed, new Map()));
     const after = offset(feed, new Map([...placed, [portId(parent.ref), child.anchor!.x]]));
-    if (Math.abs(after - start.get(feed)!) > 0.5) {
+    const wall = Math.abs(after - start.get(feed)!) > 0.5;
+    if (wall && !takes(feed, start.get(feed)!, after)) {
       name(model, read.linkOf.get(feed.link)!, 'offset');
       continue;
     }
     placed.set(portId(parent.ref), child.anchor!.x);
-    movers.push({ feed, parent, target: child.anchor!.x });
+    movers.push({ feed, parent, target: child.anchor!.x, wall });
   }
   // Only the parent port moves: the child side is `alignSide`'s, which may also widen the body and so answers to the widening allowance.
   // A port with a corridor of its own stands where 7a put the corridor, and the next pass packs the ports next to a moved one again (`alignSide` places a
@@ -133,10 +156,12 @@ export function standPortsOverChildren(model: LayoutModel, steps: readonly { tie
   const movingPorts = new Set(movers.map(item => item.parent));
   const held = (parent: LayoutPort): boolean => model.nodes[parent.ref.node]!.ports.some(port => port.side === parent.side && !movingPorts.has(port)
     && model.links.some(link => corridor.has(link.id) && link.attachments && [link.attachments.from, link.attachments.to].some(end => portId(end) === portId(port.ref))));
-  for (const { feed, parent, target } of inFaceOrder(movers, item => item.parent, item => item.target)) {
+  for (const { feed, parent, target, wall } of inFaceOrder(movers, item => item.parent, item => item.target)) {
     if (held(parent)) name(model, read.linkOf.get(feed.link)!, 'face');
-    else if (read.reaches(parent, target)) read.place(parent, target);
-    else name(model, read.linkOf.get(feed.link)!);
+    else if (read.reaches(parent, target)) {
+      read.place(parent, target);
+      if (wall) walled(model, read.linkOf.get(feed.link)!);
+    } else name(model, read.linkOf.get(feed.link)!);
   }
 }
 

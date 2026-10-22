@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
-import { centreContext, centreViolations } from '../../src/layout/centre.js';
+import { centreContext, centreViolations, stepTakesOffset } from '../../src/layout/centre.js';
 import { seatLaneSources, standPortsOverChildren } from '../../src/layout/parent-stand.js';
 import { centringFeeds } from '../../src/layout/read/feeds.js';
 import { nodeTier } from '../../src/layout/read/tier.js';
@@ -95,16 +95,19 @@ ${[1, 2, 3, 4, 5, 6].map(i => `- [t${i}.o, b${i}.i, {id: r${i}, route: orthogona
 async function displaced(count: number, shift: (n: number) => number) {
   const laid = await layout(parse(row), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   const model = JSON.parse(JSON.stringify(laid)) as typeof laid;
-  const steps = centreContext(model, model.anchorTier!).steps;
+  const context = centreContext(model, model.anchorTier!), steps = context.steps;
   const groupOf = (feed: { child: { ref: { node: string } } }): string => model.document.nodes[feed.child.ref.node]!.group;
-  const stepFeeds = (_tier: number, list: ReturnType<typeof centringFeeds>, group: string) => list.filter(feed => groupOf(feed) === group);
+  const reader = {
+    feeds: (_tier: number, list: ReturnType<typeof centringFeeds>, group: string) => list.filter(feed => groupOf(feed) === group),
+    takes: (tier: number, list: ReturnType<typeof centringFeeds>, group: string, from: number, to: number) => stepTakesOffset(model, context, tier, list, group, from, to),
+  };
   const feeds = steps.flatMap(({ tier, authority }) => centringFeeds(model, tier, authority));
   const upper = (feed: (typeof feeds)[number]) => (nodeTier(model, feed.parent.ref.node) <= nodeTier(model, feed.child.ref.node) ? feed.parent : feed.child);
   const chosen = feeds.filter(feed => model.groups[model.document.nodes[upper(feed).ref.node]!.group]!.tier !== model.anchorTier).slice(0, count);
   expect(chosen).toHaveLength(count);
   for (const feed of chosen) upper(feed).anchor!.x += shift(feeds.length / 2);
   const before = chosen.map(feed => upper(feed).anchor!.x);
-  standPortsOverChildren(model, steps, stepFeeds);
+  standPortsOverChildren(model, steps, reader);
   return { model, moved: chosen.filter((feed, i) => Math.abs(upper(feed).anchor!.x - before[i]!) > 0.01).length };
 }
 
@@ -119,4 +122,17 @@ it('takes moves in port order only while their sum stays within half a pixel', a
   const { model, moved } = await displaced(3, n => 0.2 * n + 0.001);
   expect(moved).toBe(2);
   expect(model.diagnostics.filter(item => item.code === 'CENTRE_PARENT_MOVE_SHIFTS_GROUP')).toHaveLength(1);
+}, 120000);
+
+// Follow-up (codex option d): a move that changes the offset is free when the group fills the column of its frame. `site-zone`, a zone of a canton
+// member, is as wide as its column, so its step cannot shift it; the port of `gw` over `srv` moves, link-2 is one segment, and the move is recorded. A
+// group that stands in no frame column has no such wall (the row above): its moves stay declined.
+const nested = readFileSync(new URL('../../goldens/synthetic/drawio-nested-groups.yaml', import.meta.url), 'utf8');
+it('takes a move that changes the offset when the group fills the column of its frame, and records it', async () => {
+  const model = await layout(parse(nested), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const link = model.links.find(item => item.id === 'link-2')!;
+  expect(link.path!.segments.every(segment => Math.abs(segment.from.x - segment.to.x) <= 0.5)).toBe(true);
+  expect(model.diagnostics.some(item => item.code === 'CENTRE_PARENT_MOVE_AT_WALL' && item.severity === 'info' && item.owners?.some(owner => 'id' in owner && owner.id === 'link-2'))).toBe(true);
+  expect(model.diagnostics.some(item => item.code === 'CENTRE_PARENT_MOVE_SHIFTS_GROUP')).toBe(false);
+  expect(centreViolations(model)).toEqual([]);
 }, 120000);

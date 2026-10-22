@@ -475,6 +475,65 @@ function chosenFeeds(context: CentreContext, tier: number, own: Feed[], yielded:
   return vertical.length ? vertical : own;
 }
 /**
+ * The overlay walls the main move of a group step stops at. The move carries a body an earlier pass grew toward its feeds, and a move that carries such a
+ * body onto a chord is the same growth by another name. A body that has not grown does not bound the move.
+ */
+function farthest(model: LayoutModel, walls: ReadonlyMap<string, OverlayStops>): { farthestLeft: number; farthestRight: number } {
+  let farthestLeft = -Infinity, farthestRight = Infinity;
+  for (const [id, stops] of walls) {
+    const node = model.nodes[id]!, box = node.bounds!;
+    if (box.width <= Math.max(ownSideWidth(node, 'top'), ownSideWidth(node, 'bottom')) + EPS) continue;
+    farthestLeft = Math.max(farthestLeft, stops.low - box.x);
+    farthestRight = Math.min(farthestRight, stops.high - right(box));
+  }
+  return { farthestLeft, farthestRight };
+}
+/** The main move of a group step toward the offset `toMean`: stopped at the overlay walls, and nil when it breaks the riser keep-out or carries a frozen chord across a lane. */
+function mainMove(model: LayoutModel, group: LayoutGroup, farthestLeft: number, farthestRight: number, toMean: number): number {
+  const shift = Math.max(farthestLeft, Math.min(toMean, farthestRight));
+  return riserKeepOutAfterMove(model, group, shift) && chordsClearAfterMove(model, group, shift) ? shift : 0;
+}
+/**
+ * The x range of the box of a group at the end of its step: its reserved window, clear of the group before it, inside the room the groups after it reserve,
+ * and short of the next group the step does not centre.
+ */
+function stepWindow(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, tail: ReadonlyMap<string, number>): { low: number; high: number } {
+  const order = context.groupOrder.get(tier)!, window = reservedWindow(model, context, tier, id);
+  const low = Math.max(window.low, previous ? right(previous.bounds!) + bandGap(model) : -Infinity);
+  let high = Math.min(window.high, tail.get(id)!);
+  const nextFixed = order.slice(order.indexOf(id) + 1).map(id => model.groups[id]!).find(other => !list.some(feed => model.document.nodes[feed.child.ref.node]!.group === other.id));
+  if (nextFixed) high = Math.min(high, nextFixed.bounds!.x - bandGap(model));
+  return { low, high };
+}
+/** The box a group stands at for the group after it in the tier order. A bar stands where 7d will shape it, so the groups after it clear the extent its span gives it (ticket 19). */
+function standingBox(model: LayoutModel, group: LayoutGroup): LayoutGroup {
+  const reach = barReach(model, group.id);
+  return reach === undefined ? group : { ...group, bounds: { ...group.bounds!, x: Math.min(group.bounds!.x, reach.x), width: Math.max(right(group.bounds!), reach.x + reach.width) - Math.min(group.bounds!.x, reach.x) } };
+}
+/**
+ * Whether the step of group `id` leaves the box of the group where it is when its offset goes from `from` to `to` (architecture ticket 15, follow-up): the
+ * group stands between walls that take the change of offset. Both readings must hold:
+ * - the group fills the window of its frame column (`columnWindow`: a rank cell never leaves the column of its frame; a canton member never leaves the box
+ *   of its canton). The column is as wide as the cell, so it holds no room for the cell to shift into, and a later replay that widens the cell widens the
+ *   column with it. A wall that a lane of 7a, a neighbour, an overlay or a chord makes is a reading of geometry that a later replay moves (a lane limit
+ *   that pinned a group at one replay let it shift 33 px at the next on `a-group-shift-leaves-a-chord-clear-of-a-lane`), so it is no proof.
+ * - the step as it runs now puts the group at the same x for both offsets: the main move, stopped at the overlay walls, then the clamp into the step window.
+ * The widenings, the row pack and the region fit of the step are not predicted: the two readings of one box differ only by the offset.
+ */
+export function stepTakesOffset(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, from: number, to: number): boolean {
+  const group = model.groups[id]!, order = context.groupOrder.get(tier)!, at = order.indexOf(id), box = group.bounds!;
+  const column = columnWindow(model, context, tier, id);
+  if (column.high - column.low > box.width + 0.5) return false;
+  const walls = new Map(group.rowOrder!.map(node => [node, overlayStops(model, model.nodes[node]!)]));
+  const { farthestLeft, farthestRight } = farthest(model, walls);
+  const previous = at > 0 ? standingBox(model, model.groups[order[at - 1]!]!) : undefined;
+  const { low, high } = stepWindow(model, context, tier, list, id, previous, tailReservation(model, context, tier, order));
+  // A window that cannot hold the group proves nothing: the step then declines and stands the group near its feed, which moves it.
+  if (box.width > high - low + EPS) return false;
+  const lands = (toMean: number): number => Math.max(low, Math.min(box.x + mainMove(model, group, farthestLeft, farthestRight, toMean), high - box.width));
+  return Math.abs(lands(from) - lands(to)) <= 0.5;
+}
+/**
  * One group's centring step: centre under its owning feeds, align the wanted ports, repack, fit,
  * clamp into the lane/flank/neighbour window. Reports exactly which child ports stay unresolved —
  * a conflict, an alignment the row cannot hold, a window the group cannot fit, or a clamp that
@@ -516,7 +575,7 @@ function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier
   return { unresolved: new Set(groupFeeds(model, context, tier, list, id, false).wanted.keys()), group: snapshot.group };
 }
 function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>): { unresolved: Set<string>; group: LayoutGroup } {
-  const group = model.groups[id]!, order = context.groupOrder.get(tier)!;
+  const group = model.groups[id]!;
   const { own, wanted, yielded, conflicts } = groupFeeds(model, context, tier, list, id, warn);
   const unresolved = new Set<string>(conflicts);
   const startPenetration = riserPenetrations(model, group), startCrossings = chordLaneCrossings(model, group), startBreaches = spanBreaches(model);
@@ -545,16 +604,9 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   // crosses and let the growth through. So the move stops at the wall for a grown body. A body that
   // has not grown moves as it always did; the wall then bounds only the growth that follows.
   const walls = new Map(group.rowOrder!.map(id => [id, overlayStops(model, model.nodes[id]!)]));
-  let farthestLeft = -Infinity, farthestRight = Infinity;
-  for (const [id, stops] of walls) {
-    const node = model.nodes[id]!, box = node.bounds!;
-    if (box.width <= Math.max(ownSideWidth(node, 'top'), ownSideWidth(node, 'bottom')) + EPS) continue;
-    farthestLeft = Math.max(farthestLeft, stops.low - box.x);
-    farthestRight = Math.min(farthestRight, stops.high - right(box));
-  }
+  const { farthestLeft, farthestRight } = farthest(model, walls);
   const began = group.bounds!.x, toMean = mean(distinctParents.values()) - mean(distinctChildren.values());
-  const shift = Math.max(farthestLeft, Math.min(toMean, farthestRight));
-  moveGroup(model, group, riserKeepOutAfterMove(model, group, shift) && chordsClearAfterMove(model, group, shift) ? shift : 0, 0);
+  moveGroup(model, group, mainMove(model, group, farthestLeft, farthestRight, toMean), 0);
   const aligned = new Set<string>();
   for (const nodeId of group.rowOrder!) {
     const node = model.nodes[nodeId]!;
@@ -588,11 +640,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   fitRegionGroup(model, group);
   // The window is the same one the push respects. A left flank bounds this group as a right flank
   // does, and the final clamp reads `low`. A bound that only moves the group first is undone.
-  const window = reservedWindow(model, context, tier, id);
-  const low = Math.max(window.low, previous ? right(previous.bounds!) + bandGap(model) : -Infinity);
-  let high = Math.min(window.high, tail.get(id)!);
-  const nextFixed = order.slice(order.indexOf(id) + 1).map(id => model.groups[id]!).find(other => !list.some(feed => model.document.nodes[feed.child.ref.node]!.group === other.id));
-  if (nextFixed) high = Math.min(high, nextFixed.bounds!.x - bandGap(model));
+  const { low, high } = stepWindow(model, context, tier, list, id, previous, tail);
   if (group.bounds!.width > high - low) {
     model.groups[id] = saved.group;
     for (const node of saved.nodes) model.nodes[node.id] = node;
@@ -659,7 +707,10 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
   const anchorTier = model.anchorTier;
   if (anchorTier !== undefined && model.tierBands.some(band => band.tier === anchorTier)) {
     const context = centreContext(model, anchorTier);
-    standPortsOverChildren(model, context.steps, (tier, list, id) => { const { own, yielded } = groupFeeds(model, context, tier, list, id, false); return chosenFeeds(context, tier, own, yielded); });
+    standPortsOverChildren(model, context.steps, {
+      feeds: (tier, list, id) => { const { own, yielded } = groupFeeds(model, context, tier, list, id, false); return chosenFeeds(context, tier, own, yielded); },
+      takes: (tier, list, id, from, to) => stepTakesOffset(model, context, tier, list, id, from, to),
+    });
   }
   // A face centring left alone stands centred on the body it widened (architecture ticket 10, D3). Read before the overlay windows below.
   recentreSeatedFaces(model, seated, feedPorts(model));
@@ -716,8 +767,7 @@ function centrePasses(model: LayoutModel, budget: CentreBudget): void {
         if (model.document.groups[id]!.shape === 'bar' || !list.some(feed => model.document.nodes[feed.child.ref.node]!.group === id)) {
           packClear(model, context, tier, group, previous);
           // A bar stands where 7d will shape it, which may move no other group: the groups after it clear the extent its span gives it, not the box it has now (ticket 19).
-          const reach = barReach(model, id);
-          previous = reach === undefined ? group : { ...group, bounds: { ...group.bounds!, x: Math.min(group.bounds!.x, reach.x), width: Math.max(right(group.bounds!), reach.x + reach.width) - Math.min(group.bounds!.x, reach.x) } };
+          previous = standingBox(model, group);
           continue;
         }
         const start = geometry(model);
