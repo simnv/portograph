@@ -3,7 +3,9 @@ import { expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import { bars, bundles, centre, flanks, lanes, rows } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
-import { LINK_LABEL_GEOMETRY, produceLinkLabels } from '../../src/layout/link-labels.js';
+import { LABEL_BORDER_REACH, LINK_LABEL_GEOMETRY, labelRunWindows, produceLinkLabels } from '../../src/layout/link-labels.js';
+import { groupBoxes, labelCrossesBorder } from '../../src/score/model.js';
+import { DEFAULT_STROKE_WIDTHS } from '../../src/theme/geometry.js';
 import { reserveLinkLabelRoom } from '../../src/layout/bands.js';
 import { bench } from '../layout/link-label-fixture.js';
 import { measureText } from '../../src/text/index.js';
@@ -487,4 +489,55 @@ it('ticket 30: the full text still takes a segment exactly long enough for it pl
   const short = place(need - 1);
   expect(short.text).not.toBe(text);
   expect(short.text!.endsWith(LINK_LABEL_GEOMETRY.ellipsis)).toBe(true);
+});
+
+it('a link label stays in one region: it slides off a group border into the window placement reserved', async () => {
+  const model = await run(fixture('a-link-label-stays-clear-of-a-group-border'));
+  const label = linkLabel(model);
+  expect(label.omitted).toBeUndefined();
+  expect(label.text).toBe('fibre 100M');
+  expect(label.textRotation).toBe(-90);
+  const boxes = groupBoxes(model);
+  expect(boxes.filter(box => labelCrossesBorder(label.bounds!, box.bounds)).map(box => box.id)).toEqual([]);
+  // Wholly in the tier gap, the border margin clear of both borders.
+  const upper = model.groups.upper!.bounds!, lower = model.groups.lower!.bounds!;
+  expect(label.bounds!.y).toBeGreaterThanOrEqual(upper.y + upper.height + LABEL_BORDER_REACH - 1e-6);
+  expect(label.bounds!.y + label.bounds!.height).toBeLessThanOrEqual(lower.y - LABEL_BORDER_REACH + 1e-6);
+  expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ON_BORDER' || item.code === 'LINK_LABEL_ROOM_UNRESERVED')).toEqual([]);
+  const report = score(model).snapshot;
+  expect(Object.values(report.gates).every(gate => gate.passed)).toBe(true);
+  expect(report.counters.labelBorderCrossings).toBeUndefined();
+  // The scorer counts a label put back across the border.
+  const forged = structuredClone(model);
+  linkLabel(forged).bounds!.y = upper.y + upper.height - 4;
+  expect(score(forged).snapshot.counters.labelBorderCrossings).toBe(1);
+}, 60000);
+
+it('labelRunWindows cuts a run at the border margin of every drawn box it crosses, and along a side edge it runs by', () => {
+  const owner = { kind: 'link' as const, id: 'link-1' };
+  const boxes = [{ x: 0, y: 0, width: 100, height: 100 }, { x: 0, y: 160, width: 100, height: 100 }];
+  const reach = LINK_LABEL_GEOMETRY.borderMargin + DEFAULT_STROKE_WIDTHS.group / 2;
+  const down = labelRunWindows(boxes, { from: { x: 50, y: 60 }, to: { x: 50, y: 200 }, owner })!;
+  expect(down).toEqual([{ from: 68, to: 100 - reach }, { from: 100 + reach, to: 160 - reach }, { from: 160 + reach, to: 192 }]);
+  // A run 3 px beside a side edge loses the edge's whole length, margins included.
+  const beside = labelRunWindows(boxes, { from: { x: 103, y: -50 }, to: { x: 103, y: 300 }, owner })!;
+  expect(beside).toEqual([{ from: -42, to: -reach }, { from: 100 + reach, to: 160 - reach }, { from: 260 + reach, to: 292 }]);
+  // A diagonal has no axis.
+  expect(labelRunWindows(boxes, { from: { x: 0, y: 0 }, to: { x: 50, y: 60 }, owner })).toBeUndefined();
+});
+
+it('a label with no window clear of a border keeps the midpoint and says so (LINK_LABEL_ON_BORDER)', () => {
+  const model = bench(
+    [{ id: 'source', bounds: { x: 0, y: 0, width: 40, height: 40 } }, { id: 'target', bounds: { x: 0, y: 140, width: 40, height: 40 } }],
+    [{ id: 'link-1', from: 'source', to: 'target', label: 'a longer uplink', points: [{ x: 20, y: 40 }, { x: 20, y: 140 }] }], []);
+  // A foreign box whose border lies across the run's middle, too close to either end for a window to hold the label.
+  model.document.groups.wall = { label: 'wall', shape: 'row', tier: 0 };
+  model.groups.wall = { id: 'wall', owner: { kind: 'group', id: 'wall' }, layer: 'routed', nodes: ['source'], tier: 0, rowOrder: ['source'],
+    bounds: { x: -100, y: 90, width: 400, height: 400 } };
+  produceLinkLabels(model);
+  const label = linkLabel(model);
+  expect(label.omitted).toBeUndefined();
+  expect(label.text).toBe('a longer uplink');
+  expect(label.bounds!.y + label.bounds!.height / 2).toBeCloseTo(90, 9);
+  expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ON_BORDER').map(item => item.owners)).toEqual([[{ kind: 'link', id: 'link-1' }]]);
 });

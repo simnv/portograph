@@ -4,7 +4,7 @@ import type {
 } from '../model/layout.js';
 import { equal } from '../model/json-equality.js';
 import { EPS, bottom, contains, rectDistance, right, segmentRect, segmentRectDistance } from '../geometry/planar.js';
-import { effectiveLayer } from '../score/model.js';
+import { effectiveLayer, groupBoxes, labelCrossesBorder } from '../score/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
 import { CANVAS_MARGIN, DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { drawnBoxes as paintedBoxes, produceLegend } from './legend.js';
@@ -37,7 +37,80 @@ export const LINK_LABEL_GEOMETRY = {
   halo: 2,
   /** Step of the scan along a direct line when the midpoint is taken. */
   alongStep: 2,
+  /**
+   * A link label stays in one region: along its run it keeps this much clear space beyond the
+   * stroke of every drawn group or frame border the run crosses, as it keeps the shorten margin from
+   * the run's ends. Placement reserves the room with the same figure (`labelRunWindows`).
+   */
+  borderMargin: 8,
 } as const;
+
+/** How far a border keeps a link label off along its run: the border margin beyond the border's half stroke. */
+export const LABEL_BORDER_REACH = LINK_LABEL_GEOMETRY.borderMargin + DEFAULT_STROKE_WIDTHS.group / 2;
+
+/**
+ * The pieces of an axis-aligned run where a link label may stand, as ascending intervals along the
+ * run's axis: the run less the shorten margin at each end, less every stretch within `borderMargin`
+ * of the stroke of a drawn group or frame border (`groupBoxes`). A run that goes along a side edge
+ * within that distance loses the whole edge. `undefined` for a run with no axis.
+ *
+ * Placement reads it to reserve the label room (`reserveLinkLabelRoom`) and stage 9 reads it to
+ * place the label, so the two cannot disagree on where a label may stand (R1).
+ */
+export function labelRunWindows(boxes: readonly Rect[], run: PathSegment): { from: number; to: number }[] | undefined {
+  const vertical = Math.abs(run.to.x - run.from.x) <= EPS, horizontal = Math.abs(run.to.y - run.from.y) <= EPS;
+  if (vertical === horizontal) return undefined;
+  const at = vertical ? run.from.x : run.from.y;
+  const [a, b] = vertical ? [run.from.y, run.to.y] : [run.from.x, run.to.x];
+  const low = Math.min(a, b) + LINK_LABEL_GEOMETRY.shortenMargin, high = Math.max(a, b) - LINK_LABEL_GEOMETRY.shortenMargin;
+  const reach = LABEL_BORDER_REACH;
+  const cuts: [number, number][] = [];
+  for (const box of boxes) {
+    const [across0, across1, along0, along1] = vertical
+      ? [box.x, right(box), box.y, bottom(box)] : [box.y, bottom(box), box.x, right(box)];
+    if (at <= across0 - reach + EPS || at >= across1 + reach - EPS) continue;
+    if (at < across0 + reach - EPS || at > across1 - reach + EPS) cuts.push([along0 - reach, along1 + reach]);
+    else cuts.push([along0 - reach, along0 + reach], [along1 - reach, along1 + reach]);
+  }
+  // Last key: the cut's end, so the order is total.
+  cuts.sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+  const windows: { from: number; to: number }[] = [];
+  let start = low;
+  for (const [from, to] of cuts) {
+    if (from > start + EPS && Math.min(from, high) > start + EPS) windows.push({ from: start, to: Math.min(from, high) });
+    start = Math.max(start, to);
+    if (start >= high - EPS) break;
+  }
+  if (high > start + EPS) windows.push({ from: start, to: high });
+  return windows;
+}
+
+/** The windows of a run (`labelRunWindows`) when a border cuts it; `undefined` for a run no border cuts or a run with no axis. */
+function cutWindows(boxes: readonly Rect[], run: PathSegment): { from: number; to: number }[] | undefined {
+  const windows = labelRunWindows(boxes, run);
+  if (windows === undefined) return undefined;
+  const vertical = Math.abs(run.to.x - run.from.x) <= EPS;
+  const [a, b] = vertical ? [run.from.y, run.to.y] : [run.from.x, run.to.x];
+  const low = Math.min(a, b) + LINK_LABEL_GEOMETRY.shortenMargin, high = Math.max(a, b) - LINK_LABEL_GEOMETRY.shortenMargin;
+  const whole = windows.length === 1 && Math.abs(windows[0]!.from - low) <= EPS && Math.abs(windows[0]!.to - high) <= EPS;
+  return whole || (!windows.length && high <= low + EPS) ? undefined : windows;
+}
+
+/**
+ * The centre, along the run's axis, of a label `extent` long in `windows`: the point nearest the
+ * run's midpoint at which the label lies wholly in one window. On a tie the lower coordinate wins.
+ */
+function windowCentre(windows: readonly { from: number; to: number }[], run: PathSegment, extent: number): number | undefined {
+  const vertical = Math.abs(run.to.x - run.from.x) <= EPS;
+  const mid = vertical ? (run.from.y + run.to.y) / 2 : (run.from.x + run.to.x) / 2;
+  let best: number | undefined;
+  for (const window of windows) {
+    if (window.to - window.from < extent - EPS) continue;
+    const centre = Math.min(Math.max(mid, window.from + extent / 2), window.to - extent / 2);
+    if (best === undefined || Math.abs(centre - mid) < Math.abs(best - mid) - EPS) best = centre;
+  }
+  return best;
+}
 
 /** A direct line is a segment with no axis: its label lies on it (ticket 16). */
 export function isDirect(segment: PathSegment): boolean {
@@ -67,7 +140,7 @@ export function turnedBox(centre: { x: number; y: number }, size: { width: numbe
 /** Overlay labels are suppressed strictly above this density (overlay links per node). */
 export const OVERLAY_LABEL_DENSITY = 3;
 
-export const LINK_LABEL_CODES = ['LINK_LABEL_OMITTED', 'LINK_LABEL_SHORTENED', 'LINK_LABELS_OVERLAY_SUPPRESSED'] as const;
+export const LINK_LABEL_CODES = ['LINK_LABEL_OMITTED', 'LINK_LABEL_SHORTENED', 'LINK_LABELS_OVERLAY_SUPPRESSED', 'LINK_LABEL_ON_BORDER'] as const;
 
 /** Diagram density as `pipeline.md` defines it; an empty diagram divides by one, not by zero. */
 export function overlayDensity(model: LayoutModel): number {
@@ -184,14 +257,17 @@ function collides(index: ObstacleIndex, box: Rect, support: LabelSupport | undef
  * horizontal run it stays upright; along a vertical run it turns by `verticalRotation`; along a
  * declared straight bundle member (ADR-0017) it turns by the run's own angle, flipped by 180° when
  * that would read upside down (Visio gravity). The stored box is the rotated one, so its long side
- * lies along the run. The box is centred on the segment's midpoint; the 4 px normal gap is visible
- * clearance beyond the stroke edge. A segment that is neither axis-aligned nor a declared straight
- * member — only an overlay link can be one — uses its dominant axis.
+ * lies along the run. The box is centred on the segment's midpoint, or on `centre` when given (a
+ * point of the run); the 4 px normal gap is visible clearance beyond the stroke edge. A segment that
+ * is neither axis-aligned nor a declared straight member — only an overlay link can be one — uses its
+ * dominant axis. A vertical declared straight member is a vertical run: its text reads bottom-to-top
+ * whichever way the member runs.
  */
-export function candidateBox(segment: PathSegment, half: number, size: { width: number; height: number }, second: boolean): { bounds: Rect; textRotation: number } {
-  const midX = (segment.from.x + segment.to.x) / 2, midY = (segment.from.y + segment.to.y) / 2;
+export function candidateBox(segment: PathSegment, half: number, size: { width: number; height: number }, second: boolean,
+  centre?: { x: number; y: number }): { bounds: Rect; textRotation: number } {
+  const midX = centre?.x ?? (segment.from.x + segment.to.x) / 2, midY = centre?.y ?? (segment.from.y + segment.to.y) / 2;
   const gap = LINK_LABEL_GEOMETRY.normalGap + half;
-  if (segment.straight === true) {
+  if (segment.straight === true && Math.abs(segment.to.x - segment.from.x) > EPS) {
     const dx = segment.to.x - segment.from.x, dy = segment.to.y - segment.from.y;
     // Gravity: the heading that keeps the text upright, then the box rotated about the midpoint.
     let degrees = Math.atan2(dy, dx) * 180 / Math.PI;
@@ -303,11 +379,12 @@ function shorten(widths: ReturnType<typeof prefixWidths>, limit: number): string
  * first sides; ties break on the source-to-target segment index.
  *
  * `shortened` chooses the text the rung offers, and `overlayCounts` whether drawn overlay runs are
- * obstacles on it. The caller decides the order of the four, because the two choices are not nested
- * (ticket 04 C).
+ * obstacles on it. The caller decides the order of the rungs, because the choices are not nested
+ * (ticket 04 C). `borders` are the drawn group and frame boxes the label may not lie across; absent,
+ * the label takes the midpoint and borders are not read.
  */
 function placeLabel(index: ObstacleIndex, supported: Supported, text: string, shortenable: boolean,
-  shortened: boolean, overlayCounts: boolean): Placement | undefined {
+  shortened: boolean, overlayCounts: boolean, borders: readonly Rect[] | undefined, refusal: { border: boolean } = { border: false }): Placement | undefined {
   const ordered = supported.segments
     .map((segment, at) => ({ segment, at, length: segmentLength(segment) }))
     .filter(item => item.length > EPS)
@@ -332,7 +409,7 @@ function placeLabel(index: ObstacleIndex, supported: Supported, text: string, sh
         const measuredOn = onLine === undefined ? undefined : measure(onLine);
         const fits = measuredOn !== undefined && measuredOn.lines.length > 0
           && (shortened || !shortenable || measuredOn.width + 2 * LINK_LABEL_GEOMETRY.shortenMargin <= length + EPS);
-        const found = fits ? alongLine(index, segment, length, measuredOn, supported.support(at), overlayCounts) : undefined;
+        const found = fits ? alongLine(index, segment, length, measuredOn, supported.support(at), overlayCounts, borders, refusal) : undefined;
         if (found && measuredOn) {
           const placement: Placement = { onLine: true, segment: at, bounds: found.bounds, textRotation: found.textRotation, text: onLine!, lines: measuredOn.lines, lineHeight: measuredOn.lineHeight };
           if (!shortened) return placement;
@@ -340,12 +417,25 @@ function placeLabel(index: ObstacleIndex, supported: Supported, text: string, sh
           continue;
         }
       }
-      const drawn = shortened ? shorten(widths!, length - LINK_LABEL_GEOMETRY.shortenMargin) : text;
+      // With borders, an axis-aligned run that a border cuts offers only its windows
+      // (`labelRunWindows`): a shortened text fits the longest one, and the label stands at the
+      // point of a window nearest the midpoint. A run no border cuts keeps the midpoint.
+      const windows = borders === undefined ? undefined : cutWindows(borders, segment);
+      if (windows !== undefined) refusal.border = true;
+      const longest = windows === undefined ? Infinity : Math.max(0, ...windows.map(window => window.to - window.from));
+      const drawn = shortened ? shorten(widths!, Math.min(length - LINK_LABEL_GEOMETRY.shortenMargin, longest)) : text;
       if (drawn === undefined) continue;
       const measured = measure(drawn);
       if (!measured.lines.length) continue;
       if (!shortened && shortenable && measured.width + 2 * LINK_LABEL_GEOMETRY.shortenMargin > length + EPS) continue;
-      const { bounds, textRotation } = candidateBox(segment, supported.half, { width: measured.width, height: measured.height }, second);
+      let centre: { x: number; y: number } | undefined;
+      if (windows !== undefined) {
+        const along = windowCentre(windows, segment, measured.width);
+        if (along === undefined) continue;
+        centre = Math.abs(segment.to.x - segment.from.x) <= EPS ? { x: segment.from.x, y: along } : { x: along, y: segment.from.y };
+      }
+      const { bounds, textRotation } = candidateBox(segment, supported.half, { width: measured.width, height: measured.height }, second, centre);
+      if (borders !== undefined && borders.some(box => labelCrossesBorder(bounds, box))) { refusal.border = true; continue; }
       if (collides(index, bounds, supported.support(at), overlayCounts)) continue;
       const placement = { segment: at, bounds, textRotation, text: drawn, lines: measured.lines, lineHeight: measured.lineHeight };
       if (!shortened) return placement;
@@ -363,7 +453,8 @@ function placeLabel(index: ObstacleIndex, supported: Supported, text: string, sh
  * axis-aligned box of the rotated text with its halo, which every gate measures.
  */
 function alongLine(index: ObstacleIndex, segment: PathSegment, length: number, measured: { width: number; height: number },
-  support: LabelSupport | undefined, overlayCounts: boolean): { bounds: Rect; textRotation: number } | undefined {
+  support: LabelSupport | undefined, overlayCounts: boolean, borders: readonly Rect[] | undefined,
+  refusal: { border: boolean }): { bounds: Rect; textRotation: number } | undefined {
   const degrees = lineAngle(segment), size = haloSize(measured);
   const ux = (segment.to.x - segment.from.x) / length, uy = (segment.to.y - segment.from.y) / length;
   const reach = Math.min(length / 2, measured.width / 2 + LINK_LABEL_GEOMETRY.shortenMargin);
@@ -372,6 +463,7 @@ function alongLine(index: ObstacleIndex, segment: PathSegment, length: number, m
     for (const sign of step === 0 ? [1] : [1, -1]) {
       const along = length / 2 + sign * step * LINK_LABEL_GEOMETRY.alongStep;
       const bounds = turnedBox({ x: segment.from.x + ux * along, y: segment.from.y + uy * along }, size, degrees);
+      if (borders !== undefined && borders.some(box => labelCrossesBorder(bounds, box))) { refusal.border = true; continue; }
       if (!collides(index, bounds, support, overlayCounts, true)) return { bounds, textRotation: degrees };
     }
   }
@@ -442,13 +534,30 @@ export function produceLinkLabels(model: LayoutModel): void {
    * it is the midpoint of a segment or nothing — and a label that is drawn beats a line that is
    * whole. A truncated label is the last thing tried, because the mask cuts the overlay back under
    * a whole label but nothing gives a shortened one its characters back.
+   *
+   * A label stays in one region. Each text first tries both overlay rungs with the drawn group and
+   * frame borders as walls, the label sliding along an axis-aligned run to the window nearest its
+   * midpoint (`labelRunWindows`); then both again without them, at the midpoint, as before. A whole
+   * label across a border still beats a shortened one. Placement reserved the window
+   * (`reserveLinkLabelRoom`), so a label that crosses a border is reported (`LINK_LABEL_ON_BORDER`).
    */
+  const borders = groupBoxes(model);
+  const walls = borders.map(item => item.bounds);
   const emit = (label: LayoutLabel, supported: Supported | undefined, shortenable: boolean): void => {
-    const rung = (shortened: boolean, overlayCounts: boolean): Placement | undefined =>
+    const rung = (shortened: boolean, overlayCounts: boolean, bordersCount: boolean, refusal?: { border: boolean }): Placement | undefined =>
       supported && supported.segments.length
-        ? placeLabel(index, supported, label.text, shortenable, shortened, overlayCounts) : undefined;
-    const placement = rung(false, true) ?? rung(false, false)
-      ?? (shortenable ? rung(true, true) ?? rung(true, false) : undefined);
+        ? placeLabel(index, supported, label.text, shortenable, shortened, overlayCounts, bordersCount ? walls : undefined, refusal) : undefined;
+    // Without a border cut or a border refusal the rungs without walls offer the same candidates again: they are skipped.
+    const text = (shortened: boolean): Placement | undefined => {
+      const refusal = { border: false };
+      return rung(shortened, true, true, refusal) ?? rung(shortened, false, true, refusal)
+        ?? (refusal.border ? rung(shortened, true, false) ?? rung(shortened, false, false) : undefined);
+    };
+    const placement = text(false) ?? (shortenable ? text(true) : undefined);
+    const crossed = placement === undefined ? [] : borders.filter(item => labelCrossesBorder(placement.bounds, item.bounds));
+    if (crossed.length) model.diagnostics.push(diagnostic('LINK_LABEL_ON_BORDER', 'warning',
+      `Label ${label.id} lies across the border of ${crossed.map(item => item.id).join(', ')}: no place on its runs clear of every group and frame border holds it.`,
+      [{ ...label.owner }]));
     if (!placement) {
       produced.push(omitted(label));
       model.diagnostics.push(diagnostic('LINK_LABEL_OMITTED', 'warning',

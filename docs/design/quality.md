@@ -71,7 +71,9 @@ non-random layout).
 
 Also reported: `overlaps`, `bundledLength`, `barCross`, `labelHits`, `labelsOmitted`, `stubs`, `removedLinks`,
 `groupLinks`, `lanesUsed`, `inversions`, `fallbackUsed`, `deadlineHit`, canvas size, and (outside
-the snapshot block) layout time per stage.
+the snapshot block) layout time per stage. `labelBorderCrossings` counts the pairs of a visible link
+label and a drawn group or frame box whose border the label lies across; it is present only when
+one does, and no gate reads it yet (stage 9 reports each such label as `LINK_LABEL_ON_BORDER`).
 
 `counts` gives the raw counts of each link family, beside Q and outside it (Q reads only the routed
 layer). For `routed` and for `overlay`: `links`, `bent` (links with at least one bend) and `turns`

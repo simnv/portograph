@@ -1,0 +1,18 @@
+# Expected: The label of the link from `router` up to `edge` stands in the tier gap, wholly between
+# the bottom border of `upper` and the top border of `lower`, 8 px clear of each, and reads
+# bottom-to-top (-90). `edge` is shorter than `tall`, so the run's midpoint lies near the bottom
+# border of `upper`: a label centred there lay across that border. Placement reserves the window
+# between the two borders (7f, `reserveLinkLabelRoom`) and stage 9 slides the label into it
+# (`labelRunWindows`). No LINK_LABEL_ON_BORDER, no `labelBorderCrossings` counter, every gate passes.
+# Test-only input; the whole pipeline runs.
+portograph: 2
+profile: network
+groups:
+  upper: { tier: 0, label: Upper }
+  lower: { tier: 1, label: Lower }
+nodes:
+  tall: { group: upper, class: cloud, icon: cloud, label: tall, description: a second line }
+  edge: { group: upper, label: EDGE SWITCH WIDE }
+  router: { group: lower, class: router, icon: router, label: router, ports: [{ name: wan }] }
+links:
+  - [router.wan, edge, { label: fibre 100M }]

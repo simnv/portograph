@@ -304,7 +304,9 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
     expect(Math.abs(Number(measured.geometry['y']))).toBeGreaterThan(1);
     expect(Number(on.geometry['x'])).toBeGreaterThanOrEqual(-1);
     expect(Number(on.geometry['x'])).toBeLessThanOrEqual(1);
-    expect(on.offset).toBeUndefined();
+    // At most the sub-pixel rounding of the arc length is left to `offset`: the label keeps the border
+    // margin off the lower group (stage 9), so it stands a fraction of a pixel off a whole arc length.
+    expect(Math.hypot(on.offset?.x ?? 0, on.offset?.y ?? 0)).toBeLessThan(0.5);
   }, 60000);
 
   it('attaches a label on a joined run of collinear pieces to the piece it stands on (ticket 142)', async () => {
