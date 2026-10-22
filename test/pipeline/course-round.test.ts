@@ -5,7 +5,10 @@ import { restoreLayoutModel } from '../../src/internal.js';
 import type { Course, LayoutLink, LayoutModel } from '../../src/index.js';
 import type { Side } from '../../src/model/geometry.js';
 import { naturalPolyline, polylineCrossings, polylineTurns, simplify } from '../../src/layout/course-plan.js';
-import { judgeCourseTrial, poorRoute, stepGain, stepRoute } from '../../src/layout/course-measure.js';
+import { judgeCourseTrial, measureCourses, poorRoute, stepGain, stepRoute } from '../../src/layout/course-measure.js';
+import { COURSE_VISITS, course as courseRound } from '../../src/pipeline/rounds.js';
+import type { Env } from '../../src/pipeline/env.js';
+import type { State } from '../../src/pipeline/state.js';
 import type { LinkFacts } from '../../src/layout/read/courses.js';
 import { constraintFindings } from '../../src/layout/trial-findings.js';
 import { findPort } from '../../src/layout/row-paths.js';
@@ -213,6 +216,66 @@ describe('the judge reads what the trial publishes (review of phase 4)', () => {
       expect(codes(model), name).not.toContain('COURSE_SHAPE_LOST');
     }
   }, 120000);
+});
+
+describe('a step course never costs the course of a poor route (ticket 09 follow-up)', () => {
+  // With no re-run left the flank link keeps its baseline route: the step (2 turns, no crossing) that the round would offer the L.
+  const stepped = async (): Promise<LayoutModel> => layout(parse(source(ACROSS)), { ...options, testMaxReruns: 0 });
+
+  it('records the step links of an offer, and leaves them out on request', async () => {
+    const model = await stepped();
+    expect(turns(model, 6)).toBe(2);
+    const offer = measureCourses(model, model);
+    expect(offer.courses.map(item => item.link)).toEqual(['link-6']);
+    expect(offer.steps).toEqual(['link-6']);
+    expect(measureCourses(model, model, new Set(), false).courses).toEqual([]);
+  }, 60000);
+
+  it('a refused trial with a step course beside a poor-route course gets one more trial without the step; any other refused trial gets none', async () => {
+    expect(courseRound.budget.visits).toBe(COURSE_VISITS);
+    expect(COURSE_VISITS).toBe(2);
+    expect(courseRound.budget.retries).toContain('verdict');
+    const model = await stepped();
+    const env = { options: {} } as unknown as Env;
+    const fresh = (): State => ({ base: model, routedBase: model, sideNotes: [] }) as unknown as State;
+    const refusal = { at: 'verdict' as const, why: 'no gain' };
+    // A mixed offer: the step of link-6 and a poor-route course of another link.
+    let s = fresh();
+    const first = (await courseRound.measure(env, s))!;
+    const poor: Course = { link: 'link-1', kind: 'skirt', side: 'left', from: { face: 'left' }, to: { face: 'top' }, runs: ['perimeter', 'tier-gap'] };
+    courseRound.refuse(env, s, { ...first, courses: [...first.courses, poor] }, refusal);
+    expect(s.courseRetry).toBe('without-steps');
+    // The second measure leaves the step out (on this sheet nothing else is offered).
+    expect(await courseRound.measure(env, s)).toBeUndefined();
+    // A refused offer of step courses alone, or of poor routes alone, is not tried again: a second trial would repeat the first.
+    s = fresh();
+    courseRound.refuse(env, s, first, refusal);
+    expect(s.courseRetry).toBe('none');
+    expect(await courseRound.measure(env, s)).toBeUndefined();
+    s = fresh();
+    courseRound.refuse(env, s, { ...first, courses: [poor], steps: [] }, refusal);
+    expect(s.courseRetry).toBe('none');
+    // The second trial refused as well: no third.
+    s = fresh();
+    s.courseRetry = 'without-steps';
+    courseRound.refuse(env, s, { ...first, courses: [...first.courses, poor] }, refusal);
+    expect(s.courseRetry).toBe('none');
+  }, 60000);
+
+  it('the judge refuses a step course that publishes a crossing', async () => {
+    const base = await stepped();
+    const published = await layout(parse(source(ACROSS)), options);
+    expect(published.courses!.map(item => item.link)).toEqual(['link-6']);
+    // The trial: the published model with one more routed path across the middle of the first straight piece of link-6.
+    const trial = structuredClone(published) as LayoutModel;
+    const piece = link(trial, 6).path!.segments.find(segment => Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y) > 20)!;
+    const mid = { x: (piece.from.x + piece.to.x) / 2, y: (piece.from.y + piece.to.y) / 2 }, level = piece.from.y === piece.to.y;
+    const across = level ? { from: { x: mid.x, y: mid.y - 10 }, to: { x: mid.x, y: mid.y + 10 } } : { from: { x: mid.x - 10, y: mid.y }, to: { x: mid.x + 10, y: mid.y } };
+    trial.links.push({ ...link(trial, 1), id: 'probe', path: { ...link(trial, 1).path!, segments: [{ ...piece, ...across }] } });
+    const promised = new Map([['link-6', 1]]);
+    expect(judgeCourseTrial(base, trial, promised, new Set(['link-6'])).reason).toMatch(/a step course publishes a crossing \(link-6\)/);
+    expect(judgeCourseTrial(base, trial, promised).reason).not.toMatch(/step course/);
+  }, 60000);
 });
 
 describe('the courses a placement run reserves', () => {

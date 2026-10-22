@@ -35,6 +35,11 @@ export interface State {
   sideRound: number;
   /** Whether the unmoved baseline was rebuilt for a side offer: it is rebuilt at most once in a command. */
   unmovedRebuilt: boolean;
+  /**
+   * The course round's second trial, set when its first trial is refused: `without-steps` when that trial held a step course beside a poor-route course (the
+   * second trial offers the poor routes alone), `none` otherwise (a second trial would repeat the first). Absent before the first refusal.
+   */
+  courseRetry?: 'without-steps' | 'none';
 }
 
 /** One try of a round, built from its ledger: the 7e result, the 7f result, the routed result and what 7f did. */
