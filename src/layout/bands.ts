@@ -6,7 +6,7 @@ import { equal } from '../model/json-equality.js';
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 import { frameSubtreeCells, orderedGroupIds } from '../model/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
-import { DEFAULT_STROKE_WIDTHS, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth, overlayTrackPitch } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { createCentreBudget, type CentreBudget } from './centre.js';
 import { isSideLane, rebuildLaneExtents, riserKeepOutBreaches } from './lanes.js';
 import { PlacementRefusal } from './placement-refusal.js';
@@ -24,8 +24,8 @@ import { bandHeldBy, bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placem
 import { withLayoutMutation } from './mutation.js';
 import { effectiveLayer, groupBoxes, labelCrossesBorder } from '../score/model.js';
 import { LINK_LABEL_GEOMETRY, describedLink, haloSize, isDiagonalRun, labelWindowDeficit, labelYieldsFault, longestRun, overlayLabelsSuppressed, recordLabelYields, reservedLinkRuns, runLabelBox, tierGapSplit } from './link-labels.js';
-import { overlayBasePath, overlayPath, overlayTrackRuns } from './overlay-paths.js';
-import { bodiesOf, paddingOf, reachBeyond } from './overlay-tracks.js';
+import { overlayBasePath, overlayPath, overlayTrackRuns, overlayTrackUnreserved } from './overlay-paths.js';
+import { paddingOf, sideRoomBlocked, trackLabelRoom, trackRoomNeed } from './overlay-tracks.js';
 import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { busBandHeight, busRoom } from './bus-room.js';
@@ -1497,19 +1497,12 @@ const roomGrain = (room: number): number => Math.ceil(room / LABEL_PADDING_GRAIN
  * label of a vertical run is placed by stage 9 (`LINK_LABEL_ROOM_UNRESERVED` names the same limit for a label).
  */
 export function trackRoomPadding(model: LayoutModel, link: LayoutLink, labelHeight?: number): AcrossRunRoom[] {
-  const rooms: AcrossRunRoom[] = [];
   const stroke = linkStrokeWidth(link);
-  for (const { base, drawn } of overlayTrackRuns(model, link)) {
-    const held = paddingOf(model, base[0], base[1]);
-    if (held === undefined || held.title) continue;
-    const bodies = bodiesOf(model, model.groups[held.group]!.nodes);
-    const reach = reachBeyond(bodies, held.side, drawn[0]);
-    if (reach <= reachBeyond(bodies, held.side, base[0]) + PLACEMENT_EPS) continue;
-    const beyond = Math.max(overlayTrackPitch(stroke, DEFAULT_STROKE_WIDTHS.group),
-      labelHeight !== undefined && (held.side === 'top' || held.side === 'bottom') ? stroke / 2 + LINK_LABEL_GEOMETRY.normalGap + labelHeight! + DEFAULT_STROKE_WIDTHS.group / 2 : 0);
-    rooms.push({ group: held.group, side: held.side, padding: roomGrain(reach + beyond), track: true });
-  }
-  return rooms;
+  const label = labelHeight === undefined ? undefined : trackLabelRoom(stroke, labelHeight);
+  return overlayTrackRuns(model, link).flatMap(({ base, drawn }) => {
+    const room = trackRoomNeed(model, base, drawn, stroke, label, roomGrain);
+    return room === undefined ? [] : [{ ...room, track: true as const }];
+  });
 }
 /** The track rooms of a drawn overlay link (`trackRoomPadding`), with its label when it shows one: 7f and the validator read this (R1). */
 const trackRooms = (model: LayoutModel, link: LayoutLink, suppressed: boolean): AcrossRunRoom[] =>
@@ -1580,6 +1573,10 @@ export function reserveAcrossRunRoom(model: LayoutModel, settle: (nodes: string[
     const label = run === undefined ? undefined : acrossRunPadding(model, labelBorders(model), run, labelSize(model, link), linkStrokeWidth(link) / 2);
     return [label, ...trackRooms(model, link, suppressed)];
   };
+  // A detour that keeps a shared track because its offset needs room 7f cannot grow is named (ticket 23); the scorer counts the pair.
+  for (const link of model.links) if (effectiveLayer(link) === 'overlay' && overlayTrackUnreserved(model, link)) {
+    placementWarning(model, 'OVERLAY_TRACK_ROOM_UNRESERVED', `${link.id} keeps a shared overlay track: the offset that frees it needs room beyond a reserved lane, which placement cannot reserve.`, [link.id]);
+  }
   for (const link of model.links) for (const room of roomsOf(link)) {
     if (room === undefined) continue;
     const group = model.groups[room.group]!, box = group.bounds!, bodies = union(group.nodes.map(node => model.nodes[node]!.bounds!));
@@ -1594,7 +1591,7 @@ export function reserveAcrossRunRoom(model: LayoutModel, settle: (nodes: string[
       settle(moved.flatMap(item => item.nodes));
     } else {
       const split = room.side === 'left' ? bodies.x : right(bodies);
-      if (model.lanes.some(lane => lane.kind !== 'perimeter' && lane.x >= split - PLACEMENT_EPS)) {
+      if (sideRoomBlocked(model, room.group, room.side)) {
         if (room.track) placementWarning(model, 'OVERLAY_TRACK_ROOM_UNRESERVED', `${link.id} has an overlay track beyond a reserved lane; its room cannot be reserved and the track stands where the separation put it.`, [link.id]);
         else placementWarning(model, 'LINK_LABEL_ROOM_UNRESERVED', `${link.id} needs room across its run beyond a reserved lane; its label room cannot be reserved and the label placement decides.`, [link.id]);
         continue;

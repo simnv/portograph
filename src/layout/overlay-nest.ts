@@ -5,7 +5,8 @@ import { overlayCourse } from './courses.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { overlayBasePath, publishedOverlayPath, sharedBlockers } from './overlay-paths.js';
 import { sharedTrackPairs } from './overlay-tracks.js';
-import { drawn, overlayCrossingPoints, portKey } from './read/crossings.js';
+import { drawn, overlayCrossingPairs, overlayCrossingPoints, portKey } from './read/crossings.js';
+import type { Point } from '../model/geometry.js';
 import { portId } from './skeleton-graph.js';
 import { SIDE_TIE_ORDER } from './sides-one.js';
 import { linkStrokeWidth } from '../theme/geometry.js';
@@ -24,8 +25,12 @@ import { orderedNodeIds } from '../model/model.js';
  * derivation, no second predicate (R1). A trade is kept only when the layer is better by the user's order: no more shared tracks, then
  * no more bent links and turns (bends first), then fewer crossing points.
  *
- * Only a free port moves (R3): no authored `order:`, no routed link and no other link on it, no mesh bus, no course, a detour (the
- * per-link rule bends it), and a pill of the same size as the port it trades with. Two such ports trade their slots (anchor and
+ * The same holds for a face where detours and direct links leave (user, 2026-10-24): a link that turns up takes a port above one that
+ * leaves straight or on a diagonal, and one that turns down a port below it, so the direct links keep the middle in the order of their far
+ * ends. The trades find it by the same measure; a face of direct links only is not read (stage 5 ordered it, placement judged it).
+ *
+ * Only a free port moves (R3): no authored `order:`, no routed link and no other link on it, no mesh bus, no course, on a face where at
+ * least one such port leaves by a detour, and a pill of the same size as the port it trades with. Two such ports trade their slots (anchor and
  * `engineOrder`), so no size and no spacing changes, as 7e bundles reorder their own ports. Faces in node order (`orderedNodeIds`),
  * sides in `SIDE_TIE_ORDER`, pairs in engine order; at most `NEST_PASSES` passes (R4).
  */
@@ -42,20 +47,26 @@ export function nestOverlayPorts(model: LayoutModel, holds: (model: LayoutModel)
     const key = portId(port.ref), link = linkAt.get(key);
     return link !== undefined && count.get(key) === 1 && port.anchor !== undefined && port.side !== undefined && port.authorOrder === undefined
       && port.courseHint !== true && busOfPort(model, port.ref) === undefined && !overlayCourse(model, link)
-      && link.attachments!.from.node !== link.attachments!.to.node && overlayBasePath(model, link, blockers).segments.length > 2;
+      && link.attachments!.from.node !== link.attachments!.to.node;
   };
+  const detour = (port: LayoutPort): boolean => overlayBasePath(model, linkAt.get(portId(port.ref))!, blockers).segments.length > 2;
   const faces: { node: string; ports: LayoutPort[] }[] = [];
   for (const id of orderedNodeIds(model.document)) for (const side of SIDE_TIE_ORDER) {
     const ports = (model.nodes[id]?.ports ?? []).filter(port => port.side === side && free(port)).sort((a, b) => a.engineOrder! - b.engineOrder!);
-    if (ports.length > 1) faces.push({ node: id, ports });
+    // A face where some free port leaves by a detour: its direct links trade too, so a link that turns up takes a port above one that
+    // leaves straight (user, 2026-10-24). A face of direct links only keeps the order stage 5 gave and placement judged.
+    if (ports.length > 1 && ports.some(detour)) faces.push({ node: id, ports });
   }
   if (!faces.length) return [];
+  // The paths of the last measure, by link id: a pair is traded only when its two paths cross or share a track now.
+  let drawnPaths = new Map<string, Point[]>();
   const measure = (): number[] => {
     const shapes = sharedBlockers(model);
     const points = links.map(link => {
       const segments = publishedOverlayPath(model, link, shapes).segments;
       return segments.length ? [segments[0]!.from, ...segments.map(segment => segment.to)] : [];
     });
+    drawnPaths = new Map(links.map((link, index) => [link.id, points[index]!]));
     const shares = sharedTrackPairs(links.map((link, index) => ({ points: points[index]!, strokeWidth: linkStrokeWidth(link) }))).length;
     const bent = points.filter(item => item.length > 2).length, turns = points.reduce((sum, item) => sum + Math.max(0, item.length - 2), 0);
     const crossings = overlayCrossingPoints(links.map((link, index) => drawn(points[index]!, [portKey(link.attachments!.from), portKey(link.attachments!.to)])));
@@ -73,14 +84,21 @@ export function nestOverlayPorts(model: LayoutModel, holds: (model: LayoutModel)
     const a = measurePortPill(one.ref.name), b = measurePortPill(two.ref.name);
     return a.width === b.width && a.height === b.height;
   };
+  const meet = (one: LayoutPort, two: LayoutPort): boolean => {
+    const a = linkAt.get(portId(one.ref))!, b = linkAt.get(portId(two.ref))!;
+    const pa = drawnPaths.get(a.id)!, pb = drawnPaths.get(b.id)!;
+    const segments = (points: Point[]) => points.slice(1).map((point, index) => ({ from: points[index]!, to: point }));
+    return overlayCrossingPairs([segments(pa), segments(pb)]) > 0
+      || sharedTrackPairs([{ points: pa, strokeWidth: linkStrokeWidth(a) }, { points: pb, strokeWidth: linkStrokeWidth(b) }]).length > 0;
+  };
   const moved = new Set<string>();
-  let current = measure(), tried = false;
+  let current = measure(), tried = false, trials = 0;
   for (let pass = 0; pass < NEST_PASSES; pass++) {
     let any = false;
     for (const face of faces) for (let i = 0; i < face.ports.length; i++) for (let j = i + 1; j < face.ports.length; j++) {
       const one = face.ports[i]!, two = face.ports[j]!;
-      if (!sameSize(one, two)) continue;
-      tried = true;
+      if (!sameSize(one, two) || !meet(one, two) || trials >= NEST_TRIALS) continue;
+      tried = true; trials++;
       trade(face.node, one, two);
       const next = measure();
       if (better(next, current) && holds(model)) { current = next; any = true; moved.add(portId(one.ref)).add(portId(two.ref)); }
@@ -95,6 +113,8 @@ export function nestOverlayPorts(model: LayoutModel, holds: (model: LayoutModel)
 
 /** The passes over the faces (R4: bounded by count); a trade only lowers the measure, so a pass that trades nothing ends it. */
 const NEST_PASSES = 2;
+/** The trades tried per call (R4: bounded by count); each one derives the whole overlay layer again. */
+const NEST_TRIALS = 24;
 
 /** No key worse and the last strictly better, or an earlier key strictly better: the first key that differs decides. */
 function better(next: readonly number[], current: readonly number[]): boolean {

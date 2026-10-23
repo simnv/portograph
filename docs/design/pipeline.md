@@ -1130,8 +1130,12 @@ the tracks come from (on a lateral face, the lower track the lower port when bot
 5 cannot decide it: it orders a face before any detour is derived, and the side and the track of a detour
 depend on the geometry 7f settles and on the whole layer. The measure is the separation itself
 (`nestOverlayPorts`: the published overlay paths, then fewer shared tracks, fewer bent links and turns,
-fewer crossing points). Only a free port moves: no authored `order:`, no other link on it (so no routed
-port), no bus, no course, a detour, and a pill of the same size. The two ports trade anchor and
+fewer crossing points). On a face where detours and direct links leave, the direct links trade too: a
+link that turns up takes a port above one that leaves straight or on a diagonal, one that turns down a port
+below it (user, 2026-10-24). Only a free port moves: no authored `order:`, no other link on it (so no routed
+port), no bus, no course, on a face where a free port leaves by a detour, and a pill of the same size. A
+pair is tried only when its two paths cross or share a track, and at most `NEST_TRIALS` (24) trades are
+tried per attempt (R4). The two ports trade anchor and
 `engineOrder`, so no size or spacing changes, as 7e bundles reorder their own ports. It runs at the end of
 the 7f attempt, after every placement move was judged on the order stage 5 gave (a trade made earlier
 would stand under the judges of later moves), and it makes no trade that would need room 7f did not
@@ -1512,7 +1516,10 @@ appears. Every way round with the same bends is tried (a non-collinear alternati
 the way with fewer crossings where the bends are equal). A candidate walks back along nothing, enters no body or pill, keeps the overlay port
 clearance from each (or the distance the derived way kept, where less), and stands to every group and
 frame box as the derived run did; it may cross the padding edge of a plain group on a side no title
-holds, which 7f then grows. Rank: fewest shared tracks, no growth beyond the box as it stands (a track the
+holds, which 7f then grows. A move whose room across it (the track, and the label the link shows beside it,
+`trackRoomNeed`) does not fit an edge 7f cannot grow (a side edge with a reserved lane beyond,
+`sideRoomBlocked`) is not taken: the run keeps its track, 7f names it `OVERLAY_TRACK_ROOM_UNRESERVED`,
+and the scorer counts the pair. Rank: fewest shared tracks, no growth beyond the box as it stands (a track the
 grown room holds is no growth, so a replay after 7f keeps it), fewest crossings with the held paths (the
 tracks nest), for a labelled detour the way out of its U, the nearest track, out of the U, the positive direction. The
 result is a function of the frozen geometry, so nothing is recorded: stage 8 publishes it and

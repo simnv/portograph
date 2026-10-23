@@ -3,8 +3,8 @@
 # padding of `row` must reach the outer track plus one track pitch to the border (24 px): 7f grows the top edge of `row` by 4 px and
 # records it (`labelPadding`: row top, room 24, links [link-7]). Only the content of `row` and the tiers below move down; the sibling
 # `aside` in the same tier keeps its top and its 20 px padding. The `backup` label stands under the row on the side of the bodies.
-# No LINK_LABEL_ON_BORDER. One pair of runs keeps one track (`overlayTrackShares` 1): three risers out of `n1` in a column gap that
-# holds two; 7f does not widen a column gap for a track yet.
+# No LINK_LABEL_ON_BORDER. At the end of 7f the overlay ports of each face nest with their direct links (user, 2026-10-24): two
+# tracks remain over the row and no pair shares one (`overlayTrackShares` absent); the room 7f grew for three tracks stays recorded.
 # Test-only input; test/pipeline/link-label-rules.test.ts reads it.
 portograph: 2
 groups:

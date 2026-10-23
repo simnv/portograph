@@ -3,7 +3,9 @@
 # one line over the row; they take separate tracks now, and no pair of overlay runs shares a track (`overlayTrackShares` absent). Each
 # turn steps out of its face by the overlay port clearance (7.75 px). The two detours under the row, `a`-`d` and the labelled `b`-`d`,
 # nest and do not cross: `a`-`d` goes further round, so it takes the outer track and the lower of their two ports on `d` (7f trades the
-# two slots, `nestOverlayPorts`); `b`-`d` takes the inner track one pitch inside and the upper port. The bottom padding holds both
+# two slots, `nestOverlayPorts`); `b`-`d` takes the inner track one pitch inside and the upper port. On the right face of `a` the
+# detour `a`-`c`, which turns up, takes the top port above the diagonal `a`-`b` (user, 2026-10-24): no two overlay links of the sheet
+# cross. The bottom padding holds both
 # tracks, so 7f grows nothing (`labelPadding` absent). The label of `b`-`d` has no room between its track and the bodies and stands below
 # it, across the line of `a`-`d` (a known residual: crossings come before a label's room). The label clears the border: no
 # LINK_LABEL_ON_BORDER, `labelBorderCrossings` absent.

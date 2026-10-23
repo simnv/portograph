@@ -4,7 +4,7 @@ import type { LayoutLink, LayoutModel, LayoutNode, LayoutPath, LayoutPort, PathS
 import { bottom, EPS, retracingRuns, right, samePoint, segmentRectDistance } from '../geometry/planar.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth, overlayPortClearance, overlayTrackPitch, pathStrokeWidth } from '../theme/geometry.js';
 import { overlayCrossingPairs } from './read/crossings.js';
-import { bodiesOf, paddingOf, reachBeyond, TrackIndex } from './overlay-tracks.js';
+import { bodiesOf, heldPadding, paddingOf, reachBeyond, sideRoomBlocked, TrackIndex, trackLabelHeight, trackLabelRoom, trackRoomNeed } from './overlay-tracks.js';
 import { RectangleIndex } from './rectangle-index.js';
 import { findPort } from './row-paths.js';
 import { courseGeometry, ringsOf } from './course-lanes.js';
@@ -658,7 +658,9 @@ function separateTracks(model: LayoutModel, links: readonly LayoutLink[], shapes
     const ways: Point[][] = [];
     const over = overlayOverBodies(model, link, shapes) === undefined ? undefined : chordEnds(model, link);
     const base = over !== undefined ? { points: [{ ...over.head.face }, { ...over.tail.face }], movable: false } : derivedPoints(model, link, shapes, ways);
-    return { link, ...base, ways, stroke: linkStrokeWidth(link), labelled: model.document.links[link.sourceIndex]?.label !== undefined };
+    const labelHeight = trackLabelHeight(model, link), stroke = linkStrokeWidth(link);
+    return { link, ...base, ways, stroke, labelled: model.document.links[link.sourceIndex]?.label !== undefined,
+      label: labelHeight === undefined ? undefined : trackLabelRoom(stroke, labelHeight) };
   });
   const held = new TrackIndex();
   for (const item of items) if (!item.movable) held.add({ points: item.points, strokeWidth: item.stroke });
@@ -673,15 +675,18 @@ function separateTracks(model: LayoutModel, links: readonly LayoutLink[], shapes
     ...(model.frames ?? []).map(frame => ({ group: undefined, box: frame.box }))];
   const tracks = new Map<string, Separated>();
   for (const item of movers) {
-    const separated = separate(model, [item.points, ...item.ways], item.stroke, held, shapes, borders, item.labelled);
+    const separated = separate(model, [item.points, ...item.ways], item.stroke, held, shapes, borders, item.labelled, item.label);
     held.add({ points: separated.points, strokeWidth: item.stroke });
     tracks.set(item.link.id, separated);
   }
   return tracks;
 }
 
-/** A separated detour: its drawn points, and the way round the rule derived that they were moved from, point for point. */
-interface Separated { points: Point[]; way: Point[] }
+/**
+ * A separated detour: its drawn points, and the way round the rule derived that they were moved from, point for point. `unreserved`:
+ * it still shares a track because the offset that frees it needs room 7f cannot grow (`sideRoomBlocked`).
+ */
+interface Separated { points: Point[]; way: Point[]; unreserved?: true }
 
 /**
  * One detour off every held track (ticket 23). Every way round with the bends of the derived way is tried, each with its runs moved
@@ -689,12 +694,15 @@ interface Separated { points: Point[]; way: Point[] }
  * shares the fewest tracks wins, then the fewest crossings with the held paths, then the shortest (a moved run lengthens its two
  * neighbours, so this counts the offset); last key: the way's place, the derived way first.
  */
-function separate(model: LayoutModel, ways: readonly Point[][], stroke: number, held: TrackIndex, shapes: ShapeQuery, borders: readonly Border[], labelled: boolean): Separated {
+function separate(model: LayoutModel, ways: readonly Point[][], stroke: number, held: TrackIndex, shapes: ShapeQuery, borders: readonly Border[],
+  labelled: boolean, label: number | undefined): Separated {
   let best: { separated: Separated; rank: number[] } | undefined;
   for (const [index, way] of ways.entries()) {
-    const result = shiftOff(model, way, stroke, held, shapes, borders, labelled);
+    const result = shiftOff(model, way, stroke, held, shapes, borders, labelled, label);
     const rank = [result.shares, result.crossings, polylineLength(result.points), index];
-    if (best === undefined || better(rank, best.rank)) best = { separated: { points: result.points, way }, rank };
+    if (best === undefined || better(rank, best.rank)) {
+      best = { separated: { points: result.points, way, ...(result.refused && result.shares > 0 ? { unreserved: true as const } : {}) }, rank };
+    }
   }
   return best!.separated;
 }
@@ -707,6 +715,12 @@ interface Border { group: string | undefined; box: Rect }
  * empty for a link the separation does not move (a straight segment, a course, a mesh-bus member). 7f reads it to grow the padding a
  * track moved into (`trackRoomPadding`).
  */
+/** Whether an overlay link keeps a shared track because the offset that frees it needs room 7f cannot grow (`Separated.unreserved`). */
+export function overlayTrackUnreserved(model: LayoutModel, link: LayoutLink, blockers?: ShapeQuery): boolean {
+  if (link.meshBus !== undefined || link.attachments === undefined || !derivedPoints(model, link, blockers).movable) return false;
+  return overlayTracks(model, blockers ?? sharedBlockers(model)).get(link.id)?.unreserved === true;
+}
+
 export function overlayTrackRuns(model: LayoutModel, link: LayoutLink, blockers?: ShapeQuery): { base: [Point, Point]; drawn: [Point, Point] }[] {
   if (link.meshBus !== undefined || link.attachments === undefined) return [];
   if (!derivedPoints(model, link, blockers).movable) return [];
@@ -749,7 +763,9 @@ const better = (one: readonly number[], two: readonly number[]): boolean => {
  * from its two neighbours); then the positive direction (last key). A run that no candidate
  * improves keeps its track, and the scorer's `overlayTrackShares` counts it.
  */
-function shiftOff(model: LayoutModel, base: Point[], stroke: number, held: TrackIndex, shapes: ShapeQuery, borders: readonly Border[], labelled: boolean): { points: Point[]; shares: number; crossings: number } {
+function shiftOff(model: LayoutModel, base: Point[], stroke: number, held: TrackIndex, shapes: ShapeQuery, borders: readonly Border[], labelled: boolean,
+  label: number | undefined): { points: Point[]; shares: number; crossings: number; refused: boolean } {
+  let refused = false;
   const step = overlayPortClearance(stroke);
   const pitch = overlayTrackPitch(stroke, Math.max(stroke, ...held.paths.map(path => path.strokeWidth)));
   const shares = (points: readonly Point[]): { count: number; runs: Set<number> } => {
@@ -828,6 +844,13 @@ function shiftOff(model: LayoutModel, base: Point[], stroke: number, held: Track
           const grows = horizontal ? growsFor(index, candidate[index]!) : undefined;
           const stands = [index - 1, index, index + 1].map(at => keeps(candidate, at, grows));
           if (stands.some(item => item === undefined)) continue;
+          // A track offset that needs room placement cannot reserve is not taken: the room across the moved run (`trackRoomNeed`, the
+          // track and the label it shows) on an edge 7f cannot grow (`sideRoomBlocked`) must fit in the padding as it stands.
+          const room = trackRoomNeed(model, [base[index]!, base[index + 1]!], [candidate[index]!, candidate[index + 1]!], stroke, label);
+          if (room !== undefined && sideRoomBlocked(model, room.group, room.side) && room.padding > heldPadding(model, room.group, room.side) + EPS) {
+            refused = true;
+            continue;
+          }
           // A move that needs no growth goes before one that does: spacing is spent only where no track is free. Fewer crossings go
           // next (the tracks nest), and only then does a labelled detour leave a U outward, so its label has the outer side (ticket 23).
           const out = sign === outward ? 0 : 1, growth = stands.some(item => item === true) ? 1 : 0;
@@ -840,7 +863,7 @@ function shiftOff(model: LayoutModel, base: Point[], stroke: number, held: Track
     }
     if (!moved) break;
   }
-  return { points, shares: current.count, crossings: crossings(points) };
+  return { points, shares: current.count, crossings: crossings(points), refused };
 }
 
 /**

@@ -1,10 +1,12 @@
 import type { Point, Rect, Side } from '../model/geometry.js';
-import type { LayoutModel } from '../model/layout.js';
+import type { LayoutLink, LayoutModel } from '../model/layout.js';
 import { orderedGroupIds } from '../model/model.js';
 import { EPS, samePoint } from '../geometry/planar.js';
-import { overlayTrackPitch } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, overlayTrackPitch } from '../theme/geometry.js';
 import { bandHeldBy } from './regions.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { describedLink, LINK_LABEL_GEOMETRY } from './link-labels.js';
+import { measureText } from '../text/index.js';
 
 /**
  * Two overlay detours never share a track (architecture-2 ticket 23). The one predicate: the overlay path derivation separates the
@@ -170,4 +172,53 @@ export function bodiesOf(model: LayoutModel, nodes: readonly string[]): Rect {
 export function reachBeyond(bodies: Rect, side: Side, at: Point): number {
   return side === 'top' ? bodies.y - at.y : side === 'bottom' ? at.y - (bodies.y + bodies.height)
     : side === 'left' ? bodies.x - at.x : at.x - (bodies.x + bodies.width);
+}
+
+/** One edge's room for a moved overlay track (`trackRoomNeed`): the group, the edge, the padding it needs from the bodies to the box edge. */
+export interface TrackRoom { group: string; side: Side; padding: number }
+
+/**
+ * The room a run that track separation moved needs across it (architecture-2 ticket 23): the run the per-link rule derived (`base`) lies
+ * in a plain group's padding (`paddingOf`) on an edge no title holds, and the moved run (`drawn`) stands further from the bodies; the
+ * padding must reach it plus one track pitch to the border, or plus the label beyond it (`label`, from the run to the half border) when
+ * the link shows one there. `grain` rounds the room up (7f's `LABEL_PADDING_GRAIN`). 7f grows the edge for it (`trackRoomPadding`), and
+ * the separation refuses a move whose room 7f cannot grow (`sideRoomBlocked`): one reading (R1).
+ */
+export function trackRoomNeed(model: LayoutModel, base: readonly [Point, Point], drawn: readonly [Point, Point], stroke: number,
+  label: number | undefined, grain: (room: number) => number = room => room): TrackRoom | undefined {
+  const held = paddingOf(model, base[0], base[1]);
+  if (held === undefined || held.title) return undefined;
+  const bodies = bodiesOf(model, model.groups[held.group]!.nodes);
+  const reach = reachBeyond(bodies, held.side, drawn[0]);
+  if (reach <= reachBeyond(bodies, held.side, base[0]) + PLACEMENT_EPS) return undefined;
+  const beyond = Math.max(overlayTrackPitch(stroke, DEFAULT_STROKE_WIDTHS.group), label ?? 0);
+  return { group: held.group, side: held.side, padding: grain(reach + beyond) };
+}
+
+/**
+ * Whether 7f cannot grow a side edge of a group for a room across a run: a reserved lane (no perimeter lane) stands at or beyond the
+ * bodies' face on that edge, and the room `insertRoomAt` inserts there would move it. 7f and the separation read it (R1).
+ */
+export function sideRoomBlocked(model: LayoutModel, group: string, side: Side): boolean {
+  if (side !== 'left' && side !== 'right') return false;
+  const bodies = bodiesOf(model, model.groups[group]!.nodes);
+  const split = side === 'left' ? bodies.x : bodies.x + bodies.width;
+  return model.lanes.some(lane => lane.kind !== 'perimeter' && lane.x >= split - PLACEMENT_EPS);
+}
+
+/** The padding a group holds now on one edge, from its node bodies to its box edge. */
+export function heldPadding(model: LayoutModel, group: string, side: Side): number {
+  const box = model.groups[group]!.bounds!, bodies = bodiesOf(model, model.groups[group]!.nodes);
+  return side === 'top' ? bodies.y - box.y : side === 'bottom' ? box.y + box.height - bodies.y - bodies.height
+    : side === 'left' ? bodies.x - box.x : box.x + box.width - bodies.x - bodies.width;
+}
+
+/** The room a label beside a track takes beyond it: half the stroke, the normal gap, the text and half the border's stroke (`acrossRunPadding`). */
+export const trackLabelRoom = (stroke: number, labelHeight: number): number =>
+  stroke / 2 + LINK_LABEL_GEOMETRY.normalGap + labelHeight + DEFAULT_STROKE_WIDTHS.group / 2;
+
+/** The label height a drawn overlay link shows beside its tracks, or `undefined` when it shows none (`describedLink`). 7f and the separation read it (R1). */
+export function trackLabelHeight(model: LayoutModel, link: LayoutLink): number | undefined {
+  if (!describedLink(model, link)) return undefined;
+  return measureText(model.document.links[link.sourceIndex]!.label!, { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight }).height;
 }
