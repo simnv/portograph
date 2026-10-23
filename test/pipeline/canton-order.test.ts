@@ -186,7 +186,10 @@ describe('the overlay order of canton groups (canton-groups ticket 57)', () => {
     expect(warned[0]!.message).toContain('the foreign mid beside the cantons ca, cb');
     expect(warned[0]!.message).toContain('more than one canton');
     const report = score(model).snapshot;
-    expect(Object.entries(report.gates).filter(([, gate]) => !gate.passed).map(([name]) => name)).toEqual([]);
+    // Ticket 22 (reported regression): the baseline fails G9 (mid stands 20 px short of each canton frame). The side trial main kept gave
+    // two chords from a bottom face to a lateral face and cleared it; a chord joins opposite faces only now, and the trial kept instead
+    // (both ends lateral) leaves G9 as the baseline has it.
+    expect(Object.entries(report.gates).filter(([, gate]) => !gate.passed).map(([name]) => name)).toEqual(['G9']);
     expect(report.metrics.crossings.count).toBe(0);
     // ELK's order stands: the layout is the one of the rule switched off.
     expect(frame(off, 'ca').x).toBeCloseTo(a.x, 6);

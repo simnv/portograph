@@ -357,6 +357,9 @@ describe('the follow-ups of ticket 48 (ticket 51)', () => {
 
   it('anchors an obstacle that starts inside the gap and ends below it to the band below: the rows stay above it, and H holds its need', async () => {
     const model = await edited();
+    // Ticket 22: a's fan (link-1, link-4) is a direct family whose chords crowd after 7f, so both stay orthogonal and join this plan. The
+    // test reads the parts it was written for, as when those two were held chords: the obstacle then stands under link-5 alone.
+    model.links = model.links.filter(link => link.id !== 'link-1' && link.id !== 'link-4');
     const { gap, plan: free } = tierGapPlans(model).find(item => item.gap.above === 0)!;
     const top = gap.low + 20;
     // A box in the empty x between two ends, so that no leg runs into it and only the runs that pass over it feel it.

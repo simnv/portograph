@@ -482,7 +482,8 @@ export function directGapHeight(model: LayoutModel, gap: Pick<TierGap, 'above' |
 
 /**
  * The direct members that stand, after 7f, within the chord clearance of a part the tier-gap plan seats in their gap (a leg, a row, a drop, a
- * stem), or of another held chord, and cross it nowhere strictly: what G6 would fail. Read on the model as 7f leaves it.
+ * stem), or of another held chord, and cross it nowhere strictly: what G6 would fail. Read on the model as 7f leaves it. Of two members
+ * that crowd only each other, the first in family and peer order is named.
  */
 export function crowdedDirectMembers(model: LayoutModel): string[] {
   const direct = (model.directFamilies ?? []).flatMap(family => family.members.filter(member => member.mode === 'direct').map(member => ({ id: member.link, gap: family.gap })));
@@ -509,8 +510,9 @@ export function crowdedDirectMembers(model: LayoutModel): string[] {
       }
       if ([...plannedSegments(part, found!.gap), ...stems].some(segment => near(segment, linkStrokeWidth(owner)))) { hit = true; break; }
     }
+    // Of two direct members that crowd each other only the first is refused: the other no longer has a chord near it.
     if (!hit) for (const other of model.links) {
-      if (other.id === id || !isRoutedChord(model, other)) continue;
+      if (other.id === id || crowded.includes(other.id) || !isRoutedChord(model, other)) continue;
       if (near(other.path!.segments[0]!, linkStrokeWidth(other))) { hit = true; break; }
     }
     if (hit) crowded.push(id);
