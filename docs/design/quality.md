@@ -167,7 +167,7 @@ command, the time is simply not a promise.
 - **Scale tests**: the **full pipeline** at 100 / 300 / 1,000 synthetic nodes with a hub (degree
   64), a wide tier (40 nodes), and long transit links; fallback exercised by **injected failure**
   and by deadline, not by relying on a particular ELK crash.
-- **Review**: codex on every ticket's diff; agy on every golden render against the checklist.
+- **Review**: codex on every ticket's diff; every golden render is read as a PNG (`npm run png`) against the checklist.
 
 ## The checklist (the spec half of Q7)
 
