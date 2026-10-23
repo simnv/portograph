@@ -488,54 +488,6 @@ function farthest(model: LayoutModel, walls: ReadonlyMap<string, OverlayStops>):
   }
   return { farthestLeft, farthestRight };
 }
-/**
- * A fan's source stands over its peers (architecture-2 ticket 22). The main move centres a row as one block, and the widenings after it only grow a body
- * toward its feeds; no node of the row ever moved to its own feeds, so in a row of two fans that interleave on the facing row one node stood off its
- * peers and its links went flat. Here each node of a `row` group moves toward the mean x its own targeted ports ask for, inside the row's freedom: the
- * row order stays (R3), each pair keeps the gap the widening keeps (`siblingLimit`), and the row stays inside the step's window. The x is the weighted
- * least-squares fit of the nodes' asks under the order (pool-adjacent-violators, weight = the node's targeted ports); a node with no target is carried
- * by its neighbours. The step's own checks after it (the clamp, the riser keep-out, the chords across lanes, the span breaches) judge the result as they
- * judge the main move, and the publication check replays the same step (R5). A row already frozen by the chord freeze is left as it stands.
- */
-function standOverPeers(model: LayoutModel, group: LayoutGroup, wanted: ReadonlyMap<string, number>, window: { low: number; high: number }): void {
-  if (model.frozenChords !== undefined || !['row', 'ranked'].includes(model.document.groups[group.id]?.shape ?? '')) return;
-  const rows = packRowsOf(model, group);
-  if (rows.length !== 1 || rows[0]!.length < 2) return;
-  const nodes = rows[0]!.map(id => model.nodes[id]!);
-  if (nodes.some(node => !node.bounds)) return;
-  const top = Math.max(...nodes.map(node => node.bounds!.y)), bottom = Math.min(...nodes.map(node => node.bounds!.y + node.bounds!.height));
-  if (bottom <= top + EPS) return;
-  const offsets: number[] = [];
-  nodes.forEach((node, index) => {
-    if (index === 0) { offsets.push(0); return; }
-    const prev = nodes[index - 1]!;
-    offsets.push(offsets[index - 1]! + prev.bounds!.width + Math.max(rowGap(model, prev.id, node.id), linkLabelGap(model, prev.id, node.id)));
-  });
-  const asks = nodes.map((node, index) => {
-    const pairs = node.ports.filter(port => (port.side === 'top' || port.side === 'bottom') && port.anchor && wanted.has(portId(port.ref)))
-      .map(port => [wanted.get(portId(port.ref))!, port.anchor!.x] as const);
-    const shift = pairs.length ? pairs.reduce((sum, [want, at]) => sum + want - at, 0) / pairs.length : 0;
-    return { y: node.bounds!.x + shift - offsets[index]!, w: pairs.length || 1e-6 };
-  });
-  if (asks.every(ask => ask.w < 1)) return;
-  // Pool adjacent violators: blocks of a non-decreasing fit, each at the weighted mean of its asks.
-  const blocks: { y: number; w: number; n: number }[] = [];
-  for (const ask of asks) {
-    blocks.push({ y: ask.y, w: ask.w, n: 1 });
-    while (blocks.length > 1 && blocks[blocks.length - 2]!.y > blocks[blocks.length - 1]!.y + EPS) {
-      const b = blocks.pop()!, a = blocks.pop()!;
-      blocks.push({ y: (a.y * a.w + b.y * b.w) / (a.w + b.w), w: a.w + b.w, n: a.n + b.n });
-    }
-  }
-  const xs: number[] = [];
-  for (const block of blocks) for (let i = 0; i < block.n; i++) xs.push(block.y + offsets[xs.length]!);
-  const first = nodes[0]!.bounds!, lastNode = nodes[nodes.length - 1]!;
-  const extra = group.bounds!.width - (right(lastNode.bounds!) - first.x);
-  const span = xs[xs.length - 1]! + lastNode.bounds!.width - xs[0]!;
-  if (span + extra > window.high - window.low + EPS) return;
-  nodes.forEach((node, index) => { if (Math.abs(xs[index]! - node.bounds!.x) > EPS) shiftNode(node, xs[index]! - node.bounds!.x); });
-  fitRegionGroup(model, group);
-}
 /** The main move of a group step toward the offset `toMean`: stopped at the overlay walls, and nil when it breaks the riser keep-out or carries a frozen chord across a lane. */
 function mainMove(model: LayoutModel, group: LayoutGroup, farthestLeft: number, farthestRight: number, toMean: number): number {
   const shift = Math.max(farthestLeft, Math.min(toMean, farthestRight));
@@ -656,7 +608,6 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   const { farthestLeft, farthestRight } = farthest(model, walls);
   const began = group.bounds!.x, toMean = mean(distinctParents.values()) - mean(distinctChildren.values());
   moveGroup(model, group, mainMove(model, group, farthestLeft, farthestRight, toMean), 0);
-  if (!(globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.PG_NO_SOP) standOverPeers(model, group, wanted, stepWindow(model, context, tier, list, id, previous, tail));
   const aligned = new Set<string>();
   for (const nodeId of group.rowOrder!) {
     const node = model.nodes[nodeId]!;
