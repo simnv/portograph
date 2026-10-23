@@ -108,6 +108,7 @@ is a standalone schema-v2 document. `stage-inputs.yaml` is separate test data.
 | Diagram | Stage | Expected behaviour |
 |---|---|---|
 | [a-flank-frame-stands-in-front-of-the-frame-it-flanks](synthetic/a-flank-frame-stands-in-front-of-the-frame-it-flanks.yaml) | render | A flank frame that overlaps the frame it flanks is drawn after it (smaller box in front), in the SVG and in draw.io. |
+| [an-anonymous-end-is-closed-by-a-dot](synthetic/an-anonymous-end-is-closed-by-a-dot.yaml) | render | A link from a named port to a bare node: a pill on one end, a dot in the link stroke on the other (`render.anonymousPortMarker`, default `dot`). Paint only; test `anonymous-marker.test.ts`. |
 | [a-grid-growth-stops-at-a-reserved-lane](synthetic/a-grid-growth-stops-at-a-reserved-lane.yaml) | 7e | The linked grid grows a short flank to its core y-extent only where no reserved lane window, span corridor or fitting tier gap row stands in the room it claims; a lane put in that room keeps the flank short. |
 | [flank-two-peers](synthetic/flank-two-peers.yaml) | 7b | Select the two-link primary peer; route the other peer's link. |
 | [unequal-pitch](synthetic/unequal-pitch.yaml) | 3, 7b | Respace both sides to the larger measured pitch before alignment. |

@@ -1,0 +1,14 @@
+# Expected: the link from `core.p1` to `edge` has a named end and a bare end. The named end shows its
+# pill; the bare end, an anonymous port that has no geometry (ADR-0002), shows a dot in the link
+# stroke on the border of `edge`, so the two ends do not look different for no reason.
+# `render.anonymousPortMarker: none` draws the bare end as before; the layout and the score do not
+# change either way. The dot is paint only.
+portograph: 2
+groups:
+  top: { tier: 0 }
+  bottom: { tier: 1 }
+nodes:
+  core: { group: top, label: Core, ports: [{ name: p1, side: bottom }] }
+  edge: { group: bottom, label: Edge }
+links:
+  - [core.p1, edge]

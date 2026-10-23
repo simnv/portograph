@@ -121,6 +121,11 @@ export interface NormalisedDocument {
      */
     corridorRowOrder?: boolean;
   };
+  /** Paint-only settings, present only when the author wrote `render:` at the root. They never reach layout or score. */
+  render?: {
+    /** `dot` (default): a link end on an anonymous port is drawn as a filled dot in the link stroke. `none`: the line ends bare. */
+    anonymousPortMarker?: 'dot' | 'none';
+  };
   /** Document metadata, present only when the author wrote `meta:` at the root. No cell inherits it. */
   meta?: Meta;
 }

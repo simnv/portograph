@@ -11,7 +11,7 @@ import { LEGEND_DEFAULT_CLASS } from '../profiles/network/theme.js';
 import { EPS, right } from '../geometry/planar.js';
 import { effectiveLayer, labelArea, validate } from '../score/model.js';
 import { measureText } from '../text/index.js';
-import { CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, linkStrokeWidth } from '../theme/geometry.js';
+import { CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, anonymousDotRadius, linkStrokeWidth } from '../theme/geometry.js';
 import { washAssignment, washClass } from '../profiles/network/theme.js';
 import { groupShapes } from './frame-order.js';
 import { GeometryLocks, sheetClassWashCss, themeCss } from './theme.js';
@@ -494,6 +494,22 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
         'data-owner': link.id, 'data-end': end, cx: point.x, cy: point.y, r: OVERLAY_ENDPOINT_RADIUS }));
   }).join('');
 
+  // A routed link end on an anonymous port (ADR-0002: no geometry, no pill) is closed by a dot in the link stroke, so it does not
+  // look unfinished beside a pill. Paint only; an overlay link already carries its end mark. The group stands after the nodes, as
+  // draw.io's links layer stands above its diagram layer, so the node body does not cut the dot on the border.
+  const dots = layout.document.render?.anonymousPortMarker === 'none' ? '' : drawn.flatMap(link => {
+    if (effectiveLayer(link) !== 'routed' || link.attachments === undefined) return [];
+    const segments = link.path!.segments;
+    if (!segments.length) return [];
+    // A disc drawn as a stroke: radius r/2 with a stroke r wide covers the disc of radius r, in the colour of the link's own
+    // `.link-line` rules, so a document `css:` rule that recolours the line recolours the dot.
+    const radius = anonymousDotRadius(linkStrokeWidth(link));
+    return ([['from', segments[0]!.from], ['to', segments.at(-1)!.to]] as const).flatMap(([end, point]) =>
+      link.attachments![end].anonymous === true
+        ? [element('circle', { class: classes('link-line', 'link-dot', linkClassToken(layout, link), locks.stroke(radius)), style: 'stroke-dasharray:none',
+          'data-owner': link.id, 'data-end': end, cx: point.x, cy: point.y, r: radius / 2 })] : []);
+  }).join('');
+
   const legendSwatch = (entry: NonNullable<LayoutModel['legend']>['entries'][number]): string => {
     if (entry.kind === 'line') {
       const middle = centre(entry.swatch).y;
@@ -550,6 +566,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     + (crossedBodies.length ? element('g', { class: 'nodes crossed-bars' }, crossedBodies.join('')) : '')
     + element('g', { class: 'links', ...(routedMask ? { mask: `url(#${routedMaskId})` } : {}) }, routedPaths + trunks)
     + element('g', { class: 'nodes' }, nodes)
+    + (dots ? element('g', { class: 'link-dots', ...(routedMask ? { mask: `url(#${routedMaskId})` } : {}) }, dots) : '')
     + element('g', { class: 'labels' }, groupLabels + linkLabels + busLabels.join(''))
     + (marks ? element('g', { class: 'overlay-marks' }, marks) : '')
     + legend;
