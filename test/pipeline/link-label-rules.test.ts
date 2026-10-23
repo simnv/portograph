@@ -598,7 +598,7 @@ it.fails('a label beside an overlay detour in a group padding stays clear of the
 }, 120000);
 
 // Ticket 20: a turned label is tested by its turned rectangle, and placement reserves a window along the diagonal it lies on, clear
-// of the borders and of the routed drop the line crosses.
+// of the borders and of the frozen chord the line crosses (a stored reservation, `reservedLinkRuns`).
 it('a diagonal label rising past a third group stays clear of every border (ticket 20)', async () => {
   const model = await run(fixture('a-diagonal-label-rises-past-a-third-group'));
   expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ON_BORDER' || item.code === 'LINK_LABEL_ROOM_UNRESERVED')).toEqual([]);

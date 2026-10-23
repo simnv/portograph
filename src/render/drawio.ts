@@ -517,6 +517,12 @@ const svgImage = (svg: string): string => `data:image/svg+xml,${encodeURICompone
 const outlinedFill = (of: ThemeMode, washes: WashAssignment, nodeClass?: string): string => washFill(washToken(nodeClass), of, washes);
 
 const centre = (box: Rect): Point => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
+/** The cell of a label at `box`: the turned label's text rectangle about the box centre (`turnedSize`), or the box. */
+const turnedCell = (label: LayoutLabel, box: Rect): Rect => {
+  if (label.turnedSize === undefined) return box;
+  const middle = centre(box);
+  return { x: middle.x - label.turnedSize.width / 2, y: middle.y - label.turnedSize.height / 2, ...label.turnedSize };
+};
 const samePoint = (a: Point, b: Point): boolean => Math.abs(a.x - b.x) <= EPS && Math.abs(a.y - b.y) <= EPS;
 
 /** A rectangle expressed from another rectangle's top-left, as every child geometry must be. */
@@ -592,9 +598,10 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   /** A text cell placed at exactly the box stage 9 measured, so no label is re-flowed on open. */
   const textCell = (id: string, parent: string, label: LayoutLabel, box: Rect, colour: string,
     size = labelSize(label)): void => {
-    // A label's `bounds` is already the rotated box and the model keeps no unrotated size, so the
-    // angle is reproduced the way the SVG renderer reproduces it: the text is laid out unclipped
-    // about the box centre and then turned. `rotation` is clockwise-positive in both formats, and
+    // draw.io turns a cell's own rectangle about its centre. A turned label (ticket 20) records its
+    // text rectangle (`turnedSize`), so the cell is that rectangle about the box centre, and draw.io
+    // turns the rectangle the text really occupies. Any other label's `bounds` is its box: a quarter
+    // turn keeps it, as the SVG renderer does. `rotation` is clockwise-positive in both formats, and
     // it takes every reserved angle — a straight bundle member's label is rotated to its own run
     // (ADR-0017), not to a quarter turn.
     // `spacingTop` turns with the text, so one value puts the first baseline where `render` does.
@@ -605,7 +612,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       fontFamily: FONT_FAMILY, fontSize: size, fontColor: colour,
       fontStyle: label.fontWeight === 700 ? 1 : undefined,
       rotation: label.textRotation ? label.textRotation : undefined,
-    }), box, plainText(labelLines(label)));
+    }), turnedCell(label, box), plainText(labelLines(label)));
   };
 
   // ---- paint resolution -------------------------------------------------------------------

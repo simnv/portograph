@@ -1094,9 +1094,12 @@ L's side run that has no gap to grow and whose windows do not hold the label now
 turned to its angle (ticket 16), and is tested by its turned rectangle (text plus halo). Its windows
 (`labelRunWindows` with the turned box's height) are the line less the shorten margins, less every
 stretch where a cross-section of the turned box touches a border's stroke, grown by the border margin
-and the halo along the line. 7f also cuts them where the line crosses a routed drop placement can
-predict (another routed link's anchors at one x in two tiers): text across a routed run is a label
-hit. The tier gap grows until a window holds the text; the line turns as the lower end moves, so
+and the halo along the line. The windows also keep clear of the link geometry placement reserved
+(`reservedLinkRuns`: every frozen chord and every routed lane, the label's own link left out; user
+decision 2026-10-23): a stretch where a cross-section of the turned box comes within the run's half
+stroke (G3) is cut, grown by the halo. 7f and stage 9 pass the same runs, so stage 9 places the text
+in the window placement reserved. A link placement did not reserve is left to stage 9's collision
+test. The tier gap grows until a window holds the text; the line turns as the lower end moves, so
 `labelWindowDeficit` finds the least growth by bisection (`LABEL_WINDOW_BISECTIONS` steps, rounded up
 to `LABEL_WINDOW_GRAIN`).
 Self-links, same-tier links

@@ -1,13 +1,14 @@
-import type { Rect } from '../model/geometry.js';
+import type { Point, Rect } from '../model/geometry.js';
 import type {
   Bundle, Diagnostic, LabelSupport, LayoutLabel, LayoutLink, LayoutModel, LayoutPath, Owner, PathSegment,
 } from '../model/layout.js';
 import { equal } from '../model/json-equality.js';
-import { EPS, bottom, contains, right } from '../geometry/planar.js';
+import { EPS, bottom, contains, right, segmentDistance } from '../geometry/planar.js';
 import { effectiveLayer, groupBoxes, labelArea, labelCrossesBorder } from '../score/model.js';
 import { type Area, type OrientedBox, areaBounds, areaDistance, areaSegment, areaSegmentDistance, isOriented, orientedBounds } from '../geometry/oriented.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
-import { CANVAS_MARGIN, DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
+import { CANVAS_MARGIN, DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
+import { straightChord } from './overlay-paths.js';
 import { drawnBoxes as paintedBoxes, produceLegend } from './legend.js';
 import { BUS_LABEL_FONT, BUS_LABEL_GAP, busCarriesLabel, busLabelText } from './bus-room.js';
 import { withLayoutMutation } from './mutation.js';
@@ -65,9 +66,9 @@ export const LABEL_BORDER_REACH = LINK_LABEL_GEOMETRY.borderMargin + DEFAULT_STR
  * the box reaches and the run does not refuses the candidate there. Placement reserves no room across
  * the run for that case; such a label falls back to the midpoint and reports `LINK_LABEL_ON_BORDER`.
  */
-export function labelRunWindows(boxes: readonly Rect[], run: PathSegment, across = 0): { from: number; to: number }[] | undefined {
+export function labelRunWindows(boxes: readonly Rect[], run: PathSegment, across = 0, links: readonly LinkRun[] = []): { from: number; to: number }[] | undefined {
   const vertical = Math.abs(run.to.x - run.from.x) <= EPS, horizontal = Math.abs(run.to.y - run.from.y) <= EPS;
-  if (vertical === horizontal) return vertical || !(across > 0) ? undefined : diagonalWindows(boxes, run, across);
+  if (vertical === horizontal) return vertical || !(across > 0) ? undefined : diagonalWindows(boxes, run, across, links);
   const at = vertical ? run.from.x : run.from.y;
   const [a, b] = vertical ? [run.from.y, run.to.y] : [run.from.x, run.to.x];
   const low = Math.min(a, b) + LINK_LABEL_GEOMETRY.shortenMargin, high = Math.max(a, b) - LINK_LABEL_GEOMETRY.shortenMargin;
@@ -107,7 +108,7 @@ function windowsBetween(low: number, high: number, cuts: [number, number][]): { 
  * one of its cross-sections does, so a label whose text lies in a window is clear of every border by the border margin along the
  * run, as on an axis-aligned run.
  */
-function diagonalWindows(boxes: readonly Rect[], run: PathSegment, across: number): { from: number; to: number }[] {
+function diagonalWindows(boxes: readonly Rect[], run: PathSegment, across: number, links: readonly LinkRun[]): { from: number; to: number }[] {
   const length = Math.hypot(run.to.x - run.from.x, run.to.y - run.from.y);
   const ux = (run.to.x - run.from.x) / length, uy = (run.to.y - run.from.y) / length, nx = -uy, ny = ux, h = across / 2;
   const half = DEFAULT_STROKE_WIDTHS.group / 2, grow = LINK_LABEL_GEOMETRY.borderMargin + LINK_LABEL_GEOMETRY.halo;
@@ -139,7 +140,72 @@ function diagonalWindows(boxes: readonly Rect[], run: PathSegment, across: numbe
       : ([[hit[0], inside[0]], [inside[1], hit[1]]] as Span[]).filter(([a, b]) => b >= a);
     for (const [a, b] of pieces) cuts.push([a - grow, b + grow]);
   }
+  for (const link of links) {
+    const cut = linkCut(run, length, h, link);
+    if (cut !== undefined) cuts.push([cut[0] - LINK_LABEL_GEOMETRY.halo, cut[1] + LINK_LABEL_GEOMETRY.halo]);
+  }
   return windowsBetween(low, high, cuts);
+}
+
+/** A run of another link that placement reserved, and the clear distance a label keeps from it: its half stroke (G3). */
+export interface LinkRun { segment: { from: Point; to: Point }; clearance: number }
+
+/** Bisection and ternary steps of `linkCut` (R4: a count). */
+const LINK_CUT_STEPS = 60;
+
+/**
+ * The stretch of a diagonal `run` (as t from `run.from`) where the cross-section of a label `2 h` high, at right angles to the run,
+ * comes nearer than the clearance to `link`'s segment: G3's test of a label against a routed segment, `areaSegmentDistance` below
+ * its half stroke, read one cross-section at a time. The distance of a sliding cross-section to a fixed segment is convex in t, so
+ * the stretch is one interval: its least point by a ternary search and both ends by bisection, `LINK_CUT_STEPS` steps each.
+ */
+function linkCut(run: PathSegment, length: number, h: number, link: LinkRun): [number, number] | undefined {
+  const ux = (run.to.x - run.from.x) / length, uy = (run.to.y - run.from.y) / length, nx = -uy, ny = ux;
+  const target: PathSegment = { from: link.segment.from, to: link.segment.to, owner: run.owner };
+  const distance = (t: number): number => {
+    const x = run.from.x + t * ux, y = run.from.y + t * uy;
+    return segmentDistance({ from: { x: x - h * nx, y: y - h * ny }, to: { x: x + h * nx, y: y + h * ny }, owner: run.owner }, target);
+  };
+  const near = (t: number): boolean => distance(t) < link.clearance + EPS;
+  let low = -length, high = 2 * length;
+  for (let step = 0; step < LINK_CUT_STEPS; step++) {
+    const a = low + (high - low) / 3, b = high - (high - low) / 3;
+    if (distance(a) <= distance(b)) high = b; else low = a;
+  }
+  const best = (low + high) / 2;
+  if (!near(best)) return undefined;
+  const edge = (outside: number): number => {
+    let inside = best, out = outside;
+    if (near(out)) return out;
+    for (let step = 0; step < LINK_CUT_STEPS; step++) { const mid = (inside + out) / 2; if (near(mid)) inside = mid; else out = mid; }
+    return out;
+  };
+  return [edge(-length), edge(2 * length)];
+}
+
+/**
+ * The link geometry placement reserved, as the runs a label on a diagonal line keeps clear of (ticket 20, user decision 2026-10-23):
+ * every frozen chord (`model.frozenChords`, its straight segment between its two faces) and every routed lane (`model.lanes`: a
+ * vertical run at the lane's x over its reserved extent; a span corridor is its chord's room, not a run), less the label's own
+ * link. Placement (7f) and stage 9 pass the same runs to `labelRunWindows` (R1). A link placement did not reserve is left to
+ * stage 9's collision test.
+ */
+export function reservedLinkRuns(model: LayoutModel, own: string): LinkRun[] {
+  const runs: LinkRun[] = [];
+  const byId = new Map(model.links.map(link => [link.id, link]));
+  for (const id of model.frozenChords ?? []) {
+    const link = byId.get(id);
+    if (link === undefined || id === own) continue;
+    const chord = straightChord(model, link, undefined, true);
+    if (chord !== undefined) runs.push({ segment: chord, clearance: linkStrokeWidth(link) / 2 });
+  }
+  for (const lane of model.lanes) {
+    if (lane.layer === 'overlay' || lane.kind === 'span' || lane.owner.kind === 'link' && lane.owner.id === own) continue;
+    const owner = lane.owner.kind === 'link' ? byId.get(lane.owner.id) : undefined;
+    runs.push({ segment: { from: { x: lane.x, y: lane.bounds.y }, to: { x: lane.x, y: bottom(lane.bounds) } },
+      clearance: (owner ? linkStrokeWidth(owner) : DEFAULT_STROKE_WIDTHS.path) / 2 });
+  }
+  return runs;
 }
 
 /**
@@ -170,7 +236,7 @@ export function windowHolds(window: { from: number; to: number }, extent: number
  * `LABEL_WINDOW_GRAIN` so that a replay on the grown geometry finds the window holding.
  */
 export function labelWindowDeficit(boxes: readonly Rect[], run: PathSegment, extent: number, split: number, farEndMoves = false,
-  turned?: { across: number; axis: 'x' | 'y' }): number | undefined {
+  turned?: { across: number; axis: 'x' | 'y'; links?: readonly LinkRun[] }): number | undefined {
   const vertical = Math.abs(run.to.x - run.from.x) <= EPS, horizontal = Math.abs(run.to.y - run.from.y) <= EPS;
   if (vertical && horizontal) return 0;
   const diagonal = !vertical && !horizontal;
@@ -181,8 +247,11 @@ export function labelWindowDeficit(boxes: readonly Rect[], run: PathSegment, ext
     const far = Math.max(run.from[axis], run.to[axis]);
     const end = (at: number): number => farEndMoves && at >= far - EPS ? at + growth : moved(at);
     const grown = boxes.map(box => ({ ...box, [axis]: moved(box[axis]), [size]: moved(box[axis] + box[size]) - moved(box[axis]) }));
+    // A reserved link run moves with the boxes: an end at or beyond the split moves on (a chord's or lane's lower end).
+    const links = (turned?.links ?? []).map(link => ({ ...link, segment: {
+      from: { ...link.segment.from, [axis]: moved(link.segment.from[axis]) }, to: { ...link.segment.to, [axis]: moved(link.segment.to[axis]) } } }));
     return labelRunWindows(grown, { ...run, from: { ...run.from, [axis]: end(run.from[axis]) }, to: { ...run.to, [axis]: end(run.to[axis]) } },
-      turned?.across) ?? [];
+      turned?.across, links) ?? [];
   };
   const holds = (growth: number): boolean => windows(growth).some(window => windowHolds(window, extent));
   if (holds(0)) return 0;
@@ -215,8 +284,8 @@ export const LABEL_WINDOW_GRAIN = 1e-3;
  * The windows of a run (`labelRunWindows`) when a border cuts it; `undefined` for a run no border cuts or a run with no axis. A
  * diagonal run has windows only with the height of the label's turned box (`across`).
  */
-function cutWindows(boxes: readonly Rect[], run: PathSegment, across = 0): { from: number; to: number }[] | undefined {
-  const windows = labelRunWindows(boxes, run, across);
+function cutWindows(boxes: readonly Rect[], run: PathSegment, across = 0, links: readonly LinkRun[] = []): { from: number; to: number }[] | undefined {
+  const windows = labelRunWindows(boxes, run, across, links);
   if (windows === undefined) return undefined;
   const vertical = Math.abs(run.to.x - run.from.x) <= EPS, horizontal = Math.abs(run.to.y - run.from.y) <= EPS;
   const [a, b] = vertical ? [run.from.y, run.to.y] : horizontal ? [run.from.x, run.to.x] : [0, Math.hypot(run.to.x - run.from.x, run.to.y - run.from.y)];
@@ -439,7 +508,11 @@ interface Placement {
   onLine?: true; segment: number; bounds: Rect; textRotation: number; turnedSize?: { width: number; height: number };
   text: string; lines: string[]; lineHeight: number;
 }
-interface Supported { segments: PathSegment[]; half: number; support: (index: number) => LabelSupport | undefined }
+interface Supported {
+  segments: PathSegment[]; half: number; support: (index: number) => LabelSupport | undefined;
+  /** The link runs placement reserved that a label on a diagonal line keeps clear of (`reservedLinkRuns`). */
+  links?: readonly LinkRun[];
+}
 
 /**
  * The supports of a link path (ticket 142). A link with a lane piece publishes one straight run as
@@ -553,13 +626,13 @@ function placeLabel(index: ObstacleIndex, supported: Supported, text: string, sh
       // declared straight member, on the dominant axis otherwise.
       if (isDirect(segment) && !second) {
         // With borders, a line a border cuts offers only its windows (ticket 20): a shortened text fits the longest one.
-        const lineWindows = borders === undefined ? undefined : cutWindows(borders, segment, haloSize(measure(text)).height);
+        const lineWindows = borders === undefined ? undefined : cutWindows(borders, segment, haloSize(measure(text)).height, supported.links);
         const longestOn = lineWindows === undefined ? Infinity : Math.max(0, ...lineWindows.map(window => window.to - window.from));
         const onLine = shortened ? shorten(widths!, Math.min(length - 2 * LINK_LABEL_GEOMETRY.shortenMargin, longestOn)) : text;
         const measuredOn = onLine === undefined ? undefined : measure(onLine);
         const fits = measuredOn !== undefined && measuredOn.lines.length > 0
           && (shortened || !shortenable || measuredOn.width + 2 * LINK_LABEL_GEOMETRY.shortenMargin <= length + EPS);
-        const found = fits ? alongLine(index, segment, length, measuredOn, supported.support(at), overlayCounts, borders, refusal) : undefined;
+        const found = fits ? alongLine(index, segment, length, measuredOn, supported.support(at), overlayCounts, borders, refusal, supported.links) : undefined;
         if (found && measuredOn) {
           const placement: Placement = { onLine: true, segment: at, bounds: found.bounds, textRotation: found.textRotation, turnedSize: found.turnedSize,
             text: onLine!, lines: measuredOn.lines, lineHeight: measuredOn.lineHeight };
@@ -611,12 +684,12 @@ function placeLabel(index: ObstacleIndex, supported: Supported, text: string, sh
  */
 function alongLine(index: ObstacleIndex, segment: PathSegment, length: number, measured: { width: number; height: number },
   support: LabelSupport | undefined, overlayCounts: boolean, borders: readonly Rect[] | undefined,
-  refusal: { border: boolean }): { bounds: Rect; textRotation: number; turnedSize: { width: number; height: number } } | undefined {
+  refusal: { border: boolean }, links: readonly LinkRun[] = []): { bounds: Rect; textRotation: number; turnedSize: { width: number; height: number } } | undefined {
   const degrees = lineAngle(segment), size = haloSize(measured);
   const ux = (segment.to.x - segment.from.x) / length, uy = (segment.to.y - segment.from.y) / length;
   const reach = Math.min(length / 2, measured.width / 2 + LINK_LABEL_GEOMETRY.shortenMargin);
   const room = length / 2 - reach, steps = Math.floor(room / LINK_LABEL_GEOMETRY.alongStep + EPS);
-  const windows = borders === undefined ? undefined : cutWindows(borders, segment, size.height);
+  const windows = borders === undefined ? undefined : cutWindows(borders, segment, size.height, links);
   if (windows !== undefined) refusal.border = true;
   // The steps in order: the midpoint, then towards the target before the source at each distance.
   let candidates: number[] = [];
@@ -757,7 +830,8 @@ export function produceLinkLabels(model: LayoutModel): void {
     const runs = drawable ? labelRuns(link.path!.segments) : [];
     emit(label, drawable ? { segments: runs.map(run => run.segment), half: halfStroke(link.path),
       support: at => ({ kind: 'link-segment', link: link.id, segment: runs[at]!.first,
-        ...(runs[at]!.last > runs[at]!.first ? { through: runs[at]!.last } : {}) }) } : undefined, true);
+        ...(runs[at]!.last > runs[at]!.first ? { through: runs[at]!.last } : {}) }),
+      ...(runs.some(run => isDirect(run.segment)) ? { links: reservedLinkRuns(model, link.id) } : {}) } : undefined, true);
   }
 
   const byId = new Map(model.links.map(link => [link.id, link]));

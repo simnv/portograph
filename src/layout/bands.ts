@@ -23,7 +23,7 @@ import { deriveFrames } from './frames.js';
 import { bandHeldBy, bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placementWarning, rebuildRegions, right } from './regions.js';
 import { withLayoutMutation } from './mutation.js';
 import { effectiveLayer, groupBoxes } from '../score/model.js';
-import { LINK_LABEL_GEOMETRY, haloSize, labelWindowDeficit, overlayLabelsSuppressed } from './link-labels.js';
+import { LINK_LABEL_GEOMETRY, haloSize, labelWindowDeficit, overlayLabelsSuppressed, reservedLinkRuns } from './link-labels.js';
 import { overlayPath } from './overlay-paths.js';
 import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -1425,24 +1425,7 @@ function labelWindowRoom(model: LayoutModel, run: PathSegment | undefined, exten
   if (run === undefined) return 0;
   const boxes = groupBoxes({ ...model, frames: deriveFrames(model) ?? model.frames ?? [] }).map(item => item.bounds);
   if (turned === undefined) return labelWindowDeficit(boxes, run, extent, split, farEndMoves);
-  return labelWindowDeficit([...boxes, ...routedDrops(model, turned.link)], run, extent, split, farEndMoves, { across: turned.across, axis: turned.axis });
-}
-
-/**
- * The routed runs placement can predict, as boxes of no width: the straight drop of every other routed link whose two anchors stand
- * at one x in two tiers, from anchor to anchor. A label on a diagonal line lies on the line (ticket 16), and text across a routed
- * run is a label hit, so the windows of a diagonal run are cut where it crosses such a drop, as where it crosses a border (ticket 20).
- * Stage 9 reads the routed paths themselves (its collision test); its windows read the borders only, and hold these.
- */
-function routedDrops(model: LayoutModel, own: LayoutLink): Rect[] {
-  const drops: Rect[] = [];
-  for (const link of model.links) {
-    if (link.id === own.id || effectiveLayer(link) !== 'routed' || link.technique === 'stub' || link.removed === true || !link.attachments) continue;
-    const a = findPort(model, link.attachments.from)?.anchor, b = findPort(model, link.attachments.to)?.anchor;
-    if (a === undefined || b === undefined || Math.abs(a.x - b.x) > PLACEMENT_EPS || Math.abs(a.y - b.y) <= PLACEMENT_EPS) continue;
-    drops.push({ x: a.x, y: Math.min(a.y, b.y), width: 0, height: Math.abs(a.y - b.y) });
-  }
-  return drops;
+  return labelWindowDeficit(boxes, run, extent, split, farEndMoves, { across: turned.across, axis: turned.axis, links: reservedLinkRuns(model, turned.link.id) });
 }
 
 /**

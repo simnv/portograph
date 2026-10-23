@@ -1,8 +1,8 @@
 # Expected (architecture-2 ticket 20): two described overlay links rise from `l` in `lower` to `u` in `upper`, past the group `third`
 # beside `upper`. Each draws one diagonal from face to face, and its label lies on the line (ticket 16). A turned label is tested by
 # the rectangle its text really occupies, not by its upright box (about 143 x 116 px for a 170 px turned box). 7f reserves a window
-# along the first line: between the borders of `upper` and `lower` and the routed drop `t`-`l2` the line crosses, 8 px clear of each
-# along the run, and grows the tier gap until that window holds the text. Stage 9 places the label there: no LINK_LABEL_ON_BORDER,
+# along the first line: between the borders of `upper` and `lower` (8 px clear along the run) and the frozen chord `t`-`l2` the line
+# crosses (its half stroke clear, as G3 asks), and grows the tier gap until that window holds the text. Stage 9 places the label there: no LINK_LABEL_ON_BORDER,
 # `labelBorderCrossings` absent. The second line crosses the first at its middle; its label finds no place clear of the first one
 # and is omitted (placement reserves each link's window alone).
 # Test-only input; test/pipeline/link-label-rules.test.ts reads it.

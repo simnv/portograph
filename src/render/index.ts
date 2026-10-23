@@ -3,12 +3,13 @@ import type {
   Bundle, Frame, Layer, LayoutLabel, LayoutLink, LayoutModel, LayoutNode, PathSegment,
 } from '../model/layout.js';
 import { frameNodes } from '../layout/frames.js';
-import { haloSize, isDirect } from '../layout/link-labels.js';
+import { isDirect } from '../layout/link-labels.js';
+import { isOriented } from '../geometry/oriented.js';
 import { orderedNodeIds } from '../model/model.js';
 import { iconKey, iconPath } from '../profiles/network/icons.js';
 import { LEGEND_DEFAULT_CLASS } from '../profiles/network/theme.js';
 import { EPS, right } from '../geometry/planar.js';
-import { effectiveLayer, validate } from '../score/model.js';
+import { effectiveLayer, labelArea, validate } from '../score/model.js';
 import { measureText } from '../text/index.js';
 import { CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, linkStrokeWidth } from '../theme/geometry.js';
 import { washAssignment, washClass } from '../profiles/network/theme.js';
@@ -233,19 +234,27 @@ function maskRect(shown: boolean, box: Rect, turn?: number): string {
 }
 
 /**
+ * The turned rectangle of a turned label (ticket 20), read from the label (`labelArea`): its text rectangle (with the halo on a
+ * line) turned by its heading about its centre. Undefined for an upright label, which is cut out by its stored box.
+ */
+function turnedCutout(label: LayoutLabel): Cutout | undefined {
+  if (!label.bounds || label.turnedSize === undefined) return undefined;
+  const area = labelArea(label);
+  if (!isOriented(area)) return undefined;
+  return { box: { x: area.centre.x - area.width / 2, y: area.centre.y - area.height / 2, width: area.width, height: area.height }, turn: area.degrees };
+}
+
+/**
  * The cutout of a label that lies on a direct line (ticket 16): the rectangle of its text plus the
- * halo, turned to the line's angle about its centre, so the line is cut away under the glyphs and no
- * more. Undefined for every other label, which is cut out by its stored box.
+ * halo, turned to the line's angle about its centre (`turnedCutout`), so the line is cut away under
+ * the glyphs and no more. Undefined for every other label.
  */
 function onLineCutout(model: LayoutModel, label: LayoutLabel): Cutout | undefined {
   if (label.role !== 'link' || label.onLine !== true || label.support?.kind !== 'link-segment' || !label.bounds || !label.lines?.length) return undefined;
   const support = label.support;
   const segment = model.links.find(link => link.id === support.link)?.path?.segments[support.segment];
   if (segment === undefined || !isDirect(segment)) return undefined;
-  const text = measureText(label.lines.join('\n'), { fontSize: label.fontSize ?? 9, weight: label.fontWeight ?? 400 });
-  const size = haloSize({ width: text.width, height: (label.lineHeight ?? text.lineHeight) * label.lines.length });
-  const middle = centre(label.bounds);
-  return { box: { x: middle.x - size.width / 2, y: middle.y - size.height / 2, ...size }, turn: label.textRotation ?? 0 };
+  return turnedCutout(label);
 }
 
 /**
@@ -271,7 +280,7 @@ function maskedBoxes(model: LayoutModel, visible: (link: LayoutLink) => boolean)
     if (label.omitted || !label.bounds) continue;
     if (label.role === 'group') boxes.push({ box: label.bounds });
     // A hidden link's label is not drawn, so masking it would leave an unexplained gap.
-    if (label.role === 'link' && labelDrawn(model, label, visible)) boxes.push(onLineCutout(model, label) ?? { box: label.bounds });
+    if (label.role === 'link' && labelDrawn(model, label, visible)) boxes.push(onLineCutout(model, label) ?? turnedCutout(label) ?? { box: label.bounds });
     // The bus label is cut out of the overlay layer as a link label is: the bar and stubs are overlay strokes.
     if (label.role === 'mesh-bus') {
       const bus = model.meshBuses?.find(item => item.label === label.id);
