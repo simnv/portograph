@@ -41,7 +41,7 @@ const ROWS: Row[] = [
   row('a-re-seated-band-carries-its-bar-and-flank', '1/5/7/3', 1, 1, 1, 0, 0),
   row('sync-links-do-not-stack-a-tier', '1/4/7/3', 1, 1, 1, 0, 0),
   row('an-overlay-leaves-a-lateral-side-past-a-sibling-body', '2/7/12/5', 2, 2, 2, 0, 0),
-  // Ticket 22: a chord joins opposite faces only, so this sheet has no chord hint at 90 degrees and no second side trial (2/16/12/5, 2 attempts, probe 2 before).
+  // Ticket 22: a chord never joins perpendicular faces, so this sheet has no chord hint at 90 degrees and no second side trial (2/16/12/5, 2 attempts, probe 2 before).
   row('a-chord-hint-and-a-lane-hint-never-share-a-batch', '1/14/7/3', 4, 1, 1, 0, 0, { probe: 1 }),
   // Ticket 22: the direct family of the fan reserves gap height; one more centring pass (1/7/7/3 before).
   row('a-fan-spreads-its-ports-so-its-chords-hold-clearance', '1/8/7/3', 2, 1, 1, 0, 0),

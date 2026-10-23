@@ -441,7 +441,7 @@ export function edgeMisses(model: LayoutModel, link: LayoutLink, segment: PathSe
  */
 export function chordVerdict(model: LayoutModel, link: LayoutLink, sideSlack = 0): { segment: PathSegment } | { reason: ChordRefusal } {
   const kind = chordKind(model, link);
-  if (!opposedFaces(model, link)) return { reason: 'faces' };
+  if (perpendicularFaces(model, link)) return { reason: 'faces' };
   const geometry = straightChord(model, link, undefined, true);
   if (!geometry || Math.hypot(geometry.to.x - geometry.from.x, geometry.to.y - geometry.from.y) < PLACEMENT_EPS) return { reason: 'faces' };
   // A link that crosses a tier it does not end in needs the lane lanes.ts reserves for it, and a lane
@@ -467,17 +467,17 @@ export function chordVerdict(model: LayoutModel, link: LayoutLink, sideSlack = 0
   return { segment };
 }
 
-const OPPOSITE = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' } as const;
+const VERTICAL = new Set(['top', 'bottom']);
 /**
- * A routed chord joins opposite faces only (user, 2026-10-23, architecture-2 ticket 22): `top` to `bottom`, or `left` to `right`. Two end faces at
- * 90 degrees (a bottom face to a lateral side) make the link orthogonal, and two faces on one side never make a chord. Every chord decision reads this
- * one predicate (`chordVerdict`).
+ * A routed chord never joins two perpendicular faces (user, 2026-10-23, architecture-2 ticket 22): a `top` or `bottom` face and a lateral side
+ * stand at 90 degrees, and the link is orthogonal. Opposite faces and two faces on one side keep the other chord rules. Every chord decision
+ * reads this one predicate (`chordVerdict`).
  */
-export function opposedFaces(model: LayoutModel, link: LayoutLink): boolean {
+export function perpendicularFaces(model: LayoutModel, link: LayoutLink): boolean {
   const ends = link.attachments;
   if (!ends) return false;
   const one = findPort(model, ends.from)?.side, two = findPort(model, ends.to)?.side;
-  return one !== undefined && two !== undefined && OPPOSITE[one] === two;
+  return one !== undefined && two !== undefined && VERTICAL.has(one) !== VERTICAL.has(two);
 }
 
 /** The chord of the link when nothing that no other link can change refuses it. The fan rules ask this first. */

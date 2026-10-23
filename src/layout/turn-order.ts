@@ -2,8 +2,9 @@ import type { PortRef } from '../model/document.js';
 import type { Point, Side } from '../model/geometry.js';
 import type { Course, Diagnostic, LayoutLink, LayoutModel, LayoutPort } from '../model/layout.js';
 import { portId } from './skeleton-graph.js';
+import { EPS } from '../geometry/planar.js';
 import { COURSE_STEM, endMode } from './course-rows.js';
-import { laneSource } from './lanes.js';
+import { laneSource, transitTiers } from './lanes.js';
 import { farCoordinate } from './peers.js';
 import { bypassRowY } from './course-bypass.js';
 import { busOfPort } from './bus.js';
@@ -171,6 +172,28 @@ function transitTurn(model: LayoutModel, link: LayoutLink, mine: PortRef, own: L
   const xs = (model.nodes[mine.node]?.ports ?? []).filter(port => port.side === own.side && port.anchor !== undefined).map(port => port.anchor!.x);
   if (lane.x < Math.min(...xs) - 1e-6) return { turn: 'low', shape: 'onward', reach: lane.x };
   if (lane.x > Math.max(...xs) + 1e-6) return { turn: 'high', shape: 'onward', reach: lane.x };
+  return undefined;
+}
+
+/**
+ * Tracks nest on a horizontal face (architecture-2 ticket 22, user 2026-10-23): the outer track takes the outer port. A link whose run turns in the tier gap
+ * the face looks at turns toward its far end (`low` when the far end lies before the centre of the face, `high` past it), and a link that runs on through
+ * the gap to a tier beyond (the source end of a transit lane, the deepest track of the face) turns nowhere there (`none`): it stands between the ports that
+ * turn low and the ports that turn high, outside every run that turns away from it. The order of the other ports is the far-end order. `reach` is the far end. A shared port, a bundle member and a lateral face take no turn here.
+ * Stage 5 orders a face by it when the run is not turn-ordered (`sidesTwo`); an authored `order:` still wins.
+ */
+export function nestingTurn(model: LayoutModel, port: LayoutPort, far: number): PlannedTurn | undefined {
+  if (!horizontalFace(port.side!) || !Number.isFinite(far)) return undefined;
+  const key = portId(port.ref);
+  const links = model.links.filter(link => link.attachments !== undefined && (portId(link.attachments.from) === key || portId(link.attachments.to) === key));
+  const link = links[0];
+  if (links.length !== 1 || link!.layer !== 'routed' || link!.bundle !== undefined) return undefined;
+  if (transitTiers(model, link!).length && link!.spanHint !== true && portId(laneSource(model, link!)) === key) return { turn: 'none', shape: 'onward', reach: far };
+  const box = model.nodes[port.ref.node]?.bounds;
+  if (box === undefined) return undefined;
+  const centre = box.x + box.width / 2;
+  if (far < centre - EPS) return { turn: 'low', shape: 'onward', reach: far };
+  if (far > centre + EPS) return { turn: 'high', shape: 'onward', reach: far };
   return undefined;
 }
 

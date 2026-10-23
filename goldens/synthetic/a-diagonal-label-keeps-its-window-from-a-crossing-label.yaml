@@ -7,7 +7,7 @@
 # LINK_LABEL_ON_BORDER, no `labelBorderCrossings` counter, every gate passes. Before the fix link-6's label took that window, and
 # link-10's label fell back across the border of `east` with the growth spent.
 # Ticket 22: `e`'s uplink (link-4) goes to `p1`, a straight top-to-bottom chord. It went to `zone` as a chord from `e`'s left face to `zone`'s
-# bottom face; a chord joins opposite faces only now, and its orthogonal legs would stand in the window of link-10.
+# bottom face; a chord never joins perpendicular faces now, and its orthogonal legs would stand in the window of link-10.
 # Test-only input; test/pipeline/link-label-rules.test.ts reads it.
 portograph: 2
 profile: network

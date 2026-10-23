@@ -117,7 +117,7 @@ describe('a node facing a row links direct', () => {
   }, 120000);
 });
 
-describe('a chord joins opposite faces only (ticket 22, rule 5)', () => {
+describe('a chord never joins perpendicular faces (ticket 22, rule 5)', () => {
   it('draws the bottom-to-lateral link as an L, and chordVerdict names the faces', async () => {
     const model = await run(fixture(LATERAL));
     const link = model.links.find(item => item.attachments!.from.node === 'west-router' && item.attachments!.to.node === 'provider')!;

@@ -23,7 +23,7 @@ import { gridCells, gridRowGaps, groupShape, isGridGroup, packGridRows } from '.
 import { freezePortTopology } from './mutation.js';
 import { busOfPort, busSide, meshBuses } from './bus.js';
 import { planTrunks } from './trunk.js';
-import { plannedTurns, turnOrder, turnScope, type PlannedTurn, type TurnPort } from './turn-order.js';
+import { nestingTurn, plannedTurns, turnOrder, turnScope, type PlannedTurn, type TurnPort } from './turn-order.js';
 import { routedLinksAt, unreservedPeers } from './peers.js';
 const key = portId;
 
@@ -941,7 +941,7 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
       // the other, so its port stands where its run does not cross the other's. One comparator on one y scale (`turnOrder`): a routed port is not pushed past the brackets by their order.
       const lateral = side === 'left' || side === 'right';
       const slotsOf = (turns: ReadonlyMap<string, PlannedTurn>): Map<LayoutPort, TurnPort> => new Map(ports.map(port => {
-        const turn = lateral || turns !== plainTurns ? turns.get(key(port.ref)) : undefined;
+        const turn = lateral || turns !== plainTurns ? turns.get(key(port.ref)) : (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.PG_NO_NEST ? undefined : nestingTurn(model, port, far(port.ref));
         return [port, { far: far(port.ref), ...(turn === undefined ? {} : turn) }] as const;
       }));
       const sorted = (turns: ReadonlyMap<string, PlannedTurn>): LayoutPort[] => sortFace(model, ports, slotsOf(turns), buses);

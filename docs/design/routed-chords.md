@@ -57,8 +57,8 @@ A link is a cross-frame candidate when all of these are true:
    members; a canton adds no tier.
 4. After the side freeze (ADR-0009), the port on the upper end is on `bottom` or on a lateral side that
    a side hint gave it (`sideHint`), and the port on the lower end is on `top` or on a lateral side
-   that a side hint gave it (`docs/design/side-faces.md`, Section 9; ticket 117). The two faces must be
-   opposite (Section 15.1): a `bottom` end and a lateral end make no chord. A lateral side that
+   that a side hint gave it (`docs/design/side-faces.md`, Section 9; ticket 117). The two faces must not
+   be perpendicular (Section 15.1): a `bottom` end and a lateral end make no chord. A lateral side that
    is not a hint (an author `side:`) does not make a candidate.
 
 Items 1 to 3 are known at stage 1. Item 4 is known after stage 6. The document tier of item 3 is the authored tier: stage 1 keeps it beside the
@@ -430,15 +430,16 @@ judge reads crossings last.
 The offer, the refused trial and its reason are in the trace only. `ROUTED_CHORD_REFUSED` does not change: a link
 with no hint is no spanning-chord candidate at the freeze.
 
-## 15. Opposite faces and direct families (architecture-2 ticket 22)
+## 15. Perpendicular faces and direct families (architecture-2 ticket 22)
 
 Status: decided by the user 2026-10-23 (ticket 22, "User decisions after slice 1"). Slice 1 as built.
 
-### 15.1 A chord joins opposite faces only
+### 15.1 A chord never joins perpendicular faces
 
-A routed chord joins `top` to `bottom` or `left` to `right`. When the two end faces stand at 90 degrees (a
-`bottom` face to a lateral side), or on one side, the link is orthogonal: *"90 degrees turn between faces is a
-cause for orthogonal link"*. One predicate (`opposedFaces`, `frame-paths.ts`) is the first check of
+When the two end faces of a routed link stand at 90 degrees (a `top` or `bottom` face and a lateral side), the
+link is orthogonal: *"90 degrees turn between faces is a cause for orthogonal link"*. Opposite faces and two
+faces on one side (`top` to `top`, for example) keep the other chord rules (user, 2026-10-23, second round).
+One predicate (`perpendicularFaces`, `frame-paths.ts`) is the first check of
 `chordVerdict`, so every chord decision reads it: the fixed point, the freeze, the fan, span and side
 measures. A side hint that would give a cross-frame chord a lateral lower end no longer makes a chord. Between
 two lateral faces there is no angle floor (a slight tilt is fine). Overlay chords do not read the predicate.

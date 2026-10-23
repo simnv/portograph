@@ -17,7 +17,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * with no candidate, and a replay calls the judge, so the call count fell (for example 7 to 1). Recorded on all 16 fixtures with inputs: every call the
  * branch still makes has main's verdict, and every call it dropped belonged to a replay whose result the check discarded. The verdicts did not change.
  *
- * Re-recorded again for architecture 2 ticket 22: no judge moved, but the inputs did. A chord joins opposite faces only, and a direct family reserves
+ * Re-recorded again for architecture 2 ticket 22: no judge moved, but the inputs did. A chord never joins perpendicular faces, and a direct family reserves
  * gap height and may run the attempt again, so four fixtures place other geometry and call the judges on it.
  */
 const FIXTURES = [
