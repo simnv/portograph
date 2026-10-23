@@ -1,8 +1,8 @@
 import type { Bundle, LayoutLink, LayoutModel, LayoutPort, Owner, PathSegment, Point, Rect } from '../model/index.js';
 import type { PortRef } from '../model/document.js';
 import { portId } from './skeleton-graph.js';
-import { reserveGroupExits } from './group-exits.js';
-import { MEMBER_GAP, axis, bundleFanRows, clone, coordinate, facing, fanCohorts, fanEnd, fanPitch, fanRows, junctionId, normal, type Member } from './bundle-geometry.js';
+import { reserveGroupExits, standsIn } from './group-exits.js';
+import { MEMBER_GAP, axis, bundleFanRows, clone, coordinate, edgeMargin, facing, fanCohorts, fanEnd, fanPitch, fanRows, junctionId, normal, type Member } from './bundle-geometry.js';
 import { placementWarning } from './regions.js';
 import { STRAIGHT_PATH_CLEARANCE, findPort } from './row-paths.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
@@ -102,7 +102,8 @@ export function bundleFans(model: LayoutModel, bundle: Bundle, list: Member[], q
  * The spans along `port`'s side at which a fan branch may not turn: for every node whose routing
  * obstacle stands in the corridor the branch's outward run crosses, the span that node occupies
  * along the side (ADR-0018 rule 3, ticket 45). Rule 2 spaces a track against the rows on its own
- * side; this is what spaces it against the nodes beside it.
+ * side; this is what spaces it against the nodes beside it. The edges of every box the branch leaves
+ * are walls too (ticket 18 of architecture-2).
  *
  * The reach is `routeObstacles`' own — the widest routed stroke, and the enclosing rectangle of the
  * expanded body and of every expanded pill, since the router owns the corners between them — so the
@@ -114,7 +115,7 @@ export function bundleFans(model: LayoutModel, bundle: Bundle, list: Member[], q
  * answer independent of the order the nodes were read in.
  */
 function blockedTracks(model: LayoutModel, port: LayoutPort, band: { from: number; to: number },
-  exempt: ReadonlySet<string>): { lo: number; hi: number }[] {
+  exempt: ReadonlySet<string>, farNode: string): { lo: number; hi: number }[] {
   const n = normal(port.side!), tangent = axis(port.side!), stroke = routedStroke(model);
   const low = Math.min(band.from, band.to), high = Math.max(band.from, band.to);
   const pillGap = (stroke + DEFAULT_STROKE_WIDTHS.pill) / 2;
@@ -151,6 +152,20 @@ function blockedTracks(model: LayoutModel, port: LayoutPort, band: { from: numbe
     // The box mapped onto the side's own two axes: how deep it reaches out of the side, and where it
     // stands along it.
     span({ x, y, right: Math.max(...boxes.map(box => box.x + box.width)), bottom: Math.max(...boxes.map(box => box.y + box.height)) });
+  }
+  // A branch that leaves a box (a group or frame that holds the fan's node and not the far node) runs
+  // its track either inside the box or outside it, one edge margin off each edge across the side
+  // (ADR-0013, architecture-2 ticket 18). A track outside the box ends the run there, so 7e reserves no
+  // group exit for it, and G6 `segment-group-edge` measures the run beside the edge. Each such edge is
+  // a wall the margin deep on both faces, over the depth the box spans; the step below takes the track
+  // to the face nearer the coordinate it wanted. A box the branch enters or stays in is not read here.
+  const edge = edgeMargin(stroke) + PLACEMENT_EPS;
+  for (const { id, bounds: box } of groupBoxes(model)) {
+    if (!standsIn(model, id, port.ref.node) || standsIn(model, id, farNode)) continue;
+    const bottom = box.y + box.height, right = box.x + box.width;
+    for (const at of tangent === 'x' ? [box.x, right] : [box.y, bottom]) {
+      span(tangent === 'x' ? { x: at - edge, y: box.y, right: at + edge, bottom } : { x: box.x, y: at - edge, right, bottom: at + edge });
+    }
   }
   const result: { lo: number; hi: number }[] = [];
   for (const span of found.sort((a, b) => a.lo - b.lo || a.hi - b.hi)) {
@@ -330,7 +345,7 @@ export function crossBundleFans(model: LayoutModel): void {
       // past, to the edge of it nearer the coordinate the member wanted.
       const peel = rows[Math.min(peelRank.get(item) ?? 0, rows.length - 1)]!;
       const walls = blockedTracks(model, port, { from: peel, to: stop(item, peel, wanted(item)) },
-        new Set([portId(port.ref), portId(item.far.ref)]));
+        new Set([portId(port.ref), portId(item.far.ref)]), item.far.ref.node);
       const base = clearOfRows(Math.max(wanted(item), prior + q));
       let slot = base;
       for (let guard = 0; guard < walls.length + 1; guard++) {
