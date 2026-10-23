@@ -3,8 +3,9 @@
 # the rectangle its text really occupies, not by its upright box (about 143 x 116 px for a 170 px turned box). 7f reserves a window
 # along the first line: between the borders of `upper` and `lower` (8 px clear along the run) and the frozen chord `t`-`l2` the line
 # crosses (its half stroke clear, as G3 asks), and grows the tier gap until that window holds the text. Stage 9 places the label there: no LINK_LABEL_ON_BORDER,
-# `labelBorderCrossings` absent. The second line crosses the first at its middle; its label finds no place clear of the first one
-# and is omitted (placement reserves each link's window alone).
+# `labelBorderCrossings` absent. The second line crosses the first at its middle. Neither label has a window clear of the other
+# line's band, so the later one yields (`labelBands`): no growth opens a window for it, 7f reports LINK_LABEL_ROOM_UNRESERVED for
+# link-3 and spends nothing on it, and its label is omitted.
 # Test-only input; test/pipeline/link-label-rules.test.ts reads it.
 portograph: 2
 groups:

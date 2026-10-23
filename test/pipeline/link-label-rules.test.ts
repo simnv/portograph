@@ -3,7 +3,8 @@ import { expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import { bars, bundles, centre, flanks, lanes, rows } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
-import { LABEL_BORDER_REACH, LABEL_WINDOW_GRAIN, LINK_LABEL_GEOMETRY, labelRunWindows, labelWindowDeficit, produceLinkLabels, windowHolds } from '../../src/layout/link-labels.js';
+import { LABEL_BORDER_REACH, LABEL_WINDOW_GRAIN, LINK_LABEL_GEOMETRY, labelBands, labelRunWindows, labelWindowDeficit, produceLinkLabels, windowHolds } from '../../src/layout/link-labels.js';
+import { areaDistance } from '../../src/geometry/oriented.js';
 import { groupBoxes, labelArea, labelCrossesBorder } from '../../src/score/model.js';
 import { DEFAULT_STROKE_WIDTHS } from '../../src/theme/geometry.js';
 import { reserveLinkLabelRoom } from '../../src/layout/bands.js';
@@ -601,7 +602,9 @@ it.fails('a label beside an overlay detour in a group padding stays clear of the
 // of the borders and of the frozen chord the line crosses (a stored reservation, `reservedLinkRuns`).
 it('a diagonal label rising past a third group stays clear of every border (ticket 20)', async () => {
   const model = await run(fixture('a-diagonal-label-rises-past-a-third-group'));
-  expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ON_BORDER' || item.code === 'LINK_LABEL_ROOM_UNRESERVED')).toEqual([]);
+  expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ON_BORDER')).toEqual([]);
+  // The second line crosses the first at its middle: its label yields to the first one's band, and no window clear of it can be made.
+  expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ROOM_UNRESERVED').map(item => item.owners)).toEqual([[{ kind: 'link', id: 'link-3' }]]);
   const report = score(model).snapshot;
   expect(report.counters.labelBorderCrossings).toBeUndefined();
   expect(Object.values(report.gates).filter(gate => gate.severity === 'error' && !gate.passed)).toEqual([]);
@@ -612,6 +615,27 @@ it('a diagonal label rising past a third group stays clear of every border (tick
   // Its upright box still reaches a border; its turned rectangle does not.
   expect(groupBoxes(model).filter(box => labelCrossesBorder(labelArea(first), box.bounds))).toEqual([]);
   // The reservation is at its fixed point (R1).
+  expect(reserveLinkLabelRoom(structuredClone(model))).toBe(false);
+}, 120000);
+
+// Ticket 20 follow-up: 7f grew the gap for the short line's window, and the label of a longer line that crosses it, placed first,
+// took that window. Of two labels on crossing diagonals the one with the more slack yields (`labelBands`), in 7f and in stage 9.
+it('a diagonal label keeps the window placement grew for it from the label of a crossing line (ticket 20)', async () => {
+  const model = await run(fixture('a-diagonal-label-keeps-its-window-from-a-crossing-label'));
+  expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ON_BORDER' || item.code === 'LINK_LABEL_ROOM_UNRESERVED')).toEqual([]);
+  const report = score(model).snapshot;
+  expect(report.counters.labelBorderCrossings).toBeUndefined();
+  expect(Object.values(report.gates).filter(gate => gate.severity === 'error' && !gate.passed)).toEqual([]);
+  const short = model.labels.find(label => label.id === 'label:link:link-10')!, long = model.labels.find(label => label.id === 'label:link:link-6')!;
+  expect(short.onLine).toBe(true);
+  expect(long.onLine).toBe(true);
+  const walls = groupBoxes(model).map(item => item.bounds);
+  expect(walls.filter(box => labelCrossesBorder(labelArea(short), box))).toEqual([]);
+  // The longer line yields: its label keeps clear of the short line's band; the short line yields to nothing.
+  const line = (id: string) => model.links.find(link => link.id === id)!.path!.segments[0]!;
+  expect(labelBands(model, 'link-6', walls).map(band => band.segment)).toContainEqual({ from: line('link-10').from, to: line('link-10').to });
+  expect(labelBands(model, 'link-10', walls)).toEqual([]);
+  expect(areaDistance(labelArea(short), labelArea(long))).toBeGreaterThan(0);
   expect(reserveLinkLabelRoom(structuredClone(model))).toBe(false);
 }, 120000);
 

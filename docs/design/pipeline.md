@@ -1111,7 +1111,15 @@ and the halo along the line. The windows also keep clear of the link geometry pl
 decision 2026-10-23): a stretch where a cross-section of the turned box comes within the run's half
 stroke (G3) is cut, grown by the halo. 7f and stage 9 pass the same runs, so stage 9 places the text
 in the window placement reserved. A link placement did not reserve is left to stage 9's collision
-test. The tier gap grows until a window holds the text; the line turns as the lower end moves, so
+test. **Two labels on diagonal lines do not take each other's window** (ticket 20 follow-up). A label on a
+diagonal line lies in the line's **band**: the line, with half the turned box's height plus the halo. When
+two bands can meet, one label yields (`labelBands`): its windows also keep clear of the other band, and in
+stage 9 every candidate of every rung does too. The label with the more slack yields (the longest window of
+its line clear of the borders, the reserved runs and the other band, less its text); on equal slack, the
+later link. The other label lies in its own band, so the two never meet, whichever stage 9 places first.
+Without this rule a label placed first took the window 7f had grown for a later one, and the growth was
+spent for a label that fell back across a border. A label that yields and finds no window, at any growth,
+is diagnosed `LINK_LABEL_ROOM_UNRESERVED` and no growth is spent on it. The tier gap grows until a window holds the text; the line turns as the lower end moves, so
 `labelWindowDeficit` finds the least growth by bisection (`LABEL_WINDOW_BISECTIONS` steps, rounded up
 to `LABEL_WINDOW_GRAIN`).
 Self-links, same-tier links
@@ -1568,6 +1576,8 @@ whole label across a border still beats a shortened one), and the label is repor
 run a label rides with the same windows (`labelWindowDeficit`) and grows the tier gap or the row
 when no window holds the text (ticket 19). A label on a diagonal line takes the step nearest the midpoint
 whose text lies wholly in a window of the line, or the point of a window nearest the midpoint (ticket 20).
+A label that yields to the band of another label on a diagonal line (`labelBands`, 7f) keeps clear of that
+band with every candidate, on every rung, the rungs without walls included.
 The scorer counts the crossings as `labelBorderCrossings`.
 
 **What a candidate must clear.** Visible nodes and their stroke, visible pills, every already

@@ -1425,7 +1425,7 @@ function labelWindowRoom(model: LayoutModel, run: PathSegment | undefined, exten
   if (run === undefined) return 0;
   const boxes = groupBoxes({ ...model, frames: deriveFrames(model) ?? model.frames ?? [] }).map(item => item.bounds);
   if (turned === undefined) return labelWindowDeficit(boxes, run, extent, split, farEndMoves);
-  return labelWindowDeficit(boxes, run, extent, split, farEndMoves, { across: turned.across, axis: turned.axis, links: reservedLinkRuns(model, turned.link.id) });
+  return labelWindowDeficit(boxes, run, extent, split, farEndMoves, { across: turned.across, axis: turned.axis, links: reservedLinkRuns(model, turned.link.id, boxes) });
 }
 
 /**
@@ -1555,7 +1555,9 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
         && labelWindowRoom(model, sideRun, measured.width, Infinity) === 0;
       const windowed = onSide ? 0 : labelWindowRoom(model, ridden, measured.width, split, true,
         diagonal ? { across: haloSize(measured).height, axis: 'y', link } : undefined);
-      if (windowed === undefined) unreserved('crosses a drawn box in its tier gap; no window between borders can be reserved for its label');
+      if (windowed === undefined) unreserved(diagonal
+        ? 'crosses a drawn box in its tier gap; no window between borders, clear of the reserved link runs and of the label bands it yields to, can be reserved for its label'
+        : 'crosses a drawn box in its tier gap; no window between borders can be reserved for its label');
       const deficit = Math.max(required - room, windowed ?? 0);
       if (deficit <= PLACEMENT_EPS) continue;
       for (const group of moved) moveGroup(model, group, 0, deficit);
