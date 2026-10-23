@@ -197,12 +197,15 @@ export function inSpan(at: number, spans: readonly Span[]): Span | undefined {
 }
 /**
  * The keepers held when final placement freezes, read from the junctions the last replay recorded them on (architecture-2 ticket 18).
- * From then on neither the member nor its depth is derived again from a box. [] = frozen, no keeper.
+ * From then on neither the member nor its depth is derived again from a box. Present only when a keeper is held, so a sheet without one
+ * publishes the bytes it did before; the frozen state itself is `freeze.placement` (see `edgeKeeper`).
  */
 export function freezeFanKeepers(model: LayoutModel): void {
-  model.fanKeepers = model.junctions.flatMap(junction => junction.keeper === undefined ? []
+  const held = model.junctions.flatMap(junction => junction.keeper === undefined ? []
     : [{ port: portId(junction.port), link: junction.keeper.link, depth: junction.keeper.depth }])
     .sort((a, b) => a.port < b.port ? -1 : a.port > b.port ? 1 : a.link < b.link ? -1 : a.link > b.link ? 1 : 0);
+  if (held.length) model.fanKeepers = held;
+  else delete model.fanKeepers;
 }
 
 interface KeeperInput {
@@ -233,7 +236,9 @@ interface KeeperInput {
 function edgeKeeper(model: LayoutModel, port: LayoutPort, input: KeeperInput): { keeper?: { item: FanItem; depth: number }; refused?: { item: FanItem; reason: string } } {
   const { items, wanted, target, rows, siblings, stop, walls } = input;
   const n = normal(port.side!), tangent = axis(port.side!), here = coordinate(port), anchor = port.anchor!, stroke = routedStroke(model);
-  const recorded = model.fanKeepers;
+  // Before final placement freezes, every replay chooses. After it (`freeze.placement`), the record is the decision: an absent
+  // record means no keeper, and nothing is chosen again (R1).
+  const recorded = model.freeze?.placement !== undefined ? model.fanKeepers ?? [] : undefined;
   const fresh = (): FanItem | undefined => {
     const found = items.filter(item => {
       const at = wanted(item), side = Math.sign(at - here);

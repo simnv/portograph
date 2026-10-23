@@ -17,7 +17,7 @@ const published = layout(parse(fixture), { createElkAttempt: createAttempt, crea
 
 async function forged(edit: (model: LayoutModel, box: { x: number; y: number; width: number; height: number }, here: number) => void, frozen = false) {
   const model = structuredClone(await published);
-  if (!frozen) delete model.fanKeepers;
+  if (!frozen) { delete model.fanKeepers; delete model.freeze?.placement; }
   const box = model.frames!.find(frame => frame.id === 'home')!.box, here = model.nodes['s1']!.ports[0]!.anchor!.x;
   edit(model, box, here);
   model.junctions = [];
@@ -88,4 +88,7 @@ it('ticket 18: once frozen, the keeper and its depth are read from the record, n
   // Absent = not frozen: the same stretch is chosen again; the turn past the grown frame lies beyond the rows the fan holds, so no keeper.
   const fresh = await forged((_m, box) => { box.y -= 30; box.height += 30; });
   expect(fresh.model.junctions.some(item => item.keeper !== undefined)).toBe(false);
+  // Frozen with no record: no keeper, and none is chosen, though the published geometry would admit one.
+  const none = await forged(m => { delete m.fanKeepers; }, true);
+  expect(none.model.junctions.some(item => item.keeper !== undefined)).toBe(false);
 }, 60000);

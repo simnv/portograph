@@ -520,7 +520,8 @@ export interface LayoutModel {
   /**
    * The fan edge keepers held when final placement freezes, after 7f (architecture-2 ticket 18): the fan's port id, the member's link
    * and the depth it turns at out of the port's side. From then on a replay takes the recorded member at the recorded depth or none, and
-   * never derives either again from a box. Absent = not frozen yet (every replay chooses); [] = frozen, no keeper.
+   * never derives either again from a box. Present only when a keeper is held. Before `freeze.placement` the field is not read and every
+   * replay chooses; after it, absent = no keeper, and none is chosen.
    */
   fanKeepers?: { port: string; link: string; depth: number }[];
   /**

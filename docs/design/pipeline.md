@@ -866,7 +866,7 @@ stands, named `FAN_TRACK_STEPPED_AT_GROUP_EDGE`) when the depth passes the deepe
 a node or stem wall stands on the coordinate, another member rises within the member pitch of the
 extended stem, its turn crosses or crowds another port's row on the side, or its runs come within the
 member gap of a run another link reserved. The junction records the keeper and its depth; final
-placement freezes them in `LayoutModel.fanKeepers` after 7f, and a replay reads the record and never
+placement freezes them in `LayoutModel.fanKeepers` (present only when held) after 7f; once `freeze.placement` stands, a replay reads the record and never
 chooses again from a box (R1). A fan built later than the keeper's does not read its runs. A last pass releases the branch whose reserved run closes the checkpoint another
 link's port must be approached from, and every branch of the link it hems (`FAN_BRANCH_HEMMED`,
 ADR-0018 rule 3). **Only an end that reserved nothing is measured there**, and only for a link the
